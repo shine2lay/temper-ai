@@ -64,7 +64,7 @@ def _configure_cors(app: FastAPI, mode: str) -> None:
         mode: "server" or "dashboard".
     """
     if mode == "server":
-        cors_origins_env = os.environ.get("MAF_CORS_ORIGINS", "")
+        cors_origins_env = os.environ.get("TEMPER_CORS_ORIGINS", "")
         cors_origins = [o.strip() for o in cors_origins_env.split(",") if o.strip()]
         if cors_origins:
             app.add_middleware(
@@ -325,7 +325,7 @@ def create_app(
     from temper_ai.interfaces.dashboard.data_service import DashboardDataService
     from temper_ai.interfaces.dashboard.execution_service import WorkflowExecutionService
 
-    title = "MAF Server" if mode == "server" else "MAF Dashboard"
+    title = "Temper AI Server" if mode == "server" else "Temper AI Dashboard"
     shutdown_mgr, run_store, _mining_job, _analysis_job = _init_server_components(mode)
 
     execution_service = WorkflowExecutionService(

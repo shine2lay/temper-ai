@@ -13,7 +13,7 @@ interface LLMCallInspectorProps {
 
 function PromptDisplay({ prompt }: { prompt: unknown }) {
   if (prompt == null) {
-    return <p className="text-xs text-maf-text-dim">No prompt data</p>;
+    return <p className="text-xs text-temper-text-dim">No prompt data</p>;
   }
 
   if (Array.isArray(prompt)) {
@@ -29,13 +29,13 @@ function PromptDisplay({ prompt }: { prompt: unknown }) {
               ? (msg as Record<string, unknown>).content
               : String(msg);
           return (
-            <div key={i} className="rounded-md bg-maf-panel p-2">
+            <div key={i} className="rounded-md bg-temper-panel p-2">
               {role != null && (
-                <span className="mb-1 block text-xs font-medium text-maf-accent">
+                <span className="mb-1 block text-xs font-medium text-temper-accent">
                   {String(role)}
                 </span>
               )}
-              <pre className="text-xs text-maf-text whitespace-pre-wrap">
+              <pre className="text-xs text-temper-text whitespace-pre-wrap">
                 {typeof content === 'string'
                   ? content
                   : JSON.stringify(content, null, 2)}
@@ -48,7 +48,7 @@ function PromptDisplay({ prompt }: { prompt: unknown }) {
   }
 
   return (
-    <pre className="mt-1 max-h-64 overflow-auto rounded-md bg-maf-panel p-3 text-xs text-maf-text whitespace-pre-wrap">
+    <pre className="mt-1 max-h-64 overflow-auto rounded-md bg-temper-panel p-3 text-xs text-temper-text whitespace-pre-wrap">
       {typeof prompt === 'string' ? prompt : JSON.stringify(prompt, null, 2)}
     </pre>
   );
@@ -75,24 +75,24 @@ function TokenBar({
 
   return (
     <div className="flex flex-col gap-1">
-      <span className="text-xs text-maf-text-muted">Token Distribution</span>
-      <div className="flex h-3 w-full overflow-hidden rounded-full bg-maf-panel">
+      <span className="text-xs text-temper-text-muted">Token Distribution</span>
+      <div className="flex h-3 w-full overflow-hidden rounded-full bg-temper-panel">
         <div
-          className="bg-maf-token-prompt transition-all"
+          className="bg-temper-token-prompt transition-all"
           style={{ width: `${promptPct}%` }}
         />
         <div
-          className="bg-maf-token-completion transition-all"
+          className="bg-temper-token-completion transition-all"
           style={{ width: `${completionPct}%` }}
         />
       </div>
-      <div className="flex gap-3 text-xs text-maf-text-dim">
+      <div className="flex gap-3 text-xs text-temper-text-dim">
         <span className="flex items-center gap-1">
-          <span className="inline-block size-2 rounded-full bg-maf-token-prompt" />
+          <span className="inline-block size-2 rounded-full bg-temper-token-prompt" />
           Prompt {formatTokens(promptTokens)}
         </span>
         <span className="flex items-center gap-1">
-          <span className="inline-block size-2 rounded-full bg-maf-token-completion" />
+          <span className="inline-block size-2 rounded-full bg-temper-token-completion" />
           Completion {formatTokens(completionTokens)}
         </span>
       </div>
@@ -108,7 +108,7 @@ export function LLMCallInspector({ llmCallId }: LLMCallInspectorProps) {
 
   if (!llmCall) {
     return (
-      <div className="p-4 text-sm text-maf-text-muted">
+      <div className="p-4 text-sm text-temper-text-muted">
         LLM call not found.
       </div>
     );
@@ -132,25 +132,25 @@ export function LLMCallInspector({ llmCallId }: LLMCallInspectorProps) {
           <>
             <button
               onClick={() => select('stage', parentStageId!)}
-              className="text-maf-accent hover:underline"
+              className="text-temper-accent hover:underline"
             >
               {parentStage.stage_name ?? parentStage.name ?? parentStageId}
             </button>
-            <span className="text-maf-text-dim">&gt;</span>
+            <span className="text-temper-text-dim">&gt;</span>
           </>
         )}
         {llmCall.agent_execution_id && (
           <>
             <button
               onClick={() => select('agent', llmCall.agent_execution_id!)}
-              className="text-maf-accent hover:underline"
+              className="text-temper-accent hover:underline"
             >
               {parentAgent?.agent_name ?? parentAgent?.name ?? llmCall.agent_execution_id}
             </button>
-            <span className="text-maf-text-dim">&gt;</span>
+            <span className="text-temper-text-dim">&gt;</span>
           </>
         )}
-        <span className="text-maf-text-muted">
+        <span className="text-temper-text-muted">
           {llmCall.provider && llmCall.model
             ? `${llmCall.provider}/${llmCall.model}`
             : llmCall.model ?? 'LLM Call'}
@@ -158,8 +158,8 @@ export function LLMCallInspector({ llmCallId }: LLMCallInspectorProps) {
       </div>
 
       {/* Header */}
-      <div className="flex flex-wrap items-center gap-2 sticky top-0 z-10 bg-maf-bg pb-2">
-        <h3 className="text-lg font-semibold text-maf-text">
+      <div className="flex flex-wrap items-center gap-2 sticky top-0 z-10 bg-temper-bg pb-2">
+        <h3 className="text-lg font-semibold text-temper-text">
           {llmCall.provider && llmCall.model
             ? `${llmCall.provider}/${llmCall.model}`
             : llmCall.model ?? 'LLM Call'}
@@ -212,7 +212,7 @@ export function LLMCallInspector({ llmCallId }: LLMCallInspectorProps) {
       {llmCall.status === 'failed' && llmCall.error_message && (() => {
         const { type, retryable } = categorizeError(llmCall.error_message);
         return (
-          <div className="rounded-md bg-maf-bg-failed p-3 text-sm text-maf-failed">
+          <div className="rounded-md bg-temper-bg-failed p-3 text-sm text-temper-failed">
             <div className="flex items-center gap-2 mb-1">
               <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-red-950 border border-red-900/50">{type}</span>
               {retryable && <span className="text-xs text-amber-400">Retryable</span>}
@@ -238,7 +238,7 @@ export function LLMCallInspector({ llmCallId }: LLMCallInspectorProps) {
             <CopyButton text={llmCall.response} className="mt-1" />
           </>
         ) : (
-          <p className="mt-1 text-xs text-maf-text-dim">No response data</p>
+          <p className="mt-1 text-xs text-temper-text-dim">No response data</p>
         )}
       </CollapsibleSection>
     </div>

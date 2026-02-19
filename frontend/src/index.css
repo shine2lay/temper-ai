@@ -5,33 +5,33 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme {
-  /* MAF custom palette — prefixed to avoid shadcn collision */
-  --color-maf-bg: #1a1a2e;
-  --color-maf-panel: #0f1729;
-  --color-maf-panel-light: #1e2a4a;
-  --color-maf-surface: #162032;
-  --color-maf-border: #2a3a5c;
-  --color-maf-border-light: #3a4a6c;
-  --color-maf-text: #e0e0e0;
-  --color-maf-text-muted: #8a8fa0;
-  --color-maf-text-dim: #6a7080;
-  --color-maf-accent: #4fc3f7;
-  --color-maf-accent-dim: #2a7a9f;
+  /* Temper AI custom palette — prefixed to avoid shadcn collision */
+  --color-temper-bg: #1a1a2e;
+  --color-temper-panel: #0f1729;
+  --color-temper-panel-light: #1e2a4a;
+  --color-temper-surface: #162032;
+  --color-temper-border: #2a3a5c;
+  --color-temper-border-light: #3a4a6c;
+  --color-temper-text: #e0e0e0;
+  --color-temper-text-muted: #8a8fa0;
+  --color-temper-text-dim: #6a7080;
+  --color-temper-accent: #4fc3f7;
+  --color-temper-accent-dim: #2a7a9f;
 
-  --color-maf-completed: #66bb6a;
-  --color-maf-running: #4fc3f7;
-  --color-maf-failed: #ef5350;
-  --color-maf-pending: #6a7080;
+  --color-temper-completed: #66bb6a;
+  --color-temper-running: #4fc3f7;
+  --color-temper-failed: #ef5350;
+  --color-temper-pending: #6a7080;
 
-  --color-maf-bg-completed: #162318;
-  --color-maf-bg-running: #162538;
-  --color-maf-bg-failed: #231616;
-  --color-maf-bg-pending: #0f1729;
+  --color-temper-bg-completed: #162318;
+  --color-temper-bg-running: #162538;
+  --color-temper-bg-failed: #231616;
+  --color-temper-bg-pending: #0f1729;
 
-  --color-maf-token-prompt: #42a5f5;
-  --color-maf-token-completion: #66bb6a;
+  --color-temper-token-prompt: #42a5f5;
+  --color-temper-token-completion: #66bb6a;
 
-  --color-maf-loop-back: #ffa726;
+  --color-temper-loop-back: #ffa726;
 }
 
 /* Always dark — override shadcn :root with dark values */
@@ -197,7 +197,7 @@ body {
   top: 0;
   bottom: 0;
   width: 2px;
-  background: var(--color-maf-accent);
+  background: var(--color-temper-accent);
   opacity: 0.8;
   z-index: 10;
 }
@@ -209,7 +209,7 @@ body {
   left: 50%;
   transform: translateX(-50%);
   font-size: 8px;
-  color: var(--color-maf-accent);
+  color: var(--color-temper-accent);
   font-weight: 600;
   letter-spacing: 0.5px;
 }

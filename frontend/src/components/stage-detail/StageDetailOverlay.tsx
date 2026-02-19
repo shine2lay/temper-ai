@@ -79,7 +79,7 @@ export function StageDetailOverlay() {
             {/* Header bar */}
             <SheetHeader className="shrink-0 pb-0">
               <div className="flex items-center gap-3 flex-wrap">
-                <SheetTitle className="text-lg font-bold text-maf-text">
+                <SheetTitle className="text-lg font-bold text-temper-text">
                   {stage.stage_name ?? stage.name ?? stageDetailId}
                 </SheetTitle>
                 <StatusBadge status={stage.status} />
@@ -99,7 +99,7 @@ export function StageDetailOverlay() {
               </SheetDescription>
 
               {/* Summary metrics */}
-              <div className="flex items-center gap-4 mt-1 text-xs text-maf-text-muted">
+              <div className="flex items-center gap-4 mt-1 text-xs text-temper-text-muted">
                 <span>{agents.length} agent{agents.length !== 1 ? 's' : ''}</span>
                 <span>{formatDuration(stage.duration_seconds)}</span>
                 <span>{formatTokens(totalTokens)} tokens</span>
@@ -128,7 +128,7 @@ export function StageDetailOverlay() {
                 <ErrorBoundary>
                   <div className="flex flex-col gap-4">
                     {/* Gantt Timeline */}
-                    <div className="rounded-lg border border-maf-border/30 bg-maf-panel/30 p-3">
+                    <div className="rounded-lg border border-temper-border/30 bg-temper-panel/30 p-3">
                       <GanttTimeline
                         agents={agents}
                         stageDurationSeconds={stage.duration_seconds}
@@ -138,7 +138,7 @@ export function StageDetailOverlay() {
 
                     {/* Collaboration events (if any) */}
                     {collabEvents.length > 0 && (
-                      <div className="rounded-lg border border-maf-border/30 bg-maf-panel/30 p-3">
+                      <div className="rounded-lg border border-temper-border/30 bg-temper-panel/30 p-3">
                         <CollaborationTimeline
                           events={collabEvents}
                           agents={agents}
@@ -149,7 +149,7 @@ export function StageDetailOverlay() {
 
                     {/* Agent rows */}
                     <div className="flex flex-col gap-2">
-                      <span className="text-xs font-medium text-maf-text-muted px-1">
+                      <span className="text-xs font-medium text-temper-text-muted px-1">
                         Agents ({agents.length})
                       </span>
                       {agents.map((agent) => (

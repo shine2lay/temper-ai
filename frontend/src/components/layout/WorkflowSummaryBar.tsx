@@ -71,11 +71,11 @@ export function WorkflowSummaryBar() {
   ];
 
   return (
-    <div className="flex items-center gap-6 bg-maf-panel/50 px-4 py-2 border-b border-maf-border shrink-0">
+    <div className="flex items-center gap-6 bg-temper-panel/50 px-4 py-2 border-b border-temper-border shrink-0">
       {stats.map((s) => (
         <div key={s.label} className="flex items-center gap-1.5 text-xs">
-          <span className="text-maf-text-muted">{s.label}</span>
-          <span className="font-mono font-medium text-maf-text">
+          <span className="text-temper-text-muted">{s.label}</span>
+          <span className="font-mono font-medium text-temper-text">
             {s.value}
             {s.suffix && <span className="text-red-400">{s.suffix}</span>}
           </span>
@@ -84,12 +84,12 @@ export function WorkflowSummaryBar() {
       {stageCosts.length > 0 && (() => {
         const maxCost = Math.max(...stageCosts.map(s => s.cost), 0.001);
         return (
-          <div className="flex items-center gap-2 ml-2 border-l border-maf-border/30 pl-3">
-            <span className="text-[10px] text-maf-text-dim shrink-0">Cost/stage:</span>
+          <div className="flex items-center gap-2 ml-2 border-l border-temper-border/30 pl-3">
+            <span className="text-[10px] text-temper-text-dim shrink-0">Cost/stage:</span>
             <div className="flex items-end gap-1 h-4">
               {stageCosts.slice(0, 5).map(s => (
                 <div key={s.name} className="flex flex-col items-center" title={`${s.name}: ${formatCost(s.cost)}`}>
-                  <div className="w-3 bg-maf-accent/60 rounded-t-sm" style={{ height: Math.max((s.cost / maxCost) * 16, 2) }} />
+                  <div className="w-3 bg-temper-accent/60 rounded-t-sm" style={{ height: Math.max((s.cost / maxCost) * 16, 2) }} />
                 </div>
               ))}
             </div>

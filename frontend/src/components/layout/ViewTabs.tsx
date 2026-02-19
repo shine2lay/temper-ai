@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 
-const TAB_STORAGE_KEY = 'maf-active-tab';
+const TAB_STORAGE_KEY = 'temper-active-tab';
 
 interface ViewTabsProps {
   dagContent: React.ReactNode;

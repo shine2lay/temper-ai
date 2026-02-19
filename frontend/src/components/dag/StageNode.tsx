@@ -74,7 +74,7 @@ export function StageNode({ data }: NodeProps) {
         type="target"
         position={Position.Left}
         id="left"
-        className="!bg-maf-border !w-2 !h-2"
+        className="!bg-temper-border !w-2 !h-2"
       />
 
       {/* Header */}
@@ -96,7 +96,7 @@ export function StageNode({ data }: NodeProps) {
         {/* Strategy badge */}
         {strategy && (
           <span
-            className="text-[10px] px-1.5 py-0.5 rounded bg-maf-surface text-maf-text-muted shrink-0"
+            className="text-[10px] px-1.5 py-0.5 rounded bg-temper-surface text-temper-text-muted shrink-0"
             title={STRATEGY_DESCRIPTIONS[strategy] ?? strategy}
           >
             {strategy}
@@ -109,7 +109,7 @@ export function StageNode({ data }: NodeProps) {
             e.stopPropagation();
             openStageDetail(currentStage.id);
           }}
-          className="text-[10px] px-1.5 py-0.5 rounded bg-maf-surface text-maf-text-muted hover:text-maf-accent hover:bg-maf-accent/10 shrink-0 transition-colors"
+          className="text-[10px] px-1.5 py-0.5 rounded bg-temper-surface text-temper-text-muted hover:text-temper-accent hover:bg-temper-accent/10 shrink-0 transition-colors"
           aria-label="Open stage detail view"
           title="Open detailed view"
         >
@@ -123,7 +123,7 @@ export function StageNode({ data }: NodeProps) {
               e.stopPropagation();
               setCollapsed(!collapsed);
             }}
-            className="text-[10px] px-1.5 py-0.5 rounded bg-maf-surface text-maf-text-muted hover:text-maf-text shrink-0 ml-auto"
+            className="text-[10px] px-1.5 py-0.5 rounded bg-temper-surface text-temper-text-muted hover:text-temper-text shrink-0 ml-auto"
             aria-expanded={!collapsed}
             aria-label={collapsed ? `Show ${currentAgents.length} agents` : 'Hide agents'}
           >
@@ -141,7 +141,7 @@ export function StageNode({ data }: NodeProps) {
               setIterIndex(Math.max(0, safeIndex - 1));
             }}
             disabled={safeIndex === 0}
-            className="text-[10px] w-4 h-4 flex items-center justify-center rounded bg-maf-surface text-maf-text-muted hover:text-maf-text disabled:opacity-30 disabled:cursor-default transition-colors"
+            className="text-[10px] w-4 h-4 flex items-center justify-center rounded bg-temper-surface text-temper-text-muted hover:text-temper-text disabled:opacity-30 disabled:cursor-default transition-colors"
             aria-label="Previous iteration"
           >
             &#x25C0;
@@ -181,25 +181,25 @@ export function StageNode({ data }: NodeProps) {
               setIterIndex(Math.min(iterationCount - 1, safeIndex + 1));
             }}
             disabled={safeIndex === iterationCount - 1}
-            className="text-[10px] w-4 h-4 flex items-center justify-center rounded bg-maf-surface text-maf-text-muted hover:text-maf-text disabled:opacity-30 disabled:cursor-default transition-colors"
+            className="text-[10px] w-4 h-4 flex items-center justify-center rounded bg-temper-surface text-temper-text-muted hover:text-temper-text disabled:opacity-30 disabled:cursor-default transition-colors"
             aria-label="Next iteration"
           >
             &#x25B6;
           </button>
-          <span className="text-[10px] text-maf-text-dim ml-1">
+          <span className="text-[10px] text-temper-text-dim ml-1">
             run {safeIndex + 1}/{iterationCount}
           </span>
         </div>
       )}
 
       {/* Metrics row — show current iteration metrics */}
-      <div className="px-3 pb-1 flex items-center gap-3 text-[10px] text-maf-text-muted">
+      <div className="px-3 pb-1 flex items-center gap-3 text-[10px] text-temper-text-muted">
         <span>{currentAgents.length} agent{currentAgents.length !== 1 ? 's' : ''}</span>
         <span>{formatTokens(currentIter?.totalTokens ?? 0)} tok</span>
         <span>{formatCost(currentIter?.totalCost ?? 0)}</span>
         <span>{formatDuration(currentIter?.durationSeconds ?? 0)}</span>
         {hasCollaboration && (
-          <span className="text-maf-accent" title="Has collaboration events">
+          <span className="text-temper-accent" title="Has collaboration events">
             &#x21C4;
           </span>
         )}
@@ -210,7 +210,7 @@ export function StageNode({ data }: NodeProps) {
         )}
         {/* Show aggregate totals when multi-iteration */}
         {iterationCount > 1 && (
-          <span className="text-maf-text-dim" title="Total across all iterations">
+          <span className="text-temper-text-dim" title="Total across all iterations">
             ({formatTokens(totalTokens)} / {formatCost(totalCost)} total)
           </span>
         )}
@@ -243,7 +243,7 @@ export function StageNode({ data }: NodeProps) {
         </div>
       )}
       {collapsed && (
-        <div className="px-2 pb-2 text-[10px] text-maf-text-muted">
+        <div className="px-2 pb-2 text-[10px] text-temper-text-muted">
           {currentAgents.length} agents
         </div>
       )}
@@ -260,21 +260,21 @@ export function StageNode({ data }: NodeProps) {
         type="source"
         position={Position.Right}
         id="right"
-        className="!bg-maf-border !w-2 !h-2"
+        className="!bg-temper-border !w-2 !h-2"
       />
       {/* Loop source handle (bottom — loop-back out) */}
       <Handle
         type="source"
         position={Position.Bottom}
         id="bottom"
-        className="!bg-maf-border !w-2 !h-2"
+        className="!bg-temper-border !w-2 !h-2"
       />
       {/* Loop target handle (top — loop-back in) */}
       <Handle
         type="target"
         position={Position.Top}
         id="top"
-        className="!bg-maf-border !w-2 !h-2"
+        className="!bg-temper-border !w-2 !h-2"
       />
     </div>
   );

@@ -6,9 +6,9 @@ import { Toaster } from '@/components/ui/sonner';
 
 function NotFound() {
   return (
-    <div className="flex flex-col items-center justify-center h-full bg-maf-bg text-maf-text gap-4">
+    <div className="flex flex-col items-center justify-center h-full bg-temper-bg text-temper-text gap-4">
       <h1 className="text-2xl font-semibold">Page not found</h1>
-      <a href="/app/" className="text-maf-accent hover:underline text-sm">
+      <a href="/app/" className="text-temper-accent hover:underline text-sm">
         Back to workflows
       </a>
     </div>

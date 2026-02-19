@@ -38,11 +38,11 @@ export function StreamingPanel({ agentId }: StreamingPanelProps) {
 
   if (!stream) {
     return (
-      <div className="rounded-md bg-maf-panel p-4 text-sm text-maf-text-muted">
+      <div className="rounded-md bg-temper-panel p-4 text-sm text-temper-text-muted">
         <p>Waiting for stream data...</p>
-        <p className="mt-1 text-xs text-maf-text-dim">
+        <p className="mt-1 text-xs text-temper-text-dim">
           Streaming requires the workflow to run in the dashboard process.
-          Workflows started via CLI (maf run) update via DB polling and cannot stream.
+          Workflows started via CLI (temper-ai run) update via DB polling and cannot stream.
         </p>
       </div>
     );
@@ -52,7 +52,7 @@ export function StreamingPanel({ agentId }: StreamingPanelProps) {
     <div className="flex flex-col gap-3">
       {stream.thinking && (
         <Collapsible open={thinkingOpen} onOpenChange={setThinkingOpen}>
-          <CollapsibleTrigger className="flex items-center gap-1.5 text-xs font-medium text-maf-text-muted hover:text-maf-text">
+          <CollapsibleTrigger className="flex items-center gap-1.5 text-xs font-medium text-temper-text-muted hover:text-temper-text">
             <ChevronRight
               className={cn(
                 'size-3.5 transition-transform',
@@ -62,7 +62,7 @@ export function StreamingPanel({ agentId }: StreamingPanelProps) {
             Thinking
           </CollapsibleTrigger>
           <CollapsibleContent>
-            <pre className="mt-2 max-h-48 overflow-auto rounded-md bg-maf-panel p-3 text-xs italic text-maf-text-muted whitespace-pre-wrap">
+            <pre className="mt-2 max-h-48 overflow-auto rounded-md bg-temper-panel p-3 text-xs italic text-temper-text-muted whitespace-pre-wrap">
               {stream.thinking}
             </pre>
           </CollapsibleContent>
@@ -77,21 +77,21 @@ export function StreamingPanel({ agentId }: StreamingPanelProps) {
             </div>
           )}
           <MarkdownDisplay content={stream.content} />
-          <div className="mt-2 text-xs text-maf-completed">
+          <div className="mt-2 text-xs text-temper-completed">
             Stream complete
           </div>
         </div>
       ) : (
-        <div ref={containerRef} onScroll={handleScroll} className="relative max-h-80 overflow-auto rounded-md bg-maf-panel p-3">
+        <div ref={containerRef} onScroll={handleScroll} className="relative max-h-80 overflow-auto rounded-md bg-temper-panel p-3">
           {stream.content && (
             <div className="absolute top-2 right-2">
               <CopyButton text={stream.content} />
             </div>
           )}
           {/* React auto-escapes JSX expressions — stream.content is safe */}
-          <pre className="text-sm text-maf-text whitespace-pre-wrap">
+          <pre className="text-sm text-temper-text whitespace-pre-wrap">
             {stream.content}
-            <span className="animate-pulse-streaming text-maf-accent">|</span>
+            <span className="animate-pulse-streaming text-temper-accent">|</span>
           </pre>
           {!isAtBottom && (
             <button
@@ -99,7 +99,7 @@ export function StreamingPanel({ agentId }: StreamingPanelProps) {
                 scrollToBottom();
                 setIsAtBottom(true);
               }}
-              className="sticky bottom-2 left-1/2 -translate-x-1/2 rounded-full bg-maf-accent/90 px-3 py-1 text-xs font-medium text-white shadow-md backdrop-blur-sm hover:bg-maf-accent"
+              className="sticky bottom-2 left-1/2 -translate-x-1/2 rounded-full bg-temper-accent/90 px-3 py-1 text-xs font-medium text-white shadow-md backdrop-blur-sm hover:bg-temper-accent"
             >
               Jump to bottom
             </button>

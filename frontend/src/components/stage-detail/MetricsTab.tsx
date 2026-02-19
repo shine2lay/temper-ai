@@ -69,26 +69,26 @@ export function MetricsTab({ agents, stageDurationSeconds }: MetricsTabProps) {
       {/* Stage-level token split bar */}
       {totals.totalTokens > 0 && (
         <div className="flex flex-col gap-1">
-          <span className="text-xs text-maf-text-muted">Token Split (Stage Total)</span>
-          <div className="h-3 w-full rounded-full bg-maf-surface overflow-hidden flex">
+          <span className="text-xs text-temper-text-muted">Token Split (Stage Total)</span>
+          <div className="h-3 w-full rounded-full bg-temper-surface overflow-hidden flex">
             <div
-              className="h-full bg-maf-token-prompt transition-all"
+              className="h-full bg-temper-token-prompt transition-all"
               style={{ width: `${(totals.totalPrompt / totals.totalTokens) * 100}%` }}
               title={`Prompt: ${totals.totalPrompt}`}
             />
             <div
-              className="h-full bg-maf-token-completion transition-all"
+              className="h-full bg-temper-token-completion transition-all"
               style={{ width: `${(totals.totalCompletion / totals.totalTokens) * 100}%` }}
               title={`Completion: ${totals.totalCompletion}`}
             />
           </div>
-          <div className="flex gap-4 text-[10px] text-maf-text-dim">
+          <div className="flex gap-4 text-[10px] text-temper-text-dim">
             <span className="flex items-center gap-1">
-              <span className="inline-block w-2 h-2 rounded-sm bg-maf-token-prompt" />
+              <span className="inline-block w-2 h-2 rounded-sm bg-temper-token-prompt" />
               Prompt ({((totals.totalPrompt / totals.totalTokens) * 100).toFixed(0)}%)
             </span>
             <span className="flex items-center gap-1">
-              <span className="inline-block w-2 h-2 rounded-sm bg-maf-token-completion" />
+              <span className="inline-block w-2 h-2 rounded-sm bg-temper-token-completion" />
               Completion ({((totals.totalCompletion / totals.totalTokens) * 100).toFixed(0)}%)
             </span>
           </div>
@@ -97,10 +97,10 @@ export function MetricsTab({ agents, stageDurationSeconds }: MetricsTabProps) {
 
       {/* Per-agent breakdown */}
       <div className="flex flex-col gap-1">
-        <span className="text-xs font-medium text-maf-text-muted">Per-Agent Breakdown</span>
+        <span className="text-xs font-medium text-temper-text-muted">Per-Agent Breakdown</span>
 
         {/* Table header */}
-        <div className="grid grid-cols-[1fr_120px_80px_80px_60px_60px] gap-2 px-3 py-1 text-[10px] text-maf-text-dim border-b border-maf-border/30">
+        <div className="grid grid-cols-[1fr_120px_80px_80px_60px_60px] gap-2 px-3 py-1 text-[10px] text-temper-text-dim border-b border-temper-border/30">
           <span>Agent</span>
           <span>Tokens</span>
           <span>Duration</span>
@@ -119,7 +119,7 @@ export function MetricsTab({ agents, stageDurationSeconds }: MetricsTabProps) {
           return (
             <div
               key={m.agent.id}
-              className="grid grid-cols-[1fr_120px_80px_80px_60px_60px] gap-2 px-3 py-2 items-center hover:bg-maf-surface/30 rounded transition-colors"
+              className="grid grid-cols-[1fr_120px_80px_80px_60px_60px] gap-2 px-3 py-2 items-center hover:bg-temper-surface/30 rounded transition-colors"
             >
               {/* Agent name + status */}
               <div className="flex items-center gap-2 min-w-0">
@@ -127,27 +127,27 @@ export function MetricsTab({ agents, stageDurationSeconds }: MetricsTabProps) {
                   className="w-2 h-2 rounded-full shrink-0"
                   style={{ backgroundColor: statusColor }}
                 />
-                <span className="text-xs text-maf-text truncate">{m.name}</span>
+                <span className="text-xs text-temper-text truncate">{m.name}</span>
               </div>
 
               {/* Token bar */}
               <div className="flex flex-col gap-0.5">
-                <div className="h-2 w-full rounded-full bg-maf-surface overflow-hidden flex">
+                <div className="h-2 w-full rounded-full bg-temper-surface overflow-hidden flex">
                   <div
-                    className="h-full bg-maf-token-prompt"
+                    className="h-full bg-temper-token-prompt"
                     style={{ width: `${(tokenPct * promptPct) / 100}%` }}
                   />
                   <div
-                    className="h-full bg-maf-token-completion"
+                    className="h-full bg-temper-token-completion"
                     style={{ width: `${(tokenPct * (100 - promptPct)) / 100}%` }}
                   />
                 </div>
-                <span className="text-[10px] text-maf-text-dim">{formatTokens(m.totalTokens)}</span>
+                <span className="text-[10px] text-temper-text-dim">{formatTokens(m.totalTokens)}</span>
               </div>
 
               {/* Duration bar */}
               <div className="flex flex-col gap-0.5">
-                <div className="h-2 w-full rounded-full bg-maf-surface overflow-hidden">
+                <div className="h-2 w-full rounded-full bg-temper-surface overflow-hidden">
                   <div
                     className="h-full rounded-full transition-all"
                     style={{
@@ -157,17 +157,17 @@ export function MetricsTab({ agents, stageDurationSeconds }: MetricsTabProps) {
                     }}
                   />
                 </div>
-                <span className="text-[10px] text-maf-text-dim">{formatDuration(m.duration)}</span>
+                <span className="text-[10px] text-temper-text-dim">{formatDuration(m.duration)}</span>
               </div>
 
               {/* Cost */}
-              <span className="text-xs text-maf-text">{formatCost(m.cost)}</span>
+              <span className="text-xs text-temper-text">{formatCost(m.cost)}</span>
 
               {/* LLM calls */}
-              <span className="text-xs text-maf-text text-center">{m.llmCalls}</span>
+              <span className="text-xs text-temper-text text-center">{m.llmCalls}</span>
 
               {/* Tool calls */}
-              <span className="text-xs text-maf-text text-center">{m.toolCalls}</span>
+              <span className="text-xs text-temper-text text-center">{m.toolCalls}</span>
             </div>
           );
         })}
@@ -186,10 +186,10 @@ function SummaryCard({
   subValue?: string;
 }) {
   return (
-    <div className="flex flex-col rounded-lg bg-maf-panel/60 border border-maf-border/30 p-3">
-      <span className="text-[10px] text-maf-text-dim">{label}</span>
-      <span className="text-lg font-semibold text-maf-text">{value}</span>
-      {subValue && <span className="text-[10px] text-maf-text-dim mt-0.5">{subValue}</span>}
+    <div className="flex flex-col rounded-lg bg-temper-panel/60 border border-temper-border/30 p-3">
+      <span className="text-[10px] text-temper-text-dim">{label}</span>
+      <span className="text-lg font-semibold text-temper-text">{value}</span>
+      {subValue && <span className="text-[10px] text-temper-text-dim mt-0.5">{subValue}</span>}
     </div>
   );
 }

@@ -46,7 +46,7 @@ export function AgentDetailPanel({ agentId }: AgentDetailPanelProps) {
 
   if (!ag) {
     return (
-      <div className="p-4 text-sm text-maf-text-muted">Agent not found.</div>
+      <div className="p-4 text-sm text-temper-text-muted">Agent not found.</div>
     );
   }
 
@@ -72,15 +72,15 @@ export function AgentDetailPanel({ agentId }: AgentDetailPanelProps) {
       {resolvedStageId && (
         <button
           onClick={() => select('stage', resolvedStageId)}
-          className="text-xs text-maf-accent hover:underline self-start"
+          className="text-xs text-temper-accent hover:underline self-start"
         >
           &larr; Back to Stage
         </button>
       )}
 
       {/* Header */}
-      <div className="flex flex-wrap items-center gap-2 sticky top-0 z-10 bg-maf-bg pb-2">
-        <h3 className="text-lg font-semibold text-maf-text">
+      <div className="flex flex-wrap items-center gap-2 sticky top-0 z-10 bg-temper-bg pb-2">
+        <h3 className="text-lg font-semibold text-temper-text">
           {ag.agent_name ?? ag.name ?? agentId}
         </h3>
         <StatusBadge status={ag.status} />
@@ -95,7 +95,7 @@ export function AgentDetailPanel({ agentId }: AgentDetailPanelProps) {
           </Badge>
         )}
         {isFetching && (
-          <div className="text-[10px] text-maf-accent animate-pulse">Refreshing...</div>
+          <div className="text-[10px] text-temper-accent animate-pulse">Refreshing...</div>
         )}
       </div>
 
@@ -140,24 +140,24 @@ export function AgentDetailPanel({ agentId }: AgentDetailPanelProps) {
       {/* Token bar */}
       {ag.total_tokens > 0 && (
         <div className="flex flex-col gap-1">
-          <span className="text-xs text-maf-text-muted">Token Distribution</span>
-          <div className="flex h-3 w-full overflow-hidden rounded-full bg-maf-panel">
+          <span className="text-xs text-temper-text-muted">Token Distribution</span>
+          <div className="flex h-3 w-full overflow-hidden rounded-full bg-temper-panel">
             <div
-              className="bg-maf-token-prompt transition-all"
+              className="bg-temper-token-prompt transition-all"
               style={{ width: `${promptPct}%` }}
             />
             <div
-              className="bg-maf-token-completion transition-all"
+              className="bg-temper-token-completion transition-all"
               style={{ width: `${completionPct}%` }}
             />
           </div>
-          <div className="flex gap-3 text-xs text-maf-text-dim">
+          <div className="flex gap-3 text-xs text-temper-text-dim">
             <span className="flex items-center gap-1">
-              <span className="inline-block size-2 rounded-full bg-maf-token-prompt" />
+              <span className="inline-block size-2 rounded-full bg-temper-token-prompt" />
               Prompt {formatTokens(ag.prompt_tokens)}
             </span>
             <span className="flex items-center gap-1">
-              <span className="inline-block size-2 rounded-full bg-maf-token-completion" />
+              <span className="inline-block size-2 rounded-full bg-temper-token-completion" />
               Completion {formatTokens(ag.completion_tokens)}
             </span>
           </div>
@@ -168,7 +168,7 @@ export function AgentDetailPanel({ agentId }: AgentDetailPanelProps) {
       {ag.error_message && (() => {
         const { type, retryable } = categorizeError(ag.error_message);
         return (
-          <div className="rounded-md bg-maf-bg-failed p-3 text-sm text-maf-failed">
+          <div className="rounded-md bg-temper-bg-failed p-3 text-sm text-temper-failed">
             <div className="flex items-center gap-2 mb-1">
               <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-red-950 border border-red-900/50">{type}</span>
               {retryable && <span className="text-xs text-amber-400">Retryable</span>}
@@ -183,7 +183,7 @@ export function AgentDetailPanel({ agentId }: AgentDetailPanelProps) {
         <>
           <Separator />
           <div>
-            <span className="mb-2 block text-sm font-medium text-maf-text-muted">
+            <span className="mb-2 block text-sm font-medium text-temper-text-muted">
               Live Stream
             </span>
             <StreamingPanel agentId={agentId} />
@@ -227,7 +227,7 @@ export function AgentDetailPanel({ agentId }: AgentDetailPanelProps) {
       {/* LLM calls list */}
       {ag.llm_calls && ag.llm_calls.length > 0 && (
         <div className="flex flex-col gap-2">
-          <span className="text-sm font-medium text-maf-text-muted">
+          <span className="text-sm font-medium text-temper-text-muted">
             LLM Calls
           </span>
           {ag.llm_calls.map((llm) => (
@@ -238,7 +238,7 @@ export function AgentDetailPanel({ agentId }: AgentDetailPanelProps) {
               className="justify-between text-left"
               onClick={() => select('llmCall', llm.id)}
             >
-              <span className="flex items-center gap-2 text-maf-text">
+              <span className="flex items-center gap-2 text-temper-text">
                 <span className="truncate text-xs">
                   {llm.model ?? llm.llm_call_id ?? llm.id}
                 </span>
@@ -252,7 +252,7 @@ export function AgentDetailPanel({ agentId }: AgentDetailPanelProps) {
       {/* Tool calls list */}
       {ag.tool_calls && ag.tool_calls.length > 0 && (
         <div className="flex flex-col gap-2">
-          <span className="text-sm font-medium text-maf-text-muted">
+          <span className="text-sm font-medium text-temper-text-muted">
             Tool Calls
           </span>
           {ag.tool_calls.map((tool) => (
@@ -263,7 +263,7 @@ export function AgentDetailPanel({ agentId }: AgentDetailPanelProps) {
               className="justify-between text-left"
               onClick={() => select('toolCall', tool.id)}
             >
-              <span className="text-xs text-maf-text">{tool.tool_name}</span>
+              <span className="text-xs text-temper-text">{tool.tool_name}</span>
               <StatusBadge status={tool.status} />
             </Button>
           ))}

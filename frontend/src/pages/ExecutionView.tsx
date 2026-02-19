@@ -18,11 +18,11 @@ import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
 
 function LoadingSkeleton() {
   return (
-    <div className="flex flex-col h-full bg-maf-bg">
-      <div className="bg-maf-panel px-4 py-3 border-b border-maf-border shrink-0">
+    <div className="flex flex-col h-full bg-temper-bg">
+      <div className="bg-temper-panel px-4 py-3 border-b border-temper-border shrink-0">
         <div className="skeleton h-6 w-48" />
       </div>
-      <div className="flex items-center gap-6 bg-maf-panel/50 px-4 py-2 border-b border-maf-border shrink-0">
+      <div className="flex items-center gap-6 bg-temper-panel/50 px-4 py-2 border-b border-temper-border shrink-0">
         {Array.from({ length: 6 }).map((_, i) => (
           <div key={i} className="skeleton h-4 w-20" />
         ))}
@@ -30,7 +30,7 @@ function LoadingSkeleton() {
       <div className="flex-1 flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
           <div className="skeleton h-8 w-8 rounded-full" />
-          <span className="text-sm text-maf-text-muted">Loading workflow...</span>
+          <span className="text-sm text-temper-text-muted">Loading workflow...</span>
         </div>
       </div>
     </div>
@@ -42,7 +42,7 @@ export function ExecutionView() {
   const workflow = useExecutionStore((s) => s.workflow);
   const prevStatus = useRef(workflow?.status);
   const [activeTab, setActiveTab] = useState(() => {
-    return localStorage.getItem('maf-active-tab') ?? 'dag';
+    return localStorage.getItem('temper-active-tab') ?? 'dag';
   });
 
   useWorkflowWebSocket(workflowId);
@@ -64,7 +64,7 @@ export function ExecutionView() {
 
   return (
     <ReactFlowProvider>
-      <div className="flex flex-col h-full bg-maf-bg">
+      <div className="flex flex-col h-full bg-temper-bg">
         <WorkflowHeader />
         <WorkflowSummaryBar />
 

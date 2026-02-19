@@ -1,7 +1,7 @@
 """Business logic layer for Workflow Studio config CRUD operations.
 
 Provides listing, reading, creating, updating, deleting, and validating
-YAML-based configuration files for the MAF dashboard.
+YAML-based configuration files for the Temper AI dashboard.
 """
 import json
 import logging

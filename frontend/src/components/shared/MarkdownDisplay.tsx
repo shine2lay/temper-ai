@@ -11,11 +11,11 @@ export function MarkdownDisplay({ content, className }: MarkdownDisplayProps) {
   return (
     <div
       className={cn(
-        'rounded-md bg-maf-panel p-4 text-sm text-maf-text',
-        'border border-maf-border prose prose-invert prose-sm max-w-none',
-        'prose-headings:text-maf-text prose-p:text-maf-text prose-li:text-maf-text',
-        'prose-strong:text-maf-text prose-code:text-maf-accent prose-code:text-xs',
-        'prose-pre:bg-maf-surface prose-pre:border prose-pre:border-maf-border',
+        'rounded-md bg-temper-panel p-4 text-sm text-temper-text',
+        'border border-temper-border prose prose-invert prose-sm max-w-none',
+        'prose-headings:text-temper-text prose-p:text-temper-text prose-li:text-temper-text',
+        'prose-strong:text-temper-text prose-code:text-temper-accent prose-code:text-xs',
+        'prose-pre:bg-temper-surface prose-pre:border prose-pre:border-temper-border',
         className,
       )}
     >

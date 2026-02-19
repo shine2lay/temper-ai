@@ -3,7 +3,7 @@
  * Triggers a real workflow and verifies that the React frontend
  * updates in real-time as WebSocket events arrive.
  *
- * Requires `maf serve --port 8421` running.
+ * Requires `temper-ai serve --port 8421` running.
  */
 import { test, expect, type Page, type APIRequestContext } from '@playwright/test';
 

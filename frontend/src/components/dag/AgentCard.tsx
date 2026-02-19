@@ -40,7 +40,7 @@ export function AgentCard({ agentId }: AgentCardProps) {
 
   return (
     <div
-      className="bg-maf-panel rounded px-3 py-2 cursor-pointer hover:bg-maf-panel-light transition-colors"
+      className="bg-temper-panel rounded px-3 py-2 cursor-pointer hover:bg-temper-panel-light transition-colors"
       style={{ borderLeft: `4px solid ${borderColor}` }}
       onClick={(e) => {
         e.stopPropagation();
@@ -49,16 +49,16 @@ export function AgentCard({ agentId }: AgentCardProps) {
     >
       {/* Name + model badge */}
       <div className="flex items-center gap-2 mb-1">
-        <span className="text-sm font-medium text-maf-text truncate">
+        <span className="text-sm font-medium text-temper-text truncate">
           {agent.agent_name ?? agent.name ?? agentId}
         </span>
         {model && (
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-maf-surface text-maf-text-muted shrink-0">
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-temper-surface text-temper-text-muted shrink-0">
             {model}
           </span>
         )}
         {agent.role && (
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-maf-surface text-maf-text-muted shrink-0">
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-temper-surface text-temper-text-muted shrink-0">
             {agent.role}
           </span>
         )}
@@ -78,29 +78,29 @@ export function AgentCard({ agentId }: AgentCardProps) {
           </span>
         )}
         {isStreaming && (
-          <span className="w-2 h-2 rounded-full bg-maf-accent animate-pulse-streaming shrink-0" />
+          <span className="w-2 h-2 rounded-full bg-temper-accent animate-pulse-streaming shrink-0" />
         )}
       </div>
 
       {/* Token bar */}
       {totalTokens > 0 && (
         <div
-          className="h-1.5 w-full rounded-full bg-maf-surface mb-1 overflow-hidden flex"
+          className="h-1.5 w-full rounded-full bg-temper-surface mb-1 overflow-hidden flex"
           title={`Prompt: ${promptTokens} tokens | Completion: ${completionTokens} tokens | Total: ${totalTokens}`}
         >
           <div
-            className="h-full bg-maf-token-prompt"
+            className="h-full bg-temper-token-prompt"
             style={{ width: `${promptPct}%` }}
           />
           <div
-            className="h-full bg-maf-token-completion"
+            className="h-full bg-temper-token-completion"
             style={{ width: `${completionPct}%` }}
           />
         </div>
       )}
 
       {/* Metrics */}
-      <div className="flex items-center gap-3 text-[10px] text-maf-text-muted">
+      <div className="flex items-center gap-3 text-[10px] text-temper-text-muted">
         <span>{formatDuration(agent.duration_seconds)}</span>
         <span>{formatTokens(totalTokens)} tok</span>
         {agent.total_llm_calls > 0 && <span>{agent.total_llm_calls} llm</span>}
@@ -117,7 +117,7 @@ export function AgentCard({ agentId }: AgentCardProps) {
       {/* Output preview */}
       {agent.output && (
         <div
-          className={cn('mt-1 text-[10px] text-maf-text-dim font-mono cursor-pointer', !outputExpanded && 'line-clamp-2')}
+          className={cn('mt-1 text-[10px] text-temper-text-dim font-mono cursor-pointer', !outputExpanded && 'line-clamp-2')}
           onClick={(e) => { e.stopPropagation(); setOutputExpanded(!outputExpanded); }}
           title={outputExpanded ? 'Click to collapse' : 'Click to expand'}
         >

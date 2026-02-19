@@ -160,15 +160,15 @@ export function LogsTab({ agents }: LogsTabProps) {
       {/* Controls bar */}
       <div className="flex items-center gap-3 flex-wrap">
         {/* View mode toggle */}
-        <div role="radiogroup" aria-label="View mode" className="flex rounded-md bg-maf-surface overflow-hidden">
+        <div role="radiogroup" aria-label="View mode" className="flex rounded-md bg-temper-surface overflow-hidden">
           <button
             role="radio"
             aria-checked={viewMode === 'chronological'}
             className={cn(
               'px-3 py-1 text-xs transition-colors',
               viewMode === 'chronological'
-                ? 'bg-maf-accent/20 text-maf-accent'
-                : 'text-maf-text-muted hover:text-maf-text',
+                ? 'bg-temper-accent/20 text-temper-accent'
+                : 'text-temper-text-muted hover:text-temper-text',
             )}
             onClick={() => setViewMode('chronological')}
           >
@@ -180,8 +180,8 @@ export function LogsTab({ agents }: LogsTabProps) {
             className={cn(
               'px-3 py-1 text-xs transition-colors',
               viewMode === 'by-agent'
-                ? 'bg-maf-accent/20 text-maf-accent'
-                : 'text-maf-text-muted hover:text-maf-text',
+                ? 'bg-temper-accent/20 text-temper-accent'
+                : 'text-temper-text-muted hover:text-temper-text',
             )}
             onClick={() => setViewMode('by-agent')}
           >
@@ -190,7 +190,7 @@ export function LogsTab({ agents }: LogsTabProps) {
         </div>
 
         {/* Level filter */}
-        <div role="radiogroup" aria-label="Log level filter" className="flex rounded-md bg-maf-surface overflow-hidden">
+        <div role="radiogroup" aria-label="Log level filter" className="flex rounded-md bg-temper-surface overflow-hidden">
           {(['all', 'llm', 'tool', 'error'] as LogLevel[]).map((level) => (
             <button
               key={level}
@@ -199,8 +199,8 @@ export function LogsTab({ agents }: LogsTabProps) {
               className={cn(
                 'px-2 py-1 text-[10px] transition-colors capitalize',
                 levelFilter === level
-                  ? 'bg-maf-accent/20 text-maf-accent'
-                  : 'text-maf-text-muted hover:text-maf-text',
+                  ? 'bg-temper-accent/20 text-temper-accent'
+                  : 'text-temper-text-muted hover:text-temper-text',
               )}
               onClick={() => setLevelFilter(level)}
             >
@@ -215,18 +215,18 @@ export function LogsTab({ agents }: LogsTabProps) {
           placeholder="Search logs..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="px-2 py-1 text-xs rounded-md bg-maf-surface border border-maf-border/30 text-maf-text placeholder:text-maf-text-dim flex-1 min-w-[140px] max-w-[240px] outline-none focus:border-maf-accent/50"
+          className="px-2 py-1 text-xs rounded-md bg-temper-surface border border-temper-border/30 text-temper-text placeholder:text-temper-text-dim flex-1 min-w-[140px] max-w-[240px] outline-none focus:border-temper-accent/50"
         />
 
         {/* Count */}
-        <span className="text-[10px] text-maf-text-dim ml-auto">
+        <span className="text-[10px] text-temper-text-dim ml-auto">
           {filteredLogs.length} entries
         </span>
       </div>
 
       {/* Log content */}
       {filteredLogs.length === 0 ? (
-        <div className="text-xs text-maf-text-muted py-6 text-center">
+        <div className="text-xs text-temper-text-muted py-6 text-center">
           No log entries {levelFilter !== 'all' ? `matching "${levelFilter}"` : 'recorded'}.
         </div>
       ) : viewMode === 'chronological' ? (
@@ -274,24 +274,24 @@ function LogEntryRow({
     error: 'text-red-400 bg-red-950/30',
     output: 'text-emerald-400 bg-emerald-950/30',
   };
-  const typeColor = typeColors[log.type] ?? 'text-maf-text-muted';
+  const typeColor = typeColors[log.type] ?? 'text-temper-text-muted';
 
   return (
     <div
       className={cn(
-        'rounded-md bg-maf-panel/40 border-l-2 overflow-hidden',
+        'rounded-md bg-temper-panel/40 border-l-2 overflow-hidden',
         borderClass,
       )}
     >
       <button
-        className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-maf-surface/30 transition-colors"
+        className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-temper-surface/30 transition-colors"
         onClick={() => setExpanded(!expanded)}
       >
         {/* Expand chevron */}
         {!!(log.detail || log.data) && (
           <span
             className={cn(
-              'text-[10px] text-maf-text-dim transition-transform shrink-0',
+              'text-[10px] text-temper-text-dim transition-transform shrink-0',
               expanded && 'rotate-90',
             )}
           >
@@ -300,7 +300,7 @@ function LogEntryRow({
         )}
 
         {/* Timestamp */}
-        <span className="text-[10px] text-maf-text-dim shrink-0 font-mono w-[85px]">
+        <span className="text-[10px] text-temper-text-dim shrink-0 font-mono w-[85px]">
           {log.timestamp ? formatTimestamp(log.timestamp) : '-'}
         </span>
 
@@ -311,13 +311,13 @@ function LogEntryRow({
 
         {/* Agent name */}
         {showAgent && (
-          <span className="text-[10px] text-maf-text-muted shrink-0 truncate max-w-[80px]">
+          <span className="text-[10px] text-temper-text-muted shrink-0 truncate max-w-[80px]">
             {log.agentName}
           </span>
         )}
 
         {/* Title */}
-        <span className="text-xs text-maf-text truncate flex-1 min-w-0">
+        <span className="text-xs text-temper-text truncate flex-1 min-w-0">
           {log.title}
         </span>
 
@@ -325,13 +325,13 @@ function LogEntryRow({
         <span
           className={cn(
             'text-[10px] shrink-0',
-            log.status === 'failed' ? 'text-red-400' : 'text-maf-text-dim',
+            log.status === 'failed' ? 'text-red-400' : 'text-temper-text-dim',
           )}
         >
           {log.status === 'failed' ? '\u2717' : '\u2713'}
         </span>
         {log.durationMs != null && (
-          <span className="text-[10px] text-maf-text-dim shrink-0 font-mono w-[50px] text-right">
+          <span className="text-[10px] text-temper-text-dim shrink-0 font-mono w-[50px] text-right">
             {log.durationMs >= 1000
               ? `${(log.durationMs / 1000).toFixed(1)}s`
               : `${Math.round(log.durationMs)}ms`}
@@ -341,9 +341,9 @@ function LogEntryRow({
 
       {/* Expanded detail */}
       {expanded && !!(log.detail || log.data) && (
-        <div className="border-t border-maf-border/20 px-3 py-2 bg-maf-surface/20">
+        <div className="border-t border-temper-border/20 px-3 py-2 bg-temper-surface/20">
           {log.detail && (
-            <div className="text-xs text-maf-text font-mono whitespace-pre-wrap mb-2 max-h-48 overflow-y-auto">
+            <div className="text-xs text-temper-text font-mono whitespace-pre-wrap mb-2 max-h-48 overflow-y-auto">
               {log.detail}
             </div>
           )}
@@ -372,25 +372,25 @@ function AgentLogGroup({
   const borderClass = AGENT_BG_COLORS[colorIndex];
 
   return (
-    <div className={cn('rounded-lg border border-maf-border/30 overflow-hidden')}>
+    <div className={cn('rounded-lg border border-temper-border/30 overflow-hidden')}>
       <button
         className={cn(
           'w-full flex items-center gap-2 px-3 py-2 text-left border-l-2',
-          'bg-maf-surface/30 hover:bg-maf-surface/50 transition-colors',
+          'bg-temper-surface/30 hover:bg-temper-surface/50 transition-colors',
           borderClass,
         )}
         onClick={() => setCollapsed(!collapsed)}
       >
         <span
           className={cn(
-            'text-xs text-maf-text-muted transition-transform',
+            'text-xs text-temper-text-muted transition-transform',
             !collapsed && 'rotate-90',
           )}
         >
           &#9654;
         </span>
-        <span className="text-sm font-medium text-maf-text">{agentName}</span>
-        <span className="text-[10px] text-maf-text-dim ml-auto">
+        <span className="text-sm font-medium text-temper-text">{agentName}</span>
+        <span className="text-[10px] text-temper-text-dim ml-auto">
           {logs.length} entries
         </span>
       </button>
@@ -398,7 +398,7 @@ function AgentLogGroup({
       {!collapsed && (
         <div className="flex flex-col gap-0.5 p-1">
           {logs.length === 0 ? (
-            <div className="text-xs text-maf-text-dim px-3 py-2">No entries</div>
+            <div className="text-xs text-temper-text-dim px-3 py-2">No entries</div>
           ) : (
             logs.map((log) => (
               <LogEntryRow key={log.key} log={log} colorIndex={colorIndex} />

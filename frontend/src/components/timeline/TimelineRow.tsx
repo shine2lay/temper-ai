@@ -72,7 +72,7 @@ export function TimelineRow({
     <div
       role="row"
       aria-label={`${row.level}: ${row.label}, status: ${row.status}`}
-      className={`flex items-stretch border-b border-maf-border/30 hover:bg-maf-surface/30${onClick ? ' cursor-pointer' : ''}`}
+      className={`flex items-stretch border-b border-temper-border/30 hover:bg-temper-surface/30${onClick ? ' cursor-pointer' : ''}`}
       style={{ height: TIMELINE.ROW_HEIGHT }}
       onClick={onClick}
     >
@@ -85,7 +85,7 @@ export function TimelineRow({
         {row.hasChildren ? (
           <button
             onClick={(e) => { e.stopPropagation(); onToggle(); }}
-            className="w-4 h-4 flex items-center justify-center text-maf-text-muted hover:text-maf-text shrink-0 mr-1"
+            className="w-4 h-4 flex items-center justify-center text-temper-text-muted hover:text-temper-text shrink-0 mr-1"
             aria-expanded={!isCollapsed}
             aria-label="Toggle children"
           >
@@ -99,7 +99,7 @@ export function TimelineRow({
           <span className="w-4 mr-1 shrink-0" />
         )}
 
-        <span className={`truncate text-maf-text ${fontSize} ${fontWeight}`}>
+        <span className={`truncate text-temper-text ${fontSize} ${fontWeight}`}>
           {row.label}
         </span>
       </div>

@@ -121,10 +121,10 @@ export function EventLogPanel() {
 
   if (eventLog.length === 0) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center text-maf-text-muted gap-2">
+      <div className="flex-1 flex flex-col items-center justify-center text-temper-text-muted gap-2">
         <span className="text-2xl">&#x1F4CB;</span>
         <span className="text-sm">Waiting for workflow events...</span>
-        <span className="text-xs text-maf-text-dim">Events will appear here as the workflow executes</span>
+        <span className="text-xs text-temper-text-dim">Events will appear here as the workflow executes</span>
       </div>
     );
   }
@@ -132,7 +132,7 @@ export function EventLogPanel() {
   return (
     <div className="flex-1 flex flex-col min-h-0">
       {/* Filter chips + search */}
-      <div className="flex items-center gap-2 px-4 py-2 border-b border-maf-border/30 shrink-0 flex-wrap">
+      <div className="flex items-center gap-2 px-4 py-2 border-b border-temper-border/30 shrink-0 flex-wrap">
         {FILTER_CATEGORIES.map((f) => (
           <button
             key={f}
@@ -140,8 +140,8 @@ export function EventLogPanel() {
             className={cn(
               'px-2 py-0.5 rounded text-xs transition-colors',
               filter === f || (f === 'all' && !filter)
-                ? 'bg-maf-accent/20 text-maf-accent'
-                : 'text-maf-text-muted hover:text-maf-text',
+                ? 'bg-temper-accent/20 text-temper-accent'
+                : 'text-temper-text-muted hover:text-temper-text',
             )}
           >
             {f}
@@ -155,9 +155,9 @@ export function EventLogPanel() {
           placeholder="Search events..."
           value={searchText}
           onChange={(e) => setSearchText(e.target.value)}
-          className="px-2 py-0.5 rounded text-xs bg-maf-surface border border-maf-border text-maf-text placeholder:text-maf-text-dim focus:outline-none focus:ring-1 focus:ring-maf-accent w-full sm:w-40"
+          className="px-2 py-0.5 rounded text-xs bg-temper-surface border border-temper-border text-temper-text placeholder:text-temper-text-dim focus:outline-none focus:ring-1 focus:ring-temper-accent w-full sm:w-40"
         />
-        <span className="ml-auto text-xs text-maf-text-muted">
+        <span className="ml-auto text-xs text-temper-text-muted">
           {filtered.length} events
         </span>
       </div>
@@ -177,21 +177,21 @@ export function EventLogPanel() {
             <div
               key={idx}
               className={cn(
-                'flex items-center gap-3 py-1 text-sm border-b border-maf-border/30 last:border-0',
-                sel && 'cursor-pointer hover:bg-maf-surface/50',
+                'flex items-center gap-3 py-1 text-sm border-b border-temper-border/30 last:border-0',
+                sel && 'cursor-pointer hover:bg-temper-surface/50',
               )}
               onClick={sel ? () => handleClick(entry.event_type, entry.data) : undefined}
               onKeyDown={sel ? (e) => handleKeyActivate(e, entry.event_type, entry.data) : undefined}
               role={sel ? 'button' : undefined}
               tabIndex={sel ? 0 : undefined}
             >
-              <span className="font-mono text-xs text-maf-text-muted shrink-0 w-28">
+              <span className="font-mono text-xs text-temper-text-muted shrink-0 w-28">
                 {formatTimestamp(entry.timestamp)}
               </span>
               <Badge variant="outline" className={`text-xs shrink-0 ${eventStyle(entry.event_type)}`}>
                 {entry.event_type}
               </Badge>
-              <span className="text-maf-text truncate">{entry.label}</span>
+              <span className="text-temper-text truncate">{entry.label}</span>
             </div>
           );
         })}
@@ -199,7 +199,7 @@ export function EventLogPanel() {
         {!isAtBottom && (
           <button
             onClick={scrollToBottom}
-            className="sticky bottom-2 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full text-xs bg-maf-accent text-maf-panel shadow-lg z-10"
+            className="sticky bottom-2 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full text-xs bg-temper-accent text-temper-panel shadow-lg z-10"
           >
             {newEvents > 0 ? `${newEvents} new events` : 'Jump to bottom'}
           </button>

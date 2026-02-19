@@ -23,9 +23,9 @@ const STATUS_ORDER: Record<string, number> = {
   failed: 3,
 };
 
-const STORAGE_KEY_SEARCH = 'maf-wf-search';
-const STORAGE_KEY_FILTER = 'maf-wf-filter';
-const STORAGE_KEY_SORT = 'maf-wf-sort';
+const STORAGE_KEY_SEARCH = 'temper-wf-search';
+const STORAGE_KEY_FILTER = 'temper-wf-filter';
+const STORAGE_KEY_SORT = 'temper-wf-sort';
 
 function sortWorkflows(workflows: WorkflowSummary[], sortBy: SortKey): WorkflowSummary[] {
   const sorted = [...workflows];
@@ -102,10 +102,10 @@ export function WorkflowList() {
   );
 
   return (
-    <div className="flex flex-col h-full bg-maf-bg">
-      <header className="flex items-center gap-4 bg-maf-panel px-6 py-4 border-b border-maf-border shrink-0 flex-wrap">
-        <h1 className="text-xl font-semibold text-maf-text">MAF Workflows</h1>
-        <span className="text-xs text-maf-text-muted">
+    <div className="flex flex-col h-full bg-temper-bg">
+      <header className="flex items-center gap-4 bg-temper-panel px-6 py-4 border-b border-temper-border shrink-0 flex-wrap">
+        <h1 className="text-xl font-semibold text-temper-text">Temper AI Workflows</h1>
+        <span className="text-xs text-temper-text-muted">
           {filtered.length}/{workflows?.length ?? 0} workflows
         </span>
 
@@ -114,7 +114,7 @@ export function WorkflowList() {
           placeholder="Search workflows..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="px-3 py-1.5 rounded-md bg-maf-surface border border-maf-border text-sm text-maf-text placeholder:text-maf-text-dim focus:outline-none focus:ring-1 focus:ring-maf-accent w-64"
+          className="px-3 py-1.5 rounded-md bg-temper-surface border border-temper-border text-sm text-temper-text placeholder:text-temper-text-dim focus:outline-none focus:ring-1 focus:ring-temper-accent w-64"
           aria-label="Search workflows by name"
         />
 
@@ -126,8 +126,8 @@ export function WorkflowList() {
               className={cn(
                 'px-2 py-0.5 rounded text-xs transition-colors',
                 (statusFilter === s || (s === 'all' && !statusFilter))
-                  ? 'bg-maf-accent/20 text-maf-accent'
-                  : 'text-maf-text-muted hover:text-maf-text',
+                  ? 'bg-temper-accent/20 text-temper-accent'
+                  : 'text-temper-text-muted hover:text-temper-text',
               )}
               aria-pressed={statusFilter === s || (s === 'all' && !statusFilter)}
             >
@@ -137,7 +137,7 @@ export function WorkflowList() {
         </div>
 
         <div className="ml-auto flex items-center gap-2">
-          <span className="text-xs text-maf-text-muted">Sort:</span>
+          <span className="text-xs text-temper-text-muted">Sort:</span>
           {(['time', 'name', 'status'] as const).map((s) => (
             <button
               key={s}
@@ -145,8 +145,8 @@ export function WorkflowList() {
               className={cn(
                 'px-2 py-0.5 rounded text-xs transition-colors',
                 sortBy === s
-                  ? 'bg-maf-accent/20 text-maf-accent'
-                  : 'text-maf-text-muted hover:text-maf-text',
+                  ? 'bg-temper-accent/20 text-temper-accent'
+                  : 'text-temper-text-muted hover:text-temper-text',
               )}
               aria-pressed={sortBy === s}
             >
@@ -155,12 +155,12 @@ export function WorkflowList() {
           ))}
           <button
             onClick={() => refetch()}
-            className="px-2 py-1 rounded text-xs bg-maf-surface text-maf-text-muted hover:text-maf-text transition-colors"
+            className="px-2 py-1 rounded text-xs bg-temper-surface text-temper-text-muted hover:text-temper-text transition-colors"
           >
             Refresh
           </button>
           {dataUpdatedAt > 0 && (
-            <span className="text-[10px] text-maf-text-dim">
+            <span className="text-[10px] text-temper-text-dim">
               Updated {new Date(dataUpdatedAt).toLocaleTimeString()}
             </span>
           )}
@@ -169,21 +169,21 @@ export function WorkflowList() {
 
       <div className="flex-1 overflow-y-auto p-6">
         {isLoading && (
-          <p className="text-maf-text-muted text-sm">Loading workflows...</p>
+          <p className="text-temper-text-muted text-sm">Loading workflows...</p>
         )}
 
         {error && (
-          <p className="text-maf-failed text-sm">
+          <p className="text-temper-failed text-sm">
             Failed to load workflows: {(error as Error).message}
           </p>
         )}
 
         {workflows && workflows.length === 0 && (
-          <p className="text-maf-text-muted text-sm">No workflows found.</p>
+          <p className="text-temper-text-muted text-sm">No workflows found.</p>
         )}
 
         {workflows && workflows.length > 0 && sorted.length === 0 && (
-          <p className="text-maf-text-muted text-sm">No workflows match your filters.</p>
+          <p className="text-temper-text-muted text-sm">No workflows match your filters.</p>
         )}
 
         {sorted.length > 0 && (
@@ -192,16 +192,16 @@ export function WorkflowList() {
               <Link
                 key={wf.id}
                 to={`/workflow/${wf.id}`}
-                className="flex items-center gap-4 rounded-lg bg-maf-panel px-4 py-3 border border-maf-border hover:bg-maf-surface transition-colors"
+                className="flex items-center gap-4 rounded-lg bg-temper-panel px-4 py-3 border border-temper-border hover:bg-temper-surface transition-colors"
               >
-                <span className="text-sm font-medium text-maf-text flex-1 truncate">
+                <span className="text-sm font-medium text-temper-text flex-1 truncate">
                   {wf.workflow_name}
                 </span>
                 <StatusBadge status={wf.status} />
-                <span className="text-xs text-maf-text-muted w-36">
+                <span className="text-xs text-temper-text-muted w-36">
                   {wf.start_time ? formatTimestamp(wf.start_time) : '-'}
                 </span>
-                <span className="text-xs font-mono text-maf-text-muted w-20 text-right">
+                <span className="text-xs font-mono text-temper-text-muted w-20 text-right">
                   {formatDuration(wf.duration_seconds)}
                 </span>
               </Link>

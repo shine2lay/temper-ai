@@ -41,7 +41,7 @@ export function TimelineAxis({
 
   return (
     <div
-      className="relative border-b border-maf-border"
+      className="relative border-b border-temper-border"
       style={{
         height: TIMELINE.AXIS_HEIGHT,
         marginLeft: TIMELINE.LABEL_WIDTH,
@@ -54,8 +54,8 @@ export function TimelineAxis({
           className="absolute top-0 flex flex-col items-center"
           style={{ left: tick.x, transform: 'translateX(-50%)' }}
         >
-          <div className="w-px h-2 bg-maf-border" />
-          <span className="text-[9px] text-maf-text-dim mt-0.5 whitespace-nowrap">
+          <div className="w-px h-2 bg-temper-border" />
+          <span className="text-[9px] text-temper-text-dim mt-0.5 whitespace-nowrap">
             {tick.label}
           </span>
         </div>

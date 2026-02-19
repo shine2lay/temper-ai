@@ -20,7 +20,7 @@ export function ToolCallInspector({ toolCallId }: ToolCallInspectorProps) {
 
   if (!toolCall) {
     return (
-      <div className="p-4 text-sm text-maf-text-muted">
+      <div className="p-4 text-sm text-temper-text-muted">
         Tool call not found.
       </div>
     );
@@ -38,37 +38,37 @@ export function ToolCallInspector({ toolCallId }: ToolCallInspectorProps) {
           <>
             <button
               onClick={() => select('stage', parentStageId!)}
-              className="text-maf-accent hover:underline"
+              className="text-temper-accent hover:underline"
             >
               {parentStage.stage_name ?? parentStage.name ?? parentStageId}
             </button>
-            <span className="text-maf-text-dim">&gt;</span>
+            <span className="text-temper-text-dim">&gt;</span>
           </>
         )}
         {toolCall.agent_execution_id && (
           <>
             <button
               onClick={() => select('agent', toolCall.agent_execution_id!)}
-              className="text-maf-accent hover:underline"
+              className="text-temper-accent hover:underline"
             >
               {parentAgent?.agent_name ?? parentAgent?.name ?? toolCall.agent_execution_id}
             </button>
-            <span className="text-maf-text-dim">&gt;</span>
+            <span className="text-temper-text-dim">&gt;</span>
           </>
         )}
-        <span className="text-maf-text-muted">{toolCall.tool_name}</span>
+        <span className="text-temper-text-muted">{toolCall.tool_name}</span>
       </div>
 
       {/* Header */}
-      <div className="flex flex-wrap items-center gap-2 sticky top-0 z-10 bg-maf-bg pb-2">
-        <h3 className="text-lg font-semibold text-maf-text">
+      <div className="flex flex-wrap items-center gap-2 sticky top-0 z-10 bg-temper-bg pb-2">
+        <h3 className="text-lg font-semibold text-temper-text">
           {toolCall.tool_name}
         </h3>
         <StatusBadge status={toolCall.status} />
         {toolCall.safety_checks_applied != null && (
           <Badge
             variant="outline"
-            className="text-xs bg-maf-panel text-maf-text-muted"
+            className="text-xs bg-temper-panel text-temper-text-muted"
           >
             safety checked
           </Badge>
@@ -94,7 +94,7 @@ export function ToolCallInspector({ toolCallId }: ToolCallInspectorProps) {
       {toolCall.status === 'failed' && toolCall.error_message && (() => {
         const { type, retryable } = categorizeError(toolCall.error_message);
         return (
-          <div className="rounded-md bg-maf-bg-failed p-3 text-sm text-maf-failed">
+          <div className="rounded-md bg-temper-bg-failed p-3 text-sm text-temper-failed">
             <div className="flex items-center gap-2 mb-1">
               <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-red-950 border border-red-900/50">{type}</span>
               {retryable && <span className="text-xs text-amber-400">Retryable</span>}
@@ -114,7 +114,7 @@ export function ToolCallInspector({ toolCallId }: ToolCallInspectorProps) {
             <CopyButton text={JSON.stringify(toolCall.input_params, null, 2)} className="mt-1" />
           </>
         ) : (
-          <p className="mt-1 text-xs text-maf-text-dim">No input parameters</p>
+          <p className="mt-1 text-xs text-temper-text-dim">No input parameters</p>
         )}
       </CollapsibleSection>
 
@@ -133,7 +133,7 @@ export function ToolCallInspector({ toolCallId }: ToolCallInspectorProps) {
             />
           </>
         ) : (
-          <p className="mt-1 text-xs text-maf-text-dim">No output data</p>
+          <p className="mt-1 text-xs text-temper-text-dim">No output data</p>
         )}
       </CollapsibleSection>
 

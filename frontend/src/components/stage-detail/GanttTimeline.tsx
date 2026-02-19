@@ -90,7 +90,7 @@ export function GanttTimeline({ agents, stageDurationSeconds, stageStartTime }: 
 
   if (bars.length === 0) {
     return (
-      <div className="text-xs text-maf-text-muted px-2 py-3">
+      <div className="text-xs text-temper-text-muted px-2 py-3">
         No timing data available.
       </div>
     );
@@ -102,10 +102,10 @@ export function GanttTimeline({ agents, stageDurationSeconds, stageStartTime }: 
     <div className="flex flex-col gap-1">
       {/* Header */}
       <div className="flex items-center justify-between px-1">
-        <span className="text-xs font-medium text-maf-text-muted">
+        <span className="text-xs font-medium text-temper-text-muted">
           Execution Timeline
         </span>
-        <span className="text-[10px] text-maf-text-dim">
+        <span className="text-[10px] text-temper-text-dim">
           Total: {formatDuration(totalDuration)}
         </span>
       </div>
@@ -120,7 +120,7 @@ export function GanttTimeline({ agents, stageDurationSeconds, stageStartTime }: 
           {bars.map((bar) => (
             <button
               key={bar.agent.id}
-              className="text-xs text-maf-text truncate text-left hover:text-maf-accent transition-colors px-1"
+              className="text-xs text-temper-text truncate text-left hover:text-temper-accent transition-colors px-1"
               style={{ height: BAR_HEIGHT_PX, lineHeight: `${BAR_HEIGHT_PX}px` }}
               onClick={() => select('agent', bar.agent.id)}
               title={bar.label}
@@ -132,12 +132,12 @@ export function GanttTimeline({ agents, stageDurationSeconds, stageStartTime }: 
         </div>
 
         {/* Bars area */}
-        <div className="relative flex-1 bg-maf-surface/50 rounded overflow-hidden" style={{ height: chartHeight }}>
+        <div className="relative flex-1 bg-temper-surface/50 rounded overflow-hidden" style={{ height: chartHeight }}>
           {/* Tick grid lines */}
           {tickMarks.map((tick) => (
             <div
               key={tick.pct}
-              className="absolute top-0 bottom-0 border-l border-maf-border/30"
+              className="absolute top-0 bottom-0 border-l border-temper-border/30"
               style={{ left: `${tick.pct}%` }}
             />
           ))}
@@ -186,7 +186,7 @@ export function GanttTimeline({ agents, stageDurationSeconds, stageStartTime }: 
           {tickMarks.map((tick) => (
             <span
               key={tick.pct}
-              className="absolute text-[9px] text-maf-text-dim -translate-x-1/2"
+              className="absolute text-[9px] text-temper-text-dim -translate-x-1/2"
               style={{ left: `${tick.pct}%` }}
             >
               {tick.label}

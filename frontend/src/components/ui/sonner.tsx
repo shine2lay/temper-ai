@@ -6,7 +6,7 @@ export function Toaster() {
       theme="dark"
       position="bottom-right"
       toastOptions={{
-        className: 'bg-maf-panel border-maf-border text-maf-text',
+        className: 'bg-temper-panel border-temper-border text-temper-text',
       }}
     />
   );

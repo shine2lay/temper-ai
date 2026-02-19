@@ -103,7 +103,7 @@ export function WorkflowDetailPanel() {
 
   if (!workflow) {
     return (
-      <div className="p-4 text-sm text-maf-text-muted">No workflow data.</div>
+      <div className="p-4 text-sm text-temper-text-muted">No workflow data.</div>
     );
   }
 
@@ -113,8 +113,8 @@ export function WorkflowDetailPanel() {
   return (
     <div className="flex flex-col gap-4 p-4">
       {/* Header */}
-      <div className="flex items-center gap-3 sticky top-0 z-10 bg-maf-bg pb-2">
-        <h3 className="text-lg font-semibold text-maf-text">
+      <div className="flex items-center gap-3 sticky top-0 z-10 bg-temper-bg pb-2">
+        <h3 className="text-lg font-semibold text-temper-text">
           {workflow.workflow_name}
         </h3>
         <StatusBadge status={workflow.status} />
@@ -148,7 +148,7 @@ export function WorkflowDetailPanel() {
       {workflow.status === 'failed' && workflow.error_message && (() => {
         const { type, retryable } = categorizeError(workflow.error_message);
         return (
-          <div className="rounded-md bg-maf-bg-failed p-3 text-sm text-maf-failed">
+          <div className="rounded-md bg-temper-bg-failed p-3 text-sm text-temper-failed">
             <div className="flex items-center gap-2 mb-1">
               <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-red-950 border border-red-900/50">{type}</span>
               {retryable && <span className="text-xs text-amber-400">Retryable</span>}
@@ -163,21 +163,21 @@ export function WorkflowDetailPanel() {
         <>
           <Separator />
           <div className="flex flex-col gap-2">
-            <span className="text-sm font-medium text-maf-text-muted">Stage Breakdown</span>
+            <span className="text-sm font-medium text-temper-text-muted">Stage Breakdown</span>
             <div className="flex flex-col gap-1">
               {Array.from(stages.values()).map((stage) => (
                 <button
                   key={stage.id}
                   onClick={() => select('stage', stage.id)}
-                  className="flex items-center justify-between rounded-md bg-maf-panel p-2 text-xs hover:bg-maf-surface transition-colors"
+                  className="flex items-center justify-between rounded-md bg-temper-panel p-2 text-xs hover:bg-temper-surface transition-colors"
                 >
                   <span className="flex items-center gap-2">
                     <StatusBadge status={stage.status} />
-                    <span className="text-maf-text font-medium">
+                    <span className="text-temper-text font-medium">
                       {stage.stage_name ?? stage.name ?? stage.id}
                     </span>
                   </span>
-                  <span className="flex items-center gap-3 text-maf-text-muted">
+                  <span className="flex items-center gap-3 text-temper-text-muted">
                     <span>{formatDuration(stage.duration_seconds)}</span>
                   </span>
                 </button>
@@ -192,9 +192,9 @@ export function WorkflowDetailPanel() {
         <CollapsibleSection title="Tool Analytics">
           <div className="flex flex-col gap-1 mt-1">
             {toolAnalytics.map(t => (
-              <div key={t.name} className="flex items-center justify-between rounded-md bg-maf-panel p-2 text-xs">
-                <span className="text-maf-text font-medium">{t.name}</span>
-                <div className="flex items-center gap-3 text-maf-text-muted">
+              <div key={t.name} className="flex items-center justify-between rounded-md bg-temper-panel p-2 text-xs">
+                <span className="text-temper-text font-medium">{t.name}</span>
+                <div className="flex items-center gap-3 text-temper-text-muted">
                   <span>{t.count} calls</span>
                   {t.failed > 0 && <span className="text-red-400">{t.failed} failed</span>}
                   <span>avg {formatDuration(t.avgDuration)}</span>

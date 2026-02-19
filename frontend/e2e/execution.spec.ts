@@ -1,6 +1,6 @@
 /**
- * E2E tests for the MAF React frontend.
- * Requires `maf serve --port 8421` running with at least one completed workflow.
+ * E2E tests for the Temper AI React frontend.
+ * Requires `temper-ai serve --port 8421` running with at least one completed workflow.
  * Runs against the real built React app served by FastAPI.
  */
 import { test, expect } from '@playwright/test';
@@ -16,7 +16,7 @@ test.describe('Workflow List Page', () => {
     await page.goto(`${BASE}/app/`);
 
     // Should show the header
-    await expect(page.getByText('MAF Workflows')).toBeVisible();
+    await expect(page.getByText('Temper AI Workflows')).toBeVisible();
 
     // Wait for the workflow list to load (API call)
     const firstWorkflow = page.locator('a[href*="/workflow/"]').first();

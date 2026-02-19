@@ -32,15 +32,15 @@ export function OutputsTab({ agents, stageOutputData, strategy }: OutputsTabProp
     <div className="flex flex-col gap-3">
       {/* Controls */}
       <div className="flex items-center gap-3">
-        <div role="radiogroup" aria-label="Output view mode" className="flex rounded-md bg-maf-surface overflow-hidden">
+        <div role="radiogroup" aria-label="Output view mode" className="flex rounded-md bg-temper-surface overflow-hidden">
           <button
             role="radio"
             aria-checked={viewMode === 'grid'}
             className={cn(
               'px-3 py-1 text-xs transition-colors',
               viewMode === 'grid'
-                ? 'bg-maf-accent/20 text-maf-accent'
-                : 'text-maf-text-muted hover:text-maf-text',
+                ? 'bg-temper-accent/20 text-temper-accent'
+                : 'text-temper-text-muted hover:text-temper-text',
             )}
             onClick={() => setViewMode('grid')}
           >
@@ -52,24 +52,24 @@ export function OutputsTab({ agents, stageOutputData, strategy }: OutputsTabProp
             className={cn(
               'px-3 py-1 text-xs transition-colors',
               viewMode === 'comparison'
-                ? 'bg-maf-accent/20 text-maf-accent'
-                : 'text-maf-text-muted hover:text-maf-text',
+                ? 'bg-temper-accent/20 text-temper-accent'
+                : 'text-temper-text-muted hover:text-temper-text',
             )}
             onClick={() => setViewMode('comparison')}
           >
             Compare
           </button>
         </div>
-        <span className="text-[10px] text-maf-text-dim ml-auto">
+        <span className="text-[10px] text-temper-text-dim ml-auto">
           {agentsWithOutput.length} of {agents.length} agents with output
         </span>
       </div>
 
       {/* Stage-level output */}
       {stageOutputData && Object.keys(stageOutputData).length > 0 && (
-        <div className="rounded-lg border border-maf-accent/30 bg-maf-accent/5 p-3">
+        <div className="rounded-lg border border-temper-accent/30 bg-temper-accent/5 p-3">
           <div className="flex items-center gap-2 mb-2">
-            <span className="text-xs font-medium text-maf-accent">Stage Output (Final)</span>
+            <span className="text-xs font-medium text-temper-accent">Stage Output (Final)</span>
             <CopyButton text={JSON.stringify(stageOutputData, null, 2)} />
           </div>
           <div className="max-h-48 overflow-y-auto">
@@ -79,7 +79,7 @@ export function OutputsTab({ agents, stageOutputData, strategy }: OutputsTabProp
       )}
 
       {agentsWithOutput.length === 0 ? (
-        <div className="text-xs text-maf-text-muted py-6 text-center">
+        <div className="text-xs text-temper-text-muted py-6 text-center">
           No agent outputs available yet.
         </div>
       ) : viewMode === 'grid' ? (
@@ -110,10 +110,10 @@ function WatchCard({ agent }: { agent: AgentExecution }) {
   const outputText = agent.output ?? '';
 
   return (
-    <div className="rounded-lg border border-maf-border/40 bg-maf-panel/50 overflow-hidden">
+    <div className="rounded-lg border border-temper-border/40 bg-temper-panel/50 overflow-hidden">
       {/* Header */}
-      <div className="flex items-center gap-2 px-3 py-2 bg-maf-surface/30">
-        <span className="text-xs font-medium text-maf-text truncate">{name}</span>
+      <div className="flex items-center gap-2 px-3 py-2 bg-temper-surface/30">
+        <span className="text-xs font-medium text-temper-text truncate">{name}</span>
         <StatusBadge status={agent.status} className="text-[10px] py-0 px-1" />
         {agent.confidence_score != null && (
           <span
@@ -142,24 +142,24 @@ function WatchCard({ agent }: { agent: AgentExecution }) {
           {hasOutput ? (
             <JsonViewer data={agent.output_data} />
           ) : outputText ? (
-            <div className="text-xs text-maf-text font-mono whitespace-pre-wrap">
+            <div className="text-xs text-temper-text font-mono whitespace-pre-wrap">
               {outputText}
             </div>
           ) : (
-            <span className="text-xs text-maf-text-dim">No output</span>
+            <span className="text-xs text-temper-text-dim">No output</span>
           )}
         </div>
 
         {/* Expand/collapse + detail link */}
         <div className="flex items-center gap-2 mt-1">
           <button
-            className="text-[10px] text-maf-text-muted hover:text-maf-text"
+            className="text-[10px] text-temper-text-muted hover:text-temper-text"
             onClick={() => setExpanded(!expanded)}
           >
             {expanded ? 'Show less' : 'Show more'}
           </button>
           <button
-            className="text-[10px] text-maf-accent hover:underline ml-auto"
+            className="text-[10px] text-temper-accent hover:underline ml-auto"
             onClick={() => select('agent', agent.id)}
           >
             Full details
@@ -185,11 +185,11 @@ function ComparisonView({ agents }: { agents: AgentExecution[] }) {
         return (
           <div
             key={agent.id}
-            className="flex flex-col rounded-lg border border-maf-border/40 bg-maf-panel/50 overflow-hidden"
+            className="flex flex-col rounded-lg border border-temper-border/40 bg-temper-panel/50 overflow-hidden"
           >
             {/* Agent header */}
-            <div className="flex items-center gap-2 px-3 py-2 bg-maf-surface/30 border-b border-maf-border/30">
-              <span className="text-xs font-medium text-maf-text truncate">{name}</span>
+            <div className="flex items-center gap-2 px-3 py-2 bg-temper-surface/30 border-b border-temper-border/30">
+              <span className="text-xs font-medium text-temper-text truncate">{name}</span>
               <StatusBadge status={agent.status} className="text-[10px] py-0 px-1" />
               {agent.confidence_score != null && (
                 <span
@@ -212,21 +212,21 @@ function ComparisonView({ agents }: { agents: AgentExecution[] }) {
               {hasOutput ? (
                 <JsonViewer data={agent.output_data} />
               ) : outputText ? (
-                <div className="text-xs text-maf-text font-mono whitespace-pre-wrap">
+                <div className="text-xs text-temper-text font-mono whitespace-pre-wrap">
                   {outputText}
                 </div>
               ) : (
-                <span className="text-xs text-maf-text-dim">No output</span>
+                <span className="text-xs text-temper-text-dim">No output</span>
               )}
             </div>
 
             {/* Reasoning section */}
             {agent.reasoning && (
-              <div className="border-t border-maf-border/30 px-3 py-2">
-                <span className="text-[10px] font-medium text-maf-text-muted block mb-1">
+              <div className="border-t border-temper-border/30 px-3 py-2">
+                <span className="text-[10px] font-medium text-temper-text-muted block mb-1">
                   Reasoning
                 </span>
-                <div className="text-[11px] text-maf-text-dim font-mono whitespace-pre-wrap max-h-32 overflow-y-auto">
+                <div className="text-[11px] text-temper-text-dim font-mono whitespace-pre-wrap max-h-32 overflow-y-auto">
                   {agent.reasoning}
                 </div>
               </div>

@@ -47,8 +47,8 @@ export function WorkflowHeader() {
   let wsIndicator: React.ReactNode;
   if (wsStatus.connected) {
     wsIndicator = (
-      <span className="flex items-center gap-1.5 text-xs text-maf-text-muted">
-        <span className="inline-block h-2 w-2 rounded-full bg-maf-completed" />
+      <span className="flex items-center gap-1.5 text-xs text-temper-text-muted">
+        <span className="inline-block h-2 w-2 rounded-full bg-temper-completed" />
         Connected
       </span>
     );
@@ -61,8 +61,8 @@ export function WorkflowHeader() {
     );
   } else {
     wsIndicator = (
-      <span className="flex items-center gap-1.5 text-xs text-maf-text-muted">
-        <span className="inline-block h-2 w-2 rounded-full bg-maf-text-dim" />
+      <span className="flex items-center gap-1.5 text-xs text-temper-text-muted">
+        <span className="inline-block h-2 w-2 rounded-full bg-temper-text-dim" />
         Disconnected
       </span>
     );
@@ -70,22 +70,22 @@ export function WorkflowHeader() {
 
   return (
     <>
-      <header className="flex items-center gap-4 bg-maf-panel px-4 py-3 border-b border-maf-border shrink-0">
+      <header className="flex items-center gap-4 bg-temper-panel px-4 py-3 border-b border-temper-border shrink-0">
         <button
           onClick={() => navigate('/')}
-          className="text-maf-text-muted hover:text-maf-text transition-colors shrink-0"
+          className="text-temper-text-muted hover:text-temper-text transition-colors shrink-0"
           aria-label="Back to workflow list"
         >
           <ArrowLeft className="w-5 h-5" />
         </button>
 
-        <h1 className="text-lg font-semibold text-maf-text truncate">
+        <h1 className="text-lg font-semibold text-temper-text truncate">
           {workflow?.workflow_name ?? 'Loading...'}
         </h1>
 
         <button
           onClick={() => workflow && select('workflow', workflow.id)}
-          className="text-maf-text-muted hover:text-maf-text transition-colors shrink-0"
+          className="text-temper-text-muted hover:text-temper-text transition-colors shrink-0"
           aria-label="Workflow details"
         >
           <Info className="w-4 h-4" />
@@ -95,9 +95,9 @@ export function WorkflowHeader() {
 
         <span className={cn(
           'text-sm font-mono',
-          workflow?.status === 'failed' ? 'text-maf-failed' :
-          workflow?.status === 'completed' ? 'text-maf-completed' :
-          'text-maf-text-muted'
+          workflow?.status === 'failed' ? 'text-temper-failed' :
+          workflow?.status === 'completed' ? 'text-temper-completed' :
+          'text-temper-text-muted'
         )}>
           {displayDuration}
         </span>
@@ -109,7 +109,7 @@ export function WorkflowHeader() {
               <button
                 key={sa.id}
                 onClick={() => select('agent', sa.id)}
-                className="px-2 py-0.5 rounded text-xs font-medium bg-maf-accent/20 text-maf-accent border border-maf-accent/30 animate-pulse-streaming hover:bg-maf-accent/30 transition-colors"
+                className="px-2 py-0.5 rounded text-xs font-medium bg-temper-accent/20 text-temper-accent border border-temper-accent/30 animate-pulse-streaming hover:bg-temper-accent/30 transition-colors"
               >
                 {sa.name}
               </button>

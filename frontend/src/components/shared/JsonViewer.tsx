@@ -9,13 +9,13 @@ interface JsonViewerProps {
 
 export function JsonViewer({ data, className }: JsonViewerProps) {
   if (data == null) {
-    return <p className="text-xs text-maf-text-dim">No data</p>;
+    return <p className="text-xs text-temper-text-dim">No data</p>;
   }
 
   const jsonStr = JSON.stringify(data, null, 2);
 
   return (
-    <div className={cn('relative rounded-md bg-maf-panel border border-maf-border', className)}>
+    <div className={cn('relative rounded-md bg-temper-panel border border-temper-border', className)}>
       <div className="absolute top-1 right-1 z-10">
         <CopyButton text={jsonStr} />
       </div>
@@ -31,13 +31,13 @@ const AUTO_EXPAND_DEPTH = 2;
 function JsonNode({ value, depth }: { value: unknown; depth: number }) {
   const [expanded, setExpanded] = useState(depth < AUTO_EXPAND_DEPTH);
 
-  if (value === null) return <span className="text-maf-text-dim">null</span>;
+  if (value === null) return <span className="text-temper-text-dim">null</span>;
   if (typeof value === 'boolean') return <span className="text-amber-400">{String(value)}</span>;
   if (typeof value === 'number') return <span className="text-emerald-400">{value}</span>;
   if (typeof value === 'string') return <span className="text-sky-400">&quot;{value}&quot;</span>;
 
   if (Array.isArray(value)) {
-    if (value.length === 0) return <span className="text-maf-text-muted">[]</span>;
+    if (value.length === 0) return <span className="text-temper-text-muted">[]</span>;
     return (
       <CollapsibleNode
         expanded={expanded}
@@ -48,7 +48,7 @@ function JsonNode({ value, depth }: { value: unknown; depth: number }) {
         {value.map((item, i) => (
           <div key={i} className="pl-4">
             <JsonNode value={item} depth={depth + 1} />
-            {i < value.length - 1 && <span className="text-maf-text-dim">,</span>}
+            {i < value.length - 1 && <span className="text-temper-text-dim">,</span>}
           </div>
         ))}
       </CollapsibleNode>
@@ -57,7 +57,7 @@ function JsonNode({ value, depth }: { value: unknown; depth: number }) {
 
   if (typeof value === 'object') {
     const entries = Object.entries(value as Record<string, unknown>);
-    if (entries.length === 0) return <span className="text-maf-text-muted">{'{}'}</span>;
+    if (entries.length === 0) return <span className="text-temper-text-muted">{'{}'}</span>;
     return (
       <CollapsibleNode
         expanded={expanded}
@@ -68,16 +68,16 @@ function JsonNode({ value, depth }: { value: unknown; depth: number }) {
         {entries.map(([key, val], i) => (
           <div key={key} className="pl-4">
             <span className="text-purple-400">&quot;{key}&quot;</span>
-            <span className="text-maf-text-dim">: </span>
+            <span className="text-temper-text-dim">: </span>
             <JsonNode value={val} depth={depth + 1} />
-            {i < entries.length - 1 && <span className="text-maf-text-dim">,</span>}
+            {i < entries.length - 1 && <span className="text-temper-text-dim">,</span>}
           </div>
         ))}
       </CollapsibleNode>
     );
   }
 
-  return <span className="text-maf-text">{String(value)}</span>;
+  return <span className="text-temper-text">{String(value)}</span>;
 }
 
 function CollapsibleNode({
@@ -97,20 +97,20 @@ function CollapsibleNode({
     <span>
       <button
         onClick={onToggle}
-        className="text-maf-text-muted hover:text-maf-text mr-1 text-[10px]"
+        className="text-temper-text-muted hover:text-temper-text mr-1 text-[10px]"
       >
         {expanded ? '\u25BC' : '\u25B6'}
       </button>
-      <span className="text-maf-text">{bracket[0]}</span>
+      <span className="text-temper-text">{bracket[0]}</span>
       {expanded ? (
         <>
           <div>{children}</div>
-          <span className="text-maf-text">{bracket[1]}</span>
+          <span className="text-temper-text">{bracket[1]}</span>
         </>
       ) : (
         <span>
-          <span className="text-maf-text-dim"> {count} items </span>
-          <span className="text-maf-text">{bracket[1]}</span>
+          <span className="text-temper-text-dim"> {count} items </span>
+          <span className="text-temper-text">{bracket[1]}</span>
         </span>
       )}
     </span>

@@ -5,8 +5,8 @@ import { formatDuration, formatTokens, formatCost, cn } from '@/lib/utils';
 import type { WorkflowExecution, StageExecution } from '@/types';
 
 function WorkflowColumn({ workflow, loading }: { workflow?: WorkflowExecution; loading: boolean }) {
-  if (loading) return <div className="text-maf-text-muted text-sm">Loading...</div>;
-  if (!workflow) return <div className="text-maf-text-muted text-sm">Not found</div>;
+  if (loading) return <div className="text-temper-text-muted text-sm">Loading...</div>;
+  if (!workflow) return <div className="text-temper-text-muted text-sm">Not found</div>;
 
   const metrics = [
     { label: 'Status', value: workflow.status },
@@ -19,16 +19,16 @@ function WorkflowColumn({ workflow, loading }: { workflow?: WorkflowExecution; l
   ];
 
   return (
-    <div className="rounded-lg bg-maf-panel border border-maf-border p-4">
+    <div className="rounded-lg bg-temper-panel border border-temper-border p-4">
       <div className="flex items-center gap-2 mb-4">
-        <h2 className="text-sm font-semibold text-maf-text truncate">{workflow.workflow_name}</h2>
+        <h2 className="text-sm font-semibold text-temper-text truncate">{workflow.workflow_name}</h2>
         <StatusBadge status={workflow.status} />
       </div>
       <div className="flex flex-col gap-2">
         {metrics.map((m) => (
           <div key={m.label} className="flex justify-between text-xs">
-            <span className="text-maf-text-muted">{m.label}</span>
-            <span className="font-mono text-maf-text">{m.value}</span>
+            <span className="text-temper-text-muted">{m.label}</span>
+            <span className="font-mono text-temper-text">{m.value}</span>
           </div>
         ))}
       </div>
@@ -61,11 +61,11 @@ function StageComparisonTable({
 
   return (
     <div className="mt-4">
-      <h3 className="text-sm font-medium text-maf-text-muted mb-2">Stage Comparison</h3>
+      <h3 className="text-sm font-medium text-temper-text-muted mb-2">Stage Comparison</h3>
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
           <thead>
-            <tr className="border-b border-maf-border text-maf-text-muted">
+            <tr className="border-b border-temper-border text-temper-text-muted">
               <th className="text-left py-1.5 px-2">Stage</th>
               <th className="text-center py-1.5 px-2">Status A</th>
               <th className="text-center py-1.5 px-2">Duration A</th>
@@ -85,34 +85,34 @@ function StageComparisonTable({
               const durB = b?.duration_seconds ?? 0;
               const diff = durB - durA;
               return (
-                <tr key={name} className="border-b border-maf-border/30">
-                  <td className="py-1.5 px-2 text-maf-text font-medium">{name}</td>
+                <tr key={name} className="border-b border-temper-border/30">
+                  <td className="py-1.5 px-2 text-temper-text font-medium">{name}</td>
                   <td className="py-1.5 px-2 text-center">
-                    {a ? <StatusBadge status={a.status} /> : <span className="text-maf-text-dim">-</span>}
+                    {a ? <StatusBadge status={a.status} /> : <span className="text-temper-text-dim">-</span>}
                   </td>
-                  <td className="py-1.5 px-2 text-center font-mono text-maf-text-muted">
+                  <td className="py-1.5 px-2 text-center font-mono text-temper-text-muted">
                     {a ? formatDuration(durA) : '-'}
                   </td>
                   <td className="py-1.5 px-2 text-center">
-                    {b ? <StatusBadge status={b.status} /> : <span className="text-maf-text-dim">-</span>}
+                    {b ? <StatusBadge status={b.status} /> : <span className="text-temper-text-dim">-</span>}
                   </td>
-                  <td className="py-1.5 px-2 text-center font-mono text-maf-text-muted">
+                  <td className="py-1.5 px-2 text-center font-mono text-temper-text-muted">
                     {b ? formatDuration(durB) : '-'}
                   </td>
                   {hasC && (
                     <td className="py-1.5 px-2 text-center">
-                      {c ? <StatusBadge status={c.status} /> : <span className="text-maf-text-dim">-</span>}
+                      {c ? <StatusBadge status={c.status} /> : <span className="text-temper-text-dim">-</span>}
                     </td>
                   )}
                   {hasC && (
-                    <td className="py-1.5 px-2 text-center font-mono text-maf-text-muted">
+                    <td className="py-1.5 px-2 text-center font-mono text-temper-text-muted">
                       {c ? formatDuration(c.duration_seconds) : '-'}
                     </td>
                   )}
                   <td
                     className={cn(
                       'py-1.5 px-2 text-center font-mono',
-                      diff < 0 ? 'text-emerald-400' : diff > 0 ? 'text-red-400' : 'text-maf-text-muted',
+                      diff < 0 ? 'text-emerald-400' : diff > 0 ? 'text-red-400' : 'text-temper-text-muted',
                     )}
                   >
                     {a && b ? `${diff > 0 ? '+' : ''}${formatDuration(diff)}` : '-'}
@@ -153,12 +153,12 @@ export function ComparisonView() {
 
   if (!idA || !idB) {
     return (
-      <div className="flex flex-col items-center justify-center h-full bg-maf-bg text-maf-text gap-4">
+      <div className="flex flex-col items-center justify-center h-full bg-temper-bg text-temper-text gap-4">
         <h1 className="text-xl font-semibold">Compare Workflows</h1>
-        <p className="text-sm text-maf-text-muted">
+        <p className="text-sm text-temper-text-muted">
           Use URL params: /app/compare?a=ID_1&amp;b=ID_2 (optional: &amp;c=ID_3)
         </p>
-        <Link to="/" className="text-maf-accent hover:underline text-sm">
+        <Link to="/" className="text-temper-accent hover:underline text-sm">
           Back to workflows
         </Link>
       </div>
@@ -166,12 +166,12 @@ export function ComparisonView() {
   }
 
   return (
-    <div className="flex flex-col h-full bg-maf-bg">
-      <header className="flex items-center gap-4 bg-maf-panel px-6 py-4 border-b border-maf-border shrink-0">
-        <Link to="/" className="text-maf-accent hover:underline text-sm">
+    <div className="flex flex-col h-full bg-temper-bg">
+      <header className="flex items-center gap-4 bg-temper-panel px-6 py-4 border-b border-temper-border shrink-0">
+        <Link to="/" className="text-temper-accent hover:underline text-sm">
           Back
         </Link>
-        <h1 className="text-lg font-semibold text-maf-text">Compare Workflows</h1>
+        <h1 className="text-lg font-semibold text-temper-text">Compare Workflows</h1>
       </header>
 
       <div className="flex-1 overflow-auto p-6">

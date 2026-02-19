@@ -45,7 +45,7 @@ export function AgentRow({ agentId, defaultExpanded = false }: AgentRowProps) {
     <div
       className={cn(
         'rounded-lg border transition-all',
-        isFailed ? 'border-red-900/50 bg-red-950/20' : 'border-maf-border/50 bg-maf-panel/50',
+        isFailed ? 'border-red-900/50 bg-red-950/20' : 'border-temper-border/50 bg-temper-panel/50',
         expanded && 'shadow-md',
       )}
     >
@@ -53,7 +53,7 @@ export function AgentRow({ agentId, defaultExpanded = false }: AgentRowProps) {
       <button
         className={cn(
           'w-full flex items-center gap-3 px-4 py-2.5 text-left',
-          'hover:bg-maf-surface/50 transition-colors rounded-lg',
+          'hover:bg-temper-surface/50 transition-colors rounded-lg',
         )}
         onClick={() => setExpanded(!expanded)}
         aria-expanded={expanded}
@@ -62,7 +62,7 @@ export function AgentRow({ agentId, defaultExpanded = false }: AgentRowProps) {
         {/* Expand chevron */}
         <span
           className={cn(
-            'text-xs text-maf-text-muted transition-transform shrink-0',
+            'text-xs text-temper-text-muted transition-transform shrink-0',
             expanded && 'rotate-90',
           )}
         >
@@ -77,19 +77,19 @@ export function AgentRow({ agentId, defaultExpanded = false }: AgentRowProps) {
         />
 
         {/* Agent name */}
-        <span className="text-sm font-medium text-maf-text truncate min-w-0">
+        <span className="text-sm font-medium text-temper-text truncate min-w-0">
           {agent.agent_name ?? agent.name ?? agentId}
         </span>
 
         {/* Badges */}
         <div className="flex items-center gap-1.5 shrink-0">
           {model && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-maf-surface text-maf-text-muted">
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-temper-surface text-temper-text-muted">
               {model}
             </span>
           )}
           {agent.role && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-maf-surface text-maf-text-muted">
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-temper-surface text-temper-text-muted">
               {agent.role}
             </span>
           )}
@@ -116,12 +116,12 @@ export function AgentRow({ agentId, defaultExpanded = false }: AgentRowProps) {
             </span>
           )}
           {isStreaming && (
-            <span className="w-2 h-2 rounded-full bg-maf-accent animate-pulse shrink-0" />
+            <span className="w-2 h-2 rounded-full bg-temper-accent animate-pulse shrink-0" />
           )}
         </div>
 
         {/* Metrics — right-aligned */}
-        <div className="flex items-center gap-3 ml-auto text-[11px] text-maf-text-muted shrink-0">
+        <div className="flex items-center gap-3 ml-auto text-[11px] text-temper-text-muted shrink-0">
           <span>{formatDuration(agent.duration_seconds)}</span>
           <span>{formatTokens(totalTokens)} tok</span>
           {agent.total_llm_calls > 0 && <span>{agent.total_llm_calls} llm</span>}
@@ -132,7 +132,7 @@ export function AgentRow({ agentId, defaultExpanded = false }: AgentRowProps) {
 
       {/* Expanded content — 3-pane layout */}
       {expanded && (
-        <div id={regionId} role="region" aria-label={`Details for ${agent.agent_name ?? agentId}`} className="border-t border-maf-border/30">
+        <div id={regionId} role="region" aria-label={`Details for ${agent.agent_name ?? agentId}`} className="border-t border-temper-border/30">
           {/* Error banner for failed agents */}
           {isFailed && agent.error_message && (
             <div className="mx-4 mt-3 px-3 py-2 rounded-md bg-red-950/40 text-sm text-red-400 border border-red-900/50">
@@ -146,13 +146,13 @@ export function AgentRow({ agentId, defaultExpanded = false }: AgentRowProps) {
             {/* Pane 1: Input */}
             <div className="flex flex-col gap-1.5 min-w-0">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-maf-text-muted">Input</span>
+                <span className="text-xs font-medium text-temper-text-muted">Input</span>
               </div>
-              <div className="rounded-md bg-maf-surface/70 p-2 max-h-64 overflow-y-auto">
+              <div className="rounded-md bg-temper-surface/70 p-2 max-h-64 overflow-y-auto">
                 {hasInputData ? (
                   <JsonViewer data={agent.input_data} />
                 ) : (
-                  <span className="text-xs text-maf-text-dim">No input data</span>
+                  <span className="text-xs text-temper-text-dim">No input data</span>
                 )}
               </div>
             </div>
@@ -160,9 +160,9 @@ export function AgentRow({ agentId, defaultExpanded = false }: AgentRowProps) {
             {/* Pane 2: Output */}
             <div className="flex flex-col gap-1.5 min-w-0">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-maf-text-muted">Output</span>
+                <span className="text-xs font-medium text-temper-text-muted">Output</span>
                 <button
-                  className="text-[10px] text-maf-accent hover:underline"
+                  className="text-[10px] text-temper-accent hover:underline"
                   onClick={(e) => {
                     e.stopPropagation();
                     select('agent', agentId);
@@ -171,39 +171,39 @@ export function AgentRow({ agentId, defaultExpanded = false }: AgentRowProps) {
                   Full details
                 </button>
               </div>
-              <div className="rounded-md bg-maf-surface/70 p-2 max-h-64 overflow-y-auto">
+              <div className="rounded-md bg-temper-surface/70 p-2 max-h-64 overflow-y-auto">
                 {hasOutputData ? (
                   <JsonViewer data={agent.output_data} />
                 ) : hasOutput ? (
-                  <div className="text-xs text-maf-text font-mono whitespace-pre-wrap">
+                  <div className="text-xs text-temper-text font-mono whitespace-pre-wrap">
                     {agent.output}
                   </div>
                 ) : isStreaming ? (
-                  <div className="text-xs text-maf-text font-mono whitespace-pre-wrap">
+                  <div className="text-xs text-temper-text font-mono whitespace-pre-wrap">
                     {streaming.content}
-                    <span className="inline-block w-1.5 h-3.5 bg-maf-accent animate-pulse ml-0.5" />
+                    <span className="inline-block w-1.5 h-3.5 bg-temper-accent animate-pulse ml-0.5" />
                   </div>
                 ) : (
-                  <span className="text-xs text-maf-text-dim">No output yet</span>
+                  <span className="text-xs text-temper-text-dim">No output yet</span>
                 )}
               </div>
             </div>
 
             {/* Pane 3: Reasoning */}
             <div className="flex flex-col gap-1.5 min-w-0">
-              <span className="text-xs font-medium text-maf-text-muted">Reasoning</span>
-              <div className="rounded-md bg-maf-surface/70 p-2 max-h-64 overflow-y-auto">
+              <span className="text-xs font-medium text-temper-text-muted">Reasoning</span>
+              <div className="rounded-md bg-temper-surface/70 p-2 max-h-64 overflow-y-auto">
                 {hasReasoning ? (
-                  <div className="text-xs text-maf-text-dim font-mono whitespace-pre-wrap">
+                  <div className="text-xs text-temper-text-dim font-mono whitespace-pre-wrap">
                     {agent.reasoning}
                   </div>
                 ) : isStreaming && streaming.thinking ? (
-                  <div className="text-xs text-maf-text-dim font-mono whitespace-pre-wrap">
+                  <div className="text-xs text-temper-text-dim font-mono whitespace-pre-wrap">
                     {streaming.thinking}
-                    <span className="inline-block w-1.5 h-3.5 bg-maf-accent/50 animate-pulse ml-0.5" />
+                    <span className="inline-block w-1.5 h-3.5 bg-temper-accent/50 animate-pulse ml-0.5" />
                   </div>
                 ) : (
-                  <span className="text-xs text-maf-text-dim">No reasoning captured</span>
+                  <span className="text-xs text-temper-text-dim">No reasoning captured</span>
                 )}
               </div>
             </div>
@@ -212,19 +212,19 @@ export function AgentRow({ agentId, defaultExpanded = false }: AgentRowProps) {
           {/* Token distribution bar */}
           {totalTokens > 0 && (
             <div className="px-4 pb-3">
-              <div className="flex items-center gap-2 text-[10px] text-maf-text-dim mb-1">
+              <div className="flex items-center gap-2 text-[10px] text-temper-text-dim mb-1">
                 <span>Token distribution</span>
                 <span className="ml-auto">
                   {agent.prompt_tokens} prompt / {agent.completion_tokens} completion
                 </span>
               </div>
-              <div className="h-1.5 w-full rounded-full bg-maf-surface overflow-hidden flex">
+              <div className="h-1.5 w-full rounded-full bg-temper-surface overflow-hidden flex">
                 <div
-                  className="h-full bg-maf-token-prompt"
+                  className="h-full bg-temper-token-prompt"
                   style={{ width: `${(agent.prompt_tokens / totalTokens) * 100}%` }}
                 />
                 <div
-                  className="h-full bg-maf-token-completion"
+                  className="h-full bg-temper-token-completion"
                   style={{ width: `${(agent.completion_tokens / totalTokens) * 100}%` }}
                 />
               </div>

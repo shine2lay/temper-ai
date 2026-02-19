@@ -139,7 +139,7 @@ async def _db_poll_loop(
     """Poll DB for workflow changes and push snapshots.
 
     Enables real-time updates for workflows started in a separate
-    process (e.g. ``maf run``) by periodically reading the shared
+    process (e.g. ``temper-ai run``) by periodically reading the shared
     SQLite database and sending updated snapshots over WebSocket.
     """
     last_fingerprint = initial_fingerprint

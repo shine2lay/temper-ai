@@ -71,8 +71,8 @@ export function TimelineChart() {
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-2">
         <span className="text-2xl">&#x23F1;</span>
-        <p className="text-maf-text-muted text-sm">Waiting for first stage to start</p>
-        <p className="text-xs text-maf-text-dim">Timeline bars will appear as stages and agents begin executing</p>
+        <p className="text-temper-text-muted text-sm">Waiting for first stage to start</p>
+        <p className="text-xs text-temper-text-dim">Timeline bars will appear as stages and agents begin executing</p>
       </div>
     );
   }
@@ -85,28 +85,28 @@ export function TimelineChart() {
   return (
     <div ref={containerRef} className="flex-1 flex flex-col min-h-0">
       {/* Zoom controls */}
-      <div className="flex items-center gap-2 px-4 py-1.5 border-b border-maf-border/30 shrink-0">
-        <span className="text-xs text-maf-text-muted">Zoom</span>
+      <div className="flex items-center gap-2 px-4 py-1.5 border-b border-temper-border/30 shrink-0">
+        <span className="text-xs text-temper-text-muted">Zoom</span>
         <button
           onClick={() => setZoomLevel((z) => Math.max(MIN_ZOOM, z / ZOOM_STEP))}
-          className="px-1.5 py-0.5 rounded text-xs bg-maf-surface text-maf-text-muted hover:text-maf-text"
+          className="px-1.5 py-0.5 rounded text-xs bg-temper-surface text-temper-text-muted hover:text-temper-text"
           aria-label="Zoom out"
         >
           &minus;
         </button>
-        <span className="text-xs text-maf-text-muted font-mono w-10 text-center">
+        <span className="text-xs text-temper-text-muted font-mono w-10 text-center">
           {Math.round(zoomLevel * 100)}%
         </span>
         <button
           onClick={() => setZoomLevel((z) => Math.min(MAX_ZOOM, z * ZOOM_STEP))}
-          className="px-1.5 py-0.5 rounded text-xs bg-maf-surface text-maf-text-muted hover:text-maf-text"
+          className="px-1.5 py-0.5 rounded text-xs bg-temper-surface text-temper-text-muted hover:text-temper-text"
           aria-label="Zoom in"
         >
           +
         </button>
         <button
           onClick={() => setZoomLevel(1)}
-          className="px-1.5 py-0.5 rounded text-xs text-maf-text-muted hover:text-maf-text"
+          className="px-1.5 py-0.5 rounded text-xs text-temper-text-muted hover:text-temper-text"
         >
           Reset
         </button>
@@ -142,7 +142,7 @@ export function TimelineChart() {
           if (nowX < 0 || nowX > zoomedWidth) return null;
           return (
             <div
-              className="absolute top-0 bottom-0 w-px bg-maf-accent/40 pointer-events-none z-10"
+              className="absolute top-0 bottom-0 w-px bg-temper-accent/40 pointer-events-none z-10"
               style={{ left: TIMELINE.LABEL_WIDTH + nowX }}
             />
           );

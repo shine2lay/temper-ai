@@ -4,6 +4,8 @@ Observability database models.
 Full schema for tracking workflow, stage, agent, LLM, tool executions
 and learning/merit systems.
 """
+
+import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -81,7 +83,7 @@ class WorkflowExecution(SQLModel, table=True):
     # Relationships
     stages: List["StageExecution"] = Relationship(
         back_populates="workflow",
-        sa_relationship_kwargs={CASCADE_SIMPLE: CASCADE_ALL_DELETE_ORPHAN}
+        sa_relationship_kwargs={CASCADE_SIMPLE: CASCADE_ALL_DELETE_ORPHAN},
     )
 
     def __init__(self, **data: Any) -> None:
@@ -91,14 +93,14 @@ class WorkflowExecution(SQLModel, table=True):
             validate_json_size(
                 data[FIELD_WORKFLOW_CONFIG_SNAPSHOT],
                 max_bytes=2 * BYTES_PER_MB,  # Workflows can be larger
-                field_name=FIELD_WORKFLOW_CONFIG_SNAPSHOT
+                field_name=FIELD_WORKFLOW_CONFIG_SNAPSHOT,
             )
 
         if FIELD_EXTRA_METADATA in data and data[FIELD_EXTRA_METADATA]:
             validate_json_size(
                 data[FIELD_EXTRA_METADATA],
                 max_bytes=BYTES_PER_MB // 2,
-                field_name=FIELD_EXTRA_METADATA
+                field_name=FIELD_EXTRA_METADATA,
             )
 
         super().__init__(**data)
@@ -117,7 +119,9 @@ class StageExecution(SQLModel, table=True):
 
     id: str = Field(primary_key=True)
     workflow_execution_id: str = Field(
-        sa_column=Column(String, ForeignKey(FK_WORKFLOW_EXECUTIONS_ID, ondelete=FK_CASCADE), index=True)
+        sa_column=Column(
+            String, ForeignKey(FK_WORKFLOW_EXECUTIONS_ID, ondelete=FK_CASCADE), index=True
+        )
     )
 
     # Identity
@@ -136,8 +140,12 @@ class StageExecution(SQLModel, table=True):
     error_fingerprint: Optional[str] = Field(default=None, index=True)
 
     # Data
-    input_data: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))  # noqa: duplicate
-    output_data: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))  # noqa: duplicate
+    input_data: Optional[Dict[str, Any]] = Field(
+        default=None, sa_column=Column(JSON)
+    )  # noqa: duplicate
+    output_data: Optional[Dict[str, Any]] = Field(
+        default=None, sa_column=Column(JSON)
+    )  # noqa: duplicate
 
     # Metrics
     num_agents_executed: Optional[int] = None
@@ -146,7 +154,9 @@ class StageExecution(SQLModel, table=True):
     collaboration_rounds: Optional[int] = None
 
     # Metadata
-    extra_metadata: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))  # noqa: duplicate
+    extra_metadata: Optional[Dict[str, Any]] = Field(
+        default=None, sa_column=Column(JSON)
+    )  # noqa: duplicate
 
     # Data lineage
     output_lineage: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
@@ -154,12 +164,10 @@ class StageExecution(SQLModel, table=True):
     # Relationships
     workflow: WorkflowExecution = Relationship(back_populates="stages")
     agents: List["AgentExecution"] = Relationship(
-        back_populates="stage",
-        sa_relationship_kwargs={CASCADE_SIMPLE: CASCADE_ALL_DELETE_ORPHAN}
+        back_populates="stage", sa_relationship_kwargs={CASCADE_SIMPLE: CASCADE_ALL_DELETE_ORPHAN}
     )
     collaboration_events: List["CollaborationEvent"] = Relationship(
-        back_populates="stage",
-        sa_relationship_kwargs={CASCADE_SIMPLE: CASCADE_ALL_DELETE_ORPHAN}
+        back_populates="stage", sa_relationship_kwargs={CASCADE_SIMPLE: CASCADE_ALL_DELETE_ORPHAN}
     )
 
     def __init__(self, **data: Any) -> None:
@@ -168,21 +176,17 @@ class StageExecution(SQLModel, table=True):
             validate_json_size(
                 data["stage_config_snapshot"],
                 max_bytes=BYTES_PER_MB,
-                field_name="stage_config_snapshot"
+                field_name="stage_config_snapshot",
             )
 
         if "input_data" in data and data["input_data"]:
             validate_json_size(
-                data["input_data"],
-                max_bytes=BYTES_PER_MB // 2,
-                field_name="input_data"
+                data["input_data"], max_bytes=BYTES_PER_MB // 2, field_name="input_data"
             )
 
         if "output_data" in data and data["output_data"]:
             validate_json_size(
-                data["output_data"],
-                max_bytes=BYTES_PER_MB // 2,
-                field_name="output_data"
+                data["output_data"], max_bytes=BYTES_PER_MB // 2, field_name="output_data"
             )
 
         super().__init__(**data)
@@ -255,12 +259,10 @@ class AgentExecution(SQLModel, table=True):
     # Relationships
     stage: StageExecution = Relationship(back_populates="agents")
     llm_calls: List["LLMCall"] = Relationship(
-        back_populates="agent",
-        sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+        back_populates="agent", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
     tool_executions: List["ToolExecution"] = Relationship(
-        back_populates="agent",
-        sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+        back_populates="agent", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
 
     def __init__(self, **data: Any) -> None:
@@ -269,21 +271,17 @@ class AgentExecution(SQLModel, table=True):
             validate_json_size(
                 data["agent_config_snapshot"],
                 max_bytes=BYTES_PER_MB,
-                field_name="agent_config_snapshot"
+                field_name="agent_config_snapshot",
             )
 
         if "input_data" in data and data["input_data"]:
             validate_json_size(
-                data["input_data"],
-                max_bytes=BYTES_PER_MB // 2,
-                field_name="input_data"
+                data["input_data"], max_bytes=BYTES_PER_MB // 2, field_name="input_data"
             )
 
         if "output_data" in data and data["output_data"]:
             validate_json_size(
-                data["output_data"],
-                max_bytes=BYTES_PER_MB // 2,
-                field_name="output_data"
+                data["output_data"], max_bytes=BYTES_PER_MB // 2, field_name="output_data"
             )
 
         super().__init__(**data)
@@ -441,9 +439,7 @@ class AgentMeritScore(SQLModel, table=True):
     """Agent reputation/merit tracking."""
 
     __tablename__ = "agent_merit_scores"
-    __table_args__ = (
-        UniqueConstraint("agent_name", "domain", name="uq_merit_agent_domain"),
-    )
+    __table_args__ = (UniqueConstraint("agent_name", "domain", name="uq_merit_agent_domain"),)
 
     id: str = Field(primary_key=True)
     agent_name: str = Field(index=True)
@@ -488,15 +484,21 @@ class DecisionOutcome(SQLModel, table=True):
     id: str = Field(primary_key=True)
     agent_execution_id: Optional[str] = Field(
         default=None,
-        sa_column=Column(String, ForeignKey(FK_AGENT_EXECUTIONS_ID, ondelete="CASCADE"), nullable=True),
+        sa_column=Column(
+            String, ForeignKey(FK_AGENT_EXECUTIONS_ID, ondelete="CASCADE"), nullable=True
+        ),
     )
     stage_execution_id: Optional[str] = Field(
         default=None,
-        sa_column=Column(String, ForeignKey(FK_STAGE_EXECUTIONS_ID, ondelete="CASCADE"), nullable=True),
+        sa_column=Column(
+            String, ForeignKey(FK_STAGE_EXECUTIONS_ID, ondelete="CASCADE"), nullable=True
+        ),
     )
     workflow_execution_id: Optional[str] = Field(
         default=None,
-        sa_column=Column(String, ForeignKey("workflow_executions.id", ondelete="CASCADE"), nullable=True),
+        sa_column=Column(
+            String, ForeignKey("workflow_executions.id", ondelete="CASCADE"), nullable=True
+        ),
     )
 
     # Decision info
@@ -588,6 +590,21 @@ class ErrorFingerprint(SQLModel, table=True):
     resolution_note: Optional[str] = None
 
 
+class AlertRecord(SQLModel, table=True):
+    """Persisted alert record for historical analysis."""
+
+    __tablename__ = "alert_records"
+
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
+    rule_name: str = Field(index=True)
+    severity: str = Field(index=True)
+    message: str
+    metric_value: float
+    threshold: float
+    timestamp: datetime = Field(default_factory=utcnow, index=True)
+    context: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
+
+
 # Create composite indexes for common query patterns
 # Performance optimization: Composite indices for common query patterns
 # - Foreign key + name/type: For filtering related entities
@@ -626,7 +643,12 @@ class RollbackSnapshotDB(SQLModel, table=True):
     id: str = Field(primary_key=True)
     workflow_execution_id: Optional[str] = Field(
         default=None,
-        sa_column=Column(String, ForeignKey("workflow_executions.id", ondelete="CASCADE"), index=True, nullable=True),
+        sa_column=Column(
+            String,
+            ForeignKey("workflow_executions.id", ondelete="CASCADE"),
+            index=True,
+            nullable=True,
+        ),
     )
     checkpoint_id: Optional[str] = None
 
@@ -652,7 +674,12 @@ class RollbackEvent(SQLModel, table=True):
 
     id: str = Field(primary_key=True)
     snapshot_id: str = Field(
-        sa_column=Column(String, ForeignKey("rollback_snapshots.id", ondelete="CASCADE"), index=True, nullable=False),
+        sa_column=Column(
+            String,
+            ForeignKey("rollback_snapshots.id", ondelete="CASCADE"),
+            index=True,
+            nullable=False,
+        ),
     )
 
     status: str = Field(index=True)  # completed | partial | failed
@@ -678,3 +705,6 @@ Index("idx_rollback_snapshots_workflow", RollbackSnapshotDB.workflow_execution_i
 Index("idx_rollback_events_snapshot", RollbackEvent.snapshot_id, RollbackEvent.executed_at)  # type: ignore[arg-type]
 Index("idx_rollback_events_trigger", RollbackEvent.trigger, RollbackEvent.executed_at)  # type: ignore[arg-type]
 Index("idx_rollback_snapshots_expires", RollbackSnapshotDB.expires_at)  # type: ignore[arg-type]  # For cleanup of expired snapshots
+
+# Alert record indexes
+Index("idx_alert_rule_time", AlertRecord.rule_name, AlertRecord.timestamp)  # type: ignore[arg-type]

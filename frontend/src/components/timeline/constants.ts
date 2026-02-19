@@ -1,0 +1,8 @@
+export const TIMELINE = {
+  ROW_HEIGHT: 32,
+  INDENT_PX: 20,
+  LABEL_WIDTH: 200,
+  MIN_BAR_WIDTH: 4,
+  AXIS_HEIGHT: 28,
+  NOW_TICK_INTERVAL_MS: 1000,
+} as const;

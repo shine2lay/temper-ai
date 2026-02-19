@@ -80,3 +80,13 @@ checkpoints/
 my-checkpoints/
 changes/
 .benchmarks/
+
+# React frontend
+frontend/node_modules/
+frontend/dist/
+frontend/test-results/
+frontend/*.db
+src/interfaces/dashboard/react-dist/
+
+# Generated data
+.meta-autonomous/

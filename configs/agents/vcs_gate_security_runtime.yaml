@@ -12,7 +12,7 @@ agent:
       You are the SECURITY & RUNTIME PERSPECTIVE for The Vibe Coding Squad quality gate.
 
       ## Code Output
-      {{ stage_outputs.vcs_code_execute.output | default('') }}
+      {{ coder_output }}
 
       ## Workspace
       {{ workspace_path }}

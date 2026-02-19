@@ -865,6 +865,97 @@ def _maybe_adapt_lifecycle(
         return workflow_config
 
 
+def _handle_server_mode(  # noqa: params — pass-through from Click
+    workflow: str,
+    input_file: Optional[str],
+    server: Optional[str],
+    api_key: Optional[str],
+    workspace: Optional[str],
+    run_id: Optional[str],
+    output: Optional[str],
+    show_details: bool,
+) -> None:
+    """Detect a running MAF server and delegate the run, or exit with error."""
+    from src.interfaces.cli.server_client import DEFAULT_SERVER_URL
+    from src.interfaces.cli.server_delegation import (
+        delegate_to_server,
+        detect_server,
+    )
+
+    client = detect_server(server or DEFAULT_SERVER_URL, api_key)
+    if client is not None:
+        inputs: dict = {}
+        if input_file:
+            with open(input_file) as f:
+                inputs = yaml.safe_load(f) or {}
+        delegate_to_server(
+            client, workflow, inputs, workspace, run_id, output, show_details,
+        )
+        return
+
+    console.print("[red]Error:[/red] No MAF server running.")
+    console.print("Start one with: [bold]maf serve[/bold]")
+    console.print(
+        "Or use [bold]--local[/bold] to run without a server "
+        "(no dashboard streaming)."
+    )
+    raise SystemExit(1)
+
+
+def _run_local_workflow(  # noqa: params — pass-through from Click
+    workflow: str,
+    input_file: Optional[str],
+    verbose: bool,
+    output: Optional[str],
+    db: Optional[str],
+    config_root: str,
+    show_details: bool,
+    dashboard: Optional[int],
+    workspace: Optional[str],
+    events_to: str,
+    event_format: str,
+    run_id: Optional[str],
+    autonomous: bool,
+) -> None:
+    """Execute a workflow locally with observability and optional dashboard."""
+    from src.observability.tracker import WorkflowTrackingParams
+
+    _setup_logging(verbose, show_details)
+    wf_config, inputs = _load_workflow_config(
+        workflow, input_file, config_root, verbose,
+    )
+    wf_config = _maybe_adapt_lifecycle(wf_config, inputs, config_root, verbose)
+
+    needs_bus = dashboard is not None or events_to != "stderr" or event_format != "text"
+    dash_port = dashboard if dashboard is not None else (0 if needs_bus else None)
+    config_loader, tool_registry, tracker, event_bus, dash_server = (
+        _initialize_infrastructure(config_root, db or DEFAULT_DB_PATH, dash_port, verbose)
+    )
+    _setup_event_routing(event_bus, events_to, event_format, run_id, verbose)
+    engine, compiled = _compile_workflow(wf_config, tool_registry, config_loader, verbose)
+
+    wf_name = wf_config.get("workflow", {}).get("name", Path(workflow).stem)
+    with tracker.track_workflow(WorkflowTrackingParams(
+        workflow_name=wf_name, workflow_config=wf_config,
+        trigger_type="cli", environment="local",
+    )) as workflow_id:
+        result = _execute_workflow(WorkflowExecutionParams(
+            compiled=compiled, workflow_config=wf_config, inputs=inputs,
+            tracker=tracker, config_loader=config_loader, tool_registry=tool_registry,
+            workflow_id=workflow_id, show_details=show_details, engine=engine,
+            verbose=verbose, workspace=workspace, run_id=run_id,
+            workflow_name=wf_name,
+        ))
+
+    _handle_post_execution(
+        result, show_details, output, workflow_id, wf_name, verbose,
+        autonomous_opts={"workflow_config": wf_config, "cli_autonomous": autonomous},
+    )
+    if dashboard is not None:
+        _handle_dashboard_keepalive(dash_server, dashboard)
+    _cleanup_tool_executor(engine)
+
+
 @main.command()
 @click.argument("workflow", type=click.Path(exists=True))
 @click.option(
@@ -931,6 +1022,23 @@ def _maybe_adapt_lifecycle(
     is_flag=True,
     help="Enable post-execution autonomous loop (pattern mining, goals, portfolio)",
 )
+@click.option(
+    "--local",
+    is_flag=True,
+    help="Force local execution (skip server detection)",
+)
+@click.option(
+    CLI_OPTION_SERVER,
+    default=None,
+    envvar=ENV_VAR_SERVER_URL,
+    help="Server URL for delegation",
+)
+@click.option(
+    CLI_OPTION_API_KEY,
+    default=None,
+    envvar=ENV_VAR_API_KEY,
+    help="API key for server auth",
+)
 def run(  # noqa: params — Click command, params are CLI args
     workflow: str,
     input_file: Optional[str],
@@ -945,51 +1053,23 @@ def run(  # noqa: params — Click command, params are CLI args
     event_format: str,
     run_id: Optional[str],
     autonomous: bool,
+    local: bool,
+    server: Optional[str],
+    api_key: Optional[str],
 ) -> None:
     """Run a workflow from a YAML config file."""
-    from src.observability.tracker import WorkflowTrackingParams
-    _setup_logging(verbose, show_details)
-    workflow_config, inputs = _load_workflow_config(workflow, input_file, config_root, verbose)
-
-    db_path = db or DEFAULT_DB_PATH
-
-    # Lifecycle adaptation: transform config before compilation
-    workflow_config = _maybe_adapt_lifecycle(workflow_config, inputs, config_root, verbose)
-
-    needs_event_bus = dashboard is not None or events_to != "stderr" or event_format != "text"
-    config_loader, tool_registry, tracker, event_bus, dashboard_server = _initialize_infrastructure(
-        config_root, db_path, dashboard if dashboard is not None else (0 if needs_event_bus else None), verbose
-    )
-    _setup_event_routing(event_bus, events_to, event_format, run_id, verbose)
-
-    engine, compiled = _compile_workflow(workflow_config, tool_registry, config_loader, verbose)
-
-    wf = workflow_config.get("workflow", {})
-    workflow_name = wf.get("name", Path(workflow).stem)
-    with tracker.track_workflow(WorkflowTrackingParams(
-        workflow_name=workflow_name,
-        workflow_config=workflow_config,
-        trigger_type="cli",
-        environment="local",
-    )) as workflow_id:
-        exec_params = WorkflowExecutionParams(
-            compiled=compiled, workflow_config=workflow_config, inputs=inputs,
-            tracker=tracker, config_loader=config_loader, tool_registry=tool_registry,
-            workflow_id=workflow_id, show_details=show_details, engine=engine,
-            verbose=verbose, workspace=workspace, run_id=run_id,
-            workflow_name=workflow_name,
+    if not local:
+        _handle_server_mode(
+            workflow, input_file, server, api_key,
+            workspace, run_id, output, show_details,
         )
-        result = _execute_workflow(exec_params)
+        return
 
-    _handle_post_execution(
-        result, show_details, output, workflow_id, workflow_name, verbose,
-        autonomous_opts={"workflow_config": workflow_config, "cli_autonomous": autonomous},
+    _run_local_workflow(
+        workflow, input_file, verbose, output, db, config_root,
+        show_details, dashboard, workspace, events_to,
+        event_format, run_id, autonomous,
     )
-
-    if dashboard is not None:
-        _handle_dashboard_keepalive(dashboard_server, dashboard)
-
-    _cleanup_tool_executor(engine)
 
 
 

@@ -8,6 +8,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src.interfaces.dashboard.app import create_app
+from src.interfaces.dashboard.websocket import (
+    _workflow_fingerprint,
+    TERMINAL_STATUSES,
+)
 from src.observability.constants import ObservabilityFields
 from src.observability.event_bus import ObservabilityEvent, ObservabilityEventBus
 
@@ -134,3 +138,88 @@ class TestWebSocketNoEventBus:
         with client.websocket_connect("/ws/wf-ws-1") as ws:
             msg = ws.receive_json()
             assert msg["type"] == "snapshot"
+
+
+class TestWorkflowFingerprint:
+    """Tests for the _workflow_fingerprint change-detection helper."""
+
+    def test_empty_workflow(self):
+        fp = _workflow_fingerprint({"status": "running", "stages": []})
+        assert "running" in fp
+
+    def test_same_state_same_fingerprint(self):
+        snap = {"status": "running", "stages": [{"status": "running", "agents": []}]}
+        assert _workflow_fingerprint(snap) == _workflow_fingerprint(snap)
+
+    def test_status_change_changes_fingerprint(self):
+        snap1 = {"status": "running", "stages": []}
+        snap2 = {"status": "completed", "end_time": "2026-02-17T00:00:00Z", "stages": []}
+        assert _workflow_fingerprint(snap1) != _workflow_fingerprint(snap2)
+
+    def test_new_stage_changes_fingerprint(self):
+        snap1 = {"status": "running", "stages": []}
+        snap2 = {"status": "running", "stages": [{"status": "running", "agents": []}]}
+        assert _workflow_fingerprint(snap1) != _workflow_fingerprint(snap2)
+
+    def test_agent_status_change_changes_fingerprint(self):
+        snap1 = {
+            "status": "running",
+            "stages": [{"status": "running", "agents": [{"status": "running"}]}],
+        }
+        snap2 = {
+            "status": "running",
+            "stages": [{"status": "running", "agents": [{"status": "completed"}]}],
+        }
+        assert _workflow_fingerprint(snap1) != _workflow_fingerprint(snap2)
+
+    def test_terminal_statuses_defined(self):
+        assert "completed" in TERMINAL_STATUSES
+        assert "failed" in TERMINAL_STATUSES
+        assert "running" not in TERMINAL_STATUSES
+
+
+class TestDBPolling:
+    """Tests for DB-polling based WebSocket snapshot delivery."""
+
+    def test_db_poll_sends_updated_snapshot(self):
+        """DB poller sends a new snapshot when workflow state changes."""
+        call_count = 0
+        running_workflow = {
+            "id": "wf-poll-1",
+            "workflow_name": "poll-test",
+            "status": "running",
+            "stages": [],
+        }
+        completed_workflow = {
+            "id": "wf-poll-1",
+            "workflow_name": "poll-test",
+            "status": "completed",
+            "end_time": "2026-02-17T00:00:00Z",
+            "stages": [{"status": "completed", "agents": []}],
+        }
+
+        def side_effect(wf_id):
+            nonlocal call_count
+            call_count += 1
+            # First call: initial snapshot (from handler)
+            # Second call: first poll returns running (same as initial)
+            # Third call: state changes to completed
+            if call_count <= 2:
+                return running_workflow
+            return completed_workflow
+
+        backend = MagicMock()
+        backend.get_workflow.side_effect = side_effect
+        app = create_app(backend=backend, event_bus=None)
+        client = TestClient(app)
+
+        with client.websocket_connect("/ws/wf-poll-1") as ws:
+            # First message: initial snapshot (running)
+            msg1 = ws.receive_json()
+            assert msg1["type"] == "snapshot"
+            assert msg1["workflow"]["status"] == "running"
+
+            # Second message: DB poll detects change to completed
+            msg2 = ws.receive_json()
+            assert msg2["type"] == "snapshot"
+            assert msg2["workflow"]["status"] == "completed"

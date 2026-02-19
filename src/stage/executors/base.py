@@ -151,14 +151,15 @@ def _build_final_synthesis_result(params: FinalSynthesisResultParams) -> Any:
     return result
 
 
-class WorkflowStateDict(TypedDict, total=False):
-    """Canonical type hints for the workflow state dictionary.
+class WorkflowExecutionContext(TypedDict, total=False):
+    """Canonical type hints for the workflow execution context.
 
-    This is the single authoritative definition of the workflow state dict
+    This is the single authoritative definition of the runtime context bag
     used throughout the framework. All other modules should import from here.
 
-    All keys are optional (total=False) since different executors and
-    lifecycle phases populate different subsets of the state.
+    Contains domain data, infrastructure services, UI concerns, and
+    executor internals. All keys are optional (total=False) since different
+    executors and lifecycle phases populate different subsets.
     """
 
     # Core workflow identity
@@ -207,6 +208,10 @@ class WorkflowStateDict(TypedDict, total=False):
     agent_metrics: Dict[str, Any]
     errors: Dict[str, Any]
     stage_input: Dict[str, Any]
+
+
+# Deprecated alias for backward compatibility
+WorkflowStateDict = WorkflowExecutionContext
 
 
 class ParallelRunner(ABC):
@@ -258,6 +263,7 @@ class StageExecutor(ABC):
 
     context_provider: Optional[Any] = None
     output_extractor: Optional[Any] = None
+    tool_executor: Optional[Any] = None
 
     def _extract_structured_fields(
         self, stage_config: Any, raw_output: str, stage_name: str,

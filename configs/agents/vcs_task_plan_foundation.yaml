@@ -20,7 +20,7 @@ agent:
       other generated files.
 
       ## Unified Design (Spec + Plan)
-      {{ stage_outputs.get('vcs_design', {}).get('decision', '') or stage_outputs.get('vcs_design_decision', {}).get('output', '') }}
+      {{ design_output }}
 
       ## Workspace
       {{ workspace_path }}

@@ -82,6 +82,7 @@ class ParallelStageExecutor(StageExecutor):
         synthesis_coordinator: Optional[Any] = None,
         quality_gate_validator: Optional[Any] = None,
         parallel_runner: Optional[ParallelRunner] = None,
+        tool_executor: Optional[Any] = None,
     ) -> None:
         """Initialize parallel executor.
 
@@ -90,6 +91,8 @@ class ParallelStageExecutor(StageExecutor):
             quality_gate_validator: Validator for quality gates
             parallel_runner: Runner for parallel node execution (defaults to
                 LangGraphParallelRunner)
+            tool_executor: ToolExecutor with safety stack (optional).
+                Wired through constructor instead of state dict.
         """
         self.synthesis_coordinator = synthesis_coordinator
         self.quality_gate_validator = quality_gate_validator
@@ -97,6 +100,7 @@ class ParallelStageExecutor(StageExecutor):
             from src.stage.executors.langgraph_runner import LangGraphParallelRunner
             parallel_runner = LangGraphParallelRunner()
         self.parallel_runner = parallel_runner
+        self.tool_executor = tool_executor
         # Per-workflow agent cache: agent_name -> agent instance.
         # Avoids recreating agents on every parallel invocation.
         self._agent_cache: Dict[str, Any] = {}
@@ -134,6 +138,7 @@ class ParallelStageExecutor(StageExecutor):
                 state=state, config_loader=config_loader,
                 agent_cache=self._agent_cache, agent_factory_cls=AgentFactory,
                 tracker=tracker, stage_id=stage_id,
+                tool_executor=self.tool_executor,
             )
             nodes[name] = create_agent_node(node_params)
         return nodes
@@ -228,9 +233,13 @@ class ParallelStageExecutor(StageExecutor):
             stage_config.model_dump() if hasattr(stage_config, 'model_dump') else stage_config
         )
         if tracker:
+            from src.stage.executors._base_helpers import prepare_tracking_input
+            tracking_input = prepare_tracking_input(
+                state.get(StateKeys.STAGE_OUTPUTS, {}),
+            )
             with tracker.track_stage(
                 stage_name=stage_name, stage_config=stage_config_dict,
-                workflow_id=workflow_id, input_data=state.get(StateKeys.STAGE_OUTPUTS, {}),
+                workflow_id=workflow_id, input_data=tracking_input,
             ) as stage_id:
                 return self._execute_stage_core(
                     stage_name, stage_config, state, config_loader,
@@ -245,7 +254,7 @@ class ParallelStageExecutor(StageExecutor):
     @staticmethod
     def _get_max_retries(stage_config: Any) -> int:
         """Extract max quality gate retries from stage config."""
-        default_retries: int = QualityGatesConfig.model_fields["max_retries"].default  # type: ignore[assignment]
+        default_retries: int = QualityGatesConfig.model_fields["max_retries"].default
         if isinstance(stage_config, dict):
             qg = stage_config.get("quality_gates", {})
             result: int = qg.get("max_retries", default_retries)
@@ -387,6 +396,7 @@ class ParallelStageExecutor(StageExecutor):
             agent_factory_cls=AgentFactory,
             tracker=tracker,
             stage_id=stage_id,
+            tool_executor=self.tool_executor,
         ))
 
     def _validate_quality_gates(

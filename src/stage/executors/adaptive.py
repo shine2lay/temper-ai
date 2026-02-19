@@ -145,18 +145,25 @@ class AdaptiveStageExecutor(StageExecutor):
     def __init__(
         self,
         synthesis_coordinator: Optional[Any] = None,
-        quality_gate_validator: Optional[Any] = None
+        quality_gate_validator: Optional[Any] = None,
+        tool_executor: Optional[Any] = None,
     ) -> None:
         """Initialize adaptive executor.
 
         Args:
             synthesis_coordinator: Coordinator for synthesizing agent outputs
             quality_gate_validator: Validator for quality gates
+            tool_executor: ToolExecutor with safety stack (optional).
+                Wired through constructor instead of state dict.
         """
-        self.sequential_executor = SequentialStageExecutor()
+        self.tool_executor = tool_executor
+        self.sequential_executor = SequentialStageExecutor(
+            tool_executor=tool_executor,
+        )
         self.parallel_executor = ParallelStageExecutor(
             synthesis_coordinator=synthesis_coordinator,
-            quality_gate_validator=quality_gate_validator
+            quality_gate_validator=quality_gate_validator,
+            tool_executor=tool_executor,
         )
 
     def _fallback_to_sequential(

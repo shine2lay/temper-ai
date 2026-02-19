@@ -16,6 +16,7 @@ DEFAULT_LIST_LIMIT = 20
 # HTTP client timeouts (seconds)
 CONNECT_TIMEOUT = 10
 READ_TIMEOUT = 30
+HEALTH_PROBE_TIMEOUT = 2  # Fast fail for auto-detection
 
 
 class MAFServerClient:
@@ -52,11 +53,26 @@ class MAFServerClient:
             result: Dict[str, Any] = resp.json()
             return result
 
+    def is_server_running(self) -> bool:
+        """Quick health probe to check if server is accepting requests."""
+        try:
+            with httpx.Client(
+                base_url=self.base_url,
+                timeout=httpx.Timeout(
+                    HEALTH_PROBE_TIMEOUT, connect=HEALTH_PROBE_TIMEOUT
+                ),
+            ) as client:
+                resp = client.get("/api/health")
+                return resp.status_code == httpx.codes.OK
+        except (httpx.ConnectError, httpx.TimeoutException, OSError):
+            return False
+
     def trigger_run(
         self,
         workflow: str,
         inputs: Optional[Dict[str, Any]] = None,
         workspace: Optional[str] = None,
+        run_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Trigger a workflow execution on the server.
 
@@ -64,6 +80,7 @@ class MAFServerClient:
             workflow: Workflow path (relative to config_root).
             inputs: Optional input data dict.
             workspace: Optional workspace root.
+            run_id: Optional externally-provided run ID.
 
         Returns:
             Response dict with execution_id and status.
@@ -73,6 +90,8 @@ class MAFServerClient:
             body["inputs"] = inputs
         if workspace:
             body["workspace"] = workspace
+        if run_id:
+            body["run_id"] = run_id
 
         with self._client() as client:
             resp = client.post("/api/runs", json=body)

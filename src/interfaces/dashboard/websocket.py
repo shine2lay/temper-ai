@@ -2,7 +2,7 @@
 import asyncio
 import logging
 from datetime import datetime, timezone
-from typing import Any, Callable, List
+from typing import Any, Callable, Dict, List
 
 from fastapi import WebSocket, WebSocketDisconnect
 
@@ -11,6 +11,8 @@ logger = logging.getLogger(__name__)
 EVENT_QUEUE_MAXSIZE = 1024
 HEARTBEAT_TIMEOUT_SECONDS = 30.0
 CHUNK_FLUSH_INTERVAL_SECONDS = 0.1  # 100ms batching for stream chunks
+DB_POLL_INTERVAL_SECONDS = 2.0  # DB polling interval for cross-process updates
+TERMINAL_STATUSES = frozenset({"completed", "failed", "halted", "timeout"})
 
 
 def _create_event_callback(
@@ -114,6 +116,50 @@ async def _stream_events_loop(
             )
 
 
+def _workflow_fingerprint(snapshot: Dict[str, Any]) -> str:
+    """Create a fingerprint to detect workflow state changes.
+
+    Covers all major UI-visible transitions: workflow status, stage
+    statuses, and agent statuses.
+    """
+    parts = [snapshot.get("status", ""), snapshot.get("end_time", "")]
+    for stage in snapshot.get("stages", []):
+        parts.append(stage.get("status", ""))
+        for agent in stage.get("agents", []):
+            parts.append(agent.get("status", ""))
+    return "|".join(str(p) for p in parts)
+
+
+async def _db_poll_loop(
+    websocket: WebSocket,
+    data_service: Any,
+    workflow_id: str,
+    initial_fingerprint: str = "",
+) -> None:
+    """Poll DB for workflow changes and push snapshots.
+
+    Enables real-time updates for workflows started in a separate
+    process (e.g. ``maf run``) by periodically reading the shared
+    SQLite database and sending updated snapshots over WebSocket.
+    """
+    last_fingerprint = initial_fingerprint
+    while True:
+        await asyncio.sleep(DB_POLL_INTERVAL_SECONDS)  # intentional polling interval
+        try:
+            snapshot = data_service.get_workflow_snapshot(workflow_id)
+            if not snapshot:
+                continue
+            fp = _workflow_fingerprint(snapshot)
+            if fp == last_fingerprint:
+                continue
+            last_fingerprint = fp
+            await websocket.send_json({"type": "snapshot", "workflow": snapshot})
+            if snapshot.get("status") in TERMINAL_STATUSES:
+                break
+        except (ConnectionError, OSError, RuntimeError):
+            break  # WebSocket disconnected
+
+
 def create_ws_endpoint(data_service: Any) -> Callable:
     """Create WebSocket endpoint handler.
 
@@ -133,11 +179,14 @@ def create_ws_endpoint(data_service: Any) -> Callable:
         on_event = _create_event_callback(workflow_id, event_queue, chunk_buffer)
 
         flush_task = None
+        poll_task = None
         try:
             # Send initial snapshot
             snapshot = data_service.get_workflow_snapshot(workflow_id)
+            initial_fp = ""
             if snapshot:
                 await websocket.send_json({"type": "snapshot", "workflow": snapshot})
+                initial_fp = _workflow_fingerprint(snapshot)
 
             # Subscribe to events for this workflow
             logger.info(f"[WebSocket] Subscribing to events for workflow {workflow_id}")
@@ -145,7 +194,14 @@ def create_ws_endpoint(data_service: Any) -> Callable:
             logger.info(f"[WebSocket] Subscription ID: {subscription_id}")
 
             # Start chunk flusher
-            flush_task = asyncio.create_task(_flush_chunks_task(websocket, chunk_buffer, chunk_lock))
+            flush_task = asyncio.create_task(
+                _flush_chunks_task(websocket, chunk_buffer, chunk_lock),
+            )
+
+            # Start DB poller for cross-process workflow updates
+            poll_task = asyncio.create_task(
+                _db_poll_loop(websocket, data_service, workflow_id, initial_fp),
+            )
 
             # Stream events with heartbeat
             await _stream_events_loop(websocket, event_queue)
@@ -155,12 +211,13 @@ def create_ws_endpoint(data_service: Any) -> Callable:
         except (ConnectionError, OSError, RuntimeError):
             logger.warning("WebSocket error", exc_info=True)
         finally:
-            if flush_task is not None:
-                flush_task.cancel()
-                try:
-                    await flush_task
-                except asyncio.CancelledError:
-                    pass
+            for task in (flush_task, poll_task):
+                if task is not None:
+                    task.cancel()
+                    try:
+                        await task
+                    except asyncio.CancelledError:
+                        pass
             if subscription_id:
                 data_service.unsubscribe(subscription_id)
 

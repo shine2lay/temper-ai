@@ -21,8 +21,8 @@ stage:
     task_specs:
       source: vcs_task_planning.output
       required: true
-    design_decision:
-      source: vcs_design.decision
+    design_output:
+      source: vcs_design.output
       required: false
       default: ""
 

@@ -69,14 +69,20 @@ class SequentialStageExecutor(StageExecutor):
     including outputs from previous agents/stages.
     """
 
-    def __init__(self) -> None:
-        """Initialize sequential executor with an empty agent cache."""
+    def __init__(self, tool_executor: Optional[Any] = None) -> None:
+        """Initialize sequential executor with an empty agent cache.
+
+        Args:
+            tool_executor: ToolExecutor with safety stack (optional).
+                Wired through constructor instead of state dict.
+        """
         # Per-workflow agent cache: agent_name -> agent instance.
         # Avoids recreating agents for every stage invocation when the
         # same agent appears in multiple stages of the same workflow.
         self._agent_cache: Dict[str, Any] = {}
         # H-13: Shared shutdown event for interruptible retry waits
         self.shutdown_event = threading.Event()
+        self.tool_executor = tool_executor
 
     def _extract_agents_and_error_config(
         self, stage_config: Any,
@@ -108,9 +114,13 @@ class SequentialStageExecutor(StageExecutor):
         workflow_id: str = state.get(StateKeys.WORKFLOW_ID, "unknown")
         if tracker:
             stage_config_dict = state.get("_stage_config_dict", {})
+            from src.stage.executors._base_helpers import prepare_tracking_input
+            tracking_input = prepare_tracking_input(
+                state.get(StateKeys.STAGE_OUTPUTS, {}),
+            )
             with tracker.track_stage(
                 stage_name=stage_name, stage_config=stage_config_dict,
-                workflow_id=workflow_id, input_data=state.get(StateKeys.STAGE_OUTPUTS, {}),
+                workflow_id=workflow_id, input_data=tracking_input,
             ) as stage_id:
                 # Store stage_id for dialogue synthesis tracking
                 state[StateKeys.CURRENT_STAGE_ID] = stage_id

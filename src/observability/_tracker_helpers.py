@@ -9,6 +9,7 @@ Contains:
 - TrackerCollaborationMixin (collaboration/safety/merit methods)
 - Workflow metrics aggregation helper
 """
+
 import logging
 import traceback
 import uuid
@@ -50,6 +51,7 @@ _EVENT_COLLABORATION = "collaboration_event"
 @dataclass
 class LLMCallTrackingData:
     """Bundle parameters for LLM call tracking."""
+
     agent_id: str
     provider: str
     model: str
@@ -74,6 +76,7 @@ class LLMCallTrackingData:
 @dataclass
 class ToolCallTrackingData:
     """Bundle parameters for tool call tracking."""
+
     agent_id: str
     tool_name: str
     input_params: Dict[str, Any]
@@ -88,6 +91,7 @@ class ToolCallTrackingData:
 @dataclass
 class DecisionTrackingData:
     """Bundle parameters for decision outcome tracking."""
+
     decision_type: str
     decision_data: Dict[str, Any]
     outcome: str
@@ -107,6 +111,7 @@ class DecisionTrackingData:
 @dataclass
 class StreamChunkData:
     """Bundle parameters for stream chunk events."""
+
     agent_id: str
     content: str
     chunk_type: str = "content"
@@ -121,6 +126,7 @@ class StreamChunkData:
 @dataclass
 class CollaborationEventData:
     """Bundle parameters for collaboration event tracking."""
+
     event_type: str
     stage_id: Optional[str] = None
     agents_involved: Optional[List[str]] = None
@@ -176,10 +182,15 @@ def sanitize_dict(
                 sanitized[safe_key] = sanitize_dict(sanitizer, value, _depth + 1)
             elif isinstance(value, list):
                 sanitized_list: List[Any] = [
-                    sanitize_dict(sanitizer, item, _depth + 1) if isinstance(item, dict)
-                    else sanitizer.sanitize_text(str(item), context=_CTX_CONFIG).sanitized_text
-                    if isinstance(item, str)
-                    else item
+                    (
+                        sanitize_dict(sanitizer, item, _depth + 1)
+                        if isinstance(item, dict)
+                        else (
+                            sanitizer.sanitize_text(str(item), context=_CTX_CONFIG).sanitized_text
+                            if isinstance(item, str)
+                            else item
+                        )
+                    )
                     for item in value
                 ]
                 sanitized[safe_key] = sanitized_list
@@ -194,20 +205,14 @@ def sanitize_dict(
                 # SECURITY: Log error type but NOT the value
                 logger.warning(
                     "Non-serializable object in tool parameters",
-                    extra={
-                        "value_type": type(value).__name__,
-                        "key": safe_key
-                    }
+                    extra={"value_type": type(value).__name__, "key": safe_key},
                 )
                 sanitized[safe_key] = f"[SANITIZED:{type(value).__name__}]"
         except Exception as e:
             # SECURITY: Log exception type but NOT the data
             logger.warning(
                 "Sanitization error for key",
-                extra={
-                    "error_type": type(e).__name__,
-                    "key_type": type(key).__name__
-                }
+                extra={"error_type": type(e).__name__, "key_type": type(key).__name__},
             )
             sanitized[str(key)] = "[SANITIZATION_ERROR]"
 
@@ -233,7 +238,9 @@ def _validate_llm_metrics(data: LLMCallTrackingData) -> None:
         raise ValueError(f"estimated_cost_usd must be non-negative, got {data.estimated_cost_usd}")
 
 
-def _sanitize_llm_content(sanitizer: Any, data: LLMCallTrackingData) -> tuple[Any, Any, Optional[str]]:
+def _sanitize_llm_content(
+    sanitizer: Any, data: LLMCallTrackingData
+) -> tuple[Any, Any, Optional[str]]:
     """Sanitize prompt, response, and error message.
 
     Returns:
@@ -250,11 +257,7 @@ def _sanitize_llm_content(sanitizer: Any, data: LLMCallTrackingData) -> tuple[An
     return prompt_result, response_result, safe_error_message
 
 
-def _log_sanitization_activity(
-    llm_call_id: str,
-    prompt_result: Any,
-    response_result: Any
-) -> None:
+def _log_sanitization_activity(llm_call_id: str, prompt_result: Any, response_result: Any) -> None:
     """Log sanitization activity if redactions were made."""
     if prompt_result.was_sanitized or response_result.was_sanitized:
         logger.info(
@@ -264,10 +267,12 @@ def _log_sanitization_activity(
                 "prompt_redactions": prompt_result.num_redactions,
                 "response_redactions": response_result.num_redactions,
                 "redaction_types": list(
-                    set(prompt_result.to_metadata().get("redaction_types", []) +
-                        response_result.to_metadata().get("redaction_types", []))
-                )
-            }
+                    set(
+                        prompt_result.to_metadata().get("redaction_types", [])
+                        + response_result.to_metadata().get("redaction_types", [])
+                    )
+                ),
+            },
         )
 
 
@@ -278,7 +283,7 @@ def _emit_llm_call_event(
     data: LLMCallTrackingData,
     prompt_result: Any,
     response_result: Any,
-    safe_error_message: Optional[str]
+    safe_error_message: Optional[str],
 ) -> None:
     """Emit LLM call event for real-time consumers."""
     if event_bus is None:
@@ -286,34 +291,32 @@ def _emit_llm_call_event(
 
     from src.observability.event_bus import ObservabilityEvent
 
-    event_bus.emit(ObservabilityEvent(
-        event_type=_EVENT_LLM_CALL,
-        timestamp=start_time,
-        data={
-            "llm_call_id": llm_call_id,
-            ObservabilityFields.AGENT_ID: data.agent_id,
-            "provider": data.provider,
-            "model": data.model,
-            "prompt": prompt_result.sanitized_text,
-            "response": response_result.sanitized_text,
-            "prompt_tokens": data.prompt_tokens,
-            "completion_tokens": data.completion_tokens,
-            "latency_ms": data.latency_ms,
-            "estimated_cost_usd": data.estimated_cost_usd,
-            "temperature": data.temperature,
-            "max_tokens": data.max_tokens,
-            ObservabilityFields.STATUS: data.status,
-            ObservabilityFields.ERROR_MESSAGE: safe_error_message,
-        },
-        agent_id=data.agent_id,
-    ))
+    event_bus.emit(
+        ObservabilityEvent(
+            event_type=_EVENT_LLM_CALL,
+            timestamp=start_time,
+            data={
+                "llm_call_id": llm_call_id,
+                ObservabilityFields.AGENT_ID: data.agent_id,
+                "provider": data.provider,
+                "model": data.model,
+                "prompt": prompt_result.sanitized_text,
+                "response": response_result.sanitized_text,
+                "prompt_tokens": data.prompt_tokens,
+                "completion_tokens": data.completion_tokens,
+                "latency_ms": data.latency_ms,
+                "estimated_cost_usd": data.estimated_cost_usd,
+                "temperature": data.temperature,
+                "max_tokens": data.max_tokens,
+                ObservabilityFields.STATUS: data.status,
+                ObservabilityFields.ERROR_MESSAGE: safe_error_message,
+            },
+            agent_id=data.agent_id,
+        )
+    )
 
 
-def _check_llm_alerts(
-    alert_manager: Any,
-    llm_call_id: str,
-    data: LLMCallTrackingData
-) -> None:
+def _check_llm_alerts(alert_manager: Any, llm_call_id: str, data: LLMCallTrackingData) -> None:
     """Check latency and cost alerts for LLM call."""
     if not alert_manager:
         return
@@ -326,8 +329,8 @@ def _check_llm_alerts(
                 ObservabilityFields.AGENT_ID: data.agent_id,
                 "provider": data.provider,
                 "model": data.model,
-                "llm_call_id": llm_call_id
-            }
+                "llm_call_id": llm_call_id,
+            },
         )
 
     if data.estimated_cost_usd > 0:
@@ -338,8 +341,8 @@ def _check_llm_alerts(
                 ObservabilityFields.AGENT_ID: data.agent_id,
                 "provider": data.provider,
                 "model": data.model,
-                "llm_call_id": llm_call_id
-            }
+                "llm_call_id": llm_call_id,
+            },
         )
 
 
@@ -370,14 +373,13 @@ def track_llm_call(
     llm_call_id = str(uuid.uuid4())
     start_time = utcnow()
 
-    prompt_result, response_result, safe_error_message = _sanitize_llm_content(
-        sanitizer, data
-    )
+    prompt_result, response_result, safe_error_message = _sanitize_llm_content(sanitizer, data)
 
     _log_sanitization_activity(llm_call_id, prompt_result, response_result)
 
     # Track LLM call with sanitized content
     from src.observability.backend import LLMCallData as BackendLLMCallData
+
     backend.track_llm_call(
         llm_call_id=llm_call_id,
         agent_id=data.agent_id,
@@ -403,11 +405,12 @@ def track_llm_call(
     )
 
     _emit_llm_call_event(
-        event_bus, llm_call_id, start_time, data,
-        prompt_result, response_result, safe_error_message
+        event_bus, llm_call_id, start_time, data, prompt_result, response_result, safe_error_message
     )
 
     _check_llm_alerts(alert_manager, llm_call_id, data)
+
+    _record_perf_for_llm(data)
 
     return llm_call_id
 
@@ -418,7 +421,7 @@ def _emit_tool_call_event(
     start_time: datetime,
     data: ToolCallTrackingData,
     sanitized_input: Dict[str, Any],
-    sanitized_output: Dict[str, Any]
+    sanitized_output: Dict[str, Any],
 ) -> None:
     """Emit tool call event for real-time consumers."""
     if event_bus is None:
@@ -426,29 +429,29 @@ def _emit_tool_call_event(
 
     from src.observability.event_bus import ObservabilityEvent
 
-    event_bus.emit(ObservabilityEvent(
-        event_type=_EVENT_TOOL_CALL,
-        timestamp=start_time,
-        data={
-            "tool_execution_id": tool_execution_id,
-            ObservabilityFields.AGENT_ID: data.agent_id,
-            "tool_name": data.tool_name,
-            "input_params": sanitized_input,
-            ObservabilityFields.OUTPUT_DATA: sanitized_output,
-            ObservabilityFields.DURATION_SECONDS: data.duration_seconds,
-            ObservabilityFields.STATUS: data.status,
-            ObservabilityFields.ERROR_MESSAGE: data.error_message,
-            "safety_checks": data.safety_checks,
-            "approval_required": data.approval_required,
-        },
-        agent_id=data.agent_id,
-    ))
+    event_bus.emit(
+        ObservabilityEvent(
+            event_type=_EVENT_TOOL_CALL,
+            timestamp=start_time,
+            data={
+                "tool_execution_id": tool_execution_id,
+                ObservabilityFields.AGENT_ID: data.agent_id,
+                "tool_name": data.tool_name,
+                "input_params": sanitized_input,
+                ObservabilityFields.OUTPUT_DATA: sanitized_output,
+                ObservabilityFields.DURATION_SECONDS: data.duration_seconds,
+                ObservabilityFields.STATUS: data.status,
+                ObservabilityFields.ERROR_MESSAGE: data.error_message,
+                "safety_checks": data.safety_checks,
+                "approval_required": data.approval_required,
+            },
+            agent_id=data.agent_id,
+        )
+    )
 
 
 def _check_tool_duration_alert(
-    alert_manager: Any,
-    tool_execution_id: str,
-    data: ToolCallTrackingData
+    alert_manager: Any, tool_execution_id: str, data: ToolCallTrackingData
 ) -> None:
     """Check tool execution duration alerts."""
     if alert_manager and data.duration_seconds > 0:
@@ -460,8 +463,8 @@ def _check_tool_duration_alert(
                 ObservabilityFields.AGENT_ID: data.agent_id,
                 "tool_name": data.tool_name,
                 "tool_execution_id": tool_execution_id,
-                ObservabilityFields.STATUS: data.status
-            }
+                ObservabilityFields.STATUS: data.status,
+            },
         )
 
 
@@ -492,6 +495,7 @@ def track_tool_call(
     sanitized_output = sanitize_dict_fn(data.output_data)
 
     from src.observability.backend import ToolCallData as BackendToolCallData
+
     backend.track_tool_call(
         tool_execution_id=tool_execution_id,
         agent_id=data.agent_id,
@@ -509,19 +513,17 @@ def track_tool_call(
     )
 
     _emit_tool_call_event(
-        event_bus, tool_execution_id, start_time, data,
-        sanitized_input, sanitized_output
+        event_bus, tool_execution_id, start_time, data, sanitized_input, sanitized_output
     )
 
     _check_tool_duration_alert(alert_manager, tool_execution_id, data)
 
+    _record_perf_for_tool(data)
+
     return tool_execution_id
 
 
-def _fill_execution_ids(
-    data: DecisionTrackingData,
-    context: Any
-) -> DecisionTrackingData:
+def _fill_execution_ids(data: DecisionTrackingData, context: Any) -> DecisionTrackingData:
     """Fill in execution IDs from context if not provided."""
     if not data.workflow_execution_id:
         data.workflow_execution_id = context.workflow_id
@@ -555,6 +557,7 @@ def track_decision_outcome(
 
     # Convert DecisionTrackingData to DecisionTrackingParams
     from src.observability.decision_tracker import DecisionTrackingParams
+
     params = DecisionTrackingParams(
         decision_type=data.decision_type,
         decision_data=data.decision_data,
@@ -574,9 +577,7 @@ def track_decision_outcome(
 
     result: str
     if session_stack:
-        result = str(decision_tracker.track(
-            session=session_stack[-1], params=params
-        ))
+        result = str(decision_tracker.track(session=session_stack[-1], params=params))
     else:
         with backend.get_session_context() as session:
             result = str(decision_tracker.track(session=session, params=params))
@@ -631,8 +632,8 @@ def update_agent_merit_score(
             extra={
                 ObservabilityFields.AGENT_NAME: agent_name,
                 "domain": domain,
-                "outcome": decision_outcome
-            }
+                "outcome": decision_outcome,
+            },
         )
 
 
@@ -649,7 +650,7 @@ def aggregate_workflow_metrics_on_success(
         workflow_id: Workflow execution ID
     """
     try:
-        if hasattr(backend, 'aggregate_workflow_metrics'):
+        if hasattr(backend, "aggregate_workflow_metrics"):
             metrics = backend.aggregate_workflow_metrics(workflow_id)
             if metrics:
                 total_cost = metrics.get(ObservabilityFields.TOTAL_COST_USD, 0.0)
@@ -658,12 +659,13 @@ def aggregate_workflow_metrics_on_success(
                     total_llm_calls=metrics.get(ObservabilityFields.TOTAL_LLM_CALLS, 0),
                     total_tool_calls=metrics.get(ObservabilityFields.TOTAL_TOOL_CALLS, 0),
                     total_tokens=metrics.get(ObservabilityFields.TOTAL_TOKENS, 0),
-                    total_cost_usd=total_cost
+                    total_cost_usd=total_cost,
                 )
                 if alert_manager and total_cost > 0:
                     alert_manager.check_metric(
-                        metric_type=_METRIC_COST_USD, value=total_cost,
-                        context={ObservabilityFields.WORKFLOW_ID: workflow_id}
+                        metric_type=_METRIC_COST_USD,
+                        value=total_cost,
+                        context={ObservabilityFields.WORKFLOW_ID: workflow_id},
                     )
     except Exception as e:
         logger.warning(
@@ -697,6 +699,7 @@ def build_extra_metadata(
 @dataclass
 class AgentStartParams:
     """Parameters for tracking agent start."""
+
     agent_id: str
     stage_id: str
     agent_name: str
@@ -718,15 +721,61 @@ def track_agent_start_and_emit(
         params: AgentStartParams with all agent start parameters
     """
     backend.track_agent_start(
-        agent_id=params.agent_id, stage_id=params.stage_id, agent_name=params.agent_name,
-        agent_config=params.sanitized_config, start_time=params.start_time, input_data=params.input_data
+        agent_id=params.agent_id,
+        stage_id=params.stage_id,
+        agent_name=params.agent_name,
+        agent_config=params.sanitized_config,
+        start_time=params.start_time,
+        input_data=params.input_data,
     )
-    emit_event_fn("agent_start", {
-        ObservabilityFields.AGENT_ID: params.agent_id,
-        ObservabilityFields.STAGE_ID: params.stage_id,
-        ObservabilityFields.AGENT_NAME: params.agent_name,
-        ObservabilityFields.START_TIME: params.start_time.isoformat(),
-    })
+    emit_event_fn(
+        "agent_start",
+        {
+            ObservabilityFields.AGENT_ID: params.agent_id,
+            ObservabilityFields.STAGE_ID: params.stage_id,
+            ObservabilityFields.AGENT_NAME: params.agent_name,
+            ObservabilityFields.STATUS: "running",
+            ObservabilityFields.START_TIME: params.start_time.isoformat(),
+        },
+    )
+
+
+def _record_perf_for_llm(data: LLMCallTrackingData) -> None:
+    """Record LLM call latency to performance tracker. Best-effort."""
+    try:
+        from src.observability.performance import get_performance_tracker
+
+        tracker = get_performance_tracker()
+        tracker.record(
+            "llm_call",
+            float(data.latency_ms),
+            {
+                ObservabilityFields.AGENT_ID: data.agent_id,
+                "provider": data.provider,
+                "model": data.model,
+            },
+        )
+    except Exception:  # noqa: BLE001 — perf recording must never break tracking
+        logger.debug("Perf recording failed for llm_call", exc_info=True)
+
+
+def _record_perf_for_tool(data: ToolCallTrackingData) -> None:
+    """Record tool call latency to performance tracker. Best-effort."""
+    try:
+        from src.observability.performance import get_performance_tracker
+
+        tracker = get_performance_tracker()
+        latency_ms = data.duration_seconds * MILLISECONDS_PER_SECOND
+        tracker.record(
+            "tool_execution",
+            latency_ms,
+            {
+                ObservabilityFields.AGENT_ID: data.agent_id,
+                "tool_name": data.tool_name,
+            },
+        )
+    except Exception:  # noqa: BLE001 — perf recording must never break tracking
+        logger.debug("Perf recording failed for tool_execution", exc_info=True)
 
 
 def handle_workflow_success(
@@ -738,21 +787,33 @@ def handle_workflow_success(
     """Handle successful workflow completion."""
     end_time = utcnow()
     backend.track_workflow_end(
-        workflow_id=workflow_id, end_time=end_time,
+        workflow_id=workflow_id,
+        end_time=end_time,
         status=ObservabilityFields.STATUS_COMPLETED,
-        error_message=None, error_stack_trace=None,
+        error_message=None,
+        error_stack_trace=None,
     )
-    emit_event_fn("workflow_end", {
-        ObservabilityFields.WORKFLOW_ID: workflow_id,
-        ObservabilityFields.STATUS: ObservabilityFields.STATUS_COMPLETED,
-        ObservabilityFields.END_TIME: end_time.isoformat(),
-    })
+    emit_event_fn(
+        "workflow_end",
+        {
+            ObservabilityFields.WORKFLOW_ID: workflow_id,
+            ObservabilityFields.STATUS: ObservabilityFields.STATUS_COMPLETED,
+            ObservabilityFields.END_TIME: end_time.isoformat(),
+        },
+    )
     aggregate_workflow_metrics_on_success(
-        backend=backend, alert_manager=alert_manager, workflow_id=workflow_id,
+        backend=backend,
+        alert_manager=alert_manager,
+        workflow_id=workflow_id,
     )
 
 
-def _record_fingerprint_safe(backend: Any, error: Exception, workflow_id: Optional[str] = None, agent_name: Optional[str] = None) -> bool:
+def _record_fingerprint_safe(
+    backend: Any,
+    error: Exception,
+    workflow_id: Optional[str] = None,
+    agent_name: Optional[str] = None,
+) -> bool:
     """Compute and record error fingerprint. Best-effort, never raises.
 
     Returns:
@@ -817,17 +878,42 @@ def handle_workflow_error(
     """Handle workflow execution error."""
     end_time = utcnow()
     backend.track_workflow_end(
-        workflow_id=workflow_id, end_time=end_time,
+        workflow_id=workflow_id,
+        end_time=end_time,
         status=ObservabilityFields.STATUS_FAILED,
-        error_message=str(error), error_stack_trace=get_stack_trace_fn(),
+        error_message=str(error),
+        error_stack_trace=get_stack_trace_fn(),
     )
     _record_fingerprint_safe(backend, error, workflow_id=workflow_id)
-    emit_event_fn("workflow_end", {
+    emit_event_fn(
+        "workflow_end",
+        {
+            ObservabilityFields.WORKFLOW_ID: workflow_id,
+            ObservabilityFields.STATUS: ObservabilityFields.STATUS_FAILED,
+            ObservabilityFields.END_TIME: end_time.isoformat(),
+            ObservabilityFields.ERROR_MESSAGE: str(error),
+        },
+    )
+
+
+def build_stage_start_data(
+    stage_id: str,
+    workflow_id: str,
+    stage_name: str,
+    sanitized_config: Optional[Dict[str, Any]],
+    start_time: datetime,
+) -> Dict[str, Any]:
+    """Build the event data dict for a stage_start event."""
+    data: Dict[str, Any] = {
+        ObservabilityFields.STAGE_ID: stage_id,
         ObservabilityFields.WORKFLOW_ID: workflow_id,
-        ObservabilityFields.STATUS: ObservabilityFields.STATUS_FAILED,
-        ObservabilityFields.END_TIME: end_time.isoformat(),
-        ObservabilityFields.ERROR_MESSAGE: str(error),
-    })
+        "stage_name": stage_name,
+        ObservabilityFields.STATUS: "running",
+        ObservabilityFields.START_TIME: start_time.isoformat(),
+    }
+    if sanitized_config:
+        data["stage_config_snapshot"] = sanitized_config
+    return data
 
 
 def handle_stage_success(
@@ -838,19 +924,21 @@ def handle_stage_success(
     """Handle successful stage completion."""
     end_time = utcnow()
     try:
-        if hasattr(backend, 'aggregate_stage_metrics'):
+        if hasattr(backend, "aggregate_stage_metrics"):
             metrics = backend.aggregate_stage_metrics(stage_id)
             backend.track_stage_end(
-                stage_id=stage_id, end_time=end_time,
+                stage_id=stage_id,
+                end_time=end_time,
                 status=ObservabilityFields.STATUS_COMPLETED,
                 error_message=None,
-                num_agents_executed=metrics.get('num_agents_executed', 0),
-                num_agents_succeeded=metrics.get('num_agents_succeeded', 0),
-                num_agents_failed=metrics.get('num_agents_failed', 0),
+                num_agents_executed=metrics.get("num_agents_executed", 0),
+                num_agents_succeeded=metrics.get("num_agents_succeeded", 0),
+                num_agents_failed=metrics.get("num_agents_failed", 0),
             )
         else:
             backend.track_stage_end(
-                stage_id=stage_id, end_time=end_time,
+                stage_id=stage_id,
+                end_time=end_time,
                 status=ObservabilityFields.STATUS_COMPLETED,
             )
     except Exception as e:
@@ -859,14 +947,18 @@ def handle_stage_success(
             exc_info=True,
         )
         backend.track_stage_end(
-            stage_id=stage_id, end_time=end_time,
+            stage_id=stage_id,
+            end_time=end_time,
             status=ObservabilityFields.STATUS_COMPLETED,
         )
-    emit_event_fn("stage_end", {
-        ObservabilityFields.STAGE_ID: stage_id,
-        ObservabilityFields.STATUS: ObservabilityFields.STATUS_COMPLETED,
-        ObservabilityFields.END_TIME: end_time.isoformat(),
-    })
+    emit_event_fn(
+        "stage_end",
+        {
+            ObservabilityFields.STAGE_ID: stage_id,
+            ObservabilityFields.STATUS: ObservabilityFields.STATUS_COMPLETED,
+            ObservabilityFields.END_TIME: end_time.isoformat(),
+        },
+    )
 
 
 def handle_stage_error(
@@ -880,19 +972,23 @@ def handle_stage_error(
     """Handle stage execution error."""
     end_time = utcnow()
     backend.track_stage_end(
-        stage_id=stage_id, end_time=end_time,
+        stage_id=stage_id,
+        end_time=end_time,
         status=ObservabilityFields.STATUS_FAILED,
         error_message=str(error),
     )
     is_new = _record_fingerprint_safe(backend, error, workflow_id=workflow_id)
     if is_new and alert_manager:
         _alert_new_error_type(alert_manager, error, workflow_id=workflow_id, stage_id=stage_id)
-    emit_event_fn("stage_end", {
-        ObservabilityFields.STAGE_ID: stage_id,
-        ObservabilityFields.STATUS: ObservabilityFields.STATUS_FAILED,
-        ObservabilityFields.END_TIME: end_time.isoformat(),
-        ObservabilityFields.ERROR_MESSAGE: str(error),
-    })
+    emit_event_fn(
+        "stage_end",
+        {
+            ObservabilityFields.STAGE_ID: stage_id,
+            ObservabilityFields.STATUS: ObservabilityFields.STATUS_FAILED,
+            ObservabilityFields.END_TIME: end_time.isoformat(),
+            ObservabilityFields.ERROR_MESSAGE: str(error),
+        },
+    )
 
 
 def handle_agent_success(
@@ -904,14 +1000,18 @@ def handle_agent_success(
     """Handle successful agent completion."""
     end_time = utcnow()
     backend.track_agent_end(
-        agent_id=agent_id, end_time=end_time,
+        agent_id=agent_id,
+        end_time=end_time,
         status=ObservabilityFields.STATUS_COMPLETED,
     )
-    emit_event_fn("agent_end", {
-        ObservabilityFields.AGENT_ID: agent_id,
-        ObservabilityFields.STATUS: ObservabilityFields.STATUS_COMPLETED,
-        ObservabilityFields.END_TIME: end_time.isoformat(),
-    })
+    emit_event_fn(
+        "agent_end",
+        {
+            ObservabilityFields.AGENT_ID: agent_id,
+            ObservabilityFields.STATUS: ObservabilityFields.STATUS_COMPLETED,
+            ObservabilityFields.END_TIME: end_time.isoformat(),
+        },
+    )
     collect_metrics_fn(agent_id)
 
 
@@ -927,19 +1027,25 @@ def handle_agent_error(
     """Handle agent execution error."""
     end_time = utcnow()
     backend.track_agent_end(
-        agent_id=agent_id, end_time=end_time,
+        agent_id=agent_id,
+        end_time=end_time,
         status=ObservabilityFields.STATUS_FAILED,
         error_message=str(error),
     )
-    is_new = _record_fingerprint_safe(backend, error, workflow_id=workflow_id, agent_name=agent_name)
+    is_new = _record_fingerprint_safe(
+        backend, error, workflow_id=workflow_id, agent_name=agent_name
+    )
     if is_new and alert_manager:
         _alert_new_error_type(alert_manager, error, workflow_id=workflow_id, agent_name=agent_name)
-    emit_event_fn("agent_end", {
-        ObservabilityFields.AGENT_ID: agent_id,
-        ObservabilityFields.STATUS: ObservabilityFields.STATUS_FAILED,
-        ObservabilityFields.END_TIME: end_time.isoformat(),
-        ObservabilityFields.ERROR_MESSAGE: str(error),
-    })
+    emit_event_fn(
+        "agent_end",
+        {
+            ObservabilityFields.AGENT_ID: agent_id,
+            ObservabilityFields.STATUS: ObservabilityFields.STATUS_FAILED,
+            ObservabilityFields.END_TIME: end_time.isoformat(),
+            ObservabilityFields.ERROR_MESSAGE: str(error),
+        },
+    )
 
 
 def emit_llm_stream_chunk(
@@ -960,22 +1066,24 @@ def emit_llm_stream_chunk(
     try:
         from src.observability.event_bus import ObservabilityEvent
 
-        event_bus.emit(ObservabilityEvent(
-            event_type=_EVENT_LLM_STREAM_CHUNK,
-            timestamp=utcnow(),
-            data={
-                ObservabilityFields.AGENT_ID: data.agent_id,
-                "content": data.content,
-                "chunk_type": data.chunk_type,
-                "done": data.done,
-                "model": data.model,
-                "prompt_tokens": data.prompt_tokens,
-                "completion_tokens": data.completion_tokens,
-            },
-            workflow_id=data.workflow_id,
-            stage_id=data.stage_id,
-            agent_id=data.agent_id,
-        ))
+        event_bus.emit(
+            ObservabilityEvent(
+                event_type=_EVENT_LLM_STREAM_CHUNK,
+                timestamp=utcnow(),
+                data={
+                    ObservabilityFields.AGENT_ID: data.agent_id,
+                    "content": data.content,
+                    "chunk_type": data.chunk_type,
+                    "done": data.done,
+                    "model": data.model,
+                    "prompt_tokens": data.prompt_tokens,
+                    "completion_tokens": data.completion_tokens,
+                },
+                workflow_id=data.workflow_id,
+                stage_id=data.stage_id,
+                agent_id=data.agent_id,
+            )
+        )
     except Exception:  # noqa: BLE001 -- best-effort streaming event
         pass
 
@@ -1014,12 +1122,15 @@ class TrackerCollaborationMixin:
             service_name=service_name,
             context=context,
         )
-        self._emit_event(_EVENT_SAFETY_VIOLATION, {
-            "violation_severity": violation_severity,
-            "violation_message": violation_message,
-            "policy_name": policy_name,
-            "service_name": service_name,
-        })
+        self._emit_event(
+            _EVENT_SAFETY_VIOLATION,
+            {
+                "violation_severity": violation_severity,
+                "violation_message": violation_message,
+                "policy_name": policy_name,
+                "service_name": service_name,
+            },
+        )
 
     def track_collaboration_event(
         self,
@@ -1034,6 +1145,7 @@ class TrackerCollaborationMixin:
             Event ID string
         """
         from src.observability.collaboration_tracker import CollaborationEventParams
+
         params = CollaborationEventParams(
             event_type=data.event_type,
             stage_id=data.stage_id,
@@ -1043,16 +1155,19 @@ class TrackerCollaborationMixin:
             resolution_strategy=data.resolution_strategy,
             outcome=data.outcome,
             confidence_score=data.confidence_score,
-            extra_metadata=data.extra_metadata
+            extra_metadata=data.extra_metadata,
         )
         result = self._collaboration_tracker.track_collaboration_event(params=params)
-        self._emit_event(_EVENT_COLLABORATION, {
-            "event_type": data.event_type,
-            ObservabilityFields.STAGE_ID: data.stage_id,
-            "agents_involved": data.agents_involved,
-            "outcome": data.outcome,
-            "confidence_score": data.confidence_score,
-        })
+        self._emit_event(
+            _EVENT_COLLABORATION,
+            {
+                "event_type": data.event_type,
+                ObservabilityFields.STAGE_ID: data.stage_id,
+                "agents_involved": data.agents_involved,
+                "outcome": data.outcome,
+                "confidence_score": data.confidence_score,
+            },
+        )
         return str(result)
 
     def update_agent_merit_score(

@@ -15,10 +15,10 @@ agent:
       {{ team_outputs }}
 
       ## Static Check Results
-      {{ stage_outputs.vcs_static_check.output | default('No static check results available') }}
+      {{ static_check_output | default('No static check results available') }}
 
       ## Design Spec (for reference)
-      {{ stage_outputs.vcs_design.decision | default('') }}
+      {{ design_output }}
 
       ## Your Task
       Synthesize all quality perspectives and static check results into a final verdict.

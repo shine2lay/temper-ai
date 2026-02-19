@@ -33,12 +33,12 @@ stage:
     coder_output:
       source: vcs_code_execute.output
       required: true
-    static_check_verdict:
+    static_check_output:
       source: vcs_static_check.output
       required: false
       default: ""
-    design_decision:
-      source: vcs_design.decision
+    design_output:
+      source: vcs_design.output
       required: false
       default: ""
 

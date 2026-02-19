@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class AgentNodeParams:
-    """Parameters for creating agent execution node (bundles 9 params into 1)."""
+    """Parameters for creating agent execution node (bundles 10 params into 1)."""
     agent_name: str
     agent_ref: Any
     stage_name: str
@@ -52,6 +52,7 @@ class AgentNodeParams:
     agent_factory_cls: Any = None
     tracker: Optional[Any] = None
     stage_id: Optional[str] = None
+    tool_executor: Optional[Any] = None
 
 
 @dataclass
@@ -291,6 +292,10 @@ def create_agent_node(params: AgentNodeParams) -> Callable[[Dict[str, Any]], Dic
                 params.agent_name, params.config_loader, params.agent_cache, agent_factory
             )
             input_data = _prepare_agent_input(s)
+
+            # Wire tool_executor from params (not from state dict)
+            if params.tool_executor is not None:
+                input_data['tool_executor'] = params.tool_executor
 
             # Load conversation history for this stage:agent pair
             history_key = make_history_key(params.stage_name, params.agent_name)
@@ -765,6 +770,7 @@ def update_state_with_results(
     stage_status = _compute_stage_status(agent_statuses)
     raw_dict: Dict[str, Any] = {
         StateKeys.DECISION: synthesis_result.decision,
+        StateKeys.OUTPUT: synthesis_result.decision,  # alias for consistency with sequential executor
         StateKeys.AGENT_OUTPUTS: agent_outputs_dict,
         StateKeys.AGENT_STATUSES: agent_statuses,
         StateKeys.AGENT_METRICS: parallel_result.get(StateKeys.AGENT_METRICS, {}),

@@ -216,7 +216,7 @@ class TestRunCommand:
             }
         }
         wf_path = _write_yaml(tmp_path / "workflow.yaml", wf)
-        result = runner.invoke(main, ["run", str(wf_path)])
+        result = runner.invoke(main, ["run", str(wf_path), "--local"])
         assert result.exit_code != 0
         assert "Missing required inputs" in result.output
 
@@ -248,7 +248,7 @@ class TestRunCommand:
             mock_et.return_value.track_workflow.return_value.__exit__ = MagicMock(return_value=False)
 
             result = runner.invoke(main, [
-                "run", str(wf_path),
+                "run", str(wf_path), "--local",
                 "--input", str(input_path),
             ])
             assert result.exit_code == 0
@@ -261,7 +261,7 @@ class TestRunCommand:
     def test_run_empty_workflow(self, runner, tmp_path):
         empty = tmp_path / "empty.yaml"
         empty.write_text("")
-        result = runner.invoke(main, ["run", str(empty)])
+        result = runner.invoke(main, ["run", str(empty), "--local"])
         assert result.exit_code != 0
         assert "Empty workflow file" in result.output
 
@@ -354,7 +354,7 @@ class TestRunCommandAdvanced:
             mock_et.return_value.track_workflow.return_value.__enter__ = MagicMock(return_value="wf-123")
             mock_et.return_value.track_workflow.return_value.__exit__ = MagicMock(return_value=False)
 
-            result = runner.invoke(main, ["run", str(wf_path), "-v"])
+            result = runner.invoke(main, ["run", str(wf_path), "--local", "-v"])
             assert result.exit_code == 0
 
     def test_run_with_output_file(self, runner, tmp_path):
@@ -381,7 +381,7 @@ class TestRunCommandAdvanced:
             mock_et.return_value.track_workflow.return_value.__enter__ = MagicMock(return_value="wf-123")
             mock_et.return_value.track_workflow.return_value.__exit__ = MagicMock(return_value=False)
 
-            result = runner.invoke(main, ["run", str(wf_path), "-o", str(output_path)])
+            result = runner.invoke(main, ["run", str(wf_path), "--local", "-o", str(output_path)])
             assert result.exit_code == 0
             assert output_path.exists()
 
@@ -401,7 +401,7 @@ class TestRunCommandAdvanced:
              patch("src.observability.tracker.ExecutionTracker") as mock_et:
             mock_et.ensure_database.side_effect = PermissionError("Cannot create database")
 
-            result = runner.invoke(main, ["run", str(wf_path)])
+            result = runner.invoke(main, ["run", str(wf_path), "--local"])
             assert result.exit_code != 0
 
     def test_run_compilation_error(self, runner, tmp_path):
@@ -423,7 +423,7 @@ class TestRunCommandAdvanced:
             mock_engine.compile.side_effect = ValueError("Invalid workflow structure")
             mock_er.return_value.get_engine_from_config.return_value = mock_engine
 
-            result = runner.invoke(main, ["run", str(wf_path)])
+            result = runner.invoke(main, ["run", str(wf_path), "--local"])
             assert result.exit_code != 0
             assert "compilation error" in result.output
 
@@ -450,7 +450,7 @@ class TestRunCommandAdvanced:
             mock_et.return_value.track_workflow.return_value.__enter__ = MagicMock(return_value="wf-123")
             mock_et.return_value.track_workflow.return_value.__exit__ = MagicMock(return_value=False)
 
-            result = runner.invoke(main, ["run", str(wf_path)])
+            result = runner.invoke(main, ["run", str(wf_path), "--local"])
             assert result.exit_code != 0
             assert "execution error" in result.output
 

@@ -17,22 +17,17 @@ workflow:
   name: vcs_suggestion
   description: "Multi-perspective triage, design, code, and quality-gate pipeline for The Vibe Coding Squad"
   version: "5.0"
-  engine: native
+  engine: dynamic
   product_type: api
 
   stages:
-    - name: vcs_triage
-      stage_ref: configs/stages/vcs_triage.yaml
-      description: "4 perspectives + decider evaluate suggestion"
+    # - name: vcs_triage
+    #   stage_ref: configs/stages/vcs_triage.yaml
+    #   description: "4 perspectives + decider evaluate suggestion"
 
     - name: vcs_design
       stage_ref: configs/stages/vcs_design.yaml
       description: "Architecture + implementation + safety perspectives + decider produce unified design"
-      depends_on:
-        - vcs_triage
-      # conditional: true  # TEMP BYPASS for Fix 3 testing
-      # condition: "{{ 'DECISION: APPROVE' in (stage_outputs.vcs_triage.decision | default('')) }}"
-      # skip_to: end
 
     - name: vcs_task_planning
       stage_ref: configs/stages/vcs_task_planning.yaml
@@ -59,7 +54,7 @@ workflow:
         - vcs_code_execute
       loops_back_to: vcs_code_execute
       max_loops: 2
-      loop_condition: "{{ 'OVERALL: FAIL' in (stage_outputs.vcs_static_check.output | default('')) }}"
+      loop_condition: "{{ 'OVERALL: FAIL' in (stage_outputs.vcs_static_check.output | default('') | upper) or 'OVERALL:FAIL' in (stage_outputs.vcs_static_check.output | default('') | upper) }}"
 
     - name: vcs_quality_gate
       stage_ref: configs/stages/vcs_quality_gate.yaml
@@ -68,7 +63,7 @@ workflow:
         - vcs_static_check
       loops_back_to: vcs_code_execute
       max_loops: 3
-      loop_condition: "{{ 'OVERALL: FAIL' in (stage_outputs.vcs_quality_gate.decision | default('')) }}"
+      loop_condition: "{{ 'OVERALL: FAIL' in (stage_outputs.vcs_quality_gate.output | default('') | upper) or 'OVERALL:FAIL' in (stage_outputs.vcs_quality_gate.output | default('') | upper) }}"
 
   inputs:
     required:
@@ -94,7 +89,7 @@ workflow:
     on_stage_failure: halt
     max_stage_retries: 2
     escalation_policy: GracefulDegradation
-    enable_rollback: false
+    enable_rollback: true
 
   execution:
     timeout_seconds: 14400
@@ -107,6 +102,14 @@ workflow:
       provider: vllm
       model: qwen3-next
       timeout_seconds: 30
+
+  autonomous_loop:
+    enabled: false
+    learning_enabled: true
+    goals_enabled: true
+    portfolio_enabled: true
+    auto_apply_learning: false
+    auto_apply_goals: false
 
   observability:
     trace_all_decisions: true

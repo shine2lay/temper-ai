@@ -551,4 +551,4 @@ class TestRootRedirect:
     def test_root_redirects(self, client):
         resp = client.get("/", follow_redirects=False)
         assert resp.status_code == 307
-        assert "/dashboard/list.html" in resp.headers["location"]
+        assert "/app" in resp.headers["location"]

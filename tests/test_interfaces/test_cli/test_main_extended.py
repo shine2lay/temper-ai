@@ -83,7 +83,7 @@ class TestWorkflowExecutionWithDetails:
         mock_tracker.return_value = mock_tracker_instance
 
         result = runner.invoke(main, [
-            "run", str(wf_path),
+            "run", str(wf_path), "--local",
             "--show-details",
             "--config-root", str(tmp_path / "configs")
         ])
@@ -125,7 +125,7 @@ class TestWorkflowExecutionWithDetails:
         mock_tracker.return_value = mock_tracker_instance
 
         result = runner.invoke(main, [
-            "run", str(wf_path),
+            "run", str(wf_path), "--local",
             "--config-root", str(tmp_path / "configs")
         ])
 
@@ -204,7 +204,7 @@ class TestRuntimeErrorHandling:
         mock_tracker.return_value = mock_tracker_instance
 
         result = runner.invoke(main, [
-            "run", str(wf_path),
+            "run", str(wf_path), "--local",
             "--config-root", str(tmp_path / "configs")
         ])
 
@@ -235,7 +235,7 @@ class TestRuntimeErrorHandling:
         mock_tracker.return_value = mock_tracker_instance
 
         result = runner.invoke(main, [
-            "run", str(wf_path),
+            "run", str(wf_path), "--local",
             "--config-root", str(tmp_path / "configs")
         ])
 
@@ -270,7 +270,7 @@ class TestKeyboardInterruptHandling:
         mock_tracker.return_value = mock_tracker_instance
 
         result = runner.invoke(main, [
-            "run", str(wf_path),
+            "run", str(wf_path), "--local",
             "--config-root", str(tmp_path / "configs")
         ])
 
@@ -295,7 +295,7 @@ class TestDatabaseInitialization:
         )
 
         result = runner.invoke(main, [
-            "run", str(wf_path),
+            "run", str(wf_path), "--local",
             "--db", "/root/no-permission/db.sqlite",
             "--config-root", str(tmp_path / "configs")
         ])
@@ -336,7 +336,7 @@ class TestInputValidation:
         input_path = _write_yaml(tmp_path / "inputs.yaml", inputs)
 
         result = runner.invoke(main, [
-            "run", str(wf_path),
+            "run", str(wf_path), "--local",
             "--input", str(input_path),
             "--config-root", str(tmp_path / "configs")
         ])
@@ -382,7 +382,7 @@ class TestInputValidation:
         mock_tracker.return_value = mock_tracker_instance
 
         result = runner.invoke(main, [
-            "run", str(wf_path),
+            "run", str(wf_path), "--local",
             "--input", str(input_path),
             "--config-root", str(tmp_path / "configs")
         ])

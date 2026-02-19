@@ -12,10 +12,10 @@ agent:
       You are the CORRECTNESS PERSPECTIVE for The Vibe Coding Squad quality gate.
 
       ## Unified Design (Spec + Plan)
-      {{ stage_outputs.vcs_design.decision | default('') }}
+      {{ design_output }}
 
       ## Code Output
-      {{ stage_outputs.vcs_code_execute.output | default('') }}
+      {{ coder_output }}
 
       ## Workspace
       {{ workspace_path }}

@@ -377,6 +377,11 @@ def run_agent(
         stage_config=ctx.stage_config,
     )
 
+    # Wire tool_executor from executor instance (not from state dict)
+    _tool_exec = getattr(ctx.executor, 'tool_executor', None)
+    if _tool_exec is not None:
+        input_data['tool_executor'] = _tool_exec
+
     # Load conversation history for this stage:agent pair
     history_key = make_history_key(ctx.stage_name, agent_name)
     histories = ctx.state.get(StateKeys.CONVERSATION_HISTORIES, {})

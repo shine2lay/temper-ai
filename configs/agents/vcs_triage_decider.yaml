@@ -17,7 +17,7 @@ agent:
       {{ suggestion_text }}
 
       PERSPECTIVES FROM SPECIALIST AGENTS:
-      {{ team_outputs | default(stage_outputs.get('vcs_triage_perspectives', {}).get('decision', '')) }}
+      {{ team_outputs }}
 
       DECISION RULES (apply in order):
       1. DUPLICATE CHECK (mandatory, overrides all other rules):

@@ -4,6 +4,7 @@ Execution tracker for observability.
 Tracks workflow, stage, agent, LLM, and tool executions in real-time,
 writing to pluggable observability backends (SQL, Prometheus, S3, etc.).
 """
+
 import logging
 import uuid
 from contextlib import asynccontextmanager as _asynccontextmanager, contextmanager
@@ -17,6 +18,7 @@ if TYPE_CHECKING:
 from src.shared.core.context import ExecutionContext, current_execution_context
 from src.storage.database.datetime_utils import utcnow
 from src.observability._tracker_helpers import (
+    AgentStartParams,
     DecisionTrackingData,
     LLMCallTrackingData,
     ToolCallTrackingData,
@@ -35,6 +37,9 @@ from src.observability._tracker_helpers import (
 )
 from src.observability._tracker_helpers import (
     handle_stage_error as _handle_stage_error,
+)
+from src.observability._tracker_helpers import (
+    build_stage_start_data as _build_stage_start_data,
 )
 from src.observability._tracker_helpers import (
     handle_stage_success as _handle_stage_success,
@@ -59,7 +64,7 @@ from src.observability._tracker_helpers import (
 )
 from src.observability.backend import ObservabilityBackend
 from src.observability.collaboration_tracker import CollaborationEventTracker
-from src.observability.constants import ObservabilityFields
+from src.observability.constants import MS_PER_SECOND, ObservabilityFields
 from src.observability.decision_tracker import DecisionTracker
 from src.observability.event_bus import ObservabilityEvent, ObservabilityEventBus
 from src.observability.metric_aggregator import MetricAggregator
@@ -79,6 +84,7 @@ _EVENT_STAGE_OUTPUT = "stage_output"
 @dataclass
 class WorkflowTrackingParams:
     """Parameters for tracking workflow execution."""
+
     workflow_name: str
     workflow_config: Dict[str, Any]
     trigger_type: Optional[str] = None
@@ -96,13 +102,21 @@ class WorkflowTrackingParams:
 
 
 # Helper functions for backward compatibility
-def _resolve_workflow_params(workflow_name_or_params: Any = None, workflow_config: Any = None, **kwargs: Any) -> WorkflowTrackingParams:
+def _resolve_workflow_params(
+    workflow_name_or_params: Any = None, workflow_config: Any = None, **kwargs: Any
+) -> WorkflowTrackingParams:
     """Resolve workflow tracking parameters from old or new calling conventions."""
     if isinstance(workflow_name_or_params, WorkflowTrackingParams):
         return workflow_name_or_params
 
-    wf_name = workflow_name_or_params if workflow_name_or_params is not None else kwargs.pop('workflow_name', '')
-    wf_config = workflow_config if workflow_config is not None else kwargs.pop('workflow_config', {})
+    wf_name = (
+        workflow_name_or_params
+        if workflow_name_or_params is not None
+        else kwargs.pop("workflow_name", "")
+    )
+    wf_config = (
+        workflow_config if workflow_config is not None else kwargs.pop("workflow_config", {})
+    )
     return WorkflowTrackingParams(workflow_name=wf_name, workflow_config=wf_config, **kwargs)
 
 
@@ -117,7 +131,7 @@ def _resolve_llm_data(data_or_agent_id: Any = None, **kwargs: Any) -> LLMCallTra
         return data_or_agent_id
 
     if data_or_agent_id is not None:
-        kwargs.setdefault('agent_id', data_or_agent_id)
+        kwargs.setdefault("agent_id", data_or_agent_id)
     return LLMCallTrackingData(**kwargs)
 
 
@@ -132,8 +146,130 @@ def _resolve_tool_data(data_or_agent_id: Any = None, **kwargs: Any) -> ToolCallT
         return data_or_agent_id
 
     if data_or_agent_id is not None:
-        kwargs.setdefault('agent_id', data_or_agent_id)
+        kwargs.setdefault("agent_id", data_or_agent_id)
     return ToolCallTrackingData(**kwargs)
+
+
+def _record_perf_best_effort(
+    perf_tracker: Any,
+    operation: str,
+    start_time: Any,
+    context: Dict[str, Any],
+) -> None:
+    """Record performance metric. Best-effort: never raises."""
+    try:
+        latency_ms = (utcnow() - start_time).total_seconds() * MS_PER_SECOND
+        perf_tracker.record(operation, latency_ms, context)
+    except Exception:  # noqa: BLE001 — perf recording must never break tracking
+        logger.debug("Performance recording failed for %s", operation, exc_info=True)
+
+
+def _start_workflow_tracking(
+    backend: Any,
+    emit_fn: Any,
+    workflow_id: str,
+    params: WorkflowTrackingParams,
+    start_time: Any,
+) -> None:
+    """Prepare data and record workflow start with backend + event bus (sync)."""
+    sanitized_config, start_data = _prepare_workflow_start(params)
+    backend.track_workflow_start(
+        workflow_id=workflow_id,
+        workflow_name=params.workflow_name,
+        workflow_config=sanitized_config,
+        start_time=start_time,
+        data=start_data,
+    )
+    emit_fn(_EVENT_WORKFLOW_START, _workflow_start_event_data(workflow_id, params, start_time))
+
+
+async def _astart_workflow_tracking(
+    backend: Any,
+    emit_fn: Any,
+    workflow_id: str,
+    params: WorkflowTrackingParams,
+    start_time: Any,
+) -> None:
+    """Prepare data and record workflow start with backend + event bus (async)."""
+    sanitized_config, start_data = _prepare_workflow_start(params)
+    await backend.atrack_workflow_start(
+        workflow_id=workflow_id,
+        workflow_name=params.workflow_name,
+        workflow_config=sanitized_config,
+        start_time=start_time,
+        data=start_data,
+    )
+    emit_fn(_EVENT_WORKFLOW_START, _workflow_start_event_data(workflow_id, params, start_time))
+
+
+def _prepare_workflow_start(params: WorkflowTrackingParams) -> tuple:
+    """Prepare sanitized config and WorkflowStartData for backend tracking."""
+    from src.observability.backend import WorkflowStartData
+
+    sanitized_config = sanitize_config_for_display(params.workflow_config)
+    extra_metadata = _build_extra_metadata(
+        params.experiment_id,
+        params.variant_id,
+        params.assignment_strategy,
+        params.assignment_context,
+        params.custom_metrics,
+    )
+    start_data = WorkflowStartData(
+        trigger_type=params.trigger_type,
+        trigger_data=params.trigger_data,
+        optimization_target=params.optimization_target,
+        product_type=params.product_type,
+        environment=params.environment,
+        tags=params.tags,
+        extra_metadata=extra_metadata,
+        cost_attribution_tags=params.cost_attribution_tags,
+    )
+    return sanitized_config, start_data
+
+
+def _workflow_start_event_data(
+    workflow_id: str,
+    params: WorkflowTrackingParams,
+    start_time: Any,
+) -> Dict[str, Any]:
+    """Build event data dict for workflow start emission."""
+    data: Dict[str, Any] = {
+        ObservabilityFields.WORKFLOW_ID: workflow_id,
+        "workflow_name": params.workflow_name,
+        ObservabilityFields.START_TIME: start_time.isoformat(),
+        ObservabilityFields.STATUS: "running",
+        "environment": params.environment,
+        "tags": params.tags,
+    }
+    # Include sanitized workflow config so frontend can build DAG edges
+    sanitized = sanitize_config_for_display(params.workflow_config)
+    if sanitized:
+        data["workflow_config"] = sanitized
+    return data
+
+
+def _should_skip_sampling(
+    sampling_strategy: Any, workflow_id: str, params: WorkflowTrackingParams
+) -> bool:
+    """Check if workflow should skip backend tracking based on sampling.
+
+    Returns True if the workflow should be skipped (not sampled).
+    """
+    if sampling_strategy is None:
+        return False
+    from src.observability.sampling import SamplingContext
+
+    ctx = SamplingContext(
+        workflow_id=workflow_id,
+        workflow_name=params.workflow_name,
+        environment=params.environment or "",
+        tags=params.tags or [],
+    )
+    decision = sampling_strategy.should_sample(ctx)
+    if not decision.sampled:
+        logger.debug("Workflow %s not sampled: %s", workflow_id, decision.reason)
+        return True
+    return False
 
 
 class _TrackerAsyncMixin:
@@ -145,6 +281,8 @@ class _TrackerAsyncMixin:
         alert_manager: Any
         sanitizer: Any
         _event_bus: Optional[ObservabilityEventBus]
+        _sampling_strategy: Any
+        _performance_tracker: Any
 
         @property
         def context(self) -> ExecutionContext:
@@ -173,62 +311,66 @@ class _TrackerAsyncMixin:
                     self._session_stack.pop()
 
     @_asynccontextmanager
-    async def atrack_workflow(self, workflow_name_or_params: Any = None, workflow_config: Any = None, **kwargs: Any) -> AsyncGenerator[str, None]:
+    async def atrack_workflow(
+        self, workflow_name_or_params: Any = None, workflow_config: Any = None, **kwargs: Any
+    ) -> AsyncGenerator[str, None]:
         """Async version of track_workflow."""
         params = _resolve_workflow_params(workflow_name_or_params, workflow_config, **kwargs)
         workflow_id = f"wf-{uuid.uuid4()}"
         self.context.workflow_id = workflow_id
         start_time = utcnow()
-        sanitized_config = sanitize_config_for_display(params.workflow_config)
-        extra_metadata = _build_extra_metadata(
-            params.experiment_id, params.variant_id,
-            params.assignment_strategy, params.assignment_context,
-            params.custom_metrics,
-        )
+
+        # Sampling: skip backend tracking if not sampled
+        if _should_skip_sampling(self._sampling_strategy, workflow_id, params):
+            try:
+                yield workflow_id
+            finally:
+                self.context.workflow_id = None
+            return
 
         async with self.backend.aget_session_context() as session:
             self._session_stack.append(session)
-            from src.observability.backend import WorkflowStartData
-            await self.backend.atrack_workflow_start(
-                workflow_id=workflow_id, workflow_name=params.workflow_name,
-                workflow_config=sanitized_config, start_time=start_time,
-                data=WorkflowStartData(
-                    trigger_type=params.trigger_type,
-                    trigger_data=params.trigger_data,
-                    optimization_target=params.optimization_target,
-                    product_type=params.product_type,
-                    environment=params.environment, tags=params.tags,
-                    extra_metadata=extra_metadata,
-                    cost_attribution_tags=params.cost_attribution_tags,
-                ),
+            await _astart_workflow_tracking(
+                self.backend,
+                self._emit_event,
+                workflow_id,
+                params,
+                start_time,
             )
-            self._emit_event(_EVENT_WORKFLOW_START, {
-                ObservabilityFields.WORKFLOW_ID: workflow_id,
-                "workflow_name": params.workflow_name,
-                ObservabilityFields.START_TIME: start_time.isoformat(),
-                "environment": params.environment,
-                "tags": params.tags,
-            })
             try:
                 yield workflow_id
                 _handle_workflow_success(
-                    self.backend, self.alert_manager,
-                    self._emit_event, workflow_id,
+                    self.backend,
+                    self.alert_manager,
+                    self._emit_event,
+                    workflow_id,
                 )
             except Exception as e:
                 _handle_workflow_error(
-                    self.backend, self._emit_event,
-                    self._get_stack_trace, workflow_id, e,
+                    self.backend,
+                    self._emit_event,
+                    self._get_stack_trace,
+                    workflow_id,
+                    e,
                 )
                 raise
             finally:
                 self._session_stack.pop()
                 self.context.workflow_id = None
+                _record_perf_best_effort(
+                    self._performance_tracker,
+                    "workflow_execution",
+                    start_time,
+                    {"workflow_id": workflow_id},
+                )
 
     @_asynccontextmanager
     async def atrack_stage(
-        self, stage_name: str, stage_config: Dict[str, Any],
-        workflow_id: str, input_data: Optional[Dict[str, Any]] = None,
+        self,
+        stage_name: str,
+        stage_config: Dict[str, Any],
+        workflow_id: str,
+        input_data: Optional[Dict[str, Any]] = None,
     ) -> AsyncGenerator[str, None]:
         """Async version of track_stage."""
         stage_id = str(uuid.uuid4())
@@ -238,62 +380,81 @@ class _TrackerAsyncMixin:
 
         async with self._aensure_session():
             await self.backend.atrack_stage_start(
-                stage_id=stage_id, workflow_id=workflow_id,
-                stage_name=stage_name, stage_config=sanitized_config,
-                start_time=start_time, input_data=input_data,
+                stage_id=stage_id,
+                workflow_id=workflow_id,
+                stage_name=stage_name,
+                stage_config=sanitized_config,
+                start_time=start_time,
+                input_data=input_data,
             )
-            self._emit_event(_EVENT_STAGE_START, {
-                ObservabilityFields.STAGE_ID: stage_id,
-                ObservabilityFields.WORKFLOW_ID: workflow_id,
-                "stage_name": stage_name,
-                ObservabilityFields.START_TIME: start_time.isoformat(),
-            })
+            self._emit_event(
+                _EVENT_STAGE_START,
+                _build_stage_start_data(
+                    stage_id, workflow_id, stage_name,
+                    sanitized_config, start_time,
+                ),
+            )
             try:
                 yield stage_id
-                _handle_stage_success(
-                    self.backend, self._emit_event, stage_id,
-                )
+                _handle_stage_success(self.backend, self._emit_event, stage_id)
             except Exception as e:
                 _handle_stage_error(
-                    self.backend, self._emit_event, stage_id, e,
+                    self.backend,
+                    self._emit_event,
+                    stage_id,
+                    e,
                     workflow_id=self.context.workflow_id,
                     alert_manager=self.alert_manager,
                 )
                 raise
             finally:
                 self.context.stage_id = None
+                _record_perf_best_effort(
+                    self._performance_tracker,
+                    "stage_execution",
+                    start_time,
+                    {"stage_id": stage_id},
+                )
 
     @_asynccontextmanager
     async def atrack_agent(
-        self, agent_name: str, agent_config: Dict[str, Any],
-        stage_id: str, input_data: Optional[Dict[str, Any]] = None,
+        self,
+        agent_name: str,
+        agent_config: Dict[str, Any],
+        stage_id: str,
+        input_data: Optional[Dict[str, Any]] = None,
     ) -> AsyncGenerator[str, None]:
         """Async version of track_agent."""
-        agent_id = str(uuid.uuid4())
-        self.context.agent_id = agent_id
+        self.context.agent_id = agent_id = str(uuid.uuid4())
         start_time = utcnow()
         sanitized_config = sanitize_config_for_display(agent_config)
-
         async with self._aensure_session():
-            from src.observability._tracker_helpers import AgentStartParams
             _track_agent_start_and_emit(
-                self.backend, self._emit_event,
+                self.backend,
+                self._emit_event,
                 AgentStartParams(
-                    agent_id=agent_id, stage_id=stage_id,
+                    agent_id=agent_id,
+                    stage_id=stage_id,
                     agent_name=agent_name,
                     sanitized_config=sanitized_config,
-                    start_time=start_time, input_data=input_data,
+                    start_time=start_time,
+                    input_data=input_data,
                 ),
             )
             try:
                 yield agent_id
                 _handle_agent_success(
-                    self.backend, self._emit_event,
-                    self._collect_agent_metrics, agent_id,
+                    self.backend,
+                    self._emit_event,
+                    self._collect_agent_metrics,
+                    agent_id,
                 )
             except Exception as e:
                 _handle_agent_error(
-                    self.backend, self._emit_event, agent_id, e,
+                    self.backend,
+                    self._emit_event,
+                    agent_id,
+                    e,
                     workflow_id=self.context.workflow_id,
                     agent_name=agent_name,
                     alert_manager=self.alert_manager,
@@ -301,6 +462,12 @@ class _TrackerAsyncMixin:
                 raise
             finally:
                 self.context.agent_id = None
+                _record_perf_best_effort(
+                    self._performance_tracker,
+                    "agent_execution",
+                    start_time,
+                    {"agent_id": agent_id},
+                )
 
     async def atrack_llm_call(
         self,
@@ -374,6 +541,7 @@ class ExecutionTracker(_TrackerAsyncMixin, TrackerCollaborationMixin):
 
         if backend is None:
             from src.observability.backends import SQLObservabilityBackend
+
             backend = SQLObservabilityBackend()
 
         self.backend = backend
@@ -382,10 +550,16 @@ class ExecutionTracker(_TrackerAsyncMixin, TrackerCollaborationMixin):
 
         if alert_manager is None:
             from src.observability.alerting import AlertManager
+
             alert_manager = AlertManager()
         self.alert_manager = alert_manager
 
         self._event_bus = event_bus
+
+        # Lazy import to avoid cross-domain fan-out
+        from src.observability.performance import get_performance_tracker
+
+        self._performance_tracker = get_performance_tracker()
 
         self._decision_tracker = DecisionTracker(sanitize_fn=self._sanitize_dict)
         self._metric_aggregator = MetricAggregator(
@@ -410,6 +584,7 @@ class ExecutionTracker(_TrackerAsyncMixin, TrackerCollaborationMixin):
     def ensure_database(db_url: str) -> None:
         """Ensure observability database is initialized."""
         from src.storage.database import get_database, init_database
+
         try:
             get_database()
         except RuntimeError:
@@ -456,7 +631,9 @@ class ExecutionTracker(_TrackerAsyncMixin, TrackerCollaborationMixin):
         self._event_bus.emit(event)
 
     @contextmanager
-    def track_workflow(self, workflow_name_or_params: Any = None, workflow_config: Any = None, **kwargs: Any) -> Generator[str, None, None]:
+    def track_workflow(
+        self, workflow_name_or_params: Any = None, workflow_config: Any = None, **kwargs: Any
+    ) -> Generator[str, None, None]:
         """Track workflow execution.
 
         Args:
@@ -472,48 +649,50 @@ class ExecutionTracker(_TrackerAsyncMixin, TrackerCollaborationMixin):
         self.context.workflow_id = workflow_id
 
         start_time = utcnow()
-        sanitized_config = sanitize_config_for_display(params.workflow_config)
-        extra_metadata = _build_extra_metadata(
-            params.experiment_id, params.variant_id, params.assignment_strategy,
-            params.assignment_context, params.custom_metrics
-        )
+
+        # Sampling: skip backend tracking if not sampled
+        if _should_skip_sampling(self._sampling_strategy, workflow_id, params):
+            try:
+                yield workflow_id
+            finally:
+                self.context.workflow_id = None
+            return
 
         with self.backend.get_session_context() as session:
             self._session_stack.append(session)
-
-            from src.observability.backend import WorkflowStartData
-            self.backend.track_workflow_start(
-                workflow_id=workflow_id, workflow_name=params.workflow_name,
-                workflow_config=sanitized_config, start_time=start_time,
-                data=WorkflowStartData(
-                    trigger_type=params.trigger_type, trigger_data=params.trigger_data,
-                    optimization_target=params.optimization_target, product_type=params.product_type,
-                    environment=params.environment, tags=params.tags,
-                    extra_metadata=extra_metadata,
-                    cost_attribution_tags=params.cost_attribution_tags,
-                )
+            _start_workflow_tracking(
+                self.backend,
+                self._emit_event,
+                workflow_id,
+                params,
+                start_time,
             )
-            self._emit_event(_EVENT_WORKFLOW_START, {
-                ObservabilityFields.WORKFLOW_ID: workflow_id,
-                "workflow_name": params.workflow_name,
-                ObservabilityFields.START_TIME: start_time.isoformat(),
-                "environment": params.environment,
-                "tags": params.tags,
-            })
-
             try:
                 yield workflow_id
                 _handle_workflow_success(
-                    self.backend, self.alert_manager, self._emit_event, workflow_id,
+                    self.backend,
+                    self.alert_manager,
+                    self._emit_event,
+                    workflow_id,
                 )
             except Exception as e:
                 _handle_workflow_error(
-                    self.backend, self._emit_event, self._get_stack_trace, workflow_id, e,
+                    self.backend,
+                    self._emit_event,
+                    self._get_stack_trace,
+                    workflow_id,
+                    e,
                 )
                 raise
             finally:
                 self._session_stack.pop()
                 self.context.workflow_id = None
+                _record_perf_best_effort(
+                    self._performance_tracker,
+                    "workflow_execution",
+                    start_time,
+                    {"workflow_id": workflow_id},
+                )
 
     @contextmanager
     def _ensure_session(self) -> Generator[None, None, None]:
@@ -535,69 +714,95 @@ class ExecutionTracker(_TrackerAsyncMixin, TrackerCollaborationMixin):
 
     @contextmanager
     def track_stage(
-        self, stage_name: str, stage_config: Dict[str, Any],
-        workflow_id: str, input_data: Optional[Dict[str, Any]] = None
+        self,
+        stage_name: str,
+        stage_config: Dict[str, Any],
+        workflow_id: str,
+        input_data: Optional[Dict[str, Any]] = None,
     ) -> Generator[str, None, None]:
         """Track stage execution."""
         stage_id = str(uuid.uuid4())
         self.context.stage_id = stage_id
-
         start_time = utcnow()
         sanitized_config = sanitize_config_for_display(stage_config)
 
         with self._ensure_session():
             self.backend.track_stage_start(
-                stage_id=stage_id, workflow_id=workflow_id, stage_name=stage_name,
-                stage_config=sanitized_config, start_time=start_time, input_data=input_data
+                stage_id=stage_id,
+                workflow_id=workflow_id,
+                stage_name=stage_name,
+                stage_config=sanitized_config,
+                start_time=start_time,
+                input_data=input_data,
             )
-            self._emit_event(_EVENT_STAGE_START, {
-                ObservabilityFields.STAGE_ID: stage_id,
-                ObservabilityFields.WORKFLOW_ID: workflow_id,
-                "stage_name": stage_name,
-                ObservabilityFields.START_TIME: start_time.isoformat(),
-            })
+            self._emit_event(
+                _EVENT_STAGE_START,
+                _build_stage_start_data(
+                    stage_id, workflow_id, stage_name,
+                    sanitized_config, start_time,
+                ),
+            )
             try:
                 yield stage_id
                 _handle_stage_success(self.backend, self._emit_event, stage_id)
             except Exception as e:
                 _handle_stage_error(
-                    self.backend, self._emit_event, stage_id, e,
+                    self.backend,
+                    self._emit_event,
+                    stage_id,
+                    e,
                     workflow_id=self.context.workflow_id,
                     alert_manager=self.alert_manager,
                 )
                 raise
             finally:
                 self.context.stage_id = None
+                _record_perf_best_effort(
+                    self._performance_tracker,
+                    "stage_execution",
+                    start_time,
+                    {"stage_id": stage_id},
+                )
 
     @contextmanager
     def track_agent(
-        self, agent_name: str, agent_config: Dict[str, Any],
-        stage_id: str, input_data: Optional[Dict[str, Any]] = None
+        self,
+        agent_name: str,
+        agent_config: Dict[str, Any],
+        stage_id: str,
+        input_data: Optional[Dict[str, Any]] = None,
     ) -> Generator[str, None, None]:
         """Track agent execution."""
-        agent_id = str(uuid.uuid4())
-        self.context.agent_id = agent_id
-
+        self.context.agent_id = agent_id = str(uuid.uuid4())
         start_time = utcnow()
         sanitized_config = sanitize_config_for_display(agent_config)
-
         with self._ensure_session():
-            from src.observability._tracker_helpers import AgentStartParams
             _track_agent_start_and_emit(
-                self.backend, self._emit_event,
+                self.backend,
+                self._emit_event,
                 AgentStartParams(
-                    agent_id=agent_id, stage_id=stage_id, agent_name=agent_name,
-                    sanitized_config=sanitized_config, start_time=start_time, input_data=input_data
-                )
+                    agent_id=agent_id,
+                    stage_id=stage_id,
+                    agent_name=agent_name,
+                    sanitized_config=sanitized_config,
+                    start_time=start_time,
+                    input_data=input_data,
+                ),
             )
             try:
                 yield agent_id
                 _handle_agent_success(
-                    self.backend, self._emit_event, self._collect_agent_metrics, agent_id,
+                    self.backend,
+                    self._emit_event,
+                    self._collect_agent_metrics,
+                    agent_id,
                 )
             except Exception as e:
                 _handle_agent_error(
-                    self.backend, self._emit_event, agent_id, e,
+                    self.backend,
+                    self._emit_event,
+                    agent_id,
+                    e,
                     workflow_id=self.context.workflow_id,
                     agent_name=agent_name,
                     alert_manager=self.alert_manager,
@@ -605,6 +810,12 @@ class ExecutionTracker(_TrackerAsyncMixin, TrackerCollaborationMixin):
                 raise
             finally:
                 self.context.agent_id = None
+                _record_perf_best_effort(
+                    self._performance_tracker,
+                    "agent_execution",
+                    start_time,
+                    {"agent_id": agent_id},
+                )
 
     def track_llm_call(
         self,
@@ -664,26 +875,36 @@ class ExecutionTracker(_TrackerAsyncMixin, TrackerCollaborationMixin):
             params: AgentOutputParams with all agent output parameters
         """
         self._metric_aggregator.set_agent_output(params)
-        self._emit_event(_EVENT_AGENT_OUTPUT, {
-            ObservabilityFields.AGENT_ID: params.agent_id,
-            "confidence_score": params.confidence_score,
-            ObservabilityFields.TOTAL_TOKENS: params.total_tokens,
-            "estimated_cost_usd": params.estimated_cost_usd,
-            "num_llm_calls": params.num_llm_calls,
-            "num_tool_calls": params.num_tool_calls,
-        })
+        self._emit_event(
+            _EVENT_AGENT_OUTPUT,
+            {
+                ObservabilityFields.AGENT_ID: params.agent_id,
+                "confidence_score": params.confidence_score,
+                ObservabilityFields.TOTAL_TOKENS: params.total_tokens,
+                "estimated_cost_usd": params.estimated_cost_usd,
+                "num_llm_calls": params.num_llm_calls,
+                "num_tool_calls": params.num_tool_calls,
+            },
+        )
 
     def set_stage_output(
-        self, stage_id: str, output_data: Dict[str, Any],
+        self,
+        stage_id: str,
+        output_data: Dict[str, Any],
         output_lineage: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Set stage output data."""
         self._metric_aggregator.set_stage_output(
-            stage_id=stage_id, output_data=output_data, output_lineage=output_lineage,
+            stage_id=stage_id,
+            output_data=output_data,
+            output_lineage=output_lineage,
         )
-        self._emit_event(_EVENT_STAGE_OUTPUT, {
-            ObservabilityFields.STAGE_ID: stage_id,
-        })
+        self._emit_event(
+            _EVENT_STAGE_OUTPUT,
+            {
+                ObservabilityFields.STAGE_ID: stage_id,
+            },
+        )
 
     def track_decision_outcome(self, data: DecisionTrackingData) -> str:
         """Track decision outcome.
@@ -701,4 +922,3 @@ class ExecutionTracker(_TrackerAsyncMixin, TrackerCollaborationMixin):
             session_stack=self._session_stack,
             data=data,
         )
-

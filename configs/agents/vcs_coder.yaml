@@ -19,16 +19,16 @@ agent:
       You MUST use full absolute paths starting with {{ workspace_path }} for every file.
 
       ## Unified Design (Spec + Plan)
-      {{ stage_outputs.get('vcs_design', {}).get('decision', '') or stage_outputs.get('vcs_design_decision', {}).get('output', '') }}
+      {{ design_output }}
 
       ## Detailed Task Specs (FOLLOW THESE EXACTLY)
       The task planners have produced exact file-level specifications below.
       Use the EXACT class names, field names, types, imports, and function
       signatures specified. Do NOT rename anything or change types.
 
-      {{ stage_outputs.vcs_task_planning.output | default('') }}
+      {{ task_specs }}
 
-      {% set validate_output = stage_outputs.get('vcs_quality_gate', {}).get('decision', '') or stage_outputs.get('vcs_quality_gate_decision', {}).get('output', '') %}
+      {% set validate_output = (stage_outputs.vcs_quality_gate | default({})).get('output', '') %}
       {% set static_output = (stage_outputs.vcs_static_check | default({})).get('output', '') %}
       {% if validate_output %}
       ## Validation Feedback (FIX THESE ISSUES)

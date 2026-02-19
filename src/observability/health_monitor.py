@@ -3,10 +3,11 @@
 Checks buffer health (DLQ size, retry queue, pending IDs) and optionally
 fires alerts when thresholds are breached.
 """
+
 import logging
 import threading
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from src.shared.constants.limits import THRESHOLD_LARGE_COUNT, THRESHOLD_MEDIUM_COUNT
 
@@ -40,20 +41,34 @@ class ObservabilityHealthMonitor:
         buffer: Optional[Any] = None,
         alert_manager: Optional[Any] = None,
         check_interval: int = DEFAULT_CHECK_INTERVAL_SECONDS,
+        backend: Optional[Any] = None,
+        db_session_factory: Optional[Callable] = None,
     ):
         self._buffer = buffer
         self._alert_manager = alert_manager
         self._check_interval = check_interval
+        self._backend_ref = backend
+        self._db_session_factory = db_session_factory
         self._check_thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
 
     def check_health(self) -> HealthStatus:
         """Check current health of the observability pipeline."""
-        if self._buffer is None:
-            return HealthStatus(healthy=True, stats={})
+        issues: List[str] = []
+        stats: Dict[str, Any] = {}
 
-        stats = self._buffer.get_stats()
-        issues = _evaluate_thresholds(stats)
+        # DB connectivity check
+        if self._db_session_factory is not None:
+            issues.extend(_check_db_health(self._db_session_factory))
+
+        # Backend responsiveness check
+        if self._backend_ref is not None:
+            issues.extend(_check_backend_health(self._backend_ref))
+
+        # Buffer threshold check (existing)
+        if self._buffer is not None:
+            stats = self._buffer.get_stats()
+            issues.extend(_evaluate_thresholds(stats))
 
         healthy = len(issues) == 0
         return HealthStatus(healthy=healthy, issues=issues, stats=stats)
@@ -63,9 +78,7 @@ class ObservabilityHealthMonitor:
         if self._check_thread and self._check_thread.is_alive():
             return
         self._stop_event.clear()
-        self._check_thread = threading.Thread(
-            target=self._check_loop, daemon=True
-        )
+        self._check_thread = threading.Thread(target=self._check_loop, daemon=True)
         self._check_thread.start()
 
     def stop(self) -> None:
@@ -77,7 +90,9 @@ class ObservabilityHealthMonitor:
 
     def _check_loop(self) -> None:
         """Background loop for periodic health checks."""
-        while not self._stop_event.wait(timeout=self._check_interval):  # intentional polling interval
+        while not self._stop_event.wait(
+            timeout=self._check_interval
+        ):  # intentional polling interval
             try:
                 status = self.check_health()
                 if not status.healthy:
@@ -99,6 +114,33 @@ class ObservabilityHealthMonitor:
             )
         except Exception:  # noqa: BLE001 -- alerting must never disrupt
             logger.debug("Health alert failed", exc_info=True)
+
+
+def _check_db_health(db_session_factory: Any) -> List[str]:
+    """Check database connectivity. Returns list of issues."""
+    import sqlalchemy as sa  # lazy import to avoid top-level dep
+
+    issues: List[str] = []
+    try:
+        session = db_session_factory()
+        try:
+            session.execute(sa.text("SELECT 1"))
+        finally:
+            session.close()
+    except Exception as exc:  # noqa: BLE001 -- health check best-effort
+        issues.append(f"Database connectivity failed: {type(exc).__name__}")
+    return issues
+
+
+def _check_backend_health(backend: Any) -> List[str]:
+    """Check backend responsiveness. Returns list of issues."""
+    issues: List[str] = []
+    try:
+        if hasattr(backend, "get_stats"):
+            backend.get_stats()
+    except Exception as exc:  # noqa: BLE001 -- health check best-effort
+        issues.append(f"Backend health check failed: {type(exc).__name__}")
+    return issues
 
 
 def _format_threshold_warning(
@@ -128,15 +170,11 @@ def _evaluate_thresholds(stats: Dict[str, Any]) -> List[str]:
             _format_threshold_warning("DLQ size", dlq_size, THRESHOLD_LARGE_COUNT, "CRITICAL")
         )
     elif dlq_size > THRESHOLD_MEDIUM_COUNT:
-        issues.append(
-            _format_threshold_warning("DLQ size", dlq_size, THRESHOLD_MEDIUM_COUNT)
-        )
+        issues.append(_format_threshold_warning("DLQ size", dlq_size, THRESHOLD_MEDIUM_COUNT))
 
     retry_size = stats.get("retry_queue_size", 0)
     if retry_size > THRESHOLD_MEDIUM_COUNT:
-        issues.append(
-            _format_threshold_warning("Retry queue", retry_size, THRESHOLD_MEDIUM_COUNT)
-        )
+        issues.append(_format_threshold_warning("Retry queue", retry_size, THRESHOLD_MEDIUM_COUNT))
 
     pending_count = stats.get("pending_ids", 0)
     if pending_count > THRESHOLD_LARGE_COUNT:

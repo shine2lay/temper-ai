@@ -327,7 +327,7 @@ def _make_input_wrapper(
     def wrapper(state: Dict[str, Any]) -> Dict[str, Any]:
         """Inject dynamic inputs, run node, then clean up."""
         state[StateKeys.DYNAMIC_INPUTS] = inputs
-        result = node_fn(state)
+        result: Dict[str, Any] = node_fn(state)
         state.pop(StateKeys.DYNAMIC_INPUTS, None)
         return result
     return wrapper

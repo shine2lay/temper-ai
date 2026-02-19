@@ -23,7 +23,7 @@ EXECUTION_ID_LENGTH = 12
 # Default max concurrent workflow executions
 DEFAULT_MAX_WORKFLOW_WORKERS = 4
 
-# Keys from WorkflowStateDict that hold non-serializable infrastructure objects
+# Keys from WorkflowExecutionContext that hold non-serializable infrastructure objects
 _NON_SERIALIZABLE_KEYS = frozenset({
     "tracker",
     "tool_registry",

@@ -15,7 +15,7 @@ agent:
       {{ suggestion_text }}
 
       ## Triage Decision
-      {{ stage_outputs.vcs_triage.decision | default('') }}
+      {{ triage_output }}
 
       ## Workspace
       {{ workspace_path }}

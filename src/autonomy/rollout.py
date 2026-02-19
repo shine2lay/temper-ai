@@ -104,7 +104,7 @@ class RolloutManager:
     ) -> Optional[str]:
         """Create an experiment to back the rollout."""
         try:
-            return self._experiment_service.create_experiment(
+            result: Optional[str] = self._experiment_service.create_experiment(
                 name=f"rollout-{rollout_id}",
                 description=f"Backing experiment for rollout {rollout_id}",
                 variants=[
@@ -112,6 +112,7 @@ class RolloutManager:
                     {"name": "candidate", "traffic": DEFAULT_VARIANT_TRAFFIC, "config": candidate_config},
                 ],
             )
+            return result
         except Exception as exc:  # noqa: BLE001
             logger.warning("Failed to create backing experiment: %s", exc)
             return None

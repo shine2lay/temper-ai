@@ -27,8 +27,8 @@ stage:
     workspace_path:
       source: workflow.workspace_path
       required: true
-    design_decision:
-      source: vcs_design.decision
+    design_output:
+      source: vcs_design.output
       required: true
 
   outputs:

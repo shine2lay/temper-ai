@@ -1,4 +1,5 @@
 """Database management and models for the framework."""
+
 from src.storage.database.datetime_utils import (
     ensure_utc,
     safe_duration_seconds,
@@ -17,6 +18,8 @@ from src.storage.database.models import (
     AgentExecution,
     # Merit and learning
     AgentMeritScore,
+    # Alerting
+    AlertRecord,
     CollaborationEvent,
     DecisionOutcome,
     LLMCall,
@@ -48,6 +51,7 @@ __all__ = [
     "ToolExecution",
     "CollaborationEvent",
     "AgentMeritScore",
+    "AlertRecord",
     "DecisionOutcome",
     "SystemMetric",
     "SchemaVersion",

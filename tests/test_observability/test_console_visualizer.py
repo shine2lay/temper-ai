@@ -316,8 +316,8 @@ class TestWorkflowVisualizer:
         assert "planning" in output
         assert "planner" in output
 
-        # Should NOT show LLM details in standard mode
-        assert "claude-3" not in output or "LLM" not in output
+        # Should NOT show specific LLM model names in standard mode
+        assert "claude-3" not in output
 
     def test_display_execution_verbose_mode(self, complex_workflow):
         """Test display_execution in verbose mode shows all details."""
@@ -328,12 +328,12 @@ class TestWorkflowVisualizer:
         visualizer.display_execution(complex_workflow)
         output = console.file.getvalue()
 
-        # Should show everything
+        # Should show everything including LLM and tool details
         assert "complex_workflow" in output
         assert "planning" in output
         assert "planner" in output
-        assert "claude-3" in output or "LLM" in output
-        assert "search_tool" in output or "Tool" in output
+        assert "claude-3" in output
+        assert "search_tool" in output
 
     def test_create_workflow_tree_structure(self, complex_workflow):
         """Test _create_workflow_tree builds correct structure."""

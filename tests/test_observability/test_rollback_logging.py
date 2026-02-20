@@ -228,31 +228,40 @@ class TestRollbackLogging:
         """Test querying rollback events without filters."""
         db_manager, mock_session = mock_db_manager
 
-        # Mock query results
+        # Populate mock with actual data
+        mock_event = Mock(spec=RollbackEvent)
+        mock_event.id = "evt-1"
+        mock_event.trigger = "manual"
+
         mock_query = Mock()
         mock_query.filter.return_value = mock_query
         mock_query.order_by.return_value = mock_query
         mock_query.limit.return_value = mock_query
-        mock_query.all.return_value = []
+        mock_query.all.return_value = [mock_event]
         mock_session.query.return_value = mock_query
 
         events = get_rollback_events(db_manager=db_manager)
 
-        # Verify query was executed
+        # Verify query was executed and data returned
         mock_session.query.assert_called_once_with(RollbackEvent)
         mock_query.order_by.assert_called_once()
         mock_query.limit.assert_called_once_with(100)
-        assert isinstance(events, list)
+        assert len(events) == 1
+        assert events[0].id == "evt-1"
 
     def test_get_rollback_events_filter_by_snapshot(self, mock_db_manager):
         """Test querying rollback events filtered by snapshot ID."""
         db_manager, mock_session = mock_db_manager
 
+        mock_event = Mock(spec=RollbackEvent)
+        mock_event.id = "evt-filtered"
+        mock_event.snapshot_id = "snap-123"
+
         mock_query = Mock()
         mock_query.filter.return_value = mock_query
         mock_query.order_by.return_value = mock_query
         mock_query.limit.return_value = mock_query
-        mock_query.all.return_value = []
+        mock_query.all.return_value = [mock_event]
         mock_session.query.return_value = mock_query
 
         events = get_rollback_events(
@@ -260,19 +269,24 @@ class TestRollbackLogging:
             db_manager=db_manager
         )
 
-        # Verify filter was applied
+        # Verify filter was applied and data returned
         mock_query.filter.assert_called_once()
-        assert isinstance(events, list)
+        assert len(events) == 1
+        assert events[0].snapshot_id == "snap-123"
 
     def test_get_rollback_events_filter_by_trigger(self, mock_db_manager):
         """Test querying rollback events filtered by trigger type."""
         db_manager, mock_session = mock_db_manager
 
+        mock_event = Mock(spec=RollbackEvent)
+        mock_event.id = "evt-manual"
+        mock_event.trigger = "manual"
+
         mock_query = Mock()
         mock_query.filter.return_value = mock_query
         mock_query.order_by.return_value = mock_query
         mock_query.limit.return_value = mock_query
-        mock_query.all.return_value = []
+        mock_query.all.return_value = [mock_event]
         mock_session.query.return_value = mock_query
 
         events = get_rollback_events(
@@ -280,38 +294,48 @@ class TestRollbackLogging:
             db_manager=db_manager
         )
 
-        # Verify filter was applied
+        # Verify filter was applied and data returned
         mock_query.filter.assert_called_once()
-        assert isinstance(events, list)
+        assert len(events) == 1
+        assert events[0].trigger == "manual"
 
     def test_get_rollback_snapshots_no_filter(self, mock_db_manager):
         """Test querying rollback snapshots without filters."""
         db_manager, mock_session = mock_db_manager
 
+        mock_snapshot = Mock(spec=RollbackSnapshotDB)
+        mock_snapshot.id = "snap-1"
+        mock_snapshot.workflow_execution_id = "wf-1"
+
         mock_query = Mock()
         mock_query.filter.return_value = mock_query
         mock_query.order_by.return_value = mock_query
         mock_query.limit.return_value = mock_query
-        mock_query.all.return_value = []
+        mock_query.all.return_value = [mock_snapshot]
         mock_session.query.return_value = mock_query
 
         snapshots = get_rollback_snapshots(db_manager=db_manager)
 
-        # Verify query was executed
+        # Verify query was executed and data returned
         mock_session.query.assert_called_once_with(RollbackSnapshotDB)
         mock_query.order_by.assert_called_once()
         mock_query.limit.assert_called_once_with(100)
-        assert isinstance(snapshots, list)
+        assert len(snapshots) == 1
+        assert snapshots[0].id == "snap-1"
 
     def test_get_rollback_snapshots_filter_by_workflow(self, mock_db_manager):
         """Test querying snapshots filtered by workflow execution ID."""
         db_manager, mock_session = mock_db_manager
 
+        mock_snapshot = Mock(spec=RollbackSnapshotDB)
+        mock_snapshot.id = "snap-wf"
+        mock_snapshot.workflow_execution_id = "wf-exec-1"
+
         mock_query = Mock()
         mock_query.filter.return_value = mock_query
         mock_query.order_by.return_value = mock_query
         mock_query.limit.return_value = mock_query
-        mock_query.all.return_value = []
+        mock_query.all.return_value = [mock_snapshot]
         mock_session.query.return_value = mock_query
 
         snapshots = get_rollback_snapshots(
@@ -319,6 +343,7 @@ class TestRollbackLogging:
             db_manager=db_manager
         )
 
-        # Verify filter was applied
+        # Verify filter was applied and data returned
         mock_query.filter.assert_called_once()
-        assert isinstance(snapshots, list)
+        assert len(snapshots) == 1
+        assert snapshots[0].workflow_execution_id == "wf-exec-1"

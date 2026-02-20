@@ -33,9 +33,11 @@ def test_database_re_exports_work():
 
         # Import from the deprecated location
         from temper_ai.observability.database import DatabaseManager
+        # Import from the canonical location
+        from temper_ai.storage.database.manager import DatabaseManager as CanonicalDM
 
-        # Verify the class exists
-        assert DatabaseManager is not None
+        # Verify the re-export points to the correct canonical class
+        assert DatabaseManager is CanonicalDM
 
 
 def test_database_private_exports_work():
@@ -64,5 +66,5 @@ def test_database_new_import_location():
         deprecation_warnings = [warning for warning in w if issubclass(warning.category, DeprecationWarning)]
         assert len(deprecation_warnings) == 0
 
-        # Verify the class works
-        assert DatabaseManager is not None
+        # Verify the class is callable (not just a truthy import)
+        assert callable(DatabaseManager)

@@ -42,15 +42,17 @@ class TestRecordFingerprintSafe:
         backend.record_error_fingerprint.side_effect = RuntimeError("DB down")
 
         error = ValueError("Test error")
+        # Should not raise despite backend error — exception is swallowed
         _record_fingerprint_safe(backend, error)
-        assert str(error) == "Test error"  # exception swallowed
+        backend.record_error_fingerprint.assert_called_once()
 
     def test_never_raises_on_missing_method(self):
         backend = MagicMock(spec=[])  # No methods
 
         error = ValueError("Test error")
+        # Should not raise despite missing method — hasattr check prevents call
         _record_fingerprint_safe(backend, error)
-        assert str(error) == "Test error"  # hasattr check passed
+        assert not hasattr(backend, 'record_error_fingerprint')
 
     def test_passes_classification(self):
         backend = MagicMock()

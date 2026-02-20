@@ -50,9 +50,10 @@ class TestCreateSchema:
         """Test creating schema with explicit database URL."""
         db_url = "sqlite:///:memory:"
 
-        # Should not raise error
-        create_schema(db_url)
-        assert True  # Verify no exception was raised
+        with patch('temper_ai.observability.migrations.DatabaseManager') as mock_cls:
+            create_schema(db_url)
+            mock_cls.assert_called_once_with(db_url)
+            mock_cls.return_value.create_all_tables.assert_called_once()
 
     def test_create_schema_without_url(self):
         """Test creating schema without URL uses existing database."""
@@ -67,21 +68,24 @@ class TestCreateSchema:
             assert mock_get_db.call_count == 1
 
     def test_create_schema_creates_tables(self):
-        """Test that create_schema actually creates tables."""
+        """Test that create_all_tables actually creates database tables."""
         db = DatabaseManager("sqlite:///:memory:")
 
-        # Before creation, tables don't exist
+        # Before creation, check initial table count
         with db.session() as session:
-            # This should fail or return empty
-            try:
-                result = session.execute(text("SELECT name FROM sqlite_master WHERE type='table'"))
-                initial_tables = [row[0] for row in result]
-            except Exception:
-                initial_tables = []
+            result = session.execute(text("SELECT name FROM sqlite_master WHERE type='table'"))
+            initial_tables = {row[0] for row in result}
 
-        # Create schema
-        create_schema("sqlite:///:memory:")
-        assert True  # Verify schema creation completed without error
+        # Create tables
+        db.create_all_tables()
+
+        # Verify new tables were created
+        with db.session() as session:
+            result = session.execute(text("SELECT name FROM sqlite_master WHERE type='table'"))
+            created_tables = {row[0] for row in result}
+
+        new_tables = created_tables - initial_tables
+        assert len(new_tables) > 0, "create_all_tables should create at least one table"
 
 
 class TestDropSchema:
@@ -91,10 +95,10 @@ class TestDropSchema:
         """Test dropping schema with explicit database URL."""
         db_url = "sqlite:///:memory:"
 
-        # Create then drop
-        create_schema(db_url)
-        drop_schema(db_url)
-        assert True  # Verify operations completed without error
+        with patch('temper_ai.observability.migrations.DatabaseManager') as mock_cls:
+            drop_schema(db_url)
+            mock_cls.assert_called_once_with(db_url)
+            mock_cls.return_value.drop_all_tables.assert_called_once()
 
     def test_drop_schema_without_url(self):
         """Test dropping schema without URL uses existing database."""
@@ -121,7 +125,6 @@ class TestResetSchema:
 
             mock_drop.assert_called_once_with("sqlite:///:memory:")
             mock_create.assert_called_once_with("sqlite:///:memory:")
-            assert mock_drop.call_count == 1 and mock_create.call_count == 1
 
     def test_reset_schema_without_url(self):
         """Test reset_schema without URL."""
@@ -132,7 +135,6 @@ class TestResetSchema:
 
             mock_drop.assert_called_once_with(None)
             mock_create.assert_called_once_with(None)
-            assert mock_drop.call_count == 1 and mock_create.call_count == 1
 
 
 class TestCheckSchemaVersion:
@@ -176,29 +178,29 @@ class TestCheckSchemaVersion:
 
     def test_check_version_returns_latest_when_multiple(self, test_db):
         """Test that check_version returns most recent version."""
-        # Create schema_version table with multiple versions
+        # Create schema_version table with multiple versions using explicit timestamps
         with test_db.session() as session:
             session.execute(text(
                 "CREATE TABLE IF NOT EXISTS schema_version "
                 "(version TEXT, applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
             ))
             session.execute(
-                text("INSERT INTO schema_version (version, applied_at) VALUES (:version, CURRENT_TIMESTAMP)"),
-                {"version": "1.0.0"}
+                text("INSERT INTO schema_version (version, applied_at) VALUES (:version, :ts)"),
+                {"version": "1.0.0", "ts": "2024-01-01 00:00:00"}
             )
             session.execute(
-                text("INSERT INTO schema_version (version, applied_at) VALUES (:version, CURRENT_TIMESTAMP)"),
-                {"version": "1.1.0"}
+                text("INSERT INTO schema_version (version, applied_at) VALUES (:version, :ts)"),
+                {"version": "1.1.0", "ts": "2024-01-02 00:00:00"}
             )
             session.execute(
-                text("INSERT INTO schema_version (version, applied_at) VALUES (:version, CURRENT_TIMESTAMP)"),
-                {"version": "1.2.0"}
+                text("INSERT INTO schema_version (version, applied_at) VALUES (:version, :ts)"),
+                {"version": "1.2.0", "ts": "2024-01-03 00:00:00"}
             )
             session.commit()
 
         version = check_schema_version(test_db)
-        # Should return the last inserted (most recent)
-        assert version in ["1.0.0", "1.1.0", "1.2.0"]  # Depends on TIMESTAMP ordering
+        # ORDER BY applied_at DESC returns the version with the latest timestamp
+        assert version == "1.2.0"
 
 
 class TestMigrationEdgeCases:
@@ -218,16 +220,38 @@ class TestDataPreservation:
     """Test that migrations preserve existing data."""
 
     def test_reset_schema_destroys_data(self, test_db):
-        """Test that reset_schema destroys existing data (as expected)."""
-        # Create a table with data
+        """Test that reset_schema drops tables, destroying existing data."""
+        from temper_ai.storage.database.models import WorkflowExecution
+        from sqlmodel import select
+
+        # Insert data into a model table
         with test_db.session() as session:
-            session.execute(text("CREATE TABLE test_data (id INTEGER, value TEXT)"))
-            session.execute(text("INSERT INTO test_data VALUES (1, 'important')"))
+            wf = WorkflowExecution(
+                id="wf-destroy-test",
+                workflow_name="destroy_test",
+                workflow_config_snapshot={},
+                status="completed",
+            )
+            session.add(wf)
             session.commit()
 
-        # Reset schema
-        reset_schema("sqlite:///:memory:")  # Note: This creates NEW db, not same one
-        assert True  # Verify reset_schema completed without error
+        # Verify data exists
+        with test_db.session() as session:
+            result = session.exec(
+                select(WorkflowExecution).where(WorkflowExecution.id == "wf-destroy-test")
+            ).first()
+            assert result is not None
+
+        # Drop and recreate tables
+        test_db.drop_all_tables()
+        test_db.create_all_tables()
+
+        # Data should be gone after reset
+        with test_db.session() as session:
+            result = session.exec(
+                select(WorkflowExecution).where(WorkflowExecution.id == "wf-destroy-test")
+            ).first()
+            assert result is None, "Data should be destroyed after reset"
 
 
 class TestDeprecatedFunctionsRemoved:

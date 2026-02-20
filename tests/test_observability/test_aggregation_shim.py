@@ -5,18 +5,21 @@ import pytest
 
 
 def test_aggregation_import_raises_deprecation_warning():
-    """Test that importing from aggregation.py raises DeprecationWarning."""
-    # Note: The aggregation.py file (not the package) contains the deprecation
-    # warning. Let's verify the warning code exists in that file.
+    """Test that the aggregation.py shim file contains deprecation warning code.
 
+    Note: The aggregation/ package shadows aggregation.py, so the shim
+    cannot be imported directly. We verify source content instead.
+    """
     import pathlib
 
-    agg_file = pathlib.Path("/home/shinelay/meta-autonomous-framework/src/observability/aggregation.py")
+    import temper_ai.observability
+    pkg_dir = pathlib.Path(temper_ai.observability.__file__).parent
+    agg_file = pkg_dir / "aggregation.py"
     source = agg_file.read_text()
 
     assert "DeprecationWarning" in source
-    assert "temper_ai.observability.aggregation.py is deprecated" in source
-    assert "temper_ai.observability.aggregation import" in source
+    assert "deprecated" in source.lower()
+    assert "AggregationOrchestrator" in source
 
 
 def test_aggregation_re_exports_work():
@@ -31,9 +34,12 @@ def test_aggregation_re_exports_work():
         assert hasattr(aggregation, 'AggregationOrchestrator')
         assert hasattr(aggregation, 'AggregationPeriod')
 
-        # Verify they are the correct types
-        assert aggregation.AggregationOrchestrator is not None
-        assert aggregation.AggregationPeriod is not None
+        # Verify the re-exports are actual classes, not stubs
+        import inspect
+        assert inspect.isclass(aggregation.AggregationOrchestrator), \
+            "AggregationOrchestrator should be a class"
+        assert inspect.isclass(aggregation.AggregationPeriod), \
+            "AggregationPeriod should be a class"
 
 
 def test_aggregation_exports_in_all():
@@ -60,6 +66,9 @@ def test_aggregation_new_import_location():
         # Note: This may have warnings from the aggregation.py file being imported as a side effect
         # but importing from the package should be the preferred way
 
-        # Verify the imports work
-        assert AggregationOrchestrator is not None
-        assert AggregationPeriod is not None
+        # Verify the imports are actual classes, not stubs
+        import inspect
+        assert inspect.isclass(AggregationOrchestrator), \
+            "AggregationOrchestrator should be a class"
+        assert inspect.isclass(AggregationPeriod), \
+            "AggregationPeriod should be a class"

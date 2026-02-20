@@ -214,8 +214,13 @@ class TestDataSanitizerHMAC:
         sanitizer = DataSanitizer(SanitizationConfig(include_hash=True))
         result = sanitizer.sanitize_text("test")
 
-        # Assert
-        assert result.content_hash is not None  # Should still work with random key
+        # Assert: should still produce a hash via random fallback key
+        assert result.content_hash is not None
+        # Verify random fallback: second instance gets a different random key
+        sanitizer2 = DataSanitizer(SanitizationConfig(include_hash=True))
+        result2 = sanitizer2.sanitize_text("test")
+        assert result2.content_hash is not None
+        assert result.content_hash != result2.content_hash, "Random fallback keys should differ per instance"
 
 
 class TestLoggingSecurityIntegration:

@@ -116,7 +116,10 @@ class TestCreateHierarchicalGantt:
 
         assert fig is not None
         assert isinstance(fig, go.Figure)
-        assert len(fig.data) > 0  # Should have at least one trace
+        assert len(fig.data) >= 1
+        # Verify the trace contains the workflow name in y-axis labels
+        all_y = [y for trace in fig.data if hasattr(trace, 'y') and trace.y for y in trace.y]
+        assert any("test_workflow" in str(y) for y in all_y), "Figure should contain workflow name"
 
     def test_create_gantt_nested_trace(self, nested_trace):
         """Test Gantt chart creation with nested trace."""
@@ -139,15 +142,20 @@ class TestCreateHierarchicalGantt:
         fig = create_hierarchical_gantt(nested_trace, show_tree_lines=True)
 
         assert fig is not None
-        # Check that y-axis labels contain tree characters
-        y_labels = [trace.y for trace in fig.data if hasattr(trace, 'y')]
-        assert len(y_labels) > 0
+        # Verify y-axis labels contain tree characters (├─ or └─)
+        all_y = [y for trace in fig.data if hasattr(trace, 'y') and trace.y for y in trace.y]
+        has_tree = any("\u251c\u2500" in str(y) or "\u2514\u2500" in str(y) for y in all_y)
+        assert has_tree, "Y-axis labels should contain tree characters when show_tree_lines=True"
 
     def test_create_gantt_without_tree_lines(self, nested_trace):
         """Test Gantt chart without tree structure lines."""
         fig = create_hierarchical_gantt(nested_trace, show_tree_lines=False)
 
         assert fig is not None
+        # Verify y-axis labels do NOT contain tree characters
+        all_y = [y for trace in fig.data if hasattr(trace, 'y') and trace.y for y in trace.y]
+        no_tree = not any("\u251c\u2500" in str(y) or "\u2514\u2500" in str(y) for y in all_y)
+        assert no_tree, "Y-axis labels should NOT contain tree characters when show_tree_lines=False"
 
     def test_create_gantt_colors(self, nested_trace):
         """Test that different types have different colors."""
@@ -269,6 +277,7 @@ class TestVisualizeTrace:
 
         assert fig is not None
         assert isinstance(fig, go.Figure)
+        assert len(fig.data) >= 1, "Figure should have at least one trace"
 
     def test_visualize_trace_nested(self, nested_trace):
         """Test visualizing nested trace."""
@@ -276,6 +285,8 @@ class TestVisualizeTrace:
 
         assert fig is not None
         assert isinstance(fig, go.Figure)
+        # Nested trace has 5 items (workflow, stage, agent, llm, tool)
+        assert len(fig.data) >= 3, "Nested trace should produce multiple traces"
 
     def test_visualize_trace_with_output_file(self, simple_trace, tmp_path):
         """Test saving visualization to HTML file."""
@@ -291,6 +302,7 @@ class TestVisualizeTrace:
         fig = visualize_trace(simple_trace, show_tree_lines=False, auto_open=False)
 
         assert fig is not None
+        assert len(fig.data) >= 1, "Figure should have at least one trace"
 
 
 class TestEdgeCases:

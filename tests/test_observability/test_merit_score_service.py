@@ -427,8 +427,8 @@ class TestTimeWindowedMetrics:
                 AgentMeritScore.domain == "analysis"
             )
             merit = session.exec(statement).first()
-            # Windowed metrics may be None if no DecisionOutcome records exist
-            assert merit.last_30_days_success_rate is None or merit.last_30_days_success_rate >= 0
+            # No DecisionOutcome records → windowed metric should be None
+            assert merit.last_30_days_success_rate is None
 
     def test_time_windowed_metrics_with_decisions(self, db, service):
         """Test time-windowed metrics with DecisionOutcome records."""
@@ -450,7 +450,7 @@ class TestTimeWindowedMetrics:
             service.update(session, "researcher", "analysis", "success")
             session.commit()
 
-        # Should not crash
+        # Verify merit score was updated with decision data
         with get_session() as session:
             statement = select(AgentMeritScore).where(
                 AgentMeritScore.agent_name == "researcher",
@@ -458,6 +458,9 @@ class TestTimeWindowedMetrics:
             )
             merit = session.exec(statement).first()
             assert merit is not None
+            assert merit.total_decisions == 1
+            assert merit.successful_decisions == 1
+            assert merit.success_rate == 1.0
 
 
 class TestEdgeCases:

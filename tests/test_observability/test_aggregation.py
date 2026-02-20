@@ -76,8 +76,8 @@ class TestCollectAgentMetrics:
 
         mock_backend.get_agent_execution.assert_called_once_with("agent-123")
         mock_registry.collect_all.assert_called_once_with(mock_execution)
-        # Verify metrics were collected
-        assert result is None or isinstance(result, dict)
+        # collect_agent_metrics returns None (side-effect only method)
+        assert result is None
 
     def test_collect_with_registry_execution_not_found(self):
         """Test metric collection when execution is not found."""
@@ -116,7 +116,7 @@ class TestCollectAgentMetrics:
         result = aggregator.collect_agent_metrics("agent-123")
 
         mock_registry.collect_all.assert_not_called()
-        assert result is None or isinstance(result, dict)
+        assert result is None
 
     def test_collect_with_empty_metrics(self):
         """Test metric collection returns empty dict."""
@@ -157,7 +157,7 @@ class TestCollectAgentMetrics:
 
         # Should handle None gracefully
         result = aggregator.collect_agent_metrics("agent-123")
-        assert result is None or isinstance(result, dict)
+        assert result is None
         mock_registry.collect_all.assert_called_once()
 
     def test_collect_exception_handling(self):
@@ -392,7 +392,7 @@ class TestErrorResilience:
 
         # Registry should not be called after exception
         mock_registry.collect_all.assert_not_called()
-        assert result is None or isinstance(result, dict)
+        assert result is None
         assert mock_logger.warning.called
 
 

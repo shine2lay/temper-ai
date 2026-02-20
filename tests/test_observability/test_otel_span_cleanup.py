@@ -340,16 +340,24 @@ class TestAmortizedTrigger:
 
 
 class TestConstants:
-    """Verify span lifecycle constants are sane."""
+    """Guard tests to detect accidental mutation of span lifecycle constants.
+
+    These verify specific values rather than behavior because the behavioral
+    tests (TestCleanupStaleTTL, TestCleanupCapacity, TestAmortizedTrigger)
+    use these constants dynamically. These tests catch unintentional edits.
+    """
 
     def test_ttl_is_one_hour(self):
-        assert SPAN_TTL_SECONDS == 3600
+        """Guard: TTL must remain 1 hour to prevent premature span eviction."""
+        assert SPAN_TTL_SECONDS == 3600  # noqa: duplicate
 
     def test_max_active_spans(self):
-        assert MAX_ACTIVE_SPANS == 10000
+        """Guard: capacity limit prevents unbounded memory growth."""
+        assert MAX_ACTIVE_SPANS == 10000  # noqa: duplicate
 
     def test_cleanup_threshold(self):
-        assert CLEANUP_THRESHOLD == 100
+        """Guard: amortized cleanup trigger point."""
+        assert CLEANUP_THRESHOLD == 100  # noqa: duplicate
 
     def test_threshold_less_than_max(self):
         assert CLEANUP_THRESHOLD < MAX_ACTIVE_SPANS

@@ -190,9 +190,13 @@ def test_streaming_visualizer_handles_missing_workflow(db_manager):
     # Start should handle missing workflow
     visualizer.start()
 
-    # Check console output for error message
+    # Verify visualizer detected the missing workflow
     output = console_output.getvalue()
-    assert "not found" in output or visualizer.live is None
+    if visualizer.live is not None:
+        # If live display started, output should report the missing workflow
+        assert "not found" in output.lower(), \
+            f"Started visualizer should report missing workflow. Got: {output[:200]}"
+    # If live is None, visualizer correctly didn't start for missing workflow
 
     # Cleanup
     db_module._db_manager = None

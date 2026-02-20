@@ -107,7 +107,8 @@ def test_session_rollback_on_error():
         session.add(workflow)
 
     # Try to create duplicate (should fail and rollback)
-    with pytest.raises(Exception):  # SQLAlchemy IntegrityError expected
+    from sqlalchemy.exc import IntegrityError as _IntegrityError
+    with pytest.raises(_IntegrityError):
         with manager.session() as session:
             duplicate = WorkflowExecution(
                 id="wf-001",  # Duplicate ID
@@ -371,7 +372,8 @@ class TestDatabaseFailureRecovery:
         # Simulate connection loss by forcing an error during database write
         # We'll create an invalid workflow that violates database constraints
         # Expected to fail (integrity error acts as connection failure proxy)
-        with pytest.raises(Exception):  # SQLAlchemy IntegrityError expected
+        from sqlalchemy.exc import IntegrityError as _IntegrityError
+        with pytest.raises(_IntegrityError):
             with manager.session() as session:
                 # Create a workflow with duplicate ID (will fail on commit)
                 workflow2 = WorkflowExecution(
@@ -887,8 +889,22 @@ class TestDatabaseFailureRecovery:
         with manager.session() as session:
             pass  # No operations
 
-        # Should complete successfully — verify manager is still functional
-        assert manager.engine is not None
+        # Verify manager is still functional after empty transaction
+        with manager.session() as session:
+            workflow = WorkflowExecution(
+                id="wf-after-empty",
+                workflow_name="post_empty_tx",
+                workflow_config_snapshot={},
+                status="running",
+            )
+            session.add(workflow)
+
+        with manager.session() as session:
+            result = session.exec(
+                select(WorkflowExecution).where(WorkflowExecution.id == "wf-after-empty")
+            ).first()
+            assert result is not None
+            assert result.workflow_name == "post_empty_tx"
 
     def test_rapid_connection_cycling(self):
         """Test rapid opening and closing of database connections.

@@ -68,7 +68,11 @@ def mock_perf_tracker():
 
 @pytest.fixture
 def tracker_no_sample(mock_backend, mock_perf_tracker):
-    """Tracker with NeverSample strategy."""
+    """Tracker with NeverSample strategy.
+
+    Note: _performance_tracker is set directly because ExecutionTracker
+    has no public constructor parameter for performance tracker injection.
+    """
     t = ExecutionTracker(
         backend=mock_backend,
         sampling_strategy=_make_never_sample_strategy(),

@@ -130,11 +130,13 @@ def test_all_tracking_methods_succeed(backend):
         status="completed"
     )
 
-    # Verify all tracking operations completed successfully
-    assert backend is not None
-    assert workflow_id is not None
-    assert stage_id is not None
-    assert agent_id is not None
+    # Verify workflow was tracked and completed
+    with backend.get_session_context() as session:
+        from temper_ai.storage.database.models import WorkflowExecution
+        wf = session.get(WorkflowExecution, workflow_id)
+        assert wf is not None
+        assert wf.workflow_name == "test"
+        assert wf.status == "completed"
 
 
 def test_get_session_context_works(backend):
@@ -183,6 +185,9 @@ def test_multiple_operations_do_not_leak(backend):
             workflow_config={"workflow": {"version": "1.0"}},
             start_time=datetime.now(timezone.utc)
         )
-    # No assertion on internals needed - if we get here without error,
-    # sessions are being properly opened and closed
-    assert backend is not None  # Verify backend is still valid after 20 operations
+    # Verify all 20 workflows were persisted
+    with backend.get_session_context() as session:
+        from temper_ai.storage.database.models import WorkflowExecution
+        from sqlmodel import select
+        results = session.exec(select(WorkflowExecution)).all()
+        assert len(results) == 20

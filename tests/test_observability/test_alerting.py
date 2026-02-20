@@ -297,9 +297,10 @@ class TestAlertManager:
         manager.add_rule(rule)
 
         with patch("temper_ai.observability.alerting.logger") as mock_logger:
-            manager.check_metric("cost_usd", 15.0)
+            alerts = manager.check_metric("cost_usd", 15.0)
             mock_logger.info.assert_called()
-            assert mock_logger.info.call_count > 0
+            assert len(alerts) == 1
+            assert alerts[0].rule_name == "test_rule"
 
     def test_webhook_action_with_handler(self, manager):
         """Test webhook action with registered handler."""
@@ -341,7 +342,9 @@ class TestAlertManager:
         manager.check_metric("cost_usd", 15.0)
 
         mock_handler.assert_called_once()
-        assert mock_handler.call_count == 1
+        call_args = mock_handler.call_args[0]
+        assert isinstance(call_args[0], Alert)
+        assert isinstance(call_args[1], AlertRule)
 
     def test_get_recent_alerts(self, manager):
         """Test retrieving recent alerts."""

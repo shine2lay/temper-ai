@@ -44,7 +44,8 @@ def make_agent_id() -> str:
 def test_init():
     """Test NoOp backend initialization."""
     backend = NoOpBackend()
-    assert backend is not None
+    stats = backend.get_stats()
+    assert stats["backend_type"] == "noop"
 
 
 # ========== Workflow Tracking Tests ==========
@@ -620,8 +621,9 @@ def test_full_workflow_lifecycle(noop_backend: NoOpBackend):
         status="completed"
     )
 
-    # All operations completed successfully
-    assert True
+    # Verify backend still reports consistent stats after full lifecycle
+    stats = noop_backend.get_stats()
+    assert stats["backend_type"] == "noop"
 
 
 # ========== Null Object Pattern Compliance ==========
@@ -645,14 +647,17 @@ def test_null_object_pattern_no_exceptions():
         status="completed"
     )
 
-    # All should succeed without errors
-    assert True
+    # Verify stats still work after invalid data (null object contract)
+    stats = backend.get_stats()
+    assert stats["backend_type"] == "noop"
 
 
 def test_idempotency():
     """Test that repeated operations are idempotent."""
     backend = NoOpBackend()
     workflow_id = make_workflow_id()
+
+    stats_before = backend.get_stats()
 
     # Call the same operation multiple times
     for _ in range(5):
@@ -663,5 +668,6 @@ def test_idempotency():
             start_time=datetime.utcnow()
         )
 
-    # Should not cause any issues
-    assert True
+    # Stats should remain stable after repeated calls
+    stats_after = backend.get_stats()
+    assert stats_before == stats_after

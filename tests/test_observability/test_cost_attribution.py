@@ -35,39 +35,40 @@ class TestCostAttributionSQLRoundTrip:
     """Test cost_attribution_tags persistence through SQL backend."""
 
     def test_sql_backend_passes_tags(self) -> None:
-        """SQL backend stores cost_attribution_tags on WorkflowExecution."""
-        from temper_ai.observability.backends.sql_backend import SQLObservabilityBackend
+        """Verify WorkflowStartData carries cost_attribution_tags for SQL persistence.
 
-        backend = MagicMock(spec=SQLObservabilityBackend)
+        Tests data preparation (not actual SQL round-trip — see test_read_api.py
+        for end-to-end persistence tests).
+        """
         tags = {"tenant": "acme", "env": "prod"}
-
         data = WorkflowStartData(cost_attribution_tags=tags)
-        # Verify the data object carries the tags
+
         assert data.cost_attribution_tags == tags
         assert data.cost_attribution_tags["tenant"] == "acme"
+        assert data.cost_attribution_tags["env"] == "prod"
 
 
 class TestCostAttributionOTEL:
     """Test cost attribution tag OTEL span attributes."""
 
     def test_otel_backend_sets_span_attributes(self) -> None:
-        """OTEL backend converts tags to span attributes."""
+        """Verify OTEL cost attribution span attribute naming convention.
+
+        Validates the maf.cost.tag.{key} naming pattern used when setting
+        span attributes for cost attribution tags.
+        """
         try:
-            from temper_ai.observability.backends.otel_backend import OTELObservabilityBackend
+            from temper_ai.observability.backends.otel_backend import OTELObservabilityBackend  # noqa: F401
         except ImportError:
             pytest.skip("opentelemetry not installed")
 
-        # The span attribute key pattern should be maf.cost.tag.{key}
+        # Validate the naming convention: tags map to maf.cost.tag.{key}
         tags = {"tenant": "acme", "feature": "research"}
-        expected_attrs = {
-            "maf.cost.tag.tenant": "acme",
-            "maf.cost.tag.feature": "research",
-        }
-        # Validate the expected naming convention
         for key, value in tags.items():
             attr_name = f"maf.cost.tag.{key}"
-            assert attr_name in expected_attrs
-            assert expected_attrs[attr_name] == value
+            assert attr_name.startswith("maf.cost.tag."), f"Bad prefix: {attr_name}"
+            assert key in attr_name, f"Key {key} not in attribute name"
+            assert isinstance(value, str), f"Tag value must be string, got {type(value)}"
 
 
 class TestCostAttributionCostRollup:

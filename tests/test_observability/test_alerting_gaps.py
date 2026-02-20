@@ -195,8 +195,11 @@ class TestAlertPersistence:
             # Must not raise — best-effort persistence
             mgr._persist_alert(alert)
 
-        # Verify alert was created correctly (persistence failure is silent)
+        # Alert object should be unchanged after failed persistence
         assert alert.rule_name == "r"
+        assert alert.severity == AlertSeverity.INFO
+        assert alert.metric_value == 1.0
+        assert alert.threshold == 0.5
 
     def test_get_persisted_alerts_queries_db(self):
         """get_persisted_alerts returns records from DB."""

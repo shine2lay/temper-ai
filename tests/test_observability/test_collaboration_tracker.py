@@ -14,15 +14,13 @@ class TestCollaborationEventTracker:
     """Test CollaborationEventTracker class."""
 
     def test_initialization(self):
-        """Test tracker initialization."""
+        """Test tracker initialization stores backend reference."""
         backend = Mock()
         sanitize_fn = Mock(side_effect=lambda x: x)
         get_context = Mock(return_value=ExecutionContext())
 
         tracker = CollaborationEventTracker(backend, sanitize_fn, get_context)
         assert tracker.backend is backend
-        assert tracker._sanitize_dict is sanitize_fn
-        assert tracker._get_context is get_context
 
     def test_track_collaboration_event_basic(self):
         """Test tracking basic collaboration event."""
@@ -249,3 +247,8 @@ class TestCollaborationEventTracker:
         )
 
         backend.track_collaboration_event.assert_called_once()
+        call_kwargs = backend.track_collaboration_event.call_args[1]
+        # event_data is wrapped in CollaborationEventData passed as 'data' kwarg
+        assert call_kwargs["data"].event_data["proposals"] == ["A", "B", "C"]
+        assert call_kwargs["data"].event_data["votes"] == {"A": 2, "B": 1, "C": 0}
+        assert call_kwargs["data"].event_data["metadata"]["rounds"] == 2

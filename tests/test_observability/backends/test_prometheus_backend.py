@@ -413,8 +413,10 @@ def test_track_workflow_start_logs(mock_logger, prometheus_backend: PrometheusOb
         start_time=datetime.utcnow()
     )
 
-    # Verify logging was called
-    assert mock_logger.debug.called
+    # Verify logging was called with relevant content
+    mock_logger.debug.assert_called()
+    log_msg = str(mock_logger.debug.call_args)
+    assert "Prometheus" in log_msg or workflow_id in log_msg
 
 
 @patch("temper_ai.observability.backends.prometheus_backend.logger")
@@ -429,8 +431,10 @@ def test_track_safety_violation_logs_warning(mock_logger, prometheus_backend: Pr
         policy_name="test_policy"
     )
 
-    # Verify warning was logged
-    assert mock_logger.warning.called
+    # Verify warning was logged with relevant content
+    mock_logger.warning.assert_called()
+    warning_msg = str(mock_logger.warning.call_args)
+    assert "Prometheus" in warning_msg or "safety" in warning_msg.lower()
 
 
 # ========== Full Lifecycle Test ==========
@@ -508,5 +512,6 @@ def test_full_workflow_lifecycle(prometheus_backend: PrometheusObservabilityBack
         status="completed"
     )
 
-    # All operations completed successfully
-    assert True
+    # Verify backend still reports consistent stats after full lifecycle
+    stats = prometheus_backend.get_stats()
+    assert stats["backend_type"] == "prometheus"

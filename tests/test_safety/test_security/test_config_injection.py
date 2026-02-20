@@ -474,7 +474,7 @@ node_b: &node_b
                 json.dumps(config)  # Will fail on circular refs
 
             # Accept either ConfigValidationError or RecursionError
-            assert exc_info.value is not None, "Circular reference should be detected"
+            # (pytest.raises already guarantees the exception was raised)
 
     def test_self_referential_anchor(self):
         """
@@ -508,4 +508,4 @@ recursive: &loop
                 import json
                 json.dumps(config)
 
-            assert exc_info.value is not None, "Self-reference should be detected"
+            # (pytest.raises already guarantees the exception was raised)

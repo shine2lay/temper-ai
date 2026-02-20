@@ -452,8 +452,10 @@ def test_track_workflow_start_logs(mock_logger, s3_backend: S3ObservabilityBacke
         start_time=datetime.utcnow()
     )
 
-    # Verify logging was called
-    assert mock_logger.debug.called
+    # Verify logging was called with relevant content
+    mock_logger.debug.assert_called()
+    log_msg = str(mock_logger.debug.call_args)
+    assert "S3" in log_msg or workflow_id in log_msg
 
 
 @patch("temper_ai.observability.backends.s3_backend.logger")
@@ -468,8 +470,10 @@ def test_track_safety_violation_logs_warning(mock_logger, s3_backend: S3Observab
         policy_name="test_policy"
     )
 
-    # Verify warning was logged
-    assert mock_logger.warning.called
+    # Verify warning was logged with relevant content
+    mock_logger.warning.assert_called()
+    warning_msg = str(mock_logger.warning.call_args)
+    assert "S3" in warning_msg or "safety" in warning_msg.lower()
 
 
 # ========== Full Lifecycle Test ==========
@@ -547,8 +551,9 @@ def test_full_workflow_lifecycle(s3_backend: S3ObservabilityBackend):
         status="completed"
     )
 
-    # All operations completed successfully
-    assert True
+    # Verify backend still reports consistent stats after full lifecycle
+    stats = s3_backend.get_stats()
+    assert stats["backend_type"] == "s3"
 
 
 # ========== Region-Specific Tests ==========

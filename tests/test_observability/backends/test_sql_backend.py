@@ -805,6 +805,7 @@ def test_track_collaboration_event(sql_backend: SQLObservabilityBackend):
 
     assert event_id is not None
     assert len(event_id) > 0
+    assert event_id.startswith("collab-")
 
 
 # ========== Query and Aggregation Tests ==========
@@ -869,13 +870,11 @@ def test_aggregate_workflow_metrics(sql_backend: SQLObservabilityBackend):
     # Aggregate
     metrics = sql_backend.aggregate_workflow_metrics(workflow_id)
 
-    # Verify aggregation result structure
+    # Verify aggregation result contains expected fields
     assert metrics is not None
     assert isinstance(metrics, dict)
-
-    # If metrics are present, verify expected fields
-    if metrics:
-        assert "total_llm_calls" in metrics or "avg_duration_seconds" in metrics or len(metrics) >= 0
+    assert len(metrics) > 0, "Aggregation should return at least one metric"
+    assert "total_llm_calls" in metrics
 
 
 def test_aggregate_stage_metrics(sql_backend: SQLObservabilityBackend):
@@ -903,6 +902,7 @@ def test_aggregate_stage_metrics(sql_backend: SQLObservabilityBackend):
 
     assert metrics is not None
     assert isinstance(metrics, dict)
+    assert len(metrics) > 0, "Stage metrics should contain at least one field"
 
 
 # ========== Cleanup and Maintenance Tests ==========
@@ -952,12 +952,12 @@ def test_cleanup_old_records_actual(sql_backend: SQLObservabilityBackend):
     result = sql_backend.cleanup_old_records(retention_days=30, dry_run=False)
 
     assert isinstance(result, dict)
-    # Check if workflow was deleted
+    # Verify old workflow was deleted
     with get_session() as session:
         workflow = session.exec(
             select(WorkflowExecution).where(WorkflowExecution.id == workflow_id)
         ).first()
-        # Depending on implementation, may or may not be deleted
+        assert workflow is None, "Old workflow should be deleted after cleanup"
 
 
 def test_get_stats(sql_backend: SQLObservabilityBackend):
@@ -966,7 +966,7 @@ def test_get_stats(sql_backend: SQLObservabilityBackend):
 
     assert stats is not None
     assert isinstance(stats, dict)
-    assert "backend_type" in stats or len(stats) >= 0  # Some stats returned
+    assert stats["backend_type"] == "sql"
 
 
 def test_get_session_context(sql_backend: SQLObservabilityBackend):

@@ -147,7 +147,7 @@ def _create_execution_context(
     )
 
 
-MAX_TRACKING_INPUT_BYTES = 400 * 1024  # scanner: skip-magic — 400KB, safely under 0.5MB DB limit
+MAX_TRACKING_INPUT_BYTES = 900 * 1024  # scanner: skip-magic — 900KB, safely under 1MB DB limit
 
 
 def _truncate_tracking_data(data: Dict[str, Any]) -> Dict[str, Any]:

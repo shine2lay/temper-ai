@@ -181,12 +181,12 @@ class StageExecution(SQLModel, table=True):
 
         if "input_data" in data and data["input_data"]:
             validate_json_size(
-                data["input_data"], max_bytes=BYTES_PER_MB // 2, field_name="input_data"
+                data["input_data"], max_bytes=BYTES_PER_MB, field_name="input_data"
             )
 
         if "output_data" in data and data["output_data"]:
             validate_json_size(
-                data["output_data"], max_bytes=BYTES_PER_MB // 2, field_name="output_data"
+                data["output_data"], max_bytes=BYTES_PER_MB, field_name="output_data"
             )
 
         super().__init__(**data)
@@ -276,12 +276,12 @@ class AgentExecution(SQLModel, table=True):
 
         if "input_data" in data and data["input_data"]:
             validate_json_size(
-                data["input_data"], max_bytes=BYTES_PER_MB // 2, field_name="input_data"
+                data["input_data"], max_bytes=BYTES_PER_MB, field_name="input_data"
             )
 
         if "output_data" in data and data["output_data"]:
             validate_json_size(
-                data["output_data"], max_bytes=BYTES_PER_MB // 2, field_name="output_data"
+                data["output_data"], max_bytes=BYTES_PER_MB, field_name="output_data"
             )
 
         super().__init__(**data)

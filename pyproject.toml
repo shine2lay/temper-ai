@@ -70,6 +70,7 @@ dev = [
     "radon>=6.0",
     "pip-audit>=2.6",
     "vulture>=2.10",
+    "pre-commit>=3.5",
 ]
 
 llm-providers = [
@@ -256,3 +257,13 @@ disallow_incomplete_defs = false
 [[tool.mypy.overrides]]
 module = ["mem0.*", "chromadb.*", "mcp.*", "dspy.*"]
 ignore_missing_imports = true
+
+[tool.coverage.run]
+source = ["temper_ai"]
+omit = ["*/tests/*", "*/migrations/*", "*/alembic/*"]
+
+[tool.coverage.report]
+show_missing = true
+precision = 1
+exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:", "if __name__"]
+fail_under = 50

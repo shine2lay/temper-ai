@@ -3,6 +3,7 @@
 PROVIDER_MEM0 = "mem0"
 PROVIDER_IN_MEMORY = "in_memory"
 PROVIDER_SQLITE = "sqlite"
+PROVIDER_PG = "pg"
 PROVIDER_KNOWLEDGE_GRAPH = "knowledge_graph"
 
 DEFAULT_MEMORY_DB_PATH = "memory.db"

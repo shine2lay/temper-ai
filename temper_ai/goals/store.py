@@ -1,33 +1,25 @@
-"""SQLite persistence for goal proposal data."""
+"""Database persistence for goal proposal data."""
 
 import logging
 from typing import Dict, Optional
 
-from sqlalchemy import event, func
+from sqlalchemy import func
 from sqlalchemy.engine import Engine
-from sqlalchemy.pool import NullPool, StaticPool
-from sqlmodel import Session, SQLModel, create_engine, select
+from sqlmodel import Session, SQLModel, select
 
-from temper_ai.goals.constants import DEFAULT_DATABASE_URL, DEFAULT_LIST_LIMIT, DEFAULT_RUN_LIMIT
+from temper_ai.goals.constants import DEFAULT_LIST_LIMIT, DEFAULT_RUN_LIMIT
 from temper_ai.goals.models import AnalysisRun, GoalProposalRecord
+from temper_ai.storage.database.engine import create_app_engine, get_database_url
 
 logger = logging.getLogger(__name__)
 
 
 class GoalStore:
-    """SQLite persistence for goal proposals and analysis runs."""
+    """Database persistence for goal proposals and analysis runs."""
 
     def __init__(self, database_url: Optional[str] = None) -> None:
-        self.database_url = database_url or DEFAULT_DATABASE_URL
-        is_memory = ":memory:" in self.database_url
-        self.engine: Engine = create_engine(
-            self.database_url,
-            connect_args={"check_same_thread": False},
-            poolclass=StaticPool if is_memory else NullPool,
-            echo=False,
-        )
-        if self.database_url.startswith("sqlite"):
-            _register_sqlite_pragmas(self.engine)
+        self.database_url = database_url or get_database_url()
+        self.engine: Engine = create_app_engine(self.database_url)
 
         _tables = [
             GoalProposalRecord.__table__,  # type: ignore[attr-defined]
@@ -141,14 +133,3 @@ class GoalStore:
             )
             result = session.exec(stmt).one()
             return int(result)
-
-
-def _register_sqlite_pragmas(engine: Engine) -> None:
-    """Enable WAL mode and foreign keys for SQLite."""
-
-    @event.listens_for(engine, "connect")
-    def _sqlite_pragmas(dbapi_conn, _rec):  # type: ignore[no-untyped-def]
-        cursor = dbapi_conn.cursor()
-        cursor.execute("PRAGMA journal_mode=WAL")
-        cursor.execute("PRAGMA foreign_keys=ON")
-        cursor.close()

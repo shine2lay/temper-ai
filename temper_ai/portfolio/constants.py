@@ -1,8 +1,5 @@
 """Shared constants for portfolio management module."""
 
-# Database
-DEFAULT_PORTFOLIO_DB_URL = "sqlite:///./portfolio.db"
-
 # List limits
 DEFAULT_LIST_LIMIT = 100
 DEFAULT_RUN_LIMIT = 50

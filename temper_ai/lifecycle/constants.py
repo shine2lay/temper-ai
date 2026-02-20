@@ -1,8 +1,5 @@
 """Shared constants for lifecycle module."""
 
-# Default database URL for lifecycle store
-DEFAULT_LIFECYCLE_DB_URL = "sqlite:///./lifecycle.db"
-
 # Profile sources
 SOURCE_MANUAL = "manual"
 SOURCE_LEARNED = "learned"

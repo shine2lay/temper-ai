@@ -128,6 +128,8 @@ class _RunState:
     # Multi-turn conversation history support
     messages: Optional[List[Dict[str, str]]] = None
     user_prompt_text: Optional[str] = None
+    # Structured output: response format pass-through (R0.1)
+    response_format: Optional[Dict[str, Any]] = None
 
 
 # ---------------------------------------------------------------------------

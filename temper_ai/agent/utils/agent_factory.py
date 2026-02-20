@@ -12,9 +12,10 @@ import threading
 from typing import TYPE_CHECKING, Dict, Type
 
 from temper_ai.agent.base_agent import BaseAgent
-from temper_ai.agent.utils.constants import AGENT_TYPE_STANDARD
+from temper_ai.agent.utils.constants import AGENT_TYPE_SCRIPT, AGENT_TYPE_STANDARD, AGENT_TYPE_STATIC_CHECKER
 from temper_ai.agent.standard_agent import StandardAgent
 from temper_ai.agent.static_checker_agent import StaticCheckerAgent
+from temper_ai.agent.script_agent import ScriptAgent
 
 if TYPE_CHECKING:
     from temper_ai.storage.schemas import AgentConfig
@@ -28,6 +29,7 @@ class AgentFactory:
 
     Built-in types:
     - "standard": StandardAgent with LLM + tool execution loop
+    - "script": ScriptAgent for zero-LLM bash script execution
     - "static_checker": StaticCheckerAgent for command-based checks
 
     Custom types can be registered via register_type().
@@ -38,7 +40,8 @@ class AgentFactory:
     # Map of agent type strings to implementation classes
     _agent_types: Dict[str, Type[BaseAgent]] = {
         AGENT_TYPE_STANDARD: StandardAgent,
-        "static_checker": StaticCheckerAgent,
+        AGENT_TYPE_SCRIPT: ScriptAgent,
+        AGENT_TYPE_STATIC_CHECKER: StaticCheckerAgent,
     }
 
     @classmethod
@@ -116,5 +119,6 @@ class AgentFactory:
         with cls._lock:
             cls._agent_types = {
                 AGENT_TYPE_STANDARD: StandardAgent,
-                "static_checker": StaticCheckerAgent,
+                AGENT_TYPE_SCRIPT: ScriptAgent,
+                AGENT_TYPE_STATIC_CHECKER: StaticCheckerAgent,
             }

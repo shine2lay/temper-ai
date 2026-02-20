@@ -71,12 +71,43 @@ class BudgetConfig(BaseModel):
     action_on_exceed: Literal["halt", "continue", "notify"] = "halt"
 
 
+class WorkflowRateLimitConfig(BaseModel):
+    """Workflow-level rate limiting configuration (R0.9)."""
+    enabled: bool = False
+    max_rpm: int = Field(default=60, gt=0)
+    block_on_limit: bool = True
+    max_wait_seconds: float = Field(default=60.0, gt=0)
+
+
+def _default_planning_config() -> "BaseModel":
+    """Lazy factory to avoid workflow→planning import for fan-out."""
+    from temper_ai.workflow.planning import PlanningConfig
+    return PlanningConfig()
+
+
 class WorkflowConfigOptions(BaseModel):
     """Workflow configuration options."""
     max_iterations: int = Field(default=SMALL_ITEM_LIMIT, gt=0)
     convergence_detection: bool = False
     timeout_seconds: int = Field(default=SECONDS_PER_HOUR, gt=0)
     budget: BudgetConfig = Field(default_factory=BudgetConfig)
+    tool_cache_enabled: bool = Field(
+        default=False,
+        description="Enable tool result caching for read-only tools",
+    )
+    rate_limit: WorkflowRateLimitConfig = Field(
+        default_factory=WorkflowRateLimitConfig,
+    )
+    planning: Any = Field(default_factory=_default_planning_config)
+
+    @field_validator('planning', mode='before')
+    @classmethod
+    def coerce_planning(cls, v: Any) -> Any:
+        """Coerce dict to PlanningConfig at validation time."""
+        if isinstance(v, dict):
+            from temper_ai.workflow.planning import PlanningConfig
+            return PlanningConfig(**v)
+        return v
 
 
 class WorkflowSafetyConfig(BaseModel):

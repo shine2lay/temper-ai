@@ -1,88 +1,62 @@
 # VCS Git Setup Agent
 # Pulls latest, creates an isolated worktree, and checks out a feature branch
+# Uses script type — deterministic execution, zero LLM calls
 
 agent:
   name: vcs_git_setup
   description: "Pull latest, create isolated worktree, and checkout feature branch for the suggestion"
-  version: "2.0"
-  type: standard
+  version: "3.0"
+  type: script
 
-  prompt:
-    inline: |
-      You are the GIT SETUP agent for The Vibe Coding Squad.
+  script: |
+    WORKSPACE={{ workspace_path }}
 
-      ## Repository
-      {{ workspace_path }}
+    # Initialize git if needed
+    if [ ! -d "$WORKSPACE/.git" ]; then
+      git -C "$WORKSPACE" init
+      git -C "$WORKSPACE" add -A
+      git -C "$WORKSPACE" commit -m "initial: workspace snapshot" --allow-empty
+    fi
 
-      ## Suggestion
-      {{ suggestion_text }}
+    # Check remote
+    HAS_REMOTE=false
+    if git -C "$WORKSPACE" remote | grep -q origin; then
+      HAS_REMOTE=true
+    fi
 
-      ## Your Task
-      Create an isolated worktree with a feature branch for implementing this suggestion.
+    # Pull if remote exists
+    DEFAULT_BRANCH="none"
+    PULL_STATUS="skipped_no_remote"
+    if [ "$HAS_REMOTE" = true ]; then
+      DEFAULT_BRANCH=$(git -C "$WORKSPACE" symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||' || echo "main")
+      git -C "$WORKSPACE" checkout "$DEFAULT_BRANCH" 2>/dev/null || true
+      if git -C "$WORKSPACE" pull origin "$DEFAULT_BRANCH" 2>/dev/null; then
+        PULL_STATUS="success"
+      else
+        PULL_STATUS="failed"
+      fi
+    fi
 
-      IMPORTANT: Do NOT use `cd ... &&` chains. Instead, pass working_directory="{{ workspace_path }}" as a parameter to every Bash call (unless stated otherwise). Run each command separately.
+    # Generate feature branch name
+    # Assign to a variable first so shlex.quote expansion is word-safe in pipelines
+    SUGGESTION_TEXT={{ suggestion_text }}
+    SLUG=$(printf '%s' "$SUGGESTION_TEXT" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | cut -c1-40)
+    TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+    BRANCH_NAME="feature/$SLUG-$TIMESTAMP"
 
-      Steps:
-      1. Check if git is initialized:
-         - Run: `ls .git` (with working_directory="{{ workspace_path }}")
-         - If NO .git directory, run:
-           - `git init`
-           - `git add -A`
-           - `git commit -m "initial: workspace snapshot" --allow-empty`
-           - Note: there is no remote, so skip pull in step 3
-      2. Check if remote origin exists:
-         - Run: `git remote` (with working_directory="{{ workspace_path }}")
-         - If "origin" is NOT in the output, note that there is no remote — skip pull in step 3
-      3. If remote origin exists, detect default branch and pull:
-         - Run: `git symbolic-ref refs/remotes/origin/HEAD`
-         - Parse the output to get the branch name (e.g., refs/remotes/origin/main → main)
-         - If that fails, try: `git remote show origin` and look for "HEAD branch:"
-         - If both fail, assume "main"
-         - `git checkout <default_branch>`
-         - `git pull origin <default_branch>`
-         - If NO remote origin, just stay on the current branch
-      4. Generate a feature branch name:
-         - Create a short slug from the suggestion text (lowercase, hyphens, max 40 chars, no special chars)
-         - Get a timestamp: `date +%Y%m%d-%H%M%S`
-         - Branch name format: `feature/<slug>-<timestamp>`
-      5. Create an isolated worktree:
-         - Run: `mktemp -d /tmp/vcs-run-XXXXXX`
-         - Save the output as WORKTREE_PATH
-         - Run: `git worktree add <WORKTREE_PATH> -b <branch_name> HEAD` (with working_directory="{{ workspace_path }}")
-         - This creates the worktree AND the feature branch in one command
-      6. Verify the worktree:
-         - Run: `git branch --show-current` (with working_directory="<WORKTREE_PATH>")
-         - Confirm it shows the feature branch name
+    # Create worktree
+    WORKTREE=$(mktemp -d /tmp/vcs-run-XXXXXX)
+    git -C "$WORKSPACE" worktree add "$WORKTREE" -b "$BRANCH_NAME" HEAD
 
-      Report what you did in the answer. The worktree_path MUST be the exact temp directory path.
+    # Verify
+    CURRENT_BRANCH=$(git -C "$WORKTREE" branch --show-current)
 
-      <answer>
-      GIT_SETUP:
-        default_branch: <detected default branch or "none">
-        feature_branch: <created branch name>
-        worktree_path: <exact path to the created worktree, e.g. /tmp/vcs-run-abc123>
-        pull_status: <success | skipped_no_remote | failed>
-        detail: <what happened>
-      </answer>
+    echo "::output worktree_path=$WORKTREE"
+    echo "::output feature_branch=$BRANCH_NAME"
+    echo "::output default_branch=$DEFAULT_BRANCH"
+    echo "::output pull_status=$PULL_STATUS"
 
-  inference:
-    provider: vllm
-    model: qwen3-next
-    base_url: http://localhost:8000
-    temperature: 0.1
-    max_tokens: 1024
-    timeout_seconds: 120
-
-  tools:
-    - name: Bash
-      config:
-        allowed_commands:
-          - git
-          - ls
-          - find
-          - date
-          - mktemp
-        workspace_root: "{{ workspace_path }}"
+  timeout_seconds: 120
 
   error_handling:
     retry_strategy: ExponentialBackoff

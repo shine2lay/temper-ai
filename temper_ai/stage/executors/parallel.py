@@ -42,11 +42,18 @@ logger = logging.getLogger(__name__)
 
 
 def _print_stage_header(state: Dict[str, Any], stage_name: str) -> None:
-    """Print stage header if detail console is active."""
+    """Print stage header with index if detail console is active."""
     if state.get(StateKeys.SHOW_DETAILS) and state.get(StateKeys.DETAIL_CONSOLE):
+        stage_index = len(state.get(StateKeys.STAGE_OUTPUTS, {})) + 1
+        total = state.get(StateKeys.TOTAL_STAGES, "?")
         state[StateKeys.DETAIL_CONSOLE].print(
-            f"\n[bold cyan]\u2500\u2500 Stage: {stage_name} \u2500\u2500[/bold cyan]"
+            f"\n[bold cyan]\u27f3 [{stage_index}/{total}] "
+            f"Stage: {stage_name} \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500[/bold cyan]"
         )
+        # Set stage context on stream callback for panel titles
+        stream_cb = state.get(StateKeys.STREAM_CALLBACK)
+        if stream_cb is not None and hasattr(stream_cb, "_current_stage"):
+            stream_cb._current_stage = stage_name
 
 
 def _persist_stage_output(
@@ -264,6 +271,11 @@ class ParallelStageExecutor(StageExecutor):
         stage_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Core stage execution logic (bounded retry loop)."""
+        # Wire workflow rate limiter (R0.9)
+        wf_rl = state.get(StateKeys.WORKFLOW_RATE_LIMITER)
+        if wf_rl is not None and self.tool_executor is not None:
+            self.tool_executor.workflow_rate_limiter = wf_rl
+
         wc_timeout = self._get_wall_clock_timeout(stage_config)
         wc_start = time.monotonic()
         max_retries = self._get_max_retries(stage_config)

@@ -134,6 +134,54 @@ class MemoryConfig(BaseModel):
         return self
 
 
+class ReasoningConfig(BaseModel):
+    """Agent reasoning/planning pass configuration (R0.7)."""
+
+    enabled: bool = False
+    planning_prompt: Optional[str] = None
+    inject_as: Literal["system_prefix", "context_section"] = "context_section"
+    max_planning_tokens: int = Field(default=1024, gt=0)
+    temperature: Optional[float] = Field(default=None, ge=0.0, le=2.0)
+
+
+class ContextManagementConfig(BaseModel):
+    """Context window management configuration (R0.5)."""
+
+    enabled: bool = False
+    strategy: Literal["truncate", "summarize", "sliding_window"] = "truncate"
+    max_context_tokens: Optional[int] = None
+    reserved_output_tokens: int = Field(default=2048, gt=0)
+    token_counter: Literal["tiktoken", "approximate"] = "approximate"  # noqa: S105
+
+
+class OutputSchemaConfig(BaseModel):
+    """Structured output enforcement configuration (R0.1)."""
+
+    json_schema: Optional[Dict[str, Any]] = None
+    enforce_mode: Literal["validate_only", "response_format"] = "validate_only"
+    max_retries: int = Field(default=2, ge=0)
+    strict: bool = False
+
+
+class GuardrailCheck(BaseModel):
+    """Single guardrail check definition (R0.2)."""
+
+    name: str
+    type: Literal["function", "regex"] = "function"
+    check_ref: Optional[str] = None
+    pattern: Optional[str] = None
+    severity: Literal["block", "warn"] = "block"
+
+
+class OutputGuardrailsConfig(BaseModel):
+    """Output guardrails configuration (R0.2)."""
+
+    enabled: bool = False
+    checks: List[GuardrailCheck] = Field(default_factory=list)
+    max_retries: int = Field(default=2, ge=0)
+    inject_feedback: bool = True
+
+
 class RetryConfig(BaseModel):
     """Retry strategy configuration."""
     initial_delay_seconds: int = Field(default=1, gt=0)
@@ -262,12 +310,29 @@ class AgentConfigInner(BaseModel):
     description: str
     version: str = "1.0"
     type: str = "standard"  # Agent type: standard, debate, human, custom
-    prompt: PromptConfig
-    inference: InferenceConfig
+    script: Optional[str] = Field(
+        default=None,
+        description="Bash script body (Jinja2 template) for type='script' agents",
+    )
+    timeout_seconds: Optional[int] = Field(
+        default=None,
+        gt=0,
+        description="Execution timeout in seconds (used by script-type agents)",
+    )
+    prompt: Optional[PromptConfig] = None
+    inference: Optional[InferenceConfig] = None
     tools: Optional[List[Union[str, ToolReference]]] = None
     pre_commands: Optional[List[PreCommand]] = None
     safety: SafetyConfig = Field(default_factory=SafetyConfig)
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
+    reasoning: ReasoningConfig = Field(default_factory=ReasoningConfig)
+    context_management: ContextManagementConfig = Field(
+        default_factory=ContextManagementConfig,
+    )
+    output_schema: Optional[OutputSchemaConfig] = None
+    output_guardrails: OutputGuardrailsConfig = Field(
+        default_factory=OutputGuardrailsConfig,
+    )
     autonomy: Optional[Any] = Field(
         default=None,
         description="AutonomyConfig — lazy-validated to avoid circular imports",
@@ -280,6 +345,43 @@ class AgentConfigInner(BaseModel):
             from temper_ai.safety.autonomy.schemas import AutonomyConfig
             self.autonomy = AutonomyConfig(**self.autonomy)
         return self
+
+    mcp_servers: Optional[List[Any]] = Field(
+        default=None,
+        description="MCP server connections for external tool access",
+    )
+
+    @model_validator(mode="after")
+    def validate_mcp_servers(self) -> "AgentConfigInner":
+        """Parse mcp_servers dicts into MCPServerConfig if provided."""
+        if self.mcp_servers is not None:
+            validated = []
+            for entry in self.mcp_servers:
+                if isinstance(entry, dict):
+                    from temper_ai.mcp._schemas import MCPServerConfig
+                    validated.append(MCPServerConfig(**entry))
+                else:
+                    validated.append(entry)
+            self.mcp_servers = validated
+        return self
+
+    prompt_optimization: Optional[Any] = Field(
+        default=None,
+        description="DSPy prompt optimization — lazy-validated",
+    )
+
+    @model_validator(mode="after")
+    def validate_prompt_optimization(self) -> "AgentConfigInner":
+        """Parse prompt_optimization dict into PromptOptimizationConfig if provided."""
+        if self.prompt_optimization is not None and isinstance(
+            self.prompt_optimization, dict
+        ):
+            from temper_ai.optimization._schemas import PromptOptimizationConfig
+            self.prompt_optimization = PromptOptimizationConfig(
+                **self.prompt_optimization
+            )
+        return self
+
     error_handling: ErrorHandlingConfig
     merit_tracking: MeritTrackingConfig = Field(default_factory=MeritTrackingConfig)
     observability: ObservabilityConfig = Field(default_factory=ObservabilityConfig)
@@ -293,6 +395,25 @@ class AgentConfigInner(BaseModel):
         gt=0,
         description="Max chars for auto-injected dialogue context"
     )
+
+    @model_validator(mode="after")
+    def validate_agent_type_fields(self) -> "AgentConfigInner":
+        """Validate type-dependent required fields."""
+        if self.type == "script":
+            if not self.script:
+                raise ValueError(
+                    "'script' field is required when type='script'"
+                )
+        else:
+            if self.prompt is None:
+                raise ValueError(
+                    "'prompt' is required when type is not 'script'"
+                )
+            if self.inference is None:
+                raise ValueError(
+                    "'inference' is required when type is not 'script'"
+                )
+        return self
 
 
 class AgentConfig(BaseModel):

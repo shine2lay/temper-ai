@@ -224,7 +224,8 @@ def _execute_agent_with_tracking(params: AgentExecutionParams) -> Any:
         config_to_tracking_dict(params.agent_config, config_dict)
     )
     tracker = params.tracker
-    assert tracker is not None, "_execute_agent_with_tracking requires a tracker"
+    if tracker is None:
+        raise ValueError("_execute_agent_with_tracking requires a tracker")
     with tracker.track_agent(
         agent_name=params.agent_name,
         agent_config=agent_config_for_tracking,

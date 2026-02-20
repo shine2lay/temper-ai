@@ -52,6 +52,21 @@ logger = get_logger(__name__)
 # (unified base class for all rate limit exceptions)
 
 
+def _build_tool_cache(cfg: "ToolExecutorConfig") -> Any:
+    """Create ToolResultCache from config, or None if caching is disabled."""
+    if not cfg.enable_tool_cache:
+        return None
+    from temper_ai.tools.tool_cache import ToolResultCache
+    from temper_ai.tools.tool_cache_constants import (
+        DEFAULT_CACHE_MAX_SIZE,
+        DEFAULT_CACHE_TTL_SECONDS,
+    )
+    return ToolResultCache(
+        max_size=cfg.tool_cache_max_size or DEFAULT_CACHE_MAX_SIZE,
+        ttl_seconds=cfg.tool_cache_ttl or DEFAULT_CACHE_TTL_SECONDS,
+    )
+
+
 class ToolExecutor:
     """
     Executes tools with safety checks and error handling.
@@ -129,6 +144,10 @@ class ToolExecutor:
         # Rate limiting tracking
         self._execution_times: deque[float] = deque()
         self._rate_limit_lock = threading.Lock()
+
+        # R0.3 & R0.9
+        self._tool_cache = _build_tool_cache(cfg)
+        self.workflow_rate_limiter: Any = None
 
         # Register cleanup using weakref.finalize()
         self._finalizer = weakref.finalize(

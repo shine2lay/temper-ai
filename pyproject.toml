@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Temper AI agent framework with self-improvement and full observability"
 readme = "README.md"
 requires-python = ">=3.11"
-license = {text = "MIT"}
+license = {text = "Apache-2.0"}
 authors = [
     {name = "Temper AI Team"}
 ]
@@ -22,12 +22,14 @@ dependencies = [
     # Configuration
     "pyyaml>=6.0,<7.0",
     "pydantic>=2.0,<3.0",
+    "pydantic-settings>=2.0,<3.0",
     "jinja2>=3.1,<4.0",
 
     # Database & Observability
     "sqlmodel>=0.0.14,<1.0",
     "sqlalchemy>=2.0,<3.0",
     "alembic>=1.13,<2.0",
+    "psycopg2-binary>=2.9,<3.0",
 
     # Console UI
     "click>=8.0,<9.0",
@@ -47,6 +49,9 @@ dependencies = [
 
     # Security
     "cryptography>=46.0.5",
+
+    # Validation
+    "jsonschema>=4.0,<5.0",
 ]
 
 [project.optional-dependencies]
@@ -91,6 +96,10 @@ dashboard = [
 ]
 
 memory = ["mem0ai>=1.0.0"]
+
+mcp = ["mcp>=1.26.0"]
+
+dspy = ["dspy>=2.5"]
 
 # TODO: Replace 'yourusername' with actual GitHub username/organization
 [project.urls]
@@ -241,5 +250,5 @@ disallow_untyped_defs = false
 disallow_incomplete_defs = false
 
 [[tool.mypy.overrides]]
-module = ["mem0.*", "chromadb.*"]
+module = ["mem0.*", "chromadb.*", "mcp.*"]
 ignore_missing_imports = true

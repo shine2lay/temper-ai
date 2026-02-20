@@ -5,8 +5,8 @@ from unittest.mock import patch
 import pytest
 
 from temper_ai.observability.otel_setup import (
-    _ENV_MAF_OTEL_INSTRUMENT_HTTPX,
-    _ENV_MAF_OTEL_INSTRUMENT_SQLALCHEMY,
+    _ENV_TEMPER_OTEL_INSTRUMENT_HTTPX,
+    _ENV_TEMPER_OTEL_INSTRUMENT_SQLALCHEMY,
     _is_instrumentation_enabled,
 )
 
@@ -20,7 +20,7 @@ class TestIsInstrumentationEnabled:
         """httpx instrumentation defaults to ON when env var is absent."""
         with patch.dict("os.environ", {}, clear=True):
             result = _is_instrumentation_enabled(
-                _ENV_MAF_OTEL_INSTRUMENT_HTTPX, default_enabled=True
+                _ENV_TEMPER_OTEL_INSTRUMENT_HTTPX, default_enabled=True
             )
         assert result is True
 
@@ -29,20 +29,20 @@ class TestIsInstrumentationEnabled:
     def test_httpx_opt_out_with_false(self) -> None:
         """httpx can be explicitly disabled with 'false'."""
         with patch.dict(
-            "os.environ", {_ENV_MAF_OTEL_INSTRUMENT_HTTPX: "false"}, clear=True
+            "os.environ", {_ENV_TEMPER_OTEL_INSTRUMENT_HTTPX: "false"}, clear=True
         ):
             result = _is_instrumentation_enabled(
-                _ENV_MAF_OTEL_INSTRUMENT_HTTPX, default_enabled=True
+                _ENV_TEMPER_OTEL_INSTRUMENT_HTTPX, default_enabled=True
             )
         assert result is False
 
     def test_httpx_opt_out_with_zero(self) -> None:
         """httpx can be explicitly disabled with '0'."""
         with patch.dict(
-            "os.environ", {_ENV_MAF_OTEL_INSTRUMENT_HTTPX: "0"}, clear=True
+            "os.environ", {_ENV_TEMPER_OTEL_INSTRUMENT_HTTPX: "0"}, clear=True
         ):
             result = _is_instrumentation_enabled(
-                _ENV_MAF_OTEL_INSTRUMENT_HTTPX, default_enabled=True
+                _ENV_TEMPER_OTEL_INSTRUMENT_HTTPX, default_enabled=True
             )
         assert result is False
 
@@ -51,20 +51,20 @@ class TestIsInstrumentationEnabled:
     def test_httpx_opt_in_with_true(self) -> None:
         """httpx enabled with 'true'."""
         with patch.dict(
-            "os.environ", {_ENV_MAF_OTEL_INSTRUMENT_HTTPX: "true"}, clear=True
+            "os.environ", {_ENV_TEMPER_OTEL_INSTRUMENT_HTTPX: "true"}, clear=True
         ):
             result = _is_instrumentation_enabled(
-                _ENV_MAF_OTEL_INSTRUMENT_HTTPX, default_enabled=True
+                _ENV_TEMPER_OTEL_INSTRUMENT_HTTPX, default_enabled=True
             )
         assert result is True
 
     def test_httpx_opt_in_with_one(self) -> None:
         """httpx enabled with '1'."""
         with patch.dict(
-            "os.environ", {_ENV_MAF_OTEL_INSTRUMENT_HTTPX: "1"}, clear=True
+            "os.environ", {_ENV_TEMPER_OTEL_INSTRUMENT_HTTPX: "1"}, clear=True
         ):
             result = _is_instrumentation_enabled(
-                _ENV_MAF_OTEL_INSTRUMENT_HTTPX, default_enabled=True
+                _ENV_TEMPER_OTEL_INSTRUMENT_HTTPX, default_enabled=True
             )
         assert result is True
 
@@ -74,17 +74,17 @@ class TestIsInstrumentationEnabled:
         """SQLAlchemy instrumentation defaults to OFF when env var is absent."""
         with patch.dict("os.environ", {}, clear=True):
             result = _is_instrumentation_enabled(
-                _ENV_MAF_OTEL_INSTRUMENT_SQLALCHEMY, default_enabled=False
+                _ENV_TEMPER_OTEL_INSTRUMENT_SQLALCHEMY, default_enabled=False
             )
         assert result is False
 
     def test_sqlalchemy_opt_in_with_true(self) -> None:
         """SQLAlchemy can be explicitly enabled with 'true'."""
         with patch.dict(
-            "os.environ", {_ENV_MAF_OTEL_INSTRUMENT_SQLALCHEMY: "true"}, clear=True
+            "os.environ", {_ENV_TEMPER_OTEL_INSTRUMENT_SQLALCHEMY: "true"}, clear=True
         ):
             result = _is_instrumentation_enabled(
-                _ENV_MAF_OTEL_INSTRUMENT_SQLALCHEMY, default_enabled=False
+                _ENV_TEMPER_OTEL_INSTRUMENT_SQLALCHEMY, default_enabled=False
             )
         assert result is True
 
@@ -93,20 +93,20 @@ class TestIsInstrumentationEnabled:
     def test_case_insensitive_uppercase_false(self) -> None:
         """'FALSE' (uppercase) is recognized as false."""
         with patch.dict(
-            "os.environ", {_ENV_MAF_OTEL_INSTRUMENT_HTTPX: "FALSE"}, clear=True
+            "os.environ", {_ENV_TEMPER_OTEL_INSTRUMENT_HTTPX: "FALSE"}, clear=True
         ):
             result = _is_instrumentation_enabled(
-                _ENV_MAF_OTEL_INSTRUMENT_HTTPX, default_enabled=True
+                _ENV_TEMPER_OTEL_INSTRUMENT_HTTPX, default_enabled=True
             )
         assert result is False
 
     def test_case_insensitive_mixed_case_true(self) -> None:
         """'True' (mixed case) is recognized as true."""
         with patch.dict(
-            "os.environ", {_ENV_MAF_OTEL_INSTRUMENT_HTTPX: "True"}, clear=True
+            "os.environ", {_ENV_TEMPER_OTEL_INSTRUMENT_HTTPX: "True"}, clear=True
         ):
             result = _is_instrumentation_enabled(
-                _ENV_MAF_OTEL_INSTRUMENT_HTTPX, default_enabled=False
+                _ENV_TEMPER_OTEL_INSTRUMENT_HTTPX, default_enabled=False
             )
         assert result is True
 
@@ -115,19 +115,19 @@ class TestIsInstrumentationEnabled:
     def test_unknown_value_falls_back_to_default_enabled_true(self) -> None:
         """Unknown value falls back to default_enabled (True)."""
         with patch.dict(
-            "os.environ", {_ENV_MAF_OTEL_INSTRUMENT_HTTPX: "maybe"}, clear=True
+            "os.environ", {_ENV_TEMPER_OTEL_INSTRUMENT_HTTPX: "maybe"}, clear=True
         ):
             result = _is_instrumentation_enabled(
-                _ENV_MAF_OTEL_INSTRUMENT_HTTPX, default_enabled=True
+                _ENV_TEMPER_OTEL_INSTRUMENT_HTTPX, default_enabled=True
             )
         assert result is True
 
     def test_unknown_value_falls_back_to_default_enabled_false(self) -> None:
         """Unknown value falls back to default_enabled (False)."""
         with patch.dict(
-            "os.environ", {_ENV_MAF_OTEL_INSTRUMENT_HTTPX: "maybe"}, clear=True
+            "os.environ", {_ENV_TEMPER_OTEL_INSTRUMENT_HTTPX: "maybe"}, clear=True
         ):
             result = _is_instrumentation_enabled(
-                _ENV_MAF_OTEL_INSTRUMENT_HTTPX, default_enabled=False
+                _ENV_TEMPER_OTEL_INSTRUMENT_HTTPX, default_enabled=False
             )
         assert result is False

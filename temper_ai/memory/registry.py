@@ -9,6 +9,7 @@ from temper_ai.memory.constants import (
     PROVIDER_IN_MEMORY,
     PROVIDER_KNOWLEDGE_GRAPH,
     PROVIDER_MEM0,
+    PROVIDER_PG,
     PROVIDER_SQLITE,
 )
 
@@ -21,7 +22,10 @@ class MemoryProviderRegistry:
 
     Built-ins:
       - 'in_memory': InMemoryAdapter (eager)
+      - 'pg': PGAdapter (lazy — PostgreSQL via SQLAlchemy)
+      - 'sqlite': SQLiteAdapter (lazy — raw sqlite3)
       - 'mem0': Mem0Adapter (lazy — imported only when requested)
+      - 'knowledge_graph': KnowledgeGraphMemoryAdapter (lazy)
     """
 
     _instance: MemoryProviderRegistry | None = None
@@ -44,12 +48,13 @@ class MemoryProviderRegistry:
         from temper_ai.memory.adapters.in_memory import InMemoryAdapter
 
         self._providers[PROVIDER_IN_MEMORY] = InMemoryAdapter
+        self._providers[PROVIDER_PG] = _LAZY_SENTINEL
         self._providers[PROVIDER_MEM0] = _LAZY_SENTINEL
         self._providers[PROVIDER_SQLITE] = _LAZY_SENTINEL
         self._providers[PROVIDER_KNOWLEDGE_GRAPH] = _LAZY_SENTINEL
 
     def get_provider_class(self, name: str) -> Type[Any]:
-        """Get provider class by name. Lazily imports Mem0/SQLite if needed."""
+        """Get provider class by name. Lazily imports adapters as needed."""
         with self._lock:
             if name not in self._providers:
                 raise KeyError(f"Unknown memory provider: {name}")
@@ -62,6 +67,9 @@ class MemoryProviderRegistry:
     @staticmethod
     def _lazy_import(name: str) -> Type[Any]:
         """Lazily import a provider class by name."""
+        if name == PROVIDER_PG:
+            from temper_ai.memory.adapters.pg_adapter import PGAdapter
+            return PGAdapter
         if name == PROVIDER_MEM0:
             from temper_ai.memory.adapters.mem0_adapter import Mem0Adapter
             return Mem0Adapter

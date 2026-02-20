@@ -60,7 +60,6 @@ OPT_REASON = "--reason"
 HELP_REVIEWER = "Reviewer name"
 
 # Store
-DEFAULT_DATABASE_URL = "sqlite:///./goals.db"
 DEFAULT_LIST_LIMIT = 100
 DEFAULT_RUN_LIMIT = 20
 DEDUP_KEY_LENGTH = 16

@@ -559,9 +559,9 @@ def setup_logging(
     """Configure logging for the application.
 
     Args:
-        level: Log level (default: LOG_LEVEL env var or INFO).
+        level: Log level (default: TEMPER_LOG_LEVEL env var or INFO).
         format_type: Output format - "console", "json", "rich", or "both"
-                     (default: MAF_LOG_FORMAT env var or "console").
+                     (default: TEMPER_LOG_FORMAT env var or "console").
         log_file: Optional file path for logging.
         use_colors: Whether to use colors in console output.
 
@@ -569,9 +569,9 @@ def setup_logging(
     execution-context and OTEL fields are available on every ``LogRecord``.
     """
     if level is None:
-        level = os.environ.get('LOG_LEVEL', 'INFO').upper()
+        level = os.environ.get('TEMPER_LOG_LEVEL', 'INFO').upper()
     if format_type is None:
-        format_type = os.environ.get('MAF_LOG_FORMAT', 'console').lower()
+        format_type = os.environ.get('TEMPER_LOG_FORMAT', 'console').lower()
 
     numeric_level = getattr(logging, level, None)
     if not isinstance(numeric_level, int):

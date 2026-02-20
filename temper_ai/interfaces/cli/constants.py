@@ -54,9 +54,9 @@ CLI_OPTION_CONFIG_ROOT = "--config-root"
 CLI_OPTION_DB = "--db"
 CLI_OPTION_SERVER = "--server"
 CLI_OPTION_API_KEY = "--api-key"
-ENV_VAR_CONFIG_ROOT = "MAF_CONFIG_ROOT"
-ENV_VAR_SERVER_URL = "MAF_SERVER_URL"
-ENV_VAR_API_KEY = "MAF_API_KEY"
+ENV_VAR_CONFIG_ROOT = "TEMPER_CONFIG_ROOT"
+ENV_VAR_SERVER_URL = "TEMPER_SERVER_URL"
+ENV_VAR_API_KEY = "TEMPER_API_KEY"
 
 # ============================================================================
 # Help Text

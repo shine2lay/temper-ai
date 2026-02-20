@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "temper-ai.fullname" . }}-config
+  labels:
+    {{- include "temper-ai.labels" . | nindent 4 }}
+data:
+  TEMPER_LOG_LEVEL: {{ .Values.config.logLevel | quote }}
+  TEMPER_WORKER_CONCURRENCY: {{ .Values.config.workerConcurrency | quote }}
+  MAF_CONFIG_ROOT: {{ .Values.config.configRoot | quote }}

@@ -6,6 +6,10 @@ from temper_ai.storage.database.datetime_utils import (
     utcnow,
     validate_utc_aware,
 )
+from temper_ai.storage.database.engine import (
+    create_app_engine,
+    get_database_url,
+)
 from temper_ai.storage.database.manager import (
     DatabaseManager,
     IsolationLevel,
@@ -36,6 +40,9 @@ from temper_ai.storage.database.models import (
 )
 
 __all__ = [
+    # Engine factory
+    "create_app_engine",
+    "get_database_url",
     # Manager
     "DatabaseManager",
     "get_database",

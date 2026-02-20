@@ -93,6 +93,7 @@ class WorkflowStateParams:
     workspace: Optional[str] = None
     run_id: Optional[str] = None
     workflow_name: str = ""
+    total_stages: int = 0
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────
@@ -386,6 +387,7 @@ def _build_workflow_state(params: WorkflowStateParams) -> dict[str, Any]:
         "detail_console": console if params.show_details else None,
         "stream_callback": stream_display,
         "workflow_name": params.workflow_name,
+        "total_stages": params.total_stages,
     }
     if params.workspace is not None:
         state["workspace_root"] = params.workspace
@@ -398,7 +400,7 @@ def _build_workflow_state(params: WorkflowStateParams) -> dict[str, Any]:
 # Everything else (stage_outputs, status, etc.) is data the evaluator needs.
 _INFRA_STATE_KEYS = frozenset({
     "tracker", "config_loader", "tool_registry", "detail_console",
-    "stream_callback", "show_details",
+    "stream_callback", "show_details", "total_stages",
 })
 
 
@@ -528,19 +530,14 @@ def _execute_workflow(params: WorkflowExecutionParams) -> Any:
         SystemExit: On execution failure or interruption
     """
     try:
-        state = _build_workflow_state(
-            WorkflowStateParams(
-                inputs=params.inputs,
-                tracker=params.tracker,
-                config_loader=params.config_loader,
-                tool_registry=params.tool_registry,
-                workflow_id=params.workflow_id,
-                show_details=params.show_details,
-                workspace=params.workspace,
-                run_id=params.run_id,
-                workflow_name=params.workflow_name,
-            )
-        )
+        state = _build_workflow_state(WorkflowStateParams(
+            inputs=params.inputs, tracker=params.tracker,
+            config_loader=params.config_loader, tool_registry=params.tool_registry,
+            workflow_id=params.workflow_id, show_details=params.show_details,
+            workspace=params.workspace, run_id=params.run_id,
+            workflow_name=params.workflow_name,
+            total_stages=len(params.workflow_config.get("workflow", {}).get("stages", [])),
+        ))
 
         # Wire optimization engine if configured
         opt_raw = params.workflow_config.get("workflow", {}).get("optimization")
@@ -865,6 +862,41 @@ def _maybe_adapt_lifecycle(
         return workflow_config
 
 
+def _maybe_run_planning_pass(
+    wf_config: dict, inputs: dict, cli_plan: bool, verbose: bool,
+) -> dict:
+    """Run workflow planning pass if enabled (R0.8).
+
+    Returns inputs dict with ``workflow_plan`` key injected if plan was generated.
+    """
+    wf = wf_config.get("workflow", {})
+    planning_raw = wf.get("config", {}).get("planning", {})
+    plan_enabled = planning_raw.get("enabled", False) or cli_plan
+
+    if not plan_enabled:
+        return inputs
+
+    try:
+        from temper_ai.workflow.planning import PlanningConfig, generate_workflow_plan
+
+        planning_cfg = PlanningConfig(**(planning_raw if isinstance(planning_raw, dict) else {}))
+        if cli_plan:
+            planning_cfg.enabled = True
+
+        plan = generate_workflow_plan(wf_config, inputs, planning_cfg)
+        if plan:
+            inputs = dict(inputs)
+            inputs["workflow_plan"] = plan
+            if verbose:
+                console.print(f"[cyan]Planning pass:[/cyan] {len(plan)} chars generated")
+    except (ImportError, ValueError, RuntimeError) as exc:
+        logger.warning("Planning pass failed: %s", exc)
+        if verbose:
+            console.print(f"[yellow]Planning pass skipped:[/yellow] {exc}")
+
+    return inputs
+
+
 def _handle_server_mode(  # noqa: params — pass-through from Click
     workflow: str,
     input_file: Optional[str],
@@ -916,6 +948,7 @@ def _run_local_workflow(  # noqa: params — pass-through from Click
     event_format: str,
     run_id: Optional[str],
     autonomous: bool,
+    enable_plan: bool = False,
 ) -> None:
     """Execute a workflow locally with observability and optional dashboard."""
     from temper_ai.observability.tracker import WorkflowTrackingParams
@@ -925,6 +958,9 @@ def _run_local_workflow(  # noqa: params — pass-through from Click
         workflow, input_file, config_root, verbose,
     )
     wf_config = _maybe_adapt_lifecycle(wf_config, inputs, config_root, verbose)
+
+    # Planning pass (R0.8): run before workflow execution
+    inputs = _maybe_run_planning_pass(wf_config, inputs, enable_plan, verbose)
 
     needs_bus = dashboard is not None or events_to != "stderr" or event_format != "text"
     dash_port = dashboard if dashboard is not None else (0 if needs_bus else None)
@@ -994,7 +1030,7 @@ def _run_local_workflow(  # noqa: params — pass-through from Click
     "--workspace",
     type=click.Path(),
     default=None,
-    envvar="MAF_WORKSPACE",
+    envvar="TEMPER_WORKSPACE",
     help="Restrict file operations to this directory",
 )
 @click.option(
@@ -1028,6 +1064,12 @@ def _run_local_workflow(  # noqa: params — pass-through from Click
     help="Force local execution (skip server detection)",
 )
 @click.option(
+    "--plan",
+    "enable_plan",
+    is_flag=True,
+    help="Run a planning pass before workflow execution (R0.8)",
+)
+@click.option(
     CLI_OPTION_SERVER,
     default=None,
     envvar=ENV_VAR_SERVER_URL,
@@ -1054,6 +1096,7 @@ def run(  # noqa: params — Click command, params are CLI args
     run_id: Optional[str],
     autonomous: bool,
     local: bool,
+    enable_plan: bool,
     server: Optional[str],
     api_key: Optional[str],
 ) -> None:
@@ -1068,7 +1111,7 @@ def run(  # noqa: params — Click command, params are CLI args
     _run_local_workflow(
         workflow, input_file, verbose, output, db, config_root,
         show_details, dashboard, workspace, events_to,
-        event_format, run_id, autonomous,
+        event_format, run_id, autonomous, enable_plan,
     )
 
 
@@ -1108,7 +1151,7 @@ def _print_run_summary(
 
 
 @main.command()
-@click.option("--host", default=DEFAULT_HOST, show_default=True, envvar="MAF_HOST", help="Bind address")
+@click.option("--host", default=DEFAULT_HOST, show_default=True, envvar="TEMPER_HOST", help="Bind address")
 @click.option("--port", default=DEFAULT_DASHBOARD_PORT, show_default=True, help="Dashboard port")
 @click.option("--db", default=None, help="Database path")
 def dashboard(host: str, port: int, db: Optional[str]) -> None:
@@ -1157,8 +1200,8 @@ def dashboard(host: str, port: int, db: Optional[str]) -> None:
 
 
 @main.command()
-@click.option("--host", default=DEFAULT_HOST, show_default=True, envvar="MAF_HOST", help="Bind address")
-@click.option("--port", default=DEFAULT_DASHBOARD_PORT, show_default=True, envvar="MAF_PORT", help="Listen port")
+@click.option("--host", default=DEFAULT_HOST, show_default=True, envvar="TEMPER_HOST", help="Bind address")
+@click.option("--port", default=DEFAULT_DASHBOARD_PORT, show_default=True, envvar="TEMPER_PORT", help="Listen port")
 @click.option(
     CLI_OPTION_CONFIG_ROOT,
     default=DEFAULT_CONFIG_ROOT,
@@ -1166,8 +1209,8 @@ def dashboard(host: str, port: int, db: Optional[str]) -> None:
     envvar=ENV_VAR_CONFIG_ROOT,
     help=HELP_CONFIG_ROOT,
 )
-@click.option("--db", default=None, envvar="MAF_DB_PATH", help="Database path")
-@click.option("--workers", default=DEFAULT_MAX_WORKERS, show_default=True, envvar="MAF_MAX_WORKERS", help="Max concurrent workflows")
+@click.option("--db", default=None, envvar="TEMPER_DB_PATH", help="Database path")
+@click.option("--workers", default=DEFAULT_MAX_WORKERS, show_default=True, envvar="TEMPER_MAX_WORKERS", help="Max concurrent workflows")
 @click.option("--reload", "dev_reload", is_flag=True, help="Auto-reload on code changes (dev mode)")
 def serve(host: str, port: int, config_root: str, db: Optional[str], workers: int, dev_reload: bool) -> None:
     """Start Temper AI HTTP API server for programmatic workflow execution."""
@@ -2010,6 +2053,28 @@ main.add_command(portfolio_group)
 from temper_ai.interfaces.cli.experiment_commands import experiment_group  # noqa: E402
 
 main.add_command(experiment_group)
+
+from temper_ai.interfaces.cli.chat_commands import chat  # noqa: E402
+
+main.add_command(chat)
+
+from temper_ai.interfaces.cli.checkpoint_commands import checkpoint_group  # noqa: E402
+
+main.add_command(checkpoint_group)
+
+try:
+    from temper_ai.interfaces.cli.mcp_commands import mcp_group  # noqa: E402
+    main.add_command(mcp_group)
+except ImportError:
+    pass  # mcp extra not installed
+
+from temper_ai.interfaces.cli.create_commands import create  # noqa: E402
+
+main.add_command(create)
+
+from temper_ai.interfaces.cli.visualize_commands import visualize  # noqa: E402
+
+main.add_command(visualize)
 
 
 if __name__ == "__main__":

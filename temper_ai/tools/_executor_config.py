@@ -31,6 +31,9 @@ class ToolExecutorConfig:
     approval_workflow: Optional[ApprovalWorkflow] = None
     enable_auto_rollback: bool = True
     workspace_root: Optional[str] = None
+    enable_tool_cache: bool = False
+    tool_cache_max_size: Optional[int] = None
+    tool_cache_ttl: Optional[int] = None
 
     @property
     def workspace_path(self) -> Optional[Path]:

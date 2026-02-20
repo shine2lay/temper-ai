@@ -495,6 +495,45 @@ def create_snapshot(
         return None
 
 
+def _is_tool_cacheable(tool: BaseTool) -> bool:
+    """Check if a tool's results can be cached."""
+    metadata = tool.get_metadata()
+    if metadata.cacheable is not None:
+        return metadata.cacheable
+    return not metadata.modifies_state
+
+
+def check_tool_cache(
+    executor: ToolExecutor, tool: BaseTool, params: Dict[str, Any],
+) -> Optional[ToolResult]:
+    """Check cache for a previous result. Returns cached ToolResult or None."""
+    if executor._tool_cache is None or not _is_tool_cacheable(tool):
+        return None
+    cached: Optional[ToolResult] = executor._tool_cache.get(tool.name, params)
+    return cached
+
+
+def store_tool_cache(
+    executor: ToolExecutor,
+    tool: BaseTool,
+    params: Dict[str, Any],
+    result: ToolResult,
+) -> None:
+    """Store a successful result in cache if tool is cacheable."""
+    if executor._tool_cache is None:
+        return
+    if not _is_tool_cacheable(tool) or not result.success:
+        return
+    executor._tool_cache.put(tool.name, params, result)
+
+
+def check_workflow_rate_limit(executor: ToolExecutor) -> None:
+    """Check workflow-level rate limit before tool execution."""
+    if executor.workflow_rate_limiter is None:
+        return
+    executor.workflow_rate_limiter.acquire()
+
+
 def execute_with_timeout(
     executor: ToolExecutor,
     tool: BaseTool,
@@ -505,6 +544,15 @@ def execute_with_timeout(
     context: Dict[str, Any],
 ) -> ToolResult:
     """Execute tool in thread pool with timeout and rollback handling."""
+    # Cache check (R0.3) — before acquiring any slot
+    cached = check_tool_cache(executor, tool, params)
+    if cached is not None:
+        logger.debug("Cache hit for tool '%s'", tool_name)
+        return cached
+
+    # Workflow rate limit (R0.9) — after cache, before concurrency slot
+    check_workflow_rate_limit(executor)
+
     try:
         acquire_concurrent_slot(executor)
     except RateLimitError as e:
@@ -524,6 +572,9 @@ def execute_with_timeout(
 
             if not result.success and snapshot and executor.enable_auto_rollback:
                 handle_auto_rollback(executor, snapshot, tool_name, result, context)
+
+            # Cache store (R0.3) — only successful, cacheable results
+            store_tool_cache(executor, tool, params, result)
 
             return result
 

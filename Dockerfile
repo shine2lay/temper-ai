@@ -68,3 +68,23 @@ ENV MAF_CONFIG_ROOT=/app/configs
 WORKDIR /workspace
 
 ENTRYPOINT ["temper-ai", "run"]
+
+# ── worker ────────────────────────────────────────────────────────────
+FROM base AS worker
+
+LABEL org.opencontainers.image.title="Temper AI Worker" \
+      org.opencontainers.image.description="Temper AI background workflow worker" \
+      org.opencontainers.image.version="${MAF_VERSION}" \
+      org.opencontainers.image.revision="${MAF_COMMIT}"
+
+# Non-root user
+RUN groupadd -r temperai && useradd -r -g temperai -d /app temperai
+RUN mkdir -p /app/.temper-ai && chown -R temperai:temperai /app
+USER temperai
+
+ENV MAF_CONFIG_ROOT=/app/configs
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD ["python", "-c", "import sys; sys.exit(0)"]
+
+CMD ["temper-ai", "run", "--local", "--autonomous"]

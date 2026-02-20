@@ -72,12 +72,25 @@ class StandardAgent(BaseAgent):
         start_time: float,
     ) -> AgentResponse:
         """Execute multi-turn tool-calling loop via LLMService."""
+        from temper_ai.agent._r0_pipeline_helpers import (
+            apply_context_management, apply_guardrails,
+            apply_reasoning, validate_and_retry_output,
+        )
+
         prompt = self._prepare_prompt(input_data, context)
+        if self.config.agent.reasoning.enabled:
+            prompt = apply_reasoning(self.llm_service, self.config, prompt)
+        if self.config.agent.context_management.enabled:
+            prompt = apply_context_management(self.config, prompt)
         kwargs = self._llm_kwargs(prompt, start_time)
         messages = self._build_messages_from_history(input_data, prompt)
         if messages is not None:
             kwargs["messages"] = messages
         result = self.llm_service.run(**kwargs)
+        if self.config.agent.output_schema and self.config.agent.output_schema.json_schema:
+            result = validate_and_retry_output(self.llm_service, self.config, result, prompt, kwargs)
+        if self.config.agent.output_guardrails.enabled:
+            result = apply_guardrails(self.llm_service, self.config, result, prompt, kwargs)
         response = self._convert_result(result, start_time)
         response.metadata["_rendered_prompt"] = prompt
         response.metadata["_user_message"] = result.user_message
@@ -91,12 +104,25 @@ class StandardAgent(BaseAgent):
         start_time: float,
     ) -> AgentResponse:
         """Async multi-turn tool-calling loop via LLMService."""
+        from temper_ai.agent._r0_pipeline_helpers import (
+            aapply_guardrails, apply_context_management,
+            apply_reasoning, avalidate_and_retry_output,
+        )
+
         prompt = self._prepare_prompt(input_data, context)
+        if self.config.agent.reasoning.enabled:
+            prompt = apply_reasoning(self.llm_service, self.config, prompt)
+        if self.config.agent.context_management.enabled:
+            prompt = apply_context_management(self.config, prompt)
         kwargs = self._llm_kwargs(prompt, start_time)
         messages = self._build_messages_from_history(input_data, prompt)
         if messages is not None:
             kwargs["messages"] = messages
         result = await self.llm_service.arun(**kwargs)
+        if self.config.agent.output_schema and self.config.agent.output_schema.json_schema:
+            result = await avalidate_and_retry_output(self.llm_service, self.config, result, prompt, kwargs)
+        if self.config.agent.output_guardrails.enabled:
+            result = await aapply_guardrails(self.llm_service, self.config, result, prompt, kwargs)
         response = self._convert_result(result, start_time)
         response.metadata["_rendered_prompt"] = prompt
         response.metadata["_user_message"] = result.user_message
@@ -368,8 +394,8 @@ class StandardAgent(BaseAgent):
             "description": self.description,
             "version": self.version,
             "type": "standard",
-            "llm_provider": self.config.agent.inference.provider,
-            "llm_model": self.config.agent.inference.model,
+            "llm_provider": self.config.agent.inference.provider if self.config.agent.inference else "none",
+            "llm_model": self.config.agent.inference.model if self.config.agent.inference else "none",
             "tools": tools_list,
             "max_tool_calls": self.config.agent.safety.max_tool_calls_per_execution,
             "supports_streaming": True,

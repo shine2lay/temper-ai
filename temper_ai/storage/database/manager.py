@@ -1,18 +1,18 @@
 """Database connection and session management."""
+
 import logging
 import os
 import threading
 import urllib.parse
 from contextlib import contextmanager
 from enum import Enum
-from typing import Any, Generator, Optional
+from typing import Generator, Optional
 
-from sqlalchemy import event, text
+from sqlalchemy import text
 from sqlalchemy.engine import Engine
-from sqlalchemy.pool import NullPool, StaticPool
-from sqlmodel import Session, SQLModel, create_engine
+from sqlmodel import Session, SQLModel
 
-from temper_ai.shared.constants.limits import SMALL_POOL_SIZE
+from temper_ai.storage.database.engine import create_app_engine, get_database_url
 
 logger = logging.getLogger(__name__)
 
@@ -68,72 +68,11 @@ class DatabaseManager:
         """Initialize database manager.
 
         Args:
-            database_url: Database URL. If None, uses DATABASE_URL env var
-                         or defaults to SQLite.
+            database_url: Database URL. If None, reads from
+                ``TEMPER_DATABASE_URL`` env var (default: PostgreSQL).
         """
-        if database_url is None:
-            database_url = os.getenv(
-                "DATABASE_URL",
-                "sqlite:///./meta_autonomous.db"
-            )
-
-        self.database_url = database_url
-        self.engine = self._create_engine()
-
-    def _create_engine(self) -> Engine:
-        """Create SQLAlchemy engine with appropriate settings."""
-        if self.database_url.startswith("sqlite"):
-            # SQLite settings — NullPool gives each thread its own connection
-            # (StaticPool shares one connection → InterfaceError under parallel agents)
-            is_memory_db = ":memory:" in self.database_url
-            engine = create_engine(
-                self.database_url,
-                connect_args={"check_same_thread": False},
-                poolclass=StaticPool if is_memory_db else NullPool,
-                echo=False
-            )
-
-            # SECURITY FIX (test-crit-foreign-keys-01): Enable foreign key constraints
-            # SQLite disables foreign keys by default - must enable per connection
-            @event.listens_for(engine, "connect")
-            def set_sqlite_pragma(dbapi_connection: Any, _connection_record: Any) -> None:
-                """Enable foreign keys and verify on every connection.
-
-                CRITICAL: This prevents orphaned records and enforces referential integrity.
-                Must be set PER CONNECTION as it's not persistent.
-                """
-                cursor = dbapi_connection.cursor()
-
-                # Enable foreign keys
-                cursor.execute("PRAGMA foreign_keys = ON")
-
-                # Defensive check: Verify foreign keys actually enabled
-                cursor.execute("PRAGMA foreign_keys")
-                result = cursor.fetchone()
-                if result[0] != 1:
-                    cursor.close()
-                    raise RuntimeError(
-                        "Failed to enable SQLite foreign keys. "
-                        "Database integrity cannot be guaranteed."
-                    )
-
-                # Enable WAL mode for better concurrent read performance
-                cursor.execute("PRAGMA journal_mode=WAL")
-
-                cursor.close()
-                logger.debug("SQLite foreign keys and WAL mode enabled for connection")
-
-        else:
-            # PostgreSQL settings
-            engine = create_engine(
-                self.database_url,
-                pool_size=SMALL_POOL_SIZE,
-                max_overflow=SMALL_POOL_SIZE * 2,
-                pool_pre_ping=True,
-                echo=False
-            )
-
-        return engine
+        self.database_url = database_url or get_database_url()
+        self.engine: Engine = create_app_engine(self.database_url)
 
     def create_all_tables(self) -> None:
         """Create all tables in the database.
@@ -161,19 +100,6 @@ class DatabaseManager:
                            (typically READ COMMITTED). Use SERIALIZABLE for operations
                            requiring strict consistency under concurrent access.
 
-        Usage:
-            # Default isolation (READ COMMITTED)
-            with db_manager.session() as session:
-                workflow = WorkflowExecution(...)
-                session.add(workflow)
-                session.commit()
-
-            # SERIALIZABLE for critical operations
-            with db_manager.session(isolation_level=IsolationLevel.SERIALIZABLE) as session:
-                # Concurrent-safe operations
-                result = session.execute(...)
-                session.commit()
-
         Note:
             SERIALIZABLE isolation may result in serialization failures under high
             contention. Application code should implement retry logic for such failures.
@@ -187,9 +113,7 @@ class DatabaseManager:
                     # SQLite supports SERIALIZABLE via IMMEDIATE transactions
                     if isolation_level == IsolationLevel.SERIALIZABLE:
                         session.execute(text("BEGIN IMMEDIATE"))
-                    # Other isolation levels not fully supported in SQLite
                 else:
-                    # H-04: Use execution_options instead of f-string SQL
                     session.connection().execution_options(
                         isolation_level=isolation_level.value
                     )
@@ -226,7 +150,8 @@ def init_database(database_url: Optional[str] = None) -> DatabaseManager:
     """Initialize global database manager (thread-safe).
 
     Args:
-        database_url: Database URL. If None, uses default.
+        database_url: Database URL. If None, uses ``TEMPER_DATABASE_URL``
+            env var (default: PostgreSQL).
 
     Returns:
         Initialized DatabaseManager instance.
@@ -253,7 +178,7 @@ def init_database(database_url: Optional[str] = None) -> DatabaseManager:
                 f"Failed to connect to database: {_mask_database_url(database_url)}"
             ) from e
 
-        # H-22: Alembic is the sole DDL strategy for production deployments.
+        # Alembic is the sole DDL strategy for production deployments.
         # In production, set ALEMBIC_MANAGED=1 so that init_database() skips
         # create_all_tables() and relies on `alembic upgrade head` instead.
         # For dev/test (the default), tables are auto-created for convenience.

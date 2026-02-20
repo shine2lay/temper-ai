@@ -1,34 +1,25 @@
-"""SQLite persistence for lifecycle adaptation data."""
+"""Database persistence for lifecycle adaptation data."""
 
 import logging
 from typing import Optional
 
-from sqlalchemy import event
 from sqlalchemy.engine import Engine
-from sqlalchemy.pool import NullPool, StaticPool
-from sqlmodel import Session, SQLModel, create_engine, select
+from sqlmodel import Session, SQLModel, select
 
-from temper_ai.lifecycle.constants import DEFAULT_LIFECYCLE_DB_URL, DEFAULT_LIST_LIMIT
+from temper_ai.lifecycle.constants import DEFAULT_LIST_LIMIT
 from temper_ai.lifecycle.models import LifecycleAdaptation, LifecycleProfileRecord
 from temper_ai.storage.database.datetime_utils import utcnow
+from temper_ai.storage.database.engine import create_app_engine, get_database_url
 
 logger = logging.getLogger(__name__)
 
 
 class LifecycleStore:
-    """SQLite persistence for lifecycle adaptation and profile data."""
+    """Database persistence for lifecycle adaptation and profile data."""
 
     def __init__(self, database_url: Optional[str] = None) -> None:
-        self.database_url = database_url or DEFAULT_LIFECYCLE_DB_URL
-        is_memory = ":memory:" in self.database_url
-        self.engine: Engine = create_engine(
-            self.database_url,
-            connect_args={"check_same_thread": False},
-            poolclass=StaticPool if is_memory else NullPool,
-            echo=False,
-        )
-        if self.database_url.startswith("sqlite"):
-            _register_sqlite_pragmas(self.engine)
+        self.database_url = database_url or get_database_url()
+        self.engine: Engine = create_app_engine(self.database_url)
 
         _tables = [
             LifecycleAdaptation.__table__,  # type: ignore[attr-defined]
@@ -109,14 +100,3 @@ class LifecycleStore:
             session.add(profile)
             session.commit()
             return True
-
-
-def _register_sqlite_pragmas(engine: Engine) -> None:
-    """Enable WAL mode and foreign keys for SQLite."""
-
-    @event.listens_for(engine, "connect")
-    def _sqlite_pragmas(dbapi_conn, _rec):  # type: ignore[no-untyped-def]
-        cursor = dbapi_conn.cursor()
-        cursor.execute("PRAGMA journal_mode=WAL")
-        cursor.execute("PRAGMA foreign_keys=ON")
-        cursor.close()

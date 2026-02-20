@@ -1,6 +1,6 @@
 """Environment-variable-gated OpenTelemetry initialisation.
 
-Reads standard OTEL env vars plus ``MAF_OTEL_ENABLED`` to decide whether
+Reads standard OTEL env vars plus ``TEMPER_OTEL_ENABLED`` to decide whether
 to activate tracing and metrics.  When the ``opentelemetry`` packages are
 not installed, every public function in this module is a safe no-op.
 
@@ -11,9 +11,9 @@ Typical activation::
 
 Or explicitly::
 
-    export MAF_OTEL_ENABLED=true
+    export TEMPER_OTEL_ENABLED=true
     export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
-    export OTEL_SERVICE_NAME=maf
+    export OTEL_SERVICE_NAME=temper-ai
 """
 import logging
 import os
@@ -24,12 +24,12 @@ logger = logging.getLogger(__name__)
 # Standard env vars
 _ENV_OTEL_ENDPOINT = "OTEL_EXPORTER_OTLP_ENDPOINT"
 _ENV_OTEL_SERVICE_NAME = "OTEL_SERVICE_NAME"
-_ENV_MAF_OTEL_ENABLED = "MAF_OTEL_ENABLED"
-_ENV_MAF_OTEL_INSTRUMENT_HTTPX = "MAF_OTEL_INSTRUMENT_HTTPX"
-_ENV_MAF_OTEL_INSTRUMENT_SQLALCHEMY = "MAF_OTEL_INSTRUMENT_SQLALCHEMY"
+_ENV_TEMPER_OTEL_ENABLED = "TEMPER_OTEL_ENABLED"
+_ENV_TEMPER_OTEL_INSTRUMENT_HTTPX = "TEMPER_OTEL_INSTRUMENT_HTTPX"
+_ENV_TEMPER_OTEL_INSTRUMENT_SQLALCHEMY = "TEMPER_OTEL_INSTRUMENT_SQLALCHEMY"
 
 # Defaults
-_DEFAULT_SERVICE_NAME = "maf"
+_DEFAULT_SERVICE_NAME = "temper-ai"
 
 _TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
 _FALSE_VALUES = frozenset({"0", "false", "no", "off"})
@@ -40,9 +40,9 @@ def is_otel_configured() -> bool:
 
     Activation requires either:
     * ``OTEL_EXPORTER_OTLP_ENDPOINT`` is set, **or**
-    * ``MAF_OTEL_ENABLED`` is truthy (``1`` / ``true`` / ``yes``).
+    * ``TEMPER_OTEL_ENABLED`` is truthy (``1`` / ``true`` / ``yes``).
     """
-    if os.environ.get(_ENV_MAF_OTEL_ENABLED, "").lower() in _TRUE_VALUES:
+    if os.environ.get(_ENV_TEMPER_OTEL_ENABLED, "").lower() in _TRUE_VALUES:
         return True
     return bool(os.environ.get(_ENV_OTEL_ENDPOINT))
 
@@ -127,7 +127,7 @@ def _is_instrumentation_enabled(env_var: str, default_enabled: bool = False) -> 
 
 def _init_auto_instrumentation() -> None:
     """Optionally instrument httpx and SQLAlchemy."""
-    if _is_instrumentation_enabled(_ENV_MAF_OTEL_INSTRUMENT_HTTPX, default_enabled=True):
+    if _is_instrumentation_enabled(_ENV_TEMPER_OTEL_INSTRUMENT_HTTPX, default_enabled=True):
         try:
             from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 
@@ -137,7 +137,7 @@ def _init_auto_instrumentation() -> None:
             logger.debug("httpx OTEL instrumentation not available")
 
     if _is_instrumentation_enabled(
-        _ENV_MAF_OTEL_INSTRUMENT_SQLALCHEMY, default_enabled=False
+        _ENV_TEMPER_OTEL_INSTRUMENT_SQLALCHEMY, default_enabled=False
     ):
         try:
             from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor

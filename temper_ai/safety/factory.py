@@ -325,7 +325,7 @@ def create_safety_stack(
     """
     # Determine environment
     if environment is None:
-        environment = os.getenv("SAFETY_ENV", "development")
+        environment = os.getenv("TEMPER_SAFETY_ENV", "development")
 
     logger.info(f"Creating safety stack for environment: {environment}")
 

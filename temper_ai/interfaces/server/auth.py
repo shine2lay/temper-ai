@@ -1,10 +1,10 @@
-"""API key authentication middleware for MAF Server.
+"""API key authentication middleware for Temper AI Server.
 
-When the ``MAF_API_KEY`` environment variable is set, all requests
+When the ``TEMPER_API_KEY`` environment variable is set, all requests
 (except health endpoints and WebSocket upgrades) must include an
 ``X-API-Key`` header matching the configured key.
 
-When ``MAF_API_KEY`` is not set, authentication is disabled (dev mode).
+When ``TEMPER_API_KEY`` is not set, authentication is disabled (dev mode).
 """
 import logging
 import os
@@ -17,7 +17,7 @@ from starlette.status import HTTP_401_UNAUTHORIZED
 
 logger = logging.getLogger(__name__)
 
-ENV_API_KEY = "MAF_API_KEY"
+ENV_API_KEY = "TEMPER_API_KEY"
 HEADER_API_KEY = "X-API-Key"
 
 # Paths that bypass authentication (health probes must always work)
@@ -25,7 +25,7 @@ AUTH_BYPASS_PATHS = frozenset({"/api/health", "/api/health/ready"})
 
 
 class APIKeyMiddleware(BaseHTTPMiddleware):
-    """Validates X-API-Key header against MAF_API_KEY env var.
+    """Validates X-API-Key header against TEMPER_API_KEY env var.
 
     When no API key is configured, all requests pass through (dev mode).
     Health endpoints and WebSocket connections bypass authentication.
@@ -37,7 +37,7 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
         if self.api_key:
             logger.info("API key authentication enabled")
         else:
-            logger.info("API key authentication disabled (MAF_API_KEY not set)")
+            logger.info("API key authentication disabled (TEMPER_API_KEY not set)")
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         """Check API key for non-exempt requests."""

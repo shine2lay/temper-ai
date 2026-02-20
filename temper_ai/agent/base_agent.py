@@ -34,6 +34,38 @@ from temper_ai.tools.registry import ToolRegistry
 logger = logging.getLogger(__name__)
 
 
+def _register_mcp_tools(
+    mcp_configs: Optional[list],
+    registry: ToolRegistry,
+) -> Any:
+    """Register MCP tools from configured servers into the tool registry.
+
+    Returns the MCPManager instance (caller should keep a reference for cleanup),
+    or None if mcp_configs is empty / the mcp package is not installed.
+    """
+    if not mcp_configs:
+        return None
+    try:
+        from temper_ai.mcp.manager import MCPManager
+
+        manager = MCPManager(mcp_configs)
+        tools = manager.connect_all()
+        for tool in tools:
+            registry.register(tool, allow_override=False)
+        logger.info(
+            "Registered %d MCP tools from %d servers",
+            len(tools),
+            len(mcp_configs),
+        )
+        return manager
+    except ImportError:
+        logger.warning(
+            "MCP servers configured but 'mcp' package not installed. "
+            "Install with: pip install 'temper-ai[mcp]'"
+        )
+        return None
+
+
 def load_tools_from_config(
     registry: Any,
     configured_tools: List[Any],
@@ -85,6 +117,10 @@ class BaseAgent(ABC):
         self.version = config.agent.version
 
         self.prompt_engine = PromptEngine()
+        if config.agent.inference is None:
+            raise ValueError(
+                f"Agent '{config.agent.name}' requires inference config"
+            )
         self.llm = create_llm_from_config(config.agent.inference)
 
         # Infrastructure attributes — set by _setup() at execution time
@@ -93,6 +129,7 @@ class BaseAgent(ABC):
         self._observer: Any = None
         self._stream_callback: Any = None
         self._execution_context: Any = None
+        self._mcp_manager: Any = None
 
     # ------------------------------------------------------------------
     # Template method: execute()
@@ -385,6 +422,8 @@ class BaseAgent(ABC):
         from temper_ai.llm.prompts.validation import PromptRenderError, _is_safe_template_value
 
         prompt_config = self.config.agent.prompt
+        if prompt_config is None:
+            raise ValueError("No prompt configured for this agent")
         filtered_input = {k: v for k, v in input_data.items() if _is_safe_template_value(v)}
         all_variables = {**filtered_input, **prompt_config.variables}
 
@@ -444,6 +483,12 @@ class BaseAgent(ABC):
             registry.auto_discover()
         elif configured_tools:
             load_tools_from_config(registry, configured_tools)
+
+        # Register MCP tools if configured (R1a)
+        self._mcp_manager = _register_mcp_tools(
+            getattr(self.config.agent, "mcp_servers", None),
+            registry,
+        )
 
         return registry
 

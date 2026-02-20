@@ -40,6 +40,7 @@ class _SourceStream:
 
     name: str
     model: str = ""
+    stage_name: str = ""
     thinking_buffer: str = ""
     content_buffer: str = ""
     tool_line: str = ""
@@ -63,6 +64,7 @@ class StreamDisplay:
         self._color_idx = 0
         self._live: Optional[Live] = None
         self._started = False
+        self._current_stage: str = ""
 
     # ── public API ───────────────────────────────────────────────────
 
@@ -131,6 +133,7 @@ class StreamDisplay:
                 self._sources[source_name] = _SourceStream(
                     name=source_name,
                     model=model,
+                    stage_name=self._current_stage,
                     color=self._next_color(),
                 )
             stream = self._sources[source_name]
@@ -235,9 +238,11 @@ class StreamDisplay:
             title_parts.append(f"({stream.model})")
         title = " ".join(title_parts)
 
+        suffix = f"\u25cf {stream.stage_name}" if stream.stage_name else "\u25cf running"
+
         return Panel(
             output,
-            title=f"[{stream.color}]{title}[/{stream.color}] streaming",
+            title=f"[{stream.color}]{title}[/{stream.color}] {suffix}",
             border_style=stream.color,
             padding=(0, 1),
         )

@@ -57,3 +57,5 @@ ENV_VAR_VIRTUAL_ENV = "VIRTUAL_ENV"
 # ============================================================================
 
 AGENT_TYPE_STANDARD = "standard"
+AGENT_TYPE_SCRIPT = "script"
+AGENT_TYPE_STATIC_CHECKER = "static_checker"

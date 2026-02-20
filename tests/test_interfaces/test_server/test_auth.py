@@ -88,8 +88,8 @@ class TestAPIKeyMiddleware:
         assert resp.status_code == 401
 
     def test_env_var_fallback(self) -> None:
-        """API key can be loaded from MAF_API_KEY env var."""
-        with patch.dict(os.environ, {"MAF_API_KEY": "env-secret"}):
+        """API key can be loaded from TEMPER_API_KEY env var."""
+        with patch.dict(os.environ, {"TEMPER_API_KEY": "env-secret"}):
             app = _create_app()  # No explicit key → reads env
             client = TestClient(app)
             resp = client.get("/api/runs")

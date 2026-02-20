@@ -95,6 +95,15 @@ class NodeBuilder:
             else:
                 state_dict = state.to_typed_dict()
 
+            # Checkpoint resume (R0.6): skip already-completed stages
+            resumed = state_dict.get("resumed_stages")
+            if resumed and stage_name in resumed:
+                logger.info("Skipping resumed stage '%s' (checkpoint replay)", stage_name)
+                return {
+                    "stage_outputs": state_dict.get("stage_outputs", {}),
+                    "current_stage": stage_name,
+                }
+
             # Load stage config
             stage_config = self._load_stage_config(stage_name, workflow_config)
 

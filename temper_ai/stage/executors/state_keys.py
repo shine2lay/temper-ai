@@ -25,6 +25,7 @@ class StateKeys:
     DETAIL_CONSOLE = "detail_console"
     TOOL_EXECUTOR = "tool_executor"
     STREAM_CALLBACK = "stream_callback"
+    TOTAL_STAGES = "total_stages"
 
     # Agent result keys
     AGENT_NAME = "agent_name"
@@ -97,14 +98,22 @@ class StateKeys:
     CURRENT_STAGE_AGENTS = "current_stage_agents"
     MODE_SWITCH = "mode_switch"
 
+    # Workflow-level rate limiter (R0.9)
+    WORKFLOW_RATE_LIMITER = "workflow_rate_limiter"
+
+    # Checkpoint resume: set of stage names already completed (R0.6)
+    RESUMED_STAGES = "resumed_stages"
+
     # Frozenset constants for filtering non-serializable and reserved keys
     NON_SERIALIZABLE_KEYS: "frozenset[str]" = frozenset({
         "tracker", "tool_registry", "config_loader", "visualizer",
         "show_details", "detail_console", "tool_executor", "stream_callback",
+        "total_stages",
     })
 
     RESERVED_UNWRAP_KEYS: "frozenset[str]" = frozenset({
         "stage_outputs", "current_stage", "workflow_id", "tracker",
         "tool_registry", "config_loader", "visualizer", "show_details",
         "detail_console", "workflow_inputs", "tool_executor", "stream_callback",
+        "total_stages",
     })

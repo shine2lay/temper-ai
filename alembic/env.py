@@ -25,13 +25,18 @@ import temper_ai.observability.models  # noqa: F401
 import temper_ai.experimentation.models  # noqa: F401
 import temper_ai.interfaces.server.models  # noqa: F401
 import temper_ai.learning.models  # noqa: F401
+import temper_ai.lifecycle.models  # noqa: F401
+import temper_ai.goals.models  # noqa: F401
+import temper_ai.portfolio.models  # noqa: F401
+import temper_ai.safety.autonomy.models  # noqa: F401
+import temper_ai.memory.adapters.pg_adapter  # noqa: F401
 
 target_metadata = SQLModel.metadata
 
-# Allow URL override via -x sqlalchemy.url=... or DATABASE_URL env var
+# Allow URL override via -x sqlalchemy.url=... or TEMPER_DATABASE_URL env var
 url_override = context.get_x_argument(as_dictionary=True).get("sqlalchemy.url")
 if not url_override:
-    url_override = os.environ.get("DATABASE_URL")
+    url_override = os.environ.get("TEMPER_DATABASE_URL")
 if url_override:
     config.set_main_option("sqlalchemy.url", url_override)
 

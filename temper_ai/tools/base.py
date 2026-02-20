@@ -33,6 +33,7 @@ class ToolMetadata(BaseModel):
     requires_network: bool = False
     requires_credentials: bool = False
     modifies_state: bool = True  # Whether tool modifies system state (files, DB, etc.)
+    cacheable: Optional[bool] = None  # None = auto-detect from modifies_state
 
 
 class ToolResult(BaseModel):

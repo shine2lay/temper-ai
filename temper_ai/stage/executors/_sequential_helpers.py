@@ -317,6 +317,17 @@ def _build_success_result(
     }
 
 
+def _wire_tool_executor(ctx: AgentExecutionContext, input_data: Dict[str, Any]) -> None:
+    """Wire tool executor and rate limiter from executor to input data."""
+    _tool_exec = getattr(ctx.executor, 'tool_executor', None)
+    if _tool_exec is None:
+        return
+    input_data['tool_executor'] = _tool_exec
+    wf_rl = ctx.state.get(StateKeys.WORKFLOW_RATE_LIMITER)
+    if wf_rl is not None:
+        _tool_exec.workflow_rate_limiter = wf_rl
+
+
 def run_agent(
     ctx: AgentExecutionContext,
     agent_name: str,
@@ -340,9 +351,7 @@ def run_agent(
     )
 
     # Wire tool_executor from executor instance (not from state dict)
-    _tool_exec = getattr(ctx.executor, 'tool_executor', None)
-    if _tool_exec is not None:
-        input_data['tool_executor'] = _tool_exec
+    _wire_tool_executor(ctx, input_data)
 
     # Load conversation history for this stage:agent pair
     history_key = make_history_key(ctx.stage_name, agent_name)
@@ -409,6 +418,22 @@ def _print_agent_progress(
         )
 
 
+def _print_sequential_stage_header(ctx: AgentExecutionContext) -> None:
+    """Print stage header with index and set stream callback stage context."""
+    detail_console = ctx.state.get(StateKeys.DETAIL_CONSOLE)
+    if not detail_console:
+        return
+    stage_index = len(ctx.state.get(StateKeys.STAGE_OUTPUTS, {})) + 1
+    total = ctx.state.get(StateKeys.TOTAL_STAGES, "?")
+    detail_console.print(
+        f"\n[bold cyan]\u27f3 [{stage_index}/{total}] "
+        f"Stage: {ctx.stage_name} \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500[/bold cyan]"
+    )
+    stream_cb = ctx.state.get(StateKeys.STREAM_CALLBACK)
+    if stream_cb is not None and hasattr(stream_cb, "_current_stage"):
+        stream_cb._current_stage = ctx.stage_name
+
+
 def run_all_agents(
     ctx: AgentExecutionContext,
     agents: list,
@@ -424,16 +449,12 @@ def run_all_agents(
     Returns:
         Tuple of (agent_outputs, agent_statuses, agent_metrics)
     """
-    accum = AgentResultAccumulators(
-        outputs={},
-        statuses={},
-        metrics={},
-    )
+    accum = AgentResultAccumulators(outputs={}, statuses={}, metrics={})
 
     show_details = ctx.state.get(StateKeys.SHOW_DETAILS, False)
     detail_console = ctx.state.get(StateKeys.DETAIL_CONSOLE)
     if show_details and detail_console:
-        detail_console.print(f"\n[bold cyan]\u2500\u2500 Stage: {ctx.stage_name} \u2500\u2500[/bold cyan]")
+        _print_sequential_stage_header(ctx)
 
     total_agents = len(agents)
     prior_stages = list(ctx.state.get(StateKeys.STAGE_OUTPUTS, {}).keys())
@@ -441,24 +462,19 @@ def run_all_agents(
     logger.info("Stage '%s' starting sequential execution with %d agent(s) (%s)", ctx.stage_name, total_agents, input_info)
 
     for agent_idx, agent_ref in enumerate(agents):
-        agent_result = execute_agent(
-            ctx=ctx,
-            agent_ref=agent_ref,
-            prior_agent_outputs=accum.outputs,
-        )
+        if show_details and detail_console:
+            ref_name = ctx.executor._extract_agent_name(agent_ref)
+            detail_console.print(f"  [dim]\u27f3 {ref_name} running...[/dim]")
 
+        agent_result = execute_agent(ctx=ctx, agent_ref=agent_ref, prior_agent_outputs=accum.outputs)
         agent_name = agent_result[StateKeys.AGENT_NAME]
         logger.info("Stage '%s' agent '%s' completed (%s)", ctx.stage_name, agent_name, agent_result[StateKeys.STATUS])
 
         if show_details and detail_console:
-            is_last = (agent_idx == total_agents - 1)
-            _print_agent_progress(detail_console, agent_name, agent_result, is_last)
+            _print_agent_progress(detail_console, agent_name, agent_result, agent_idx == total_agents - 1)
 
         if agent_result[StateKeys.STATUS] == "failed":
-            loop_action = _process_agent_failure(
-                agent_name, agent_result, error_handling,
-                ctx, agent_ref, accum,
-            )
+            loop_action = _process_agent_failure(agent_name, agent_result, error_handling, ctx, agent_ref, accum)
             if loop_action == "break":
                 break
             if loop_action == "continue":
@@ -467,6 +483,9 @@ def run_all_agents(
             accum.statuses[agent_name] = agent_result[StateKeys.STATUS]
             accum.outputs[agent_name] = agent_result[StateKeys.OUTPUT_DATA]
             accum.metrics[agent_name] = agent_result[StateKeys.METRICS]
+
+    if show_details and detail_console:
+        detail_console.print("[bold green]  \u2713 Stage complete[/bold green]")
 
     _emit_sequential_cost_summary(ctx, accum)
     return accum.outputs, accum.statuses, accum.metrics

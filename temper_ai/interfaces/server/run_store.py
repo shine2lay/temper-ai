@@ -6,16 +6,13 @@ history is independent of the main observability database.
 import logging
 from typing import Optional
 
-from sqlalchemy import event
 from sqlalchemy.engine import Engine
-from sqlalchemy.pool import NullPool, StaticPool
-from sqlmodel import Session, SQLModel, create_engine, select
+from sqlmodel import Session, SQLModel, select
 
 from temper_ai.interfaces.server.models import ServerRun
+from temper_ai.storage.database.engine import create_app_engine, get_database_url
 
 logger = logging.getLogger(__name__)
-
-DEFAULT_DATABASE_URL = "sqlite:///./server_runs.db"
 
 
 class RunStore:
@@ -26,26 +23,10 @@ class RunStore:
 
         Args:
             database_url: SQLAlchemy database URL.
-                Defaults to ``sqlite:///./server_runs.db``.
+                Defaults to the centralized database URL.
         """
-        self.database_url = database_url or DEFAULT_DATABASE_URL
-        is_memory = ":memory:" in self.database_url
-        self.engine: Engine = create_engine(
-            self.database_url,
-            connect_args={"check_same_thread": False},
-            poolclass=StaticPool if is_memory else NullPool,
-            echo=False,
-        )
-
-        # Enable WAL + foreign keys for SQLite
-        if self.database_url.startswith("sqlite"):
-            @event.listens_for(self.engine, "connect")
-            def _sqlite_pragmas(dbapi_conn, _rec):  # type: ignore[no-untyped-def]
-                """Enable SQLite WAL mode and foreign keys."""
-                cursor = dbapi_conn.cursor()
-                cursor.execute("PRAGMA journal_mode=WAL")
-                cursor.execute("PRAGMA foreign_keys=ON")
-                cursor.close()
+        self.database_url = database_url or get_database_url()
+        self.engine: Engine = create_app_engine(self.database_url)
 
         SQLModel.metadata.create_all(self.engine, tables=[ServerRun.__table__])  # type: ignore[attr-defined]
         logger.info("RunStore initialized: %s", self.database_url)

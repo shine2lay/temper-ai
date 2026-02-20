@@ -1,4 +1,25 @@
 services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: temper_ai
+      POSTGRES_USER: temper_ai
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U temper_ai"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
   temper-ai-server:
     build:
       context: .
@@ -9,9 +30,45 @@ services:
       - ./configs:/app/configs:ro
       - temper-ai-data:/app/.temper-ai
     environment:
-      - MAF_CONFIG_ROOT=/app/configs
-      - MAF_DB_PATH=/app/.temper-ai/observability.db
+      MAF_CONFIG_ROOT: /app/configs
+      TEMPER_DATABASE_URL: postgresql://temper_ai:${POSTGRES_PASSWORD:-changeme}@postgres:5432/temper_ai
+      TEMPER_LOG_LEVEL: ${TEMPER_LOG_LEVEL:-INFO}
+    env_file:
+      - path: .env
+        required: false
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+  temper-ai-worker:
+    build:
+      context: .
+      target: worker
+    volumes:
+      - ./configs:/app/configs:ro
+      - temper-ai-data:/app/.temper-ai
+    environment:
+      MAF_CONFIG_ROOT: /app/configs
+      TEMPER_DATABASE_URL: postgresql://temper_ai:${POSTGRES_PASSWORD:-changeme}@postgres:5432/temper_ai
+      TEMPER_WORKER_CONCURRENCY: ${TEMPER_WORKER_CONCURRENCY:-4}
+      TEMPER_LOG_LEVEL: ${TEMPER_LOG_LEVEL:-INFO}
+    env_file:
+      - path: .env
+        required: false
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2G
 
 volumes:
+  postgres-data:
   temper-ai-data:

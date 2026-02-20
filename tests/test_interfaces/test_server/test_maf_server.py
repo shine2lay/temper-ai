@@ -1,7 +1,7 @@
 """Integration tests for MAF Server.
 
 Tests health endpoints, run API, workspace isolation, config check,
-event output, and MAF_CONFIG_ROOT env var.
+event output, and TEMPER_CONFIG_ROOT env var.
 """
 import json
 import os
@@ -175,24 +175,24 @@ class TestConfigCheckCommand:
 
 
 # ---------------------------------------------------------------------------
-# MAF_CONFIG_ROOT env var tests
+# TEMPER_CONFIG_ROOT env var tests
 # ---------------------------------------------------------------------------
 
 
-class TestMafConfigRootEnv:
-    """Test MAF_CONFIG_ROOT environment variable."""
+class TestTemperConfigRootEnv:
+    """Test TEMPER_CONFIG_ROOT environment variable."""
 
     def test_env_var_overrides_default(self) -> None:
-        """ConfigLoader uses MAF_CONFIG_ROOT when set."""
+        """ConfigLoader uses TEMPER_CONFIG_ROOT when set."""
         from temper_ai.workflow.config_loader import ConfigLoader
 
         real_configs = str(Path("configs").resolve())
-        with patch.dict(os.environ, {"MAF_CONFIG_ROOT": real_configs}):
+        with patch.dict(os.environ, {"TEMPER_CONFIG_ROOT": real_configs}):
             loader = ConfigLoader()
             assert str(loader.config_root) == real_configs
 
     def test_cli_envvar_in_list_workflows(self) -> None:
-        """temper-ai list workflows respects MAF_CONFIG_ROOT env."""
+        """temper-ai list workflows respects TEMPER_CONFIG_ROOT env."""
         from click.testing import CliRunner
 
         from temper_ai.interfaces.cli.main import main
@@ -201,7 +201,7 @@ class TestMafConfigRootEnv:
         result = runner.invoke(
             main,
             ["list", "workflows"],
-            env={"MAF_CONFIG_ROOT": "configs"},
+            env={"TEMPER_CONFIG_ROOT": "configs"},
         )
         assert result.exit_code == 0
 

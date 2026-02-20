@@ -19,15 +19,15 @@ class TestIsOtelConfigured:
             assert is_otel_configured() is True
 
     def test_configured_via_maf_flag(self) -> None:
-        with patch.dict(os.environ, {"MAF_OTEL_ENABLED": "true"}):
+        with patch.dict(os.environ, {"TEMPER_OTEL_ENABLED": "true"}):
             assert is_otel_configured() is True
 
     def test_configured_via_maf_flag_1(self) -> None:
-        with patch.dict(os.environ, {"MAF_OTEL_ENABLED": "1"}):
+        with patch.dict(os.environ, {"TEMPER_OTEL_ENABLED": "1"}):
             assert is_otel_configured() is True
 
     def test_not_configured_with_false_flag(self) -> None:
-        with patch.dict(os.environ, {"MAF_OTEL_ENABLED": "false"}, clear=True):
+        with patch.dict(os.environ, {"TEMPER_OTEL_ENABLED": "false"}, clear=True):
             assert is_otel_configured() is False
 
 

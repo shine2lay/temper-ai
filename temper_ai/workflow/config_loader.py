@@ -63,7 +63,7 @@ class ConfigLoader:
     @staticmethod
     def _find_config_root() -> Path:
         """Find config root directory by checking env var and searching upwards."""
-        env_root = os.environ.get("MAF_CONFIG_ROOT")
+        env_root = os.environ.get("TEMPER_CONFIG_ROOT")
         if env_root:
             return Path(env_root)
 

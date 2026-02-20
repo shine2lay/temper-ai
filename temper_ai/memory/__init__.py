@@ -15,6 +15,7 @@ from temper_ai.memory.constants import (
     MEMORY_TYPE_PROCEDURAL,
     PROVIDER_IN_MEMORY,
     PROVIDER_MEM0,
+    PROVIDER_PG,
     PROVIDER_SQLITE,
     SCOPE_SEPARATOR,
 )
@@ -39,6 +40,7 @@ __all__ = [
     "extract_procedural_patterns",
     "PROVIDER_IN_MEMORY",
     "PROVIDER_MEM0",
+    "PROVIDER_PG",
     "PROVIDER_SQLITE",
     "SCOPE_SEPARATOR",
 ]

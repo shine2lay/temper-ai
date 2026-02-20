@@ -44,6 +44,15 @@ class WorkflowStageReference(BaseModel):
             raise ValueError("stage_ref is required (or use deprecated config_path)")
         return self
 
+    on_complete: Optional[Any] = Field(
+        default=None,
+        description="Event to emit on stage completion — lazy-validated to StageEventEmitConfig",
+    )
+    trigger: Optional[Any] = Field(
+        default=None,
+        description="Event trigger config — lazy-validated to StageTriggerConfig",
+    )
+
     @model_validator(mode='after')
     def validate_conditional_config(self) -> 'WorkflowStageReference':
         """Validate conditional stage configuration.
@@ -60,6 +69,32 @@ class WorkflowStageReference(BaseModel):
         if self.loops_back_to is not None and not self.loops_back_to.strip():
             raise ValueError(
                 f"{ERROR_MSG_STAGE_PREFIX}{self.name}': 'loops_back_to' must be a non-empty string"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def validate_on_complete(self) -> "WorkflowStageReference":
+        """Parse on_complete dict into StageEventEmitConfig if provided."""
+        if self.on_complete is not None and isinstance(self.on_complete, dict):
+            from temper_ai.events._schemas import StageEventEmitConfig
+            self.on_complete = StageEventEmitConfig(**self.on_complete)
+        return self
+
+    @model_validator(mode="after")
+    def validate_trigger(self) -> "WorkflowStageReference":
+        """Parse trigger dict into StageTriggerConfig if provided."""
+        if self.trigger is not None and isinstance(self.trigger, dict):
+            from temper_ai.events._schemas import StageTriggerConfig
+            self.trigger = StageTriggerConfig(**self.trigger)
+        return self
+
+    @model_validator(mode="after")
+    def validate_trigger_depends_exclusive(self) -> "WorkflowStageReference":
+        """Ensure trigger and depends_on are mutually exclusive."""
+        if self.trigger is not None and self.depends_on:
+            raise ValueError(
+                "Stage cannot have both 'trigger' and 'depends_on' — "
+                "event-triggered stages are DAG roots"
             )
         return self
 
@@ -99,6 +134,10 @@ class WorkflowConfigOptions(BaseModel):
         default_factory=WorkflowRateLimitConfig,
     )
     planning: Any = Field(default_factory=_default_planning_config)
+    event_bus: Optional[Any] = Field(
+        default=None,
+        description="Event bus configuration — lazy-validated to EventBusConfig",
+    )
 
     @field_validator('planning', mode='before')
     @classmethod
@@ -108,6 +147,14 @@ class WorkflowConfigOptions(BaseModel):
             from temper_ai.workflow.planning import PlanningConfig
             return PlanningConfig(**v)
         return v
+
+    @model_validator(mode="after")
+    def validate_event_bus(self) -> "WorkflowConfigOptions":
+        """Parse event_bus dict into EventBusConfig if provided."""
+        if self.event_bus is not None and isinstance(self.event_bus, dict):
+            from temper_ai.events._schemas import EventBusConfig
+            self.event_bus = EventBusConfig(**self.event_bus)
+        return self
 
 
 class WorkflowSafetyConfig(BaseModel):

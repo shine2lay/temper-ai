@@ -31,6 +31,10 @@ import temper_ai.portfolio.models  # noqa: F401
 import temper_ai.safety.autonomy.models  # noqa: F401
 import temper_ai.memory.adapters.pg_adapter  # noqa: F401
 
+# M9 models
+from temper_ai.storage.database.models_registry import AgentRegistryDB  # noqa: F401
+from temper_ai.events.models import EventLog, EventSubscription  # noqa: F401
+
 target_metadata = SQLModel.metadata
 
 # Allow URL override via -x sqlalchemy.url=... or TEMPER_DATABASE_URL env var

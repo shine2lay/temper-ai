@@ -46,6 +46,7 @@ class GoalStore:
         status: Optional[str] = None,
         goal_type: Optional[str] = None,
         product_type: Optional[str] = None,
+        agent_id: Optional[str] = None,
         limit: int = DEFAULT_LIST_LIMIT,
     ) -> list[GoalProposalRecord]:
         """List proposals with optional filters."""
@@ -61,6 +62,8 @@ class GoalStore:
                 stmt = stmt.where(
                     GoalProposalRecord.source_product_type == product_type
                 )
+            if agent_id is not None:
+                stmt = stmt.where(GoalProposalRecord.source_agent_id == agent_id)
             stmt = stmt.limit(limit)
             return list(session.exec(stmt).all())
 

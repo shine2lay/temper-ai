@@ -49,6 +49,11 @@ class ExecutionContext:
     tool_name: Optional[str] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
 
+    @property
+    def execution_mode(self) -> str:
+        """Return 'project' if workflow_id is set, else 'desk'."""
+        return "project" if self.workflow_id else "desk"
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert context to a plain dictionary."""
         return {

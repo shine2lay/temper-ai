@@ -89,16 +89,26 @@ class StageCompiler:
         init_node = create_init_node()
         graph.add_node("init", init_node)  # type: ignore
 
+        # Build ref lookup for trigger/on_complete detection
+        stage_refs = self._get_stage_refs(workflow_config)
+        ref_lookup = self._build_ref_lookup(stage_refs)
+
         # Add execution node for each stage
         for stage_name in stage_names:
             stage_node = self.node_builder.create_stage_node(
                 stage_name,
                 workflow_config,
             )
+            stage_ref = ref_lookup.get(stage_name)
+            stage_node = _maybe_wrap_trigger_node(
+                stage_name, stage_node, stage_ref, workflow_config
+            )
+            stage_node = _maybe_wrap_on_complete_node(
+                stage_name, stage_node, stage_ref, workflow_config
+            )
             graph.add_node(stage_name, stage_node)  # type: ignore
 
         # Wire DAG into predecessor resolver for context resolution
-        stage_refs = self._get_stage_refs(workflow_config)
         dag = build_stage_dag(stage_names, stage_refs)
         self.node_builder.wire_dag_context(dag)
 
@@ -675,3 +685,129 @@ def _insert_fan_in_barriers(
             )
 
     return barrier_edges
+
+
+def _get_trigger_config(stage_ref: Any) -> Any:
+    """Extract trigger config from a stage reference (dict or Pydantic model)."""
+    if stage_ref is None:
+        return None
+    if isinstance(stage_ref, dict):
+        return stage_ref.get("trigger")
+    return getattr(stage_ref, "trigger", None)
+
+
+def _get_on_complete_config(stage_ref: Any) -> Any:
+    """Extract on_complete config from a stage reference."""
+    if stage_ref is None:
+        return None
+    if isinstance(stage_ref, dict):
+        return stage_ref.get("on_complete")
+    return getattr(stage_ref, "on_complete", None)
+
+
+def _get_event_bus_from_workflow(workflow_config: Dict[str, Any]) -> Any:
+    """Extract event bus from workflow config options, if enabled."""
+    wf = workflow_config.get("workflow", {})
+    config = wf.get("config", {}) if isinstance(wf, dict) else {}
+    if isinstance(config, dict):
+        event_bus_cfg = config.get("event_bus")
+    else:
+        event_bus_cfg = getattr(config, "event_bus", None)
+    if event_bus_cfg is None:
+        return None
+    enabled = (
+        event_bus_cfg.get("enabled", False)
+        if isinstance(event_bus_cfg, dict)
+        else getattr(event_bus_cfg, "enabled", False)
+    )
+    if not enabled:
+        return None
+    persist = (
+        event_bus_cfg.get("persist_events", True)
+        if isinstance(event_bus_cfg, dict)
+        else getattr(event_bus_cfg, "persist_events", True)
+    )
+    from temper_ai.events.event_bus import TemperEventBus
+
+    return TemperEventBus(persist=persist)
+
+
+def _maybe_wrap_trigger_node(
+    stage_name: str,
+    node_fn: Any,
+    stage_ref: Any,
+    workflow_config: Dict[str, Any],
+) -> Any:
+    """Wrap node_fn with event trigger if the stage has a trigger config."""
+    trigger_config = _get_trigger_config(stage_ref)
+    if trigger_config is None:
+        return node_fn
+
+    from temper_ai.workflow.node_builder import create_event_triggered_node
+
+    def _node_with_event_bus(state: Any) -> Any:
+        event_bus = state.get("event_bus") if isinstance(state, dict) else None
+        wrapped = create_event_triggered_node(
+            stage_name=stage_name,
+            inner_node_fn=node_fn,
+            event_bus=event_bus,
+            trigger_config=trigger_config,
+        )
+        return wrapped(state)
+
+    return _node_with_event_bus
+
+
+def _maybe_wrap_on_complete_node(
+    stage_name: str,
+    node_fn: Any,
+    stage_ref: Any,
+    workflow_config: Dict[str, Any],
+) -> Any:
+    """Wrap node_fn to emit an event on completion if on_complete is configured."""
+    on_complete_config = _get_on_complete_config(stage_ref)
+    if on_complete_config is None:
+        return node_fn
+
+    def _node_with_on_complete(state: Any) -> Any:
+        result = node_fn(state)
+        event_bus = (
+            result.get("event_bus") if isinstance(result, dict) else None
+        ) or (
+            state.get("event_bus") if isinstance(state, dict) else None
+        )
+        if event_bus is None:
+            return result
+
+        event_type = (
+            on_complete_config.get("event_type")
+            if isinstance(on_complete_config, dict)
+            else getattr(on_complete_config, "event_type", None)
+        )
+        include_output = (
+            on_complete_config.get("include_output", False)
+            if isinstance(on_complete_config, dict)
+            else getattr(on_complete_config, "include_output", False)
+        )
+        payload: Dict[str, Any] = {"stage_name": stage_name}
+        if include_output and isinstance(result, dict):
+            stage_outputs = result.get("stage_outputs", {})
+            payload["output"] = stage_outputs.get(stage_name)
+
+        workflow_id = (
+            state.get("workflow_id") if isinstance(state, dict) else None
+        )
+        try:
+            event_bus.emit(
+                event_type=event_type,
+                payload=payload,
+                source_workflow_id=workflow_id,
+                source_stage_name=stage_name,
+            )
+        except Exception as exc:
+            logger.warning(
+                "on_complete event emit failed for stage '%s': %s", stage_name, exc
+            )
+        return result
+
+    return _node_with_on_complete

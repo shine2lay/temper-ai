@@ -30,6 +30,7 @@ class GoalProposalRecord(SQLModel, table=True):
         default_factory=dict, sa_column=Column(JSON)
     )
     source_product_type: Optional[str] = Field(default=None, index=True)
+    source_agent_id: Optional[str] = Field(default=None, index=True)  # M9: persistent agent
     applicable_product_types: List[str] = Field(
         default_factory=list, sa_column=Column(JSON)
     )

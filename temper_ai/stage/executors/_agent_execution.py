@@ -5,9 +5,14 @@ _parallel_helpers.py into a single module, reducing ~100 lines of
 duplicate code across the two helper files.
 """
 import logging
+import threading
 from typing import Any, Dict
 
 logger = logging.getLogger(__name__)
+
+# Module-level cache for persistent agents — survives across workflow runs.
+_persistent_agent_cache: Dict[str, Any] = {}
+_persistent_cache_lock = threading.Lock()
 
 
 def resolve_agent_factory(agent_factory_cls: Any) -> Any:
@@ -33,6 +38,9 @@ def load_or_cache_agent(
 ) -> tuple:
     """Load agent config, create or retrieve cached agent instance.
 
+    Persistent agents (persistent=True) are cached at module level for
+    cross-workflow reuse. Non-persistent agents use the per-execution cache.
+
     Args:
         agent_name: Name of the agent to load
         config_loader: ConfigLoader for loading agent configs
@@ -46,6 +54,16 @@ def load_or_cache_agent(
 
     agent_config_dict = config_loader.load_agent(agent_name)
     agent_config = AgentConfig(**agent_config_dict)
+    is_persistent = getattr(agent_config.agent, "persistent", False)
+
+    if is_persistent:
+        with _persistent_cache_lock:
+            if agent_name in _persistent_agent_cache:
+                return _persistent_agent_cache[agent_name], agent_config, agent_config_dict
+            agent = agent_factory.create(agent_config)
+            _persistent_agent_cache[agent_name] = agent
+        return agent, agent_config, agent_config_dict
+
     if agent_name in agent_cache:
         agent = agent_cache[agent_name]
     else:

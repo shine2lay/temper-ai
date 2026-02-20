@@ -31,6 +31,9 @@ class AutonomousLoopConfig(BaseModel):
     # Prompt optimization (opt-in)
     prompt_optimization_enabled: bool = False
 
+    # M9: sync workflow learnings to persistent agents
+    agent_memory_sync_enabled: bool = False
+
 
 class WorkflowRunContext(BaseModel):
     """Context passed to the orchestrator after a workflow run."""

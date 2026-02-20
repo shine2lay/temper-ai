@@ -22,12 +22,14 @@ class MemoryScope:
     workflow_name: str = ""
     agent_name: str = ""
     namespace: Optional[str] = None
+    agent_id: Optional[str] = None  # M9: persistent agent ID
 
     @property
     def scope_key(self) -> str:
-        """Build scope key: 'tenant:namespace_or_workflow:agent'."""
+        """Build scope key: 'tenant:namespace_or_workflow:agent_or_id'."""
         middle = self.namespace if self.namespace else self.workflow_name
-        return SCOPE_SEPARATOR.join([self.tenant_id, middle, self.agent_name])
+        agent_part = self.agent_id if self.agent_id else self.agent_name
+        return SCOPE_SEPARATOR.join([self.tenant_id, middle, agent_part])
 
 
 @dataclass

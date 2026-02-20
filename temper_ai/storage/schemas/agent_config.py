@@ -395,6 +395,32 @@ class AgentConfigInner(BaseModel):
             self.plugin_config = PluginConfig(**self.plugin_config)
         return self
 
+    # M9: Persistent agent fields
+    persistent: bool = Field(
+        default=False,
+        description="Enable persistent identity and cross-workflow memory",
+    )
+    agent_id: Optional[str] = Field(
+        default=None,
+        description="Unique agent identifier (auto-assigned on registration)",
+    )
+    cross_pollination: Optional[Any] = Field(
+        default=None,
+        description="Cross-agent knowledge sharing config — lazy-validated",
+    )
+
+    @model_validator(mode="after")
+    def validate_cross_pollination(self) -> "AgentConfigInner":
+        """Parse cross_pollination dict into CrossPollinationConfig if provided."""
+        if self.cross_pollination is not None and isinstance(
+            self.cross_pollination, dict
+        ):
+            from temper_ai.memory._m9_schemas import CrossPollinationConfig
+            self.cross_pollination = CrossPollinationConfig(
+                **self.cross_pollination
+            )
+        return self
+
     error_handling: ErrorHandlingConfig
     merit_tracking: MeritTrackingConfig = Field(default_factory=MeritTrackingConfig)
     observability: ObservabilityConfig = Field(default_factory=ObservabilityConfig)
@@ -422,9 +448,7 @@ class AgentConfigInner(BaseModel):
                 raise ValueError(
                     "'script' field is required when type='script'"
                 )
-        elif self._is_plugin_type():
-            pass  # Plugin agents don't require prompt/inference
-        else:
+        elif not self._is_plugin_type():
             if self.prompt is None:
                 raise ValueError(
                     "'prompt' is required when type is not 'script' or plugin"

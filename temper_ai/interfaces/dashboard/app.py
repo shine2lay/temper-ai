@@ -217,6 +217,12 @@ def _register_optional_routes(app: FastAPI, config_root: str) -> None:
     except Exception:  # noqa: BLE001
         logger.warning("Experimentation routes not available")
 
+    try:
+        from temper_ai.interfaces.server.agent_routes import router as agent_router
+        app.include_router(agent_router)
+    except Exception:  # noqa: BLE001
+        logger.warning("Agent registry routes not available")
+
 
 _SUBMOD_STORE = "store"
 _SUBMOD_SVC = "dashboard_service"

@@ -708,3 +708,7 @@ Index("idx_rollback_snapshots_expires", RollbackSnapshotDB.expires_at)  # type: 
 
 # Alert record indexes
 Index("idx_alert_rule_time", AlertRecord.rule_name, AlertRecord.timestamp)  # type: ignore[arg-type]
+
+# M9: Import new models for SQLModel metadata registration
+from temper_ai.storage.database.models_registry import AgentRegistryDB  # noqa: F401
+from temper_ai.events.models import EventLog, EventSubscription  # noqa: F401

@@ -1,0 +1,16 @@
+"""Constants for the events module."""
+
+EVENT_WORKFLOW_COMPLETED = "workflow.completed"
+EVENT_WORKFLOW_STARTED = "workflow.started"
+EVENT_WORKFLOW_FAILED = "workflow.failed"
+EVENT_STAGE_COMPLETED = "stage.completed"
+EVENT_STAGE_STARTED = "stage.started"
+EVENT_STAGE_FAILED = "stage.failed"
+EVENT_AGENT_COMPLETED = "agent.completed"
+EVENT_AGENT_REGISTERED = "agent.registered"
+EVENT_CUSTOM = "custom"
+
+DEFAULT_EVENT_RETENTION_DAYS = 30
+MAX_PAYLOAD_SIZE_BYTES = 1048576  # 1MB
+DEFAULT_TRIGGER_TIMEOUT_SECONDS = 300
+MAX_SUBSCRIPTION_HANDLERS = 100

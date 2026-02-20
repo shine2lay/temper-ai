@@ -243,6 +243,7 @@ class StandardAgent(BaseAgent):
         template = self._inject_dialogue_context(template, input_data)
         template = self._inject_memory_context(template, input_data, context)
         template = self._inject_optimization_context(template)
+        template = self._inject_persistent_context(template, context)
 
         return template
 
@@ -259,12 +260,23 @@ class StandardAgent(BaseAgent):
         workflow_name = ""
         if context and context.metadata:
             workflow_name = context.metadata.get("workflow_name", "")
-        return self._get_memory_service().build_scope(
+        scope = self._get_memory_service().build_scope(
             tenant_id=mem_cfg.tenant_id,
             workflow_name=workflow_name,
             agent_name=self.name,
             namespace=mem_cfg.memory_namespace,
         )
+        if getattr(self.config.agent, "persistent", False):
+            from temper_ai.registry.constants import PERSISTENT_NAMESPACE_PREFIX
+
+            scope = MemoryScope(
+                tenant_id=scope.tenant_id,
+                workflow_name="",
+                agent_name=scope.agent_name,
+                namespace=f"{PERSISTENT_NAMESPACE_PREFIX}{self.config.agent.name}",
+                agent_id=getattr(self.config.agent, "agent_id", None),
+            )
+        return scope
 
     def _inject_memory_context(
         self,
@@ -321,6 +333,41 @@ class StandardAgent(BaseAgent):
 
         return template
 
+    def _inject_persistent_context(self, prompt: str, context: Optional[ExecutionContext]) -> str:
+        """Inject persistent agent context into prompt (M9)."""
+        if not getattr(self.config.agent, "persistent", False):
+            return prompt
+
+        from temper_ai.agent._m9_context_helpers import (
+            detect_execution_mode,
+            inject_cross_pollination_context,
+            inject_execution_mode_context,
+            inject_project_goal_context,
+        )
+
+        ctx_dict: Dict[str, Any] = {}
+        if context:
+            ctx_dict = {"workflow_id": context.workflow_id}
+
+        mode = detect_execution_mode(ctx_dict)
+        prompt = inject_execution_mode_context(prompt, mode)
+
+        agent_id = getattr(self.config.agent, "agent_id", None)
+        if agent_id:
+            from temper_ai.goals.agent_goals import AgentGoalService
+
+            goal_service = AgentGoalService()
+            prompt = inject_project_goal_context(prompt, agent_id, goal_service)
+
+        cross_config = getattr(self.config.agent, "cross_pollination", None)
+        if cross_config and self._memory_service:
+            query = ""
+            prompt = inject_cross_pollination_context(
+                prompt, cross_config, self._memory_service, query
+            )
+
+        return prompt
+
     def _inject_optimization_context(self, template: str) -> str:
         """Inject DSPy-optimized prompt sections if available."""
         opt_cfg = getattr(self.config.agent, "prompt_optimization", None)
@@ -351,27 +398,47 @@ class StandardAgent(BaseAgent):
 
     def _on_after_run(self, result: AgentResponse) -> AgentResponse:
         """Store execution output as episodic memory after run."""
-        if not self.config.agent.memory.enabled:
-            return result
+        if self.config.agent.memory.enabled:
+            try:
+                mem_cfg = self.config.agent.memory
+                scope = self._build_memory_scope(self._execution_context)
+                output_text = result.output or ""
+                if output_text:
+                    svc = self._get_memory_service()
+                    svc.store_episodic(
+                        scope,
+                        content=output_text,
+                        metadata={"agent_name": self.name},
+                        max_episodes=mem_cfg.max_episodes,
+                    )
+                    self._maybe_extract_procedural(svc, scope, output_text, mem_cfg)
+                    self._maybe_store_shared(svc, scope, output_text, mem_cfg)
+            except (ValueError, TypeError, KeyError, RuntimeError, OSError, ImportError) as exc:
+                logger.warning("Memory storage failed for agent %s: %s", self.name, exc)
 
-        try:
-            mem_cfg = self.config.agent.memory
-            scope = self._build_memory_scope(self._execution_context)
-            output_text = result.output or ""
-            if output_text:
-                svc = self._get_memory_service()
-                svc.store_episodic(
-                    scope,
-                    content=output_text,
-                    metadata={"agent_name": self.name},
-                    max_episodes=mem_cfg.max_episodes,
-                )
-                self._maybe_extract_procedural(svc, scope, output_text, mem_cfg)
-                self._maybe_store_shared(svc, scope, output_text, mem_cfg)
-        except (ValueError, TypeError, KeyError, RuntimeError, OSError, ImportError) as exc:
-            logger.warning("Memory storage failed for agent %s: %s", self.name, exc)
-
+        self._maybe_publish_persistent_output(result)
         return result
+
+    def _maybe_publish_persistent_output(self, result: AgentResponse) -> None:
+        """Publish agent output to cross-pollination namespace when configured (M9)."""
+        if not getattr(self.config.agent, "persistent", False):
+            return
+        cross_config = getattr(self.config.agent, "cross_pollination", None)
+        if not cross_config or not getattr(cross_config, "publish_output", False):
+            return
+        output_text = result.output or ""
+        if not output_text:
+            return
+        try:
+            from temper_ai.memory.cross_pollination import publish_knowledge
+
+            publish_knowledge(
+                agent_name=self.config.agent.name,
+                content=output_text,
+                memory_service=self._get_memory_service(),
+            )
+        except (ValueError, TypeError, KeyError, RuntimeError, OSError, ImportError):
+            logger.debug("Failed to publish agent output", exc_info=True)
 
     def _maybe_extract_procedural(
         self, svc: MemoryService, scope: MemoryScope,

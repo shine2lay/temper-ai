@@ -92,6 +92,7 @@ class GoalProposal(BaseModel):
     applicable_product_types: List[str] = Field(default_factory=list)
     proposed_actions: List[str] = Field(default_factory=list)
     priority_score: float = 0.0
+    source_agent_id: Optional[str] = None  # M9: persistent agent that proposed this goal
 
 
 class GoalReviewAction(str, Enum):

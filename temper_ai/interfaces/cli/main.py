@@ -2088,6 +2088,18 @@ try:
 except ImportError:
     pass  # plugin commands unavailable
 
+from temper_ai.interfaces.cli.prompt_test_commands import prompt_test_group  # noqa: E402
+
+main.add_command(prompt_test_group)
+
+from temper_ai.interfaces.cli.agent_commands import agent_group  # noqa: E402
+
+main.add_command(agent_group)
+
+from temper_ai.interfaces.cli.event_commands import events_group  # noqa: E402
+
+main.add_command(events_group)
+
 
 if __name__ == "__main__":
     main()

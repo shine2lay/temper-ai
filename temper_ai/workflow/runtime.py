@@ -24,6 +24,69 @@ logger = logging.getLogger(__name__)
 _ObservabilityEvent: Optional[type] = None
 
 
+def _create_temper_event_bus(workflow_config: Dict[str, Any]) -> Optional[Any]:
+    """Create a TemperEventBus if event_bus is enabled in workflow config options.
+
+    Args:
+        workflow_config: Parsed workflow configuration dict.
+
+    Returns:
+        TemperEventBus instance if enabled, None otherwise.
+    """
+    wf = workflow_config.get("workflow", {})
+    config = wf.get("config", {}) if isinstance(wf, dict) else {}
+    event_bus_cfg = (
+        config.get("event_bus") if isinstance(config, dict)
+        else getattr(config, "event_bus", None)
+    )
+    if event_bus_cfg is None:
+        return None
+
+    enabled = (
+        event_bus_cfg.get("enabled", False)
+        if isinstance(event_bus_cfg, dict)
+        else getattr(event_bus_cfg, "enabled", False)
+    )
+    if not enabled:
+        return None
+
+    persist = (
+        event_bus_cfg.get("persist_events", True)
+        if isinstance(event_bus_cfg, dict)
+        else getattr(event_bus_cfg, "persist_events", True)
+    )
+    try:
+        from temper_ai.events.event_bus import TemperEventBus
+        return TemperEventBus(persist=persist)
+    except ImportError:
+        logger.debug("TemperEventBus not available, skipping event bus creation")
+        return None
+
+
+def _emit_workflow_completed(
+    event_bus: Any,
+    workflow_name: Optional[str],
+    workflow_id: Optional[str],
+) -> None:
+    """Emit workflow.completed event via the event bus.
+
+    Args:
+        event_bus: TemperEventBus instance.
+        workflow_name: Name of the completed workflow.
+        workflow_id: Unique workflow execution ID.
+    """
+    from temper_ai.events.constants import EVENT_WORKFLOW_COMPLETED
+
+    try:
+        event_bus.emit(
+            event_type=EVENT_WORKFLOW_COMPLETED,
+            payload={"workflow_name": workflow_name, "status": "completed"},
+            source_workflow_id=workflow_id,
+        )
+    except Exception as exc:
+        logger.warning("Failed to emit workflow.completed event: %s", exc)
+
+
 @dataclass
 class RuntimeConfig:
     """Configuration for WorkflowRuntime."""
@@ -233,6 +296,7 @@ class WorkflowRuntime:
         inputs: Dict[str, Any],
         infra: InfrastructureBundle,
         workflow_id: str,
+        workflow_config: Optional[Dict[str, Any]] = None,
         **extras: Any,
     ) -> Dict[str, Any]:
         """Build the initial workflow state dict.
@@ -241,6 +305,8 @@ class WorkflowRuntime:
             inputs: Input data for the workflow.
             infra: Infrastructure bundle.
             workflow_id: Unique workflow execution ID.
+            workflow_config: Parsed workflow config — used to create TemperEventBus
+                when event_bus is enabled in config options.
             **extras: Optional keys forwarded to state. Common keys:
                 show_details, detail_console, stream_callback,
                 workspace, run_id, workflow_name.
@@ -264,6 +330,13 @@ class WorkflowRuntime:
             value = extras.get(key)
             if value is not None:
                 state[state_key] = value
+
+        if workflow_config is not None:
+            temper_event_bus = _create_temper_event_bus(workflow_config)
+            if temper_event_bus is not None:
+                state["event_bus"] = temper_event_bus
+                infra.event_bus = temper_event_bus
+
         return state
 
     def execute(
@@ -281,6 +354,15 @@ class WorkflowRuntime:
             Final workflow state dict.
         """
         result: Dict[str, Any] = compiled.invoke(state)
+
+        event_bus = state.get("event_bus")
+        if event_bus is not None:
+            _emit_workflow_completed(
+                event_bus=event_bus,
+                workflow_name=state.get("workflow_name"),
+                workflow_id=state.get("workflow_id"),
+            )
+
         return result
 
     def cleanup(self, engine: Any) -> None:

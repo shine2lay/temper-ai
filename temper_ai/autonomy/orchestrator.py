@@ -42,45 +42,44 @@ class PostExecutionOrchestrator:
             context.workflow_id,
         )
 
-        if self._config.learning_enabled:
-            report.learning_result = self._run_learning(context, report)
+        self._run_subsystems(context, report, start)
+        self._finalize_report(report, start)
+        return report
 
-        if self._budget_exhausted(start, report):
-            return report
+    def _run_subsystems(
+        self,
+        context: WorkflowRunContext,
+        report: PostExecutionReport,
+        start: float,
+    ) -> None:
+        """Execute each enabled subsystem, bailing on timeout."""
+        steps: List[tuple] = [
+            (self._config.learning_enabled, "_run_learning", "learning_result"),
+            (self._config.goals_enabled, "_run_goals", "goals_result"),
+            (
+                self._config.auto_apply_learning or self._config.auto_apply_goals,
+                "_run_feedback",
+                "feedback_result",
+            ),
+            (self._config.prompt_optimization_enabled, "_run_prompt_optimization", "optimization_result"),
+            (self._config.portfolio_enabled, "_run_portfolio", "portfolio_result"),
+            (self._config.agent_memory_sync_enabled, "_run_agent_memory_sync", "memory_sync_result"),
+        ]
+        for enabled, method_name, attr in steps:
+            if enabled:
+                setattr(report, attr, getattr(self, method_name)(context, report))
+            if self._budget_exhausted(start, report):
+                return
 
-        if self._config.goals_enabled:
-            report.goals_result = self._run_goals(context, report)
-
-        if self._budget_exhausted(start, report):
-            return report
-
-        if self._config.auto_apply_learning or self._config.auto_apply_goals:
-            report.feedback_result = self._run_feedback(context, report)
-
-        if self._budget_exhausted(start, report):
-            return report
-
-        if self._config.prompt_optimization_enabled:
-            report.optimization_result = self._run_prompt_optimization(
-                context, report,
-            )
-
-        if self._budget_exhausted(start, report):
-            return report
-
-        if self._config.portfolio_enabled:
-            report.portfolio_result = self._run_portfolio(context, report)
-
+    def _finalize_report(self, report: PostExecutionReport, start: float) -> None:
+        """Compute elapsed time and log completion."""
         elapsed_ms = (time.monotonic() - start) * MS_PER_SECOND
         report.duration_ms = round(elapsed_ms, 1)
-
-        error_count = len(report.errors)
         logger.info(
             "Autonomous loop completed in %.1fms (%d errors)",
             report.duration_ms,
-            error_count,
+            len(report.errors),
         )
-        return report
 
     def _budget_exhausted(
         self, start: float, report: PostExecutionReport,
@@ -322,6 +321,38 @@ class PostExecutionOrchestrator:
             },
         )
         return True
+
+    def _run_agent_memory_sync(
+        self, context: WorkflowRunContext, report: PostExecutionReport
+    ) -> Optional[Dict[str, Any]]:
+        """Sync workflow learnings to persistent agents (M9).
+
+        For each persistent agent that participated in the workflow,
+        calls sync_workflow_learnings_to_agent().
+        """
+        try:
+            from temper_ai.agent._m9_context_helpers import sync_workflow_learnings_to_agent
+            from temper_ai.registry.store import AgentRegistryStore
+
+            store = AgentRegistryStore()
+            agents = store.list_all(status_filter="active")
+
+            results = []
+            for agent_entry in agents:
+                result = sync_workflow_learnings_to_agent(
+                    agent_id=agent_entry.id,
+                    agent_name=agent_entry.name,
+                    workflow_name=context.workflow_name,
+                    memory_service=None,
+                )
+                results.append({"agent": agent_entry.name, **result})
+
+            return {"agents_synced": len(results), "results": results}
+        except Exception as exc:  # noqa: BLE001 -- subsystem failures must not crash workflow
+            msg = f"Agent memory sync error: {exc}"
+            logger.warning(msg)
+            report.errors.append(msg)
+            return None
 
     def _run_portfolio(
         self, context: WorkflowRunContext, report: PostExecutionReport

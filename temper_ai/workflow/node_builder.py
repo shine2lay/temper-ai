@@ -350,3 +350,67 @@ class NodeBuilder:
             >>> name = builder.extract_agent_name({"agent_name": "analyzer"})  # "analyzer"
         """
         return extract_agent_name(agent_ref)
+
+
+STAGE_TIMEOUT_STATUS = "timeout"
+
+
+def create_event_triggered_node(
+    stage_name: str,
+    inner_node_fn: Callable,
+    event_bus: Any,
+    trigger_config: Any,
+) -> Callable:
+    """Wrap a stage node function to wait for an event trigger before executing.
+
+    Args:
+        stage_name: Name of the stage
+        inner_node_fn: The original stage node function
+        event_bus: TemperEventBus instance
+        trigger_config: StageTriggerConfig with event_type, timeout_seconds, etc.
+
+    Returns:
+        Wrapped node function that waits for event then runs inner_node_fn
+    """
+    def event_triggered_node(state: dict) -> dict:
+        _logger = logging.getLogger(__name__)
+
+        if event_bus is None:
+            _logger.warning(
+                "Stage '%s' has trigger config but no event_bus in state — running immediately",
+                stage_name,
+            )
+            return inner_node_fn(state)
+
+        event_type = trigger_config.event_type
+        timeout = getattr(trigger_config, "timeout_seconds", 300)
+        source_filter = getattr(trigger_config, "source_workflow", None)
+
+        _logger.info(
+            "Stage '%s' waiting for event '%s' (timeout=%ds)",
+            stage_name,
+            event_type,
+            timeout,
+        )
+
+        event_data = event_bus.wait_for_event(
+            event_type=event_type,
+            timeout_seconds=timeout,
+            source_workflow_filter=source_filter,
+        )
+
+        if event_data is None:
+            _logger.warning(
+                "Stage '%s' timed out waiting for event '%s'",
+                stage_name,
+                event_type,
+            )
+            state_copy = dict(state)
+            state_copy["stage_status"] = STAGE_TIMEOUT_STATUS
+            return state_copy
+
+        state_copy = dict(state)
+        state_copy["trigger_event"] = event_data
+        return inner_node_fn(state_copy)
+
+    return event_triggered_node

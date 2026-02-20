@@ -73,7 +73,7 @@ class TestAnalysisEndpoints:
     def test_get_analysis_runs(self, client):
         resp = client.get("/goals/analysis-runs")
         assert resp.status_code == 200
-        assert isinstance(resp.json(), list)
+        assert resp.json() == []
 
     def test_trigger_analysis(self, client):
         with patch("temper_ai.goals.analysis_orchestrator.AnalysisOrchestrator") as MockOrch:

@@ -6,88 +6,66 @@ class TestObservabilityInitExports:
     """Tests for observability package __init__ exports."""
 
     def test_eager_imports_available(self):
-        """Test that eager imports are immediately available."""
+        """Test that eager imports are immediately available and correct types."""
         import temper_ai.observability as obs
 
-        # Backend ABC
-        assert hasattr(obs, 'ObservabilityBackend')
-        assert obs.ObservabilityBackend is not None
+        # Backend ABC should be a class
+        assert isinstance(obs.ObservabilityBackend, type)
 
-        # Context
-        assert hasattr(obs, 'ExecutionContext')
-        assert obs.ExecutionContext is not None
+        # Context should be a class
+        assert isinstance(obs.ExecutionContext, type)
 
-        # Models
-        assert hasattr(obs, 'WorkflowExecution')
-        assert hasattr(obs, 'StageExecution')
-        assert hasattr(obs, 'AgentExecution')
-        assert hasattr(obs, 'LLMCall')
-        assert hasattr(obs, 'ToolExecution')
-        assert hasattr(obs, 'CollaborationEvent')
-        assert hasattr(obs, 'AgentMeritScore')
-        assert hasattr(obs, 'DecisionOutcome')
-        assert hasattr(obs, 'SystemMetric')
-        assert hasattr(obs, 'SchemaVersion')
+        # Models should be classes
+        for model_name in [
+            'WorkflowExecution', 'StageExecution', 'AgentExecution',
+            'LLMCall', 'ToolExecution', 'CollaborationEvent',
+            'AgentMeritScore', 'DecisionOutcome', 'SystemMetric', 'SchemaVersion',
+        ]:
+            assert isinstance(getattr(obs, model_name), type), f"{model_name} should be a class"
 
-        # Tracker
-        assert hasattr(obs, 'ExecutionTracker')
+        # Tracker should be a class
+        assert isinstance(obs.ExecutionTracker, type)
 
-        # Hooks
-        assert hasattr(obs, 'ExecutionHook')
-        assert hasattr(obs, 'get_tracker')
-        assert hasattr(obs, 'set_tracker')
-        assert hasattr(obs, 'reset_tracker')
-        assert hasattr(obs, 'track_workflow')
-        assert hasattr(obs, 'track_stage')
-        assert hasattr(obs, 'track_agent')
+        # Hooks should be correct types
+        assert isinstance(obs.ExecutionHook, type)
+        assert callable(obs.get_tracker)
+        assert callable(obs.set_tracker)
+        assert callable(obs.reset_tracker)
+        assert callable(obs.track_workflow)
+        assert callable(obs.track_stage)
+        assert callable(obs.track_agent)
 
     def test_lazy_backend_imports(self):
-        """Test that backend implementations are lazily loaded."""
+        """Test that backend implementations are lazily loaded and are classes."""
         import temper_ai.observability as obs
 
-        # Access lazy imports
-        assert hasattr(obs, 'SQLObservabilityBackend')
-        sql_backend = obs.SQLObservabilityBackend
-        assert sql_backend is not None
-
-        assert hasattr(obs, 'PrometheusObservabilityBackend')
-        prom_backend = obs.PrometheusObservabilityBackend
-        assert prom_backend is not None
-
-        assert hasattr(obs, 'S3ObservabilityBackend')
-        s3_backend = obs.S3ObservabilityBackend
-        assert s3_backend is not None
+        # All backends should be classes
+        assert isinstance(obs.SQLObservabilityBackend, type)
+        assert isinstance(obs.PrometheusObservabilityBackend, type)
+        assert isinstance(obs.S3ObservabilityBackend, type)
 
     def test_lazy_buffer_imports(self):
-        """Test that buffer is lazily loaded."""
+        """Test that buffer is lazily loaded and is a class."""
         import temper_ai.observability as obs
 
-        assert hasattr(obs, 'ObservabilityBuffer')
-        buffer_cls = obs.ObservabilityBuffer
-        assert buffer_cls is not None
+        assert isinstance(obs.ObservabilityBuffer, type)
 
     def test_lazy_console_imports(self):
-        """Test that console utilities are lazily loaded."""
+        """Test that console utilities are lazily loaded and correct types."""
         import temper_ai.observability as obs
 
-        assert hasattr(obs, 'WorkflowVisualizer')
-        assert hasattr(obs, 'StreamingVisualizer')
-        assert hasattr(obs, 'print_workflow_tree')
-
-        visualizer = obs.WorkflowVisualizer
-        assert visualizer is not None
+        assert isinstance(obs.WorkflowVisualizer, type)
+        assert isinstance(obs.StreamingVisualizer, type)
+        assert callable(obs.print_workflow_tree)
 
     def test_lazy_database_imports(self):
-        """Test that database utilities are lazily loaded."""
+        """Test that database utilities are lazily loaded and correct types."""
         import temper_ai.observability as obs
 
-        assert hasattr(obs, 'DatabaseManager')
-        assert hasattr(obs, 'init_database')
-        assert hasattr(obs, 'get_database')
-        assert hasattr(obs, 'get_session')
-
-        db_manager = obs.DatabaseManager
-        assert db_manager is not None
+        assert isinstance(obs.DatabaseManager, type)
+        assert callable(obs.init_database)
+        assert callable(obs.get_database)
+        assert callable(obs.get_session)
 
     def test_lazy_formatters_imports(self):
         """Test that formatters are lazily loaded."""

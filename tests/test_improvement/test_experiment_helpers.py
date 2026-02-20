@@ -2,7 +2,7 @@
 
 from unittest.mock import MagicMock, call
 
-from temper_ai.improvement._experiment_helpers import (
+from temper_ai.optimization._experiment_helpers import (
     METRIC_OPTIMIZATION_SCORE,
     MIN_SAMPLE_SIZE_SINGLE,
     STATUS_COMPLETED,

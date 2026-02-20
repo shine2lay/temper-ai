@@ -109,7 +109,7 @@ class TestRandomAssignment:
 
         # Should see both variants (not deterministic)
         # Note: This test has ~0.4^100 chance of false negative, which is negligible
-        assert len(results) >= 1  # At minimum we see some variant
+        assert len(results) == 2  # Both variants should appear across 100 calls
 
     def test_random_assignment_empty_variants(self, experiment):
         """Test that random assignment fails with no variants."""

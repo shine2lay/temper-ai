@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from temper_ai.optimization.program_store import CompiledProgramStore
+from temper_ai.optimization.dspy.program_store import CompiledProgramStore
 
 
 class TestCompiledProgramStore:

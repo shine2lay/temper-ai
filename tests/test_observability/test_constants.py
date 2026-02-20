@@ -7,28 +7,24 @@ class TestPerformanceConstants:
     """Tests for performance monitoring constants."""
 
     def test_max_latency_samples_defined(self):
-        """Test that MAX_LATENCY_SAMPLES is defined."""
-        assert hasattr(constants, 'MAX_LATENCY_SAMPLES')
+        """Test that MAX_LATENCY_SAMPLES has the expected value."""
         assert isinstance(constants.MAX_LATENCY_SAMPLES, int)
-        assert constants.MAX_LATENCY_SAMPLES > 0
+        assert constants.MAX_LATENCY_SAMPLES == 1000
 
     def test_max_slow_operations_defined(self):
-        """Test that MAX_SLOW_OPERATIONS is defined."""
-        assert hasattr(constants, 'MAX_SLOW_OPERATIONS')
+        """Test that MAX_SLOW_OPERATIONS has the expected value."""
         assert isinstance(constants.MAX_SLOW_OPERATIONS, int)
-        assert constants.MAX_SLOW_OPERATIONS > 0
+        assert constants.MAX_SLOW_OPERATIONS == 100
 
     def test_default_cleanup_interval_defined(self):
-        """Test that DEFAULT_CLEANUP_INTERVAL is defined."""
-        assert hasattr(constants, 'DEFAULT_CLEANUP_INTERVAL')
+        """Test that DEFAULT_CLEANUP_INTERVAL has the expected value."""
         assert isinstance(constants.DEFAULT_CLEANUP_INTERVAL, int)
-        assert constants.DEFAULT_CLEANUP_INTERVAL > 0
+        assert constants.DEFAULT_CLEANUP_INTERVAL == 1000
 
     def test_default_slow_threshold_ms_defined(self):
-        """Test that DEFAULT_SLOW_THRESHOLD_MS is defined."""
-        assert hasattr(constants, 'DEFAULT_SLOW_THRESHOLD_MS')
+        """Test that DEFAULT_SLOW_THRESHOLD_MS has the expected value."""
         assert isinstance(constants.DEFAULT_SLOW_THRESHOLD_MS, float)
-        assert constants.DEFAULT_SLOW_THRESHOLD_MS > 0
+        assert constants.DEFAULT_SLOW_THRESHOLD_MS == 1000.0
 
     def test_ms_per_second_conversion(self):
         """Test that MS_PER_SECOND is correct."""
@@ -40,9 +36,9 @@ class TestOperationThresholds:
     """Tests for operation threshold constants."""
 
     def test_default_thresholds_defined(self):
-        """Test that DEFAULT_THRESHOLDS_MS is defined."""
-        assert hasattr(constants, 'DEFAULT_THRESHOLDS_MS')
+        """Test that DEFAULT_THRESHOLDS_MS is a non-empty dict."""
         assert isinstance(constants.DEFAULT_THRESHOLDS_MS, dict)
+        assert len(constants.DEFAULT_THRESHOLDS_MS) >= 5
 
     def test_all_operation_thresholds_present(self):
         """Test that all expected operation types have thresholds."""
@@ -84,44 +80,38 @@ class TestBufferConstants:
     """Tests for buffer configuration constants."""
 
     def test_default_buffer_size_defined(self):
-        """Test that DEFAULT_BUFFER_SIZE is defined."""
-        assert hasattr(constants, 'DEFAULT_BUFFER_SIZE')
+        """Test that DEFAULT_BUFFER_SIZE has the expected value."""
         assert isinstance(constants.DEFAULT_BUFFER_SIZE, int)
-        assert constants.DEFAULT_BUFFER_SIZE > 0
+        assert constants.DEFAULT_BUFFER_SIZE == 100
 
     def test_default_buffer_timeout_defined(self):
-        """Test that DEFAULT_BUFFER_TIMEOUT_SECONDS is defined."""
-        assert hasattr(constants, 'DEFAULT_BUFFER_TIMEOUT_SECONDS')
+        """Test that DEFAULT_BUFFER_TIMEOUT_SECONDS has the expected value."""
         assert isinstance(constants.DEFAULT_BUFFER_TIMEOUT_SECONDS, float)
-        assert constants.DEFAULT_BUFFER_TIMEOUT_SECONDS > 0
+        assert constants.DEFAULT_BUFFER_TIMEOUT_SECONDS == 5.0
 
     def test_max_retry_attempts_defined(self):
-        """Test that MAX_RETRY_ATTEMPTS is defined."""
-        assert hasattr(constants, 'MAX_RETRY_ATTEMPTS')
+        """Test that MAX_RETRY_ATTEMPTS has the expected value."""
         assert isinstance(constants.MAX_RETRY_ATTEMPTS, int)
-        assert constants.MAX_RETRY_ATTEMPTS > 0
+        assert constants.MAX_RETRY_ATTEMPTS == 3
 
     def test_retry_delay_seconds_defined(self):
-        """Test that RETRY_DELAY_SECONDS is defined."""
-        assert hasattr(constants, 'RETRY_DELAY_SECONDS')
+        """Test that RETRY_DELAY_SECONDS has the expected value."""
         assert isinstance(constants.RETRY_DELAY_SECONDS, float)
-        assert constants.RETRY_DELAY_SECONDS > 0
+        assert constants.RETRY_DELAY_SECONDS == 1.0
 
 
 class TestAlertingConstants:
     """Tests for alerting threshold constants."""
 
     def test_default_alert_cooldown_defined(self):
-        """Test that DEFAULT_ALERT_COOLDOWN_SECONDS is defined."""
-        assert hasattr(constants, 'DEFAULT_ALERT_COOLDOWN_SECONDS')
+        """Test that DEFAULT_ALERT_COOLDOWN_SECONDS has the expected value."""
         assert isinstance(constants.DEFAULT_ALERT_COOLDOWN_SECONDS, int)
-        assert constants.DEFAULT_ALERT_COOLDOWN_SECONDS > 0
+        assert constants.DEFAULT_ALERT_COOLDOWN_SECONDS == 300
 
     def test_max_alert_history_defined(self):
-        """Test that MAX_ALERT_HISTORY is defined."""
-        assert hasattr(constants, 'MAX_ALERT_HISTORY')
+        """Test that MAX_ALERT_HISTORY has the expected value."""
         assert isinstance(constants.MAX_ALERT_HISTORY, int)
-        assert constants.MAX_ALERT_HISTORY > 0
+        assert constants.MAX_ALERT_HISTORY == 1000
 
     def test_error_rate_alert_threshold_defined(self):
         """Test that DEFAULT_ERROR_RATE_ALERT_THRESHOLD is defined."""
@@ -140,110 +130,95 @@ class TestDisplayConstants:
     """Tests for display and formatting constants."""
 
     def test_default_trace_depth_defined(self):
-        """Test that DEFAULT_TRACE_DEPTH is defined."""
-        assert hasattr(constants, 'DEFAULT_TRACE_DEPTH')
+        """Test that DEFAULT_TRACE_DEPTH has the expected value."""
         assert isinstance(constants.DEFAULT_TRACE_DEPTH, int)
-        assert constants.DEFAULT_TRACE_DEPTH > 0
+        assert constants.DEFAULT_TRACE_DEPTH == 10
 
     def test_max_trace_display_items_defined(self):
-        """Test that MAX_TRACE_DISPLAY_ITEMS is defined."""
-        assert hasattr(constants, 'MAX_TRACE_DISPLAY_ITEMS')
+        """Test that MAX_TRACE_DISPLAY_ITEMS has the expected value."""
         assert isinstance(constants.MAX_TRACE_DISPLAY_ITEMS, int)
-        assert constants.MAX_TRACE_DISPLAY_ITEMS > 0
+        assert constants.MAX_TRACE_DISPLAY_ITEMS == 50
 
     def test_default_indent_size_defined(self):
-        """Test that DEFAULT_INDENT_SIZE is defined."""
-        assert hasattr(constants, 'DEFAULT_INDENT_SIZE')
+        """Test that DEFAULT_INDENT_SIZE has the expected value."""
         assert isinstance(constants.DEFAULT_INDENT_SIZE, int)
-        assert constants.DEFAULT_INDENT_SIZE > 0
+        assert constants.DEFAULT_INDENT_SIZE == 2
 
     def test_sanitization_max_length_defined(self):
-        """Test that SANITIZATION_MAX_LENGTH is defined."""
-        assert hasattr(constants, 'SANITIZATION_MAX_LENGTH')
+        """Test that SANITIZATION_MAX_LENGTH has the expected value."""
         assert isinstance(constants.SANITIZATION_MAX_LENGTH, int)
-        assert constants.SANITIZATION_MAX_LENGTH > 0
+        assert constants.SANITIZATION_MAX_LENGTH == 10000
 
     def test_sanitization_replacement_defined(self):
-        """Test that SANITIZATION_REPLACEMENT is defined."""
-        assert hasattr(constants, 'SANITIZATION_REPLACEMENT')
+        """Test that SANITIZATION_REPLACEMENT has the expected value."""
         assert isinstance(constants.SANITIZATION_REPLACEMENT, str)
-        assert len(constants.SANITIZATION_REPLACEMENT) > 0
+        assert constants.SANITIZATION_REPLACEMENT == "***"
 
 
 class TestDLQConstants:
     """Tests for dead letter queue constants."""
 
     def test_default_dlq_max_size_defined(self):
-        """Test that DEFAULT_DLQ_MAX_SIZE is defined."""
-        assert hasattr(constants, 'DEFAULT_DLQ_MAX_SIZE')
+        """Test that DEFAULT_DLQ_MAX_SIZE has the expected value."""
         assert isinstance(constants.DEFAULT_DLQ_MAX_SIZE, int)
-        assert constants.DEFAULT_DLQ_MAX_SIZE > 0
+        assert constants.DEFAULT_DLQ_MAX_SIZE == 10000
 
     def test_default_dlq_retry_interval_defined(self):
-        """Test that DEFAULT_DLQ_RETRY_INTERVAL is defined."""
-        assert hasattr(constants, 'DEFAULT_DLQ_RETRY_INTERVAL')
+        """Test that DEFAULT_DLQ_RETRY_INTERVAL has the expected value."""
         assert isinstance(constants.DEFAULT_DLQ_RETRY_INTERVAL, int)
-        assert constants.DEFAULT_DLQ_RETRY_INTERVAL > 0
+        assert constants.DEFAULT_DLQ_RETRY_INTERVAL == 60
 
     def test_max_dlq_retry_attempts_defined(self):
-        """Test that MAX_DLQ_RETRY_ATTEMPTS is defined."""
-        assert hasattr(constants, 'MAX_DLQ_RETRY_ATTEMPTS')
+        """Test that MAX_DLQ_RETRY_ATTEMPTS has the expected value."""
         assert isinstance(constants.MAX_DLQ_RETRY_ATTEMPTS, int)
-        assert constants.MAX_DLQ_RETRY_ATTEMPTS > 0
+        assert constants.MAX_DLQ_RETRY_ATTEMPTS == 5
 
 
 class TestMeritScoreConstants:
     """Tests for merit score service constants."""
 
     def test_default_merit_decay_rate_defined(self):
-        """Test that DEFAULT_MERIT_DECAY_RATE is defined."""
-        assert hasattr(constants, 'DEFAULT_MERIT_DECAY_RATE')
+        """Test that DEFAULT_MERIT_DECAY_RATE has the expected value."""
         assert isinstance(constants.DEFAULT_MERIT_DECAY_RATE, float)
-        assert 0 < constants.DEFAULT_MERIT_DECAY_RATE < 1
+        assert constants.DEFAULT_MERIT_DECAY_RATE == 0.95
 
     def test_default_merit_window_days_defined(self):
-        """Test that DEFAULT_MERIT_WINDOW_DAYS is defined."""
-        assert hasattr(constants, 'DEFAULT_MERIT_WINDOW_DAYS')
+        """Test that DEFAULT_MERIT_WINDOW_DAYS has the expected value."""
         assert isinstance(constants.DEFAULT_MERIT_WINDOW_DAYS, int)
-        assert constants.DEFAULT_MERIT_WINDOW_DAYS > 0
+        assert constants.DEFAULT_MERIT_WINDOW_DAYS == 30
 
     def test_min_observations_for_merit_defined(self):
-        """Test that MIN_OBSERVATIONS_FOR_MERIT is defined."""
-        assert hasattr(constants, 'MIN_OBSERVATIONS_FOR_MERIT')
+        """Test that MIN_OBSERVATIONS_FOR_MERIT has the expected value."""
         assert isinstance(constants.MIN_OBSERVATIONS_FOR_MERIT, int)
-        assert constants.MIN_OBSERVATIONS_FOR_MERIT > 0
+        assert constants.MIN_OBSERVATIONS_FOR_MERIT == 5
 
 
 class TestDecisionTrackerConstants:
     """Tests for decision tracker constants."""
 
     def test_max_decision_history_defined(self):
-        """Test that MAX_DECISION_HISTORY is defined."""
-        assert hasattr(constants, 'MAX_DECISION_HISTORY')
+        """Test that MAX_DECISION_HISTORY has the expected value."""
         assert isinstance(constants.MAX_DECISION_HISTORY, int)
-        assert constants.MAX_DECISION_HISTORY > 0
+        assert constants.MAX_DECISION_HISTORY == 10000
 
     def test_decision_context_max_length_defined(self):
-        """Test that DECISION_CONTEXT_MAX_LENGTH is defined."""
-        assert hasattr(constants, 'DECISION_CONTEXT_MAX_LENGTH')
+        """Test that DECISION_CONTEXT_MAX_LENGTH has the expected value."""
         assert isinstance(constants.DECISION_CONTEXT_MAX_LENGTH, int)
-        assert constants.DECISION_CONTEXT_MAX_LENGTH > 0
+        assert constants.DECISION_CONTEXT_MAX_LENGTH == 5000
 
 
 class TestSQLBackendConstants:
     """Tests for SQL backend constants."""
 
     def test_default_query_limit_defined(self):
-        """Test that DEFAULT_QUERY_LIMIT is defined."""
-        assert hasattr(constants, 'DEFAULT_QUERY_LIMIT')
+        """Test that DEFAULT_QUERY_LIMIT has the expected value."""
         assert isinstance(constants.DEFAULT_QUERY_LIMIT, int)
-        assert constants.DEFAULT_QUERY_LIMIT > 0
+        assert constants.DEFAULT_QUERY_LIMIT == 1000
 
     def test_default_aggregation_interval_defined(self):
-        """Test that DEFAULT_AGGREGATION_INTERVAL_SECONDS is defined."""
-        assert hasattr(constants, 'DEFAULT_AGGREGATION_INTERVAL_SECONDS')
+        """Test that DEFAULT_AGGREGATION_INTERVAL_SECONDS has the expected value."""
         assert isinstance(constants.DEFAULT_AGGREGATION_INTERVAL_SECONDS, int)
-        assert constants.DEFAULT_AGGREGATION_INTERVAL_SECONDS > 0
+        assert constants.DEFAULT_AGGREGATION_INTERVAL_SECONDS == 60
 
 
 class TestConstantsIntegrity:

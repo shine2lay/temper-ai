@@ -32,12 +32,11 @@ class TestPluginConfig:
 
     def test_base_config_framework_config_is_dict(self) -> None:
         config = PluginConfig(framework="test", framework_config={"a": 1, "b": 2})
-        assert isinstance(config.framework_config, dict)
-        assert len(config.framework_config) == 2
+        assert config.framework_config == {"a": 1, "b": 2}
 
     def test_base_config_extra_is_dict(self) -> None:
         config = PluginConfig(framework="test", extra={"x": "y"})
-        assert isinstance(config.extra, dict)
+        assert config.extra == {"x": "y"}
 
 
 class TestCrewAIPluginConfig:

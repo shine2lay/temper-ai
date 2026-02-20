@@ -242,3 +242,4 @@ class TestSafeExecuteContract:
 
         assert isinstance(result, ToolResult)
         assert result.success is False
+        assert "boom" in result.error

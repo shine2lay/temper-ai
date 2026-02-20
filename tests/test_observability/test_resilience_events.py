@@ -235,8 +235,10 @@ class TestEmitRetryEvent:
             outcome=RETRY_OUTCOME_FAILED,
         )
 
+        # Must not raise — exception should be swallowed
         emit_retry_event(tracker, "stage-123", event_data)
-        assert event_data.agent_name == "agent-1"  # exception swallowed
+        # Verify the tracker method was actually called (and raised)
+        tracker.track_collaboration_event.assert_called_once()
 
 
 class TestEmitFallbackEvent:
@@ -337,8 +339,10 @@ class TestEmitCircuitBreakerEvent:
             new_state="open",
         )
 
+        # Must not raise — exception should be swallowed
         emit_circuit_breaker_event(callback, event_data)
-        assert event_data.breaker_name == "llm-breaker"  # exception swallowed
+        # Verify the callback was actually called (and raised)
+        callback.assert_called_once()
 
     def test_emit_logs_state_transition(self, caplog):
         callback = Mock()

@@ -289,13 +289,13 @@ class TestEventOutputHandler:
         assert "stage_end" in line
         assert "research" in line
 
-    def test_file_mode_creates_file(self, tmp_path: Path) -> None:
+    def test_stderr_mode_handler(self, tmp_path: Path) -> None:
+        """Test EventOutputHandler initializes correctly in stderr mode."""
         from temper_ai.interfaces.cli.event_output import EventOutputHandler
 
-        with patch("temper_ai.interfaces.cli.event_output.Path") as mock_path_cls:
-            # Just check it doesn't crash with file mode
-            handler = EventOutputHandler(mode="stderr", fmt="text")
-            assert handler.mode == "stderr"
+        handler = EventOutputHandler(mode="stderr", fmt="text")
+        assert handler.mode == "stderr"
+        assert handler.fmt == "text"
 
 
 # ---------------------------------------------------------------------------

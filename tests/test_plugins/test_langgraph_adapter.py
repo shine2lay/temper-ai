@@ -212,3 +212,5 @@ class TestLangGraphTranslateConfig:
         configs = LangGraphAgent.translate_config(source)
 
         assert isinstance(configs, list)
+        assert len(configs) == 1
+        assert "agent" in configs[0]

@@ -127,7 +127,7 @@ class TestDatabaseManager:
         """Test that session rolls back on error."""
         manager = DatabaseManager("sqlite:///:memory:")
 
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError, match="test error"):
             with manager.session() as session:
                 raise ValueError("test error")
 
@@ -141,18 +141,22 @@ class TestDatabaseManager:
 
     def test_create_all_tables(self):
         """Test creating all tables."""
+        from sqlalchemy import inspect
+
         manager = DatabaseManager("sqlite:///:memory:")
         manager.create_all_tables()
-        assert manager.engine is not None
-        with manager.session() as session:
-            assert session is not None
+        table_names = inspect(manager.engine).get_table_names()
+        assert len(table_names) > 0
 
     def test_drop_all_tables(self):
         """Test dropping all tables."""
+        from sqlalchemy import inspect
+
         manager = DatabaseManager("sqlite:///:memory:")
         manager.create_all_tables()
         manager.drop_all_tables()
-        assert manager.engine is not None
+        table_names = inspect(manager.engine).get_table_names()
+        assert len(table_names) == 0
 
 
 class TestGlobalDatabaseFunctions:
@@ -248,17 +252,15 @@ class TestSQLiteForeignKeys:
         manager = DatabaseManager("sqlite:///:memory:")
 
         with manager.session() as session:
-            result = session.execute("PRAGMA foreign_keys").fetchone()
+            result = session.execute(text("PRAGMA foreign_keys")).fetchone()
             assert result[0] == 1
 
-    def test_foreign_keys_verified(self):
-        """Test that foreign key verification works."""
-        # This test verifies that the foreign key check doesn't raise
+    def test_session_executes_query_after_table_creation(self):
+        """Test that sessions work correctly after table creation."""
         manager = DatabaseManager("sqlite:///:memory:")
         manager.create_all_tables()
 
         with manager.session() as session:
-            # Should not raise
             result = session.execute(text("SELECT 1")).scalar()
             assert result == 1
 

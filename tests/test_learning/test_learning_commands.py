@@ -48,6 +48,7 @@ class TestLearningCommands:
         result = runner.invoke(learning_group, ["mine"])
         assert result.exit_code == 0
         assert "Mining complete" in result.output
+        mock_orch_cls.return_value.run_mining.assert_called_once()
 
     @patch("temper_ai.interfaces.cli.learning_commands._get_store")
     def test_patterns_empty(self, mock_store) -> None:

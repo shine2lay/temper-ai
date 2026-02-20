@@ -5,12 +5,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from temper_ai.optimization._schemas import (
+from temper_ai.optimization.dspy._schemas import (
     CompilationResult,
     PromptOptimizationConfig,
     TrainingExample,
 )
-from temper_ai.optimization.compiler import DSPyCompiler
+from temper_ai.optimization.dspy.compiler import DSPyCompiler
 
 
 def _make_examples(count=10):
@@ -146,3 +146,35 @@ class TestDSPyCompiler:
         assert "instruction" in result.program_data
         assert "demos" in result.program_data
         assert isinstance(result.program_data["demos"], list)
+
+
+class TestMetricDispatch:
+    def test_default_is_exact_match(self):
+        metric = DSPyCompiler._get_metric(None)
+        example = MagicMock(output="hello")
+        pred = MagicMock(output="hello")
+        assert metric(example, pred)
+
+    def test_exact_match_mismatch(self):
+        metric = DSPyCompiler._get_metric("exact_match")
+        example = MagicMock(output="hello")
+        pred = MagicMock(output="world")
+        assert not metric(example, pred)
+
+    def test_contains_metric(self):
+        metric = DSPyCompiler._get_metric("contains")
+        example = MagicMock(output="world")
+        pred = MagicMock(output="hello world")
+        assert metric(example, pred)
+
+    def test_fuzzy_metric_above_threshold(self):
+        metric = DSPyCompiler._get_metric("fuzzy")
+        example = MagicMock(output="the quick brown fox")
+        pred = MagicMock(output="the quick brown dog")
+        assert metric(example, pred)
+
+    def test_fuzzy_metric_below_threshold(self):
+        metric = DSPyCompiler._get_metric("fuzzy")
+        example = MagicMock(output="hello world")
+        pred = MagicMock(output="goodbye universe forever")
+        assert not metric(example, pred)

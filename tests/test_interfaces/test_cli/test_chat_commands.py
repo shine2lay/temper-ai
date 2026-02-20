@@ -142,8 +142,10 @@ class TestRunChatLoop:
         agent = MagicMock()
         _run_chat_loop(agent)
         agent.execute.assert_not_called()
-        # Help text should be printed
-        assert mock_console.print.call_count >= 1
+        # Help text should be printed containing command instructions
+        printed_args = [str(c) for c in mock_console.print.call_args_list]
+        all_printed = " ".join(printed_args)
+        assert "exit" in all_printed or "help" in all_printed
 
 
 # ─── Click command tests ─────────────────────────────────────────────

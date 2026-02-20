@@ -8,6 +8,7 @@ import pytest
 from temper_ai.shared.core.protocols import Registry, ToolRegistryProtocol as DomainToolRegistryProtocol
 from temper_ai.tools.registry import ToolRegistry
 from temper_ai.tools.base import BaseTool, ToolMetadata, ToolResult
+from temper_ai.shared.utils.exceptions import ToolRegistryError
 from temper_ai.safety.policy_registry import PolicyRegistry
 from temper_ai.safety.interfaces import ValidationResult
 
@@ -209,7 +210,7 @@ class TestRegistryProtocolEdgeCases:
         registry.register(tool1)
 
         # Should raise error without allow_override
-        with pytest.raises(Exception):
+        with pytest.raises(ToolRegistryError, match="already registered"):
             registry.register(tool2, allow_override=False)
 
         # Should succeed with allow_override

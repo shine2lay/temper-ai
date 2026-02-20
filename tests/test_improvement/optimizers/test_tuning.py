@@ -3,8 +3,8 @@
 import pytest
 from unittest.mock import MagicMock
 
-from temper_ai.improvement._schemas import EvaluationResult
-from temper_ai.improvement.optimizers.tuning import TuningOptimizer
+from temper_ai.optimization._schemas import EvaluationResult
+from temper_ai.optimization.optimizers.tuning import TuningOptimizer
 
 
 class TestTuningOptimizer:

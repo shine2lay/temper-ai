@@ -84,8 +84,10 @@ class TestCleanupStaleTTL:
         _cleanup_stale_spans(backend, SPAN_TTL_SECONDS, MAX_ACTIVE_SPANS)
 
         old_span.set_status.assert_called_once()
-        args = old_span.set_status.call_args
-        assert "TTL exceeded" in str(args)
+        call_args = old_span.set_status.call_args
+        # Verify the description contains "TTL exceeded" (may be positional or keyword)
+        all_args_str = str(call_args)
+        assert "TTL exceeded" in all_args_str, f"Expected 'TTL exceeded' in set_status args: {all_args_str}"
 
     def test_ttl_eviction_sets_ttl_expired_attribute(self, otel_backend):
         backend, _ = otel_backend
@@ -262,8 +264,10 @@ class TestThreeTupleCompat:
         mock_span.add_event.reset_mock()
         # track_workflow_end calls _add_event internally
         backend.track_workflow_end("wf-1", NOW, "failed", error_message="boom")
-        # Should have added at least one event without error
+        # Should have added at least one event with error info
         assert mock_span.add_event.call_count >= 1
+        event_name = mock_span.add_event.call_args[0][0]
+        assert isinstance(event_name, str) and len(event_name) > 0
 
     def test_update_workflow_metrics_three_tuple(self, otel_backend):
         backend, mock_span = otel_backend

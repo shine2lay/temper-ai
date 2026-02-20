@@ -64,11 +64,16 @@ class TestCostAttributionOTEL:
 
         # Validate the naming convention: tags map to maf.cost.tag.{key}
         tags = {"tenant": "acme", "feature": "research"}
+        expected_attrs = {f"maf.cost.tag.{k}": v for k, v in tags.items()}
+        assert expected_attrs == {
+            "maf.cost.tag.tenant": "acme",
+            "maf.cost.tag.feature": "research",
+        }
+        # Verify all generated attribute names have correct prefix and key
         for key, value in tags.items():
             attr_name = f"maf.cost.tag.{key}"
-            assert attr_name.startswith("maf.cost.tag."), f"Bad prefix: {attr_name}"
-            assert key in attr_name, f"Key {key} not in attribute name"
-            assert isinstance(value, str), f"Tag value must be string, got {type(value)}"
+            assert attr_name in expected_attrs
+            assert expected_attrs[attr_name] == value
 
 
 class TestCostAttributionCostRollup:
@@ -137,5 +142,11 @@ class TestCostAttributionBackwardCompat:
             data=data,
         )
 
-        # Primary should be called
+        # Primary and secondary should both be called
         primary.track_workflow_start.assert_called_once()
+        secondary.track_workflow_start.assert_called_once()
+        # Verify tags were forwarded via the data argument
+        call_kwargs = primary.track_workflow_start.call_args
+        passed_data = call_kwargs.kwargs.get("data") or call_kwargs[1].get("data") if len(call_kwargs) > 1 else None
+        if passed_data is not None:
+            assert passed_data.cost_attribution_tags == tags

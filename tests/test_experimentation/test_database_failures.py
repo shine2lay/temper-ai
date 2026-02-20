@@ -989,7 +989,7 @@ class TestDataIntegrity:
 
     def test_null_constraint_handling(self, db_manager):
         """Test required fields validation."""
-        with pytest.raises(Exception):  # Could be IntegrityError or validation error
+        with pytest.raises((IntegrityError, TypeError, ValueError)):  # DB or model validation
             with db_manager.session() as session:
                 experiment = Experiment(
                     id="exp-null-test",

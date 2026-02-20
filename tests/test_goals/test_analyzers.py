@@ -229,3 +229,4 @@ class TestCrossProductAnalyzer:
                 results = analyzer.analyze()
         # Should include cross-product opportunities (at least from _analyze_learned_patterns)
         assert isinstance(results, list)
+        learning_store.list_patterns.assert_called_once()

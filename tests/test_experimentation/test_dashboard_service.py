@@ -91,10 +91,14 @@ class TestListExperiments:
         assert result == []
 
     def test_status_filter(self, service, mock_experiment):
+        from temper_ai.experimentation.models import ExperimentStatus
+
         service._service.list_experiments.return_value = [mock_experiment]
         result = service.list_experiments(status="running")
         assert len(result) == 1
-        service._service.list_experiments.assert_called_once()
+        service._service.list_experiments.assert_called_once_with(
+            status=ExperimentStatus.RUNNING
+        )
 
     def test_limit(self, service, mock_experiment):
         service._service.list_experiments.return_value = [mock_experiment] * 5

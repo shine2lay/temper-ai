@@ -2,7 +2,7 @@
 
 from unittest.mock import patch
 
-from temper_ai.improvement.evaluators.human import HumanEvaluator
+from temper_ai.optimization.evaluators.human import HumanEvaluator
 
 
 class TestHumanEvaluator:

@@ -58,7 +58,7 @@ class TestCryptographicPRNG:
         """The module should not use the standard random module."""
         import temper_ai.experimentation.assignment as mod
         # 'random' should not be in the module's namespace
-        assert not hasattr(mod, 'random') or mod.__name__ != 'random'
+        assert not hasattr(mod, 'random')
 
     def test_uniform_distribution(self):
         """10,000 assignments should produce roughly uniform distribution."""

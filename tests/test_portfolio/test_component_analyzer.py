@@ -210,8 +210,8 @@ class TestComponentMatchDetails:
                 ],
             )
             matches = analyzer.analyze_portfolio(portfolio)
-            if matches:
-                assert len(matches[0].differing_keys) > 0
+            assert len(matches) >= 1
+            assert len(matches[0].differing_keys) > 0
 
     def test_saves_to_store(self, analyzer, store):
         with tempfile.TemporaryDirectory() as tmpdir:

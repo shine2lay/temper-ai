@@ -172,7 +172,8 @@ class TestDataSanitizer:
         result = sanitizer.sanitize_text(text)
 
         assert result.was_sanitized is True
-        # IP addresses should be redacted
+        # IP address should be removed from output
+        assert "192.168.1.100" not in result.sanitized_text
 
     def test_sanitize_jwt_token(self):
         """Test sanitizing JWT tokens."""

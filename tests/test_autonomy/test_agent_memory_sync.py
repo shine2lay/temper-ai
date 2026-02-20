@@ -215,7 +215,6 @@ class TestPostExecutionReportMemorySyncField:
 
     def test_report_has_memory_sync_result_field(self) -> None:
         report = PostExecutionReport()
-        assert hasattr(report, "memory_sync_result")
         assert report.memory_sync_result is None
 
     def test_report_memory_sync_result_assignable(self) -> None:

@@ -181,14 +181,7 @@ class TestOrchestratorLearningIntegration:
         report = PostExecutionReport()
         ctx = _make_context()
 
-        with patch(
-            "temper_ai.autonomy.orchestrator.PostExecutionOrchestrator._run_learning",
-            side_effect=None,
-        ):
-            # Simulate import error in the actual method
-            pass
-
-        # Direct test of _run_learning with import mock
+        # Simulate ImportError by setting module to None in sys.modules
         with patch.dict("sys.modules", {"temper_ai.learning.orchestrator": None}):
             result = orch._run_learning(ctx, report)
             assert result is None

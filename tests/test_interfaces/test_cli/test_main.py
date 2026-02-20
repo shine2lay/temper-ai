@@ -305,18 +305,15 @@ class TestPrintRunSummary:
             "total_cost": 0.0123,
         })
         # Function uses Rich console, output goes to console not capsys
-        # Just verify it doesn't raise
-        assert True  # Function completed without exception
+        # No-raise verification: function completed without exception
 
     def test_summary_with_non_dict_result(self, capsys):
         _print_run_summary("test_wf", "wf-123", "simple result")
-        # Verify no exception
-        assert True  # Function completed without exception
+        # No-raise verification: function completed without exception
 
     def test_summary_with_failed_status(self, capsys):
         _print_run_summary("test_wf", "wf-123", {"status": "failed"})
-        # Verify no exception
-        assert True  # Function completed without exception
+        # No-raise verification: function completed without exception
 
 
 class TestM5Subcommands:

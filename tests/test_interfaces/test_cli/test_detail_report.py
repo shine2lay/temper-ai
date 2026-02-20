@@ -118,12 +118,11 @@ class TestRenderAgentDetail:
         }
         renderables = _render_agent_detail("test_agent", output_data)
 
-        # Should have multiple renderables
+        # Should have multiple renderables with actual content
         assert len(renderables) > 0
-
-        # Check for Text objects (LLM content sanitization)
-        text_objects = [r for r in renderables if isinstance(r, Text)]
-        assert len(text_objects) > 0
+        all_text = " ".join(str(r) for r in renderables)
+        assert "test_agent" in all_text
+        assert "Agent output text" in all_text
 
     def test_render_agent_detail_empty_output(self):
         """Test rendering agent details with empty output."""
@@ -132,6 +131,8 @@ class TestRenderAgentDetail:
 
         # Should still have agent name header
         assert len(renderables) > 0
+        all_text = " ".join(str(r) for r in renderables)
+        assert "test_agent" in all_text
 
     def test_render_agent_detail_with_tool_error(self):
         """Test rendering agent details with tool call error."""
@@ -147,6 +148,8 @@ class TestRenderAgentDetail:
         }
         renderables = _render_agent_detail("test_agent", output_data)
         assert len(renderables) > 0
+        all_text = " ".join(str(r) for r in renderables)
+        assert "failing_tool" in all_text
 
     def test_render_agent_detail_no_tool_calls(self):
         """Test rendering agent details with no tool calls."""
@@ -156,6 +159,8 @@ class TestRenderAgentDetail:
         }
         renderables = _render_agent_detail("test_agent", output_data)
         assert len(renderables) > 0
+        all_text = " ".join(str(r) for r in renderables)
+        assert "Simple output" in all_text
 
     def test_render_agent_detail_tool_params_as_arguments(self):
         """Test rendering when tool call uses 'arguments' instead of 'parameters'."""

@@ -141,7 +141,7 @@ class TestSecretRedactingFormatter:
     def test_initialization(self):
         """Test formatter initialization."""
         formatter = SecretRedactingFormatter()
-        assert formatter is not None
+        assert isinstance(formatter, logging.Formatter)
 
     def test_format_with_secret_in_message(self):
         """Test secret redaction in log message."""
@@ -191,7 +191,7 @@ class TestSecretRedactingFormatter:
         )
 
         result = formatter.format(record)
-        assert "API_KEY" not in result or "REDACTED" in result
+        assert "REDACTED" in result
 
     def test_format_preserves_original_message(self):
         """Test original message is restored after formatting."""

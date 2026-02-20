@@ -37,9 +37,11 @@ def test_datetime_utils_re_exports_work():
         # Verify the function exists and is callable
         assert callable(utcnow)
 
-        # Verify it actually works
+        # Verify it returns a timezone-aware datetime
+        from datetime import datetime
         result = utcnow()
-        assert result is not None
+        assert isinstance(result, datetime)
+        assert result.tzinfo is not None, "utcnow() should return timezone-aware datetime"
 
 
 def test_datetime_utils_new_import_location():

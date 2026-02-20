@@ -198,8 +198,8 @@ class TestCreateCommand:
 class TestGenerateFromTemplate:
     """Tests for _generate_from_template helper."""
 
-    @patch("temper_ai.interfaces.cli.create_commands.TemplateGenerator", create=True)
-    @patch("temper_ai.interfaces.cli.create_commands.TemplateRegistry", create=True)
+    @patch("temper_ai.workflow.templates.generator.TemplateGenerator")
+    @patch("temper_ai.workflow.templates.registry.TemplateRegistry")
     def test_calls_generator_generate(self, mock_reg_cls: MagicMock, mock_gen_cls: MagicMock, tmp_path: Path) -> None:
         mock_registry = MagicMock()
         mock_reg_cls.return_value = mock_registry
@@ -208,8 +208,14 @@ class TestGenerateFromTemplate:
         expected_path = tmp_path / "workflows" / "proj_workflow.yaml"
         mock_generator.generate.return_value = expected_path
 
-        with patch("temper_ai.interfaces.cli.create_commands._generate_from_template") as mock_fn:
-            mock_fn.return_value = expected_path
-            result = mock_fn(tmp_path, "api", "proj", None, None, "configs")
+        from temper_ai.interfaces.cli.create_commands import _generate_from_template
+
+        result = _generate_from_template(tmp_path, "api", "proj", None, None, "configs")
 
         assert result == expected_path
+        mock_generator.generate.assert_called_once_with(
+            product_type="api",
+            project_name="proj",
+            output_dir=tmp_path,
+            inference_overrides=None,
+        )

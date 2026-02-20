@@ -100,8 +100,11 @@ class TestOrchestrator:
 
 class TestHelpers:
     def test_pattern_key_deterministic(self) -> None:
-        p = _make_pattern("Hello")
-        assert _pattern_key(p) == _pattern_key(p)
+        p1 = _make_pattern("Hello")
+        p2 = _make_pattern("Hello")
+        p_diff = _make_pattern("Different")
+        assert _pattern_key(p1) == _pattern_key(p2)
+        assert _pattern_key(p1) != _pattern_key(p_diff)
 
     def test_calc_novelty_zero_total(self) -> None:
         assert _calc_novelty(0, 0) == 0.0

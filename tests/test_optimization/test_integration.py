@@ -6,7 +6,7 @@ import sys
 
 import pytest
 
-from temper_ai.optimization._schemas import (
+from temper_ai.optimization.dspy._schemas import (
     CompilationResult,
     PromptOptimizationConfig,
     TrainingExample,
@@ -18,8 +18,8 @@ class TestOptimizationPipeline:
 
     def test_full_pipeline(self, tmp_path):
         """Collect -> build -> compile -> save -> load -> adapt prompt."""
-        from temper_ai.optimization.program_store import CompiledProgramStore
-        from temper_ai.optimization.prompt_adapter import DSPyPromptAdapter
+        from temper_ai.optimization.dspy.program_store import CompiledProgramStore
+        from temper_ai.optimization.dspy.prompt_adapter import DSPyPromptAdapter
 
         # Save a compiled program
         store = CompiledProgramStore(store_dir=str(tmp_path))
@@ -45,8 +45,8 @@ class TestOptimizationPipeline:
 
     def test_graceful_degradation_no_program(self, tmp_path):
         """Prompt unchanged when no compiled program exists."""
-        from temper_ai.optimization.program_store import CompiledProgramStore
-        from temper_ai.optimization.prompt_adapter import DSPyPromptAdapter
+        from temper_ai.optimization.dspy.program_store import CompiledProgramStore
+        from temper_ai.optimization.dspy.prompt_adapter import DSPyPromptAdapter
 
         store = CompiledProgramStore(store_dir=str(tmp_path))
         adapter = DSPyPromptAdapter(store=store)

@@ -5,8 +5,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from temper_ai.optimization._schemas import PromptOptimizationConfig
-from temper_ai.optimization.program_builder import (
+from temper_ai.optimization.dspy._schemas import PromptOptimizationConfig
+from temper_ai.optimization.dspy.program_builder import (
     DSPyProgramBuilder,
     INTERNAL_TEMPLATE_VARS,
     TEMPLATE_VAR_PATTERN,
@@ -31,9 +31,12 @@ class TestDSPyProgramBuilder:
             output_fields=["analysis"],
         )
         builder = DSPyProgramBuilder()
-        with patch("temper_ai.optimization._helpers.ensure_dspy_available"):
+        with patch("temper_ai.optimization.dspy._helpers.ensure_dspy_available"):
             result = builder.build_from_config(config)
-        assert mock_dspy.Predict.called
+        mock_dspy.Predict.assert_called_once()
+        sig_arg = mock_dspy.Predict.call_args[0][0]
+        assert "topic" in sig_arg
+        assert "analysis" in sig_arg
 
     def test_build_cot_module(self, mock_dspy):
         config = PromptOptimizationConfig(
@@ -42,9 +45,12 @@ class TestDSPyProgramBuilder:
             output_fields=["analysis"],
         )
         builder = DSPyProgramBuilder()
-        with patch("temper_ai.optimization._helpers.ensure_dspy_available"):
+        with patch("temper_ai.optimization.dspy._helpers.ensure_dspy_available"):
             result = builder.build_from_config(config)
-        assert mock_dspy.ChainOfThought.called
+        mock_dspy.ChainOfThought.assert_called_once()
+        sig_arg = mock_dspy.ChainOfThought.call_args[0][0]
+        assert "topic" in sig_arg
+        assert "analysis" in sig_arg
 
     def test_extract_fields_from_template(self):
         builder = DSPyProgramBuilder()
@@ -75,7 +81,7 @@ class TestDSPyProgramBuilder:
             output_fields=["output"],
         )
         builder = DSPyProgramBuilder()
-        with patch("temper_ai.optimization._helpers.ensure_dspy_available"):
+        with patch("temper_ai.optimization.dspy._helpers.ensure_dspy_available"):
             result = builder.build_from_config(config)
         # Should use default "input" field
         sig_arg = mock_dspy.Predict.call_args[0][0]

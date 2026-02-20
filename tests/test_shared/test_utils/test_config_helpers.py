@@ -225,9 +225,8 @@ class TestValidateConfigStructure:
             "version": "1.0"
         }
 
-        # Should not raise
+        # Should not raise for valid structure
         validate_config_structure(config, ["workflow", "version"])
-        assert True  # Verifies no exception raised
 
     def test_validate_missing_key_raises_error(self):
         """Test validation fails for missing required key."""

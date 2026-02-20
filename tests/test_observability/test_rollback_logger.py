@@ -166,6 +166,8 @@ class TestLogRollbackSnapshot:
 
             assert snapshot.created_at is not None
             assert snapshot.expires_at is not None
+            # Expires_at should be after created_at
+            assert snapshot.expires_at > snapshot.created_at
 
     @patch('temper_ai.observability.rollback_logger.get_database')
     def test_log_snapshot_uses_singleton_db(self, mock_get_db, rollback_snapshot):

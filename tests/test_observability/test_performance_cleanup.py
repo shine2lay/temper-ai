@@ -129,7 +129,11 @@ class TestMemoryCleanup:
         assert len(tracker.metrics) == 2
 
     def test_automatic_cleanup_on_record_interval(self):
-        """Test that cleanup runs automatically every N records."""
+        """Test that cleanup runs automatically every N records.
+
+        Note: accesses _cleanup_interval and _record_count because
+        PerformanceTracker has no public API to configure cleanup scheduling.
+        """
         tracker = PerformanceTracker()
         now = datetime.utcnow()
 

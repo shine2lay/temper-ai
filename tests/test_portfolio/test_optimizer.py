@@ -291,4 +291,4 @@ class TestUtilization:
         scorecards = optimizer.compute_scorecards(portfolio)
         web_sc = next(sc for sc in scorecards if sc.product_type == "web_app")
         # utilization = min(1.0, runs / (max_concurrent * hours/24))
-        assert 0.0 <= web_sc.utilization <= 1.0
+        assert 0.0 < web_sc.utilization <= 1.0

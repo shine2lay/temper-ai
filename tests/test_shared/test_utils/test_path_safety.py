@@ -212,15 +212,15 @@ class TestGlobalFunctions:
     """Test global convenience functions."""
 
     def test_validate_path_global(self, temp_workspace):
-        """Test global validate_path function."""
-        # Should work with cwd as root
+        """Test global validate_path function with cwd path."""
         cwd_file = Path.cwd() / "test.txt"
-        # Just ensure it doesn't crash - actual validation depends on cwd
         try:
             result = validate_path(cwd_file)
+            # If accepted, must return a resolved absolute Path
             assert isinstance(result, Path)
+            assert result.is_absolute()
         except PathSafetyError:
-            # Expected if path doesn't exist or is outside cwd
+            # Expected if cwd is outside the validator's allowed root
             pass
 
     def test_validate_read_global(self, temp_workspace):

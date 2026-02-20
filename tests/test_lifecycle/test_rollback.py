@@ -61,9 +61,9 @@ class TestRollbackMonitor:
         assert profile is not None
         assert profile.enabled is False
 
-    def test_revert_missing_profile(self, monitor):
+    def test_revert_missing_profile(self, monitor, store):
         monitor.revert_profile("nonexistent")
-        assert monitor._store.get_profile("nonexistent") is None
+        assert store.get_profile("nonexistent") is None
 
     def test_custom_threshold(self, store, history):
         monitor = RollbackMonitor(

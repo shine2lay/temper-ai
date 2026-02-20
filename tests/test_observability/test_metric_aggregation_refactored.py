@@ -62,7 +62,7 @@ class TestAggregationQueryBuilder:
 
         # Verify it compiles to SQL referencing workflowexecution
         sql_str = str(query).lower()
-        assert "workflowexecution" in sql_str or "workflow_execution" in sql_str or "select" in sql_str
+        assert "workflowexecution" in sql_str or "workflow_execution" in sql_str
         assert hasattr(query, 'where')
         assert hasattr(query, 'group_by')
 
@@ -73,7 +73,7 @@ class TestAggregationQueryBuilder:
         query = AggregationQueryBuilder.build_agent_query(start_time, end_time)
 
         sql_str = str(query).lower()
-        assert "agentexecution" in sql_str or "agent_execution" in sql_str or "select" in sql_str
+        assert "agentexecution" in sql_str or "agent_execution" in sql_str
         assert hasattr(query, 'where')
         assert hasattr(query, 'group_by')
 
@@ -84,7 +84,7 @@ class TestAggregationQueryBuilder:
         query = AggregationQueryBuilder.build_llm_query(start_time, end_time)
 
         sql_str = str(query).lower()
-        assert "llmcall" in sql_str or "llm_call" in sql_str or "select" in sql_str
+        assert "llmcall" in sql_str or "llm_call" in sql_str
         assert hasattr(query, 'where')
         assert hasattr(query, 'group_by')
 
@@ -328,19 +328,21 @@ class TestBackwardCompatibility:
     """Tests for backward compatibility of imports."""
 
     def test_import_from_aggregation_module(self):
-        """Test importing from old aggregation.py file.
+        """Test importing from old aggregation.py file resolves to correct classes.
 
         Note: Deprecation warning may not be captured in pytest if module
-        is already loaded. The critical requirement is that the import works.
+        is already loaded. The critical requirement is that the import works
+        and resolves to the canonical classes.
         """
         import warnings
         warnings.simplefilter("ignore")
 
         from temper_ai.observability import aggregation
 
-        # Verify the classes are accessible
-        assert hasattr(aggregation, 'AggregationOrchestrator')
-        assert hasattr(aggregation, 'AggregationPeriod')
+        # Verify the classes resolve to the canonical implementations
+        assert isinstance(aggregation.AggregationOrchestrator, type)
+        assert isinstance(aggregation.AggregationPeriod, type)
+        assert aggregation.AggregationOrchestrator is AggregationOrchestrator
 
     def test_classes_accessible_from_aggregation_module(self):
         """Test that classes are accessible from old import path."""

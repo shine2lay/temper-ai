@@ -81,8 +81,10 @@ class TestRunStore:
         store.save_run(_make_run("exec-1", "completed"))
         store.save_run(_make_run("exec-2", "completed"))
         runs = store.list_runs()
-        # Most recently inserted should be first (by created_at)
         assert len(runs) == 2
+        # Most recently inserted should be first (newest-first ordering)
+        assert runs[0].execution_id == "exec-2"
+        assert runs[1].execution_id == "exec-1"
 
     def test_update_status(self, store: RunStore) -> None:
         store.save_run(_make_run("exec-1", "pending"))

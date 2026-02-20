@@ -20,6 +20,7 @@ from temper_ai.observability.hooks import (
     reset_tracker,
     track_workflow,
 )
+from temper_ai.observability.tracker import ExecutionTracker
 from temper_ai.observability.models import (
     AgentExecution,
     LLMCall,
@@ -69,13 +70,9 @@ class TestHookFailureResilience:
 
         # Main function should still execute even if tracking fails
         config = {"workflow": {"name": "test"}}
-        try:
-            result = run_workflow(config)
-            # If tracking fails gracefully, we get the result
-            assert result == "workflow_success"
-        except Exception:
-            # If tracking doesn't fail gracefully, that's also acceptable for this edge case
-            pass
+        result = run_workflow(config)
+        assert result == "workflow_success", \
+            "Decorator should not block main execution when database fails"
 
     def test_decorator_with_invalid_config(self, db):
         """Test decorator handles invalid config gracefully."""
@@ -108,29 +105,34 @@ class TestCircularDependencies:
     """Test detection and handling of circular hook dependencies."""
 
     def test_circular_hook_dependencies_detected(self):
-        """Test that circular hook dependencies are detected (if implemented)."""
-        # Note: This test assumes circular dependency detection exists
-        # If not implemented, this documents the expected behavior
+        """Test that circular hook dependencies can be created without crashing.
 
+        Documents the data model: hooks can form circular dependency chains.
+        No detection is currently implemented — this verifies the structure
+        can be created and traversed without infinite loops or errors.
+        """
         class HookA(ExecutionHook):
             def __init__(self, name):
                 self.name = name
                 self.dependencies = []
 
-        # Create potential circular dependency
+        # Create circular dependency: A → B → C → A
         hook_a = HookA("A")
         hook_b = HookA("B")
         hook_c = HookA("C")
 
-        # A depends on B, B depends on C, C depends on A (circular)
         hook_a.dependencies = [hook_b]
         hook_b.dependencies = [hook_c]
         hook_c.dependencies = [hook_a]
 
-        # Verify the circular structure was actually created
-        assert hook_a.dependencies == [hook_b]
-        assert hook_b.dependencies == [hook_c]
-        assert hook_c.dependencies == [hook_a]
+        # Verify cycle exists by traversing the chain
+        visited = []
+        current = hook_a
+        for _ in range(4):  # 3 hops + 1 to detect cycle
+            visited.append(current.name)
+            if current.dependencies:
+                current = current.dependencies[0]
+        assert visited == ["A", "B", "C", "A"], "Circular chain should loop back to A"
 
 
 class TestLargeOutputHandling:
@@ -243,15 +245,15 @@ class TestTelemetrySampling:
             assert count == 100
 
     def test_sampling_rate_configuration(self):
-        """Test that sampling rate can be configured."""
-        # Note: This assumes sampling configuration exists
-        # Documents expected behavior
+        """Test that tracker is an ExecutionTracker instance.
 
+        Sampling rate configuration is not yet implemented. This verifies
+        the tracker interface is available and correctly typed.
+        """
         tracker = get_tracker()
 
-        # In a production system, should be able to set sampling rate
-        # For now, verify tracker exists
-        assert tracker is not None
+        assert isinstance(tracker, ExecutionTracker), \
+            f"get_tracker() should return ExecutionTracker, got {type(tracker)}"
 
 
 class TestMissingMetricsHandling:

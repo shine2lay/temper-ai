@@ -3,8 +3,8 @@
 import pytest
 from unittest.mock import MagicMock
 
-from temper_ai.improvement._schemas import EvaluationResult
-from temper_ai.improvement.optimizers.selection import SelectionOptimizer
+from temper_ai.optimization._schemas import EvaluationResult
+from temper_ai.optimization.optimizers.selection import SelectionOptimizer
 
 
 class TestSelectionOptimizer:

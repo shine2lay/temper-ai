@@ -4,11 +4,11 @@ import threading
 
 import pytest
 
-from temper_ai.improvement.evaluators.criteria import CriteriaEvaluator
-from temper_ai.improvement.evaluators.scored import ScoredEvaluator
-from temper_ai.improvement.optimizers.refinement import RefinementOptimizer
-from temper_ai.improvement.optimizers.selection import SelectionOptimizer
-from temper_ai.improvement.registry import OptimizationRegistry
+from temper_ai.optimization.evaluators.criteria import CriteriaEvaluator
+from temper_ai.optimization.evaluators.scored import ScoredEvaluator
+from temper_ai.optimization.optimizers.refinement import RefinementOptimizer
+from temper_ai.optimization.optimizers.selection import SelectionOptimizer
+from temper_ai.optimization.registry import OptimizationRegistry
 
 
 class TestOptimizationRegistry:

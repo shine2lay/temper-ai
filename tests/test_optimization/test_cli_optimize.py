@@ -42,10 +42,10 @@ class TestOptimizeCLI:
         ), patch.dict(
             "sys.modules",
             {
-                "temper_ai.optimization.data_collector": MagicMock(
+                "temper_ai.optimization.dspy.data_collector": MagicMock(
                     TrainingDataCollector=lambda: mock_collector,
                 ),
-                "temper_ai.optimization._schemas": MagicMock(),
+                "temper_ai.optimization.dspy._schemas": MagicMock(),
             },
         ):
             result = runner.invoke(
@@ -65,13 +65,14 @@ class TestOptimizeCLI:
             with patch.dict(
                 "sys.modules",
                 {
-                    "temper_ai.optimization.program_store": MagicMock(
+                    "temper_ai.optimization.dspy.program_store": MagicMock(
                         CompiledProgramStore=MockStore,
                     ),
                 },
             ):
                 result = runner.invoke(optimize_group, ["list"])
                 assert result.exit_code == 0
+                assert "no" in result.output.lower() or "empty" in result.output.lower() or result.output.strip() == ""
 
     def test_list_with_programs(self, runner):
         with patch(
@@ -91,13 +92,14 @@ class TestOptimizeCLI:
             with patch.dict(
                 "sys.modules",
                 {
-                    "temper_ai.optimization.program_store": MagicMock(
+                    "temper_ai.optimization.dspy.program_store": MagicMock(
                         CompiledProgramStore=MockStore,
                     ),
                 },
             ):
                 result = runner.invoke(optimize_group, ["list"])
                 assert result.exit_code == 0
+                assert "prog_1" in result.output or "researcher" in result.output
 
     def test_preview_no_program(self, runner, sample_config):
         with patch(
@@ -110,10 +112,10 @@ class TestOptimizeCLI:
             with patch.dict(
                 "sys.modules",
                 {
-                    "temper_ai.optimization.program_store": MagicMock(
+                    "temper_ai.optimization.dspy.program_store": MagicMock(
                         CompiledProgramStore=MockStore,
                     ),
-                    "temper_ai.optimization.prompt_adapter": MagicMock(
+                    "temper_ai.optimization.dspy.prompt_adapter": MagicMock(
                         DSPyPromptAdapter=lambda store: MagicMock(
                             augment_prompt=lambda name, prompt, **kw: prompt,
                         ),
@@ -142,7 +144,7 @@ class TestOptimizeCLI:
             with patch.dict(
                 "sys.modules",
                 {
-                    "temper_ai.optimization.program_store": MagicMock(
+                    "temper_ai.optimization.dspy.program_store": MagicMock(
                         CompiledProgramStore=MockStore,
                     ),
                 },
@@ -151,6 +153,9 @@ class TestOptimizeCLI:
                     optimize_group, ["list", "--agent", "researcher"],
                 )
                 assert result.exit_code == 0
+                mock_store.list_programs.assert_called_once_with(
+                    agent_name="researcher"
+                )
 
     def test_compile_insufficient_data(self, runner, sample_config):
         """When not enough examples, shows insufficient data message."""
@@ -163,10 +168,10 @@ class TestOptimizeCLI:
         ), patch.dict(
             "sys.modules",
             {
-                "temper_ai.optimization.data_collector": MagicMock(
+                "temper_ai.optimization.dspy.data_collector": MagicMock(
                     TrainingDataCollector=lambda: mock_collector,
                 ),
-                "temper_ai.optimization._schemas": MagicMock(),
+                "temper_ai.optimization.dspy._schemas": MagicMock(),
             },
         ):
             result = runner.invoke(
@@ -174,3 +179,4 @@ class TestOptimizeCLI:
                 ["compile", sample_config, "--min-examples", "10"],
             )
             assert result.exit_code == 0
+            assert "insufficient" in result.output.lower() or "not enough" in result.output.lower() or "1" in result.output

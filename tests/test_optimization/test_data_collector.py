@@ -7,9 +7,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from temper_ai.optimization._schemas import TrainingExample
-from temper_ai.optimization.data_collector import TrainingDataCollector
-from temper_ai.optimization.constants import DEFAULT_FALLBACK_QUALITY_SCORE
+from temper_ai.optimization.dspy._schemas import TrainingExample
+from temper_ai.optimization.dspy.data_collector import TrainingDataCollector
+from temper_ai.optimization.dspy.constants import DEFAULT_FALLBACK_QUALITY_SCORE
 
 
 _MISSING = object()
@@ -164,9 +164,10 @@ class TestTrainingDataCollector:
 
     def test_serialize_data_handles_non_json(self):
         """_serialize_data handles objects that aren't JSON-serializable."""
-        result = TrainingDataCollector._serialize_data(object())
+        obj = object()
+        result = TrainingDataCollector._serialize_data(obj)
         assert isinstance(result, str)
-        assert len(result) > 0
+        assert "object" in result  # Should contain repr/str of the object
 
     def test_serialize_data_none(self):
         result = TrainingDataCollector._serialize_data(None)

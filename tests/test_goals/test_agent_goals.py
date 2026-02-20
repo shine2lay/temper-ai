@@ -103,7 +103,9 @@ class TestProposeAgentGoal:
         result = svc.propose_agent_goal("agent_a", goal_data)
         assert isinstance(result, str)
         assert len(result) > 0
-        assert store.save_proposal.called
+        store.save_proposal.assert_called_once()
+        saved_record = store.save_proposal.call_args[0][0]
+        assert saved_record.id == result
 
     def test_sets_source_product_type_to_agent_id(self):
         store = MagicMock()

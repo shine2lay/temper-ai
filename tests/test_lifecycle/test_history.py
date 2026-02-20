@@ -35,12 +35,13 @@ class TestHistoryAnalyzer:
         """In-memory DB has no tables, should return empty gracefully."""
         analyzer = HistoryAnalyzer(db_url="sqlite:///:memory:")
         result = analyzer.get_stage_metrics("test")
-        assert isinstance(result, dict)
+        assert result == {}
 
     def test_workflow_metrics_with_in_memory_db(self):
         analyzer = HistoryAnalyzer(db_url="sqlite:///:memory:")
         result = analyzer.get_workflow_metrics("test")
         assert isinstance(result, WorkflowMetrics)
+        assert result.run_count == 0
 
     def test_lookback_parameter(self):
         analyzer = HistoryAnalyzer(db_url=None)

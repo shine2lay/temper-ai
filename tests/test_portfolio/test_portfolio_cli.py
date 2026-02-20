@@ -74,6 +74,7 @@ class TestPortfolioScorecards:
 
         result = runner.invoke(portfolio_group, ["scorecards", "example_portfolio"])
         assert result.exit_code == 0
+        mock_optimizer.compute_scorecards.assert_called_once()
 
 
 class TestPortfolioRecommend:
@@ -94,6 +95,7 @@ class TestPortfolioRecommend:
 
         result = runner.invoke(portfolio_group, ["recommend", "example_portfolio"])
         assert result.exit_code == 0
+        mock_optimizer.recommend.assert_called_once()
 
 
 class TestPortfolioComponents:
@@ -112,6 +114,7 @@ class TestPortfolioComponents:
 
         result = runner.invoke(portfolio_group, ["components", "example_portfolio"])
         assert result.exit_code == 0
+        mock_analyzer.analyze_portfolio.assert_called_once()
 
 
 class TestPortfolioGraph:

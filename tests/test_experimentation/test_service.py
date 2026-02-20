@@ -99,6 +99,7 @@ class TestExperimentServiceInitialization:
         service = ExperimentService(max_cache_size=50)
 
         assert service._crud is not None
+        assert service._crud._max_cache_size == 50
 
     def test_service_lifecycle(self):
         """Test service initialize and shutdown."""

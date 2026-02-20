@@ -126,9 +126,10 @@ class TestRateSample:
 
     def test_boundary_rates_valid(self) -> None:
         # 0.0 and 1.0 should not raise
-        RateSample(rate=0.0)
-        RateSample(rate=1.0)
-        assert True  # Reached without error
+        s0 = RateSample(rate=0.0)
+        s1 = RateSample(rate=1.0)
+        assert s0.name == "rate(0.0)"
+        assert s1.name == "rate(1.0)"
 
 
 # ---------------------------------------------------------------------------

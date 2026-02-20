@@ -80,6 +80,7 @@ class TestStatusCommand:
             MockWf.return_value.get_acceptance_rate.return_value = 0.6
             result = runner.invoke(goals_group, ["status"])
         assert result.exit_code == 0
+        assert "proposed" in result.output.lower() or "5" in result.output
 
 
 class TestApproveCommand:

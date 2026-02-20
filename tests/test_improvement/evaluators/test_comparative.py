@@ -2,8 +2,8 @@
 
 from unittest.mock import MagicMock
 
-from temper_ai.improvement._schemas import EvaluatorConfig
-from temper_ai.improvement.evaluators.comparative import ComparativeEvaluator
+from temper_ai.optimization._schemas import EvaluatorConfig
+from temper_ai.optimization.evaluators.comparative import ComparativeEvaluator
 
 
 class TestComparativeEvaluator:

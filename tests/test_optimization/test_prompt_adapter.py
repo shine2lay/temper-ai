@@ -4,8 +4,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from temper_ai.optimization.prompt_adapter import DSPyPromptAdapter
-from temper_ai.optimization.constants import (
+from temper_ai.optimization.dspy.prompt_adapter import DSPyPromptAdapter
+from temper_ai.optimization.dspy.constants import (
     EXAMPLES_HEADER,
     OPTIMIZATION_HEADER,
 )

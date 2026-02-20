@@ -75,7 +75,9 @@ class TestWorkflowRunContext:
         assert ctx.cost_usd == 0.05
 
     def test_missing_required_raises(self) -> None:
-        with pytest.raises(Exception):
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
             WorkflowRunContext()  # type: ignore[call-arg]
 
 

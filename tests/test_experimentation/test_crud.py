@@ -358,11 +358,10 @@ class TestGetExperiment:
         mock_session.exec.return_value.first.return_value = None
         mock_get_session.return_value = mock_session
 
-        crud_instance.get_experiment("test_id")
+        result = crud_instance.get_experiment("test_id")
 
-        # Verify that selectinload was used (check statement construction)
-        call_args = mock_session.exec.call_args
-        assert call_args is not None
+        assert result is None  # Mock returns None for non-existent
+        mock_session.exec.assert_called_once()
 
 
 class TestListExperiments:

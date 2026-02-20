@@ -225,28 +225,73 @@ class TestNodeBuilderStageFailureCheck:
         result = builder._check_stage_failure("analysis", result_dict, workflow_config)
         assert result is None
 
-    def test_check_stage_failure_ignores_non_failed(self):
-        """_check_stage_failure does nothing for completed/degraded stages."""
+    def test_check_stage_failure_ignores_completed(self):
+        """_check_stage_failure does nothing for completed stages."""
         builder = self._make_builder()
 
-        for status in ("completed", "degraded"):
-            result_dict = {
-                "stage_outputs": {
-                    "analysis": {
-                        "stage_status": status,
-                        "agent_statuses": {"agent1": "success"},
-                    }
+        result_dict = {
+            "stage_outputs": {
+                "analysis": {
+                    "stage_status": "completed",
+                    "agent_statuses": {"agent1": "success"},
                 }
             }
-            workflow_config = {
-                "workflow": {
-                    "error_handling": {"on_stage_failure": "halt"}
-                }
+        }
+        workflow_config = {
+            "workflow": {
+                "error_handling": {"on_stage_failure": "halt"}
             }
+        }
 
-            # Should not raise
-            result = builder._check_stage_failure("analysis", result_dict, workflow_config)
-            assert result is None
+        # Should not raise
+        result = builder._check_stage_failure("analysis", result_dict, workflow_config)
+        assert result is None
+
+    def test_check_stage_failure_halts_on_degraded_with_halt_policy(self):
+        """_check_stage_failure raises for degraded stages when policy is halt."""
+        builder = self._make_builder()
+
+        result_dict = {
+            "stage_outputs": {
+                "analysis": {
+                    "stage_status": "degraded",
+                    "agent_statuses": {
+                        "agent1": "success",
+                        "agent2": {"status": "failed"},
+                    },
+                }
+            }
+        }
+        workflow_config = {
+            "workflow": {
+                "error_handling": {"on_stage_failure": "halt"}
+            }
+        }
+
+        with pytest.raises(WorkflowStageError, match="degraded"):
+            builder._check_stage_failure("analysis", result_dict, workflow_config)
+
+    def test_check_stage_failure_ignores_degraded_with_skip_policy(self):
+        """_check_stage_failure does nothing for degraded stages when policy is skip."""
+        builder = self._make_builder()
+
+        result_dict = {
+            "stage_outputs": {
+                "analysis": {
+                    "stage_status": "degraded",
+                    "agent_statuses": {"agent1": "success"},
+                }
+            }
+        }
+        workflow_config = {
+            "workflow": {
+                "error_handling": {"on_stage_failure": "skip"}
+            }
+        }
+
+        # Should not raise
+        result = builder._check_stage_failure("analysis", result_dict, workflow_config)
+        assert result is None
 
     def test_check_stage_failure_handles_missing_stage_output(self):
         """_check_stage_failure handles missing stage in results gracefully."""

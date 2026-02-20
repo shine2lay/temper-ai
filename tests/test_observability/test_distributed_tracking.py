@@ -1685,40 +1685,31 @@ class TestDataConsistencyVerification:
             if p.is_alive():
                 p.terminate()
 
-        # Verify foreign key relationships
+        # Verify data was written and no orphaned records exist
         with shared_db.session() as session:
             workflows = session.exec(select(WorkflowExecution)).all()
+            assert len(workflows) > 0, "No workflows written by concurrent processes"
+            workflow_ids = {wf.id for wf in workflows}
 
-            for workflow in workflows:
-                # Verify all stages reference valid workflow
-                stages = session.exec(
-                    select(StageExecution).where(
-                        StageExecution.workflow_execution_id == workflow.id
-                    )
-                ).all()
+            # Verify no orphaned stages (every stage references an existing workflow)
+            all_stages = session.exec(select(StageExecution)).all()
+            for stage in all_stages:
+                assert stage.workflow_execution_id in workflow_ids, \
+                    f"Orphaned stage {stage.id} references non-existent workflow {stage.workflow_execution_id}"
+            stage_ids = {s.id for s in all_stages}
 
-                for stage in stages:
-                    assert stage.workflow_execution_id == workflow.id
+            # Verify no orphaned agents (every agent references an existing stage)
+            all_agents = session.exec(select(AgentExecution)).all()
+            for agent in all_agents:
+                assert agent.stage_execution_id in stage_ids, \
+                    f"Orphaned agent {agent.id} references non-existent stage {agent.stage_execution_id}"
+            agent_ids = {a.id for a in all_agents}
 
-                    # Verify all agents reference valid stage
-                    agents = session.exec(
-                        select(AgentExecution).where(
-                            AgentExecution.stage_execution_id == stage.id
-                        )
-                    ).all()
-
-                    for agent in agents:
-                        assert agent.stage_execution_id == stage.id
-
-                        # Verify all LLM calls reference valid agent
-                        llm_calls = session.exec(
-                            select(LLMCall).where(
-                                LLMCall.agent_execution_id == agent.id
-                            )
-                        ).all()
-
-                        for llm_call in llm_calls:
-                            assert llm_call.agent_execution_id == agent.id
+            # Verify no orphaned LLM calls (every call references an existing agent)
+            all_llm_calls = session.exec(select(LLMCall)).all()
+            for llm_call in all_llm_calls:
+                assert llm_call.agent_execution_id in agent_ids, \
+                    f"Orphaned LLM call {llm_call.id} references non-existent agent {llm_call.agent_execution_id}"
 
     def test_verify_metric_aggregation_consistency(self, shared_db, temp_db_path):
         """

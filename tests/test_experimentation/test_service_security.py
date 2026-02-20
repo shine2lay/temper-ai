@@ -196,14 +196,13 @@ class TestExperimentServiceSecurity:
                 primary_metric="test_metric"
             )
 
-    def test_orm_prevents_sql_injection(self, service):
+    def test_orm_roundtrip_integrity(self, service):
         """
-        Test that ORM prevents SQL injection even if validation is bypassed.
+        Test that ORM correctly persists and retrieves experiment names.
 
-        This test verifies defense-in-depth: even if validation somehow failed,
-        the ORM would still prevent SQL injection.
+        Verifies that the ORM layer handles experiment creation and
+        retrieval without data corruption.
         """
-        # This payload would be dangerous with string concatenation SQL
         malicious_name = "test_orm_injection"
 
         exp_id = service.create_experiment(

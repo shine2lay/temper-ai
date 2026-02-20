@@ -407,8 +407,8 @@ class TestVisualizeTrace:
                 auto_open=True
             )
             # visualize_trace should complete without raising, even if browser fails
-            # Returns a Figure object on success
-            assert result is not None
+            assert isinstance(result, go.Figure)
+            assert output_file.exists()
 
 
 class TestMainCLI:

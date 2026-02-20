@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from temper_ai.optimization._schemas import (
+from temper_ai.optimization.dspy._schemas import (
     CompilationResult,
     PromptOptimizationConfig,
     TrainingExample,

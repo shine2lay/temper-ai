@@ -94,6 +94,7 @@ class TestMCPToolsInRegistry:
 
         assert isinstance(result, ToolResult)
         assert result.success is False
+        assert "mcp exploded" in result.error
 
 
 class TestAgentConfigMCPServers:

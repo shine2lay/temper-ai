@@ -65,13 +65,6 @@ class TestMcpServe:
         mock_server = MagicMock()
         mock_create = MagicMock(return_value=mock_server)
 
-        with patch("temper_ai.interfaces.cli.mcp_commands.Console"):
-            with patch(
-                "temper_ai.interfaces.cli.mcp_commands.mcp_serve.__wrapped__",
-                create=True,
-            ):
-                pass
-
         with patch(
             "temper_ai.interfaces.cli.mcp_commands.Console"
         ) as mock_console_cls:

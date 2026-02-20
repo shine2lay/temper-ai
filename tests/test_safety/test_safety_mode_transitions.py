@@ -50,8 +50,8 @@ class TestSafetyModeTransitions:
     def test_execute_to_dry_run_transition(self):
         """Test transition from execute to dry_run mode.
 
-        When high-risk operations are detected during execution,
-        the system should escalate to dry_run mode.
+        SafetyConfig is immutable; transitions are represented by constructing
+        new configs. This tests that escalated config preserves shared fields.
         """
         # Start in execute mode
         config = SafetyConfig(mode="execute", risk_level="low")
@@ -73,8 +73,8 @@ class TestSafetyModeTransitions:
     def test_dry_run_to_require_approval_transition(self):
         """Test transition from dry_run to require_approval mode.
 
-        When safety violations are detected during dry_run,
-        the system should escalate to require_approval mode.
+        SafetyConfig is immutable; transitions are represented by constructing
+        new configs with escalated mode and tool approval requirements.
         """
         # Start in dry_run mode
         config = SafetyConfig(mode="dry_run", risk_level="high")
@@ -95,8 +95,8 @@ class TestSafetyModeTransitions:
     def test_require_approval_to_execute_after_approval(self):
         """Test transition from require_approval back to execute.
 
-        After human approval is granted, execution can proceed
-        with the approved operations.
+        SafetyConfig is immutable; de-escalation after approval is represented
+        by constructing a new config with reduced risk and cleared approvals.
         """
         # Start in require_approval mode
         config = SafetyConfig(

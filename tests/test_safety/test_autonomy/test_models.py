@@ -91,6 +91,7 @@ class TestBudgetRecord:
         b.spent_usd = 25.0
         b.action_count = 10
         assert b.spent_usd == 25.0
+        assert b.action_count == 10
 
 
 class TestEmergencyStopEvent:
@@ -115,4 +116,4 @@ class TestEmergencyStopEvent:
             reason="test",
             agents_halted=["agent-a", "agent-b"],
         )
-        assert len(e.agents_halted) == 2
+        assert e.agents_halted == ["agent-a", "agent-b"]

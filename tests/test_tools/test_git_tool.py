@@ -63,7 +63,7 @@ def test_blocked_flag_force(tool, tmp_path):
     result = tool.execute(operation="push", repo_path=str(tmp_path), args=["--force"])
     # Note: 'push' may fail operation check first; test either error about operation or flag
     assert result.success is False
-    assert result.error is not None
+    assert "not allowed" in result.error.lower() or "blocked" in result.error.lower()
 
 
 def test_blocked_flag_hard(tool, tmp_path):
@@ -73,7 +73,7 @@ def test_blocked_flag_hard(tool, tmp_path):
         )
     # 'reset' is not in allowed operations
     assert result.success is False
-    assert result.error is not None
+    assert "not allowed" in result.error.lower() or "blocked" in result.error.lower()
 
 
 def test_blocked_flag_on_allowed_op(tool, tmp_path):
@@ -106,4 +106,4 @@ def test_nonzero_exit_code(tool, tmp_path):
         result = tool.execute(operation="status", repo_path=str(tmp_path))
 
     assert result.success is False
-    assert result.error is not None
+    assert "fatal" in result.error.lower() or "not a git repository" in result.error.lower()

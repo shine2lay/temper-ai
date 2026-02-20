@@ -499,11 +499,8 @@ class TestClientLifecycle:
         """Test that __del__ closes client gracefully."""
         tool = TavilySearch()
         tool._get_client()
-        try:
-            tool.__del__()
-            assert True
-        except Exception as e:
-            pytest.fail(f"__del__ raised exception: {e}")
+        # Should not raise during cleanup
+        tool.__del__()
 
     def test_custom_base_url(self):
         """Test that custom base_url from config is used."""

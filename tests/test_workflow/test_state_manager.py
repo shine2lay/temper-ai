@@ -62,12 +62,6 @@ class TestStateInitialization:
 class TestInitNode:
     """Test initialization node creation."""
 
-    def test_create_init_node(self):
-        """Test creating initialization node."""
-        init_node = create_init_node()
-
-        assert callable(init_node)
-
     def test_init_node_sets_stage_outputs_when_none(self):
         """Test init node creates stage_outputs when None."""
         init_node = create_init_node()

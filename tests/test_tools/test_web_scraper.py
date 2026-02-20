@@ -1269,28 +1269,17 @@ class TestWebScraperClientManagement:
         """Test that __del__ closes client gracefully."""
         scraper = WebScraper()
         scraper._get_client()
-        # Should not raise even if client cleanup fails
-        try:
-            scraper.__del__()
-            # If we reach here, cleanup succeeded
-            assert True
-        except Exception as e:
-            pytest.fail(f"__del__ raised exception: {e}")
+        # Should not raise during cleanup
+        scraper.__del__()
 
     def test_del_with_os_error(self):
         """Test __del__ handles OSError gracefully."""
         scraper = WebScraper()
         client = scraper._get_client()
 
-        # Mock close to raise OSError
+        # Mock close to raise OSError — destructor should swallow it
         with patch.object(client, 'close', side_effect=OSError("Mock error")):
-            # Should not raise
-            try:
-                scraper.__del__()
-                # Destructor handled error gracefully
-                assert True
-            except Exception as e:
-                pytest.fail(f"__del__ raised exception: {e}")
+            scraper.__del__()
 
 
 class TestWebScraperTextExtraction:

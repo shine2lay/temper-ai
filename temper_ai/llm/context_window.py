@@ -30,7 +30,7 @@ def count_tokens(text: str, method: str = "approximate") -> int:
     """
     if method == "tiktoken":
         try:
-            import tiktoken  # type: ignore[import-not-found]
+            import tiktoken
             enc = tiktoken.get_encoding("cl100k_base")
             return len(enc.encode(text))
         except ImportError:

@@ -183,7 +183,10 @@ class TestComposerSyncAsyncConsistency:
 
 
 class TestComposerHelpers:
-    """Verify that shared helpers exist and work correctly."""
+    """Verify that shared helpers exist and work correctly.
+
+    Intentional private access: unit tests for internal composer helpers.
+    """
 
     def test_handle_policy_result_collects_violations(self):
         composer = PolicyComposer()
@@ -278,7 +281,10 @@ class TestBasePolicySyncAsyncConsistency:
 
 
 class TestBasePolicyHelpers:
-    """Verify extracted helpers in BaseSafetyPolicy work correctly."""
+    """Verify extracted helpers in BaseSafetyPolicy work correctly.
+
+    Intentional private access: unit tests for internal policy helpers.
+    """
 
     def test_init_validation_metadata(self):
         policy = PassPolicy({})

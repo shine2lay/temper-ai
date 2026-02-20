@@ -353,41 +353,54 @@ class TestCheckpointSupport:
             with pytest.raises(CheckpointNotFoundError):
                 executor.resume_from_checkpoint("wf-nonexistent")
 
-    def test_extract_domain_state(self):
-        """Test extracting domain state from workflow state dict."""
+    def test_checkpoint_saves_domain_state_without_infrastructure(self):
+        """Test that checkpoints exclude infrastructure fields like tracker/tool_registry."""
         import tempfile
 
         from temper_ai.workflow.checkpoint_backends import FileCheckpointBackend
         from temper_ai.workflow.checkpoint_manager import CheckpointManager
 
         mock_graph = Mock()
+        # Stream returns state with both domain and infrastructure fields
+        state_with_infra = {
+            "workflow_id": "wf-extract-test",
+            "stage_outputs": {"stage1": "output1"},
+            "current_stage": "stage1",
+            "input": "test",
+            "tracker": Mock(),  # Infrastructure - should be excluded
+            "tool_registry": Mock(),  # Infrastructure - should be excluded
+        }
+        mock_graph.stream = Mock(return_value=iter([{"stage1": state_with_infra}]))
+
         with tempfile.TemporaryDirectory() as tmpdir:
             backend = FileCheckpointBackend(checkpoint_dir=tmpdir)
             checkpoint_manager = CheckpointManager(backend=backend)
+
+            # Spy on save_checkpoint to capture what gets saved
+            saved_states = []
+            original_save = checkpoint_manager.save_checkpoint
+
+            def capture_save(state, **kwargs):
+                saved_states.append(state)
+                return original_save(state, **kwargs)
+
+            checkpoint_manager.save_checkpoint = capture_save
+
             executor = WorkflowExecutor(
                 mock_graph,
-                checkpoint_manager=checkpoint_manager
+                checkpoint_manager=checkpoint_manager,
+                enable_checkpoints=True
             )
+            executor.execute_with_checkpoints({"input": "test"})
 
-            # State dict with both domain and infrastructure fields
-            state_dict = {
-                "workflow_id": "wf-extract-test",
-                "stage_outputs": {"stage1": "output1"},
-                "current_stage": "stage1",
-                "input": "test",
-                "tracker": Mock(),  # Infrastructure - should be excluded
-                "tool_registry": Mock(),  # Infrastructure - should be excluded
-            }
-
-            domain_state = executor._extract_domain_state(state_dict)
-
-            # Verify only domain fields extracted
+            # Verify domain fields were saved
+            assert len(saved_states) > 0
+            domain_state = saved_states[-1]
             assert domain_state.workflow_id == "wf-extract-test"
             assert domain_state.stage_outputs == {"stage1": "output1"}
             assert domain_state.current_stage == "stage1"
-            assert domain_state.input == "test"
 
-            # Verify infrastructure not included
+            # Verify infrastructure fields were excluded
             assert not hasattr(domain_state, "tracker")
             assert not hasattr(domain_state, "tool_registry")
 

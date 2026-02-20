@@ -65,7 +65,10 @@ class TestThreadPoolParallelRunner:
             {"agent_outputs": {}},
         )
         # Both outputs should be merged
-        assert "a" in result["agent_outputs"] or "b" in result["agent_outputs"]
+        assert "a" in result["agent_outputs"]
+        assert "b" in result["agent_outputs"]
+        assert result["agent_outputs"]["a"] == "output_a"
+        assert result["agent_outputs"]["b"] == "output_b"
 
     def test_init_node(self):
         """Test init_node runs before parallel nodes."""

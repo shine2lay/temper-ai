@@ -1,0 +1,63 @@
+# Test suite for vcs_gate_correctness agent
+# Tests the CORRECTNESS gate perspective — verifies implementation matches design spec.
+# Covers: implementation fully meets spec (PASS), implementation missing required endpoints (FAIL).
+
+agent_config: configs/agents/vcs_gate_correctness.yaml
+test_cases:
+  - name: pass_correct_implementation
+    description: "Implementation matches design spec exactly; agent should report OVERALL: PASS"
+    input_vars:
+      design_output: |
+        FILES:
+          - api/health.py (new)
+          - tests/test_health.py (new)
+        EXECUTION_ORDER: 1. api/health.py, 2. tests/test_health.py
+        ACCEPTANCE_CRITERIA:
+          - GET /api/health returns HTTP 200
+          - Response body is JSON with key "status" set to "ok"
+        TECHNICAL_APPROACH: Simple function-based view with no DB dependency.
+      coder_output: |
+        FILES_CREATED:
+          - api/health.py
+          - tests/test_health.py
+        SUMMARY: Implemented GET /api/health returning {"status": "ok"} with HTTP 200. Added unit test covering success path and 503 fallback.
+      workspace_path: "/tmp/test_workspace"
+    validators:
+      - name: has_perspective
+        pattern: "PERSPECTIVE:\\s*CORRECTNESS"
+      - name: has_overall
+        pattern: "OVERALL:\\s*(PASS|FAIL)"
+      - name: has_spec_compliance
+        pattern: "SPEC_COMPLIANCE:"
+      - name: has_acceptance_checks
+        pattern: "ACCEPTANCE_CHECKS:"
+
+  - name: fail_missing_requirement
+    description: "Design spec requires 3 endpoints but only 1 was implemented; agent should report OVERALL: FAIL"
+    input_vars:
+      design_output: |
+        FILES:
+          - api/users.py (new)
+          - api/orders.py (new)
+          - api/products.py (new)
+          - tests/test_api.py (new)
+        EXECUTION_ORDER: 1. api/users.py, 2. api/orders.py, 3. api/products.py, 4. tests
+        ACCEPTANCE_CRITERIA:
+          - GET /api/users returns user list
+          - GET /api/orders returns order list
+          - GET /api/products returns product list
+        TECHNICAL_APPROACH: RESTful list endpoints with pagination.
+      coder_output: |
+        FILES_CREATED:
+          - api/users.py
+        SUMMARY: Implemented GET /api/users endpoint only. Ran out of context for orders and products.
+      workspace_path: "/tmp/test_workspace"
+    validators:
+      - name: has_perspective
+        pattern: "PERSPECTIVE:\\s*CORRECTNESS"
+      - name: has_overall
+        pattern: "OVERALL:\\s*(PASS|FAIL)"
+      - name: has_spec_compliance
+        pattern: "SPEC_COMPLIANCE:"
+      - name: has_acceptance_checks
+        pattern: "ACCEPTANCE_CHECKS:"

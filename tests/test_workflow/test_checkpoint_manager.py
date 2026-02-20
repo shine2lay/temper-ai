@@ -52,7 +52,7 @@ class TestCheckpointManager:
 
     def test_manager_initialization(self, manager):
         """Test manager initialization with defaults."""
-        assert manager.backend is not None
+        assert isinstance(manager.backend, FileCheckpointBackend)
         assert manager.strategy == CheckpointStrategy.EVERY_STAGE
         assert manager.max_checkpoints == 10
 

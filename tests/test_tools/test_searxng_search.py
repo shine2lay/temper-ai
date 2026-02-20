@@ -483,6 +483,7 @@ class TestSearXNGSearchClientLifecycle:
 
     def test_client_reuse(self):
         """Test that client is reused across calls."""
+        # Intentional private access: verify client pooling behavior
         tool = SearXNGSearch()
         c1 = tool._get_client()
         c2 = tool._get_client()
@@ -490,6 +491,7 @@ class TestSearXNGSearchClientLifecycle:
 
     def test_client_recreation_after_close(self):
         """Test that client is recreated after close()."""
+        # Intentional private access: verify client lifecycle after close
         tool = SearXNGSearch()
         c1 = tool._get_client()
         tool.close()
@@ -500,21 +502,11 @@ class TestSearXNGSearchClientLifecycle:
         """Test __del__ does not raise."""
         tool = SearXNGSearch()
         tool._get_client()
-        try:
-            tool.__del__()
-        except Exception as e:
-            pytest.fail(f"__del__ raised: {e}")
-        # Verify that __del__ completed without exception
-        assert True
+        tool.__del__()
 
     def test_del_os_error(self):
         """Test __del__ handles OSError gracefully."""
         tool = SearXNGSearch()
         client = tool._get_client()
         with patch.object(client, "close", side_effect=OSError("Mock")):
-            try:
-                tool.__del__()
-            except Exception as e:
-                pytest.fail(f"__del__ raised: {e}")
-        # Verify that __del__ handled OSError gracefully
-        assert True
+            tool.__del__()

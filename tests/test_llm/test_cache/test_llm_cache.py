@@ -99,8 +99,11 @@ class TestInMemoryCacheBasics:
     def test_initialization(self):
         """Test InMemoryCache initialization."""
         cache = InMemoryCache(max_size=100)
-        assert cache._max_size == 100
-        assert len(cache._cache) == 0
+        assert cache.get("any") is None
+        # Verify max_size by filling to capacity and checking eviction
+        for i in range(101):
+            cache.set(f"k{i}", f"v{i}")
+        assert cache.get("k0") is None  # Oldest evicted at max_size=100
 
     def test_set_and_get(self):
         """Test basic set and get operations."""
@@ -159,7 +162,7 @@ class TestInMemoryCacheBasics:
 
         assert cache.get("key1") is None
         assert cache.get("key2") is None
-        assert len(cache._cache) == 0
+        assert cache.exists("key1") is False
 
 
 class TestInMemoryCacheTTL:
@@ -207,10 +210,10 @@ class TestInMemoryCacheTTL:
         cache.set("key1", "value1", ttl=1)
 
         time.sleep(1.1)
-        cache.get("key1")
+        assert cache.get("key1") is None
 
-        # Key should be removed from internal cache
-        assert "key1" not in cache._cache
+        # Key should be fully removed
+        assert cache.exists("key1") is False
 
 
 class TestInMemoryCacheLRUEviction:
@@ -1069,15 +1072,16 @@ class TestLLMCacheEdgeCases:
         """Test Unicode prompts are hashed correctly."""
         cache = LLMCache(backend="memory")
 
-        unicode_prompt = "Hello 世界 🌍"
-
         key = cache.generate_key(
             model="gpt-4",
-            prompt=unicode_prompt,
+            prompt="Hello 世界 🌍",
             tenant_id="tenant_a"
         )
 
-        assert isinstance(key, str)
+        assert len(key) == 64  # SHA-256 hex
+        # Deterministic
+        key2 = cache.generate_key(model="gpt-4", prompt="Hello 世界 🌍", tenant_id="tenant_a")
+        assert key == key2
 
     def test_special_characters_in_params(self):
         """Test special characters in parameters."""
@@ -1089,7 +1093,10 @@ class TestLLMCacheEdgeCases:
             tenant_id="tenant_a"
         )
 
-        assert isinstance(key, str)
+        assert len(key) == 64  # SHA-256 hex
+        # Different from plain prompt
+        plain_key = cache.generate_key(model="gpt-4", prompt="plain", tenant_id="tenant_a")
+        assert key != plain_key
 
     def test_empty_prompt(self):
         """Test empty prompt is handled."""
@@ -1101,7 +1108,10 @@ class TestLLMCacheEdgeCases:
             tenant_id="tenant_a"
         )
 
-        assert isinstance(key, str)
+        assert len(key) == 64  # SHA-256 hex
+        # Different from non-empty prompt
+        nonempty_key = cache.generate_key(model="gpt-4", prompt="hello", tenant_id="tenant_a")
+        assert key != nonempty_key
 
     def test_session_id_isolation(self):
         """Test session_id provides additional isolation."""

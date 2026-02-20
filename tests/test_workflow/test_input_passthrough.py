@@ -110,6 +110,11 @@ class TestInputPassthrough:
 
     def test_sequential_helpers_unwrap(self):
         """Sequential executor unwraps workflow_inputs into input_data."""
+        from temper_ai.stage.executors._sequential_helpers import (
+            AgentExecutionContext,
+            _build_legacy_input,
+        )
+
         state_dict = {
             "workflow_inputs": {
                 "problem_description": "test",
@@ -118,14 +123,12 @@ class TestInputPassthrough:
             "stage_outputs": {"stage1": {"output": "result"}},
             "current_stage": "stage1",
         }
-
-        # Simulate the unwrap logic from _sequential_helpers.py
-        input_data = {
-            **state_dict,
-            **state_dict.get("workflow_inputs", {}),
-            "stage_outputs": state_dict.get("stage_outputs", {}),
-            "current_stage_agents": {},
-        }
+        ctx = AgentExecutionContext(
+            executor=None, stage_id="s1", stage_name="stage1",
+            workflow_id="wf-1", state=state_dict, tracker=None,
+            config_loader=None,
+        )
+        input_data = _build_legacy_input(ctx, {})
 
         assert input_data["problem_description"] == "test"
         assert input_data["technical_context"] == "ctx"
@@ -133,15 +136,17 @@ class TestInputPassthrough:
 
     def test_parallel_helpers_unwrap(self):
         """Parallel executor unwraps workflow_inputs into input_data."""
-        stage_input = {
-            "workflow_inputs": {
-                "problem_description": "parallel test",
-            },
-            "stage_outputs": {},
-        }
+        from temper_ai.stage.executors._parallel_helpers import _prepare_agent_input
 
-        # Simulate the unwrap logic from _parallel_helpers.py
-        input_data = {**stage_input, **stage_input.get("workflow_inputs", {})}
+        state = {
+            StateKeys.STAGE_INPUT: {
+                "workflow_inputs": {
+                    "problem_description": "parallel test",
+                },
+                "stage_outputs": {},
+            },
+        }
+        input_data = _prepare_agent_input(state)
 
         assert input_data["problem_description"] == "parallel test"
 

@@ -1,0 +1,25 @@
+# Test suite for vcs_design_implementation agent
+# Tests the IMPLEMENTATION design perspective — produces component breakdown and error handling strategy.
+# Covers: a feature where the agent must output COMPONENTS and ERROR_HANDLING sections.
+
+agent_config: configs/agents/vcs_design_implementation.yaml
+test_cases:
+  - name: produces_implementation_format
+    description: "Agent must produce PERSPECTIVE: IMPLEMENTATION with COMPONENTS and ERROR_HANDLING sections"
+    input_vars:
+      suggestion_text: "Add rate limiting to API endpoints using a sliding window algorithm"
+      triage_output: |
+        DECISION: APPROVE
+        CATEGORY: feature
+        PRIORITY: P1
+        EFFORT: medium
+        CONFIDENCE: 0.87
+        REASONING: Prevents API abuse; technically feasible with in-memory or Redis store.
+      workspace_path: "/tmp/test_workspace"
+    validators:
+      - name: has_perspective
+        pattern: "PERSPECTIVE:\\s*IMPLEMENTATION"
+      - name: has_components
+        pattern: "COMPONENTS:"
+      - name: has_error_handling
+        pattern: "ERROR_HANDLING:"

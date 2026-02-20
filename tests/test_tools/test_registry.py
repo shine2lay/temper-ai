@@ -476,9 +476,9 @@ class TestEnhancedAutoDiscovery:
             # Missing execute() method
 
         is_valid, errors = registry._validate_tool_interface(IncompleteTool)
-        # This should still pass because execute is inherited from BaseTool
-        # But if we check abstract methods, it might fail
-        assert isinstance(is_valid, bool)
+        # Validator flags that execute() is not overridden in the subclass
+        assert is_valid is False
+        assert len(errors) > 0
 
     def test_list_available_tools(self):
         """Test listing tools with detailed information."""
@@ -568,8 +568,8 @@ class TestEnhancedAutoDiscovery:
         error_msg = "Some random error that doesn't match patterns"
         suggestion = registry._get_error_suggestion(error_msg)
 
-        # Should return None or a generic suggestion
-        assert suggestion is None or isinstance(suggestion, str)
+        # Unknown errors return None (no matching pattern)
+        assert suggestion is None
 
     def test_auto_discover_logs_success(self, caplog):
         """Test that auto-discover logs successful tool loading."""
@@ -583,8 +583,8 @@ class TestEnhancedAutoDiscovery:
         # Auto-discover in a package that doesn't exist shouldn't crash
         count = registry.auto_discover("nonexistent.package")
 
-        # Should not raise errors
-        assert count >= 0
+        # Nonexistent package discovers zero tools
+        assert count == 0
 
     def test_auto_discover_with_real_tools(self):
         """Test auto-discover finds real tools in temper_ai.tools package."""
@@ -936,7 +936,8 @@ class TestRegistryEdgeCases:
         calc = MockCalculator()
         registry.register(calc)
 
-        # Manually corrupt the registry to have empty versions dict
+        # Intentional private access: simulate corrupted internal state
+        # where versions dict exists but is empty (edge case for get())
         registry._tools["calculator"] = {}
 
         result = registry.get("calculator")

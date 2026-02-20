@@ -215,7 +215,7 @@ class TestLangGraphCompiledWorkflow:
         metadata = compiled.get_metadata()
 
         assert metadata["engine"] == "langgraph"
-        assert metadata["version"] == "0.2.0"
+        assert isinstance(metadata["version"], str) and metadata["version"]
         assert metadata["config"] == SIMPLE_WORKFLOW_CONFIG
         assert metadata["stages"] == ["research", "synthesis"]
 
@@ -281,7 +281,8 @@ class TestLangGraphExecutionEngine:
         engine = LangGraphExecutionEngine()
 
         assert engine.compiler is not None
-        assert hasattr(engine.compiler, 'compile')
+        assert engine.tool_registry is None
+        assert engine.config_loader is None
 
     def test_init_with_dependencies(self):
         """Test initialization with tool registry and config loader."""

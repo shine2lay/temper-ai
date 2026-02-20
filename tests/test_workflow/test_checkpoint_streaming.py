@@ -195,8 +195,10 @@ def test_checkpoint_with_tracker(tmp_path):
         checkpoint_interval=1
     )
 
-    # Verify result was produced (checkpoint events are now logged via logger)
-    assert result is not None
+    # Verify result has expected stage outputs
+    assert result["stage_outputs"]["stage1"] == "r1"
+    assert result["stage_outputs"]["stage2"] == "r2"
+    assert result["workflow_id"] == "wf-tracked"
 
 
 def test_checkpoint_error_handling_doesnt_mask_original_error(tmp_path):

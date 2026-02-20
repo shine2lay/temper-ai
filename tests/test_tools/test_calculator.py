@@ -293,7 +293,7 @@ class TestErrorHandling:
         result = calc.execute(expression="'hello' + 'world'")
 
         assert result.success is False
-        assert result.error is not None
+        assert "unsupported" in result.error.lower() or "not allowed" in result.error.lower()
 
     def test_variable_assignment(self):
         """Test that variable assignment is not allowed."""
@@ -301,6 +301,7 @@ class TestErrorHandling:
         result = calc.execute(expression="x = 5")
 
         assert result.success is False
+        assert result.error is not None
 
     def test_missing_expression(self):
         """Test missing expression parameter."""

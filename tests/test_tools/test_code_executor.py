@@ -75,7 +75,7 @@ def test_syntax_error(tool):
         result = tool.execute(code="def broken(")
 
     assert result.success is False
-    assert result.error is not None
+    assert "syntax" in result.error.lower()
 
 
 def test_unsupported_language(tool):
@@ -98,4 +98,4 @@ def test_max_output_truncation(tool):
 def test_empty_code_returns_error(tool):
     result = tool.execute(code="")
     assert result.success is False
-    assert result.error is not None
+    assert "code" in result.error.lower() or "empty" in result.error.lower()

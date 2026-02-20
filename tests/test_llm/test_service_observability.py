@@ -263,9 +263,8 @@ class TestLLMCacheEvents:
         received: list = []
         cache = LLMCache(backend="memory", on_event=received.append)
 
-        # Populate then retrieve
-        cache._backend.set("testkey", "value")
-        cache.stats.writes += 1
+        # Populate via public API, then retrieve
+        cache.set("testkey", "value")
         # Now get should fire "hit"
         result = cache.get("testkey")
 

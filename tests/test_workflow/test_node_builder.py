@@ -313,17 +313,14 @@ class TestCreateStageNode:
 class TestFindEmbeddedStage:
     """Test finding embedded stage configurations."""
 
-    def test_find_embedded_returns_none_currently(self):
-        """Test that find_embedded_stage returns None (not yet implemented)."""
+    def test_find_embedded_stage_not_found_returns_none(self):
+        """Test that find_embedded_stage returns None when stage is not in config."""
         builder = NodeBuilder(Mock(spec=ConfigLoader), Mock(spec=ToolRegistry), {})
 
-        # Mock workflow config with embedded stages
         workflow_config = Mock()
         workflow_config.workflow.stages = []
 
         result = builder.find_embedded_stage("research", workflow_config)
-
-        # Currently returns None (future enhancement)
         assert result is None
 
 

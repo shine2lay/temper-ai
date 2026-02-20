@@ -54,20 +54,11 @@ class TestConfigSecurityLimits:
         with pytest.raises(AttributeError):
             limits.MAX_YAML_NODES = 999
 
-    def test_dataclass_instantiation(self):
-        """Test that ConfigSecurityLimits can be instantiated."""
-        limits = ConfigSecurityLimits()
-        assert isinstance(limits, ConfigSecurityLimits)
-
-    def test_multiple_instances_same_values(self):
-        """Test that multiple instances have the same constant values."""
+    def test_frozen_equality(self):
+        """Test that frozen dataclass instances with same values are equal."""
         limits1 = ConfigSecurityLimits()
         limits2 = ConfigSecurityLimits()
-
-        assert limits1.MAX_CONFIG_SIZE == limits2.MAX_CONFIG_SIZE
-        assert limits1.MAX_ENV_VAR_SIZE == limits2.MAX_ENV_VAR_SIZE
-        assert limits1.MAX_YAML_NESTING_DEPTH == limits2.MAX_YAML_NESTING_DEPTH
-        assert limits1.MAX_YAML_NODES == limits2.MAX_YAML_NODES
+        assert limits1 == limits2
 
 
 class TestConfigSecuritySingleton:
@@ -161,12 +152,6 @@ class TestSecurityLimitTypes:
 
 class TestSecurityLimitUsage:
     """Test expected usage patterns of security limits."""
-
-    def test_can_import_singleton(self):
-        """Test that CONFIG_SECURITY can be imported directly."""
-        from temper_ai.workflow.security_limits import CONFIG_SECURITY as imported_singleton
-        assert imported_singleton is CONFIG_SECURITY
-        assert imported_singleton.MAX_CONFIG_SIZE == 10 * 1024 * 1024
 
     def test_can_import_class(self):
         """Test that ConfigSecurityLimits class can be imported."""

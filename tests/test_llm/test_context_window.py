@@ -30,7 +30,8 @@ class TestCountTokens:
         # If tiktoken is installed this tests actual tokenization;
         # if not, it tests the fallback path. Either way it should not error.
         result = count_tokens(text, "tiktoken")
-        assert result >= 0
+        assert result > 0
+        assert result <= len(text)  # Cannot produce more tokens than characters
 
     def test_approximate_long_text(self):
         """Should handle long texts."""

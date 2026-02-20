@@ -154,10 +154,16 @@ def test_standard_agent_execute_with_tool_calls(minimal_agent_config):
 def test_standard_agent_execute_tool_not_found(minimal_agent_config):
     """Test StandardAgent handles missing tool gracefully."""
     with patch('temper_ai.agent.base_agent.ToolRegistry') as mock_registry:
+        # Provide a dummy tool so LLMService enters tool-calling mode
+        mock_tool = Mock()
+        mock_tool.name = "dummy"
+        mock_tool.description = "Dummy tool"
+        mock_tool.get_parameters_schema.return_value = {"type": "object", "properties": {}}
+
         mock_registry_instance = Mock()
-        mock_registry_instance.list_tools.return_value = []
+        mock_registry_instance.list_tools.return_value = [mock_tool]
         mock_registry_instance.get.return_value = None  # Tool not found
-        mock_registry_instance.get_all_tools.return_value = {}  # No tools available
+        mock_registry_instance.get_all_tools.return_value = {"dummy": mock_tool}
         mock_registry.return_value = mock_registry_instance
 
         agent = StandardAgent(minimal_agent_config)
@@ -188,13 +194,14 @@ def test_standard_agent_execute_tool_not_found(minimal_agent_config):
             success=False, result=None, error="Tool 'nonexistent_tool' not found"
         )
 
-        # Execute — with no tools in registry, LLMService runs in no-tools mode
-        # So we won't see tool call parsing. Let's test with a tool present.
         response = agent.execute({"input": "Use missing tool", "tool_executor": mock_executor})
 
-        # Should handle gracefully — either no tool calls (no tools in registry)
-        # or tool call with error
         assert isinstance(response, AgentResponse)
+        assert len(response.tool_calls) >= 1, "Should record the failed tool call"
+        failed_call = response.tool_calls[0]
+        assert failed_call["name"] == "nonexistent_tool"
+        assert failed_call["success"] is False
+        assert "not found" in failed_call.get("error", "").lower()
 
 
 def test_standard_agent_execute_llm_error(minimal_agent_config):
@@ -269,78 +276,69 @@ def test_standard_agent_execute_max_iterations(minimal_agent_config):
             f"Should record tool calls made before stopping, got {len(response.tool_calls)}"
 
 
-def test_standard_agent_extract_reasoning(minimal_agent_config):
+def test_extract_reasoning():
     """Test reasoning extraction from LLM response."""
-    with patch('temper_ai.agent.base_agent.ToolRegistry'):
-        agent = StandardAgent(minimal_agent_config)
+    # Test with <reasoning> tag
+    text = "<reasoning>My thought process</reasoning>\n<answer>Final answer</answer>"
+    reasoning = extract_reasoning(text)
+    assert reasoning == "My thought process"
 
-        # Test with <reasoning> tag
-        text = "<reasoning>My thought process</reasoning>\n<answer>Final answer</answer>"
-        reasoning = extract_reasoning(text)
-        assert reasoning == "My thought process"
+    # Test with <thinking> tag
+    text = "<thinking>Deep thoughts</thinking>\n<answer>Result</answer>"
+    reasoning = extract_reasoning(text)
+    assert reasoning == "Deep thoughts"
 
-        # Test with <thinking> tag
-        text = "<thinking>Deep thoughts</thinking>\n<answer>Result</answer>"
-        reasoning = extract_reasoning(text)
-        assert reasoning == "Deep thoughts"
-
-        # Test without reasoning tags
-        text = "<answer>Just an answer</answer>"
-        reasoning = extract_reasoning(text)
-        assert reasoning is None
+    # Test without reasoning tags
+    text = "<answer>Just an answer</answer>"
+    reasoning = extract_reasoning(text)
+    assert reasoning is None
 
 
-def test_standard_agent_extract_final_answer(minimal_agent_config):
+def test_extract_final_answer():
     """Test final answer extraction from LLM response."""
-    with patch('temper_ai.agent.base_agent.ToolRegistry'):
-        agent = StandardAgent(minimal_agent_config)
+    # Test with <answer> tag
+    text = "<reasoning>Thinking...</reasoning>\n<answer>This is the answer</answer>"
+    answer = extract_final_answer(text)
+    assert answer == "This is the answer"
 
-        # Test with <answer> tag
-        text = "<reasoning>Thinking...</reasoning>\n<answer>This is the answer</answer>"
-        answer = extract_final_answer(text)
-        assert answer == "This is the answer"
-
-        # Test without answer tag
-        text = "This is just a plain response"
-        answer = extract_final_answer(text)
-        assert answer == "This is just a plain response"
+    # Test without answer tag
+    text = "This is just a plain response"
+    answer = extract_final_answer(text)
+    assert answer == "This is just a plain response"
 
 
-def test_standard_agent_parse_tool_calls(minimal_agent_config):
+def test_parse_tool_calls():
     """Test tool call parsing from LLM response."""
-    with patch('temper_ai.agent.base_agent.ToolRegistry'):
-        agent = StandardAgent(minimal_agent_config)
+    # Single tool call
+    text = '<tool_call>{"name": "calculator", "parameters": {"expression": "2+2"}}</tool_call>'
+    calls = parse_tool_calls(text)
+    assert len(calls) == 1
+    assert calls[0]["name"] == "calculator"
+    assert calls[0]["parameters"]["expression"] == "2+2"
 
-        # Single tool call
-        text = '<tool_call>{"name": "calculator", "parameters": {"expression": "2+2"}}</tool_call>'
-        calls = parse_tool_calls(text)
-        assert len(calls) == 1
-        assert calls[0]["name"] == "calculator"
-        assert calls[0]["parameters"]["expression"] == "2+2"
-
-        # Multiple tool calls
-        text = '''
+    # Multiple tool calls
+    text = '''
 <tool_call>{"name": "tool1", "parameters": {}}</tool_call>
 <tool_call>{"name": "tool2", "parameters": {"arg": "value"}}</tool_call>
-        '''
-        calls = parse_tool_calls(text)
-        assert len(calls) == 2
-        assert calls[0]["name"] == "tool1"
-        assert calls[1]["name"] == "tool2"
+    '''
+    calls = parse_tool_calls(text)
+    assert len(calls) == 2
+    assert calls[0]["name"] == "tool1"
+    assert calls[1]["name"] == "tool2"
 
-        # No tool calls
-        text = "<answer>Just a plain answer</answer>"
-        calls = parse_tool_calls(text)
-        assert len(calls) == 0
+    # No tool calls
+    text = "<answer>Just a plain answer</answer>"
+    calls = parse_tool_calls(text)
+    assert len(calls) == 0
 
-        # Invalid JSON in tool call
-        text = '<tool_call>invalid json</tool_call>'
-        calls = parse_tool_calls(text)
-        assert len(calls) == 0  # Should skip invalid JSON
+    # Invalid JSON in tool call
+    text = '<tool_call>invalid json</tool_call>'
+    calls = parse_tool_calls(text)
+    assert len(calls) == 0  # Should skip invalid JSON
 
 
 def test_standard_agent_execute_with_context(minimal_agent_config):
-    """Test StandardAgent execute with execution context."""
+    """Test StandardAgent execute propagates execution context."""
     with patch('temper_ai.agent.base_agent.ToolRegistry') as mock_registry:
         mock_registry.return_value.list_tools.return_value = []
 
@@ -365,9 +363,16 @@ def test_standard_agent_execute_with_context(minimal_agent_config):
         )
         response = agent.execute({"input": "Test"}, context=context)
 
-        # Should execute successfully
         assert isinstance(response, AgentResponse)
         assert response.error is None
+        assert "Response" in response.output
+        # Context should be stored on the agent during execution
+        assert agent._execution_context is context
+        assert agent._execution_context.workflow_id == "wf-001"
+        assert agent._execution_context.stage_id == "stage-001"
+        # LLM should have been called with the rendered prompt
+        assert agent.llm.complete.called
+        assert "_rendered_prompt" in response.metadata
 
 
 class TestInputValidation:

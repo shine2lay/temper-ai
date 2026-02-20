@@ -101,8 +101,13 @@ class TestAdaptLifecycle:
         result = rt.adapt_lifecycle(config, {})
         assert result is config
 
-    @patch("temper_ai.workflow.runtime.LifecycleAdapter", create=True)
-    def test_lifecycle_enabled_calls_adapt(self, _mock_adapter):
+    @patch("temper_ai.lifecycle.adapter.LifecycleAdapter")
+    @patch("temper_ai.lifecycle.classifier.ProjectClassifier")
+    @patch("temper_ai.lifecycle.profiles.ProfileRegistry")
+    @patch("temper_ai.lifecycle.store.LifecycleStore")
+    def test_lifecycle_enabled_calls_adapt(
+        self, _store, _registry, _classifier, mock_adapter
+    ):
         """Test lifecycle adaptation is attempted when enabled."""
         rt = WorkflowRuntime()
         config = {
@@ -112,9 +117,10 @@ class TestAdaptLifecycle:
                 "lifecycle": {"enabled": True},
             }
         }
-        # Will fail (mocked modules), but should not raise
         result = rt.adapt_lifecycle(config, {"topic": "test"})
-        assert isinstance(result, dict)
+        # Verify the adapter was instantiated and adapt() was called
+        mock_adapter.return_value.adapt.assert_called_once_with(config, {"topic": "test"})
+        assert result is mock_adapter.return_value.adapt.return_value
 
 
 class TestSetupInfrastructure:

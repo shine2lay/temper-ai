@@ -1,0 +1,39 @@
+# Test suite for vcs_triage_duplicate agent
+# Tests the DUPLICATE_CHECK perspective for feature triage.
+# Covers: correctly classifying a genuinely new feature vs. a duplicate of existing functionality.
+
+agent_config: configs/agents/vcs_triage_duplicate.yaml
+test_cases:
+  - name: detect_new_feature
+    description: "Suggestion describes a genuinely new feature not present in the codebase; agent should classify as NEW"
+    input_vars:
+      suggestion_text: "Add a webhook notification system for build completions"
+      workspace_path: "/tmp/test_workspace"
+    validators:
+      - name: has_perspective
+        pattern: "PERSPECTIVE:\\s*DUPLICATE_CHECK"
+      - name: has_classification
+        pattern: "CLASSIFICATION:\\s*(DUPLICATE|PARTIAL|NEW)"
+      - name: has_confidence
+        pattern: "CONFIDENCE:\\s*[01]?\\.\\d+"
+      - name: has_existing_features
+        pattern: "EXISTING_FEATURES:"
+      - name: has_reasoning
+        pattern: "REASONING:"
+
+  - name: detect_duplicate_feature
+    description: "Suggestion describes user authentication which already exists; agent should classify as DUPLICATE"
+    input_vars:
+      suggestion_text: "Add user authentication with login and signup forms"
+      workspace_path: "/tmp/test_workspace"
+    validators:
+      - name: has_perspective
+        pattern: "PERSPECTIVE:\\s*DUPLICATE_CHECK"
+      - name: has_classification
+        pattern: "CLASSIFICATION:\\s*(DUPLICATE|PARTIAL|NEW)"
+      - name: has_confidence
+        pattern: "CONFIDENCE:\\s*[01]?\\.\\d+"
+      - name: has_existing_features
+        pattern: "EXISTING_FEATURES:"
+      - name: has_reasoning
+        pattern: "REASONING:"

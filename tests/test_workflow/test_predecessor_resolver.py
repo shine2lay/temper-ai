@@ -246,6 +246,8 @@ class TestNodeBuilderWireDag:
 
     def test_wire_dag_sets_dag_on_predecessor_resolver(self):
         """wire_dag_context passes DAG to PredecessorResolver in executors."""
+        from unittest.mock import patch
+
         predecessor = PredecessorResolver()
         source_resolver = SourceResolver(fallback=predecessor)
 
@@ -260,9 +262,9 @@ class TestNodeBuilderWireDag:
         )
 
         dag = MagicMock()
-        builder.wire_dag_context(dag)
-
-        assert predecessor._dag is dag
+        with patch.object(predecessor, "set_dag", wraps=predecessor.set_dag) as spy:
+            builder.wire_dag_context(dag)
+            spy.assert_called_once_with(dag)
 
     def test_wire_dag_no_predecessor_resolver_no_error(self):
         """wire_dag_context is safe when no PredecessorResolver exists."""

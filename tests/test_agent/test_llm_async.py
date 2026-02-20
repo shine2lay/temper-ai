@@ -265,13 +265,21 @@ async def test_all_providers_have_async_methods():
     ]
 
     for provider in providers:
-        # Check async methods exist
-        assert hasattr(provider, 'acomplete')
-        assert hasattr(provider, 'aclose')
-        assert hasattr(provider, '__aenter__')
-        assert hasattr(provider, '__aexit__')
-        assert asyncio.iscoroutinefunction(provider.acomplete)
-        assert asyncio.iscoroutinefunction(provider.aclose)
+        # Verify async methods exist and are coroutines
+        assert asyncio.iscoroutinefunction(provider.acomplete), \
+            f"{type(provider).__name__}.acomplete is not a coroutine"
+        assert asyncio.iscoroutinefunction(provider.aclose), \
+            f"{type(provider).__name__}.aclose is not a coroutine"
+
+        # Verify async context manager protocol
+        assert hasattr(provider, '__aenter__'), \
+            f"{type(provider).__name__} missing __aenter__"
+        assert hasattr(provider, '__aexit__'), \
+            f"{type(provider).__name__} missing __aexit__"
+
+        # Verify provider name is correctly set
+        assert provider.model is not None, \
+            f"{type(provider).__name__} model should not be None"
 
         # Cleanup
         await provider.aclose()
@@ -510,8 +518,8 @@ class TestAsyncErrorPaths:
             assert "aclose failed" in str(e)
 
         # Verify state is marked as closed despite error
-        # Implementation should ensure cleanup even on failure
-        assert llm._closed is True or llm._async_client is None
+        assert llm._closed is True, \
+            "LLM should be marked as closed even when aclose() fails"
 
     # ========================================================================
     # Test 5: Concurrent Async Errors Don't Leak Connections

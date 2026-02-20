@@ -605,13 +605,17 @@ class TestDialogueOrchestratorConvergence:
 
     def test_semantic_convergence_fallback_to_exact(self):
         """Test fallback to exact match when embeddings unavailable."""
+        from unittest.mock import patch
+
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
             strategy = DialogueOrchestrator(use_semantic_convergence=True)
-        strategy._embeddings_available = False
-        current = [AgentOutput("a1", "Use microservices", "r", 0.8, {})]
-        previous = [AgentOutput("a1", "Adopt microservices", "r", 0.7, {})]
-        convergence = strategy.calculate_convergence(current, previous)
+        # Mock the embeddings check to simulate missing sentence-transformers
+        with patch.object(strategy, "_check_embeddings_available", return_value=False):
+            current = [AgentOutput("a1", "Use microservices", "r", 0.8, {})]
+            previous = [AgentOutput("a1", "Adopt microservices", "r", 0.7, {})]
+            convergence = strategy.calculate_convergence(current, previous)
+        # Different strings → exact match returns 0.0
         assert convergence == 0.0
 
     def test_convergence_with_integer_decisions(self):
@@ -656,15 +660,23 @@ class TestDialogueOrchestratorConvergence:
         convergence = strategy.calculate_convergence(current, previous)
         assert convergence == 0.0
 
-    def test_check_embeddings_available(self):
-        """Test embeddings availability check."""
+    def test_embeddings_check_is_cached(self):
+        """Test embeddings availability check is cached across convergence calls."""
+        from unittest.mock import patch
+
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
             strategy = DialogueOrchestrator(use_semantic_convergence=True)
-        first_check = strategy._check_embeddings_available()
-        second_check = strategy._check_embeddings_available()
-        assert isinstance(first_check, bool)
-        assert first_check == second_check  # Cached
+
+        current = [AgentOutput("a1", "X", "r", 0.8, {})]
+        previous = [AgentOutput("a1", "X", "r", 0.7, {})]
+
+        # First call populates the cache; second should reuse it
+        c1 = strategy.calculate_convergence(current, previous)
+        c2 = strategy.calculate_convergence(current, previous)
+        # Same inputs → deterministic, identical convergence regardless of backend
+        assert c1 == c2
+        assert c1 == 1.0  # Exact match "X" == "X"
 
     def test_convergence_with_empty_previous(self):
         """Test convergence handles empty previous outputs gracefully."""

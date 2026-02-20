@@ -969,7 +969,7 @@ class TestPathTraversalSecurity:
             )
 
             manager = RollbackManager()
-            # Add snapshot to manager's internal storage
+            # Intentional private access: no public API to inject pre-crafted snapshots
             manager._snapshots[snapshot.id] = snapshot
 
             result = manager.execute_rollback(snapshot.id)
@@ -991,7 +991,7 @@ class TestPathTraversalSecurity:
         )
 
         manager = RollbackManager()
-        # Add snapshot to manager's internal storage
+        # Intentional private access: no public API to inject pre-crafted snapshots
         manager._snapshots[snapshot.id] = snapshot
 
         result = manager.execute_rollback(snapshot.id)
@@ -1008,8 +1008,9 @@ class TestPathTraversalSecurity:
 
             is_valid, error = validate_rollback_path(test_file)
 
-            # Should be valid (temp directory is in default allowlist)
-            assert is_valid is True or error is not None  # Depends on OS
+            # Temp directory should be in default allowlist
+            assert is_valid is True
+            assert error is None
 
     def test_validate_rollback_path_current_working_directory(self):
         """Test that current working directory is allowed by default."""

@@ -164,6 +164,7 @@ class TestEntityTracking:
 
     def test_entity_key_extraction(self):
         """Test entity key extraction from context."""
+        # Intentional private access: unit test for key derivation logic
         policy = RateLimiterPolicy()
 
         # Test with agent_id
@@ -202,6 +203,7 @@ class TestHistoryCleanup:
 
     def test_clean_old_records_function(self):
         """Test _clean_old_records helper method."""
+        # Intentional private access: unit test for history cleanup logic
         policy = RateLimiterPolicy()
 
         now = time.time()
@@ -418,6 +420,7 @@ class TestEdgeCases:
 
     def test_check_limit_function(self):
         """Test _check_limit helper method."""
+        # Intentional private access: unit test for limit checking logic
         policy = RateLimiterPolicy()
         
         now = time.time()
@@ -437,6 +440,7 @@ class TestEdgeCases:
 
     def test_check_limit_no_violation(self):
         """Test _check_limit when within limit."""
+        # Intentional private access: unit test for limit checking logic
         policy = RateLimiterPolicy()
         
         now = time.time()

@@ -263,21 +263,22 @@ class TestGenericSecretDetection:
         policy = SecretDetectionPolicy()
         content = 'secret: "abcdefgh12345678"'
         result = policy.validate({'content': content}, {})
-        assert not result.valid or len(result.violations) >= 0
+        # MEDIUM severity violations don't set valid=False, but violations should exist
+        assert len(result.violations) >= 1
 
     def test_passwd_detected(self):
         """Passwd field should be detected."""
         policy = SecretDetectionPolicy()
         content = 'passwd=mysecretpassword123'
         result = policy.validate({'content': content}, {})
-        assert not result.valid or len(result.violations) >= 0
+        assert len(result.violations) >= 1
 
     def test_pwd_detected(self):
         """Pwd field should be detected."""
         policy = SecretDetectionPolicy()
         content = 'pwd: "secretpwd123"'
         result = policy.validate({'content': content}, {})
-        assert not result.valid or len(result.violations) >= 0
+        assert len(result.violations) >= 1
 
 
 # ============================================================================
@@ -487,7 +488,8 @@ class TestEntropyCalculation:
         content = 'secret="aB3dE5fG7hI9jK1lM3nO5pQ7rS9tU"'
         result = policy.validate({'content': content}, {})
         # Should detect due to high entropy
-        assert not result.valid or len(result.violations) > 0
+        assert not result.valid
+        assert len(result.violations) > 0
 
     def test_entropy_not_nan_or_inf(self):
         """Entropy calculation should never return NaN or Inf."""
@@ -1115,10 +1117,10 @@ class TestFalsePositiveReduction:
         content = 'api_key="abcdef1234567890abcd"'  # Some diversity, 20+ chars
         result = policy.validate({'content': content}, {})
 
-        # Should be detected (medium entropy)
-        # Severity depends on actual entropy calculation
-        # With entropy ~3.5-4.0, should trigger but may be MEDIUM severity
-        assert not result.valid or len(result.violations) == 0  # May filter if entropy < 3.5
+        # Medium entropy content — detection depends on entropy calculation
+        # api_key with 20+ mixed chars should exceed default threshold
+        assert not result.valid
+        assert len(result.violations) >= 1
 
     def test_entropy_threshold_generic_configurable(self):
         """Entropy threshold for generic patterns should be configurable."""
@@ -1142,10 +1144,8 @@ class TestFalsePositiveReduction:
         # Strict policy should not flag it
         result_strict = policy_strict.validate({'content': content}, {})
 
-        # At least verify strict policy is more permissive
-        if not result_sensitive.valid:
-            # If sensitive flagged it, strict should be same or more permissive
-            assert result_strict.valid or not result_strict.valid
+        # Strict policy should be at least as permissive as sensitive policy
+        assert len(result_strict.violations) <= len(result_sensitive.violations)
 
     def test_specific_patterns_bypass_entropy_check(self):
         """Specific patterns (AWS, GitHub) should NOT be filtered by entropy."""

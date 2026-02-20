@@ -105,9 +105,7 @@ class TestAgentInitialization:
 
         agent = _make_mock_agent(config)
 
-        assert hasattr(agent.config.agent, "tools")
-        if agent.config.agent.tools:
-            assert len(agent.config.agent.tools) >= 0
+        assert len(agent.config.agent.tools) == 2
 
     def test_agent_without_tools(self):
         """Test agent initialization without tools."""
@@ -135,7 +133,7 @@ class TestAgentExecutionFlow:
         assert result.metadata["input"] == input_data
 
     def test_agent_execution_with_context(self):
-        """Test agent execution with previous context."""
+        """Test agent execution propagates context and input."""
         config = create_mock_config(name="test_agent")
         agent = _make_mock_agent(config)
 
@@ -152,21 +150,26 @@ class TestAgentExecutionFlow:
         result = agent.execute(input_data, context)
 
         assert isinstance(result, AgentResponse)
-        assert result.output is not None
+        assert result.output == "mock result"
+        assert result.metadata["input"] == input_data
+        assert agent._execution_context is context
+        assert agent._execution_context.workflow_id == "wf-001"
 
     def test_agent_multiple_executions(self):
-        """Test agent can execute multiple times."""
+        """Test agent can execute multiple times with independent results."""
         config = create_mock_config(name="test_agent")
         agent = _make_mock_agent(config)
 
-        # Execute multiple times
         result1 = agent.execute({"query": "first"})
         result2 = agent.execute({"query": "second"})
         result3 = agent.execute({"query": "third"})
 
-        assert isinstance(result1, AgentResponse)
-        assert isinstance(result2, AgentResponse)
-        assert isinstance(result3, AgentResponse)
+        assert result1.metadata["input"] == {"query": "first"}
+        assert result2.metadata["input"] == {"query": "second"}
+        assert result3.metadata["input"] == {"query": "third"}
+        assert result1.error is None
+        assert result2.error is None
+        assert result3.error is None
 
 
 class TestAgentErrorHandling:
@@ -239,7 +242,7 @@ class TestAgentToolCalls:
         assert agent.name == "tool_agent"
 
     def test_agent_tool_execution_simulation(self):
-        """Test agent execution with tool calls (simulated)."""
+        """Test agent with tool config completes and preserves input."""
         config = create_mock_config(
             name="tool_agent",
             tools=[{"name": "search"}]
@@ -247,7 +250,6 @@ class TestAgentToolCalls:
 
         agent = _make_mock_agent(config)
 
-        # Simulate execution that would call tools
         input_data = {
             "query": "search for Python",
             "use_tools": True
@@ -255,22 +257,27 @@ class TestAgentToolCalls:
 
         result = agent.execute(input_data)
 
-        # Should complete even with tool configuration
         assert isinstance(result, AgentResponse)
+        assert result.error is None
+        assert result.metadata["input"] == input_data
+        assert len(agent.config.agent.tools) == 1
 
 
 class TestAgentResourceManagement:
     """Test agent resource management."""
 
-    def test_agent_cleanup(self):
-        """Test agent cleanup after execution."""
+    def test_agent_accessible_after_execution(self):
+        """Test agent remains functional after execution."""
         config = create_mock_config(name="test_agent")
         agent = _make_mock_agent(config)
 
-        agent.execute({"query": "test"})
+        result1 = agent.execute({"query": "test"})
+        assert result1.error is None
 
-        # Future: Verify resources are cleaned up
-        # For now, just verify agent still accessible
+        # Agent should still be usable for subsequent calls
+        result2 = agent.execute({"query": "another"})
+        assert result2.error is None
+        assert result2.metadata["input"] == {"query": "another"}
         assert agent.name == "test_agent"
 
     def test_agent_config_validation(self):
@@ -321,11 +328,10 @@ class TestAgentEdgeCases:
         assert isinstance(result2, AgentResponse)
 
     def test_agent_large_input(self):
-        """Test agent with large input data."""
+        """Test agent handles large input without error."""
         config = create_mock_config(name="test_agent")
         agent = _make_mock_agent(config)
 
-        # Create large input
         large_input = {
             "query": "process data",
             "data": ["item" * 100 for _ in range(1000)]
@@ -333,8 +339,10 @@ class TestAgentEdgeCases:
 
         result = agent.execute(large_input)
 
-        # Should handle large input
         assert isinstance(result, AgentResponse)
+        assert result.error is None
+        assert result.metadata["input"] == large_input
+        assert len(result.metadata["input"]["data"]) == 1000
 
 
 class TestAgentConcurrentExecution:

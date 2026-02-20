@@ -15,6 +15,11 @@ Output: JSON with sections:
     god_objects, layer_analysis, static_analysis, summary
 
 Changelog:
+    v2.5.0: Test quality gates (sleep detection, oversized files, parametrize suggestions)
+        - AST-based time.sleep detection (no false positives from comments/strings)
+        - Oversized test file detection (>500 lines)
+        - Parametrize suggestions for repeated test name prefixes (>=5 same prefix)
+        - All informational only (no score deductions yet)
     v2.4.3: Add suppression comments for magic numbers
         - Support # noqa and # scanner: skip-magic comments
         - Example: x = 42  # noqa (skips magic number check)
@@ -46,7 +51,7 @@ import os
 import re
 import subprocess
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
@@ -261,6 +266,10 @@ MAGIC_NUMBER_WHITELIST = {
 }
 MAGIC_STRING_MIN_OCCURRENCES = 3
 MAGIC_STRING_MIN_LENGTH = 3
+
+# v2.5.0: Test quality thresholds
+OVERSIZED_TEST_FILE_LINES = 500
+PARAMETRIZE_PREFIX_THRESHOLD = 5
 
 # Strings that are never magic — format specifiers, common framework identifiers, etc.
 _FORMAT_SPEC_RE = re.compile(r"^\.\d+[fde%]$")
@@ -1662,16 +1671,19 @@ def _run_pip_audit() -> dict:
                         "description": vuln.get("description", "")[:200],
                         "fix_versions": vuln.get("fix_versions", []),
                     })
+            # Only count actionable vulns (those with a fix available)
+            actionable = [v for v in vulns if v.get("fix_versions")]
             high_count = sum(
-                1 for v in vulns
+                1 for v in actionable
                 if "critical" in v.get("description", "").lower()
                 or v.get("id", "").startswith("GHSA")
             )
             return {
                 "available": True,
-                "total": len(vulns),
+                "total": len(actionable),
                 "high": high_count,
-                "other": len(vulns) - high_count,
+                "other": len(actionable) - high_count,
+                "unfixable": len(vulns) - len(actionable),
                 "vulnerabilities": vulns[:50],  # Cap details
             }
         return {"available": True, "total": 0, "error": result.stderr[:500]}
@@ -2761,9 +2773,15 @@ def scan_test_quality(src_dir: Path, *, src_total_lines: int = 0) -> dict:
                 "zero_assert_tests": 0,
                 "avg_assert_density": 0.0,
                 "test_to_code_ratio": 0.0,
+                "sleep_calls_in_tests": 0,
+                "oversized_test_files": 0,
+                "parametrize_suggestions": 0,
             },
             "zero_assert_details": [],
             "low_density_details": [],
+            "sleep_call_details": [],
+            "oversized_file_details": [],
+            "parametrize_suggestion_details": [],
         }
 
     test_files_result = scan_files(tests_dir)
@@ -2773,6 +2791,9 @@ def scan_test_quality(src_dir: Path, *, src_total_lines: int = 0) -> dict:
 
     all_test_funcs: list[dict] = []
     total_asserts = 0
+    oversized_files: list[dict] = []
+    sleep_calls: list[dict] = []
+    parametrize_suggestions: list[dict] = []
 
     for file_info in test_files:
         abs_path = file_info["abs_path"]
@@ -2780,6 +2801,21 @@ def scan_test_quality(src_dir: Path, *, src_total_lines: int = 0) -> dict:
         source, tree = cache.get(abs_path, ("", None))
         if tree is None:
             continue
+
+        # v2.5.0: Oversized test file detection
+        if file_info["lines"] > OVERSIZED_TEST_FILE_LINES:
+            oversized_files.append({"file": rel_path, "lines": file_info["lines"]})
+
+        # v2.5.0: time.sleep detection (AST-based — no false positives from comments/strings)
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "sleep"
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id == "time"
+            ):
+                sleep_calls.append({"file": rel_path, "line": node.lineno})
 
         # Collect test functions: top-level test_* and methods inside Test* classes
         test_nodes: list[tuple[str, ast.FunctionDef]] = []
@@ -2790,6 +2826,19 @@ def scan_test_quality(src_dir: Path, *, src_total_lines: int = 0) -> dict:
                 for item in node.body:
                     if isinstance(item, ast.FunctionDef) and item.name.startswith("test_"):
                         test_nodes.append((item.name, item))
+
+        # v2.5.0: Parametrize suggestions (repeated test name prefixes)
+        if len(test_nodes) >= PARAMETRIZE_PREFIX_THRESHOLD:
+            prefixes: Counter[str] = Counter()
+            for func_name, _ in test_nodes:
+                parts = func_name.split("_", maxsplit=3)
+                if len(parts) >= 3:
+                    prefixes[f"{parts[0]}_{parts[1]}_"] += 1
+            for prefix, count in prefixes.items():
+                if count >= PARAMETRIZE_PREFIX_THRESHOLD:
+                    parametrize_suggestions.append(
+                        {"file": rel_path, "prefix": prefix, "count": count}
+                    )
 
         for func_name, func_node in test_nodes:
             assert_count = 0
@@ -2829,6 +2878,9 @@ def scan_test_quality(src_dir: Path, *, src_total_lines: int = 0) -> dict:
             "zero_assert_tests": len(zero_assert),
             "avg_assert_density": avg_density,
             "test_to_code_ratio": ratio,
+            "sleep_calls_in_tests": len(sleep_calls),
+            "oversized_test_files": len(oversized_files),
+            "parametrize_suggestions": len(parametrize_suggestions),
         },
         "zero_assert_details": [
             {"file": f["file"], "name": f["name"], "line": f["line"]}
@@ -2838,6 +2890,9 @@ def scan_test_quality(src_dir: Path, *, src_total_lines: int = 0) -> dict:
             {"file": f["file"], "name": f["name"], "line": f["line"], "assert_count": f["assert_count"]}
             for f in low_density
         ],
+        "sleep_call_details": sleep_calls,
+        "oversized_file_details": oversized_files,
+        "parametrize_suggestion_details": parametrize_suggestions,
     }
 
 
@@ -3018,6 +3073,10 @@ def compute_deterministic_score(
     # v2.3.0: Test quality (if provided)
     if test_quality is not None and test_quality["summary"].get("available"):
         deduct("zero-assert test functions", test_quality["summary"].get("zero_assert_tests", 0), 0.5, 5)
+        # v2.5.0: Informational only — not scored yet (too many existing hits)
+        # Future deductions when counts are reduced:
+        # deduct("time.sleep in tests", test_quality["summary"].get("sleep_calls_in_tests", 0), 0.1, 3)
+        # deduct("oversized test files (>500 lines)", test_quality["summary"].get("oversized_test_files", 0), 0.2, 3)
 
     score = max(0, round(score))
 
@@ -3174,7 +3233,7 @@ def main() -> None:
         "metadata": {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "src_dir": str(src_dir),
-            "scanner_version": "2.4.1",
+            "scanner_version": "2.5.0",
             "content_hash": compute_content_hash(src_dir),
         },
         "files": files,

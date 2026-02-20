@@ -278,10 +278,9 @@ class TestInputValidation:
         max_input = "A" * (10 * 1024)  # Exactly 10KB
 
         # Should not raise ValueError
-        result = detect_secret_patterns(max_input)
-        # Result doesn't matter, just verify it doesn't raise
-        assert result is not None
-        assert isinstance(result, (list, dict, bool))
+        is_secret, confidence = detect_secret_patterns(max_input)
+        assert isinstance(is_secret, bool)
+        assert isinstance(confidence, str)
 
     def test_input_validation_error_message(self):
         """Verify error message is clear and informative."""

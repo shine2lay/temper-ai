@@ -1,0 +1,105 @@
+# Test suite for vcs_triage_decider agent
+# Tests the final triage decision synthesis from multiple perspective agents.
+# Covers: approve path with aligned perspectives, reject path for duplicates.
+
+agent_config: configs/agents/vcs_triage_decider.yaml
+test_cases:
+  - name: approve_valid_suggestion
+    description: "All four perspectives recommend APPROVE with high confidence (0.85+); decider should output APPROVE"
+    input_vars:
+      suggestion_text: "Add a dark mode toggle to the settings page"
+      team_outputs: |
+        --- PRODUCT_VISION ---
+        PERSPECTIVE: PRODUCT_VISION
+        RECOMMENDATION: APPROVE
+        CONFIDENCE: 0.90
+        CATEGORY: ui_change
+        PRIORITY: P2
+        REASONING: Aligns with user personalisation goals; high demand feature.
+
+        --- TECHNICAL_FEASIBILITY ---
+        PERSPECTIVE: TECHNICAL_FEASIBILITY
+        RECOMMENDATION: APPROVE
+        CONFIDENCE: 0.88
+        EFFORT: small
+        TECHNICAL_RISKS: Minimal — CSS variable refactor already partially done.
+        REASONING: Low complexity; existing theming layer can be extended.
+
+        --- USER_VALUE ---
+        PERSPECTIVE: USER_VALUE
+        RECOMMENDATION: APPROVE
+        CONFIDENCE: 0.92
+        USER_IMPACT: high
+        REASONING: Dark mode is a top user request; improves accessibility and reduces eye strain.
+
+        --- DUPLICATE_CHECK ---
+        PERSPECTIVE: DUPLICATE_CHECK
+        CLASSIFICATION: NEW
+        CONFIDENCE: 0.95
+        EXISTING_FEATURES: None matching.
+        REASONING: No existing dark mode or theme toggle found in codebase.
+    validators:
+      - name: has_decision
+        pattern: "DECISION:\\s*(APPROVE|REJECT)"
+      - name: has_category
+        pattern: "CATEGORY:\\s*(feature|ui_change|bug_fix|improvement|infrastructure|duplicate)"
+      - name: has_priority
+        pattern: "PRIORITY:\\s*P[0-3]"
+      - name: has_effort
+        pattern: "EFFORT:\\s*(small|medium|large)"
+      - name: has_confidence
+        pattern: "CONFIDENCE:\\s*[01]?\\.\\d+"
+      - name: has_perspective_summary
+        pattern: "PERSPECTIVE_SUMMARY:"
+      - name: has_reasoning
+        pattern: "REASONING:"
+
+  - name: reject_duplicate_suggestion
+    description: "DUPLICATE_CHECK reports CLASSIFICATION: DUPLICATE; decider should output REJECT"
+    input_vars:
+      suggestion_text: "Add user login functionality"
+      team_outputs: |
+        --- PRODUCT_VISION ---
+        PERSPECTIVE: PRODUCT_VISION
+        RECOMMENDATION: REJECT
+        CONFIDENCE: 0.85
+        CATEGORY: duplicate
+        PRIORITY: P0
+        REASONING: Authentication already exists in the platform.
+
+        --- TECHNICAL_FEASIBILITY ---
+        PERSPECTIVE: TECHNICAL_FEASIBILITY
+        RECOMMENDATION: REJECT
+        CONFIDENCE: 0.90
+        EFFORT: large
+        TECHNICAL_RISKS: High — would conflict with existing auth module.
+        REASONING: Reimplementing login would introduce breaking changes.
+
+        --- USER_VALUE ---
+        PERSPECTIVE: USER_VALUE
+        RECOMMENDATION: REJECT
+        CONFIDENCE: 0.88
+        USER_IMPACT: low
+        REASONING: Users already have login; adding a duplicate would cause confusion.
+
+        --- DUPLICATE_CHECK ---
+        PERSPECTIVE: DUPLICATE_CHECK
+        CLASSIFICATION: DUPLICATE
+        CONFIDENCE: 0.97
+        EXISTING_FEATURES: auth/login.py, auth/session.py, templates/login.html
+        REASONING: Full authentication system already implemented and in production.
+    validators:
+      - name: has_decision
+        pattern: "DECISION:\\s*(APPROVE|REJECT)"
+      - name: has_category
+        pattern: "CATEGORY:\\s*(feature|ui_change|bug_fix|improvement|infrastructure|duplicate)"
+      - name: has_priority
+        pattern: "PRIORITY:\\s*P[0-3]"
+      - name: has_effort
+        pattern: "EFFORT:\\s*(small|medium|large)"
+      - name: has_confidence
+        pattern: "CONFIDENCE:\\s*[01]?\\.\\d+"
+      - name: has_perspective_summary
+        pattern: "PERSPECTIVE_SUMMARY:"
+      - name: has_reasoning
+        pattern: "REASONING:"

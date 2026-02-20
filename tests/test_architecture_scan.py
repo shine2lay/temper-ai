@@ -1622,6 +1622,10 @@ class TestTestQuality:
         result = scanner.scan_test_quality(src_dir, src_total_lines=100)
         assert result["summary"]["available"] is False
         assert result["summary"]["total_test_files"] == 0
+        assert result["summary"]["sleep_calls_in_tests"] == 0
+        assert result["sleep_call_details"] == []
+        assert result["oversized_file_details"] == []
+        assert result["parametrize_suggestion_details"] == []
 
     def test_avg_density_calculated(self, tmp_path):
         src_dir, src_lines = self._setup_project(tmp_path, """\
@@ -1647,6 +1651,100 @@ class TestTestQuality:
         result = scanner.scan_test_quality(src_dir, src_total_lines=10)
         assert result["summary"]["available"] is True
         assert result["summary"]["total_test_functions"] == 0
+
+    # v2.5.0: New test quality checks
+
+    def test_sleep_calls_detected(self, tmp_path):
+        src_dir, src_lines = self._setup_project(tmp_path, """\
+            def foo():
+                pass
+        """, """\
+            import time
+            def test_slow():
+                time.sleep(1)
+                assert True
+        """)
+        result = scanner.scan_test_quality(src_dir, src_total_lines=src_lines)
+        assert result["summary"]["sleep_calls_in_tests"] > 0
+        assert len(result["sleep_call_details"]) == 1
+        assert result["sleep_call_details"][0]["line"] == 3
+
+    def test_sleep_not_counted_in_comments(self, tmp_path):
+        src_dir, src_lines = self._setup_project(tmp_path, """\
+            def foo():
+                pass
+        """, """\
+            import time
+            # time.sleep(1)
+            def test_fast():
+                assert True
+        """)
+        result = scanner.scan_test_quality(src_dir, src_total_lines=src_lines)
+        assert result["summary"]["sleep_calls_in_tests"] == 0
+
+    def test_oversized_test_file_detected(self, tmp_path):
+        src_dir = tmp_path / "src"
+        src_dir.mkdir()
+        (src_dir / "app.py").write_text("x = 1\n", encoding="utf-8")
+        tests_dir = tmp_path / "tests"
+        tests_dir.mkdir()
+        lines = ["def test_line():\n", "    assert True\n"] + ["    pass\n"] * 499
+        (tests_dir / "test_big.py").write_text("".join(lines), encoding="utf-8")
+        result = scanner.scan_test_quality(src_dir, src_total_lines=10)
+        assert result["summary"]["oversized_test_files"] == 1
+        assert result["oversized_file_details"][0]["lines"] > 500
+
+    def test_parametrize_suggestion(self, tmp_path):
+        src_dir, src_lines = self._setup_project(tmp_path, """\
+            def create():
+                pass
+        """, textwrap.dedent("""\
+            def test_create_one():
+                assert True
+            def test_create_two():
+                assert True
+            def test_create_three():
+                assert True
+            def test_create_four():
+                assert True
+            def test_create_five():
+                assert True
+        """))
+        result = scanner.scan_test_quality(src_dir, src_total_lines=src_lines)
+        assert result["summary"]["parametrize_suggestions"] >= 1
+        suggestion = result["parametrize_suggestion_details"][0]
+        assert suggestion["prefix"] == "test_create_"
+        assert suggestion["count"] >= 5
+
+    def test_informational_no_score_deduction(self, tmp_path):
+        """Verify sleep/oversized checks don't deduct from score."""
+        src_dir = tmp_path / "src"
+        src_dir.mkdir()
+        (src_dir / "app.py").write_text("x = 1\n", encoding="utf-8")
+        tests_dir = tmp_path / "tests"
+        tests_dir.mkdir()
+        # Create test file with sleep calls AND > 500 lines
+        lines = [
+            "import time\n",
+            "def test_with_sleep():\n",
+            "    time.sleep(1)\n",
+            "    assert True\n",
+        ] + ["    pass\n"] * 498
+        (tests_dir / "test_info.py").write_text("".join(lines), encoding="utf-8")
+        result = scanner.scan_test_quality(src_dir, src_total_lines=10)
+        assert result["summary"]["sleep_calls_in_tests"] > 0
+        assert result["summary"]["oversized_test_files"] > 0
+        # Score should remain 100 — these are informational only
+        score_result = scanner.compute_deterministic_score(
+            anti_patterns={"summary": {"critical": 0, "high": 0, "medium": 0, "low": 0}, "details": []},
+            naming_collisions={"summary": {"total_collisions": 0}},
+            god_objects={"summary": {"god_classes": 0}},
+            layer_violations={"summary": {"total_violations": 0}},
+            circular_deps=[],
+            static_analysis={},
+            test_quality=result,
+        )
+        assert score_result["score"] == 100
 
 
 # ---------------------------------------------------------------------------

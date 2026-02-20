@@ -236,10 +236,14 @@ class TestSetup:
         assert agent._stream_callback is cb
 
     def test_creates_observer(self):
-        """_setup creates AgentObserver."""
+        """_setup creates AgentObserver with correct tracker and context."""
         agent = RecordingAgent(_make_config())
-        agent._setup({}, None)
+        mock_tracker = MagicMock()
+        context = ExecutionContext(workflow_id="wf1", stage_id="s1")
+        agent._setup({"tracker": mock_tracker}, context)
         assert agent._observer is not None
+        assert agent._observer._tracker is mock_tracker
+        assert agent._observer._context is context
 
     def test_handles_empty_input(self):
         """_setup works with empty input_data."""

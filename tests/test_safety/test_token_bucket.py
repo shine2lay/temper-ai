@@ -588,14 +588,12 @@ class TestRealWorld:
         )
         bucket = TokenBucket(limit)
 
-        # Should allow 2 immediate commits (burst)
-        assert bucket.consume(1) is True
-        assert bucket.consume(1) is True
+        # Bucket starts with max_tokens=10, consume all of them
+        for _ in range(10):
+            assert bucket.consume(1) is True
 
-        # Third should be rate limited (need to wait)
-        # (Actually with max_tokens=10, we start with 10 tokens, so this test needs adjustment)
-        # Let me fix this
-        pass
+        # 11th should be rate limited (no tokens left, refill too slow)
+        assert bucket.consume(1) is False
 
     def test_deployment_rate_limit(self):
         """Test typical deployment rate limiting."""

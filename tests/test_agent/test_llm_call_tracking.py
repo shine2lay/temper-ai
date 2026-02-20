@@ -57,7 +57,7 @@ class TestTrackFailedLLMCall:
         assert "[attempt 2/4]" in call_kwargs["error_message"]
 
     def test_failed_call_sanitizes_error_message(self):
-        """Error messages are sanitized."""
+        """Error messages are sanitized and include error content."""
         service = _make_llm_service()
         observer = MagicMock()
         error = Exception("Auth token abc123xyz invalid")
@@ -66,6 +66,8 @@ class TestTrackFailedLLMCall:
 
         call_kwargs = observer.track_llm_call.call_args[1]
         assert call_kwargs["status"] == "failed"
+        assert "error_message" in call_kwargs
+        assert len(call_kwargs["error_message"]) > 0, "Error message should not be empty"
 
     def test_observer_none_does_not_raise(self):
         """When observer is None, _track_failed_call completes silently."""
@@ -79,10 +81,11 @@ class TestTrackFailedLLMCall:
 class TestStandardAgentFailedLLMTracking:
     """Integration tests for failed LLM tracking via LLMService."""
 
-    def test_track_failed_call_is_callable(self):
-        """Verify _track_failed_call is callable on LLMService."""
+    def test_track_failed_call_with_none_observer_returns_none(self):
+        """Verify _track_failed_call handles None observer gracefully."""
         service = _make_llm_service()
-        assert callable(service._track_failed_call)
+        result = service._track_failed_call(None, "prompt", Exception("err"), 1, 1)
+        assert result is None
 
     def test_track_failed_call_with_llm_error(self):
         """_track_failed_call works with LLMError."""

@@ -119,21 +119,32 @@ def test_agent_factory_register_invalid_class():
 
 
 def test_agent_factory_creates_working_agent(minimal_agent_config):
-    """Test factory-created agent can execute."""
-    from unittest.mock import patch
+    """Test factory-created agent can execute and return valid capabilities."""
+    from unittest.mock import Mock, patch
 
-    with patch('temper_ai.agent.base_agent.ToolRegistry'):
+    with patch('temper_ai.agent.base_agent.ToolRegistry') as mock_registry:
+        mock_registry.return_value.list_tools.return_value = []
         agent = AgentFactory.create(minimal_agent_config)
-
-        # Agent should have all required methods
-        assert hasattr(agent, 'execute')
-        assert hasattr(agent, 'get_capabilities')
-        assert hasattr(agent, 'validate_config')
 
         # Capabilities should be valid
         capabilities = agent.get_capabilities()
-        assert "type" in capabilities
         assert capabilities["type"] == "standard"
+        assert capabilities["name"] == minimal_agent_config.agent.name
+        assert agent.validate_config() is True
+
+        # Agent should be able to execute with mocked LLM
+        from temper_ai.llm.providers import LLMResponse
+        mock_llm_response = LLMResponse(
+            content="<answer>test output</answer>",
+            model="llama2", provider="ollama", total_tokens=10,
+        )
+        agent.llm = Mock()
+        agent.llm.complete.return_value = mock_llm_response
+        agent.llm_service.llm = agent.llm
+
+        response = agent.execute({"input": "hello"})
+        assert response.error is None
+        assert "test output" in response.output
 
 
 class TestAgentFactoryThreadSafety:

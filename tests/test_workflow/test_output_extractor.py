@@ -57,7 +57,7 @@ class TestLLMOutputExtractor:
         assert result["decision"] == "REJECT"
 
     def test_parse_extraction_response_invalid_json(self):
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             LLMOutputExtractor._parse_extraction_response("not json")
 
     def test_extract_empty_output(self):

@@ -37,8 +37,7 @@ class TestExtractAgentName:
         """Test fallback to str() when no name keys present."""
         agent_ref = {"id": 123, "type": "analyzer"}
         result = extract_agent_name(agent_ref)
-        assert isinstance(result, str)
-        assert "id" in result or "type" in result
+        assert result == str(agent_ref)
 
     def test_extract_from_object_with_name(self):
         """Test extracting from object with 'name' attribute."""

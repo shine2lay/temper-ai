@@ -104,13 +104,16 @@ class TestRegistryReset:
 
     def test_reset_idempotent(self):
         """Test reset() can be called multiple times safely."""
+        registry = StrategyRegistry()
+        # Record default count after first init
+        count_after_first_reset = len(registry.list_strategy_names())
+
         StrategyRegistry.reset()
         StrategyRegistry.reset()
         StrategyRegistry.reset()
 
-        registry = StrategyRegistry()
-        # Should still have defaults
-        assert len(registry.list_strategy_names()) >= 0
+        # Count should be identical after repeated resets
+        assert len(registry.list_strategy_names()) == count_after_first_reset
 
     def test_reset_reinitializes_defaults(self):
         """Test reset() re-initializes defaults if they were removed."""
@@ -159,16 +162,17 @@ class TestRegistryClear:
         assert not StrategyRegistry._initialized
 
     def test_clear_allows_reinitialization(self):
-        """Test clear() allows fresh initialization."""
+        """Test clear() allows fresh initialization with defaults restored."""
         registry = StrategyRegistry()
+        pre_clear_count = len(registry.list_strategy_names())
 
         StrategyRegistry.clear()
 
         # Create new registry - should re-initialize
         registry2 = StrategyRegistry()
         assert StrategyRegistry._initialized
-        # Should have defaults
-        assert len(registry2.list_strategy_names()) >= 0
+        # Should have same defaults as before clear
+        assert len(registry2.list_strategy_names()) == pre_clear_count
 
 
 class TestRegistryResetForTesting:
@@ -353,17 +357,22 @@ class TestMemoryLeakPrevention:
 
     def test_clear_prevents_accumulation(self):
         """Test clear() prevents memory accumulation."""
+        # Get baseline default count
+        baseline_registry = StrategyRegistry()
+        baseline_count = len(baseline_registry.list_strategy_names())
+        StrategyRegistry.reset_for_testing()
+
         # Create and clear 100 times
         for i in range(100):
             registry = StrategyRegistry()
             registry.register_strategy(f"temp_{i}", CustomTestStrategy)
             StrategyRegistry.clear()
 
-        # Final registry should be empty
+        # Final registry should have only defaults, no temp_ strategies
         registry = StrategyRegistry()
-        # Only defaults should be present
-        default_count = len(registry.list_strategy_names())
-        assert default_count >= 0  # Should have defaults
+        final_count = len(registry.list_strategy_names())
+        assert final_count == baseline_count
+        assert not any("temp_" in name for name in registry.list_strategy_names())
 
 
 class TestBackwardCompatibility:

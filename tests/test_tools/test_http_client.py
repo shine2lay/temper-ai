@@ -81,7 +81,7 @@ def test_blocked_host_localhost(tool):
 def test_blocked_host_loopback(tool):
     result = tool.execute(url="http://127.0.0.1/secret")
     assert result.success is False
-    assert result.error is not None
+    assert "blocked" in result.error.lower() or "ssrf" in result.error.lower()
 
 
 def test_invalid_method(tool):

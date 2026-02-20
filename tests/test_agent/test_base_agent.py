@@ -282,19 +282,19 @@ class TestContextPropagation:
             assert ctx.session_id == "session-789"
 
     def test_context_includes_workflow_stage_ids(self, minimal_agent_config):
-        """Test that context includes workflow_id and stage_id."""
+        """Test that context with workflow_id and stage_id is stored on agent."""
         agent = _make_mock_agent(minimal_agent_config)
         context = ExecutionContext(
             workflow_id="wf-production",
             stage_id="stage-processing"
         )
 
-        # Execute with context
         response = agent.execute({"test": True}, context=context)
 
-        # Verify context fields are set
-        assert context.workflow_id == "wf-production"
-        assert context.stage_id == "stage-processing"
+        assert response.error is None
+        assert agent._execution_context is context
+        assert agent._execution_context.workflow_id == "wf-production"
+        assert agent._execution_context.stage_id == "stage-processing"
 
     def test_context_with_parent_id_tracking(self, minimal_agent_config):
         """Test context can track parent agent relationships."""
@@ -385,10 +385,17 @@ class TestContextPropagation:
         assert response_without_context.output == "No workflow context"
 
     def test_context_metadata_extensibility(self, minimal_agent_config):
-        """Test that context metadata can be extended with custom fields."""
-        agent = _make_mock_agent(minimal_agent_config)
+        """Test that context metadata is accessible to agent during execution."""
 
-        # Create context with custom metadata
+        class MetadataReadingAgent(MockAgent):
+            """Agent that reads metadata from context."""
+            def _run(self, input_data, context=None, start_time=0.0):
+                tenant = context.metadata.get("tenant_id") if context else None
+                return AgentResponse(output=f"tenant:{tenant}")
+
+        with patch("temper_ai.agent.base_agent.create_llm_from_config"):
+            agent = MetadataReadingAgent(minimal_agent_config)
+
         context = ExecutionContext(
             workflow_id="wf-001",
             metadata={
@@ -399,13 +406,9 @@ class TestContextPropagation:
             }
         )
 
-        # Execute
         response = agent.execute({"test": True}, context=context)
 
-        # Verify custom metadata is preserved
-        assert context.metadata["user_id"] == "user-123"
-        assert context.metadata["tenant_id"] == "tenant-456"
-        assert context.metadata["request_id"] == "req-789"
+        assert "tenant:tenant-456" in response.output
         assert context.metadata["custom_field"] == "custom_value"
 
     def test_context_session_id_tracking(self, minimal_agent_config):
@@ -434,19 +437,25 @@ class TestContextPropagation:
         assert response.metadata["session_id"] == "session-xyz"
 
     def test_context_user_id_propagation(self, minimal_agent_config):
-        """Test that user_id propagates through context."""
-        agent = _make_mock_agent(minimal_agent_config)
+        """Test that user_id propagates through context to agent."""
+
+        class UserIdCapturingAgent(MockAgent):
+            """Agent that captures user_id from context."""
+            def _run(self, input_data, context=None, start_time=0.0):
+                uid = context.user_id if context else None
+                return AgentResponse(output=f"user:{uid}")
+
+        with patch("temper_ai.agent.base_agent.create_llm_from_config"):
+            agent = UserIdCapturingAgent(minimal_agent_config)
 
         context = ExecutionContext(
             workflow_id="wf-001",
             user_id="user-alice"
         )
 
-        # Execute
         response = agent.execute({"test": True}, context=context)
 
-        # Verify user_id is in context
-        assert context.user_id == "user-alice"
+        assert "user:user-alice" in response.output
 
     def test_context_none_is_valid(self, minimal_agent_config):
         """Test that agents can handle None context gracefully."""
@@ -609,11 +618,11 @@ class TestContextImmutability:
 class TestContextThreadSafety:
     """Tests for context thread-safety in concurrent executions (P1)."""
 
-    def test_concurrent_context_modifications(self, minimal_agent_config):
-        """Test that concurrent agent executions can lead to race conditions."""
+    def test_concurrent_context_modifications_may_race(self, minimal_agent_config):
+        """Test that shared context without locking can lose increments (documents race)."""
 
         class CountingAgent(MockAgent):
-            """Agent that increments a counter in context."""
+            """Agent that increments a counter in context (no locking)."""
             def _run(self, input_data, context=None, start_time=0.0):
                 if context and context.metadata:
                     current = context.metadata.get("counter", 0)
@@ -643,10 +652,12 @@ class TestContextThreadSafety:
             thread.join()
 
         final_count = shared_context.metadata["counter"]
-        assert final_count <= num_threads
+        # Without locking, some increments may be lost to races
+        assert final_count >= 1, "At least one increment should land"
+        assert final_count <= num_threads, "Cannot exceed total thread count"
 
     def test_concurrent_list_modifications(self, minimal_agent_config):
-        """Test concurrent modifications to context metadata lists."""
+        """Test concurrent list appends — CPython GIL makes list.append atomic."""
 
         class ListAppendingAgent(MockAgent):
             """Agent that appends to a list in context."""
@@ -678,8 +689,9 @@ class TestContextThreadSafety:
             thread.join()
 
         items_count = len(shared_context.metadata["items"])
-        assert items_count > 0
-        assert items_count <= num_threads
+        # list.append is atomic under CPython GIL, so all should land
+        assert items_count == num_threads, \
+            f"Expected {num_threads} items, got {items_count}"
 
     def test_concurrent_dict_modifications(self, minimal_agent_config):
         """Test concurrent modifications to nested dicts in context."""

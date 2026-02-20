@@ -325,9 +325,8 @@ class TestValidateInputs:
             AgentOutput("agent2", "yes", "r2", 0.8, {}),
         ]
 
-        # Should not raise
+        # Should not raise — reaching this line is the assertion
         strategy.validate_inputs(outputs)
-        assert True  # Verifies no exception raised
 
 
 class TestDetectConflicts:

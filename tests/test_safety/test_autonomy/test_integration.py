@@ -141,7 +141,8 @@ class TestApprovalRouterWithPolicy:
         }
 
         result = policy.validate({"action": "deploy"}, context)
-        # MEDIUM violation from approval routing (approval required)
+        # MEDIUM violation from approval routing (approval required at SUPERVISED)
+        assert len(result.violations) > 0
         assert any(v.severity == ViolationSeverity.MEDIUM for v in result.violations)
 
 

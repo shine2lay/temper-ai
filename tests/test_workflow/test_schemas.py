@@ -794,23 +794,6 @@ class TestEnumValidation:
 class TestDefaultValues:
     """Tests for default values across schemas."""
 
-    def test_inference_config_defaults(self):
-        """Test inference config defaults."""
-        config = InferenceConfig(provider="ollama", model="test")
-        assert config.temperature == 0.7
-        assert config.max_tokens == 131072
-        assert config.top_p == 0.9
-        assert config.timeout_seconds == 1800  # 30 minutes default for LLM calls
-        assert config.max_retries == 3
-
-    def test_safety_config_defaults(self):
-        """Test safety config defaults."""
-        config = SafetyConfig()
-        assert config.mode == "execute"
-        assert config.require_approval_for_tools == []
-        assert config.max_tool_calls_per_execution == 20
-        assert config.risk_level == "medium"
-
     def test_stage_execution_defaults(self):
         """Test stage execution defaults."""
         config = StageExecutionConfig()

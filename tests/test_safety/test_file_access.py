@@ -758,8 +758,8 @@ class TestEdgeCases:
             context={}
         )
 
-        # Should handle gracefully (likely invalid, but no crash)
-        assert result.valid or not result.valid  # Either outcome is ok, just no crash
+        # Empty path passes in denylist mode (not explicitly denied)
+        assert result.valid
 
     def test_root_path(self):
         """Test handling of root path /."""
@@ -770,8 +770,8 @@ class TestEdgeCases:
             context={}
         )
 
-        # Root should be handled (likely blocked, but no crash)
-        assert isinstance(result.valid, bool)
+        # Root path passes in denylist mode (not explicitly denied)
+        assert result.valid
 
     def test_action_without_paths(self):
         """Test action with no path information."""

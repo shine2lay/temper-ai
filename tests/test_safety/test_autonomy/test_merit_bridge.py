@@ -65,16 +65,19 @@ class TestOnDecisionRecorded:
         assert manager.evaluate_and_transition.call_count == 2
 
     def test_handles_evaluation_error(self) -> None:
-        """Handles errors from evaluate_and_transition gracefully."""
+        """Handles errors from evaluate_and_transition gracefully (no propagation)."""
         manager = MagicMock()
         manager.evaluate_and_transition.side_effect = RuntimeError("db error")
         bridge = MeritSafetyBridge(autonomy_manager=manager, evaluation_interval=1)
 
+        # Should not raise — error is caught and logged internally
         bridge.on_decision_recorded(MagicMock(), "a", "d", "success")
         assert manager.evaluate_and_transition.call_count == 1
+        # Counter still advances despite error (not stuck)
+        assert bridge._decision_counters.get("a:d", 0) == 1
 
     def test_logs_transition(self) -> None:
-        """Logs when a transition occurs."""
+        """Processes transition result without error when evaluate returns a transition."""
         manager = MagicMock()
         transition = MagicMock()
         transition.from_level = 0
@@ -85,3 +88,5 @@ class TestOnDecisionRecorded:
         bridge = MeritSafetyBridge(autonomy_manager=manager, evaluation_interval=1)
         bridge.on_decision_recorded(MagicMock(), "a", "d", "success")
         manager.evaluate_and_transition.assert_called_once()
+        # Verify the transition object was returned (bridge logs it internally)
+        assert manager.evaluate_and_transition.return_value.to_level == 1

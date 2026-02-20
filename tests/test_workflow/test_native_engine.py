@@ -196,7 +196,8 @@ class TestNativeExecutionEngine:
         )
 
         result = engine.execute(wf, {"topic": "test"})
-        assert result is not None
+        assert result["stage_outputs"] == {"s": {"status": "ok"}}
+        assert result["workflow_id"] == "test"
         runner.run.assert_called_once()
 
     @pytest.mark.asyncio
@@ -216,7 +217,7 @@ class TestNativeExecutionEngine:
         )
 
         result = await engine.async_execute(wf, {"topic": "test"})
-        assert result is not None
+        assert result["stage_outputs"] == {"s": {"status": "ok"}}
 
     @pytest.mark.asyncio
     async def test_async_execute_wrong_type(self):

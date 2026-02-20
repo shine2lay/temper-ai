@@ -875,6 +875,7 @@ class TestCacheKeySecurityFixes:
             "params": {"mode": "w", "path": "/tmp/file.txt"}  # Different order
         }
 
+        # Intentional private access: unit test for cache key generation logic
         key1 = engine._get_cache_key(policy, action1, context)
         key2 = engine._get_cache_key(policy, action2, context)
 
@@ -901,6 +902,7 @@ class TestCacheKeySecurityFixes:
         action1 = {"tool": "write_file", "path": "/tmp/file1.txt"}
         action2 = {"tool": "write_file", "path": "/tmp/file2.txt"}
 
+        # Intentional private access: unit test for cache key generation logic
         key1 = engine._get_cache_key(policy, action1, context)
         key2 = engine._get_cache_key(policy, action2, context)
 
@@ -933,6 +935,7 @@ class TestCacheKeySecurityFixes:
             "params": {"endpoint": "/api/users", "data": {"role": "user"}}
         }
 
+        # Intentional private access: unit test for cache key generation logic
         key1 = engine._get_cache_key(policy, action1, context)
         key2 = engine._get_cache_key(policy, action2, context)
 
@@ -965,6 +968,7 @@ class TestCacheKeySecurityFixes:
             stage_id="stage2"  # Different stage
         )
 
+        # Intentional private access: unit test for cache key generation logic
         key1 = engine._get_cache_key(policy, action, context1)
         key2 = engine._get_cache_key(policy, action, context2)
 
@@ -998,6 +1002,7 @@ class TestCacheKeySecurityFixes:
 
         action = {"tool": "test"}
 
+        # Intentional private access: unit test for cache key generation logic
         key1 = engine._get_cache_key(policy1, action, context)
         key2 = engine._get_cache_key(policy2, action, context)
 

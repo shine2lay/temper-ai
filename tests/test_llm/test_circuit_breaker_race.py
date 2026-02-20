@@ -202,19 +202,19 @@ class TestCircuitBreakerRaceCondition:
         assert breaker.state == CircuitState.OPEN
 
     def test_state_reservation_atomicity(self):
-        """Test that state reservation is atomic."""
+        """Test that concurrent calls all succeed atomically in CLOSED state."""
         breaker = CircuitBreaker(name="test")
 
-        reserved_states = []
+        results = []
         lock = threading.Lock()
 
-        def reserve_and_record():
-            state = breaker._reserve_execution()
+        def call_and_record():
+            result = breaker.call(lambda: "ok")
             with lock:
-                reserved_states.append(state)
+                results.append(result)
 
-        # Launch 100 concurrent reservations
-        threads = [threading.Thread(target=reserve_and_record) for _ in range(100)]
+        # Launch 100 concurrent calls
+        threads = [threading.Thread(target=call_and_record) for _ in range(100)]
 
         for t in threads:
             t.start()
@@ -222,9 +222,10 @@ class TestCircuitBreakerRaceCondition:
         for t in threads:
             t.join(timeout=2.0)
 
-        # All should have reserved CLOSED state
-        assert len(reserved_states) == 100
-        assert all(s == CircuitState.CLOSED for s in reserved_states)
+        # All should have completed successfully in CLOSED state
+        assert len(results) == 100
+        assert all(r == "ok" for r in results)
+        assert breaker.state == CircuitState.CLOSED
 
     def test_only_one_concurrent_test_in_half_open(self):
         """Test that only ONE thread can test CONCURRENTLY in HALF_OPEN."""
@@ -531,21 +532,20 @@ class TestCircuitBreakerBackwardCompatibility:
     """Test backward compatibility of circuit breaker changes."""
 
     def test_legacy_on_success_call_without_state(self):
-        """Test that _on_success() can be called without reserved_state (backward compat)."""
+        """Test that _on_success() can be called without reserved_state (backward compat).
+
+        Intentionally tests private method — external subclasses may call it directly.
+        """
         breaker = CircuitBreaker(name="test")
-
-        # Call without reserved_state parameter (legacy usage)
         breaker._on_success()
-
-        # Should not raise exception
         assert breaker.failure_count == 0
+        assert breaker.state == CircuitState.CLOSED
 
     def test_legacy_on_failure_call_without_state(self):
-        """Test that _on_failure() can be called without reserved_state (backward compat)."""
+        """Test that _on_failure() can be called without reserved_state (backward compat).
+
+        Intentionally tests private method — external subclasses may call it directly.
+        """
         breaker = CircuitBreaker(name="test")
-
-        # Call without reserved_state parameter (legacy usage) using counted error
         breaker._on_failure(create_counted_error())
-
-        # Should not raise exception
         assert breaker.failure_count == 1

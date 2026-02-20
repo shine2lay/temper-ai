@@ -675,8 +675,7 @@ class TestSafetyServiceMixin:
         # Should not raise
         service.handle_violations([violation], raise_exception=True)
 
-        # Verify operation completed without exception
-        assert service is not None
+        # LOW severity should not raise even with raise_exception=True
 
     def test_handle_violations_raises_on_high(self):
         """Test that HIGH violations raise exception."""
@@ -784,7 +783,6 @@ class TestEdgeCases:
         )
         # Should not raise
         policy.report_violation(violation)
-        assert True  # Verifies no exception raised
 
     def test_validator_interface(self):
         """Test Validator interface."""
@@ -856,10 +854,9 @@ class TestEdgeCases:
                 return "test"
 
         service = TestService()
-        # These should not raise (default implementations)
+        # Default implementations should not raise
         service.initialize()
         service.shutdown()
-        assert True  # Verifies no exception raised
 
     def test_metadata_no_override(self):
         """Test that child metadata doesn't override parent metadata."""
@@ -905,6 +902,7 @@ class TestEdgeCases:
 
     def test_base_policy_default_validate_impl(self):
         """Test default _validate_impl returns valid."""
+        # Intentional private access: verify template method default behavior
         class MinimalPolicy(BaseSafetyPolicy):
             @property
             def name(self) -> str:
@@ -924,6 +922,7 @@ class TestEdgeCases:
     @pytest.mark.asyncio
     async def test_base_policy_default_async_validate_impl(self):
         """Test default _validate_async_impl calls sync version."""
+        # Intentional private access: verify async→sync delegation default
         class TestPolicy(BaseSafetyPolicy):
             def __init__(self, config):
                 super().__init__(config)
@@ -964,7 +963,6 @@ class TestEdgeCases:
 
         # Should not raise when raise_exception=False
         service.handle_violations([violation], raise_exception=False)
-        assert True  # Verifies no exception raised
 
     def test_service_mixin_handle_empty_violations(self):
         """Test handle_violations with empty list."""
@@ -976,7 +974,6 @@ class TestEdgeCases:
         service = TestService()
         # Should not raise with empty list
         service.handle_violations([])
-        assert True  # Verifies no exception raised
 
     def test_validation_with_metadata_merge(self):
         """Test that metadata from child and parent are merged correctly."""

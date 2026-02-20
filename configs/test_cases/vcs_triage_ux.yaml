@@ -1,0 +1,39 @@
+# Test suite for vcs_triage_ux agent
+# Tests the USER_VALUE perspective for feature triage.
+# Covers: approve for a high user-value UX improvement, reject for a harmful UX change.
+
+agent_config: configs/agents/vcs_triage_ux.yaml
+test_cases:
+  - name: approve_good_ux
+    description: "Feature significantly improves usability; agent should APPROVE with high user impact"
+    input_vars:
+      suggestion_text: "Add keyboard shortcuts for common actions in the dashboard"
+      workspace_path: "/tmp/test_workspace"
+    validators:
+      - name: has_perspective
+        pattern: "PERSPECTIVE:\\s*USER_VALUE"
+      - name: has_recommendation
+        pattern: "RECOMMENDATION:\\s*(APPROVE|REJECT)"
+      - name: has_confidence
+        pattern: "CONFIDENCE:\\s*[01]?\\.\\d+"
+      - name: has_user_impact
+        pattern: "USER_IMPACT:\\s*(high|medium|low)"
+      - name: has_reasoning
+        pattern: "REASONING:"
+
+  - name: reject_poor_ux
+    description: "Feature removes error messages, degrading UX and user safety; agent should REJECT"
+    input_vars:
+      suggestion_text: "Remove all error messages to make the UI cleaner"
+      workspace_path: "/tmp/test_workspace"
+    validators:
+      - name: has_perspective
+        pattern: "PERSPECTIVE:\\s*USER_VALUE"
+      - name: has_recommendation
+        pattern: "RECOMMENDATION:\\s*(APPROVE|REJECT)"
+      - name: has_confidence
+        pattern: "CONFIDENCE:\\s*[01]?\\.\\d+"
+      - name: has_user_impact
+        pattern: "USER_IMPACT:\\s*(high|medium|low)"
+      - name: has_reasoning
+        pattern: "REASONING:"

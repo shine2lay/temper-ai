@@ -331,12 +331,11 @@ class TestObserverTracking:
         mock_context.agent_id = "test-agent-id"
         agent.execute({"tracker": mock_tracker})
 
-        # setup_execution creates the observer; patch it after setup and re-run
-        # Instead, verify the observer was created at all — since no execution_context
-        # with agent_id is provided, observer.active == False and track_tool_call is a no-op.
-        # The pre_command_helpers call the observer directly (not via AgentObserver).
+        # Verify observer was created and is the correct type
         observer = getattr(agent, "_observer", None)
         assert observer is not None
+        # Without an execution context with agent_id, observer is inactive
+        assert not observer.active, "Observer should be inactive without agent_id in context"
 
     @patch("temper_ai.agent.utils._pre_command_helpers.subprocess.run")
     @patch("temper_ai.agent.base_agent.create_llm_from_config")

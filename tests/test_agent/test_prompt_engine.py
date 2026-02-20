@@ -309,9 +309,10 @@ class TestTemplateCaching:
             engine.render(template, {"agent_name": "researcher", "domain": "AI", "detailed": True})
         cached_time = time.time() - start
 
-        # Cached version should be faster (allowing some variance for timing noise)
-        # We expect at least 2x faster, but use 1.5x to account for timing variance
-        assert cached_time < uncached_time * 0.75, f"Cached ({cached_time}s) not faster than uncached ({uncached_time}s)"
+        # Verify cache is used deterministically via stats
+        stats = engine.get_cache_stats()
+        assert stats["cache_hits"] >= 9, \
+            f"Expected at least 9 cache hits from 10 renders, got {stats['cache_hits']}"
 
     def test_cache_lru_eviction(self):
         """Test that cache evicts oldest entries when full."""
@@ -552,8 +553,8 @@ class TestTemplateInjectionPrevention:
         malicious_input = "{{ 7 * 7 }}"
         result = engine.render(template, {"user_input": malicious_input})
 
-        # Should render as literal text, not execute
-        assert "{{ 7 * 7 }}" in result or "49" not in result
+        # Should render as literal text, not execute the expression
+        assert "49" not in result, "Jinja2 expression was evaluated — injection succeeded"
 
     def test_user_input_cannot_inject_jinja_statements(self):
         """Test that user input with {% %} is rendered as literal text."""
@@ -564,8 +565,8 @@ class TestTemplateInjectionPrevention:
         malicious_input = "{% for i in range(10) %}X{% endfor %}"
         result = engine.render(template, {"user_input": malicious_input})
 
-        # Should render as literal text, not execute loop
-        assert "{% for" in result or result.count("X") < 10
+        # Should render as literal text, not execute the loop
+        assert result.count("X") < 10, "Jinja2 for-loop was executed — injection succeeded"
 
     def test_cannot_access_python_builtins(self):
         """Test that Python builtins are not accessible from templates."""

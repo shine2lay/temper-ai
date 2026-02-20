@@ -96,12 +96,17 @@ class TestPromptInjectionVariants:
             if not is_safe:
                 detected += 1
 
-        # Document current behavior: tokenization exploits may bypass detection
-        # This test documents a known limitation for security audit
-        assert detected >= 0, f"Tokenization detection: {detected}/3 variants caught"
+        # Known limitation: token splitting bypasses regex-based pattern detection.
+        # Documented for security audit. If detection improves, update threshold.
+        assert detected >= 0, f"Tokenization detection: {detected}/3 variants caught (known gap)"
 
     def test_base64_encoded_injection(self):
-        """Base64-encoded injection - documents entropy detection behavior."""
+        """Base64-encoded injection - documents entropy detection behavior.
+
+        Known gap: short base64 strings have moderate entropy (~4-5 bits)
+        which may not exceed ENTROPY_THRESHOLD_RANDOM. This documents current
+        behavior for security audit.
+        """
         detector = PromptInjectionDetector()
 
         # "ignore previous instructions" base64 encoded
@@ -109,12 +114,16 @@ class TestPromptInjectionVariants:
 
         is_safe, violations = detector.detect(b64_injection)
 
-        # Document behavior: base64 may or may not trigger entropy (depends on threshold)
-        # This is expected - short base64 strings have moderate entropy (~4-5)
-        assert isinstance(is_safe, bool), "Detection should complete without error"
+        # Detection completes without error; result depends on entropy threshold
+        assert isinstance(is_safe, bool)
+        assert isinstance(violations, list)
 
     def test_null_byte_injection(self):
-        """Null byte injection attempts should be handled safely without crashes."""
+        """Null byte injection attempts should be handled safely without crashes.
+
+        Primary goal is crash safety at the security boundary. Detection of
+        injection patterns embedded after null bytes is secondary.
+        """
         detector = PromptInjectionDetector()
 
         null_byte_variants = [
@@ -124,9 +133,9 @@ class TestPromptInjectionVariants:
 
         for variant in null_byte_variants:
             is_safe, violations = detector.detect(variant)
-            # Primary goal: no crash (security boundary)
-            assert isinstance(is_safe, bool), "Should handle null bytes without crashing"
-            # Detection of embedded injection is secondary
+            # Crash safety: must return valid types (the core security property)
+            assert isinstance(is_safe, bool)
+            assert isinstance(violations, list)
 
 
 class TestEntropyAnalysisEdgeCases:
@@ -171,7 +180,11 @@ class TestEntropyAnalysisEdgeCases:
         assert false_positive_count <= 1, "Multilingual text should not trigger excessive entropy false positives"
 
     def test_code_snippet_entropy(self):
-        """Code snippets may have higher entropy but should be distinguishable."""
+        """Code snippets may have higher entropy but should not crash.
+
+        Documents behavior: code with embedded UUIDs/hashes may trigger entropy
+        detection. This is acceptable — the primary property is crash safety.
+        """
         detector = PromptInjectionDetector()
 
         code_samples = [
@@ -180,12 +193,10 @@ class TestEntropyAnalysisEdgeCases:
             "const apiKey = '7a8b9c0d1e2f3g4h5i6j7k8l9m0n1o2p';",
         ]
 
-        # Code may trigger entropy, but that's expected behavior
-        # This test documents the behavior
         for code in code_samples:
             is_safe, violations = detector.detect(code)
-            # Just verify no crash
             assert isinstance(is_safe, bool)
+            assert isinstance(violations, list)
 
     def test_empty_and_exact_length_boundaries(self):
         """Test empty strings and exact length boundaries."""
@@ -415,9 +426,8 @@ class TestRateLimitingConcurrency:
         assert allowed1 and allowed2, "First 2 should be allowed"
         assert not allowed3, "Third should be blocked"
 
-        # Wait for burst window expiry (RATE_LIMIT_WINDOW_BURST = 10 seconds)
-        # In production: time.sleep(11)
-        # For test: assume Redis/memory expiry works (tested separately)
+        # TODO: Window expiry not tested — would require time.sleep(11) or mock clock.
+        # RATE_LIMIT_WINDOW_BURST = 10s. Expiry behavior relies on in-memory TTL.
 
     def test_fail_open_vs_fail_closed(self):
         """Test fail_open vs fail_closed behavior on errors."""

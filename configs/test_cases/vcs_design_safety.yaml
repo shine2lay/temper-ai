@@ -1,0 +1,25 @@
+# Test suite for vcs_design_safety agent
+# Tests the SAFETY design perspective — produces impact assessment and risk level classification.
+# Covers: a feature where the agent must output IMPACT_ASSESSMENT and RISK_LEVEL sections.
+
+agent_config: configs/agents/vcs_design_safety.yaml
+test_cases:
+  - name: produces_safety_format
+    description: "Agent must produce PERSPECTIVE: SAFETY with IMPACT_ASSESSMENT and RISK_LEVEL sections"
+    input_vars:
+      suggestion_text: "Add the ability for admins to delete user accounts permanently"
+      triage_output: |
+        DECISION: APPROVE
+        CATEGORY: feature
+        PRIORITY: P1
+        EFFORT: medium
+        CONFIDENCE: 0.80
+        REASONING: Required for GDPR compliance; must be restricted to admin role.
+      workspace_path: "/tmp/test_workspace"
+    validators:
+      - name: has_perspective
+        pattern: "PERSPECTIVE:\\s*SAFETY"
+      - name: has_impact_assessment
+        pattern: "IMPACT_ASSESSMENT:"
+      - name: has_risk_level
+        pattern: "RISK_LEVEL:\\s*(LOW|MEDIUM|HIGH)"

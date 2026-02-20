@@ -56,6 +56,8 @@ class TestConsensusStrategy:
         assert len(result.conflicts) == 0  # No conflicts when all agree
         assert "100.0% support" in result.reasoning
         assert "(3/3 agents)" in result.reasoning
+        assert "Dissenting" not in result.reasoning  # No dissenters in unanimous
+        assert "Vote breakdown:" not in result.reasoning  # Omitted when unanimous
         assert result.metadata["total_agents"] == 3
         assert result.metadata["decision_support"] == 1.0
 
@@ -79,6 +81,7 @@ class TestConsensusStrategy:
         assert "66.7% support" in result.reasoning
         assert "agent1, agent2" in result.reasoning
         assert "agent3" in result.reasoning
+        assert "Vote breakdown:" in result.reasoning  # Present when not unanimous
 
     def test_tie_breaking_by_confidence(self):
         """Test tie-breaking using confidence."""
@@ -96,7 +99,7 @@ class TestConsensusStrategy:
         assert "50.0% support" in result.reasoning
 
     def test_tie_breaking_by_first(self):
-        """Test tie-breaking using first-vote."""
+        """Test tie-breaking using first-vote — first encountered decision wins."""
         strategy = ConsensusStrategy()
         outputs = [
             AgentOutput("agent1", "Option B", "reason1", 0.7, {}),
@@ -105,9 +108,8 @@ class TestConsensusStrategy:
 
         result = strategy.synthesize(outputs, {"tie_breaker": "first"})
 
-        # First decision in tie wins (implementation orders by count then iteration)
-        # Since both have equal counts, the first one encountered wins
-        assert result.decision in ["Option A", "Option B"]
+        # "Option B" is encountered first (agent1), so it wins with "first" tie-breaker
+        assert result.decision == "Option B"
         assert result.votes == {"Option A": 1, "Option B": 1}
 
     def test_no_majority_creates_weak_consensus(self):
@@ -377,73 +379,6 @@ class TestConsensusTieBreaking:
         result = strategy.synthesize(outputs, {"tie_breaker": "confidence"})
         # B should win due to highest confidence
         assert result.decision == "B"
-
-    def test_tie_break_method_helper(self):
-        """Test _break_tie helper method directly."""
-        strategy = ConsensusStrategy()
-        outputs = [
-            AgentOutput("agent1", "Option A", "r1", 0.9, {}),
-            AgentOutput("agent2", "Option B", "r2", 0.7, {})
-        ]
-
-        # Test confidence method
-        winner = strategy._break_tie(["Option A", "Option B"], outputs, "confidence")
-        assert winner == "Option A"
-
-        # Test first method
-        winner = strategy._break_tie(["Option B", "Option A"], outputs, "first")
-        assert winner == "Option B"
-
-
-class TestConsensusReasoning:
-    """Test reasoning generation."""
-
-    def test_build_reasoning_unanimous(self):
-        """Test reasoning for unanimous decision."""
-        strategy = ConsensusStrategy()
-        reasoning = strategy._build_reasoning(
-            "Option A",
-            1.0,
-            ["agent1", "agent2", "agent3"],
-            [],
-            {"Option A": 3}
-        )
-
-        assert "100.0% support" in reasoning
-        assert "(3/3 agents)" in reasoning
-        assert "agent1, agent2, agent3" in reasoning
-        assert "Dissenting" not in reasoning  # No dissenters
-
-    def test_build_reasoning_with_dissenters(self):
-        """Test reasoning with dissenters."""
-        strategy = ConsensusStrategy()
-        reasoning = strategy._build_reasoning(
-            "Option A",
-            0.667,
-            ["agent1", "agent2"],
-            ["agent3"],
-            {"Option A": 2, "Option B": 1}
-        )
-
-        assert "66.7% support" in reasoning
-        assert "agent1, agent2" in reasoning
-        assert "agent3" in reasoning
-        assert "Vote breakdown:" in reasoning
-
-    def test_build_reasoning_no_vote_breakdown_if_unanimous(self):
-        """Test that vote breakdown is omitted for unanimous decision."""
-        strategy = ConsensusStrategy()
-        reasoning = strategy._build_reasoning(
-            "Option A",
-            1.0,
-            ["agent1"],
-            [],
-            {"Option A": 1}
-        )
-
-        # Only one option, no vote breakdown needed
-        assert "Vote breakdown:" not in reasoning
-
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])

@@ -1,0 +1,96 @@
+# Test suite for vcs_design_decider agent
+# Tests synthesis of design perspectives into a unified implementation plan.
+# Covers: simple feature (health check endpoint), complex feature (WebSocket notifications).
+
+agent_config: configs/agents/vcs_design_decider.yaml
+test_cases:
+  - name: synthesize_simple_feature
+    description: "All design perspectives are aligned on a simple feature; decider should produce a complete implementation plan"
+    input_vars:
+      suggestion_text: "Add a health check endpoint at /api/health"
+      triage_output: |
+        DECISION: APPROVE
+        CATEGORY: feature
+        PRIORITY: P2
+        EFFORT: small
+        CONFIDENCE: 0.92
+        REASONING: Simple, low-risk infrastructure addition with clear value.
+      team_outputs: |
+        --- ARCHITECTURE ---
+        PERSPECTIVE: ARCHITECTURE
+        FILE_STRUCTURE:
+          - api/health.py (new)
+          - api/__init__.py (modify)
+          - tests/test_health.py (new)
+        EXECUTION_ORDER: 1. health.py, 2. __init__.py route registration, 3. tests
+        REASONING: Minimal surface area; single endpoint, no DB dependency.
+
+        --- IMPLEMENTATION ---
+        PERSPECTIVE: IMPLEMENTATION
+        COMPONENTS:
+          - HealthCheckHandler: Returns 200 OK with JSON status payload
+        ERROR_HANDLING: Return 503 on any internal exception
+        REASONING: Stateless handler; can use a simple function-based view.
+
+        --- SAFETY ---
+        PERSPECTIVE: SAFETY
+        IMPACT_ASSESSMENT: No user data touched; read-only endpoint
+        RISK_LEVEL: LOW
+        REASONING: No auth required; endpoint exposes only uptime status.
+    validators:
+      - name: has_files
+        pattern: "FILES:"
+      - name: has_execution_order
+        pattern: "EXECUTION_ORDER:"
+      - name: has_acceptance_criteria
+        pattern: "ACCEPTANCE_CRITERIA:"
+      - name: has_technical_approach
+        pattern: "TECHNICAL_APPROACH:"
+
+  - name: synthesize_complex_feature
+    description: "Design perspectives align on a complex WebSocket feature; decider must handle larger context and produce plan"
+    input_vars:
+      suggestion_text: "Add real-time notifications via WebSocket"
+      triage_output: |
+        DECISION: APPROVE
+        CATEGORY: feature
+        PRIORITY: P1
+        EFFORT: large
+        CONFIDENCE: 0.85
+        REASONING: High user value; technically feasible with existing async stack.
+      team_outputs: |
+        --- ARCHITECTURE ---
+        PERSPECTIVE: ARCHITECTURE
+        FILE_STRUCTURE:
+          - notifications/ws_handler.py (new)
+          - notifications/hub.py (new)
+          - notifications/models.py (new)
+          - notifications/__init__.py (new)
+          - api/routes.py (modify)
+          - tests/test_notifications.py (new)
+        EXECUTION_ORDER: 1. models.py, 2. hub.py, 3. ws_handler.py, 4. routes.py, 5. tests
+        REASONING: Hub pattern decouples connection management from business logic.
+
+        --- IMPLEMENTATION ---
+        PERSPECTIVE: IMPLEMENTATION
+        COMPONENTS:
+          - NotificationHub: Manages active WebSocket connections and broadcasts
+          - WSHandler: Handles connection lifecycle (connect/disconnect/receive)
+          - NotificationModel: Stores notification metadata in DB
+        ERROR_HANDLING: Graceful disconnect on client timeout; dead connection cleanup via heartbeat
+        REASONING: Use asyncio queues for fan-out; avoid shared mutable state.
+
+        --- SAFETY ---
+        PERSPECTIVE: SAFETY
+        IMPACT_ASSESSMENT: Auth token required per connection; messages scoped to user_id
+        RISK_LEVEL: MEDIUM
+        REASONING: Token validation on connect; reject unauthenticated upgrades. Rate-limit broadcasts.
+    validators:
+      - name: has_files
+        pattern: "FILES:"
+      - name: has_execution_order
+        pattern: "EXECUTION_ORDER:"
+      - name: has_acceptance_criteria
+        pattern: "ACCEPTANCE_CRITERIA:"
+      - name: has_technical_approach
+        pattern: "TECHNICAL_APPROACH:"

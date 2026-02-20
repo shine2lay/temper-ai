@@ -206,8 +206,9 @@ def test_resume_with_tracker(tmp_path):
     # Resume
     result = executor.resume_from_checkpoint("wf-tracked-resume")
 
-    # Verify resume completed (checkpoint events logged via logger, not tracker)
-    assert result is not None
+    # Verify resume completed with expected stage outputs
+    assert result[StateKeys.STAGE_OUTPUTS]["stage1"] == "r1"
+    assert result[StateKeys.STAGE_OUTPUTS]["stage2"] == "r2"
 
 
 def test_resume_error_saves_checkpoint(tmp_path):

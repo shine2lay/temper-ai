@@ -100,10 +100,10 @@ class TestAdaptLifecycleEvents:
         ]
         assert len(lifecycle_events) == 0
 
-    @patch("temper_ai.workflow.runtime.LifecycleAdapter", create=True)
-    @patch("temper_ai.workflow.runtime.ProjectClassifier", create=True)
-    @patch("temper_ai.workflow.runtime.ProfileRegistry", create=True)
-    @patch("temper_ai.workflow.runtime.LifecycleStore", create=True)
+    @patch("temper_ai.lifecycle.adapter.LifecycleAdapter")
+    @patch("temper_ai.lifecycle.classifier.ProjectClassifier")
+    @patch("temper_ai.lifecycle.profiles.ProfileRegistry")
+    @patch("temper_ai.lifecycle.store.LifecycleStore")
     def test_emits_lifecycle_adapted(
         self, _store, _registry, _classifier, _adapter,
         event_bus, captured_events,
@@ -117,11 +117,15 @@ class TestAdaptLifecycleEvents:
                 "lifecycle": {"enabled": True},
             }
         }
-        # The mock adapter.adapt returns the config
+        # Mocked adapter.adapt returns a MagicMock, which triggers the event
         rt.adapt_lifecycle(config, {"topic": "test"})
 
-        # May or may not emit depending on mock setup; verify no crash
-        assert isinstance(captured_events, list)
+        lifecycle_events = [
+            e for e in captured_events
+            if e.event_type == EVENT_LIFECYCLE_ADAPTED
+        ]
+        assert len(lifecycle_events) == 1
+        assert lifecycle_events[0].data["status"] == "adapted"
 
 
 class TestCompileEvents:

@@ -448,8 +448,7 @@ class TestSafetyGate:
             pass
 
         # Verify gate allowed operation to proceed
-        assert gate is not None
-        assert not gate._blocked
+        assert not gate.is_blocked()
 
     def test_context_manager_raises_when_blocked(self):
         """Test context manager raises exception when blocked."""

@@ -343,13 +343,9 @@ class TestResourceManagement:
         assert len(results) == 10
         assert all(r == 1024 * 1024 for r in results)
 
-        # Force garbage collection
+        # Force garbage collection — verify it doesn't raise
         del results
-        collected = gc.collect()
-
-        # gc.collect() returns the number of unreachable objects found;
-        # a non-negative value confirms the collector ran successfully
-        assert collected >= 0
+        gc.collect()
 
 
 class TestErrorHandlingConcurrency:

@@ -265,8 +265,8 @@ class TestMeritWeightedEdgeCases:
         assert resolution is not None
         assert resolution.decision in ["A", "B"]
 
-    def test_missing_merit_scores_fallback(self):
-        """Test resolution with missing merit scores."""
+    def test_missing_merit_scores_uses_default(self):
+        """Test resolution falls back to default merit for agents without scores."""
         conflict = Conflict(
             agents=["agent_1", "agent_2"],
             decisions=["A", "B"],
@@ -279,7 +279,7 @@ class TestMeritWeightedEdgeCases:
             AgentOutput("agent_2", "B", "Reason B", 0.8, {}),
         ]
 
-        # Only provide merit for one agent
+        # Only provide merit for one agent — agent_2 gets PROB_MEDIUM (0.5) default
         context = ResolutionContext(
             agent_merits={
                 "agent_1": AgentMerit("agent_1", 0.8, 0.7, 0.75, "expert"),
@@ -292,15 +292,13 @@ class TestMeritWeightedEdgeCases:
         )
 
         resolver = MeritWeightedResolver()
+        resolution = resolver.resolve_with_context(conflict, context)
 
-        # Should handle missing merit gracefully
-        # May raise ValueError or use default merit
-        try:
-            resolution = resolver.resolve_with_context(conflict, context)
-            assert resolution is not None
-        except ValueError as e:
-            # Acceptable to require all merits
-            assert "merit" in str(e).lower()
+        # agent_1: merit ~0.75 * conf 0.9 = 0.675
+        # agent_2: default merit 0.5 * conf 0.8 = 0.4
+        # agent_1 should win
+        assert resolution.decision == "A"
+        assert "agent_1" in resolution.winning_agents
 
     def test_negative_merit_scores_rejected(self):
         """Test that negative merit scores are rejected during creation."""
@@ -340,10 +338,9 @@ class TestMeritWeightedEdgeCases:
         resolver = MeritWeightedResolver()
         resolution = resolver.resolve_with_context(conflict, context)
 
-        # Expert should dominate (or at least have strong influence)
-        # Result could be B (expert) or the weighting might not be overwhelming
-        assert resolution.decision in ["A", "B"]
-        # Expert's high merit should result in reasonable confidence
+        # Expert (merit 0.99) should dominate over novice (merit 0.01)
+        assert resolution.decision == "B", "Expert with 0.99 merit should win over novice with 0.01"
+        assert "expert" in resolution.winning_agents
         assert resolution.confidence > 0.3
 
     def test_merit_weighted_with_equal_merits(self):
@@ -413,8 +410,11 @@ class TestMeritWeightedEdgeCases:
         resolver = MeritWeightedResolver()
         resolution = resolver.resolve_with_context(conflict, context)
 
-        # Result depends on weighting calculation
-        assert resolution.decision in ["A", "B"]
+        # A has 7 agents * 0.5 merit * 0.8 conf = 2.8 weighted score
+        # B has 3 agents * 0.9 merit * 0.8 conf = 2.16 weighted score
+        # Majority (A) still wins despite lower individual merit
+        assert resolution.decision == "A"
+        assert len(resolution.winning_agents) == 7
 
     def test_empty_conflict_agents_raises_error(self):
         """Test that empty conflict agents raises ValueError during creation."""

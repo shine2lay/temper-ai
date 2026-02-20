@@ -1,0 +1,43 @@
+# Test suite for vcs_triage_technical agent
+# Tests the TECHNICAL_FEASIBILITY perspective for feature triage.
+# Covers: approve for a well-scoped implementable feature, reject for an infeasible rewrite.
+
+agent_config: configs/agents/vcs_triage_technical.yaml
+test_cases:
+  - name: approve_feasible_feature
+    description: "Feature is technically feasible with manageable effort; agent should APPROVE"
+    input_vars:
+      suggestion_text: "Add rate limiting to the API endpoints using a sliding window algorithm"
+      workspace_path: "/tmp/test_workspace"
+    validators:
+      - name: has_perspective
+        pattern: "PERSPECTIVE:\\s*TECHNICAL_FEASIBILITY"
+      - name: has_recommendation
+        pattern: "RECOMMENDATION:\\s*(APPROVE|REJECT)"
+      - name: has_confidence
+        pattern: "CONFIDENCE:\\s*[01]?\\.\\d+"
+      - name: has_effort
+        pattern: "EFFORT:\\s*(small|medium|large)"
+      - name: has_technical_risks
+        pattern: "TECHNICAL_RISKS:"
+      - name: has_reasoning
+        pattern: "REASONING:"
+
+  - name: reject_infeasible_feature
+    description: "Feature requires rewriting the entire backend in one sprint; agent should REJECT as infeasible"
+    input_vars:
+      suggestion_text: "Rewrite the entire backend in Rust within one sprint"
+      workspace_path: "/tmp/test_workspace"
+    validators:
+      - name: has_perspective
+        pattern: "PERSPECTIVE:\\s*TECHNICAL_FEASIBILITY"
+      - name: has_recommendation
+        pattern: "RECOMMENDATION:\\s*(APPROVE|REJECT)"
+      - name: has_confidence
+        pattern: "CONFIDENCE:\\s*[01]?\\.\\d+"
+      - name: has_effort
+        pattern: "EFFORT:\\s*(small|medium|large)"
+      - name: has_technical_risks
+        pattern: "TECHNICAL_RISKS:"
+      - name: has_reasoning
+        pattern: "REASONING:"

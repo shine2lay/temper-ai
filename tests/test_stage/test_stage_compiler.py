@@ -251,8 +251,11 @@ class TestCompileParallelStages:
         # Should not raise, should delegate to compile_stages
         graph = compiler.compile_parallel_stages(stage_names, workflow_config)
 
-        assert hasattr(graph, 'invoke'), "Graph must have invoke method for execution"
-        assert hasattr(graph, 'get_graph'), "Graph must have get_graph for introspection"
+        # Verify delegation: create_stage_node called once per stage
+        assert node_builder.create_stage_node.call_count == 2
+        # Verify graph structure matches sequential compilation
+        graph_structure = graph.get_graph()
+        assert len(graph_structure.nodes) == 5  # __start__, init, research, analysis, __end__
 
 
 class TestCompileConditionalStages:
@@ -276,8 +279,11 @@ class TestCompileConditionalStages:
             conditions
         )
 
-        assert hasattr(graph, 'invoke'), "Graph must have invoke method for execution"
-        assert hasattr(graph, 'get_graph'), "Graph must have get_graph for introspection"
+        # Verify delegation: create_stage_node called once per stage
+        assert node_builder.create_stage_node.call_count == 2
+        # Verify graph structure matches sequential compilation
+        graph_structure = graph.get_graph()
+        assert len(graph_structure.nodes) == 5  # __start__, init, research, analysis, __end__
 
 
 class TestIntegrationWithRealGraph:

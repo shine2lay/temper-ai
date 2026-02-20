@@ -1,0 +1,29 @@
+# Test suite for vcs_coder agent
+# Tests that the coder agent produces structured output including FILES_CREATED.
+# Covers: basic implementation task producing the required output format.
+
+agent_config: configs/agents/vcs_coder.yaml
+test_cases:
+  - name: produces_files_created
+    description: "Coder agent given a design spec and task specs must produce output containing FILES_CREATED"
+    input_vars:
+      workspace_path: "/tmp/test_workspace"
+      design_output: |
+        FILES:
+          - api/ping.py (new)
+          - tests/test_ping.py (new)
+        EXECUTION_ORDER: 1. api/ping.py, 2. tests/test_ping.py
+        ACCEPTANCE_CRITERIA:
+          - GET /api/ping returns HTTP 200 with JSON body {"pong": true}
+        TECHNICAL_APPROACH: Single function-based view, no DB access.
+      task_specs: |
+        TASK 1: Create api/ping.py
+          - Implement a view function ping_view that returns JsonResponse({"pong": True})
+          - Register at route /api/ping with GET method
+
+        TASK 2: Create tests/test_ping.py
+          - Write a test that calls GET /api/ping and asserts status 200
+          - Assert response JSON contains {"pong": true}
+    validators:
+      - name: has_files_created
+        pattern: "FILES_CREATED:"

@@ -464,8 +464,7 @@ class TestExecutorConfiguration:
         """Test setting custom max workers."""
         registry = ToolRegistry()
         executor = ToolExecutor(registry, max_workers=2)
-        # Just verify it doesn't error
-        assert executor is not None
+        assert executor._executor._max_workers == 2
 
     def test_override_timeout_per_execution(self):
         """Test overriding timeout for specific execution."""

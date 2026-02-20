@@ -29,19 +29,19 @@ _COL_NAME = "Name"
 _COL_PRODUCT = "Product"
 _ID_DISPLAY_LEN = 12  # noqa: scanner: skip-magic
 
-DEFAULT_PORTFOLIO_DB = "sqlite:///./portfolio.db"
 DEFAULT_PORTFOLIO_CONFIG_DIR = "configs/portfolios"
 _OPT_DB = "--db"
-_HELP_DB = "Portfolio database URL"
+_HELP_DB = "Database URL override"
 _OPT_CONFIG_DIR = "--config-dir"
 _HELP_CONFIG_DIR = "Portfolio config directory"
 
 
-def _get_store(db: str) -> "PortfolioStore":
+def _get_store(db: str | None = None) -> "PortfolioStore":
     """Create a PortfolioStore instance."""
     from temper_ai.portfolio.store import PortfolioStore as _Store
+    from temper_ai.storage.database.engine import get_database_url
 
-    return _Store(database_url=db)
+    return _Store(database_url=db or get_database_url())
 
 
 def _get_loader(config_dir: str) -> "PortfolioLoader":
@@ -60,7 +60,7 @@ def portfolio_group() -> None:
 
 
 @portfolio_group.command("list")
-@click.option(_OPT_DB, default=DEFAULT_PORTFOLIO_DB, help=_HELP_DB)
+@click.option(_OPT_DB, default=None, envvar="TEMPER_DATABASE_URL", help=_HELP_DB)
 @click.option(_OPT_CONFIG_DIR, default=DEFAULT_PORTFOLIO_CONFIG_DIR, help=_HELP_CONFIG_DIR)
 def list_portfolios(db: str, config_dir: str) -> None:
     """List available portfolios (YAML configs + DB)."""
@@ -117,7 +117,7 @@ def _source_label(in_yaml: bool, in_db: bool) -> str:
 
 @portfolio_group.command("show")
 @click.argument("name")
-@click.option(_OPT_DB, default=DEFAULT_PORTFOLIO_DB, help=_HELP_DB)
+@click.option(_OPT_DB, default=None, envvar="TEMPER_DATABASE_URL", help=_HELP_DB)
 @click.option(_OPT_CONFIG_DIR, default=DEFAULT_PORTFOLIO_CONFIG_DIR, help=_HELP_CONFIG_DIR)
 def show_portfolio(name: str, db: str, config_dir: str) -> None:
     """Show portfolio details and allocation status."""
@@ -180,7 +180,7 @@ def show_portfolio(name: str, db: str, config_dir: str) -> None:
 @portfolio_group.command("run")
 @click.argument("name")
 @click.option("--product", default=None, help="Specific product type to run")
-@click.option(_OPT_DB, default=DEFAULT_PORTFOLIO_DB, help=_HELP_DB)
+@click.option(_OPT_DB, default=None, envvar="TEMPER_DATABASE_URL", help=_HELP_DB)
 @click.option(_OPT_CONFIG_DIR, default=DEFAULT_PORTFOLIO_CONFIG_DIR, help=_HELP_CONFIG_DIR)
 def run_product(name: str, product: str | None, db: str, config_dir: str) -> None:
     """Run next product (or a specific one) from the portfolio."""
@@ -222,7 +222,7 @@ def run_product(name: str, product: str | None, db: str, config_dir: str) -> Non
 
 @portfolio_group.command("scorecards")
 @click.argument("name")
-@click.option(_OPT_DB, default=DEFAULT_PORTFOLIO_DB, help=_HELP_DB)
+@click.option(_OPT_DB, default=None, envvar="TEMPER_DATABASE_URL", help=_HELP_DB)
 @click.option(_OPT_CONFIG_DIR, default=DEFAULT_PORTFOLIO_CONFIG_DIR, help=_HELP_CONFIG_DIR)
 def scorecards(name: str, db: str, config_dir: str) -> None:
     """Show product scorecards for a portfolio."""
@@ -270,7 +270,7 @@ def scorecards(name: str, db: str, config_dir: str) -> None:
 
 @portfolio_group.command("recommend")
 @click.argument("name")
-@click.option(_OPT_DB, default=DEFAULT_PORTFOLIO_DB, help=_HELP_DB)
+@click.option(_OPT_DB, default=None, envvar="TEMPER_DATABASE_URL", help=_HELP_DB)
 @click.option(_OPT_CONFIG_DIR, default=DEFAULT_PORTFOLIO_CONFIG_DIR, help=_HELP_CONFIG_DIR)
 def recommend(name: str, db: str, config_dir: str) -> None:
     """Show invest/sunset recommendations for a portfolio."""
@@ -317,7 +317,7 @@ def recommend(name: str, db: str, config_dir: str) -> None:
 
 @portfolio_group.command("components")
 @click.argument("name")
-@click.option(_OPT_DB, default=DEFAULT_PORTFOLIO_DB, help=_HELP_DB)
+@click.option(_OPT_DB, default=None, envvar="TEMPER_DATABASE_URL", help=_HELP_DB)
 @click.option(_OPT_CONFIG_DIR, default=DEFAULT_PORTFOLIO_CONFIG_DIR, help=_HELP_CONFIG_DIR)
 def components(name: str, db: str, config_dir: str) -> None:
     """Analyze cross-product component sharing."""
@@ -367,7 +367,7 @@ def graph_group() -> None:
 
 
 @graph_group.command("stats")
-@click.option(_OPT_DB, default=DEFAULT_PORTFOLIO_DB, help=_HELP_DB)
+@click.option(_OPT_DB, default=None, envvar="TEMPER_DATABASE_URL", help=_HELP_DB)
 def graph_stats(db: str) -> None:
     """Show knowledge graph statistics."""
     from temper_ai.portfolio.knowledge_graph import KnowledgeQuery
@@ -390,7 +390,7 @@ def graph_stats(db: str) -> None:
 @graph_group.command("query")
 @click.argument("concept")
 @click.option("--depth", default=1, help="BFS traversal depth")
-@click.option(_OPT_DB, default=DEFAULT_PORTFOLIO_DB, help=_HELP_DB)
+@click.option(_OPT_DB, default=None, envvar="TEMPER_DATABASE_URL", help=_HELP_DB)
 def graph_query(concept: str, depth: int, db: str) -> None:
     """Query related concepts in the knowledge graph."""
     from temper_ai.portfolio.knowledge_graph import KnowledgeQuery

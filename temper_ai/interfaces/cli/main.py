@@ -40,7 +40,6 @@ from temper_ai.interfaces.cli.constants import (
     ENV_VAR_SERVER_URL,
     ERROR_DIR_NOT_FOUND,
     HELP_CONFIG_ROOT,
-    SQLITE_URL_PREFIX,
     YAML_FILE_EXTENSION,
     YAML_GLOB_PATTERN,
 )
@@ -51,7 +50,6 @@ logger = logging.getLogger(__name__)
 
 # Project root for resolving paths
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-DEFAULT_DB_PATH = ".meta-autonomous/observability.db"
 DEFAULT_DASHBOARD_PORT = 8420
 DEFAULT_HOST = "127.0.0.1"  # Secure default: localhost only
 DEFAULT_MAX_WORKERS = 4
@@ -277,16 +275,15 @@ def _import_core_modules(verbose: bool) -> tuple:
         raise SystemExit(1)
 
 
-def _init_database(db_path: str, ensure_database_fn: Any, verbose: bool) -> None:
-    """Create the database directory and ensure schema exists.
+def _init_database(db_url: str, ensure_database_fn: Any, verbose: bool) -> None:
+    """Ensure the database schema exists.
 
     Raises:
-        SystemExit: On filesystem or database errors.
+        SystemExit: On database errors.
     """
     try:
-        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-        ensure_database_fn(f"{SQLITE_URL_PREFIX}{db_path}")
-    except (OSError, PermissionError) as e:
+        ensure_database_fn(db_url)
+    except (OSError, ConnectionError, RuntimeError) as e:
         console.print(f"[red]Database initialization error:[/red] {e}")
         if verbose:
             logger.exception("Failed to initialize database")
@@ -319,13 +316,13 @@ def _create_tracker(event_bus: Any, verbose: bool) -> Any:
 
 
 def _initialize_infrastructure(
-    config_root: str, db_path: str, dashboard_port: Optional[int], verbose: bool
+    config_root: str, db_url: Optional[str], dashboard_port: Optional[int], verbose: bool
 ) -> tuple:
     """Initialize database, registries, tracker, event bus, and optionally dashboard server.
 
     Args:
         config_root: Config directory root
-        db_path: Database file path
+        db_url: Database URL override (None = use centralized config)
         dashboard_port: Optional port for dashboard (None = no dashboard)
         verbose: Enable verbose output
 
@@ -335,8 +332,10 @@ def _initialize_infrastructure(
     Raises:
         SystemExit: On initialization failure
     """
+    from temper_ai.storage.database.engine import get_database_url
+
     ConfigLoader, ExecutionTracker, ToolRegistry = _import_core_modules(verbose)
-    _init_database(db_path, ExecutionTracker.ensure_database, verbose)
+    _init_database(db_url or get_database_url(), ExecutionTracker.ensure_database, verbose)
 
     config_loader = ConfigLoader(config_root=config_root)
     tool_registry = ToolRegistry(auto_discover=True)
@@ -965,7 +964,7 @@ def _run_local_workflow(  # noqa: params — pass-through from Click
     needs_bus = dashboard is not None or events_to != "stderr" or event_format != "text"
     dash_port = dashboard if dashboard is not None else (0 if needs_bus else None)
     config_loader, tool_registry, tracker, event_bus, dash_server = (
-        _initialize_infrastructure(config_root, db or DEFAULT_DB_PATH, dash_port, verbose)
+        _initialize_infrastructure(config_root, db, dash_port, verbose)
     )
     _setup_event_routing(event_bus, events_to, event_format, run_id, verbose)
     engine, compiled = _compile_workflow(wf_config, tool_registry, config_loader, verbose)
@@ -1004,7 +1003,7 @@ def _run_local_workflow(  # noqa: params — pass-through from Click
 @click.option(
     "--output", "-o", type=click.Path(), help="Save results to JSON file"
 )
-@click.option(CLI_OPTION_DB, type=click.Path(), help="Database path override")
+@click.option(CLI_OPTION_DB, default=None, envvar="TEMPER_DATABASE_URL", help="Database URL override")
 @click.option(
     CLI_OPTION_CONFIG_ROOT,
     default=DEFAULT_CONFIG_ROOT,
@@ -1153,7 +1152,7 @@ def _print_run_summary(
 @main.command()
 @click.option("--host", default=DEFAULT_HOST, show_default=True, envvar="TEMPER_HOST", help="Bind address")
 @click.option("--port", default=DEFAULT_DASHBOARD_PORT, show_default=True, help="Dashboard port")
-@click.option("--db", default=None, help="Database path")
+@click.option("--db", default=None, envvar="TEMPER_DATABASE_URL", help="Database URL override")
 def dashboard(host: str, port: int, db: Optional[str]) -> None:
     """Launch dashboard to browse past workflow executions."""
     try:
@@ -1170,13 +1169,13 @@ def dashboard(host: str, port: int, db: Optional[str]) -> None:
     from temper_ai.observability.backends import SQLObservabilityBackend
     from temper_ai.observability.event_bus import ObservabilityEventBus
     from temper_ai.observability.tracker import ExecutionTracker
+    from temper_ai.storage.database.engine import get_database_url
 
     # Init database
-    db_path = db or DEFAULT_DB_PATH
+    db_url = db or get_database_url()
     try:
-        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-        ExecutionTracker.ensure_database(f"{SQLITE_URL_PREFIX}{db_path}")
-    except (OSError, PermissionError) as e:
+        ExecutionTracker.ensure_database(db_url)
+    except (OSError, ConnectionError, RuntimeError) as e:
         console.print(f"[red]Database error:[/red] {e}")
         raise SystemExit(1)
 
@@ -1209,7 +1208,7 @@ def dashboard(host: str, port: int, db: Optional[str]) -> None:
     envvar=ENV_VAR_CONFIG_ROOT,
     help=HELP_CONFIG_ROOT,
 )
-@click.option("--db", default=None, envvar="TEMPER_DB_PATH", help="Database path")
+@click.option("--db", default=None, envvar="TEMPER_DATABASE_URL", help="Database URL override")
 @click.option("--workers", default=DEFAULT_MAX_WORKERS, show_default=True, envvar="TEMPER_MAX_WORKERS", help="Max concurrent workflows")
 @click.option("--reload", "dev_reload", is_flag=True, help="Auto-reload on code changes (dev mode)")
 def serve(host: str, port: int, config_root: str, db: Optional[str], workers: int, dev_reload: bool) -> None:
@@ -1228,13 +1227,13 @@ def serve(host: str, port: int, config_root: str, db: Optional[str], workers: in
     from temper_ai.observability.backends import SQLObservabilityBackend
     from temper_ai.observability.event_bus import ObservabilityEventBus
     from temper_ai.observability.tracker import ExecutionTracker
+    from temper_ai.storage.database.engine import get_database_url
 
     # Init database
-    db_path = db or DEFAULT_DB_PATH
+    db_url = db or get_database_url()
     try:
-        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-        ExecutionTracker.ensure_database(f"{SQLITE_URL_PREFIX}{db_path}")
-    except (OSError, PermissionError) as e:
+        ExecutionTracker.ensure_database(db_url)
+    except (OSError, ConnectionError, RuntimeError) as e:
         console.print(f"[red]Database error:[/red] {e}")
         raise SystemExit(1)
 

@@ -16,7 +16,6 @@ from temper_ai.interfaces.cli.optimize_constants import (
     COMPILE_SUCCESS_MSG,
     CONFIG_LOAD_ERROR_MSG,
     DB_INIT_ERROR_MSG,
-    DEFAULT_OPTIMIZE_DB_PATH,
     DRY_RUN_HELP,
     DSPY_NOT_INSTALLED_MSG,
     INSUFFICIENT_DATA_MSG,
@@ -37,12 +36,9 @@ console = Console()
 def _ensure_database() -> bool:
     """Initialize the database for training data collection."""
     try:
-        from temper_ai.interfaces.cli.constants import SQLITE_URL_PREFIX
         from temper_ai.storage.database.manager import init_database
 
-        db_path = DEFAULT_OPTIMIZE_DB_PATH
-        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-        init_database(f"{SQLITE_URL_PREFIX}{db_path}")
+        init_database()
         return True
     except (ConnectionError, RuntimeError, OSError) as exc:
         console.print(DB_INIT_ERROR_MSG.format(error=exc))

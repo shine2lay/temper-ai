@@ -16,7 +16,6 @@ from temper_ai.memory.constants import (
     PROVIDER_IN_MEMORY,
     PROVIDER_MEM0,
     PROVIDER_PG,
-    PROVIDER_SQLITE,
     SCOPE_SEPARATOR,
 )
 from temper_ai.memory.extractors import extract_procedural_patterns
@@ -41,6 +40,5 @@ __all__ = [
     "PROVIDER_IN_MEMORY",
     "PROVIDER_MEM0",
     "PROVIDER_PG",
-    "PROVIDER_SQLITE",
     "SCOPE_SEPARATOR",
 ]

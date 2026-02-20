@@ -30,18 +30,18 @@ _RECENT_ANALYSIS_RUNS = 5  # noqa: scanner: skip-magic
 
 DEFAULT_LOOKBACK_HOURS = 48
 DEFAULT_PROPOSAL_LIMIT = 20
-DEFAULT_GOALS_DB = "sqlite:///./goals.db"
-_HELP_DB = "Goals database URL"
+_HELP_DB = "Database URL override"
 _OPT_DB = "--db"
 _COL_WIDTH_ID = 16
 _COL_WIDTH_TITLE = 40
 _ID_DISPLAY_LEN = 16
 
 
-def _get_store(db_url: str = DEFAULT_GOALS_DB) -> GoalStore:
+def _get_store(db_url: str | None = None) -> GoalStore:
     """Create a GoalStore instance."""
     from temper_ai.goals.store import GoalStore
-    return GoalStore(database_url=db_url)
+    from temper_ai.storage.database.engine import get_database_url
+    return GoalStore(database_url=db_url or get_database_url())
 
 
 @click.group("goals")
@@ -54,7 +54,7 @@ def goals_group() -> None:
 @click.option("--status", default=None, help="Filter by status")
 @click.option("--product", default=None, help="Filter by product type")
 @click.option("--limit", default=DEFAULT_PROPOSAL_LIMIT, help="Max proposals")
-@click.option(_OPT_DB, default=DEFAULT_GOALS_DB, help=_HELP_DB)
+@click.option(_OPT_DB, default=None, envvar="TEMPER_DATABASE_URL", help=_HELP_DB)
 def list_proposals(
     goal_type: str | None,
     status: str | None,
@@ -94,7 +94,7 @@ def list_proposals(
 
 @goals_group.command("propose")
 @click.option("--lookback", default=DEFAULT_LOOKBACK_HOURS, help="Hours of history to analyze")
-@click.option(_OPT_DB, default=DEFAULT_GOALS_DB, help=_HELP_DB)
+@click.option(_OPT_DB, default=None, envvar="TEMPER_DATABASE_URL", help=_HELP_DB)
 def propose(lookback: int, db: str) -> None:
     """Run analysis and generate goal proposals."""
     from temper_ai.goals.analysis_orchestrator import AnalysisOrchestrator
@@ -117,7 +117,7 @@ def propose(lookback: int, db: str) -> None:
 @click.option("--action", type=click.Choice(["approve", "reject", "defer"]), required=True)
 @click.option(_OPT_REVIEWER, required=True, help=_HELP_REVIEWER)
 @click.option(_OPT_REASON, default=None, help="Review reason")
-@click.option(_OPT_DB, default=DEFAULT_GOALS_DB, help=_HELP_DB)
+@click.option(_OPT_DB, default=None, envvar="TEMPER_DATABASE_URL", help=_HELP_DB)
 def review(proposal_id: str, action: str, reviewer: str, reason: str | None, db: str) -> None:
     """Apply a review decision to a proposal."""
     from temper_ai.goals._schemas import GoalReviewAction
@@ -138,7 +138,7 @@ def review(proposal_id: str, action: str, reviewer: str, reason: str | None, db:
 @click.argument("proposal_id")
 @click.option(_OPT_REVIEWER, required=True, help=_HELP_REVIEWER)
 @click.option(_OPT_REASON, default=None, help="Approval reason")
-@click.option(_OPT_DB, default=DEFAULT_GOALS_DB, help=_HELP_DB)
+@click.option(_OPT_DB, default=None, envvar="TEMPER_DATABASE_URL", help=_HELP_DB)
 def approve(proposal_id: str, reviewer: str, reason: str | None, db: str) -> None:
     """Approve a goal proposal."""
     from temper_ai.goals._schemas import GoalReviewAction
@@ -158,7 +158,7 @@ def approve(proposal_id: str, reviewer: str, reason: str | None, db: str) -> Non
 @click.argument("proposal_id")
 @click.option(_OPT_REVIEWER, required=True, help=_HELP_REVIEWER)
 @click.option(_OPT_REASON, default=None, help="Rejection reason")
-@click.option(_OPT_DB, default=DEFAULT_GOALS_DB, help=_HELP_DB)
+@click.option(_OPT_DB, default=None, envvar="TEMPER_DATABASE_URL", help=_HELP_DB)
 def reject(proposal_id: str, reviewer: str, reason: str | None, db: str) -> None:
     """Reject a goal proposal."""
     from temper_ai.goals._schemas import GoalReviewAction
@@ -175,7 +175,7 @@ def reject(proposal_id: str, reviewer: str, reason: str | None, db: str) -> None
 
 
 @goals_group.command("status")
-@click.option(_OPT_DB, default=DEFAULT_GOALS_DB, help=_HELP_DB)
+@click.option(_OPT_DB, default=None, envvar="TEMPER_DATABASE_URL", help=_HELP_DB)
 def status(db: str) -> None:
     """Show acceptance rate and proposal statistics."""
     from temper_ai.goals.review_workflow import GoalReviewWorkflow

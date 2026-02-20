@@ -26,8 +26,7 @@ _COL_WIDTH_ID = 16
 _COL_WIDTH_DESC = 40
 _ID_DISPLAY_LEN = 16
 _OPT_DB = "--db"
-_HELP_DB = "Experimentation database URL"
-DEFAULT_EXPERIMENT_DB = "sqlite:///./experimentation.db"
+_HELP_DB = "Database URL override"
 
 
 def _get_service() -> ExperimentService:

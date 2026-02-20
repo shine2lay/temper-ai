@@ -13,10 +13,17 @@ from typing import Any, Dict, List
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_LIFECYCLE_DB = "sqlite:///./lifecycle.db"
 DEFAULT_LIFECYCLE_CONFIG_DIR = "configs/lifecycle"
 DEFAULT_LIMIT = 50
 _METHOD_GET = "GET"
+
+
+def _resolve_db_url(db_url: str | None) -> str:
+    """Resolve database URL from argument or centralized config."""
+    if db_url:
+        return db_url
+    from temper_ai.storage.database.engine import get_database_url
+    return get_database_url()
 
 
 def get_lifecycle_routes() -> List[Dict[str, Any]]:
@@ -46,14 +53,14 @@ def get_lifecycle_routes() -> List[Dict[str, Any]]:
 
 
 def handle_list_adaptations(
-    db_url: str = DEFAULT_LIFECYCLE_DB,
+    db_url: str | None = None,
     limit: int = DEFAULT_LIMIT,
 ) -> Dict[str, Any]:
     """List recent lifecycle adaptations."""
     try:
         from temper_ai.lifecycle.store import LifecycleStore
 
-        store = LifecycleStore(database_url=db_url)
+        store = LifecycleStore(database_url=_resolve_db_url(db_url))
         adaptations = store.list_adaptations(limit=limit)
         return {
             "adaptations": [
@@ -75,7 +82,7 @@ def handle_list_adaptations(
 
 
 def handle_list_profiles(
-    db_url: str = DEFAULT_LIFECYCLE_DB,
+    db_url: str | None = None,
     config_dir: str = DEFAULT_LIFECYCLE_CONFIG_DIR,
 ) -> Dict[str, Any]:
     """List all lifecycle profiles."""
@@ -83,7 +90,7 @@ def handle_list_profiles(
         from temper_ai.lifecycle.profiles import ProfileRegistry
         from temper_ai.lifecycle.store import LifecycleStore
 
-        store = LifecycleStore(database_url=db_url)
+        store = LifecycleStore(database_url=_resolve_db_url(db_url))
         registry = ProfileRegistry(
             config_dir=Path(config_dir), store=store
         )
@@ -108,13 +115,13 @@ def handle_list_profiles(
 
 
 def handle_list_experiments(
-    db_url: str = DEFAULT_LIFECYCLE_DB,
+    db_url: str | None = None,
 ) -> Dict[str, Any]:
     """List lifecycle experiment results."""
     try:
         from temper_ai.lifecycle.store import LifecycleStore
 
-        store = LifecycleStore(database_url=db_url)
+        store = LifecycleStore(database_url=_resolve_db_url(db_url))
         adaptations = store.list_adaptations(limit=DEFAULT_LIMIT)
         experiments: Dict[str, list] = {}
         for a in adaptations:
@@ -135,13 +142,13 @@ def handle_list_experiments(
 
 
 def handle_metrics(
-    db_url: str = DEFAULT_LIFECYCLE_DB,
+    db_url: str | None = None,
 ) -> Dict[str, Any]:
     """Get lifecycle adaptation metrics summary."""
     try:
         from temper_ai.lifecycle.store import LifecycleStore
 
-        store = LifecycleStore(database_url=db_url)
+        store = LifecycleStore(database_url=_resolve_db_url(db_url))
         adaptations = store.list_adaptations()
         profiles = store.list_profiles()
 

@@ -18,9 +18,8 @@ from rich.table import Table
 
 console = Console()
 
-DEFAULT_AUTONOMY_DB = "sqlite:///./autonomy.db"
 DEFAULT_HISTORY_LIMIT = 20
-_HELP_DB = "Autonomy database URL"
+_HELP_DB = "Database URL override"
 _OPT_DB = "--db"
 _COL_WIDTH_ID = 12
 _ID_DISPLAY_LEN = 12
@@ -33,10 +32,11 @@ LEVEL_NAMES = {0: "SUPERVISED", 1: "SPOT_CHECKED", 2: "RISK_GATED", 3: "AUTONOMO
 LEVEL_COLORS = {0: "red", 1: "yellow", 2: "cyan", 3: "green", 4: "blue"}
 
 
-def _get_store(db_url: str = DEFAULT_AUTONOMY_DB):  # type: ignore[no-untyped-def]
+def _get_store(db_url: str | None = None):  # type: ignore[no-untyped-def]
     """Create an AutonomyStore instance."""
     from temper_ai.safety.autonomy.store import AutonomyStore
-    return AutonomyStore(database_url=db_url)
+    from temper_ai.storage.database.engine import get_database_url
+    return AutonomyStore(database_url=db_url or get_database_url())
 
 
 def _level_display(level: int) -> str:
@@ -53,7 +53,7 @@ def autonomy_group() -> None:
 
 @autonomy_group.command("status")
 @click.option(_OPT_AGENT, default=None, help="Filter by agent name")
-@click.option(_OPT_DB, default=DEFAULT_AUTONOMY_DB, help=_HELP_DB)
+@click.option(_OPT_DB, default=None, envvar="TEMPER_DATABASE_URL", help=_HELP_DB)
 def status(agent: str | None, db: str) -> None:
     """Show autonomy levels for all agents."""
     store = _get_store(db)
@@ -93,7 +93,7 @@ def status(agent: str | None, db: str) -> None:
 @click.option("--domain", default="general", help=_COL_DOMAIN)
 @click.option("--level", type=int, default=None, help="Target level (0-4)")
 @click.option(_OPT_REASON, default="manual CLI escalation", help="Reason")
-@click.option(_OPT_DB, default=DEFAULT_AUTONOMY_DB, help=_HELP_DB)
+@click.option(_OPT_DB, default=None, envvar="TEMPER_DATABASE_URL", help=_HELP_DB)
 def escalate(agent: str, domain: str, level: int | None, reason: str, db: str) -> None:
     """Manually escalate an agent's autonomy level."""
     from temper_ai.safety.autonomy.manager import AutonomyManager
@@ -118,7 +118,7 @@ def escalate(agent: str, domain: str, level: int | None, reason: str, db: str) -
 @click.option(_OPT_AGENT, required=True, help="Agent name")
 @click.option("--domain", default="general", help=_COL_DOMAIN)
 @click.option(_OPT_REASON, default="manual CLI de-escalation", help="Reason")
-@click.option(_OPT_DB, default=DEFAULT_AUTONOMY_DB, help=_HELP_DB)
+@click.option(_OPT_DB, default=None, envvar="TEMPER_DATABASE_URL", help=_HELP_DB)
 def deescalate(agent: str, domain: str, reason: str, db: str) -> None:
     """Manually de-escalate an agent's autonomy level."""
     from temper_ai.safety.autonomy.manager import AutonomyManager
@@ -139,7 +139,7 @@ def deescalate(agent: str, domain: str, reason: str, db: str) -> None:
 
 @autonomy_group.command("emergency-stop")
 @click.option(_OPT_REASON, required=True, help="Reason for emergency stop")
-@click.option(_OPT_DB, default=DEFAULT_AUTONOMY_DB, help=_HELP_DB)
+@click.option(_OPT_DB, default=None, envvar="TEMPER_DATABASE_URL", help=_HELP_DB)
 def emergency_stop(reason: str, db: str) -> None:
     """Activate emergency stop — halt all autonomous operations."""
     from temper_ai.safety.autonomy.emergency_stop import EmergencyStopController
@@ -154,7 +154,7 @@ def emergency_stop(reason: str, db: str) -> None:
 
 @autonomy_group.command("resume")
 @click.option(_OPT_REASON, required=True, help="Reason for resuming")
-@click.option(_OPT_DB, default=DEFAULT_AUTONOMY_DB, help=_HELP_DB)
+@click.option(_OPT_DB, default=None, envvar="TEMPER_DATABASE_URL", help=_HELP_DB)
 def resume(reason: str, db: str) -> None:
     """Deactivate emergency stop — resume autonomous operations."""
     from temper_ai.safety.autonomy.emergency_stop import EmergencyStopController
@@ -172,7 +172,7 @@ def resume(reason: str, db: str) -> None:
 
 @autonomy_group.command("budget")
 @click.option("--scope", default=None, help="Budget scope (agent name)")
-@click.option(_OPT_DB, default=DEFAULT_AUTONOMY_DB, help=_HELP_DB)
+@click.option(_OPT_DB, default=None, envvar="TEMPER_DATABASE_URL", help=_HELP_DB)
 def budget(scope: str | None, db: str) -> None:
     """Show budget status."""
     from temper_ai.safety.autonomy.budget_enforcer import BudgetEnforcer
@@ -238,7 +238,7 @@ def _display_all_budgets(store) -> None:  # type: ignore[no-untyped-def]
 @autonomy_group.command("history")
 @click.option(_OPT_AGENT, default=None, help="Filter by agent name")
 @click.option("--limit", default=DEFAULT_HISTORY_LIMIT, help="Max transitions to show")
-@click.option(_OPT_DB, default=DEFAULT_AUTONOMY_DB, help=_HELP_DB)
+@click.option(_OPT_DB, default=None, envvar="TEMPER_DATABASE_URL", help=_HELP_DB)
 def history(agent: str | None, limit: int, db: str) -> None:
     """Show autonomy transition history."""
     store = _get_store(db)

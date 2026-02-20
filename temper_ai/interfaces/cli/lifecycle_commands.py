@@ -24,11 +24,10 @@ from rich.table import Table
 
 console = Console()
 
-DEFAULT_LIFECYCLE_DB = "sqlite:///./lifecycle.db"
 DEFAULT_LIFECYCLE_CONFIG_DIR = "configs/lifecycle"
 DEFAULT_HISTORY_LIMIT = 20
 _OPT_DB = "--db"
-_HELP_DB = "Lifecycle database URL"
+_HELP_DB = "Database URL override"
 _OPT_CONFIG_DIR = "--config-dir"
 _HELP_CONFIG_DIR = "Lifecycle config directory"
 _ID_DISPLAY_LEN = 12
@@ -49,7 +48,7 @@ def profiles_group() -> None:
 
 
 @profiles_group.command("list")
-@click.option(_OPT_DB, default=DEFAULT_LIFECYCLE_DB, help=_HELP_DB)
+@click.option(_OPT_DB, default=None, envvar="TEMPER_DATABASE_URL", help=_HELP_DB)
 @click.option(
     _OPT_CONFIG_DIR,
     default=DEFAULT_LIFECYCLE_CONFIG_DIR,
@@ -86,7 +85,7 @@ def profiles_list(db: str, config_dir: str) -> None:
 
 @profiles_group.command("show")
 @click.argument("name")
-@click.option(_OPT_DB, default=DEFAULT_LIFECYCLE_DB, help=_HELP_DB)
+@click.option(_OPT_DB, default=None, envvar="TEMPER_DATABASE_URL", help=_HELP_DB)
 @click.option(
     _OPT_CONFIG_DIR,
     default=DEFAULT_LIFECYCLE_CONFIG_DIR,
@@ -159,7 +158,7 @@ def classify(workflow: str, input_file: Optional[str]) -> None:
     type=click.Path(exists=True),
     help="YAML input file",
 )
-@click.option(_OPT_DB, default=DEFAULT_LIFECYCLE_DB, help=_HELP_DB)
+@click.option(_OPT_DB, default=None, envvar="TEMPER_DATABASE_URL", help=_HELP_DB)
 @click.option(
     _OPT_CONFIG_DIR,
     default=DEFAULT_LIFECYCLE_CONFIG_DIR,
@@ -181,7 +180,8 @@ def preview(
     wf = workflow_config.get("workflow", {})
     original_stages = [s.get("name", "") for s in wf.get("stages", [])]
 
-    store = LifecycleStore(database_url=db)
+    url = _get_db_url(db)
+    store = LifecycleStore(database_url=url)
     registry = _get_registry(config_dir, db)
     classifier = ProjectClassifier()
     adapter = LifecycleAdapter(
@@ -221,7 +221,7 @@ def preview(
 
 
 @lifecycle_group.command("history")
-@click.option(_OPT_DB, default=DEFAULT_LIFECYCLE_DB, help=_HELP_DB)
+@click.option(_OPT_DB, default=None, envvar="TEMPER_DATABASE_URL", help=_HELP_DB)
 @click.option(
     "--limit", default=DEFAULT_HISTORY_LIMIT, help="Max records to show"
 )
@@ -229,7 +229,8 @@ def history(db: str, limit: int) -> None:
     """Show recent adaptation records."""
     from temper_ai.lifecycle.store import LifecycleStore
 
-    store = LifecycleStore(database_url=db)
+    url = _get_db_url(db)
+    store = LifecycleStore(database_url=url)
     records = store.list_adaptations(limit=limit)
 
     if not records:
@@ -259,7 +260,7 @@ def history(db: str, limit: int) -> None:
 
 
 @lifecycle_group.command("check")
-@click.option(_OPT_DB, default=DEFAULT_LIFECYCLE_DB, help=_HELP_DB)
+@click.option(_OPT_DB, default=None, envvar="TEMPER_DATABASE_URL", help=_HELP_DB)
 @click.option(
     _OPT_CONFIG_DIR,
     default=DEFAULT_LIFECYCLE_CONFIG_DIR,
@@ -271,8 +272,9 @@ def check(db: str, config_dir: str) -> None:
     from temper_ai.lifecycle.rollback import RollbackMonitor
     from temper_ai.lifecycle.store import LifecycleStore
 
-    store = LifecycleStore(database_url=db)
-    history_analyzer = HistoryAnalyzer(db_url=db)
+    url = _get_db_url(db)
+    store = LifecycleStore(database_url=url)
+    history_analyzer = HistoryAnalyzer(db_url=url)
     monitor = RollbackMonitor(store=store, history=history_analyzer)
 
     registry = _get_registry(config_dir, db)
@@ -299,12 +301,19 @@ def check(db: str, config_dir: str) -> None:
 # ── Helpers ──────────────────────────────────────────────────────────
 
 
-def _get_registry(config_dir: str, db: str) -> "ProfileRegistry":
+def _get_db_url(db: str | None) -> str:
+    """Resolve database URL from CLI arg or centralized config."""
+    from temper_ai.storage.database.engine import get_database_url
+    return db or get_database_url()
+
+
+def _get_registry(config_dir: str, db: str | None) -> "ProfileRegistry":
     """Create a ProfileRegistry instance."""
     from temper_ai.lifecycle.profiles import ProfileRegistry
     from temper_ai.lifecycle.store import LifecycleStore
 
-    store = LifecycleStore(database_url=db)
+    url = _get_db_url(db)
+    store = LifecycleStore(database_url=url)
     return ProfileRegistry(config_dir=Path(config_dir), store=store)
 
 

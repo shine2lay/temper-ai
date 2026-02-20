@@ -39,8 +39,6 @@ _HELP_TENANT = "Tenant ID"
 _HELP_WORKFLOW = "Workflow name"
 _HELP_AGENT = "Agent name"
 _HELP_PROVIDER = "Memory provider"
-_OPT_DB_PATH = "--db-path"
-_HELP_DB_PATH = "SQLite database file path (sqlite provider only)"
 
 # Table column widths
 _COL_WIDTH_ID = 12
@@ -49,7 +47,6 @@ _COL_WIDTH_CONTENT = 80
 
 def _build_service_and_scope(
     provider: str, tenant: str, workflow: str, agent: str,
-    db_path: Optional[str] = None,
 ) -> tuple:
     """Create a MemoryService and MemoryScope from CLI args.
 
@@ -58,10 +55,7 @@ def _build_service_and_scope(
     """
     from temper_ai.memory.service import MemoryService
 
-    provider_config = None
-    if db_path and provider == "sqlite":
-        provider_config = {"db_path": db_path}
-    service = MemoryService(provider_name=provider, provider_config=provider_config)
+    service = MemoryService(provider_name=provider)
     scope = service.build_scope(
         tenant_id=tenant,
         workflow_name=workflow,
@@ -86,10 +80,9 @@ def memory_group() -> None:
     help="Filter by memory type",
 )
 @click.option(_OPT_PROVIDER, default=DEFAULT_PROVIDER, show_default=True, help=_HELP_PROVIDER)
-@click.option(_OPT_DB_PATH, default=None, help=_HELP_DB_PATH)
-def list_memories(tenant: str, workflow: str, agent: str, memory_type: str, provider: str, db_path: Optional[str]) -> None:
+def list_memories(tenant: str, workflow: str, agent: str, memory_type: str, provider: str) -> None:
     """List stored memories for a scope."""
-    service, scope = _build_service_and_scope(provider, tenant, workflow, agent, db_path=db_path)
+    service, scope = _build_service_and_scope(provider, tenant, workflow, agent)
     entries = service.list_memories(scope, memory_type=memory_type)
 
     if not entries:
@@ -125,13 +118,12 @@ def list_memories(tenant: str, workflow: str, agent: str, memory_type: str, prov
 )
 @click.option("--content", default=None, help="Memory content (interactive if omitted)")
 @click.option(_OPT_PROVIDER, default=DEFAULT_PROVIDER, show_default=True, help=_HELP_PROVIDER)
-@click.option(_OPT_DB_PATH, default=None, help=_HELP_DB_PATH)
-def add_memory(tenant: str, workflow: str, agent: str, memory_type: str, content: Optional[str], provider: str, db_path: Optional[str]) -> None:
+def add_memory(tenant: str, workflow: str, agent: str, memory_type: str, content: Optional[str], provider: str) -> None:
     """Add a memory to the store."""
     if content is None:
         content = click.prompt("Enter memory content")
 
-    service, scope = _build_service_and_scope(provider, tenant, workflow, agent, db_path=db_path)
+    service, scope = _build_service_and_scope(provider, tenant, workflow, agent)
     memory_id = _store_by_type(service, scope, content, memory_type)
 
     console.print(f"[green]Memory stored[/green] (id={memory_id[:_COL_WIDTH_ID]})")
@@ -153,10 +145,9 @@ def _store_by_type(service: Any, scope: Any, content: str, memory_type: str) -> 
 @click.option("--query", required=True, help="Search query")
 @click.option("--limit", default=DEFAULT_SEARCH_LIMIT, show_default=True, type=int, help="Max results")
 @click.option(_OPT_PROVIDER, default=DEFAULT_PROVIDER, show_default=True, help=_HELP_PROVIDER)
-@click.option(_OPT_DB_PATH, default=None, help=_HELP_DB_PATH)
-def search_memories(tenant: str, workflow: str, agent: str, query: str, limit: int, provider: str, db_path: Optional[str]) -> None:
+def search_memories(tenant: str, workflow: str, agent: str, query: str, limit: int, provider: str) -> None:
     """Search memories by query."""
-    service, scope = _build_service_and_scope(provider, tenant, workflow, agent, db_path=db_path)
+    service, scope = _build_service_and_scope(provider, tenant, workflow, agent)
     entries = service.search(scope=scope, query=query, limit=limit)
 
     if not entries:
@@ -186,10 +177,9 @@ def search_memories(tenant: str, workflow: str, agent: str, query: str, limit: i
 @click.option(_OPT_AGENT, default="", help=_HELP_AGENT)
 @click.option("--confirm", is_flag=True, required=True, help="Confirm deletion")
 @click.option(_OPT_PROVIDER, default=DEFAULT_PROVIDER, show_default=True, help=_HELP_PROVIDER)
-@click.option(_OPT_DB_PATH, default=None, help=_HELP_DB_PATH)
-def clear_memories(tenant: str, workflow: str, agent: str, confirm: bool, provider: str, db_path: Optional[str]) -> None:
+def clear_memories(tenant: str, workflow: str, agent: str, confirm: bool, provider: str) -> None:
     """Delete all memories for a scope."""
-    service, scope = _build_service_and_scope(provider, tenant, workflow, agent, db_path=db_path)
+    service, scope = _build_service_and_scope(provider, tenant, workflow, agent)
     count = service.clear_memories(scope)
     console.print(f"[green]Cleared {count} memories[/green] (scope: {scope.scope_key})")
 
@@ -197,8 +187,7 @@ def clear_memories(tenant: str, workflow: str, agent: str, confirm: bool, provid
 @memory_group.command("seed")
 @click.argument("seed_file", type=click.Path(exists=True))
 @click.option(_OPT_PROVIDER, default=DEFAULT_PROVIDER, show_default=True, help=_HELP_PROVIDER)
-@click.option(_OPT_DB_PATH, default=None, help=_HELP_DB_PATH)
-def seed_memories(seed_file: str, provider: str, db_path: Optional[str]) -> None:
+def seed_memories(seed_file: str, provider: str) -> None:
     """Bulk load memories from a YAML seed file."""
     from temper_ai.memory.service import MemoryService
 
@@ -209,10 +198,7 @@ def seed_memories(seed_file: str, provider: str, db_path: Optional[str]) -> None
         console.print("[red]Error:[/red] Seed file must contain a 'memories' key")
         raise SystemExit(1)
 
-    provider_config = None
-    if db_path and provider == "sqlite":
-        provider_config = {"db_path": db_path}
-    service = MemoryService(provider_name=provider, provider_config=provider_config)
+    service = MemoryService(provider_name=provider)
     count = 0
 
     for item in data["memories"]:

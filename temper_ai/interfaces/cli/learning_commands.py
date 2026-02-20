@@ -24,18 +24,18 @@ console = Console()
 DEFAULT_LOOKBACK_HOURS = 24
 DEFAULT_PATTERN_LIMIT = 20
 DEFAULT_CONFIDENCE_THRESHOLD = 0.7
-DEFAULT_LEARNING_DB = "sqlite:///./learning.db"
-_HELP_DB = "Learning database URL"
+_HELP_DB = "Database URL override"
 _OPT_DB = "--db"
 _COL_WIDTH_ID = 12
 _COL_WIDTH_RATIONALE = 40
 _ID_DISPLAY_LEN = 12
 
 
-def _get_store(db_url: str = DEFAULT_LEARNING_DB) -> LearningStore:
+def _get_store(db_url: str | None = None) -> LearningStore:
     """Create a LearningStore instance."""
     from temper_ai.learning.store import LearningStore
-    return LearningStore(database_url=db_url)
+    from temper_ai.storage.database.engine import get_database_url
+    return LearningStore(database_url=db_url or get_database_url())
 
 
 @click.group("learning")
@@ -45,7 +45,7 @@ def learning_group() -> None:
 
 @learning_group.command("mine")
 @click.option("--lookback", default=DEFAULT_LOOKBACK_HOURS, help="Hours of history to analyze")
-@click.option(_OPT_DB, default=DEFAULT_LEARNING_DB, help=_HELP_DB)
+@click.option(_OPT_DB, default=None, envvar="TEMPER_DATABASE_URL", help=_HELP_DB)
 def mine(lookback: int, db: str) -> None:
     """Mine patterns from execution history."""
     from temper_ai.learning.orchestrator import MiningOrchestrator
@@ -68,7 +68,7 @@ def mine(lookback: int, db: str) -> None:
 @learning_group.command("patterns")
 @click.option("--type", "pattern_type", default=None, help="Filter by pattern type")
 @click.option("--limit", default=DEFAULT_PATTERN_LIMIT, help="Max patterns to show")
-@click.option(_OPT_DB, default=DEFAULT_LEARNING_DB, help=_HELP_DB)
+@click.option(_OPT_DB, default=None, envvar="TEMPER_DATABASE_URL", help=_HELP_DB)
 def patterns(pattern_type: str | None, limit: int, db: str) -> None:
     """List learned patterns."""
     store = _get_store(db)
@@ -94,7 +94,7 @@ def patterns(pattern_type: str | None, limit: int, db: str) -> None:
 
 @learning_group.command("recommend")
 @click.option("--min-confidence", default=DEFAULT_CONFIDENCE_THRESHOLD, help="Min confidence threshold")
-@click.option(_OPT_DB, default=DEFAULT_LEARNING_DB, help=_HELP_DB)
+@click.option(_OPT_DB, default=None, envvar="TEMPER_DATABASE_URL", help=_HELP_DB)
 def recommend(min_confidence: float, db: str) -> None:
     """Generate recommendations from learned patterns."""
     from temper_ai.learning.recommender import RecommendationEngine
@@ -125,7 +125,7 @@ def recommend(min_confidence: float, db: str) -> None:
 @learning_group.command("tune")
 @click.option("--apply", "apply_ids", multiple=True, help="Recommendation IDs to apply")
 @click.option("--preview", is_flag=True, help="Preview changes without applying")
-@click.option(_OPT_DB, default=DEFAULT_LEARNING_DB, help=_HELP_DB)
+@click.option(_OPT_DB, default=None, envvar="TEMPER_DATABASE_URL", help=_HELP_DB)
 def tune(apply_ids: tuple, preview: bool, db: str) -> None:
     """Preview or apply auto-tune recommendations."""
     from temper_ai.learning.auto_tune import AutoTuneEngine
@@ -153,7 +153,7 @@ def tune(apply_ids: tuple, preview: bool, db: str) -> None:
 
 
 @learning_group.command("stats")
-@click.option(_OPT_DB, default=DEFAULT_LEARNING_DB, help=_HELP_DB)
+@click.option(_OPT_DB, default=None, envvar="TEMPER_DATABASE_URL", help=_HELP_DB)
 def stats(db: str) -> None:
     """Show mining run history and convergence status."""
     from temper_ai.learning.convergence import ConvergenceDetector

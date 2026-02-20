@@ -30,32 +30,29 @@ def sample_config(tmp_path):
 class TestOptimizeCLI:
 
     def test_compile_dry_run(self, runner, sample_config):
+        mock_collector = MagicMock()
+        mock_collector.collect_examples.return_value = [
+            MagicMock() for _ in range(15)
+        ]
         with patch(
-            "temper_ai.interfaces.cli.optimize_commands.TrainingDataCollector",
-            create=True,
-        ) as MockCollector:
-            mock_collector = MagicMock()
-            mock_collector.collect_examples.return_value = [
-                MagicMock() for _ in range(15)
-            ]
-            with patch(
-                "temper_ai.interfaces.cli.optimize_commands._show_dry_run_stats"
-            ) as mock_stats:
-                # Patch the import inside compile_cmd
-                with patch.dict(
-                    "sys.modules",
-                    {
-                        "temper_ai.optimization.data_collector": MagicMock(
-                            TrainingDataCollector=lambda: mock_collector,
-                        ),
-                        "temper_ai.optimization._schemas": MagicMock(),
-                    },
-                ):
-                    result = runner.invoke(
-                        optimize_group,
-                        ["compile", sample_config, "--dry-run"],
-                    )
-                    assert result.exit_code == 0
+            "temper_ai.interfaces.cli.optimize_commands._ensure_database",
+            return_value=True,
+        ), patch(
+            "temper_ai.interfaces.cli.optimize_commands._show_dry_run_stats"
+        ), patch.dict(
+            "sys.modules",
+            {
+                "temper_ai.optimization.data_collector": MagicMock(
+                    TrainingDataCollector=lambda: mock_collector,
+                ),
+                "temper_ai.optimization._schemas": MagicMock(),
+            },
+        ):
+            result = runner.invoke(
+                optimize_group,
+                ["compile", sample_config, "--dry-run"],
+            )
+            assert result.exit_code == 0
 
     def test_list_no_programs(self, runner):
         with patch(
@@ -160,7 +157,10 @@ class TestOptimizeCLI:
         mock_collector = MagicMock()
         mock_collector.collect_examples.return_value = [MagicMock()]  # Only 1
 
-        with patch.dict(
+        with patch(
+            "temper_ai.interfaces.cli.optimize_commands._ensure_database",
+            return_value=True,
+        ), patch.dict(
             "sys.modules",
             {
                 "temper_ai.optimization.data_collector": MagicMock(

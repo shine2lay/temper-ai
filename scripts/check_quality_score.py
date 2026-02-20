@@ -34,9 +34,15 @@ def main() -> None:
         print(f"Scanner failed:\n{result.stderr}", file=sys.stderr)
         sys.exit(1)
 
-    data = json.loads(result.stdout)
-    score = data["deterministic_score"]["score"]
-    grade = data["deterministic_score"]["grade"]
+    try:
+        data = json.loads(result.stdout)
+        score = data["deterministic_score"]["score"]
+        grade = data["deterministic_score"]["grade"]
+    except (json.JSONDecodeError, KeyError) as exc:
+        print(f"Failed to parse scanner output: {exc}", file=sys.stderr)
+        if result.stderr:
+            print(f"stderr:\n{result.stderr}", file=sys.stderr)
+        sys.exit(1)
 
     print(f"Quality score: {score}/100 ({grade})")
 

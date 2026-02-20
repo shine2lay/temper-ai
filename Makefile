@@ -4,6 +4,7 @@
 PYTEST_CORE_DIRS := tests/test_workflow/ tests/test_stage/ tests/test_agent/ tests/test_safety/
 PYTEST_EXCLUDE := --ignore=tests/property --ignore=tests/self_improvement --ignore=tests/benchmarks --ignore=tests/test_benchmarks
 SRC := temper_ai/
+MIN_SCORE ?= 90
 
 ## lint: Run ruff check + black --check
 lint:
@@ -33,7 +34,7 @@ coverage:
 
 ## quality: Run architecture scanner with score gate
 quality:
-	python scripts/check_quality_score.py --min-score 90
+	python scripts/check_quality_score.py --min-score $(MIN_SCORE)
 
 ## security: Run bandit security scan
 security:

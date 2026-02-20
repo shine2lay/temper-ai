@@ -67,10 +67,13 @@ class AgentFactory:
 
         with cls._lock:
             if agent_type not in cls._agent_types:
-                raise ValueError(
-                    f"Unknown agent type: '{agent_type}'. "
-                    f"Supported types: {list(cls._agent_types.keys())}"
-                )
+                # Try plugin registry before raising
+                from temper_ai.plugins.registry import ensure_plugin_registered
+                if not ensure_plugin_registered(agent_type):
+                    raise ValueError(
+                        f"Unknown agent type: '{agent_type}'. "
+                        f"Supported types: {list(cls._agent_types.keys())}"
+                    )
             agent_class = cls._agent_types[agent_type]
 
         return agent_class(config)

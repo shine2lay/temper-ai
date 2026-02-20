@@ -2082,9 +2082,11 @@ try:
 except ImportError:
     pass  # dspy extra not installed
 
-from temper_ai.interfaces.cli.plugin_commands import plugin_group  # noqa: E402
-
-main.add_command(plugin_group)
+try:
+    from temper_ai.interfaces.cli.plugin_commands import plugin_group  # noqa: E402
+    main.add_command(plugin_group)
+except ImportError:
+    pass  # plugin commands unavailable
 
 
 if __name__ == "__main__":

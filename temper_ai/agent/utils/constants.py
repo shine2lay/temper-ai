@@ -59,3 +59,12 @@ ENV_VAR_VIRTUAL_ENV = "VIRTUAL_ENV"
 AGENT_TYPE_STANDARD = "standard"
 AGENT_TYPE_SCRIPT = "script"
 AGENT_TYPE_STATIC_CHECKER = "static_checker"
+
+# ============================================================================
+# Plugin Agent Types
+# ============================================================================
+
+AGENT_TYPE_CREWAI = "crewai"
+AGENT_TYPE_LANGGRAPH_PLUGIN = "langgraph"
+AGENT_TYPE_OPENAI_AGENTS = "openai_agents"
+AGENT_TYPE_AUTOGEN = "autogen"

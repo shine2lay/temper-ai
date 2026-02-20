@@ -376,7 +376,7 @@ class AgentConfigInner(BaseModel):
         if self.prompt_optimization is not None and isinstance(
             self.prompt_optimization, dict
         ):
-            from temper_ai.optimization._schemas import PromptOptimizationConfig
+            from temper_ai.optimization.dspy._schemas import PromptOptimizationConfig
             self.prompt_optimization = PromptOptimizationConfig(
                 **self.prompt_optimization
             )

@@ -6,9 +6,9 @@ import json
 import logging
 from typing import Any, Dict, Optional, Tuple
 
-from temper_ai.improvement._schemas import EvaluationResult, OptimizationResult
-from temper_ai.improvement.constants import DEFAULT_MAX_ITERATIONS
-from temper_ai.improvement.protocols import EvaluatorProtocol
+from temper_ai.optimization._schemas import EvaluationResult, OptimizationResult
+from temper_ai.optimization.engine_constants import DEFAULT_MAX_ITERATIONS
+from temper_ai.optimization.protocols import EvaluatorProtocol
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +88,7 @@ class RefinementOptimizer:
         config: Dict[str, Any],
     ) -> OptimizationResult:
         """Run refinement WITH experiment tracking."""
-        from temper_ai.improvement._experiment_helpers import (
+        from temper_ai.optimization._experiment_helpers import (
             create_refinement_experiment,
             finalize_experiment,
         )
@@ -133,7 +133,7 @@ class RefinementOptimizer:
         experiment_id: str,
     ) -> Tuple[Dict[str, Any], EvaluationResult, int]:
         """Run and track baseline execution."""
-        from temper_ai.improvement._experiment_helpers import (
+        from temper_ai.optimization._experiment_helpers import (
             create_workflow_id,
             track_run_result,
         )
@@ -158,7 +158,7 @@ class RefinementOptimizer:
         max_iterations: int,
     ) -> Tuple[Dict[str, Any], EvaluationResult, int]:
         """Run and track refinement iterations."""
-        from temper_ai.improvement._experiment_helpers import (
+        from temper_ai.optimization._experiment_helpers import (
             create_workflow_id,
             track_run_result,
         )

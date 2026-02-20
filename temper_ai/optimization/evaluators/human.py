@@ -7,8 +7,8 @@ from typing import Any, Dict, Optional
 
 import click
 
-from temper_ai.improvement._schemas import EvaluationResult
-from temper_ai.improvement.constants import FIRST_BETTER, MAX_SCORE, MIN_SCORE, SECOND_BETTER, TIE
+from temper_ai.optimization._schemas import EvaluationResult
+from temper_ai.optimization.engine_constants import FIRST_BETTER, MAX_SCORE, MIN_SCORE, SECOND_BETTER, TIE
 
 
 class HumanEvaluator:

@@ -5,9 +5,9 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Optional
 
-from temper_ai.improvement._schemas import OptimizationResult
-from temper_ai.improvement.constants import DEFAULT_RUNS
-from temper_ai.improvement.protocols import EvaluatorProtocol
+from temper_ai.optimization._schemas import OptimizationResult
+from temper_ai.optimization.engine_constants import DEFAULT_RUNS
+from temper_ai.optimization.protocols import EvaluatorProtocol
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +75,7 @@ class SelectionOptimizer:
         config: Dict[str, Any],
     ) -> OptimizationResult:
         """Run selection WITH experiment tracking."""
-        from temper_ai.improvement._experiment_helpers import (
+        from temper_ai.optimization._experiment_helpers import (
             create_selection_experiment,
             create_workflow_id,
             finalize_experiment,

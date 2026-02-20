@@ -24,6 +24,7 @@ EVALUATOR_HUMAN = "human"
 OPTIMIZER_REFINEMENT = "refinement"
 OPTIMIZER_SELECTION = "selection"
 OPTIMIZER_TUNING = "tuning"
+OPTIMIZER_PROMPT = "prompt"
 
 # Check methods
 CHECK_METHOD_PROGRAMMATIC = "programmatic"

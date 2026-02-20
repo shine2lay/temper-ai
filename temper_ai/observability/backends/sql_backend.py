@@ -279,6 +279,8 @@ class SQLObservabilityBackend(SQLDelegatedMethodsMixin, ObservabilityBackend, Re
         metrics: Optional[AgentOutputData] = None, **kwargs: Any,
     ) -> None:
         """Set agent output data and metrics."""
+        from temper_ai.observability._quality_scorer import compute_quality_score
+
         if metrics is None and kwargs:
             metrics = AgentOutputData(**kwargs)
         with get_session() as session:
@@ -286,6 +288,10 @@ class SQLObservabilityBackend(SQLDelegatedMethodsMixin, ObservabilityBackend, Re
             agent = session.exec(statement).first()
             if agent:
                 agent.output_data = output_data
+                agent.output_quality_score = compute_quality_score(
+                    status=agent.status or "",
+                    output_data=output_data,
+                )
                 if metrics:
                     agent.reasoning = metrics.reasoning
                     agent.confidence_score = metrics.confidence_score

@@ -5,13 +5,13 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Optional
 
-from temper_ai.improvement._schemas import (
+from temper_ai.optimization._schemas import (
     EvaluationResult,
     OptimizationConfig,
     OptimizationResult,
     PipelineStepConfig,
 )
-from temper_ai.improvement.registry import OptimizationRegistry
+from temper_ai.optimization.registry import OptimizationRegistry
 
 logger = logging.getLogger(__name__)
 

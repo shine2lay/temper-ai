@@ -4,16 +4,45 @@ import logging
 import uuid
 from typing import Any, Callable, List, Optional
 
-from temper_ai.optimization._schemas import (
+from temper_ai.optimization.dspy._schemas import (
     CompilationResult,
     PromptOptimizationConfig,
     TrainingExample,
 )
-from temper_ai.optimization.constants import TRAIN_SPLIT_RATIO
+from temper_ai.optimization.dspy.constants import TRAIN_SPLIT_RATIO
 
 _UUID_SHORT_LENGTH = 8
+FUZZY_THRESHOLD = 0.5
 
 logger = logging.getLogger(__name__)
+
+
+def _exact_match_metric(
+    example: Any, prediction: Any, trace: Any = None,
+) -> bool:
+    """Return True if prediction output matches example output exactly."""
+    return getattr(prediction, "output", "") == getattr(example, "output", "")
+
+
+def _contains_metric(
+    example: Any, prediction: Any, trace: Any = None,
+) -> bool:
+    """Return True if expected output is a substring of predicted output."""
+    expected = str(getattr(example, "output", ""))
+    actual = str(getattr(prediction, "output", ""))
+    return expected in actual
+
+
+def _fuzzy_metric(
+    example: Any, prediction: Any, trace: Any = None,
+) -> bool:
+    """Return True if token overlap ratio >= threshold."""
+    expected = set(str(getattr(example, "output", "")).lower().split())
+    actual = set(str(getattr(prediction, "output", "")).lower().split())
+    if not expected:
+        return not actual
+    overlap = len(expected & actual) / len(expected | actual)
+    return overlap >= FUZZY_THRESHOLD
 
 
 class DSPyCompiler:
@@ -30,7 +59,7 @@ class DSPyCompiler:
         base_url: Optional[str] = None,
     ) -> CompilationResult:
         """Compile a DSPy program using the configured optimizer."""
-        from temper_ai.optimization._helpers import (
+        from temper_ai.optimization.dspy._helpers import (
             configure_dspy_lm,
             ensure_dspy_available,
             examples_to_dspy,
@@ -88,11 +117,18 @@ class DSPyCompiler:
 
     @staticmethod
     def _get_metric(metric_name: Optional[str]) -> Callable:
-        """Return the metric function to use for optimization."""
-        def default_metric(example: Any, prediction: Any, trace: Any = None) -> bool:
-            """Return True if prediction output matches example output."""
-            return getattr(prediction, "output", "") == getattr(example, "output", "")
-        return default_metric
+        """Return the metric function for the given metric name.
+
+        Supported metrics:
+            - "exact_match" (default): output must exactly match expected
+            - "contains": expected must be a substring of output
+            - "fuzzy": token overlap ratio >= 0.5
+        """
+        if metric_name == "contains":
+            return _contains_metric
+        if metric_name == "fuzzy":
+            return _fuzzy_metric
+        return _exact_match_metric
 
     @staticmethod
     def _evaluate(program: Any, dataset: list, metric_fn: Callable) -> Optional[float]:

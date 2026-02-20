@@ -11,6 +11,8 @@ from temper_ai.lifecycle._schemas import LifecycleProfile
 
 logger = logging.getLogger(__name__)
 
+VARIANT_CONTROL = "control"
+
 
 class LifecycleExperimenter:
     """A/B testing for lifecycle adaptation profiles.
@@ -21,6 +23,23 @@ class LifecycleExperimenter:
 
     def __init__(self, experiment_service: Any) -> None:
         self._service = experiment_service
+
+    def _resolve_variant_name(self, experiment_id: str, variant_id: str) -> str:
+        """Return the human-readable name for a variant_id.
+
+        Looks up the experiment's variants list to find the matching name.
+        Falls back to variant_id if the experiment or variant cannot be loaded.
+        """
+        try:
+            experiment = self._service.get_experiment(experiment_id)
+            if experiment is None:
+                return variant_id
+            for variant in getattr(experiment, "variants", []):
+                if variant.id == variant_id:
+                    return variant.name
+        except Exception:  # noqa: BLE001 -- best-effort lookup
+            pass
+        return variant_id
 
     def get_adapted_profile(
         self,
@@ -45,8 +64,10 @@ class LifecycleExperimenter:
             if assignment is None:
                 return None
 
-            variant_name = assignment.variant_name
-            if variant_name == "control":
+            variant_name = self._resolve_variant_name(
+                experiment_id, assignment.variant_id
+            )
+            if variant_name == VARIANT_CONTROL:
                 logger.info(
                     "Experiment %s: assigned control (no adaptation)",
                     experiment_id,
@@ -89,9 +110,8 @@ class LifecycleExperimenter:
             metrics: Dict of metric_name -> value (e.g., duration_seconds).
         """
         try:
-            self._service.record_metric(
+            self._service.track_execution_complete(
                 workflow_id,
-                experiment_id,
                 metrics,
             )
             logger.info(

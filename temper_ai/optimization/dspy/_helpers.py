@@ -3,8 +3,8 @@
 import logging
 from typing import Any, List, Optional
 
-from temper_ai.optimization._schemas import TrainingExample
-from temper_ai.optimization.constants import INSTALL_HINT
+from temper_ai.optimization.dspy._schemas import TrainingExample
+from temper_ai.optimization.dspy.constants import INSTALL_HINT
 
 logger = logging.getLogger(__name__)
 

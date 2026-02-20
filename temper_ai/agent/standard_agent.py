@@ -374,8 +374,8 @@ class StandardAgent(BaseAgent):
         if opt_cfg is None or not getattr(opt_cfg, "enabled", False):
             return template
         try:
-            from temper_ai.optimization.prompt_adapter import DSPyPromptAdapter
-            from temper_ai.optimization.program_store import CompiledProgramStore
+            from temper_ai.optimization.dspy.prompt_adapter import DSPyPromptAdapter
+            from temper_ai.optimization.dspy.program_store import CompiledProgramStore
 
             store = CompiledProgramStore(store_dir=opt_cfg.program_store_dir)
             adapter = DSPyPromptAdapter(store=store)

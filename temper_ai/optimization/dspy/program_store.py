@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from temper_ai.optimization.constants import DEFAULT_PROGRAM_STORE_DIR
+from temper_ai.optimization.dspy.constants import DEFAULT_PROGRAM_STORE_DIR
 
 logger = logging.getLogger(__name__)
 

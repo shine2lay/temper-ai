@@ -5,9 +5,9 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
-from temper_ai.improvement._schemas import OptimizationResult
-from temper_ai.improvement.constants import DEFAULT_RUNS
-from temper_ai.improvement.protocols import EvaluatorProtocol
+from temper_ai.optimization._schemas import OptimizationResult
+from temper_ai.optimization.engine_constants import DEFAULT_RUNS
+from temper_ai.optimization.protocols import EvaluatorProtocol
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +88,7 @@ class TuningOptimizer:
         config: Dict[str, Any],
     ) -> OptimizationResult:
         """Run via ExperimentService with proper tracking."""
-        from temper_ai.improvement._experiment_helpers import (
+        from temper_ai.optimization._experiment_helpers import (
             create_tuning_experiment,
             finalize_experiment,
         )
@@ -130,7 +130,7 @@ class TuningOptimizer:
         experiment_id: str,
     ) -> tuple:
         """Execute all strategy runs and return (best_output, best_score, run_idx)."""
-        from temper_ai.improvement._experiment_helpers import (
+        from temper_ai.optimization._experiment_helpers import (
             create_workflow_id,
             track_run_result,
         )

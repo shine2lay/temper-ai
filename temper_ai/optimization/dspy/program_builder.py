@@ -4,8 +4,8 @@ import logging
 import re
 from typing import Any, FrozenSet, List, Optional
 
-from temper_ai.optimization._schemas import PromptOptimizationConfig
-from temper_ai.optimization.constants import MAX_FIELD_NAME_LENGTH
+from temper_ai.optimization.dspy._schemas import PromptOptimizationConfig
+from temper_ai.optimization.dspy.constants import MAX_FIELD_NAME_LENGTH
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +30,7 @@ class DSPyProgramBuilder:
         template_source: Optional[str] = None,
     ) -> Any:
         """Create a dspy.Module based on the optimization config."""
-        from temper_ai.optimization._helpers import ensure_dspy_available
+        from temper_ai.optimization.dspy._helpers import ensure_dspy_available
         ensure_dspy_available()
         import dspy
 

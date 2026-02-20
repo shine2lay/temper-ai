@@ -1,63 +1,84 @@
-"""Schemas for DSPy prompt optimization."""
+"""Pydantic models for optimization configuration and results."""
 
+from __future__ import annotations
+
+import dataclasses
 from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
-from temper_ai.optimization.constants import (
-    DEFAULT_LOOKBACK_HOURS,
-    DEFAULT_MAX_DEMOS,
-    DEFAULT_MIN_QUALITY_SCORE,
-    DEFAULT_MIN_TRAINING_EXAMPLES,
-    DEFAULT_NUM_THREADS,
-    DEFAULT_OPTIMIZER,
-    DEFAULT_PROGRAM_STORE_DIR,
+from temper_ai.optimization.engine_constants import (
+    DEFAULT_MAX_ITERATIONS,
+    DEFAULT_RUNS,
+    DEFAULT_TIMEOUT_SECONDS,
+    MAX_SCORE,
+    MIN_SCORE,
 )
 
 
-class PromptOptimizationConfig(BaseModel):
-    """Configuration for DSPy prompt optimization on an agent."""
+class CheckConfig(BaseModel):
+    """A single check within a criteria evaluator."""
 
-    enabled: bool = False
-    optimizer: Literal["bootstrap", "mipro"] = DEFAULT_OPTIMIZER
-    module_type: Literal["predict", "chain_of_thought"] = "predict"
-    input_fields: List[str] = Field(default_factory=list)
-    output_fields: List[str] = Field(
-        default_factory=lambda: ["output"],
-    )
-    min_training_examples: int = Field(
-        default=DEFAULT_MIN_TRAINING_EXAMPLES, gt=0,
-    )
-    min_quality_score: float = Field(
-        default=DEFAULT_MIN_QUALITY_SCORE, ge=0.0, le=1.0,
-    )
-    training_metric: Optional[str] = None
-    lookback_hours: int = Field(default=DEFAULT_LOOKBACK_HOURS, gt=0)
-    max_demos: int = Field(default=DEFAULT_MAX_DEMOS, gt=0)
-    num_threads: int = Field(default=DEFAULT_NUM_THREADS, gt=0)
-    program_store_dir: str = DEFAULT_PROGRAM_STORE_DIR
-    auto_compile: bool = False
+    name: str
+    method: Literal["programmatic", "llm"] = "programmatic"
+    command: Optional[str] = None
+    prompt: Optional[str] = None
+    timeout: int = DEFAULT_TIMEOUT_SECONDS
 
 
-class TrainingExample(BaseModel):
-    """A single training example extracted from execution history."""
+class EvaluatorConfig(BaseModel):
+    """Configuration for an evaluator instance."""
 
-    input_text: str
-    output_text: str
-    metric_score: float = Field(ge=0.0, le=1.0)
-    agent_name: str
-    prompt_template_hash: Optional[str] = None
+    type: Literal["criteria", "comparative", "scored", "human"] = "criteria"
+    checks: List[CheckConfig] = Field(default_factory=list)
+    prompt: Optional[str] = None
+    rubric: Optional[str] = None
+    model: Optional[str] = None
 
 
-class CompilationResult(BaseModel):
-    """Result of a DSPy compilation run."""
+class PipelineStepConfig(BaseModel):
+    """A single step in the optimization pipeline."""
 
-    program_id: str
-    agent_name: str
-    optimizer_type: str
-    train_score: Optional[float] = None
-    val_score: Optional[float] = None
-    num_examples: int = 0
-    num_demos: int = 0
-    program_data: Dict[str, Any] = Field(default_factory=dict)
-    metadata: Dict[str, str] = Field(default_factory=dict)
+    optimizer: Literal[
+        "refinement", "selection", "tuning", "prompt"
+    ] = "refinement"
+    evaluator: str
+    max_iterations: int = DEFAULT_MAX_ITERATIONS
+    runs: int = DEFAULT_RUNS
+    strategies: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class OptimizationConfig(BaseModel):
+    """Top-level optimization configuration."""
+
+    evaluators: Dict[str, EvaluatorConfig] = Field(default_factory=dict)
+    pipeline: List[PipelineStepConfig] = Field(default_factory=list)
+    enabled: bool = True
+
+
+@dataclasses.dataclass
+class EvaluationResult:
+    """Result of evaluating a single output."""
+
+    passed: bool
+    score: float = MAX_SCORE
+    details: Dict[str, Any] = dataclasses.field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        self.score = max(MIN_SCORE, min(MAX_SCORE, self.score))
+
+
+@dataclasses.dataclass
+class OptimizationResult:
+    """Result of an optimization pipeline run."""
+
+    output: Dict[str, Any]
+    score: float = MAX_SCORE
+    iterations: int = 0
+    improved: bool = False
+    details: Dict[str, Any] = dataclasses.field(default_factory=dict)
+    experiment_id: Optional[str] = None
+    experiment_results: Optional[Dict[str, Any]] = None
+
+    def __post_init__(self) -> None:
+        self.score = max(MIN_SCORE, min(MAX_SCORE, self.score))

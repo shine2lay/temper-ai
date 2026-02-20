@@ -6,8 +6,8 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, List, Optional
 
-from temper_ai.optimization._schemas import TrainingExample
-from temper_ai.optimization.constants import (
+from temper_ai.optimization.dspy._schemas import TrainingExample
+from temper_ai.optimization.dspy.constants import (
     DEFAULT_FALLBACK_QUALITY_SCORE,
     DEFAULT_LOOKBACK_HOURS,
     DEFAULT_MIN_QUALITY_SCORE,

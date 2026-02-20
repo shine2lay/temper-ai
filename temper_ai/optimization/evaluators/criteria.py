@@ -8,8 +8,8 @@ import shlex
 import subprocess
 from typing import Any, Dict, List, Optional
 
-from temper_ai.improvement._schemas import CheckConfig, EvaluationResult, EvaluatorConfig
-from temper_ai.improvement.constants import (
+from temper_ai.optimization._schemas import CheckConfig, EvaluationResult, EvaluatorConfig
+from temper_ai.optimization.engine_constants import (
     CHECK_METHOD_LLM,
     CHECK_METHOD_PROGRAMMATIC,
     FIRST_BETTER,

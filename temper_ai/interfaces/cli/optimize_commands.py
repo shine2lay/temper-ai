@@ -77,8 +77,8 @@ def compile_cmd(
     agent_name = agent_config["agent"]["name"]
 
     try:
-        from temper_ai.optimization.data_collector import TrainingDataCollector
-        from temper_ai.optimization._schemas import PromptOptimizationConfig  # noqa: F401
+        from temper_ai.optimization.dspy.data_collector import TrainingDataCollector
+        from temper_ai.optimization.dspy._schemas import PromptOptimizationConfig  # noqa: F401
     except ImportError:
         console.print(DSPY_NOT_INSTALLED_MSG)
         return
@@ -128,10 +128,10 @@ def _run_compilation(
 ) -> None:
     """Execute the compilation pipeline."""
     try:
-        from temper_ai.optimization._schemas import PromptOptimizationConfig
-        from temper_ai.optimization.compiler import DSPyCompiler
-        from temper_ai.optimization.program_builder import DSPyProgramBuilder
-        from temper_ai.optimization.program_store import CompiledProgramStore
+        from temper_ai.optimization.dspy._schemas import PromptOptimizationConfig
+        from temper_ai.optimization.dspy.compiler import DSPyCompiler
+        from temper_ai.optimization.dspy.program_builder import DSPyProgramBuilder
+        from temper_ai.optimization.dspy.program_store import CompiledProgramStore
 
         config = PromptOptimizationConfig(
             optimizer=optimizer,  # type: ignore[arg-type]  # click passes str
@@ -165,7 +165,7 @@ def _run_compilation(
 @click.option("--agent", default=None, help=AGENT_FILTER_HELP)
 def list_cmd(agent: str | None) -> None:
     """List compiled optimization programs."""
-    from temper_ai.optimization.program_store import CompiledProgramStore
+    from temper_ai.optimization.dspy.program_store import CompiledProgramStore
 
     store = CompiledProgramStore()
     programs = store.list_programs(agent_name=agent)
@@ -199,8 +199,8 @@ def preview_cmd(config_path: str) -> None:
         return
     agent_name = agent_config["agent"]["name"]
 
-    from temper_ai.optimization.program_store import CompiledProgramStore
-    from temper_ai.optimization.prompt_adapter import DSPyPromptAdapter
+    from temper_ai.optimization.dspy.program_store import CompiledProgramStore
+    from temper_ai.optimization.dspy.prompt_adapter import DSPyPromptAdapter
 
     store = CompiledProgramStore()
     adapter = DSPyPromptAdapter(store=store)

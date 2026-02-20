@@ -541,7 +541,7 @@ def _execute_workflow(params: WorkflowExecutionParams) -> Any:
         # Wire optimization engine if configured
         opt_raw = params.workflow_config.get("workflow", {}).get("optimization")
         if opt_raw and opt_raw.get("enabled", True):
-            from temper_ai.improvement import OptimizationConfig, OptimizationEngine
+            from temper_ai.optimization import OptimizationConfig, OptimizationEngine
 
             logger.info("Optimization enabled — running optimization pipeline")
             opt_config = OptimizationConfig.model_validate(opt_raw)
@@ -933,6 +933,60 @@ def _handle_server_mode(  # noqa: params — pass-through from Click
     raise SystemExit(1)
 
 
+def _apply_experiment_variant(
+    experiment_id: Optional[str],
+    workflow_id: str,
+    wf_config: dict,
+    verbose: bool,
+) -> tuple:
+    """Apply experiment variant config overrides if experiment_id provided.
+
+    Returns:
+        (wf_config, variant_id) where wf_config may have overrides applied.
+    """
+    if not experiment_id:
+        return wf_config, None
+
+    try:
+        from temper_ai.experimentation._workflow_integration import assign_and_merge
+        merged_config, variant_id = assign_and_merge(
+            experiment_id, workflow_id, wf_config,
+        )
+        if verbose:
+            console.print(
+                f"[cyan]Experiment:[/cyan] assigned variant={variant_id} "
+                f"for experiment={experiment_id}"
+            )
+        return merged_config, variant_id
+    except (ValueError, RuntimeError) as e:
+        logger.warning("Experiment variant assignment failed: %s", e)
+        if verbose:
+            console.print(f"[yellow]Experiment assignment skipped:[/yellow] {e}")
+        return wf_config, None
+
+
+def _maybe_track_experiment(
+    experiment_id: Optional[str],
+    workflow_id: str,
+    result: Any,
+    duration_seconds: float,
+) -> None:
+    """Track experiment completion metrics if experiment_id is set."""
+    if not experiment_id:
+        return
+
+    try:
+        from temper_ai.experimentation._workflow_integration import (
+            track_experiment_completion,
+        )
+        result_dict = result if isinstance(result, dict) else {}
+        track_experiment_completion(
+            experiment_id, workflow_id, result_dict, duration_seconds,
+        )
+    except (ValueError, RuntimeError) as e:
+        logger.warning("Experiment completion tracking failed: %s", e)
+
+
 def _run_local_workflow(  # noqa: params — pass-through from Click
     workflow: str,
     input_file: Optional[str],
@@ -948,8 +1002,10 @@ def _run_local_workflow(  # noqa: params — pass-through from Click
     run_id: Optional[str],
     autonomous: bool,
     enable_plan: bool = False,
+    experiment_id: Optional[str] = None,
 ) -> None:
     """Execute a workflow locally with observability and optional dashboard."""
+    import time
     from temper_ai.observability.tracker import WorkflowTrackingParams
 
     _setup_logging(verbose, show_details)
@@ -970,10 +1026,14 @@ def _run_local_workflow(  # noqa: params — pass-through from Click
     engine, compiled = _compile_workflow(wf_config, tool_registry, config_loader, verbose)
 
     wf_name = wf_config.get("workflow", {}).get("name", Path(workflow).stem)
+    start_time = time.monotonic()
     with tracker.track_workflow(WorkflowTrackingParams(
         workflow_name=wf_name, workflow_config=wf_config,
         trigger_type="cli", environment="local",
     )) as workflow_id:
+        wf_config, _variant_id = _apply_experiment_variant(
+            experiment_id, workflow_id, wf_config, verbose,
+        )
         result = _execute_workflow(WorkflowExecutionParams(
             compiled=compiled, workflow_config=wf_config, inputs=inputs,
             tracker=tracker, config_loader=config_loader, tool_registry=tool_registry,
@@ -981,6 +1041,9 @@ def _run_local_workflow(  # noqa: params — pass-through from Click
             verbose=verbose, workspace=workspace, run_id=run_id,
             workflow_name=wf_name,
         ))
+
+    duration = time.monotonic() - start_time
+    _maybe_track_experiment(experiment_id, workflow_id, result, duration)
 
     _handle_post_execution(
         result, show_details, output, workflow_id, wf_name, verbose,
@@ -1069,6 +1132,12 @@ def _run_local_workflow(  # noqa: params — pass-through from Click
     help="Run a planning pass before workflow execution (R0.8)",
 )
 @click.option(
+    "--experiment",
+    "experiment_id",
+    default=None,
+    help="Experiment ID for A/B testing variant assignment.",
+)
+@click.option(
     CLI_OPTION_SERVER,
     default=None,
     envvar=ENV_VAR_SERVER_URL,
@@ -1096,6 +1165,7 @@ def run(  # noqa: params — Click command, params are CLI args
     autonomous: bool,
     local: bool,
     enable_plan: bool,
+    experiment_id: Optional[str],
     server: Optional[str],
     api_key: Optional[str],
 ) -> None:
@@ -1111,6 +1181,7 @@ def run(  # noqa: params — Click command, params are CLI args
         workflow, input_file, verbose, output, db, config_root,
         show_details, dashboard, workspace, events_to,
         event_format, run_id, autonomous, enable_plan,
+        experiment_id=experiment_id,
     )
 
 

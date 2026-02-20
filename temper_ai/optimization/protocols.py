@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional, Protocol, runtime_checkable
 
-from temper_ai.improvement._schemas import EvaluationResult, OptimizationResult
+from temper_ai.optimization._schemas import EvaluationResult, OptimizationResult
 
 
 @runtime_checkable

@@ -600,3 +600,212 @@ class TestPostExecutionReportNewFields:
         )
         assert report.feedback_result == {"learning": []}
         assert report.memory_sync_result["patterns_synced"] == 5
+
+
+class TestOrchestratorPromptOptimization:
+    """Tests for _run_prompt_optimization and _optimize_agent_via_pipeline."""
+
+    def _make_optimizer_mock(self, improved: bool = True) -> MagicMock:
+        """Return a PromptOptimizer mock whose optimize() returns improved=improved."""
+        from temper_ai.optimization._schemas import OptimizationResult
+
+        mock_optimizer = MagicMock()
+        mock_optimizer.optimize.return_value = OptimizationResult(
+            output={}, improved=improved,
+        )
+        return mock_optimizer
+
+    def test_agents_compiled_count(self) -> None:
+        """Agents with auto_compile=True that succeed increment agents_compiled."""
+        config = AutonomousLoopConfig(enabled=True, prompt_optimization_enabled=True)
+        orch = PostExecutionOrchestrator(config)
+        report = PostExecutionReport()
+        ctx = _make_context(
+            result={
+                "agent_a": {
+                    "prompt_optimization": {"auto_compile": True},
+                    "inference": {"provider": "openai", "model": "gpt-4"},
+                },
+                "agent_b": {
+                    "prompt_optimization": {"auto_compile": True},
+                    "inference": {"provider": "anthropic", "model": "claude-3"},
+                },
+            }
+        )
+
+        mock_optimizer = self._make_optimizer_mock(improved=True)
+
+        with patch(
+            "temper_ai.optimization.optimizers.prompt.PromptOptimizer",
+            return_value=mock_optimizer,
+        ):
+            result = orch._run_prompt_optimization(ctx, report)
+
+        assert result is not None
+        assert result["agents_compiled"] == 2
+        assert result["agents_skipped"] == 0
+
+    def test_agents_skipped_when_no_auto_compile(self) -> None:
+        """Agents without auto_compile are counted as skipped."""
+        config = AutonomousLoopConfig(enabled=True, prompt_optimization_enabled=True)
+        orch = PostExecutionOrchestrator(config)
+        report = PostExecutionReport()
+        ctx = _make_context(
+            result={
+                "agent_a": {
+                    "prompt_optimization": {"auto_compile": False},
+                    "inference": {},
+                },
+                "agent_b": {"inference": {}},
+            }
+        )
+
+        mock_optimizer = self._make_optimizer_mock(improved=False)
+
+        with patch(
+            "temper_ai.optimization.optimizers.prompt.PromptOptimizer",
+            return_value=mock_optimizer,
+        ):
+            result = orch._run_prompt_optimization(ctx, report)
+
+        assert result is not None
+        assert result["agents_compiled"] == 0
+        assert result["agents_skipped"] == 2
+
+    def test_non_dict_agent_data_is_skipped(self) -> None:
+        """Non-dict values in context.result are skipped without error."""
+        config = AutonomousLoopConfig(enabled=True, prompt_optimization_enabled=True)
+        orch = PostExecutionOrchestrator(config)
+        report = PostExecutionReport()
+        ctx = _make_context(result={"status": "completed", "count": 42})
+
+        mock_optimizer = self._make_optimizer_mock()
+
+        with patch(
+            "temper_ai.optimization.optimizers.prompt.PromptOptimizer",
+            return_value=mock_optimizer,
+        ):
+            result = orch._run_prompt_optimization(ctx, report)
+
+        assert result is not None
+        assert result["agents_compiled"] == 0
+        mock_optimizer.optimize.assert_not_called()
+
+    def test_import_error_returns_none(self) -> None:
+        """An ImportError from PromptOptimizer returns None gracefully."""
+        config = AutonomousLoopConfig(enabled=True, prompt_optimization_enabled=True)
+        orch = PostExecutionOrchestrator(config)
+        report = PostExecutionReport()
+        ctx = _make_context()
+
+        with patch.dict(
+            "sys.modules",
+            {"temper_ai.optimization.optimizers.prompt": None},
+        ):
+            result = orch._run_prompt_optimization(ctx, report)
+
+        assert result is None
+        assert report.errors == []
+
+    def test_runtime_error_appended_to_report(self) -> None:
+        """A RuntimeError from PromptOptimizer is appended to report.errors."""
+        config = AutonomousLoopConfig(enabled=True, prompt_optimization_enabled=True)
+        orch = PostExecutionOrchestrator(config)
+        report = PostExecutionReport()
+        ctx = _make_context(
+            result={
+                "agent_a": {
+                    "prompt_optimization": {"auto_compile": True},
+                    "inference": {},
+                },
+            }
+        )
+
+        mock_optimizer = MagicMock()
+        mock_optimizer.optimize.side_effect = RuntimeError("compile failed")
+
+        with patch(
+            "temper_ai.optimization.optimizers.prompt.PromptOptimizer",
+            return_value=mock_optimizer,
+        ):
+            result = orch._run_prompt_optimization(ctx, report)
+
+        assert result is None
+        assert len(report.errors) == 1
+        assert "Prompt optimization error" in report.errors[0]
+
+    def test_provider_and_model_forwarded_from_inference(self) -> None:
+        """The optimizer receives provider/model from agent_data's inference config."""
+        config = AutonomousLoopConfig(enabled=True, prompt_optimization_enabled=True)
+        orch = PostExecutionOrchestrator(config)
+        report = PostExecutionReport()
+
+        agent_data = {
+            "prompt_optimization": {"auto_compile": True, "optimizer": "mipro"},
+            "inference": {"provider": "anthropic", "model": "claude-opus-4", "base_url": None},
+        }
+
+        mock_optimizer = self._make_optimizer_mock(improved=True)
+
+        orch._optimize_agent_via_pipeline("my_agent", agent_data, mock_optimizer, report)
+
+        mock_optimizer.optimize.assert_called_once()
+        call_config = mock_optimizer.optimize.call_args.kwargs["config"]
+        assert call_config["agent_name"] == "my_agent"
+        assert call_config["provider"] == "anthropic"
+        assert call_config["model"] == "claude-opus-4"
+        assert call_config["optimizer"] == "mipro"
+
+    def test_optimize_agent_via_pipeline_returns_false_when_not_auto_compile(self) -> None:
+        """_optimize_agent_via_pipeline returns False when auto_compile is absent."""
+        config = AutonomousLoopConfig(enabled=True)
+        orch = PostExecutionOrchestrator(config)
+        report = PostExecutionReport()
+        mock_optimizer = MagicMock()
+
+        result = orch._optimize_agent_via_pipeline(
+            "agent_x", {"inference": {}}, mock_optimizer, report,
+        )
+
+        assert result is False
+        mock_optimizer.optimize.assert_not_called()
+
+    def test_optimize_agent_via_pipeline_returns_improved_flag(self) -> None:
+        """_optimize_agent_via_pipeline returns True when optimizer.improved is True."""
+        config = AutonomousLoopConfig(enabled=True)
+        orch = PostExecutionOrchestrator(config)
+        report = PostExecutionReport()
+        mock_optimizer = self._make_optimizer_mock(improved=True)
+
+        agent_data = {
+            "prompt_optimization": {"auto_compile": True},
+            "inference": {"provider": "openai", "model": "gpt-4o"},
+        }
+        result = orch._optimize_agent_via_pipeline("agent_y", agent_data, mock_optimizer, report)
+
+        assert result is True
+
+    def test_opt_cfg_keys_merged_into_config(self) -> None:
+        """Settings from prompt_optimization dict are merged into the optimizer config."""
+        config = AutonomousLoopConfig(enabled=True)
+        orch = PostExecutionOrchestrator(config)
+        report = PostExecutionReport()
+        mock_optimizer = self._make_optimizer_mock(improved=True)
+
+        agent_data = {
+            "prompt_optimization": {
+                "auto_compile": True,
+                "min_training_examples": 20,
+                "lookback_hours": 48,
+                "max_demos": 5,
+                "min_quality_score": 0.8,
+            },
+            "inference": {"provider": "openai", "model": "gpt-4"},
+        }
+        orch._optimize_agent_via_pipeline("agent_z", agent_data, mock_optimizer, report)
+
+        call_config = mock_optimizer.optimize.call_args.kwargs["config"]
+        assert call_config["min_training_examples"] == 20
+        assert call_config["lookback_hours"] == 48
+        assert call_config["max_demos"] == 5
+        assert call_config["min_quality_score"] == 0.8

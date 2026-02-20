@@ -234,24 +234,16 @@ class PostExecutionOrchestrator:
     ) -> Optional[Dict[str, Any]]:
         """Run DSPy prompt optimization for agents with auto_compile."""
         try:
-            from temper_ai.optimization.data_collector import TrainingDataCollector
-            from temper_ai.optimization.compiler import DSPyCompiler
-            from temper_ai.optimization.program_builder import DSPyProgramBuilder
-            from temper_ai.optimization.program_store import CompiledProgramStore
+            from temper_ai.optimization.optimizers.prompt import PromptOptimizer
 
-            collector = TrainingDataCollector()
-            compiler = DSPyCompiler()
-            builder = DSPyProgramBuilder()
-            store = CompiledProgramStore()
-
+            optimizer = PromptOptimizer()
             agents_compiled = 0
             agents_skipped = 0
             for agent_name, agent_data in context.result.items():
                 if not isinstance(agent_data, dict):
                     continue
-                compiled = self._optimize_agent(
-                    agent_name, agent_data, collector, builder,
-                    compiler, store, report,
+                compiled = self._optimize_agent_via_pipeline(
+                    agent_name, agent_data, optimizer, report,
                 )
                 if compiled:
                     agents_compiled += 1
@@ -273,54 +265,39 @@ class PostExecutionOrchestrator:
             report.errors.append(msg)
             return None
 
-    def _optimize_agent(
+    def _optimize_agent_via_pipeline(
         self,
         agent_name: str,
         agent_data: dict,
-        collector: Any,
-        builder: Any,
-        compiler: Any,
-        store: Any,
+        optimizer: Any,
         report: Any,
     ) -> bool:
-        """Attempt to optimize a single agent. Returns True if compiled."""
+        """Optimize a single agent via PromptOptimizer. Returns True if compiled."""
         opt_cfg = agent_data.get("prompt_optimization")
         if not opt_cfg or not opt_cfg.get("auto_compile"):
             return False
 
-        from temper_ai.optimization._schemas import PromptOptimizationConfig
+        inference = agent_data.get("inference", {})
+        config: Dict[str, Any] = {
+            "agent_name": agent_name,
+            "provider": inference.get("provider", "openai"),
+            "model": inference.get("model", "gpt-4"),
+            "base_url": inference.get("base_url"),
+        }
+        if isinstance(opt_cfg, dict):
+            for key in (
+                "optimizer", "module_type", "min_training_examples",
+                "lookback_hours", "max_demos", "min_quality_score",
+            ):
+                if key in opt_cfg:
+                    config[key] = opt_cfg[key]
 
-        config = (
-            PromptOptimizationConfig(**opt_cfg)
-            if isinstance(opt_cfg, dict)
-            else opt_cfg
-        )
+        from temper_ai.optimization._schemas import OptimizationResult
 
-        examples = collector.collect_examples(
-            agent_name=agent_name,
-            min_quality_score=config.min_quality_score,
-            max_examples=config.min_training_examples * 2,
-            lookback_hours=config.lookback_hours,
+        result: OptimizationResult = optimizer.optimize(
+            runner=None, input_data={}, evaluator=None, config=config,
         )
-
-        if len(examples) < config.min_training_examples:
-            return False
-
-        program = builder.build_from_config(config)
-        result = compiler.compile(
-            program=program,
-            training_examples=examples,
-            config=config,
-        )
-        store.save(
-            agent_name=agent_name,
-            program=result.metadata,
-            metadata={
-                "optimizer": result.optimizer_type,
-                "val_score": str(result.val_score or ""),
-            },
-        )
-        return True
+        return result.improved
 
     def _run_agent_memory_sync(
         self, context: WorkflowRunContext, report: PostExecutionReport

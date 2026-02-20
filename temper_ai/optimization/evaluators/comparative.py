@@ -7,8 +7,8 @@ import logging
 import re
 from typing import Any, Dict, Optional
 
-from temper_ai.improvement._schemas import EvaluationResult, EvaluatorConfig
-from temper_ai.improvement.constants import FIRST_BETTER, MAX_SCORE, SECOND_BETTER, TIE
+from temper_ai.optimization._schemas import EvaluationResult, EvaluatorConfig
+from temper_ai.optimization.engine_constants import FIRST_BETTER, MAX_SCORE, SECOND_BETTER, TIE
 
 logger = logging.getLogger(__name__)
 

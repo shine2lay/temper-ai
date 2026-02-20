@@ -25,6 +25,7 @@ from temper_ai.workflow.condition_evaluator import (
 from temper_ai.workflow.dag_builder import StageDAG, build_stage_dag, compute_depths
 from temper_ai.stage.executors.state_keys import StateKeys
 from temper_ai.workflow.node_builder import NodeBuilder
+from temper_ai.shared.utils.exceptions import WorkflowStageError
 
 logger = logging.getLogger(__name__)
 
@@ -411,16 +412,21 @@ class WorkflowExecutor:
                 break
 
             stages_at_depth = depth_groups[depth]
-            if len(stages_at_depth) == 1:
-                state = self._execute_single_stage(
-                    stages_at_depth[0], stage_nodes, ref_lookup,
-                    stage_refs, state, workflow_config,
-                )
-            else:
-                state = self._execute_parallel_stages(
-                    stages_at_depth, stage_nodes, ref_lookup,
-                    stage_refs, state, workflow_config,
-                )
+            try:
+                if len(stages_at_depth) == 1:
+                    state = self._execute_single_stage(
+                        stages_at_depth[0], stage_nodes, ref_lookup,
+                        stage_refs, state, workflow_config,
+                    )
+                else:
+                    state = self._execute_parallel_stages(
+                        stages_at_depth, stage_nodes, ref_lookup,
+                        stage_refs, state, workflow_config,
+                    )
+            except WorkflowStageError as exc:
+                logger.error("Stage failed, halting workflow: %s", exc)
+                state[StateKeys.SKIP_TO_END] = exc.stage_name
+                break
 
         return state
 

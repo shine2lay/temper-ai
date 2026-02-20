@@ -5,22 +5,24 @@ from __future__ import annotations
 import threading
 from typing import Any, Dict, Type
 
-from temper_ai.improvement.constants import (
+from temper_ai.optimization.engine_constants import (
     EVALUATOR_COMPARATIVE,
     EVALUATOR_CRITERIA,
     EVALUATOR_HUMAN,
     EVALUATOR_SCORED,
+    OPTIMIZER_PROMPT,
     OPTIMIZER_REFINEMENT,
     OPTIMIZER_SELECTION,
     OPTIMIZER_TUNING,
 )
-from temper_ai.improvement.evaluators.comparative import ComparativeEvaluator
-from temper_ai.improvement.evaluators.criteria import CriteriaEvaluator
-from temper_ai.improvement.evaluators.human import HumanEvaluator
-from temper_ai.improvement.evaluators.scored import ScoredEvaluator
-from temper_ai.improvement.optimizers.refinement import RefinementOptimizer
-from temper_ai.improvement.optimizers.selection import SelectionOptimizer
-from temper_ai.improvement.optimizers.tuning import TuningOptimizer
+from temper_ai.optimization.evaluators.comparative import ComparativeEvaluator
+from temper_ai.optimization.evaluators.criteria import CriteriaEvaluator
+from temper_ai.optimization.evaluators.human import HumanEvaluator
+from temper_ai.optimization.evaluators.scored import ScoredEvaluator
+from temper_ai.optimization.optimizers.prompt import PromptOptimizer
+from temper_ai.optimization.optimizers.refinement import RefinementOptimizer
+from temper_ai.optimization.optimizers.selection import SelectionOptimizer
+from temper_ai.optimization.optimizers.tuning import TuningOptimizer
 
 
 class OptimizationRegistry:
@@ -52,6 +54,7 @@ class OptimizationRegistry:
         self._optimizers[OPTIMIZER_REFINEMENT] = RefinementOptimizer
         self._optimizers[OPTIMIZER_SELECTION] = SelectionOptimizer
         self._optimizers[OPTIMIZER_TUNING] = TuningOptimizer
+        self._optimizers[OPTIMIZER_PROMPT] = PromptOptimizer
 
     def get_evaluator_class(self, name: str) -> Type[Any]:
         """Get evaluator class by name."""

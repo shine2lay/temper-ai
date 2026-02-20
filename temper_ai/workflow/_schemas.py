@@ -166,7 +166,7 @@ class WorkflowSafetyConfig(BaseModel):
     custom_rules: List[Dict[str, Any]] = Field(default_factory=list)
 
 
-from temper_ai.improvement._schemas import OptimizationConfig  # noqa: F401
+from temper_ai.optimization._schemas import OptimizationConfig  # noqa: F401
 from temper_ai.lifecycle._schemas import LifecycleConfig  # noqa: F401
 
 

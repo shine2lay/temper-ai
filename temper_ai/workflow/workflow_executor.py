@@ -452,8 +452,8 @@ class CompiledGraphRunner:
         Returns:
             Final workflow state dict (best output from optimization)
         """
-        from temper_ai.improvement._schemas import OptimizationConfig
-        from temper_ai.improvement.engine import OptimizationEngine
+        from temper_ai.optimization._schemas import OptimizationConfig
+        from temper_ai.optimization.engine import OptimizationEngine
 
         if not isinstance(optimization_config, OptimizationConfig):
             return self.execute(input_data, workflow_id)

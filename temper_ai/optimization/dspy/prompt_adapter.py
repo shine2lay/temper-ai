@@ -3,7 +3,7 @@
 import logging
 from typing import Any
 
-from temper_ai.optimization.constants import (
+from temper_ai.optimization.dspy.constants import (
     DEFAULT_MAX_DEMOS,
     EXAMPLES_HEADER,
     OPTIMIZATION_HEADER,

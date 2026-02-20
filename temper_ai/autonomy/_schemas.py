@@ -28,6 +28,9 @@ class AutonomousLoopConfig(BaseModel):
     auto_apply_min_confidence: float = DEFAULT_AUTO_APPLY_MIN_CONFIDENCE
     max_auto_apply_per_run: int = DEFAULT_MAX_AUTO_APPLY_PER_RUN
 
+    # Prompt optimization (opt-in)
+    prompt_optimization_enabled: bool = False
+
 
 class WorkflowRunContext(BaseModel):
     """Context passed to the orchestrator after a workflow run."""
@@ -50,5 +53,6 @@ class PostExecutionReport(BaseModel):
     portfolio_result: Optional[Dict[str, Any]] = None
     feedback_result: Optional[Dict[str, Any]] = None
     memory_sync_result: Optional[Dict[str, Any]] = None
+    optimization_result: Optional[Dict[str, Any]] = None
     errors: List[str] = Field(default_factory=list)
     duration_ms: float = 0.0

@@ -101,6 +101,10 @@ mcp = ["mcp>=1.26.0"]
 
 dspy = ["dspy>=2.5"]
 
+crewai = ["crewai>=0.80"]
+openai_agents = ["openai-agents>=0.1"]
+autogen = ["autogen-agentchat>=0.4", "autogen-ext>=0.4"]
+
 # TODO: Replace 'yourusername' with actual GitHub username/organization
 [project.urls]
 Homepage = "https://github.com/yourusername/temper-ai"
@@ -250,5 +254,5 @@ disallow_untyped_defs = false
 disallow_incomplete_defs = false
 
 [[tool.mypy.overrides]]
-module = ["mem0.*", "chromadb.*", "mcp.*"]
+module = ["mem0.*", "chromadb.*", "mcp.*", "dspy.*"]
 ignore_missing_imports = true

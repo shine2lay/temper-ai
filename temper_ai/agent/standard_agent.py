@@ -242,6 +242,7 @@ class StandardAgent(BaseAgent):
         template = self._inject_input_context(template, input_data, _MODE_CONTEXT_KEYS)
         template = self._inject_dialogue_context(template, input_data)
         template = self._inject_memory_context(template, input_data, context)
+        template = self._inject_optimization_context(template)
 
         return template
 
@@ -319,6 +320,29 @@ class StandardAgent(BaseAgent):
             logger.warning("Memory injection failed for agent %s: %s", self.name, exc)
 
         return template
+
+    def _inject_optimization_context(self, template: str) -> str:
+        """Inject DSPy-optimized prompt sections if available."""
+        opt_cfg = getattr(self.config.agent, "prompt_optimization", None)
+        if opt_cfg is None or not getattr(opt_cfg, "enabled", False):
+            return template
+        try:
+            from temper_ai.optimization.prompt_adapter import DSPyPromptAdapter
+            from temper_ai.optimization.program_store import CompiledProgramStore
+
+            store = CompiledProgramStore(store_dir=opt_cfg.program_store_dir)
+            adapter = DSPyPromptAdapter(store=store)
+            return adapter.augment_prompt(
+                agent_name=self.name,
+                rendered_prompt=template,
+                max_demos=opt_cfg.max_demos,
+            )
+        except ImportError:
+            logger.debug("DSPy not installed, skipping prompt optimization")
+            return template
+        except (ValueError, TypeError, KeyError, RuntimeError, OSError) as exc:
+            logger.warning("Prompt optimization injection failed: %s", exc)
+            return template
 
     def _extract_memory_query(self, input_data: Dict[str, Any]) -> str:
         """Build a query string from input_data string values (truncated to 500 chars)."""

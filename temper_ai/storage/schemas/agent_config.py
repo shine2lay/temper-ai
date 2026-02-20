@@ -382,6 +382,19 @@ class AgentConfigInner(BaseModel):
             )
         return self
 
+    plugin_config: Optional[Any] = Field(
+        default=None,
+        description="Plugin configuration for external framework agents",
+    )
+
+    @model_validator(mode="after")
+    def validate_plugin_config(self) -> "AgentConfigInner":
+        """Parse plugin_config dict into PluginConfig if provided."""
+        if self.plugin_config is not None and isinstance(self.plugin_config, dict):
+            from temper_ai.plugins._schemas import PluginConfig
+            self.plugin_config = PluginConfig(**self.plugin_config)
+        return self
+
     error_handling: ErrorHandlingConfig
     merit_tracking: MeritTrackingConfig = Field(default_factory=MeritTrackingConfig)
     observability: ObservabilityConfig = Field(default_factory=ObservabilityConfig)
@@ -396,6 +409,11 @@ class AgentConfigInner(BaseModel):
         description="Max chars for auto-injected dialogue context"
     )
 
+    def _is_plugin_type(self) -> bool:
+        """Check if agent type is a plugin type (lazy import)."""
+        from temper_ai.plugins.constants import ALL_PLUGIN_TYPES
+        return self.type in ALL_PLUGIN_TYPES
+
     @model_validator(mode="after")
     def validate_agent_type_fields(self) -> "AgentConfigInner":
         """Validate type-dependent required fields."""
@@ -404,14 +422,16 @@ class AgentConfigInner(BaseModel):
                 raise ValueError(
                     "'script' field is required when type='script'"
                 )
+        elif self._is_plugin_type():
+            pass  # Plugin agents don't require prompt/inference
         else:
             if self.prompt is None:
                 raise ValueError(
-                    "'prompt' is required when type is not 'script'"
+                    "'prompt' is required when type is not 'script' or plugin"
                 )
             if self.inference is None:
                 raise ValueError(
-                    "'inference' is required when type is not 'script'"
+                    "'inference' is required when type is not 'script' or plugin"
                 )
         return self
 

@@ -2076,6 +2076,16 @@ from temper_ai.interfaces.cli.visualize_commands import visualize  # noqa: E402
 
 main.add_command(visualize)
 
+try:
+    from temper_ai.interfaces.cli.optimize_commands import optimize_group  # noqa: E402
+    main.add_command(optimize_group)
+except ImportError:
+    pass  # dspy extra not installed
+
+from temper_ai.interfaces.cli.plugin_commands import plugin_group  # noqa: E402
+
+main.add_command(plugin_group)
+
 
 if __name__ == "__main__":
     main()

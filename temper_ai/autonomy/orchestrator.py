@@ -60,6 +60,14 @@ class PostExecutionOrchestrator:
         if self._budget_exhausted(start, report):
             return report
 
+        if self._config.prompt_optimization_enabled:
+            report.optimization_result = self._run_prompt_optimization(
+                context, report,
+            )
+
+        if self._budget_exhausted(start, report):
+            return report
+
         if self._config.portfolio_enabled:
             report.portfolio_result = self._run_portfolio(context, report)
 
@@ -221,6 +229,99 @@ class PostExecutionOrchestrator:
             max_auto_apply=self._config.max_auto_apply_per_run,
         )
         return applier.apply_approved_goals()
+
+    def _run_prompt_optimization(
+        self, context: WorkflowRunContext, report: PostExecutionReport,
+    ) -> Optional[Dict[str, Any]]:
+        """Run DSPy prompt optimization for agents with auto_compile."""
+        try:
+            from temper_ai.optimization.data_collector import TrainingDataCollector
+            from temper_ai.optimization.compiler import DSPyCompiler
+            from temper_ai.optimization.program_builder import DSPyProgramBuilder
+            from temper_ai.optimization.program_store import CompiledProgramStore
+
+            collector = TrainingDataCollector()
+            compiler = DSPyCompiler()
+            builder = DSPyProgramBuilder()
+            store = CompiledProgramStore()
+
+            agents_compiled = 0
+            agents_skipped = 0
+            for agent_name, agent_data in context.result.items():
+                if not isinstance(agent_data, dict):
+                    continue
+                compiled = self._optimize_agent(
+                    agent_name, agent_data, collector, builder,
+                    compiler, store, report,
+                )
+                if compiled:
+                    agents_compiled += 1
+                else:
+                    agents_skipped += 1
+
+            return {
+                "agents_compiled": agents_compiled,
+                "agents_skipped": agents_skipped,
+            }
+        except ImportError:
+            logger.warning(
+                "DSPy not installed, skipping prompt optimization"
+            )
+            return None
+        except Exception as exc:  # noqa: BLE001 -- subsystem failures must not crash workflow
+            msg = f"Prompt optimization error: {exc}"
+            logger.warning(msg)
+            report.errors.append(msg)
+            return None
+
+    def _optimize_agent(
+        self,
+        agent_name: str,
+        agent_data: dict,
+        collector: Any,
+        builder: Any,
+        compiler: Any,
+        store: Any,
+        report: Any,
+    ) -> bool:
+        """Attempt to optimize a single agent. Returns True if compiled."""
+        opt_cfg = agent_data.get("prompt_optimization")
+        if not opt_cfg or not opt_cfg.get("auto_compile"):
+            return False
+
+        from temper_ai.optimization._schemas import PromptOptimizationConfig
+
+        config = (
+            PromptOptimizationConfig(**opt_cfg)
+            if isinstance(opt_cfg, dict)
+            else opt_cfg
+        )
+
+        examples = collector.collect_examples(
+            agent_name=agent_name,
+            min_quality_score=config.min_quality_score,
+            max_examples=config.min_training_examples * 2,
+            lookback_hours=config.lookback_hours,
+        )
+
+        if len(examples) < config.min_training_examples:
+            return False
+
+        program = builder.build_from_config(config)
+        result = compiler.compile(
+            program=program,
+            training_examples=examples,
+            config=config,
+        )
+        store.save(
+            agent_name=agent_name,
+            program=result.metadata,
+            metadata={
+                "optimizer": result.optimizer_type,
+                "val_score": str(result.val_score or ""),
+            },
+        )
+        return True
 
     def _run_portfolio(
         self, context: WorkflowRunContext, report: PostExecutionReport

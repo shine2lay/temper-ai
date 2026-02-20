@@ -19,6 +19,10 @@ def ensure_dspy_available() -> None:
         ) from None
 
 
+LOCAL_PROVIDERS = frozenset({"ollama", "vllm"})
+DUMMY_API_KEY = "not-needed"  # noqa: S105
+
+
 def configure_dspy_lm(
     provider: str,
     model: str,
@@ -33,8 +37,13 @@ def configure_dspy_lm(
     kwargs: dict = {}
     if api_key:
         kwargs["api_key"] = api_key
+    elif provider in LOCAL_PROVIDERS:
+        kwargs["api_key"] = DUMMY_API_KEY
     if base_url:
-        kwargs["api_base"] = base_url
+        api_base = base_url.rstrip("/")
+        if provider == "vllm" and not api_base.endswith("/v1"):
+            api_base = f"{api_base}/v1"
+        kwargs["api_base"] = api_base
 
     lm = dspy.LM(model_id, **kwargs)
     dspy.configure(lm=lm)
@@ -45,6 +54,7 @@ def _build_model_id(provider: str, model: str) -> str:
     """Map provider/model to dspy model identifier."""
     provider_map = {
         "ollama": f"ollama_chat/{model}",
+        "vllm": f"openai/{model}",
         "openai": f"openai/{model}",
         "anthropic": f"anthropic/{model}",
     }

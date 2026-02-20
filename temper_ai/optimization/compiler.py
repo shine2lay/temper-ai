@@ -52,6 +52,7 @@ class DSPyCompiler:
         val_score = self._evaluate(compiled, valset, metric_fn)
 
         program_id = self._generate_id(config)
+        program_data = self._extract_program_data(compiled)
         return CompilationResult(
             program_id=program_id,
             agent_name="",  # Set by caller
@@ -59,7 +60,8 @@ class DSPyCompiler:
             train_score=train_score,
             val_score=val_score,
             num_examples=len(training_examples),
-            num_demos=config.max_demos,
+            num_demos=len(program_data.get("demos", [])),
+            program_data=program_data,
         )
 
     def _split_data(self, examples: list) -> tuple:
@@ -106,6 +108,31 @@ class DSPyCompiler:
             except (AttributeError, TypeError, RuntimeError):
                 pass
         return correct / len(dataset)
+
+    @staticmethod
+    def _extract_program_data(compiled: Any) -> dict:
+        """Extract instruction and demos from a compiled DSPy program."""
+        instruction = ""
+        demos: list = []
+        try:
+            for predictor in compiled.predictors():
+                if hasattr(predictor, "signature"):
+                    sig_instructions = getattr(
+                        predictor.signature, "instructions", "",
+                    )
+                    if sig_instructions and not instruction:
+                        instruction = str(sig_instructions)
+                for demo in getattr(predictor, "demos", []):
+                    entry: dict = {}
+                    if hasattr(demo, "input"):
+                        entry["input"] = str(demo.input)
+                    if hasattr(demo, "output"):
+                        entry["output"] = str(demo.output)
+                    if entry:
+                        demos.append(entry)
+        except (AttributeError, TypeError):
+            logger.debug("Could not extract predictors from compiled program")
+        return {"instruction": instruction, "demos": demos}
 
     @staticmethod
     def _generate_id(config: PromptOptimizationConfig) -> str:

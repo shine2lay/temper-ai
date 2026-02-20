@@ -135,7 +135,7 @@ class TestDSPyCompiler:
         assert score is not None
         assert 0.0 <= score <= 1.0
 
-    def test_compile_sets_num_demos(self, mock_dspy):
+    def test_compile_returns_program_data(self, mock_dspy):
         config = PromptOptimizationConfig(max_demos=7)
         compiler = DSPyCompiler()
         result = compiler.compile(
@@ -143,4 +143,6 @@ class TestDSPyCompiler:
             training_examples=_make_examples(),
             config=config,
         )
-        assert result.num_demos == 7
+        assert "instruction" in result.program_data
+        assert "demos" in result.program_data
+        assert isinstance(result.program_data["demos"], list)

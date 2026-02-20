@@ -56,6 +56,20 @@ agent:
 
   tools: []
 
+  prompt_optimization:
+    enabled: true
+    optimizer: bootstrap
+    module_type: predict
+    input_fields:
+      - suggestion_text
+      - team_outputs
+    output_fields:
+      - decision
+    min_training_examples: 10
+    min_quality_score: 0.7
+    max_demos: 3
+    auto_compile: false
+
   error_handling:
     retry_strategy: ExponentialBackoff
     max_retries: 2

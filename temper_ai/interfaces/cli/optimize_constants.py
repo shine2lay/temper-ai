@@ -23,3 +23,5 @@ DSPY_NOT_INSTALLED_MSG = (
 )
 PREVIEW_NO_PROGRAM_MSG = "No compiled program found for agent '{agent_name}'."
 CONFIG_LOAD_ERROR_MSG = "Failed to load config: {error}"
+DB_INIT_ERROR_MSG = "Database not available: {error}"
+DEFAULT_OPTIMIZE_DB_PATH = ".meta-autonomous/observability.db"

@@ -15,6 +15,8 @@ from temper_ai.interfaces.cli.optimize_constants import (
     COMPILE_HELP,
     COMPILE_SUCCESS_MSG,
     CONFIG_LOAD_ERROR_MSG,
+    DB_INIT_ERROR_MSG,
+    DEFAULT_OPTIMIZE_DB_PATH,
     DRY_RUN_HELP,
     DSPY_NOT_INSTALLED_MSG,
     INSUFFICIENT_DATA_MSG,
@@ -30,6 +32,21 @@ from temper_ai.interfaces.cli.optimize_constants import (
 
 logger = logging.getLogger(__name__)
 console = Console()
+
+
+def _ensure_database() -> bool:
+    """Initialize the database for training data collection."""
+    try:
+        from temper_ai.interfaces.cli.constants import SQLITE_URL_PREFIX
+        from temper_ai.storage.database.manager import init_database
+
+        db_path = DEFAULT_OPTIMIZE_DB_PATH
+        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+        init_database(f"{SQLITE_URL_PREFIX}{db_path}")
+        return True
+    except (ConnectionError, RuntimeError, OSError) as exc:
+        console.print(DB_INIT_ERROR_MSG.format(error=exc))
+        return False
 
 
 @click.group(name="optimize", help=OPTIMIZE_GROUP_HELP)
@@ -70,6 +87,9 @@ def compile_cmd(
         console.print(DSPY_NOT_INSTALLED_MSG)
         return
 
+    if not _ensure_database():
+        return
+
     collector = TrainingDataCollector()
     examples = collector.collect_examples(
         agent_name=agent_name, max_examples=min_examples * 2,
@@ -87,7 +107,8 @@ def compile_cmd(
         )
         return
 
-    _run_compilation(agent_name, examples, optimizer, max_demos)
+    inference = agent_config["agent"].get("inference", {})
+    _run_compilation(agent_name, examples, optimizer, max_demos, inference)
 
 
 def _show_dry_run_stats(
@@ -107,6 +128,7 @@ def _run_compilation(
     examples: list,
     optimizer: str,
     max_demos: int,
+    inference: dict,
 ) -> None:
     """Execute the compilation pipeline."""
     try:
@@ -127,10 +149,13 @@ def _run_compilation(
             program=program,
             training_examples=examples,
             config=config,
+            provider=inference.get("provider", "openai"),
+            model=inference.get("model", "gpt-4"),
+            base_url=inference.get("base_url"),
         )
 
         store = CompiledProgramStore(store_dir=config.program_store_dir)
-        store.save(agent_name, result.metadata, metadata={
+        store.save(agent_name, result.program_data, metadata={
             "optimizer": result.optimizer_type,
         })
         console.print(

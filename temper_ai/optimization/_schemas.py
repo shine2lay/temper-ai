@@ -1,6 +1,6 @@
 """Schemas for DSPy prompt optimization."""
 
-from typing import Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -59,4 +59,5 @@ class CompilationResult(BaseModel):
     val_score: Optional[float] = None
     num_examples: int = 0
     num_demos: int = 0
+    program_data: Dict[str, Any] = Field(default_factory=dict)
     metadata: Dict[str, str] = Field(default_factory=dict)

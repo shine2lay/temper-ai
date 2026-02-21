@@ -10,7 +10,8 @@ logger = logging.getLogger(__name__)
 
 EVENT_QUEUE_MAXSIZE = 1024
 HEARTBEAT_TIMEOUT_SECONDS = 30.0
-CHUNK_FLUSH_INTERVAL_SECONDS = 0.1  # 100ms batching for stream chunks
+CHUNK_IDLE_TIMEOUT_SECONDS = 0.03  # 30ms adaptive idle timeout
+CHUNK_BATCH_SIZE = 10  # Flush immediately when buffer reaches this size
 DB_POLL_INTERVAL_SECONDS = 2.0  # DB polling interval for cross-process updates
 TERMINAL_STATUSES = frozenset({"completed", "failed", "halted", "timeout"})
 
@@ -32,7 +33,7 @@ def _create_event_callback(
     """
     def on_event(event: Any) -> None:
         """Callback from event bus (runs in sync emitting thread)."""
-        logger.info(f"[WebSocket] Received event: {event.event_type} for workflow {workflow_id}")
+        logger.info("[WebSocket] Received event: %s for workflow %s", event.event_type, workflow_id)
         event_dict = {
             "type": "event",
             "event_type": event.event_type,
@@ -48,7 +49,10 @@ def _create_event_callback(
                 loop = asyncio.get_running_loop()
                 loop.call_soon_threadsafe(chunk_buffer.append, event_dict)
             except RuntimeError:
-                chunk_buffer.append(event_dict)
+                logger.debug(
+                    "No running event loop; dropping stream chunk for workflow %s",
+                    workflow_id,
+                )
             return
 
         try:
@@ -64,7 +68,15 @@ async def _flush_chunks_task(
     chunk_buffer: List[dict],
     chunk_lock: asyncio.Lock,
 ) -> None:
-    """Periodically flush accumulated stream chunks as a batch.
+    """Flush accumulated stream chunks with adaptive batching.
+
+    Uses a short 30ms idle poll instead of a fixed 100ms interval.
+    When the buffer has fewer than CHUNK_BATCH_SIZE items, waits one
+    additional interval to allow the producer to batch more chunks.
+    When the buffer reaches CHUNK_BATCH_SIZE, flushes immediately.
+
+    Net effect: first token reaches frontend in ~30-60ms instead of
+    ~100ms; burst throughput is unchanged.
 
     Args:
         websocket: WebSocket connection.
@@ -72,9 +84,14 @@ async def _flush_chunks_task(
         chunk_lock: Lock for buffer access.
     """
     while True:
-        await asyncio.sleep(CHUNK_FLUSH_INTERVAL_SECONDS)
+        await asyncio.sleep(CHUNK_IDLE_TIMEOUT_SECONDS)  # 30ms poll
         if not chunk_buffer:
             continue
+        # Pre-lock length check is safe: chunk_buffer.append() is scheduled
+        # via call_soon_threadsafe and executes on this same event loop
+        # thread, so there is no concurrent mutation.
+        if len(chunk_buffer) < CHUNK_BATCH_SIZE:
+            await asyncio.sleep(CHUNK_IDLE_TIMEOUT_SECONDS)  # intentional wait for batching
         async with chunk_lock:
             if not chunk_buffer:
                 continue
@@ -140,13 +157,18 @@ async def _db_poll_loop(
 
     Enables real-time updates for workflows started in a separate
     process (e.g. ``temper-ai run``) by periodically reading the shared
-    SQLite database and sending updated snapshots over WebSocket.
+    database and sending updated snapshots over WebSocket.
+
+    DB queries run in a thread executor to avoid blocking the async
+    event loop (critical for PostgreSQL where queries involve network I/O).
     """
     last_fingerprint = initial_fingerprint
     while True:
         await asyncio.sleep(DB_POLL_INTERVAL_SECONDS)  # intentional polling interval
         try:
-            snapshot = data_service.get_workflow_snapshot(workflow_id)
+            snapshot = await asyncio.to_thread(
+                data_service.get_workflow_snapshot, workflow_id,
+            )
             if not snapshot:
                 continue
             fp = _workflow_fingerprint(snapshot)
@@ -158,6 +180,11 @@ async def _db_poll_loop(
                 break
         except (ConnectionError, OSError, RuntimeError):
             break  # WebSocket disconnected
+        except Exception:
+            logger.warning(
+                "DB poll error for workflow %s; will retry",
+                workflow_id, exc_info=True,
+            )
 
 
 def create_ws_endpoint(data_service: Any) -> Callable:
@@ -181,17 +208,19 @@ def create_ws_endpoint(data_service: Any) -> Callable:
         flush_task = None
         poll_task = None
         try:
-            # Send initial snapshot
-            snapshot = data_service.get_workflow_snapshot(workflow_id)
+            # Send initial snapshot (run in thread to avoid blocking event loop)
+            snapshot = await asyncio.to_thread(
+                data_service.get_workflow_snapshot, workflow_id,
+            )
             initial_fp = ""
             if snapshot:
                 await websocket.send_json({"type": "snapshot", "workflow": snapshot})
                 initial_fp = _workflow_fingerprint(snapshot)
 
             # Subscribe to events for this workflow
-            logger.info(f"[WebSocket] Subscribing to events for workflow {workflow_id}")
+            logger.info("[WebSocket] Subscribing to events for workflow %s", workflow_id)
             subscription_id = data_service.subscribe_workflow(workflow_id, on_event)
-            logger.info(f"[WebSocket] Subscription ID: {subscription_id}")
+            logger.info("[WebSocket] Subscription ID: %s", subscription_id)
 
             # Start chunk flusher
             flush_task = asyncio.create_task(

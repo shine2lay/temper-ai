@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Optional
 
 from sqlalchemy import case
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.orm import selectinload
 from sqlmodel import delete, func, select
 
 from temper_ai.storage.database import get_session
@@ -509,66 +510,58 @@ def _collab_to_dict(event: Any) -> Dict[str, Any]:
     }  # Collab fields are event-specific, not standard ObservabilityFields
 
 
-def _build_agent_dict_with_children(session: Any, agent: Any) -> Dict[str, Any]:
-    """Build agent dict with its LLM and tool calls."""
-    llm_calls = session.exec(
-        select(LLMCall)
-        .where(LLMCall.agent_execution_id == agent.id)
-        .order_by(LLMCall.start_time)  # type: ignore[arg-type]
-    ).all()
-    tool_calls = session.exec(
-        select(ToolExecution)
-        .where(ToolExecution.agent_execution_id == agent.id)
-        .order_by(ToolExecution.start_time)  # type: ignore[arg-type]
-    ).all()
-    return _agent_to_dict(
-        agent,
-        [_llm_to_dict(llm) for llm in llm_calls],
-        [_tool_to_dict(t) for t in tool_calls],
-    )
+def _eager_build_workflow_dict(wf: Any) -> Dict[str, Any]:
+    """Build workflow dict from eagerly-loaded ORM object.
 
-
-def _build_stage_dict_with_children(session: Any, stage: Any) -> Dict[str, Any]:
-    """Build stage dict with its agents and collaboration events."""
-    agents = session.exec(
-        select(AgentExecution)
-        .where(AgentExecution.stage_execution_id == stage.id)
-        .order_by(AgentExecution.start_time)  # type: ignore[arg-type]
-    ).all()
-
-    agent_dicts = [_build_agent_dict_with_children(session, agent) for agent in agents]
-
-    collab_events = session.exec(
-        select(CollaborationEvent)
-        .where(CollaborationEvent.stage_execution_id == stage.id)
-        .order_by(CollaborationEvent.timestamp)  # type: ignore[arg-type]
-    ).all()
-
-    return _stage_to_dict(
-        stage,
-        agent_dicts,
-        [_collab_to_dict(e) for e in collab_events],
-    )
+    Walks pre-loaded relationships (via selectinload) and sorts children
+    by start_time/timestamp to match the ordering of the N+1 approach.
+    """
+    stage_dicts = []
+    for stage in sorted(wf.stages, key=lambda s: (s.start_time is None, s.start_time)):
+        agent_dicts = []
+        for agent in sorted(stage.agents, key=lambda a: (a.start_time is None, a.start_time)):
+            agent_dicts.append(_agent_to_dict(
+                agent,
+                [_llm_to_dict(call) for call in sorted(
+                    agent.llm_calls, key=lambda call: (call.start_time is None, call.start_time)
+                )],
+                [_tool_to_dict(tool) for tool in sorted(
+                    agent.tool_executions, key=lambda tool: (tool.start_time is None, tool.start_time)
+                )],
+            ))
+        collab_dicts = [
+            _collab_to_dict(e) for e in sorted(
+                stage.collaboration_events, key=lambda e: (e.timestamp is None, e.timestamp)
+            )
+        ]
+        stage_dicts.append(_stage_to_dict(stage, agent_dicts, collab_dicts))
+    return _workflow_to_dict(wf, stage_dicts)
 
 
 def read_get_workflow(workflow_id: str) -> Optional[Dict[str, Any]]:
-    """Get workflow execution with full hierarchy."""
+    """Get workflow execution with full hierarchy using eager loading.
+
+    Uses selectinload to batch-load the entire hierarchy in ~5 queries
+    instead of 20-40 individual queries (N+1 elimination).
+    """
     with get_session() as session:
-        wf = session.exec(
-            select(WorkflowExecution).where(WorkflowExecution.id == workflow_id)
-        ).first()
+        statement = (
+            select(WorkflowExecution)
+            .where(WorkflowExecution.id == workflow_id)
+            .options(
+                selectinload(WorkflowExecution.stages).options(
+                    selectinload(StageExecution.agents).options(
+                        selectinload(AgentExecution.llm_calls),
+                        selectinload(AgentExecution.tool_executions),
+                    ),
+                    selectinload(StageExecution.collaboration_events),
+                )
+            )
+        )
+        wf = session.exec(statement).first()
         if not wf:
             return None
-
-        stages = session.exec(
-            select(StageExecution)
-            .where(StageExecution.workflow_execution_id == workflow_id)
-            .order_by(StageExecution.start_time)  # type: ignore[arg-type]
-        ).all()
-
-        stage_dicts = [_build_stage_dict_with_children(session, stage) for stage in stages]
-
-        return _workflow_to_dict(wf, stage_dicts)
+        return _eager_build_workflow_dict(wf)
 
 
 def read_list_workflows(

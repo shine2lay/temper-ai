@@ -5,14 +5,21 @@ Entry point: `temper-ai`
 
 Commands:
     temper-ai run <workflow>          Run a workflow from a YAML config
-    temper-ai dashboard               Launch dashboard to browse past executions
+    temper-ai serve --dev              Dev mode: no auth, permissive CORS
     temper-ai validate <workflow>     Validate workflow config without running
-    temper-ai list workflows          List available workflows
-    temper-ai list agents             List available agents
-    temper-ai list stages             List available stages
-    temper-ai rollback ...            Rollback operations
-    temper-ai m5 ...                  M5 self-improvement commands
-    temper-ai memory ...              Memory management commands
+    temper-ai list workflows|agents|stages  List available resources
+    temper-ai chat <agent>            Interactive agent chat
+    temper-ai checkpoint list|resume  Checkpoint management
+    temper-ai mcp serve|list-tools    MCP server operations
+    temper-ai create <project>        Scaffold a new project
+    temper-ai visualize <workflow>    DAG visualization
+    temper-ai optimize compile|list|preview  DSPy prompt optimization
+    temper-ai plugin list|import      External agent ingestion
+    temper-ai agent list|register|chat|status  Persistent agent management
+    temper-ai events list|subscribe|replay  Event bus operations
+    temper-ai autonomy audit|apply-pending  Autonomous loop management
+    temper-ai experiment ...          A/B experiment commands
+    temper-ai lifecycle|goals|portfolio|learning|memory  Self-improvement
 """
 import json
 import logging
@@ -77,21 +84,9 @@ class WorkflowExecutionParams:
     workspace: Optional[str] = None
     run_id: Optional[str] = None
     workflow_name: str = ""
+    event_bus: Optional[Any] = None
 
 
-@dataclass
-class WorkflowStateParams:
-    """Parameters for building workflow state."""
-    inputs: Any
-    tracker: Any
-    config_loader: Any
-    tool_registry: Any
-    workflow_id: str
-    show_details: bool
-    workspace: Optional[str] = None
-    run_id: Optional[str] = None
-    workflow_name: str = ""
-    total_stages: int = 0
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────
@@ -102,50 +97,38 @@ def _load_and_validate_workflow(
 ) -> Any:
     """Load a workflow YAML file and validate against schema.
 
+    Delegates to WorkflowRuntime.load_config() for unified security
+    and schema validation across all entry points.
+
     Returns the parsed workflow config dict.
     Raises SystemExit(1) on validation failure.
     """
-    from temper_ai.workflow._schemas import WorkflowConfig as WorkflowConfigSchema
+    from temper_ai.shared.utils.exceptions import ConfigValidationError
+    from temper_ai.workflow.runtime import WorkflowRuntime
 
-    with open(workflow_path) as f:
-        workflow_config = yaml.safe_load(f)
-
-    if not workflow_config:
-        console.print("[red]Error:[/red] Empty workflow file")
-        raise SystemExit(1)
-
+    rt = WorkflowRuntime()
     try:
-        WorkflowConfigSchema(**workflow_config)
-        if verbose:
-            console.print("[green]Schema validation passed[/green]")
-    except Exception as e:  # noqa: BLE001 -- CLI validation catch-all
-        console.print(f"[red]Validation error:[/red] {e}")
+        workflow_config, _ = rt.load_config(workflow_path)
+    except FileNotFoundError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
         raise SystemExit(1)
+    except (ConfigValidationError, ValueError) as exc:
+        console.print(f"[red]Validation error:[/red] {exc}")
+        raise SystemExit(1)
+
+    if verbose:
+        console.print("[green]Schema validation passed[/green]")
 
     return workflow_config
 
 def _cleanup_tool_executor(engine: Any) -> None:
-    """Clean up tool executor resources.
+    """Clean up tool executor resources via WorkflowRuntime.
 
     Args:
         engine: The workflow engine instance
     """
-    logger.debug(f"Starting cleanup, engine type: {type(engine)}")
-    tool_executor = None
-    if hasattr(engine, 'tool_executor'):
-        tool_executor = engine.tool_executor
-    elif hasattr(engine, 'compiler') and hasattr(engine.compiler, 'tool_executor'):
-        tool_executor = engine.compiler.tool_executor
-
-    if tool_executor is not None:
-        try:
-            logger.debug("Calling tool_executor.shutdown()")
-            tool_executor.shutdown()
-            logger.debug("tool_executor.shutdown() completed")
-        except Exception as e:  # noqa: BLE001 -- defensive cleanup
-            logger.debug(f"Error during tool executor shutdown: {e}")
-    else:
-        logger.debug("No tool_executor found to cleanup")
+    from temper_ai.workflow.runtime import WorkflowRuntime
+    WorkflowRuntime().cleanup(engine)
 
 # ─── Root group ───────────────────────────────────────────────────────
 
@@ -186,6 +169,8 @@ def _load_workflow_config(
 ) -> tuple:
     """Load and validate workflow config, load inputs, and check requirements.
 
+    Delegates to WorkflowRuntime for unified validation.
+
     Args:
         workflow: Path to workflow YAML file
         input_file: Optional path to input YAML file
@@ -198,19 +183,27 @@ def _load_workflow_config(
     Raises:
         SystemExit: On validation failure or missing required inputs
     """
+    from temper_ai.shared.utils.exceptions import ConfigValidationError
+    from temper_ai.workflow.runtime import WorkflowRuntime
+
     # Load and validate workflow YAML
     workflow_config = _load_and_validate_workflow(workflow, verbose=verbose)
 
-    # Load inputs
+    # Load inputs via WorkflowRuntime for security checks
+    rt = WorkflowRuntime()
     inputs: dict = {}
     if input_file:
-        with open(input_file) as f:
-            inputs = yaml.safe_load(f) or {}
+        try:
+            inputs = rt.load_input_file(input_file)
+        except FileNotFoundError as exc:
+            console.print(f"[red]Error:[/red] {exc}")
+            raise SystemExit(1)
+        except ConfigValidationError as exc:
+            console.print(f"[red]Input validation error:[/red] {exc}")
+            raise SystemExit(1)
 
     # Check required inputs
-    wf = workflow_config.get("workflow", {})
-    required = wf.get("inputs", {}).get("required", [])
-    missing = [r for r in required if r not in inputs]
+    missing = WorkflowRuntime.check_required_inputs(workflow_config, inputs)
     if missing:
         console.print(
             f"[red]Missing required inputs:[/red] {', '.join(missing)}"
@@ -254,71 +247,58 @@ def _start_dashboard_server(backend: Any, event_bus: Any, port: int) -> Any:
         return None
 
 
-def _import_core_modules(verbose: bool) -> tuple:
-    """Import and return core infrastructure modules, exiting on failure.
+def _create_otel_backend_factory(verbose: bool) -> Optional[Any]:
+    """Create a factory that returns OTEL composite backend if available.
+
+    The returned callable creates a CompositeBackend wrapping the default
+    SQL backend with an OTEL secondary.  Returns *None* when OTEL modules
+    are not installed.
+
+    Args:
+        verbose: Print status message when OTEL is activated.
 
     Returns:
-        Tuple of (ConfigLoader, ExecutionTracker, ToolRegistry) classes.
-
-    Raises:
-        SystemExit: If imports fail.
+        Callable returning composite backend, or None if OTEL unavailable.
     """
     try:
-        from temper_ai.workflow.config_loader import ConfigLoader
-        from temper_ai.observability.tracker import ExecutionTracker
-        from temper_ai.tools.registry import ToolRegistry
-        return ConfigLoader, ExecutionTracker, ToolRegistry
-    except ImportError as e:
-        console.print(f"[red]Import error:[/red] {e}")
-        if verbose:
-            logger.exception("Failed to import required modules")
-        raise SystemExit(1)
+        from temper_ai.observability.otel_setup import (  # noqa: F401
+            create_otel_backend,
+            init_otel,
+        )
+    except ImportError:
+        return None
 
-
-def _init_database(db_url: str, ensure_database_fn: Any, verbose: bool) -> None:
-    """Ensure the database schema exists.
-
-    Raises:
-        SystemExit: On database errors.
-    """
-    try:
-        ensure_database_fn(db_url)
-    except (OSError, ConnectionError, RuntimeError) as e:
-        console.print(f"[red]Database initialization error:[/red] {e}")
-        if verbose:
-            logger.exception("Failed to initialize database")
-        raise SystemExit(1)
-
-
-def _create_tracker(event_bus: Any, verbose: bool) -> Any:
-    """Create an ExecutionTracker with OTEL composite backend if available.
-
-    Returns:
-        Configured ExecutionTracker instance.
-    """
-    from temper_ai.observability.tracker import ExecutionTracker
-    from temper_ai.observability.otel_setup import init_otel, create_otel_backend
-
-    init_otel()
-    otel_backend = create_otel_backend()
-
-    if otel_backend is not None:
-        from temper_ai.observability.backends.composite_backend import CompositeBackend
-        from temper_ai.observability.backends import SQLObservabilityBackend as _SQLBackend
+    def _factory() -> Optional[Any]:
+        init_otel()
+        otel_backend = create_otel_backend()
+        if otel_backend is None:
+            return None
+        from temper_ai.observability.backends import (
+            SQLObservabilityBackend as _SQLBackend,
+        )
+        from temper_ai.observability.backends.composite_backend import (
+            CompositeBackend,
+        )
         sql_backend = _SQLBackend()
-        composite = CompositeBackend(primary=sql_backend, secondaries=[otel_backend])
-        tracker = ExecutionTracker(backend=composite, event_bus=event_bus)
+        composite = CompositeBackend(
+            primary=sql_backend, secondaries=[otel_backend],
+        )
         if verbose:
             console.print("[cyan]OTEL[/cyan] backend active (composite mode)")
-        return tracker
+        return composite
 
-    return ExecutionTracker(event_bus=event_bus) if event_bus else ExecutionTracker()
+    return _factory
 
 
 def _initialize_infrastructure(
     config_root: str, db_url: Optional[str], dashboard_port: Optional[int], verbose: bool
 ) -> tuple:
-    """Initialize database, registries, tracker, event bus, and optionally dashboard server.
+    """Initialize infrastructure via WorkflowRuntime with CLI-specific overlays.
+
+    Delegates ConfigLoader, ToolRegistry, tracker creation, and DB init
+    to ``WorkflowRuntime.setup_infrastructure()``.  CLI-specific concerns
+    (OTEL composite backend, ObservabilityEventBus, dashboard server) are
+    layered on top via ``RuntimeConfig`` fields.
 
     Args:
         config_root: Config directory root
@@ -327,72 +307,51 @@ def _initialize_infrastructure(
         verbose: Enable verbose output
 
     Returns:
-        Tuple of (config_loader, tool_registry, tracker, engine, event_bus, dashboard_server)
+        Tuple of (config_loader, tool_registry, tracker, event_bus, dashboard_server)
 
     Raises:
         SystemExit: On initialization failure
     """
     from temper_ai.storage.database.engine import get_database_url
+    from temper_ai.workflow.runtime import RuntimeConfig, WorkflowRuntime
 
-    ConfigLoader, ExecutionTracker, ToolRegistry = _import_core_modules(verbose)
-    _init_database(db_url or get_database_url(), ExecutionTracker.ensure_database, verbose)
-
-    config_loader = ConfigLoader(config_root=config_root)
-    tool_registry = ToolRegistry(auto_discover=True)
-
-    # Create event bus (needed for dashboard)
+    # CLI-specific: TemperEventBus wrapping ObservabilityEventBus for dashboard streaming
     event_bus = None
     if dashboard_port is not None:
         try:
+            from temper_ai.events.event_bus import TemperEventBus
             from temper_ai.observability.event_bus import ObservabilityEventBus
-            event_bus = ObservabilityEventBus()
+            event_bus = TemperEventBus(observability_bus=ObservabilityEventBus(), persist=False)
         except ImportError:
             console.print("[yellow]Warning:[/yellow] Event bus not available")
 
-    tracker = _create_tracker(event_bus, verbose)
+    backend_factory = _create_otel_backend_factory(verbose)
+
+    try:
+        rt = WorkflowRuntime(config=RuntimeConfig(
+            config_root=config_root,
+            db_path=db_url or get_database_url(),
+            initialize_database=True,
+            event_bus=event_bus,
+            tracker_backend_factory=backend_factory,
+        ))
+        infra = rt.setup_infrastructure()
+    except (ImportError, OSError, ConnectionError, RuntimeError) as e:
+        console.print(f"[red]Infrastructure initialization error:[/red] {e}")
+        if verbose:
+            logger.exception("Failed to initialize infrastructure")
+        raise SystemExit(1)
 
     # Start dashboard server if requested
     dashboard_server = None
     if dashboard_port is not None and event_bus is not None:
-        dashboard_server = _start_dashboard_server(tracker.backend, event_bus, dashboard_port)
+        dashboard_server = _start_dashboard_server(
+            infra.tracker.backend, event_bus, dashboard_port,
+        )
 
-    return config_loader, tool_registry, tracker, event_bus, dashboard_server
+    return infra.config_loader, infra.tool_registry, infra.tracker, event_bus, dashboard_server
 
 
-def _build_workflow_state(params: WorkflowStateParams) -> dict[str, Any]:
-    """Build workflow state dict with optional stream display.
-
-    Args:
-        params: WorkflowStateParams with all state parameters
-
-    Returns:
-        State dict for workflow execution
-    """
-    stream_display = None
-    if params.show_details:
-        try:
-            from temper_ai.interfaces.cli.stream_display import StreamDisplay
-            stream_display = StreamDisplay(console)
-        except ImportError:
-            pass  # stream_display not available, skip
-
-    state: dict[str, Any] = {
-        "workflow_inputs": params.inputs,
-        "tracker": params.tracker,
-        "config_loader": params.config_loader,
-        "tool_registry": params.tool_registry,
-        "workflow_id": params.workflow_id,
-        "show_details": params.show_details,
-        "detail_console": console if params.show_details else None,
-        "stream_callback": stream_display,
-        "workflow_name": params.workflow_name,
-        "total_stages": params.total_stages,
-    }
-    if params.workspace is not None:
-        state["workspace_root"] = params.workspace
-    if params.run_id is not None:
-        state["run_id"] = params.run_id
-    return state
 
 
 # Keys in workflow state that are infrastructure (non-serializable).
@@ -415,45 +374,98 @@ class _CritiqueLLM:
         return str(response.content)
 
 
-def _create_critique_llm(workflow_config: dict) -> Optional[Any]:
-    """Try to create an LLM for optimization critique from the first agent.
+def _create_critique_llm(
+    workflow_config: dict,
+    config_loader: Optional[Any] = None,
+) -> Optional[Any]:
+    """Create an LLM for evaluation critique from workflow agent configs.
 
-    Reads the stage_ref YAML directly, extracts the first agent name,
-    then loads the agent config to get the inference provider/model/url.
+    Tries each stage's agents via config_loader (robust path resolution),
+    falls back to raw file reads if config_loader is unavailable.
     """
-    try:
-        wf = workflow_config.get("workflow", {})
-        stages = wf.get("stages", [])
-        if not stages:
-            return None
-        stage_ref = stages[0].get("stage_ref")
+    wf = workflow_config.get("workflow", {})
+    stages = wf.get("stages", [])
+    if not stages:
+        logger.warning("No stages in workflow config, cannot create critique LLM")
+        return None
+
+    # Collect all agent names across all stages
+    agent_names = _collect_agent_names(stages, config_loader)
+    if not agent_names:
+        logger.warning("No agent names found in workflow stages")
+        return None
+
+    # Try each agent until we find one with valid inference config
+    for agent_name in agent_names:
+        llm = _try_create_llm_from_agent(agent_name, config_loader)
+        if llm is not None:
+            return llm
+
+    logger.warning("Could not create critique LLM from any agent config")
+    return None
+
+
+def _collect_agent_names(
+    stages: list,
+    config_loader: Optional[Any],
+) -> list:
+    """Extract agent names from stage configs."""
+    agent_names: list = []
+    for stage_def in stages:
+        stage_ref = stage_def.get("stage_ref")
         if not stage_ref:
-            return None
-        with open(stage_ref) as f:
-            stage_config = yaml.safe_load(f)
-        agents = stage_config.get("stage", {}).get("agents", [])
-        if not agents:
-            return None
-        agent_name = agents[0] if isinstance(agents[0], str) else agents[0].get("name")
-        agent_path = Path("configs/agents") / f"{agent_name}.yaml"
-        with open(agent_path) as f:
-            agent_config = yaml.safe_load(f)
+            continue
+        try:
+            if config_loader is not None:
+                stage_name = Path(stage_ref).stem
+                stage_config = config_loader.load_stage(stage_name, validate=False)
+            else:
+                stage_path = PROJECT_ROOT / stage_ref
+                with open(stage_path) as f:
+                    stage_config = yaml.safe_load(f)
+            agents = stage_config.get("stage", {}).get("agents", [])
+            for a in agents:
+                name = a if isinstance(a, str) else a.get("name")
+                if name and name not in agent_names:
+                    agent_names.append(name)
+        except (OSError, yaml.YAMLError, KeyError, AttributeError) as exc:
+            logger.debug("Skipping stage '%s' during agent name collection: %s", stage_ref, exc)
+            continue
+    return agent_names
+
+
+def _try_create_llm_from_agent(
+    agent_name: str,
+    config_loader: Optional[Any],
+) -> Optional[Any]:
+    """Try to create a critique LLM from a single agent's inference config."""
+    try:
+        if config_loader is not None:
+            agent_config = config_loader.load_agent(agent_name, validate=False)
+        else:
+            agent_path = PROJECT_ROOT / "configs" / "agents" / f"{agent_name}.yaml"
+            with open(agent_path) as f:
+                agent_config = yaml.safe_load(f)
+
         inference = agent_config.get("agent", {}).get("inference", {})
         provider = inference.get("provider", "vllm")
         model = inference.get("model")
         base_url = inference.get("base_url")
         if not model or not base_url:
             return None
+
         from temper_ai.llm.providers.vllm_provider import VllmLLM
+
         raw_llm: Any
         if provider == "ollama":
             from temper_ai.llm.providers.ollama import OllamaLLM
             raw_llm = OllamaLLM(model=model, base_url=base_url)
         else:
             raw_llm = VllmLLM(model=model, base_url=base_url)
+        logger.info("Critique LLM created from agent '%s' (%s/%s)", agent_name, provider, model)
         return _CritiqueLLM(raw_llm)
-    except Exception:  # noqa: BLE001 -- optional feature, fall back gracefully
-        logger.debug("Could not create critique LLM, using fallback")
+    except Exception:  # noqa: BLE001
+        logger.debug("Could not create critique LLM from agent '%s'", agent_name, exc_info=True)
         return None
 
 
@@ -503,17 +515,96 @@ class _CLIWorkflowRunner:
     def execute(self, input_data: Any) -> Any:
         """Run the workflow and return only serializable output.
 
-        Shallow-copies the state template (infrastructure objects like tracker,
-        config_loader are shared across runs), runs the workflow, then strips
-        non-serializable infrastructure keys so the evaluator can json.dumps().
+        Delegates to ``WorkflowRuntime.execute()`` so that
+        ``workflow.completed`` events are emitted for optimized runs.
         """
+        from temper_ai.workflow.runtime import WorkflowRuntime
+
         state = dict(self._state_template)
         if isinstance(input_data, dict):
             state["workflow_inputs"] = dict(input_data)
-        result = self._compiled.invoke(state)
+        result = WorkflowRuntime().execute(self._compiled, state)
         if isinstance(result, dict):
             return {k: v for k, v in result.items() if k not in _INFRA_STATE_KEYS}
         return result
+
+
+def _create_evaluation_dispatcher(
+    opt_raw: dict,
+    llm: Optional[Any] = None,
+) -> Optional[Any]:
+    """Create EvaluationDispatcher from optimization config if evaluations are defined."""
+    from pydantic import ValidationError
+
+    from temper_ai.optimization._evaluation_schemas import EvaluationMapping
+    from temper_ai.optimization.evaluation_dispatcher import EvaluationDispatcher
+
+    try:
+        mapping = EvaluationMapping(
+            evaluations=opt_raw.get("evaluations", {}),
+            agent_evaluations=opt_raw.get("agent_evaluations", {}),
+        )
+    except ValidationError as exc:
+        logger.warning("Invalid evaluation config, skipping dispatcher: %s", exc)
+        return None
+
+    session_factory = _get_evaluation_session_factory()
+    return EvaluationDispatcher(
+        config=mapping, llm_factory=llm, session_factory=session_factory,
+    )
+
+
+def _get_evaluation_session_factory() -> Optional[Any]:
+    """Get DB session factory for persisting evaluation results.
+
+    Returns None if the database manager has not been initialized,
+    so EvaluationDispatcher skips persistence rather than failing
+    silently at write time.
+    """
+    try:
+        from temper_ai.storage.database.manager import get_database, get_session
+        get_database()  # Raises RuntimeError if not initialized
+        return get_session
+    except RuntimeError:
+        logger.warning("Database not initialized, evaluation results will not be persisted")
+        return None
+    except ImportError:
+        logger.warning("Database module unavailable, evaluation results will not be persisted")
+        return None
+
+
+def _finalize_evaluation_dispatcher(dispatcher: Any) -> None:
+    """Collect completed evaluations and shut down dispatcher."""
+    if dispatcher is None:
+        return
+    try:
+        results = dispatcher.wait_all()
+        if results:
+            _display_evaluation_results(results)
+    except Exception:  # noqa: BLE001 — evaluation cleanup must not crash workflow
+        logger.warning("Evaluation dispatcher wait failed", exc_info=True)
+    finally:
+        dispatcher.shutdown()
+
+
+def _display_evaluation_results(results: list) -> None:
+    """Display evaluation results summary table."""
+    table = Table(title="Per-Agent Evaluation Results")
+    table.add_column("Evaluation", style="cyan")
+    table.add_column("Type", style="dim")
+    table.add_column("Score", justify="right")
+    table.add_column("Passed", justify="center")
+    for row in results:
+        score = row.get("score", 0.0)
+        passed = row.get("passed", False)
+        name = row.get("evaluation_name", "?")
+        etype = row.get("evaluator_type", "?")
+        color = "green" if passed else "red"
+        table.add_row(
+            name, etype, f"{score:.2f}",
+            f"[{color}]{'YES' if passed else 'NO'}[/{color}]",
+        )
+    console.print(table)
 
 
 def _execute_workflow(params: WorkflowExecutionParams) -> Any:
@@ -528,24 +619,53 @@ def _execute_workflow(params: WorkflowExecutionParams) -> Any:
     Raises:
         SystemExit: On execution failure or interruption
     """
+    eval_dispatcher = None
     try:
-        state = _build_workflow_state(WorkflowStateParams(
-            inputs=params.inputs, tracker=params.tracker,
-            config_loader=params.config_loader, tool_registry=params.tool_registry,
-            workflow_id=params.workflow_id, show_details=params.show_details,
+        from temper_ai.workflow.runtime import InfrastructureBundle, WorkflowRuntime
+        rt = WorkflowRuntime(event_bus=params.event_bus)
+        infra = InfrastructureBundle(
+            config_loader=params.config_loader,
+            tool_registry=params.tool_registry,
+            tracker=params.tracker,
+        )
+        state = rt.build_state(
+            params.inputs, infra, params.workflow_id,
+            workflow_config=params.workflow_config,
             workspace=params.workspace, run_id=params.run_id,
+            show_details=params.show_details,
             workflow_name=params.workflow_name,
-            total_stages=len(params.workflow_config.get("workflow", {}).get("stages", [])),
-        ))
+        )
+        # CLI-specific overlays
+        if params.show_details:
+            state["detail_console"] = console
+            try:
+                from temper_ai.interfaces.cli.stream_display import StreamDisplay
+                state["stream_callback"] = StreamDisplay(console)
+            except ImportError:
+                pass
 
         # Wire optimization engine if configured
         opt_raw = params.workflow_config.get("workflow", {}).get("optimization")
+        critique_llm = None
+
+        # Create evaluation dispatcher if per-agent evaluations are configured
+        if opt_raw and opt_raw.get("evaluations"):
+            critique_llm = _create_critique_llm(
+                params.workflow_config, config_loader=params.config_loader,
+            )
+            eval_dispatcher = _create_evaluation_dispatcher(opt_raw, llm=critique_llm)
+            if eval_dispatcher is not None:
+                state["evaluation_dispatcher"] = eval_dispatcher
+
         if opt_raw and opt_raw.get("enabled", True):
             from temper_ai.optimization import OptimizationConfig, OptimizationEngine
 
             logger.info("Optimization enabled — running optimization pipeline")
             opt_config = OptimizationConfig.model_validate(opt_raw)
-            critique_llm = _create_critique_llm(params.workflow_config)
+            if critique_llm is None:
+                critique_llm = _create_critique_llm(
+                    params.workflow_config, config_loader=params.config_loader,
+                )
             experiment_service = _create_experiment_service()
             opt_engine = OptimizationEngine(
                 config=opt_config,
@@ -557,7 +677,7 @@ def _execute_workflow(params: WorkflowExecutionParams) -> Any:
             _log_optimization_summary(opt_result)
             return opt_result.output
 
-        return params.compiled.invoke(state)
+        return rt.execute(params.compiled, state)
     except WorkflowStageError as e:
         console.print(f"[red]Stage failure:[/red] {e.stage_name} — {e}")
         if params.verbose:
@@ -576,6 +696,8 @@ def _execute_workflow(params: WorkflowExecutionParams) -> Any:
         console.print("\n[yellow]Interrupted[/yellow]")
         _cleanup_tool_executor(params.engine)
         raise SystemExit(EXIT_CODE_KEYBOARD_INTERRUPT)
+    finally:
+        _finalize_evaluation_dispatcher(eval_dispatcher)
 
 
 def _display_detailed_report(result: Any) -> None:
@@ -665,8 +787,7 @@ def _run_autonomous_loop(
     orchestrator = PostExecutionOrchestrator(config)
     report = orchestrator.run(context)
 
-    if verbose or True:  # Always show autonomous loop summary
-        _print_autonomous_summary(report)
+    _print_autonomous_summary(report)
 
 
 def _format_subsystem_result(
@@ -803,20 +924,19 @@ def _setup_event_routing(
 
 def _compile_workflow(
     workflow_config: Any, tool_registry: Any, config_loader: Any, verbose: bool,
+    event_bus: Optional[Any] = None,
 ) -> tuple:
-    """Compile workflow config into an executable graph.
+    """Compile workflow config into an executable graph via WorkflowRuntime.
 
     Returns (engine, compiled) tuple.
     """
     try:
-        from temper_ai.workflow.engine_registry import EngineRegistry
-        registry = EngineRegistry()
-        engine = registry.get_engine_from_config(
-            workflow_config,
-            tool_registry=tool_registry,
-            config_loader=config_loader,
+        from temper_ai.workflow.runtime import InfrastructureBundle, WorkflowRuntime
+        rt = WorkflowRuntime(event_bus=event_bus)
+        infra = InfrastructureBundle(
+            config_loader=config_loader, tool_registry=tool_registry,
         )
-        compiled = engine.compile(workflow_config)
+        engine, compiled = rt.compile(workflow_config, infra)
         return engine, compiled
     except (ValueError, KeyError, AttributeError) as e:
         console.print(f"[red]Workflow compilation error:[/red] {e}")
@@ -828,37 +948,14 @@ def _compile_workflow(
 def _maybe_adapt_lifecycle(
     workflow_config: dict, inputs: dict, config_root: str, verbose: bool
 ) -> dict:
-    """Apply lifecycle adaptation if enabled in workflow config."""
-    wf = workflow_config.get("workflow", {})
-    lifecycle_cfg = wf.get("lifecycle", {})
-    if not lifecycle_cfg.get("enabled", False):
-        return workflow_config
+    """Apply lifecycle adaptation if enabled via WorkflowRuntime."""
+    from temper_ai.workflow.runtime import RuntimeConfig, WorkflowRuntime
 
-    try:
-        from temper_ai.lifecycle.adapter import LifecycleAdapter
-        from temper_ai.lifecycle.classifier import ProjectClassifier
-        from temper_ai.lifecycle.profiles import ProfileRegistry
-        from temper_ai.lifecycle.store import LifecycleStore
-
-        store = LifecycleStore()
-        registry = ProfileRegistry(
-            config_dir=Path(config_root) / "lifecycle", store=store
-        )
-        classifier = ProjectClassifier()
-        adapter = LifecycleAdapter(
-            profile_registry=registry,
-            classifier=classifier,
-            store=store,
-        )
-        adapted = adapter.adapt(workflow_config, inputs)
-        if verbose:
-            console.print("[cyan]Lifecycle adaptation applied[/cyan]")
-        return adapted
-    except Exception as e:  # noqa: BLE001 -- lifecycle is optional
-        logger.warning("Lifecycle adaptation failed: %s", e)
-        if verbose:
-            console.print(f"[yellow]Lifecycle adaptation skipped:[/yellow] {e}")
-        return workflow_config
+    rt = WorkflowRuntime(config=RuntimeConfig(config_root=config_root))
+    adapted = rt.adapt_lifecycle(workflow_config, inputs)
+    if adapted is not workflow_config and verbose:
+        console.print("[cyan]Lifecycle adaptation applied[/cyan]")
+    return adapted
 
 
 def _maybe_run_planning_pass(
@@ -1023,7 +1120,9 @@ def _run_local_workflow(  # noqa: params — pass-through from Click
         _initialize_infrastructure(config_root, db, dash_port, verbose)
     )
     _setup_event_routing(event_bus, events_to, event_format, run_id, verbose)
-    engine, compiled = _compile_workflow(wf_config, tool_registry, config_loader, verbose)
+    engine, compiled = _compile_workflow(
+        wf_config, tool_registry, config_loader, verbose, event_bus=event_bus,
+    )
 
     wf_name = wf_config.get("workflow", {}).get("name", Path(workflow).stem)
     start_time = time.monotonic()
@@ -1039,7 +1138,7 @@ def _run_local_workflow(  # noqa: params — pass-through from Click
             tracker=tracker, config_loader=config_loader, tool_registry=tool_registry,
             workflow_id=workflow_id, show_details=show_details, engine=engine,
             verbose=verbose, workspace=workspace, run_id=run_id,
-            workflow_name=wf_name,
+            workflow_name=wf_name, event_bus=event_bus,
         ))
 
     duration = time.monotonic() - start_time
@@ -1217,55 +1316,6 @@ def _print_run_summary(
     console.print(table)
 
 
-# ─── dashboard command ────────────────────────────────────────────────
-
-
-@main.command()
-@click.option("--host", default=DEFAULT_HOST, show_default=True, envvar="TEMPER_HOST", help="Bind address")
-@click.option("--port", default=DEFAULT_DASHBOARD_PORT, show_default=True, help="Dashboard port")
-@click.option("--db", default=None, envvar="TEMPER_DATABASE_URL", help="Database URL override")
-def dashboard(host: str, port: int, db: Optional[str]) -> None:
-    """Launch dashboard to browse past workflow executions."""
-    try:
-        import uvicorn
-
-        from temper_ai.interfaces.dashboard.app import create_app
-    except ImportError as e:
-        console.print(
-            f"[red]Error:[/red] Dashboard dependencies not installed: {e}\n"
-            "Install with: pip install 'temper-ai[dashboard]'"
-        )
-        raise SystemExit(1)
-
-    from temper_ai.observability.backends import SQLObservabilityBackend
-    from temper_ai.observability.event_bus import ObservabilityEventBus
-    from temper_ai.observability.tracker import ExecutionTracker
-    from temper_ai.storage.database.engine import get_database_url
-
-    # Init database
-    db_url = db or get_database_url()
-    try:
-        ExecutionTracker.ensure_database(db_url)
-    except (OSError, ConnectionError, RuntimeError) as e:
-        console.print(f"[red]Database error:[/red] {e}")
-        raise SystemExit(1)
-
-    backend = SQLObservabilityBackend(buffer=False)
-    event_bus = ObservabilityEventBus()
-    app = create_app(backend=backend, event_bus=event_bus)
-
-    if host == DEFAULT_SERVER_HOST:  # nosec B104
-        console.print("[yellow]Warning:[/yellow] Binding to 0.0.0.0 exposes service on all network interfaces")
-
-    console.print(f"\n[cyan]Temper AI Dashboard[/cyan] running at http://{host}:{port}")
-    console.print("Press Ctrl+C to stop\n")
-
-    try:
-        uvicorn.run(app, host=host, port=port, log_level="info")
-    except KeyboardInterrupt:
-        console.print("\n[yellow]Dashboard stopped[/yellow]")
-
-
 # ─── serve command ────────────────────────────────────────────────────
 
 
@@ -1281,9 +1331,14 @@ def dashboard(host: str, port: int, db: Optional[str]) -> None:
 )
 @click.option("--db", default=None, envvar="TEMPER_DATABASE_URL", help="Database URL override")
 @click.option("--workers", default=DEFAULT_MAX_WORKERS, show_default=True, envvar="TEMPER_MAX_WORKERS", help="Max concurrent workflows")
-@click.option("--reload", "dev_reload", is_flag=True, help="Auto-reload on code changes (dev mode)")
-def serve(host: str, port: int, config_root: str, db: Optional[str], workers: int, dev_reload: bool) -> None:
-    """Start Temper AI HTTP API server for programmatic workflow execution."""
+@click.option("--reload", "dev_reload", is_flag=True, help="Auto-reload on code changes")
+@click.option("--dev", is_flag=True, help="Dev mode: disable auth, permissive CORS")
+def serve(host: str, port: int, config_root: str, db: Optional[str], workers: int, dev_reload: bool, dev: bool) -> None:
+    """Start Temper AI HTTP API server.
+
+    Use --dev for local development (disables auth, permissive CORS).
+    Without --dev, runs in production mode with auth and restrictive CORS.
+    """
     try:
         import uvicorn
 
@@ -1295,6 +1350,7 @@ def serve(host: str, port: int, config_root: str, db: Optional[str], workers: in
         )
         raise SystemExit(1)
 
+    from temper_ai.events.event_bus import TemperEventBus
     from temper_ai.observability.backends import SQLObservabilityBackend
     from temper_ai.observability.event_bus import ObservabilityEventBus
     from temper_ai.observability.tracker import ExecutionTracker
@@ -1309,11 +1365,12 @@ def serve(host: str, port: int, config_root: str, db: Optional[str], workers: in
         raise SystemExit(1)
 
     backend = SQLObservabilityBackend(buffer=False)
-    event_bus = ObservabilityEventBus()
+    event_bus = TemperEventBus(observability_bus=ObservabilityEventBus(), persist=False)
+    mode = "dev" if dev else "server"
     app = create_app(
         backend=backend,
         event_bus=event_bus,
-        mode="server",
+        mode=mode,
         config_root=config_root,
         max_workers=workers,
     )
@@ -1321,7 +1378,8 @@ def serve(host: str, port: int, config_root: str, db: Optional[str], workers: in
     if host == DEFAULT_SERVER_HOST:  # nosec B104
         console.print("[yellow]Warning:[/yellow] Binding to 0.0.0.0 exposes service on all network interfaces")
 
-    console.print(f"\n[cyan]Temper AI Server[/cyan] listening on http://{host}:{port}")
+    label = "Temper AI (Dev)" if dev else "Temper AI Server"
+    console.print(f"\n[cyan]{label}[/cyan] listening on http://{host}:{port}")
     console.print("Press Ctrl+C to stop\n")
 
     try:
@@ -1440,6 +1498,7 @@ def _validate_stage_sources(
     config_root: str,
     workflow_dir: Path,
     errors: list[str],
+    warnings: list[str],
 ) -> None:
     """Validate source references for a single stage."""
     stage_name = stage.get("name", "")
@@ -1467,11 +1526,19 @@ def _validate_stage_sources(
             continue
 
         if source_prefix not in preds:
-            errors.append(
-                f"Stage '{stage_name}' input '{input_name}': "
-                f"source '{decl.source}' references stage '{source_prefix}' "
-                f"which is not a predecessor"
-            )
+            if decl.required:
+                errors.append(
+                    f"Stage '{stage_name}' input '{input_name}': "
+                    f"source '{decl.source}' references stage "
+                    f"'{source_prefix}' which is not a predecessor"
+                )
+            else:
+                warnings.append(
+                    f"Stage '{stage_name}' input '{input_name}': "
+                    f"source '{decl.source}' references stage "
+                    f"'{source_prefix}' which is not a predecessor "
+                    f"(ok: input is optional with default)"
+                )
 
 
 def _validate_source_references(
@@ -1503,7 +1570,7 @@ def _validate_source_references(
     for stage in stages:
         _validate_stage_sources(
             stage, stage_names, trans_preds,
-            config_root, workflow_dir, errors,
+            config_root, workflow_dir, errors, warnings,
         )
 
 
@@ -1633,27 +1700,23 @@ def _check_workflow_file(
     errors: list[str], warnings: list[str], verbose: bool,
 ) -> None:
     """Validate a single workflow file: schema, stage refs, agent refs."""
-    try:
-        with open(wf_path) as f:
-            wf_config = yaml.safe_load(f)
-    except Exception as exc:  # noqa: BLE001
-        errors.append(f"{wf_path.name}: YAML parse error — {exc}")
-        return
+    from temper_ai.shared.utils.exceptions import ConfigValidationError
+    from temper_ai.workflow.runtime import RuntimeConfig, WorkflowRuntime
 
-    if not wf_config:
-        warnings.append(f"{wf_path.name}: empty file")
+    rt = WorkflowRuntime(config=RuntimeConfig(config_root=config_root))
+    try:
+        wf_config, _ = rt.load_config(str(wf_path))
+    except (ConfigValidationError, ValueError) as exc:
+        errors.append(f"{wf_path.name}: {exc}")
+        return
+    except FileNotFoundError as exc:
+        errors.append(f"{wf_path.name}: {exc}")
         return
 
     wf = wf_config.get("workflow", {})
     if not wf:
         errors.append(f"{wf_path.name}: missing 'workflow' key")
         return
-
-    try:
-        from temper_ai.workflow._schemas import WorkflowConfig as WfSchema
-        WfSchema(**wf_config)
-    except Exception as exc:  # noqa: BLE001
-        errors.append(f"{wf_path.name}: schema error — {exc}")
 
     for stage in wf.get("stages", []):
         stage_ref = stage.get("stage_ref", "")
@@ -1719,6 +1782,152 @@ def config_check(config_root: str, fail_on_warning: bool, verbose: bool) -> None
         _check_workflow_file(wf_path, config_root, errors, warnings, verbose)
 
     _report_config_results(errors, warnings, fail_on_warning)
+
+
+@config_group.command("import")
+@click.argument("yaml_file", type=click.Path(exists=True))
+@click.option("--name", required=True, help="Config name in DB")
+@click.option(
+    "--type", "config_type",
+    type=click.Choice(["workflow", "stage", "agent"]),
+    required=True,
+    help="Config type",
+)
+@click.option("--api-key", required=True, envvar="TEMPER_API_KEY", help="API key for auth")
+@click.option("--server", default=None, envvar="TEMPER_SERVER_URL", help="Server URL")
+def config_import(yaml_file: str, name: str, config_type: str, api_key: str, server: str | None) -> None:
+    """Import a YAML config file to the DB."""
+    import httpx
+    from temper_ai.interfaces.cli.server_client import DEFAULT_SERVER_URL
+
+    server_url = server or DEFAULT_SERVER_URL
+    with open(yaml_file) as f:
+        yaml_content = f.read()
+
+    resp = httpx.post(
+        f"{server_url}/api/configs/import",
+        json={"config_type": config_type, "name": name, "yaml_content": yaml_content},
+        headers={"Authorization": f"Bearer {api_key}"},
+        timeout=30,
+    )
+    if resp.status_code != 200:
+        console.print(f"[red]Error:[/red] {resp.text}")
+        raise SystemExit(1)
+
+    data = resp.json()
+    console.print(f"[green]Imported:[/green] {config_type}/{name} (v{data.get('version', 1)})")
+
+
+@config_group.command("export")
+@click.argument("config_type", type=click.Choice(["workflow", "stage", "agent"]))
+@click.argument("name")
+@click.option("--output", "-o", default=None, help="Output file path (default: stdout)")
+@click.option("--api-key", required=True, envvar="TEMPER_API_KEY", help="API key for auth")
+@click.option("--server", default=None, envvar="TEMPER_SERVER_URL", help="Server URL")
+def config_export(config_type: str, name: str, output: str | None, api_key: str, server: str | None) -> None:
+    """Export a config from DB to YAML."""
+    import httpx
+    from temper_ai.interfaces.cli.server_client import DEFAULT_SERVER_URL
+
+    server_url = server or DEFAULT_SERVER_URL
+
+    resp = httpx.get(
+        f"{server_url}/api/configs/export/{config_type}/{name}",
+        headers={"Authorization": f"Bearer {api_key}"},
+        timeout=30,
+    )
+    if resp.status_code != 200:
+        console.print(f"[red]Error:[/red] {resp.text}")
+        raise SystemExit(1)
+
+    yaml_content: str = resp.json().get("yaml_content", "")
+    if output:
+        with open(output, "w") as f:
+            f.write(yaml_content)
+        console.print(f"[green]Exported:[/green] {config_type}/{name} -> {output}")
+    else:
+        console.print(yaml_content)
+
+
+@config_group.command("list")
+@click.argument("config_type", type=click.Choice(["workflow", "stage", "agent"]))
+@click.option("--api-key", required=True, envvar="TEMPER_API_KEY", help="API key for auth")
+@click.option("--server", default=None, envvar="TEMPER_SERVER_URL", help="Server URL")
+def config_list(config_type: str, api_key: str, server: str | None) -> None:
+    """List configs of a given type from DB."""
+    import httpx
+    from temper_ai.interfaces.cli.server_client import DEFAULT_SERVER_URL
+
+    server_url = server or DEFAULT_SERVER_URL
+
+    resp = httpx.get(
+        f"{server_url}/api/configs/{config_type}",
+        headers={"Authorization": f"Bearer {api_key}"},
+        timeout=30,
+    )
+    if resp.status_code != 200:
+        console.print(f"[red]Error:[/red] {resp.text}")
+        raise SystemExit(1)
+
+    configs = resp.json().get("configs", [])
+    if not configs:
+        console.print(f"No {config_type} configs found.")
+        return
+
+    table = Table(title=f"{config_type.capitalize()} Configs")
+    table.add_column(COLUMN_NAME, style="cyan")
+    table.add_column("Version", style="yellow")
+    table.add_column(COLUMN_DESCRIPTION)
+
+    for cfg in configs:
+        table.add_row(
+            cfg.get("name", ""),
+            str(cfg.get("version", "")),
+            cfg.get("description", ""),
+        )
+    console.print(table)
+
+
+@config_group.command("seed")
+@click.option("--config-root", default="configs", help="Config directory root")
+@click.option("--api-key", required=True, envvar="TEMPER_API_KEY", help="API key for auth")
+@click.option("--server", default=None, envvar="TEMPER_SERVER_URL", help="Server URL")
+def config_seed(config_root: str, api_key: str, server: str | None) -> None:
+    """Import all YAML configs from disk to DB."""
+    import httpx
+    from temper_ai.interfaces.cli.server_client import DEFAULT_SERVER_URL
+
+    server_url = server or DEFAULT_SERVER_URL
+    root = Path(config_root)
+    type_map = {"workflows": "workflow", "stages": "stage", "agents": "agent"}
+
+    imported = 0
+    errors = 0
+
+    for subdir, config_type in type_map.items():
+        config_dir = root / subdir
+        if not config_dir.exists():
+            continue
+        for yaml_path in sorted(config_dir.glob(YAML_GLOB_PATTERN)):
+            name = yaml_path.stem
+            with open(yaml_path) as f:
+                yaml_content = f.read()
+            resp = httpx.post(
+                f"{server_url}/api/configs/import",
+                json={"config_type": config_type, "name": name, "yaml_content": yaml_content},
+                headers={"Authorization": f"Bearer {api_key}"},
+                timeout=30,
+            )
+            if resp.status_code != 200:
+                console.print(f"[red]Error:[/red] {config_type}/{name}: {resp.text}")
+                errors += 1
+            else:
+                console.print(f"[green]Seeded:[/green] {config_type}/{name}")
+                imported += 1
+
+    console.print(f"\nDone: {imported} imported, {errors} error(s).")
+    if errors:
+        raise SystemExit(1)
 
 
 # ─── list group ───────────────────────────────────────────────────────

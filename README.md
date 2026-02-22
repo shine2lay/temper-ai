@@ -134,10 +134,10 @@ temper-ai template list                     # List product types
 temper-ai template create --type api --name my-api  # Scaffold new project
 ```
 
-### Dashboard
+### Dashboard (Dev Mode)
 
 ```bash
-temper-ai dashboard                         # Launch web UI on port 8420
+temper-ai serve --dev                       # Launch with no auth, permissive CORS (port 8420)
 ```
 
 ## Development

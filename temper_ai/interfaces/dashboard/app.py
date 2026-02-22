@@ -61,7 +61,7 @@ def _configure_cors(app: FastAPI, mode: str) -> None:
 
     Args:
         app: FastAPI application instance.
-        mode: "server" or "dashboard".
+        mode: "server" or "dev".
     """
     if mode == "server":
         cors_origins_env = os.environ.get("TEMPER_CORS_ORIGINS", "")
@@ -74,7 +74,7 @@ def _configure_cors(app: FastAPI, mode: str) -> None:
                 allow_headers=["Content-Type"],
             )
     else:
-        # Dashboard mode: permissive for local development
+        # Dev mode: permissive for local development
         app.add_middleware(
             CORSMiddleware,
             allow_origins=["*"],
@@ -89,13 +89,14 @@ def _register_routes(
     data_service: Any,
     config_root: str,
     mode: str,
+    auth_enabled: bool = False,
 ) -> None:
     """Register API routes and WebSocket endpoints."""
-    _register_core_routes(app, execution_service, data_service, config_root)
-    _register_data_api_routes(app, data_service)
+    _register_core_routes(app, execution_service, data_service, config_root, auth_enabled=auth_enabled)
+    _register_data_api_routes(app, data_service, auth_enabled=auth_enabled)
+    _register_studio_routes(app, config_root, auth_enabled=auth_enabled)
 
-    if mode != "server":
-        _register_dashboard_extras(app, data_service, config_root)
+    _register_dashboard_extras(app, data_service, config_root)
 
     _mount_react_app(app)
 
@@ -105,41 +106,44 @@ def _register_core_routes(
     execution_service: Any,
     data_service: Any,
     config_root: str,
+    auth_enabled: bool = False,
 ) -> None:
     """Register server + WebSocket routes (all modes)."""
     from temper_ai.interfaces.dashboard.websocket import create_ws_endpoint
     from temper_ai.interfaces.server.routes import create_server_router
 
     app.include_router(
-        create_server_router(execution_service, data_service, config_root),
+        create_server_router(execution_service, data_service, config_root, auth_enabled=auth_enabled),
         prefix=_API_PREFIX,
     )
 
-    ws_handler = create_ws_endpoint(data_service)
+    ws_handler = create_ws_endpoint(data_service, auth_enabled=auth_enabled)
     app.add_api_websocket_route("/ws/{workflow_id}", ws_handler)
 
 
-def _register_data_api_routes(app: FastAPI, data_service: Any) -> None:
+def _register_data_api_routes(app: FastAPI, data_service: Any, auth_enabled: bool = False) -> None:
     """Register data query routes (workflows, stages, agents, llm/tool calls).
 
     Available in ALL modes so the React frontend can fetch data.
     """
     from temper_ai.interfaces.dashboard.routes import create_router
 
-    app.include_router(create_router(data_service), prefix=_API_PREFIX)
+    app.include_router(create_router(data_service, auth_enabled=auth_enabled), prefix=_API_PREFIX)
+
+
+def _register_studio_routes(app: FastAPI, config_root: str, auth_enabled: bool = False) -> None:
+    """Register Studio config CRUD routes (all modes)."""
+    from temper_ai.interfaces.dashboard.studio_routes import create_studio_router
+    from temper_ai.interfaces.dashboard.studio_service import StudioService
+
+    studio_service = StudioService(config_root=config_root, use_db=auth_enabled)
+    app.include_router(create_studio_router(studio_service, auth_enabled=auth_enabled), prefix="/api/studio")
 
 
 def _register_dashboard_extras(
     app: FastAPI, data_service: Any, config_root: str,
 ) -> None:
-    """Register dashboard-only routes (studio, learning, goals, portfolio)."""
-    # Studio config CRUD routes
-    from temper_ai.interfaces.dashboard.studio_routes import create_studio_router
-    from temper_ai.interfaces.dashboard.studio_service import StudioService
-
-    studio_service = StudioService(config_root=config_root)
-    app.include_router(create_studio_router(studio_service), prefix="/api/studio")
-
+    """Register dashboard-only routes (learning, goals, portfolio)."""
     _register_optional_routes(app, config_root)
 
 
@@ -175,6 +179,21 @@ def _mount_react_app(app: FastAPI) -> None:
     async def root() -> RedirectResponse:
         """Redirect root to React app."""
         return RedirectResponse(url="/app")
+
+
+def _register_auth_routes(app: FastAPI) -> None:
+    """Register auth and config management routes (server mode only)."""
+    try:
+        from temper_ai.interfaces.server.auth_routes import create_auth_router
+        app.include_router(create_auth_router())
+    except ImportError:
+        logger.warning("Auth routes not available")
+
+    try:
+        from temper_ai.interfaces.server.config_routes import create_config_router
+        app.include_router(create_config_router())
+    except ImportError:
+        logger.warning("Config routes not available")
 
 
 def _register_optional_routes(app: FastAPI, config_root: str) -> None:
@@ -266,7 +285,7 @@ def _init_server_components(mode: str) -> tuple:
     mining_job = None
     analysis_job = None
 
-    if mode != "server":
+    if mode not in ("server", "dev"):
         return shutdown_mgr, run_store, mining_job, analysis_job
 
     from temper_ai.interfaces.server.lifecycle import GracefulShutdownManager
@@ -312,7 +331,7 @@ def _init_server_components(mode: str) -> tuple:
 def create_app(
     backend: Any = None,
     event_bus: Any = None,
-    mode: str = "dashboard",
+    mode: str = "dev",
     config_root: str = "configs",
     max_workers: int = DEFAULT_MAX_WORKERS,
 ) -> FastAPI:
@@ -321,7 +340,7 @@ def create_app(
     Args:
         backend: ObservabilityBackend instance for reading workflow data.
         event_bus: ObservabilityEventBus instance for real-time events.
-        mode: "dashboard" (default) or "server" (headless HTTP API).
+        mode: "dev" (default) or "server" (headless HTTP API with auth).
         config_root: Config directory root path.
         max_workers: Max concurrent workflow executions.
 
@@ -331,13 +350,17 @@ def create_app(
     from temper_ai.interfaces.dashboard.data_service import DashboardDataService
     from temper_ai.interfaces.dashboard.execution_service import WorkflowExecutionService
 
-    title = "Temper AI Server" if mode == "server" else "Temper AI Dashboard"
+    title = "Temper AI Server" if mode == "server" else "Temper AI (Dev)"
     shutdown_mgr, run_store, _mining_job, _analysis_job = _init_server_components(mode)
 
     execution_service = WorkflowExecutionService(
         backend=backend, event_bus=event_bus, config_root=config_root,
         max_workers=max_workers, run_store=run_store,
     )
+
+    # Two-phase init: inject execution_service into event bus for cross-workflow triggers
+    if event_bus is not None and hasattr(event_bus, "set_execution_service"):
+        event_bus.set_execution_service(execution_service)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -363,12 +386,12 @@ def create_app(
         app.state.shutdown_manager = shutdown_mgr
 
     _configure_cors(app, mode)
-    if mode == "server":
-        from temper_ai.interfaces.server.auth import APIKeyMiddleware
-
-        app.add_middleware(APIKeyMiddleware)
+    auth_enabled = mode == "server"
 
     data_service = DashboardDataService(backend=backend, event_bus=event_bus)
-    _register_routes(app, execution_service, data_service, config_root, mode)
+    _register_routes(app, execution_service, data_service, config_root, mode, auth_enabled=auth_enabled)
+
+    if auth_enabled:
+        _register_auth_routes(app)
 
     return app

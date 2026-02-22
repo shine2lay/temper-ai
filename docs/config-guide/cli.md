@@ -87,18 +87,19 @@ temper-ai validate configs/workflows/quick_decision_demo.yaml
 
 ---
 
-### `temper-ai dashboard` — Standalone Dashboard
+### `temper-ai serve --dev` — Dev Mode
 
 ```bash
-temper-ai dashboard [--port PORT] [--db PATH]
+temper-ai serve --dev [--port PORT] [--db PATH]
 ```
 
-Launches the web dashboard to browse past workflow executions.
+Starts the server in dev mode: no auth, permissive CORS, all routes enabled.
+Replaces the former `temper-ai dashboard` command.
 
 **Example:**
 
 ```bash
-temper-ai dashboard --port 8420
+temper-ai serve --dev --port 8420
 ```
 
 ---

@@ -393,29 +393,29 @@ class TestServerRoutes:
         assert data["total"] == 0
 
 
-class TestDashboardIncludesServerRouter:
-    """Verify dashboard mode mounts the server router."""
+class TestDevModeIncludesServerRouter:
+    """Verify dev mode mounts the server router."""
 
-    def test_dashboard_mode_has_health_endpoint(self) -> None:
-        """Dashboard app should serve /api/health from the server router."""
+    def test_dev_mode_has_health_endpoint(self) -> None:
+        """Dev mode app should serve /api/health from the server router."""
         from fastapi.testclient import TestClient
 
         from temper_ai.interfaces.dashboard.app import create_app
 
-        app = create_app(backend=None, mode="dashboard")
+        app = create_app(backend=None, mode="dev")
         c = TestClient(app)
         resp = c.get("/api/health")
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "healthy"
 
-    def test_dashboard_mode_has_runs_endpoint(self) -> None:
-        """Dashboard app should serve POST /api/runs from the server router."""
+    def test_dev_mode_has_runs_endpoint(self) -> None:
+        """Dev mode app should serve POST /api/runs from the server router."""
         from fastapi.testclient import TestClient
 
         from temper_ai.interfaces.dashboard.app import create_app
 
-        app = create_app(backend=None, mode="dashboard")
+        app = create_app(backend=None, mode="dev")
         c = TestClient(app)
         # Missing body should return 422 (validation error), not 404
         resp = c.post("/api/runs")

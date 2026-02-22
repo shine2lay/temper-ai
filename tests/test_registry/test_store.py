@@ -7,7 +7,7 @@ from typing import Generator
 import pytest
 from sqlmodel import Session, SQLModel
 
-from temper_ai.storage.database.engine import create_app_engine
+from temper_ai.storage.database.engine import create_test_engine
 from temper_ai.storage.database.models_registry import AgentRegistryDB  # noqa: F401 — registers table
 from temper_ai.registry._schemas import AgentRegistryEntry
 from temper_ai.registry.constants import (
@@ -31,7 +31,7 @@ def _make_entry(name: str = "test-agent", **kwargs) -> AgentRegistryEntry:
 
 def _make_store() -> AgentRegistryStore:
     """Create an in-memory SQLite store for testing."""
-    engine = create_app_engine("sqlite:///:memory:")
+    engine = create_test_engine("sqlite:///:memory:")
     SQLModel.metadata.create_all(engine)
 
     @contextmanager

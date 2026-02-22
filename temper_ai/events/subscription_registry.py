@@ -37,6 +37,16 @@ class SubscriptionRegistry:
         from temper_ai.events.models import EventSubscription
 
         sub_id = str(uuid.uuid4())
+
+        if handler_ref:
+            from temper_ai.events._subscription_helpers import _HANDLER_REGISTRY
+
+            if handler_ref not in _HANDLER_REGISTRY:
+                logger.warning(
+                    "Handler '%s' not yet registered; subscription created but handler won't fire until registered",
+                    handler_ref,
+                )
+
         subscription = EventSubscription(
             id=sub_id,
             agent_id=agent_id,

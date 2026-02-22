@@ -1,5 +1,6 @@
 """MCP protocol CLI commands."""
 import logging
+import os
 
 import click
 from rich.console import Console
@@ -35,13 +36,19 @@ def mcp_group() -> None:
     help="HTTP transport port",
 )
 @click.option(
+    "--host",
+    default="127.0.0.1",
+    show_default=True,
+    help="HTTP transport host address",
+)
+@click.option(
     "--config-root",
     default=DEFAULT_CONFIG_ROOT,
     show_default=True,
     envvar=ENV_VAR_CONFIG_ROOT,
     help="Configuration directory root",
 )
-def mcp_serve(transport: str, port: int, config_root: str) -> None:
+def mcp_serve(transport: str, port: int, host: str, config_root: str) -> None:
     """Start Temper AI as an MCP server."""
     try:
         from temper_ai.mcp.server import create_mcp_server
@@ -52,7 +59,32 @@ def mcp_serve(transport: str, port: int, config_root: str) -> None:
         )
         raise SystemExit(1)
 
-    mcp_server = create_mcp_server(config_root=config_root)
+    api_key: str | None = None
+    if transport == "http":
+        if host == "0.0.0.0":
+            console.print(
+                "[yellow]Warning:[/yellow] Binding to 0.0.0.0 exposes the MCP server "
+                "on all network interfaces. Prefer 127.0.0.1 for local use."
+            )
+        api_key = os.environ.get("TEMPER_MCP_API_KEY")
+        if not api_key:
+            console.print(
+                "[red]Error:[/red] TEMPER_MCP_API_KEY environment variable is required "
+                "for HTTP transport. Set it to a strong secret value."
+            )
+            raise SystemExit(1)
+
+    # Create execution service for bounded concurrency and run tracking
+    from temper_ai.workflow.execution_service import WorkflowExecutionService
+
+    execution_service = WorkflowExecutionService(
+        backend=None, event_bus=None, config_root=config_root,
+    )
+    mcp_server = create_mcp_server(
+        config_root=config_root,
+        execution_service=execution_service,
+        api_key=api_key,
+    )
 
     if transport == "stdio":
         console.print("[cyan]Temper AI MCP Server[/cyan] (stdio transport)")
@@ -60,9 +92,9 @@ def mcp_serve(transport: str, port: int, config_root: str) -> None:
         mcp_server.run(transport="stdio")
     else:
         console.print(
-            f"[cyan]Temper AI MCP Server[/cyan] listening on port {port} (HTTP transport)"
+            f"[cyan]Temper AI MCP Server[/cyan] listening on {host}:{port} (HTTP transport)"
         )
-        mcp_server.run(transport="streamable-http", port=port)
+        mcp_server.run(transport="streamable-http", host=host, port=port)
 
 
 @mcp_group.command("list-tools")

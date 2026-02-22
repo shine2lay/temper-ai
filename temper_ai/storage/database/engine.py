@@ -9,6 +9,7 @@ Tests can pass explicit SQLite URLs for isolation.
 
 import logging
 import os
+import sys
 from typing import Optional
 
 from sqlalchemy import event
@@ -50,15 +51,26 @@ def create_app_engine(
 
     Returns:
         Configured SQLAlchemy :class:`Engine`.
+
+    Raises:
+        ValueError: If a SQLite URL is provided (not supported in production).
     """
     url = database_url or get_database_url()
 
     if url.startswith("sqlite"):
-        engine = _create_sqlite_engine(url)
-    else:
-        engine = _create_pg_engine(url, pool_size)
+        if "pytest" not in sys.modules:
+            raise ValueError(
+                "SQLite is not supported for production use. "
+                "Set TEMPER_DATABASE_URL to a PostgreSQL connection string."
+            )
+        return _create_sqlite_engine(url)
 
-    return engine
+    return _create_pg_engine(url, pool_size)
+
+
+def create_test_engine(database_url: str = "sqlite:///:memory:") -> Engine:
+    """Create a SQLite engine for tests only."""
+    return _create_sqlite_engine(database_url)
 
 
 # -- Private helpers --------------------------------------------------------

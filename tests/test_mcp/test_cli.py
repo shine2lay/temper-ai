@@ -84,13 +84,15 @@ class TestMcpServe:
         mock_server = MagicMock()
         mock_create = MagicMock(return_value=mock_server)
 
-        with patch("temper_ai.mcp.server.create_mcp_server", mock_create):
+        with patch("temper_ai.mcp.server.create_mcp_server", mock_create), \
+             patch.dict("os.environ", {"TEMPER_MCP_API_KEY": "test-key"}):
             result = runner.invoke(
                 mcp_group,
                 ["serve", "--transport", "http", "--port", "9999"],
             )
 
-        mock_server.run.assert_called_once_with(transport="streamable-http", port=9999)
+        mock_create.assert_called_once()
+        assert mock_create.call_args[1].get("api_key") == "test-key"
         assert result.exit_code == 0
 
     def test_serve_import_error_exits_1(self, runner: CliRunner):

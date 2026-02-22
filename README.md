@@ -210,7 +210,7 @@ See [docs/milestones/](./docs/milestones/) for detailed retrospectives.
 
 ## License
 
-MIT License - See LICENSE file for details
+Apache License 2.0 - See LICENSE file for details
 
 ---
 

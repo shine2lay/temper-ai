@@ -70,14 +70,14 @@ class TestDatabaseManager:
     """Test DatabaseManager class."""
 
     def test_initialization_default_url(self):
-        """Test initialization with default SQLite URL."""
+        """Test initialization with default PostgreSQL URL."""
         with patch.dict(os.environ, {}, clear=True):
             manager = DatabaseManager()
-            assert "sqlite" in manager.database_url
+            assert "postgresql" in manager.database_url
 
     def test_initialization_env_var(self):
-        """Test initialization with DATABASE_URL env var."""
-        with patch.dict(os.environ, {"DATABASE_URL": "sqlite:///test.db"}):
+        """Test initialization with TEMPER_DATABASE_URL env var."""
+        with patch.dict(os.environ, {"TEMPER_DATABASE_URL": "sqlite:///test.db"}):
             manager = DatabaseManager()
             assert manager.database_url == "sqlite:///test.db"
 

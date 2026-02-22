@@ -1,15 +1,57 @@
-"""Temper AI MCP server — exposes workflows as MCP tools."""
+"""Temper AI MCP server -- exposes workflows as MCP tools."""
 import json
 import logging
-from typing import Any
+from pathlib import Path
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_CONFIG_ROOT = "configs"
 
 
-def create_mcp_server(config_root: str = DEFAULT_CONFIG_ROOT) -> Any:
+class BearerAuthMiddleware:
+    """ASGI middleware that enforces Bearer token authentication."""
+
+    def __init__(self, app: Any, api_key: str) -> None:
+        self._app = app
+        self._api_key = api_key
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        if scope["type"] == "http":
+            headers = dict(scope.get("headers", []))
+            auth = headers.get(b"authorization", b"").decode("latin-1")
+            if not auth.startswith("Bearer ") or auth[7:].strip() != self._api_key:
+                await self._send_unauthorized(send)
+                return
+        await self._app(scope, receive, send)
+
+    @staticmethod
+    async def _send_unauthorized(send: Any) -> None:
+        await send({
+            "type": "http.response.start",
+            "status": 401,
+            "headers": [(b"content-type", b"text/plain")],
+        })
+        await send({
+            "type": "http.response.body",
+            "body": b"Unauthorized",
+        })
+
+
+def create_mcp_server(
+    config_root: str = DEFAULT_CONFIG_ROOT,
+    execution_service: Optional[Any] = None,
+    api_key: Optional[str] = None,
+) -> Any:
     """Create a FastMCP server exposing Temper AI workflows.
+
+    Args:
+        config_root: Config directory root path.
+        execution_service: Optional WorkflowExecutionService for bounded
+            concurrency and run tracking.  Falls back to direct
+            WorkflowRunner when None (standalone MCP).
+        api_key: If provided and using HTTP transport, enforce Bearer auth
+            on all requests via BearerAuthMiddleware.
 
     Requires the mcp package: pip install 'temper-ai[mcp]'
     """
@@ -33,8 +75,29 @@ def create_mcp_server(config_root: str = DEFAULT_CONFIG_ROOT) -> Any:
 
     _register_list_workflows(mcp, tool_annotations_cls, config_root, scan_workflow_configs)
     _register_list_agents(mcp, tool_annotations_cls, config_root, scan_agent_configs)
-    _register_run_workflow(mcp, tool_annotations_cls, config_root)
-    _register_get_run_status(mcp, tool_annotations_cls)
+    _register_run_workflow(mcp, tool_annotations_cls, config_root, execution_service)
+    _register_get_run_status(mcp, tool_annotations_cls, execution_service)
+
+    if api_key:
+        # Wrap the ASGI app with bearer auth for HTTP transport
+        original_run = mcp.run
+
+        def run_with_auth(**kwargs: Any) -> None:
+            transport = kwargs.get("transport", "stdio")
+            if transport != "stdio":
+                try:
+                    asgi_app = mcp.http_app()
+                    wrapped_app = BearerAuthMiddleware(asgi_app, api_key)
+                    import uvicorn
+                    host = kwargs.get("host", "127.0.0.1")
+                    port = kwargs.get("port", 8421)
+                    uvicorn.run(wrapped_app, host=host, port=port)
+                    return
+                except AttributeError:
+                    pass  # Fallback to original run if http_app() not available
+            original_run(**kwargs)
+
+        mcp.run = run_with_auth  # type: ignore[method-assign]
 
     return mcp
 
@@ -82,38 +145,56 @@ def _register_list_agents(
 
 
 def _register_run_workflow(
-    mcp: Any, tool_annotations_cls: Any, config_root: str
+    mcp: Any,
+    tool_annotations_cls: Any,
+    config_root: str,
+    execution_service: Optional[Any],
 ) -> None:
     """Register the run_workflow tool on the MCP server."""
     if tool_annotations_cls is not None:
         @mcp.tool(annotations=tool_annotations_cls(destructiveHint=True))
         def run_workflow(workflow_path: str, inputs: str = "{}") -> str:
             """Execute a Temper AI workflow with JSON inputs."""
-            return _run_workflow_impl(workflow_path, inputs, config_root)
+            return _run_workflow_impl(workflow_path, inputs, config_root, execution_service)
     else:
         @mcp.tool()
         def run_workflow(workflow_path: str, inputs: str = "{}") -> str:
             """Execute a Temper AI workflow with JSON inputs."""
-            return _run_workflow_impl(workflow_path, inputs, config_root)
+            return _run_workflow_impl(workflow_path, inputs, config_root, execution_service)
 
 
-def _register_get_run_status(mcp: Any, tool_annotations_cls: Any) -> None:
+def _register_get_run_status(
+    mcp: Any,
+    tool_annotations_cls: Any,
+    execution_service: Optional[Any],
+) -> None:
     """Register the get_run_status tool on the MCP server."""
     if tool_annotations_cls is not None:
         @mcp.tool(annotations=tool_annotations_cls(readOnlyHint=True))
         def get_run_status(run_id: str) -> str:
             """Check status of a workflow execution."""
-            return _get_run_status_impl(run_id)
+            return _get_run_status_impl(run_id, execution_service)
     else:
         @mcp.tool()
         def get_run_status(run_id: str) -> str:
             """Check status of a workflow execution."""
-            return _get_run_status_impl(run_id)
+            return _get_run_status_impl(run_id, execution_service)
 
 
-def _run_workflow_impl(workflow_path: str, inputs_json: str, config_root: str) -> str:
-    """Run a workflow and return the result as JSON string."""
-    from temper_ai.mcp._server_helpers import format_run_result
+def _run_workflow_impl(
+    workflow_path: str,
+    inputs_json: str,
+    config_root: str,
+    execution_service: Optional[Any] = None,
+) -> str:
+    """Run a workflow via execution service or direct WorkflowRunner."""
+    # Security: prevent path traversal
+    config_root_resolved = Path(config_root).resolve()
+    workflow_file = (config_root_resolved / workflow_path).resolve()
+    try:
+        workflow_file.relative_to(config_root_resolved)
+    except ValueError:
+        return json.dumps({"error": "Invalid workflow path: path traversal not allowed"})
 
     try:
         parsed_inputs = json.loads(inputs_json)
@@ -121,46 +202,55 @@ def _run_workflow_impl(workflow_path: str, inputs_json: str, config_root: str) -
         return json.dumps({"error": f"Invalid JSON inputs: {exc}"})
 
     try:
-        import yaml
+        if execution_service is not None:
+            result_dict = execution_service.execute_workflow_sync(
+                workflow_path, input_data=parsed_inputs,
+            )
+            if result_dict.get("status") == "failed":
+                return json.dumps({
+                    "error": result_dict.get("error_message", "Workflow failed"),
+                })
+            from temper_ai.mcp._server_helpers import format_run_result
 
-        from temper_ai.observability.tracker import ExecutionTracker
-        from temper_ai.tools.registry import ToolRegistry
-        from temper_ai.workflow.config_loader import ConfigLoader
-        from temper_ai.workflow.engine_registry import EngineRegistry
+            return format_run_result(result_dict.get("result") or {})
 
-        with open(workflow_path) as f:
-            workflow_config = yaml.safe_load(f)
-
-        config_loader = ConfigLoader(config_root=config_root)
-        tool_registry = ToolRegistry(auto_discover=True)
-        tracker = ExecutionTracker()
-
-        registry = EngineRegistry()
-        engine = registry.get_engine_from_config(
-            workflow_config,
-            tool_registry=tool_registry,
-            config_loader=config_loader,
+        # Fallback: direct WorkflowRunner (standalone MCP without server)
+        logger.warning(
+            "MCP run_workflow: no execution_service configured, "
+            "running without concurrency bounds or run tracking"
         )
-        compiled = engine.compile(workflow_config)
+        from temper_ai.interfaces.server.workflow_runner import (
+            WorkflowRunner,
+            WorkflowRunnerConfig,
+        )
+        from temper_ai.mcp._server_helpers import format_run_result
+        from temper_ai.shared.utils.exceptions import ConfigValidationError
 
-        state = {
-            "workflow_inputs": parsed_inputs,
-            "tracker": tracker,
-            "config_loader": config_loader,
-            "tool_registry": tool_registry,
-            "workflow_id": "mcp-run",
-            "show_details": False,
-        }
-        result = compiled.invoke(state)
-        return format_run_result(result)
+        runner = WorkflowRunner(
+            config=WorkflowRunnerConfig(config_root=config_root),
+        )
+        result = runner.run(workflow_path, input_data=parsed_inputs)
+        if result.status == "failed":
+            return json.dumps({"error": result.error_message})
+        return format_run_result(result.result or {})
     except FileNotFoundError:
         return json.dumps({"error": f"Workflow not found: {workflow_path}"})
     except (ValueError, RuntimeError, KeyError) as exc:
         return json.dumps({"error": str(exc)})
 
 
-def _get_run_status_impl(run_id: str) -> str:
-    """Get the status of a workflow run from the run store."""
+def _get_run_status_impl(
+    run_id: str,
+    execution_service: Optional[Any] = None,
+) -> str:
+    """Get the status of a workflow run."""
+    if execution_service is not None:
+        result = execution_service.get_status_sync(run_id)
+        if result is None:
+            return json.dumps({"error": f"Run not found: {run_id}"})
+        return json.dumps(result, default=str)
+
+    # Fallback: direct RunStore (standalone MCP)
     try:
         from temper_ai.interfaces.server.run_store import RunStore
 

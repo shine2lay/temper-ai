@@ -11,7 +11,7 @@ from temper_ai.events._bus_helpers import (
     persist_event,
 )
 from temper_ai.events._cross_workflow import CrossWorkflowTrigger
-from temper_ai.events._subscription_helpers import resolve_handler
+from temper_ai.events._subscription_helpers import register_handler, resolve_handler
 from temper_ai.events.constants import (
     DEFAULT_TRIGGER_TIMEOUT_SECONDS,
     MAX_SUBSCRIPTION_HANDLERS,
@@ -53,8 +53,42 @@ class TemperEventBus:
         self._registry = SubscriptionRegistry(session_factory=session_factory)
         self._trigger = CrossWorkflowTrigger()
         self._wait_events: Dict[str, threading.Event] = {}
+        self._execution_service: Optional[Any] = None
         self._wait_payloads: Dict[str, Optional[Dict[str, Any]]] = {}
         self._wait_lock = threading.Lock()
+
+    def set_execution_service(self, execution_service: Any) -> None:
+        """Inject execution service into the cross-workflow trigger.
+
+        Two-phase init to break circular dependency: event_bus creates
+        trigger, but execution_service needs event_bus.
+        """
+        self._execution_service = execution_service
+        self._trigger = CrossWorkflowTrigger(execution_service=execution_service)
+
+    def subscribe(self, callback: Any) -> str:
+        """Subscribe a callback to the inner ObservabilityEventBus.
+
+        Delegates to the wrapped ObservabilityEventBus so that callers
+        (e.g. WorkflowRunner, DashboardDataService) can subscribe
+        regardless of whether they hold a TemperEventBus or a raw
+        ObservabilityEventBus.
+
+        Args:
+            callback: Callable invoked for each ObservabilityEvent.
+
+        Returns:
+            Subscription ID string for later unsubscribe.
+        """
+        return self._obs_bus.subscribe(callback)
+
+    def unsubscribe(self, subscription_id: str) -> None:
+        """Unsubscribe a callback from the inner ObservabilityEventBus.
+
+        Args:
+            subscription_id: ID returned by subscribe().
+        """
+        self._obs_bus.unsubscribe(subscription_id)
 
     def emit(
         self,
@@ -234,7 +268,7 @@ class TemperEventBus:
         payload: Optional[Dict[str, Any]],
         source_workflow_id: Optional[str],
     ) -> None:
-        """Evaluate subscriptions without DB (memory-only path)."""
+        """Evaluate subscriptions for the non-persist emit path."""
         if self._session_factory is None:
             return
         try:
@@ -286,3 +320,7 @@ class TemperEventBus:
     def _build_wait_key(event_type: str, source_workflow_filter: Optional[str]) -> str:
         """Build a unique key for the wait_for_event lookup."""
         return f"{event_type}::{source_workflow_filter or ''}"
+
+
+# Module-level re-export so callers can use temper_ai.events.event_bus.register_handler
+__all__ = ["TemperEventBus", "register_handler"]

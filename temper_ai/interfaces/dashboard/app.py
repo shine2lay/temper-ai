@@ -74,10 +74,10 @@ def _configure_cors(app: FastAPI, mode: str) -> None:
                 allow_headers=["Content-Type"],
             )
     else:
-        # Dev mode: permissive for local development
+        # Dev mode: restrict to localhost only (blocks cross-origin from external sites)
         app.add_middleware(
             CORSMiddleware,
-            allow_origins=["*"],
+            allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
             allow_methods=["*"],
             allow_headers=["*"],
         )

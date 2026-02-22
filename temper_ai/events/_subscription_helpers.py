@@ -1,10 +1,16 @@
 """Helper functions for subscription matching and handler resolution."""
 
-import importlib
 import logging
 from typing import Any, Callable, Dict, Optional
 
 logger = logging.getLogger(__name__)
+
+_HANDLER_REGISTRY: Dict[str, Callable] = {}  # type: ignore[type-arg]
+
+
+def register_handler(name: str, fn: Callable) -> None:  # type: ignore[type-arg]
+    """Register a named event handler."""
+    _HANDLER_REGISTRY[name] = fn
 
 
 def matches_filter(
@@ -39,23 +45,15 @@ def matches_filter(
 
 
 def resolve_handler(handler_ref: str) -> Optional[Callable]:  # type: ignore[type-arg]
-    """Import and resolve a dotted-path handler reference.
+    """Look up a registered handler by name.
 
     Args:
-        handler_ref: Dotted path like ``mymodule.submodule.function``.
+        handler_ref: Name the handler was registered under via register_handler().
 
     Returns:
-        Callable if found, None if import fails.
+        Callable if found, None if not registered.
     """
-    parts = handler_ref.rsplit(".", maxsplit=1)
-    if len(parts) != 2:  # noqa: PLR2004
-        logger.warning("Invalid handler_ref format (expected 'module.name'): %s", handler_ref)
-        return None
-
-    module_path, attr = parts
-    try:
-        module = importlib.import_module(module_path)
-        return getattr(module, attr)
-    except (ImportError, AttributeError) as exc:
-        logger.warning("Could not resolve handler_ref %s: %s", handler_ref, exc)
-        return None
+    handler = _HANDLER_REGISTRY.get(handler_ref)
+    if handler is None:
+        logger.warning("Unknown handler: %s", handler_ref)
+    return handler

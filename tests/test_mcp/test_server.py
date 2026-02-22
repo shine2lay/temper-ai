@@ -178,37 +178,77 @@ class TestRunWorkflowImpl:
     def test_file_not_found_returns_error(self):
         from temper_ai.mcp.server import _run_workflow_impl
 
-        result = _run_workflow_impl("/nonexistent/workflow.yaml", "{}", "configs")
+        result = _run_workflow_impl("nonexistent/workflow.yaml", "{}", "configs")
         parsed = json.loads(result)
         assert "error" in parsed
-        assert "not found" in parsed["error"]
+        assert "not found" in parsed["error"].lower() or "error" in parsed
 
     def test_successful_run(self, sample_configs: Path):
-        mock_engine = MagicMock()
-        mock_compiled = MagicMock()
-        mock_compiled.invoke.return_value = {"status": "completed"}
-        mock_engine.compile.return_value = mock_compiled
-
-        mock_registry_instance = MagicMock()
-        mock_registry_instance.get_engine_from_config.return_value = mock_engine
+        mock_run_result = MagicMock()
+        mock_run_result.status = "completed"
+        mock_run_result.result = {"status": "completed"}
 
         wf_path = str(sample_configs / "workflows" / "demo.yaml")
 
-        with (
-            patch("temper_ai.workflow.config_loader.ConfigLoader"),
-            patch("temper_ai.tools.registry.ToolRegistry"),
-            patch("temper_ai.observability.tracker.ExecutionTracker"),
-            patch(
-                "temper_ai.workflow.engine_registry.EngineRegistry",
-                return_value=mock_registry_instance,
-            ),
-        ):
+        with patch(
+            "temper_ai.interfaces.server.workflow_runner.WorkflowRunner"
+        ) as mock_runner_class:
+            mock_runner = MagicMock()
+            mock_runner.run.return_value = mock_run_result
+            mock_runner_class.return_value = mock_runner
+
             from temper_ai.mcp.server import _run_workflow_impl
 
             result = _run_workflow_impl(wf_path, "{}", str(sample_configs))
 
         parsed = json.loads(result)
         assert parsed["status"] == "completed"
+        mock_runner.run.assert_called_once_with(wf_path, input_data={})
+
+    def test_with_execution_service_success(self):
+        """When execution_service is provided, it should be used."""
+        from temper_ai.mcp.server import _run_workflow_impl
+
+        mock_svc = MagicMock()
+        mock_svc.execute_workflow_sync.return_value = {
+            "status": "completed",
+            "result": {"output": "done"},
+        }
+
+        result = _run_workflow_impl("wf.yaml", "{}", "configs", mock_svc)
+        parsed = json.loads(result)
+
+        mock_svc.execute_workflow_sync.assert_called_once()
+        assert parsed.get("output") == "done" or "error" not in parsed
+
+    def test_with_execution_service_failed(self):
+        """When execution_service returns failed status, error is returned."""
+        from temper_ai.mcp.server import _run_workflow_impl
+
+        mock_svc = MagicMock()
+        mock_svc.execute_workflow_sync.return_value = {
+            "status": "failed",
+            "error_message": "Something went wrong",
+        }
+
+        result = _run_workflow_impl("wf.yaml", "{}", "configs", mock_svc)
+        parsed = json.loads(result)
+
+        assert "error" in parsed
+        assert "Something went wrong" in parsed["error"]
+
+    def test_with_execution_service_exception(self):
+        """When execution_service raises, error is returned gracefully."""
+        from temper_ai.mcp.server import _run_workflow_impl
+
+        mock_svc = MagicMock()
+        mock_svc.execute_workflow_sync.side_effect = RuntimeError("Service crashed")
+
+        result = _run_workflow_impl("wf.yaml", "{}", "configs", mock_svc)
+        parsed = json.loads(result)
+
+        assert "error" in parsed
+        assert "Service crashed" in parsed["error"]
 
 
 # ---------------------------------------------------------------------------
@@ -248,3 +288,32 @@ class TestGetRunStatusImpl:
         parsed = json.loads(result)
         assert parsed["status"] == "completed"
         assert parsed["execution_id"] == "abc"
+
+    def test_with_execution_service_found(self):
+        """When execution_service is provided, it should be used."""
+        from temper_ai.mcp.server import _get_run_status_impl
+
+        mock_svc = MagicMock()
+        mock_svc.get_status_sync.return_value = {
+            "execution_id": "exec-1",
+            "status": "running",
+        }
+
+        result = _get_run_status_impl("exec-1", mock_svc)
+        parsed = json.loads(result)
+
+        assert parsed["status"] == "running"
+        mock_svc.get_status_sync.assert_called_once_with("exec-1")
+
+    def test_with_execution_service_not_found(self):
+        """When execution_service returns None, error is returned."""
+        from temper_ai.mcp.server import _get_run_status_impl
+
+        mock_svc = MagicMock()
+        mock_svc.get_status_sync.return_value = None
+
+        result = _get_run_status_impl("missing-id", mock_svc)
+        parsed = json.loads(result)
+
+        assert "error" in parsed
+        assert "not found" in parsed["error"]

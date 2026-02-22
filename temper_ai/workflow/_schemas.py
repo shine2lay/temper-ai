@@ -180,7 +180,7 @@ class WorkflowObservabilityConfig(BaseModel):
     """Workflow observability configuration."""
     console_mode: Literal["minimal", "standard", "verbose"] = "standard"
     trace_everything: bool = True
-    export_format: List[str] = Field(default=["json", "sqlite"])
+    export_format: List[str] = Field(default=["json"])
     generate_dag_visualization: bool = True
     waterfall_in_console: bool = True
     alert_on: List[str] = Field(default_factory=list)

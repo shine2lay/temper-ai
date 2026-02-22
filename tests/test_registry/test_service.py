@@ -11,7 +11,7 @@ import pytest
 import yaml
 from sqlmodel import Session, SQLModel
 
-from temper_ai.storage.database.engine import create_app_engine
+from temper_ai.storage.database.engine import create_test_engine
 from temper_ai.storage.database.models_registry import AgentRegistryDB  # noqa: F401
 from temper_ai.registry._schemas import MessageRequest
 from temper_ai.registry.constants import STATUS_INACTIVE, STATUS_REGISTERED
@@ -20,7 +20,7 @@ from temper_ai.registry.store import AgentRegistryStore
 
 
 def _make_store() -> AgentRegistryStore:
-    engine = create_app_engine("sqlite:///:memory:")
+    engine = create_test_engine("sqlite:///:memory:")
     SQLModel.metadata.create_all(engine)
 
     @contextmanager

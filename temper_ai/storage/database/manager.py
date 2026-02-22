@@ -109,14 +109,9 @@ class DatabaseManager:
         # Set isolation level if specified
         if isolation_level:
             try:
-                if self.database_url.startswith("sqlite"):
-                    # SQLite supports SERIALIZABLE via IMMEDIATE transactions
-                    if isolation_level == IsolationLevel.SERIALIZABLE:
-                        session.execute(text("BEGIN IMMEDIATE"))
-                else:
-                    session.connection().execution_options(
-                        isolation_level=isolation_level.value
-                    )
+                session.connection().execution_options(
+                    isolation_level=isolation_level.value
+                )
             except Exception as e:
                 logger.warning(
                     f"Failed to set isolation level {isolation_level.value}: {e}",

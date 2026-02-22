@@ -1,60 +1,55 @@
 [build-system]
-requires = ["setuptools>=68.0", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
 name = "temper-ai"
-version = "0.1.0"
+version = "1.0.0a1"
 description = "Temper AI agent framework with self-improvement and full observability"
-readme = "README.md"
+license = "Apache-2.0"
 requires-python = ">=3.11"
-license = {text = "Apache-2.0"}
 authors = [
-    {name = "Temper AI Team"}
+    { name = "Temper AI Team" },
 ]
 keywords = ["ai", "agents", "autonomous", "langgraph", "observability", "self-improvement"]
+readme = "README.md"
 
 dependencies = [
-    # Core execution
     "langchain>=1.0,<2.0",
     "langgraph>=1.0,<2.0",
-
-    # Configuration
     "pyyaml>=6.0,<7.0",
     "pydantic>=2.0,<3.0",
     "pydantic-settings>=2.0,<3.0",
     "jinja2>=3.1,<4.0",
-
-    # Database & Observability
     "sqlmodel>=0.0.14,<1.0",
     "sqlalchemy>=2.0,<3.0",
     "alembic>=1.13,<2.0",
     "psycopg2-binary>=2.9,<3.0",
-
-    # Console UI
     "click>=8.0,<9.0",
     "rich>=13.0,<14.0",
-
-    # HTTP & Web
     "httpx>=0.25,<1.0",
     "requests>=2.31,<3.0",
     "beautifulsoup4>=4.12,<5.0",
     "lxml>=4.9,<6.0",
-
-    # Environment & Config
     "python-dotenv>=1.0,<2.0",
-
-    # Utilities
     "tenacity>=8.2,<10.0",
-
-    # Security
     "cryptography>=46.0.5",
-
-    # Validation
     "jsonschema>=4.0,<5.0",
 ]
 
 [project.optional-dependencies]
+autogen = [
+    "autogen-agentchat>=0.4",
+    "autogen-ext>=0.4",
+]
+coord = []
+crewai = [
+    "crewai>=0.80",
+]
+dashboard = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.34.0",
+]
 dev = [
     "pytest>=7.4",
     "pytest-asyncio>=0.21",
@@ -76,210 +71,51 @@ dev = [
     "pytest-timeout>=2.2",
     "mutmut>=2.4",
 ]
-
+dspy = [
+    "dspy>=2.5",
+]
 llm-providers = [
     "openai>=1.0",
     "anthropic>=0.8",
 ]
-
-# coord_service is a local package under .claude-coord/coord_service/.
-# It is NOT published to PyPI. To make it importable, either:
-#   1. Add .claude-coord/ to PYTHONPATH, or
-#   2. pip install -e .claude-coord/
-# The framework gracefully degrades when coord_service is unavailable.
-coord = []
-
+mcp = [
+    "mcp>=1.26.0",
+]
+memory = [
+    "mem0ai>=1.0.0",
+]
+openai_agents = [
+    "openai-agents>=0.1",
+]
 otel = [
     "opentelemetry-api>=1.20",
     "opentelemetry-sdk>=1.20",
     "opentelemetry-exporter-otlp-proto-grpc>=1.20",
 ]
 
-dashboard = [
-    "fastapi>=0.115.0",
-    "uvicorn[standard]>=0.34.0",
-]
-
-memory = ["mem0ai>=1.0.0"]
-
-mcp = ["mcp>=1.26.0"]
-
-dspy = ["dspy>=2.5"]
-
-crewai = ["crewai>=0.80"]
-openai_agents = ["openai-agents>=0.1"]
-autogen = ["autogen-agentchat>=0.4", "autogen-ext>=0.4"]
-
-# TODO: Replace 'yourusername' with actual GitHub username/organization
-[project.urls]
-Homepage = "https://github.com/yourusername/temper-ai"
-Documentation = "https://github.com/yourusername/temper-ai/docs"
-Repository = "https://github.com/yourusername/temper-ai"
-
 [project.scripts]
 temper-ai = "temper_ai.interfaces.cli.main:main"
 
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["temper_ai*"]
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-python_files = ["test_*.py"]
-python_classes = ["Test*"]
-python_functions = ["test_*"]
-addopts = "-v --tb=short --strict-markers"
-timeout = 30
-timeout_method = "thread"
-markers = [
-    "unit: marks unit tests (select with '-m unit')",
-    "integration: marks integration tests (select with '-m integration')",
-    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
-    "memory: marks tests that check for memory leaks",
-    "benchmark: marks tests that measure performance",
-    "security: marks security tests (select with '-m security')",
-]
-
-# pytest-benchmark configuration
-[tool.pytest.ini_options.benchmark]
-# Store benchmarks in .benchmarks/ directory
-storage = ".benchmarks"
-# Automatically save benchmarks with timestamp
-autosave = false
-# Fail CI if performance regresses (multiple thresholds)
-compare_fail = [
-    "mean:10%",           # Mean regression threshold
-    "median:10%",         # Median regression threshold
-    "stddev:50%"          # Standard deviation regression
-]
-# Warm up before benchmarking to account for JIT compilation
-warmup = true
-# Minimum rounds to run each benchmark
-min_rounds = 5
-# Minimum time to run benchmarks (seconds)
-min_time = 0.005
-# Maximum time to run benchmarks (seconds)
-max_time = 1.0
-# Number of warmup iterations
-warmup_iterations = 2
-# Calibration precision
-calibration_precision = 10
-# Disable GC during benchmarks for more consistent results
-disable_gc = true
-# Save detailed data for analysis
-save_data = true
-# Generate histograms for visualization
-histogram = true
-# Group benchmarks by category
-group_by = "group"
-# Sort by mean time
-sort = "mean"
-
-[tool.black]
-line-length = 100
-target-version = ['py311']
-include = '\.pyi?$'
-
 [tool.ruff]
-line-length = 100
-target-version = "py311"
+exclude = [
+    "__pycache__",
+    "*.pyc",
+    "*.pyo",
+    "migrations",
+]
+
+# Use docstring-code-line-length instead of line-length
+# This is the correct key for ruff's docstring code line length
+# For regular line length, use line-length under [tool.ruff.format]
+[tool.ruff.format]
+line-length = 88
+
+docstring-code-line-length = 88
 
 [tool.ruff.lint]
-select = [
-    "E",    # pycodestyle errors
-    "F",    # pyflakes
-    "I",    # isort
-    "N",    # pep8-naming
-    "W",    # pycodestyle warnings
-    "S",    # bandit (security)
-]
-ignore = [
-    "E501",   # line too long
-    "S101",   # use of assert (OK in tests)
-    "E402",   # module-import-not-at-top (sys.path manipulation, logger init patterns)
-    "S110",   # try-except-pass (defensive error handling, reviewed case-by-case)
-    "S112",   # try-except-continue (defensive error handling in loops)
-]
+select = ["E", "W", "F", "I", "C", "N", "B", "Q", "T", "UP", "PYI"]
+ignore = ["E501"]
 
-[tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101"]  # Allow assert in tests
-
-[tool.ruff.lint.flake8-bandit]
-check-typed-exception = true
-
-[tool.mypy]
-python_version = "3.11"
-warn_return_any = true
-warn_unused_configs = true
-disallow_untyped_defs = true
-disallow_any_unimported = false
-disallow_any_expr = false
-disallow_any_decorated = false
-disallow_any_explicit = false
-disallow_any_generics = false
-disallow_subclassing_any = true
-disallow_untyped_calls = false
-disallow_untyped_decorators = false
-disallow_incomplete_defs = true
-check_untyped_defs = true
-no_implicit_optional = true
-warn_redundant_casts = true
-warn_unused_ignores = true
-warn_no_return = true
-warn_unreachable = true
-strict_equality = true
-show_error_codes = true
-show_error_context = true
-pretty = true
-
-# Allow some flexibility for third-party libraries
-[[tool.mypy.overrides]]
-module = [
-    "langchain.*",
-    "langgraph.*",
-    "anthropic.*",
-    "openai.*",
-    "sqlmodel.*",
-    "alembic.*",
-    "jinja2.*",
-    "yaml.*",
-    "bs4.*",
-    "lxml.*",
-    "plotly.*",
-    "opentelemetry.*",
-    "agents", "agents.*",
-    "crewai", "crewai.*",
-    "autogen_agentchat", "autogen_agentchat.*",
-    "autogen_ext", "autogen_ext.*",
-    "autogen_core", "autogen_core.*",
-]
-ignore_missing_imports = true
-
-# Exclude examples and tests from strict checking (for now)
-[[tool.mypy.overrides]]
-module = "examples.*"
-ignore_errors = true
-
-[[tool.mypy.overrides]]
-module = "tests.*"
-disallow_untyped_defs = false
-disallow_incomplete_defs = false
-
-[[tool.mypy.overrides]]
-module = ["mem0.*", "chromadb.*", "mcp.*", "dspy.*"]
-ignore_missing_imports = true
-
-[tool.mutmut]
-paths_to_mutate = "temper_ai/"
-tests_dir = "tests/"
-runner = "python -m pytest tests/test_agent/ tests/test_workflow/ -x -q --timeout=10"
-
-[tool.coverage.run]
-source = ["temper_ai"]
-omit = ["*/tests/*", "*/migrations/*", "*/alembic/*"]
-
-[tool.coverage.report]
-show_missing = true
-precision = 1
-exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:", "if __name__"]
-fail_under = 50
+[tool.ruff.per-file-ignores]
+"__init__.py" = ["F401"]
+"migrations/*" = ["E501"]

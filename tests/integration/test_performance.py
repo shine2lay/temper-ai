@@ -7,25 +7,24 @@ Comprehensive performance testing:
 - Memory leak detection
 - Database query performance
 """
-import asyncio
-from datetime import datetime, timezone
+
 import gc
-import psutil
 import statistics
 import time
-from typing import List
-from unittest.mock import Mock, patch
 import uuid
+from datetime import UTC, datetime
 
+import psutil
 import pytest
 
-from tests.fixtures.database_fixtures import db_session
-from tests.fixtures.mock_helpers import mock_llm
-
+# Import models at module level so SQLModel.metadata registers all tables
+# before db_session fixture calls create_all().
+import temper_ai.storage.database.models  # noqa: F401
 
 # ============================================================================
 # Throughput Benchmarks
 # ============================================================================
+
 
 class TestThroughputBenchmarks:
     """Test system throughput under various loads."""
@@ -34,32 +33,29 @@ class TestThroughputBenchmarks:
     def execution_tracker(self):
         """Create execution tracker for benchmarks."""
         from temper_ai.observability.tracker import ExecutionTracker
-        from temper_ai.observability.database import init_database
+        from temper_ai.storage.database.manager import init_database
 
         init_database("sqlite:///:memory:")
         return ExecutionTracker()
 
     def test_event_tracking_throughput(self, execution_tracker):
-        """Measure event tracking throughput (events/sec)."""
+        """Measure workflow tracking throughput (events/sec)."""
         event_count = 10000
         latencies = []
 
-        with execution_tracker.track_workflow("throughput_test") as wf_id:
-            start_time = time.perf_counter()
+        start_time = time.perf_counter()
 
-            for i in range(event_count):
-                event_start = time.perf_counter()
+        for i in range(event_count):
+            event_start = time.perf_counter()
 
-                execution_tracker.track_event(
-                    event_type="benchmark_event",
-                    details={"index": i, "timestamp": datetime.now(timezone.utc).isoformat()}
-                )
+            with execution_tracker.track_workflow(f"throughput_{i}") as wf_id:
+                pass  # Minimal workflow open/close as event proxy
 
-                event_end = time.perf_counter()
-                latencies.append((event_end - event_start) * 1000)  # Convert to ms
+            event_end = time.perf_counter()
+            latencies.append((event_end - event_start) * 1000)  # Convert to ms
 
-            end_time = time.perf_counter()
-            duration = end_time - start_time
+        end_time = time.perf_counter()
+        duration = end_time - start_time
 
         throughput = event_count / duration
         avg_latency = statistics.mean(latencies)
@@ -69,7 +65,7 @@ class TestThroughputBenchmarks:
         assert avg_latency < 10, f"Average latency too high: {avg_latency:.2f} ms"
 
         # Log benchmark results
-        print(f"\n=== Event Tracking Throughput ===")
+        print("\n=== Event Tracking Throughput ===")
         print(f"Events: {event_count}")
         print(f"Duration: {duration:.2f}s")
         print(f"Throughput: {throughput:.2f} events/sec")
@@ -85,54 +81,60 @@ class TestThroughputBenchmarks:
             with execution_tracker.track_workflow(f"workflow_{i}") as wf_id:
                 workflow_ids.append(wf_id)
 
-                # Simulate minimal workflow
-                with execution_tracker.track_agent("test_agent", "1.0") as agent_id:
-                    execution_tracker.track_event(
-                        event_type="agent_executed",
-                        details={"workflow": i}
-                    )
+                # Simulate minimal workflow with stage + agent
+                with execution_tracker.track_stage(
+                    f"stage_{i}", {"type": "test"}, wf_id
+                ) as stage_id:
+                    with execution_tracker.track_agent(
+                        "test_agent", {"version": "1.0"}, stage_id
+                    ) as agent_id:
+                        pass  # Minimal agent execution
 
         end_time = time.perf_counter()
         duration = end_time - start_time
         throughput = workflow_count / duration
 
-        assert throughput > 10, f"Workflow throughput too low: {throughput:.2f} workflows/sec"
+        assert (
+            throughput > 10
+        ), f"Workflow throughput too low: {throughput:.2f} workflows/sec"
         assert len(workflow_ids) == workflow_count
 
-        print(f"\n=== Workflow Execution Throughput ===")
+        print("\n=== Workflow Execution Throughput ===")
         print(f"Workflows: {workflow_count}")
         print(f"Duration: {duration:.2f}s")
         print(f"Throughput: {throughput:.2f} workflows/sec")
 
     def test_database_write_throughput(self, db_session):
         """Measure database write throughput."""
-        from temper_ai.observability.models import Event
+        from temper_ai.storage.database.models import WorkflowExecution
 
         record_count = 5000
         start_time = time.perf_counter()
 
-        events = []
+        records = []
         for i in range(record_count):
-            event = Event(
+            record = WorkflowExecution(
                 id=str(uuid.uuid4()),
-                workflow_run_id=str(uuid.uuid4()),
-                event_type="benchmark_write",
-                timestamp=datetime.now(timezone.utc),
-                details={"index": i}
+                workflow_name="benchmark_write",
+                status="completed",
+                workflow_config_snapshot={"index": i},
+                start_time=datetime.now(UTC),
             )
-            events.append(event)
+            records.append(record)
 
         # Bulk insert
-        db_session.add_all(events)
+        db_session.add_all(records)
         db_session.commit()
 
         end_time = time.perf_counter()
         duration = end_time - start_time
         throughput = record_count / duration
 
-        assert throughput > 100, f"DB write throughput too low: {throughput:.2f} records/sec"
+        assert (
+            throughput > 100
+        ), f"DB write throughput too low: {throughput:.2f} records/sec"
 
-        print(f"\n=== Database Write Throughput ===")
+        print("\n=== Database Write Throughput ===")
         print(f"Records: {record_count}")
         print(f"Duration: {duration:.2f}s")
         print(f"Throughput: {throughput:.2f} records/sec")
@@ -142,6 +144,7 @@ class TestThroughputBenchmarks:
 # Latency Benchmarks
 # ============================================================================
 
+
 class TestLatencyBenchmarks:
     """Test system latency characteristics (p50, p95, p99)."""
 
@@ -149,27 +152,24 @@ class TestLatencyBenchmarks:
     def execution_tracker(self):
         """Create execution tracker for latency tests."""
         from temper_ai.observability.tracker import ExecutionTracker
-        from temper_ai.observability.database import init_database
+        from temper_ai.storage.database.manager import init_database
 
         init_database("sqlite:///:memory:")
         return ExecutionTracker()
 
     def test_event_tracking_latency_percentiles(self, execution_tracker):
-        """Measure event tracking latency percentiles."""
+        """Measure workflow tracking latency percentiles."""
         sample_count = 1000
-        latencies: List[float] = []
+        latencies: list[float] = []
 
-        with execution_tracker.track_workflow("latency_test") as wf_id:
-            for i in range(sample_count):
-                start = time.perf_counter()
+        for i in range(sample_count):
+            start = time.perf_counter()
 
-                execution_tracker.track_event(
-                    event_type="latency_test",
-                    details={"index": i}
-                )
+            with execution_tracker.track_workflow(f"latency_{i}") as wf_id:
+                pass  # Minimal workflow as event proxy
 
-                end = time.perf_counter()
-                latencies.append((end - start) * 1000)  # Convert to ms
+            end = time.perf_counter()
+            latencies.append((end - start) * 1000)  # Convert to ms
 
         # Calculate percentiles
         latencies.sort()
@@ -183,7 +183,7 @@ class TestLatencyBenchmarks:
         assert p95 < 15, f"p95 latency too high: {p95:.2f} ms"
         assert p99 < 30, f"p99 latency too high: {p99:.2f} ms"
 
-        print(f"\n=== Event Tracking Latency Percentiles ===")
+        print("\n=== Event Tracking Latency Percentiles ===")
         print(f"Samples: {sample_count}")
         print(f"p50: {p50:.2f} ms")
         print(f"p95: {p95:.2f} ms")
@@ -193,7 +193,7 @@ class TestLatencyBenchmarks:
     def test_workflow_context_latency(self, execution_tracker):
         """Measure workflow context creation latency."""
         sample_count = 500
-        latencies: List[float] = []
+        latencies: list[float] = []
 
         for i in range(sample_count):
             start = time.perf_counter()
@@ -212,7 +212,7 @@ class TestLatencyBenchmarks:
         assert p50 < 2, f"Workflow context p50 too high: {p50:.2f} ms"
         assert p95 < 10, f"Workflow context p95 too high: {p95:.2f} ms"
 
-        print(f"\n=== Workflow Context Latency ===")
+        print("\n=== Workflow Context Latency ===")
         print(f"Samples: {sample_count}")
         print(f"p50: {p50:.2f} ms")
         print(f"p95: {p95:.2f} ms")
@@ -220,33 +220,36 @@ class TestLatencyBenchmarks:
 
     def test_database_query_latency(self, db_session):
         """Measure database query latency percentiles."""
-        from temper_ai.observability.models import Event
+        from temper_ai.storage.database.models import WorkflowExecution
 
         # Insert test data
-        events = [
-            Event(
+        records = [
+            WorkflowExecution(
                 id=str(uuid.uuid4()),
-                workflow_run_id=str(uuid.uuid4()),
-                event_type=f"query_test_{i % 10}",
-                timestamp=datetime.now(timezone.utc),
-                details={"index": i}
+                workflow_name=f"query_test_{i % 10}",
+                status="completed",
+                workflow_config_snapshot={"index": i},
+                start_time=datetime.now(UTC),
             )
             for i in range(1000)
         ]
-        db_session.add_all(events)
+        db_session.add_all(records)
         db_session.commit()
 
         # Measure query latency
         sample_count = 100
-        latencies: List[float] = []
+        latencies: list[float] = []
 
         for i in range(sample_count):
             start = time.perf_counter()
 
             # Perform query
-            results = db_session.query(Event).filter(
-                Event.event_type == f"query_test_{i % 10}"
-            ).limit(10).all()
+            results = (
+                db_session.query(WorkflowExecution)
+                .filter(WorkflowExecution.workflow_name == f"query_test_{i % 10}")
+                .limit(10)
+                .all()
+            )
 
             end = time.perf_counter()
             latencies.append((end - start) * 1000)
@@ -259,7 +262,7 @@ class TestLatencyBenchmarks:
         assert p50 < 5, f"Query p50 too high: {p50:.2f} ms"
         assert p95 < 20, f"Query p95 too high: {p95:.2f} ms"
 
-        print(f"\n=== Database Query Latency ===")
+        print("\n=== Database Query Latency ===")
         print(f"Samples: {sample_count}")
         print(f"p50: {p50:.2f} ms")
         print(f"p95: {p95:.2f} ms")
@@ -270,6 +273,7 @@ class TestLatencyBenchmarks:
 # Concurrency Stress Tests
 # ============================================================================
 
+
 class TestConcurrencyStress:
     """Stress test system under concurrent load."""
 
@@ -277,7 +281,7 @@ class TestConcurrencyStress:
     def execution_tracker(self):
         """Create execution tracker for concurrency tests."""
         from temper_ai.observability.tracker import ExecutionTracker
-        from temper_ai.observability.database import init_database
+        from temper_ai.storage.database.manager import init_database
 
         init_database("sqlite:///:memory:")
         return ExecutionTracker()
@@ -290,9 +294,16 @@ class TestConcurrencyStress:
         def worker_task(worker_id):
             results = []
             for i in range(workflows_per_worker):
-                with execution_tracker.track_workflow(f"worker_{worker_id}_wf_{i}") as wf_id:
-                    with execution_tracker.track_agent(f"agent_{worker_id}", "1.0") as agent_id:
-                        results.append((wf_id, agent_id))
+                with execution_tracker.track_workflow(
+                    f"worker_{worker_id}_wf_{i}"
+                ) as wf_id:
+                    with execution_tracker.track_stage(
+                        f"stage_{worker_id}_{i}", {"type": "test"}, wf_id
+                    ) as stage_id:
+                        with execution_tracker.track_agent(
+                            f"agent_{worker_id}", {"version": "1.0"}, stage_id
+                        ) as agent_id:
+                            results.append((wf_id, agent_id))
             return results
 
         start_time = time.perf_counter()
@@ -309,9 +320,11 @@ class TestConcurrencyStress:
         throughput = total_workflows / duration
 
         assert len(all_results) == total_workflows
-        assert throughput > 5, f"Concurrent throughput too low: {throughput:.2f} workflows/sec"
+        assert (
+            throughput > 5
+        ), f"Concurrent throughput too low: {throughput:.2f} workflows/sec"
 
-        print(f"\n=== 10 Worker Concurrency Test ===")
+        print("\n=== 10 Worker Concurrency Test ===")
         print(f"Workers: {worker_count}")
         print(f"Workflows/Worker: {workflows_per_worker}")
         print(f"Total Workflows: {total_workflows}")
@@ -319,17 +332,17 @@ class TestConcurrencyStress:
         print(f"Throughput: {throughput:.2f} workflows/sec")
 
     def test_concurrent_event_tracking_50_workers(self, execution_tracker):
-        """Test 50 concurrent workers tracking events."""
+        """Test 50 concurrent workers tracking workflows."""
         worker_count = 50
         events_per_worker = 100
 
         def worker_task(worker_id):
             count = 0
             for i in range(events_per_worker):
-                execution_tracker.track_event(
-                    event_type=f"worker_{worker_id}_event",
-                    details={"worker": worker_id, "index": i}
-                )
+                with execution_tracker.track_workflow(
+                    f"worker_{worker_id}_event_{i}"
+                ) as wf_id:
+                    pass  # Minimal workflow open/close as event proxy
                 count += 1
             return count
 
@@ -349,7 +362,7 @@ class TestConcurrencyStress:
         assert total_events == expected_total
         assert throughput > 50, f"Event throughput too low: {throughput:.2f} events/sec"
 
-        print(f"\n=== 50 Worker Event Tracking Test ===")
+        print("\n=== 50 Worker Event Tracking Test ===")
         print(f"Workers: {worker_count}")
         print(f"Events/Worker: {events_per_worker}")
         print(f"Total Events: {total_events}")
@@ -358,33 +371,33 @@ class TestConcurrencyStress:
 
     def test_database_concurrent_writes(self, db_session):
         """Test concurrent database writes."""
-        from temper_ai.observability.models import Event
+        from temper_ai.storage.database.models import WorkflowExecution
 
         writer_count = 20
         writes_per_worker = 50
 
         def writer_task(writer_id):
-            events = []
+            records = []
             for i in range(writes_per_worker):
-                event = Event(
+                record = WorkflowExecution(
                     id=str(uuid.uuid4()),
-                    workflow_run_id=str(uuid.uuid4()),
-                    event_type=f"concurrent_write_{writer_id}",
-                    timestamp=datetime.now(timezone.utc),
-                    details={"writer": writer_id, "index": i}
+                    workflow_name=f"concurrent_write_{writer_id}",
+                    status="completed",
+                    workflow_config_snapshot={"writer": writer_id, "index": i},
+                    start_time=datetime.now(UTC),
                 )
-                events.append(event)
-            return events
+                records.append(record)
+            return records
 
         start_time = time.perf_counter()
 
-        all_events = []
+        all_records = []
         for writer_id in range(writer_count):
-            events = writer_task(writer_id)
-            all_events.extend(events)
+            records = writer_task(writer_id)
+            all_records.extend(records)
 
-        # Bulk insert all events
-        db_session.add_all(all_events)
+        # Bulk insert all records
+        db_session.add_all(all_records)
         db_session.commit()
 
         end_time = time.perf_counter()
@@ -392,10 +405,12 @@ class TestConcurrencyStress:
         total_writes = writer_count * writes_per_worker
         throughput = total_writes / duration
 
-        assert len(all_events) == total_writes
-        assert throughput > 50, f"Concurrent write throughput too low: {throughput:.2f} writes/sec"
+        assert len(all_records) == total_writes
+        assert (
+            throughput > 50
+        ), f"Concurrent write throughput too low: {throughput:.2f} writes/sec"
 
-        print(f"\n=== Concurrent Database Writes ===")
+        print("\n=== Concurrent Database Writes ===")
         print(f"Writers: {writer_count}")
         print(f"Writes/Writer: {writes_per_worker}")
         print(f"Total Writes: {total_writes}")
@@ -407,6 +422,7 @@ class TestConcurrencyStress:
 # Memory Leak Detection
 # ============================================================================
 
+
 class TestMemoryLeaks:
     """Detect memory leaks in long-running operations."""
 
@@ -414,7 +430,7 @@ class TestMemoryLeaks:
     def execution_tracker(self):
         """Create execution tracker for memory tests."""
         from temper_ai.observability.tracker import ExecutionTracker
-        from temper_ai.observability.database import init_database
+        from temper_ai.storage.database.manager import init_database
 
         init_database("sqlite:///:memory:")
         return ExecutionTracker()
@@ -436,11 +452,13 @@ class TestMemoryLeaks:
         iteration_count = 100
         for i in range(iteration_count):
             with execution_tracker.track_workflow(f"memory_test_{i}") as wf_id:
-                with execution_tracker.track_agent("test_agent", "1.0") as agent_id:
-                    execution_tracker.track_event(
-                        event_type="memory_test",
-                        details={"iteration": i}
-                    )
+                with execution_tracker.track_stage(
+                    f"stage_{i}", {"type": "test"}, wf_id
+                ) as stage_id:
+                    with execution_tracker.track_agent(
+                        "test_agent", {"version": "1.0"}, stage_id
+                    ) as agent_id:
+                        pass  # Minimal agent execution
 
         gc.collect()
         final_memory = process.memory_info().rss / 1024 / 1024  # MB
@@ -449,10 +467,14 @@ class TestMemoryLeaks:
         memory_per_iteration = memory_increase / iteration_count
 
         # Memory should not grow unboundedly
-        assert memory_increase < 50, f"Memory increased too much: {memory_increase:.2f} MB"
-        assert memory_per_iteration < 0.5, f"Memory per iteration too high: {memory_per_iteration:.3f} MB"
+        assert (
+            memory_increase < 50
+        ), f"Memory increased too much: {memory_increase:.2f} MB"
+        assert (
+            memory_per_iteration < 0.5
+        ), f"Memory per iteration too high: {memory_per_iteration:.3f} MB"
 
-        print(f"\n=== Workflow Memory Stability ===")
+        print("\n=== Workflow Memory Stability ===")
         print(f"Iterations: {iteration_count}")
         print(f"Initial Memory: {initial_memory:.2f} MB")
         print(f"Final Memory: {final_memory:.2f} MB")
@@ -460,27 +482,23 @@ class TestMemoryLeaks:
         print(f"Per Iteration: {memory_per_iteration:.3f} MB")
 
     def test_event_tracking_memory_growth(self, execution_tracker):
-        """Event tracking should not leak memory."""
+        """Workflow tracking should not leak memory."""
         process = psutil.Process()
         gc.collect()
 
         # Warm up
         for i in range(100):
-            execution_tracker.track_event(
-                event_type="warmup",
-                details={"index": i}
-            )
+            with execution_tracker.track_workflow(f"warmup_{i}") as wf_id:
+                pass
 
         gc.collect()
         initial_memory = process.memory_info().rss / 1024 / 1024  # MB
 
-        # Track many events
+        # Track many workflows
         event_count = 1000
         for i in range(event_count):
-            execution_tracker.track_event(
-                event_type="memory_growth_test",
-                details={"index": i, "data": f"event_{i}"}
-            )
+            with execution_tracker.track_workflow(f"memory_growth_{i}") as wf_id:
+                pass  # Minimal workflow as event proxy
 
         gc.collect()
         final_memory = process.memory_info().rss / 1024 / 1024  # MB
@@ -489,10 +507,14 @@ class TestMemoryLeaks:
         memory_per_event = memory_increase / event_count
 
         # Should not leak significant memory
-        assert memory_increase < 30, f"Event tracking memory increase too high: {memory_increase:.2f} MB"
-        assert memory_per_event < 0.03, f"Memory per event too high: {memory_per_event:.4f} MB"
+        assert (
+            memory_increase < 30
+        ), f"Event tracking memory increase too high: {memory_increase:.2f} MB"
+        assert (
+            memory_per_event < 0.03
+        ), f"Memory per event too high: {memory_per_event:.4f} MB"
 
-        print(f"\n=== Event Tracking Memory Growth ===")
+        print("\n=== Event Tracking Memory Growth ===")
         print(f"Events: {event_count}")
         print(f"Initial Memory: {initial_memory:.2f} MB")
         print(f"Final Memory: {final_memory:.2f} MB")
@@ -501,7 +523,9 @@ class TestMemoryLeaks:
 
     def test_database_connection_cleanup(self):
         """Database connections should be properly cleaned up."""
-        from temper_ai.observability.database import init_database, get_session
+        from sqlalchemy import text
+
+        from temper_ai.storage.database.manager import get_session, init_database
 
         process = psutil.Process()
         gc.collect()
@@ -511,10 +535,8 @@ class TestMemoryLeaks:
         session_count = 50
         for i in range(session_count):
             init_database("sqlite:///:memory:")
-            session = get_session()
-            # Use session
-            session.execute("SELECT 1")
-            session.close()
+            with get_session() as session:
+                session.execute(text("SELECT 1"))
 
         gc.collect()
         final_memory = process.memory_info().rss / 1024 / 1024  # MB
@@ -522,9 +544,11 @@ class TestMemoryLeaks:
         memory_increase = final_memory - initial_memory
 
         # Connection cleanup should prevent memory growth
-        assert memory_increase < 20, f"DB connection memory leak: {memory_increase:.2f} MB"
+        assert (
+            memory_increase < 20
+        ), f"DB connection memory leak: {memory_increase:.2f} MB"
 
-        print(f"\n=== Database Connection Cleanup ===")
+        print("\n=== Database Connection Cleanup ===")
         print(f"Sessions: {session_count}")
         print(f"Initial Memory: {initial_memory:.2f} MB")
         print(f"Final Memory: {final_memory:.2f} MB")
@@ -535,47 +559,49 @@ class TestMemoryLeaks:
 # Database Query Performance
 # ============================================================================
 
+
 class TestDatabasePerformance:
     """Test database query optimization and performance."""
 
     @pytest.fixture
     def populated_db(self, db_session):
         """Create database with test data."""
-        from temper_ai.observability.models import WorkflowRun, Event
+        from temper_ai.storage.database.models import StageExecution, WorkflowExecution
 
         # Create workflows
         workflow_ids = []
         for i in range(10):
-            wf = WorkflowRun(
+            wf = WorkflowExecution(
                 id=str(uuid.uuid4()),
                 workflow_name=f"workflow_{i % 3}",
                 status="completed" if i % 2 == 0 else "running",
-                start_time=datetime.now(timezone.utc),
-                metadata={"index": i}
+                start_time=datetime.now(UTC),
+                workflow_config_snapshot={"index": i},
             )
             db_session.add(wf)
             workflow_ids.append(wf.id)
 
         db_session.commit()
 
-        # Create events
+        # Create stages linked to workflows
         for wf_id in workflow_ids:
             for j in range(100):
-                event = Event(
+                stage = StageExecution(
                     id=str(uuid.uuid4()),
-                    workflow_run_id=wf_id,
-                    event_type=f"event_type_{j % 10}",
-                    timestamp=datetime.now(timezone.utc),
-                    details={"index": j}
+                    workflow_execution_id=wf_id,
+                    stage_name=f"stage_type_{j % 10}",
+                    status="completed",
+                    stage_config_snapshot={"index": j},
+                    start_time=datetime.now(UTC),
                 )
-                db_session.add(event)
+                db_session.add(stage)
 
         db_session.commit()
         return db_session
 
     def test_workflow_query_performance(self, populated_db):
         """Test workflow query performance."""
-        from temper_ai.observability.models import WorkflowRun
+        from temper_ai.storage.database.models import WorkflowExecution
 
         query_count = 50
         latencies = []
@@ -584,9 +610,12 @@ class TestDatabasePerformance:
             start = time.perf_counter()
 
             # Query workflows
-            workflows = populated_db.query(WorkflowRun).filter(
-                WorkflowRun.status == "completed"
-            ).limit(10).all()
+            workflows = (
+                populated_db.query(WorkflowExecution)
+                .filter(WorkflowExecution.status == "completed")
+                .limit(10)
+                .all()
+            )
 
             end = time.perf_counter()
             latencies.append((end - start) * 1000)
@@ -594,18 +623,21 @@ class TestDatabasePerformance:
         avg_latency = statistics.mean(latencies)
         p95_latency = sorted(latencies)[int(len(latencies) * 0.95)]
 
-        assert avg_latency < 10, f"Workflow query avg latency too high: {avg_latency:.2f} ms"
+        assert (
+            avg_latency < 10
+        ), f"Workflow query avg latency too high: {avg_latency:.2f} ms"
         assert p95_latency < 20, f"Workflow query p95 too high: {p95_latency:.2f} ms"
 
-        print(f"\n=== Workflow Query Performance ===")
+        print("\n=== Workflow Query Performance ===")
         print(f"Queries: {query_count}")
         print(f"Avg Latency: {avg_latency:.2f} ms")
         print(f"p95 Latency: {p95_latency:.2f} ms")
 
     def test_event_aggregation_performance(self, populated_db):
-        """Test event aggregation query performance."""
-        from temper_ai.observability.models import Event
+        """Test stage aggregation query performance."""
         from sqlalchemy import func
+
+        from temper_ai.storage.database.models import StageExecution
 
         query_count = 30
         latencies = []
@@ -613,11 +645,15 @@ class TestDatabasePerformance:
         for i in range(query_count):
             start = time.perf_counter()
 
-            # Aggregate events by type
-            results = populated_db.query(
-                Event.event_type,
-                func.count(Event.id).label('count')
-            ).group_by(Event.event_type).all()
+            # Aggregate stages by name
+            results = (
+                populated_db.query(
+                    StageExecution.stage_name,
+                    func.count(StageExecution.id).label("count"),
+                )
+                .group_by(StageExecution.stage_name)
+                .all()
+            )
 
             end = time.perf_counter()
             latencies.append((end - start) * 1000)
@@ -625,17 +661,19 @@ class TestDatabasePerformance:
         avg_latency = statistics.mean(latencies)
         p95_latency = sorted(latencies)[int(len(latencies) * 0.95)]
 
-        assert avg_latency < 15, f"Aggregation avg latency too high: {avg_latency:.2f} ms"
+        assert (
+            avg_latency < 15
+        ), f"Aggregation avg latency too high: {avg_latency:.2f} ms"
         assert p95_latency < 30, f"Aggregation p95 too high: {p95_latency:.2f} ms"
 
-        print(f"\n=== Event Aggregation Performance ===")
+        print("\n=== Event Aggregation Performance ===")
         print(f"Queries: {query_count}")
         print(f"Avg Latency: {avg_latency:.2f} ms")
         print(f"p95 Latency: {p95_latency:.2f} ms")
 
     def test_join_query_performance(self, populated_db):
         """Test join query performance."""
-        from temper_ai.observability.models import WorkflowRun, Event
+        from temper_ai.storage.database.models import StageExecution, WorkflowExecution
 
         query_count = 20
         latencies = []
@@ -643,12 +681,17 @@ class TestDatabasePerformance:
         for i in range(query_count):
             start = time.perf_counter()
 
-            # Join workflows and events
-            results = populated_db.query(WorkflowRun, Event).join(
-                Event, WorkflowRun.id == Event.workflow_run_id
-            ).filter(
-                WorkflowRun.status == "completed"
-            ).limit(50).all()
+            # Join workflows and stages
+            results = (
+                populated_db.query(WorkflowExecution, StageExecution)
+                .join(
+                    StageExecution,
+                    WorkflowExecution.id == StageExecution.workflow_execution_id,
+                )
+                .filter(WorkflowExecution.status == "completed")
+                .limit(50)
+                .all()
+            )
 
             end = time.perf_counter()
             latencies.append((end - start) * 1000)
@@ -656,10 +699,12 @@ class TestDatabasePerformance:
         avg_latency = statistics.mean(latencies)
         p95_latency = sorted(latencies)[int(len(latencies) * 0.95)]
 
-        assert avg_latency < 25, f"Join query avg latency too high: {avg_latency:.2f} ms"
+        assert (
+            avg_latency < 25
+        ), f"Join query avg latency too high: {avg_latency:.2f} ms"
         assert p95_latency < 50, f"Join query p95 too high: {p95_latency:.2f} ms"
 
-        print(f"\n=== Join Query Performance ===")
+        print("\n=== Join Query Performance ===")
         print(f"Queries: {query_count}")
         print(f"Avg Latency: {avg_latency:.2f} ms")
         print(f"p95 Latency: {p95_latency:.2f} ms")

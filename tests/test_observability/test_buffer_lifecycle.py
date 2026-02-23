@@ -1,19 +1,19 @@
 """Tests for lifecycle event buffering in ObservabilityBuffer."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import MagicMock
-
-import pytest
 
 from temper_ai.observability.buffer import BufferedLifecycleEvent, ObservabilityBuffer
 
 
-def _make_event(event_type: str = "agent_end", entity_id: str = "agent-1") -> BufferedLifecycleEvent:
+def _make_event(
+    event_type: str = "agent_end", entity_id: str = "agent-1"
+) -> BufferedLifecycleEvent:
     """Create a test lifecycle event."""
     return BufferedLifecycleEvent(
         event_type=event_type,
         entity_id=entity_id,
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
         data={"status": "completed"},
     )
 
@@ -158,12 +158,21 @@ class TestBufferLifecycleShouldFlush:
         from temper_ai.observability.buffer import LLMCallBufferParams
 
         # Adding 1 LLM call makes total=2 (lifecycle+llm), triggers flush
-        buf.buffer_llm_call(LLMCallBufferParams(
-            llm_call_id="llm-1", agent_id="agent-1", provider="test",
-            model="test", prompt="p", response="r",
-            prompt_tokens=10, completion_tokens=10, latency_ms=100,
-            estimated_cost_usd=0.01, start_time=datetime.now(timezone.utc),
-        ))
+        buf.buffer_llm_call(
+            LLMCallBufferParams(
+                llm_call_id="llm-1",
+                agent_id="agent-1",
+                provider="test",
+                model="test",
+                prompt="p",
+                response="r",
+                prompt_tokens=10,
+                completion_tokens=10,
+                latency_ms=100,
+                estimated_cost_usd=0.01,
+                start_time=datetime.now(UTC),
+            )
+        )
 
         # The LLM flush callback was invoked because total items >= flush_size
         flush_cb.assert_called_once()
@@ -173,7 +182,7 @@ class TestBufferedLifecycleEventDataclass:
     """Test the BufferedLifecycleEvent dataclass."""
 
     def test_fields(self):
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         event = BufferedLifecycleEvent(
             event_type="workflow_end",
             entity_id="wf-123",

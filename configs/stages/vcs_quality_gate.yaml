@@ -28,8 +28,9 @@ stage:
       source: vcs_git_setup.structured.worktree_path
       required: true
     suggestion_text:
-      source: workflow.suggestion_text
-      required: true
+      source: vcs_work_discovery.output
+      required: false
+      default: ""
     coder_output:
       source: vcs_code_execute.output
       required: true

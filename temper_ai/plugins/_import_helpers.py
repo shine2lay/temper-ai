@@ -1,9 +1,10 @@
 """Helpers for importing and translating external agent configurations."""
+
 from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 import yaml
 
@@ -11,7 +12,7 @@ _SAFE_NAME_RE = re.compile(r"[^a-zA-Z0-9_-]")
 DEFAULT_VERSION = "1.0"
 
 
-def load_yaml_safe(path: Path) -> Dict[str, Any]:
+def load_yaml_safe(path: Path) -> dict[str, Any]:
     """Load a YAML file safely.
 
     Raises:
@@ -37,9 +38,9 @@ def build_agent_config_dict(
     name: str,
     description: str,
     agent_type: str,
-    plugin_config: Dict[str, Any],
+    plugin_config: dict[str, Any],
     version: str = DEFAULT_VERSION,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Build a valid Temper AI agent config dict."""
     return {
         "agent": {
@@ -59,15 +60,15 @@ def build_agent_config_dict(
 
 
 def write_agent_yaml(
-    config_dicts: List[Dict[str, Any]],
+    config_dicts: list[dict[str, Any]],
     output_dir: Path,
-) -> List[Path]:
+) -> list[Path]:
     """Write agent config dicts to individual YAML files.
 
     Returns list of paths written.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
-    written: List[Path] = []
+    written: list[Path] = []
     for config_dict in config_dicts:
         agent_name = config_dict["agent"]["name"]
         out_path = output_dir / f"{agent_name}.yaml"

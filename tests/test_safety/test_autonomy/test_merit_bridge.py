@@ -12,7 +12,10 @@ class TestOnDecisionRecorded:
         """No-op when autonomy manager is not configured."""
         bridge = MeritSafetyBridge(autonomy_manager=None)
         bridge.on_decision_recorded(
-            session=MagicMock(), agent_name="a", domain="d", outcome="success",
+            session=MagicMock(),
+            agent_name="a",
+            domain="d",
+            outcome="success",
         )
         assert bridge._decision_counters == {}
 

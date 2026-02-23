@@ -129,7 +129,9 @@ class TestCanExecute:
             name="budget",
             products=[
                 ProductDefinition(
-                    name="web_app", weight=1.0, max_concurrent=5,
+                    name="web_app",
+                    weight=1.0,
+                    max_concurrent=5,
                     budget_limit_usd=10.0,
                 ),
             ],
@@ -151,7 +153,9 @@ class TestCanExecute:
             name="unlimited",
             products=[
                 ProductDefinition(
-                    name="web_app", weight=1.0, max_concurrent=5,
+                    name="web_app",
+                    weight=1.0,
+                    max_concurrent=5,
                     budget_limit_usd=0.0,
                 ),
             ],
@@ -275,7 +279,9 @@ class TestWFQFairness:
             name="budget-test",
             products=[
                 ProductDefinition(
-                    name="web_app", weight=1.0, max_concurrent=5,
+                    name="web_app",
+                    weight=1.0,
+                    max_concurrent=5,
                     budget_limit_usd=5.0,
                 ),
             ],
@@ -283,7 +289,10 @@ class TestWFQFairness:
         for i in range(5):
             scheduler.record_start("web_app", f"wf-{i}")
             scheduler.record_complete(
-                "web_app", f"wf-{i}", cost_usd=1.0, success=True,
+                "web_app",
+                f"wf-{i}",
+                cost_usd=1.0,
+                success=True,
             )
 
         # Budget is now 5.0 == limit, should be blocked

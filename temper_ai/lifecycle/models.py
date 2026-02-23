@@ -1,7 +1,7 @@
 """SQLModel tables for lifecycle adaptation data."""
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from sqlalchemy import JSON, Column
 from sqlmodel import Field, SQLModel
@@ -21,20 +21,14 @@ class LifecycleAdaptation(SQLModel, table=True):
     id: str = Field(primary_key=True)
     workflow_id: str = Field(index=True)
     profile_name: str = Field(index=True)
-    characteristics: Dict[str, Any] = Field(
+    characteristics: dict[str, Any] = Field(
         default_factory=dict, sa_column=Column(JSON)
     )
-    rules_applied: List[str] = Field(
-        default_factory=list, sa_column=Column(JSON)
-    )
-    stages_original: List[str] = Field(
-        default_factory=list, sa_column=Column(JSON)
-    )
-    stages_adapted: List[str] = Field(
-        default_factory=list, sa_column=Column(JSON)
-    )
-    experiment_id: Optional[str] = None
-    experiment_variant: Optional[str] = None
+    rules_applied: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    stages_original: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    stages_adapted: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    experiment_id: str | None = None
+    experiment_variant: str | None = None
     created_at: datetime = Field(default_factory=utcnow)
 
 
@@ -47,16 +41,12 @@ class LifecycleProfileRecord(SQLModel, table=True):
     name: str = Field(unique=True)
     description: str = ""
     version: str = "1.0"
-    product_types: List[str] = Field(
-        default_factory=list, sa_column=Column(JSON)
-    )
-    rules: List[Dict[str, Any]] = Field(
-        default_factory=list, sa_column=Column(JSON)
-    )
+    product_types: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    rules: list[dict[str, Any]] = Field(default_factory=list, sa_column=Column(JSON))
     enabled: bool = True
     source: str = "manual"
     confidence: float = 1.0
     min_autonomy_level: int = 0
     requires_approval: bool = True
     created_at: datetime = Field(default_factory=utcnow)
-    updated_at: Optional[datetime] = None
+    updated_at: datetime | None = None

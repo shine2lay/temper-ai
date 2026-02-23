@@ -28,14 +28,14 @@ curl http://localhost:11434/api/tags
 
 **Solution:**
 ```bash
-pip install -e .
+uv sync
 ```
 
 ### Package not found
 
 **Solution:**
 ```bash
-pip install -e ".[dev]"
+uv sync --dev
 ```
 
 ---

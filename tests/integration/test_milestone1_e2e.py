@@ -7,6 +7,7 @@ Tests all M1 components working together:
 - Console visualization
 - Example configurations
 """
+
 import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -14,10 +15,6 @@ from pathlib import Path
 import pytest
 from sqlmodel import delete, select
 
-from temper_ai.workflow.config_loader import ConfigLoader
-from temper_ai.storage.schemas.agent_config import AgentConfig
-from temper_ai.tools._schemas import ToolConfig
-from temper_ai.workflow._schemas import WorkflowConfig
 from temper_ai.observability.console import WorkflowVisualizer
 from temper_ai.observability.database import get_session, init_database
 from temper_ai.observability.models import (
@@ -27,6 +24,10 @@ from temper_ai.observability.models import (
     ToolExecution,
     WorkflowExecution,
 )
+from temper_ai.storage.schemas.agent_config import AgentConfig
+from temper_ai.tools._schemas import ToolConfig
+from temper_ai.workflow._schemas import WorkflowConfig
+from temper_ai.workflow.config_loader import ConfigLoader
 
 
 class TestMilestone1Integration:
@@ -38,6 +39,7 @@ class TestMilestone1Integration:
         # Initialize database if not already done
         try:
             from temper_ai.observability.database import get_database
+
             get_database()
         except RuntimeError:
             init_database("sqlite:///:memory:")
@@ -238,7 +240,7 @@ class TestMilestone1Integration:
         # Complete agent execution
         agent_exec.end_time = datetime.now(UTC)
         agent_exec.duration_seconds = 2.0
-        agent_exec.status = "success"
+        agent_exec.status = "completed"
         agent_exec.output_data = {"analysis": "Complete"}
         agent_exec.total_tokens = 15
         agent_exec.prompt_tokens = 10
@@ -257,7 +259,7 @@ class TestMilestone1Integration:
         # Complete stage execution
         stage_exec.end_time = datetime.now(UTC)
         stage_exec.duration_seconds = 2.5
-        stage_exec.status = "success"
+        stage_exec.status = "completed"
         stage_exec.output_data = {"research_results": "Complete"}
         stage_exec.num_agents_executed = 1
         stage_exec.num_agents_succeeded = 1
@@ -295,7 +297,7 @@ class TestMilestone1Integration:
                 select(StageExecution).where(StageExecution.id == stage_id)
             ).first()
             assert loaded_stage is not None
-            assert loaded_stage.status == "success"
+            assert loaded_stage.status == "completed"
             assert loaded_stage.workflow_execution_id == workflow_id
 
             # Query agent
@@ -303,7 +305,7 @@ class TestMilestone1Integration:
                 select(AgentExecution).where(AgentExecution.id == agent_id)
             ).first()
             assert loaded_agent is not None
-            assert loaded_agent.status == "success"
+            assert loaded_agent.status == "completed"
             assert loaded_agent.stage_execution_id == stage_id
 
             # Query LLM call
@@ -434,7 +436,9 @@ class TestMilestone1Integration:
                     id=workflow_id,
                     workflow_name=f"concurrent_workflow_{workflow_num}",
                     workflow_version="1.0",
-                    workflow_config_snapshot={"workflow": {"name": f"test_{workflow_num}"}},
+                    workflow_config_snapshot={
+                        "workflow": {"name": f"test_{workflow_num}"}
+                    },
                     trigger_type="manual",
                     start_time=datetime.now(UTC),
                     status="running",
@@ -482,7 +486,9 @@ class TestMilestone1Integration:
         assert len(errors) == 0, f"Errors during concurrent execution: {errors}"
 
         # Verify all workflows completed
-        assert len(workflow_ids) == 20, f"Expected 20 workflows, got {len(workflow_ids)}"
+        assert (
+            len(workflow_ids) == 20
+        ), f"Expected 20 workflows, got {len(workflow_ids)}"
 
         # Verify all workflow IDs are unique
         assert len(set(workflow_ids)) == 20, "Workflow IDs should be unique"
@@ -495,7 +501,9 @@ class TestMilestone1Integration:
                 )
             ).all()
 
-            assert len(workflows) == 20, f"Expected 20 workflows in DB, found {len(workflows)}"
+            assert (
+                len(workflows) == 20
+            ), f"Expected 20 workflows in DB, found {len(workflows)}"
 
             # Verify all have unique IDs
             db_ids = [w.id for w in workflows]
@@ -503,7 +511,9 @@ class TestMilestone1Integration:
 
             # Verify all completed successfully
             completed = [w for w in workflows if w.status == "completed"]
-            assert len(completed) == 20, f"Expected 20 completed, found {len(completed)}"
+            assert (
+                len(completed) == 20
+            ), f"Expected 20 completed, found {len(completed)}"
 
     def test_concurrent_workflows_with_same_config(self, db_session):
         """Test concurrent workflows using identical configuration."""
@@ -512,7 +522,7 @@ class TestMilestone1Integration:
         shared_config = {
             "workflow": {
                 "name": "shared_test_workflow",
-                "stages": ["research", "analysis", "synthesis"]
+                "stages": ["research", "analysis", "synthesis"],
             }
         }
 
@@ -567,7 +577,9 @@ class TestMilestone1Integration:
 
         # Verify all completed
         assert len(workflow_ids) == 15
-        assert len(set(workflow_ids)) == 15, "All IDs should be unique despite same config"
+        assert (
+            len(set(workflow_ids)) == 15
+        ), "All IDs should be unique despite same config"
 
         # Verify database integrity
         with get_session() as session:
@@ -577,7 +589,9 @@ class TestMilestone1Integration:
                 )
             ).all()
 
-            assert len(workflows) == 15, f"Expected 15 workflows, found {len(workflows)}"
+            assert (
+                len(workflows) == 15
+            ), f"Expected 15 workflows, found {len(workflows)}"
 
             # Verify config is identical for all
             for workflow in workflows:
@@ -602,7 +616,9 @@ class TestMilestone1Integration:
                     id=workflow_id,
                     workflow_name=f"full_workflow_{workflow_num}",
                     workflow_version="1.0",
-                    workflow_config_snapshot={"workflow": {"name": f"test_{workflow_num}"}},
+                    workflow_config_snapshot={
+                        "workflow": {"name": f"test_{workflow_num}"}
+                    },
                     trigger_type="manual",
                     start_time=datetime.now(UTC),
                     status="running",
@@ -627,7 +643,7 @@ class TestMilestone1Integration:
                         start_time=datetime.now(UTC),
                         end_time=datetime.now(UTC) + timedelta(milliseconds=500),
                         duration_seconds=0.5,
-                        status="success",
+                        status="completed",
                         num_agents_executed=1,
                         num_agents_succeeded=1,
                     )
@@ -684,17 +700,16 @@ class TestMilestone1Integration:
             assert len(workflows) == 12
 
             stages = session.exec(
-                select(StageExecution).where(
-                    StageExecution.stage_name.like("stage_%")
-                )
+                select(StageExecution).where(StageExecution.stage_name.like("stage_%"))
             ).all()
 
             assert len(stages) == 12
 
             # Verify each stage belongs to correct workflow
             for stage in stages:
-                assert stage.workflow_execution_id in workflow_ids, \
-                    "Stage should reference valid workflow"
+                assert (
+                    stage.workflow_execution_id in workflow_ids
+                ), "Stage should reference valid workflow"
 
     def test_workflow_continues_after_noncritical_failure(self, db_session):
         """Test workflow continues executing after a non-critical stage fails."""
@@ -704,7 +719,9 @@ class TestMilestone1Integration:
             id=workflow_id,
             workflow_name="partial_failure_workflow",
             workflow_version="1.0",
-            workflow_config_snapshot={"workflow": {"name": "test", "stages": ["stage1", "stage2", "stage3"]}},
+            workflow_config_snapshot={
+                "workflow": {"name": "test", "stages": ["stage1", "stage2", "stage3"]}
+            },
             trigger_type="manual",
             start_time=datetime.now(UTC),
             status="running",
@@ -725,7 +742,7 @@ class TestMilestone1Integration:
             start_time=datetime.now(UTC),
             end_time=datetime.now(UTC) + timedelta(seconds=1),
             duration_seconds=1.0,
-            status="success",
+            status="completed",
             num_agents_executed=1,
             num_agents_succeeded=1,
             num_agents_failed=0,
@@ -748,7 +765,6 @@ class TestMilestone1Integration:
             duration_seconds=1.0,
             status="failed",
             error_message="Non-critical error: API rate limit exceeded",
-            error_type="LLMRateLimitError",
             num_agents_executed=1,
             num_agents_succeeded=0,
             num_agents_failed=1,
@@ -758,7 +774,7 @@ class TestMilestone1Integration:
             session.add(stage2_exec)
             session.commit()
 
-        # Stage 3: Success (continues despite stage 2 failure)
+        # Stage 3: Completed (continues despite stage 2 failure)
         stage3_id = str(uuid.uuid4())
         stage3_exec = StageExecution(
             id=stage3_id,
@@ -769,7 +785,7 @@ class TestMilestone1Integration:
             start_time=datetime.now(UTC),
             end_time=datetime.now(UTC) + timedelta(seconds=1),
             duration_seconds=1.0,
-            status="success",
+            status="completed",
             num_agents_executed=1,
             num_agents_succeeded=1,
             num_agents_failed=0,
@@ -779,10 +795,10 @@ class TestMilestone1Integration:
             session.add(stage3_exec)
             session.commit()
 
-        # Complete workflow with partial success
+        # Complete workflow (some stages failed, but workflow completed)
         workflow_exec.end_time = datetime.now(UTC)
         workflow_exec.duration_seconds = 3.0
-        workflow_exec.status = "partial_success"
+        workflow_exec.status = "completed"
 
         with get_session() as session:
             session.merge(workflow_exec)
@@ -793,7 +809,7 @@ class TestMilestone1Integration:
             loaded_workflow = session.exec(
                 select(WorkflowExecution).where(WorkflowExecution.id == workflow_id)
             ).first()
-            assert loaded_workflow.status == "partial_success"
+            assert loaded_workflow.status == "completed"
 
             # Verify all 3 stages executed
             stages = session.exec(
@@ -805,9 +821,9 @@ class TestMilestone1Integration:
 
             # Verify stage statuses
             stage_statuses = {stage.stage_name: stage.status for stage in stages}
-            assert stage_statuses["stage1"] == "success"
+            assert stage_statuses["stage1"] == "completed"
             assert stage_statuses["stage2"] == "failed"
-            assert stage_statuses["stage3"] == "success"
+            assert stage_statuses["stage3"] == "completed"
 
     def test_workflow_partial_success_status(self, db_session):
         """Test workflow status reflects partial success when some stages fail."""
@@ -825,10 +841,10 @@ class TestMilestone1Integration:
             session.add(workflow_exec)
             session.commit()
 
-        # Create 5 stages: 3 success, 2 failed
+        # Create 5 stages: 3 completed, 2 failed
         for i in range(5):
             stage_id = str(uuid.uuid4())
-            status = "failed" if i in [1, 3] else "success"
+            status = "failed" if i in [1, 3] else "completed"
             error_msg = f"Stage {i} failed" if status == "failed" else None
 
             stage_exec = StageExecution(
@@ -843,7 +859,7 @@ class TestMilestone1Integration:
                 status=status,
                 error_message=error_msg,
                 num_agents_executed=1,
-                num_agents_succeeded=1 if status == "success" else 0,
+                num_agents_succeeded=1 if status == "completed" else 0,
                 num_agents_failed=1 if status == "failed" else 0,
             )
 
@@ -851,21 +867,21 @@ class TestMilestone1Integration:
                 session.add(stage_exec)
                 session.commit()
 
-        # Complete workflow with partial success
+        # Complete workflow (some stages failed)
         workflow_exec.end_time = datetime.now(UTC)
         workflow_exec.duration_seconds = 5.0
-        workflow_exec.status = "partial_success"
+        workflow_exec.status = "completed"
 
         with get_session() as session:
             session.merge(workflow_exec)
             session.commit()
 
-        # Verify status reflects partial success
+        # Verify status reflects completion
         with get_session() as session:
             loaded = session.exec(
                 select(WorkflowExecution).where(WorkflowExecution.id == workflow_id)
             ).first()
-            assert loaded.status == "partial_success"
+            assert loaded.status == "completed"
 
             stages = session.exec(
                 select(StageExecution).where(
@@ -874,10 +890,10 @@ class TestMilestone1Integration:
             ).all()
             assert len(stages) == 5
 
-            success_count = sum(1 for s in stages if s.status == "success")
+            completed_count = sum(1 for s in stages if s.status == "completed")
             failed_count = sum(1 for s in stages if s.status == "failed")
 
-            assert success_count == 3
+            assert completed_count == 3
             assert failed_count == 2
 
     def test_failed_stages_logged_with_error_details(self, db_session):
@@ -1003,7 +1019,7 @@ class TestMilestone1Integration:
             session.add(agent2_exec)
             session.commit()
 
-        # Attempt 3: Success
+        # Attempt 3: Completed
         agent3_id = str(uuid.uuid4())
         agent3_exec = AgentExecution(
             id=agent3_id,
@@ -1014,7 +1030,7 @@ class TestMilestone1Integration:
             start_time=datetime.now(UTC),
             end_time=datetime.now(UTC) + timedelta(seconds=1),
             duration_seconds=1.0,
-            status="success",
+            status="completed",
             retry_count=3,
         )
 
@@ -1025,10 +1041,10 @@ class TestMilestone1Integration:
         # Complete stage
         stage_exec.end_time = datetime.now(UTC)
         stage_exec.duration_seconds = 3.5
-        stage_exec.status = "success"
-        stage_exec.num_agents_executed=3
-        stage_exec.num_agents_succeeded=1
-        stage_exec.num_agents_failed=2
+        stage_exec.status = "completed"
+        stage_exec.num_agents_executed = 3
+        stage_exec.num_agents_succeeded = 1
+        stage_exec.num_agents_failed = 2
 
         with get_session() as session:
             session.merge(stage_exec)
@@ -1049,7 +1065,7 @@ class TestMilestone1Integration:
                 select(AgentExecution)
                 .where(
                     AgentExecution.stage_execution_id == stage_id,
-                    AgentExecution.agent_name == agent_name
+                    AgentExecution.agent_name == agent_name,
                 )
                 .order_by(AgentExecution.retry_count)
             ).all()
@@ -1064,7 +1080,7 @@ class TestMilestone1Integration:
             assert agents[1].status == "failed"
 
             assert agents[2].retry_count == 3
-            assert agents[2].status == "success"
+            assert agents[2].status == "completed"
 
             # Verify workflow eventually succeeded
             workflow = session.exec(
@@ -1088,7 +1104,7 @@ class TestMilestone1Integration:
             session.add(workflow_exec)
             session.commit()
 
-        # Stage 1: Success (will be rolled back)
+        # Stage 1: Completed initially (will be halted due to rollback)
         stage1_id = str(uuid.uuid4())
         stage1_exec = StageExecution(
             id=stage1_id,
@@ -1099,7 +1115,7 @@ class TestMilestone1Integration:
             start_time=datetime.now(UTC),
             end_time=datetime.now(UTC) + timedelta(seconds=1),
             duration_seconds=1.0,
-            status="success",
+            status="completed",
             num_agents_executed=1,
             num_agents_succeeded=1,
         )
@@ -1130,8 +1146,8 @@ class TestMilestone1Integration:
             session.add(stage2_exec)
             session.commit()
 
-        # Stage 1: Rolled back due to critical failure
-        stage1_exec.status = "rolled_back"
+        # Stage 1: Halted due to critical failure rollback
+        stage1_exec.status = "halted"
 
         with get_session() as session:
             session.merge(stage1_exec)
@@ -1141,7 +1157,9 @@ class TestMilestone1Integration:
         workflow_exec.end_time = datetime.now(UTC)
         workflow_exec.duration_seconds = 2.5
         workflow_exec.status = "failed"
-        workflow_exec.error_message = "Critical failure in critical_stage: Data integrity violation"
+        workflow_exec.error_message = (
+            "Critical failure in critical_stage: Data integrity violation"
+        )
 
         with get_session() as session:
             session.merge(workflow_exec)
@@ -1163,9 +1181,9 @@ class TestMilestone1Integration:
 
             assert len(stages) == 2
 
-            # Verify stage 1 rolled back
+            # Verify stage 1 halted (rolled back)
             assert stages[0].stage_name == "setup_stage"
-            assert stages[0].status == "rolled_back"
+            assert stages[0].status == "halted"
 
             # Verify stage 2 failed with critical flag in metadata
             assert stages[1].stage_name == "critical_stage"
@@ -1204,7 +1222,7 @@ class TestMilestone1Integration:
             session.add(stage_exec)
             session.commit()
 
-        # Agent 1: Success
+        # Agent 1: Completed
         agent1_id = str(uuid.uuid4())
         agent1_exec = AgentExecution(
             id=agent1_id,
@@ -1215,7 +1233,7 @@ class TestMilestone1Integration:
             start_time=datetime.now(UTC),
             end_time=datetime.now(UTC) + timedelta(seconds=1),
             duration_seconds=1.0,
-            status="success",
+            status="completed",
         )
 
         with get_session() as session:
@@ -1235,14 +1253,13 @@ class TestMilestone1Integration:
             duration_seconds=1.0,
             status="failed",
             error_message="Agent execution failed",
-            error_type="AgentError",
         )
 
         with get_session() as session:
             session.add(agent2_exec)
             session.commit()
 
-        # Agent 3: Success
+        # Agent 3: Completed
         agent3_id = str(uuid.uuid4())
         agent3_exec = AgentExecution(
             id=agent3_id,
@@ -1253,17 +1270,17 @@ class TestMilestone1Integration:
             start_time=datetime.now(UTC),
             end_time=datetime.now(UTC) + timedelta(seconds=1),
             duration_seconds=1.0,
-            status="success",
+            status="completed",
         )
 
         with get_session() as session:
             session.add(agent3_exec)
             session.commit()
 
-        # Complete stage with partial failure
+        # Complete stage (some agents failed, but stage completed)
         stage_exec.end_time = datetime.now(UTC)
         stage_exec.duration_seconds = 3.0
-        stage_exec.status = "partial_success"
+        stage_exec.status = "completed"
         stage_exec.num_agents_executed = 3
         stage_exec.num_agents_succeeded = 2
         stage_exec.num_agents_failed = 1
@@ -1277,7 +1294,7 @@ class TestMilestone1Integration:
             stage = session.exec(
                 select(StageExecution).where(StageExecution.id == stage_id)
             ).first()
-            assert stage.status == "partial_success"
+            assert stage.status == "completed"
             assert stage.num_agents_executed == 3
             assert stage.num_agents_succeeded == 2
             assert stage.num_agents_failed == 1
@@ -1289,8 +1306,8 @@ class TestMilestone1Integration:
             ).all()
             assert len(agents) == 3
 
-            success_count = sum(1 for a in agents if a.status == "success")
+            completed_count = sum(1 for a in agents if a.status == "completed")
             failed_count = sum(1 for a in agents if a.status == "failed")
 
-            assert success_count == 2
+            assert completed_count == 2
             assert failed_count == 1

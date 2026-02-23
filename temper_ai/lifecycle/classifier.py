@@ -6,7 +6,7 @@ explicit-input fallback for deterministic operation without LLM.
 
 import json
 import logging
-from typing import Any, Dict, Optional
+from typing import Any
 
 from temper_ai.lifecycle._schemas import (
     ProjectCharacteristics,
@@ -40,13 +40,13 @@ class ProjectClassifier:
     Fallback chain: explicit input -> LLM inference -> conservative defaults.
     """
 
-    def __init__(self, llm: Optional[Any] = None) -> None:
+    def __init__(self, llm: Any | None = None) -> None:
         self._llm = llm
 
     def classify(
         self,
-        workflow_config: Dict[str, Any],
-        input_data: Dict[str, Any],
+        workflow_config: dict[str, Any],
+        input_data: dict[str, Any],
     ) -> ProjectCharacteristics:
         """Classify project characteristics.
 
@@ -60,16 +60,14 @@ class ProjectClassifier:
         # Start with defaults
         chars = _extract_explicit(input_data)
 
-        # If all key fields are explicit, skip LLM
+        # If minimum required fields (size + risk_level) are explicit, skip LLM
         if _has_all_explicit(input_data):
             logger.info("All characteristics explicitly provided")
             return chars
 
         # Try LLM inference for missing fields
         if self._llm is not None:
-            llm_chars = self._classify_with_llm(
-                workflow_config, input_data
-            )
+            llm_chars = self._classify_with_llm(workflow_config, input_data)
             if llm_chars is not None:
                 chars = _merge_characteristics(chars, llm_chars)
 
@@ -77,9 +75,9 @@ class ProjectClassifier:
 
     def _classify_with_llm(
         self,
-        workflow_config: Dict[str, Any],
-        input_data: Dict[str, Any],
-    ) -> Optional[ProjectCharacteristics]:
+        workflow_config: dict[str, Any],
+        input_data: dict[str, Any],
+    ) -> ProjectCharacteristics | None:
         """Use LLM to infer project characteristics."""
         try:
             wf = workflow_config.get("workflow", {})
@@ -104,9 +102,9 @@ class ProjectClassifier:
             return None
 
 
-def _extract_explicit(input_data: Dict[str, Any]) -> ProjectCharacteristics:
+def _extract_explicit(input_data: dict[str, Any]) -> ProjectCharacteristics:
     """Extract explicitly provided characteristics from input data."""
-    kwargs: Dict[str, Any] = {}
+    kwargs: dict[str, Any] = {}
 
     if "size" in input_data:
         try:
@@ -130,15 +128,13 @@ def _extract_explicit(input_data: Dict[str, Any]) -> ProjectCharacteristics:
         kwargs["product_type"] = str(input_data["product_type"])
 
     if "estimated_complexity" in input_data:
-        kwargs["estimated_complexity"] = float(
-            input_data["estimated_complexity"]
-        )
+        kwargs["estimated_complexity"] = float(input_data["estimated_complexity"])
 
     return ProjectCharacteristics(**kwargs)
 
 
-def _has_all_explicit(input_data: Dict[str, Any]) -> bool:
-    """Check if all key classification fields are explicitly provided."""
+def _has_all_explicit(input_data: dict[str, Any]) -> bool:
+    """Check if minimum required classification fields (size, risk_level) are provided."""
     return "size" in input_data and "risk_level" in input_data
 
 
@@ -159,7 +155,7 @@ def _merge_characteristics(
     return ProjectCharacteristics(**data)
 
 
-def _parse_llm_response(content: str) -> Optional[ProjectCharacteristics]:
+def _parse_llm_response(content: str) -> ProjectCharacteristics | None:
     """Parse LLM JSON response into ProjectCharacteristics."""
     try:
         # Strip markdown code fences if present

@@ -3,12 +3,14 @@
 Tests the integration of RollbackManager with ToolExecutor for
 automatic rollback on tool failures, approval rejection, and policy violations.
 """
+
 import os
 import tempfile
 from unittest.mock import Mock
 
 import pytest
 
+from temper_ai.observability.database import init_database
 from temper_ai.safety.action_policy_engine import (
     ActionPolicyEngine,
     EnforcementResult,
@@ -29,7 +31,7 @@ class FileWriteTool(BaseTool):
             name="write_file",
             description="Write content to file",
             version="1.0.0",
-            category="file"
+            category="file",
         )
 
     def get_parameters_schema(self) -> dict:
@@ -38,37 +40,46 @@ class FileWriteTool(BaseTool):
             "properties": {
                 "path": {"type": "string"},
                 "content": {"type": "string"},
-                "fail": {"type": "boolean"}
+                "fail": {"type": "boolean"},
             },
-            "required": ["path", "content"]
+            "required": ["path", "content"],
         }
 
     def execute(self, path: str, content: str, fail: bool = False) -> ToolResult:
         """Execute file write."""
         if fail:
             return ToolResult(
-                success=False,
-                result=None,
-                error="Simulated tool failure"
+                success=False, result=None, error="Simulated tool failure"
             )
 
-        with open(path, 'w') as f:
+        with open(path, "w") as f:
             f.write(content)
 
         return ToolResult(
             success=True,
             result={"path": path, "bytes_written": len(content)},
-            error=None
+            error=None,
         )
 
 
 class TestToolRollback:
     """Test suite for tool executor rollback integration."""
 
+    @pytest.fixture(autouse=True)
+    def sample_database(self):
+        """Initialize in-memory database for rollback logging."""
+        try:
+            from temper_ai.observability.database import get_database
+
+            get_database()
+        except RuntimeError:
+            init_database("sqlite:///:memory:")
+        yield
+
     @pytest.fixture
     def temp_file(self):
         """Create temporary file for testing."""
-        with tempfile.NamedTemporaryFile(mode='w', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
             f.write("original content")
             temp_path = f.name
 
@@ -96,11 +107,11 @@ class TestToolRollback:
         executor = ToolExecutor(
             registry=registry,
             rollback_manager=rollback_manager,
-            enable_auto_rollback=True
+            enable_auto_rollback=True,
         )
 
         # Verify original content
-        with open(temp_file, 'r') as f:
+        with open(temp_file) as f:
             assert f.read() == "original content"
 
         # Execute tool that will fail (but after modifying file conceptually)
@@ -109,7 +120,7 @@ class TestToolRollback:
         result = executor.execute(
             tool_name="write_file",
             params={"path": temp_file, "content": "new content", "fail": True},
-            context={"agent_id": "test-agent"}
+            context={"agent_id": "test-agent"},
         )
 
         # Verify tool failed
@@ -117,7 +128,7 @@ class TestToolRollback:
         assert "Simulated tool failure" in result.error
 
         # File should remain unchanged (or be rolled back if changed)
-        with open(temp_file, 'r') as f:
+        with open(temp_file) as f:
             content = f.read()
             assert content == "original content"
 
@@ -126,21 +137,21 @@ class TestToolRollback:
         executor = ToolExecutor(
             registry=registry,
             rollback_manager=rollback_manager,
-            enable_auto_rollback=True
+            enable_auto_rollback=True,
         )
 
         # Execute successful tool
         result = executor.execute(
             tool_name="write_file",
             params={"path": temp_file, "content": "new content", "fail": False},
-            context={"agent_id": "test-agent"}
+            context={"agent_id": "test-agent"},
         )
 
         # Verify tool succeeded
         assert result.success
 
         # File should have new content
-        with open(temp_file, 'r') as f:
+        with open(temp_file) as f:
             assert f.read() == "new content"
 
         # No rollback should have been executed
@@ -152,14 +163,14 @@ class TestToolRollback:
         executor = ToolExecutor(
             registry=registry,
             rollback_manager=rollback_manager,
-            enable_auto_rollback=False
+            enable_auto_rollback=False,
         )
 
         # Execute failing tool
         result = executor.execute(
             tool_name="write_file",
             params={"path": temp_file, "content": "new content", "fail": True},
-            context={"agent_id": "test-agent"}
+            context={"agent_id": "test-agent"},
         )
 
         # Verify tool failed
@@ -171,6 +182,7 @@ class TestToolRollback:
 
     def test_snapshot_only_for_state_modifying_tools(self, registry, rollback_manager):
         """Test that snapshots are only created for state-modifying tools."""
+
         # Create a read-only tool
         class ReadTool(BaseTool):
             def get_metadata(self) -> ToolMetadata:
@@ -179,7 +191,7 @@ class TestToolRollback:
                     description="Read file",
                     version="1.0.0",
                     category="file",
-                    modifies_state=False  # Read-only tool
+                    modifies_state=False,  # Read-only tool
                 )
 
             def get_parameters_schema(self) -> dict:
@@ -193,14 +205,12 @@ class TestToolRollback:
         executor = ToolExecutor(
             registry=registry,
             rollback_manager=rollback_manager,
-            enable_auto_rollback=True
+            enable_auto_rollback=True,
         )
 
         # Execute read tool
         result = executor.execute(
-            tool_name="read_file",
-            params={},
-            context={"agent_id": "test-agent"}
+            tool_name="read_file", params={}, context={"agent_id": "test-agent"}
         )
 
         assert result.success
@@ -213,35 +223,41 @@ class TestToolRollback:
         """Test policy blocking prevents execution."""
         # Mock policy engine that blocks action
         mock_policy_engine = Mock(spec=ActionPolicyEngine)
-        mock_policy_engine.validate_action = Mock(return_value=EnforcementResult(
-            allowed=False,
-            violations=[
-                SafetyViolation(
-                    policy_name="test_policy",
-                    severity=ViolationSeverity.CRITICAL,
-                    message="Action blocked by policy",
-                    action="write_file",
-                    context={}
-                )
-            ],
-            policies_executed=["test_policy"],
-            execution_time_ms=1.0,
-            metadata={},
-            cache_hit=False
-        ))
+        mock_policy_engine.validate_action_sync = Mock(
+            return_value=EnforcementResult(
+                allowed=False,
+                violations=[
+                    SafetyViolation(
+                        policy_name="test_policy",
+                        severity=ViolationSeverity.CRITICAL,
+                        message="Action blocked by policy",
+                        action="write_file",
+                        context={},
+                    )
+                ],
+                policies_executed=["test_policy"],
+                execution_time_ms=1.0,
+                metadata={},
+                cache_hit=False,
+            )
+        )
 
         executor = ToolExecutor(
             registry=registry,
             rollback_manager=rollback_manager,
             policy_engine=mock_policy_engine,
-            enable_auto_rollback=True
+            enable_auto_rollback=True,
         )
 
         # Execute tool (should be blocked)
         result = executor.execute(
             tool_name="write_file",
             params={"path": temp_file, "content": "new content"},
-            context={"agent_id": "test-agent", "workflow_id": "wf-1", "stage_id": "stage-1"}
+            context={
+                "agent_id": "test-agent",
+                "workflow_id": "wf-1",
+                "stage_id": "stage-1",
+            },
         )
 
         # Verify execution was blocked
@@ -249,7 +265,7 @@ class TestToolRollback:
         assert "Action blocked by policy" in result.error
 
         # File should remain unchanged
-        with open(temp_file, 'r') as f:
+        with open(temp_file) as f:
             assert f.read() == "original content"
 
         # No snapshot or rollback should have been created
@@ -261,29 +277,42 @@ class TestToolRollback:
         executor = ToolExecutor(
             registry=registry,
             rollback_manager=rollback_manager,
-            enable_auto_rollback=True
+            enable_auto_rollback=True,
         )
 
         # Execute failing tool
         result = executor.execute(
             tool_name="write_file",
             params={"path": temp_file, "content": "new content", "fail": True},
-            context={"agent_id": "test-agent-123", "workflow_id": "wf-456"}
+            context={"agent_id": "test-agent-123", "workflow_id": "wf-456"},
         )
 
         # Verify metadata if rollback occurred
         if result.metadata and result.metadata.get("rollback_executed"):
             assert result.metadata["rollback_snapshot_id"]
-            assert result.metadata["rollback_status"] in [s.value for s in RollbackStatus]
+            assert result.metadata["rollback_status"] in [
+                s.value for s in RollbackStatus
+            ]
 
 
 class TestApprovalRejectionRollback:
     """Test approval rejection triggers rollback."""
 
+    @pytest.fixture(autouse=True)
+    def sample_database(self):
+        """Initialize in-memory database for rollback logging."""
+        try:
+            from temper_ai.observability.database import get_database
+
+            get_database()
+        except RuntimeError:
+            init_database("sqlite:///:memory:")
+        yield
+
     @pytest.fixture
     def temp_file(self):
         """Create temporary file for testing."""
-        with tempfile.NamedTemporaryFile(mode='w', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
             f.write("original content")
             temp_path = f.name
 
@@ -305,13 +334,12 @@ class TestApprovalRejectionRollback:
             registry=registry,
             rollback_manager=rollback_manager,
             approval_workflow=approval_workflow,
-            enable_auto_rollback=True
+            enable_auto_rollback=True,
         )
 
         # Create a snapshot manually
         snapshot = rollback_manager.create_snapshot(
-            action={"tool": "write_file"},
-            context={"agent_id": "test-agent"}
+            action={"tool": "write_file"}, context={"agent_id": "test-agent"}
         )
 
         # Create approval request with snapshot ID in metadata
@@ -320,11 +348,13 @@ class TestApprovalRejectionRollback:
             reason="Test approval",
             context={"agent_id": "test-agent"},
             violations=[],
-            metadata={"rollback_snapshot_id": snapshot.id}
+            metadata={"rollback_snapshot_id": snapshot.id},
         )
 
         # Reject approval (should trigger rollback via callback)
-        approval_workflow.reject(approval_request.id, rejecter="test-user", reason="Test rejection")
+        approval_workflow.reject(
+            approval_request.id, rejecter="test-user", reason="Test rejection"
+        )
 
         # Verify rollback was executed
         history = rollback_manager.get_history()

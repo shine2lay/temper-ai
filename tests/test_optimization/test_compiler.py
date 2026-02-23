@@ -47,6 +47,9 @@ def mock_dspy():
     optimizer.compile.return_value = compiled_program
     dspy.BootstrapFewShot.return_value = optimizer
     dspy.MIPROv2.return_value = optimizer
+    dspy.COPRO.return_value = optimizer
+    dspy.SIMBA.return_value = optimizer
+    dspy.GEPA.return_value = optimizer
 
     with patch.dict(sys.modules, {"dspy": dspy}):
         yield dspy, compiled_program
@@ -111,7 +114,8 @@ class TestDSPyCompiler:
         assert len(program_id) > len("prog_bootstrap_")
 
     def test_default_metric(self):
-        metric = DSPyCompiler._get_metric(None)
+        config = PromptOptimizationConfig()
+        metric = DSPyCompiler._resolve_metric(config)
         example = MagicMock(output="hello")
         pred_match = MagicMock(output="hello")
         pred_no_match = MagicMock(output="world")
@@ -126,7 +130,10 @@ class TestDSPyCompiler:
         program = MagicMock()
         program.return_value = MagicMock(output="correct")
 
-        examples = [MagicMock(input="in1", output="correct"), MagicMock(input="in2", output="correct")]
+        examples = [
+            MagicMock(input="in1", output="correct"),
+            MagicMock(input="in2", output="correct"),
+        ]
 
         def metric(ex, pred, trace=None):
             return getattr(pred, "output", "") == getattr(ex, "output", "")
@@ -149,32 +156,133 @@ class TestDSPyCompiler:
 
 
 class TestMetricDispatch:
+    """Test _resolve_metric delegates to the metric registry."""
+
     def test_default_is_exact_match(self):
-        metric = DSPyCompiler._get_metric(None)
+        from temper_ai.optimization.dspy.metrics import get_metric
+
+        metric = get_metric("exact_match")
         example = MagicMock(output="hello")
         pred = MagicMock(output="hello")
         assert metric(example, pred)
 
     def test_exact_match_mismatch(self):
-        metric = DSPyCompiler._get_metric("exact_match")
+        from temper_ai.optimization.dspy.metrics import get_metric
+
+        metric = get_metric("exact_match")
         example = MagicMock(output="hello")
         pred = MagicMock(output="world")
         assert not metric(example, pred)
 
     def test_contains_metric(self):
-        metric = DSPyCompiler._get_metric("contains")
+        from temper_ai.optimization.dspy.metrics import get_metric
+
+        metric = get_metric("contains")
         example = MagicMock(output="world")
         pred = MagicMock(output="hello world")
         assert metric(example, pred)
 
     def test_fuzzy_metric_above_threshold(self):
-        metric = DSPyCompiler._get_metric("fuzzy")
+        from temper_ai.optimization.dspy.metrics import get_metric
+
+        metric = get_metric("fuzzy")
         example = MagicMock(output="the quick brown fox")
         pred = MagicMock(output="the quick brown dog")
         assert metric(example, pred)
 
     def test_fuzzy_metric_below_threshold(self):
-        metric = DSPyCompiler._get_metric("fuzzy")
+        from temper_ai.optimization.dspy.metrics import get_metric
+
+        metric = get_metric("fuzzy")
         example = MagicMock(output="hello world")
         pred = MagicMock(output="goodbye universe forever")
         assert not metric(example, pred)
+
+
+class TestResolveMetric:
+    """Test compiler._resolve_metric for GEPA auto-selection."""
+
+    def test_gepa_auto_selects_gepa_feedback(self):
+        config = PromptOptimizationConfig(
+            optimizer="gepa",
+            training_metric="exact_match",
+        )
+        metric = DSPyCompiler._resolve_metric(config)
+        assert callable(metric)
+
+    def test_gepa_respects_explicit_metric(self):
+        config = PromptOptimizationConfig(
+            optimizer="gepa",
+            training_metric="fuzzy",
+        )
+        metric = DSPyCompiler._resolve_metric(config)
+        # Should use fuzzy, not gepa_feedback
+        example = MagicMock(output="a b c")
+        pred = MagicMock(output="a b c")
+        assert metric(example, pred) is True
+
+    def test_metric_params_forwarded(self):
+        config = PromptOptimizationConfig(
+            training_metric="llm_judge",
+            metric_params={"rubric": "Test rubric"},
+        )
+        metric = DSPyCompiler._resolve_metric(config)
+        assert callable(metric)
+
+
+class TestOptimizerDispatch:
+    """Test that compile delegates to optimizer registry."""
+
+    def test_copro_dispatched(self, mock_dspy):
+        dspy, _ = mock_dspy
+        config = PromptOptimizationConfig(optimizer="copro")
+        compiler = DSPyCompiler()
+        result = compiler.compile(
+            program=MagicMock(),
+            training_examples=_make_examples(),
+            config=config,
+        )
+        assert dspy.COPRO.called
+        assert result.optimizer_type == "copro"
+
+    def test_simba_dispatched(self, mock_dspy):
+        dspy, _ = mock_dspy
+        config = PromptOptimizationConfig(optimizer="simba")
+        compiler = DSPyCompiler()
+        result = compiler.compile(
+            program=MagicMock(),
+            training_examples=_make_examples(),
+            config=config,
+        )
+        assert dspy.SIMBA.called
+        assert result.optimizer_type == "simba"
+
+    def test_gepa_dispatched(self, mock_dspy):
+        dspy, _ = mock_dspy
+        # GEPA auto-selects gepa_feedback metric which needs submodule mocking
+        mock_gepa_utils = MagicMock()
+        mock_gepa_utils.ScoreWithFeedback = MagicMock(
+            side_effect=lambda **kw: MagicMock(**kw),
+        )
+        mock_result = MagicMock()
+        mock_result.score = "0.5"
+        mock_result.feedback = ""
+        dspy.ChainOfThought.return_value.return_value = mock_result
+
+        with patch.dict(
+            sys.modules,
+            {
+                "dspy.teleprompt": MagicMock(),
+                "dspy.teleprompt.gepa": MagicMock(),
+                "dspy.teleprompt.gepa.gepa_utils": mock_gepa_utils,
+            },
+        ):
+            config = PromptOptimizationConfig(optimizer="gepa")
+            compiler = DSPyCompiler()
+            result = compiler.compile(
+                program=MagicMock(),
+                training_examples=_make_examples(),
+                config=config,
+            )
+        assert dspy.GEPA.called
+        assert result.optimizer_type == "gepa"

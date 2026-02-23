@@ -111,9 +111,7 @@ class TestTrackStageSessionDedup:
         """track_stage exception path should still clean up session stack."""
         assert len(tracker._session_stack) == 0
 
-        with patch(
-            "temper_ai.observability.tracker._handle_stage_error"
-        ) as mock_err:
+        with patch("temper_ai.observability.tracker._handle_stage_error") as mock_err:
             with pytest.raises(RuntimeError, match="stage_fail"):
                 with tracker.track_stage("s", {}, "wf-1"):
                     assert len(tracker._session_stack) == 1
@@ -161,9 +159,7 @@ class TestTrackAgentSessionDedup:
         """track_agent exception path should still clean up session stack."""
         assert len(tracker._session_stack) == 0
 
-        with patch(
-            "temper_ai.observability.tracker._handle_agent_error"
-        ) as mock_err:
+        with patch("temper_ai.observability.tracker._handle_agent_error") as mock_err:
             with pytest.raises(RuntimeError, match="agent_fail"):
                 with tracker.track_agent("a", {}, "s-1"):
                     assert len(tracker._session_stack) == 1
@@ -181,7 +177,8 @@ class TestNestedSessions:
         """track_stage inside track_workflow should reuse the workflow's session."""
         config = {"workflow": {"name": "test"}}
         params = WorkflowTrackingParams(
-            workflow_name="test_wf", workflow_config=config,
+            workflow_name="test_wf",
+            workflow_config=config,
         )
 
         with tracker.track_workflow(params) as workflow_id:
@@ -201,7 +198,8 @@ class TestNestedSessions:
         """track_agent inside track_workflow should reuse the workflow's session."""
         config = {"workflow": {"name": "test"}}
         params = WorkflowTrackingParams(
-            workflow_name="test_wf", workflow_config=config,
+            workflow_name="test_wf",
+            workflow_config=config,
         )
 
         with tracker.track_workflow(params) as workflow_id:
@@ -217,7 +215,8 @@ class TestNestedSessions:
         """Only one get_session_context call for nested track_workflow > track_stage."""
         config = {"workflow": {"name": "test"}}
         params = WorkflowTrackingParams(
-            workflow_name="test_wf", workflow_config=config,
+            workflow_name="test_wf",
+            workflow_config=config,
         )
 
         with tracker.track_workflow(params) as workflow_id:

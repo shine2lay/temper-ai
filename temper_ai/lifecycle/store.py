@@ -1,7 +1,6 @@
 """Database persistence for lifecycle adaptation data."""
 
 import logging
-from typing import Optional
 
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, SQLModel, select
@@ -17,7 +16,7 @@ logger = logging.getLogger(__name__)
 class LifecycleStore:
     """Database persistence for lifecycle adaptation and profile data."""
 
-    def __init__(self, database_url: Optional[str] = None) -> None:
+    def __init__(self, database_url: str | None = None) -> None:
         self.database_url = database_url or get_database_url()
         self.engine: Engine = create_app_engine(self.database_url)
 
@@ -38,7 +37,7 @@ class LifecycleStore:
 
     def list_adaptations(
         self,
-        profile_name: Optional[str] = None,
+        profile_name: str | None = None,
         limit: int = DEFAULT_LIST_LIMIT,
     ) -> list[LifecycleAdaptation]:
         """List adaptation records, newest first."""
@@ -47,9 +46,7 @@ class LifecycleStore:
                 LifecycleAdaptation.created_at.desc()  # type: ignore[attr-defined]
             )
             if profile_name is not None:
-                stmt = stmt.where(
-                    LifecycleAdaptation.profile_name == profile_name
-                )
+                stmt = stmt.where(LifecycleAdaptation.profile_name == profile_name)
             stmt = stmt.limit(limit)
             return list(session.exec(stmt).all())
 
@@ -61,7 +58,7 @@ class LifecycleStore:
             session.merge(profile)
             session.commit()
 
-    def get_profile(self, name: str) -> Optional[LifecycleProfileRecord]:
+    def get_profile(self, name: str) -> LifecycleProfileRecord | None:
         """Get a profile by name, or None."""
         with Session(self.engine) as session:
             stmt = select(LifecycleProfileRecord).where(
@@ -76,17 +73,13 @@ class LifecycleStore:
     ) -> list[LifecycleProfileRecord]:
         """List profiles, optionally filtered by enabled status."""
         with Session(self.engine) as session:
-            stmt = select(LifecycleProfileRecord).order_by(
-                LifecycleProfileRecord.name
-            )
+            stmt = select(LifecycleProfileRecord).order_by(LifecycleProfileRecord.name)
             if enabled_only:
                 stmt = stmt.where(LifecycleProfileRecord.enabled.is_(True))  # type: ignore[attr-defined]
             stmt = stmt.limit(limit)
             return list(session.exec(stmt).all())
 
-    def update_profile_status(
-        self, name: str, enabled: bool
-    ) -> bool:
+    def update_profile_status(self, name: str, enabled: bool) -> bool:
         """Update a profile's enabled status. Returns True if found."""
         with Session(self.engine) as session:
             stmt = select(LifecycleProfileRecord).where(

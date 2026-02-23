@@ -3,13 +3,14 @@ WebScraper tool for fetching and extracting text from web pages.
 
 Uses httpx for HTTP requests and BeautifulSoup for HTML parsing.
 """
+
 import ipaddress
 import logging
 import socket
 import threading
 import time
 import urllib.parse
-from typing import Any, Dict, List, Optional, Tuple, Type, Union
+from typing import Any
 
 import httpx
 from bs4 import BeautifulSoup
@@ -65,15 +66,17 @@ BLOCKED_HOSTS = [
     "::ffff:127.0.0.1",  # IPv6 localhost
 ]
 
-BLOCKED_NETWORKS: List[Union[ipaddress.IPv4Network, ipaddress.IPv6Network]] = [
-    ipaddress.IPv4Network("10.0.0.0/8"),      # RFC 1918: Private network
-    ipaddress.IPv4Network("172.16.0.0/12"),   # RFC 1918: Private network
+BLOCKED_NETWORKS: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = [
+    ipaddress.IPv4Network("10.0.0.0/8"),  # RFC 1918: Private network
+    ipaddress.IPv4Network("172.16.0.0/12"),  # RFC 1918: Private network
     ipaddress.IPv4Network("192.168.0.0/16"),  # RFC 1918: Private network
-    ipaddress.IPv4Network("127.0.0.0/8"),     # RFC 1122: Loopback (entire range)
-    ipaddress.IPv4Network("169.254.0.0/16"),  # RFC 3927: Link-local (includes AWS/Azure metadata)
-    ipaddress.IPv6Network("::1/128"),         # RFC 4291: IPv6 loopback
-    ipaddress.IPv6Network("fe80::/10"),       # RFC 4291: IPv6 link-local
-    ipaddress.IPv6Network("::ffff:0:0/96"),   # RFC 4291: IPv4-mapped IPv6
+    ipaddress.IPv4Network("127.0.0.0/8"),  # RFC 1122: Loopback (entire range)
+    ipaddress.IPv4Network(
+        "169.254.0.0/16"
+    ),  # RFC 3927: Link-local (includes AWS/Azure metadata)
+    ipaddress.IPv6Network("::1/128"),  # RFC 4291: IPv6 loopback
+    ipaddress.IPv6Network("fe80::/10"),  # RFC 4291: IPv6 link-local
+    ipaddress.IPv6Network("::ffff:0:0/96"),  # RFC 4291: IPv4-mapped IPv6
 ]
 
 # DNS Security Configuration
@@ -99,14 +102,16 @@ class DNSCache:
     - Only caches validated (safe) resolutions
     """
 
-    def __init__(self, ttl: int = DNS_CACHE_TTL_SECONDS, max_size: int = DNS_CACHE_MAX_SIZE):
+    def __init__(
+        self, ttl: int = DNS_CACHE_TTL_SECONDS, max_size: int = DNS_CACHE_MAX_SIZE
+    ):
         """Initialize DNS cache with TTL and size limit."""
-        self._cache: Dict[str, Tuple[List[Tuple], float]] = {}
+        self._cache: dict[str, tuple[list[tuple], float]] = {}
         self._lock = threading.Lock()
         self._ttl = ttl
         self._max_size = max_size
 
-    def get(self, hostname: str) -> Optional[List[Tuple]]:
+    def get(self, hostname: str) -> list[tuple] | None:
         """
         Get cached DNS resolution if not expired.
 
@@ -129,7 +134,7 @@ class DNSCache:
 
             return addr_info
 
-    def set(self, hostname: str, addr_info: List[Tuple]) -> None:
+    def set(self, hostname: str, addr_info: list[tuple]) -> None:
         """
         Cache DNS resolution result.
 
@@ -138,7 +143,7 @@ class DNSCache:
             addr_info: Address info tuples from getaddrinfo
         """
         with self._lock:
-            # Enforce max cache size (simple LRU - remove oldest)
+            # Enforce max cache size (FIFO - remove oldest entry)
             if len(self._cache) >= self._max_size and hostname not in self._cache:
                 # Remove oldest entry (first key)
                 oldest_key = next(iter(self._cache))
@@ -156,7 +161,9 @@ class DNSCache:
 _dns_cache = DNSCache()
 
 
-def resolve_hostname_with_timeout(hostname: str, timeout: float = DNS_RESOLUTION_TIMEOUT_SECONDS) -> List[Tuple]:
+def resolve_hostname_with_timeout(
+    hostname: str, timeout: float = DNS_RESOLUTION_TIMEOUT_SECONDS
+) -> list[tuple]:
     """
     Resolve hostname with timeout to prevent DNS timing attacks.
 
@@ -175,7 +182,7 @@ def resolve_hostname_with_timeout(hostname: str, timeout: float = DNS_RESOLUTION
         TimeoutError: DNS resolution timed out
     """
     result: list[Any] = []
-    exception: Optional[Exception] = None
+    exception: Exception | None = None
 
     def resolve() -> None:
         """Thread target for DNS resolution."""
@@ -194,7 +201,9 @@ def resolve_hostname_with_timeout(hostname: str, timeout: float = DNS_RESOLUTION
 
     # Check if thread is still alive (timeout occurred)
     if thread.is_alive():
-        raise TimeoutError(f"DNS resolution for {hostname} timed out after {timeout}s (possible timing attack)")
+        raise TimeoutError(
+            f"DNS resolution for {hostname} timed out after {timeout}s (possible timing attack)"
+        )
 
     # Check if exception occurred during resolution
     if exception is not None:
@@ -203,14 +212,16 @@ def resolve_hostname_with_timeout(hostname: str, timeout: float = DNS_RESOLUTION
     return result
 
 
-def _check_hostname_blocklist(hostname: str) -> Optional[str]:
+def _check_hostname_blocklist(hostname: str) -> str | None:
     """Check if hostname is in blocklist. Returns error or None."""
     if hostname.lower() in [h.lower() for h in BLOCKED_HOSTS]:
         return f"Access to {hostname}{SSRF_ERROR_SUFFIX}"
     return None
 
 
-def _check_ip_against_networks(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> Optional[str]:
+def _check_ip_against_networks(
+    ip: ipaddress.IPv4Address | ipaddress.IPv6Address,
+) -> str | None:
     """Check if IP is in blocked networks. Returns error or None."""
     for network in BLOCKED_NETWORKS:
         if ip in network:
@@ -218,7 +229,7 @@ def _check_ip_against_networks(ip: ipaddress.IPv4Address | ipaddress.IPv6Address
     return None
 
 
-def _validate_resolved_ips(addr_info: List[Tuple]) -> Optional[str]:
+def _validate_resolved_ips(addr_info: list[tuple]) -> str | None:
     """Validate all resolved IPs against blocked networks. Returns error or None."""
     for family, _, _, _, sockaddr in addr_info:
         ip_str = sockaddr[0]
@@ -232,7 +243,9 @@ def _validate_resolved_ips(addr_info: List[Tuple]) -> Optional[str]:
     return None
 
 
-def _resolve_and_validate_hostname(hostname: str, use_cache: bool) -> Tuple[bool, Optional[str]]:
+def _resolve_and_validate_hostname(
+    hostname: str, use_cache: bool
+) -> tuple[bool, str | None]:
     """Resolve hostname and validate IPs. Returns (is_valid, error)."""
     # Check DNS cache first
     addr_info = None
@@ -246,8 +259,7 @@ def _resolve_and_validate_hostname(hostname: str, use_cache: bool) -> Tuple[bool
     # Perform DNS resolution with timeout
     try:
         addr_info = resolve_hostname_with_timeout(
-            hostname,
-            timeout=DNS_RESOLUTION_TIMEOUT_SECONDS
+            hostname, timeout=DNS_RESOLUTION_TIMEOUT_SECONDS
         )
     except TimeoutError as e:
         return False, f"DNS resolution timeout (possible attack): {str(e)}"
@@ -268,7 +280,7 @@ def _resolve_and_validate_hostname(hostname: str, use_cache: bool) -> Tuple[bool
     return True, None
 
 
-def validate_url_safety(url: str, use_cache: bool = True) -> Tuple[bool, Optional[str]]:
+def validate_url_safety(url: str, use_cache: bool = True) -> tuple[bool, str | None]:
     """
     Validate URL doesn't target internal resources (SSRF protection).
 
@@ -339,11 +351,15 @@ class ScraperRateLimiter:
         self.max_requests = max_requests
         self.time_window = time_window
         # Configure token bucket: refill all tokens over the time window
-        self._bucket = TokenBucket(RateLimit(
-            max_tokens=max_requests,
-            refill_rate=max_requests / time_window if time_window > 0 else max_requests,
-            refill_period=1.0,
-        ))
+        self._bucket = TokenBucket(
+            RateLimit(
+                max_tokens=max_requests,
+                refill_rate=(
+                    max_requests / time_window if time_window > 0 else max_requests
+                ),
+                refill_period=1.0,
+            )
+        )
 
     def can_proceed(self) -> bool:
         """Check if request can proceed without exceeding rate limit."""
@@ -373,29 +389,28 @@ class WebScraperParams(BaseModel):
         ...,
         description="URL to fetch (must start with http:// or https://)",
         min_length=URL_MIN_LENGTH,
-        max_length=URL_MAX_LENGTH
+        max_length=URL_MAX_LENGTH,
     )
     extract_text: bool = Field(
-        default=True,
-        description="Whether to extract text from HTML"
+        default=True, description="Whether to extract text from HTML"
     )
     timeout: int = Field(
         default=DEFAULT_WEB_TIMEOUT,
         description="Request timeout in seconds",
         gt=0,
-        le=MAX_TIMEOUT_SECONDS
+        le=MAX_TIMEOUT_SECONDS,
     )
-    user_agent: Optional[str] = Field(
+    user_agent: str | None = Field(
         default=None,
         description="Custom User-Agent header",
-        max_length=USER_AGENT_MAX_LENGTH
+        max_length=USER_AGENT_MAX_LENGTH,
     )
 
-    @field_validator('url')
+    @field_validator("url")
     @classmethod
     def validate_url_protocol(cls, v: str) -> str:
         """Validate URL starts with http:// or https://."""
-        if not v.startswith(('http://', 'https://')):
+        if not v.startswith(("http://", "https://")):
             raise ValueError("URL must start with http:// or https://")
         return v
 
@@ -422,7 +437,7 @@ class WebScraper(BaseTool):
     DEFAULT_TIMEOUT = DEFAULT_WEB_TIMEOUT
     DEFAULT_RATE_LIMIT = _DEFAULT_RATE_LIMIT
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: dict[str, Any] | None = None):
         """Initialize web scraper with rate limiter.
 
         Args:
@@ -430,10 +445,9 @@ class WebScraper(BaseTool):
         """
         super().__init__(config)
         self.rate_limiter = ScraperRateLimiter(
-            max_requests=self.DEFAULT_RATE_LIMIT,
-            time_window=RATE_LIMIT_WINDOW_SECONDS
+            max_requests=self.DEFAULT_RATE_LIMIT, time_window=RATE_LIMIT_WINDOW_SECONDS
         )
-        self._client: Optional[httpx.Client] = None
+        self._client: httpx.Client | None = None
 
     def _get_client(self) -> httpx.Client:
         """Return shared httpx.Client, creating it on first use."""
@@ -468,72 +482,67 @@ class WebScraper(BaseTool):
             requires_credentials=False,
         )
 
-    def get_parameters_model(self) -> Type[BaseModel]:
+    def get_parameters_model(self) -> type[BaseModel]:
         """Return Pydantic model for comprehensive parameter validation."""
         return WebScraperParams
 
-    def get_parameters_schema(self) -> Dict[str, Any]:
+    def get_parameters_schema(self) -> dict[str, Any]:
         """Return JSON schema for web scraper parameters."""
         return {
             "type": "object",
             "properties": {
                 "url": {
                     "type": "string",
-                    "description": "URL to fetch (must start with http:// or https://)"
+                    "description": "URL to fetch (must start with http:// or https://)",
                 },
                 "extract_text": {
                     "type": "boolean",
                     "description": "Whether to extract text from HTML (default: true)",
-                    "default": True
+                    "default": True,
                 },
                 "timeout": {
                     "type": "integer",
                     "description": f"Request timeout in seconds (default: {self.DEFAULT_TIMEOUT})",
-                    "default": self.DEFAULT_TIMEOUT
+                    "default": self.DEFAULT_TIMEOUT,
                 },
                 "user_agent": {
                     "type": "string",
-                    "description": "Custom User-Agent header (optional)"
-                }
+                    "description": "Custom User-Agent header (optional)",
+                },
             },
-            "required": ["url"]
+            "required": ["url"],
         }
 
-    def _validate_url_input(self, url: Any) -> Optional[ToolResult]:
+    def _validate_url_input(self, url: Any) -> ToolResult | None:
         """Validate URL input. Returns error or None."""
         if not url or not isinstance(url, str):
-            return ToolResult(
-                success=False,
-                error="url must be a non-empty string"
-            )
+            return ToolResult(success=False, error="url must be a non-empty string")
 
         if not url.startswith(("http://", "https://")):
             return ToolResult(
-                success=False,
-                error="URL must start with http:// or https://"
+                success=False, error="URL must start with http:// or https://"
             )
 
         # SSRF protection
         is_safe, safety_error = validate_url_safety(url)
         if not is_safe:
-            return ToolResult(
-                success=False,
-                error=safety_error
-            )
+            return ToolResult(success=False, error=safety_error)
 
         return None
 
-    def _check_rate_limit(self) -> Optional[ToolResult]:
+    def _check_rate_limit(self) -> ToolResult | None:
         """Check rate limit. Returns error or None."""
         if not self.rate_limiter.can_proceed():
             wait_time = self.rate_limiter.wait_time()
             return ToolResult(
                 success=False,
-                error=f"Rate limit exceeded. Please wait {wait_time:.1f} seconds."
+                error=f"Rate limit exceeded. Please wait {wait_time:.1f} seconds.",
             )
         return None
 
-    def _fetch_with_redirect_validation(self, url: str, headers: Dict[str, str], timeout: int) -> tuple[Optional[Any], Optional[ToolResult]]:
+    def _fetch_with_redirect_validation(
+        self, url: str, headers: dict[str, str], timeout: int
+    ) -> tuple[Any | None, ToolResult | None]:
         """Fetch URL with SSRF-safe redirect handling. Returns (response, error)."""
         try:
             client = self._get_client()
@@ -543,7 +552,11 @@ class WebScraper(BaseTool):
                 response = client.get(current_url, headers=headers, timeout=timeout)
 
                 if response.is_redirect:
-                    redirect_url = str(response.next_request.url) if response.next_request else None
+                    redirect_url = (
+                        str(response.next_request.url)
+                        if response.next_request
+                        else None
+                    )
                     if redirect_url is None:
                         break
                     # Validate redirect target
@@ -551,15 +564,14 @@ class WebScraper(BaseTool):
                     if not is_safe:
                         return None, ToolResult(
                             success=False,
-                            error=f"Redirect to unsafe URL blocked (SSRF protection): {safety_error}"
+                            error=f"Redirect to unsafe URL blocked (SSRF protection): {safety_error}",
                         )
                     current_url = redirect_url
                     continue
                 break
             else:
                 return None, ToolResult(
-                    success=False,
-                    error=f"Too many redirects (max {MAX_REDIRECTS})"
+                    success=False, error=f"Too many redirects (max {MAX_REDIRECTS})"
                 )
 
             response.raise_for_status()
@@ -567,21 +579,17 @@ class WebScraper(BaseTool):
 
         except httpx.TimeoutException:
             return None, ToolResult(
-                success=False,
-                error=f"Request timed out after {timeout} seconds"
+                success=False, error=f"Request timed out after {timeout} seconds"
             )
         except httpx.HTTPStatusError as e:
             return None, ToolResult(
                 success=False,
-                error=f"HTTP error {e.response.status_code}: {e.response.reason_phrase}"
+                error=f"HTTP error {e.response.status_code}: {e.response.reason_phrase}",
             )
         except httpx.RequestError as e:
-            return None, ToolResult(
-                success=False,
-                error=f"Request error: {str(e)}"
-            )
+            return None, ToolResult(success=False, error=f"Request error: {str(e)}")
 
-    def _validate_content_type(self, content_type: str) -> Optional[ToolResult]:
+    def _validate_content_type(self, content_type: str) -> ToolResult | None:
         """Validate content type is acceptable. Returns error or None."""
         acceptable_types = [
             "text/html",
@@ -592,18 +600,17 @@ class WebScraper(BaseTool):
         ]
 
         is_acceptable = any(
-            acceptable_type in content_type
-            for acceptable_type in acceptable_types
+            acceptable_type in content_type for acceptable_type in acceptable_types
         )
 
         if not is_acceptable and content_type:
             return ToolResult(
                 success=False,
-                error=f"Unsupported content type: {content_type.split(';')[0]}. Only text-based content is supported."
+                error=f"Unsupported content type: {content_type.split(';')[0]}. Only text-based content is supported.",
             )
         return None
 
-    def _validate_response(self, response: Any) -> Optional[ToolResult]:
+    def _validate_response(self, response: Any) -> ToolResult | None:
         """Validate response content type and size. Returns error or None."""
         content_type = response.headers.get("content-type", "").lower()
         error_result = self._validate_content_type(content_type)
@@ -623,21 +630,17 @@ class WebScraper(BaseTool):
 
     def _fetch_response(
         self, url: Any, headers: dict, timeout: Any
-    ) -> tuple[Any, Optional[ToolResult]]:
+    ) -> tuple[Any, ToolResult | None]:
         """Fetch URL and validate the response. Returns (response, error)."""
         if not isinstance(url, str):
-            return None, ToolResult(
-                success=False, error="URL must be a string"
-            )
+            return None, ToolResult(success=False, error="URL must be a string")
         response, error_result = self._fetch_with_redirect_validation(
             url, headers, timeout
         )
         if error_result is not None:
             return None, error_result
         if response is None:
-            return None, ToolResult(
-                success=False, error="No response received"
-            )
+            return None, ToolResult(success=False, error="No response received")
         return response, None
 
     def execute(self, **kwargs: Any) -> ToolResult:
@@ -671,8 +674,7 @@ class WebScraper(BaseTool):
         # Prepare headers and record request
         headers = {
             "User-Agent": (
-                user_agent
-                or "Mozilla/5.0 (compatible; MetaAutonomousBot/1.0)"
+                user_agent or "Mozilla/5.0 (compatible; MetaAutonomousBot/1.0)"
             )
         }
         self.rate_limiter.record_request()
@@ -697,9 +699,7 @@ class WebScraper(BaseTool):
                 metadata={
                     "url": url,
                     "status_code": response.status_code,
-                    "content_type": response.headers.get(
-                        "content-type", ""
-                    ),
+                    "content_type": response.headers.get("content-type", ""),
                     "size_bytes": len(response.content),
                     "text_extracted": extract_text,
                 },
@@ -722,18 +722,18 @@ class WebScraper(BaseTool):
             Extracted text
         """
         try:
-            soup = BeautifulSoup(html, 'html.parser')
+            soup = BeautifulSoup(html, "html.parser")
 
             # Remove script and style elements
             for script in soup(["script", "style", "head", "meta", "link"]):
                 script.decompose()
 
             # Get text
-            text = soup.get_text(separator='\n', strip=True)
+            text = soup.get_text(separator="\n", strip=True)
 
             # Clean up whitespace
             lines = [line.strip() for line in text.splitlines() if line.strip()]
-            text = '\n'.join(lines)
+            text = "\n".join(lines)
 
             return text
 

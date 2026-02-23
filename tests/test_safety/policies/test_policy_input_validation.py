@@ -4,6 +4,7 @@ Regression tests to ensure that policy configuration parameters are properly
 validated to prevent negative values, type errors, and extreme values that
 could bypass safety limits or cause undefined behavior.
 """
+
 import pytest
 
 from temper_ai.safety.policies.rate_limit_policy import RateLimitPolicy
@@ -15,7 +16,9 @@ class TestRateLimitPolicyValidation:
 
     def test_reject_negative_cooldown_multiplier(self):
         """Test that negative cooldown_multiplier is rejected."""
-        with pytest.raises(ValueError, match="cooldown_multiplier must be non-negative"):
+        with pytest.raises(
+            ValueError, match="cooldown_multiplier must be non-negative"
+        ):
             RateLimitPolicy({"cooldown_multiplier": -1.0})
 
     def test_reject_extreme_cooldown_multiplier(self):
@@ -41,7 +44,9 @@ class TestRateLimitPolicyValidation:
     def test_reject_non_string_limit_type(self):
         """Test that rate limit type keys must be strings."""
         with pytest.raises(ValueError, match="config keys must be strings"):
-            RateLimitPolicy({"rate_limits": {123: {"max_tokens": 10, "refill_rate": 1.0}}})
+            RateLimitPolicy(
+                {"rate_limits": {123: {"max_tokens": 10, "refill_rate": 1.0}}}
+            )
 
     def test_reject_missing_required_fields(self):
         """Test that rate limits with missing required fields are rejected."""
@@ -52,23 +57,18 @@ class TestRateLimitPolicyValidation:
         """Test that invalid RateLimit config is rejected."""
         # RateLimit.__post_init__ will reject negative values
         with pytest.raises(ValueError, match="Invalid rate limit configuration"):
-            RateLimitPolicy({
-                "rate_limits": {
-                    "commit": {
-                        "max_tokens": -10,  # Negative
-                        "refill_rate": 1.0
+            RateLimitPolicy(
+                {
+                    "rate_limits": {
+                        "commit": {"max_tokens": -10, "refill_rate": 1.0}  # Negative
                     }
                 }
-            })
+            )
 
     def test_reject_wrong_type_for_limit_config(self):
         """Test that wrong type for limit config is rejected."""
         with pytest.raises(ValueError, match="must be dict or RateLimit"):
-            RateLimitPolicy({
-                "rate_limits": {
-                    "commit": "not a dict or RateLimit"
-                }
-            })
+            RateLimitPolicy({"rate_limits": {"commit": "not a dict or RateLimit"}})
 
     def test_accept_valid_cooldown_multiplier(self):
         """Test that valid cooldown_multiplier is accepted."""
@@ -79,11 +79,7 @@ class TestRateLimitPolicyValidation:
         """Test that valid rate limits are accepted."""
         config = {
             "rate_limits": {
-                "commit": {
-                    "max_tokens": 10,
-                    "refill_rate": 1.0,
-                    "refill_period": 60.0
-                }
+                "commit": {"max_tokens": 10, "refill_rate": 1.0, "refill_period": 60.0}
             }
         }
         policy = RateLimitPolicy(config)
@@ -189,7 +185,7 @@ class TestResourceLimitPolicyValidation:
             "min_free_disk_space": 500 * 1024 * 1024,  # 500MB
             "track_memory": True,
             "track_cpu": True,
-            "track_disk": False
+            "track_disk": False,
         }
         policy = ResourceLimitPolicy(config)
         assert policy.max_file_size_read == 50 * 1024 * 1024
@@ -335,14 +331,18 @@ class TestSecretDetectionPolicyValidation:
         """Test that negative entropy threshold is rejected."""
         from temper_ai.safety.secret_detection import SecretDetectionPolicy
 
-        with pytest.raises(ValueError, match="entropy_threshold must be between 0.0 and 8.0"):
+        with pytest.raises(
+            ValueError, match="entropy_threshold must be between 0.0 and 8.0"
+        ):
             SecretDetectionPolicy({"entropy_threshold": -1.0})
 
     def test_reject_extreme_entropy_threshold(self):
         """Test that entropy threshold > 8.0 is rejected (max Shannon entropy)."""
         from temper_ai.safety.secret_detection import SecretDetectionPolicy
 
-        with pytest.raises(ValueError, match="entropy_threshold must be between 0.0 and 8.0"):
+        with pytest.raises(
+            ValueError, match="entropy_threshold must be between 0.0 and 8.0"
+        ):
             SecretDetectionPolicy({"entropy_threshold": 10.0})
 
     def test_reject_string_entropy_threshold(self):
@@ -372,7 +372,9 @@ class TestSecretDetectionPolicyValidation:
         from temper_ai.safety.secret_detection import SecretDetectionPolicy
 
         many_paths = [f"path_{i}" for i in range(1001)]
-        with pytest.raises(ValueError, match="config list/tuple/set must have <= 1000 items"):
+        with pytest.raises(
+            ValueError, match="config list/tuple/set must have <= 1000 items"
+        ):
             SecretDetectionPolicy({"excluded_paths": many_paths})
 
     def test_reject_string_allow_test_secrets(self):
@@ -386,13 +388,15 @@ class TestSecretDetectionPolicyValidation:
         """Test that valid configuration is accepted."""
         from temper_ai.safety.secret_detection import SecretDetectionPolicy
 
-        policy = SecretDetectionPolicy({
-            "enabled_patterns": ["aws_access_key", "github_token"],
-            "entropy_threshold": 5.0,
-            "entropy_threshold_generic": 3.5,
-            "excluded_paths": ["/test", "/examples"],
-            "allow_test_secrets": False
-        })
+        policy = SecretDetectionPolicy(
+            {
+                "enabled_patterns": ["aws_access_key", "github_token"],
+                "entropy_threshold": 5.0,
+                "entropy_threshold_generic": 3.5,
+                "excluded_paths": ["/test", "/examples"],
+                "allow_test_secrets": False,
+            }
+        )
         assert len(policy.enabled_patterns) == 2
         assert policy.entropy_threshold == 5.0
         assert policy.entropy_threshold_generic == 3.5
@@ -430,7 +434,9 @@ class TestFileAccessPolicyValidation:
         from temper_ai.safety.file_access import FileAccessPolicy
 
         many_paths = [f"/path{i}" for i in range(1001)]
-        with pytest.raises(ValueError, match="config list/tuple/set must have <= 1000 items"):
+        with pytest.raises(
+            ValueError, match="config list/tuple/set must have <= 1000 items"
+        ):
             FileAccessPolicy({"allowed_paths": many_paths})
 
     def test_reject_string_allow_parent_traversal(self):
@@ -461,7 +467,9 @@ class TestFileAccessPolicyValidation:
         from temper_ai.safety.file_access import FileAccessPolicy
 
         long_ext = "a" * 21
-        with pytest.raises(ValueError, match="forbidden_extensions items must be <= 20"):
+        with pytest.raises(
+            ValueError, match="forbidden_extensions items must be <= 20"
+        ):
             FileAccessPolicy({"forbidden_extensions": [long_ext]})
 
     def test_reject_too_many_extensions(self):
@@ -483,17 +491,19 @@ class TestFileAccessPolicyValidation:
         """Test that valid configuration is accepted."""
         from temper_ai.safety.file_access import FileAccessPolicy
 
-        policy = FileAccessPolicy({
-            "allowed_paths": ["/project/src", "/project/tests"],
-            "denied_paths": ["/project/src/secrets"],
-            "allow_parent_traversal": False,
-            "allow_symlinks": False,
-            "allow_absolute_paths": True,
-            "case_sensitive": True,
-            "forbidden_extensions": ["exe", "dll"],
-            "forbidden_directories": ["/custom/forbidden"],
-            "forbidden_files": [".env.production"]
-        })
+        policy = FileAccessPolicy(
+            {
+                "allowed_paths": ["/project/src", "/project/tests"],
+                "denied_paths": ["/project/src/secrets"],
+                "allow_parent_traversal": False,
+                "allow_symlinks": False,
+                "allow_absolute_paths": True,
+                "case_sensitive": True,
+                "forbidden_extensions": ["exe", "dll"],
+                "forbidden_directories": ["/custom/forbidden"],
+                "forbidden_files": [".env.production"],
+            }
+        )
         assert len(policy.allowed_paths) == 2
         assert policy.allow_parent_traversal is False
         assert ".exe" in policy.forbidden_extensions
@@ -513,7 +523,9 @@ class TestForbiddenOperationsPolicyValidation:
         """Test that non-dict custom_forbidden_patterns is rejected."""
         from temper_ai.safety.forbidden_operations import ForbiddenOperationsPolicy
 
-        with pytest.raises(ValueError, match="custom_forbidden_patterns must be a dict"):
+        with pytest.raises(
+            ValueError, match="custom_forbidden_patterns must be a dict"
+        ):
             ForbiddenOperationsPolicy({"custom_forbidden_patterns": ["pattern1"]})
 
     def test_reject_non_string_pattern_value(self):
@@ -529,7 +541,9 @@ class TestForbiddenOperationsPolicyValidation:
 
         long_pattern = "a" * 501
         with pytest.raises(ValueError, match="must be <= 500 characters"):
-            ForbiddenOperationsPolicy({"custom_forbidden_patterns": {"test": long_pattern}})
+            ForbiddenOperationsPolicy(
+                {"custom_forbidden_patterns": {"test": long_pattern}}
+            )
 
     def test_reject_too_many_patterns(self):
         """Test that > 100 custom patterns are rejected."""
@@ -559,21 +573,25 @@ class TestForbiddenOperationsPolicyValidation:
         from temper_ai.safety.forbidden_operations import ForbiddenOperationsPolicy
 
         many_cmds = [f"cmd{i}" for i in range(1001)]
-        with pytest.raises(ValueError, match="config list/tuple/set must have <= 1000 items"):
+        with pytest.raises(
+            ValueError, match="config list/tuple/set must have <= 1000 items"
+        ):
             ForbiddenOperationsPolicy({"whitelist_commands": many_cmds})
 
     def test_accept_valid_configuration(self):
         """Test that valid configuration is accepted."""
         from temper_ai.safety.forbidden_operations import ForbiddenOperationsPolicy
 
-        policy = ForbiddenOperationsPolicy({
-            "check_file_writes": True,
-            "check_dangerous_commands": True,
-            "check_injection_patterns": True,
-            "allow_read_only": False,
-            "custom_forbidden_patterns": {"test": r"rm\s+-rf"},
-            "whitelist_commands": ["git status", "ls -la"]
-        })
+        policy = ForbiddenOperationsPolicy(
+            {
+                "check_file_writes": True,
+                "check_dangerous_commands": True,
+                "check_injection_patterns": True,
+                "allow_read_only": False,
+                "custom_forbidden_patterns": {"test": r"rm\s+-rf"},
+                "whitelist_commands": ["git status", "ls -la"],
+            }
+        )
         assert policy.check_file_writes is True
         assert len(policy.custom_forbidden_patterns) == 1
         assert len(policy.whitelist_commands) == 2

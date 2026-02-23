@@ -5,7 +5,8 @@ Verifies:
 - Agent running indicator is printed before execution
 - Stage completion line is printed after all agents finish
 """
-from unittest.mock import MagicMock, patch, call
+
+from unittest.mock import MagicMock, patch
 
 from temper_ai.agent.base_agent import AgentResponse
 from temper_ai.stage.executors._sequential_helpers import (
@@ -32,7 +33,9 @@ def _make_detail_console() -> MagicMock:
 
 def _make_executor() -> MagicMock:
     executor = MagicMock()
-    executor._extract_agent_name = lambda ref: ref if isinstance(ref, str) else ref.get("name", "")
+    executor._extract_agent_name = lambda ref: (
+        ref if isinstance(ref, str) else ref.get("name", "")
+    )
     executor._agent_cache = {}
     return executor
 
@@ -76,7 +79,12 @@ class TestStageHeaderIndex:
             StateKeys.AGENT_NAME: "agent1",
             StateKeys.STATUS: "success",
             StateKeys.OUTPUT_DATA: {"output": "ok"},
-            StateKeys.METRICS: {"duration_seconds": 1.0, "tokens": 100, "cost_usd": 0.0, "tool_calls": 0},
+            StateKeys.METRICS: {
+                "duration_seconds": 1.0,
+                "tokens": 100,
+                "cost_usd": 0.0,
+                "tool_calls": 0,
+            },
         }
         ctx, detail_console = _make_ctx(total_stages=3)
 
@@ -89,12 +97,19 @@ class TestStageHeaderIndex:
         assert "analysis" in header_text
 
     @patch("temper_ai.stage.executors._sequential_helpers.execute_agent")
-    def test_header_shows_correct_index_for_second_stage(self, mock_exec: MagicMock) -> None:
+    def test_header_shows_correct_index_for_second_stage(
+        self, mock_exec: MagicMock
+    ) -> None:
         mock_exec.return_value = {
             StateKeys.AGENT_NAME: "agent1",
             StateKeys.STATUS: "success",
             StateKeys.OUTPUT_DATA: {"output": "ok"},
-            StateKeys.METRICS: {"duration_seconds": 1.0, "tokens": 100, "cost_usd": 0.0, "tool_calls": 0},
+            StateKeys.METRICS: {
+                "duration_seconds": 1.0,
+                "tokens": 100,
+                "cost_usd": 0.0,
+                "tool_calls": 0,
+            },
         }
         # Simulate one stage already completed
         ctx, detail_console = _make_ctx(
@@ -120,7 +135,12 @@ class TestAgentRunningIndicator:
             StateKeys.AGENT_NAME: "research_agent",
             StateKeys.STATUS: "success",
             StateKeys.OUTPUT_DATA: {"output": "ok"},
-            StateKeys.METRICS: {"duration_seconds": 1.0, "tokens": 100, "cost_usd": 0.0, "tool_calls": 0},
+            StateKeys.METRICS: {
+                "duration_seconds": 1.0,
+                "tokens": 100,
+                "cost_usd": 0.0,
+                "tool_calls": 0,
+            },
         }
         ctx, detail_console = _make_ctx()
 
@@ -134,12 +154,19 @@ class TestAgentRunningIndicator:
         assert "running" in running_text
 
     @patch("temper_ai.stage.executors._sequential_helpers.execute_agent")
-    def test_running_indicator_not_shown_without_details(self, mock_exec: MagicMock) -> None:
+    def test_running_indicator_not_shown_without_details(
+        self, mock_exec: MagicMock
+    ) -> None:
         mock_exec.return_value = {
             StateKeys.AGENT_NAME: "agent1",
             StateKeys.STATUS: "success",
             StateKeys.OUTPUT_DATA: {"output": "ok"},
-            StateKeys.METRICS: {"duration_seconds": 1.0, "tokens": 100, "cost_usd": 0.0, "tool_calls": 0},
+            StateKeys.METRICS: {
+                "duration_seconds": 1.0,
+                "tokens": 100,
+                "cost_usd": 0.0,
+                "tool_calls": 0,
+            },
         }
         ctx, detail_console = _make_ctx(show_details=False)
 
@@ -157,7 +184,12 @@ class TestStageCompletionLine:
             StateKeys.AGENT_NAME: "agent1",
             StateKeys.STATUS: "success",
             StateKeys.OUTPUT_DATA: {"output": "ok"},
-            StateKeys.METRICS: {"duration_seconds": 1.0, "tokens": 100, "cost_usd": 0.0, "tool_calls": 0},
+            StateKeys.METRICS: {
+                "duration_seconds": 1.0,
+                "tokens": 100,
+                "cost_usd": 0.0,
+                "tool_calls": 0,
+            },
         }
         ctx, detail_console = _make_ctx()
 
@@ -172,4 +204,6 @@ class TestStageCompletionLine:
             if "\u2713" in text and "Stage complete" in text:
                 completion_found = True
                 break
-        assert completion_found, f"Stage completion line not found in: {[c[0][0] for c in calls]}"
+        assert (
+            completion_found
+        ), f"Stage completion line not found in: {[c[0][0] for c in calls]}"

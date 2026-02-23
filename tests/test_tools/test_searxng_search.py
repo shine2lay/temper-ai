@@ -2,7 +2,7 @@
 
 Tests SearXNG search with mocked HTTP responses.
 """
-import time
+
 from unittest.mock import MagicMock, Mock, patch
 
 import httpx
@@ -11,10 +11,10 @@ from pydantic import ValidationError
 
 from temper_ai.tools.searxng_search import SearXNGSearch, SearXNGSearchParams
 
-
 # ---------------------------------------------------------------------------
 # Parameter validation
 # ---------------------------------------------------------------------------
+
 
 class TestSearXNGSearchParams:
     """Test SearXNGSearchParams Pydantic model validation."""
@@ -79,6 +79,7 @@ class TestSearXNGSearchParams:
 # Metadata
 # ---------------------------------------------------------------------------
 
+
 class TestSearXNGSearchMetadata:
     """Test tool metadata."""
 
@@ -130,6 +131,7 @@ class TestSearXNGSearchMetadata:
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def mock_httpx_client():
     """Create a mock httpx.Client for SearXNGSearch."""
@@ -174,6 +176,7 @@ def _make_searxng_response(
 # Execute — success paths
 # ---------------------------------------------------------------------------
 
+
 class TestSearXNGSearchExecuteSuccess:
     """Test successful search execution."""
 
@@ -198,7 +201,9 @@ class TestSearXNGSearchExecuteSuccess:
             {"title": f"R{i}", "url": f"https://example.com/{i}", "content": f"s{i}"}
             for i in range(10)
         ]
-        mock_httpx_client.get.return_value = _make_searxng_response(results=many_results)
+        mock_httpx_client.get.return_value = _make_searxng_response(
+            results=many_results
+        )
         tool = SearXNGSearch()
 
         result = tool.execute(query="test", max_results=3)
@@ -214,7 +219,11 @@ class TestSearXNGSearchExecuteSuccess:
         tool.execute(query="news", categories=["general", "news"])
 
         call_kwargs = mock_httpx_client.get.call_args
-        params = call_kwargs[1]["params"] if "params" in call_kwargs[1] else call_kwargs[0][1]
+        params = (
+            call_kwargs[1]["params"]
+            if "params" in call_kwargs[1]
+            else call_kwargs[0][1]
+        )
         assert params["categories"] == "general,news"
 
     def test_language_passed_to_api(self, mock_httpx_client):
@@ -312,7 +321,11 @@ class TestSearXNGSearchExecuteSuccess:
     def test_result_without_score(self, mock_httpx_client):
         """Test handling of results that lack a score field."""
         results = [
-            {"title": "No Score", "url": "https://example.com/ns", "content": "snippet"},
+            {
+                "title": "No Score",
+                "url": "https://example.com/ns",
+                "content": "snippet",
+            },
         ]
         mock_httpx_client.get.return_value = _make_searxng_response(results=results)
         tool = SearXNGSearch()
@@ -326,6 +339,7 @@ class TestSearXNGSearchExecuteSuccess:
 # ---------------------------------------------------------------------------
 # Execute — error paths
 # ---------------------------------------------------------------------------
+
 
 class TestSearXNGSearchExecuteErrors:
     """Test error handling in execute()."""
@@ -405,6 +419,7 @@ class TestSearXNGSearchExecuteErrors:
 # Rate limiting
 # ---------------------------------------------------------------------------
 
+
 class TestSearXNGSearchRateLimiting:
     """Test rate limiting behaviour."""
 
@@ -441,6 +456,7 @@ class TestSearXNGSearchRateLimiting:
 # ---------------------------------------------------------------------------
 # Client lifecycle
 # ---------------------------------------------------------------------------
+
 
 class TestSearXNGSearchSSRF:
     """Test SSRF protection on base_url."""
@@ -503,6 +519,7 @@ class TestSearXNGSearchClientLifecycle:
         tool = SearXNGSearch()
         tool._get_client()
         tool.__del__()
+        assert tool._client is None  # client cleaned up after __del__
 
     def test_del_os_error(self):
         """Test __del__ handles OSError gracefully."""
@@ -510,3 +527,4 @@ class TestSearXNGSearchClientLifecycle:
         client = tool._get_client()
         with patch.object(client, "close", side_effect=OSError("Mock")):
             tool.__del__()
+        assert tool._client is None  # client reference cleared despite OSError

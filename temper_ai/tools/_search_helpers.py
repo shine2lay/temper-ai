@@ -3,7 +3,6 @@
 Provides common Pydantic models (SearchResultItem, SearchResponse) and
 a formatter for presenting search results to LLMs.
 """
-from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -16,7 +15,7 @@ class SearchResultItem(BaseModel):
     title: str
     url: str
     snippet: str
-    score: Optional[float] = Field(
+    score: float | None = Field(
         default=None, description="Relevance score if provided by the search engine"
     )
 
@@ -25,12 +24,14 @@ class SearchResponse(BaseModel):
     """Aggregated response from a search query."""
 
     query: str
-    results: List[SearchResultItem] = Field(default_factory=list)
-    total_results: Optional[int] = None
-    search_time_ms: Optional[float] = None
+    results: list[SearchResultItem] = Field(default_factory=list)
+    total_results: int | None = None
+    search_time_ms: float | None = None
 
 
-def format_results_for_llm(response: SearchResponse, max_results: int = DEFAULT_FORMAT_MAX_RESULTS) -> str:
+def format_results_for_llm(
+    response: SearchResponse, max_results: int = DEFAULT_FORMAT_MAX_RESULTS
+) -> str:
     """Format search results as readable text for LLM consumption.
 
     Args:

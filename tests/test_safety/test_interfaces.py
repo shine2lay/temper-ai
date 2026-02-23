@@ -11,7 +11,6 @@ Tests cover:
 
 import pytest
 
-from temper_ai.shared.core.service import Service
 from temper_ai.safety import (
     BaseSafetyPolicy,
     SafetyPolicy,
@@ -21,10 +20,12 @@ from temper_ai.safety import (
     ViolationSeverity,
 )
 from temper_ai.safety.service_mixin import SafetyServiceMixin
+from temper_ai.shared.core.service import Service
 
 # ============================================
 # VIOLATION SEVERITY TESTS
 # ============================================
+
 
 class TestViolationSeverity:
     """Tests for ViolationSeverity enum."""
@@ -71,6 +72,7 @@ class TestViolationSeverity:
 # SAFETY VIOLATION TESTS
 # ============================================
 
+
 class TestSafetyViolation:
     """Tests for SafetyViolation dataclass."""
 
@@ -81,7 +83,7 @@ class TestSafetyViolation:
             severity=ViolationSeverity.HIGH,
             message="Test violation",
             action="test_action",
-            context={"agent": "test"}
+            context={"agent": "test"},
         )
         assert violation.policy_name == "test_policy"
         assert violation.severity == ViolationSeverity.HIGH
@@ -101,7 +103,7 @@ class TestSafetyViolation:
             context={},
             timestamp="2026-01-26T10:00:00Z",
             remediation_hint="Fix by doing X",
-            metadata={"extra": "data"}
+            metadata={"extra": "data"},
         )
         assert violation.remediation_hint == "Fix by doing X"
         assert violation.metadata == {"extra": "data"}
@@ -114,7 +116,7 @@ class TestSafetyViolation:
             severity=ViolationSeverity.INFO,
             message="test",
             action="test",
-            context={}
+            context={},
         )
         # Should have ISO format timestamp ending with Z
         assert violation.timestamp.endswith("Z")
@@ -128,7 +130,7 @@ class TestSafetyViolation:
             message="Test message",
             action="test_action",
             context={"key": "value"},
-            remediation_hint="hint"
+            remediation_hint="hint",
         )
         d = violation.to_dict()
         assert d["policy_name"] == "test_policy"
@@ -143,6 +145,7 @@ class TestSafetyViolation:
 # ============================================
 # VALIDATION RESULT TESTS
 # ============================================
+
 
 class TestValidationResult:
     """Tests for ValidationResult dataclass."""
@@ -162,13 +165,13 @@ class TestValidationResult:
             severity=ViolationSeverity.HIGH,
             message="error",
             action="action",
-            context={}
+            context={},
         )
         result = ValidationResult(
             valid=False,
             violations=[violation],
             metadata={"reason": "test"},
-            policy_name="test"
+            policy_name="test",
         )
         assert result.valid is False
         assert len(result.violations) == 1
@@ -181,29 +184,25 @@ class TestValidationResult:
             severity=ViolationSeverity.CRITICAL,
             message="critical",
             action="action",
-            context={}
+            context={},
         )
         high_violation = SafetyViolation(
             policy_name="test",
             severity=ViolationSeverity.HIGH,
             message="high",
             action="action",
-            context={}
+            context={},
         )
 
         # Result with CRITICAL
         result1 = ValidationResult(
-            valid=False,
-            violations=[critical_violation],
-            policy_name="test"
+            valid=False, violations=[critical_violation], policy_name="test"
         )
         assert result1.has_critical_violations() is True
 
         # Result without CRITICAL
         result2 = ValidationResult(
-            valid=False,
-            violations=[high_violation],
-            policy_name="test"
+            valid=False, violations=[high_violation], policy_name="test"
         )
         assert result2.has_critical_violations() is False
 
@@ -214,29 +213,25 @@ class TestValidationResult:
             severity=ViolationSeverity.HIGH,
             message="high",
             action="action",
-            context={}
+            context={},
         )
         medium_violation = SafetyViolation(
             policy_name="test",
             severity=ViolationSeverity.MEDIUM,
             message="medium",
             action="action",
-            context={}
+            context={},
         )
 
         # Result with HIGH (blocking)
         result1 = ValidationResult(
-            valid=False,
-            violations=[high_violation],
-            policy_name="test"
+            valid=False, violations=[high_violation], policy_name="test"
         )
         assert result1.has_blocking_violations() is True
 
         # Result with only MEDIUM (not blocking)
         result2 = ValidationResult(
-            valid=True,
-            violations=[medium_violation],
-            policy_name="test"
+            valid=True, violations=[medium_violation], policy_name="test"
         )
         assert result2.has_blocking_violations() is False
 
@@ -248,24 +243,26 @@ class TestValidationResult:
                 severity=ViolationSeverity.CRITICAL,
                 message="c",
                 action="a",
-                context={}
+                context={},
             ),
             SafetyViolation(
                 policy_name="test",
                 severity=ViolationSeverity.HIGH,
                 message="h",
                 action="a",
-                context={}
+                context={},
             ),
             SafetyViolation(
                 policy_name="test",
                 severity=ViolationSeverity.HIGH,
                 message="h2",
                 action="a",
-                context={}
-            )
+                context={},
+            ),
         ]
-        result = ValidationResult(valid=False, violations=violations, policy_name="test")
+        result = ValidationResult(
+            valid=False, violations=violations, policy_name="test"
+        )
 
         critical = result.get_violations_by_severity(ViolationSeverity.CRITICAL)
         assert len(critical) == 1
@@ -282,6 +279,7 @@ class TestValidationResult:
 # SAFETY POLICY INTERFACE TESTS
 # ============================================
 
+
 class TestSafetyPolicy:
     """Tests for SafetyPolicy abstract interface."""
 
@@ -292,6 +290,7 @@ class TestSafetyPolicy:
 
     def test_concrete_policy_implementation(self):
         """Test that concrete policy implementations work."""
+
         class TestPolicy(SafetyPolicy):
             @property
             def name(self) -> str:
@@ -315,6 +314,7 @@ class TestSafetyPolicy:
 
     def test_custom_priority(self):
         """Test policy with custom priority."""
+
         class HighPriorityPolicy(SafetyPolicy):
             @property
             def name(self) -> str:
@@ -336,6 +336,7 @@ class TestSafetyPolicy:
 
     def test_custom_description(self):
         """Test policy with custom description."""
+
         class DescribedPolicy(SafetyPolicy):
             @property
             def name(self) -> str:
@@ -360,11 +361,13 @@ class TestSafetyPolicy:
 # BASE SAFETY POLICY TESTS
 # ============================================
 
+
 class TestBaseSafetyPolicy:
     """Tests for BaseSafetyPolicy implementation."""
 
     def test_base_policy_initialization(self):
         """Test BaseSafetyPolicy initialization."""
+
         class TestPolicy(BaseSafetyPolicy):
             @property
             def name(self) -> str:
@@ -380,6 +383,7 @@ class TestBaseSafetyPolicy:
 
     def test_add_child_policy(self):
         """Test adding child policies."""
+
         class ParentPolicy(BaseSafetyPolicy):
             @property
             def name(self) -> str:
@@ -408,6 +412,7 @@ class TestBaseSafetyPolicy:
 
     def test_child_policy_priority_ordering(self):
         """Test that child policies are sorted by priority."""
+
         class ParentPolicy(BaseSafetyPolicy):
             @property
             def name(self) -> str:
@@ -457,6 +462,7 @@ class TestBaseSafetyPolicy:
 
     def test_validate_composition(self):
         """Test validation with child policy composition."""
+
         class AlwaysValidPolicy(BaseSafetyPolicy):
             @property
             def name(self) -> str:
@@ -487,10 +493,10 @@ class TestBaseSafetyPolicy:
                             severity=ViolationSeverity.HIGH,
                             message="Invalid",
                             action=str(action),
-                            context=context
+                            context=context,
                         )
                     ],
-                    policy_name=self.name
+                    policy_name=self.name,
                 )
 
         parent = AlwaysValidPolicy({})
@@ -505,6 +511,7 @@ class TestBaseSafetyPolicy:
 
     def test_short_circuit_on_critical(self):
         """Test that CRITICAL violations short-circuit evaluation."""
+
         class CriticalPolicy(BaseSafetyPolicy):
             @property
             def name(self) -> str:
@@ -523,10 +530,10 @@ class TestBaseSafetyPolicy:
                             severity=ViolationSeverity.CRITICAL,
                             message="Critical error",
                             action=str(action),
-                            context=context
+                            context=context,
                         )
                     ],
-                    policy_name=self.name
+                    policy_name=self.name,
                 )
 
         class NeverCalledPolicy(BaseSafetyPolicy):
@@ -558,6 +565,7 @@ class TestBaseSafetyPolicy:
     @pytest.mark.asyncio
     async def test_async_validation(self):
         """Test async validation."""
+
         class AsyncPolicy(BaseSafetyPolicy):
             @property
             def name(self) -> str:
@@ -580,11 +588,13 @@ class TestBaseSafetyPolicy:
 # SAFETY SERVICE MIXIN TESTS
 # ============================================
 
+
 class TestSafetyServiceMixin:
     """Tests for SafetyServiceMixin."""
 
     def test_service_mixin_initialization(self):
         """Test service mixin initialization."""
+
         class TestService(Service, SafetyServiceMixin):
             @property
             def name(self) -> str:
@@ -595,6 +605,7 @@ class TestSafetyServiceMixin:
 
     def test_register_policy(self):
         """Test registering policies."""
+
         class TestService(Service, SafetyServiceMixin):
             @property
             def name(self) -> str:
@@ -619,6 +630,7 @@ class TestSafetyServiceMixin:
 
     def test_validate_action(self):
         """Test action validation through service."""
+
         class TestService(Service, SafetyServiceMixin):
             @property
             def name(self) -> str:
@@ -642,10 +654,10 @@ class TestSafetyServiceMixin:
                             severity=ViolationSeverity.HIGH,
                             message="Rejected",
                             action=str(action),
-                            context=context
+                            context=context,
                         )
                     ],
-                    policy_name=self.name
+                    policy_name=self.name,
                 )
 
         service = TestService()
@@ -658,6 +670,7 @@ class TestSafetyServiceMixin:
 
     def test_handle_violations_no_exception(self):
         """Test handling violations without raising exception."""
+
         class TestService(Service, SafetyServiceMixin):
             @property
             def name(self) -> str:
@@ -669,16 +682,18 @@ class TestSafetyServiceMixin:
             severity=ViolationSeverity.LOW,
             message="Low severity",
             action="action",
-            context={}
+            context={},
         )
 
         # Should not raise
-        service.handle_violations([violation], raise_exception=True)
+        result = service.handle_violations([violation], raise_exception=True)
 
         # LOW severity should not raise even with raise_exception=True
+        assert result is None  # handle_violations returns None for low severity
 
     def test_handle_violations_raises_on_high(self):
         """Test that HIGH violations raise exception."""
+
         class TestService(Service, SafetyServiceMixin):
             @property
             def name(self) -> str:
@@ -690,7 +705,7 @@ class TestSafetyServiceMixin:
             severity=ViolationSeverity.HIGH,
             message="High severity",
             action="action",
-            context={}
+            context={},
         )
 
         with pytest.raises(RuntimeError, match="HIGH safety violation"):
@@ -698,6 +713,7 @@ class TestSafetyServiceMixin:
 
     def test_handle_violations_raises_on_critical(self):
         """Test that CRITICAL violations raise exception."""
+
         class TestService(Service, SafetyServiceMixin):
             @property
             def name(self) -> str:
@@ -709,7 +725,7 @@ class TestSafetyServiceMixin:
             severity=ViolationSeverity.CRITICAL,
             message="Critical error",
             action="action",
-            context={}
+            context={},
         )
 
         with pytest.raises(RuntimeError, match="CRITICAL safety violation"):
@@ -718,6 +734,7 @@ class TestSafetyServiceMixin:
     @pytest.mark.asyncio
     async def test_validate_action_async(self):
         """Test async action validation."""
+
         class TestService(Service, SafetyServiceMixin):
             @property
             def name(self) -> str:
@@ -747,6 +764,7 @@ class TestSafetyServiceMixin:
 # EDGE CASE TESTS
 # ============================================
 
+
 class TestEdgeCases:
     """Tests for edge cases and error handling."""
 
@@ -761,6 +779,7 @@ class TestEdgeCases:
 
     def test_safety_policy_report_violation_default(self):
         """Test default report_violation does nothing."""
+
         class TestPolicy(SafetyPolicy):
             @property
             def name(self) -> str:
@@ -779,13 +798,15 @@ class TestEdgeCases:
             severity=ViolationSeverity.INFO,
             message="test",
             action="action",
-            context={}
+            context={},
         )
-        # Should not raise
-        policy.report_violation(violation)
+        # Should not raise; default report_violation is a no-op returning None
+        result = policy.report_violation(violation)
+        assert result is None
 
     def test_validator_interface(self):
         """Test Validator interface."""
+
         class TestValidator(Validator):
             def validate(self, value, context):
                 return ValidationResult(valid=True, policy_name="validator")
@@ -797,6 +818,7 @@ class TestEdgeCases:
     @pytest.mark.asyncio
     async def test_base_policy_async_short_circuit(self):
         """Test async validation short-circuits on CRITICAL."""
+
         class CriticalAsyncPolicy(BaseSafetyPolicy):
             @property
             def name(self) -> str:
@@ -815,10 +837,10 @@ class TestEdgeCases:
                             severity=ViolationSeverity.CRITICAL,
                             message="Critical",
                             action=str(action),
-                            context=context
+                            context=context,
                         )
                     ],
-                    policy_name=self.name
+                    policy_name=self.name,
                 )
 
         class NeverCalledAsync(BaseSafetyPolicy):
@@ -848,6 +870,7 @@ class TestEdgeCases:
 
     def test_service_base_class(self):
         """Test Service base class methods."""
+
         class TestService(Service):
             @property
             def name(self) -> str:
@@ -855,11 +878,13 @@ class TestEdgeCases:
 
         service = TestService()
         # Default implementations should not raise
+        assert service.name == "test"
         service.initialize()
         service.shutdown()
 
     def test_metadata_no_override(self):
         """Test that child metadata doesn't override parent metadata."""
+
         class ParentPolicy(BaseSafetyPolicy):
             @property
             def name(self) -> str:
@@ -873,7 +898,7 @@ class TestEdgeCases:
                 return ValidationResult(
                     valid=True,
                     metadata={"shared_key": "parent_value"},
-                    policy_name=self.name
+                    policy_name=self.name,
                 )
 
         class ChildPolicy(BaseSafetyPolicy):
@@ -889,7 +914,7 @@ class TestEdgeCases:
                 return ValidationResult(
                     valid=True,
                     metadata={"shared_key": "child_value"},
-                    policy_name=self.name
+                    policy_name=self.name,
                 )
 
         parent = ParentPolicy({})
@@ -902,6 +927,7 @@ class TestEdgeCases:
 
     def test_base_policy_default_validate_impl(self):
         """Test default _validate_impl returns valid."""
+
         # Intentional private access: verify template method default behavior
         class MinimalPolicy(BaseSafetyPolicy):
             @property
@@ -922,6 +948,7 @@ class TestEdgeCases:
     @pytest.mark.asyncio
     async def test_base_policy_default_async_validate_impl(self):
         """Test default _validate_async_impl calls sync version."""
+
         # Intentional private access: verify async→sync delegation default
         class TestPolicy(BaseSafetyPolicy):
             def __init__(self, config):
@@ -947,6 +974,7 @@ class TestEdgeCases:
 
     def test_service_mixin_handle_violations_no_raise(self):
         """Test handle_violations with raise_exception=False."""
+
         class TestService(Service, SafetyServiceMixin):
             @property
             def name(self) -> str:
@@ -958,25 +986,29 @@ class TestEdgeCases:
             severity=ViolationSeverity.CRITICAL,
             message="Critical",
             action="action",
-            context={}
+            context={},
         )
 
-        # Should not raise when raise_exception=False
-        service.handle_violations([violation], raise_exception=False)
+        # Should not raise when raise_exception=False, even for CRITICAL
+        result = service.handle_violations([violation], raise_exception=False)
+        assert result is None
 
     def test_service_mixin_handle_empty_violations(self):
         """Test handle_violations with empty list."""
+
         class TestService(Service, SafetyServiceMixin):
             @property
             def name(self) -> str:
                 return "test"
 
         service = TestService()
-        # Should not raise with empty list
-        service.handle_violations([])
+        # Should not raise with empty list; returns early
+        result = service.handle_violations([])
+        assert result is None
 
     def test_validation_with_metadata_merge(self):
         """Test that metadata from child and parent are merged correctly."""
+
         class ChildWithMetadata(BaseSafetyPolicy):
             @property
             def name(self) -> str:
@@ -990,7 +1022,7 @@ class TestEdgeCases:
                 return ValidationResult(
                     valid=True,
                     metadata={"child_key": "child_value", "common": "from_child"},
-                    policy_name=self.name
+                    policy_name=self.name,
                 )
 
         class ParentWithMetadata(BaseSafetyPolicy):
@@ -1006,7 +1038,7 @@ class TestEdgeCases:
                 return ValidationResult(
                     valid=True,
                     metadata={"parent_key": "parent_value", "common": "from_parent"},
-                    policy_name=self.name
+                    policy_name=self.name,
                 )
 
         parent = ParentWithMetadata({})

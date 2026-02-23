@@ -3,9 +3,10 @@
 Extracted from ExecutionTracker to separate metric collection/storage
 concerns from core execution tracking.
 """
+
 import logging
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any
 
 from temper_ai.observability.backend import ObservabilityBackend
 
@@ -15,16 +16,17 @@ logger = logging.getLogger(__name__)
 @dataclass
 class AgentOutputParams:
     """Parameters for setting agent output data."""
+
     agent_id: str
-    output_data: Dict[str, Any]
-    reasoning: Optional[str] = None
-    confidence_score: Optional[float] = None
-    total_tokens: Optional[int] = None
-    prompt_tokens: Optional[int] = None
-    completion_tokens: Optional[int] = None
-    estimated_cost_usd: Optional[float] = None
-    num_llm_calls: Optional[int] = None
-    num_tool_calls: Optional[int] = None
+    output_data: dict[str, Any]
+    reasoning: str | None = None
+    confidence_score: float | None = None
+    total_tokens: int | None = None
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    estimated_cost_usd: float | None = None
+    num_llm_calls: int | None = None
+    num_tool_calls: int | None = None
 
 
 class MetricAggregator:
@@ -41,7 +43,7 @@ class MetricAggregator:
     def __init__(
         self,
         backend: ObservabilityBackend,
-        metric_registry: Optional[Any] = None,
+        metric_registry: Any | None = None,
     ):
         self.backend = backend
         self.metric_registry = metric_registry
@@ -81,12 +83,13 @@ class MetricAggregator:
             )
 
     def set_agent_output(
-        self, params: Optional[AgentOutputParams] = None, **kwargs: Any
+        self, params: AgentOutputParams | None = None, **kwargs: Any
     ) -> None:
         """Set agent output data after execution."""
         if params is None:
             params = AgentOutputParams(**kwargs)
         from temper_ai.observability.backend import AgentOutputData
+
         self.backend.set_agent_output(
             agent_id=params.agent_id,
             output_data=params.output_data,
@@ -105,8 +108,8 @@ class MetricAggregator:
     def set_stage_output(
         self,
         stage_id: str,
-        output_data: Dict[str, Any],
-        output_lineage: Optional[Dict[str, Any]] = None,
+        output_data: dict[str, Any],
+        output_lineage: dict[str, Any] | None = None,
     ) -> None:
         """Set stage output data after execution.
 

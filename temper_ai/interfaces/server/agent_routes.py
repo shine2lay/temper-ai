@@ -1,6 +1,6 @@
 """HTTP API routes for persistent agent management (M9)."""
+
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -14,19 +14,24 @@ _HTTP_BAD_REQUEST = 400
 _HTTP_SERVER_ERROR = 500
 
 
+def _agent_not_found_detail(name: str) -> str:
+    """Build detail string for agent-not-found errors."""
+    return f"Agent '{name}' not found"
+
+
 class RegisterRequest(BaseModel):
     """Request body for registering an agent."""
 
     config_path: str
-    metadata: Optional[dict] = None
+    metadata: dict | None = None
 
 
 class MessageRequestAPI(BaseModel):
     """Request body for sending a message to an agent."""
 
     content: str
-    context: Optional[dict] = None
-    max_tokens: Optional[int] = None
+    context: dict | None = None
+    max_tokens: int | None = None
 
 
 def _get_service():
@@ -37,7 +42,7 @@ def _get_service():
 
 
 @router.get("")
-def list_agents(status: Optional[str] = None):
+def list_agents(status: str | None = None):
     """List all registered agents."""
     service = _get_service()
     agents = service.list_agents(status=status)
@@ -51,7 +56,7 @@ def get_agent(name: str):
     agent = service.get_agent(name)
     if not agent:
         raise HTTPException(
-            status_code=_HTTP_NOT_FOUND, detail=f"Agent '{name}' not found"
+            status_code=_HTTP_NOT_FOUND, detail=_agent_not_found_detail(name)
         )
     return agent.model_dump()
 
@@ -62,7 +67,8 @@ def register_agent(request: RegisterRequest):
     service = _get_service()
     try:
         entry = service.register_agent(
-            request.config_path, metadata=request.metadata,
+            request.config_path,
+            metadata=request.metadata,
         )
         return {"agent": entry.model_dump()}
     except (ValueError, FileNotFoundError) as e:
@@ -76,7 +82,7 @@ def unregister_agent(name: str):
     success = service.unregister_agent(name)
     if not success:
         raise HTTPException(
-            status_code=_HTTP_NOT_FOUND, detail=f"Agent '{name}' not found"
+            status_code=_HTTP_NOT_FOUND, detail=_agent_not_found_detail(name)
         )
     return {"deleted": True}
 
@@ -90,7 +96,7 @@ def send_message(name: str, request: MessageRequestAPI):
     agent = service.get_agent(name)
     if not agent:
         raise HTTPException(
-            status_code=_HTTP_NOT_FOUND, detail=f"Agent '{name}' not found"
+            status_code=_HTTP_NOT_FOUND, detail=_agent_not_found_detail(name)
         )
 
     try:

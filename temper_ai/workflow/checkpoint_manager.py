@@ -30,10 +30,15 @@ Example:
     >>> restored_domain = manager.load_checkpoint("wf-123")
     >>> print(restored_domain.stage_outputs)  # {"research": {"findings": ["data"]}}
 """
-import logging
-from enum import Enum
-from typing import Any, Callable, Dict, List, Optional
 
+import logging
+from collections.abc import Callable
+from enum import Enum
+from typing import Any
+
+from temper_ai.shared.constants.durations import SECONDS_PER_5_MINUTES
+from temper_ai.shared.constants.limits import MEDIUM_ITEM_LIMIT
+from temper_ai.shared.utils.exceptions import ConfigurationError, ErrorCode
 from temper_ai.workflow.checkpoint_backends import (
     CheckpointBackend,
     CheckpointNotFoundError,
@@ -41,9 +46,6 @@ from temper_ai.workflow.checkpoint_backends import (
 )
 from temper_ai.workflow.constants import LOG_SEPARATOR_CHECKPOINT
 from temper_ai.workflow.domain_state import WorkflowDomainState
-from temper_ai.shared.constants.durations import SECONDS_PER_5_MINUTES
-from temper_ai.shared.constants.limits import MEDIUM_ITEM_LIMIT
-from temper_ai.shared.utils.exceptions import ConfigurationError, ErrorCode
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +59,7 @@ class CheckpointStrategy(Enum):
     - MANUAL: Only save when explicitly requested
     - DISABLED: No automatic checkpointing
     """
+
     EVERY_STAGE = "every_stage"
     PERIODIC = "periodic"
     MANUAL = "manual"
@@ -92,10 +95,10 @@ class CheckpointManager:
 
     def __init__(
         self,
-        backend: Optional[CheckpointBackend] = None,
+        backend: CheckpointBackend | None = None,
         strategy: CheckpointStrategy = CheckpointStrategy.EVERY_STAGE,
         max_checkpoints: int = MEDIUM_ITEM_LIMIT,
-        periodic_interval: int = SECONDS_PER_5_MINUTES
+        periodic_interval: int = SECONDS_PER_5_MINUTES,
     ):
         """Initialize checkpoint manager.
 
@@ -111,16 +114,16 @@ class CheckpointManager:
         self.periodic_interval = periodic_interval
 
         # Callback hooks for checkpoint lifecycle events
-        self.on_checkpoint_saved: Optional[Callable[[str, str], None]] = None
-        self.on_checkpoint_loaded: Optional[Callable[[str, str], None]] = None
-        self.on_checkpoint_failed: Optional[Callable[[str, Exception], None]] = None
+        self.on_checkpoint_saved: Callable[[str, str], None] | None = None
+        self.on_checkpoint_loaded: Callable[[str, str], None] | None = None
+        self.on_checkpoint_failed: Callable[[str, Exception], None] | None = None
 
     def save_checkpoint(
         self,
         domain_state: WorkflowDomainState,
-        checkpoint_id: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-        force: bool = False
+        checkpoint_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        force: bool = False,
     ) -> str:
         """Save a workflow checkpoint.
 
@@ -152,18 +155,20 @@ class CheckpointManager:
         try:
             # Add checkpoint metadata
             checkpoint_metadata = metadata or {}
-            checkpoint_metadata.update({
-                "strategy": self.strategy.value,
-                "stage": domain_state.current_stage,
-                "num_stages_completed": len(domain_state.stage_outputs)
-            })
+            checkpoint_metadata.update(
+                {
+                    "strategy": self.strategy.value,
+                    "stage": domain_state.current_stage,
+                    "num_stages_completed": len(domain_state.stage_outputs),
+                }
+            )
 
             # Save checkpoint via backend
             saved_checkpoint_id = self.backend.save_checkpoint(
                 workflow_id=domain_state.workflow_id,
                 domain_state=domain_state,
                 checkpoint_id=checkpoint_id,
-                metadata=checkpoint_metadata
+                metadata=checkpoint_metadata,
             )
 
             logger.info(
@@ -191,9 +196,7 @@ class CheckpointManager:
             ) from e
 
     def load_checkpoint(
-        self,
-        workflow_id: str,
-        checkpoint_id: Optional[str] = None
+        self, workflow_id: str, checkpoint_id: str | None = None
     ) -> WorkflowDomainState:
         """Load a workflow checkpoint for resume.
 
@@ -269,7 +272,7 @@ class CheckpointManager:
         # MANUAL strategy requires explicit save_checkpoint calls
         return False
 
-    def list_checkpoints(self, workflow_id: str) -> List[Dict[str, Any]]:
+    def list_checkpoints(self, workflow_id: str) -> list[dict[str, Any]]:
         """List all checkpoints for a workflow.
 
         Args:
@@ -300,10 +303,12 @@ class CheckpointManager:
         """
         success = self.backend.delete_checkpoint(workflow_id, checkpoint_id)
         if success:
-            logger.info(f"Checkpoint deleted: workflow={workflow_id}LOG_SEPARATOR_CHECKPOINT{checkpoint_id}")
+            logger.info(
+                f"Checkpoint deleted: workflow={workflow_id}LOG_SEPARATOR_CHECKPOINT{checkpoint_id}"
+            )
         return success
 
-    def get_latest_checkpoint_id(self, workflow_id: str) -> Optional[str]:
+    def get_latest_checkpoint_id(self, workflow_id: str) -> str | None:
         """Get the latest checkpoint ID for a workflow.
 
         Args:
@@ -347,7 +352,7 @@ class CheckpointManager:
 
         if len(checkpoints) > self.max_checkpoints:
             # Delete oldest checkpoints (list is sorted newest first)
-            to_delete = checkpoints[self.max_checkpoints:]
+            to_delete = checkpoints[self.max_checkpoints :]
             for cp in to_delete:
                 self.delete_checkpoint(workflow_id, cp["checkpoint_id"])
                 logger.debug(
@@ -360,32 +365,23 @@ class CheckpointSaveError(ConfigurationError):
     """Raised when checkpoint save fails."""
 
     def __init__(self, message: str, **kwargs: Any) -> None:
-        super().__init__(
-            message=message,
-            error_code=ErrorCode.CONFIG_INVALID,
-            **kwargs
-        )
+        super().__init__(message=message, error_code=ErrorCode.CONFIG_INVALID, **kwargs)
 
 
 class CheckpointLoadError(ConfigurationError):
     """Raised when checkpoint load fails."""
 
     def __init__(self, message: str, **kwargs: Any) -> None:
-        super().__init__(
-            message=message,
-            error_code=ErrorCode.CONFIG_INVALID,
-            **kwargs
-        )
+        super().__init__(message=message, error_code=ErrorCode.CONFIG_INVALID, **kwargs)
 
 
 def create_checkpoint_manager(
-    backend_type: str = "file",
-    **backend_kwargs: Any
+    backend_type: str = "file", **backend_kwargs: Any
 ) -> CheckpointManager:
     """Factory function to create CheckpointManager with specified backend.
 
     Args:
-        backend_type: Backend type ("file" or "redis")
+        backend_type: Backend type ("file")
         **backend_kwargs: Backend-specific configuration
 
     Returns:
@@ -397,19 +393,11 @@ def create_checkpoint_manager(
         ...     backend_type="file",
         ...     checkpoint_dir="./checkpoints"
         ... )
-        >>>
-        >>> # Redis backend
-        >>> manager = create_checkpoint_manager(
-        ...     backend_type="redis",
-        ...     redis_url="redis://localhost:6379"
-        ... )
     """
     if backend_type == "file":
         from temper_ai.workflow.checkpoint_backends import FileCheckpointBackend
+
         backend = FileCheckpointBackend(**backend_kwargs)
-    elif backend_type == "redis":
-        from temper_ai.workflow.checkpoint_backends import RedisCheckpointBackend
-        backend = RedisCheckpointBackend(**backend_kwargs)  # type: ignore[assignment]
     else:
         raise ValueError(f"Unknown backend type: {backend_type}")
 

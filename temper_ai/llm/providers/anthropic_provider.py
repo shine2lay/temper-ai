@@ -1,9 +1,15 @@
 """Anthropic LLM provider (Claude models)."""
-from typing import Any, Dict
+
+from typing import Any
 
 import httpx
 
-from temper_ai.llm.providers.base import BaseLLM, LLMProvider, LLMResponse, StreamCallback
+from temper_ai.llm.providers.base import (
+    BaseLLM,
+    LLMProvider,
+    LLMResponse,
+    StreamCallback,
+)
 
 
 class AnthropicLLM(BaseLLM):
@@ -12,7 +18,7 @@ class AnthropicLLM(BaseLLM):
     def _get_endpoint(self) -> str:
         return "/v1/messages"
 
-    def _get_headers(self) -> Dict[str, str]:
+    def _get_headers(self) -> dict[str, str]:
         headers = {
             "Content-Type": "application/json",
             "anthropic-version": "2023-06-01",
@@ -21,11 +27,11 @@ class AnthropicLLM(BaseLLM):
             headers["x-api-key"] = self.api_key
         return headers
 
-    def _build_request(self, prompt: str, **kwargs: Any) -> Dict[str, Any]:
+    def _build_request(self, prompt: str, **kwargs: Any) -> dict[str, Any]:
         messages = kwargs.get("messages")
         if messages is None:
             messages = [{"role": "user", "content": prompt}]
-        request: Dict[str, Any] = {
+        request: dict[str, Any] = {
             "model": self.model,
             "messages": messages,
             "max_tokens": kwargs.get("max_tokens", self.max_tokens),
@@ -40,7 +46,7 @@ class AnthropicLLM(BaseLLM):
             request["messages"] = non_system
         return request
 
-    def _parse_response(self, response: Dict[str, Any], latency_ms: int) -> LLMResponse:
+    def _parse_response(self, response: dict[str, Any], latency_ms: int) -> LLMResponse:
         content_block = response["content"][0]
         usage = response.get("usage", {})
 
@@ -50,7 +56,8 @@ class AnthropicLLM(BaseLLM):
             provider=LLMProvider.ANTHROPIC,
             prompt_tokens=usage.get("input_tokens"),
             completion_tokens=usage.get("output_tokens"),
-            total_tokens=(usage.get("input_tokens", 0) + usage.get("output_tokens", 0)) or None,
+            total_tokens=(usage.get("input_tokens", 0) + usage.get("output_tokens", 0))
+            or None,
             latency_ms=latency_ms,
             finish_reason=response.get("stop_reason"),
             raw_response=response,
@@ -62,7 +69,9 @@ class AnthropicLLM(BaseLLM):
         on_chunk: StreamCallback,
     ) -> LLMResponse:
         """Streaming not yet implemented for Anthropic provider."""
-        raise NotImplementedError("Streaming support not yet implemented for Anthropic provider")
+        raise NotImplementedError(
+            "Streaming support not yet implemented for Anthropic provider"
+        )
 
     async def _aconsume_stream(
         self,
@@ -70,4 +79,6 @@ class AnthropicLLM(BaseLLM):
         on_chunk: StreamCallback,
     ) -> LLMResponse:
         """Async streaming not yet implemented for Anthropic provider."""
-        raise NotImplementedError("Async streaming support not yet implemented for Anthropic provider")
+        raise NotImplementedError(
+            "Async streaming support not yet implemented for Anthropic provider"
+        )

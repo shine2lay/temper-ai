@@ -11,6 +11,7 @@ from temper_ai.experimentation.validators import (
     validate_experiment_name,
     validate_variant_name,
 )
+from temper_ai.storage.database import init_database, reset_database
 
 
 class TestInputValidation:
@@ -110,6 +111,14 @@ class TestInputValidation:
 class TestExperimentServiceSecurity:
     """Test security features of ExperimentService."""
 
+    @pytest.fixture(autouse=True)
+    def setup_db(self, tmp_path):
+        """Initialize a fresh test database for each test."""
+        db_path = tmp_path / "test_security.db"
+        init_database(f"sqlite:///{db_path}")
+        yield
+        reset_database()
+
     @pytest.fixture
     def service(self):
         """Create ExperimentService instance."""
@@ -125,9 +134,9 @@ class TestExperimentServiceSecurity:
             description="Test experiment",
             variants=[
                 {"name": "control", "is_control": True, "traffic": 0.5},
-                {"name": "variant", "traffic": 0.5}
+                {"name": "variant", "traffic": 0.5},
             ],
-            primary_metric="test_metric"
+            primary_metric="test_metric",
         )
         assert exp_id is not None
 
@@ -153,9 +162,9 @@ class TestExperimentServiceSecurity:
                     description="Test",
                     variants=[
                         {"name": "control", "is_control": True, "traffic": 0.5},
-                        {"name": "variant", "traffic": 0.5}
+                        {"name": "variant", "traffic": 0.5},
                     ],
-                    primary_metric="test_metric"
+                    primary_metric="test_metric",
                 )
 
     def test_variant_name_validation_in_service(self, service):
@@ -166,9 +175,9 @@ class TestExperimentServiceSecurity:
                 description="Test",
                 variants=[
                     {"name": "control", "is_control": True, "traffic": 0.5},
-                    {"name": "variant'; DROP TABLE--", "traffic": 0.5}
+                    {"name": "variant'; DROP TABLE--", "traffic": 0.5},
                 ],
-                primary_metric="test_metric"
+                primary_metric="test_metric",
             )
 
     def test_duplicate_experiment_name_error(self, service):
@@ -179,9 +188,9 @@ class TestExperimentServiceSecurity:
             description="First experiment",
             variants=[
                 {"name": "control", "is_control": True, "traffic": 0.5},
-                {"name": "variant", "traffic": 0.5}
+                {"name": "variant", "traffic": 0.5},
             ],
-            primary_metric="test_metric"
+            primary_metric="test_metric",
         )
 
         # Try to create duplicate
@@ -191,9 +200,9 @@ class TestExperimentServiceSecurity:
                 description="Duplicate experiment",
                 variants=[
                     {"name": "control", "is_control": True, "traffic": 0.5},
-                    {"name": "variant", "traffic": 0.5}
+                    {"name": "variant", "traffic": 0.5},
                 ],
-                primary_metric="test_metric"
+                primary_metric="test_metric",
             )
 
     def test_orm_roundtrip_integrity(self, service):
@@ -210,9 +219,9 @@ class TestExperimentServiceSecurity:
             description="Test that ORM escapes properly",
             variants=[
                 {"name": "control", "is_control": True, "traffic": 0.5},
-                {"name": "variant", "traffic": 0.5}
+                {"name": "variant", "traffic": 0.5},
             ],
-            primary_metric="test_metric"
+            primary_metric="test_metric",
         )
 
         # Verify experiment was created with exact name (ORM escaped it)
@@ -240,9 +249,9 @@ class TestExperimentServiceSecurity:
                     description="Control char test",
                     variants=[
                         {"name": "control", "is_control": True, "traffic": 0.5},
-                        {"name": "variant", "traffic": 0.5}
+                        {"name": "variant", "traffic": 0.5},
                     ],
-                    primary_metric="test_metric"
+                    primary_metric="test_metric",
                 )
 
     def test_length_limit_enforcement(self, service):
@@ -254,9 +263,9 @@ class TestExperimentServiceSecurity:
                 description="Length test",
                 variants=[
                     {"name": "control", "is_control": True, "traffic": 0.5},
-                    {"name": "variant", "traffic": 0.5}
+                    {"name": "variant", "traffic": 0.5},
                 ],
-                primary_metric="test_metric"
+                primary_metric="test_metric",
             )
 
         # Variant name too long
@@ -266,14 +275,22 @@ class TestExperimentServiceSecurity:
                 description="Length test",
                 variants=[
                     {"name": "control", "is_control": True, "traffic": 0.5},
-                    {"name": "a" * 31, "traffic": 0.5}
+                    {"name": "a" * 31, "traffic": 0.5},
                 ],
-                primary_metric="test_metric"
+                primary_metric="test_metric",
             )
 
 
 class TestSecurityLogging:
     """Test security event logging."""
+
+    @pytest.fixture(autouse=True)
+    def setup_db(self, tmp_path):
+        """Initialize a fresh test database for each test."""
+        db_path = tmp_path / "test_security_log.db"
+        init_database(f"sqlite:///{db_path}")
+        yield
+        reset_database()
 
     @pytest.fixture
     def service(self):
@@ -291,15 +308,15 @@ class TestSecurityLogging:
                 description="Test",
                 variants=[
                     {"name": "control", "is_control": True, "traffic": 0.5},
-                    {"name": "variant", "traffic": 0.5}
+                    {"name": "variant", "traffic": 0.5},
                 ],
-                primary_metric="test_metric"
+                primary_metric="test_metric",
             )
 
         # Check that security event was logged
         assert any(
-            "INPUT_VALIDATION_FAILED" in record.getMessage() or
-            hasattr(record, 'security_event')
+            "INPUT_VALIDATION_FAILED" in record.getMessage()
+            or hasattr(record, "security_event")
             for record in caplog.records
         )
 
@@ -311,9 +328,9 @@ class TestSecurityLogging:
             description="Test",
             variants=[
                 {"name": "control", "is_control": True, "traffic": 0.5},
-                {"name": "variant", "traffic": 0.5}
+                {"name": "variant", "traffic": 0.5},
             ],
-            primary_metric="test_metric"
+            primary_metric="test_metric",
         )
 
         # Try duplicate
@@ -323,14 +340,14 @@ class TestSecurityLogging:
                 description="Test",
                 variants=[
                     {"name": "control", "is_control": True, "traffic": 0.5},
-                    {"name": "variant", "traffic": 0.5}
+                    {"name": "variant", "traffic": 0.5},
                 ],
-                primary_metric="test_metric"
+                primary_metric="test_metric",
             )
 
         # Check for security event log
         assert any(
-            "DATABASE_CONSTRAINT_VIOLATION" in record.message or
-            "constraint violation" in record.message.lower()
+            "DATABASE_CONSTRAINT_VIOLATION" in record.message
+            or "constraint violation" in record.message.lower()
             for record in caplog.records
         )

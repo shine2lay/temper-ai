@@ -6,7 +6,7 @@ validation against schemas, and security checks to prevent sensitive field overr
 """
 
 import copy
-from typing import Any, Dict, Optional, Set
+from typing import Any
 
 from pydantic import ValidationError
 
@@ -30,11 +30,13 @@ PROTECTED_CONFIG_FIELDS = {
 
 class ExperimentConfigValidationError(Exception):
     """Raised when variant config validation fails."""
+
     pass
 
 
 class SecurityViolationError(Exception):
     """Raised when variant config attempts to override protected fields."""
+
     pass
 
 
@@ -61,7 +63,7 @@ class ConfigManager:
         >>> # }
     """
 
-    def __init__(self, protected_fields: Optional[Set[str]] = None):
+    def __init__(self, protected_fields: set[str] | None = None):
         """
         Initialize config manager.
 
@@ -72,10 +74,10 @@ class ConfigManager:
 
     def merge_config(
         self,
-        base_config: Dict[str, Any],
-        variant_overrides: Dict[str, Any],
-        validate_protected: bool = True
-    ) -> Dict[str, Any]:
+        base_config: dict[str, Any],
+        variant_overrides: dict[str, Any],
+        validate_protected: bool = True,
+    ) -> dict[str, Any]:
         """
         Deep merge variant overrides into base configuration.
 
@@ -102,7 +104,7 @@ class ConfigManager:
 
         return merged
 
-    def _deep_merge(self, base: Dict[str, Any], overrides: Dict[str, Any]) -> None:
+    def _deep_merge(self, base: dict[str, Any], overrides: dict[str, Any]) -> None:
         """
         Recursively merge overrides into base dictionary.
 
@@ -124,11 +126,7 @@ class ConfigManager:
                 # Override value
                 base[key] = value
 
-    def _check_protected_fields(
-        self,
-        config: Dict[str, Any],
-        path: str = ""
-    ) -> None:
+    def _check_protected_fields(self, config: dict[str, Any], path: str = "") -> None:
         """
         Recursively check for protected field violations.
 
@@ -153,9 +151,7 @@ class ConfigManager:
                 self._check_protected_fields(value, current_path)
 
     def validate_merged_config(
-        self,
-        merged_config: Dict[str, Any],
-        schema_class: Any
+        self, merged_config: dict[str, Any], schema_class: Any
     ) -> None:
         """
         Validate merged config against Pydantic schema.
@@ -175,10 +171,8 @@ class ConfigManager:
             ) from e
 
     def get_config_diff(
-        self,
-        base_config: Dict[str, Any],
-        variant_config: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, base_config: dict[str, Any], variant_config: dict[str, Any]
+    ) -> dict[str, Any]:
         """
         Get diff showing what changed in variant config.
 
@@ -189,7 +183,7 @@ class ConfigManager:
         Returns:
             Dictionary showing only changed/added keys
         """
-        diff: Dict[str, Any] = {}
+        diff: dict[str, Any] = {}
 
         for key, value in variant_config.items():
             if key not in base_config:
@@ -209,10 +203,10 @@ class ConfigManager:
 
     def apply_overrides_safely(
         self,
-        base_config: Dict[str, Any],
-        variant_overrides: Dict[str, Any],
-        schema_class: Optional[Any] = None
-    ) -> Dict[str, Any]:
+        base_config: dict[str, Any],
+        variant_overrides: dict[str, Any],
+        schema_class: Any | None = None,
+    ) -> dict[str, Any]:
         """
         Apply overrides with full validation and security checks.
 
@@ -232,9 +226,7 @@ class ConfigManager:
         """
         # Merge with security check
         merged = self.merge_config(
-            base_config,
-            variant_overrides,
-            validate_protected=True
+            base_config, variant_overrides, validate_protected=True
         )
 
         # Validate against schema if provided
@@ -244,9 +236,7 @@ class ConfigManager:
         return merged
 
 
-def extract_overrides_from_variant(
-    variant_dict: Dict[str, Any]
-) -> Dict[str, Any]:
+def extract_overrides_from_variant(variant_dict: dict[str, Any]) -> dict[str, Any]:
     """
     Extract config overrides from variant dictionary.
 
@@ -268,9 +258,8 @@ def extract_overrides_from_variant(
 
 
 def merge_agent_config(
-    base_agent_config: Dict[str, Any],
-    variant_overrides: Dict[str, Any]
-) -> Dict[str, Any]:
+    base_agent_config: dict[str, Any], variant_overrides: dict[str, Any]
+) -> dict[str, Any]:
     """
     Merge variant overrides into agent configuration.
 
@@ -301,9 +290,8 @@ def merge_agent_config(
 
 
 def merge_stage_config(
-    base_stage_config: Dict[str, Any],
-    variant_overrides: Dict[str, Any]
-) -> Dict[str, Any]:
+    base_stage_config: dict[str, Any], variant_overrides: dict[str, Any]
+) -> dict[str, Any]:
     """
     Merge variant overrides into stage configuration.
 
@@ -321,9 +309,8 @@ def merge_stage_config(
 
 
 def merge_workflow_config(
-    base_workflow_config: Dict[str, Any],
-    variant_overrides: Dict[str, Any]
-) -> Dict[str, Any]:
+    base_workflow_config: dict[str, Any], variant_overrides: dict[str, Any]
+) -> dict[str, Any]:
     """
     Merge variant overrides into workflow configuration.
 

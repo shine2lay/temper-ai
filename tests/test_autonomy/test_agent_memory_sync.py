@@ -1,11 +1,8 @@
 """Tests for orchestrator._run_agent_memory_sync (M9 agent memory sync step)."""
 
-from typing import Any, Dict, List, Optional
-from unittest.mock import MagicMock, call, patch
-
 import time
-
-import pytest
+from typing import Any
+from unittest.mock import MagicMock, patch
 
 from temper_ai.autonomy._schemas import (
     AutonomousLoopConfig,
@@ -27,7 +24,7 @@ _SYNC_FN = "temper_ai.agent._m9_context_helpers.sync_workflow_learnings_to_agent
 
 
 def _make_config(**overrides: Any) -> AutonomousLoopConfig:
-    defaults: Dict[str, Any] = {
+    defaults: dict[str, Any] = {
         "enabled": True,
         "learning_enabled": False,
         "goals_enabled": False,
@@ -39,7 +36,7 @@ def _make_config(**overrides: Any) -> AutonomousLoopConfig:
 
 
 def _make_context(**overrides: Any) -> WorkflowRunContext:
-    defaults: Dict[str, Any] = {
+    defaults: dict[str, Any] = {
         "workflow_id": "wf-m9-001",
         "workflow_name": "test_workflow",
         "result": {},
@@ -50,7 +47,7 @@ def _make_context(**overrides: Any) -> WorkflowRunContext:
     return WorkflowRunContext(**defaults)
 
 
-def _make_agent_entry(name: str, agent_id: Optional[str] = None) -> AgentRegistryEntry:
+def _make_agent_entry(name: str, agent_id: str | None = None) -> AgentRegistryEntry:
     return AgentRegistryEntry(
         id=agent_id or f"id-{name}",
         name=name,
@@ -148,7 +145,7 @@ class TestRunAgentMemorySyncMultipleAgents:
         mock_store_instance = MagicMock()
         mock_store_instance.list_all.return_value = agents
 
-        sync_side_effects: List[Dict[str, Any]] = [
+        sync_side_effects: list[dict[str, Any]] = [
             {"synced": True, "entry_id": "eid-1"},
             {"synced": True, "entry_id": "eid-2"},
         ]

@@ -7,7 +7,7 @@
 
 ## Overview
 
-This guide covers configuring the M4 Safety System through the `config/safety/action_policies.yaml` file. Learn how to:
+This guide covers configuring the M4 Safety System through the `configs/safety/action_policies.yaml` file. Learn how to:
 - Map policies to action types
 - Configure policy behavior
 - Set environment-specific settings
@@ -18,7 +18,7 @@ This guide covers configuring the M4 Safety System through the `config/safety/ac
 
 ## Configuration File Structure
 
-**Location:** `config/safety/action_policies.yaml`
+**Location:** `configs/safety/action_policies.yaml`
 
 ```yaml
 # Engine configuration
@@ -658,10 +658,10 @@ environments:
 
 ```bash
 # Use YAML linter
-yamllint config/safety/action_policies.yaml
+yamllint configs/safety/action_policies.yaml
 
 # Or Python YAML parser
-python -c "import yaml; yaml.safe_load(open('config/safety/action_policies.yaml'))"
+python -c "import yaml; yaml.safe_load(open('configs/safety/action_policies.yaml'))"
 ```
 
 ### Test Configuration Loading
@@ -670,7 +670,7 @@ python -c "import yaml; yaml.safe_load(open('config/safety/action_policies.yaml'
 import yaml
 from pathlib import Path
 
-config_path = Path("config/safety/action_policies.yaml")
+config_path = Path("configs/safety/action_policies.yaml")
 with open(config_path) as f:
     config = yaml.safe_load(f)
 
@@ -827,7 +827,7 @@ policy_mappings:
 
 ```bash
 # Validate YAML
-yamllint config/safety/action_policies.yaml
+yamllint configs/safety/action_policies.yaml
 
 # Check environment
 echo $ENVIRONMENT  # Should be development, staging, or production
@@ -917,7 +917,7 @@ policy_config:
 Track configuration changes in git:
 
 ```bash
-git add config/safety/action_policies.yaml
+git add configs/safety/action_policies.yaml
 git commit -m "Increase deployment rate limit for staging"
 ```
 
@@ -940,4 +940,4 @@ Always test configuration changes in development/staging first:
 - [M4 Safety System Architecture](./M4_SAFETY_SYSTEM.md)
 - [Custom Policy Development](./CUSTOM_POLICY_DEVELOPMENT.md)
 - [Safety Examples](./SAFETY_EXAMPLES.md)
-- Configuration file: `config/safety/action_policies.yaml`
+- Configuration file: `configs/safety/action_policies.yaml`

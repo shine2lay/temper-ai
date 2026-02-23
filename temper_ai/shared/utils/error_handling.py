@@ -4,11 +4,13 @@ Centralized error handling utilities.
 Provides common error handling patterns including retry strategies,
 exponential backoff, and standardized error result creation.
 """
+
 import logging
 import time
+from collections.abc import Callable
 from enum import Enum
 from functools import wraps
-from typing import Any, Callable, Dict, Optional, Tuple, Type, TypeVar
+from typing import Any, TypeVar
 
 from temper_ai.shared.constants.durations import TIMEOUT_LONG
 from temper_ai.shared.constants.retries import (
@@ -19,11 +21,12 @@ from temper_ai.shared.constants.retries import (
 
 logger = logging.getLogger(__name__)
 
-T = TypeVar('T')
+T = TypeVar("T")
 
 
 class RetryStrategy(Enum):
     """Retry strategy types."""
+
     NONE = "none"
     FIXED_DELAY = "fixed"
     EXPONENTIAL_BACKOFF = "exponential"
@@ -49,7 +52,7 @@ class RetryParams:
         max_delay: float = TIMEOUT_LONG,
         strategy: RetryStrategy = RetryStrategy.EXPONENTIAL_BACKOFF,
         backoff_multiplier: float = DEFAULT_BACKOFF_MULTIPLIER,
-        retryable_exceptions: Optional[Tuple[Type[Exception], ...]] = None
+        retryable_exceptions: tuple[type[Exception], ...] | None = None,
     ):
         self.max_retries = max_retries
         self.initial_delay = initial_delay
@@ -74,7 +77,7 @@ class RetryParams:
         elif self.strategy == RetryStrategy.LINEAR_BACKOFF:
             delay = self.initial_delay * (attempt + 1)
         elif self.strategy == RetryStrategy.EXPONENTIAL_BACKOFF:
-            delay = self.initial_delay * (self.backoff_multiplier ** attempt)
+            delay = self.initial_delay * (self.backoff_multiplier**attempt)
         else:
             delay = self.initial_delay  # type: ignore[unreachable]
 
@@ -87,8 +90,8 @@ def retry_with_backoff(
     initial_delay: float = MIN_BACKOFF_SECONDS,
     max_delay: float = TIMEOUT_LONG,
     strategy: RetryStrategy = RetryStrategy.EXPONENTIAL_BACKOFF,
-    retryable_exceptions: Optional[Tuple[Type[Exception], ...]] = None,
-    on_retry: Optional[Callable[[Exception, int], None]] = None
+    retryable_exceptions: tuple[type[Exception], ...] | None = None,
+    on_retry: Callable[[Exception, int], None] | None = None,
 ) -> Callable[[Callable[..., T]], Callable[..., T]]:
     """Decorator for automatic retry with backoff.
 
@@ -122,11 +125,12 @@ def retry_with_backoff(
         initial_delay=initial_delay,
         max_delay=max_delay,
         strategy=strategy,
-        retryable_exceptions=retryable_exceptions
+        retryable_exceptions=retryable_exceptions,
     )
 
     def decorator(func: Callable[..., T]) -> Callable[..., T]:
         """Error handling decorator."""
+
         @wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> T:
             """Error handling wrapper."""
@@ -157,28 +161,37 @@ def retry_with_backoff(
 
                     # Wait before retry
                     if delay > 0:
-                        time.sleep(delay)  # Intentional blocking: sync retry decorator with exponential backoff
+                        time.sleep(
+                            delay
+                        )  # Intentional blocking: sync retry decorator with exponential backoff
 
             # All retries exhausted
             logger.error(
                 f"All {config.max_retries + 1} attempts failed for {func.__name__}: {last_exception}"
             )
             if last_exception is None:
-                raise RuntimeError(f"Retry loop completed without capturing exception for {func.__name__}")
+                raise RuntimeError(
+                    f"Retry loop completed without capturing exception for {func.__name__}"
+                )
             raise last_exception
 
         return wrapper
+
     return decorator
 
 
 def safe_execute(
     func: Callable[..., T],
     *args: Any,
-    default: Optional[T] = None,
+    default: T | None = None,
     log_errors: bool = True,
-    **kwargs: Any
-) -> Tuple[Optional[T], Optional[Exception]]:
+    **kwargs: Any,
+) -> tuple[T | None, Exception | None]:
     """Safely execute a function and return result or error.
+
+    Catches common exception types (ValueError, TypeError, KeyError,
+    AttributeError, RuntimeError, OSError, ConnectionError, TimeoutError).
+    Other exception types propagate to the caller.
 
     Args:
         func: Function to execute
@@ -188,7 +201,7 @@ def safe_execute(
         **kwargs: Keyword arguments for func
 
     Returns:
-        Tuple of (result, error). One will be None.
+        Tuple of (result, error). One will be None for caught exceptions.
 
     Example:
         >>> result, error = safe_execute(risky_operation, param=123)
@@ -200,7 +213,16 @@ def safe_execute(
     try:
         result = func(*args, **kwargs)
         return result, None
-    except (ValueError, TypeError, KeyError, AttributeError, RuntimeError, OSError, ConnectionError, TimeoutError) as e:
+    except (
+        ValueError,
+        TypeError,
+        KeyError,
+        AttributeError,
+        RuntimeError,
+        OSError,
+        ConnectionError,
+        TimeoutError,
+    ) as e:
         if log_errors:
             logger.error(f"Error in {func.__name__}: {e}", exc_info=True)
         return default, e
@@ -208,9 +230,9 @@ def safe_execute(
 
 def create_error_result(
     error: Exception,
-    context: Optional[Dict[str, Any]] = None,
-    include_traceback: bool = False
-) -> Dict[str, Any]:
+    context: dict[str, Any] | None = None,
+    include_traceback: bool = False,
+) -> dict[str, Any]:
     """Create standardized error result dictionary.
 
     Args:
@@ -233,7 +255,7 @@ def create_error_result(
         "success": False,
         "error": str(error),
         "error_type": type(error).__name__,
-        "metadata": context or {}
+        "metadata": context or {},
     }
 
     if include_traceback:
@@ -264,7 +286,7 @@ class ErrorHandler:
         max_retries: int = DEFAULT_MAX_RETRIES,
         retry_delay: float = MIN_BACKOFF_SECONDS,
         log_errors: bool = True,
-        raise_on_failure: bool = True
+        raise_on_failure: bool = True,
     ):
         """Initialize error handler.
 
@@ -283,9 +305,9 @@ class ErrorHandler:
         self,
         func: Callable[..., T],
         *args: Any,
-        fallback_value: Optional[T] = None,
-        **kwargs: Any
-    ) -> Optional[T]:
+        fallback_value: T | None = None,
+        **kwargs: Any,
+    ) -> T | None:
         """Execute function with error handling and retries.
 
         Args:
@@ -305,7 +327,16 @@ class ErrorHandler:
         for attempt in range(self.max_retries + 1):
             try:
                 return func(*args, **kwargs)
-            except (ValueError, TypeError, KeyError, AttributeError, RuntimeError, OSError, ConnectionError, TimeoutError) as e:
+            except (
+                ValueError,
+                TypeError,
+                KeyError,
+                AttributeError,
+                RuntimeError,
+                OSError,
+                ConnectionError,
+                TimeoutError,
+            ) as e:
                 last_exception = e
 
                 if self.log_errors:
@@ -315,12 +346,16 @@ class ErrorHandler:
 
                 # Don't sleep on last attempt
                 if attempt < self.max_retries:
-                    time.sleep(self.retry_delay * (2 ** attempt))  # Intentional blocking: sync retry with exponential backoff
+                    time.sleep(
+                        self.retry_delay * (2**attempt)
+                    )  # Intentional blocking: sync retry with exponential backoff
 
         # All attempts failed
         if self.raise_on_failure:
             if last_exception is None:
-                raise RuntimeError(f"Retry executor completed without capturing exception for {func.__name__}")
+                raise RuntimeError(
+                    f"Retry executor completed without capturing exception for {func.__name__}"
+                )
             raise last_exception
 
         return fallback_value

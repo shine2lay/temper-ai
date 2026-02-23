@@ -2,15 +2,14 @@
 
 Tests buffer performance, query reduction, and flush strategies.
 """
+
 import time
-from datetime import datetime, timezone
+from datetime import datetime
 
 import pytest
 
 from temper_ai.observability.buffer import (
-    LLMCallBufferParams,
     ObservabilityBuffer,
-    ToolCallBufferParams,
 )
 
 
@@ -36,7 +35,7 @@ class TestBufferQueryReduction:
         buffer = ObservabilityBuffer(
             flush_size=10,  # Flush every 10 items
             flush_interval=10.0,  # Long interval to test size-based flush
-            auto_flush=False  # Manual control for testing
+            auto_flush=False,  # Manual control for testing
         )
         buffer.set_flush_callback(mock_flush_callback)
 
@@ -53,7 +52,7 @@ class TestBufferQueryReduction:
                 completion_tokens=100,
                 latency_ms=500,
                 estimated_cost_usd=0.002,
-                start_time=datetime.now()
+                start_time=datetime.now(),
             )
 
         # Final flush for remaining items
@@ -62,14 +61,18 @@ class TestBufferQueryReduction:
         # Without buffering: 100 events = 200 queries (1 INSERT + 1 UPDATE per event)
         # With buffering: 100 events = 30 queries (10 batches × 3 queries per batch)
         # Query reduction: (200 - 30) / 200 = 85%
-        assert query_count <= 30, \
-            f"Expected ≤30 queries for 100 events with buffering, got {query_count}"
+        assert (
+            query_count <= 30
+        ), f"Expected ≤30 queries for 100 events with buffering, got {query_count}"
 
         # Verify >85% reduction
         non_buffered_queries = 200  # 100 INSERT + 100 UPDATE
-        reduction_percent = ((non_buffered_queries - query_count) / non_buffered_queries) * 100
-        assert reduction_percent >= 85, \
-            f"Expected ≥85% query reduction, got {reduction_percent:.1f}%"
+        reduction_percent = (
+            (non_buffered_queries - query_count) / non_buffered_queries
+        ) * 100
+        assert (
+            reduction_percent >= 85
+        ), f"Expected ≥85% query reduction, got {reduction_percent:.1f}%"
 
     def test_buffer_mixed_operations_query_count(self):
         """Test query count for mixed LLM and tool calls."""
@@ -85,9 +88,7 @@ class TestBufferQueryReduction:
                 query_count += 1
 
         buffer = ObservabilityBuffer(
-            flush_size=20,
-            flush_interval=10.0,
-            auto_flush=False
+            flush_size=20, flush_interval=10.0, auto_flush=False
         )
         buffer.set_flush_callback(mock_flush_callback)
 
@@ -104,7 +105,7 @@ class TestBufferQueryReduction:
                 completion_tokens=100,
                 latency_ms=500,
                 estimated_cost_usd=0.002,
-                start_time=datetime.now()
+                start_time=datetime.now(),
             )
 
             buffer.buffer_tool_call(
@@ -114,7 +115,7 @@ class TestBufferQueryReduction:
                 input_params={"x": i},
                 output_data={"result": i * 2},
                 start_time=datetime.now(),
-                duration_seconds=0.5
+                duration_seconds=0.5,
             )
 
         buffer.flush()
@@ -122,8 +123,9 @@ class TestBufferQueryReduction:
         # With flush_size=20, we expect: 100 items / 20 = 5 flushes
         # Each flush: 3 queries (llm_calls, tool_calls, agent_metrics)
         # Total: 5 × 3 = 15 queries
-        assert query_count <= 18, \
-            f"Expected ≤18 queries for 100 mixed events, got {query_count}"
+        assert (
+            query_count <= 18
+        ), f"Expected ≤18 queries for 100 mixed events, got {query_count}"
 
     def test_buffer_without_callback_logs_warning(self, caplog):
         """Test that buffer without flush callback logs warning."""
@@ -141,7 +143,7 @@ class TestBufferQueryReduction:
             completion_tokens=100,
             latency_ms=500,
             estimated_cost_usd=0.002,
-            start_time=datetime.now()
+            start_time=datetime.now(),
         )
 
         buffer.flush()
@@ -164,7 +166,7 @@ class TestBufferFlushStrategies:
         buffer = ObservabilityBuffer(
             flush_size=10,  # Small size for testing
             flush_interval=10.0,
-            auto_flush=False
+            auto_flush=False,
         )
         buffer.set_flush_callback(mock_flush_callback)
 
@@ -181,17 +183,19 @@ class TestBufferFlushStrategies:
                 completion_tokens=100,
                 latency_ms=500,
                 estimated_cost_usd=0.002,
-                start_time=datetime.now()
+                start_time=datetime.now(),
             )
 
         # Verify automatic flushes occurred
-        assert flush_count == 2, \
-            f"Expected 2 automatic flushes (at 10, 20), got {flush_count}"
+        assert (
+            flush_count == 2
+        ), f"Expected 2 automatic flushes (at 10, 20), got {flush_count}"
 
         # Verify remaining items in buffer
         stats = buffer.get_stats()
-        assert stats["llm_calls_buffered"] == 5, \
-            f"Expected 5 items in buffer after auto-flushes, got {stats['llm_calls_buffered']}"
+        assert (
+            stats["llm_calls_buffered"] == 5
+        ), f"Expected 5 items in buffer after auto-flushes, got {stats['llm_calls_buffered']}"
 
     def test_time_based_flush_with_auto_flush(self):
         """Test that buffer flushes automatically after time interval."""
@@ -205,7 +209,7 @@ class TestBufferFlushStrategies:
         buffer = ObservabilityBuffer(
             flush_size=1000,  # Large size to prevent size-based flush
             flush_interval=0.2,  # 200ms interval
-            auto_flush=True  # Enable auto-flush thread
+            auto_flush=True,  # Enable auto-flush thread
         )
         buffer.set_flush_callback(mock_flush_callback)
 
@@ -223,15 +227,16 @@ class TestBufferFlushStrategies:
                     completion_tokens=100,
                     latency_ms=500,
                     estimated_cost_usd=0.002,
-                    start_time=datetime.now()
+                    start_time=datetime.now(),
                 )
 
             # Wait for auto-flush (200ms interval + margin)
             time.sleep(0.5)
 
             # Verify time-based flush occurred
-            assert flush_count >= 1, \
-                f"Expected at least 1 time-based flush after 500ms, got {flush_count}"
+            assert (
+                flush_count >= 1
+            ), f"Expected at least 1 time-based flush after 500ms, got {flush_count}"
 
         finally:
             buffer.stop()
@@ -244,16 +249,18 @@ class TestBufferFlushStrategies:
         def mock_flush_callback(llm_calls, tool_calls, agent_metrics):
             nonlocal flush_count
             flush_count += 1
-            flushed_items.append({
-                "llm_calls": len(llm_calls),
-                "tool_calls": len(tool_calls),
-                "agent_metrics": len(agent_metrics)
-            })
+            flushed_items.append(
+                {
+                    "llm_calls": len(llm_calls),
+                    "tool_calls": len(tool_calls),
+                    "agent_metrics": len(agent_metrics),
+                }
+            )
 
         buffer = ObservabilityBuffer(
             flush_size=1000,  # Large size to prevent auto-flush
             flush_interval=10.0,
-            auto_flush=False
+            auto_flush=False,
         )
         buffer.set_flush_callback(mock_flush_callback)
 
@@ -270,7 +277,7 @@ class TestBufferFlushStrategies:
                 completion_tokens=100,
                 latency_ms=500,
                 estimated_cost_usd=0.002,
-                start_time=datetime.now()
+                start_time=datetime.now(),
             )
 
         # Manual flush
@@ -282,8 +289,7 @@ class TestBufferFlushStrategies:
 
         # Verify buffer is empty
         stats = buffer.get_stats()
-        assert stats["total_buffered"] == 0, \
-            "Buffer should be empty after flush"
+        assert stats["total_buffered"] == 0, "Buffer should be empty after flush"
 
 
 class TestBufferOverflow:
@@ -300,9 +306,7 @@ class TestBufferOverflow:
             total_flushed += len(llm_calls) + len(tool_calls)
 
         buffer = ObservabilityBuffer(
-            flush_size=50,
-            flush_interval=10.0,
-            auto_flush=False
+            flush_size=50, flush_interval=10.0, auto_flush=False
         )
         buffer.set_flush_callback(mock_flush_callback)
 
@@ -319,18 +323,16 @@ class TestBufferOverflow:
                 completion_tokens=100,
                 latency_ms=500,
                 estimated_cost_usd=0.002,
-                start_time=datetime.now()
+                start_time=datetime.now(),
             )
 
         buffer.flush()
 
         # Verify all events were flushed
-        assert total_flushed == 500, \
-            f"Expected 500 events flushed, got {total_flushed}"
+        assert total_flushed == 500, f"Expected 500 events flushed, got {total_flushed}"
 
         # Verify multiple batches
-        assert flush_count == 10, \
-            f"Expected 10 flushes (500/50), got {flush_count}"
+        assert flush_count == 10, f"Expected 10 flushes (500/50), got {flush_count}"
 
     def test_buffer_overflow_with_concurrent_operations(self):
         """Test buffer handles concurrent additions during flush."""
@@ -347,9 +349,7 @@ class TestBufferOverflow:
             time.sleep(0.01)
 
         buffer = ObservabilityBuffer(
-            flush_size=10,
-            flush_interval=10.0,
-            auto_flush=False
+            flush_size=10, flush_interval=10.0, auto_flush=False
         )
         buffer.set_flush_callback(mock_flush_callback)
 
@@ -367,7 +367,7 @@ class TestBufferOverflow:
                     completion_tokens=100,
                     latency_ms=500,
                     estimated_cost_usd=0.002,
-                    start_time=datetime.now()
+                    start_time=datetime.now(),
                 )
 
         threads = []
@@ -382,8 +382,7 @@ class TestBufferOverflow:
         buffer.flush()
 
         # Verify flushes occurred (5 threads × 20 items = 100 items / 10 = 10 flushes)
-        assert flush_count >= 10, \
-            f"Expected at least 10 flushes, got {flush_count}"
+        assert flush_count >= 10, f"Expected at least 10 flushes, got {flush_count}"
 
     def test_empty_buffer_flush_does_nothing(self):
         """Test that flushing empty buffer doesn't call callback."""
@@ -402,8 +401,7 @@ class TestBufferOverflow:
         buffer.flush()
 
         # Callback should not be called for empty flushes
-        assert flush_count == 0, \
-            "Flush callback should not be called for empty buffer"
+        assert flush_count == 0, "Flush callback should not be called for empty buffer"
 
 
 class TestBufferStatistics:
@@ -412,9 +410,7 @@ class TestBufferStatistics:
     def test_get_stats_returns_accurate_counts(self):
         """Test that get_stats returns accurate buffer statistics."""
         buffer = ObservabilityBuffer(
-            flush_size=100,
-            flush_interval=1.0,
-            auto_flush=False
+            flush_size=100, flush_interval=1.0, auto_flush=False
         )
         buffer.set_flush_callback(lambda *args: None)
 
@@ -437,7 +433,7 @@ class TestBufferStatistics:
                 completion_tokens=100,
                 latency_ms=500,
                 estimated_cost_usd=0.002,
-                start_time=datetime.now()
+                start_time=datetime.now(),
             )
 
         for i in range(5):
@@ -448,7 +444,7 @@ class TestBufferStatistics:
                 input_params={"x": i},
                 output_data={"result": i * 2},
                 start_time=datetime.now(),
-                duration_seconds=0.5
+                duration_seconds=0.5,
             )
 
         # Check stats
@@ -477,7 +473,7 @@ class TestBufferStatistics:
                 completion_tokens=100,
                 latency_ms=500,
                 estimated_cost_usd=0.002,
-                start_time=datetime.now()
+                start_time=datetime.now(),
             )
 
         # Verify items are buffered
@@ -520,12 +516,11 @@ class TestBufferContextManager:
                     completion_tokens=100,
                     latency_ms=500,
                     estimated_cost_usd=0.002,
-                    start_time=datetime.now()
+                    start_time=datetime.now(),
                 )
 
         # Context manager should flush on exit
-        assert flush_count == 1, \
-            "Context manager should flush on exit"
+        assert flush_count == 1, "Context manager should flush on exit"
 
     def test_buffer_context_manager_flushes_even_on_exception(self):
         """Test that buffer flushes even if exception occurs."""
@@ -550,7 +545,7 @@ class TestBufferContextManager:
                     completion_tokens=100,
                     latency_ms=500,
                     estimated_cost_usd=0.002,
-                    start_time=datetime.now()
+                    start_time=datetime.now(),
                 )
 
                 # Raise exception
@@ -559,8 +554,7 @@ class TestBufferContextManager:
             pass
 
         # Buffer should still flush despite exception
-        assert flush_count == 1, \
-            "Buffer should flush even when exception occurs"
+        assert flush_count == 1, "Buffer should flush even when exception occurs"
 
 
 class TestBufferErrorHandling:
@@ -592,30 +586,35 @@ class TestBufferErrorHandling:
             completion_tokens=100,
             latency_ms=500,
             estimated_cost_usd=0.002,
-            start_time=datetime.now()
+            start_time=datetime.now(),
         )
 
-        # First flush (will fail and log error)
+        # First flush (will fail and items go to retry queue)
         buffer.flush()
 
         # Verify error was logged
-        assert any("Error flushing buffer" in record.message for record in caplog.records)
+        assert any(
+            "Error flushing buffer" in record.message for record in caplog.records
+        )
 
-        # Verify items are still buffered after failed flush
+        # After failed flush, items move to retry queue (not main buffer)
         stats = buffer.get_stats()
-        assert stats["llm_calls_buffered"] == 1, \
-            "Items should be re-buffered after failed flush"
+        assert (
+            stats["retry_queue_size"] >= 1
+        ), "Items should be in retry queue after failed flush"
 
-        # Second flush (will succeed)
+        # Second flush (will succeed, retrying from retry queue)
         buffer.flush()
 
-        # Verify items are cleared after successful flush
+        # Verify retry queue is cleared after successful flush
         stats = buffer.get_stats()
-        assert stats["llm_calls_buffered"] == 0, \
-            "Items should be cleared after successful flush"
+        assert (
+            stats["retry_queue_size"] == 0
+        ), "Retry queue should be cleared after successful flush"
 
-        assert len(flush_attempts) == 2, \
-            f"Should have attempted flush twice, got {len(flush_attempts)}"
+        assert (
+            len(flush_attempts) == 2
+        ), f"Should have attempted flush twice, got {len(flush_attempts)}"
 
 
 if __name__ == "__main__":

@@ -3,7 +3,6 @@
 import logging
 import uuid
 from pathlib import Path
-from typing import Dict, List, Set
 
 import yaml
 
@@ -24,21 +23,22 @@ class ComponentAnalyzer:
         self.store = store
 
     def analyze_portfolio(
-        self, portfolio: PortfolioConfig,
-    ) -> List[ComponentMatch]:
+        self,
+        portfolio: PortfolioConfig,
+    ) -> list[ComponentMatch]:
         """Analyze all products for shared stage configurations.
 
         Loads workflow configs, extracts stage definitions, computes
         pairwise Jaccard similarity, and persists matches above threshold.
         """
-        product_stages: Dict[str, Dict[str, Set[str]]] = {}
+        product_stages: dict[str, dict[str, set[str]]] = {}
 
         for product in portfolio.products:
             stages = _load_stages_for_product(product.workflow_configs)
             if stages:
                 product_stages[product.name] = stages
 
-        matches: List[ComponentMatch] = []
+        matches: list[ComponentMatch] = []
         product_names = list(product_stages.keys())
 
         for i in range(len(product_names)):
@@ -71,22 +71,21 @@ class ComponentAnalyzer:
 
     def find_similar_stages(
         self,
-        stage_config: Dict,
+        stage_config: dict,
         product_type: str,
         min_similarity: float = MIN_SIMILARITY_THRESHOLD,
-    ) -> List[ComponentMatch]:
+    ) -> list[ComponentMatch]:
         """Find stages similar to a given config within stored components."""
         query_keys = set(_flatten_keys(stage_config))
         records = self.store.list_shared_components(
             min_similarity=min_similarity,
         )
 
-        results: List[ComponentMatch] = []
+        results: list[ComponentMatch] = []
         for rec in records:
-            if (
-                rec.source_stage.startswith(product_type + "/")
-                or rec.target_stage.startswith(product_type + "/")
-            ):
+            if rec.source_stage.startswith(
+                product_type + "/"
+            ) or rec.target_stage.startswith(product_type + "/"):
                 if rec.similarity >= min_similarity:
                     shared = set(rec.shared_keys) & query_keys
                     if shared:
@@ -110,7 +109,8 @@ class ComponentAnalyzer:
 
     @staticmethod
     def jaccard_similarity(
-        keys_a: Set[str], keys_b: Set[str],
+        keys_a: set[str],
+        keys_b: set[str],
     ) -> float:
         """|A intersection B| / |A union B|, 0.0 for empty sets."""
         if not keys_a and not keys_b:
@@ -135,10 +135,10 @@ class ComponentAnalyzer:
 
 
 def _load_stages_for_product(
-    workflow_configs: List[str],
-) -> Dict[str, Set[str]]:
+    workflow_configs: list[str],
+) -> dict[str, set[str]]:
     """Load workflow YAML files and extract stage key sets."""
-    stages: Dict[str, Set[str]] = {}
+    stages: dict[str, set[str]] = {}
     for config_path in workflow_configs:
         path = Path(config_path)
         if not path.exists():
@@ -157,7 +157,9 @@ def _load_stages_for_product(
 
 
 def _extract_stages(
-    data: Dict, config_path: str, out: Dict[str, Set[str]],
+    data: dict,
+    config_path: str,
+    out: dict[str, set[str]],
 ) -> None:
     """Extract stage definitions from a parsed workflow config."""
     raw_stages = data.get("stages", [])
@@ -175,9 +177,9 @@ def _extract_stages(
                 out[key] = set(_flatten_keys(stage_data))
 
 
-def _flatten_keys(d: Dict, prefix: str = "") -> List[str]:
+def _flatten_keys(d: dict, prefix: str = "") -> list[str]:
     """Flatten a nested dict into dot-delimited key paths."""
-    keys: List[str] = []
+    keys: list[str] = []
     for k, v in d.items():
         full_key = f"{prefix}.{k}" if prefix else str(k)
         keys.append(full_key)
@@ -188,20 +190,18 @@ def _flatten_keys(d: Dict, prefix: str = "") -> List[str]:
 
 def _compare_products(
     p_a: str,
-    stages_a: Dict[str, Set[str]],
+    stages_a: dict[str, set[str]],
     p_b: str,
-    stages_b: Dict[str, Set[str]],
-) -> List[ComponentMatch]:
+    stages_b: dict[str, set[str]],
+) -> list[ComponentMatch]:
     """Compare stages between two products and return matches."""
-    matches: List[ComponentMatch] = []
+    matches: list[ComponentMatch] = []
     for name_a, keys_a in stages_a.items():
         for name_b, keys_b in stages_b.items():
             sim = ComponentAnalyzer.jaccard_similarity(keys_a, keys_b)
             if sim >= MIN_SIMILARITY_THRESHOLD:
                 shared = sorted(keys_a & keys_b)
-                differing = sorted(
-                    (keys_a | keys_b) - (keys_a & keys_b)
-                )
+                differing = sorted((keys_a | keys_b) - (keys_a & keys_b))
                 matches.append(
                     ComponentMatch(
                         source_stage=f"{p_a}/{name_a}",

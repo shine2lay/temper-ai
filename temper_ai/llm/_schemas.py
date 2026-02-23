@@ -3,12 +3,13 @@
 Builds text-based and native (function-calling) tool definitions,
 with caching by tool count/hash to avoid redundant rebuilds.
 """
+
 from __future__ import annotations
 
 import hashlib
 import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from temper_ai.llm.providers import AnthropicLLM, OllamaLLM, OpenAILLM
 from temper_ai.llm.tool_keys import ToolKeys
@@ -17,10 +18,10 @@ logger = logging.getLogger(__name__)
 
 
 def build_text_schemas(
-    tools: Optional[List[Any]],
-    cached_schemas: Optional[str],
+    tools: list[Any] | None,
+    cached_schemas: str | None,
     cached_version: int,
-) -> tuple[Optional[str], int]:
+) -> tuple[str | None, int]:
     """Build text-based tool schemas for LLMs without native tool support.
 
     Returns (schemas_text, new_version). Reuses cached value when tool count
@@ -61,10 +62,10 @@ def build_text_schemas(
 
 def build_native_tool_defs(
     llm: Any,
-    tools: Optional[List[Any]],
-    cached_defs: Optional[List[Dict[str, Any]]],
-    cached_hash: Optional[str],
-) -> tuple[Optional[List[Dict[str, Any]]], Optional[str]]:
+    tools: list[Any] | None,
+    cached_defs: list[dict[str, Any]] | None,
+    cached_hash: str | None,
+) -> tuple[list[dict[str, Any]] | None, str | None]:
     """Build native tool definitions for providers with function calling.
 
     Returns (native_defs, new_hash). Reuses cached value when tool names
@@ -86,10 +87,10 @@ def build_native_tool_defs(
     if cached_defs is not None and cached_hash == current_hash:
         return cached_defs, cached_hash
 
-    native_tools: List[Dict[str, Any]] = []
+    native_tools: list[dict[str, Any]] = []
     for tool in tools_dict.values():
         schema = tool.get_parameters_schema()
-        function_def: Dict[str, Any] = {
+        function_def: dict[str, Any] = {
             ToolKeys.NAME: tool.name,
             "description": tool.description,
             ToolKeys.PARAMETERS: schema,
@@ -100,10 +101,12 @@ def build_native_tool_defs(
                 f"{tool.description}\n\n"
                 f"Result schema: {json.dumps(result_schema, indent=2)}"
             )
-        native_tools.append({
-            "type": "function",
-            "function": function_def,
-        })
+        native_tools.append(
+            {
+                "type": "function",
+                "function": function_def,
+            }
+        )
 
     result = native_tools if native_tools else None
     return result, current_hash

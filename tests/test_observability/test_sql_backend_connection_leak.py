@@ -5,7 +5,8 @@ Verifies that each tracking method uses a per-operation session via
 get_session() and does not leak connections. The old standalone-session
 and session-stack patterns have been removed.
 """
-from datetime import datetime, timezone
+
+from datetime import UTC, datetime
 
 import pytest
 
@@ -45,7 +46,7 @@ def test_all_tracking_methods_succeed(backend):
         workflow_id=workflow_id,
         workflow_name="test",
         workflow_config={},
-        start_time=datetime.now(timezone.utc)
+        start_time=datetime.now(UTC),
     )
 
     backend.update_workflow_metrics(
@@ -53,7 +54,7 @@ def test_all_tracking_methods_succeed(backend):
         total_llm_calls=1,
         total_tool_calls=1,
         total_tokens=100,
-        total_cost_usd=0.01
+        total_cost_usd=0.01,
     )
 
     # Stage tracking
@@ -62,13 +63,10 @@ def test_all_tracking_methods_succeed(backend):
         workflow_id=workflow_id,
         stage_name="test_stage",
         stage_config={},
-        start_time=datetime.now(timezone.utc)
+        start_time=datetime.now(UTC),
     )
 
-    backend.set_stage_output(
-        stage_id=stage_id,
-        output_data={"result": "success"}
-    )
+    backend.set_stage_output(stage_id=stage_id, output_data={"result": "success"})
 
     # Agent tracking
     backend.track_agent_start(
@@ -76,13 +74,11 @@ def test_all_tracking_methods_succeed(backend):
         stage_id=stage_id,
         agent_name="test_agent",
         agent_config={},
-        start_time=datetime.now(timezone.utc)
+        start_time=datetime.now(UTC),
     )
 
     backend.set_agent_output(
-        agent_id=agent_id,
-        output_data={"result": "success"},
-        total_tokens=50
+        agent_id=agent_id, output_data={"result": "success"}, total_tokens=50
     )
 
     # LLM call tracking (unbuffered since buffer=False)
@@ -97,7 +93,7 @@ def test_all_tracking_methods_succeed(backend):
         completion_tokens=20,
         latency_ms=100,
         estimated_cost_usd=0.001,
-        start_time=datetime.now(timezone.utc)
+        start_time=datetime.now(UTC),
     )
 
     # Tool call tracking (unbuffered since buffer=False)
@@ -107,32 +103,27 @@ def test_all_tracking_methods_succeed(backend):
         tool_name="test_tool",
         input_params={},
         output_data={},
-        start_time=datetime.now(timezone.utc),
-        duration_seconds=0.1
+        start_time=datetime.now(UTC),
+        duration_seconds=0.1,
     )
 
     # End tracking
     backend.track_agent_end(
-        agent_id=agent_id,
-        end_time=datetime.now(timezone.utc),
-        status="completed"
+        agent_id=agent_id, end_time=datetime.now(UTC), status="completed"
     )
 
     backend.track_stage_end(
-        stage_id=stage_id,
-        end_time=datetime.now(timezone.utc),
-        status="completed"
+        stage_id=stage_id, end_time=datetime.now(UTC), status="completed"
     )
 
     backend.track_workflow_end(
-        workflow_id=workflow_id,
-        end_time=datetime.now(timezone.utc),
-        status="completed"
+        workflow_id=workflow_id, end_time=datetime.now(UTC), status="completed"
     )
 
     # Verify workflow was tracked and completed
     with backend.get_session_context() as session:
         from temper_ai.storage.database.models import WorkflowExecution
+
         wf = session.get(WorkflowExecution, workflow_id)
         assert wf is not None
         assert wf.workflow_name == "test"
@@ -152,21 +143,21 @@ def test_get_agent_execution_returns_detached(backend):
         workflow_id="wf-1",
         workflow_name="test",
         workflow_config={},
-        start_time=datetime.now(timezone.utc)
+        start_time=datetime.now(UTC),
     )
     backend.track_stage_start(
         stage_id="st-1",
         workflow_id="wf-1",
         stage_name="test_stage",
         stage_config={},
-        start_time=datetime.now(timezone.utc)
+        start_time=datetime.now(UTC),
     )
     backend.track_agent_start(
         agent_id="ag-1",
         stage_id="st-1",
         agent_name="test_agent",
         agent_config={},
-        start_time=datetime.now(timezone.utc)
+        start_time=datetime.now(UTC),
     )
 
     # Fetch agent - should be usable after session closes
@@ -183,11 +174,13 @@ def test_multiple_operations_do_not_leak(backend):
             workflow_id=f"test-wf-{i}",
             workflow_name="test_workflow",
             workflow_config={"workflow": {"version": "1.0"}},
-            start_time=datetime.now(timezone.utc)
+            start_time=datetime.now(UTC),
         )
     # Verify all 20 workflows were persisted
     with backend.get_session_context() as session:
-        from temper_ai.storage.database.models import WorkflowExecution
         from sqlmodel import select
+
+        from temper_ai.storage.database.models import WorkflowExecution
+
         results = session.exec(select(WorkflowExecution)).all()
         assert len(results) == 20

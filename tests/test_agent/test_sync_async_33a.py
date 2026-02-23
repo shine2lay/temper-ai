@@ -45,7 +45,9 @@ class DummyLLM(BaseLLM):
 @pytest.fixture
 def llm():
     """Create a DummyLLM with mocked HTTP clients."""
-    instance = DummyLLM(model="test-model", base_url="http://localhost:11434", api_key="test-key")
+    instance = DummyLLM(
+        model="test-model", base_url="http://localhost:11434", api_key="test-key"
+    )
     return instance
 
 
@@ -62,15 +64,17 @@ class TestCheckCache:
         """With cache enabled and a hit, returns cached LLMResponse."""
         mock_cache = MagicMock()
         mock_cache.generate_key.return_value = "key-123"
-        mock_cache.get.return_value = json.dumps({
-            "content": "cached-result",
-            "model": "test-model",
-            "provider": "dummy",
-            "prompt_tokens": 10,
-            "completion_tokens": 20,
-            "total_tokens": 30,
-            "latency_ms": 5,
-        })
+        mock_cache.get.return_value = json.dumps(
+            {
+                "content": "cached-result",
+                "model": "test-model",
+                "provider": "dummy",
+                "prompt_tokens": 10,
+                "completion_tokens": 20,
+                "total_tokens": 30,
+                "latency_ms": 5,
+            }
+        )
         llm._cache = mock_cache
 
         key, hit = llm._check_cache("hello", None)
@@ -115,20 +119,36 @@ class TestCacheResponse:
 
     def test_noop_when_no_cache(self, llm):
         """No error when cache is None."""
-        llm._cache_response("key", LLMResponse(
-            content="x", model="m", provider="p",
-            prompt_tokens=0, completion_tokens=0, total_tokens=0, latency_ms=0,
-        ))
+        llm._cache_response(
+            "key",
+            LLMResponse(
+                content="x",
+                model="m",
+                provider="p",
+                prompt_tokens=0,
+                completion_tokens=0,
+                total_tokens=0,
+                latency_ms=0,
+            ),
+        )
         # Function should complete without error when cache is None
         assert llm._cache is None
 
     def test_noop_when_no_key(self, llm):
         """No error when cache_key is None."""
         llm._cache = MagicMock()
-        llm._cache_response(None, LLMResponse(
-            content="x", model="m", provider="p",
-            prompt_tokens=0, completion_tokens=0, total_tokens=0, latency_ms=0,
-        ))
+        llm._cache_response(
+            None,
+            LLMResponse(
+                content="x",
+                model="m",
+                provider="p",
+                prompt_tokens=0,
+                completion_tokens=0,
+                total_tokens=0,
+                latency_ms=0,
+            ),
+        )
         llm._cache.set.assert_not_called()
 
 
@@ -158,8 +178,10 @@ class TestSyncAsyncConsistency:
 
     def test_complete_uses_check_cache(self, llm):
         """complete() uses _check_cache for cache lookup."""
-        with patch.object(llm, '_check_cache', return_value=("key", None)) as mock_check, \
-             patch.object(llm, '_get_client') as mock_client:
+        with (
+            patch.object(llm, "_check_cache", return_value=("key", None)) as mock_check,
+            patch.object(llm, "_get_client") as mock_client,
+        ):
 
             mock_resp = MagicMock()
             mock_resp.status_code = 200
@@ -172,18 +194,27 @@ class TestSyncAsyncConsistency:
     def test_complete_returns_cache_hit(self, llm):
         """complete() returns cached response without making API call."""
         cached = LLMResponse(
-            content="cached", model="m", provider="p",
-            prompt_tokens=0, completion_tokens=0, total_tokens=0, latency_ms=0,
+            content="cached",
+            model="m",
+            provider="p",
+            prompt_tokens=0,
+            completion_tokens=0,
+            total_tokens=0,
+            latency_ms=0,
         )
-        with patch.object(llm, '_check_cache', return_value=("key", cached)):
+        with patch.object(llm, "_check_cache", return_value=("key", cached)):
             result = llm.complete("hello")
             assert result.content == "cached"
 
     @pytest.mark.asyncio
     async def test_acomplete_uses_check_cache(self, llm):
         """acomplete() uses _check_cache for cache lookup."""
-        with patch.object(llm, '_check_cache', return_value=("key", None)) as mock_check, \
-             patch('temper_ai.llm.providers.base.httpx.AsyncClient') as mock_client_class:
+        with (
+            patch.object(llm, "_check_cache", return_value=("key", None)) as mock_check,
+            patch(
+                "temper_ai.llm.providers.base.httpx.AsyncClient"
+            ) as mock_client_class,
+        ):
 
             mock_resp = MagicMock()
             mock_resp.status_code = 200
@@ -200,10 +231,15 @@ class TestSyncAsyncConsistency:
     async def test_acomplete_returns_cache_hit(self, llm):
         """acomplete() returns cached response without making API call."""
         cached = LLMResponse(
-            content="cached", model="m", provider="p",
-            prompt_tokens=0, completion_tokens=0, total_tokens=0, latency_ms=0,
+            content="cached",
+            model="m",
+            provider="p",
+            prompt_tokens=0,
+            completion_tokens=0,
+            total_tokens=0,
+            latency_ms=0,
         )
-        with patch.object(llm, '_check_cache', return_value=("key", cached)):
+        with patch.object(llm, "_check_cache", return_value=("key", cached)):
             result = await llm.acomplete("hello")
             assert result.content == "cached"
 

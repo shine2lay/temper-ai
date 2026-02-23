@@ -1,11 +1,12 @@
 """Helper functions for subscription matching and handler resolution."""
 
 import logging
-from typing import Any, Callable, Dict, Optional
+from collections.abc import Callable
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
-_HANDLER_REGISTRY: Dict[str, Callable] = {}  # type: ignore[type-arg]
+_HANDLER_REGISTRY: dict[str, Callable] = {}  # type: ignore[type-arg]
 
 
 def register_handler(name: str, fn: Callable) -> None:  # type: ignore[type-arg]
@@ -16,8 +17,8 @@ def register_handler(name: str, fn: Callable) -> None:  # type: ignore[type-arg]
 def matches_filter(
     subscription: Any,
     event_type: str,
-    payload: Optional[Dict[str, Any]],
-    source_workflow_id: Optional[str],
+    payload: dict[str, Any] | None,
+    source_workflow_id: str | None,
 ) -> bool:
     """Check if a subscription matches the given event.
 
@@ -33,7 +34,10 @@ def matches_filter(
     if subscription.event_type != event_type:
         return False
 
-    if subscription.source_workflow_filter and subscription.source_workflow_filter != source_workflow_id:
+    if (
+        subscription.source_workflow_filter
+        and subscription.source_workflow_filter != source_workflow_id
+    ):
         return False
 
     if subscription.payload_filter and payload:
@@ -44,7 +48,7 @@ def matches_filter(
     return True
 
 
-def resolve_handler(handler_ref: str) -> Optional[Callable]:  # type: ignore[type-arg]
+def resolve_handler(handler_ref: str) -> Callable | None:  # type: ignore[type-arg]
     """Look up a registered handler by name.
 
     Args:

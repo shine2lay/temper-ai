@@ -1,5 +1,4 @@
 """Tests for ConditionEvaluator and helper functions."""
-import pytest
 
 from temper_ai.workflow.condition_evaluator import (
     ConditionEvaluator,
@@ -44,7 +43,9 @@ class TestConditionEvaluator:
 
     def test_evaluate_nested_dict_get(self):
         state = {"stage_outputs": {"test": {"stage_status": "success"}}}
-        condition = "{{ stage_outputs.get('test', {}).get('stage_status') == 'failed' }}"
+        condition = (
+            "{{ stage_outputs.get('test', {}).get('stage_status') == 'failed' }}"
+        )
         result = self.evaluator.evaluate(condition, state)
         assert result is False
 
@@ -64,9 +65,7 @@ class TestConditionEvaluator:
             "visualizer": object(),
         }
         # Should not raise even though tracker etc. are non-serializable
-        result = self.evaluator.evaluate(
-            "{{ stage_outputs.test == 'result' }}", state
-        )
+        result = self.evaluator.evaluate("{{ stage_outputs.test == 'result' }}", state)
         assert result is True
 
     def test_missing_key_graceful(self):

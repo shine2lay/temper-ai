@@ -1,9 +1,10 @@
 import { useState, useMemo } from 'react';
 import { useExecutionStore } from '@/store/executionStore';
 import { cn } from '@/lib/utils';
-import { JsonViewer } from '@/components/shared/JsonViewer';
+import { confidenceBadgeClass } from '@/components/dag/constants';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { CopyButton } from '@/components/shared/CopyButton';
+import { OutputDisplay } from '@/components/shared/OutputDisplay';
 import type { AgentExecution } from '@/types';
 
 interface OutputsTabProps {
@@ -72,9 +73,7 @@ export function OutputsTab({ agents, stageOutputData, strategy }: OutputsTabProp
             <span className="text-xs font-medium text-temper-accent">Stage Output (Final)</span>
             <CopyButton text={JSON.stringify(stageOutputData, null, 2)} />
           </div>
-          <div className="max-h-48 overflow-y-auto">
-            <JsonViewer data={stageOutputData} />
-          </div>
+          <OutputDisplay data={stageOutputData} />
         </div>
       )}
 
@@ -103,7 +102,6 @@ function WatchPanelGrid({ agents }: { agents: AgentExecution[] }) {
 }
 
 function WatchCard({ agent }: { agent: AgentExecution }) {
-  const [expanded, setExpanded] = useState(false);
   const select = useExecutionStore((s) => s.select);
   const name = agent.agent_name ?? agent.name ?? agent.id;
   const hasOutput = agent.output_data && Object.keys(agent.output_data).length > 0;
@@ -117,14 +115,7 @@ function WatchCard({ agent }: { agent: AgentExecution }) {
         <StatusBadge status={agent.status} className="text-[10px] py-0 px-1" />
         {agent.confidence_score != null && (
           <span
-            className={cn(
-              'text-[10px] px-1 rounded font-mono ml-auto',
-              agent.confidence_score >= 0.8
-                ? 'text-emerald-400'
-                : agent.confidence_score >= 0.5
-                  ? 'text-amber-400'
-                  : 'text-red-400',
-            )}
+            className={cn('text-[10px] px-1 rounded font-mono ml-auto', confidenceBadgeClass(agent.confidence_score))}
           >
             {(agent.confidence_score * 100).toFixed(0)}%
           </span>
@@ -134,30 +125,19 @@ function WatchCard({ agent }: { agent: AgentExecution }) {
         />
       </div>
 
-      {/* Output preview / full */}
+      {/* Output */}
       <div className="px-3 py-2">
-        <div
-          className={cn('overflow-hidden transition-all', expanded ? 'max-h-96' : 'max-h-24')}
-        >
-          {hasOutput ? (
-            <JsonViewer data={agent.output_data} />
-          ) : outputText ? (
-            <div className="text-xs text-temper-text font-mono whitespace-pre-wrap">
-              {outputText}
-            </div>
-          ) : (
-            <span className="text-xs text-temper-text-dim">No output</span>
-          )}
-        </div>
+        {hasOutput ? (
+          <OutputDisplay data={agent.output_data!} />
+        ) : outputText ? (
+          <div className="text-xs text-temper-text font-mono whitespace-pre-wrap">
+            {outputText}
+          </div>
+        ) : (
+          <span className="text-xs text-temper-text-dim">No output</span>
+        )}
 
-        {/* Expand/collapse + detail link */}
-        <div className="flex items-center gap-2 mt-1">
-          <button
-            className="text-[10px] text-temper-text-muted hover:text-temper-text"
-            onClick={() => setExpanded(!expanded)}
-          >
-            {expanded ? 'Show less' : 'Show more'}
-          </button>
+        <div className="flex items-center mt-1">
           <button
             className="text-[10px] text-temper-accent hover:underline ml-auto"
             onClick={() => select('agent', agent.id)}
@@ -193,14 +173,7 @@ function ComparisonView({ agents }: { agents: AgentExecution[] }) {
               <StatusBadge status={agent.status} className="text-[10px] py-0 px-1" />
               {agent.confidence_score != null && (
                 <span
-                  className={cn(
-                    'text-[10px] px-1 rounded font-mono ml-auto',
-                    agent.confidence_score >= 0.8
-                      ? 'text-emerald-400'
-                      : agent.confidence_score >= 0.5
-                        ? 'text-amber-400'
-                        : 'text-red-400',
-                  )}
+                  className={cn('text-[10px] px-1 rounded font-mono ml-auto', confidenceBadgeClass(agent.confidence_score))}
                 >
                   {(agent.confidence_score * 100).toFixed(0)}%
                 </span>
@@ -208,9 +181,9 @@ function ComparisonView({ agents }: { agents: AgentExecution[] }) {
             </div>
 
             {/* Output content */}
-            <div className="flex-1 p-3 max-h-80 overflow-y-auto">
+            <div className="flex-1 p-3">
               {hasOutput ? (
-                <JsonViewer data={agent.output_data} />
+                <OutputDisplay data={agent.output_data!} />
               ) : outputText ? (
                 <div className="text-xs text-temper-text font-mono whitespace-pre-wrap">
                   {outputText}

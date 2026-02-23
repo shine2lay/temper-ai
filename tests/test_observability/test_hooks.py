@@ -1,6 +1,7 @@
 """
 Tests for observability hooks.
 """
+
 import pytest
 
 from temper_ai.observability.database import get_session, init_database
@@ -13,7 +14,11 @@ from temper_ai.observability.hooks import (
     track_stage,
     track_workflow,
 )
-from temper_ai.observability.models import AgentExecution, StageExecution, WorkflowExecution
+from temper_ai.observability.models import (
+    AgentExecution,
+    StageExecution,
+    WorkflowExecution,
+)
 from temper_ai.observability.tracker import ExecutionTracker, WorkflowTrackingParams
 
 
@@ -31,6 +36,7 @@ def db():
     # Reset global database before each test
     import temper_ai.observability.database as db_module
     from temper_ai.observability.database import _db_lock
+
     with _db_lock:
         db_module._db_manager = None
 
@@ -90,9 +96,11 @@ class TestWorkflowDecorator:
 
         # Verify workflow tracked
         with get_session() as session:
-            wf = session.query(WorkflowExecution).filter_by(
-                workflow_name="test_workflow"
-            ).first()
+            wf = (
+                session.query(WorkflowExecution)
+                .filter_by(workflow_name="test_workflow")
+                .first()
+            )
             assert wf is not None
             assert wf.status == "completed"
 
@@ -107,9 +115,11 @@ class TestWorkflowDecorator:
 
         # Should use function name "my_custom_workflow"
         with get_session() as session:
-            wf = session.query(WorkflowExecution).filter_by(
-                workflow_name="my_custom_workflow"
-            ).first()
+            wf = (
+                session.query(WorkflowExecution)
+                .filter_by(workflow_name="my_custom_workflow")
+                .first()
+            )
             assert wf is not None
 
     def test_decorator_injects_workflow_id(self, db):
@@ -140,9 +150,11 @@ class TestWorkflowDecorator:
 
         # Verify workflow marked as failed
         with get_session() as session:
-            wf = session.query(WorkflowExecution).filter_by(
-                workflow_name="failing_workflow"
-            ).first()
+            wf = (
+                session.query(WorkflowExecution)
+                .filter_by(workflow_name="failing_workflow")
+                .first()
+            )
             assert wf.status == "failed"
             assert wf.error_message == "Test error"
 
@@ -166,9 +178,9 @@ class TestStageDecorator:
 
         # Verify stage tracked
         with get_session() as session:
-            st = session.query(StageExecution).filter_by(
-                stage_name="test_stage"
-            ).first()
+            st = (
+                session.query(StageExecution).filter_by(stage_name="test_stage").first()
+            )
             assert st is not None
             assert st.status == "completed"
 
@@ -216,9 +228,9 @@ class TestAgentDecorator:
 
         # Verify agent tracked
         with get_session() as session:
-            ag = session.query(AgentExecution).filter_by(
-                agent_name="test_agent"
-            ).first()
+            ag = (
+                session.query(AgentExecution).filter_by(agent_name="test_agent").first()
+            )
             assert ag is not None
             assert ag.status == "completed"
 
@@ -249,6 +261,14 @@ class TestAgentDecorator:
 
 class TestExecutionHook:
     """Tests for ExecutionHook class."""
+
+    @pytest.fixture(autouse=True)
+    def _unbuffered_tracker(self, db):
+        """Use an unbuffered tracker so writes are visible immediately."""
+        from temper_ai.observability.backends import SQLObservabilityBackend
+
+        tracker = ExecutionTracker(backend=SQLObservabilityBackend(buffer=False))
+        set_tracker(tracker)
 
     def test_hook_workflow_lifecycle(self, db):
         """Test workflow lifecycle with ExecutionHook."""
@@ -339,23 +359,31 @@ class TestExecutionHook:
         agent_id = hook.start_agent("test_agent", {}, stage_id)
 
         from temper_ai.observability.hooks import LLMCallParams
-        llm_call_id = hook.log_llm_call(LLMCallParams(
-            agent_id=agent_id,
-            provider="ollama",
-            model="llama3.2:3b",
-            prompt="Hello",
-            response="Hi there!",
-            prompt_tokens=10,
-            completion_tokens=5,
-            latency_ms=250,
-            cost=0.001
-        ))
+
+        llm_call_id = hook.log_llm_call(
+            LLMCallParams(
+                agent_id=agent_id,
+                provider="ollama",
+                model="llama3.2:3b",
+                prompt="Hello",
+                response="Hi there!",
+                prompt_tokens=10,
+                completion_tokens=5,
+                latency_ms=250,
+                cost=0.001,
+            )
+        )
 
         assert llm_call_id is not None
+
+        # Flush buffer so LLM call is persisted to DB
+        if hasattr(hook.tracker.backend, "_buffer") and hook.tracker.backend._buffer:
+            hook.tracker.backend._buffer.flush()
 
         # Verify LLM call recorded
         with get_session() as session:
             from temper_ai.observability.models import LLMCall
+
             llm_call = session.query(LLMCall).filter_by(id=llm_call_id).first()
             assert llm_call is not None
             assert llm_call.agent_execution_id == agent_id
@@ -374,11 +402,7 @@ class TestExecutionHook:
         agent_id = hook.start_agent("test_agent", {}, stage_id)
 
         tool_id = hook.log_tool_call(
-            agent_id,
-            "calculator",
-            {"operation": "add"},
-            {"result": 3},
-            0.01
+            agent_id, "calculator", {"operation": "add"}, {"result": 3}, 0.01
         )
 
         assert tool_id is not None
@@ -386,6 +410,7 @@ class TestExecutionHook:
         # Verify tool call recorded
         with get_session() as session:
             from temper_ai.observability.models import ToolExecution
+
             tool_exec = session.query(ToolExecution).filter_by(id=tool_id).first()
             assert tool_exec is not None
             assert tool_exec.agent_execution_id == agent_id
@@ -410,14 +435,21 @@ class TestExecutionHook:
 
         # Log LLM and tool calls
         from temper_ai.observability.hooks import LLMCallParams
-        hook.log_llm_call(LLMCallParams(
-            agent_id=agent_id, provider="ollama", model="llama3.2:3b",
-            prompt="prompt", response="response", prompt_tokens=100,
-            completion_tokens=50, latency_ms=300, cost=0.005
-        ))
-        hook.log_tool_call(
-            agent_id, "tool1", {}, {}, 0.1
+
+        hook.log_llm_call(
+            LLMCallParams(
+                agent_id=agent_id,
+                provider="ollama",
+                model="llama3.2:3b",
+                prompt="prompt",
+                response="response",
+                prompt_tokens=100,
+                completion_tokens=50,
+                latency_ms=300,
+                cost=0.005,
+            )
         )
+        hook.log_tool_call(agent_id, "tool1", {}, {}, 0.1)
 
         # End agent
         hook.end_agent(agent_id)
@@ -471,9 +503,9 @@ class TestCustomTracker:
 
         # Verify workflow tracked
         with get_session() as session:
-            wf = session.query(WorkflowExecution).filter_by(
-                workflow_name="test"
-            ).first()
+            wf = (
+                session.query(WorkflowExecution).filter_by(workflow_name="test").first()
+            )
             assert wf is not None
 
 
@@ -510,6 +542,7 @@ class TestParameterInspection:
 
     def test_workflow_no_parameter_no_error(self, db):
         """No workflow_id parameter or local — no error, no injection."""
+
         @track_workflow("test")
         def run(config):
             return "ok"
@@ -522,7 +555,10 @@ class TestParameterInspection:
         tracker = get_tracker()
 
         # Create a real workflow so FK constraint is satisfied
-        with tracker.track_workflow(WorkflowTrackingParams(workflow_name="parent_wf", workflow_config={})) as wf_id:
+        with tracker.track_workflow(
+            WorkflowTrackingParams(workflow_name="parent_wf", workflow_config={})
+        ) as wf_id:
+
             @track_stage("test")
             def run(config, workflow_id=None, stage_id=None):
                 received["stage_id"] = stage_id
@@ -536,7 +572,10 @@ class TestParameterInspection:
         received = {}
         tracker = get_tracker()
 
-        with tracker.track_workflow(WorkflowTrackingParams(workflow_name="parent_wf", workflow_config={})) as wf_id:
+        with tracker.track_workflow(
+            WorkflowTrackingParams(workflow_name="parent_wf", workflow_config={})
+        ) as wf_id:
+
             @track_stage("test")
             def run(config, workflow_id=None):
                 stage_id = "my_local_stage"  # noqa: F841
@@ -551,8 +590,11 @@ class TestParameterInspection:
         received = {}
         tracker = get_tracker()
 
-        with tracker.track_workflow(WorkflowTrackingParams(workflow_name="parent_wf", workflow_config={})) as wf_id:
+        with tracker.track_workflow(
+            WorkflowTrackingParams(workflow_name="parent_wf", workflow_config={})
+        ) as wf_id:
             with tracker.track_stage("parent_st", {}, wf_id) as st_id:
+
                 @track_agent("test")
                 def run(config, stage_id=None, agent_id=None):
                     received["agent_id"] = agent_id
@@ -566,8 +608,11 @@ class TestParameterInspection:
         received = {}
         tracker = get_tracker()
 
-        with tracker.track_workflow(WorkflowTrackingParams(workflow_name="parent_wf", workflow_config={})) as wf_id:
+        with tracker.track_workflow(
+            WorkflowTrackingParams(workflow_name="parent_wf", workflow_config={})
+        ) as wf_id:
             with tracker.track_stage("parent_st", {}, wf_id) as st_id:
+
                 @track_agent("test")
                 def run(config, stage_id=None):
                     agent_id = "my_local_agent"  # noqa: F841

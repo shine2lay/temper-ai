@@ -1,4 +1,5 @@
 """Tests for rollback mechanism system."""
+
 import os
 import tempfile
 from datetime import datetime
@@ -28,7 +29,7 @@ class TestRollbackSnapshot:
             action={"tool": "write_file", "path": "/tmp/test.txt"},
             context={"agent": "writer"},
             file_snapshots={"/tmp/test.txt": "original content"},
-            state_snapshots={"counter": 0}
+            state_snapshots={"counter": 0},
         )
 
         assert snapshot.id is not None
@@ -44,7 +45,7 @@ class TestRollbackSnapshot:
             action={"tool": "test"},
             context={"agent": "test"},
             file_snapshots={"file.txt": "content"},
-            state_snapshots={"key": "value"}
+            state_snapshots={"key": "value"},
         )
 
         data = snapshot.to_dict()
@@ -66,7 +67,7 @@ class TestRollbackResult:
             status=RollbackStatus.COMPLETED,
             reverted_items=["file1.txt", "file2.txt"],
             failed_items=[],
-            errors=[]
+            errors=[],
         )
 
         assert result.success is True
@@ -83,7 +84,7 @@ class TestRollbackResult:
             status=RollbackStatus.FAILED,
             reverted_items=[],
             failed_items=["file.txt"],
-            errors=["Failed to restore file"]
+            errors=["Failed to restore file"],
         )
 
         data = result.to_dict()
@@ -106,7 +107,7 @@ class TestFileRollbackStrategy:
         strategy = FileRollbackStrategy()
         snapshot = strategy.create_snapshot(
             action={"tool": "write_file", "path": str(test_file)},
-            context={"agent": "test"}
+            context={"agent": "test"},
         )
 
         assert str(test_file) in snapshot.file_snapshots
@@ -119,8 +120,7 @@ class TestFileRollbackStrategy:
 
         strategy = FileRollbackStrategy()
         snapshot = strategy.create_snapshot(
-            action={"tool": "write_file", "path": str(test_file)},
-            context={}
+            action={"tool": "write_file", "path": str(test_file)}, context={}
         )
 
         assert str(test_file) not in snapshot.file_snapshots
@@ -133,10 +133,7 @@ class TestFileRollbackStrategy:
         test_file.write_text("original content")
 
         strategy = FileRollbackStrategy()
-        snapshot = strategy.create_snapshot(
-            action={"path": str(test_file)},
-            context={}
-        )
+        snapshot = strategy.create_snapshot(action={"path": str(test_file)}, context={})
 
         # Modify file
         test_file.write_text("modified content")
@@ -155,10 +152,7 @@ class TestFileRollbackStrategy:
         test_file = tmp_path / "new.txt"
 
         strategy = FileRollbackStrategy()
-        snapshot = strategy.create_snapshot(
-            action={"path": str(test_file)},
-            context={}
-        )
+        snapshot = strategy.create_snapshot(action={"path": str(test_file)}, context={})
 
         # Create file (simulating action)
         test_file.write_text("new content")
@@ -181,8 +175,7 @@ class TestFileRollbackStrategy:
 
         strategy = FileRollbackStrategy()
         snapshot = strategy.create_snapshot(
-            action={"files": [str(file1), str(file2)]},
-            context={}
+            action={"files": [str(file1), str(file2)]}, context={}
         )
 
         # Modify both files
@@ -212,12 +205,9 @@ class TestFileRollbackStrategy:
             context={},
             file_snapshots={
                 str(file1): "content1",
-                str(file2): "content2"  # This is a directory, write will fail
+                str(file2): "content2",  # This is a directory, write will fail
             },
-            metadata={
-                f"{str(file1)}_existed": True,
-                f"{str(file2)}_existed": True
-            }
+            metadata={f"{str(file1)}_existed": True, f"{str(file2)}_existed": True},
         )
 
         # Modify file1
@@ -239,14 +229,9 @@ class TestStateRollbackStrategy:
         """Test snapshot creation with state getter."""
         current_state = {"counter": 10, "flag": True}
 
-        strategy = StateRollbackStrategy(
-            state_getter=lambda: current_state
-        )
+        strategy = StateRollbackStrategy(state_getter=lambda: current_state)
 
-        snapshot = strategy.create_snapshot(
-            action={"tool": "increment"},
-            context={}
-        )
+        snapshot = strategy.create_snapshot(action={"tool": "increment"}, context={})
 
         assert snapshot.state_snapshots == {"counter": 10, "flag": True}
 
@@ -254,10 +239,7 @@ class TestStateRollbackStrategy:
         """Test snapshot creation without state getter."""
         strategy = StateRollbackStrategy()
 
-        snapshot = strategy.create_snapshot(
-            action={"tool": "test"},
-            context={}
-        )
+        snapshot = strategy.create_snapshot(action={"tool": "test"}, context={})
 
         assert snapshot.state_snapshots == {}
 
@@ -265,9 +247,7 @@ class TestStateRollbackStrategy:
         """Test state rollback execution."""
         strategy = StateRollbackStrategy()
         snapshot = RollbackSnapshot(
-            action={},
-            context={},
-            state_snapshots={"counter": 5, "flag": False}
+            action={}, context={}, state_snapshots={"counter": 5, "flag": False}
         )
 
         result = strategy.execute_rollback(snapshot)
@@ -313,14 +293,13 @@ class TestCompositeRollbackStrategy:
         # Create composite
         composite = CompositeRollbackStrategy()
         composite.add_strategy(FileRollbackStrategy())
-        composite.add_strategy(StateRollbackStrategy(
-            state_getter=lambda: current_state
-        ))
+        composite.add_strategy(
+            StateRollbackStrategy(state_getter=lambda: current_state)
+        )
 
         # Create snapshot
         snapshot = composite.create_snapshot(
-            action={"path": str(test_file)},
-            context={}
+            action={"path": str(test_file)}, context={}
         )
 
         # Should have both file and state snapshots
@@ -340,8 +319,7 @@ class TestCompositeRollbackStrategy:
         composite.add_strategy(StateRollbackStrategy())
 
         snapshot = composite.create_snapshot(
-            action={"path": str(test_file)},
-            context={}
+            action={"path": str(test_file)}, context={}
         )
 
         # Modify file
@@ -383,7 +361,7 @@ class TestRollbackManager:
         manager = RollbackManager()
         snapshot = manager.create_snapshot(
             action={"tool": "write_file", "path": str(test_file)},
-            context={"agent": "writer"}
+            context={"agent": "writer"},
         )
 
         assert snapshot is not None
@@ -397,9 +375,7 @@ class TestRollbackManager:
         manager.register_strategy("state", state_strategy)
 
         snapshot = manager.create_snapshot(
-            action={"tool": "increment"},
-            context={},
-            strategy_name="state"
+            action={"tool": "increment"}, context={}, strategy_name="state"
         )
 
         assert snapshot is not None
@@ -412,10 +388,7 @@ class TestRollbackManager:
         manager = RollbackManager()
 
         # Create snapshot
-        snapshot = manager.create_snapshot(
-            action={"path": str(test_file)},
-            context={}
-        )
+        snapshot = manager.create_snapshot(action={"path": str(test_file)}, context={})
 
         # Modify file
         test_file.write_text("modified")
@@ -433,10 +406,7 @@ class TestRollbackManager:
         test_file.write_text("original")
 
         manager = RollbackManager()
-        snapshot = manager.create_snapshot(
-            action={"path": str(test_file)},
-            context={}
-        )
+        snapshot = manager.create_snapshot(action={"path": str(test_file)}, context={})
 
         # Modify file
         test_file.write_text("modified")
@@ -468,10 +438,7 @@ class TestRollbackManager:
         test_file.write_text("content")
 
         manager = RollbackManager()
-        created = manager.create_snapshot(
-            action={"path": str(test_file)},
-            context={}
-        )
+        created = manager.create_snapshot(action={"path": str(test_file)}, context={})
 
         retrieved = manager.get_snapshot(created.id)
 
@@ -494,10 +461,7 @@ class TestRollbackManager:
         for i in range(3):
             file_path = tmp_path / f"file{i}.txt"
             file_path.write_text(f"content{i}")
-            manager.create_snapshot(
-                action={"path": str(file_path)},
-                context={}
-            )
+            manager.create_snapshot(action={"path": str(file_path)}, context={})
 
         snapshots = manager.list_snapshots()
 
@@ -513,8 +477,7 @@ class TestRollbackManager:
         # Create and rollback multiple snapshots
         for i in range(3):
             snapshot = manager.create_snapshot(
-                action={"path": str(test_file)},
-                context={}
+                action={"path": str(test_file)}, context={}
             )
             test_file.write_text(f"modified{i}")
             manager.execute_rollback(snapshot.id)
@@ -537,10 +500,7 @@ class TestRollbackManager:
         manager.on_rollback(on_rollback)
 
         # Create and rollback
-        snapshot = manager.create_snapshot(
-            action={"path": str(test_file)},
-            context={}
-        )
+        snapshot = manager.create_snapshot(action={"path": str(test_file)}, context={})
         test_file.write_text("modified")
         manager.execute_rollback(snapshot.id)
 
@@ -560,10 +520,7 @@ class TestRollbackManager:
         manager.on_rollback(failing_callback)
 
         # Create and rollback
-        snapshot = manager.create_snapshot(
-            action={"path": str(test_file)},
-            context={}
-        )
+        snapshot = manager.create_snapshot(action={"path": str(test_file)}, context={})
         test_file.write_text("modified")
 
         # Should not raise exception
@@ -579,10 +536,7 @@ class TestRollbackManager:
         for i in range(3):
             file_path = tmp_path / f"file{i}.txt"
             file_path.write_text(f"content{i}")
-            manager.create_snapshot(
-                action={"path": str(file_path)},
-                context={}
-            )
+            manager.create_snapshot(action={"path": str(file_path)}, context={})
 
         assert manager.snapshot_count() == 3
 
@@ -598,10 +552,7 @@ class TestRollbackManager:
         manager = RollbackManager()
 
         # Create history
-        snapshot = manager.create_snapshot(
-            action={"path": str(test_file)},
-            context={}
-        )
+        snapshot = manager.create_snapshot(action={"path": str(test_file)}, context={})
         manager.execute_rollback(snapshot.id)
 
         assert len(manager.get_history()) == 1
@@ -633,14 +584,8 @@ class TestIntegration:
 
         # Phase 1: Create snapshot before risky operation
         snapshot = manager.create_snapshot(
-            action={
-                "tool": "update_config",
-                "file": str(config_file)
-            },
-            context={
-                "agent": "config_updater",
-                "reason": "Update production config"
-            }
+            action={"tool": "update_config", "file": str(config_file)},
+            context={"agent": "config_updater", "reason": "Update production config"},
         )
 
         # Phase 2: Execute risky operation
@@ -677,9 +622,9 @@ class TestIntegration:
         snapshot = manager.create_snapshot(
             action={
                 "tool": "batch_update",
-                "files": [str(file1), str(file2), str(file3)]
+                "files": [str(file1), str(file2), str(file3)],
             },
-            context={"operation": "upgrade_all"}
+            context={"operation": "upgrade_all"},
         )
 
         # Update all files
@@ -705,7 +650,9 @@ class TestPathTraversalSecurity:
         with tempfile.TemporaryDirectory() as tmpdir:
             test_file = os.path.join(tmpdir, "test.txt")
 
-            is_valid, error = validate_rollback_path(test_file, allowed_directories=[tmpdir])
+            is_valid, error = validate_rollback_path(
+                test_file, allowed_directories=[tmpdir]
+            )
 
             assert is_valid is True
             assert error is None
@@ -716,7 +663,9 @@ class TestPathTraversalSecurity:
             # Attempt to traverse to parent directory
             malicious_path = os.path.join(tmpdir, "..", "..", "etc", "passwd")
 
-            is_valid, error = validate_rollback_path(malicious_path, allowed_directories=[tmpdir])
+            is_valid, error = validate_rollback_path(
+                malicious_path, allowed_directories=[tmpdir]
+            )
 
             assert is_valid is False
             assert "outside allowed directories" in error.lower()
@@ -733,11 +682,12 @@ class TestPathTraversalSecurity:
         with tempfile.TemporaryDirectory() as tmpdir:
             for system_path in system_paths:
                 is_valid, error = validate_rollback_path(
-                    system_path,
-                    allowed_directories=[tmpdir]
+                    system_path, allowed_directories=[tmpdir]
                 )
 
-                assert is_valid is False, f"System path should be rejected: {system_path}"
+                assert (
+                    is_valid is False
+                ), f"System path should be rejected: {system_path}"
                 assert error is not None
 
     def test_validate_rollback_path_rejects_symlinks(self):
@@ -752,9 +702,7 @@ class TestPathTraversalSecurity:
                 os.symlink(target_path, symlink_path)
 
                 is_valid, error = validate_rollback_path(
-                    symlink_path,
-                    allowed_directories=[tmpdir],
-                    check_symlinks=True
+                    symlink_path, allowed_directories=[tmpdir], check_symlinks=True
                 )
 
                 assert is_valid is False
@@ -774,7 +722,7 @@ class TestPathTraversalSecurity:
                 is_valid, error = validate_rollback_path(
                     file_under_symlink,
                     allowed_directories=[tmpdir],
-                    check_symlinks=True
+                    check_symlinks=True,
                 )
 
                 assert is_valid is False
@@ -792,7 +740,9 @@ class TestPathTraversalSecurity:
             # Null byte injection attack
             malicious_path = os.path.join(tmpdir, "test.txt\x00/etc/passwd")
 
-            is_valid, error = validate_rollback_path(malicious_path, allowed_directories=[tmpdir])
+            is_valid, error = validate_rollback_path(
+                malicious_path, allowed_directories=[tmpdir]
+            )
 
             assert is_valid is False
             assert "null bytes" in error.lower()
@@ -802,7 +752,9 @@ class TestPathTraversalSecurity:
         system32_path = "C:\\Windows\\System32\\important.dll"
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            is_valid, error = validate_rollback_path(system32_path, allowed_directories=[tmpdir])
+            is_valid, error = validate_rollback_path(
+                system32_path, allowed_directories=[tmpdir]
+            )
 
             assert is_valid is False
             assert error is not None
@@ -821,13 +773,13 @@ class TestPathTraversalSecurity:
             # But use names that would bypass old startswith() check
             bypass_paths = [
                 "/etc_backup/passwd",  # Bypasses startswith("/etc/")
-                "/etch/passwd",        # Bypasses startswith("/etc/")
-                "/etcd/passwd",        # Bypasses startswith("/etc/")
+                "/etch/passwd",  # Bypasses startswith("/etc/")
+                "/etcd/passwd",  # Bypasses startswith("/etc/")
                 "/sys_backup/kernel",  # Bypasses startswith("/sys/")
-                "/sysa/kernel",        # Bypasses startswith("/sys/")
-                "/proc_old/cpuinfo",   # Bypasses startswith("/proc/")
-                "/devs/null",          # Bypasses startswith("/dev/")
-                "/boots/vmlinuz",      # Bypasses startswith("/boot/")
+                "/sysa/kernel",  # Bypasses startswith("/sys/")
+                "/proc_old/cpuinfo",  # Bypasses startswith("/proc/")
+                "/devs/null",  # Bypasses startswith("/dev/")
+                "/boots/vmlinuz",  # Bypasses startswith("/boot/")
             ]
 
             for bypass_path in bypass_paths:
@@ -838,10 +790,13 @@ class TestPathTraversalSecurity:
 
                 # Actually, these paths are outside tmpdir, so they should fail
                 # the allowed_directories check first
-                is_valid, error = validate_rollback_path(bypass_path, allowed_directories=[tmpdir])
+                is_valid, error = validate_rollback_path(
+                    bypass_path, allowed_directories=[tmpdir]
+                )
 
-                assert is_valid is False, \
-                    f"Path {bypass_path} should be blocked (outside allowed dirs)"
+                assert (
+                    is_valid is False
+                ), f"Path {bypass_path} should be blocked (outside allowed dirs)"
                 assert error is not None
 
     def test_validate_rollback_path_blocks_etc_subdirs(self):
@@ -870,13 +825,15 @@ class TestPathTraversalSecurity:
                 # because it's a dangerous system directory
                 is_valid, error = validate_rollback_path(
                     etc_path,
-                    allowed_directories=["/etc", tmpdir]  # Explicitly allow /etc
+                    allowed_directories=["/etc", tmpdir],  # Explicitly allow /etc
                 )
 
-                assert is_valid is False, \
-                    f"Path {etc_path} should be blocked (dangerous system directory)"
-                assert "system directory" in error.lower(), \
-                    f"Error should mention system directory, got: {error}"
+                assert (
+                    is_valid is False
+                ), f"Path {etc_path} should be blocked (dangerous system directory)"
+                assert (
+                    "system directory" in error.lower()
+                ), f"Error should mention system directory, got: {error}"
 
     def test_validate_rollback_path_blocks_windows_system32_bypass(self):
         """
@@ -895,10 +852,13 @@ class TestPathTraversalSecurity:
 
             for bypass_path in bypass_paths:
                 # These should fail allowed_directories check, not dangerous dir check
-                is_valid, error = validate_rollback_path(bypass_path, allowed_directories=[tmpdir])
+                is_valid, error = validate_rollback_path(
+                    bypass_path, allowed_directories=[tmpdir]
+                )
 
-                assert is_valid is False, \
-                    f"Path {bypass_path} should be blocked (outside allowed dirs)"
+                assert (
+                    is_valid is False
+                ), f"Path {bypass_path} should be blocked (outside allowed dirs)"
                 # Should fail allowed_directories check, not dangerous dir check
                 assert error is not None
 
@@ -907,15 +867,15 @@ class TestPathTraversalSecurity:
         manager = RollbackManager()
 
         # Attempt to create snapshot with path traversal
-        action = {
-            "tool": "write_file",
-            "path": "../../etc/passwd"
-        }
+        action = {"tool": "write_file", "path": "../../etc/passwd"}
 
         with pytest.raises(RollbackSecurityError) as exc_info:
             manager.create_snapshot(action=action, context={})
 
-        assert "path traversal" in str(exc_info.value).lower() or "invalid file path" in str(exc_info.value).lower()
+        assert (
+            "path traversal" in str(exc_info.value).lower()
+            or "invalid file path" in str(exc_info.value).lower()
+        )
 
     def test_rollback_manager_rejects_symlink_in_snapshot(self):
         """Test that RollbackManager rejects symlinks in snapshot creation."""
@@ -928,10 +888,7 @@ class TestPathTraversalSecurity:
                 os.symlink("/etc/passwd", symlink_path)
 
                 manager = RollbackManager()
-                action = {
-                    "tool": "write_file",
-                    "path": symlink_path
-                }
+                action = {"tool": "write_file", "path": symlink_path}
 
                 with pytest.raises(RollbackSecurityError) as exc_info:
                     manager.create_snapshot(action=action, context={})
@@ -946,10 +903,7 @@ class TestPathTraversalSecurity:
             Path(safe_file).write_text("safe content")
 
             manager = RollbackManager()
-            action = {
-                "tool": "write_file",
-                "path": safe_file
-            }
+            action = {"tool": "write_file", "path": safe_file}
 
             # Should not raise exception
             snapshot = manager.create_snapshot(action=action, context={})
@@ -965,7 +919,7 @@ class TestPathTraversalSecurity:
                 action={},
                 context={},
                 file_snapshots={"../../etc/passwd": "malicious content"},
-                metadata={}
+                metadata={},
             )
 
             manager = RollbackManager()
@@ -985,9 +939,7 @@ class TestPathTraversalSecurity:
             action={},
             context={},
             file_snapshots={},
-            metadata={
-                "/etc/passwd_existed": False  # Indicates file should be deleted
-            }
+            metadata={"/etc/passwd_existed": False},  # Indicates file should be deleted
         )
 
         manager = RollbackManager()
@@ -1079,8 +1031,7 @@ class TestTOCTOURaceConditionFixes:
 
         # validate_rollback_path should reject the symlink
         is_valid, error = validate_rollback_path(
-            str(symlink),
-            allowed_directories=[str(tmp_path)]
+            str(symlink), allowed_directories=[str(tmp_path)]
         )
         assert is_valid is False
         assert "symlink" in error.lower()
@@ -1096,8 +1047,7 @@ class TestTOCTOURaceConditionFixes:
         # Non-symlink paths with .. should resolve fine
         relative_path = str(sub_dir / ".." / "subdir" / "file.txt")
         is_valid, error = validate_rollback_path(
-            relative_path,
-            allowed_directories=[str(tmp_path)]
+            relative_path, allowed_directories=[str(tmp_path)]
         )
         # Should be valid since it resolves to the same file (no symlinks)
         assert is_valid is True
@@ -1131,8 +1081,7 @@ class TestTOCTOURaceConditionFixes:
         # Non-existent path (can't be a symlink)
         nonexistent = str(tmp_path / "doesnt_exist.txt")
         is_valid, error = validate_rollback_path(
-            nonexistent,
-            allowed_directories=[str(tmp_path)]
+            nonexistent, allowed_directories=[str(tmp_path)]
         )
         # Should be valid (path doesn't exist yet, no symlink)
         assert is_valid is True

@@ -3,6 +3,7 @@ Property-based tests for validation and invariants using Hypothesis.
 
 Tests validation properties across different components.
 """
+
 import pytest
 
 pytest.importorskip("hypothesis")
@@ -10,8 +11,8 @@ pytest.importorskip("hypothesis")
 from hypothesis import assume, given, settings
 from hypothesis import strategies as st
 
-from temper_ai.storage.schemas.agent_config import InferenceConfig
 from temper_ai.agent.strategies.base import AgentOutput, Conflict
+from temper_ai.storage.schemas.agent_config import InferenceConfig
 
 
 class TestAgentOutputValidation:
@@ -21,11 +22,15 @@ class TestAgentOutputValidation:
         agent_name=st.text(min_size=1, max_size=100),
         decision=st.text(min_size=1, max_size=200),
         reasoning=st.text(max_size=500),
-        confidence=st.floats(min_value=0.0, max_value=1.0, allow_nan=False, allow_infinity=False),
-        metadata=st.dictionaries(st.text(), st.text(), max_size=10)
+        confidence=st.floats(
+            min_value=0.0, max_value=1.0, allow_nan=False, allow_infinity=False
+        ),
+        metadata=st.dictionaries(st.text(), st.text(), max_size=10),
     )
     @settings(max_examples=100)
-    def test_valid_confidence_range_accepted(self, agent_name, decision, reasoning, confidence, metadata):
+    def test_valid_confidence_range_accepted(
+        self, agent_name, decision, reasoning, confidence, metadata
+    ):
         """Property: AgentOutput accepts confidence in [0, 1]."""
         # Should not raise for valid confidence
         output = AgentOutput(
@@ -33,7 +38,7 @@ class TestAgentOutputValidation:
             decision=decision,
             reasoning=reasoning,
             confidence=confidence,
-            metadata=metadata
+            metadata=metadata,
         )
 
         assert output.confidence == confidence
@@ -44,13 +49,16 @@ class TestAgentOutputValidation:
         decision=st.text(min_size=1, max_size=200),
         reasoning=st.text(max_size=500),
         confidence=st.one_of(
-            st.floats(max_value=-0.01),
-            st.floats(min_value=1.01)
-        ).filter(lambda x: not (x != x)),  # Filter out NaN
-        metadata=st.dictionaries(st.text(), st.text(), max_size=10)
+            st.floats(max_value=-0.01), st.floats(min_value=1.01)
+        ).filter(
+            lambda x: not (x != x)
+        ),  # Filter out NaN
+        metadata=st.dictionaries(st.text(), st.text(), max_size=10),
     )
     @settings(max_examples=100)
-    def test_invalid_confidence_rejected(self, agent_name, decision, reasoning, confidence, metadata):
+    def test_invalid_confidence_rejected(
+        self, agent_name, decision, reasoning, confidence, metadata
+    ):
         """Property: AgentOutput rejects confidence outside [0, 1]."""
         assume(confidence < 0.0 or confidence > 1.0)
 
@@ -61,14 +69,16 @@ class TestAgentOutputValidation:
                 decision=decision,
                 reasoning=reasoning,
                 confidence=confidence,
-                metadata=metadata
+                metadata=metadata,
             )
 
     @given(
         decision=st.text(min_size=1, max_size=200),
         reasoning=st.text(max_size=500),
-        confidence=st.floats(min_value=0.0, max_value=1.0, allow_nan=False, allow_infinity=False),
-        metadata=st.dictionaries(st.text(), st.text(), max_size=10)
+        confidence=st.floats(
+            min_value=0.0, max_value=1.0, allow_nan=False, allow_infinity=False
+        ),
+        metadata=st.dictionaries(st.text(), st.text(), max_size=10),
     )
     @settings(max_examples=50)
     def test_empty_agent_name_rejected(self, decision, reasoning, confidence, metadata):
@@ -80,7 +90,7 @@ class TestAgentOutputValidation:
                 decision=decision,
                 reasoning=reasoning,
                 confidence=confidence,
-                metadata=metadata
+                metadata=metadata,
             )
 
 
@@ -90,17 +100,21 @@ class TestConflictValidation:
     @given(
         agents=st.lists(st.text(min_size=1, max_size=50), min_size=1, max_size=10),
         decisions=st.lists(st.text(min_size=1, max_size=100), min_size=1, max_size=10),
-        disagreement_score=st.floats(min_value=0.0, max_value=1.0, allow_nan=False, allow_infinity=False),
-        context=st.dictionaries(st.text(), st.text(), max_size=5)
+        disagreement_score=st.floats(
+            min_value=0.0, max_value=1.0, allow_nan=False, allow_infinity=False
+        ),
+        context=st.dictionaries(st.text(), st.text(), max_size=5),
     )
     @settings(max_examples=100)
-    def test_valid_conflict_accepted(self, agents, decisions, disagreement_score, context):
+    def test_valid_conflict_accepted(
+        self, agents, decisions, disagreement_score, context
+    ):
         """Property: Conflict accepts valid disagreement_score in [0, 1]."""
         conflict = Conflict(
             agents=agents,
             decisions=decisions,
             disagreement_score=disagreement_score,
-            context=context
+            context=context,
         )
 
         assert conflict.disagreement_score == disagreement_score
@@ -112,13 +126,16 @@ class TestConflictValidation:
         agents=st.lists(st.text(min_size=1, max_size=50), min_size=1, max_size=10),
         decisions=st.lists(st.text(min_size=1, max_size=100), min_size=1, max_size=10),
         disagreement_score=st.one_of(
-            st.floats(max_value=-0.01),
-            st.floats(min_value=1.01)
-        ).filter(lambda x: not (x != x)),  # Filter out NaN
-        context=st.dictionaries(st.text(), st.text(), max_size=5)
+            st.floats(max_value=-0.01), st.floats(min_value=1.01)
+        ).filter(
+            lambda x: not (x != x)
+        ),  # Filter out NaN
+        context=st.dictionaries(st.text(), st.text(), max_size=5),
     )
     @settings(max_examples=100)
-    def test_invalid_disagreement_score_rejected(self, agents, decisions, disagreement_score, context):
+    def test_invalid_disagreement_score_rejected(
+        self, agents, decisions, disagreement_score, context
+    ):
         """Property: Conflict rejects disagreement_score outside [0, 1]."""
         assume(disagreement_score < 0.0 or disagreement_score > 1.0)
 
@@ -128,13 +145,15 @@ class TestConflictValidation:
                 agents=agents,
                 decisions=decisions,
                 disagreement_score=disagreement_score,
-                context=context
+                context=context,
             )
 
     @given(
         decisions=st.lists(st.text(min_size=1, max_size=100), min_size=1, max_size=10),
-        disagreement_score=st.floats(min_value=0.0, max_value=1.0, allow_nan=False, allow_infinity=False),
-        context=st.dictionaries(st.text(), st.text(), max_size=5)
+        disagreement_score=st.floats(
+            min_value=0.0, max_value=1.0, allow_nan=False, allow_infinity=False
+        ),
+        context=st.dictionaries(st.text(), st.text(), max_size=5),
     )
     @settings(max_examples=50)
     def test_empty_agents_list_rejected(self, decisions, disagreement_score, context):
@@ -144,13 +163,15 @@ class TestConflictValidation:
                 agents=[],
                 decisions=decisions,
                 disagreement_score=disagreement_score,
-                context=context
+                context=context,
             )
 
     @given(
         agents=st.lists(st.text(min_size=1, max_size=50), min_size=1, max_size=10),
-        disagreement_score=st.floats(min_value=0.0, max_value=1.0, allow_nan=False, allow_infinity=False),
-        context=st.dictionaries(st.text(), st.text(), max_size=5)
+        disagreement_score=st.floats(
+            min_value=0.0, max_value=1.0, allow_nan=False, allow_infinity=False
+        ),
+        context=st.dictionaries(st.text(), st.text(), max_size=5),
     )
     @settings(max_examples=50)
     def test_empty_decisions_list_rejected(self, agents, disagreement_score, context):
@@ -160,7 +181,7 @@ class TestConflictValidation:
                 agents=agents,
                 decisions=[],
                 disagreement_score=disagreement_score,
-                context=context
+                context=context,
             )
 
 
@@ -170,17 +191,21 @@ class TestInferenceConfigValidation:
     @given(
         provider=st.sampled_from(["openai", "anthropic", "ollama", "custom"]),
         model=st.text(min_size=1, max_size=50),
-        temperature=st.floats(min_value=0.0, max_value=2.0, allow_nan=False, allow_infinity=False),
-        max_tokens=st.integers(min_value=1, max_value=100000)
+        temperature=st.floats(
+            min_value=0.0, max_value=2.0, allow_nan=False, allow_infinity=False
+        ),
+        max_tokens=st.integers(min_value=1, max_value=100000),
     )
     @settings(max_examples=100)
-    def test_valid_inference_config_parameters(self, provider, model, temperature, max_tokens):
+    def test_valid_inference_config_parameters(
+        self, provider, model, temperature, max_tokens
+    ):
         """Property: InferenceConfig accepts valid parameters."""
         config = InferenceConfig(
             provider=provider,
             model=model,
             temperature=temperature,
-            max_tokens=max_tokens
+            max_tokens=max_tokens,
         )
 
         assert config.provider == provider
@@ -190,20 +215,17 @@ class TestInferenceConfigValidation:
 
     @given(
         provider=st.sampled_from(["openai", "anthropic", "ollama"]),
-        model=st.text(min_size=1, max_size=50)
+        model=st.text(min_size=1, max_size=50),
     )
     @settings(max_examples=50)
     def test_temperature_defaults_if_not_provided(self, provider, model):
         """Property: InferenceConfig has reasonable defaults for optional fields."""
-        config = InferenceConfig(
-            provider=provider,
-            model=model
-        )
+        config = InferenceConfig(provider=provider, model=model)
 
         assert config.provider == provider
         assert config.model == model
         # Temperature should have a default (0.7)
-        assert hasattr(config, 'temperature')
+        assert hasattr(config, "temperature")
         assert 0.0 <= config.temperature <= 2.0
 
 
@@ -211,8 +233,12 @@ class TestStateTransitionInvariants:
     """Property-based tests for state transition invariants."""
 
     @given(
-        initial_confidence=st.floats(min_value=0.0, max_value=1.0, allow_nan=False, allow_infinity=False),
-        adjustment=st.floats(min_value=-0.5, max_value=0.5, allow_nan=False, allow_infinity=False)
+        initial_confidence=st.floats(
+            min_value=0.0, max_value=1.0, allow_nan=False, allow_infinity=False
+        ),
+        adjustment=st.floats(
+            min_value=-0.5, max_value=0.5, allow_nan=False, allow_infinity=False
+        ),
     )
     @settings(max_examples=100)
     def test_confidence_adjustment_stays_bounded(self, initial_confidence, adjustment):
@@ -224,7 +250,7 @@ class TestStateTransitionInvariants:
 
     @given(
         vote_count=st.integers(min_value=0, max_value=100),
-        total_votes=st.integers(min_value=1, max_value=100)
+        total_votes=st.integers(min_value=1, max_value=100),
     )
     @settings(max_examples=100)
     def test_vote_percentage_bounded(self, vote_count, total_votes):

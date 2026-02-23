@@ -11,12 +11,10 @@ from unittest.mock import MagicMock
 import pytest
 
 from temper_ai.optimization import (
-    EvaluatorProtocol,
     OptimizationConfig,
     OptimizationEngine,
     OptimizationRegistry,
     OptimizationResult,
-    OptimizerProtocol,
     PipelineStepConfig,
 )
 from temper_ai.optimization._schemas import EvaluatorConfig
@@ -31,6 +29,10 @@ class TestDSPySubpackageImports:
             PromptOptimizationConfig,
             TrainingExample,
         )
+
+        assert CompilationResult is not None
+        assert PromptOptimizationConfig is not None
+        assert TrainingExample is not None
 
     def test_lazy_getattr(self):
         """Lazy __getattr__ on dspy subpackage works."""
@@ -86,13 +88,13 @@ class TestPipelineWithPromptStep:
 
     def test_engine_invokes_prompt_optimizer(self):
         """Engine correctly invokes PromptOptimizer via registry."""
-        from temper_ai.optimization.evaluators.criteria import CriteriaEvaluator
         from temper_ai.optimization.optimizers.prompt import PromptOptimizer
 
         # Register a mock evaluator
         mock_evaluator = MagicMock()
         mock_evaluator.evaluate.return_value = MagicMock(
-            passed=True, score=1.0,
+            passed=True,
+            score=1.0,
         )
 
         config = OptimizationConfig(
@@ -114,7 +116,8 @@ class TestPipelineWithPromptStep:
         registry.register_optimizer("prompt", lambda **kw: mock_optimizer)
 
         engine = OptimizationEngine(
-            config=config, registry=registry,
+            config=config,
+            registry=registry,
         )
         # Build evaluator manually since config has mock
         engine._evaluator_instances["quality"] = mock_evaluator

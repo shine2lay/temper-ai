@@ -1,4 +1,5 @@
 """Shared fixtures for agent tests."""
+
 import pytest
 
 from temper_ai.llm.providers.base import BaseLLM

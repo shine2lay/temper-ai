@@ -1,125 +1,56 @@
 # CLI Commands
 
-The `temper-ai` CLI is the primary interface for running, validating, and listing configurations.
+The `temper-ai` CLI exposes a single `serve` command that starts the HTTP API server and React dashboard.
 
-**Binary:** `~/.local/bin/temper-ai`
-**Source:** `temper_ai/cli/main.py`
-
-> Always use `temper-ai` instead of `python -m` to avoid RuntimeWarning.
+**Source:** `temper_ai/interfaces/cli/main.py`
 
 ## Commands
 
-### `temper-ai run` — Execute a Workflow
+### `temper-ai serve` — Start the Server
 
 ```bash
-temper-ai run <workflow> [options]
+temper-ai serve [options]
 ```
 
-**Arguments:**
-
-| Argument | Required | Description |
-|----------|----------|-------------|
-| `workflow` | Yes | Path to workflow YAML file |
+Starts the Temper AI HTTP API server. All workflow operations (run, validate, list) are done via the REST API.
 
 **Options:**
 
-| Flag | Short | Default | Description |
-|------|-------|---------|-------------|
-| `--input FILE` | | — | YAML file with input values |
-| `--show-details` | `-d` | off | Real-time agent progress + post-execution report |
-| `--dashboard [PORT]` | | — | Launch live web dashboard (default: 8420) |
-| `--output FILE` | `-o` | — | Save results to JSON file |
-| `--db PATH` | | `.meta-autonomous/observability.db` | Database path override |
-| `--config-root DIR` | | `configs` | Config directory root |
-| `--verbose` | `-v` | off | Enable DEBUG logging |
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--host` | `127.0.0.1` | Bind address |
+| `--port` | `8420` | Listen port |
+| `--config-root` | `configs` | Config directory root |
+| `--db` | — | Database URL override |
+| `--workers` | `4` | Max concurrent workflows |
+| `--reload` | off | Auto-reload on code changes |
+| `--dev` | off | Dev mode: disable auth, permissive CORS |
+| `--mcp` | off | Also start MCP stdio server |
 
 **Examples:**
 
 ```bash
-# Basic run
-temper-ai run configs/workflows/simple_research.yaml \
-  --input examples/research_input.yaml
+# Dev mode (dashboard + API, no auth)
+temper-ai serve --dev
 
-# With real-time details
-temper-ai run configs/workflows/quick_decision_demo.yaml \
-  --input examples/demo_input.yaml \
-  --show-details
+# Dev mode with MCP
+temper-ai serve --dev --mcp
 
-# Save output to file
-temper-ai run configs/workflows/simple_research.yaml \
-  --input examples/research_input.yaml \
-  --output results.json
-
-# With live dashboard
-temper-ai run configs/workflows/llm_debate_demo.yaml \
-  --input examples/debate_demo_input.yaml \
-  --dashboard
-
-# Dashboard on custom port
-temper-ai run configs/workflows/llm_debate_demo.yaml \
-  --input examples/debate_demo_input.yaml \
-  --dashboard 9000
-
-# Verbose logging
-temper-ai run configs/workflows/simple_research.yaml \
-  --input examples/research_input.yaml \
-  -v
+# Custom port
+temper-ai serve --dev --port 9000
 ```
 
 ---
 
-### `temper-ai validate` — Validate Config
+## Key API Endpoints
+
+Once the server is running, use the HTTP API:
 
 ```bash
-temper-ai validate <workflow> [--config-root DIR]
-```
-
-Validates a workflow config without running it. Checks:
-- Schema validation (Pydantic)
-- Stage reference file existence
-- Agent config file existence
-
-**Example:**
-
-```bash
-temper-ai validate configs/workflows/quick_decision_demo.yaml
-```
-
----
-
-### `temper-ai serve --dev` — Dev Mode
-
-```bash
-temper-ai serve --dev [--port PORT] [--db PATH]
-```
-
-Starts the server in dev mode: no auth, permissive CORS, all routes enabled.
-Replaces the former `temper-ai dashboard` command.
-
-**Example:**
-
-```bash
-temper-ai serve --dev --port 8420
-```
-
----
-
-### `temper-ai list` — List Available Configs
-
-```bash
-temper-ai list workflows [--config-root DIR]
-temper-ai list agents [--config-root DIR]
-temper-ai list stages [--config-root DIR]
-```
-
-Lists available configuration files.
-
-**Examples:**
-
-```bash
-temper-ai list workflows
-temper-ai list agents
-temper-ai list stages
+curl localhost:8420/api/health                    # liveness check
+curl -X POST localhost:8420/api/runs -d '{"workflow":"workflows/research.yaml"}'
+curl -X POST localhost:8420/api/validate -d '{"workflow":"workflows/research.yaml"}'
+curl localhost:8420/api/workflows/available        # list workflow configs
 ```
 
 ---
@@ -134,4 +65,4 @@ temper-ai list stages
 | `configs/workflows/technical_problem_solving.yaml` | `examples/technical_problem_demo_input.yaml` | 4-phase problem solving |
 | `configs/workflows/collaborative_dialogue_demo.yaml` | `examples/dialogue_demo_input.yaml` | Multi-round collaborative dialogue |
 | `configs/workflows/multi_agent_research.yaml` | `examples/market_research_input.yaml` | Parallel multi-agent research |
-| `configs/workflows/erc721_generator.yaml` | — | Solidity contract generation |
+| `configs/workflows/vcs_suggestion.yaml` | `examples/vcs_suggestion_input.yaml` | Vision-driven code generation pipeline |

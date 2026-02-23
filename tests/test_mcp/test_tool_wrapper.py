@@ -1,15 +1,14 @@
 """Tests for MCPToolWrapper — sync bridge, annotation mapping, result conversion."""
+
 import concurrent.futures
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from temper_ai.tools.base import ToolResult
-
 
 # ---------------------------------------------------------------------------
 # Helpers — build fake MCP objects without the mcp SDK installed
 # ---------------------------------------------------------------------------
+
 
 def _make_tool_info(
     name="create_pr",
@@ -90,6 +89,7 @@ def _make_wrapper(
 # Metadata / annotation tests
 # ---------------------------------------------------------------------------
 
+
 class TestAnnotationMapping:
     def test_read_only_hint_sets_modifies_state_false(self):
         annotations = MagicMock()
@@ -151,6 +151,7 @@ class TestNamespaceAndSchema:
 # Execute / result conversion tests  (sync bridge fully mocked)
 # ---------------------------------------------------------------------------
 
+
 class TestExecuteResultConversion:
     """Test _convert_result() directly to avoid asyncio complexity."""
 
@@ -211,7 +212,10 @@ class TestTimeoutHandling:
             event_loop=loop,
         )
 
-        with patch("concurrent.futures.Future.result", side_effect=concurrent.futures.TimeoutError):
+        with patch(
+            "concurrent.futures.Future.result",
+            side_effect=concurrent.futures.TimeoutError,
+        ):
             result = wrapper.execute()
 
         assert result.success is False
@@ -236,7 +240,12 @@ class TestSafeExecuteContract:
 
         # Patch validate_params to skip schema validation (no required fields)
         from temper_ai.tools.base import ParameterValidationResult
-        with patch.object(wrapper, "validate_params", return_value=ParameterValidationResult(valid=True)):
+
+        with patch.object(
+            wrapper,
+            "validate_params",
+            return_value=ParameterValidationResult(valid=True),
+        ):
             with patch.object(wrapper, "execute", side_effect=RuntimeError("boom")):
                 result = wrapper.safe_execute()
 

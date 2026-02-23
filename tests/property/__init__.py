@@ -1,1 +1,1 @@
-"""Property-based tests for the meta-autonomous-framework."""
+"""Property-based tests for Temper AI."""

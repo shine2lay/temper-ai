@@ -8,9 +8,11 @@ import pytest
 from temper_ai.optimization.dspy._schemas import PromptOptimizationConfig
 from temper_ai.optimization.dspy.program_builder import (
     DSPyProgramBuilder,
-    INTERNAL_TEMPLATE_VARS,
-    TEMPLATE_VAR_PATTERN,
 )
+
+
+class _MockSignature:
+    """Stub base class for dspy.Signature so type() subclassing works."""
 
 
 @pytest.fixture
@@ -19,6 +21,8 @@ def mock_dspy():
     dspy = MagicMock()
     dspy.Predict.return_value = MagicMock(name="PredictModule")
     dspy.ChainOfThought.return_value = MagicMock(name="CoTModule")
+    # Provide a real class so _build_class_signature can subclass it
+    dspy.Signature = _MockSignature
     with patch.dict(sys.modules, {"dspy": dspy}):
         yield dspy
 
@@ -89,6 +93,76 @@ class TestDSPyProgramBuilder:
 
     def test_build_signature_format(self):
         sig = DSPyProgramBuilder._build_signature(
-            MagicMock(), ["topic", "context"], ["analysis"],
+            MagicMock(),
+            ["topic", "context"],
+            ["analysis"],
         )
         assert sig == "topic, context -> analysis"
+
+    def test_module_type_react_dispatches_to_registry(self, mock_dspy):
+        config = PromptOptimizationConfig(
+            module_type="react",
+            input_fields=["query"],
+            output_fields=["answer"],
+            module_params={"tools": [MagicMock()]},
+        )
+        builder = DSPyProgramBuilder()
+        with patch("temper_ai.optimization.dspy._helpers.ensure_dspy_available"):
+            result = builder.build_from_config(config)
+        # ReAct requires class-based signature, so should auto-upgrade
+        mock_dspy.ReAct.assert_called_once()
+
+    def test_module_type_program_of_thought_dispatches(self, mock_dspy):
+        config = PromptOptimizationConfig(
+            module_type="program_of_thought",
+            input_fields=["input"],
+            output_fields=["output"],
+            module_params={"max_iters": 5},
+        )
+        builder = DSPyProgramBuilder()
+        with patch("temper_ai.optimization.dspy._helpers.ensure_dspy_available"):
+            result = builder.build_from_config(config)
+        mock_dspy.ProgramOfThought.assert_called_once()
+
+    def test_module_type_best_of_n_wraps_base(self, mock_dspy):
+        config = PromptOptimizationConfig(
+            module_type="best_of_n",
+            input_fields=["input"],
+            output_fields=["output"],
+            module_params={"N": 3, "threshold": 0.8},
+        )
+        builder = DSPyProgramBuilder()
+        with patch("temper_ai.optimization.dspy._helpers.ensure_dspy_available"):
+            result = builder.build_from_config(config)
+        mock_dspy.Predict.assert_called_once()  # default base module
+        mock_dspy.BestOfN.assert_called_once()
+
+    def test_signature_style_class_creates_signature_subclass(self, mock_dspy):
+        config = PromptOptimizationConfig(
+            signature_style="class",
+            input_fields=["topic"],
+            output_fields=["analysis"],
+            field_descriptions={
+                "topic": "The research topic",
+                "analysis": "Detailed analysis output",
+            },
+        )
+        builder = DSPyProgramBuilder()
+        with patch("temper_ai.optimization.dspy._helpers.ensure_dspy_available"):
+            result = builder.build_from_config(config)
+        # Should use class-based signature (calls InputField/OutputField)
+        mock_dspy.InputField.assert_called_once()
+        mock_dspy.OutputField.assert_called_once()
+
+    def test_build_class_signature_creates_subclass(self):
+        mock_dspy_mod = MagicMock()
+        mock_dspy_mod.Signature = _MockSignature
+        sig_cls = DSPyProgramBuilder._build_class_signature(
+            mock_dspy_mod,
+            ["topic"],
+            ["answer"],
+            {"topic": "The topic", "answer": "The answer"},
+        )
+        assert issubclass(sig_cls, _MockSignature)
+        mock_dspy_mod.InputField.assert_called_with(desc="The topic")
+        mock_dspy_mod.OutputField.assert_called_with(desc="The answer")

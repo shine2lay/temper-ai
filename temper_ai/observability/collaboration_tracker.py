@@ -3,16 +3,18 @@
 Extracted from ExecutionTracker to separate collaboration/safety
 concerns from core execution tracking.
 """
-import logging
-from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Literal, Optional
 
-from temper_ai.storage.database.datetime_utils import utcnow
+import logging
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Any, Literal
+
 from temper_ai.observability.backend import (
     CollaborationEventData,
     ObservabilityBackend,
     SafetyViolationData,
 )
+from temper_ai.storage.database.datetime_utils import utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -20,15 +22,16 @@ logger = logging.getLogger(__name__)
 @dataclass
 class CollaborationEventParams:
     """Parameters for tracking collaboration events."""
+
     event_type: str
-    stage_id: Optional[str] = None
-    agents_involved: Optional[List[str]] = None
-    event_data: Optional[Dict[str, Any]] = None
-    round_number: Optional[int] = None
-    resolution_strategy: Optional[str] = None
-    outcome: Optional[str] = None
-    confidence_score: Optional[float] = None
-    extra_metadata: Optional[Dict[str, Any]] = None
+    stage_id: str | None = None
+    agents_involved: list[str] | None = None
+    event_data: dict[str, Any] | None = None
+    round_number: int | None = None
+    resolution_strategy: str | None = None
+    outcome: str | None = None
+    confidence_score: float | None = None
+    extra_metadata: dict[str, Any] | None = None
 
 
 class CollaborationEventTracker:
@@ -46,7 +49,7 @@ class CollaborationEventTracker:
     def __init__(
         self,
         backend: ObservabilityBackend,
-        sanitize_fn: Callable[[Optional[Dict[str, Any]]], Optional[Dict[str, Any]]],
+        sanitize_fn: Callable[[dict[str, Any] | None], dict[str, Any] | None],
         get_context: Callable,
     ):
         self.backend = backend
@@ -55,7 +58,7 @@ class CollaborationEventTracker:
 
     def track_collaboration_event(
         self,
-        params: Optional[CollaborationEventParams] = None,
+        params: CollaborationEventParams | None = None,
         **kwargs: Any,
     ) -> str:
         """Track collaboration event for multi-agent interactions."""
@@ -104,7 +107,9 @@ class CollaborationEventTracker:
             params.agents_involved = []
 
         # Validate confidence_score range
-        if params.confidence_score is not None and not (0.0 <= params.confidence_score <= 1.0):
+        if params.confidence_score is not None and not (
+            0.0 <= params.confidence_score <= 1.0
+        ):
             logger.warning(
                 f"Invalid confidence_score {params.confidence_score}, clamping to [0.0, 1.0]",
                 extra={"event_type": params.event_type, "stage_id": params.stage_id},
@@ -146,8 +151,8 @@ class CollaborationEventTracker:
         violation_severity: Literal["INFO", "LOW", "MEDIUM", "HIGH", "CRITICAL"],
         violation_message: str,
         policy_name: str,
-        service_name: Optional[str] = None,
-        context: Optional[Dict[str, Any]] = None,
+        service_name: str | None = None,
+        context: dict[str, Any] | None = None,
     ) -> None:
         """Track safety violation for observability and metrics.
 

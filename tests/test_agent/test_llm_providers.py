@@ -3,8 +3,8 @@ Unit tests for LLM provider clients.
 
 Tests Ollama, OpenAI, Anthropic, and vLLM providers with mocked HTTP responses.
 """
+
 import time
-from typing import Optional
 from unittest.mock import MagicMock, Mock, patch
 
 import httpx
@@ -19,27 +19,27 @@ from temper_ai.llm.providers import (
     VllmLLM,
     create_llm_client,
 )
-from temper_ai.shared.utils.exceptions import (
-    LLMAuthenticationError,
-    LLMError,
-    LLMRateLimitError,
-    LLMTimeoutError,
-)
 from temper_ai.shared.core.circuit_breaker import (
     CircuitBreaker,
     CircuitBreakerConfig,
     CircuitBreakerError,
     CircuitState,
 )
+from temper_ai.shared.utils.exceptions import (
+    LLMAuthenticationError,
+    LLMError,
+    LLMRateLimitError,
+    LLMTimeoutError,
+)
 
 
 class InMemoryStorage:
-    """In-memory storage backend for testing (mimics Redis)."""
+    """In-memory storage backend for testing."""
 
     def __init__(self):
         self._store = {}
 
-    def get(self, key: str) -> Optional[str]:
+    def get(self, key: str) -> str | None:
         """Retrieve value by key."""
         return self._store.get(key)
 
@@ -61,9 +61,10 @@ def mock_httpx_client():
     """Create a mock httpx.Client for testing."""
     # M-49: Clear shared HTTP client pool before each test for isolation
     from temper_ai.llm.providers.base import BaseLLM
+
     BaseLLM.reset_shared_http_clients()
 
-    with patch('temper_ai.llm.providers.base.httpx.Client') as mock_client_class:
+    with patch("temper_ai.llm.providers.base.httpx.Client") as mock_client_class:
         mock_client = MagicMock()
         mock_client_class.return_value = mock_client
         yield mock_client
@@ -244,14 +245,14 @@ class TestOpenAILLM:
             "choices": [
                 {
                     "message": {"content": "Hello! How can I help?"},
-                    "finish_reason": "stop"
+                    "finish_reason": "stop",
                 }
             ],
             "usage": {
                 "prompt_tokens": 12,
                 "completion_tokens": 8,
                 "total_tokens": 20,
-            }
+            },
         }
 
         result = llm._parse_response(mock_response, latency_ms=500)
@@ -315,7 +316,9 @@ class TestAnthropicLLM:
         request = llm._build_request("Explain quantum physics")
 
         assert request["model"] == "claude-3-opus-20240229"
-        assert request["messages"] == [{"role": "user", "content": "Explain quantum physics"}]
+        assert request["messages"] == [
+            {"role": "user", "content": "Explain quantum physics"}
+        ]
         assert request["temperature"] == 0.8
         assert request["max_tokens"] == 4096
 
@@ -336,7 +339,7 @@ class TestAnthropicLLM:
             "usage": {
                 "input_tokens": 10,
                 "output_tokens": 50,
-            }
+            },
         }
 
         result = llm._parse_response(mock_response, latency_ms=800)
@@ -456,14 +459,14 @@ class TestVllmLLM:
             "choices": [
                 {
                     "message": {"content": "Generated text from vLLM"},
-                    "finish_reason": "stop"
+                    "finish_reason": "stop",
                 }
             ],
             "usage": {
                 "prompt_tokens": 25,
                 "completion_tokens": 75,
                 "total_tokens": 100,
-            }
+            },
         }
 
         result = llm._parse_response(mock_response, latency_ms=300)
@@ -497,7 +500,7 @@ class TestVllmLLM:
                             }
                         ],
                     },
-                    "finish_reason": "tool_calls"
+                    "finish_reason": "tool_calls",
                 }
             ],
             "usage": {"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30},
@@ -515,7 +518,9 @@ class TestVllmSSEParsing:
 
     def test_parse_sse_data_line(self):
         """Test parsing a valid SSE data line."""
-        data = VllmLLM._parse_sse_line('data: {"choices": [{"delta": {"content": "hello"}}]}')
+        data = VllmLLM._parse_sse_line(
+            'data: {"choices": [{"delta": {"content": "hello"}}]}'
+        )
         assert data is not None
         assert data["choices"][0]["delta"]["content"] == "hello"
 
@@ -544,9 +549,7 @@ class TestVllmChunkExtraction:
 
     def test_extract_content_token(self):
         """Test extracting a content token."""
-        data = {
-            "choices": [{"delta": {"content": "hello"}, "finish_reason": None}]
-        }
+        data = {"choices": [{"delta": {"content": "hello"}, "finish_reason": None}]}
         content, chunk_type, done = VllmLLM._extract_chunk_fields(data)
         assert content == "hello"
         assert chunk_type == "content"
@@ -555,7 +558,12 @@ class TestVllmChunkExtraction:
     def test_extract_reasoning_token(self):
         """Test extracting a reasoning/thinking token."""
         data = {
-            "choices": [{"delta": {"reasoning_content": "Let me think..."}, "finish_reason": None}]
+            "choices": [
+                {
+                    "delta": {"reasoning_content": "Let me think..."},
+                    "finish_reason": None,
+                }
+            ]
         }
         content, chunk_type, done = VllmLLM._extract_chunk_fields(data)
         assert content == "Let me think..."
@@ -564,9 +572,7 @@ class TestVllmChunkExtraction:
 
     def test_extract_done_signal(self):
         """Test extracting done signal from finish_reason."""
-        data = {
-            "choices": [{"delta": {"content": ""}, "finish_reason": "stop"}]
-        }
+        data = {"choices": [{"delta": {"content": ""}, "finish_reason": "stop"}]}
         content, chunk_type, done = VllmLLM._extract_chunk_fields(data)
         assert done is True
 
@@ -581,10 +587,12 @@ class TestVllmChunkExtraction:
     def test_extract_reasoning_over_content(self):
         """Test reasoning_content takes precedence over content."""
         data = {
-            "choices": [{
-                "delta": {"reasoning_content": "thinking", "content": "speaking"},
-                "finish_reason": None,
-            }]
+            "choices": [
+                {
+                    "delta": {"reasoning_content": "thinking", "content": "speaking"},
+                    "finish_reason": None,
+                }
+            ]
         }
         content, chunk_type, done = VllmLLM._extract_chunk_fields(data)
         assert content == "thinking"
@@ -686,7 +694,7 @@ class TestErrorHandling:
             success_response,
         ]
 
-        with patch('time.sleep'):  # Speed up test
+        with patch("time.sleep"):  # Speed up test
             result = llm.complete("Test prompt")
 
         assert result.content == "Success after retry"
@@ -723,7 +731,9 @@ class TestErrorResponseSanitization:
         )
         mock_response = Mock()
         mock_response.status_code = 500
-        mock_response.text = "Error: Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.payload.signature"
+        mock_response.text = (
+            "Error: Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.payload.signature"
+        )
         mock_httpx_client.post.return_value = mock_response
 
         with pytest.raises(LLMError) as exc_info:
@@ -963,7 +973,7 @@ class TestCircuitBreaker:
         # Open the circuit manually
         breaker = llm._circuit_breaker
         breaker.state = CircuitState.OPEN
-        breaker.last_failure_time = time.time() - 61  # Past timeout
+        breaker._last_failure_time = time.time() - 61  # Past timeout
 
         # Mock successful response
         mock_response = Mock()
@@ -1129,7 +1139,7 @@ class TestCircuitBreaker:
 
         # Open circuit
         llm._circuit_breaker.state = CircuitState.OPEN
-        llm._circuit_breaker.last_failure_time = time.time()
+        llm._circuit_breaker._last_failure_time = time.time()
 
         # Try to make call
         start = time.time()
@@ -1152,7 +1162,7 @@ class TestCircuitBreaker:
 
         # Open circuit with known failure time
         llm._circuit_breaker.state = CircuitState.OPEN
-        llm._circuit_breaker.last_failure_time = time.time()
+        llm._circuit_breaker._last_failure_time = time.time()
 
         # Error should include retry time
         with pytest.raises(CircuitBreakerError) as exc_info:
@@ -1256,7 +1266,7 @@ class TestCircuitBreaker:
 
 class TestTokenLimitEnforcement:
     """Test token limit enforcement for all LLM providers.
-    
+
     These tests ensure that providers validate token limits before making
     API calls, provide accurate token counting, and give helpful error messages.
     """
@@ -1414,7 +1424,7 @@ class TestTokenLimitEnforcement:
 
     def test_max_tokens_extremely_large_accepted(self):
         """Test that very large max_tokens is accepted.
-        
+
         Note: Actual API may reject if it exceeds model's context window,
         but the client should accept large values.
         """
@@ -1534,11 +1544,11 @@ class TestTokenLimitEnforcement:
     def test_max_tokens_boundary_conditions(self):
         """Test boundary conditions for max_tokens."""
         boundary_values = [
-            1,      # Minimum possible
-            2048,   # Common default
-            4096,   # Common limit
-            8192,   # GPT-4 limit
-            100000, # Large value
+            1,  # Minimum possible
+            2048,  # Common default
+            4096,  # Common limit
+            8192,  # GPT-4 limit
+            100000,  # Large value
         ]
 
         for value in boundary_values:
@@ -1559,7 +1569,12 @@ class TestTokenLimitEnforcement:
         - Using different encoding
         """
         # Error message should be educational
-        suggestions = ["Truncating", "Smaller model", "Split requests", "Different encoding"]
+        suggestions = [
+            "Truncating",
+            "Smaller model",
+            "Split requests",
+            "Different encoding",
+        ]
         assert len(suggestions) == 4  # Verify documented suggestions
 
     def test_token_cost_estimation(self):
@@ -1587,6 +1602,7 @@ class TestTokenLimitEnforcement:
 # Failover Provider Tests
 # ============================================================================
 
+
 class TestFailoverProvider:
     """Test LLM provider failover mechanism."""
 
@@ -1595,7 +1611,9 @@ class TestFailoverProvider:
         from temper_ai.llm.failover import FailoverProvider
 
         primary = OllamaLLM(model="llama3.2", base_url="http://localhost:11434")
-        backup = OpenAILLM(model="gpt-4", base_url="https://api.openai.com", api_key="test")
+        backup = OpenAILLM(
+            model="gpt-4", base_url="https://api.openai.com", api_key="test"
+        )
 
         failover = FailoverProvider(providers=[primary, backup])
 
@@ -1615,17 +1633,21 @@ class TestFailoverProvider:
         from temper_ai.llm.failover import FailoverProvider
 
         primary = OllamaLLM(model="llama3.2", base_url="http://localhost:11434")
-        backup = OpenAILLM(model="gpt-4", base_url="https://api.openai.com", api_key="test")
+        backup = OpenAILLM(
+            model="gpt-4", base_url="https://api.openai.com", api_key="test"
+        )
 
         failover = FailoverProvider(providers=[primary, backup])
 
         # Mock primary failure, backup success
-        with patch.object(primary, 'complete', side_effect=httpx.ConnectError("Down")):
-            with patch.object(backup, 'complete', return_value=LLMResponse(
-                content="Success",
-                model="gpt-4",
-                provider="openai"
-            )):
+        with patch.object(primary, "complete", side_effect=httpx.ConnectError("Down")):
+            with patch.object(
+                backup,
+                "complete",
+                return_value=LLMResponse(
+                    content="Success", model="gpt-4", provider="openai"
+                ),
+            ):
                 result = failover.complete("test")
 
         assert result.content == "Success"
@@ -1636,17 +1658,23 @@ class TestFailoverProvider:
         from temper_ai.llm.failover import FailoverProvider
 
         primary = OllamaLLM(model="llama3.2", base_url="http://localhost:11434")
-        backup = OpenAILLM(model="gpt-4", base_url="https://api.openai.com", api_key="test")
+        backup = OpenAILLM(
+            model="gpt-4", base_url="https://api.openai.com", api_key="test"
+        )
 
         failover = FailoverProvider(providers=[primary, backup])
 
         # Mock primary timeout, backup success
-        with patch.object(primary, 'complete', side_effect=httpx.TimeoutException("Timeout")):
-            with patch.object(backup, 'complete', return_value=LLMResponse(
-                content="Success",
-                model="gpt-4",
-                provider="openai"
-            )):
+        with patch.object(
+            primary, "complete", side_effect=httpx.TimeoutException("Timeout")
+        ):
+            with patch.object(
+                backup,
+                "complete",
+                return_value=LLMResponse(
+                    content="Success", model="gpt-4", provider="openai"
+                ),
+            ):
                 result = failover.complete("test")
 
         assert result.content == "Success"
@@ -1657,17 +1685,23 @@ class TestFailoverProvider:
         from temper_ai.llm.failover import FailoverProvider
 
         primary = OllamaLLM(model="llama3.2", base_url="http://localhost:11434")
-        backup = OpenAILLM(model="gpt-4", base_url="https://api.openai.com", api_key="test")
+        backup = OpenAILLM(
+            model="gpt-4", base_url="https://api.openai.com", api_key="test"
+        )
 
         failover = FailoverProvider(providers=[primary, backup])
 
         # Mock primary rate limit, backup success
-        with patch.object(primary, 'complete', side_effect=LLMRateLimitError("Rate limited")):
-            with patch.object(backup, 'complete', return_value=LLMResponse(
-                content="Success",
-                model="gpt-4",
-                provider="openai"
-            )):
+        with patch.object(
+            primary, "complete", side_effect=LLMRateLimitError("Rate limited")
+        ):
+            with patch.object(
+                backup,
+                "complete",
+                return_value=LLMResponse(
+                    content="Success", model="gpt-4", provider="openai"
+                ),
+            ):
                 result = failover.complete("test")
 
         assert result.content == "Success"
@@ -1678,7 +1712,9 @@ class TestFailoverProvider:
         from temper_ai.llm.failover import FailoverProvider
 
         primary = OllamaLLM(model="llama3.2", base_url="http://localhost:11434")
-        backup = OpenAILLM(model="gpt-4", base_url="https://api.openai.com", api_key="test")
+        backup = OpenAILLM(
+            model="gpt-4", base_url="https://api.openai.com", api_key="test"
+        )
 
         failover = FailoverProvider(providers=[primary, backup])
 
@@ -1687,12 +1723,14 @@ class TestFailoverProvider:
         response.status_code = 500
         error = httpx.HTTPStatusError("Server error", request=Mock(), response=response)
 
-        with patch.object(primary, 'complete', side_effect=error):
-            with patch.object(backup, 'complete', return_value=LLMResponse(
-                content="Success",
-                model="gpt-4",
-                provider="openai"
-            )):
+        with patch.object(primary, "complete", side_effect=error):
+            with patch.object(
+                backup,
+                "complete",
+                return_value=LLMResponse(
+                    content="Success", model="gpt-4", provider="openai"
+                ),
+            ):
                 result = failover.complete("test")
 
         assert result.content == "Success"
@@ -1703,7 +1741,9 @@ class TestFailoverProvider:
         from temper_ai.llm.failover import FailoverProvider
 
         primary = OllamaLLM(model="llama3.2", base_url="http://localhost:11434")
-        backup = OpenAILLM(model="gpt-4", base_url="https://api.openai.com", api_key="test")
+        backup = OpenAILLM(
+            model="gpt-4", base_url="https://api.openai.com", api_key="test"
+        )
 
         failover = FailoverProvider(providers=[primary, backup])
 
@@ -1712,12 +1752,14 @@ class TestFailoverProvider:
         response.status_code = 400
         error = httpx.HTTPStatusError("Bad request", request=Mock(), response=response)
 
-        with patch.object(primary, 'complete', side_effect=error):
-            with patch.object(backup, 'complete', return_value=LLMResponse(
-                content="OK",
-                model="gpt-4",
-                provider="openai"
-            )) as backup_mock:
+        with patch.object(primary, "complete", side_effect=error):
+            with patch.object(
+                backup,
+                "complete",
+                return_value=LLMResponse(
+                    content="OK", model="gpt-4", provider="openai"
+                ),
+            ) as backup_mock:
                 # Should raise without trying backup
                 with pytest.raises(httpx.HTTPStatusError):
                     failover.complete("test")
@@ -1732,15 +1774,23 @@ class TestFailoverProvider:
         providers = [
             OllamaLLM(model="llama", base_url="http://localhost:11434"),
             OpenAILLM(model="gpt-4", base_url="https://api.openai.com", api_key="test"),
-            AnthropicLLM(model="claude-3", base_url="https://api.anthropic.com", api_key="test"),
+            AnthropicLLM(
+                model="claude-3", base_url="https://api.anthropic.com", api_key="test"
+            ),
         ]
 
         failover = FailoverProvider(providers=providers)
 
         # Mock all failures
-        with patch.object(providers[0], 'complete', side_effect=httpx.ConnectError("Down")) as mock0:
-            with patch.object(providers[1], 'complete', side_effect=httpx.ConnectError("Down")) as mock1:
-                with patch.object(providers[2], 'complete', side_effect=httpx.ConnectError("Down")) as mock2:
+        with patch.object(
+            providers[0], "complete", side_effect=httpx.ConnectError("Down")
+        ) as mock0:
+            with patch.object(
+                providers[1], "complete", side_effect=httpx.ConnectError("Down")
+            ) as mock1:
+                with patch.object(
+                    providers[2], "complete", side_effect=httpx.ConnectError("Down")
+                ) as mock2:
                     # Should fail after trying all 3
                     with pytest.raises(LLMError, match="All 3 providers failed"):
                         failover.complete("test")
@@ -1755,36 +1805,42 @@ class TestFailoverProvider:
         from temper_ai.llm.failover import FailoverConfig, FailoverProvider
 
         primary = OllamaLLM(model="primary", base_url="http://localhost:11434")
-        backup = OpenAILLM(model="backup", base_url="https://api.openai.com", api_key="test")
+        backup = OpenAILLM(
+            model="backup", base_url="https://api.openai.com", api_key="test"
+        )
 
         failover = FailoverProvider(
             providers=[primary, backup],
-            config=FailoverConfig(sticky_session=True, retry_primary_after=10)
+            config=FailoverConfig(sticky_session=True, retry_primary_after=10),
         )
 
         # First call succeeds with backup
-        with patch.object(primary, 'complete', side_effect=httpx.ConnectError("Down")):
-            with patch.object(backup, 'complete', return_value=LLMResponse(
-                content="OK",
-                model="backup",
-                provider="openai"
-            )):
+        with patch.object(primary, "complete", side_effect=httpx.ConnectError("Down")):
+            with patch.object(
+                backup,
+                "complete",
+                return_value=LLMResponse(
+                    content="OK", model="backup", provider="openai"
+                ),
+            ):
                 failover.complete("test")
 
         assert failover.last_successful_index == 1
         assert failover.backup_success_count == 1
 
         # Second call should try backup FIRST (sticky)
-        with patch.object(primary, 'complete', return_value=LLMResponse(
-                content="OK",
-                model="primary",
-                provider="ollama"
-            )) as primary_mock:
-            with patch.object(backup, 'complete', return_value=LLMResponse(
-                content="OK",
-                model="backup",
-                provider="openai"
-            )) as backup_mock:
+        with patch.object(
+            primary,
+            "complete",
+            return_value=LLMResponse(content="OK", model="primary", provider="ollama"),
+        ) as primary_mock:
+            with patch.object(
+                backup,
+                "complete",
+                return_value=LLMResponse(
+                    content="OK", model="backup", provider="openai"
+                ),
+            ) as backup_mock:
                 failover.complete("test")
 
                 # Backup should be called first, primary should not
@@ -1796,19 +1852,21 @@ class TestFailoverProvider:
         from temper_ai.llm.failover import FailoverConfig, FailoverProvider
 
         primary = OllamaLLM(model="primary", base_url="http://localhost:11434")
-        backup = OpenAILLM(model="backup", base_url="https://api.openai.com", api_key="test")
+        backup = OpenAILLM(
+            model="backup", base_url="https://api.openai.com", api_key="test"
+        )
 
         failover = FailoverProvider(
             providers=[primary, backup],
-            config=FailoverConfig(sticky_session=True, retry_primary_after=3)
+            config=FailoverConfig(sticky_session=True, retry_primary_after=3),
         )
 
         # Simulate 3 successful backup calls
-        with patch.object(backup, 'complete', return_value=LLMResponse(
-            content="OK",
-            model="backup",
-            provider="openai"
-        )):
+        with patch.object(
+            backup,
+            "complete",
+            return_value=LLMResponse(content="OK", model="backup", provider="openai"),
+        ):
             for i in range(3):
                 failover.last_successful_index = 1  # Force backup
                 failover.complete("test")
@@ -1816,11 +1874,11 @@ class TestFailoverProvider:
         assert failover.backup_success_count == 3
 
         # Fourth call should retry primary first
-        with patch.object(primary, 'complete', return_value=LLMResponse(
-            content="OK",
-            model="primary",
-            provider="ollama"
-        )) as primary_mock:
+        with patch.object(
+            primary,
+            "complete",
+            return_value=LLMResponse(content="OK", model="primary", provider="ollama"),
+        ) as primary_mock:
             failover.complete("test")
 
             # Primary should be called
@@ -1834,7 +1892,9 @@ class TestFailoverProvider:
         from temper_ai.llm.failover import FailoverProvider
 
         primary = OllamaLLM(model="llama3.2", base_url="http://localhost:11434")
-        backup = OpenAILLM(model="gpt-4", base_url="https://api.openai.com", api_key="test")
+        backup = OpenAILLM(
+            model="gpt-4", base_url="https://api.openai.com", api_key="test"
+        )
 
         failover = FailoverProvider(providers=[primary, backup])
 
@@ -1843,14 +1903,10 @@ class TestFailoverProvider:
             raise httpx.ConnectError("Down")
 
         async def async_success(*args, **kwargs):
-            return LLMResponse(
-                content="Success",
-                model="gpt-4",
-                provider="openai"
-            )
+            return LLMResponse(content="Success", model="gpt-4", provider="openai")
 
-        with patch.object(primary, 'acomplete', side_effect=async_error):
-            with patch.object(backup, 'acomplete', side_effect=async_success):
+        with patch.object(primary, "acomplete", side_effect=async_error):
+            with patch.object(backup, "acomplete", side_effect=async_success):
                 result = await failover.acomplete("test")
 
         assert result.content == "Success"
@@ -1861,7 +1917,9 @@ class TestFailoverProvider:
         from temper_ai.llm.failover import FailoverProvider
 
         primary = OllamaLLM(model="primary", base_url="http://localhost:11434")
-        backup = OpenAILLM(model="backup", base_url="https://api.openai.com", api_key="test")
+        backup = OpenAILLM(
+            model="backup", base_url="https://api.openai.com", api_key="test"
+        )
 
         failover = FailoverProvider(providers=[primary, backup])
 
@@ -1880,7 +1938,9 @@ class TestFailoverProvider:
         from temper_ai.llm.failover import FailoverProvider
 
         primary = OllamaLLM(model="llama3.2", base_url="http://localhost:11434")
-        backup = OpenAILLM(model="gpt-4", base_url="https://api.openai.com", api_key="test")
+        backup = OpenAILLM(
+            model="gpt-4", base_url="https://api.openai.com", api_key="test"
+        )
 
         failover = FailoverProvider(providers=[primary, backup])
 
@@ -1896,17 +1956,23 @@ class TestFailoverProvider:
         from temper_ai.llm.failover import FailoverProvider
 
         primary = OllamaLLM(model="llama3.2", base_url="http://localhost:11434")
-        backup = OpenAILLM(model="gpt-4", base_url="https://api.openai.com", api_key="test")
+        backup = OpenAILLM(
+            model="gpt-4", base_url="https://api.openai.com", api_key="test"
+        )
 
         failover = FailoverProvider(providers=[primary, backup])
 
         # Mock authentication error
-        with patch.object(primary, 'complete', side_effect=LLMAuthenticationError("Invalid API key")):
-            with patch.object(backup, 'complete', return_value=LLMResponse(
-                content="OK",
-                model="gpt-4",
-                provider="openai"
-            )) as backup_mock:
+        with patch.object(
+            primary, "complete", side_effect=LLMAuthenticationError("Invalid API key")
+        ):
+            with patch.object(
+                backup,
+                "complete",
+                return_value=LLMResponse(
+                    content="OK", model="gpt-4", provider="openai"
+                ),
+            ) as backup_mock:
                 # Should raise without trying backup
                 with pytest.raises(LLMAuthenticationError):
                     failover.complete("test")
@@ -1919,19 +1985,25 @@ class TestFailoverProvider:
         from temper_ai.llm.failover import FailoverConfig, FailoverProvider
 
         primary = OllamaLLM(model="primary", base_url="http://localhost:11434")
-        backup = OpenAILLM(model="backup", base_url="https://api.openai.com", api_key="test")
+        backup = OpenAILLM(
+            model="backup", base_url="https://api.openai.com", api_key="test"
+        )
 
         # Disable timeout failover
         config = FailoverConfig(failover_on_timeout=False)
         failover = FailoverProvider(providers=[primary, backup], config=config)
 
         # Mock timeout - should NOT failover
-        with patch.object(primary, 'complete', side_effect=httpx.TimeoutException("Timeout")):
-            with patch.object(backup, 'complete', return_value=LLMResponse(
-                content="OK",
-                model="backup",
-                provider="openai"
-            )) as backup_mock:
+        with patch.object(
+            primary, "complete", side_effect=httpx.TimeoutException("Timeout")
+        ):
+            with patch.object(
+                backup,
+                "complete",
+                return_value=LLMResponse(
+                    content="OK", model="backup", provider="openai"
+                ),
+            ) as backup_mock:
                 # Should raise without trying backup
                 with pytest.raises(httpx.TimeoutException):
                     failover.complete("test")
@@ -1953,12 +2025,14 @@ class TestCircuitBreakerPersistence:
     def test_state_persists_across_restart(self, storage):
         """Test that circuit breaker state persists when instance is recreated."""
         # Create breaker and open circuit
-        breaker1 = CircuitBreaker('llm-provider', storage=storage)
+        breaker1 = CircuitBreaker("llm-provider", storage=storage)
 
         # Simulate failures to open circuit
         for _ in range(5):
             try:
-                breaker1.call(lambda: (_ for _ in ()).throw(httpx.TimeoutException("Timeout")))
+                breaker1.call(
+                    lambda: (_ for _ in ()).throw(httpx.TimeoutException("Timeout"))
+                )
             except httpx.TimeoutException:
                 pass
 
@@ -1966,19 +2040,21 @@ class TestCircuitBreakerPersistence:
         del breaker1
 
         # Simulate process restart - create new breaker with same name
-        breaker2 = CircuitBreaker('llm-provider', storage=storage)
+        breaker2 = CircuitBreaker("llm-provider", storage=storage)
 
         # State should be restored from storage
         assert breaker2.state == CircuitState.OPEN
 
     def test_failure_count_persists(self, storage):
         """Test that failure count persists across instances."""
-        breaker1 = CircuitBreaker('test-provider', storage=storage)
+        breaker1 = CircuitBreaker("test-provider", storage=storage)
 
         # Record 3 failures (threshold is 5)
         for _ in range(3):
             try:
-                breaker1.call(lambda: (_ for _ in ()).throw(httpx.TimeoutException("Timeout")))
+                breaker1.call(
+                    lambda: (_ for _ in ()).throw(httpx.TimeoutException("Timeout"))
+                )
             except httpx.TimeoutException:
                 pass
 
@@ -1987,7 +2063,7 @@ class TestCircuitBreakerPersistence:
         del breaker1
 
         # Recreate breaker
-        breaker2 = CircuitBreaker('test-provider', storage=storage)
+        breaker2 = CircuitBreaker("test-provider", storage=storage)
 
         # Failure count should persist
         assert breaker2.failure_count == 3
@@ -1996,11 +2072,13 @@ class TestCircuitBreakerPersistence:
     def test_half_open_state_persists(self, storage):
         """Test that HALF_OPEN state persists correctly."""
         config = CircuitBreakerConfig(failure_threshold=1, timeout=1)
-        breaker1 = CircuitBreaker('test-provider', config=config, storage=storage)
+        breaker1 = CircuitBreaker("test-provider", config=config, storage=storage)
 
         # Open circuit
         try:
-            breaker1.call(lambda: (_ for _ in ()).throw(httpx.TimeoutException("Timeout")))
+            breaker1.call(
+                lambda: (_ for _ in ()).throw(httpx.TimeoutException("Timeout"))
+            )
         except httpx.TimeoutException:
             pass
 
@@ -2020,7 +2098,7 @@ class TestCircuitBreakerPersistence:
         del breaker1
 
         # Recreate breaker
-        breaker2 = CircuitBreaker('test-provider', config=config, storage=storage)
+        breaker2 = CircuitBreaker("test-provider", config=config, storage=storage)
 
         # HALF_OPEN state should persist
         assert breaker2.state == CircuitState.HALF_OPEN
@@ -2028,16 +2106,16 @@ class TestCircuitBreakerPersistence:
     def test_config_persists(self, storage):
         """Test that configuration persists with state."""
         config = CircuitBreakerConfig(
-            failure_threshold=10,
-            success_threshold=3,
-            timeout=120
+            failure_threshold=10, success_threshold=3, timeout=120
         )
-        breaker1 = CircuitBreaker('test-provider', config=config, storage=storage)
+        breaker1 = CircuitBreaker("test-provider", config=config, storage=storage)
 
         # Open circuit
         for _ in range(10):
             try:
-                breaker1.call(lambda: (_ for _ in ()).throw(httpx.TimeoutException("Timeout")))
+                breaker1.call(
+                    lambda: (_ for _ in ()).throw(httpx.TimeoutException("Timeout"))
+                )
             except httpx.TimeoutException:
                 pass
 
@@ -2045,7 +2123,7 @@ class TestCircuitBreakerPersistence:
         del breaker1
 
         # Recreate breaker (without passing config)
-        breaker2 = CircuitBreaker('test-provider', storage=storage)
+        breaker2 = CircuitBreaker("test-provider", storage=storage)
 
         # Config should be restored from storage
         assert breaker2.config.failure_threshold == 10
@@ -2054,13 +2132,15 @@ class TestCircuitBreakerPersistence:
 
     def test_multiple_instances_share_state(self, storage):
         """Test that multiple instances with same name share state via storage."""
-        breaker1 = CircuitBreaker('shared-provider', storage=storage)
-        breaker2 = CircuitBreaker('shared-provider', storage=storage)
+        breaker1 = CircuitBreaker("shared-provider", storage=storage)
+        breaker2 = CircuitBreaker("shared-provider", storage=storage)
 
         # Open circuit via breaker1
         for _ in range(5):
             try:
-                breaker1.call(lambda: (_ for _ in ()).throw(httpx.TimeoutException("Timeout")))
+                breaker1.call(
+                    lambda: (_ for _ in ()).throw(httpx.TimeoutException("Timeout"))
+                )
             except httpx.TimeoutException:
                 pass
 
@@ -2074,13 +2154,15 @@ class TestCircuitBreakerPersistence:
 
     def test_isolated_state_for_different_names(self, storage):
         """Test that different circuit breaker names have isolated state."""
-        breaker1 = CircuitBreaker('provider-a', storage=storage)
-        breaker2 = CircuitBreaker('provider-b', storage=storage)
+        breaker1 = CircuitBreaker("provider-a", storage=storage)
+        breaker2 = CircuitBreaker("provider-b", storage=storage)
 
         # Open circuit for provider-a
         for _ in range(5):
             try:
-                breaker1.call(lambda: (_ for _ in ()).throw(httpx.TimeoutException("Timeout")))
+                breaker1.call(
+                    lambda: (_ for _ in ()).throw(httpx.TimeoutException("Timeout"))
+                )
             except httpx.TimeoutException:
                 pass
 
@@ -2089,12 +2171,14 @@ class TestCircuitBreakerPersistence:
 
     def test_reset_clears_persisted_state(self, storage):
         """Test that reset() updates persisted state."""
-        breaker1 = CircuitBreaker('test-provider', storage=storage)
+        breaker1 = CircuitBreaker("test-provider", storage=storage)
 
         # Open circuit
         for _ in range(5):
             try:
-                breaker1.call(lambda: (_ for _ in ()).throw(httpx.TimeoutException("Timeout")))
+                breaker1.call(
+                    lambda: (_ for _ in ()).throw(httpx.TimeoutException("Timeout"))
+                )
             except httpx.TimeoutException:
                 pass
 
@@ -2106,17 +2190,21 @@ class TestCircuitBreakerPersistence:
         del breaker1
 
         # Recreate - should see CLOSED state
-        breaker2 = CircuitBreaker('test-provider', storage=storage)
+        breaker2 = CircuitBreaker("test-provider", storage=storage)
         assert breaker2.state == CircuitState.CLOSED
 
     def test_success_updates_persisted_state(self, storage):
         """Test that successful calls update persisted state."""
-        config = CircuitBreakerConfig(failure_threshold=1, success_threshold=2, timeout=1)
-        breaker1 = CircuitBreaker('test-provider', config=config, storage=storage)
+        config = CircuitBreakerConfig(
+            failure_threshold=1, success_threshold=2, timeout=1
+        )
+        breaker1 = CircuitBreaker("test-provider", config=config, storage=storage)
 
         # Open circuit
         try:
-            breaker1.call(lambda: (_ for _ in ()).throw(httpx.TimeoutException("Timeout")))
+            breaker1.call(
+                lambda: (_ for _ in ()).throw(httpx.TimeoutException("Timeout"))
+            )
         except httpx.TimeoutException:
             pass
 
@@ -2138,17 +2226,17 @@ class TestCircuitBreakerPersistence:
         del breaker1
 
         # Recreate - success count should persist
-        breaker2 = CircuitBreaker('test-provider', config=config, storage=storage)
+        breaker2 = CircuitBreaker("test-provider", config=config, storage=storage)
         assert breaker2.success_count == 1
         assert breaker2.state == CircuitState.HALF_OPEN
 
     def test_corrupted_state_handled_gracefully(self, storage):
         """Test that corrupted state data doesn't crash breaker."""
         # Manually inject corrupted data
-        storage.set('circuit_breaker:test-provider:state', 'invalid json{{{')
+        storage.set("circuit_breaker:test-provider:state", "invalid json{{{")
 
         # Should not crash, should start with fresh state
-        breaker = CircuitBreaker('test-provider', storage=storage)
+        breaker = CircuitBreaker("test-provider", storage=storage)
 
         assert breaker.state == CircuitState.CLOSED
         assert breaker.failure_count == 0
@@ -2156,7 +2244,7 @@ class TestCircuitBreakerPersistence:
     def test_missing_state_starts_fresh(self, storage):
         """Test that missing state starts circuit breaker fresh."""
         # Create breaker with empty storage
-        breaker = CircuitBreaker('new-provider', storage=storage)
+        breaker = CircuitBreaker("new-provider", storage=storage)
 
         # Should start in CLOSED state
         assert breaker.state == CircuitState.CLOSED
@@ -2165,12 +2253,14 @@ class TestCircuitBreakerPersistence:
 
     def test_last_failure_time_persists(self, storage):
         """Test that last failure time persists across restarts."""
-        breaker1 = CircuitBreaker('test-provider', storage=storage)
+        breaker1 = CircuitBreaker("test-provider", storage=storage)
 
         # Record failure
         before_time = time.time()
         try:
-            breaker1.call(lambda: (_ for _ in ()).throw(httpx.TimeoutException("Timeout")))
+            breaker1.call(
+                lambda: (_ for _ in ()).throw(httpx.TimeoutException("Timeout"))
+            )
         except httpx.TimeoutException:
             pass
         after_time = time.time()
@@ -2182,24 +2272,26 @@ class TestCircuitBreakerPersistence:
         del breaker1
 
         # Recreate
-        breaker2 = CircuitBreaker('test-provider', storage=storage)
+        breaker2 = CircuitBreaker("test-provider", storage=storage)
 
         # Last failure time should persist
         assert breaker2.last_failure_time == saved_time
 
     def test_state_serialization_deserialization(self, storage):
         """Test complete serialize/deserialize cycle."""
-        config = CircuitBreakerConfig(failure_threshold=7, success_threshold=3, timeout=90)
-        breaker1 = CircuitBreaker('test-provider', config=config, storage=storage)
+        config = CircuitBreakerConfig(
+            failure_threshold=7, success_threshold=3, timeout=90
+        )
+        breaker1 = CircuitBreaker("test-provider", config=config, storage=storage)
 
         # Set various state values
         breaker1.failure_count = 4
         breaker1.success_count = 2
-        breaker1.last_failure_time = 1234567890.5
+        breaker1._last_failure_time = 1234567890.5
         breaker1._save_state()
 
         # Load into new instance
-        breaker2 = CircuitBreaker('test-provider', storage=storage)
+        breaker2 = CircuitBreaker("test-provider", storage=storage)
 
         # All state should match
         assert breaker2.failure_count == 4
@@ -2212,12 +2304,14 @@ class TestCircuitBreakerPersistence:
     def test_without_storage_no_persistence(self):
         """Test that breaker without storage doesn't persist."""
         # Create breaker without storage
-        breaker1 = CircuitBreaker('test-provider')
+        breaker1 = CircuitBreaker("test-provider")
 
         # Open circuit
         for _ in range(5):
             try:
-                breaker1.call(lambda: (_ for _ in ()).throw(httpx.TimeoutException("Timeout")))
+                breaker1.call(
+                    lambda: (_ for _ in ()).throw(httpx.TimeoutException("Timeout"))
+                )
             except httpx.TimeoutException:
                 pass
 
@@ -2225,22 +2319,24 @@ class TestCircuitBreakerPersistence:
         del breaker1
 
         # New breaker (still no storage) starts fresh
-        breaker2 = CircuitBreaker('test-provider')
+        breaker2 = CircuitBreaker("test-provider")
         assert breaker2.state == CircuitState.CLOSED
 
     def test_concurrent_instances_eventually_consistent(self, storage):
         """Test that concurrent instances stay eventually consistent."""
         import threading
 
-        breaker1 = CircuitBreaker('shared-provider', storage=storage)
-        breaker2 = CircuitBreaker('shared-provider', storage=storage)
+        breaker1 = CircuitBreaker("shared-provider", storage=storage)
+        breaker2 = CircuitBreaker("shared-provider", storage=storage)
 
         results = []
 
         def open_circuit(breaker):
             for _ in range(5):
                 try:
-                    breaker.call(lambda: (_ for _ in ()).throw(httpx.TimeoutException("Timeout")))
+                    breaker.call(
+                        lambda: (_ for _ in ()).throw(httpx.TimeoutException("Timeout"))
+                    )
                 except httpx.TimeoutException:
                     pass
             results.append(breaker.state)
@@ -2262,7 +2358,9 @@ class TestCircuitBreakerPersistence:
         breaker2._load_state()
 
         # At least one should be OPEN (eventual consistency)
-        assert breaker1.state == CircuitState.OPEN or breaker2.state == CircuitState.OPEN
+        assert (
+            breaker1.state == CircuitState.OPEN or breaker2.state == CircuitState.OPEN
+        )
 
 
 class TestConnectionPoolCleanup:
@@ -2274,8 +2372,9 @@ class TestConnectionPoolCleanup:
 
         # Trigger client creation
         client = llm._get_client()
-        assert isinstance(client, httpx.Client), \
-            f"Expected httpx.Client, got {type(client)}"
+        assert isinstance(
+            client, httpx.Client
+        ), f"Expected httpx.Client, got {type(client)}"
         assert llm._client is client, "Should cache client instance"
 
         # Close and verify cleanup
@@ -2291,8 +2390,9 @@ class TestConnectionPoolCleanup:
 
             # Trigger async client creation
             client = llm._get_async_client()
-            assert isinstance(client, httpx.AsyncClient), \
-                f"Expected httpx.AsyncClient, got {type(client)}"
+            assert isinstance(
+                client, httpx.AsyncClient
+            ), f"Expected httpx.AsyncClient, got {type(client)}"
             assert llm._async_client is client, "Should cache async client instance"
 
             # Close using async method
@@ -2312,8 +2412,9 @@ class TestConnectionPoolCleanup:
 
         # Trigger async client creation
         client = llm._get_async_client()
-        assert isinstance(client, httpx.AsyncClient), \
-            f"Expected httpx.AsyncClient, got {type(client)}"
+        assert isinstance(
+            client, httpx.AsyncClient
+        ), f"Expected httpx.AsyncClient, got {type(client)}"
         assert llm._async_client is client, "Should cache async client instance"
 
         # Close without event loop (this previously leaked connections)
@@ -2329,10 +2430,12 @@ class TestConnectionPoolCleanup:
             # Trigger both client creations
             sync_client = llm._get_client()
             async_client = llm._get_async_client()
-            assert isinstance(sync_client, httpx.Client), \
-                f"Expected httpx.Client, got {type(sync_client)}"
-            assert isinstance(async_client, httpx.AsyncClient), \
-                f"Expected httpx.AsyncClient, got {type(async_client)}"
+            assert isinstance(
+                sync_client, httpx.Client
+            ), f"Expected httpx.Client, got {type(sync_client)}"
+            assert isinstance(
+                async_client, httpx.AsyncClient
+            ), f"Expected httpx.AsyncClient, got {type(async_client)}"
 
         # After context exit, both should be closed
         assert llm._client is None
@@ -2344,8 +2447,9 @@ class TestConnectionPoolCleanup:
 
         llm = OllamaLLM(model="llama2", base_url="http://localhost:11434")
         client = llm._get_client()
-        assert isinstance(client, httpx.Client), \
-            f"Expected httpx.Client, got {type(client)}"
+        assert isinstance(
+            client, httpx.Client
+        ), f"Expected httpx.Client, got {type(client)}"
 
         # Verify __del__ emits ResourceWarning (new design philosophy)
         with warnings.catch_warnings(record=True) as w:
@@ -2365,8 +2469,9 @@ class TestConnectionPoolCleanup:
         """
         llm = OllamaLLM(model="llama2", base_url="http://localhost:11434")
         async_client = llm._get_async_client()
-        assert isinstance(async_client, httpx.AsyncClient), \
-            f"Expected httpx.AsyncClient, got {type(async_client)}"
+        assert isinstance(
+            async_client, httpx.AsyncClient
+        ), f"Expected httpx.AsyncClient, got {type(async_client)}"
 
         # Close the client properly
         llm.close()

@@ -3,10 +3,11 @@
 Uses OpenAI-compatible API with SSE streaming and reasoning token support.
 Requires vLLM served with --reasoning-parser for thinking/reasoning separation.
 """
+
 import json
 import logging
 import time
-from typing import Any, Dict, Optional, cast
+from typing import Any, cast
 
 import httpx
 
@@ -39,20 +40,20 @@ class VllmLLM(BaseLLM):
     def _get_endpoint(self) -> str:
         return "/v1/chat/completions"
 
-    def _get_headers(self) -> Dict[str, str]:
-        headers: Dict[str, str] = {"Content-Type": "application/json"}
+    def _get_headers(self) -> dict[str, str]:
+        headers: dict[str, str] = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
         return headers
 
-    def _build_request(self, prompt: str, **kwargs: Any) -> Dict[str, Any]:
+    def _build_request(self, prompt: str, **kwargs: Any) -> dict[str, Any]:
         stream = kwargs.get("stream", False)
         tools = kwargs.get("tools")
         messages = kwargs.get("messages")
         if messages is None:
             messages = [{"role": "user", "content": prompt}]
 
-        request: Dict[str, Any] = {
+        request: dict[str, Any] = {
             "model": self.model,
             "messages": messages,
             "temperature": kwargs.get("temperature", self.temperature),
@@ -105,12 +106,10 @@ class VllmLLM(BaseLLM):
                 "name": func.get("name", ""),
                 "arguments": args,
             }
-            parts.append(
-                f"<tool_call>\n{json.dumps(tc_dict)}\n</tool_call>"
-            )
+            parts.append(f"<tool_call>\n{json.dumps(tc_dict)}\n</tool_call>")
         return "\n".join(parts)
 
-    def _parse_response(self, response: Dict[str, Any], latency_ms: int) -> LLMResponse:
+    def _parse_response(self, response: dict[str, Any], latency_ms: int) -> LLMResponse:
         choice = response["choices"][0]
         message = choice.get("message", {})
         content = message.get("content", "")
@@ -141,8 +140,8 @@ class VllmLLM(BaseLLM):
     def stream(
         self,
         prompt: str,
-        context: Optional[ExecutionContext] = None,
-        on_chunk: Optional[StreamCallback] = None,
+        context: ExecutionContext | None = None,
+        on_chunk: StreamCallback | None = None,
         **kwargs: Any,
     ) -> LLMResponse:
         """Synchronous streaming completion.
@@ -165,18 +164,22 @@ class VllmLLM(BaseLLM):
             endpoint = f"{self.base_url}{self._get_endpoint()}"
 
             client = self._get_client()
-            request = client.build_request("POST", endpoint, json=request_data, headers=headers)
+            request = client.build_request(
+                "POST", endpoint, json=request_data, headers=headers
+            )
 
             response = client.send(request, stream=True)
-            return self._execute_streaming_impl(start_time, response, on_chunk, cache_key)
+            return self._execute_streaming_impl(
+                start_time, response, on_chunk, cache_key
+            )
 
         return self._circuit_breaker.call(_make_streaming_call)
 
     async def astream(
         self,
         prompt: str,
-        context: Optional[ExecutionContext] = None,
-        on_chunk: Optional[StreamCallback] = None,
+        context: ExecutionContext | None = None,
+        on_chunk: StreamCallback | None = None,
         **kwargs: Any,
     ) -> LLMResponse:
         """Async streaming completion."""
@@ -195,21 +198,27 @@ class VllmLLM(BaseLLM):
             endpoint = f"{self.base_url}{self._get_endpoint()}"
 
             client = await self._get_async_client_safe()
-            request = client.build_request("POST", endpoint, json=request_data, headers=headers)
+            request = client.build_request(
+                "POST", endpoint, json=request_data, headers=headers
+            )
 
             response = await client.send(request, stream=True)
             return cast(
                 LLMResponse,
-                await self._execute_streaming_async_impl(start_time, response, on_chunk, cache_key),
+                await self._execute_streaming_async_impl(
+                    start_time, response, on_chunk, cache_key
+                ),
             )
 
-        result: LLMResponse = await self._circuit_breaker.async_call(_make_async_streaming_call)
+        result: LLMResponse = await self._circuit_breaker.async_call(
+            _make_async_streaming_call
+        )
         return result
 
     @staticmethod
     def _accumulate_delta_tool_calls(
-        data: Dict[str, Any],
-        tool_call_buf: Dict[int, Dict[str, str]],
+        data: dict[str, Any],
+        tool_call_buf: dict[int, dict[str, str]],
     ) -> None:
         """Accumulate streamed tool call deltas into a buffer.
 
@@ -241,10 +250,10 @@ class VllmLLM(BaseLLM):
         """Consume SSE streaming response synchronously."""
         content_parts: list[str] = []
         thinking_parts: list[str] = []
-        tool_call_buf: Dict[int, Dict[str, str]] = {}
-        prompt_tokens: Optional[int] = None
-        completion_tokens: Optional[int] = None
-        finish_reason: Optional[str] = None
+        tool_call_buf: dict[int, dict[str, str]] = {}
+        prompt_tokens: int | None = None
+        completion_tokens: int | None = None
+        finish_reason: str | None = None
 
         for line in response.iter_lines():
             data = self._parse_sse_line(line)
@@ -253,8 +262,11 @@ class VllmLLM(BaseLLM):
 
             if data == SSE_STREAM_DONE_MARKER:
                 emit_final_chunk(
-                    on_chunk, self.model, prompt_tokens,
-                    completion_tokens, finish_reason
+                    on_chunk,
+                    self.model,
+                    prompt_tokens,
+                    completion_tokens,
+                    finish_reason,
                 )
                 break
 
@@ -262,8 +274,12 @@ class VllmLLM(BaseLLM):
 
             if chunk_content:
                 process_chunk_content(
-                    chunk_content, chunk_type, content_parts, thinking_parts,
-                    on_chunk, self.model
+                    chunk_content,
+                    chunk_type,
+                    content_parts,
+                    thinking_parts,
+                    on_chunk,
+                    self.model,
                 )
 
             # Accumulate native tool calls from streaming deltas
@@ -281,17 +297,23 @@ class VllmLLM(BaseLLM):
         # Convert accumulated native tool calls to XML tags
         if tool_call_buf:
             tc_list = [
-                {"function": tool_call_buf[idx]}
-                for idx in sorted(tool_call_buf)
+                {"function": tool_call_buf[idx]} for idx in sorted(tool_call_buf)
             ]
             xml = self._format_tool_calls_xml(tc_list)
             if xml:
                 content_parts.append("\n" + xml)
 
-        return cast(LLMResponse, build_stream_result(
-            content_parts, self.model, LLMProvider.VLLM,
-            prompt_tokens, completion_tokens, finish_reason
-        ))
+        return cast(
+            LLMResponse,
+            build_stream_result(
+                content_parts,
+                self.model,
+                LLMProvider.VLLM,
+                prompt_tokens,
+                completion_tokens,
+                finish_reason,
+            ),
+        )
 
     async def _aconsume_stream(
         self,
@@ -301,10 +323,10 @@ class VllmLLM(BaseLLM):
         """Consume SSE streaming response asynchronously."""
         content_parts: list[str] = []
         thinking_parts: list[str] = []
-        tool_call_buf: Dict[int, Dict[str, str]] = {}
-        prompt_tokens: Optional[int] = None
-        completion_tokens: Optional[int] = None
-        finish_reason: Optional[str] = None
+        tool_call_buf: dict[int, dict[str, str]] = {}
+        prompt_tokens: int | None = None
+        completion_tokens: int | None = None
+        finish_reason: str | None = None
 
         async for line in response.aiter_lines():
             data = self._parse_sse_line(line)
@@ -313,8 +335,11 @@ class VllmLLM(BaseLLM):
 
             if data == SSE_STREAM_DONE_MARKER:
                 emit_final_chunk(
-                    on_chunk, self.model, prompt_tokens,
-                    completion_tokens, finish_reason
+                    on_chunk,
+                    self.model,
+                    prompt_tokens,
+                    completion_tokens,
+                    finish_reason,
                 )
                 break
 
@@ -322,8 +347,12 @@ class VllmLLM(BaseLLM):
 
             if chunk_content:
                 process_chunk_content(
-                    chunk_content, chunk_type, content_parts, thinking_parts,
-                    on_chunk, self.model
+                    chunk_content,
+                    chunk_type,
+                    content_parts,
+                    thinking_parts,
+                    on_chunk,
+                    self.model,
                 )
 
             # Accumulate native tool calls from streaming deltas
@@ -341,17 +370,23 @@ class VllmLLM(BaseLLM):
         # Convert accumulated native tool calls to XML tags
         if tool_call_buf:
             tc_list = [
-                {"function": tool_call_buf[idx]}
-                for idx in sorted(tool_call_buf)
+                {"function": tool_call_buf[idx]} for idx in sorted(tool_call_buf)
             ]
             xml = self._format_tool_calls_xml(tc_list)
             if xml:
                 content_parts.append("\n" + xml)
 
-        return cast(LLMResponse, build_stream_result(
-            content_parts, self.model, LLMProvider.VLLM,
-            prompt_tokens, completion_tokens, finish_reason
-        ))
+        return cast(
+            LLMResponse,
+            build_stream_result(
+                content_parts,
+                self.model,
+                LLMProvider.VLLM,
+                prompt_tokens,
+                completion_tokens,
+                finish_reason,
+            ),
+        )
 
     @staticmethod
     def _parse_sse_line(line: str) -> Any:
@@ -364,7 +399,7 @@ class VllmLLM(BaseLLM):
         if not line or not line.startswith("data:"):
             return None
 
-        payload = line[len("data:"):].strip()
+        payload = line[len("data:") :].strip()
         if payload == SSE_STREAM_DONE_MARKER:
             return SSE_STREAM_DONE_MARKER
 
@@ -374,7 +409,7 @@ class VllmLLM(BaseLLM):
             return None
 
     @staticmethod
-    def _extract_chunk_fields(data: Dict[str, Any]) -> tuple[str, str, bool]:
+    def _extract_chunk_fields(data: dict[str, Any]) -> tuple[str, str, bool]:
         """Extract content, chunk_type, and done flag from an SSE chunk.
 
         Returns ``(content, chunk_type, done)``.

@@ -1,7 +1,6 @@
 """Database persistence for continuous learning data."""
 
 import logging
-from typing import Optional
 
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, SQLModel, select
@@ -18,7 +17,7 @@ DEFAULT_MINING_LIST_LIMIT = 20
 class LearningStore:
     """Database persistence for learning data."""
 
-    def __init__(self, database_url: Optional[str] = None) -> None:
+    def __init__(self, database_url: str | None = None) -> None:
         self.database_url = database_url or get_database_url()
         self.engine: Engine = create_app_engine(self.database_url)
 
@@ -38,15 +37,15 @@ class LearningStore:
             session.merge(pattern)
             session.commit()
 
-    def get_pattern(self, pattern_id: str) -> Optional[LearnedPattern]:
+    def get_pattern(self, pattern_id: str) -> LearnedPattern | None:
         """Get a pattern by ID, or None."""
         with Session(self.engine) as session:
             return session.get(LearnedPattern, pattern_id)
 
     def list_patterns(
         self,
-        pattern_type: Optional[str] = None,
-        status: Optional[str] = "active",
+        pattern_type: str | None = None,
+        status: str | None = "active",
         limit: int = DEFAULT_LIST_LIMIT,
     ) -> list[LearnedPattern]:
         """List patterns with optional type and status filters."""
@@ -89,19 +88,13 @@ class LearningStore:
             session.merge(rec)
             session.commit()
 
-    def list_recommendations(
-        self, status: str = "pending"
-    ) -> list[TuneRecommendation]:
+    def list_recommendations(self, status: str = "pending") -> list[TuneRecommendation]:
         """List recommendations filtered by status."""
         with Session(self.engine) as session:
-            stmt = select(TuneRecommendation).where(
-                TuneRecommendation.status == status
-            )
+            stmt = select(TuneRecommendation).where(TuneRecommendation.status == status)
             return list(session.exec(stmt).all())
 
-    def update_recommendation_status(
-        self, rec_id: str, status: str
-    ) -> bool:
+    def update_recommendation_status(self, rec_id: str, status: str) -> bool:
         """Update a recommendation's status. Returns True if found."""
         with Session(self.engine) as session:
             rec = session.get(TuneRecommendation, rec_id)

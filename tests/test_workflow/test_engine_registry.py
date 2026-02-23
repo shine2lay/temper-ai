@@ -5,12 +5,16 @@ error handling, and thread safety.
 """
 
 import threading
-from typing import Any, Dict
+from typing import Any
 
 import pytest
 
 from temper_ai.workflow.engine_registry import EngineRegistry
-from temper_ai.workflow.execution_engine import CompiledWorkflow, ExecutionEngine, ExecutionMode
+from temper_ai.workflow.execution_engine import (
+    CompiledWorkflow,
+    ExecutionEngine,
+    ExecutionMode,
+)
 
 
 # Mock engine for testing
@@ -20,25 +24,25 @@ class MockExecutionEngine(ExecutionEngine):
     def __init__(self, **kwargs):
         self.init_kwargs = kwargs
 
-    def compile(self, workflow_config: Dict[str, Any]) -> CompiledWorkflow:
+    def compile(self, workflow_config: dict[str, Any]) -> CompiledWorkflow:
         """Mock compile - not used in registry tests."""
         pass
 
     def execute(
         self,
         compiled_workflow: CompiledWorkflow,
-        input_data: Dict[str, Any],
-        mode: ExecutionMode = ExecutionMode.SYNC
-    ) -> Dict[str, Any]:
+        input_data: dict[str, Any],
+        mode: ExecutionMode = ExecutionMode.SYNC,
+    ) -> dict[str, Any]:
         """Mock execute - not used in registry tests."""
         pass
 
     async def async_execute(
         self,
         compiled_workflow: CompiledWorkflow,
-        input_data: Dict[str, Any],
-        mode: ExecutionMode = ExecutionMode.ASYNC
-    ) -> Dict[str, Any]:
+        input_data: dict[str, Any],
+        mode: ExecutionMode = ExecutionMode.ASYNC,
+    ) -> dict[str, Any]:
         """Mock async execute - not used in registry tests."""
         pass
 
@@ -186,13 +190,7 @@ def test_get_engine_from_config():
 
     registry.register_engine("mock", MockExecutionEngine)
 
-    config = {
-        "workflow": {
-            "name": "test",
-            "engine": "mock",
-            "stages": []
-        }
-    }
+    config = {"workflow": {"name": "test", "engine": "mock", "stages": []}}
 
     engine = registry.get_engine_from_config(config)
 
@@ -206,12 +204,7 @@ def test_get_engine_from_config_default():
     """Test default to langgraph if no engine specified."""
     registry = EngineRegistry()
 
-    config = {
-        "workflow": {
-            "name": "test",
-            "stages": []
-        }
-    }
+    config = {"workflow": {"name": "test", "stages": []}}
 
     engine = registry.get_engine_from_config(config)
 
@@ -235,11 +228,8 @@ def test_get_engine_from_config_with_engine_config():
         "workflow": {
             "name": "test",
             "engine": "mock",
-            "engine_config": {
-                "max_retries": 3,
-                "timeout": 30
-            },
-            "stages": []
+            "engine_config": {"max_retries": 3, "timeout": 30},
+            "stages": [],
         }
     }
 
@@ -268,10 +258,8 @@ def test_get_engine_from_config_kwargs_override():
         "workflow": {
             "name": "test",
             "engine": "mock",
-            "engine_config": {
-                "max_retries": 3
-            },
-            "stages": []
+            "engine_config": {"max_retries": 3},
+            "stages": [],
         }
     }
 
@@ -296,11 +284,7 @@ def test_get_engine_from_config_no_workflow_section():
 
     registry.register_engine("mock", MockExecutionEngine)
 
-    config = {
-        "name": "test",
-        "engine": "mock",
-        "stages": []
-    }
+    config = {"name": "test", "engine": "mock", "stages": []}
 
     engine = registry.get_engine_from_config(config)
 

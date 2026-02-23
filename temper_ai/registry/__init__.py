@@ -1,4 +1,5 @@
 """Agent registry public API."""
+
 from temper_ai.registry._schemas import (
     AgentRegistryEntry,
     MessageRequest,

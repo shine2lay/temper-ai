@@ -2,6 +2,7 @@
 
 Tests secret management, credential obfuscation, and secret detection.
 """
+
 import os
 from unittest.mock import patch
 
@@ -86,7 +87,9 @@ class TestSecretReference:
     def test_resolve_env_missing(self):
         """Test resolving missing environment variable."""
         with patch.dict(os.environ, {}, clear=True):
-            with pytest.raises(ValueError, match="Environment variable 'MISSING_KEY' not set"):
+            with pytest.raises(
+                ValueError, match="Environment variable 'MISSING_KEY' not set"
+            ):
                 SecretReference.resolve("${env:MISSING_KEY}")
 
     def test_resolve_env_empty(self):
@@ -111,18 +114,26 @@ class TestSecretReference:
     def test_resolve_env_null_bytes(self):
         """Test that secret with null bytes raises error."""
         # Cannot set env vars with null bytes, so we mock the validation instead
-        with patch('temper_ai.shared.utils.secrets.os.environ.get', return_value="test\x00value"):
+        with patch(
+            "temper_ai.shared.utils.secrets.os.environ.get",
+            return_value="test\x00value",
+        ):
             with pytest.raises(ValueError, match="contains null bytes"):
                 SecretReference.resolve("${env:NULL_KEY}")
 
     def test_resolve_vault_not_implemented(self):
         """Test that vault provider is not yet implemented."""
-        with pytest.raises(NotImplementedError, match="HashiCorp Vault provider not yet implemented"):
+        with pytest.raises(
+            NotImplementedError, match="HashiCorp Vault provider is planned for v1.1"
+        ):
             SecretReference.resolve("${vault:secret/path}")
 
     def test_resolve_aws_not_implemented(self):
         """Test that AWS provider is not yet implemented."""
-        with pytest.raises(NotImplementedError, match="AWS Secrets Manager provider not yet implemented"):
+        with pytest.raises(
+            NotImplementedError,
+            match="AWS Secrets Manager provider is planned for v1.1",
+        ):
             SecretReference.resolve("${aws:secret-id}")
 
     def test_resolve_plain_text(self):
@@ -143,7 +154,9 @@ class TestObfuscatedCredential:
 
     def test_empty_value_raises(self):
         """Test that empty value raises ValueError."""
-        with pytest.raises(ValueError, match="Cannot create ObfuscatedCredential with empty value"):
+        with pytest.raises(
+            ValueError, match="Cannot create ObfuscatedCredential with empty value"
+        ):
             ObfuscatedCredential("")
 
     def test_get_returns_original(self):
@@ -195,6 +208,9 @@ class TestSecureCredential:
     def test_secure_credential_works(self):
         """Test that SecureCredential still works (with warning)."""
         import warnings
+
+        # Reset the once-per-process warning flag so it fires in this test
+        SecureCredential._warning_shown = False
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
             cred = SecureCredential("secret-value")
@@ -206,6 +222,7 @@ class TestSecureCredential:
     def test_secure_credential_is_obfuscated_credential(self):
         """Test that SecureCredential is a subclass of ObfuscatedCredential."""
         import warnings
+
         with warnings.catch_warnings(record=True):
             warnings.simplefilter("always")
             cred = SecureCredential("secret")
@@ -229,11 +246,7 @@ class TestResolveSecret:
     def test_resolve_dict(self):
         """Test resolving secrets in dictionary."""
         with patch.dict(os.environ, {"SECRET": "secret-value"}):
-            config = {
-                "api_key": "${env:SECRET}",
-                "timeout": 30,
-                "name": "test"
-            }
+            config = {"api_key": "${env:SECRET}", "timeout": 30, "name": "test"}
             result = resolve_secret(config)
             assert result["api_key"] == "secret-value"
             assert result["timeout"] == 30
@@ -242,12 +255,7 @@ class TestResolveSecret:
     def test_resolve_nested_dict(self):
         """Test resolving secrets in nested dictionary."""
         with patch.dict(os.environ, {"DB_PASS": "db-secret"}):
-            config = {
-                "database": {
-                    "host": "localhost",
-                    "password": "${env:DB_PASS}"
-                }
-            }
+            config = {"database": {"host": "localhost", "password": "${env:DB_PASS}"}}
             result = resolve_secret(config)
             assert result["database"]["password"] == "db-secret"
 
@@ -318,8 +326,8 @@ class TestDetectSecretPatterns:
         assert confidence is None
 
     def test_input_too_long(self):
-        """Test that input exceeding 10KB raises error."""
-        long_text = "x" * 11000  # >10KB
+        """Test that input exceeding 100KB raises error."""
+        long_text = "x" * 103000  # >100KB
         with pytest.raises(ValueError, match="Input too long"):
             detect_secret_patterns(long_text)
 

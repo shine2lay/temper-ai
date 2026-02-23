@@ -2,11 +2,8 @@
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from temper_ai.memory._schemas import MemoryScope
 from temper_ai.memory.constants import MEMORY_TYPE_EPISODIC, MEMORY_TYPE_PROCEDURAL
-
 
 # All tests mock mem0 so we can test adapter logic without the dependency.
 ADAPTER_MODULE = "temper_ai.memory.adapters.mem0_adapter"
@@ -93,8 +90,18 @@ class TestMem0AdapterSearch:
         mock_mem0 = MagicMock()
         mock_mem0.Memory.from_config.return_value.search.return_value = {
             "results": [
-                {"id": "1", "memory": "a", "score": 0.9, "metadata": {"memory_type": MEMORY_TYPE_EPISODIC}},
-                {"id": "2", "memory": "b", "score": 0.8, "metadata": {"memory_type": MEMORY_TYPE_PROCEDURAL}},
+                {
+                    "id": "1",
+                    "memory": "a",
+                    "score": 0.9,
+                    "metadata": {"memory_type": MEMORY_TYPE_EPISODIC},
+                },
+                {
+                    "id": "2",
+                    "memory": "b",
+                    "score": 0.8,
+                    "metadata": {"memory_type": MEMORY_TYPE_PROCEDURAL},
+                },
             ]
         }
         adapter = _make_adapter(mock_mem0)
@@ -108,8 +115,18 @@ class TestMem0AdapterSearch:
         mock_mem0 = MagicMock()
         mock_mem0.Memory.from_config.return_value.search.return_value = {
             "results": [
-                {"id": "1", "memory": "high", "score": 0.9, "metadata": {"memory_type": "episodic"}},
-                {"id": "2", "memory": "low", "score": 0.1, "metadata": {"memory_type": "episodic"}},
+                {
+                    "id": "1",
+                    "memory": "high",
+                    "score": 0.9,
+                    "metadata": {"memory_type": "episodic"},
+                },
+                {
+                    "id": "2",
+                    "memory": "low",
+                    "score": 0.1,
+                    "metadata": {"memory_type": "episodic"},
+                },
             ]
         }
         adapter = _make_adapter(mock_mem0)
@@ -151,7 +168,9 @@ class TestMem0AdapterDelete:
 
     def test_delete_returns_false_on_error(self):
         mock_mem0 = MagicMock()
-        mock_mem0.Memory.from_config.return_value.delete.side_effect = RuntimeError("fail")
+        mock_mem0.Memory.from_config.return_value.delete.side_effect = RuntimeError(
+            "fail"
+        )
         adapter = _make_adapter(mock_mem0)
         scope = _make_scope()
 

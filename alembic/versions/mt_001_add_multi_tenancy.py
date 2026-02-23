@@ -5,15 +5,16 @@ Revises: opt_001
 Create Date: 2026-02-21
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
+
 revision: str = "mt_001"
-down_revision: Union[str, None] = "opt_001"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "opt_001"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 # Default tenant ID used for backfilling existing rows
 DEFAULT_TENANT_ID = "00000000-0000-0000-0000-000000000000"
@@ -27,7 +28,9 @@ def upgrade() -> None:
         sa.Column("id", sa.String(), primary_key=True),
         sa.Column("name", sa.String(256), nullable=False),
         sa.Column("slug", sa.String(128), nullable=False),
-        sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.text("1")),
+        sa.Column(
+            "is_active", sa.Boolean(), nullable=False, server_default=sa.text("1")
+        ),
         sa.Column("plan", sa.String(64), nullable=False, server_default="free"),
         sa.Column("max_workflows", sa.Integer(), nullable=False, server_default="100"),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
@@ -45,7 +48,9 @@ def upgrade() -> None:
         sa.Column("name", sa.String(256), nullable=False, server_default=""),
         sa.Column("oauth_provider", sa.String(64), nullable=True),
         sa.Column("oauth_subject", sa.String(256), nullable=True),
-        sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.text("1")),
+        sa.Column(
+            "is_active", sa.Boolean(), nullable=False, server_default=sa.text("1")
+        ),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.UniqueConstraint("email", name="uq_users_email"),
@@ -57,12 +62,16 @@ def upgrade() -> None:
         "tenant_memberships",
         sa.Column("id", sa.String(), primary_key=True),
         sa.Column(
-            "tenant_id", sa.String(),
-            sa.ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False,
+            "tenant_id",
+            sa.String(),
+            sa.ForeignKey("tenants.id", ondelete="CASCADE"),
+            nullable=False,
         ),
         sa.Column(
-            "user_id", sa.String(),
-            sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False,
+            "user_id",
+            sa.String(),
+            sa.ForeignKey("users.id", ondelete="CASCADE"),
+            nullable=False,
         ),
         sa.Column("role", sa.String(32), nullable=False, server_default="viewer"),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
@@ -72,25 +81,35 @@ def upgrade() -> None:
             name="membership_valid_role",
         ),
     )
-    op.create_index("ix_tenant_memberships_tenant_id", "tenant_memberships", ["tenant_id"])
+    op.create_index(
+        "ix_tenant_memberships_tenant_id", "tenant_memberships", ["tenant_id"]
+    )
     op.create_index("ix_tenant_memberships_user_id", "tenant_memberships", ["user_id"])
-    op.create_index("idx_membership_tenant_role", "tenant_memberships", ["tenant_id", "role"])
+    op.create_index(
+        "idx_membership_tenant_role", "tenant_memberships", ["tenant_id", "role"]
+    )
 
     op.create_table(
         "api_keys",
         sa.Column("id", sa.String(), primary_key=True),
         sa.Column(
-            "user_id", sa.String(),
-            sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False,
+            "user_id",
+            sa.String(),
+            sa.ForeignKey("users.id", ondelete="CASCADE"),
+            nullable=False,
         ),
         sa.Column(
-            "tenant_id", sa.String(),
-            sa.ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False,
+            "tenant_id",
+            sa.String(),
+            sa.ForeignKey("tenants.id", ondelete="CASCADE"),
+            nullable=False,
         ),
         sa.Column("label", sa.String(128), nullable=False, server_default="default"),
         sa.Column("key_prefix", sa.String(16), nullable=False),
         sa.Column("key_hash", sa.String(64), nullable=False),
-        sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.text("1")),
+        sa.Column(
+            "is_active", sa.Boolean(), nullable=False, server_default=sa.text("1")
+        ),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("last_used_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("total_requests", sa.Integer(), nullable=False, server_default="0"),
@@ -105,28 +124,46 @@ def upgrade() -> None:
     # ── 2. DB-backed config storage tables ────────────────────────
 
     for table_name, uq_name, version_ck in [
-        ("workflow_configs", "uq_workflow_configs_tenant_name", "workflow_configs_valid_version"),
-        ("stage_configs", "uq_stage_configs_tenant_name", "stage_configs_valid_version"),
-        ("agent_configs", "uq_agent_configs_tenant_name", "agent_configs_valid_version"),
+        (
+            "workflow_configs",
+            "uq_workflow_configs_tenant_name",
+            "workflow_configs_valid_version",
+        ),
+        (
+            "stage_configs",
+            "uq_stage_configs_tenant_name",
+            "stage_configs_valid_version",
+        ),
+        (
+            "agent_configs",
+            "uq_agent_configs_tenant_name",
+            "agent_configs_valid_version",
+        ),
     ]:
         op.create_table(
             table_name,
             sa.Column("id", sa.String(), primary_key=True),
             sa.Column(
-                "tenant_id", sa.String(),
-                sa.ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False,
+                "tenant_id",
+                sa.String(),
+                sa.ForeignKey("tenants.id", ondelete="CASCADE"),
+                nullable=False,
             ),
             sa.Column("name", sa.String(256), nullable=False),
             sa.Column("version", sa.Integer(), nullable=False, server_default="1"),
             sa.Column("description", sa.String(), nullable=False, server_default=""),
             sa.Column("config_data", sa.JSON(), nullable=False),
             sa.Column(
-                "created_by", sa.String(),
-                sa.ForeignKey("users.id", ondelete="SET NULL"), nullable=True,
+                "created_by",
+                sa.String(),
+                sa.ForeignKey("users.id", ondelete="SET NULL"),
+                nullable=True,
             ),
             sa.Column(
-                "updated_by", sa.String(),
-                sa.ForeignKey("users.id", ondelete="SET NULL"), nullable=True,
+                "updated_by",
+                sa.String(),
+                sa.ForeignKey("users.id", ondelete="SET NULL"),
+                nullable=True,
             ),
             sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
             sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
@@ -189,7 +226,9 @@ def upgrade() -> None:
 
     for table in _EXISTING_TABLES:
         op.execute(
-            sa.text(f"UPDATE {table} SET tenant_id = :tid WHERE tenant_id IS NULL").bindparams(
+            sa.text(
+                f"UPDATE {table} SET tenant_id = :tid WHERE tenant_id IS NULL"
+            ).bindparams(
                 tid=DEFAULT_TENANT_ID,
             )
         )

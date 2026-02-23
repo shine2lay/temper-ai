@@ -29,26 +29,25 @@ Temper AI is a self-improving autonomous agent system that can execute complete 
 ### Step 1: Clone the Repository
 
 ```bash
-git clone https://github.com/yourusername/meta-autonomous-framework.git
-cd meta-autonomous-framework
+git clone https://github.com/temper-ai/temper-ai.git
+cd temper-ai
 ```
 
-### Step 2: Create Virtual Environment
+### Step 2: Install Dependencies
 
 ```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+make setup   # installs uv deps, pre-commit, copies .env
 ```
 
-### Step 3: Install Dependencies
+Or manually with `uv`:
 
 ```bash
-pip install -e ".[dev]"
+uv sync --extra dev --extra dashboard
 ```
 
 This installs the framework in development mode with all dependencies.
 
-### Step 4: Configure Environment
+### Step 3: Configure Environment
 
 ```bash
 cp .env.example .env
@@ -83,16 +82,17 @@ ollama serve
 ollama pull llama3.2:3b
 ```
 
-3. **Run the demo**:
+3. **Start the server and run a workflow**:
 ```bash
-python examples/milestone1_demo.py
+uv run temper-ai serve --dev
+
+# In another terminal:
+curl -X POST http://localhost:8000/api/runs \
+  -H "Content-Type: application/json" \
+  -d '{"workflow_path": "configs/workflows/hello_world.yaml", "inputs": {"topic": "AI safety"}}'
 ```
 
-You should see:
-- Agent execution logs
-- LLM interactions
-- Tool calls and results
-- Final workflow output
+You should see execution results in the API response and the dashboard at `http://localhost:8000`.
 
 ### Using OpenAI or Anthropic
 
@@ -101,25 +101,34 @@ You should see:
 OPENAI_API_KEY=sk-...
 ```
 
-2. **Run a workflow**:
+2. **Start the server and run a workflow via API**:
 ```bash
-temper-ai run configs/workflows/simple_research.yaml \
-  --input inputs.yaml --show-details
+temper-ai serve --dev
+
+# In another terminal:
+curl -X POST http://localhost:8420/api/runs \
+  -H 'Content-Type: application/json' \
+  -d '{"workflow": "workflows/simple_research.yaml", "inputs": {"query": "Research topic"}}'
 ```
 
 ---
 
 ## Run Example Workflows
 
-The framework includes several pre-built example workflows.
+The framework includes several pre-built example workflows. Start the server first:
+
+```bash
+temper-ai serve --dev
+```
 
 ### Simple Research Workflow
 
 Single-agent workflow for research tasks:
 
 ```bash
-python examples/run_workflow.py simple_research \
-  --prompt "Research Python typing benefits"
+curl -X POST http://localhost:8420/api/runs \
+  -H 'Content-Type: application/json' \
+  -d '{"workflow": "workflows/simple_research.yaml", "inputs": {"query": "Research Python typing benefits"}}'
 ```
 
 ### Multi-Agent Parallel Research
@@ -127,27 +136,20 @@ python examples/run_workflow.py simple_research \
 Run 3 agents in parallel with consensus synthesis:
 
 ```bash
-python examples/run_multi_agent_workflow.py parallel-research
+curl -X POST http://localhost:8420/api/runs \
+  -H 'Content-Type: application/json' \
+  -d '{"workflow": "workflows/parallel_research.yaml"}'
 ```
-
-**Output:**
-- 3 agents research independently
-- Results synthesized via consensus voting
-- 2-3x faster than sequential execution
 
 ### Multi-Agent Debate
 
 Run 3 agents in a multi-round debate:
 
 ```bash
-python examples/run_multi_agent_workflow.py debate-decision
+curl -X POST http://localhost:8420/api/runs \
+  -H 'Content-Type: application/json' \
+  -d '{"workflow": "workflows/debate_decision.yaml"}'
 ```
-
-**Output:**
-- Agents present positions
-- Debate across multiple rounds
-- Convergence detection stops early
-- Final decision with confidence score
 
 ---
 
@@ -211,8 +213,12 @@ output_mapping:
 ### Step 3: Run Your Workflow
 
 ```bash
-python examples/run_workflow.py my_workflow \
-  --input '{"topic": "Python async programming"}'
+temper-ai serve --dev
+
+# In another terminal:
+curl -X POST http://localhost:8420/api/runs \
+  -H 'Content-Type: application/json' \
+  -d '{"workflow": "workflows/my_workflow.yaml", "inputs": {"topic": "AI safety"}}'
 ```
 
 ---
@@ -364,7 +370,7 @@ OPENAI_API_KEY=sk-your_key_here
 
 **Solution:** Install in development mode:
 ```bash
-pip install -e ".[dev]"
+uv sync --dev
 ```
 
 ### Issue: "Database connection error"
@@ -418,44 +424,24 @@ pip install -e ".[dev]"
 **Workflow:** Single agent with WebScraper tool
 
 ```bash
-python examples/run_workflow.py simple_research \
-  --prompt "Research GraphQL vs REST APIs"
+curl -X POST http://localhost:8420/api/runs \
+  -H 'Content-Type: application/json' \
+  -d '{"workflow": "workflows/simple_research.yaml", "inputs": {"query": "Research GraphQL vs REST APIs"}}'
 ```
 
-### 2. Parallel Research
-
-**Use Case:** Fast research with multiple perspectives
-
-**Workflow:** 3 agents in parallel with consensus
-
-```bash
-python examples/run_multi_agent_workflow.py parallel-research
-```
-
-**Result:** 2-3x faster than sequential
-
-### 3. Technical Decision
+### 2. Multi-Agent Decision
 
 **Use Case:** Make a complex technical decision
 
 **Workflow:** Multi-agent debate with convergence
 
 ```bash
-python examples/run_multi_agent_workflow.py debate-decision
+curl -X POST http://localhost:8420/api/runs \
+  -H 'Content-Type: application/json' \
+  -d '{"workflow": "workflows/quick_decision_demo.yaml", "inputs": {"question": "Should we use microservices?"}}'
 ```
 
 **Result:** High-confidence decision with reasoning
-
-### 4. Data Analysis
-
-**Use Case:** Analyze data and generate reports
-
-**Workflow:** Agent with Calculator + FileWriter
-
-```bash
-python examples/run_workflow.py data_analysis \
-  --input '{"data_file": "sales.csv"}'
-```
 
 ---
 

@@ -22,7 +22,7 @@ class TestPromptOptimizationConfig:
         assert cfg.output_fields == ["output"]
         assert cfg.min_training_examples == 10
         assert cfg.min_quality_score == 0.7
-        assert cfg.training_metric is None
+        assert cfg.training_metric == "exact_match"
         assert cfg.lookback_hours == 720
         assert cfg.max_demos == 3
         assert cfg.num_threads == 4
@@ -48,13 +48,15 @@ class TestPromptOptimizationConfig:
         assert cfg.output_fields == ["analysis", "summary"]
         assert cfg.min_training_examples == 50
 
-    def test_invalid_optimizer(self):
-        with pytest.raises(ValidationError):
-            PromptOptimizationConfig(optimizer="invalid")
+    def test_custom_optimizer_accepted(self):
+        # optimizer is now a plain str — any value is accepted
+        cfg = PromptOptimizationConfig(optimizer="copro")
+        assert cfg.optimizer == "copro"
 
-    def test_invalid_module_type(self):
-        with pytest.raises(ValidationError):
-            PromptOptimizationConfig(module_type="invalid")
+    def test_custom_module_type_accepted(self):
+        # module_type is now a plain str — any value is accepted
+        cfg = PromptOptimizationConfig(module_type="react")
+        assert cfg.module_type == "react"
 
     def test_quality_score_bounds(self):
         with pytest.raises(ValidationError):
@@ -103,13 +105,17 @@ class TestTrainingExample:
     def test_metric_score_bounds(self):
         with pytest.raises(ValidationError):
             TrainingExample(
-                input_text="x", output_text="y",
-                metric_score=1.5, agent_name="a",
+                input_text="x",
+                output_text="y",
+                metric_score=1.5,
+                agent_name="a",
             )
         with pytest.raises(ValidationError):
             TrainingExample(
-                input_text="x", output_text="y",
-                metric_score=-0.1, agent_name="a",
+                input_text="x",
+                output_text="y",
+                metric_score=-0.1,
+                agent_name="a",
             )
 
 

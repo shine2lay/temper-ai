@@ -2,9 +2,10 @@
 
 Covers normalization, hashing, classification, and compute_error_fingerprint().
 """
-import pytest
 
 from temper_ai.observability.error_fingerprinting import (
+    FINGERPRINT_LENGTH,
+    MAX_NORMALIZED_MESSAGE_LENGTH,
     ErrorClassification,
     ErrorFingerprintResult,
     classify_error,
@@ -12,11 +13,8 @@ from temper_ai.observability.error_fingerprinting import (
     compute_fingerprint,
     extract_error_code,
     normalize_message,
-    FINGERPRINT_LENGTH,
-    MAX_NORMALIZED_MESSAGE_LENGTH,
 )
-from temper_ai.shared.utils.exceptions import BaseError, ErrorCode, LLMError
-
+from temper_ai.shared.utils.exceptions import ErrorCode, LLMError
 
 # ============================================================================
 # normalize_message
@@ -159,27 +157,43 @@ class TestClassifyError:
 
     def test_transient_errors(self):
         transient_codes = [
-            "LLM_CONNECTION_ERROR", "LLM_TIMEOUT", "LLM_RATE_LIMIT",
-            "SYSTEM_TIMEOUT", "SYSTEM_RESOURCE_ERROR", "TOOL_TIMEOUT",
-            "AGENT_TIMEOUT", "WORKFLOW_TIMEOUT",
+            "LLM_CONNECTION_ERROR",
+            "LLM_TIMEOUT",
+            "LLM_RATE_LIMIT",
+            "SYSTEM_TIMEOUT",
+            "SYSTEM_RESOURCE_ERROR",
+            "TOOL_TIMEOUT",
+            "AGENT_TIMEOUT",
+            "WORKFLOW_TIMEOUT",
         ]
         for code in transient_codes:
-            assert classify_error(code) == ErrorClassification.TRANSIENT, f"{code} should be transient"
+            assert (
+                classify_error(code) == ErrorClassification.TRANSIENT
+            ), f"{code} should be transient"
 
     def test_safety_errors(self):
         safety_codes = [
-            "SAFETY_VIOLATION", "SAFETY_POLICY_ERROR", "SAFETY_ACTION_BLOCKED",
+            "SAFETY_VIOLATION",
+            "SAFETY_POLICY_ERROR",
+            "SAFETY_ACTION_BLOCKED",
         ]
         for code in safety_codes:
-            assert classify_error(code) == ErrorClassification.SAFETY, f"{code} should be safety"
+            assert (
+                classify_error(code) == ErrorClassification.SAFETY
+            ), f"{code} should be safety"
 
     def test_permanent_errors(self):
         permanent_codes = [
-            "LLM_AUTH_ERROR", "CONFIG_NOT_FOUND", "VALIDATION_ERROR",
-            "AGENT_EXECUTION_ERROR", "TOOL_NOT_FOUND",
+            "LLM_AUTH_ERROR",
+            "CONFIG_NOT_FOUND",
+            "VALIDATION_ERROR",
+            "AGENT_EXECUTION_ERROR",
+            "TOOL_NOT_FOUND",
         ]
         for code in permanent_codes:
-            assert classify_error(code) == ErrorClassification.PERMANENT, f"{code} should be permanent"
+            assert (
+                classify_error(code) == ErrorClassification.PERMANENT
+            ), f"{code} should be permanent"
 
     def test_unknown_errors(self):
         assert classify_error("UNKNOWN") == ErrorClassification.UNKNOWN
@@ -223,12 +237,14 @@ class TestComputeFingerprint:
 
     def test_normalizes_volatile_parts(self):
         fp1 = compute_fingerprint(
-            "LLMError", "LLM_TIMEOUT",
-            "Workflow a1b2c3d4-e5f6-7890-abcd-ef1234567890 timed out"
+            "LLMError",
+            "LLM_TIMEOUT",
+            "Workflow a1b2c3d4-e5f6-7890-abcd-ef1234567890 timed out",
         )
         fp2 = compute_fingerprint(
-            "LLMError", "LLM_TIMEOUT",
-            "Workflow f1f2f3f4-a5a6-7890-1234-aabbccddeeff timed out"
+            "LLMError",
+            "LLM_TIMEOUT",
+            "Workflow f1f2f3f4-a5a6-7890-1234-aabbccddeeff timed out",
         )
         # Same logical error, different UUIDs → same fingerprint
         assert fp1 == fp2

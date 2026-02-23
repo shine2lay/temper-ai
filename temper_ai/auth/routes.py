@@ -14,20 +14,34 @@ SECURITY NOTES:
 - All cookies use HttpOnly, Secure, SameSite flags
 - Referrer-Policy prevents code leakage
 """
+
 import logging
 import os
 import uuid
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 from urllib.parse import quote
 
-from temper_ai.auth.constants import HEADER_SET_COOKIE, LOG_IP_SEPARATOR, ROUTE_DASHBOARD
+from temper_ai.auth.constants import (
+    HEADER_SET_COOKIE,
+    LOG_IP_SEPARATOR,
+    ROUTE_DASHBOARD,
+)
 from temper_ai.auth.models import User
 from temper_ai.auth.oauth.config import OAuthConfig
 from temper_ai.auth.oauth.rate_limiter import RateLimitExceeded
-from temper_ai.auth.oauth.service import OAuthError, OAuthProviderError, OAuthService, OAuthStateError
+from temper_ai.auth.oauth.service import (
+    OAuthError,
+    OAuthProviderError,
+    OAuthService,
+    OAuthStateError,
+)
 from temper_ai.auth.session import SessionStore, SessionStoreProtocol, UserStore
-from temper_ai.shared.constants.durations import SECONDS_PER_10_MINUTES, SECONDS_PER_HOUR, SECONDS_PER_YEAR
+from temper_ai.shared.constants.durations import (
+    SECONDS_PER_10_MINUTES,
+    SECONDS_PER_HOUR,
+    SECONDS_PER_YEAR,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +50,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_ALLOWED_REDIRECTS = ["/", ROUTE_DASHBOARD]
 
 
-def _get_allowed_redirects(explicit: Optional[List[str]] = None) -> List[str]:
+def _get_allowed_redirects(explicit: list[str] | None = None) -> list[str]:
     """Get allowed redirect URLs from explicit list or environment variable.
 
     M-14: Makes the redirect allowlist configurable via the
@@ -78,7 +92,7 @@ class OAuthRouteHandlers:
         >>> from fastapi.responses import RedirectResponse
         >>>
         >>> app = FastAPI()
-        >>> handlers = OAuthRouteHandlers.from_config_file("config/oauth.yaml")
+        >>> handlers = OAuthRouteHandlers.from_config_file("configs/oauth.yaml")
         >>>
         >>> @app.get("/auth/oauth/google")
         >>> async def login(request: Request):
@@ -93,9 +107,9 @@ class OAuthRouteHandlers:
     def __init__(
         self,
         oauth_service: OAuthService,
-        session_store: Optional[SessionStoreProtocol] = None,
-        user_store: Optional[UserStore] = None,
-        allowed_redirect_urls: Optional[List[str]] = None,
+        session_store: SessionStoreProtocol | None = None,
+        user_store: UserStore | None = None,
+        allowed_redirect_urls: list[str] | None = None,
     ):
         """Initialize OAuth route handlers.
 
@@ -141,7 +155,7 @@ class OAuthRouteHandlers:
             return False
 
         # Allow relative URLs that don't start with //
-        if url.startswith('/') and not url.startswith('//'):
+        if url.startswith("/") and not url.startswith("//"):
             return url in self.allowed_redirect_urls
 
         # Block all absolute URLs for security
@@ -173,7 +187,7 @@ class OAuthRouteHandlers:
             Set-Cookie header value
         """
         # AU-08: URL-encode value to prevent cookie injection via special chars
-        safe_value = quote(str(value), safe='')
+        safe_value = quote(str(value), safe="")
         return (
             f"{name}={safe_value}; "
             f"Path={path}; "
@@ -183,7 +197,7 @@ class OAuthRouteHandlers:
             f"Max-Age={max_age}"
         )
 
-    def _get_security_headers(self) -> Dict[str, str]:
+    def _get_security_headers(self) -> dict[str, str]:
         """Get security headers for OAuth responses.
 
         SECURITY: Defense-in-depth headers to prevent various attacks.
@@ -213,8 +227,8 @@ class OAuthRouteHandlers:
         self,
         provider: str,
         client_ip: str,
-        redirect_after: Optional[str] = None,
-    ) -> Tuple[str, Dict[str, str]]:
+        redirect_after: str | None = None,
+    ) -> tuple[str, dict[str, str]]:
         """Handle OAuth login initiation.
 
         Generates authorization URL and redirects user to OAuth provider.
@@ -284,7 +298,7 @@ class OAuthRouteHandlers:
 
     async def _exchange_code_and_get_user_info(
         self, provider: str, code: str, state: str, client_ip: str
-    ) -> Tuple[str, Dict[str, Any]]:
+    ) -> tuple[str, dict[str, Any]]:
         """Exchange code for tokens and get user info.
 
         Args:
@@ -305,7 +319,7 @@ class OAuthRouteHandlers:
         )
 
         # Extract flow user ID
-        flow_user_id = token_result.get('_flow_user_id', str(uuid.uuid4()))
+        flow_user_id = token_result.get("_flow_user_id", str(uuid.uuid4()))
 
         # Get user info
         user_info = await self.oauth_service.get_user_info(
@@ -316,7 +330,7 @@ class OAuthRouteHandlers:
         return flow_user_id, user_info
 
     async def _create_or_get_user(
-        self, provider: str, user_info: Dict[str, Any]
+        self, provider: str, user_info: dict[str, Any]
     ) -> User:
         """Create or retrieve user from user info.
 
@@ -350,8 +364,8 @@ class OAuthRouteHandlers:
         self,
         user: User,
         client_ip: str,
-        user_agent: Optional[str],
-    ) -> Tuple[str, Dict[str, str]]:
+        user_agent: str | None,
+    ) -> tuple[str, dict[str, str]]:
         """Create session and build redirect response with session cookie."""
         session = await self.session_store.create_session(
             user=user,
@@ -372,7 +386,9 @@ class OAuthRouteHandlers:
         )
         headers["Set-Cookie"] = session_cookie
 
-        logger.info(f"OAuth login successful: user={user.user_id}{LOG_IP_SEPARATOR}{client_ip}")
+        logger.info(
+            f"OAuth login successful: user={user.user_id}{LOG_IP_SEPARATOR}{client_ip}"
+        )
 
         return redirect_url, headers
 
@@ -382,10 +398,10 @@ class OAuthRouteHandlers:
         code: str,
         state: str,
         client_ip: str,
-        user_agent: Optional[str] = None,
-        error: Optional[str] = None,
-        error_description: Optional[str] = None,
-    ) -> Tuple[str, Dict[str, str]]:
+        user_agent: str | None = None,
+        error: str | None = None,
+        error_description: str | None = None,
+    ) -> tuple[str, dict[str, str]]:
         """Handle OAuth callback from provider.
 
         Exchanges authorization code for tokens, creates/updates user,
@@ -449,10 +465,10 @@ class OAuthRouteHandlers:
 
     async def handle_logout(
         self,
-        session_id: Optional[str],
+        session_id: str | None,
         client_ip: str,
         revoke_tokens: bool = True,
-    ) -> Tuple[str, Dict[str, str]]:
+    ) -> tuple[str, dict[str, str]]:
         """Handle user logout.
 
         Terminates session, optionally revokes OAuth tokens, and clears cookies.
@@ -507,7 +523,7 @@ class OAuthRouteHandlers:
 
         return "/login", headers
 
-    async def get_current_user(self, session_id: Optional[str]) -> Optional[User]:
+    async def get_current_user(self, session_id: str | None) -> User | None:
         """Get currently authenticated user from session.
 
         Args:

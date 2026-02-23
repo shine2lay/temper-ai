@@ -4,11 +4,12 @@ Provides structured dataclasses and emit helpers that route through the existing
 tracker.track_collaboration_event infrastructure, following the same pattern as
 resilience_events.py.
 """
+
 from __future__ import annotations
 
 import logging
 from dataclasses import asdict, dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -22,10 +23,10 @@ class FailoverEventData:
 
     from_provider: str
     to_provider: str
-    failover_sequence: List[str]
+    failover_sequence: list[str]
     total_attempts: int
-    successful_provider: Optional[str] = None
-    stage_name: Optional[str] = None
+    successful_provider: str | None = None
+    stage_name: str | None = None
 
 
 def emit_failover_event(
@@ -57,7 +58,7 @@ def _emit_via_tracker(
     tracker: Any,
     stage_id: str,
     event_type: str,
-    event_dict: Dict[str, Any],
+    event_dict: dict[str, Any],
 ) -> None:
     """Route a failover event through the tracker's collaboration event API."""
     if tracker is None:
@@ -77,5 +78,7 @@ def _emit_via_tracker(
         )
     except Exception:  # noqa: BLE001 — best-effort observability
         logger.debug(
-            "Failed to emit %s event via tracker", event_type, exc_info=True,
+            "Failed to emit %s event via tracker",
+            event_type,
+            exc_info=True,
         )

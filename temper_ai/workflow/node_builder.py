@@ -3,16 +3,71 @@
 Handles creation of execution nodes for stages, with proper configuration
 loading and executor delegation.
 """
-import logging
-from typing import Any, Callable, Dict, Optional, cast
 
+import logging
+from collections.abc import Callable
+from typing import Any, cast
+
+from temper_ai.shared.utils.exceptions import WorkflowStageError
+from temper_ai.tools.registry import ToolRegistry
 from temper_ai.workflow.config_loader import ConfigLoader
 from temper_ai.workflow.langgraph_state import LangGraphWorkflowState
 from temper_ai.workflow.utils import extract_agent_name
-from temper_ai.tools.registry import ToolRegistry
-from temper_ai.shared.utils.exceptions import WorkflowStageError
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_on_stage_failure_policy(workflow_config: Any) -> str:
+    """Extract the on_stage_failure policy string from a workflow config.
+
+    Supports both dict-style and object-style workflow configs.
+    Defaults to 'halt' when the field is absent.
+    """
+    if isinstance(workflow_config, dict):
+        wf = workflow_config.get("workflow", {})
+        eh = wf.get("error_handling", {})
+        return eh.get("on_stage_failure", "halt")
+    if hasattr(workflow_config, "workflow"):
+        wf = workflow_config.workflow
+        if hasattr(wf, "error_handling") and wf.error_handling:
+            return getattr(wf.error_handling, "on_stage_failure", "halt")
+    return "halt"
+
+
+def _enforce_stage_failure_policy(
+    stage_name: str,
+    stage_status: str,
+    stage_output: dict[str, Any],
+    on_stage_failure: str,
+) -> None:
+    """Enforce on_stage_failure policy for a failed or degraded stage.
+
+    Raises:
+        WorkflowStageError: When policy is 'halt'.
+    """
+    if on_stage_failure == "halt":
+        agent_statuses = stage_output.get("agent_statuses", {})
+        failed_agents = [
+            name
+            for name, status in agent_statuses.items()
+            if (isinstance(status, dict) and status.get("status") == "failed")
+            or status == "failed"
+        ]
+        label = "all agents failed" if stage_status == "failed" else "degraded"
+        raise WorkflowStageError(
+            message=(
+                f"Stage '{stage_name}' {label} "
+                f"({', '.join(failed_agents)}). "
+                f"Workflow halted per on_stage_failure='halt' policy."
+            ),
+            stage_name=stage_name,
+        )
+    if on_stage_failure == "skip":
+        logger.warning(
+            "Stage '%s' %s but on_stage_failure='skip'; continuing workflow.",
+            stage_name,
+            stage_status,
+        )
 
 
 class NodeBuilder:
@@ -32,9 +87,9 @@ class NodeBuilder:
         self,
         config_loader: ConfigLoader,
         tool_registry: ToolRegistry,
-        executors: Dict[str, Any],
-        tool_executor: Optional[Any] = None,
-        context_provider: Optional[Any] = None,
+        executors: dict[str, Any],
+        tool_executor: Any | None = None,
+        context_provider: Any | None = None,
     ) -> None:
         """Initialize node builder.
 
@@ -56,10 +111,8 @@ class NodeBuilder:
                 executor.context_provider = context_provider
 
     def create_stage_node(
-        self,
-        stage_name: str,
-        workflow_config: Any
-    ) -> Callable[[LangGraphWorkflowState], Dict[str, Any]]:
+        self, stage_name: str, workflow_config: Any
+    ) -> Callable[[LangGraphWorkflowState], dict[str, Any]]:
         """Create execution node for a stage.
 
         Creates a callable node function that loads stage config,
@@ -77,7 +130,8 @@ class NodeBuilder:
             >>> node = builder.create_stage_node("research", workflow_config)
             >>> graph.add_node("research", node)
         """
-        def stage_node(state: Any) -> Dict[str, Any]:
+
+        def stage_node(state: Any) -> dict[str, Any]:
             """Execute stage with configured agent mode.
 
             Args:
@@ -98,7 +152,9 @@ class NodeBuilder:
             # Checkpoint resume (R0.6): skip already-completed stages
             resumed = state_dict.get("resumed_stages")
             if resumed and stage_name in resumed:
-                logger.info("Skipping resumed stage '%s' (checkpoint replay)", stage_name)
+                logger.info(
+                    "Skipping resumed stage '%s' (checkpoint replay)", stage_name
+                )
                 return {
                     "stage_outputs": state_dict.get("stage_outputs", {}),
                     "current_stage": stage_name,
@@ -111,7 +167,7 @@ class NodeBuilder:
             agent_mode = self.get_agent_mode(stage_config)
 
             # Get appropriate executor
-            executor = self.executors.get(agent_mode, self.executors['sequential'])
+            executor = self.executors.get(agent_mode, self.executors["sequential"])
 
             # Delegate to executor (pass dict, get dict back)
             result_dict = executor.execute_stage(
@@ -119,7 +175,7 @@ class NodeBuilder:
                 stage_config=stage_config,
                 state=state_dict,
                 config_loader=self.config_loader,
-                tool_registry=self.tool_registry
+                tool_registry=self.tool_registry,
             )
 
             # Check stage failure and enforce on_stage_failure policy
@@ -129,7 +185,7 @@ class NodeBuilder:
             # Executor returns full state dict, we need to return just the updates
             return {
                 "stage_outputs": result_dict.get("stage_outputs", {}),
-                "current_stage": result_dict.get("current_stage", "")
+                "current_stage": result_dict.get("current_stage", ""),
             }
 
         return stage_node
@@ -137,7 +193,7 @@ class NodeBuilder:
     def _check_stage_failure(
         self,
         stage_name: str,
-        result_dict: Dict[str, Any],
+        result_dict: dict[str, Any],
         workflow_config: Any,
     ) -> None:
         """Check if stage failed and enforce on_stage_failure policy.
@@ -156,46 +212,22 @@ class NodeBuilder:
             return
 
         stage_status = stage_output.get("stage_status")
-        if stage_status != "failed":
+        on_stage_failure = _extract_on_stage_failure_policy(workflow_config)
+
+        # Only "failed" and "degraded" statuses can trigger a halt
+        if stage_status not in ("failed", "degraded"):
+            return
+        # Degraded stages only halt when policy is "halt"
+        if stage_status == "degraded" and on_stage_failure != "halt":
             return
 
-        # Extract on_stage_failure policy from workflow config
-        on_stage_failure = "halt"  # default: halt on failure
-        if isinstance(workflow_config, dict):
-            wf = workflow_config.get("workflow", {})
-            eh = wf.get("error_handling", {})
-            on_stage_failure = eh.get("on_stage_failure", "halt")
-        elif hasattr(workflow_config, "workflow"):
-            wf = workflow_config.workflow
-            if hasattr(wf, "error_handling") and wf.error_handling:
-                on_stage_failure = getattr(wf.error_handling, "on_stage_failure", "halt")
-
-        if on_stage_failure == "halt":
-            agent_statuses = stage_output.get("agent_statuses", {})
-            failed_agents = [
-                name for name, status in agent_statuses.items()
-                if (isinstance(status, dict) and status.get("status") == "failed")
-                or status == "failed"
-            ]
-            raise WorkflowStageError(
-                message=(
-                    f"Stage '{stage_name}' failed: all agents failed "
-                    f"({', '.join(failed_agents)}). "
-                    f"Workflow halted per on_stage_failure='halt' policy."
-                ),
-                stage_name=stage_name,
-            )
-        elif on_stage_failure == "skip":
-            logger.warning(
-                "Stage '%s' failed but on_stage_failure='skip'; continuing workflow.",
-                stage_name,
-            )
+        _enforce_stage_failure_policy(
+            stage_name, stage_status, stage_output, on_stage_failure
+        )
 
     def _load_stage_config(
-        self,
-        stage_name: str,
-        workflow_config: Any
-    ) -> Dict[str, Any]:
+        self, stage_name: str, workflow_config: Any
+    ) -> dict[str, Any]:
         """Load stage configuration from file or embedded config.
 
         Args:
@@ -235,10 +267,10 @@ class NodeBuilder:
             >>> # Returns: "parallel", "sequential", or "adaptive"
         """
         # Handle Pydantic model
-        if hasattr(stage_config, 'stage'):
-            execution = getattr(stage_config.stage, 'execution', None)
+        if hasattr(stage_config, "stage"):
+            execution = getattr(stage_config.stage, "execution", None)
             if execution:
-                return getattr(execution, 'agent_mode', 'sequential')
+                return getattr(execution, "agent_mode", "sequential")
 
         # Handle dict — config may be {"stage": {"execution": ...}} or {"execution": ...}
         stage_dict = stage_config if isinstance(stage_config, dict) else {}
@@ -250,10 +282,8 @@ class NodeBuilder:
         return "sequential"
 
     def find_embedded_stage(
-        self,
-        stage_name: str,
-        workflow_config: Any
-    ) -> Optional[Dict[str, Any]]:
+        self, stage_name: str, workflow_config: Any
+    ) -> dict[str, Any] | None:
         """Find stage config embedded in workflow config.
 
         Some workflows embed stage configurations directly rather than
@@ -267,10 +297,13 @@ class NodeBuilder:
             Stage config dict if found, None otherwise
         """
         # Check if stages are embedded in workflow config
-        if hasattr(workflow_config, 'workflow'):
+        if hasattr(workflow_config, "workflow"):
             stages = workflow_config.workflow.stages
             for stage_ref in stages:
-                if hasattr(stage_ref, 'stage_name') and stage_ref.stage_name == stage_name:
+                if (
+                    hasattr(stage_ref, "stage_name")
+                    and stage_ref.stage_name == stage_name
+                ):
                     # For now, return None (embedded configs not fully supported)
                     # Future enhancement: extract embedded config
                     return None
@@ -302,12 +335,14 @@ class NodeBuilder:
             return stage
         elif isinstance(stage, dict):
             # Try common key names
-            name = stage.get("name") or stage.get("stage_name") or stage.get("stage_ref")
+            name = (
+                stage.get("name") or stage.get("stage_name") or stage.get("stage_ref")
+            )
             if name:
                 return cast(str, name)
         else:
             # Pydantic model
-            name = getattr(stage, 'name', None) or getattr(stage, 'stage_name', None)
+            name = getattr(stage, "name", None) or getattr(stage, "stage_name", None)
             if name:
                 return cast(str, name)
 
@@ -353,6 +388,7 @@ class NodeBuilder:
 
 
 STAGE_TIMEOUT_STATUS = "timeout"
+_DEFAULT_TRIGGER_TIMEOUT_SECONDS = 300
 
 
 def create_event_triggered_node(
@@ -372,7 +408,9 @@ def create_event_triggered_node(
     Returns:
         Wrapped node function that waits for event then runs inner_node_fn
     """
+
     def event_triggered_node(state: dict) -> dict:
+        """Wait for a trigger event before executing the inner stage node."""
         _logger = logging.getLogger(__name__)
 
         if event_bus is None:
@@ -383,7 +421,9 @@ def create_event_triggered_node(
             return inner_node_fn(state)
 
         event_type = trigger_config.event_type
-        timeout = getattr(trigger_config, "timeout_seconds", 300)
+        timeout = getattr(
+            trigger_config, "timeout_seconds", _DEFAULT_TRIGGER_TIMEOUT_SECONDS
+        )
         source_filter = getattr(trigger_config, "source_workflow", None)
 
         _logger.info(

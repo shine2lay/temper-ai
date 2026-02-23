@@ -3,7 +3,7 @@
 import copy
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import yaml
 
@@ -30,7 +30,7 @@ class TemplateGenerator:
         product_type: str,
         project_name: str,
         output_dir: Path,
-        inference_overrides: Optional[Dict[str, str]] = None,
+        inference_overrides: dict[str, str] | None = None,
     ) -> Path:
         """Generate a full project config set from a template.
 
@@ -51,15 +51,22 @@ class TemplateGenerator:
             project_name,
         )
         self._copy_and_stamp_stages(
-            template_dir, stages_dir, project_name,
+            template_dir,
+            stages_dir,
+            project_name,
             manifest.quality_gates,
         )
         self._copy_and_stamp_agents(
-            template_dir, agents_dir, project_name, inference_overrides,
+            template_dir,
+            agents_dir,
+            project_name,
+            inference_overrides,
         )
         logger.info(
             "Generated %s project '%s' at %s",
-            product_type, project_name, output_dir,
+            product_type,
+            project_name,
+            output_dir,
         )
         return workflow_path
 
@@ -68,7 +75,10 @@ class TemplateGenerator:
     # ------------------------------------------------------------------
 
     def _copy_and_stamp_workflow(
-        self, src: Path, dst: Path, project_name: str,
+        self,
+        src: Path,
+        dst: Path,
+        project_name: str,
     ) -> Path:
         """Read a template workflow, stamp project name, write output."""
         data = self._read_yaml(src)
@@ -82,10 +92,10 @@ class TemplateGenerator:
         output_dir: Path,
         project_name: str,
         quality_gates: TemplateQualityGates,
-    ) -> List[str]:
+    ) -> list[str]:
         """Copy and stamp all stage configs from the template."""
         stages_dir = template_dir / "stages"
-        written: List[str] = []
+        written: list[str] = []
         if not stages_dir.is_dir():
             return written
         for src in sorted(stages_dir.glob("*.yaml")):
@@ -101,11 +111,11 @@ class TemplateGenerator:
         template_dir: Path,
         output_dir: Path,
         project_name: str,
-        inference_overrides: Optional[Dict[str, str]] = None,
-    ) -> List[str]:
+        inference_overrides: dict[str, str] | None = None,
+    ) -> list[str]:
         """Copy and stamp all agent configs from the template."""
         agents_dir = template_dir / "agents"
-        written: List[str] = []
+        written: list[str] = []
         if not agents_dir.is_dir():
             return written
         for src in sorted(agents_dir.glob("*.yaml")):
@@ -113,14 +123,17 @@ class TemplateGenerator:
             stamped = _replace_placeholder(data, project_name)
             if inference_overrides:
                 stamped = _apply_inference_overrides(
-                    stamped, inference_overrides,
+                    stamped,
+                    inference_overrides,
                 )
             self._write_yaml(output_dir / src.name, stamped)
             written.append(src.name)
         return written
 
     def _apply_quality_gates(
-        self, stage_data: Any, quality_gates: TemplateQualityGates,
+        self,
+        stage_data: Any,
+        quality_gates: TemplateQualityGates,
     ) -> Any:
         """Merge quality gate settings into a stage config dict."""
         if not isinstance(stage_data, dict):
@@ -136,7 +149,7 @@ class TemplateGenerator:
     @staticmethod
     def _read_yaml(path: Path) -> Any:
         """Read a YAML file and return its parsed content."""
-        with open(path, "r", encoding="utf-8") as fh:
+        with open(path, encoding="utf-8") as fh:
             return yaml.safe_load(fh)
 
     @staticmethod
@@ -156,16 +169,15 @@ def _replace_placeholder(obj: Any, project_name: str) -> Any:
     if isinstance(obj, str):
         return obj.replace(PROJECT_NAME_PLACEHOLDER, project_name)
     if isinstance(obj, dict):
-        return {
-            k: _replace_placeholder(v, project_name) for k, v in obj.items()
-        }
+        return {k: _replace_placeholder(v, project_name) for k, v in obj.items()}
     if isinstance(obj, list):
         return [_replace_placeholder(item, project_name) for item in obj]
     return obj
 
 
 def _apply_inference_overrides(
-    agent_data: Any, overrides: Dict[str, str],
+    agent_data: Any,
+    overrides: dict[str, str],
 ) -> Any:
     """Apply inference setting overrides to an agent config dict."""
     if not isinstance(agent_data, dict):

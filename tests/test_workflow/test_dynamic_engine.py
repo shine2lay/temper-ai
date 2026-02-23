@@ -3,6 +3,7 @@
 Tests engine interface compliance, compile/execute lifecycle,
 feature detection, cancellation, metadata, and dynamic routing support.
 """
+
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -110,7 +111,9 @@ class TestDynamicExecutionEngine:
 
     def _make_engine(self):
         """Create engine with mocked safety stack."""
-        with patch("temper_ai.workflow.engines.dynamic_engine.create_safety_stack") as mock_safety:
+        with patch(
+            "temper_ai.workflow.engines.dynamic_engine.create_safety_stack"
+        ) as mock_safety:
             mock_safety.return_value = MagicMock()
             engine = DynamicExecutionEngine()
         return engine
@@ -258,7 +261,9 @@ class TestEngineRegistration:
         from temper_ai.workflow.engine_registry import EngineRegistry
 
         registry = EngineRegistry()
-        with patch("temper_ai.workflow.engines.dynamic_engine.create_safety_stack") as mock:
+        with patch(
+            "temper_ai.workflow.engines.dynamic_engine.create_safety_stack"
+        ) as mock:
             mock.return_value = MagicMock()
             engine = registry.get_engine("dynamic")
         assert isinstance(engine, DynamicExecutionEngine)
@@ -268,7 +273,9 @@ class TestEngineRegistration:
         from temper_ai.workflow.engine_registry import EngineRegistry
 
         registry = EngineRegistry()
-        with patch("temper_ai.workflow.engines.dynamic_engine.create_safety_stack") as mock:
+        with patch(
+            "temper_ai.workflow.engines.dynamic_engine.create_safety_stack"
+        ) as mock:
             mock.return_value = MagicMock()
             engine = registry.get_engine("native")
         assert isinstance(engine, DynamicExecutionEngine)
@@ -280,7 +287,9 @@ class TestEngineRegistration:
         registry = EngineRegistry()
         config = {"workflow": {"engine": "dynamic", "stages": ["s1"]}}
 
-        with patch("temper_ai.workflow.engines.dynamic_engine.create_safety_stack") as mock:
+        with patch(
+            "temper_ai.workflow.engines.dynamic_engine.create_safety_stack"
+        ) as mock:
             mock.return_value = MagicMock()
             engine = registry.get_engine_from_config(config)
         assert isinstance(engine, DynamicExecutionEngine)
@@ -295,6 +304,7 @@ class TestBackwardCompatibility:
             NativeCompiledWorkflow,
             NativeExecutionEngine,
         )
+
         assert NativeExecutionEngine is DynamicExecutionEngine
         assert NativeCompiledWorkflow is DynamicCompiledWorkflow
 
@@ -304,5 +314,6 @@ class TestBackwardCompatibility:
             NativeCompiledWorkflow,
             NativeExecutionEngine,
         )
+
         assert NativeExecutionEngine is DynamicExecutionEngine
         assert NativeCompiledWorkflow is DynamicCompiledWorkflow

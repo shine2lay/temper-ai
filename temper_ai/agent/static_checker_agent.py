@@ -4,20 +4,21 @@ Unlike StandardAgent, StaticCheckerAgent has no tool-calling loop.
 The only subprocess execution is via ``pre_commands``; the LLM receives
 their output and produces a structured verdict.
 """
+
 from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from temper_ai.storage.schemas import AgentConfig
 
-from temper_ai.agent.utils._pre_command_helpers import execute_pre_commands
 from temper_ai.agent.base_agent import AgentResponse, BaseAgent, ExecutionContext
-from temper_ai.shared.utils.exceptions import LLMError
+from temper_ai.agent.utils._pre_command_helpers import execute_pre_commands
 from temper_ai.llm.prompts.validation import PromptRenderError
 from temper_ai.llm.service import LLMService
+from temper_ai.shared.utils.exceptions import LLMError
 
 logger = logging.getLogger(__name__)
 
@@ -60,11 +61,15 @@ class StaticCheckerAgent(BaseAgent):
 
     def _build_prompt(
         self,
-        input_data: Dict[str, Any],
-        context: Optional[ExecutionContext] = None,  # noqa: unused — kept for interface compat
+        input_data: dict[str, Any],
+        context: (
+            ExecutionContext | None
+        ) = None,  # noqa: unused — kept for interface compat
     ) -> str:
         template = self._render_template(input_data)
-        template = self._inject_input_context(template, input_data, _EXCLUDE_FROM_INJECT)
+        template = self._inject_input_context(
+            template, input_data, _EXCLUDE_FROM_INJECT
+        )
         return template
 
     # ------------------------------------------------------------------
@@ -73,8 +78,8 @@ class StaticCheckerAgent(BaseAgent):
 
     def _run(
         self,
-        input_data: Dict[str, Any],
-        context: Optional[ExecutionContext],
+        input_data: dict[str, Any],
+        context: ExecutionContext | None,
         start_time: float,
     ) -> AgentResponse:
         """Run pre_commands, render prompt, call LLM once, return response."""
@@ -94,13 +99,15 @@ class StaticCheckerAgent(BaseAgent):
 
     async def _arun(
         self,
-        input_data: Dict[str, Any],
-        context: Optional[ExecutionContext],
+        input_data: dict[str, Any],
+        context: ExecutionContext | None,
         start_time: float,
     ) -> AgentResponse:
         """Async: pre_commands in thread, then async LLM call."""
         # pre_commands are sync subprocess calls — run in thread
-        command_results = await asyncio.to_thread(execute_pre_commands, self, input_data)
+        command_results = await asyncio.to_thread(
+            execute_pre_commands, self, input_data
+        )
         if command_results is not None:
             input_data["command_results"] = command_results
 
@@ -114,7 +121,9 @@ class StaticCheckerAgent(BaseAgent):
         )
         return self._build_checker_response(result, input_data, start_time)
 
-    def _build_checker_response(self, result: Any, input_data: Dict[str, Any], start_time: float) -> AgentResponse:
+    def _build_checker_response(
+        self, result: Any, input_data: dict[str, Any], start_time: float
+    ) -> AgentResponse:
         """Build response, prepending raw command results for downstream agents."""
         output = result.output
         raw_results = input_data.get("command_results", "")
@@ -133,12 +142,11 @@ class StaticCheckerAgent(BaseAgent):
             error=result.error,
         )
 
-    def _on_error(
-        self, error: Exception, start_time: float
-    ) -> Optional[AgentResponse]:
+    def _on_error(self, error: Exception, start_time: float) -> AgentResponse | None:
         """Handle expected execution errors."""
-        if isinstance(error, (LLMError, PromptRenderError, RuntimeError,
-                              ValueError, TimeoutError)):
+        if isinstance(
+            error, (LLMError, PromptRenderError, RuntimeError, ValueError, TimeoutError)
+        ):
             return self._build_error_response(error, start_time)
         return None
 
@@ -146,7 +154,7 @@ class StaticCheckerAgent(BaseAgent):
     # Capabilities
     # ------------------------------------------------------------------
 
-    def get_capabilities(self) -> Dict[str, Any]:
+    def get_capabilities(self) -> dict[str, Any]:
         """Get agent capabilities and configuration."""
         pre_commands = getattr(self.config.agent, "pre_commands", []) or []
         return {
@@ -154,8 +162,16 @@ class StaticCheckerAgent(BaseAgent):
             "description": self.description,
             "version": self.version,
             "type": "static_checker",
-            "llm_provider": self.config.agent.inference.provider if self.config.agent.inference else "none",
-            "llm_model": self.config.agent.inference.model if self.config.agent.inference else "none",
+            "llm_provider": (
+                self.config.agent.inference.provider
+                if self.config.agent.inference
+                else "none"
+            ),
+            "llm_model": (
+                self.config.agent.inference.model
+                if self.config.agent.inference
+                else "none"
+            ),
             "tools": [],
             "pre_commands": [cmd.name for cmd in pre_commands],
             "supports_streaming": True,

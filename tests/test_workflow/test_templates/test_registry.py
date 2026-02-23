@@ -58,9 +58,14 @@ class TestTemplateRegistryListTemplates:
 
     def test_discovers_templates(self, tmp_path):
         _create_template(tmp_path, "api")
-        _create_template(tmp_path, "cli_tool", {
-            **MINIMAL_MANIFEST, "name": "CLI Tool",
-        })
+        _create_template(
+            tmp_path,
+            "cli_tool",
+            {
+                **MINIMAL_MANIFEST,
+                "name": "CLI Tool",
+            },
+        )
         registry = TemplateRegistry(templates_dir=tmp_path)
         templates = registry.list_templates()
         assert len(templates) == 2

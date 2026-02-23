@@ -1,7 +1,9 @@
 """Agent registry store — CRUD operations for the agent registry."""
+
 import logging
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
-from typing import Any, Callable, Generator, List, Optional
+from typing import Any
 
 from sqlmodel import Session, select
 
@@ -38,7 +40,7 @@ def _entry_from_db(row: AgentRegistryDB) -> AgentRegistryEntry:
 class AgentRegistryStore:
     """Persists and retrieves agent registration records."""
 
-    def __init__(self, session_factory: Optional[SessionFactory] = None) -> None:
+    def __init__(self, session_factory: SessionFactory | None = None) -> None:
         """Initialise the store.
 
         Args:
@@ -106,21 +108,21 @@ class AgentRegistryStore:
             session.add(row)
         return True
 
-    def get(self, name: str) -> Optional[AgentRegistryEntry]:
+    def get(self, name: str) -> AgentRegistryEntry | None:
         """Return an agent entry by name, or None if not found."""
         with self._session() as session:
             stmt = select(AgentRegistryDB).where(AgentRegistryDB.name == name)
             row = session.exec(stmt).first()
             return _entry_from_db(row) if row else None
 
-    def get_by_id(self, agent_id: str) -> Optional[AgentRegistryEntry]:
+    def get_by_id(self, agent_id: str) -> AgentRegistryEntry | None:
         """Return an agent entry by ID, or None if not found."""
         with self._session() as session:
             stmt = select(AgentRegistryDB).where(AgentRegistryDB.id == agent_id)
             row = session.exec(stmt).first()
             return _entry_from_db(row) if row else None
 
-    def list_all(self, status_filter: Optional[str] = None) -> List[AgentRegistryEntry]:
+    def list_all(self, status_filter: str | None = None) -> list[AgentRegistryEntry]:
         """List all registered agents, optionally filtered by status.
 
         Args:

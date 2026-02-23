@@ -7,7 +7,12 @@ import uuid
 import pytest
 import yaml
 
-from temper_ai.portfolio._schemas import KGConceptType, KGRelation, PortfolioConfig, ProductDefinition
+from temper_ai.portfolio._schemas import (
+    KGConceptType,
+    KGRelation,
+    PortfolioConfig,
+    ProductDefinition,
+)
 from temper_ai.portfolio.knowledge_graph import KnowledgePopulator, KnowledgeQuery
 from temper_ai.portfolio.models import ProductRunRecord
 from temper_ai.portfolio.store import PortfolioStore
@@ -46,9 +51,13 @@ def _make_workflow_yaml(tmpdir, name, stages):
 class TestPopulateFromConfig:
     def test_creates_concepts(self, populator, store):
         with tempfile.TemporaryDirectory() as tmpdir:
-            wf_path = _make_workflow_yaml(tmpdir, "wf1", [
-                {"name": "build", "agents": ["builder_agent"]},
-            ])
+            wf_path = _make_workflow_yaml(
+                tmpdir,
+                "wf1",
+                [
+                    {"name": "build", "agents": ["builder_agent"]},
+                ],
+            )
             portfolio = PortfolioConfig(
                 name="test",
                 products=[
@@ -63,9 +72,13 @@ class TestPopulateFromConfig:
 
     def test_creates_edges(self, populator, store):
         with tempfile.TemporaryDirectory() as tmpdir:
-            wf_path = _make_workflow_yaml(tmpdir, "wf1", [
-                {"name": "build", "agents": ["builder_agent"]},
-            ])
+            wf_path = _make_workflow_yaml(
+                tmpdir,
+                "wf1",
+                [
+                    {"name": "build", "agents": ["builder_agent"]},
+                ],
+            )
             portfolio = PortfolioConfig(
                 name="test",
                 products=[
@@ -74,14 +87,20 @@ class TestPopulateFromConfig:
             )
             populator.populate_from_config(portfolio)
             product = store.get_concept("web_app")
-            edges = store.query_edges(source_id=product.id, relation=KGRelation.USES.value)
+            edges = store.query_edges(
+                source_id=product.id, relation=KGRelation.USES.value
+            )
             assert len(edges) >= 1
 
     def test_idempotent(self, populator, store):
         with tempfile.TemporaryDirectory() as tmpdir:
-            wf_path = _make_workflow_yaml(tmpdir, "wf1", [
-                {"name": "build", "agents": ["builder_agent"]},
-            ])
+            wf_path = _make_workflow_yaml(
+                tmpdir,
+                "wf1",
+                [
+                    {"name": "build", "agents": ["builder_agent"]},
+                ],
+            )
             portfolio = PortfolioConfig(
                 name="test",
                 products=[
@@ -97,9 +116,13 @@ class TestPopulateFromConfig:
 class TestPopulateFromRuns:
     def test_creates_outcome_concepts(self, populator, store):
         with tempfile.TemporaryDirectory() as tmpdir:
-            wf_path = _make_workflow_yaml(tmpdir, "wf1", [
-                {"name": "build", "agents": ["a1"]},
-            ])
+            wf_path = _make_workflow_yaml(
+                tmpdir,
+                "wf1",
+                [
+                    {"name": "build", "agents": ["a1"]},
+                ],
+            )
             portfolio = PortfolioConfig(
                 name="test",
                 products=[
@@ -108,14 +131,16 @@ class TestPopulateFromRuns:
             )
             populator.populate_from_config(portfolio)
 
-            store.save_product_run(ProductRunRecord(
-                id=str(uuid.uuid4()),
-                portfolio_id="p1",
-                product_type="web_app",
-                workflow_id="wf-1",
-                status="completed",
-                success=True,
-            ))
+            store.save_product_run(
+                ProductRunRecord(
+                    id=str(uuid.uuid4()),
+                    portfolio_id="p1",
+                    product_type="web_app",
+                    workflow_id="wf-1",
+                    status="completed",
+                    success=True,
+                )
+            )
             added = populator.populate_from_runs("web_app")
             assert added >= 1
             concepts = store.list_concepts(concept_type=KGConceptType.OUTCOME.value)
@@ -123,19 +148,23 @@ class TestPopulateFromRuns:
 
     def test_populate_missing_product_concept(self, populator, store):
         """If product concept doesn't exist, populate_from_runs returns 0."""
-        store.save_product_run(ProductRunRecord(
-            id=str(uuid.uuid4()),
-            portfolio_id="p1",
-            product_type="nonexistent",
-            workflow_id="wf-1",
-        ))
+        store.save_product_run(
+            ProductRunRecord(
+                id=str(uuid.uuid4()),
+                portfolio_id="p1",
+                product_type="nonexistent",
+                workflow_id="wf-1",
+            )
+        )
         added = populator.populate_from_runs("nonexistent")
         assert added == 0
 
 
 class TestTechCompatibility:
     def test_add_tech_compatibility(self, populator, store):
-        populator.add_tech_compatibility("python", "fastapi", score=0.95, notes="Native")
+        populator.add_tech_compatibility(
+            "python", "fastapi", score=0.95, notes="Native"
+        )
         records = store.get_compatibility("python")
         assert len(records) == 1
         assert records[0].compatibility_score == pytest.approx(0.95)
@@ -144,9 +173,13 @@ class TestTechCompatibility:
 class TestGetRelatedConcepts:
     def test_returns_related(self, populator, query, store):
         with tempfile.TemporaryDirectory() as tmpdir:
-            wf_path = _make_workflow_yaml(tmpdir, "wf1", [
-                {"name": "build", "agents": ["builder_agent"]},
-            ])
+            wf_path = _make_workflow_yaml(
+                tmpdir,
+                "wf1",
+                [
+                    {"name": "build", "agents": ["builder_agent"]},
+                ],
+            )
             portfolio = PortfolioConfig(
                 name="test",
                 products=[
@@ -160,9 +193,13 @@ class TestGetRelatedConcepts:
 
     def test_filtered_by_relation(self, populator, query, store):
         with tempfile.TemporaryDirectory() as tmpdir:
-            wf_path = _make_workflow_yaml(tmpdir, "wf1", [
-                {"name": "build", "agents": ["builder_agent"]},
-            ])
+            wf_path = _make_workflow_yaml(
+                tmpdir,
+                "wf1",
+                [
+                    {"name": "build", "agents": ["builder_agent"]},
+                ],
+            )
             portfolio = PortfolioConfig(
                 name="test",
                 products=[
@@ -170,15 +207,21 @@ class TestGetRelatedConcepts:
                 ],
             )
             populator.populate_from_config(portfolio)
-            related = query.get_related_concepts("web_app", relation=KGRelation.USES.value)
+            related = query.get_related_concepts(
+                "web_app", relation=KGRelation.USES.value
+            )
             assert all(r["relation"] == KGRelation.USES.value for r in related)
 
     def test_depth_traversal(self, populator, query, store):
         """Depth=2 should traverse product→stage→agent."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            wf_path = _make_workflow_yaml(tmpdir, "wf1", [
-                {"name": "build", "agents": ["builder_agent"]},
-            ])
+            wf_path = _make_workflow_yaml(
+                tmpdir,
+                "wf1",
+                [
+                    {"name": "build", "agents": ["builder_agent"]},
+                ],
+            )
             portfolio = PortfolioConfig(
                 name="test",
                 products=[
@@ -199,9 +242,13 @@ class TestGetRelatedConcepts:
 class TestFindPath:
     def test_path_exists(self, populator, query, store):
         with tempfile.TemporaryDirectory() as tmpdir:
-            wf_path = _make_workflow_yaml(tmpdir, "wf1", [
-                {"name": "build", "agents": ["builder_agent"]},
-            ])
+            wf_path = _make_workflow_yaml(
+                tmpdir,
+                "wf1",
+                [
+                    {"name": "build", "agents": ["builder_agent"]},
+                ],
+            )
             portfolio = PortfolioConfig(
                 name="test",
                 products=[
@@ -216,12 +263,20 @@ class TestFindPath:
 
     def test_no_path(self, populator, query, store):
         with tempfile.TemporaryDirectory() as tmpdir:
-            wf1 = _make_workflow_yaml(tmpdir, "wf1", [
-                {"name": "build", "agents": ["a1"]},
-            ])
-            wf2 = _make_workflow_yaml(tmpdir, "wf2", [
-                {"name": "deploy", "agents": ["a2"]},
-            ])
+            wf1 = _make_workflow_yaml(
+                tmpdir,
+                "wf1",
+                [
+                    {"name": "build", "agents": ["a1"]},
+                ],
+            )
+            wf2 = _make_workflow_yaml(
+                tmpdir,
+                "wf2",
+                [
+                    {"name": "deploy", "agents": ["a2"]},
+                ],
+            )
             p1 = PortfolioConfig(
                 name="p1",
                 products=[
@@ -242,9 +297,13 @@ class TestFindPath:
 
     def test_direct_connection(self, populator, query, store):
         with tempfile.TemporaryDirectory() as tmpdir:
-            wf_path = _make_workflow_yaml(tmpdir, "wf1", [
-                {"name": "build", "agents": []},
-            ])
+            wf_path = _make_workflow_yaml(
+                tmpdir,
+                "wf1",
+                [
+                    {"name": "build", "agents": []},
+                ],
+            )
             portfolio = PortfolioConfig(
                 name="test",
                 products=[
@@ -259,9 +318,13 @@ class TestFindPath:
     def test_bfs_depth_limit(self, populator, query, store):
         """With max_depth=1, cannot reach agent through stage."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            wf_path = _make_workflow_yaml(tmpdir, "wf1", [
-                {"name": "build", "agents": ["builder_agent"]},
-            ])
+            wf_path = _make_workflow_yaml(
+                tmpdir,
+                "wf1",
+                [
+                    {"name": "build", "agents": ["builder_agent"]},
+                ],
+            )
             portfolio = PortfolioConfig(
                 name="test",
                 products=[
@@ -277,9 +340,13 @@ class TestFindPath:
     def test_bidirectional_path(self, populator, query, store):
         """Path finding works in both directions."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            wf_path = _make_workflow_yaml(tmpdir, "wf1", [
-                {"name": "build", "agents": ["builder_agent"]},
-            ])
+            wf_path = _make_workflow_yaml(
+                tmpdir,
+                "wf1",
+                [
+                    {"name": "build", "agents": ["builder_agent"]},
+                ],
+            )
             portfolio = PortfolioConfig(
                 name="test",
                 products=[
@@ -296,10 +363,14 @@ class TestFindPath:
 class TestConceptStats:
     def test_concept_stats(self, populator, query, store):
         with tempfile.TemporaryDirectory() as tmpdir:
-            wf_path = _make_workflow_yaml(tmpdir, "wf1", [
-                {"name": "build", "agents": ["a1"]},
-                {"name": "test", "agents": ["a2"]},
-            ])
+            wf_path = _make_workflow_yaml(
+                tmpdir,
+                "wf1",
+                [
+                    {"name": "build", "agents": ["a1"]},
+                    {"name": "test", "agents": ["a2"]},
+                ],
+            )
             portfolio = PortfolioConfig(
                 name="test",
                 products=[
@@ -313,9 +384,13 @@ class TestConceptStats:
 
     def test_concept_stats_edges(self, populator, query, store):
         with tempfile.TemporaryDirectory() as tmpdir:
-            wf_path = _make_workflow_yaml(tmpdir, "wf1", [
-                {"name": "build", "agents": ["a1"]},
-            ])
+            wf_path = _make_workflow_yaml(
+                tmpdir,
+                "wf1",
+                [
+                    {"name": "build", "agents": ["a1"]},
+                ],
+            )
             portfolio = PortfolioConfig(
                 name="test",
                 products=[

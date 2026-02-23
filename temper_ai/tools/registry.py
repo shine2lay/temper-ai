@@ -1,10 +1,12 @@
 """
 Tool registry for managing and discovering tools.
 """
+
 import logging
 import threading
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
+from temper_ai.shared.utils.exceptions import ToolRegistryError
 from temper_ai.tools._registry_helpers import (
     auto_discover as _auto_discover,
 )
@@ -34,14 +36,13 @@ from temper_ai.tools._registry_helpers import (
 )
 from temper_ai.tools.base import BaseTool
 from temper_ai.tools.constants import TOOL_ERROR_PREFIX
-from temper_ai.shared.utils.exceptions import ToolRegistryError
 
 logger = logging.getLogger(__name__)
 
 # Global cache for discovered tools (populated on first auto-discovery)
-_DISCOVERED_TOOLS_CACHE: Optional[Dict[str, BaseTool]] = None
-_GLOBAL_REGISTRY: Optional['ToolRegistry'] = None
-_GLOBAL_LOCK = threading.Lock()
+_DISCOVERED_TOOLS_CACHE: dict[str, BaseTool] | None = None
+_GLOBAL_REGISTRY: Optional["ToolRegistry"] = None
+_GLOBAL_LOCK = threading.RLock()
 
 
 class ToolRegistry:
@@ -58,7 +59,7 @@ class ToolRegistry:
 
     def __init__(self, auto_discover: bool = False):
         """Initialize tool registry."""
-        self._tools: Dict[str, Dict[str, BaseTool]] = {}
+        self._tools: dict[str, dict[str, BaseTool]] = {}
         self._lock = threading.Lock()
 
         if auto_discover:
@@ -88,12 +89,12 @@ class ToolRegistry:
 
         logger.debug(f"Registered tool: {tool.name} v{version}")
 
-    def register_multiple(self, tools: List[BaseTool]) -> None:
+    def register_multiple(self, tools: list[BaseTool]) -> None:
         """Register multiple tools at once."""
         for tool in tools:
             self.register(tool)
 
-    def unregister(self, tool_name: str, version: Optional[str] = None) -> None:
+    def unregister(self, tool_name: str, version: str | None = None) -> None:
         """Unregister a tool or specific tool version."""
         with self._lock:
             if tool_name not in self._tools:
@@ -103,12 +104,14 @@ class ToolRegistry:
                 del self._tools[tool_name]
             else:
                 if version not in self._tools[tool_name]:
-                    raise ToolRegistryError(f"{TOOL_ERROR_PREFIX}{tool_name}' version '{version}' not found")
+                    raise ToolRegistryError(
+                        f"{TOOL_ERROR_PREFIX}{tool_name}' version '{version}' not found"
+                    )
                 del self._tools[tool_name][version]
                 if not self._tools[tool_name]:
                     del self._tools[tool_name]
 
-    def get(self, name: str, version: Optional[str] = None) -> Optional[BaseTool]:
+    def get(self, name: str, version: str | None = None) -> BaseTool | None:
         """Get tool by name and optionally version."""
         if name not in self._tools:
             return None
@@ -124,7 +127,7 @@ class ToolRegistry:
         latest_version = get_latest_version(list(tool_versions.keys()))
         return tool_versions[latest_version]
 
-    def has(self, name: str, version: Optional[str] = None) -> bool:
+    def has(self, name: str, version: str | None = None) -> bool:
         """Check if tool is registered."""
         if name not in self._tools:
             return False
@@ -132,17 +135,17 @@ class ToolRegistry:
             return len(self._tools[name]) > 0
         return version in self._tools[name]
 
-    def list_tools(self) -> List[str]:
+    def list_tools(self) -> list[str]:
         """List all registered tool names."""
         return list(self._tools.keys())
 
-    def list_tool_versions(self, name: str) -> List[str]:
+    def list_tool_versions(self, name: str) -> list[str]:
         """List all versions of a specific tool."""
         if name not in self._tools:
             return []
         return list(self._tools[name].keys())
 
-    def get_all_tools(self) -> Dict[str, BaseTool]:
+    def get_all_tools(self) -> dict[str, BaseTool]:
         """Get all registered tools (latest version of each)."""
         result = {}
         for name in self._tools:
@@ -151,18 +154,20 @@ class ToolRegistry:
                 result[name] = latest_tool
         return result
 
-    def get_tool_schema(self, name: str) -> Dict[str, Any]:
+    def get_tool_schema(self, name: str) -> dict[str, Any]:
         """Get tool schema for LLM."""
         tool = self.get(name)
         if not tool:
             raise ToolRegistryError(f"Tool not found: {name}")
         return tool.to_llm_schema()
 
-    def get_all_tool_schemas(self) -> List[Dict[str, Any]]:
+    def get_all_tool_schemas(self) -> list[dict[str, Any]]:
         """Get schemas for all registered tools."""
         return [tool.to_llm_schema() for tool in self.get_all_tools().values()]
 
-    def auto_discover(self, tools_package: str = "temper_ai.tools", use_cache: bool = True) -> int:
+    def auto_discover(
+        self, tools_package: str = "temper_ai.tools", use_cache: bool = True
+    ) -> int:
         """Auto-discover and register tools from a package."""
         global _DISCOVERED_TOOLS_CACHE
         return _auto_discover(
@@ -171,7 +176,9 @@ class ToolRegistry:
             use_cache=use_cache,
             global_lock=_GLOBAL_LOCK,
             get_cache_fn=lambda: _DISCOVERED_TOOLS_CACHE,
-            set_cache_fn=lambda tools: globals().__setitem__('_DISCOVERED_TOOLS_CACHE', tools),
+            set_cache_fn=lambda tools: globals().__setitem__(
+                "_DISCOVERED_TOOLS_CACHE", tools
+            ),
         )
 
     def clear(self) -> None:
@@ -195,45 +202,62 @@ class ToolRegistry:
 # compatibility (callers can still do ``registry.list_all()`` etc.).
 # --------------------------------------------------------------------------
 
-def _list(self: ToolRegistry) -> List[str]:
+
+def _list(self: ToolRegistry) -> list[str]:
     """List all registered tool names (Registry Protocol method)."""
     return self.list_tools()
 
-def _list_all(self: ToolRegistry) -> List[str]:
+
+def _list_all(self: ToolRegistry) -> list[str]:
     """DEPRECATED: Use list() instead."""
     return self.list_tools()
+
 
 def _count(self: ToolRegistry) -> int:
     """Get total number of registered tool instances (Registry Protocol method)."""
     return len(self)
 
-def _get_tool_metadata_method(self: ToolRegistry, name: str) -> Dict[str, Any]:
+
+def _get_tool_metadata_method(self: ToolRegistry, name: str) -> dict[str, Any]:
     """Get tool metadata."""
     return _get_tool_metadata(self, name)
 
-def _list_available_tools_method(self: ToolRegistry) -> Dict[str, Dict[str, Any]]:
+
+def _list_available_tools_method(self: ToolRegistry) -> dict[str, dict[str, Any]]:
     """List all registered tools with detailed information."""
     return _list_available_tools(self)
+
 
 def _get_registration_report_method(self: ToolRegistry) -> str:
     """Get detailed registration report for debugging."""
     return _get_registration_report(self)
 
-def _load_from_config_method(self: ToolRegistry, config_name: str, config_loader: Optional[Any] = None) -> BaseTool:
+
+def _load_from_config_method(
+    self: ToolRegistry, config_name: str, config_loader: Any | None = None
+) -> BaseTool:
     """Load and register a tool from configuration file."""
     return _load_from_config(self, config_name, config_loader)
 
-def _load_all_from_configs_method(self: ToolRegistry, config_loader: Optional[Any] = None) -> int:
+
+def _load_all_from_configs_method(
+    self: ToolRegistry, config_loader: Any | None = None
+) -> int:
     """Load and register all tools from configuration files."""
     return _load_all_from_configs(self, config_loader)
 
-def _validate_tool_interface_method(self: ToolRegistry, tool_class: Any) -> tuple[bool, List[str]]:
+
+def _validate_tool_interface_method(
+    self: ToolRegistry, tool_class: Any
+) -> tuple[bool, list[str]]:
     """Validate tool interface."""
     return _validate_tool_interface(tool_class)
 
-def _get_error_suggestion_method(self: ToolRegistry, error_msg: str) -> Optional[str]:
+
+def _get_error_suggestion_method(self: ToolRegistry, error_msg: str) -> str | None:
     """Get error suggestion."""
     return _get_error_suggestion(error_msg)
+
 
 ToolRegistry.list = _list  # type: ignore[attr-defined]
 ToolRegistry.list_all = _list_all  # type: ignore[attr-defined]

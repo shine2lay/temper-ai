@@ -2,9 +2,9 @@
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from temper_ai.optimization.dspy.constants import DEFAULT_PROGRAM_STORE_DIR
 
@@ -21,10 +21,10 @@ class CompiledProgramStore:
         self,
         agent_name: str,
         program: Any,
-        metadata: Optional[Dict[str, str]] = None,
+        metadata: dict[str, str] | None = None,
     ) -> str:
         """Save compiled program data as JSON. Returns program_id."""
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+        timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S")
         program_id = f"{agent_name}_{timestamp}"
         agent_dir = self._store_dir / agent_name
         agent_dir.mkdir(parents=True, exist_ok=True)
@@ -32,7 +32,7 @@ class CompiledProgramStore:
         payload = {
             "program_id": program_id,
             "agent_name": agent_name,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
             "metadata": metadata or {},
             "program_data": program if isinstance(program, dict) else {},
         }
@@ -41,7 +41,7 @@ class CompiledProgramStore:
         logger.info("Saved program %s to %s", program_id, file_path)
         return program_id
 
-    def load_latest(self, agent_name: str) -> Optional[Dict[str, Any]]:
+    def load_latest(self, agent_name: str) -> dict[str, Any] | None:
         """Load the most recent compiled program for an agent."""
         agent_dir = self._store_dir / agent_name
         if not agent_dir.is_dir():
@@ -57,7 +57,7 @@ class CompiledProgramStore:
 
         return self._load_file(json_files[0])
 
-    def load(self, agent_name: str, program_id: str) -> Optional[Dict[str, Any]]:
+    def load(self, agent_name: str, program_id: str) -> dict[str, Any] | None:
         """Load a specific compiled program by ID."""
         file_path = self._store_dir / agent_name / f"{program_id}.json"
         if not file_path.is_file():
@@ -65,10 +65,11 @@ class CompiledProgramStore:
         return self._load_file(file_path)
 
     def list_programs(
-        self, agent_name: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
+        self,
+        agent_name: str | None = None,
+    ) -> list[dict[str, Any]]:
         """List available compiled programs with metadata."""
-        programs: List[Dict[str, Any]] = []
+        programs: list[dict[str, Any]] = []
         if agent_name:
             dirs = [self._store_dir / agent_name]
         else:
@@ -84,19 +85,21 @@ class CompiledProgramStore:
             for json_file in sorted(agent_dir.glob("*.json")):
                 data = self._load_file(json_file)
                 if data:
-                    programs.append({
-                        "program_id": data.get("program_id", json_file.stem),
-                        "agent_name": data.get("agent_name", agent_dir.name),
-                        "created_at": data.get("created_at", ""),
-                        "metadata": data.get("metadata", {}),
-                    })
+                    programs.append(
+                        {
+                            "program_id": data.get("program_id", json_file.stem),
+                            "agent_name": data.get("agent_name", agent_dir.name),
+                            "created_at": data.get("created_at", ""),
+                            "metadata": data.get("metadata", {}),
+                        }
+                    )
         return programs
 
     @staticmethod
-    def _load_file(file_path: Path) -> Optional[Dict[str, Any]]:
+    def _load_file(file_path: Path) -> dict[str, Any] | None:
         """Load and parse a JSON program file."""
         try:
-            data: Dict[str, Any] = json.loads(file_path.read_text())
+            data: dict[str, Any] = json.loads(file_path.read_text())
             return data
         except (json.JSONDecodeError, OSError) as exc:
             logger.warning("Failed to load %s: %s", file_path, exc)

@@ -1,6 +1,6 @@
 """Data service for experimentation dashboard endpoints."""
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 DEFAULT_EXPERIMENT_LIMIT = 50
 
@@ -19,9 +19,9 @@ class ExperimentDataService:
 
     def list_experiments(
         self,
-        status: Optional[str] = None,
+        status: str | None = None,
         limit: int = DEFAULT_EXPERIMENT_LIMIT,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """List experiments, optionally filtered by status."""
         from temper_ai.experimentation.models import ExperimentStatus
 
@@ -30,14 +30,14 @@ class ExperimentDataService:
         results = [_experiment_to_dict(exp) for exp in experiments[:limit]]
         return results
 
-    def get_experiment(self, experiment_id: str) -> Optional[Dict[str, Any]]:
+    def get_experiment(self, experiment_id: str) -> dict[str, Any] | None:
         """Get a single experiment by ID."""
         exp = self._service.get_experiment(experiment_id)
         if exp is None:
             return None
         return _experiment_to_dict(exp)
 
-    def get_results(self, experiment_id: str) -> Optional[Dict[str, Any]]:
+    def get_results(self, experiment_id: str) -> dict[str, Any] | None:
         """Get analysis results for an experiment."""
         exp = self._service.get_experiment(experiment_id)
         if exp is None:
@@ -48,7 +48,7 @@ class ExperimentDataService:
             return None
 
 
-def _experiment_to_dict(exp: Any) -> Dict[str, Any]:
+def _experiment_to_dict(exp: Any) -> dict[str, Any]:
     """Convert an Experiment model to a JSON-serializable dict."""
     return {
         "id": exp.id,

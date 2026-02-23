@@ -8,17 +8,18 @@ Tests cover:
 - ErrorHandler edge cases
 - safe_execute edge cases
 """
+
 import time
-from unittest.mock import Mock, call
+from unittest.mock import Mock
+
 import pytest
 
 from temper_ai.shared.utils.error_handling import (
-    RetryStrategy,
+    ErrorHandler,
     RetryParams,
+    RetryStrategy,
     retry_with_backoff,
     safe_execute,
-    create_error_result,
-    ErrorHandler,
 )
 
 
@@ -30,7 +31,9 @@ class TestRetryCallbackHandling:
         failing_callback = Mock(side_effect=RuntimeError("Callback error"))
         mock_func = Mock(side_effect=[ValueError(), "success"])
 
-        @retry_with_backoff(max_retries=2, initial_delay=0.01, on_retry=failing_callback)
+        @retry_with_backoff(
+            max_retries=2, initial_delay=0.01, on_retry=failing_callback
+        )
         def test_func():
             return mock_func()
 
@@ -69,13 +72,13 @@ class TestRetryCallbackHandling:
         def stateful_callback(exc, attempt):
             call_history.append((str(exc), attempt))
 
-        mock_func = Mock(side_effect=[
-            ValueError("Error 1"),
-            ValueError("Error 2"),
-            "success"
-        ])
+        mock_func = Mock(
+            side_effect=[ValueError("Error 1"), ValueError("Error 2"), "success"]
+        )
 
-        @retry_with_backoff(max_retries=3, initial_delay=0.01, on_retry=stateful_callback)
+        @retry_with_backoff(
+            max_retries=3, initial_delay=0.01, on_retry=stateful_callback
+        )
         def test_func():
             return mock_func()
 
@@ -104,16 +107,14 @@ class TestRetryStrategyEdgeCases:
 
     def test_mixed_exception_types(self):
         """Test retry with multiple exception types."""
-        mock_func = Mock(side_effect=[
-            ValueError("Error 1"),
-            TypeError("Error 2"),
-            "success"
-        ])
+        mock_func = Mock(
+            side_effect=[ValueError("Error 1"), TypeError("Error 2"), "success"]
+        )
 
         @retry_with_backoff(
             max_retries=3,
             initial_delay=0.01,
-            retryable_exceptions=(ValueError, TypeError)
+            retryable_exceptions=(ValueError, TypeError),
         )
         def test_func():
             return mock_func()
@@ -125,9 +126,7 @@ class TestRetryStrategyEdgeCases:
     def test_linear_backoff_progression(self):
         """Test linear backoff increases linearly."""
         params = RetryParams(
-            initial_delay=0.1,
-            strategy=RetryStrategy.LINEAR_BACKOFF,
-            max_delay=10.0
+            initial_delay=0.1, strategy=RetryStrategy.LINEAR_BACKOFF, max_delay=10.0
         )
 
         delays = [params.calculate_delay(i) for i in range(5)]
@@ -142,7 +141,7 @@ class TestRetryStrategyEdgeCases:
             initial_delay=1.0,
             strategy=RetryStrategy.EXPONENTIAL_BACKOFF,
             backoff_multiplier=3.0,  # Triple instead of double
-            max_delay=100.0
+            max_delay=100.0,
         )
 
         delays = [params.calculate_delay(i) for i in range(4)]
@@ -176,7 +175,9 @@ class TestErrorHandlerEdgeCases:
 
     def test_error_handler_no_logging(self):
         """Test ErrorHandler with log_errors=False."""
-        handler = ErrorHandler(max_retries=1, retry_delay=0.01, log_errors=False, raise_on_failure=False)
+        handler = ErrorHandler(
+            max_retries=1, retry_delay=0.01, log_errors=False, raise_on_failure=False
+        )
         mock_func = Mock(side_effect=ValueError("Silent fail"))
 
         # Should not log but should still retry

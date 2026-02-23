@@ -2,7 +2,7 @@
 
 import logging
 from datetime import timedelta
-from typing import Any, List, Optional
+from typing import Any
 
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, select
@@ -33,8 +33,8 @@ class CrossProductAnalyzer(BaseAnalyzer):
 
     def __init__(
         self,
-        engine: Optional[Engine] = None,
-        learning_store: Optional[object] = None,
+        engine: Engine | None = None,
+        learning_store: object | None = None,
     ) -> None:
         self._engine = engine
         self._learning_store = learning_store
@@ -46,7 +46,7 @@ class CrossProductAnalyzer(BaseAnalyzer):
 
     def analyze(
         self, lookback_hours: int = DEFAULT_LOOKBACK_HOURS
-    ) -> List[GoalProposal]:
+    ) -> list[GoalProposal]:
         """Analyze cross-product patterns and performance differences."""
         if self._engine is None:
             return []
@@ -74,13 +74,15 @@ class CrossProductAnalyzer(BaseAnalyzer):
 
         cutoff = utcnow() - timedelta(hours=lookback_hours)
         with Session(self._engine) as session:
-            return list(session.exec(
-                select(WorkflowExecution).where(
-                    WorkflowExecution.start_time >= cutoff,
-                    WorkflowExecution.product_type.is_not(None),  # type: ignore[union-attr]
-                    WorkflowExecution.status == "completed",
-                )
-            ).all())
+            return list(
+                session.exec(
+                    select(WorkflowExecution).where(
+                        WorkflowExecution.start_time >= cutoff,
+                        WorkflowExecution.product_type.is_not(None),  # type: ignore[union-attr]
+                        WorkflowExecution.status == "completed",
+                    )
+                ).all()
+            )
 
 
 def _group_by_product(workflows: list) -> dict[str, list]:
@@ -107,30 +109,40 @@ def _compute_product_stats(by_product: dict[str, list]) -> dict[str, dict]:
     return stats
 
 
-def _find_performance_gaps(stats: dict[str, dict]) -> List[GoalProposal]:
+def _find_performance_gaps(stats: dict[str, dict]) -> list[GoalProposal]:
     """Find product types with significantly better performance."""
-    proposals: List[GoalProposal] = []
+    proposals: list[GoalProposal] = []
     types = list(stats.keys())
 
     for i, source in enumerate(types):
         src_dur = stats[source]["avg_duration"]
         if src_dur == 0:
             continue
-        for target in types[i + 1:]:
+        for target in types[i + 1 :]:
             tgt_dur = stats[target]["avg_duration"]
             if tgt_dur == 0:
                 continue
             ratio = tgt_dur / src_dur
             if ratio > PERFORMANCE_RATIO_THRESHOLD:
                 improvement = ((tgt_dur - src_dur) / tgt_dur) * PCT_MULTIPLIER
-                proposals.append(_make_cross_proposal(
-                    source, target, stats[source], stats[target], improvement,
-                ))
+                proposals.append(
+                    _make_cross_proposal(
+                        source,
+                        target,
+                        stats[source],
+                        stats[target],
+                        improvement,
+                    )
+                )
     return proposals
 
 
 def _make_cross_proposal(
-    source: str, target: str, src_stats: dict, tgt_stats: dict, improvement: float,
+    source: str,
+    target: str,
+    src_stats: dict,
+    tgt_stats: dict,
+    improvement: float,
 ) -> GoalProposal:
     """Build a cross-product opportunity proposal."""
     return GoalProposal(
@@ -142,18 +154,26 @@ def _make_cross_proposal(
             f"patterns could yield {improvement:.0f}% improvement."
         ),
         risk_assessment=RiskAssessment(
-            level=GoalRiskLevel.MEDIUM, blast_radius=f"product:{target}", reversible=True,
+            level=GoalRiskLevel.MEDIUM,
+            blast_radius=f"product:{target}",
+            reversible=True,
         ),
         effort_estimate=EffortLevel.MEDIUM,
-        expected_impacts=[ImpactEstimate(
-            metric_name="avg_duration",
-            current_value=tgt_stats["avg_duration"],
-            expected_value=src_stats["avg_duration"],
-            improvement_pct=improvement, confidence=CROSS_CONFIDENCE,
-        )],
+        expected_impacts=[
+            ImpactEstimate(
+                metric_name="avg_duration",
+                current_value=tgt_stats["avg_duration"],
+                expected_value=src_stats["avg_duration"],
+                improvement_pct=improvement,
+                confidence=CROSS_CONFIDENCE,
+            )
+        ],
         evidence=GoalEvidence(
             workflow_ids=src_stats["workflow_ids"] + tgt_stats["workflow_ids"],
-            metrics={"source_duration": src_stats["avg_duration"], "target_duration": tgt_stats["avg_duration"]},
+            metrics={
+                "source_duration": src_stats["avg_duration"],
+                "target_duration": tgt_stats["avg_duration"],
+            },
             analysis_summary=f"Cross-product opportunity: {source} -> {target} ({improvement:.0f}% potential)",
         ),
         source_product_type=source,
@@ -180,7 +200,7 @@ def _fetch_active_patterns(learning_store: object) -> list:
 
 def _cross_ref_patterns(
     learning_store: object, by_product: dict[str, list]
-) -> List[GoalProposal]:
+) -> list[GoalProposal]:
     """Cross-reference learned patterns with product types."""
     patterns = _fetch_active_patterns(learning_store)
     if not patterns:
@@ -188,18 +208,21 @@ def _cross_ref_patterns(
 
     product_types = set(by_product.keys())
     product_wf_ids = {pt: {wf.id for wf in wfs} for pt, wfs in by_product.items()}
-    proposals: List[GoalProposal] = []
+    proposals: list[GoalProposal] = []
 
     for pattern in patterns:
         if not pattern.source_workflow_ids:
             continue
         source_types = {
-            pt for pt, wf_ids in product_wf_ids.items()
+            pt
+            for pt, wf_ids in product_wf_ids.items()
             if set(pattern.source_workflow_ids) & wf_ids
         }
         missing = product_types - source_types
         if source_types and missing:
-            proposals.append(_make_pattern_proposal(pattern, source_types, missing, product_types))
+            proposals.append(
+                _make_pattern_proposal(pattern, source_types, missing, product_types)
+            )
 
     return proposals
 
@@ -217,16 +240,22 @@ def _make_pattern_proposal(
             f"but not yet applied to {', '.join(sorted(missing))}."
         ),
         risk_assessment=RiskAssessment(
-            level=GoalRiskLevel.LOW, blast_radius=f"products:{','.join(sorted(missing))}", reversible=True,
+            level=GoalRiskLevel.LOW,
+            blast_radius=f"products:{','.join(sorted(missing))}",
+            reversible=True,
         ),
         effort_estimate=EffortLevel.SMALL,
-        expected_impacts=[ImpactEstimate(
-            metric_name="pattern_coverage",
-            current_value=float(len(source_types)),
-            expected_value=float(len(all_types)),
-            improvement_pct=float(len(missing)) / float(len(all_types)) * PCT_MULTIPLIER,
-            confidence=pattern.confidence,
-        )],
+        expected_impacts=[
+            ImpactEstimate(
+                metric_name="pattern_coverage",
+                current_value=float(len(source_types)),
+                expected_value=float(len(all_types)),
+                improvement_pct=float(len(missing))
+                / float(len(all_types))
+                * PCT_MULTIPLIER,
+                confidence=pattern.confidence,
+            )
+        ],
         evidence=GoalEvidence(
             pattern_ids=[pattern.id],
             analysis_summary=(
@@ -236,5 +265,8 @@ def _make_pattern_proposal(
         ),
         source_product_type=sorted(source_types)[0],
         applicable_product_types=sorted(missing),
-        proposed_actions=[f"Review pattern: {pattern.title}", f"Apply to: {', '.join(sorted(missing))}"],
+        proposed_actions=[
+            f"Review pattern: {pattern.title}",
+            f"Apply to: {', '.join(sorted(missing))}",
+        ],
     )

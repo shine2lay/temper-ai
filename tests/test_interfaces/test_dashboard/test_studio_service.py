@@ -1,9 +1,12 @@
 """Tests for StudioService business logic layer."""
+
 import pytest
 import yaml
 
-from temper_ai.interfaces.dashboard.studio_service import StudioService, VALID_CONFIG_TYPES
-
+from temper_ai.interfaces.dashboard.studio_service import (
+    VALID_CONFIG_TYPES,
+    StudioService,
+)
 
 # ---------------------------------------------------------------------------
 # Sample valid config data for each type

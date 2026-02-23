@@ -4,12 +4,14 @@ Tests complete experiment execution with various configurations including
 multi-variant experiments, config overrides, and protected field validation.
 """
 
-
 import numpy as np
 import pytest
 
 from temper_ai.experimentation.analyzer import StatisticalAnalyzer
-from temper_ai.experimentation.config_manager import ConfigManager, SecurityViolationError
+from temper_ai.experimentation.config_manager import (
+    ConfigManager,
+    SecurityViolationError,
+)
 from temper_ai.experimentation.models import (
     AssignmentStrategyType,
     ConfigType,
@@ -77,7 +79,7 @@ class TestCompleteExperimentLifecycle:
                 workflow_execution_id=f"wf-control-{i}",
                 assignment_strategy=AssignmentStrategyType.RANDOM,
                 execution_status=ExecutionStatus.COMPLETED,
-                metrics={"page_load_ms": 500.0 + np.random.normal(0, 50)}
+                metrics={"page_load_ms": 500.0 + np.random.normal(0, 50)},
             )
             assignments.append(assignment)
 
@@ -90,7 +92,7 @@ class TestCompleteExperimentLifecycle:
                 workflow_execution_id=f"wf-opt-{i}",
                 assignment_strategy=AssignmentStrategyType.RANDOM,
                 execution_status=ExecutionStatus.COMPLETED,
-                metrics={"page_load_ms": 350.0 + np.random.normal(0, 50)}
+                metrics={"page_load_ms": 350.0 + np.random.normal(0, 50)},
             )
             assignments.append(assignment)
 
@@ -141,7 +143,7 @@ class TestConfigurationManagement:
             "workflow": {
                 "timeout": 300,
                 "max_retries": 3,
-            }
+            },
         }
 
         # Variant overrides
@@ -155,9 +157,7 @@ class TestConfigurationManagement:
         # Apply overrides
         manager = ConfigManager()
         merged_config = manager.merge_config(
-            base_config,
-            variant_overrides,
-            validate_protected=True
+            base_config, variant_overrides, validate_protected=True
         )
 
         # Verify merge
@@ -177,7 +177,9 @@ class TestConfigurationManagement:
         dangerous_override = {"api_key": "sk-secret-key"}
 
         with pytest.raises(SecurityViolationError):
-            manager.merge_config(base_config, dangerous_override, validate_protected=True)
+            manager.merge_config(
+                base_config, dangerous_override, validate_protected=True
+            )
 
 
 class TestMultiVariantExperiments:
@@ -244,7 +246,7 @@ class TestMultiVariantExperiments:
                 workflow_execution_id=f"wf-control-{i}",
                 assignment_strategy=AssignmentStrategyType.RANDOM,
                 execution_status=ExecutionStatus.COMPLETED,
-                metrics={"score": 50.0 + np.random.normal(0, 5)}
+                metrics={"score": 50.0 + np.random.normal(0, 5)},
             )
             assignments.append(assignment)
 
@@ -257,7 +259,7 @@ class TestMultiVariantExperiments:
                 workflow_execution_id=f"wf-a-{i}",
                 assignment_strategy=AssignmentStrategyType.RANDOM,
                 execution_status=ExecutionStatus.COMPLETED,
-                metrics={"score": 55.0 + np.random.normal(0, 5)}
+                metrics={"score": 55.0 + np.random.normal(0, 5)},
             )
             assignments.append(assignment)
 
@@ -270,7 +272,7 @@ class TestMultiVariantExperiments:
                 workflow_execution_id=f"wf-b-{i}",
                 assignment_strategy=AssignmentStrategyType.RANDOM,
                 execution_status=ExecutionStatus.COMPLETED,
-                metrics={"score": 60.0 + np.random.normal(0, 5)}
+                metrics={"score": 60.0 + np.random.normal(0, 5)},
             )
             assignments.append(assignment)
 
@@ -286,7 +288,9 @@ class TestMultiVariantExperiments:
 
         # Verify hypothesis tests run for each treatment vs control
         assert len(result["statistical_tests"]) == 2
-        assert "control_vs_var-a" in result["statistical_tests"] or "control_vs_a" in str(result["statistical_tests"])
+        assert "control_vs_var-a" in result[
+            "statistical_tests"
+        ] or "control_vs_a" in str(result["statistical_tests"])
 
         # Best variant should be variant_b (highest score, 20% better)
         if result["recommendation"] == RecommendationType.STOP_WINNER:

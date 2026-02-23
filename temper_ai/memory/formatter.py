@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import List
 
 from temper_ai.memory._schemas import MemorySearchResult
-from temper_ai.memory.constants import MAX_MEMORY_CONTEXT_CHARS, TRUNCATION_SUFFIX, TRUNCATION_SUFFIX_LEN
+from temper_ai.memory.constants import (
+    MAX_MEMORY_CONTEXT_CHARS,
+    TRUNCATION_SUFFIX,
+    TRUNCATION_SUFFIX_LEN,
+)
 
 
 def format_memory_context(
@@ -27,13 +30,13 @@ def format_memory_context(
     if not result.entries:
         return ""
 
-    grouped: dict[str, List[str]] = defaultdict(list)
+    grouped: dict[str, list[str]] = defaultdict(list)
     for entry in sorted(result.entries, key=lambda e: e.relevance_score, reverse=True):
         label = entry.memory_type.replace("_", " ").title()
         line = f"- [{entry.relevance_score:.2f}] {entry.content}"
         grouped[label].append(line)
 
-    sections: List[str] = []
+    sections: list[str] = []
     for type_label, lines in grouped.items():
         section = f"## {type_label}\n" + "\n".join(lines)
         sections.append(section)
@@ -43,5 +46,5 @@ def format_memory_context(
     full = header + body
 
     if len(full) > max_chars:
-        return full[:max_chars - TRUNCATION_SUFFIX_LEN] + TRUNCATION_SUFFIX
+        return full[: max_chars - TRUNCATION_SUFFIX_LEN] + TRUNCATION_SUFFIX
     return full

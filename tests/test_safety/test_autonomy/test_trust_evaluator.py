@@ -41,7 +41,10 @@ class TestTrustEvaluator:
         """Not eligible with too few decisions."""
         session = MagicMock()
         session.exec.return_value.first.return_value = _mock_merit(
-            total=5, successful=5, failed=0, success_rate=1.0,
+            total=5,
+            successful=5,
+            failed=0,
+            success_rate=1.0,
         )
         evaluator = TrustEvaluator()
         result = evaluator.evaluate(session, "a", "d")
@@ -51,7 +54,10 @@ class TestTrustEvaluator:
         """Eligible when success rate >= threshold and enough decisions."""
         session = MagicMock()
         session.exec.return_value.first.return_value = _mock_merit(
-            total=25, successful=23, failed=2, success_rate=0.92,
+            total=25,
+            successful=23,
+            failed=2,
+            success_rate=0.92,
         )
         evaluator = TrustEvaluator()
         result = evaluator.evaluate(session, "a", "d")
@@ -62,7 +68,10 @@ class TestTrustEvaluator:
         """Not eligible with low success rate."""
         session = MagicMock()
         session.exec.return_value.first.return_value = _mock_merit(
-            total=25, successful=20, failed=5, success_rate=0.80,
+            total=25,
+            successful=20,
+            failed=5,
+            success_rate=0.80,
         )
         evaluator = TrustEvaluator()
         result = evaluator.evaluate(session, "a", "d")
@@ -72,11 +81,17 @@ class TestTrustEvaluator:
         """De-escalation when failure rate >= threshold."""
         session = MagicMock()
         session.exec.return_value.first.return_value = _mock_merit(
-            total=20, successful=15, failed=5, success_rate=0.75,
+            total=20,
+            successful=15,
+            failed=5,
+            success_rate=0.75,
         )
         evaluator = TrustEvaluator(de_escalation_rate=0.15)
         result = evaluator.evaluate(
-            session, "a", "d", current_level=AutonomyLevel.SPOT_CHECKED,
+            session,
+            "a",
+            "d",
+            current_level=AutonomyLevel.SPOT_CHECKED,
         )
         # failure_rate = 5/20 = 0.25 >= 0.15
         assert result.needs_de_escalation
@@ -86,11 +101,17 @@ class TestTrustEvaluator:
         """No de-escalation when already at SUPERVISED."""
         session = MagicMock()
         session.exec.return_value.first.return_value = _mock_merit(
-            total=20, successful=15, failed=5, success_rate=0.75,
+            total=20,
+            successful=15,
+            failed=5,
+            success_rate=0.75,
         )
         evaluator = TrustEvaluator(de_escalation_rate=0.15)
         result = evaluator.evaluate(
-            session, "a", "d", current_level=AutonomyLevel.SUPERVISED,
+            session,
+            "a",
+            "d",
+            current_level=AutonomyLevel.SUPERVISED,
         )
         assert not result.needs_de_escalation
 
@@ -98,11 +119,17 @@ class TestTrustEvaluator:
         """Escalation from SPOT_CHECKED to RISK_GATED."""
         session = MagicMock()
         session.exec.return_value.first.return_value = _mock_merit(
-            total=30, successful=28, failed=2, success_rate=0.93,
+            total=30,
+            successful=28,
+            failed=2,
+            success_rate=0.93,
         )
         evaluator = TrustEvaluator()
         result = evaluator.evaluate(
-            session, "a", "d", current_level=AutonomyLevel.SPOT_CHECKED,
+            session,
+            "a",
+            "d",
+            current_level=AutonomyLevel.SPOT_CHECKED,
         )
         assert result.eligible_for_escalation
         assert result.recommended_level == AutonomyLevel.RISK_GATED

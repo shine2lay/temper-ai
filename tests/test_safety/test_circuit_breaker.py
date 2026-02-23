@@ -1,4 +1,5 @@
 """Tests for circuit breaker and safety gate system."""
+
 from unittest.mock import Mock, patch
 
 import pytest
@@ -30,9 +31,7 @@ class TestCircuitBreakerMetrics:
     def test_success_rate(self):
         """Test success rate calculation."""
         metrics = CircuitBreakerMetrics(
-            total_calls=10,
-            successful_calls=7,
-            failed_calls=3
+            total_calls=10, successful_calls=7, failed_calls=3
         )
 
         assert abs(metrics.success_rate() - 0.7) < 0.001
@@ -48,10 +47,7 @@ class TestCircuitBreakerMetrics:
     def test_to_dict(self):
         """Test serialization to dictionary."""
         metrics = CircuitBreakerMetrics(
-            total_calls=10,
-            successful_calls=7,
-            failed_calls=3,
-            state_changes=2
+            total_calls=10, successful_calls=7, failed_calls=3, state_changes=2
         )
 
         data = metrics.to_dict()
@@ -68,9 +64,7 @@ class TestCircuitBreaker:
     def test_initialization(self):
         """Test circuit breaker initialization."""
         breaker = CircuitBreaker(
-            name="test_breaker",
-            failure_threshold=5,
-            timeout_seconds=60
+            name="test_breaker", failure_threshold=5, timeout_seconds=60
         )
 
         assert breaker.name == "test_breaker"
@@ -105,10 +99,7 @@ class TestCircuitBreaker:
 
     def test_open_after_threshold_failures(self):
         """Test circuit opens after threshold failures."""
-        breaker = CircuitBreaker(
-            name="test",
-            failure_threshold=3
-        )
+        breaker = CircuitBreaker(name="test", failure_threshold=3)
 
         # Record failures up to threshold
         breaker.record_failure()
@@ -122,10 +113,7 @@ class TestCircuitBreaker:
 
     def test_cannot_execute_when_open(self):
         """Test execution blocked when circuit is open."""
-        breaker = CircuitBreaker(
-            name="test",
-            failure_threshold=1
-        )
+        breaker = CircuitBreaker(name="test", failure_threshold=1)
 
         breaker.record_failure()
         assert breaker.state == CircuitBreakerState.OPEN
@@ -134,9 +122,7 @@ class TestCircuitBreaker:
     def test_transition_to_half_open_after_timeout(self):
         """Test transition from OPEN to HALF_OPEN after timeout."""
         breaker = CircuitBreaker(
-            name="test",
-            failure_threshold=1,
-            timeout_seconds=1  # 1 second timeout
+            name="test", failure_threshold=1, timeout_seconds=1  # 1 second timeout
         )
 
         # Open circuit
@@ -145,7 +131,7 @@ class TestCircuitBreaker:
 
         # Mock time.time to advance past timeout (no flaky sleep)
         original_time = breaker._last_failure_time
-        with patch('temper_ai.shared.core.circuit_breaker.time') as mock_time:
+        with patch("temper_ai.shared.core.circuit_breaker.time") as mock_time:
             mock_time.time.return_value = original_time + 1.1
             # Check state (should transition to HALF_OPEN)
             assert breaker.state == CircuitBreakerState.HALF_OPEN
@@ -157,7 +143,7 @@ class TestCircuitBreaker:
             name="test",
             failure_threshold=1,
             timeout_seconds=1,
-            success_threshold=2  # Need 2 successes
+            success_threshold=2,  # Need 2 successes
         )
 
         # Open circuit
@@ -165,7 +151,7 @@ class TestCircuitBreaker:
 
         # Mock time.time to advance past timeout (no flaky sleep)
         original_time = breaker._last_failure_time
-        with patch('temper_ai.shared.core.circuit_breaker.time') as mock_time:
+        with patch("temper_ai.shared.core.circuit_breaker.time") as mock_time:
             mock_time.time.return_value = original_time + 1.1
             # Now in HALF_OPEN
             assert breaker.state == CircuitBreakerState.HALF_OPEN
@@ -180,18 +166,14 @@ class TestCircuitBreaker:
 
     def test_half_open_to_open_on_failure(self):
         """Test transition from HALF_OPEN back to OPEN on failure."""
-        breaker = CircuitBreaker(
-            name="test",
-            failure_threshold=1,
-            timeout_seconds=1
-        )
+        breaker = CircuitBreaker(name="test", failure_threshold=1, timeout_seconds=1)
 
         # Open circuit
         breaker.record_failure()
 
         # Mock time.time to advance past timeout (no flaky sleep)
         original_time = breaker._last_failure_time
-        with patch('temper_ai.shared.core.circuit_breaker.time') as mock_time:
+        with patch("temper_ai.shared.core.circuit_breaker.time") as mock_time:
             mock_time.time.return_value = original_time + 1.1
             # Now in HALF_OPEN
             assert breaker.state == CircuitBreakerState.HALF_OPEN
@@ -202,10 +184,7 @@ class TestCircuitBreaker:
 
     def test_reset(self):
         """Test manual reset to CLOSED."""
-        breaker = CircuitBreaker(
-            name="test",
-            failure_threshold=1
-        )
+        breaker = CircuitBreaker(name="test", failure_threshold=1)
 
         # Open circuit
         breaker.record_failure()
@@ -246,10 +225,7 @@ class TestCircuitBreaker:
 
     def test_context_manager_raises_when_open(self):
         """Test context manager raises exception when open."""
-        breaker = CircuitBreaker(
-            name="test",
-            failure_threshold=1
-        )
+        breaker = CircuitBreaker(name="test", failure_threshold=1)
 
         # Open circuit
         breaker.record_failure()
@@ -263,10 +239,7 @@ class TestCircuitBreaker:
 
     def test_state_change_callback(self):
         """Test state change callback."""
-        breaker = CircuitBreaker(
-            name="test",
-            failure_threshold=1
-        )
+        breaker = CircuitBreaker(name="test", failure_threshold=1)
 
         callback_called = []
 
@@ -279,14 +252,14 @@ class TestCircuitBreaker:
         breaker.record_failure()
 
         assert len(callback_called) == 1
-        assert callback_called[0] == (CircuitBreakerState.CLOSED, CircuitBreakerState.OPEN)
+        assert callback_called[0] == (
+            CircuitBreakerState.CLOSED,
+            CircuitBreakerState.OPEN,
+        )
 
     def test_callback_exception_doesnt_break_breaker(self):
         """Test that callback exceptions don't break circuit breaker."""
-        breaker = CircuitBreaker(
-            name="test",
-            failure_threshold=1
-        )
+        breaker = CircuitBreaker(name="test", failure_threshold=1)
 
         def failing_callback(old_state, new_state):
             raise RuntimeError("Callback failed")
@@ -314,10 +287,7 @@ class TestCircuitBreaker:
 
     def test_repr(self):
         """Test string representation."""
-        breaker = CircuitBreaker(
-            name="test_breaker",
-            failure_threshold=5
-        )
+        breaker = CircuitBreaker(name="test_breaker", failure_threshold=5)
 
         repr_str = repr(breaker)
 
@@ -341,23 +311,14 @@ class TestSafetyGate:
         """Test can_pass with no restrictions."""
         gate = SafetyGate(name="test")
 
-        result = gate.can_pass(
-            action={"tool": "test"},
-            context={}
-        )
+        result = gate.can_pass(action={"tool": "test"}, context={})
 
         assert result is True
 
     def test_can_pass_with_circuit_breaker(self):
         """Test can_pass with circuit breaker."""
-        breaker = CircuitBreaker(
-            name="test",
-            failure_threshold=1
-        )
-        gate = SafetyGate(
-            name="test_gate",
-            circuit_breaker=breaker
-        )
+        breaker = CircuitBreaker(name="test", failure_threshold=1)
+        gate = SafetyGate(name="test_gate", circuit_breaker=breaker)
 
         # Initially can pass
         assert gate.can_pass(action={}, context={}) is True
@@ -381,15 +342,9 @@ class TestSafetyGate:
         mock_result.has_blocking_violations.return_value = True
         mock_composer.validate.return_value = mock_result
 
-        gate = SafetyGate(
-            name="test_gate",
-            policy_composer=mock_composer
-        )
+        gate = SafetyGate(name="test_gate", policy_composer=mock_composer)
 
-        result = gate.can_pass(
-            action={"tool": "test"},
-            context={}
-        )
+        result = gate.can_pass(action={"tool": "test"}, context={})
 
         assert result is False
         mock_composer.validate.assert_called_once()
@@ -418,22 +373,13 @@ class TestSafetyGate:
 
     def test_validate_returns_reasons(self):
         """Test validate returns detailed reasons."""
-        breaker = CircuitBreaker(
-            name="test",
-            failure_threshold=1
-        )
-        gate = SafetyGate(
-            name="test_gate",
-            circuit_breaker=breaker
-        )
+        breaker = CircuitBreaker(name="test", failure_threshold=1)
+        gate = SafetyGate(name="test_gate", circuit_breaker=breaker)
 
         # Open circuit
         breaker.record_failure()
 
-        can_pass, reasons = gate.validate(
-            action={},
-            context={}
-        )
+        can_pass, reasons = gate.validate(action={}, context={})
 
         assert can_pass is False
         assert len(reasons) > 0
@@ -462,10 +408,7 @@ class TestSafetyGate:
     def test_context_manager_with_circuit_breaker(self):
         """Test context manager integrates with circuit breaker."""
         breaker = CircuitBreaker("test")
-        gate = SafetyGate(
-            name="test_gate",
-            circuit_breaker=breaker
-        )
+        gate = SafetyGate(name="test_gate", circuit_breaker=breaker)
 
         # Success
         with gate(action={}, context={}):
@@ -497,10 +440,7 @@ class TestCircuitBreakerManager:
         """Test creating circuit breaker."""
         manager = CircuitBreakerManager()
 
-        breaker = manager.create_breaker(
-            name="test",
-            failure_threshold=5
-        )
+        breaker = manager.create_breaker(name="test", failure_threshold=5)
 
         assert breaker is not None
         assert breaker.name == "test"
@@ -580,10 +520,7 @@ class TestCircuitBreakerManager:
         manager = CircuitBreakerManager()
 
         manager.create_breaker("test_breaker")
-        gate = manager.create_gate(
-            name="test_gate",
-            breaker_name="test_breaker"
-        )
+        gate = manager.create_gate(name="test_gate", breaker_name="test_breaker")
 
         assert gate.circuit_breaker is not None
         assert gate.circuit_breaker.name == "test_breaker"
@@ -693,9 +630,7 @@ class TestIntegration:
     def test_circuit_breaker_prevents_cascading_failures(self):
         """Test circuit breaker stops cascading failures."""
         breaker = CircuitBreaker(
-            name="external_api",
-            failure_threshold=3,
-            timeout_seconds=2
+            name="external_api", failure_threshold=3, timeout_seconds=2
         )
 
         failed_count = 0
@@ -738,7 +673,7 @@ class TestIntegration:
         gate = SafetyGate(
             name="multi_check_gate",
             circuit_breaker=breaker,
-            policy_composer=mock_composer
+            policy_composer=mock_composer,
         )
 
         # Should pass - both checks OK

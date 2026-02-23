@@ -27,14 +27,8 @@ class TestMergeConfigs:
 
     def test_merge_nested_configs(self):
         """Test merging nested configs."""
-        base = {
-            "llm": {"temperature": 0.7, "model": "gpt-4"},
-            "tools": ["calculator"]
-        }
-        override = {
-            "llm": {"temperature": 0.9},
-            "safety": {"mode": "strict"}
-        }
+        base = {"llm": {"temperature": 0.7, "model": "gpt-4"}, "tools": ["calculator"]}
+        override = {"llm": {"temperature": 0.9}, "safety": {"mode": "strict"}}
 
         result = merge_configs(base, override)
 
@@ -45,24 +39,8 @@ class TestMergeConfigs:
 
     def test_merge_deep_nesting(self):
         """Test merging deeply nested configs."""
-        base = {
-            "level1": {
-                "level2": {
-                    "level3": {
-                        "value": "old"
-                    }
-                }
-            }
-        }
-        override = {
-            "level1": {
-                "level2": {
-                    "level3": {
-                        "value": "new"
-                    }
-                }
-            }
-        }
+        base = {"level1": {"level2": {"level3": {"value": "old"}}}}
+        override = {"level1": {"level2": {"level3": {"value": "new"}}}}
 
         result = merge_configs(base, override)
 
@@ -92,18 +70,10 @@ class TestExtractRequiredFields:
 
     def test_extract_nested_fields(self):
         """Test extracting nested fields with dot notation."""
-        config = {
-            "agent": {
-                "name": "researcher",
-                "inference": {
-                    "model": "gpt-4"
-                }
-            }
-        }
+        config = {"agent": {"name": "researcher", "inference": {"model": "gpt-4"}}}
 
         result = extract_required_fields(
-            config,
-            ["agent.name", "agent.inference.model"]
+            config, ["agent.name", "agent.inference.model"]
         )
 
         assert result["agent.name"] == "researcher"
@@ -130,13 +100,7 @@ class TestGetNestedValue:
 
     def test_get_nested_value(self):
         """Test getting nested value with dot notation."""
-        config = {
-            "agent": {
-                "inference": {
-                    "model": "gpt-4"
-                }
-            }
-        }
+        config = {"agent": {"inference": {"model": "gpt-4"}}}
 
         result = get_nested_value(config, "agent.inference.model")
 
@@ -160,9 +124,7 @@ class TestGetNestedValue:
 
     def test_get_value_from_list(self):
         """Test getting value when path goes through non-dict."""
-        config = {
-            "items": ["a", "b", "c"]
-        }
+        config = {"items": ["a", "b", "c"]}
 
         # Can't get nested value from list
         result = get_nested_value(config, "items.0")
@@ -191,11 +153,7 @@ class TestSetNestedValue:
 
     def test_set_value_in_existing_path(self):
         """Test setting value in existing path."""
-        config = {
-            "agent": {
-                "name": "researcher"
-            }
-        }
+        config = {"agent": {"name": "researcher"}}
 
         set_nested_value(config, "agent.inference.model", "gpt-4")
 
@@ -204,11 +162,7 @@ class TestSetNestedValue:
 
     def test_set_value_overwrites_existing(self):
         """Test that setting value overwrites existing value."""
-        config = {
-            "agent": {
-                "name": "old_name"
-            }
-        }
+        config = {"agent": {"name": "old_name"}}
 
         set_nested_value(config, "agent.name", "new_name")
 
@@ -220,19 +174,15 @@ class TestValidateConfigStructure:
 
     def test_validate_valid_structure(self):
         """Test validation passes for valid structure."""
-        config = {
-            "workflow": {"name": "test"},
-            "version": "1.0"
-        }
+        config = {"workflow": {"name": "test"}, "version": "1.0"}
 
-        # Should not raise for valid structure
-        validate_config_structure(config, ["workflow", "version"])
+        # Should not raise for valid structure; returns None on success
+        result = validate_config_structure(config, ["workflow", "version"])
+        assert result is None
 
     def test_validate_missing_key_raises_error(self):
         """Test validation fails for missing required key."""
-        config = {
-            "workflow": {"name": "test"}
-        }
+        config = {"workflow": {"name": "test"}}
 
         with pytest.raises(ValueError, match="missing required key"):
             validate_config_structure(config, ["workflow", "missing_key"])
@@ -243,10 +193,7 @@ class TestSanitizeConfigForDisplay:
 
     def test_sanitize_api_key(self):
         """Test that API keys are redacted."""
-        config = {
-            "api_key": "sk-secret123",
-            "model": "gpt-4"
-        }
+        config = {"api_key": "sk-secret123", "model": "gpt-4"}
 
         result = sanitize_config_for_display(config)
 
@@ -255,10 +202,7 @@ class TestSanitizeConfigForDisplay:
 
     def test_sanitize_password(self):
         """Test that passwords are redacted."""
-        config = {
-            "username": "admin",
-            "password": "secret123"
-        }
+        config = {"username": "admin", "password": "secret123"}
 
         result = sanitize_config_for_display(config)
 
@@ -271,9 +215,7 @@ class TestSanitizeConfigForDisplay:
             "database": {
                 "host": "localhost",
                 "password": "db_secret",
-                "credentials": {
-                    "api_key": "api_secret"
-                }
+                "credentials": {"api_key": "api_secret"},
             }
         }
 
@@ -294,7 +236,7 @@ class TestSanitizeConfigForDisplay:
             "password": "secret6",
             "passwd": "secret7",
             "private_key": "secret8",
-            "access_key": "secret9"
+            "access_key": "secret9",
         }
 
         result = sanitize_config_for_display(config)
@@ -304,11 +246,7 @@ class TestSanitizeConfigForDisplay:
 
     def test_sanitize_case_insensitive(self):
         """Test sanitization is case-insensitive."""
-        config = {
-            "API_KEY": "secret1",
-            "Password": "secret2",
-            "SECRET": "secret3"
-        }
+        config = {"API_KEY": "secret1", "Password": "secret2", "SECRET": "secret3"}
 
         result = sanitize_config_for_display(config)
 
@@ -317,27 +255,16 @@ class TestSanitizeConfigForDisplay:
 
     def test_sanitize_custom_secret_keys(self):
         """Test adding custom secret keys."""
-        config = {
-            "custom_secret": "value1",
-            "api_key": "value2"
-        }
+        config = {"custom_secret": "value1", "api_key": "value2"}
 
-        result = sanitize_config_for_display(
-            config,
-            secret_keys=["custom_secret"]
-        )
+        result = sanitize_config_for_display(config, secret_keys=["custom_secret"])
 
         assert result["custom_secret"] == "***REDACTED***"
         assert result["api_key"] == "***REDACTED***"
 
     def test_sanitize_secrets_in_lists(self):
         """Test sanitization in list items."""
-        config = {
-            "credentials": [
-                {"api_key": "secret1"},
-                {"api_key": "secret2"}
-            ]
-        }
+        config = {"credentials": [{"api_key": "secret1"}, {"api_key": "secret2"}]}
 
         result = sanitize_config_for_display(config)
 
@@ -346,10 +273,7 @@ class TestSanitizeConfigForDisplay:
 
     def test_sanitize_doesnt_modify_original(self):
         """Test that sanitization doesn't modify original config."""
-        config = {
-            "api_key": "sk-secret123",
-            "model": "gpt-4"
-        }
+        config = {"api_key": "sk-secret123", "model": "gpt-4"}
 
         result = sanitize_config_for_display(config)
 
@@ -361,7 +285,7 @@ class TestSanitizeConfigForDisplay:
         config = {
             "openai_api_key": "secret1",
             "database_password": "secret2",
-            "auth_token": "secret3"
+            "auth_token": "secret3",
         }
 
         result = sanitize_config_for_display(config)
@@ -377,7 +301,7 @@ class TestSanitizeConfigForDisplay:
             "api_key": "secret",
             "timeout": 30,
             "enabled": True,
-            "tags": ["prod", "api"]
+            "tags": ["prod", "api"],
         }
 
         result = sanitize_config_for_display(config)
@@ -498,41 +422,21 @@ class TestEdgeCases:
 
     def test_none_values_in_config(self):
         """Test handling None values."""
-        config = {
-            "name": "test",
-            "optional": None
-        }
+        config = {"name": "test", "optional": None}
 
         result = sanitize_config_for_display(config)
         assert result["optional"] is None
 
     def test_numeric_keys_in_get_nested(self):
         """Test that numeric string keys work."""
-        config = {
-            "items": {
-                "0": "first",
-                "1": "second"
-            }
-        }
+        config = {"items": {"0": "first", "1": "second"}}
 
         result = get_nested_value(config, "items.0")
         assert result == "first"
 
     def test_deep_nesting_sanitization(self):
         """Test sanitization with very deep nesting."""
-        config = {
-            "l1": {
-                "l2": {
-                    "l3": {
-                        "l4": {
-                            "l5": {
-                                "api_key": "secret"
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        config = {"l1": {"l2": {"l3": {"l4": {"l5": {"api_key": "secret"}}}}}}
 
         result = sanitize_config_for_display(config)
         assert result["l1"]["l2"]["l3"]["l4"]["l5"]["api_key"] == "***REDACTED***"

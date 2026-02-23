@@ -73,7 +73,9 @@ def format_dialogue_history(  # scanner: skip-radon
         if total_chars + len(round_text) > max_chars:
             if not parts:
                 # Always include at least one round, truncated
-                truncated = round_text[:max_chars - total_chars - TRUNCATION_MESSAGE_BUFFER_CHARS]
+                truncated = round_text[
+                    : max_chars - total_chars - TRUNCATION_MESSAGE_BUFFER_CHARS
+                ]
                 parts.append(truncated + "\n*[truncated]*\n")
             else:
                 parts.insert(0, "*[Earlier rounds truncated for context limits]*\n")

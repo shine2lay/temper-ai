@@ -2,9 +2,9 @@
 
 Contains models for users and sessions used in the authentication system.
 """
+
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 from temper_ai.auth.constants import (
     FIELD_EMAIL,
@@ -28,16 +28,16 @@ class User:
     user_id: str  # Internal UUID
     email: str  # User email (unique)
     name: str  # Display name
-    picture: Optional[str] = None  # Profile picture URL
+    picture: str | None = None  # Profile picture URL
 
     # OAuth provider data
     oauth_provider: str = PROVIDER_GOOGLE  # Provider name
     oauth_subject: str = ""  # Provider's user ID
 
     # Timestamps
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    last_login: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    last_login: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     # Status
     is_active: bool = True  # Account status
@@ -82,7 +82,7 @@ class Session:
     """User session data model.
 
     Represents an active user session with security metadata.
-    Sessions are stored server-side (Redis/database) and referenced by a secure cookie.
+    Sessions are stored server-side and referenced by a secure cookie.
     """
 
     # Identity
@@ -92,16 +92,16 @@ class Session:
     # User data (cached for performance)
     email: str
     name: str
-    picture: Optional[str] = None
+    picture: str | None = None
 
     # Authentication metadata
     provider: str = PROVIDER_GOOGLE
-    authenticated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    expires_at: Optional[datetime] = None
+    authenticated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    expires_at: datetime | None = None
 
     # Security metadata
-    ip_address: Optional[str] = None
-    user_agent: Optional[str] = None
+    ip_address: str | None = None
+    user_agent: str | None = None
 
     def to_dict(self) -> dict:
         """Convert to dictionary for storage."""
@@ -129,7 +129,11 @@ class Session:
             picture=data.get(FIELD_PICTURE),
             provider=data.get("provider", PROVIDER_GOOGLE),
             authenticated_at=datetime.fromisoformat(data["authenticated_at"]),
-            expires_at=datetime.fromisoformat(data[FIELD_EXPIRES_AT]) if data.get(FIELD_EXPIRES_AT) else None,
+            expires_at=(
+                datetime.fromisoformat(data[FIELD_EXPIRES_AT])
+                if data.get(FIELD_EXPIRES_AT)
+                else None
+            ),
             ip_address=data.get("ip_address"),
             user_agent=data.get("user_agent"),
         )
@@ -138,4 +142,4 @@ class Session:
         """Check if session has expired."""
         if not self.expires_at:
             return False
-        return datetime.now(timezone.utc) > self.expires_at
+        return datetime.now(UTC) > self.expires_at

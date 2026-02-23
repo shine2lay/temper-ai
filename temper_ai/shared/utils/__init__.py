@@ -1,4 +1,4 @@
-"""Utility modules for the meta-autonomous framework.
+"""Utility modules for Temper AI.
 
 This package provides shared utilities:
 - exceptions: Custom exception hierarchy (LLMError, etc.)
@@ -10,6 +10,7 @@ This package provides shared utilities:
 - secret_patterns: Secret/credential detection patterns
 - secrets: Secret management utilities
 """
+
 from temper_ai.shared.utils.exceptions import (
     LLMAuthenticationError,
     LLMError,

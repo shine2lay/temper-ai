@@ -10,6 +10,7 @@ Imports are lazy to avoid circular dependency:
   -> temper_ai.agent.__init__ -> temper_ai.agent.base_agent
   -> temper_ai.llm.providers.factory -> temper_ai.llm.providers.base (circular)
 """
+
 from typing import Any
 
 _LAZY_IMPORTS = {
@@ -43,7 +44,6 @@ __all__ = [
     "ExecutionContext",
     "StandardAgent",
     "AgentFactory",
-
     # Prompt engine
     "PromptEngine",
     "PromptRenderError",

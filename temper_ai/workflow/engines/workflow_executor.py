@@ -11,21 +11,23 @@ Supports:
 - Stage-to-stage negotiation (re-run producer on ContextResolutionError)
 - Dynamic edge routing (stage declares next stage via _next_stage signal)
 """
+
 import json
 import logging
 from collections import defaultdict
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
+from temper_ai.shared.utils.exceptions import WorkflowStageError
+from temper_ai.stage.executors.state_keys import StateKeys
 from temper_ai.workflow.condition_evaluator import (
     ConditionEvaluator,
     get_default_condition,
     get_default_loop_condition,
 )
 from temper_ai.workflow.dag_builder import StageDAG, build_stage_dag, compute_depths
-from temper_ai.stage.executors.state_keys import StateKeys
 from temper_ai.workflow.node_builder import NodeBuilder
-from temper_ai.shared.utils.exceptions import WorkflowStageError
 
 logger = logging.getLogger(__name__)
 
@@ -59,9 +61,9 @@ def _is_conditional(stage_ref: Any) -> bool:
     )
 
 
-def _build_ref_lookup(stage_refs: List[Any]) -> Dict[str, Any]:
+def _build_ref_lookup(stage_refs: list[Any]) -> dict[str, Any]:
     """Build name -> stage reference lookup."""
-    lookup: Dict[str, Any] = {}
+    lookup: dict[str, Any] = {}
     for ref in stage_refs:
         if isinstance(ref, str):
             continue
@@ -72,10 +74,11 @@ def _build_ref_lookup(stage_refs: List[Any]) -> Dict[str, Any]:
 
 
 def _group_by_depth(
-    dag: StageDAG, depths: Dict[str, int],
-) -> Dict[int, List[str]]:
+    dag: StageDAG,
+    depths: dict[str, int],
+) -> dict[int, list[str]]:
     """Group stages by their DAG depth for parallel execution."""
-    groups: Dict[int, List[str]] = defaultdict(list)
+    groups: dict[int, list[str]] = defaultdict(list)
     for stage in dag.topo_order:
         groups[depths[stage]].append(stage)
     return dict(groups)
@@ -87,18 +90,18 @@ _NEXT_STAGE_KEY = "_next_stage"
 def _run_stage_node(
     stage_name: str,
     node_fn: Callable,
-    state: Dict[str, Any],
-) -> Dict[str, Any]:
+    state: dict[str, Any],
+) -> dict[str, Any]:
     """Run a stage node callable and return its result dict."""
     logger.info("Executing stage '%s'", stage_name)
-    result: Dict[str, Any] = node_fn(state)
+    result: dict[str, Any] = node_fn(state)
     return result
 
 
 def _merge_stage_result(
-    state: Dict[str, Any],
-    result: Dict[str, Any],
-) -> Dict[str, Any]:
+    state: dict[str, Any],
+    result: dict[str, Any],
+) -> dict[str, Any]:
     """Merge stage execution result into workflow state."""
     result_outputs = result.get(StateKeys.STAGE_OUTPUTS, {})
     state_outputs = state.get(StateKeys.STAGE_OUTPUTS, {})
@@ -112,7 +115,7 @@ def _merge_stage_result(
     return state
 
 
-def _normalize_next_stage_signal(raw_signal: Any) -> Optional[Dict[str, Any]]:
+def _normalize_next_stage_signal(raw_signal: Any) -> dict[str, Any] | None:
     """Normalize various _next_stage signal formats into ``{targets, mode}``.
 
     Supported formats (backward-compatible):
@@ -133,7 +136,7 @@ def _normalize_next_stage_signal(raw_signal: Any) -> Optional[Dict[str, Any]]:
     return None
 
 
-def _normalize_list_signal(items: List[Any]) -> Optional[Dict[str, Any]]:
+def _normalize_list_signal(items: list[Any]) -> dict[str, Any] | None:
     """Normalize list-format signal (sequential chain)."""
     targets = _extract_target_list(items)
     if not targets:
@@ -141,7 +144,7 @@ def _normalize_list_signal(items: List[Any]) -> Optional[Dict[str, Any]]:
     return {"targets": targets, "mode": "sequential"}
 
 
-def _normalize_dict_signal(signal: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def _normalize_dict_signal(signal: dict[str, Any]) -> dict[str, Any] | None:
     """Normalize dict-format signal (old single or parallel).
 
     Parallel signals may include a ``converge`` field specifying a stage
@@ -153,7 +156,7 @@ def _normalize_dict_signal(signal: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         targets = _extract_target_list(signal["targets"])
         if not targets:
             return None
-        result: Dict[str, Any] = {"targets": targets, "mode": "parallel"}
+        result: dict[str, Any] = {"targets": targets, "mode": "parallel"}
         converge = signal.get("converge")
         if isinstance(converge, dict) and converge.get("name"):
             result["converge"] = {"name": converge["name"]}
@@ -166,24 +169,25 @@ def _normalize_dict_signal(signal: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     return None
 
 
-def _extract_target_list(items: List[Any]) -> List[Dict[str, Any]]:
+def _extract_target_list(items: list[Any]) -> list[dict[str, Any]]:
     """Extract and cap target list from raw items."""
-    targets: List[Dict[str, Any]] = []
+    targets: list[dict[str, Any]] = []
     for item in items[:DEFAULT_MAX_DYNAMIC_TARGETS]:
         if isinstance(item, dict) and item.get("name"):
             targets.append({"name": item["name"], "inputs": item.get("inputs", {})})
     if len(items) > DEFAULT_MAX_DYNAMIC_TARGETS:
         logger.warning(
             "Dynamic targets truncated from %d to %d",
-            len(items), DEFAULT_MAX_DYNAMIC_TARGETS,
+            len(items),
+            DEFAULT_MAX_DYNAMIC_TARGETS,
         )
     return targets
 
 
 def _extract_next_stage_signal(
     stage_name: str,
-    state: Dict[str, Any],
-) -> Optional[Dict[str, Any]]:
+    state: dict[str, Any],
+) -> dict[str, Any] | None:
     """Extract _next_stage signal from a stage's output.
 
     Checks three sources in priority order:
@@ -220,7 +224,7 @@ def _extract_next_stage_signal(
     return None
 
 
-def _parse_next_stage_from_text(text: str) -> Optional[Dict[str, Any]]:
+def _parse_next_stage_from_text(text: str) -> dict[str, Any] | None:
     """Try to extract _next_stage from raw output text.
 
     Handles two cases:
@@ -239,14 +243,14 @@ def _parse_next_stage_from_text(text: str) -> Optional[Dict[str, Any]]:
     first_brace = text.find("{")
     last_brace = text.rfind("}")
     if first_brace >= 0 and last_brace > first_brace:
-        substring = text[first_brace:last_brace + 1]
+        substring = text[first_brace : last_brace + 1]
         parsed = _try_parse_json(substring)
         return _extract_signal_from_parsed(parsed)
 
     return None
 
 
-def _extract_signal_from_parsed(parsed: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+def _extract_signal_from_parsed(parsed: dict[str, Any] | None) -> dict[str, Any] | None:
     """Extract and normalize _next_stage signal from parsed JSON dict."""
     if parsed is None:
         return None
@@ -256,7 +260,7 @@ def _extract_signal_from_parsed(parsed: Optional[Dict[str, Any]]) -> Optional[Di
     return None
 
 
-def _try_parse_json(text: str) -> Optional[Dict[str, Any]]:
+def _try_parse_json(text: str) -> dict[str, Any] | None:
     """Attempt to parse text as JSON dict. Returns None on failure."""
     try:
         result = json.loads(text)
@@ -268,18 +272,21 @@ def _try_parse_json(text: str) -> Optional[Dict[str, Any]]:
 
 
 def _run_parallel_stage_batch(
-    runnable: List[str],
-    stage_nodes: Dict[str, Callable],
-    state: Dict[str, Any],
-) -> Dict[str, Dict[str, Any]]:
+    runnable: list[str],
+    stage_nodes: dict[str, Callable],
+    state: dict[str, Any],
+) -> dict[str, dict[str, Any]]:
     """Execute stages in parallel using ThreadPoolExecutor."""
     max_workers = min(DEFAULT_MAX_STAGE_PARALLEL_WORKERS, len(runnable))
-    results: Dict[str, Dict[str, Any]] = {}
+    results: dict[str, dict[str, Any]] = {}
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_to_name = {
             executor.submit(
-                _run_stage_node, name, stage_nodes[name], dict(state),
+                _run_stage_node,
+                name,
+                stage_nodes[name],
+                dict(state),
             ): name
             for name in runnable
         }
@@ -301,15 +308,15 @@ def _run_parallel_stage_batch(
 
 
 def _build_dynamic_input_wrappers(
-    targets: List[Dict[str, Any]],
-    stage_nodes: Dict[str, Callable],
-) -> Dict[str, Callable]:
+    targets: list[dict[str, Any]],
+    stage_nodes: dict[str, Callable],
+) -> dict[str, Callable]:
     """Build wrapper nodes that inject per-target DYNAMIC_INPUTS.
 
     For parallel fan-out, each target may have its own inputs that need
     to be injected before the stage node runs.
     """
-    wrapped: Dict[str, Callable] = {}
+    wrapped: dict[str, Callable] = {}
     for target_info in targets:
         name = target_info["name"]
         node_fn = stage_nodes[name]
@@ -322,15 +329,18 @@ def _build_dynamic_input_wrappers(
 
 
 def _make_input_wrapper(
-    node_fn: Callable, inputs: Dict[str, Any],
+    node_fn: Callable,
+    inputs: dict[str, Any],
 ) -> Callable:
     """Create a wrapper that sets DYNAMIC_INPUTS before calling node_fn."""
-    def wrapper(state: Dict[str, Any]) -> Dict[str, Any]:
+
+    def wrapper(state: dict[str, Any]) -> dict[str, Any]:
         """Inject dynamic inputs, run node, then clean up."""
         state[StateKeys.DYNAMIC_INPUTS] = inputs
-        result: Dict[str, Any] = node_fn(state)
+        result: dict[str, Any] = node_fn(state)
         state.pop(StateKeys.DYNAMIC_INPUTS, None)
         return result
+
     return wrapper
 
 
@@ -351,7 +361,7 @@ class WorkflowExecutor:
         self,
         node_builder: NodeBuilder,
         condition_evaluator: ConditionEvaluator,
-        negotiation_config: Optional[Dict[str, Any]] = None,
+        negotiation_config: dict[str, Any] | None = None,
     ) -> None:
         self.node_builder = node_builder
         self.condition_evaluator = condition_evaluator
@@ -359,10 +369,10 @@ class WorkflowExecutor:
 
     def run(
         self,
-        stage_refs: List[Any],
-        workflow_config: Dict[str, Any],
-        state: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        stage_refs: list[Any],
+        workflow_config: dict[str, Any],
+        state: dict[str, Any],
+    ) -> dict[str, Any]:
         """Execute all stages, returning final state.
 
         1. Build DAG from depends_on declarations
@@ -381,9 +391,7 @@ class WorkflowExecutor:
         Returns:
             Final workflow state with all stage outputs
         """
-        stage_names = [
-            self.node_builder.extract_stage_name(ref) for ref in stage_refs
-        ]
+        stage_names = [self.node_builder.extract_stage_name(ref) for ref in stage_refs]
 
         # Build DAG and compute depths
         dag = build_stage_dag(stage_names, stage_refs)
@@ -395,10 +403,11 @@ class WorkflowExecutor:
         self.node_builder.wire_dag_context(dag)
 
         # Pre-build stage node callables
-        stage_nodes: Dict[str, Callable] = {}
+        stage_nodes: dict[str, Callable] = {}
         for name in stage_names:
             stage_nodes[name] = self.node_builder.create_stage_node(
-                name, workflow_config,
+                name,
+                workflow_config,
             )
 
         # Walk depth groups in order
@@ -415,13 +424,21 @@ class WorkflowExecutor:
             try:
                 if len(stages_at_depth) == 1:
                     state = self._execute_single_stage(
-                        stages_at_depth[0], stage_nodes, ref_lookup,
-                        stage_refs, state, workflow_config,
+                        stages_at_depth[0],
+                        stage_nodes,
+                        ref_lookup,
+                        stage_refs,
+                        state,
+                        workflow_config,
                     )
                 else:
                     state = self._execute_parallel_stages(
-                        stages_at_depth, stage_nodes, ref_lookup,
-                        stage_refs, state, workflow_config,
+                        stages_at_depth,
+                        stage_nodes,
+                        ref_lookup,
+                        stage_refs,
+                        state,
+                        workflow_config,
                     )
             except WorkflowStageError as exc:
                 logger.error("Stage failed, halting workflow: %s", exc)
@@ -433,12 +450,12 @@ class WorkflowExecutor:
     def _execute_single_stage(
         self,
         stage_name: str,
-        stage_nodes: Dict[str, Callable],
-        ref_lookup: Dict[str, Any],
-        stage_refs: List[Any],
-        state: Dict[str, Any],
-        workflow_config: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        stage_nodes: dict[str, Callable],
+        ref_lookup: dict[str, Any],
+        stage_refs: list[Any],
+        state: dict[str, Any],
+        workflow_config: dict[str, Any],
+    ) -> dict[str, Any]:
         """Execute a single stage with condition/loop/negotiation support."""
         stage_ref = ref_lookup.get(stage_name)
 
@@ -447,13 +464,14 @@ class WorkflowExecutor:
             skip_to = _ref_attr(stage_ref, "skip_to")
             if skip_to == "end":
                 logger.info(
-                    "Stage '%s' condition not met → skip_to=end, "
-                    "halting workflow", stage_name,
+                    "Stage '%s' condition not met → skip_to=end, " "halting workflow",
+                    stage_name,
                 )
                 state[StateKeys.SKIP_TO_END] = stage_name
             else:
                 logger.info(
-                    "Skipping stage '%s' (condition not met)", stage_name,
+                    "Skipping stage '%s' (condition not met)",
+                    stage_name,
                 )
             return state
 
@@ -461,27 +479,38 @@ class WorkflowExecutor:
         loops_back_to = _ref_attr(stage_ref, "loops_back_to") if stage_ref else None
         if loops_back_to:
             return self._execute_with_loop(
-                stage_name, stage_ref, stage_nodes, ref_lookup,
-                stage_refs, state, workflow_config,
+                stage_name,
+                stage_ref,
+                stage_nodes,
+                ref_lookup,
+                stage_refs,
+                state,
+                workflow_config,
             )
 
         # Execute with dynamic edge routing
         state = self._execute_with_negotiation(
-            stage_name, stage_nodes, state, workflow_config,
+            stage_name,
+            stage_nodes,
+            state,
+            workflow_config,
         )
         return self._follow_dynamic_edges(
-            stage_name, stage_nodes, state, workflow_config,
+            stage_name,
+            stage_nodes,
+            state,
+            workflow_config,
         )
 
     def _execute_parallel_stages(
         self,
-        stage_names: List[str],
-        stage_nodes: Dict[str, Callable],
-        ref_lookup: Dict[str, Any],
-        stage_refs: List[Any],
-        state: Dict[str, Any],
-        workflow_config: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        stage_names: list[str],
+        stage_nodes: dict[str, Callable],
+        ref_lookup: dict[str, Any],
+        stage_refs: list[Any],
+        state: dict[str, Any],
+        workflow_config: dict[str, Any],
+    ) -> dict[str, Any]:
         """Execute multiple stages at the same depth in parallel.
 
         Stages at the same depth with no mutual dependency run concurrently.
@@ -497,12 +526,14 @@ class WorkflowExecutor:
                 if skip_to == "end":
                     logger.info(
                         "Stage '%s' condition not met → skip_to=end, "
-                        "halting workflow", name,
+                        "halting workflow",
+                        name,
                     )
                     state[StateKeys.SKIP_TO_END] = name
                     return state
                 logger.info(
-                    "Skipping stage '%s' (condition not met)", name,
+                    "Skipping stage '%s' (condition not met)",
+                    name,
                 )
                 continue
             runnable.append(name)
@@ -512,7 +543,10 @@ class WorkflowExecutor:
 
         if len(runnable) == 1:
             return self._execute_with_negotiation(
-                runnable[0], stage_nodes, state, workflow_config,
+                runnable[0],
+                stage_nodes,
+                state,
+                workflow_config,
             )
 
         results = _run_parallel_stage_batch(runnable, stage_nodes, state)
@@ -524,7 +558,10 @@ class WorkflowExecutor:
         # Process dynamic edges from each parallel stage sequentially
         for name in runnable:
             state = self._follow_dynamic_edges(
-                name, stage_nodes, state, workflow_config,
+                name,
+                stage_nodes,
+                state,
+                workflow_config,
             )
 
         return state
@@ -533,12 +570,12 @@ class WorkflowExecutor:
         self,
         stage_name: str,
         stage_ref: Any,
-        stage_nodes: Dict[str, Callable],
-        ref_lookup: Dict[str, Any],
-        stage_refs: List[Any],
-        state: Dict[str, Any],
-        workflow_config: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        stage_nodes: dict[str, Callable],
+        ref_lookup: dict[str, Any],
+        stage_refs: list[Any],
+        state: dict[str, Any],
+        workflow_config: dict[str, Any],
+    ) -> dict[str, Any]:
         """Execute a stage with loop-back support.
 
         Runs the stage, then checks the loop condition. If met and under
@@ -547,46 +584,67 @@ class WorkflowExecutor:
         """
         loop_cfg = self._build_loop_config(stage_ref, stage_name)
         intermediate = self._find_intermediate_stages(
-            loop_cfg["target"], stage_name, stage_refs, stage_nodes,
+            loop_cfg["target"],
+            stage_name,
+            stage_refs,
+            stage_nodes,
         )
         loop_count = 0
 
         while True:
             state = self._execute_with_negotiation(
-                stage_name, stage_nodes, state, workflow_config,
+                stage_name,
+                stage_nodes,
+                state,
+                workflow_config,
             )
             loop_count += 1
             state = self._update_loop_count(state, stage_name, loop_count)
 
             should_continue = self._check_loop_continue(
-                stage_name, loop_count, loop_cfg, state,
+                stage_name,
+                loop_count,
+                loop_cfg,
+                state,
             )
             if not should_continue:
                 break
 
             logger.info(
                 "Stage '%s' looping back to '%s' (iteration %d/%d)",
-                stage_name, loop_cfg["target"], loop_count, loop_cfg["max"],
+                stage_name,
+                loop_cfg["target"],
+                loop_count,
+                loop_cfg["max"],
             )
             if loop_cfg["target"] in stage_nodes:
                 state = self._execute_with_negotiation(
-                    loop_cfg["target"], stage_nodes, state, workflow_config,
+                    loop_cfg["target"],
+                    stage_nodes,
+                    state,
+                    workflow_config,
                 )
 
             for mid_name in intermediate:
                 logger.info(
-                    "Re-running intermediate stage '%s' in loop", mid_name,
+                    "Re-running intermediate stage '%s' in loop",
+                    mid_name,
                 )
                 state = self._execute_with_negotiation(
-                    mid_name, stage_nodes, state, workflow_config,
+                    mid_name,
+                    stage_nodes,
+                    state,
+                    workflow_config,
                 )
 
         return state
 
     @staticmethod
     def _find_intermediate_stages(
-        target: str, source: str,
-        stage_refs: List[Any], stage_nodes: Dict[str, Callable],
+        target: str,
+        source: str,
+        stage_refs: list[Any],
+        stage_nodes: dict[str, Callable],
     ) -> list[str]:
         """Find stages between loop target and source in DAG order.
 
@@ -601,10 +659,10 @@ class WorkflowExecutor:
             return []
         if t_idx >= s_idx:
             return []
-        return [n for n in names[t_idx + 1:s_idx] if n in stage_nodes]
+        return [n for n in names[t_idx + 1 : s_idx] if n in stage_nodes]
 
     @staticmethod
-    def _build_loop_config(stage_ref: Any, stage_name: str) -> Dict[str, Any]:
+    def _build_loop_config(stage_ref: Any, stage_name: str) -> dict[str, Any]:
         """Extract loop configuration from stage reference."""
         return {
             "max": _ref_attr(stage_ref, "max_loops", DEFAULT_MAX_LOOPS),
@@ -618,8 +676,10 @@ class WorkflowExecutor:
 
     @staticmethod
     def _update_loop_count(
-        state: Dict[str, Any], stage_name: str, count: int,
-    ) -> Dict[str, Any]:
+        state: dict[str, Any],
+        stage_name: str,
+        count: int,
+    ) -> dict[str, Any]:
         """Update loop count in state."""
         loop_counts = dict(state.get(StateKeys.STAGE_LOOP_COUNTS, {}))
         loop_counts[stage_name] = count
@@ -627,14 +687,18 @@ class WorkflowExecutor:
         return state
 
     def _check_loop_continue(
-        self, stage_name: str, loop_count: int,
-        loop_cfg: Dict[str, Any], state: Dict[str, Any],
+        self,
+        stage_name: str,
+        loop_count: int,
+        loop_cfg: dict[str, Any],
+        state: dict[str, Any],
     ) -> bool:
         """Check if loop should continue. Returns False to exit."""
         if loop_count > loop_cfg["max"]:
             logger.info(
                 "Stage '%s' reached max loops (%d), exiting",
-                stage_name, loop_cfg["max"],
+                stage_name,
+                loop_cfg["max"],
             )
             return False
         if not self.condition_evaluator.evaluate(loop_cfg["condition"], state):
@@ -645,10 +709,10 @@ class WorkflowExecutor:
     def _execute_with_negotiation(
         self,
         stage_name: str,
-        stage_nodes: Dict[str, Callable],
-        state: Dict[str, Any],
-        workflow_config: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        stage_nodes: dict[str, Callable],
+        state: dict[str, Any],
+        workflow_config: dict[str, Any],
+    ) -> dict[str, Any]:
         """Execute a stage with negotiation support.
 
         When ContextResolutionError is raised for a required input,
@@ -658,14 +722,17 @@ class WorkflowExecutor:
 
         negotiation_enabled = self._negotiation_config.get("enabled", False)
         max_rounds = self._negotiation_config.get(
-            "max_stage_rounds", DEFAULT_MAX_NEGOTIATION_ROUNDS,
+            "max_stage_rounds",
+            DEFAULT_MAX_NEGOTIATION_ROUNDS,
         )
 
-        last_error: Optional[ContextResolutionError] = None
+        last_error: ContextResolutionError | None = None
         for attempt in range(max_rounds + 1):
             try:
                 result = _run_stage_node(
-                    stage_name, stage_nodes[stage_name], state,
+                    stage_name,
+                    stage_nodes[stage_name],
+                    state,
                 )
                 return _merge_stage_result(state, result)
             except ContextResolutionError as exc:
@@ -673,7 +740,10 @@ class WorkflowExecutor:
                     raise
                 last_error = exc
                 state = self._negotiate_with_producer(
-                    exc, stage_name, stage_nodes, state,
+                    exc,
+                    stage_name,
+                    stage_nodes,
+                    state,
                 )
 
         # Exhausted all negotiation rounds without success
@@ -685,20 +755,23 @@ class WorkflowExecutor:
         self,
         exc: Any,
         stage_name: str,
-        stage_nodes: Dict[str, Callable],
-        state: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        stage_nodes: dict[str, Callable],
+        state: dict[str, Any],
+    ) -> dict[str, Any]:
         """Re-run producer stage with feedback after ContextResolutionError."""
         # Source format: "producer_stage.field_name"
         producer = exc.source.split(".")[0]
         logger.info(
             "Negotiation: stage '%s' missing input '%s' from producer '%s'",
-            stage_name, exc.input_name, producer,
+            stage_name,
+            exc.input_name,
+            producer,
         )
 
         if producer not in stage_nodes:
             logger.warning(
-                "Negotiation: producer '%s' not found in stage nodes", producer,
+                "Negotiation: producer '%s' not found in stage nodes",
+                producer,
             )
             return state
 
@@ -709,7 +782,9 @@ class WorkflowExecutor:
         }
         state["_negotiation_feedback"] = feedback
         producer_result = _run_stage_node(
-            producer, stage_nodes[producer], state,
+            producer,
+            stage_nodes[producer],
+            state,
         )
         state = _merge_stage_result(state, producer_result)
         state.pop("_negotiation_feedback", None)
@@ -719,8 +794,8 @@ class WorkflowExecutor:
         self,
         stage_name: str,
         stage_ref: Any,
-        stage_refs: List[Any],
-        state: Dict[str, Any],
+        stage_refs: list[Any],
+        state: dict[str, Any],
     ) -> bool:
         """Check if a stage should be skipped based on conditions."""
         if not stage_ref or not _is_conditional(stage_ref):
@@ -736,9 +811,7 @@ class WorkflowExecutor:
             return not self.condition_evaluator.evaluate(condition, state)
 
         # Default condition: previous stage failed/degraded → execute
-        stage_names = [
-            self.node_builder.extract_stage_name(ref) for ref in stage_refs
-        ]
+        stage_names = [self.node_builder.extract_stage_name(ref) for ref in stage_refs]
         try:
             stage_index = stage_names.index(stage_name)
         except ValueError:
@@ -753,20 +826,22 @@ class WorkflowExecutor:
     def _follow_dynamic_edges(
         self,
         stage_name: str,
-        stage_nodes: Dict[str, Callable],
-        state: Dict[str, Any],
-        workflow_config: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        stage_nodes: dict[str, Callable],
+        state: dict[str, Any],
+        workflow_config: dict[str, Any],
+    ) -> dict[str, Any]:
         """Follow dynamic edge signals after a stage completes.
 
         Delegates to ``_dynamic_edge_helpers.follow_dynamic_edges``.
         """
-        from temper_ai.workflow.engines._dynamic_edge_helpers import follow_dynamic_edges
-
-        return follow_dynamic_edges(
-            stage_name, stage_nodes, state, workflow_config,
-            self._execute_with_negotiation,
+        from temper_ai.workflow.engines._dynamic_edge_helpers import (
+            follow_dynamic_edges,
         )
 
-
-
+        return follow_dynamic_edges(
+            stage_name,
+            stage_nodes,
+            state,
+            workflow_config,
+            self._execute_with_negotiation,
+        )

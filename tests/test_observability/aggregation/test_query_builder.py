@@ -11,12 +11,14 @@ Tests cover:
 NOTE: SQLite doesn't support PERCENTILE_CONT, so tests validate query structure
 for percentile queries without executing them. Integration tests use PostgreSQL.
 """
+
+from datetime import UTC, datetime, timedelta
+
 import pytest
-from datetime import datetime, timedelta, timezone
-from sqlmodel import Session, create_engine, SQLModel, select, func
+from sqlmodel import Session, SQLModel, create_engine, func, select
 
 from temper_ai.observability.aggregation.query_builder import AggregationQueryBuilder
-from temper_ai.storage.database.models import WorkflowExecution, AgentExecution, LLMCall
+from temper_ai.storage.database.models import AgentExecution, LLMCall, WorkflowExecution
 
 
 @pytest.fixture
@@ -32,7 +34,7 @@ def db_session():
 @pytest.fixture
 def time_window():
     """Standard time window for tests."""
-    end_time = datetime(2024, 1, 15, 14, 0, 0, tzinfo=timezone.utc)
+    end_time = datetime(2024, 1, 15, 14, 0, 0, tzinfo=UTC)
     start_time = end_time - timedelta(hours=1)
     return start_time, end_time
 
@@ -48,16 +50,17 @@ class TestQueryStructureValidation:
 
         # Verify query is a Select object
         from sqlalchemy.sql.selectable import Select
+
         assert isinstance(query, Select)
 
         # Verify column names in query
         query_str = str(query)
-        assert 'workflow_name' in query_str
-        assert 'count' in query_str.lower()
-        assert 'sum' in query_str.lower()
-        assert 'avg' in query_str.lower()
-        assert 'percentile_cont' in query_str.lower()  # P95 duration
-        assert 'GROUP BY' in query_str
+        assert "workflow_name" in query_str
+        assert "count" in query_str.lower()
+        assert "sum" in query_str.lower()
+        assert "avg" in query_str.lower()
+        assert "percentile_cont" in query_str.lower()  # P95 duration
+        assert "GROUP BY" in query_str
 
     def test_agent_query_has_correct_structure(self, time_window):
         """Agent query has correct SQL structure."""
@@ -66,10 +69,10 @@ class TestQueryStructureValidation:
         query = AggregationQueryBuilder.build_agent_query(start_time, end_time)
 
         query_str = str(query)
-        assert 'agent_name' in query_str
-        assert 'count' in query_str.lower()
-        assert 'avg' in query_str.lower()
-        assert 'GROUP BY' in query_str
+        assert "agent_name" in query_str
+        assert "count" in query_str.lower()
+        assert "avg" in query_str.lower()
+        assert "GROUP BY" in query_str
 
     def test_llm_query_has_correct_structure(self, time_window):
         """LLM query has correct SQL structure."""
@@ -78,11 +81,11 @@ class TestQueryStructureValidation:
         query = AggregationQueryBuilder.build_llm_query(start_time, end_time)
 
         query_str = str(query)
-        assert 'provider' in query_str
-        assert 'model' in query_str
-        assert 'count' in query_str.lower()
-        assert 'percentile_cont' in query_str.lower()  # P95 and P99
-        assert 'GROUP BY' in query_str
+        assert "provider" in query_str
+        assert "model" in query_str
+        assert "count" in query_str.lower()
+        assert "percentile_cont" in query_str.lower()  # P95 and P99
+        assert "GROUP BY" in query_str
 
     def test_workflow_query_time_filters(self, time_window):
         """Workflow query includes time range filters."""
@@ -92,9 +95,9 @@ class TestQueryStructureValidation:
 
         # Check WHERE clause exists
         query_str = str(query)
-        assert 'WHERE' in query_str
-        assert 'start_time >=' in query_str
-        assert 'start_time <' in query_str
+        assert "WHERE" in query_str
+        assert "start_time >=" in query_str
+        assert "start_time <" in query_str
 
     def test_agent_query_time_filters(self, time_window):
         """Agent query includes time range filters."""
@@ -103,8 +106,8 @@ class TestQueryStructureValidation:
         query = AggregationQueryBuilder.build_agent_query(start_time, end_time)
 
         query_str = str(query)
-        assert 'WHERE' in query_str
-        assert 'start_time >=' in query_str
+        assert "WHERE" in query_str
+        assert "start_time >=" in query_str
 
     def test_llm_query_time_filters(self, time_window):
         """LLM query includes time range filters."""
@@ -113,8 +116,8 @@ class TestQueryStructureValidation:
         query = AggregationQueryBuilder.build_llm_query(start_time, end_time)
 
         query_str = str(query)
-        assert 'WHERE' in query_str
-        assert 'start_time >=' in query_str
+        assert "WHERE" in query_str
+        assert "start_time >=" in query_str
 
 
 class TestWorkflowQueryFiltering:
@@ -130,7 +133,7 @@ class TestWorkflowQueryFiltering:
             workflow_name="test_workflow",
             start_time=start_time + timedelta(minutes=15),
             status="completed",
-            duration_seconds=5.0
+            duration_seconds=5.0,
         )
 
         wf_before = WorkflowExecution(
@@ -138,7 +141,7 @@ class TestWorkflowQueryFiltering:
             workflow_name="test_workflow",
             start_time=start_time - timedelta(hours=2),
             status="completed",
-            duration_seconds=3.0
+            duration_seconds=3.0,
         )
 
         wf_after = WorkflowExecution(
@@ -146,20 +149,24 @@ class TestWorkflowQueryFiltering:
             workflow_name="test_workflow",
             start_time=end_time + timedelta(hours=1),
             status="completed",
-            duration_seconds=4.0
+            duration_seconds=4.0,
         )
 
         db_session.add_all([wf_in, wf_before, wf_after])
         db_session.commit()
 
         # Use a simple query without PERCENTILE_CONT for SQLite
-        query = select(
-            WorkflowExecution.workflow_name,
-            func.count(WorkflowExecution.id).label('total')
-        ).where(
-            WorkflowExecution.start_time >= start_time,
-            WorkflowExecution.start_time < end_time
-        ).group_by(WorkflowExecution.workflow_name)
+        query = (
+            select(
+                WorkflowExecution.workflow_name,
+                func.count(WorkflowExecution.id).label("total"),
+            )
+            .where(
+                WorkflowExecution.start_time >= start_time,
+                WorkflowExecution.start_time < end_time,
+            )
+            .group_by(WorkflowExecution.workflow_name)
+        )
 
         results = db_session.exec(query).all()
 
@@ -175,7 +182,7 @@ class TestWorkflowQueryFiltering:
             workflow_name="workflow_a",
             start_time=start_time + timedelta(minutes=10),
             status="completed",
-            duration_seconds=5.0
+            duration_seconds=5.0,
         )
 
         wf2 = WorkflowExecution(
@@ -183,7 +190,7 @@ class TestWorkflowQueryFiltering:
             workflow_name="workflow_b",
             start_time=start_time + timedelta(minutes=20),
             status="completed",
-            duration_seconds=3.0
+            duration_seconds=3.0,
         )
 
         wf3 = WorkflowExecution(
@@ -191,19 +198,23 @@ class TestWorkflowQueryFiltering:
             workflow_name="workflow_a",
             start_time=start_time + timedelta(minutes=30),
             status="failed",
-            duration_seconds=2.0
+            duration_seconds=2.0,
         )
 
         db_session.add_all([wf1, wf2, wf3])
         db_session.commit()
 
-        query = select(
-            WorkflowExecution.workflow_name,
-            func.count(WorkflowExecution.id).label('total')
-        ).where(
-            WorkflowExecution.start_time >= start_time,
-            WorkflowExecution.start_time < end_time
-        ).group_by(WorkflowExecution.workflow_name)
+        query = (
+            select(
+                WorkflowExecution.workflow_name,
+                func.count(WorkflowExecution.id).label("total"),
+            )
+            .where(
+                WorkflowExecution.start_time >= start_time,
+                WorkflowExecution.start_time < end_time,
+            )
+            .group_by(WorkflowExecution.workflow_name)
+        )
 
         results = db_session.exec(query).all()
 
@@ -223,7 +234,7 @@ class TestWorkflowQueryFiltering:
             workflow_name="test_workflow",
             start_time=start_time + timedelta(minutes=5),
             status="completed",
-            duration_seconds=5.0
+            duration_seconds=5.0,
         )
 
         wf_completed2 = WorkflowExecution(
@@ -231,7 +242,7 @@ class TestWorkflowQueryFiltering:
             workflow_name="test_workflow",
             start_time=start_time + timedelta(minutes=10),
             status="completed",
-            duration_seconds=6.0
+            duration_seconds=6.0,
         )
 
         wf_failed = WorkflowExecution(
@@ -239,20 +250,26 @@ class TestWorkflowQueryFiltering:
             workflow_name="test_workflow",
             start_time=start_time + timedelta(minutes=15),
             status="failed",
-            duration_seconds=2.0
+            duration_seconds=2.0,
         )
 
         db_session.add_all([wf_completed1, wf_completed2, wf_failed])
         db_session.commit()
 
-        query = select(
-            WorkflowExecution.workflow_name,
-            func.count(WorkflowExecution.id).label('total'),
-            func.sum(case((WorkflowExecution.status == 'completed', 1), else_=0)).label('successful')
-        ).where(
-            WorkflowExecution.start_time >= start_time,
-            WorkflowExecution.start_time < end_time
-        ).group_by(WorkflowExecution.workflow_name)
+        query = (
+            select(
+                WorkflowExecution.workflow_name,
+                func.count(WorkflowExecution.id).label("total"),
+                func.sum(
+                    case((WorkflowExecution.status == "completed", 1), else_=0)
+                ).label("successful"),
+            )
+            .where(
+                WorkflowExecution.start_time >= start_time,
+                WorkflowExecution.start_time < end_time,
+            )
+            .group_by(WorkflowExecution.workflow_name)
+        )
 
         results = db_session.exec(query).all()
 
@@ -270,7 +287,7 @@ class TestWorkflowQueryFiltering:
             workflow_name="test_workflow",
             start_time=start_time + timedelta(minutes=5),
             status="completed",
-            duration_seconds=4.0
+            duration_seconds=4.0,
         )
 
         wf2 = WorkflowExecution(
@@ -278,19 +295,23 @@ class TestWorkflowQueryFiltering:
             workflow_name="test_workflow",
             start_time=start_time + timedelta(minutes=10),
             status="completed",
-            duration_seconds=6.0
+            duration_seconds=6.0,
         )
 
         db_session.add_all([wf1, wf2])
         db_session.commit()
 
-        query = select(
-            WorkflowExecution.workflow_name,
-            func.avg(WorkflowExecution.duration_seconds).label('avg_duration')
-        ).where(
-            WorkflowExecution.start_time >= start_time,
-            WorkflowExecution.start_time < end_time
-        ).group_by(WorkflowExecution.workflow_name)
+        query = (
+            select(
+                WorkflowExecution.workflow_name,
+                func.avg(WorkflowExecution.duration_seconds).label("avg_duration"),
+            )
+            .where(
+                WorkflowExecution.start_time >= start_time,
+                WorkflowExecution.start_time < end_time,
+            )
+            .group_by(WorkflowExecution.workflow_name)
+        )
 
         results = db_session.exec(query).all()
 
@@ -307,7 +328,7 @@ class TestWorkflowQueryFiltering:
             start_time=start_time + timedelta(minutes=5),
             status="completed",
             duration_seconds=5.0,
-            total_cost_usd=0.15
+            total_cost_usd=0.15,
         )
 
         wf2 = WorkflowExecution(
@@ -316,19 +337,23 @@ class TestWorkflowQueryFiltering:
             start_time=start_time + timedelta(minutes=10),
             status="completed",
             duration_seconds=5.0,
-            total_cost_usd=0.25
+            total_cost_usd=0.25,
         )
 
         db_session.add_all([wf1, wf2])
         db_session.commit()
 
-        query = select(
-            WorkflowExecution.workflow_name,
-            func.sum(WorkflowExecution.total_cost_usd).label('total_cost')
-        ).where(
-            WorkflowExecution.start_time >= start_time,
-            WorkflowExecution.start_time < end_time
-        ).group_by(WorkflowExecution.workflow_name)
+        query = (
+            select(
+                WorkflowExecution.workflow_name,
+                func.sum(WorkflowExecution.total_cost_usd).label("total_cost"),
+            )
+            .where(
+                WorkflowExecution.start_time >= start_time,
+                WorkflowExecution.start_time < end_time,
+            )
+            .group_by(WorkflowExecution.workflow_name)
+        )
 
         results = db_session.exec(query).all()
 
@@ -348,7 +373,7 @@ class TestAgentQueryFiltering:
             agent_name="test_agent",
             start_time=start_time + timedelta(minutes=15),
             status="completed",
-            duration_seconds=2.5
+            duration_seconds=2.5,
         )
 
         agent_out = AgentExecution(
@@ -356,19 +381,22 @@ class TestAgentQueryFiltering:
             agent_name="test_agent",
             start_time=end_time + timedelta(hours=1),
             status="completed",
-            duration_seconds=3.0
+            duration_seconds=3.0,
         )
 
         db_session.add_all([agent_in, agent_out])
         db_session.commit()
 
-        query = select(
-            AgentExecution.agent_name,
-            func.count(AgentExecution.id).label('total')
-        ).where(
-            AgentExecution.start_time >= start_time,
-            AgentExecution.start_time < end_time
-        ).group_by(AgentExecution.agent_name)
+        query = (
+            select(
+                AgentExecution.agent_name, func.count(AgentExecution.id).label("total")
+            )
+            .where(
+                AgentExecution.start_time >= start_time,
+                AgentExecution.start_time < end_time,
+            )
+            .group_by(AgentExecution.agent_name)
+        )
 
         results = db_session.exec(query).all()
 
@@ -384,7 +412,7 @@ class TestAgentQueryFiltering:
             agent_name="agent_a",
             start_time=start_time + timedelta(minutes=10),
             status="completed",
-            duration_seconds=2.0
+            duration_seconds=2.0,
         )
 
         agent2 = AgentExecution(
@@ -392,7 +420,7 @@ class TestAgentQueryFiltering:
             agent_name="agent_b",
             start_time=start_time + timedelta(minutes=20),
             status="completed",
-            duration_seconds=3.0
+            duration_seconds=3.0,
         )
 
         agent3 = AgentExecution(
@@ -400,19 +428,22 @@ class TestAgentQueryFiltering:
             agent_name="agent_a",
             start_time=start_time + timedelta(minutes=30),
             status="completed",
-            duration_seconds=4.0
+            duration_seconds=4.0,
         )
 
         db_session.add_all([agent1, agent2, agent3])
         db_session.commit()
 
-        query = select(
-            AgentExecution.agent_name,
-            func.count(AgentExecution.id).label('total')
-        ).where(
-            AgentExecution.start_time >= start_time,
-            AgentExecution.start_time < end_time
-        ).group_by(AgentExecution.agent_name)
+        query = (
+            select(
+                AgentExecution.agent_name, func.count(AgentExecution.id).label("total")
+            )
+            .where(
+                AgentExecution.start_time >= start_time,
+                AgentExecution.start_time < end_time,
+            )
+            .group_by(AgentExecution.agent_name)
+        )
 
         results = db_session.exec(query).all()
 
@@ -430,7 +461,7 @@ class TestAgentQueryFiltering:
             start_time=start_time + timedelta(minutes=5),
             status="completed",
             duration_seconds=2.0,
-            total_tokens=100
+            total_tokens=100,
         )
 
         agent2 = AgentExecution(
@@ -439,19 +470,23 @@ class TestAgentQueryFiltering:
             start_time=start_time + timedelta(minutes=10),
             status="completed",
             duration_seconds=3.0,
-            total_tokens=200
+            total_tokens=200,
         )
 
         db_session.add_all([agent1, agent2])
         db_session.commit()
 
-        query = select(
-            AgentExecution.agent_name,
-            func.avg(AgentExecution.total_tokens).label('avg_tokens')
-        ).where(
-            AgentExecution.start_time >= start_time,
-            AgentExecution.start_time < end_time
-        ).group_by(AgentExecution.agent_name)
+        query = (
+            select(
+                AgentExecution.agent_name,
+                func.avg(AgentExecution.total_tokens).label("avg_tokens"),
+            )
+            .where(
+                AgentExecution.start_time >= start_time,
+                AgentExecution.start_time < end_time,
+            )
+            .group_by(AgentExecution.agent_name)
+        )
 
         results = db_session.exec(query).all()
 
@@ -472,7 +507,7 @@ class TestLLMQueryFiltering:
             model="gpt-4",
             start_time=start_time + timedelta(minutes=15),
             status="success",
-            latency_ms=500.0
+            latency_ms=500.0,
         )
 
         llm_out = LLMCall(
@@ -481,20 +516,19 @@ class TestLLMQueryFiltering:
             model="gpt-4",
             start_time=start_time - timedelta(hours=2),
             status="success",
-            latency_ms=600.0
+            latency_ms=600.0,
         )
 
         db_session.add_all([llm_in, llm_out])
         db_session.commit()
 
-        query = select(
-            LLMCall.provider,
-            LLMCall.model,
-            func.count(LLMCall.id).label('total')
-        ).where(
-            LLMCall.start_time >= start_time,
-            LLMCall.start_time < end_time
-        ).group_by(LLMCall.provider, LLMCall.model)
+        query = (
+            select(
+                LLMCall.provider, LLMCall.model, func.count(LLMCall.id).label("total")
+            )
+            .where(LLMCall.start_time >= start_time, LLMCall.start_time < end_time)
+            .group_by(LLMCall.provider, LLMCall.model)
+        )
 
         results = db_session.exec(query).all()
 
@@ -511,7 +545,7 @@ class TestLLMQueryFiltering:
             model="gpt-4",
             start_time=start_time + timedelta(minutes=10),
             status="success",
-            latency_ms=500.0
+            latency_ms=500.0,
         )
 
         llm2 = LLMCall(
@@ -520,7 +554,7 @@ class TestLLMQueryFiltering:
             model="gpt-3.5-turbo",
             start_time=start_time + timedelta(minutes=20),
             status="success",
-            latency_ms=300.0
+            latency_ms=300.0,
         )
 
         llm3 = LLMCall(
@@ -529,20 +563,19 @@ class TestLLMQueryFiltering:
             model="gpt-4",
             start_time=start_time + timedelta(minutes=30),
             status="success",
-            latency_ms=550.0
+            latency_ms=550.0,
         )
 
         db_session.add_all([llm1, llm2, llm3])
         db_session.commit()
 
-        query = select(
-            LLMCall.provider,
-            LLMCall.model,
-            func.count(LLMCall.id).label('total')
-        ).where(
-            LLMCall.start_time >= start_time,
-            LLMCall.start_time < end_time
-        ).group_by(LLMCall.provider, LLMCall.model)
+        query = (
+            select(
+                LLMCall.provider, LLMCall.model, func.count(LLMCall.id).label("total")
+            )
+            .where(LLMCall.start_time >= start_time, LLMCall.start_time < end_time)
+            .group_by(LLMCall.provider, LLMCall.model)
+        )
 
         results = db_session.exec(query).all()
 
@@ -562,7 +595,7 @@ class TestLLMQueryFiltering:
             model="gpt-4",
             start_time=start_time + timedelta(minutes=5),
             status="success",
-            latency_ms=500.0
+            latency_ms=500.0,
         )
 
         llm_success2 = LLMCall(
@@ -571,7 +604,7 @@ class TestLLMQueryFiltering:
             model="gpt-4",
             start_time=start_time + timedelta(minutes=10),
             status="success",
-            latency_ms=600.0
+            latency_ms=600.0,
         )
 
         llm_error = LLMCall(
@@ -580,21 +613,24 @@ class TestLLMQueryFiltering:
             model="gpt-4",
             start_time=start_time + timedelta(minutes=15),
             status="error",
-            latency_ms=100.0
+            latency_ms=100.0,
         )
 
         db_session.add_all([llm_success1, llm_success2, llm_error])
         db_session.commit()
 
-        query = select(
-            LLMCall.provider,
-            LLMCall.model,
-            func.count(LLMCall.id).label('total'),
-            func.sum(case((LLMCall.status == 'success', 1), else_=0)).label('successful')
-        ).where(
-            LLMCall.start_time >= start_time,
-            LLMCall.start_time < end_time
-        ).group_by(LLMCall.provider, LLMCall.model)
+        query = (
+            select(
+                LLMCall.provider,
+                LLMCall.model,
+                func.count(LLMCall.id).label("total"),
+                func.sum(case((LLMCall.status == "success", 1), else_=0)).label(
+                    "successful"
+                ),
+            )
+            .where(LLMCall.start_time >= start_time, LLMCall.start_time < end_time)
+            .group_by(LLMCall.provider, LLMCall.model)
+        )
 
         results = db_session.exec(query).all()
 
@@ -613,7 +649,7 @@ class TestLLMQueryFiltering:
             model="gpt-4",
             start_time=start_time + timedelta(minutes=5),
             status="success",
-            latency_ms=400.0
+            latency_ms=400.0,
         )
 
         llm2 = LLMCall(
@@ -622,20 +658,21 @@ class TestLLMQueryFiltering:
             model="gpt-4",
             start_time=start_time + timedelta(minutes=10),
             status="success",
-            latency_ms=600.0
+            latency_ms=600.0,
         )
 
         db_session.add_all([llm1, llm2])
         db_session.commit()
 
-        query = select(
-            LLMCall.provider,
-            LLMCall.model,
-            func.avg(LLMCall.latency_ms).label('avg_latency')
-        ).where(
-            LLMCall.start_time >= start_time,
-            LLMCall.start_time < end_time
-        ).group_by(LLMCall.provider, LLMCall.model)
+        query = (
+            select(
+                LLMCall.provider,
+                LLMCall.model,
+                func.avg(LLMCall.latency_ms).label("avg_latency"),
+            )
+            .where(LLMCall.start_time >= start_time, LLMCall.start_time < end_time)
+            .group_by(LLMCall.provider, LLMCall.model)
+        )
 
         results = db_session.exec(query).all()
 
@@ -655,19 +692,23 @@ class TestTimeWindowEdgeCases:
             workflow_name="test_workflow",
             start_time=start_time,
             status="completed",
-            duration_seconds=5.0
+            duration_seconds=5.0,
         )
 
         db_session.add(wf)
         db_session.commit()
 
-        query = select(
-            WorkflowExecution.workflow_name,
-            func.count(WorkflowExecution.id).label('total')
-        ).where(
-            WorkflowExecution.start_time >= start_time,
-            WorkflowExecution.start_time < end_time
-        ).group_by(WorkflowExecution.workflow_name)
+        query = (
+            select(
+                WorkflowExecution.workflow_name,
+                func.count(WorkflowExecution.id).label("total"),
+            )
+            .where(
+                WorkflowExecution.start_time >= start_time,
+                WorkflowExecution.start_time < end_time,
+            )
+            .group_by(WorkflowExecution.workflow_name)
+        )
 
         results = db_session.exec(query).all()
 
@@ -682,19 +723,23 @@ class TestTimeWindowEdgeCases:
             workflow_name="test_workflow",
             start_time=end_time,
             status="completed",
-            duration_seconds=5.0
+            duration_seconds=5.0,
         )
 
         db_session.add(wf)
         db_session.commit()
 
-        query = select(
-            WorkflowExecution.workflow_name,
-            func.count(WorkflowExecution.id).label('total')
-        ).where(
-            WorkflowExecution.start_time >= start_time,
-            WorkflowExecution.start_time < end_time
-        ).group_by(WorkflowExecution.workflow_name)
+        query = (
+            select(
+                WorkflowExecution.workflow_name,
+                func.count(WorkflowExecution.id).label("total"),
+            )
+            .where(
+                WorkflowExecution.start_time >= start_time,
+                WorkflowExecution.start_time < end_time,
+            )
+            .group_by(WorkflowExecution.workflow_name)
+        )
 
         results = db_session.exec(query).all()
 
@@ -711,7 +756,7 @@ class TestTimeWindowEdgeCases:
             start_time=start_time + timedelta(minutes=10),
             status="completed",
             duration_seconds=5.0,
-            total_cost_usd=None
+            total_cost_usd=None,
         )
 
         wf2 = WorkflowExecution(
@@ -720,19 +765,23 @@ class TestTimeWindowEdgeCases:
             start_time=start_time + timedelta(minutes=20),
             status="completed",
             duration_seconds=6.0,
-            total_cost_usd=0.10
+            total_cost_usd=0.10,
         )
 
         db_session.add_all([wf1, wf2])
         db_session.commit()
 
-        query = select(
-            WorkflowExecution.workflow_name,
-            func.sum(WorkflowExecution.total_cost_usd).label('total_cost')
-        ).where(
-            WorkflowExecution.start_time >= start_time,
-            WorkflowExecution.start_time < end_time
-        ).group_by(WorkflowExecution.workflow_name)
+        query = (
+            select(
+                WorkflowExecution.workflow_name,
+                func.sum(WorkflowExecution.total_cost_usd).label("total_cost"),
+            )
+            .where(
+                WorkflowExecution.start_time >= start_time,
+                WorkflowExecution.start_time < end_time,
+            )
+            .group_by(WorkflowExecution.workflow_name)
+        )
 
         results = db_session.exec(query).all()
 

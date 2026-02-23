@@ -14,13 +14,13 @@ from unittest.mock import Mock, patch
 import pytest
 
 from temper_ai.agent.base_agent import AgentResponse
-from temper_ai.workflow.domain_state import WorkflowDomainState
 from temper_ai.stage.executors import (
     AdaptiveStageExecutor,
     ParallelStageExecutor,
     SequentialStageExecutor,
 )
 from temper_ai.stage.executors.state_keys import StateKeys
+from temper_ai.workflow.domain_state import WorkflowDomainState
 from temper_ai.workflow.langgraph_compiler import LangGraphCompiler
 
 
@@ -33,7 +33,7 @@ class TestAgentModeDetection:
 
         stage_config = {
             "execution": {"agent_mode": "parallel"},
-            "agents": ["agent1", "agent2"]
+            "agents": ["agent1", "agent2"],
         }
 
         assert compiler.node_builder.get_agent_mode(stage_config) == "parallel"
@@ -42,10 +42,7 @@ class TestAgentModeDetection:
         """Test detection of sequential mode from dict config."""
         compiler = LangGraphCompiler()
 
-        stage_config = {
-            "execution": {"agent_mode": "sequential"},
-            "agents": ["agent1"]
-        }
+        stage_config = {"execution": {"agent_mode": "sequential"}, "agents": ["agent1"]}
 
         assert compiler.node_builder.get_agent_mode(stage_config) == "sequential"
 
@@ -85,24 +82,23 @@ class TestExecutorRegistry:
         """Test compiler initializes with all executors."""
         compiler = LangGraphCompiler()
 
-        assert 'sequential' in compiler.executors
-        assert 'parallel' in compiler.executors
-        assert 'adaptive' in compiler.executors
-        assert isinstance(compiler.executors['sequential'], SequentialStageExecutor)
-        assert isinstance(compiler.executors['parallel'], ParallelStageExecutor)
-        assert isinstance(compiler.executors['adaptive'], AdaptiveStageExecutor)
+        assert "sequential" in compiler.executors
+        assert "parallel" in compiler.executors
+        assert "adaptive" in compiler.executors
+        assert isinstance(compiler.executors["sequential"], SequentialStageExecutor)
+        assert isinstance(compiler.executors["parallel"], ParallelStageExecutor)
+        assert isinstance(compiler.executors["adaptive"], AdaptiveStageExecutor)
 
     def test_stage_node_delegates_to_executor(self):
         """Test that stage nodes delegate to executors."""
         compiler = LangGraphCompiler()
 
-        stage_config = {
-            "agents": ["agent1"],
-            "execution": {"agent_mode": "sequential"}
-        }
+        stage_config = {"agents": ["agent1"], "execution": {"agent_mode": "sequential"}}
 
-        with patch.object(compiler.config_loader, 'load_stage') as mock_load:
-            with patch.object(compiler.executors['sequential'], 'execute_stage') as mock_exec:
+        with patch.object(compiler.config_loader, "load_stage") as mock_load:
+            with patch.object(
+                compiler.executors["sequential"], "execute_stage"
+            ) as mock_exec:
                 mock_load.return_value = stage_config
                 mock_exec.return_value = {"stage_outputs": {}, "current_stage": ""}
 
@@ -139,7 +135,7 @@ class TestSequentialExecutor:
             reasoning="Sequential reasoning",
             tokens=100,
             estimated_cost_usd=0.001,
-            tool_calls=[]
+            tool_calls=[],
         )
         mock_agent.execute.return_value = mock_response
 
@@ -147,17 +143,16 @@ class TestSequentialExecutor:
         mock_agent_config = Mock()
         mock_agent_config.name = "agent1"
 
-        stage_config = {
-            "agents": ["agent1"]
-        }
+        stage_config = {"agents": ["agent1"]}
 
-        state = {
-            "workflow_id": "wf-123",
-            "stage_outputs": {}
-        }
+        state = {"workflow_id": "wf-123", "stage_outputs": {}}
 
-        with patch('temper_ai.storage.schemas.agent_config.AgentConfig') as mock_config_class:
-            with patch('temper_ai.stage.executors.sequential.AgentFactory.create') as mock_create:
+        with patch(
+            "temper_ai.storage.schemas.agent_config.AgentConfig"
+        ) as mock_config_class:
+            with patch(
+                "temper_ai.stage.executors.sequential.AgentFactory.create"
+            ) as mock_create:
                 mock_config_class.return_value = mock_agent_config
                 mock_create.return_value = mock_agent
 
@@ -165,11 +160,14 @@ class TestSequentialExecutor:
                     stage_name="research",
                     stage_config=stage_config,
                     state=state,
-                    config_loader=mock_config_loader
+                    config_loader=mock_config_loader,
                 )
 
                 # Verify execution — sequential now returns structured dict
-                assert result[StateKeys.STAGE_OUTPUTS]["research"]["output"] == "Sequential output"
+                assert (
+                    result[StateKeys.STAGE_OUTPUTS]["research"]["output"]
+                    == "Sequential output"
+                )
                 assert result[StateKeys.CURRENT_STAGE] == "research"
 
 
@@ -196,8 +194,8 @@ class TestAdaptiveExecutor:
     def test_adaptive_executor_has_sequential_and_parallel_executors(self):
         """Test adaptive executor composes sequential and parallel executors."""
         executor = AdaptiveStageExecutor()
-        assert hasattr(executor, 'sequential_executor')
-        assert hasattr(executor, 'parallel_executor')
+        assert hasattr(executor, "sequential_executor")
+        assert hasattr(executor, "parallel_executor")
         assert isinstance(executor.sequential_executor, SequentialStageExecutor)
         assert isinstance(executor.parallel_executor, ParallelStageExecutor)
 
@@ -216,7 +214,7 @@ class TestBackwardCompatibility:
             reasoning="Sequential reasoning",
             tokens=100,
             estimated_cost_usd=0.001,
-            tool_calls=[]
+            tool_calls=[],
         )
         mock_agent.execute.return_value = mock_response
 
@@ -229,28 +227,32 @@ class TestBackwardCompatibility:
             # No execution mode = sequential by default
         }
 
-        state = {
-            "workflow_id": "wf-123",
-            "stage_outputs": {}
-        }
+        state = {"workflow_id": "wf-123", "stage_outputs": {}}
 
-        with patch.object(compiler.config_loader, 'load_agent') as mock_load:
-            with patch('temper_ai.storage.schemas.agent_config.AgentConfig') as mock_config_class:
-                with patch('temper_ai.stage.executors.sequential.AgentFactory.create') as mock_create:
+        with patch.object(compiler.config_loader, "load_agent") as mock_load:
+            with patch(
+                "temper_ai.storage.schemas.agent_config.AgentConfig"
+            ) as mock_config_class:
+                with patch(
+                    "temper_ai.stage.executors.sequential.AgentFactory.create"
+                ) as mock_create:
                     mock_load.return_value = {"name": "agent1"}
                     mock_config_class.return_value = mock_agent_config
                     mock_create.return_value = mock_agent
 
                     # Execute through executor
-                    result = compiler.executors['sequential'].execute_stage(
+                    result = compiler.executors["sequential"].execute_stage(
                         stage_name="research",
                         stage_config=stage_config,
                         state=state,
-                        config_loader=compiler.config_loader
+                        config_loader=compiler.config_loader,
                     )
 
                     # Verify sequential execution worked — sequential now returns structured dict
-                    assert result[StateKeys.STAGE_OUTPUTS]["research"]["output"] == "Sequential output"
+                    assert (
+                        result[StateKeys.STAGE_OUTPUTS]["research"]["output"]
+                        == "Sequential output"
+                    )
                     assert result[StateKeys.CURRENT_STAGE] == "research"
 
 

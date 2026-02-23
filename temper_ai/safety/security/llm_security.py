@@ -7,9 +7,9 @@ Provides security controls for LLM interactions including:
 - Output sanitization (secrets, dangerous content)
 - Rate limiting per agent/workflow
 """
+
 import logging
 import math
-import os
 import re
 import time
 import unicodedata
@@ -17,8 +17,15 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
 from threading import Lock
-from typing import Any, DefaultDict, Dict, List, Optional, Tuple
+from typing import Any
 
+from temper_ai.safety.security.constants import (
+    DETECTION_PREFIX,
+    RATE_LIMIT_ERROR_MESSAGE,
+    SEVERITY_HIGH,
+    SEVERITY_MEDIUM,
+    ThreatTypes,
+)
 from temper_ai.shared.constants.durations import (
     RATE_LIMIT_WINDOW_BURST,
     RATE_LIMIT_WINDOW_HOUR,
@@ -29,14 +36,6 @@ from temper_ai.shared.constants.limits import (
     SMALL_ITEM_LIMIT,
 )
 from temper_ai.shared.constants.sizes import SIZE_10KB, SIZE_100KB
-from temper_ai.safety.security.constants import (
-    DETECTION_PREFIX,
-    RATE_LIMIT_ERROR_MESSAGE,
-    RATE_LIMIT_PREFIX,
-    SEVERITY_HIGH,
-    SEVERITY_MEDIUM,
-    ThreatTypes,
-)
 
 # Entropy threshold for detecting obfuscated attacks
 ENTROPY_THRESHOLD_RANDOM = 5.5
@@ -44,58 +43,6 @@ ENTROPY_THRESHOLD_RANDOM = 5.5
 EVIDENCE_PREFIX_LENGTH = 20
 
 logger = logging.getLogger(__name__)
-
-# Try to import Redis (optional dependency)
-try:
-    import redis
-    REDIS_AVAILABLE = True
-except ImportError:
-    REDIS_AVAILABLE = False
-    logger.warning("Redis not available, using in-memory rate limiting only")
-
-
-# Lua script for atomic rate limit check (prevents TOCTOU race condition)
-# Combined version checks all limits (minute, hour, burst) in a single atomic operation
-RATE_LIMIT_LUA_SCRIPT = f"""
--- Atomically check all rate limits (minute, hour, burst) in single operation
--- This prevents partial rollback issues and reduces Redis roundtrips
-local minute_key = KEYS[1]
-local hour_key = KEYS[2]
-local burst_key = KEYS[3]
-
-local minute_limit = tonumber(ARGV[1])
-local hour_limit = tonumber(ARGV[2])
-local burst_limit = tonumber(ARGV[3])
-
--- Get current counts (default 0)
-local minute_count = tonumber(redis.call('GET', minute_key)) or 0
-local hour_count = tonumber(redis.call('GET', hour_key)) or 0
-local burst_count = tonumber(redis.call('GET', burst_key)) or 0
-
--- Check ALL limits BEFORE incrementing (prevents partial success)
--- If limit=100, allows requests when current=0..99, blocks when current=100
-if minute_count >= minute_limit then
-    return {{0, 'minute'}}  -- Rate limited by minute
-end
-
-if hour_count >= hour_limit then
-    return {{0, 'hour'}}  -- Rate limited by hour
-end
-
-if burst_count >= burst_limit then
-    return {{0, 'burst'}}  -- Rate limited by burst
-end
-
--- All checks passed - increment ALL counters atomically
-redis.call('INCR', minute_key)
-redis.call('EXPIRE', minute_key, {RATE_LIMIT_WINDOW_MINUTE})
-redis.call('INCR', hour_key)
-redis.call('EXPIRE', hour_key, {RATE_LIMIT_WINDOW_HOUR})
-redis.call('INCR', burst_key)
-redis.call('EXPIRE', burst_key, {RATE_LIMIT_WINDOW_BURST})
-
-return {{1, 'allowed'}}  -- Success
-"""
 
 
 def normalize_entity_id(entity_id: str) -> str:
@@ -119,11 +66,11 @@ def normalize_entity_id(entity_id: str) -> str:
         return ""
 
     # Lowercase + Unicode NFC normalization + strip whitespace
-    normalized = unicodedata.normalize('NFC', entity_id.lower().strip())
+    normalized = unicodedata.normalize("NFC", entity_id.lower().strip())
 
     # Remove zero-width characters (bypass attempt)
-    for zwc in ['\u200B', '\u200C', '\u200D', '\uFEFF']:
-        normalized = normalized.replace(zwc, '')
+    for zwc in ["\u200b", "\u200c", "\u200d", "\ufeff"]:
+        normalized = normalized.replace(zwc, "")
 
     return normalized
 
@@ -131,13 +78,14 @@ def normalize_entity_id(entity_id: str) -> str:
 @dataclass
 class SecurityViolation:
     """Record of a security violation."""
+
     violation_type: str
     severity: str  # "critical", "high", "medium", "low"
     description: str
     evidence: str
     timestamp: datetime = field(default_factory=datetime.now)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
             "violation_type": self.violation_type,
@@ -176,46 +124,100 @@ class PromptInjectionDetector:
         # Multiple patterns per attack type to maintain detection coverage
         self.injection_patterns = [
             # Direct command injection - whitespace separators (most common)
-            (r"ignore\s+all\s+previous\s+(?:instructions|steps|context|prompts)", ThreatTypes.COMMAND_INJECTION),
-            (r"ignore\s+previous\s+(?:\w+\s+)?(?:instructions|steps|context|prompts)", ThreatTypes.COMMAND_INJECTION),
-            (r"disregard\s+all\s+(?:previous|prior)\s+(?:instructions|prompts|context|steps)", ThreatTypes.COMMAND_INJECTION),
-            (r"disregard\s+(?:previous|prior)\s+(?:\w+\s+)?(?:instructions|prompts|context|steps)", ThreatTypes.COMMAND_INJECTION),
-            (r"forget\s+all\s+(?:previous|prior)\s+(?:instructions|context|steps)", ThreatTypes.COMMAND_INJECTION),
-            (r"forget\s+(?:previous|prior)\s+(?:\w+\s+)?(?:instructions|context|steps)", ThreatTypes.COMMAND_INJECTION),
-            (r"override\s+your\s+(?:training|instructions|rules|programming)", ThreatTypes.COMMAND_INJECTION),
-            (r"override\s+(?:training|instructions|rules|programming)", ThreatTypes.COMMAND_INJECTION),
-
+            (
+                r"ignore\s+all\s+previous\s+(?:instructions|steps|context|prompts)",
+                ThreatTypes.COMMAND_INJECTION,
+            ),
+            (
+                r"ignore\s+previous\s+(?:\w+\s+)?(?:instructions|steps|context|prompts)",
+                ThreatTypes.COMMAND_INJECTION,
+            ),
+            (
+                r"disregard\s+all\s+(?:previous|prior)\s+(?:instructions|prompts|context|steps)",
+                ThreatTypes.COMMAND_INJECTION,
+            ),
+            (
+                r"disregard\s+(?:previous|prior)\s+(?:\w+\s+)?(?:instructions|prompts|context|steps)",
+                ThreatTypes.COMMAND_INJECTION,
+            ),
+            (
+                r"forget\s+all\s+(?:previous|prior)\s+(?:instructions|context|steps)",
+                ThreatTypes.COMMAND_INJECTION,
+            ),
+            (
+                r"forget\s+(?:previous|prior)\s+(?:\w+\s+)?(?:instructions|context|steps)",
+                ThreatTypes.COMMAND_INJECTION,
+            ),
+            (
+                r"override\s+your\s+(?:training|instructions|rules|programming)",
+                ThreatTypes.COMMAND_INJECTION,
+            ),
+            (
+                r"override\s+(?:training|instructions|rules|programming)",
+                ThreatTypes.COMMAND_INJECTION,
+            ),
             # Direct command injection - alternative separators (tokenization exploits)
             # Limited character class [._-] without nested quantifiers
-            (r"ignore[._-]+all[._-]+previous[._-]+instructions", ThreatTypes.COMMAND_INJECTION),
+            (
+                r"ignore[._-]+all[._-]+previous[._-]+instructions",
+                ThreatTypes.COMMAND_INJECTION,
+            ),
             (r"ignore[._-]+previous[._-]+instructions", ThreatTypes.COMMAND_INJECTION),
-            (r"disregard[._-]+all[._-]+(?:previous|prior)[._-]+instructions", ThreatTypes.COMMAND_INJECTION),
-            (r"disregard[._-]+(?:previous|prior)[._-]+instructions", ThreatTypes.COMMAND_INJECTION),
-
+            (
+                r"disregard[._-]+all[._-]+(?:previous|prior)[._-]+instructions",
+                ThreatTypes.COMMAND_INJECTION,
+            ),
+            (
+                r"disregard[._-]+(?:previous|prior)[._-]+instructions",
+                ThreatTypes.COMMAND_INJECTION,
+            ),
             # Role manipulation
             (r"you\s+are\s+now\s+(?:a|an)\s+", ThreatTypes.ROLE_MANIPULATION),
             (r"act\s+as\s+(?:a|an)\s+", ThreatTypes.ROLE_MANIPULATION),
             (r"pretend\s+(?:you\s+are|to\s+be)\s+", ThreatTypes.ROLE_MANIPULATION),
             (r"new\s+(?:role|persona|character)\s*:", ThreatTypes.ROLE_MANIPULATION),
-
             # System prompt extraction
-            (r"(?:show|reveal|display|print)\s+(?:me\s+)?(?:your\s+)?(?:system\s+)?(?:prompt|instructions)", ThreatTypes.SYSTEM_PROMPT_LEAKAGE),
-            (r"what\s+(?:is|are)\s+your\s+(?:system\s+)?(?:prompt|instructions)", ThreatTypes.SYSTEM_PROMPT_LEAKAGE),
-            (r"repeat\s+(?:your\s+)?(?:instructions|prompt|everything\s+above)", ThreatTypes.SYSTEM_PROMPT_LEAKAGE),
-            (r"(?:translate|summarize)\s+(?:your\s+)?(?:instructions|prompt|what\s+you\s+were\s+told)", ThreatTypes.SYSTEM_PROMPT_LEAKAGE),
-            (r"what\s+(?:are\s+)?(?:the\s+)?rules\s+you", ThreatTypes.SYSTEM_PROMPT_LEAKAGE),
-            (r"output\s+your\s+(?:initialization|initial)\s+message", ThreatTypes.SYSTEM_PROMPT_LEAKAGE),
-
+            (
+                r"(?:show|reveal|display|print)\s+(?:me\s+)?(?:your\s+)?(?:system\s+)?(?:prompt|instructions)",
+                ThreatTypes.SYSTEM_PROMPT_LEAKAGE,
+            ),
+            (
+                r"what\s+(?:is|are)\s+your\s+(?:system\s+)?(?:prompt|instructions)",
+                ThreatTypes.SYSTEM_PROMPT_LEAKAGE,
+            ),
+            (
+                r"repeat\s+(?:your\s+)?(?:instructions|prompt|everything\s+above)",
+                ThreatTypes.SYSTEM_PROMPT_LEAKAGE,
+            ),
+            (
+                r"(?:translate|summarize)\s+(?:your\s+)?(?:instructions|prompt|what\s+you\s+were\s+told)",
+                ThreatTypes.SYSTEM_PROMPT_LEAKAGE,
+            ),
+            (
+                r"what\s+(?:are\s+)?(?:the\s+)?rules\s+you",
+                ThreatTypes.SYSTEM_PROMPT_LEAKAGE,
+            ),
+            (
+                r"output\s+your\s+(?:initialization|initial)\s+message",
+                ThreatTypes.SYSTEM_PROMPT_LEAKAGE,
+            ),
             # Delimiter injection
-            (r"</?\s*(?:system|user|assistant|instructions?)\s*>", ThreatTypes.DELIMITER_INJECTION),
-            (r"\[/?\s*(?:SYSTEM|USER|ASSISTANT|INSTRUCTIONS?)\s*\]", ThreatTypes.DELIMITER_INJECTION),
+            (
+                r"</?\s*(?:system|user|assistant|instructions?)\s*>",
+                ThreatTypes.DELIMITER_INJECTION,
+            ),
+            (
+                r"\[/?\s*(?:SYSTEM|USER|ASSISTANT|INSTRUCTIONS?)\s*\]",
+                ThreatTypes.DELIMITER_INJECTION,
+            ),
             (r"(?:System|User|Assistant)\s*:", ThreatTypes.DELIMITER_INJECTION),
-
             # Encoding bypass attempts - length-limited to prevent ReDoS
-            (r"(?:decode|execute|run)\s+(?:and\s+)?(?:execute|run)?\s*:\s*[a-zA-Z0-9+/=]{20,200}", ThreatTypes.ENCODING_BYPASS),
+            (
+                r"(?:decode|execute|run)\s+(?:and\s+)?(?:execute|run)?\s*:\s*[a-zA-Z0-9+/=]{20,200}",
+                ThreatTypes.ENCODING_BYPASS,
+            ),
             (r"base64|hex\s+encoded|rot13", ThreatTypes.ENCODING_BYPASS),
             (r"\\x[0-9a-f]{2}", ThreatTypes.ENCODING_BYPASS),  # hex encoding detection
-
             # DAN/Jailbreak patterns
             (r"(?:do\s+anything\s+now|DAN\s+mode)", ThreatTypes.JAILBREAK_ATTEMPT),
             (r"developer\s+mode", ThreatTypes.JAILBREAK_ATTEMPT),
@@ -230,11 +232,16 @@ class PromptInjectionDetector:
 
         # High-risk keywords
         self.high_risk_keywords = [
-            "sudo", "root", "bypass", "jailbreak",
-            "unrestricted", "unfiltered", "uncensored"
+            "sudo",
+            "root",
+            "bypass",
+            "jailbreak",
+            "unrestricted",
+            "unfiltered",
+            "uncensored",
         ]
 
-    def detect(self, prompt: str) -> Tuple[bool, List[SecurityViolation]]:
+    def detect(self, prompt: str) -> tuple[bool, list[SecurityViolation]]:
         """
         Detect prompt injection attempts with ReDoS protection.
 
@@ -252,11 +259,11 @@ class PromptInjectionDetector:
                 violation_type="oversized_input",
                 severity=SEVERITY_HIGH,
                 description=f"Input exceeds maximum length ({self.MAX_INPUT_LENGTH} chars)",
-                evidence=f"Length: {len(prompt)}"
+                evidence=f"Length: {len(prompt)}",
             )
             violations.append(violation)
             # Truncate for analysis to prevent DoS
-            prompt = prompt[:self.MAX_INPUT_LENGTH]
+            prompt = prompt[: self.MAX_INPUT_LENGTH]
 
         # Pattern-based detection (ReDoS protection layer 2: safe patterns)
         # Use search() instead of findall() for efficiency (stops at first match)
@@ -266,7 +273,9 @@ class PromptInjectionDetector:
                 # Limit evidence length to prevent log injection
                 evidence_text = match.group(0)
                 if len(evidence_text) > self.MAX_EVIDENCE_LENGTH:
-                    evidence = evidence_text[:self.MAX_EVIDENCE_LENGTH] + "... [truncated]"
+                    evidence = (
+                        evidence_text[: self.MAX_EVIDENCE_LENGTH] + "... [truncated]"
+                    )
                 else:
                     evidence = evidence_text
 
@@ -274,7 +283,7 @@ class PromptInjectionDetector:
                     violation_type="prompt_injection",
                     severity=SEVERITY_HIGH,
                     description=f"{DETECTION_PREFIX}{attack_type}",
-                    evidence=evidence
+                    evidence=evidence,
                 )
                 violations.append(violation)
 
@@ -286,7 +295,7 @@ class PromptInjectionDetector:
                 violation_type="high_risk_keywords",
                 severity=SEVERITY_MEDIUM,
                 description="High-risk keywords detected",
-                evidence=", ".join(detected_keywords[:SMALL_ITEM_LIMIT])
+                evidence=", ".join(detected_keywords[:SMALL_ITEM_LIMIT]),
             )
             violations.append(violation)
 
@@ -296,7 +305,7 @@ class PromptInjectionDetector:
                 violation_type="high_entropy",
                 severity="medium",
                 description="High entropy detected (possible obfuscation)",
-                evidence=f"Entropy: {self._calculate_entropy(prompt):.2f}"
+                evidence=f"Entropy: {self._calculate_entropy(prompt):.2f}",
             )
             violations.append(violation)
 
@@ -309,7 +318,7 @@ class PromptInjectionDetector:
             return 0.0
 
         # Count character frequencies
-        char_counts: DefaultDict[str, int] = defaultdict(int)
+        char_counts: defaultdict[str, int] = defaultdict(int)
         for char in text:
             char_counts[char] += 1
 
@@ -323,7 +332,9 @@ class PromptInjectionDetector:
 
         return entropy
 
-    def _high_entropy(self, text: str, threshold: float = ENTROPY_THRESHOLD_RANDOM) -> bool:
+    def _high_entropy(
+        self, text: str, threshold: float = ENTROPY_THRESHOLD_RANDOM
+    ) -> bool:
         """
         Check if text has suspiciously high entropy.
 
@@ -429,10 +440,10 @@ class OutputSanitizer:
 
     def _detect_secrets(
         self, output: str
-    ) -> Tuple[List[SecurityViolation], List[Tuple[int, int, str]]]:
+    ) -> tuple[list[SecurityViolation], list[tuple[int, int, str]]]:
         """Detect secrets in output and collect replacements."""
-        violations: List[SecurityViolation] = []
-        replacements: List[Tuple[int, int, str]] = []
+        violations: list[SecurityViolation] = []
+        replacements: list[tuple[int, int, str]] = []
         for pattern, secret_type, severity in self.compiled_secret_patterns:
             for match in pattern.finditer(output):
                 violations.append(
@@ -449,8 +460,8 @@ class OutputSanitizer:
         return violations, replacements
 
     def _deduplicate_replacements(
-        self, replacements: List[Tuple[int, int, str]]
-    ) -> List[Tuple[int, int, str]]:
+        self, replacements: list[tuple[int, int, str]]
+    ) -> list[tuple[int, int, str]]:
         """Deduplicate overlapping replacements, keeping longest matches first.
 
         SECURITY FIX (code-crit-20): Uses longest-match-first strategy to prevent
@@ -458,20 +469,18 @@ class OutputSanitizer:
         """
         # Sort by length (longest first), then start position (leftmost first)
         replacements.sort(key=lambda x: (-(x[1] - x[0]), x[0]))
-        deduplicated: List[Tuple[int, int, str]] = []
+        deduplicated: list[tuple[int, int, str]] = []
         for start, end, replacement in replacements:
-            overlaps = any(
-                not (end <= es or start >= ee) for es, ee, _ in deduplicated
-            )
+            overlaps = any(not (end <= es or start >= ee) for es, ee, _ in deduplicated)
             if not overlaps:
                 deduplicated.append((start, end, replacement))
         # Sort by start position in reverse for safe string replacement
         deduplicated.sort(key=lambda x: x[0], reverse=True)
         return deduplicated
 
-    def _detect_dangerous_content(self, text: str) -> List[SecurityViolation]:
+    def _detect_dangerous_content(self, text: str) -> list[SecurityViolation]:
         """Detect dangerous content patterns (no redaction, just detection)."""
-        violations: List[SecurityViolation] = []
+        violations: list[SecurityViolation] = []
         for pattern, danger_type in self.compiled_dangerous_patterns:
             for match in pattern.finditer(text):
                 violations.append(
@@ -484,7 +493,7 @@ class OutputSanitizer:
                 )
         return violations
 
-    def sanitize(self, output: str) -> Tuple[str, List[SecurityViolation]]:
+    def sanitize(self, output: str) -> tuple[str, list[SecurityViolation]]:
         """
         Sanitize LLM output.
 
@@ -527,12 +536,11 @@ class LLMSecurityRateLimiter:
     - Per-workflow rate limiting
     - Sliding window algorithm
     - Burst protection
-    - Optional Redis backend for distributed rate limiting
 
     For simpler single-tier rate limiting, see
     :class:`~temper_ai.safety.token_bucket.TokenBucket` which provides a canonical
     token bucket implementation. This class is specifically designed for
-    multi-tier LLM call limiting with optional Redis backend.
+    multi-tier LLM call limiting.
     """
 
     # Default rate limiting parameters
@@ -545,8 +553,7 @@ class LLMSecurityRateLimiter:
         max_calls_per_minute: int = DEFAULT_MAX_CALLS_PER_MINUTE,
         max_calls_per_hour: int = DEFAULT_MAX_CALLS_PER_HOUR,
         burst_size: int = DEFAULT_BURST_SIZE,
-        redis_url: Optional[str] = None,
-        fallback_mode: str = 'in_memory'
+        fallback_mode: str = "in_memory",
     ):
         """
         Initialize rate limiter.
@@ -555,7 +562,6 @@ class LLMSecurityRateLimiter:
             max_calls_per_minute: Maximum calls per minute per entity
             max_calls_per_hour: Maximum calls per hour per entity
             burst_size: Maximum burst size (consecutive calls)
-            redis_url: Redis connection URL (default: from REDIS_URL env var)
             fallback_mode: 'fail_closed' (deny all) or 'in_memory' (local fallback)
         """
         self.max_calls_per_minute = max_calls_per_minute
@@ -564,58 +570,20 @@ class LLMSecurityRateLimiter:
         self.fallback_mode = fallback_mode
 
         # Track call history per entity (agent_id or workflow_id)
-        self.call_history: Dict[str, List[float]] = defaultdict(list)
+        self.call_history: dict[str, list[float]] = defaultdict(list)
 
         # Track burst activity
-        self.burst_tracker: Dict[str, List[float]] = defaultdict(list)
+        self.burst_tracker: dict[str, list[float]] = defaultdict(list)
 
         # Thread safety lock
         self._lock = Lock()
 
-        # Initialize Redis connection (optional)
-        self._redis = None
-        self._rate_limit_script = None
-        self._redis_available = False
-
-        if REDIS_AVAILABLE:
-            redis_url = redis_url or os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
-
-            try:
-                redis_connect_timeout = 1  # seconds
-                redis_socket_timeout = 2  # seconds
-                self._redis = redis.from_url(
-                    redis_url,
-                    decode_responses=True,
-                    socket_connect_timeout=redis_connect_timeout,
-                    socket_timeout=redis_socket_timeout
-                )
-                # Test connection
-                self._redis.ping()
-                # Register Lua script
-                self._rate_limit_script = self._redis.register_script(RATE_LIMIT_LUA_SCRIPT)
-                self._redis_available = True
-                from temper_ai.shared.utils.secrets import mask_url_password
-                logger.info(
-                    "Redis rate limiting enabled",
-                    extra={'redis_url': mask_url_password(redis_url)}
-                )
-
-            except Exception as e:
-                from temper_ai.shared.utils.secrets import mask_url_password
-                logger.warning(
-                    f"Redis unavailable, using {fallback_mode} mode: {e}",
-                    extra={'redis_url': mask_url_password(redis_url)}
-                )
-                self._redis = None
-                self._redis_available = False
-
-    def check_and_record_rate_limit(self, entity_id: str) -> Tuple[bool, Optional[str]]:
+    def check_and_record_rate_limit(self, entity_id: str) -> tuple[bool, str | None]:
         """
         ATOMIC: Check and record rate limit in a single operation.
 
         This method fixes the TOCTOU race condition by combining check and record
-        into a single atomic operation using Redis Lua scripts (distributed) or
-        thread-safe in-memory operations (fallback).
+        into a single atomic operation using thread-safe in-memory operations.
 
         SECURITY FIX: Prevents concurrent threads from bypassing rate limits by
         checking and recording in separate operations.
@@ -633,95 +601,29 @@ class LLMSecurityRateLimiter:
         normalized_id = normalize_entity_id(entity_id)
 
         if not normalized_id:
-            logger.warning("Empty entity_id after normalization", extra={'raw_entity_id': entity_id})
+            logger.warning(
+                "Empty entity_id after normalization",
+                extra={"raw_entity_id": entity_id},
+            )
             return False, "Invalid entity ID"
 
-        # Try Redis (primary - distributed, atomic)
-        if self._redis_available and self._rate_limit_script:
-            try:
-                return self._check_redis_atomic(normalized_id)
+        # Use in-memory rate limiting
+        if self.fallback_mode == "fail_closed":
+            # fail_closed mode still uses in-memory when available
+            return self._check_local_atomic(normalized_id)
 
-            except Exception as e:
-                logger.error(
-                    f"Redis rate limit failed: {e}",
-                    exc_info=True,
-                    extra={'entity_id': normalized_id}
-                )
-                # Fall through to fallback
-
-        # Fallback mode
-        if self.fallback_mode == 'fail_closed':
-            logger.warning(
-                f"Rate limiting unavailable, denying: {normalized_id}",
-                extra={'entity_id': normalized_id}
-            )
-            return False, "Rate limiting unavailable (failing safe)"
-
-        elif self.fallback_mode == 'in_memory':
-            logger.debug(
-                f"Using in-memory fallback for: {normalized_id}",
-                extra={'entity_id': normalized_id}
-            )
+        elif self.fallback_mode == "in_memory":
             return self._check_local_atomic(normalized_id)
 
         else:
             # Unknown mode, fail closed
             logger.error(
                 f"Invalid fallback mode: {self.fallback_mode}",
-                extra={'fallback_mode': self.fallback_mode}
+                extra={"fallback_mode": self.fallback_mode},
             )
             return False, "Invalid fallback mode"
 
-    def _check_redis_atomic(self, entity_id: str) -> Tuple[bool, Optional[str]]:
-        """
-        Check rate limit using Redis Lua script (atomic operation).
-
-        This uses a combined Lua script that checks all limits (minute, hour, burst)
-        in a single atomic operation, eliminating the need for rollback logic.
-
-        Args:
-            entity_id: Normalized entity ID
-
-        Returns:
-            Tuple of (allowed, reason_if_blocked)
-        """
-        if self._rate_limit_script is None:
-            raise RuntimeError("Rate limit script not initialized")
-
-        minute_key = f"{RATE_LIMIT_PREFIX}{entity_id}:minute"
-        hour_key = f"{RATE_LIMIT_PREFIX}{entity_id}:hour"
-        burst_key = f"{RATE_LIMIT_PREFIX}{entity_id}:burst"
-
-        # Single atomic check of all limits
-        result = self._rate_limit_script(
-            keys=[minute_key, hour_key, burst_key],
-            args=[self.max_calls_per_minute, self.max_calls_per_hour, self.burst_size]
-        )
-
-        allowed = result[0]
-        reason = result[1]
-
-        if allowed == 0:
-            # Build detailed error message based on which limit was hit
-            limit_messages = {
-                'minute': f"{RATE_LIMIT_ERROR_MESSAGE}{self.max_calls_per_minute} calls/minute",
-                'hour': f"{RATE_LIMIT_ERROR_MESSAGE}{self.max_calls_per_hour} calls/hour",
-                'burst': f"Burst limit exceeded: {self.burst_size} calls in {RATE_LIMIT_WINDOW_BURST} seconds"
-            }
-
-            logger.warning(
-                f"Rate limit exceeded ({reason}): {entity_id}",
-                extra={
-                    'entity_id': entity_id,
-                    'limit_type': reason
-                }
-            )
-
-            return False, limit_messages.get(reason, f"{RATE_LIMIT_ERROR_MESSAGE}{reason}")
-
-        return True, None
-
-    def _check_local_atomic(self, entity_id: str) -> Tuple[bool, Optional[str]]:
+    def _check_local_atomic(self, entity_id: str) -> tuple[bool, str | None]:
         """
         Fallback: In-memory rate limiting (thread-safe, NOT distributed).
 
@@ -744,19 +646,28 @@ class LLMSecurityRateLimiter:
             minute_ago = now - RATE_LIMIT_WINDOW_MINUTE
             recent_calls = [t for t in self.call_history[entity_id] if t > minute_ago]
             if len(recent_calls) >= self.max_calls_per_minute:
-                return False, f"{RATE_LIMIT_ERROR_MESSAGE}{self.max_calls_per_minute} calls/minute"
+                return (
+                    False,
+                    f"{RATE_LIMIT_ERROR_MESSAGE}{self.max_calls_per_minute} calls/minute",
+                )
 
             # Check hour limit
             hour_ago = now - RATE_LIMIT_WINDOW_HOUR
             hourly_calls = [t for t in self.call_history[entity_id] if t > hour_ago]
             if len(hourly_calls) >= self.max_calls_per_hour:
-                return False, f"{RATE_LIMIT_ERROR_MESSAGE}{self.max_calls_per_hour} calls/hour"
+                return (
+                    False,
+                    f"{RATE_LIMIT_ERROR_MESSAGE}{self.max_calls_per_hour} calls/hour",
+                )
 
             # Check burst limit
             burst_window = now - RATE_LIMIT_WINDOW_BURST
             burst_calls = [t for t in self.call_history[entity_id] if t > burst_window]
             if len(burst_calls) >= self.burst_size:
-                return False, f"Burst limit exceeded: {self.burst_size} calls in {RATE_LIMIT_WINDOW_BURST} seconds"
+                return (
+                    False,
+                    f"Burst limit exceeded: {self.burst_size} calls in {RATE_LIMIT_WINDOW_BURST} seconds",
+                )
 
             # ATOMIC: Record the call immediately after checks pass
             self.call_history[entity_id].append(now)
@@ -774,7 +685,7 @@ class LLMSecurityRateLimiter:
         if not self.call_history[entity_id]:
             del self.call_history[entity_id]
 
-    def get_stats(self, entity_id: str) -> Dict[str, int]:
+    def get_stats(self, entity_id: str) -> dict[str, int]:
         """
         Get rate limit statistics for entity (thread-safe).
 
@@ -791,7 +702,9 @@ class LLMSecurityRateLimiter:
             minute_ago = now - RATE_LIMIT_WINDOW_MINUTE
             hour_ago = now - RATE_LIMIT_WINDOW_HOUR
 
-            minute_calls = len([t for t in self.call_history[entity_id] if t > minute_ago])
+            minute_calls = len(
+                [t for t in self.call_history[entity_id] if t > minute_ago]
+            )
             hour_calls = len([t for t in self.call_history[entity_id] if t > hour_ago])
 
             return {
@@ -803,7 +716,7 @@ class LLMSecurityRateLimiter:
                 "hour_remaining": max(0, self.max_calls_per_hour - hour_calls),
             }
 
-    def reset(self, entity_id: Optional[str] = None) -> None:
+    def reset(self, entity_id: str | None = None) -> None:
         """
         Reset rate limits (thread-safe).
 
@@ -820,9 +733,9 @@ class LLMSecurityRateLimiter:
 
 
 # Global instances
-_prompt_detector: Optional[PromptInjectionDetector] = None
-_output_sanitizer: Optional[OutputSanitizer] = None
-_rate_limiter: Optional[LLMSecurityRateLimiter] = None
+_prompt_detector: PromptInjectionDetector | None = None
+_output_sanitizer: OutputSanitizer | None = None
+_rate_limiter: LLMSecurityRateLimiter | None = None
 _security_lock = Lock()
 
 

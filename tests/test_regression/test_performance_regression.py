@@ -4,12 +4,13 @@ Regression tests for performance bugs.
 Tests to detect performance regressions and ensure operations
 complete within acceptable time bounds.
 """
+
 import gc
 import time
 from unittest.mock import patch
 
-from temper_ai.agent.utils.agent_factory import AgentFactory
 from temper_ai.agent.standard_agent import StandardAgent
+from temper_ai.agent.utils.agent_factory import AgentFactory
 from temper_ai.tools.calculator import Calculator
 from temper_ai.tools.executor import ToolExecutor
 from temper_ai.tools.registry import ToolRegistry
@@ -29,13 +30,15 @@ class TestAgentCreationPerformance:
         Fixed: Optimized tool registry lookup
         Baseline: <100ms for standard agent
         """
-        with patch('temper_ai.agent.base_agent.ToolRegistry'):
+        with patch("temper_ai.agent.base_agent.ToolRegistry"):
             start = time.time()
             agent = AgentFactory.create(minimal_agent_config)
             elapsed = time.time() - start
 
             # Should complete quickly
-            assert elapsed < 0.1, f"Regression! Agent creation took {elapsed*1000:.2f}ms (baseline: <100ms)"
+            assert (
+                elapsed < 0.1
+            ), f"Regression! Agent creation took {elapsed*1000:.2f}ms (baseline: <100ms)"
             assert isinstance(agent, StandardAgent)
 
     def test_multiple_agent_creation_performance(self, minimal_agent_config):
@@ -49,7 +52,7 @@ class TestAgentCreationPerformance:
         Fixed: Removed quadratic registry lookup
         Baseline: <1s for 100 agents
         """
-        with patch('temper_ai.agent.base_agent.ToolRegistry'):
+        with patch("temper_ai.agent.base_agent.ToolRegistry"):
             start = time.time()
 
             for i in range(100):
@@ -60,7 +63,9 @@ class TestAgentCreationPerformance:
             elapsed = time.time() - start
 
             # Should scale linearly
-            assert elapsed < 1.0, f"Regression! 100 agents took {elapsed:.2f}s (baseline: <1s)"
+            assert (
+                elapsed < 1.0
+            ), f"Regression! 100 agents took {elapsed:.2f}s (baseline: <1s)"
 
 
 class TestToolExecutionPerformance:
@@ -84,7 +89,9 @@ class TestToolExecutionPerformance:
         elapsed = time.time() - start
 
         assert result.success is True
-        assert elapsed < 0.01, f"Regression! Calculator took {elapsed*1000:.2f}ms (baseline: <10ms)"
+        assert (
+            elapsed < 0.01
+        ), f"Regression! Calculator took {elapsed*1000:.2f}ms (baseline: <10ms)"
 
     def test_tool_executor_overhead(self):
         """
@@ -114,7 +121,9 @@ class TestToolExecutionPerformance:
         overhead = executor_time - direct_time
 
         # Overhead should be minimal
-        assert overhead < 0.005, f"Regression! Executor overhead {overhead*1000:.2f}ms (baseline: <5ms)"
+        assert (
+            overhead < 0.005
+        ), f"Regression! Executor overhead {overhead*1000:.2f}ms (baseline: <5ms)"
 
 
 class TestMemory:
@@ -131,7 +140,7 @@ class TestMemory:
         Fixed: Proper cleanup of tool registry references
         """
 
-        with patch('temper_ai.agent.base_agent.ToolRegistry'):
+        with patch("temper_ai.agent.base_agent.ToolRegistry"):
             # Create many agents
             agents = []
             for i in range(100):
@@ -202,7 +211,9 @@ class TestScalability:
         avg_time = elapsed / 1000
 
         # Should be very fast (dict lookup + method overhead)
-        assert avg_time < 0.00001, f"Regression! Lookup took {avg_time*1000000:.2f}μs (baseline: <10μs)"
+        assert (
+            avg_time < 0.00001
+        ), f"Regression! Lookup took {avg_time*1000000:.2f}μs (baseline: <10μs)"
 
     def test_concurrent_execution_scaling(self):
         """
@@ -233,4 +244,6 @@ class TestScalability:
 
         # Should complete in reasonable time
         assert all(r.success for r in results)
-        assert time_4_workers < 1.0, f"Regression! 40 concurrent calls took {time_4_workers:.2f}s"
+        assert (
+            time_4_workers < 1.0
+        ), f"Regression! 40 concurrent calls took {time_4_workers:.2f}s"

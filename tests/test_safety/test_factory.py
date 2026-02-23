@@ -4,6 +4,7 @@ Verifies that create_policy_registry() correctly loads and registers
 built-in policies, and that create_safety_stack() selects the correct
 approver based on environment.
 """
+
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -241,7 +242,9 @@ class TestRealYAMLConfig:
         config = load_safety_config()
         registry = create_policy_registry(config)
         policies = registry.get_policies_for_action("file_write")
-        assert len(policies) >= 3  # At least file_access, forbidden_ops, secret_detection
+        assert (
+            len(policies) >= 3
+        )  # At least file_access, forbidden_ops, secret_detection
 
 
 class TestApproverSelection:
@@ -253,24 +256,18 @@ class TestApproverSelection:
 
     def test_development_uses_noop_approver(self, mock_tool_registry):
         """Development environment uses NoOpApprover."""
-        executor = create_safety_stack(
-            mock_tool_registry, environment="development"
-        )
+        executor = create_safety_stack(mock_tool_registry, environment="development")
         assert isinstance(executor.approval_workflow, NoOpApprover)
 
     def test_staging_uses_real_approver(self, mock_tool_registry):
         """Staging environment uses real ApprovalWorkflow."""
-        executor = create_safety_stack(
-            mock_tool_registry, environment="staging"
-        )
+        executor = create_safety_stack(mock_tool_registry, environment="staging")
         assert isinstance(executor.approval_workflow, ApprovalWorkflow)
         assert not isinstance(executor.approval_workflow, NoOpApprover)
 
     def test_production_uses_real_approver(self, mock_tool_registry):
         """Production environment uses real ApprovalWorkflow."""
-        executor = create_safety_stack(
-            mock_tool_registry, environment="production"
-        )
+        executor = create_safety_stack(mock_tool_registry, environment="production")
         assert isinstance(executor.approval_workflow, ApprovalWorkflow)
         assert not isinstance(executor.approval_workflow, NoOpApprover)
 
@@ -281,15 +278,11 @@ class TestApproverSelection:
                 **_get_default_config(),
                 "approval_mode": "noop",
             }
-            executor = create_safety_stack(
-                mock_tool_registry, environment="production"
-            )
+            executor = create_safety_stack(mock_tool_registry, environment="production")
         assert isinstance(executor.approval_workflow, NoOpApprover)
 
     def test_unknown_environment_uses_real_approver(self, mock_tool_registry):
         """Unknown environment defaults to real ApprovalWorkflow."""
-        executor = create_safety_stack(
-            mock_tool_registry, environment="custom_env"
-        )
+        executor = create_safety_stack(mock_tool_registry, environment="custom_env")
         assert isinstance(executor.approval_workflow, ApprovalWorkflow)
         assert not isinstance(executor.approval_workflow, NoOpApprover)

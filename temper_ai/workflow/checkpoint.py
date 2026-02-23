@@ -7,9 +7,10 @@ DEPRECATED: This module is a compatibility shim. New code should import from:
 This shim delegates to checkpoint_manager.py and checkpoint_backends.py,
 eliminating the duplicate implementation (code-high-dup-checkpoint-15).
 """
+
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from temper_ai.workflow.checkpoint_backends import (
     CheckpointNotFoundError,
@@ -28,12 +29,12 @@ class CheckpointMetadata:
     workflow_id: str
     created_at: datetime
     current_stage: str
-    completed_stages: List[str]
+    completed_stages: list[str]
     version: str = "1.0"
-    file_path: Optional[str] = None
-    size_bytes: Optional[int] = None
+    file_path: str | None = None
+    size_bytes: int | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
             "workflow_id": self.workflow_id,
@@ -46,7 +47,7 @@ class CheckpointMetadata:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'CheckpointMetadata':
+    def from_dict(cls, data: dict[str, Any]) -> "CheckpointMetadata":
         """Create from dictionary."""
         data = data.copy()
         if "created_at" in data and isinstance(data["created_at"], str):
@@ -64,9 +65,9 @@ class CheckpointManager:
 
     def __init__(
         self,
-        storage: Optional[Any] = None,
+        storage: Any | None = None,
         storage_path: str = "./checkpoints",
-        backend: Optional[Any] = None,
+        backend: Any | None = None,
         **kwargs: Any,
     ):
         """Initialize checkpoint manager.
@@ -94,7 +95,7 @@ class CheckpointManager:
     def save_checkpoint(
         self,
         workflow_id_or_state: Any,
-        domain_state: Optional[WorkflowDomainState] = None,
+        domain_state: WorkflowDomainState | None = None,
         **kwargs: Any,
     ) -> Any:
         """Save workflow checkpoint (supports both old and new calling conventions).
@@ -108,9 +109,7 @@ class CheckpointManager:
             if domain_state is None:
                 raise TypeError("domain_state is required when workflow_id is provided")
             # Delegate to backend and return CheckpointMetadata for backward compat
-            self._manager.backend.save_checkpoint(
-                workflow_id, domain_state, **kwargs
-            )
+            self._manager.backend.save_checkpoint(workflow_id, domain_state, **kwargs)
             return CheckpointMetadata(
                 workflow_id=workflow_id,
                 created_at=datetime.now(UTC),
@@ -156,14 +155,14 @@ class CheckpointManager:
                 deleted = True
         return deleted
 
-    def list_all(self) -> List[CheckpointMetadata]:
+    def list_all(self) -> list[CheckpointMetadata]:
         """List all available checkpoints.
 
         Returns:
             List of checkpoint metadata
         """
         # The new backend is per-workflow; scan the checkpoint directory
-        results: List[CheckpointMetadata] = []
+        results: list[CheckpointMetadata] = []
         checkpoint_dir = self._manager.backend.checkpoint_dir  # type: ignore[attr-defined]
         if not checkpoint_dir.exists():
             return results
@@ -173,24 +172,22 @@ class CheckpointManager:
                 workflow_id = workflow_dir.name
                 checkpoints = self._manager.list_checkpoints(workflow_id)
                 for cp in checkpoints:
-                    results.append(CheckpointMetadata(
-                        workflow_id=workflow_id,
-                        created_at=datetime.fromisoformat(cp["created_at"]),
-                        current_stage=cp.get("stage", ""),
-                        completed_stages=[],
-                    ))
+                    results.append(
+                        CheckpointMetadata(
+                            workflow_id=workflow_id,
+                            created_at=datetime.fromisoformat(cp["created_at"]),
+                            current_stage=cp.get("stage", ""),
+                            completed_stages=[],
+                        )
+                    )
         return results
 
-    def get_completed_stages(self, workflow_id: str) -> List[str]:
+    def get_completed_stages(self, workflow_id: str) -> list[str]:
         """Get list of completed stages from checkpoint."""
         domain_state = self.resume(workflow_id)
         return list(domain_state.stage_outputs.keys())
 
-    def should_skip_stage(
-        self,
-        workflow_id: str,
-        stage_name: str
-    ) -> bool:
+    def should_skip_stage(self, workflow_id: str, stage_name: str) -> bool:
         """Check if stage should be skipped on resume (already completed)."""
         if not self.has_checkpoint(workflow_id):
             return False
@@ -214,9 +211,7 @@ class FileCheckpointStorage:
         self.storage_path = self._backend.checkpoint_dir
 
     def save(
-        self,
-        workflow_id: str,
-        domain_state: WorkflowDomainState
+        self, workflow_id: str, domain_state: WorkflowDomainState
     ) -> CheckpointMetadata:
         """Save checkpoint (delegates to FileCheckpointBackend)."""
         checkpoint_id = self._backend.save_checkpoint(workflow_id, domain_state)
@@ -225,11 +220,15 @@ class FileCheckpointStorage:
             created_at=datetime.now(UTC),
             current_stage=domain_state.current_stage,
             completed_stages=list(domain_state.stage_outputs.keys()),
-            file_path=str(self._backend._get_checkpoint_path(workflow_id, checkpoint_id)),
-            size_bytes=self._backend._get_checkpoint_path(workflow_id, checkpoint_id).stat().st_size,
+            file_path=str(
+                self._backend._get_checkpoint_path(workflow_id, checkpoint_id)
+            ),
+            size_bytes=self._backend._get_checkpoint_path(workflow_id, checkpoint_id)
+            .stat()
+            .st_size,
         )
 
-    def load(self, workflow_id: str) -> Optional[WorkflowDomainState]:
+    def load(self, workflow_id: str) -> WorkflowDomainState | None:
         """Load latest checkpoint."""
         try:
             return self._backend.load_checkpoint(workflow_id)
@@ -249,9 +248,9 @@ class FileCheckpointStorage:
             self._backend.delete_checkpoint(workflow_id, cp["checkpoint_id"])
         return True
 
-    def list_checkpoints(self) -> List[CheckpointMetadata]:
+    def list_checkpoints(self) -> list[CheckpointMetadata]:
         """List all checkpoints across all workflows."""
-        results: List[CheckpointMetadata] = []
+        results: list[CheckpointMetadata] = []
         if not self.storage_path.exists():
             return results
         for workflow_dir in self.storage_path.iterdir():
@@ -259,10 +258,12 @@ class FileCheckpointStorage:
                 workflow_id = workflow_dir.name
                 checkpoints = self._backend.list_checkpoints(workflow_id)
                 for cp in checkpoints:
-                    results.append(CheckpointMetadata(
-                        workflow_id=workflow_id,
-                        created_at=datetime.fromisoformat(cp["created_at"]),
-                        current_stage=cp.get("stage", ""),
-                        completed_stages=[],
-                    ))
+                    results.append(
+                        CheckpointMetadata(
+                            workflow_id=workflow_id,
+                            created_at=datetime.fromisoformat(cp["created_at"]),
+                            current_stage=cp.get("stage", ""),
+                            completed_stages=[],
+                        )
+                    )
         return results

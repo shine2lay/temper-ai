@@ -2,6 +2,7 @@
 
 This module provides the abstract base class for all framework services.
 """
+
 from abc import ABC, abstractmethod
 
 

@@ -4,18 +4,21 @@ Producers (agents, executors, tool runners) emit ``StreamEvent`` instances.
 ``StreamDisplay`` consumes them.  An adapter converts legacy ``LLMStreamChunk``
 objects at the callback boundary so existing code keeps working.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict
+from typing import Any
 
 # ── Event type constants ──────────────────────────────────────────────
 LLM_TOKEN = "llm_token"  # noqa: S105  # Event type identifier, not credential
-LLM_DONE = "llm_done"          # done=True, metadata has token counts
-TOOL_START = "tool_start"      # metadata["tool_name"], metadata["input_params"]
-TOOL_RESULT = "tool_result"    # metadata["tool_name"], metadata["success"], metadata["duration_s"]
-STATUS = "status"              # content=status message (overwrites, not appends)
-PROGRESS = "progress"          # content=progress message (appends)
+LLM_DONE = "llm_done"  # done=True, metadata has token counts
+TOOL_START = "tool_start"  # metadata["tool_name"], metadata["input_params"]
+TOOL_RESULT = (
+    "tool_result"  # metadata["tool_name"], metadata["success"], metadata["duration_s"]
+)
+STATUS = "status"  # content=status message (overwrites, not appends)
+PROGRESS = "progress"  # content=progress message (appends)
 
 
 @dataclass
@@ -40,10 +43,11 @@ class StreamEvent:
     event_type: str
     content: str = ""
     done: bool = False
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 # ── LLMStreamChunk adapter ───────────────────────────────────────────
+
 
 def from_llm_chunk(source: str, chunk: Any) -> StreamEvent:
     """Convert an ``LLMStreamChunk`` into a ``StreamEvent``.

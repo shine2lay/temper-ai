@@ -2,7 +2,7 @@
 
 import logging
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from temper_ai.autonomy._schemas import (
     AutonomousLoopConfig,
@@ -53,7 +53,7 @@ class PostExecutionOrchestrator:
         start: float,
     ) -> None:
         """Execute each enabled subsystem, bailing on timeout."""
-        steps: List[tuple] = [
+        steps: list[tuple] = [
             (self._config.learning_enabled, "_run_learning", "learning_result"),
             (self._config.goals_enabled, "_run_goals", "goals_result"),
             (
@@ -61,9 +61,17 @@ class PostExecutionOrchestrator:
                 "_run_feedback",
                 "feedback_result",
             ),
-            (self._config.prompt_optimization_enabled, "_run_prompt_optimization", "optimization_result"),
+            (
+                self._config.prompt_optimization_enabled,
+                "_run_prompt_optimization",
+                "optimization_result",
+            ),
             (self._config.portfolio_enabled, "_run_portfolio", "portfolio_result"),
-            (self._config.agent_memory_sync_enabled, "_run_agent_memory_sync", "memory_sync_result"),
+            (
+                self._config.agent_memory_sync_enabled,
+                "_run_agent_memory_sync",
+                "memory_sync_result",
+            ),
         ]
         for enabled, method_name, attr in steps:
             if enabled:
@@ -82,7 +90,9 @@ class PostExecutionOrchestrator:
         )
 
     def _budget_exhausted(
-        self, start: float, report: PostExecutionReport,
+        self,
+        start: float,
+        report: PostExecutionReport,
     ) -> bool:
         """Return True and finalize report if LOOP_TIMEOUT_SECONDS exceeded."""
         if (time.monotonic() - start) > LOOP_TIMEOUT_SECONDS:
@@ -94,7 +104,7 @@ class PostExecutionOrchestrator:
 
     def _run_learning(
         self, context: WorkflowRunContext, report: PostExecutionReport
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Run pattern mining, recommendation generation, and memory sync."""
         try:
             from temper_ai.learning.orchestrator import MiningOrchestrator
@@ -103,9 +113,7 @@ class PostExecutionOrchestrator:
 
             store = LearningStore()
             orchestrator = MiningOrchestrator(store=store)
-            mining_run = orchestrator.run_mining(
-                lookback_hours=DEFAULT_LOOKBACK_HOURS
-            )
+            mining_run = orchestrator.run_mining(lookback_hours=DEFAULT_LOOKBACK_HOURS)
 
             engine = RecommendationEngine(store=store)
             recs = engine.generate_recommendations()
@@ -120,14 +128,18 @@ class PostExecutionOrchestrator:
                 "recommendations": len(recs),
                 "status": mining_run.status,
             }
-        except Exception as exc:  # noqa: BLE001 -- subsystem failures must not crash workflow
+        except (
+            Exception
+        ) as exc:  # noqa: BLE001 -- subsystem failures must not crash workflow
             msg = f"Learning subsystem error: {exc}"
             logger.warning(msg)
             report.errors.append(msg)
             return None
 
     def _sync_memory_bridge(
-        self, store: object, report: PostExecutionReport,
+        self,
+        store: object,
+        report: PostExecutionReport,
     ) -> None:
         """Sync learned patterns to memory via LearningToMemoryBridge."""
         try:
@@ -141,7 +153,7 @@ class PostExecutionOrchestrator:
 
     def _run_goals(
         self, context: WorkflowRunContext, report: PostExecutionReport
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Run goal analysis and proposal generation with all analyzers."""
         try:
             from temper_ai.goals.analysis_orchestrator import AnalysisOrchestrator
@@ -154,7 +166,9 @@ class PostExecutionOrchestrator:
             learning_store = LearningStore()
             analyzers = self._build_goal_analyzers(learning_store)
             orchestrator = AnalysisOrchestrator(
-                store=goal_store, analyzers=analyzers, learning_store=learning_store,
+                store=goal_store,
+                analyzers=analyzers,
+                learning_store=learning_store,
             )
             analysis_run = orchestrator.run_analysis(
                 lookback_hours=DEFAULT_LOOKBACK_HOURS
@@ -165,7 +179,9 @@ class PostExecutionOrchestrator:
                 "proposals_generated": analysis_run.proposals_generated,
                 "status": analysis_run.status,
             }
-        except Exception as exc:  # noqa: BLE001 -- subsystem failures must not crash workflow
+        except (
+            Exception
+        ) as exc:  # noqa: BLE001 -- subsystem failures must not crash workflow
             msg = f"Goals subsystem error: {exc}"
             logger.warning(msg)
             report.errors.append(msg)
@@ -186,11 +202,13 @@ class PostExecutionOrchestrator:
         ]
 
     def _run_feedback(
-        self, context: WorkflowRunContext, report: PostExecutionReport,
-    ) -> Optional[Dict[str, Any]]:
+        self,
+        context: WorkflowRunContext,
+        report: PostExecutionReport,
+    ) -> dict[str, Any] | None:
         """Apply learned recommendations and approved goals."""
         try:
-            results: Dict[str, Any] = {}
+            results: dict[str, Any] = {}
             if self._config.auto_apply_learning:
                 results["learning"] = self._apply_learning_feedback()
             if self._config.auto_apply_goals:
@@ -202,7 +220,7 @@ class PostExecutionOrchestrator:
             report.errors.append(msg)
             return None
 
-    def _apply_learning_feedback(self) -> List[Dict[str, Any]]:
+    def _apply_learning_feedback(self) -> list[dict[str, Any]]:
         """Apply pending learning recommendations via FeedbackApplier."""
         from temper_ai.autonomy.feedback_applier import FeedbackApplier
         from temper_ai.learning.store import LearningStore
@@ -216,7 +234,7 @@ class PostExecutionOrchestrator:
             min_confidence=self._config.auto_apply_min_confidence,
         )
 
-    def _apply_goal_feedback(self) -> List[Dict[str, Any]]:
+    def _apply_goal_feedback(self) -> list[dict[str, Any]]:
         """Apply approved goals via FeedbackApplier."""
         from temper_ai.autonomy.feedback_applier import FeedbackApplier
         from temper_ai.goals.store import GoalStore
@@ -230,8 +248,10 @@ class PostExecutionOrchestrator:
         return applier.apply_approved_goals()
 
     def _run_prompt_optimization(
-        self, context: WorkflowRunContext, report: PostExecutionReport,
-    ) -> Optional[Dict[str, Any]]:
+        self,
+        context: WorkflowRunContext,
+        report: PostExecutionReport,
+    ) -> dict[str, Any] | None:
         """Run DSPy prompt optimization for agents with auto_compile."""
         try:
             from temper_ai.optimization.optimizers.prompt import PromptOptimizer
@@ -243,7 +263,10 @@ class PostExecutionOrchestrator:
                 if not isinstance(agent_data, dict):
                     continue
                 compiled = self._optimize_agent_via_pipeline(
-                    agent_name, agent_data, optimizer, report,
+                    agent_name,
+                    agent_data,
+                    optimizer,
+                    report,
                 )
                 if compiled:
                     agents_compiled += 1
@@ -255,11 +278,11 @@ class PostExecutionOrchestrator:
                 "agents_skipped": agents_skipped,
             }
         except ImportError:
-            logger.warning(
-                "DSPy not installed, skipping prompt optimization"
-            )
+            logger.warning("DSPy not installed, skipping prompt optimization")
             return None
-        except Exception as exc:  # noqa: BLE001 -- subsystem failures must not crash workflow
+        except (
+            Exception
+        ) as exc:  # noqa: BLE001 -- subsystem failures must not crash workflow
             msg = f"Prompt optimization error: {exc}"
             logger.warning(msg)
             report.errors.append(msg)
@@ -278,7 +301,7 @@ class PostExecutionOrchestrator:
             return False
 
         inference = agent_data.get("inference", {})
-        config: Dict[str, Any] = {
+        config: dict[str, Any] = {
             "agent_name": agent_name,
             "provider": inference.get("provider", "openai"),
             "model": inference.get("model", "gpt-4"),
@@ -286,8 +309,13 @@ class PostExecutionOrchestrator:
         }
         if isinstance(opt_cfg, dict):
             for key in (
-                "optimizer", "module_type", "min_training_examples",
-                "lookback_hours", "max_demos", "min_quality_score",
+                "optimizer",
+                "module_type",
+                "min_training_examples",
+                "lookback_hours",
+                "max_demos",
+                "min_quality_score",
+                "reads",
             ):
                 if key in opt_cfg:
                     config[key] = opt_cfg[key]
@@ -295,20 +323,25 @@ class PostExecutionOrchestrator:
         from temper_ai.optimization._schemas import OptimizationResult
 
         result: OptimizationResult = optimizer.optimize(
-            runner=None, input_data={}, evaluator=None, config=config,
+            runner=None,
+            input_data={},
+            evaluator=None,
+            config=config,
         )
         return result.improved
 
     def _run_agent_memory_sync(
         self, context: WorkflowRunContext, report: PostExecutionReport
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Sync workflow learnings to persistent agents (M9).
 
-        For each persistent agent that participated in the workflow,
+        For each currently active persistent agent,
         calls sync_workflow_learnings_to_agent().
         """
         try:
-            from temper_ai.agent._m9_context_helpers import sync_workflow_learnings_to_agent
+            from temper_ai.agent._m9_context_helpers import (
+                sync_workflow_learnings_to_agent,
+            )
             from temper_ai.registry.store import AgentRegistryStore
 
             store = AgentRegistryStore()
@@ -325,7 +358,9 @@ class PostExecutionOrchestrator:
                 results.append({"agent": agent_entry.name, **result})
 
             return {"agents_synced": len(results), "results": results}
-        except Exception as exc:  # noqa: BLE001 -- subsystem failures must not crash workflow
+        except (
+            Exception
+        ) as exc:  # noqa: BLE001 -- subsystem failures must not crash workflow
             msg = f"Agent memory sync error: {exc}"
             logger.warning(msg)
             report.errors.append(msg)
@@ -333,7 +368,7 @@ class PostExecutionOrchestrator:
 
     def _run_portfolio(
         self, context: WorkflowRunContext, report: PostExecutionReport
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Record portfolio run completion and generate scorecards."""
         try:
             from temper_ai.portfolio._schemas import PortfolioConfig
@@ -347,9 +382,13 @@ class PostExecutionOrchestrator:
                 optimizer = PortfolioOptimizer(store=store)
                 portfolios = store.list_portfolios()
                 # Find portfolio containing this product_type
-                target_cfg: Optional[PortfolioConfig] = None
+                target_cfg: PortfolioConfig | None = None
                 for p in portfolios:
-                    cfg = PortfolioConfig(**p.config) if isinstance(p.config, dict) else p.config
+                    cfg = (
+                        PortfolioConfig(**p.config)
+                        if isinstance(p.config, dict)
+                        else p.config
+                    )
                     if any(prod.name == context.product_type for prod in cfg.products):
                         target_cfg = cfg
                         break
@@ -364,7 +403,9 @@ class PostExecutionOrchestrator:
                 }
 
             return {"product_type": None, "skipped": True}
-        except Exception as exc:  # noqa: BLE001 -- subsystem failures must not crash workflow
+        except (
+            Exception
+        ) as exc:  # noqa: BLE001 -- subsystem failures must not crash workflow
             msg = f"Portfolio subsystem error: {exc}"
             logger.warning(msg)
             report.errors.append(msg)

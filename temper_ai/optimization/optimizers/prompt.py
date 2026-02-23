@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional, Type
+from typing import Any
 
 from temper_ai.optimization._schemas import OptimizationResult
 
@@ -13,6 +13,8 @@ _ERR_AGENT_NAME = "agent_name required in config"
 _ERR_DSPY_MISSING = "DSPy not installed"
 _STATUS_INSUFFICIENT_DATA = "insufficient_data"
 _STATUS_COMPILED = "compiled"
+_DEFAULT_LOOKBACK_HOURS = 720
+_DEFAULT_MAX_DEMOS = 3
 
 # Module-level names populated lazily so tests can patch them.
 # Set to None when the dspy subpackage is unavailable.
@@ -25,11 +27,11 @@ try:
 
     _DSPY_AVAILABLE = True
 except ImportError:
-    PromptOptimizationConfig: Optional[Type] = None  # type: ignore[misc,no-redef]
-    DSPyCompiler: Optional[Type] = None  # type: ignore[misc,no-redef]
-    TrainingDataCollector: Optional[Type] = None  # type: ignore[misc,no-redef]
-    DSPyProgramBuilder: Optional[Type] = None  # type: ignore[misc,no-redef]
-    CompiledProgramStore: Optional[Type] = None  # type: ignore[misc,no-redef]
+    PromptOptimizationConfig: type | None = None  # type: ignore[misc,no-redef]
+    DSPyCompiler: type | None = None  # type: ignore[misc,no-redef]
+    TrainingDataCollector: type | None = None  # type: ignore[misc,no-redef]
+    DSPyProgramBuilder: type | None = None  # type: ignore[misc,no-redef]
+    CompiledProgramStore: type | None = None  # type: ignore[misc,no-redef]
     _DSPY_AVAILABLE = False
 
 
@@ -49,9 +51,9 @@ class PromptOptimizer:
     def optimize(
         self,
         runner: Any,
-        input_data: Dict[str, Any],
+        input_data: dict[str, Any],
         evaluator: Any,
-        config: Dict[str, Any],
+        config: dict[str, Any],
     ) -> OptimizationResult:
         """Run DSPy prompt optimization as a pipeline step.
 
@@ -71,7 +73,13 @@ class PromptOptimizer:
             )
 
         opt_config = _build_opt_config(PromptOptimizationConfig, config)
-        examples = _collect_examples(TrainingDataCollector, agent_name, opt_config)
+        evaluation_name = config.get("reads")
+        examples = _collect_examples(
+            TrainingDataCollector,
+            agent_name,
+            opt_config,
+            evaluation_name,
+        )
 
         if len(examples) < opt_config.min_training_examples:
             return OptimizationResult(
@@ -95,18 +103,35 @@ class PromptOptimizer:
         )
 
 
-def _build_opt_config(config_cls: Any, config: Dict[str, Any]) -> Any:
+def _build_opt_config(config_cls: Any, config: dict[str, Any]) -> Any:
     """Construct PromptOptimizationConfig from a raw config dict."""
-    return config_cls(
-        optimizer=config.get("optimizer", "bootstrap"),
-        module_type=config.get("module_type", "predict"),
-        min_training_examples=config.get("min_training_examples", 10),
-        lookback_hours=config.get("lookback_hours", 720),
-        max_demos=config.get("max_demos", 3),
-    )
+    kwargs: dict[str, Any] = {
+        "optimizer": config.get("optimizer", "bootstrap"),
+        "module_type": config.get("module_type", "predict"),
+        "min_training_examples": config.get("min_training_examples", 10),
+        "lookback_hours": config.get("lookback_hours", _DEFAULT_LOOKBACK_HOURS),
+        "max_demos": config.get("max_demos", _DEFAULT_MAX_DEMOS),
+    }
+    # Pass through new modular fields when present
+    for key in (
+        "training_metric",
+        "optimizer_params",
+        "metric_params",
+        "module_params",
+        "signature_style",
+        "field_descriptions",
+    ):
+        if key in config:
+            kwargs[key] = config[key]
+    return config_cls(**kwargs)
 
 
-def _collect_examples(collector_cls: Any, agent_name: str, opt_config: Any) -> list:
+def _collect_examples(
+    collector_cls: Any,
+    agent_name: str,
+    opt_config: Any,
+    evaluation_name: str | None = None,
+) -> list:
     """Instantiate collector and gather historical training examples."""
     collector = collector_cls()
     return collector.collect_examples(
@@ -114,6 +139,7 @@ def _collect_examples(collector_cls: Any, agent_name: str, opt_config: Any) -> l
         min_quality_score=opt_config.min_quality_score,
         max_examples=opt_config.min_training_examples * 2,
         lookback_hours=opt_config.lookback_hours,
+        evaluation_name=evaluation_name,
     )
 
 
@@ -124,8 +150,8 @@ def _compile_and_save(  # noqa: params
     agent_name: str,
     examples: list,
     opt_config: Any,
-    config: Dict[str, Any],
-    input_data: Dict[str, Any],
+    config: dict[str, Any],
+    input_data: dict[str, Any],
 ) -> OptimizationResult:
     """Build, compile, and persist the DSPy program; return an OptimizationResult."""
     builder = builder_cls()

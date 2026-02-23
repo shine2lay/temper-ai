@@ -22,8 +22,9 @@ stage:
 
   inputs:
     suggestion_text:
-      source: workflow.suggestion_text
-      required: true
+      source: vcs_work_discovery.output
+      required: false
+      default: ""
     workspace_path:
       source: workflow.workspace_path
       required: true

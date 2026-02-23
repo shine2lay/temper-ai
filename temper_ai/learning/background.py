@@ -31,7 +31,10 @@ class BackgroundMiningJob:
         """Start the background mining loop."""
         self._running = True
         self._task = asyncio.create_task(self._run_loop())
-        logger.info("Background mining job started (interval=%dh)", self.interval_seconds // SECONDS_PER_HOUR)
+        logger.info(
+            "Background mining job started (interval=%dh)",
+            self.interval_seconds // SECONDS_PER_HOUR,
+        )
 
     async def stop(self) -> None:
         """Stop the background mining loop."""
@@ -48,7 +51,9 @@ class BackgroundMiningJob:
         """Run mining at regular intervals unless converged."""
         while self._running:
             try:
-                await asyncio.sleep(self.interval_seconds)  # intentional: periodic mining interval
+                await asyncio.sleep(
+                    self.interval_seconds
+                )  # intentional: periodic mining interval
                 if self.convergence.is_converged():
                     logger.info("Mining converged — skipping this cycle")
                     continue

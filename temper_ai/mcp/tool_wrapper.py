@@ -1,7 +1,8 @@
 """MCPToolWrapper — wraps a single MCP tool as a Temper AI BaseTool."""
+
 import concurrent.futures
 import logging
-from typing import Any, Dict
+from typing import Any
 
 from temper_ai.mcp._client_helpers import map_annotations_to_metadata
 from temper_ai.mcp.constants import MCP_NAMESPACE_SEPARATOR
@@ -9,7 +10,7 @@ from temper_ai.tools.base import BaseTool, ToolMetadata, ToolResult
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_PARAM_SCHEMA: Dict[str, Any] = {"type": "object", "properties": {}}
+_DEFAULT_PARAM_SCHEMA: dict[str, Any] = {"type": "object", "properties": {}}
 
 
 class MCPToolWrapper(BaseTool):
@@ -50,7 +51,9 @@ class MCPToolWrapper(BaseTool):
 
     def get_metadata(self) -> ToolMetadata:
         """Build ToolMetadata from the MCP tool description and annotations."""
-        namespaced_name = f"{self._namespace}{MCP_NAMESPACE_SEPARATOR}{self._tool_info.name}"
+        namespaced_name = (
+            f"{self._namespace}{MCP_NAMESPACE_SEPARATOR}{self._tool_info.name}"
+        )
         annotation_overrides = map_annotations_to_metadata(
             getattr(self._tool_info, "annotations", None)
         )
@@ -62,7 +65,7 @@ class MCPToolWrapper(BaseTool):
             requires_network=annotation_overrides.get("requires_network", False),
         )
 
-    def get_parameters_schema(self) -> Dict[str, Any]:
+    def get_parameters_schema(self) -> dict[str, Any]:
         """Return the MCP tool's input schema, falling back to a bare object schema."""
         return self._tool_info.inputSchema or _DEFAULT_PARAM_SCHEMA
 
@@ -70,6 +73,7 @@ class MCPToolWrapper(BaseTool):
         """Call the remote MCP tool, bridging sync→async via the background loop."""
         original_name = self._tool_info.name
         try:
+
             async def _call() -> Any:
                 return await self._session.call_tool(original_name, kwargs)
 
@@ -109,7 +113,9 @@ class MCPToolWrapper(BaseTool):
         """Convert an MCP CallToolResult into a Temper AI ToolResult."""
         if getattr(call_result, "isError", False):
             error_text = self._extract_text(call_result)
-            return ToolResult(success=False, error=error_text or "MCP tool returned an error")
+            return ToolResult(
+                success=False, error=error_text or "MCP tool returned an error"
+            )
 
         content_items = getattr(call_result, "content", []) or []
         if not content_items:

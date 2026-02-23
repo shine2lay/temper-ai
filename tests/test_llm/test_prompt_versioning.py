@@ -3,9 +3,8 @@
 Tests hash determinism, render_with_metadata, render_file_with_metadata,
 different vars produce same hash, different templates produce different hash.
 """
+
 import pytest
-from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 from temper_ai.llm.prompts.engine import PromptEngine, _compute_template_hash
 
@@ -103,5 +102,7 @@ class TestRenderFileWithMetadata:
         from temper_ai.llm.prompts.validation import PromptRenderError
 
         engine = PromptEngine(templates_dir="/nonexistent/path")
-        with pytest.raises(PromptRenderError, match="templates directory not configured"):
+        with pytest.raises(
+            PromptRenderError, match="templates directory not configured"
+        ):
             engine.render_file_with_metadata("test.txt")

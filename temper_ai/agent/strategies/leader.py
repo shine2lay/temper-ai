@@ -16,7 +16,7 @@ Config Example:
 """
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from temper_ai.agent.strategies.base import (
     AgentOutput,
@@ -52,7 +52,7 @@ class LeaderCollaborationStrategy(CollaborationStrategy):
 
     def __init__(
         self,
-        leader_agent: Optional[str] = None,
+        leader_agent: str | None = None,
         fallback_to_consensus: bool = True,
         **kwargs: Any,
     ) -> None:
@@ -69,7 +69,7 @@ class LeaderCollaborationStrategy(CollaborationStrategy):
         """Leader strategy requires leader-specific synthesis path."""
         return True
 
-    def get_leader_agent_name(self, config: Dict[str, Any]) -> Optional[str]:
+    def get_leader_agent_name(self, config: dict[str, Any]) -> str | None:
         """Extract leader agent name from collaboration config.
 
         Uses the config argument if provided, otherwise falls back
@@ -83,9 +83,7 @@ class LeaderCollaborationStrategy(CollaborationStrategy):
         """
         return config.get(CONFIG_KEY_LEADER_AGENT, self._leader_agent)
 
-    def format_team_outputs(
-        self, agent_outputs: List[AgentOutput]
-    ) -> str:
+    def format_team_outputs(self, agent_outputs: list[AgentOutput]) -> str:
         """Format perspective outputs as structured text for leader prompt injection.
 
         Creates a formatted string of all perspective agent outputs that gets
@@ -100,7 +98,7 @@ class LeaderCollaborationStrategy(CollaborationStrategy):
         if not agent_outputs:
             return "(No team outputs available)"
 
-        sections: List[str] = []
+        sections: list[str] = []
         for output in agent_outputs:
             section = (
                 f"## {output.agent_name} (confidence: {output.confidence:.0%})\n"
@@ -113,8 +111,8 @@ class LeaderCollaborationStrategy(CollaborationStrategy):
 
     def synthesize(
         self,
-        agent_outputs: List[AgentOutput],
-        config: Dict[str, Any],
+        agent_outputs: list[AgentOutput],
+        config: dict[str, Any],
     ) -> SynthesisResult:
         """Synthesize outputs using leader's decision.
 
@@ -132,13 +130,11 @@ class LeaderCollaborationStrategy(CollaborationStrategy):
         self.validate_inputs(agent_outputs)
 
         leader_name = self.get_leader_agent_name(config)
-        fallback = config.get(
-            "fallback_to_consensus", self._fallback_to_consensus
-        )
+        fallback = config.get("fallback_to_consensus", self._fallback_to_consensus)
 
         # Separate leader and perspective outputs
         leader_output = None
-        perspective_outputs: List[AgentOutput] = []
+        perspective_outputs: list[AgentOutput] = []
 
         for output in agent_outputs:
             if leader_name and output.agent_name == leader_name:
@@ -162,9 +158,7 @@ class LeaderCollaborationStrategy(CollaborationStrategy):
                 metadata={
                     "leader_agent": leader_name,
                     "perspective_count": len(perspective_outputs),
-                    "perspective_agents": [
-                        o.agent_name for o in perspective_outputs
-                    ],
+                    "perspective_agents": [o.agent_name for o in perspective_outputs],
                 },
             )
 
@@ -186,8 +180,8 @@ class LeaderCollaborationStrategy(CollaborationStrategy):
 
     def _consensus_fallback(
         self,
-        perspective_outputs: List[AgentOutput],
-        leader_name: Optional[str],
+        perspective_outputs: list[AgentOutput],
+        leader_name: str | None,
     ) -> SynthesisResult:
         """Fall back to consensus when leader output is unavailable.
 
@@ -213,9 +207,7 @@ class LeaderCollaborationStrategy(CollaborationStrategy):
         votes = calculate_vote_distribution(perspective_outputs)
 
         if decision is not None:
-            confidence = calculate_consensus_confidence(
-                perspective_outputs, decision
-            )
+            confidence = calculate_consensus_confidence(perspective_outputs, decision)
         else:
             # Tie — pick first decision, low confidence
             decision = perspective_outputs[0].decision
@@ -238,7 +230,7 @@ class LeaderCollaborationStrategy(CollaborationStrategy):
             },
         )
 
-    def get_capabilities(self) -> Dict[str, bool]:
+    def get_capabilities(self) -> dict[str, bool]:
         """Get strategy capabilities for feature detection."""
         return {
             "supports_debate": False,
@@ -250,7 +242,7 @@ class LeaderCollaborationStrategy(CollaborationStrategy):
             "requires_leader": True,
         }
 
-    def get_metadata(self) -> Dict[str, Any]:
+    def get_metadata(self) -> dict[str, Any]:
         """Get strategy metadata for introspection."""
         return {
             **super().get_metadata(),

@@ -2,6 +2,7 @@
 
 These are internal implementation details and should not be imported directly.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -12,7 +13,7 @@ import logging
 import threading
 import time
 from types import TracebackType
-from typing import TYPE_CHECKING, Any, Dict, Literal, Optional, Tuple, Type, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 from urllib.parse import urlparse
 
 import httpx
@@ -51,6 +52,7 @@ CONNECT_TIMEOUT_SECONDS = 30.0
 # URL validation
 # ---------------------------------------------------------------------------
 
+
 def validate_base_url(url: str) -> str:
     """Validate base_url to prevent SSRF attacks (AG-01)."""
     parsed = urlparse(url)
@@ -68,7 +70,12 @@ def validate_base_url(url: str) -> str:
 
     try:
         addr = ipaddress.ip_address(hostname)
-        if addr.is_private or addr.is_link_local or addr.is_loopback or addr.is_reserved:
+        if (
+            addr.is_private
+            or addr.is_link_local
+            or addr.is_loopback
+            or addr.is_reserved
+        ):
             raise ValueError(
                 f"SSRF blocked: base_url points to private/reserved address '{hostname}'"
             )
@@ -83,9 +90,10 @@ def validate_base_url(url: str) -> str:
 # Circuit breaker management
 # ---------------------------------------------------------------------------
 
+
 def get_shared_circuit_breaker(
     instance: BaseLLM,
-    circuit_breakers: collections.OrderedDict[Tuple[str, str, str], CircuitBreaker],
+    circuit_breakers: collections.OrderedDict[tuple[str, str, str], CircuitBreaker],
     lock: threading.Lock,
     max_breakers: int,
 ) -> CircuitBreaker:
@@ -98,8 +106,7 @@ def get_shared_circuit_breaker(
             if len(circuit_breakers) >= max_breakers:
                 circuit_breakers.popitem(last=False)
             circuit_breakers[key] = CircuitBreaker(
-                name=f"{provider_name}:{instance.model}",
-                config=CircuitBreakerConfig()
+                name=f"{provider_name}:{instance.model}", config=CircuitBreakerConfig()
             )
         else:
             circuit_breakers.move_to_end(key)
@@ -121,8 +128,9 @@ def reset_shared_circuit_breakers(
 # HTTP client management
 # ---------------------------------------------------------------------------
 
+
 def get_shared_http_client(
-    clients: Dict[Tuple[str, str], httpx.Client],
+    clients: dict[tuple[str, str], httpx.Client],
     lock: threading.Lock,
     max_clients: int,
     provider: str,
@@ -141,7 +149,7 @@ def get_shared_http_client(
 
 
 def reset_shared_http_clients(
-    clients: Dict[Tuple[str, str], httpx.Client],
+    clients: dict[tuple[str, str], httpx.Client],
     lock: threading.Lock,
 ) -> None:
     """Close and remove all shared HTTP clients."""
@@ -162,19 +170,23 @@ def get_or_create_sync_client(instance: BaseLLM) -> httpx.Client:
                 limits = httpx.Limits(
                     max_connections=DEFAULT_MAX_HTTP_CONNECTIONS,
                     max_keepalive_connections=DEFAULT_MAX_KEEPALIVE_CONNECTIONS,
-                    keepalive_expiry=DEFAULT_KEEPALIVE_EXPIRY_SECONDS
+                    keepalive_expiry=DEFAULT_KEEPALIVE_EXPIRY_SECONDS,
                 )
 
                 try:
                     import h2  # type: ignore[import-not-found]  # noqa: F401
+
                     http2_enabled = True
                 except ImportError:
                     http2_enabled = False
 
                 provider_name = instance.__class__.__name__.replace("LLM", "").lower()
                 from temper_ai.llm.providers.base import BaseLLM as _BaseLLM
+
                 # Create explicit timeout object to ensure all timeout types are set
-                timeout_config = httpx.Timeout(timeout=instance.timeout, connect=CONNECT_TIMEOUT_SECONDS)
+                timeout_config = httpx.Timeout(
+                    timeout=instance.timeout, connect=CONNECT_TIMEOUT_SECONDS
+                )
                 instance._client = get_shared_http_client(
                     _BaseLLM._http_clients,
                     _BaseLLM._http_client_lock,
@@ -183,7 +195,7 @@ def get_or_create_sync_client(instance: BaseLLM) -> httpx.Client:
                     base_url=instance.base_url,
                     timeout=timeout_config,
                     limits=limits,
-                    http2=http2_enabled
+                    http2=http2_enabled,
                 )
     return instance._client
 
@@ -192,26 +204,28 @@ async def get_or_create_async_client_safe(instance: BaseLLM) -> httpx.AsyncClien
     """Get or create async HTTPx client with proper async locking (M-19)."""
     if instance._async_client is None:
         from temper_ai.llm.providers.base import BaseLLM as _BaseLLM
+
         async with get_async_lock(_BaseLLM):
             if instance._async_client is None:
                 limits = httpx.Limits(
                     max_connections=DEFAULT_MAX_HTTP_CONNECTIONS,
                     max_keepalive_connections=DEFAULT_MAX_KEEPALIVE_CONNECTIONS,
-                    keepalive_expiry=DEFAULT_KEEPALIVE_EXPIRY_SECONDS
+                    keepalive_expiry=DEFAULT_KEEPALIVE_EXPIRY_SECONDS,
                 )
 
                 try:
                     import h2  # noqa: F401
+
                     http2_enabled = True
                 except ImportError:
                     http2_enabled = False
 
                 # Create explicit timeout object to ensure all timeout types are set
-                timeout_config = httpx.Timeout(timeout=instance.timeout, connect=CONNECT_TIMEOUT_SECONDS)
+                timeout_config = httpx.Timeout(
+                    timeout=instance.timeout, connect=CONNECT_TIMEOUT_SECONDS
+                )
                 instance._async_client = httpx.AsyncClient(
-                    timeout=timeout_config,
-                    limits=limits,
-                    http2=http2_enabled
+                    timeout=timeout_config, limits=limits, http2=http2_enabled
                 )
     return instance._async_client
 
@@ -224,21 +238,22 @@ def get_or_create_async_client_sync(instance: BaseLLM) -> httpx.AsyncClient:
                 limits = httpx.Limits(
                     max_connections=DEFAULT_MAX_HTTP_CONNECTIONS,
                     max_keepalive_connections=DEFAULT_MAX_KEEPALIVE_CONNECTIONS,
-                    keepalive_expiry=DEFAULT_KEEPALIVE_EXPIRY_SECONDS
+                    keepalive_expiry=DEFAULT_KEEPALIVE_EXPIRY_SECONDS,
                 )
 
                 try:
                     import h2  # noqa: F401
+
                     http2_enabled = True
                 except ImportError:
                     http2_enabled = False
 
                 # Create explicit timeout object to ensure all timeout types are set
-                timeout_config = httpx.Timeout(timeout=instance.timeout, connect=CONNECT_TIMEOUT_SECONDS)
+                timeout_config = httpx.Timeout(
+                    timeout=instance.timeout, connect=CONNECT_TIMEOUT_SECONDS
+                )
                 instance._async_client = httpx.AsyncClient(
-                    timeout=timeout_config,
-                    limits=limits,
-                    http2=http2_enabled
+                    timeout=timeout_config, limits=limits, http2=http2_enabled
                 )
     return instance._async_client
 
@@ -247,12 +262,13 @@ def get_or_create_async_client_sync(instance: BaseLLM) -> httpx.AsyncClient:
 # Cache helpers
 # ---------------------------------------------------------------------------
 
+
 def check_cache(
     instance: BaseLLM,
     prompt: str,
-    context: Optional[ExecutionContext],
+    context: ExecutionContext | None,
     **kwargs: Any,
-) -> Tuple[Optional[str], Optional[LLMResponse]]:
+) -> tuple[str | None, LLMResponse | None]:
     """Check cache for a cached response."""
     from temper_ai.llm.providers.base import LLMResponse as _LLMResponse
 
@@ -260,23 +276,25 @@ def check_cache(
         return None, None
 
     user_id = context.user_id if context else None
-    tenant_id = context.metadata.get('tenant_id') if context and context.metadata else None
+    tenant_id = (
+        context.metadata.get("tenant_id") if context and context.metadata else None
+    )
     session_id = context.session_id if context else None
 
-    _extracted_keys = {'temperature', 'max_tokens', 'top_p', 'system_prompt', 'tools'}
+    _extracted_keys = {"temperature", "max_tokens", "top_p", "system_prompt", "tools"}
     _remaining_kwargs = {k: v for k, v in kwargs.items() if k not in _extracted_keys}
     cache_key = instance._cache.generate_key(
         model=instance.model,
         prompt=prompt,
-        temperature=kwargs.get('temperature', instance.temperature),
-        max_tokens=kwargs.get('max_tokens', instance.max_tokens),
-        top_p=kwargs.get('top_p', instance.top_p),
+        temperature=kwargs.get("temperature", instance.temperature),
+        max_tokens=kwargs.get("max_tokens", instance.max_tokens),
+        top_p=kwargs.get("top_p", instance.top_p),
         user_id=user_id,
         tenant_id=tenant_id,
         session_id=session_id,
-        system_prompt=kwargs.get('system_prompt'),
-        tools=kwargs.get('tools'),
-        **_remaining_kwargs
+        system_prompt=kwargs.get("system_prompt"),
+        tools=kwargs.get("tools"),
+        **_remaining_kwargs,
     )
 
     cached_response = instance._cache.get(cache_key)
@@ -290,18 +308,20 @@ def check_cache(
     return cache_key, None
 
 
-def cache_response(instance: BaseLLM, cache_key: Optional[str], llm_response: LLMResponse) -> None:
+def cache_response(
+    instance: BaseLLM, cache_key: str | None, llm_response: LLMResponse
+) -> None:
     """Store a response in cache if caching is enabled."""
     if instance._cache is not None and cache_key is not None:
         cache_data = {
-            'content': llm_response.content,
-            'model': llm_response.model,
-            'provider': llm_response.provider,
-            'prompt_tokens': llm_response.prompt_tokens,
-            'completion_tokens': llm_response.completion_tokens,
-            'total_tokens': llm_response.total_tokens,
-            'latency_ms': llm_response.latency_ms,
-            'finish_reason': llm_response.finish_reason,
+            "content": llm_response.content,
+            "model": llm_response.model,
+            "provider": llm_response.provider,
+            "prompt_tokens": llm_response.prompt_tokens,
+            "completion_tokens": llm_response.completion_tokens,
+            "total_tokens": llm_response.total_tokens,
+            "latency_ms": llm_response.latency_ms,
+            "finish_reason": llm_response.finish_reason,
         }
         instance._cache.set(cache_key, json.dumps(cache_data))
 
@@ -310,11 +330,12 @@ def cache_response(instance: BaseLLM, cache_key: Optional[str], llm_response: LL
 # Response handling
 # ---------------------------------------------------------------------------
 
+
 def execute_and_parse(
     instance: BaseLLM,
     response: httpx.Response,
     start_time: float,
-    cache_key: Optional[str],
+    cache_key: str | None,
 ) -> LLMResponse:
     """Handle response, parse, and cache. Shared by sync/async paths."""
     latency_ms = int((time.time() - start_time) * 1000)
@@ -344,6 +365,7 @@ def handle_error_response(response: httpx.Response) -> None:
 # ---------------------------------------------------------------------------
 # Cleanup helpers
 # ---------------------------------------------------------------------------
+
 
 def close_sync(instance: BaseLLM) -> None:
     """Close sync resources and release references (H-06)."""
@@ -401,7 +423,8 @@ async def close_async(instance: BaseLLM) -> None:
 # Bearer auth helper
 # ---------------------------------------------------------------------------
 
-def build_bearer_auth_headers(instance: BaseLLM) -> Dict[str, str]:
+
+def build_bearer_auth_headers(instance: BaseLLM) -> dict[str, str]:
     """Build standard headers with Bearer token authentication."""
     headers = {"Content-Type": "application/json"}
     if instance.api_key:
@@ -412,6 +435,7 @@ def build_bearer_auth_headers(instance: BaseLLM) -> Dict[str, str]:
 # ---------------------------------------------------------------------------
 # Async lock helper
 # ---------------------------------------------------------------------------
+
 
 def get_async_lock(cls: Any) -> asyncio.Lock:
     """Get or lazily create the class-level async lock."""
@@ -428,23 +452,30 @@ def get_async_lock(cls: Any) -> asyncio.Lock:
 # Streaming helpers (extracted from BaseLLM to reduce method count)
 # ---------------------------------------------------------------------------
 
+
 def make_streaming_call_impl(
     instance: BaseLLM,
     prompt: str,
-    context: Optional[ExecutionContext],
+    context: ExecutionContext | None,
     **kwargs: Any,
-) -> Tuple[Optional[str], Optional[LLMResponse]]:
+) -> tuple[str | None, LLMResponse | None]:
     """Prepare streaming call with rate limiting and cache check.
 
     Returns:
         Tuple of (cache_key, cached_response_or_none)
     """
     from temper_ai.llm.constants import ERROR_MSG_RATE_LIMIT_EXCEEDED
-    from temper_ai.shared.utils.exceptions import LLMRateLimitError as _LLMRateLimitError
+    from temper_ai.shared.utils.exceptions import (
+        LLMRateLimitError as _LLMRateLimitError,
+    )
 
     # Rate limiter check
     if instance._rate_limiter is not None:
-        entity_id = (context.agent_id if context and hasattr(context, 'agent_id') else instance.model)
+        entity_id = (
+            context.agent_id
+            if context and hasattr(context, "agent_id")
+            else instance.model
+        )
         allowed, reason = instance._rate_limiter.check_and_record_rate_limit(entity_id)
         if not allowed:
             raise _LLMRateLimitError(reason or ERROR_MSG_RATE_LIMIT_EXCEEDED)
@@ -459,7 +490,7 @@ def execute_streaming_impl(
     start_time: float,
     response: Any,
     on_chunk: Any,
-    cache_key: Optional[str],
+    cache_key: str | None,
 ) -> LLMResponse:
     """Execute streaming request and handle response (synchronous).
 
@@ -488,7 +519,7 @@ async def execute_streaming_async_impl(
     start_time: float,
     response: Any,
     on_chunk: Any,
-    cache_key: Optional[str],
+    cache_key: str | None,
 ) -> LLMResponse:
     """Execute streaming request and handle response (asynchronous).
 
@@ -516,30 +547,61 @@ async def execute_streaming_async_impl(
 # Context manager mixin
 # ---------------------------------------------------------------------------
 
+
 def bind_callable_attributes(instance: BaseLLM) -> None:
     """Bind callable attributes (not methods) to reduce class method count."""
     instance._build_bearer_auth_headers = lambda: build_bearer_auth_headers(instance)
-    instance._check_cache = lambda prompt, context, **kw: check_cache(instance, prompt, context, **kw)
-    instance._cache_response = lambda cache_key, llm_response: cache_response(instance, cache_key, llm_response)
-    instance._execute_and_parse = lambda response, start_time, cache_key: execute_and_parse(instance, response, start_time, cache_key)
-    instance._make_streaming_call_impl = lambda prompt, context=None, on_chunk=None, **kw: make_streaming_call_impl(instance, prompt, context, **kw)
-    instance._execute_streaming_impl = lambda start_time, response, on_chunk, cache_key: execute_streaming_impl(instance, start_time, response, on_chunk, cache_key)
-    instance._execute_streaming_async_impl = lambda start_time, response, on_chunk, cache_key: execute_streaming_async_impl(instance, start_time, response, on_chunk, cache_key)
+    instance._check_cache = lambda prompt, context, **kw: check_cache(
+        instance, prompt, context, **kw
+    )
+    instance._cache_response = lambda cache_key, llm_response: cache_response(
+        instance, cache_key, llm_response
+    )
+    instance._execute_and_parse = (
+        lambda response, start_time, cache_key: execute_and_parse(
+            instance, response, start_time, cache_key
+        )
+    )
+    instance._make_streaming_call_impl = (
+        lambda prompt, context=None, on_chunk=None, **kw: make_streaming_call_impl(
+            instance, prompt, context, **kw
+        )
+    )
+    instance._execute_streaming_impl = (
+        lambda start_time, response, on_chunk, cache_key: execute_streaming_impl(
+            instance, start_time, response, on_chunk, cache_key
+        )
+    )
+    instance._execute_streaming_async_impl = (
+        lambda start_time, response, on_chunk, cache_key: execute_streaming_async_impl(
+            instance, start_time, response, on_chunk, cache_key
+        )
+    )
 
 
 class LLMContextManagerMixin:
     """Mixin providing sync and async context manager support for LLM classes."""
 
-    def __enter__(self) -> "LLMContextManagerMixin":
+    def __enter__(self) -> LLMContextManagerMixin:
         return self
 
-    def __exit__(self, _exc_type: Optional[Type[BaseException]], _exc_val: Optional[BaseException], _exc_tb: Optional[TracebackType]) -> Literal[False]:
+    def __exit__(
+        self,
+        _exc_type: type[BaseException] | None,
+        _exc_val: BaseException | None,
+        _exc_tb: TracebackType | None,
+    ) -> Literal[False]:
         self.close()  # type: ignore[attr-defined]
         return False
 
-    async def __aenter__(self) -> "LLMContextManagerMixin":
+    async def __aenter__(self) -> LLMContextManagerMixin:
         return self
 
-    async def __aexit__(self, _exc_type: Optional[Type[BaseException]], _exc_val: Optional[BaseException], _exc_tb: Optional[TracebackType]) -> Literal[False]:
+    async def __aexit__(
+        self,
+        _exc_type: type[BaseException] | None,
+        _exc_val: BaseException | None,
+        _exc_tb: TracebackType | None,
+    ) -> Literal[False]:
         await self.aclose()  # type: ignore[attr-defined]
         return False

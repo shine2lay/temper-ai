@@ -3,7 +3,9 @@
 Reduces code duplication in ollama.py and vllm_provider.py where sync/async
 stream consumers are nearly identical.
 """
-from typing import Any, Callable, List, Optional
+
+from collections.abc import Callable
+from typing import Any
 
 from temper_ai.llm.providers.base import LLMStreamChunk
 
@@ -11,8 +13,8 @@ from temper_ai.llm.providers.base import LLMStreamChunk
 def process_chunk_content(
     chunk_content: str,
     chunk_type: str,
-    content_parts: List[str],
-    thinking_parts: List[str],
+    content_parts: list[str],
+    thinking_parts: list[str],
     on_chunk: Callable[[LLMStreamChunk], None],
     model: str,
 ) -> None:
@@ -25,40 +27,44 @@ def process_chunk_content(
     else:
         content_parts.append(chunk_content)
 
-    on_chunk(LLMStreamChunk(
-        content=chunk_content,
-        chunk_type=chunk_type,
-        done=False,
-        model=model,
-    ))
+    on_chunk(
+        LLMStreamChunk(
+            content=chunk_content,
+            chunk_type=chunk_type,
+            done=False,
+            model=model,
+        )
+    )
 
 
 def emit_final_chunk(
     on_chunk: Callable[[LLMStreamChunk], None],
     model: str,
-    prompt_tokens: Optional[int],
-    completion_tokens: Optional[int],
-    finish_reason: Optional[str],
+    prompt_tokens: int | None,
+    completion_tokens: int | None,
+    finish_reason: str | None,
 ) -> None:
     """Emit final completion chunk with token counts."""
-    on_chunk(LLMStreamChunk(
-        content="",
-        chunk_type="content",
-        done=True,
-        model=model,
-        prompt_tokens=prompt_tokens,
-        completion_tokens=completion_tokens,
-        finish_reason=finish_reason,
-    ))
+    on_chunk(
+        LLMStreamChunk(
+            content="",
+            chunk_type="content",
+            done=True,
+            model=model,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            finish_reason=finish_reason,
+        )
+    )
 
 
 def build_stream_result(
-    content_parts: List[str],
+    content_parts: list[str],
     model: str,
     provider: str,
-    prompt_tokens: Optional[int],
-    completion_tokens: Optional[int],
-    finish_reason: Optional[str],
+    prompt_tokens: int | None,
+    completion_tokens: int | None,
+    finish_reason: str | None,
 ) -> Any:  # Returns LLMResponse
     """Build final LLMResponse from accumulated stream chunks."""
     from temper_ai.llm.providers.base import LLMResponse

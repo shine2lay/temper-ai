@@ -3,6 +3,7 @@
 Only caches results from tools where ``modifies_state=False`` (read-only tools
 like search, calculator). State-modifying tools (bash, file_write) are never cached.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -12,7 +13,7 @@ import threading
 import time
 from collections import OrderedDict
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any
 
 from temper_ai.tools.base import ToolResult
 from temper_ai.tools.tool_cache_constants import (
@@ -64,7 +65,7 @@ class ToolResultCache:
     # Public API
     # ------------------------------------------------------------------
 
-    def get(self, tool_name: str, params: Dict[str, Any]) -> Optional[ToolResult]:
+    def get(self, tool_name: str, params: dict[str, Any]) -> ToolResult | None:
         """Look up a cached result. Returns ``None`` on miss or TTL expiry."""
         key = self._build_key(tool_name, params)
         with self._lock:
@@ -86,7 +87,7 @@ class ToolResultCache:
     def put(
         self,
         tool_name: str,
-        params: Dict[str, Any],
+        params: dict[str, Any],
         result: ToolResult,
     ) -> None:
         """Store a result, evicting the oldest entry if over capacity."""
@@ -96,16 +97,20 @@ class ToolResultCache:
             if key in self._entries:
                 self._entries.move_to_end(key)
                 self._entries[key] = _CacheEntry(
-                    result=result, timestamp=now, tool_name=tool_name,
+                    result=result,
+                    timestamp=now,
+                    tool_name=tool_name,
                 )
                 return
 
             self._entries[key] = _CacheEntry(
-                result=result, timestamp=now, tool_name=tool_name,
+                result=result,
+                timestamp=now,
+                tool_name=tool_name,
             )
             self._evict_if_needed()
 
-    def invalidate(self, tool_name: Optional[str] = None) -> int:
+    def invalidate(self, tool_name: str | None = None) -> int:
         """Remove entries. If *tool_name* given, remove only that tool's entries.
 
         Returns:
@@ -118,8 +123,7 @@ class ToolResultCache:
                 return count
 
             keys_to_remove = [
-                k for k, v in self._entries.items()
-                if v.tool_name == tool_name
+                k for k, v in self._entries.items() if v.tool_name == tool_name
             ]
             for k in keys_to_remove:
                 del self._entries[k]
@@ -130,7 +134,7 @@ class ToolResultCache:
         with self._lock:
             self._entries.clear()
 
-    def stats(self) -> Dict[str, Any]:
+    def stats(self) -> dict[str, Any]:
         """Return cache statistics."""
         with self._lock:
             return {
@@ -146,10 +150,16 @@ class ToolResultCache:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _build_key(self, tool_name: str, params: Dict[str, Any]) -> str:
+    def _build_key(self, tool_name: str, params: dict[str, Any]) -> str:
         """Build a deterministic cache key from tool name and params."""
-        raw = tool_name + CACHE_KEY_SEPARATOR + json.dumps(
-            params, sort_keys=True, default=str,
+        raw = (
+            tool_name
+            + CACHE_KEY_SEPARATOR
+            + json.dumps(
+                params,
+                sort_keys=True,
+                default=str,
+            )
         )
         return hashlib.sha256(raw.encode()).hexdigest()
 

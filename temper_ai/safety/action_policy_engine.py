@@ -22,15 +22,13 @@ Example:
     >>> if not result.allowed:
     ...     print(f"Action blocked: {result.violations[0].message}")
 """
+
 import logging
 import time
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
-from temper_ai.shared.constants.durations import MILLISECONDS_PER_SECOND, TTL_LONG
-from temper_ai.shared.constants.limits import THRESHOLD_MEDIUM_COUNT
-from temper_ai.shared.core.circuit_breaker import CircuitBreakerError
 from temper_ai.safety._action_policy_helpers import (
     cache_result as _cache_result_helper,
 )
@@ -47,8 +45,16 @@ from temper_ai.safety.constants import (
     NO_POLICIES_REGISTERED_KEY,
     REASON_KEY,
 )
-from temper_ai.safety.interfaces import SafetyPolicy, SafetyViolation, ValidationResult, ViolationSeverity
+from temper_ai.safety.interfaces import (
+    SafetyPolicy,
+    SafetyViolation,
+    ValidationResult,
+    ViolationSeverity,
+)
 from temper_ai.safety.policy_registry import PolicyRegistry
+from temper_ai.shared.constants.durations import MILLISECONDS_PER_SECOND, TTL_LONG
+from temper_ai.shared.constants.limits import THRESHOLD_MEDIUM_COUNT
+from temper_ai.shared.core.circuit_breaker import CircuitBreakerError
 
 logger = logging.getLogger(__name__)
 
@@ -67,12 +73,13 @@ class PolicyExecutionContext:
         action_data: Action-specific data
         metadata: Additional context metadata
     """
+
     agent_id: str
     workflow_id: str
     stage_id: str
     action_type: str
-    action_data: Dict[str, Any]
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    action_data: dict[str, Any]
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -87,11 +94,12 @@ class EnforcementResult:
         metadata: Additional result metadata
         cache_hit: Whether result was retrieved from cache
     """
+
     allowed: bool
-    violations: List[SafetyViolation]
-    policies_executed: List[str]
+    violations: list[SafetyViolation]
+    policies_executed: list[str]
     execution_time_ms: float
-    metadata: Dict[str, Any]
+    metadata: dict[str, Any]
     cache_hit: bool = False
 
     def has_critical_violations(self) -> bool:
@@ -102,14 +110,16 @@ class EnforcementResult:
         """Check if any blocking (HIGH or CRITICAL) violations detected."""
         return any(v.severity >= ViolationSeverity.HIGH for v in self.violations)
 
-    def get_violations_by_severity(self, severity: ViolationSeverity) -> List[SafetyViolation]:
+    def get_violations_by_severity(
+        self, severity: ViolationSeverity
+    ) -> list[SafetyViolation]:
         """Get violations of specific severity."""
         return [v for v in self.violations if v.severity == severity]
 
 
 def _should_short_circuit_on_critical(
     short_circuit_critical: bool,
-    violations: List[SafetyViolation],
+    violations: list[SafetyViolation],
 ) -> bool:
     """Check if we should short-circuit on CRITICAL violations."""
     return short_circuit_critical and any(
@@ -131,8 +141,8 @@ class ActionPolicyEngine:
     def __init__(
         self,
         policy_registry: PolicyRegistry,
-        config: Optional[Dict[str, Any]] = None,
-        emergency_stop: Optional[Any] = None,
+        config: dict[str, Any] | None = None,
+        emergency_stop: Any | None = None,
     ):
         """Initialize action policy engine.
 
@@ -151,21 +161,21 @@ class ActionPolicyEngine:
         self._emergency_stop = emergency_stop
 
         # Configuration
-        self.cache_ttl = self.config.get('cache_ttl', TTL_LONG)
-        self.max_cache_size = self.config.get('max_cache_size', THRESHOLD_MEDIUM_COUNT)
-        self.enable_caching = self.config.get('enable_caching', True)
-        self.short_circuit_critical = self.config.get('short_circuit_critical', True)
-        self.log_violations = self.config.get('log_violations', True)
+        self.cache_ttl = self.config.get("cache_ttl", TTL_LONG)
+        self.max_cache_size = self.config.get("max_cache_size", THRESHOLD_MEDIUM_COUNT)
+        self.enable_caching = self.config.get("enable_caching", True)
+        self.short_circuit_critical = self.config.get("short_circuit_critical", True)
+        self.log_violations = self.config.get("log_violations", True)
         # SECURITY: Default to fail-closed when no policies match.
         # Set fail_open=True only for development/testing.
-        self.fail_open = self.config.get('fail_open', False)
+        self.fail_open = self.config.get("fail_open", False)
 
         # Policy result cache: cache_key -> (result, timestamp)
-        self._cache: OrderedDict[str, Tuple[ValidationResult, float]] = OrderedDict()
+        self._cache: OrderedDict[str, tuple[ValidationResult, float]] = OrderedDict()
 
         # SECURITY: Initialize sanitizer for defense-in-depth violation message sanitization
         # Lazy loaded to avoid import overhead if sanitization is not needed
-        self._sanitizer: Optional[Any] = None
+        self._sanitizer: Any | None = None
 
         # Metrics
         self._validations_performed = 0
@@ -175,12 +185,10 @@ class ActionPolicyEngine:
 
         # SA-06: Track policy snapshot for cache invalidation.
         # When policies change in the registry, cached results may be stale.
-        self._cached_policy_snapshot: Optional[str] = None
+        self._cached_policy_snapshot: str | None = None
 
     async def validate_action(
-        self,
-        action: Dict[str, Any],
-        context: PolicyExecutionContext
+        self, action: dict[str, Any], context: PolicyExecutionContext
     ) -> EnforcementResult:
         """Validate action against all applicable policies.
 
@@ -207,7 +215,9 @@ class ActionPolicyEngine:
         # Emergency stop: block all actions immediately
         if self._emergency_stop is not None and self._emergency_stop.is_active():
             return EnforcementResult(
-                allowed=False, violations=[], policies_executed=[],
+                allowed=False,
+                violations=[],
+                policies_executed=[],
                 execution_time_ms=0.0,
                 metadata={"reason": "emergency_stop_active"},
             )
@@ -225,8 +235,8 @@ class ActionPolicyEngine:
                 return no_policies_result
 
         # Execute all policies and collect violations
-        all_violations, policies_executed, cache_hits = await self._execute_policies_async(
-            policies, action, context
+        all_violations, policies_executed, cache_hits = (
+            await self._execute_policies_async(policies, action, context)
         )
 
         # Build and return final result
@@ -234,7 +244,7 @@ class ActionPolicyEngine:
             all_violations, policies_executed, cache_hits, start_time, context
         )
 
-    def _handle_no_policies(self, action_type: str) -> Optional[EnforcementResult]:
+    def _handle_no_policies(self, action_type: str) -> EnforcementResult | None:
         """Handle case when no policies are registered for action type.
 
         Args:
@@ -250,8 +260,11 @@ class ActionPolicyEngine:
                 violations=[],
                 policies_executed=[],
                 execution_time_ms=0.0,
-                metadata={REASON_KEY: NO_POLICIES_REGISTERED_KEY, MODE_KEY: FAIL_OPEN_KEY},
-                cache_hit=False
+                metadata={
+                    REASON_KEY: NO_POLICIES_REGISTERED_KEY,
+                    MODE_KEY: FAIL_OPEN_KEY,
+                },
+                cache_hit=False,
             )
         # SECURITY: Fail-closed — deny action when no policies can validate it
         logger.warning(
@@ -264,16 +277,16 @@ class ActionPolicyEngine:
             violations=[],
             policies_executed=[],
             execution_time_ms=0.0,
-            metadata={REASON_KEY: NO_POLICIES_REGISTERED_KEY, MODE_KEY: 'fail_closed'},
-            cache_hit=False
+            metadata={REASON_KEY: NO_POLICIES_REGISTERED_KEY, MODE_KEY: "fail_closed"},
+            cache_hit=False,
         )
 
     async def _execute_policies_async(
         self,
-        policies: List[SafetyPolicy],
-        action: Dict[str, Any],
-        context: PolicyExecutionContext
-    ) -> Tuple[List[SafetyViolation], List[str], int]:
+        policies: list[SafetyPolicy],
+        action: dict[str, Any],
+        context: PolicyExecutionContext,
+    ) -> tuple[list[SafetyViolation], list[str], int]:
         """Execute all policies and collect violations.
 
         Args:
@@ -284,14 +297,16 @@ class ActionPolicyEngine:
         Returns:
             Tuple of (all_violations, policies_executed, cache_hits)
         """
-        all_violations: List[SafetyViolation] = []
-        policies_executed: List[str] = []
+        all_violations: list[SafetyViolation] = []
+        policies_executed: list[str] = []
         cache_hits = 0
 
         for policy in policies:
             try:
                 cache_key = self._get_cache_key(policy, action, context)
-                cached_result = self._get_cached_result(cache_key) if self.enable_caching else None
+                cached_result = (
+                    self._get_cached_result(cache_key) if self.enable_caching else None
+                )
 
                 if cached_result is not None:
                     result = cached_result
@@ -299,8 +314,7 @@ class ActionPolicyEngine:
                     self._cache_hits += 1
                 else:
                     result = await policy.validate_async(
-                        action=action,
-                        context=self._context_to_dict(context)
+                        action=action, context=self._context_to_dict(context)
                     )
 
                     if self.enable_caching:
@@ -311,14 +325,25 @@ class ActionPolicyEngine:
                 all_violations.extend(result.violations)
 
                 # Short-circuit on CRITICAL violations (if configured)
-                if _should_short_circuit_on_critical(self.short_circuit_critical, result.violations):
+                if _should_short_circuit_on_critical(
+                    self.short_circuit_critical, result.violations
+                ):
                     logger.warning(
                         f"Short-circuiting on CRITICAL violation from {policy.name}"
                     )
                     break
 
-            except (AttributeError, TypeError, ValueError, KeyError, RuntimeError, CircuitBreakerError) as e:
-                violation = self._create_execution_error_violation(policy, action, context, e)
+            except (
+                AttributeError,
+                TypeError,
+                ValueError,
+                KeyError,
+                RuntimeError,
+                CircuitBreakerError,
+            ) as e:
+                violation = self._create_execution_error_violation(
+                    policy, action, context, e
+                )
                 all_violations.append(violation)
                 policies_executed.append(policy.name)
 
@@ -331,9 +356,9 @@ class ActionPolicyEngine:
     def _create_execution_error_violation(
         self,
         policy: SafetyPolicy,
-        action: Dict[str, Any],
+        action: dict[str, Any],
         context: PolicyExecutionContext,
-        error: Exception
+        error: Exception,
     ) -> SafetyViolation:
         """Create a violation for policy execution errors.
 
@@ -356,16 +381,16 @@ class ActionPolicyEngine:
             action=str(action),
             context=self._context_to_dict(context),
             remediation_hint="Check policy implementation for errors",
-            metadata={'exception_type': type(error).__name__}
+            metadata={"exception_type": type(error).__name__},
         )
 
     def _build_enforcement_result(
         self,
-        all_violations: List[SafetyViolation],
-        policies_executed: List[str],
+        all_violations: list[SafetyViolation],
+        policies_executed: list[str],
         cache_hits: int,
         start_time: float,
-        context: PolicyExecutionContext
+        context: PolicyExecutionContext,
     ) -> EnforcementResult:
         """Build final enforcement result from collected violations."""
         # Determine if action is allowed (block if any HIGH or CRITICAL)
@@ -380,22 +405,35 @@ class ActionPolicyEngine:
             policies_executed=policies_executed,
             execution_time_ms=execution_time,
             metadata={
-                'total_violations': len(all_violations),
-                'critical_violations': len([v for v in all_violations if v.severity == ViolationSeverity.CRITICAL]),
-                'high_violations': len([v for v in all_violations if v.severity == ViolationSeverity.HIGH]),
-                'medium_violations': len([v for v in all_violations if v.severity == ViolationSeverity.MEDIUM]),
+                "total_violations": len(all_violations),
+                "critical_violations": len(
+                    [
+                        v
+                        for v in all_violations
+                        if v.severity == ViolationSeverity.CRITICAL
+                    ]
+                ),
+                "high_violations": len(
+                    [v for v in all_violations if v.severity == ViolationSeverity.HIGH]
+                ),
+                "medium_violations": len(
+                    [
+                        v
+                        for v in all_violations
+                        if v.severity == ViolationSeverity.MEDIUM
+                    ]
+                ),
                 CACHE_HITS_KEY: cache_hits,
-                'short_circuited': self.short_circuit_critical and any(
+                "short_circuited": self.short_circuit_critical
+                and any(
                     v.severity == ViolationSeverity.CRITICAL for v in all_violations
-                )
+                ),
             },
-            cache_hit=cache_hits > 0
+            cache_hit=cache_hits > 0,
         )
 
     def validate_action_sync(
-        self,
-        action: Dict[str, Any],
-        context: PolicyExecutionContext
+        self, action: dict[str, Any], context: PolicyExecutionContext
     ) -> EnforcementResult:
         """Synchronous version of validate_action for non-async callers.
 
@@ -408,7 +446,9 @@ class ActionPolicyEngine:
         # Emergency stop: block all actions immediately
         if self._emergency_stop is not None and self._emergency_stop.is_active():
             return EnforcementResult(
-                allowed=False, violations=[], policies_executed=[],
+                allowed=False,
+                violations=[],
+                policies_executed=[],
                 execution_time_ms=0.0,
                 metadata={"reason": "emergency_stop_active"},
             )
@@ -435,10 +475,10 @@ class ActionPolicyEngine:
 
     def _execute_policies_sync(
         self,
-        policies: List[SafetyPolicy],
-        action: Dict[str, Any],
-        context: PolicyExecutionContext
-    ) -> Tuple[List[SafetyViolation], List[str], int]:
+        policies: list[SafetyPolicy],
+        action: dict[str, Any],
+        context: PolicyExecutionContext,
+    ) -> tuple[list[SafetyViolation], list[str], int]:
         """Execute all policies synchronously and collect violations.
 
         Args:
@@ -449,14 +489,16 @@ class ActionPolicyEngine:
         Returns:
             Tuple of (all_violations, policies_executed, cache_hits)
         """
-        all_violations: List[SafetyViolation] = []
-        policies_executed: List[str] = []
+        all_violations: list[SafetyViolation] = []
+        policies_executed: list[str] = []
         cache_hits = 0
 
         for policy in policies:
             try:
                 cache_key = self._get_cache_key(policy, action, context)
-                cached_result = self._get_cached_result(cache_key) if self.enable_caching else None
+                cached_result = (
+                    self._get_cached_result(cache_key) if self.enable_caching else None
+                )
 
                 if cached_result is not None:
                     result = cached_result
@@ -464,8 +506,7 @@ class ActionPolicyEngine:
                     self._cache_hits += 1
                 else:
                     result = policy.validate(
-                        action=action,
-                        context=self._context_to_dict(context)
+                        action=action, context=self._context_to_dict(context)
                     )
                     if self.enable_caching:
                         self._cache_result(cache_key, result)
@@ -475,14 +516,25 @@ class ActionPolicyEngine:
                 all_violations.extend(result.violations)
 
                 # Short-circuit on CRITICAL violations (if configured)
-                if _should_short_circuit_on_critical(self.short_circuit_critical, result.violations):
+                if _should_short_circuit_on_critical(
+                    self.short_circuit_critical, result.violations
+                ):
                     logger.warning(
                         f"Short-circuiting on CRITICAL violation from {policy.name}"
                     )
                     break
 
-            except (AttributeError, TypeError, ValueError, KeyError, RuntimeError, CircuitBreakerError) as e:
-                violation = self._create_execution_error_violation(policy, action, context, e)
+            except (
+                AttributeError,
+                TypeError,
+                ValueError,
+                KeyError,
+                RuntimeError,
+                CircuitBreakerError,
+            ) as e:
+                violation = self._create_execution_error_violation(
+                    policy, action, context, e
+                )
                 all_violations.append(violation)
                 policies_executed.append(policy.name)
 
@@ -493,30 +545,34 @@ class ActionPolicyEngine:
         return all_violations, policies_executed, cache_hits
 
     def _log_violations_sync(
-        self,
-        violations: List[SafetyViolation],
-        context: PolicyExecutionContext
+        self, violations: list[SafetyViolation], context: PolicyExecutionContext
     ) -> None:
         """Synchronous version of _log_violations."""
         from temper_ai.safety._action_policy_helpers import log_violations_sync
+
         if self._sanitizer is None:
             from temper_ai.observability.sanitization import DataSanitizer
+
             self._sanitizer = DataSanitizer()
         log_violations_sync(violations, context, self._sanitizer)
 
     def _get_cache_key(
         self,
         policy: SafetyPolicy,
-        action: Dict[str, Any],
-        context: PolicyExecutionContext
+        action: dict[str, Any],
+        context: PolicyExecutionContext,
     ) -> str:
         """Generate cache key for policy result."""
         return get_cache_key(
-            policy, action, context.agent_id,
-            context.action_type, context.workflow_id, context.stage_id,
+            policy,
+            action,
+            context.agent_id,
+            context.action_type,
+            context.workflow_id,
+            context.stage_id,
         )
 
-    def _get_cached_result(self, cache_key: str) -> Optional[ValidationResult]:
+    def _get_cached_result(self, cache_key: str) -> ValidationResult | None:
         """Get cached validation result if available and not expired."""
         return get_cached_result(self._cache, cache_key, self.cache_ttl)
 
@@ -540,24 +596,24 @@ class ActionPolicyEngine:
         self._cached_policy_snapshot = None
         logger.debug("Validation cache cleared")
 
-    def _context_to_dict(self, context: PolicyExecutionContext) -> Dict[str, Any]:
+    def _context_to_dict(self, context: PolicyExecutionContext) -> dict[str, Any]:
         """Convert PolicyExecutionContext to dict for policy validation."""
         return context_to_dict(context)
 
     async def _log_violations(
-        self,
-        violations: List[SafetyViolation],
-        context: PolicyExecutionContext
+        self, violations: list[SafetyViolation], context: PolicyExecutionContext
     ) -> None:
         """Log violations to observability system."""
         from temper_ai.safety._action_policy_helpers import log_violations
+
         if self._sanitizer is None:
             from temper_ai.observability.sanitization import DataSanitizer
+
             self._sanitizer = DataSanitizer()
         await log_violations(violations, context, self._sanitizer)
         self._violations_logged += len(violations)
 
-    def get_metrics(self) -> Dict[str, Any]:
+    def get_metrics(self) -> dict[str, Any]:
         """Get engine metrics for observability.
 
         Returns:
@@ -569,19 +625,17 @@ class ActionPolicyEngine:
         """
         total_cache_requests = self._cache_hits + self._cache_misses
         cache_hit_rate = (
-            self._cache_hits / total_cache_requests
-            if total_cache_requests > 0
-            else 0.0
+            self._cache_hits / total_cache_requests if total_cache_requests > 0 else 0.0
         )
 
         return {
-            'validations_performed': self._validations_performed,
-            'violations_logged': self._violations_logged,
-            'cache_size': len(self._cache),
-            'cache_hits': self._cache_hits,
-            'cache_misses': self._cache_misses,
-            'cache_hit_rate': cache_hit_rate,
-            'policies_registered': self.registry.policy_count()
+            "validations_performed": self._validations_performed,
+            "violations_logged": self._violations_logged,
+            "cache_size": len(self._cache),
+            "cache_hits": self._cache_hits,
+            "cache_misses": self._cache_misses,
+            "cache_hit_rate": cache_hit_rate,
+            "policies_registered": self.registry.policy_count(),
         }
 
     def reset_metrics(self) -> None:

@@ -4,11 +4,21 @@ This module provides the BaseSafetyPolicy class which implements the SafetyPolic
 interface with support for policy composition, priority-based execution, and
 short-circuit evaluation on critical violations.
 """
-from typing import Any, Dict, List
 
-from temper_ai.shared.constants.limits import MAX_TEXT_LENGTH, THRESHOLD_LARGE_COUNT, THRESHOLD_VERY_LARGE_COUNT
+from typing import Any
+
 from temper_ai.safety.constants import SHORT_CIRCUIT_KEY
-from temper_ai.safety.interfaces import SafetyPolicy, SafetyViolation, ValidationResult, ViolationSeverity
+from temper_ai.safety.interfaces import (
+    SafetyPolicy,
+    SafetyViolation,
+    ValidationResult,
+    ViolationSeverity,
+)
+from temper_ai.shared.constants.limits import (
+    MAX_TEXT_LENGTH,
+    THRESHOLD_LARGE_COUNT,
+    THRESHOLD_VERY_LARGE_COUNT,
+)
 
 
 class BaseSafetyPolicy(SafetyPolicy):
@@ -49,7 +59,7 @@ class BaseSafetyPolicy(SafetyPolicy):
         >>> result = policy.validate(action={}, context={})
     """
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         """Initialize base safety policy with validation.
 
         Args:
@@ -75,7 +85,7 @@ class BaseSafetyPolicy(SafetyPolicy):
 
         # Store validated config
         self.config = config
-        self._child_policies: List[SafetyPolicy] = []
+        self._child_policies: list[SafetyPolicy] = []
 
     # Maximum nesting depth for config dicts (prevents DoS via deeply nested structures)
     _MAX_CONFIG_DEPTH = 4
@@ -175,7 +185,7 @@ class BaseSafetyPolicy(SafetyPolicy):
         # Re-sort by priority (highest first)
         self._child_policies.sort(key=lambda p: p.priority, reverse=True)
 
-    def get_child_policies(self) -> List[SafetyPolicy]:
+    def get_child_policies(self) -> list[SafetyPolicy]:
         """Get list of child policies in execution order.
 
         Returns:
@@ -183,20 +193,20 @@ class BaseSafetyPolicy(SafetyPolicy):
         """
         return self._child_policies.copy()
 
-    def _init_validation_metadata(self) -> Dict[str, Any]:
+    def _init_validation_metadata(self) -> dict[str, Any]:
         """Create initial metadata dict for validation. Shared by sync/async."""
         return {
             "policy_name": self.name,
             "policy_version": self.version,
-            "child_policies": [p.name for p in self._child_policies]
+            "child_policies": [p.name for p in self._child_policies],
         }
 
     def _merge_child_result(
         self,
         child: SafetyPolicy,
         child_result: ValidationResult,
-        violations: List[SafetyViolation],
-        metadata: Dict[str, Any],
+        violations: list[SafetyViolation],
+        metadata: dict[str, Any],
     ) -> bool:
         """Merge a child policy result into the accumulated state.
 
@@ -217,8 +227,8 @@ class BaseSafetyPolicy(SafetyPolicy):
     def _merge_own_result(
         self,
         own_result: ValidationResult,
-        violations: List[SafetyViolation],
-        metadata: Dict[str, Any],
+        violations: list[SafetyViolation],
+        metadata: dict[str, Any],
     ) -> None:
         """Merge own validation result into accumulated state. Shared by sync/async."""
         violations.extend(own_result.violations)
@@ -228,8 +238,8 @@ class BaseSafetyPolicy(SafetyPolicy):
 
     def _finalize_validation(
         self,
-        violations: List[SafetyViolation],
-        metadata: Dict[str, Any],
+        violations: list[SafetyViolation],
+        metadata: dict[str, Any],
     ) -> ValidationResult:
         """Determine validity, report violations, and return result. Shared by sync/async."""
         valid = not any(v.severity >= ViolationSeverity.HIGH for v in violations)
@@ -238,16 +248,11 @@ class BaseSafetyPolicy(SafetyPolicy):
             self.report_violation(violation)
 
         return ValidationResult(
-            valid=valid,
-            violations=violations,
-            metadata=metadata,
-            policy_name=self.name
+            valid=valid, violations=violations, metadata=metadata, policy_name=self.name
         )
 
     def validate(
-        self,
-        action: Dict[str, Any],
-        context: Dict[str, Any]
+        self, action: dict[str, Any], context: dict[str, Any]
     ) -> ValidationResult:
         """Validate action with child policy composition.
 
@@ -274,7 +279,7 @@ class BaseSafetyPolicy(SafetyPolicy):
             ...     for violation in result.violations:
             ...         print(f"{violation.severity.name}: {violation.message}")
         """
-        violations: List[SafetyViolation] = []
+        violations: list[SafetyViolation] = []
         metadata = self._init_validation_metadata()
 
         for child in self._child_policies:
@@ -289,9 +294,7 @@ class BaseSafetyPolicy(SafetyPolicy):
         return self._finalize_validation(violations, metadata)
 
     def _validate_impl(
-        self,
-        action: Dict[str, Any],
-        context: Dict[str, Any]
+        self, action: dict[str, Any], context: dict[str, Any]
     ) -> ValidationResult:
         """Implementation-specific validation logic.
 
@@ -325,16 +328,11 @@ class BaseSafetyPolicy(SafetyPolicy):
             ...         return ValidationResult(valid=True, policy_name=self.name)
         """
         return ValidationResult(
-            valid=True,
-            violations=[],
-            metadata={},
-            policy_name=self.name
+            valid=True, violations=[], metadata={}, policy_name=self.name
         )
 
     async def validate_async(
-        self,
-        action: Dict[str, Any],
-        context: Dict[str, Any]
+        self, action: dict[str, Any], context: dict[str, Any]
     ) -> ValidationResult:
         """Async validation with child policy composition.
 
@@ -348,7 +346,7 @@ class BaseSafetyPolicy(SafetyPolicy):
         Returns:
             ValidationResult
         """
-        violations: List[SafetyViolation] = []
+        violations: list[SafetyViolation] = []
         metadata = self._init_validation_metadata()
 
         for child in self._child_policies:
@@ -363,9 +361,7 @@ class BaseSafetyPolicy(SafetyPolicy):
         return self._finalize_validation(violations, metadata)
 
     async def _validate_async_impl(
-        self,
-        action: Dict[str, Any],
-        context: Dict[str, Any]
+        self, action: dict[str, Any], context: dict[str, Any]
     ) -> ValidationResult:
         """Async implementation-specific validation logic.
 

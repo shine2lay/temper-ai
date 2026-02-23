@@ -1,27 +1,40 @@
 """Tests for WorkflowRuntime — shared execution pipeline."""
-import os
-import tempfile
+
 from unittest.mock import MagicMock, patch
 
 import pytest
 import yaml
 
+from temper_ai.shared.utils.exceptions import ConfigValidationError
 from temper_ai.workflow.runtime import (
+    ExecutionHooks,
     InfrastructureBundle,
     RuntimeConfig,
     WorkflowRuntime,
 )
 
 
-@pytest.fixture
-def tmp_workflow(tmp_path):
-    """Create a minimal workflow YAML file."""
-    config = {
+def _valid_workflow_config() -> dict:
+    """Return a schema-valid workflow config dict."""
+    return {
         "workflow": {
             "name": "test_wf",
-            "stages": ["s1"],
+            "description": "Test workflow",
+            "stages": [{"name": "s1", "stage_ref": "stages/s1.yaml"}],
+            "error_handling": {
+                "on_stage_failure": "halt",
+                "max_stage_retries": 2,
+                "escalation_policy": "log_and_notify",
+                "enable_rollback": False,
+            },
         }
     }
+
+
+@pytest.fixture
+def tmp_workflow(tmp_path):
+    """Create a schema-valid workflow YAML file."""
+    config = _valid_workflow_config()
     path = tmp_path / "test.yaml"
     path.write_text(yaml.dump(config))
     return str(path)
@@ -47,14 +60,13 @@ class TestLoadConfig:
     def test_load_with_input_data(self, tmp_workflow):
         """Test loading with pre-loaded inputs."""
         rt = WorkflowRuntime()
-        wf_config, inputs = rt.load_config(
-            tmp_workflow, input_data={"topic": "AI"}
-        )
+        wf_config, inputs = rt.load_config(tmp_workflow, input_data={"topic": "AI"})
         assert inputs == {"topic": "AI"}
 
     def test_load_relative_to_config_root(self, tmp_path):
         """Test loading from config_root-relative path."""
-        config = {"workflow": {"name": "rel_wf", "stages": ["s1"]}}
+        config = _valid_workflow_config()
+        config["workflow"]["name"] = "rel_wf"
         (tmp_path / "workflows").mkdir()
         wf_file = tmp_path / "workflows" / "demo.yaml"
         wf_file.write_text(yaml.dump(config))
@@ -119,7 +131,9 @@ class TestAdaptLifecycle:
         }
         result = rt.adapt_lifecycle(config, {"topic": "test"})
         # Verify the adapter was instantiated and adapt() was called
-        mock_adapter.return_value.adapt.assert_called_once_with(config, {"topic": "test"})
+        mock_adapter.return_value.adapt.assert_called_once_with(
+            config, {"topic": "test"}
+        )
         assert result is mock_adapter.return_value.adapt.return_value
 
 
@@ -128,7 +142,7 @@ class TestSetupInfrastructure:
 
     def test_creates_bundle(self):
         """Test infrastructure bundle is created correctly."""
-        rt = WorkflowRuntime()
+        rt = WorkflowRuntime(RuntimeConfig(initialize_database=False))
         bundle = rt.setup_infrastructure()
 
         assert isinstance(bundle, InfrastructureBundle)
@@ -139,7 +153,7 @@ class TestSetupInfrastructure:
     def test_passes_event_bus(self):
         """Test event bus is passed through to bundle."""
         bus = MagicMock()
-        rt = WorkflowRuntime()
+        rt = WorkflowRuntime(RuntimeConfig(initialize_database=False))
         bundle = rt.setup_infrastructure(event_bus=bus)
         assert bundle.event_bus is bus
 
@@ -277,19 +291,29 @@ class TestRuntimeConfig:
         assert cfg.trigger_type == "cli"
         assert cfg.verbose is False
         assert cfg.tracker_backend_factory is None
+        assert cfg.environment == "development"
+        assert cfg.initialize_database is True
+        assert cfg.event_bus is None
 
     def test_custom_values(self):
         """Test custom config values."""
         factory = lambda: MagicMock()  # noqa: E731
+        bus = MagicMock()
         cfg = RuntimeConfig(
             config_root="/custom",
             trigger_type="api",
             verbose=True,
             tracker_backend_factory=factory,
+            environment="server",
+            initialize_database=False,
+            event_bus=bus,
         )
         assert cfg.config_root == "/custom"
         assert cfg.trigger_type == "api"
         assert cfg.tracker_backend_factory is factory
+        assert cfg.environment == "server"
+        assert cfg.initialize_database is False
+        assert cfg.event_bus is bus
 
 
 class TestTrackerBackendFactory:
@@ -300,7 +324,12 @@ class TestTrackerBackendFactory:
         mock_backend = MagicMock()
         factory = MagicMock(return_value=mock_backend)
 
-        rt = WorkflowRuntime(RuntimeConfig(tracker_backend_factory=factory))
+        rt = WorkflowRuntime(
+            RuntimeConfig(
+                tracker_backend_factory=factory,
+                initialize_database=False,
+            )
+        )
 
         with patch("temper_ai.observability.tracker.ExecutionTracker") as mock_et:
             mock_et.return_value = MagicMock()
@@ -308,3 +337,598 @@ class TestTrackerBackendFactory:
 
         factory.assert_called_once()
         mock_et.assert_called_once_with(backend=mock_backend, event_bus=None)
+
+
+class TestLoadConfigSecurity:
+    """Test load_config security validation (file size, structure, schema)."""
+
+    def test_rejects_oversized_file(self, tmp_path):
+        """Files exceeding MAX_CONFIG_SIZE are rejected."""
+        big_file = tmp_path / "big.yaml"
+        # Write a valid-looking YAML header followed by padding
+        big_file.write_text("workflow:\n  name: big\n" + "x" * (11 * 1024 * 1024))
+
+        rt = WorkflowRuntime(RuntimeConfig(config_root=str(tmp_path)))
+        with pytest.raises(ConfigValidationError, match="too large"):
+            rt.load_config(str(big_file))
+
+    def test_rejects_deeply_nested_yaml(self, tmp_path):
+        """Deeply nested structures are rejected by structure validation."""
+        # Build a YAML string with 60 levels of nesting (limit is 50)
+        nested = "value"
+        for i in range(60):
+            nested = {f"level_{i}": nested}
+        config = {"workflow": nested}
+
+        deep_file = tmp_path / "deep.yaml"
+        deep_file.write_text(yaml.dump(config))
+
+        rt = WorkflowRuntime(RuntimeConfig(config_root=str(tmp_path)))
+        with pytest.raises(ConfigValidationError, match="nesting depth"):
+            rt.load_config(str(deep_file))
+
+    def test_rejects_invalid_schema(self, tmp_path):
+        """Config that passes YAML parsing but fails Pydantic is rejected."""
+        bad_schema = {"workflow": {"name": "test"}}  # Missing required fields
+        bad_file = tmp_path / "bad_schema.yaml"
+        bad_file.write_text(yaml.dump(bad_schema))
+
+        rt = WorkflowRuntime(RuntimeConfig(config_root=str(tmp_path)))
+        with pytest.raises(ConfigValidationError, match="schema validation"):
+            rt.load_config(str(bad_file))
+
+    def test_rejects_non_mapping_yaml(self, tmp_path):
+        """Non-mapping YAML raises ValueError."""
+        list_file = tmp_path / "list.yaml"
+        list_file.write_text("- just\n- a\n- list")
+
+        rt = WorkflowRuntime(RuntimeConfig(config_root=str(tmp_path)))
+        with pytest.raises(ValueError, match="YAML mapping"):
+            rt.load_config(str(list_file))
+
+    def test_valid_config_passes_all_checks(self, tmp_path):
+        """A valid config passes file size, structure, and schema checks."""
+        config = _valid_workflow_config()
+        path = tmp_path / "valid.yaml"
+        path.write_text(yaml.dump(config))
+
+        rt = WorkflowRuntime(RuntimeConfig(config_root=str(tmp_path)))
+        wf_config, inputs = rt.load_config(str(path))
+        assert wf_config["workflow"]["name"] == "test_wf"
+        assert inputs == {}
+
+
+class TestLoadInputFile:
+    """Test WorkflowRuntime.load_input_file."""
+
+    def test_load_valid_input(self, tmp_path):
+        """Valid input file returns parsed dict."""
+        input_file = tmp_path / "inputs.yaml"
+        input_file.write_text(yaml.dump({"topic": "AI", "depth": 2}))
+
+        rt = WorkflowRuntime()
+        result = rt.load_input_file(str(input_file))
+        assert result == {"topic": "AI", "depth": 2}
+
+    def test_empty_file_returns_empty_dict(self, tmp_path):
+        """Empty YAML file returns empty dict."""
+        empty = tmp_path / "empty.yaml"
+        empty.write_text("")
+
+        rt = WorkflowRuntime()
+        result = rt.load_input_file(str(empty))
+        assert result == {}
+
+    def test_missing_file_raises(self):
+        """Missing file raises FileNotFoundError."""
+        rt = WorkflowRuntime()
+        with pytest.raises(FileNotFoundError):
+            rt.load_input_file("/nonexistent/inputs.yaml")
+
+    def test_non_mapping_raises(self, tmp_path):
+        """Non-mapping input raises ConfigValidationError."""
+        bad = tmp_path / "bad_input.yaml"
+        bad.write_text("- a\n- b")
+
+        rt = WorkflowRuntime()
+        with pytest.raises(ConfigValidationError, match="YAML mapping"):
+            rt.load_input_file(str(bad))
+
+    def test_oversized_input_rejected(self, tmp_path):
+        """Input files exceeding MAX_CONFIG_SIZE are rejected."""
+        big = tmp_path / "big_input.yaml"
+        big.write_text("topic: AI\n" + "x" * (11 * 1024 * 1024))
+
+        rt = WorkflowRuntime()
+        with pytest.raises(ConfigValidationError, match="too large"):
+            rt.load_input_file(str(big))
+
+
+class TestCheckRequiredInputs:
+    """Test WorkflowRuntime.check_required_inputs."""
+
+    def test_no_required_inputs(self):
+        """No required inputs means empty missing list."""
+        config = {"workflow": {"name": "test"}}
+        missing = WorkflowRuntime.check_required_inputs(config, {})
+        assert missing == []
+
+    def test_all_required_present(self):
+        """All required inputs present means empty missing list."""
+        config = {
+            "workflow": {
+                "name": "test",
+                "inputs": {"required": ["topic", "depth"]},
+            }
+        }
+        missing = WorkflowRuntime.check_required_inputs(
+            config, {"topic": "AI", "depth": 2}
+        )
+        assert missing == []
+
+    def test_missing_required_inputs(self):
+        """Missing required inputs are reported."""
+        config = {
+            "workflow": {
+                "name": "test",
+                "inputs": {"required": ["topic", "depth", "format"]},
+            }
+        }
+        missing = WorkflowRuntime.check_required_inputs(config, {"topic": "AI"})
+        assert missing == ["depth", "format"]
+
+    def test_empty_required_list(self):
+        """Empty required list means nothing missing."""
+        config = {
+            "workflow": {
+                "name": "test",
+                "inputs": {"required": []},
+            }
+        }
+        missing = WorkflowRuntime.check_required_inputs(config, {"extra": 1})
+        assert missing == []
+
+
+class TestBuildStateAutoInject:
+    """Test build_state auto-injection of total_stages and workflow_name."""
+
+    def test_auto_injects_total_stages(self):
+        """total_stages is auto-injected from workflow_config."""
+        rt = WorkflowRuntime()
+        infra = InfrastructureBundle(
+            config_loader=MagicMock(),
+            tool_registry=MagicMock(),
+            tracker=MagicMock(),
+        )
+        wf_config = {
+            "workflow": {
+                "name": "test_wf",
+                "stages": [
+                    {"name": "s1", "stage_ref": "s1.yaml"},
+                    {"name": "s2", "stage_ref": "s2.yaml"},
+                ],
+            }
+        }
+        state = rt.build_state(
+            inputs={},
+            infra=infra,
+            workflow_id="wf-1",
+            workflow_config=wf_config,
+        )
+        assert state["total_stages"] == 2
+        assert state["workflow_name"] == "test_wf"
+
+    def test_explicit_overrides_auto_inject(self):
+        """Explicit workflow_name in extras takes precedence over auto-inject."""
+        rt = WorkflowRuntime()
+        infra = InfrastructureBundle(
+            config_loader=MagicMock(),
+            tool_registry=MagicMock(),
+            tracker=MagicMock(),
+        )
+        wf_config = {
+            "workflow": {
+                "name": "auto_name",
+                "stages": [{"name": "s1"}],
+            }
+        }
+        state = rt.build_state(
+            inputs={},
+            infra=infra,
+            workflow_id="wf-1",
+            workflow_config=wf_config,
+            workflow_name="explicit_name",
+        )
+        # Explicit workflow_name via extras was set first via _OPTIONAL_KEYS,
+        # setdefault should not overwrite it
+        assert state["workflow_name"] == "explicit_name"
+
+    def test_no_auto_inject_without_workflow_config(self):
+        """Without workflow_config, total_stages and workflow_name not set."""
+        rt = WorkflowRuntime()
+        infra = InfrastructureBundle(
+            config_loader=MagicMock(),
+            tool_registry=MagicMock(),
+            tracker=MagicMock(),
+        )
+        state = rt.build_state(inputs={}, infra=infra, workflow_id="wf-1")
+        assert "total_stages" not in state
+        assert "workflow_name" not in state
+
+
+class TestSetupInfrastructureDbInit:
+    """Test setup_infrastructure with initialize_database."""
+
+    @patch("temper_ai.observability.tracker.ExecutionTracker")
+    def test_ensure_database_called(self, mock_et_class):
+        """ensure_database is called when initialize_database=True."""
+        mock_et_class.return_value = MagicMock()
+        rt = WorkflowRuntime(RuntimeConfig(initialize_database=True))
+        rt.setup_infrastructure()
+        mock_et_class.ensure_database.assert_called_once()
+
+    @patch("temper_ai.observability.tracker.ExecutionTracker")
+    def test_ensure_database_skipped(self, mock_et_class):
+        """ensure_database is NOT called when initialize_database=False."""
+        mock_et_class.return_value = MagicMock()
+        rt = WorkflowRuntime(RuntimeConfig(initialize_database=False))
+        rt.setup_infrastructure()
+        mock_et_class.ensure_database.assert_not_called()
+
+    @patch("temper_ai.observability.tracker.ExecutionTracker")
+    def test_config_event_bus_fallback(self, mock_et_class):
+        """Config event_bus is used when no explicit event_bus passed."""
+        mock_et_class.return_value = MagicMock()
+        config_bus = MagicMock()
+        rt = WorkflowRuntime(
+            RuntimeConfig(
+                initialize_database=False,
+                event_bus=config_bus,
+            )
+        )
+        bundle = rt.setup_infrastructure()
+        assert bundle.event_bus is config_bus
+
+    @patch("temper_ai.observability.tracker.ExecutionTracker")
+    def test_explicit_event_bus_overrides_config(self, mock_et_class):
+        """Explicit event_bus param overrides config.event_bus."""
+        mock_et_class.return_value = MagicMock()
+        config_bus = MagicMock()
+        explicit_bus = MagicMock()
+        rt = WorkflowRuntime(
+            RuntimeConfig(
+                initialize_database=False,
+                event_bus=config_bus,
+            )
+        )
+        bundle = rt.setup_infrastructure(event_bus=explicit_bus)
+        assert bundle.event_bus is explicit_bus
+
+
+class TestCleanupCompilerFallback:
+    """Test cleanup with compiler.tool_executor fallback."""
+
+    def test_compiler_tool_executor_fallback(self):
+        """cleanup shuts down compiler.tool_executor when engine has none."""
+        rt = WorkflowRuntime()
+        engine = MagicMock(spec=["compiler"])
+        engine.compiler = MagicMock(spec=["tool_executor"])
+        engine.compiler.tool_executor = MagicMock()
+        rt.cleanup(engine)
+        engine.compiler.tool_executor.shutdown.assert_called_once()
+
+    def test_compiler_fallback_error_handled(self):
+        """cleanup handles errors in compiler.tool_executor.shutdown."""
+        rt = WorkflowRuntime()
+        engine = MagicMock(spec=["compiler"])
+        engine.compiler = MagicMock(spec=["tool_executor"])
+        engine.compiler.tool_executor = MagicMock()
+        engine.compiler.tool_executor.shutdown.side_effect = RuntimeError("boom")
+        rt.cleanup(engine)  # Should not raise
+        engine.compiler.tool_executor.shutdown.assert_called_once()
+
+    def test_engine_tool_executor_preferred_over_compiler(self):
+        """engine.tool_executor is preferred over compiler.tool_executor."""
+        rt = WorkflowRuntime()
+        engine = MagicMock()
+        engine.tool_executor = MagicMock()
+        engine.compiler = MagicMock()
+        engine.compiler.tool_executor = MagicMock()
+        rt.cleanup(engine)
+        engine.tool_executor.shutdown.assert_called_once()
+        engine.compiler.tool_executor.shutdown.assert_not_called()
+
+
+class TestExecutionHooks:
+    """Test ExecutionHooks dataclass."""
+
+    def test_defaults_are_none(self):
+        """All hooks default to None."""
+        hooks = ExecutionHooks()
+        assert hooks.on_config_loaded is None
+        assert hooks.on_state_built is None
+        assert hooks.on_before_execute is None
+        assert hooks.on_after_execute is None
+        assert hooks.on_error is None
+
+    def test_custom_hooks(self):
+        """Hooks accept callables."""
+        fn = MagicMock()
+        hooks = ExecutionHooks(
+            on_config_loaded=fn,
+            on_state_built=fn,
+            on_before_execute=fn,
+            on_after_execute=fn,
+            on_error=fn,
+        )
+        assert hooks.on_config_loaded is fn
+        assert hooks.on_error is fn
+
+
+class TestRunPipeline:
+    """Test WorkflowRuntime.run_pipeline."""
+
+    @patch("temper_ai.workflow.runtime.WorkflowRuntime.cleanup")
+    @patch("temper_ai.workflow.runtime.WorkflowRuntime.execute")
+    @patch("temper_ai.workflow.runtime.WorkflowRuntime.build_state")
+    @patch("temper_ai.workflow.runtime.WorkflowRuntime.compile")
+    @patch("temper_ai.workflow.runtime.WorkflowRuntime.setup_infrastructure")
+    @patch("temper_ai.workflow.runtime.WorkflowRuntime.adapt_lifecycle")
+    @patch("temper_ai.workflow.runtime.WorkflowRuntime.load_config")
+    def test_run_pipeline_full_sequence(
+        self,
+        mock_load,
+        mock_adapt,
+        mock_setup,
+        mock_compile,
+        mock_build_state,
+        mock_execute,
+        mock_cleanup,
+    ):
+        """run_pipeline calls the full sequence in order."""
+        wf_config = {"workflow": {"name": "test-wf", "stages": []}}
+        mock_load.return_value = (wf_config, {"key": "val"})
+        mock_adapt.return_value = wf_config
+
+        mock_tracker = MagicMock()
+        mock_tracker.track_workflow.return_value.__enter__ = MagicMock(
+            return_value="wf-abc"
+        )
+        mock_tracker.track_workflow.return_value.__exit__ = MagicMock(
+            return_value=False
+        )
+        mock_infra = MagicMock()
+        mock_infra.tracker = mock_tracker
+        mock_setup.return_value = mock_infra
+
+        mock_engine = MagicMock()
+        mock_compiled = MagicMock()
+        mock_compile.return_value = (mock_engine, mock_compiled)
+
+        mock_build_state.return_value = {"workflow_id": "wf-abc"}
+        mock_execute.return_value = {"status": "completed"}
+
+        rt = WorkflowRuntime(config=RuntimeConfig(initialize_database=False))
+        result = rt.run_pipeline("test.yaml", {"key": "val"})
+
+        assert result["status"] == "completed"
+        assert result["workflow_id"] == "wf-abc"
+        mock_load.assert_called_once()
+        mock_adapt.assert_called_once()
+        mock_setup.assert_called_once()
+        mock_compile.assert_called_once()
+        mock_build_state.assert_called_once()
+        mock_execute.assert_called_once()
+        mock_cleanup.assert_called_once_with(mock_engine)
+
+    @patch("temper_ai.workflow.runtime.WorkflowRuntime.cleanup")
+    @patch("temper_ai.workflow.runtime.WorkflowRuntime.execute")
+    @patch("temper_ai.workflow.runtime.WorkflowRuntime.build_state")
+    @patch("temper_ai.workflow.runtime.WorkflowRuntime.compile")
+    @patch("temper_ai.workflow.runtime.WorkflowRuntime.setup_infrastructure")
+    @patch("temper_ai.workflow.runtime.WorkflowRuntime.adapt_lifecycle")
+    @patch("temper_ai.workflow.runtime.WorkflowRuntime.load_config")
+    def test_on_config_loaded_hook(
+        self,
+        mock_load,
+        mock_adapt,
+        mock_setup,
+        mock_compile,
+        mock_build_state,
+        mock_execute,
+        mock_cleanup,
+    ):
+        """on_config_loaded hook can modify the workflow config."""
+        original_config = {"workflow": {"name": "original", "stages": []}}
+        modified_config = {"workflow": {"name": "modified", "stages": []}}
+
+        mock_load.return_value = (original_config, {})
+        mock_adapt.return_value = original_config
+
+        mock_tracker = MagicMock()
+        mock_tracker.track_workflow.return_value.__enter__ = MagicMock(
+            return_value="wf-1"
+        )
+        mock_tracker.track_workflow.return_value.__exit__ = MagicMock(
+            return_value=False
+        )
+        mock_infra = MagicMock()
+        mock_infra.tracker = mock_tracker
+        mock_setup.return_value = mock_infra
+
+        mock_compile.return_value = (MagicMock(), MagicMock())
+        mock_build_state.return_value = {"workflow_id": "wf-1"}
+        mock_execute.return_value = {"status": "completed"}
+
+        hook_fn = MagicMock(return_value=modified_config)
+        hooks = ExecutionHooks(on_config_loaded=hook_fn)
+
+        rt = WorkflowRuntime(config=RuntimeConfig(initialize_database=False))
+        rt.run_pipeline("test.yaml", {}, hooks=hooks)
+
+        hook_fn.assert_called_once_with(original_config, {})
+        # compile should receive modified config
+        mock_compile.assert_called_once_with(modified_config, mock_infra)
+
+    @patch("temper_ai.workflow.runtime.WorkflowRuntime.cleanup")
+    @patch("temper_ai.workflow.runtime.WorkflowRuntime.execute")
+    @patch("temper_ai.workflow.runtime.WorkflowRuntime.build_state")
+    @patch("temper_ai.workflow.runtime.WorkflowRuntime.compile")
+    @patch("temper_ai.workflow.runtime.WorkflowRuntime.setup_infrastructure")
+    @patch("temper_ai.workflow.runtime.WorkflowRuntime.adapt_lifecycle")
+    @patch("temper_ai.workflow.runtime.WorkflowRuntime.load_config")
+    def test_on_state_built_hook(
+        self,
+        mock_load,
+        mock_adapt,
+        mock_setup,
+        mock_compile,
+        mock_build_state,
+        mock_execute,
+        mock_cleanup,
+    ):
+        """on_state_built hook receives state and infra."""
+        wf_config = {"workflow": {"name": "test", "stages": []}}
+        mock_load.return_value = (wf_config, {})
+        mock_adapt.return_value = wf_config
+
+        mock_tracker = MagicMock()
+        mock_tracker.track_workflow.return_value.__enter__ = MagicMock(
+            return_value="wf-1"
+        )
+        mock_tracker.track_workflow.return_value.__exit__ = MagicMock(
+            return_value=False
+        )
+        mock_infra = MagicMock()
+        mock_infra.tracker = mock_tracker
+        mock_setup.return_value = mock_infra
+
+        mock_compile.return_value = (MagicMock(), MagicMock())
+        state = {"workflow_id": "wf-1"}
+        mock_build_state.return_value = state
+        mock_execute.return_value = {"status": "completed"}
+
+        hook_fn = MagicMock()
+        hooks = ExecutionHooks(on_state_built=hook_fn)
+
+        rt = WorkflowRuntime(config=RuntimeConfig(initialize_database=False))
+        rt.run_pipeline("test.yaml", {}, hooks=hooks)
+
+        hook_fn.assert_called_once_with(state, mock_infra)
+
+    @patch("temper_ai.workflow.runtime.WorkflowRuntime.cleanup")
+    @patch("temper_ai.workflow.runtime.WorkflowRuntime.execute")
+    @patch("temper_ai.workflow.runtime.WorkflowRuntime.build_state")
+    @patch("temper_ai.workflow.runtime.WorkflowRuntime.compile")
+    @patch("temper_ai.workflow.runtime.WorkflowRuntime.setup_infrastructure")
+    @patch("temper_ai.workflow.runtime.WorkflowRuntime.adapt_lifecycle")
+    @patch("temper_ai.workflow.runtime.WorkflowRuntime.load_config")
+    def test_on_after_execute_hook(
+        self,
+        mock_load,
+        mock_adapt,
+        mock_setup,
+        mock_compile,
+        mock_build_state,
+        mock_execute,
+        mock_cleanup,
+    ):
+        """on_after_execute hook receives result and workflow_id."""
+        wf_config = {"workflow": {"name": "test", "stages": []}}
+        mock_load.return_value = (wf_config, {})
+        mock_adapt.return_value = wf_config
+
+        mock_tracker = MagicMock()
+        mock_tracker.track_workflow.return_value.__enter__ = MagicMock(
+            return_value="wf-42"
+        )
+        mock_tracker.track_workflow.return_value.__exit__ = MagicMock(
+            return_value=False
+        )
+        mock_infra = MagicMock()
+        mock_infra.tracker = mock_tracker
+        mock_setup.return_value = mock_infra
+
+        mock_compile.return_value = (MagicMock(), MagicMock())
+        mock_build_state.return_value = {"workflow_id": "wf-42"}
+        mock_execute.return_value = {"status": "completed", "output": "done"}
+
+        hook_fn = MagicMock()
+        hooks = ExecutionHooks(on_after_execute=hook_fn)
+
+        rt = WorkflowRuntime(config=RuntimeConfig(initialize_database=False))
+        rt.run_pipeline("test.yaml", {}, hooks=hooks)
+
+        hook_fn.assert_called_once()
+        result_arg, wf_id_arg = hook_fn.call_args[0]
+        assert result_arg["status"] == "completed"
+        assert wf_id_arg == "wf-42"
+
+    @patch("temper_ai.workflow.runtime.WorkflowRuntime.cleanup")
+    @patch("temper_ai.workflow.runtime.WorkflowRuntime.setup_infrastructure")
+    @patch("temper_ai.workflow.runtime.WorkflowRuntime.adapt_lifecycle")
+    @patch("temper_ai.workflow.runtime.WorkflowRuntime.load_config")
+    def test_on_error_hook(
+        self,
+        mock_load,
+        mock_adapt,
+        mock_setup,
+        mock_cleanup,
+    ):
+        """on_error hook is called when pipeline raises."""
+        wf_config = {"workflow": {"name": "test", "stages": []}}
+        mock_load.return_value = (wf_config, {})
+        mock_adapt.return_value = wf_config
+        mock_setup.side_effect = ValueError("infra failed")
+
+        hook_fn = MagicMock()
+        hooks = ExecutionHooks(on_error=hook_fn)
+
+        rt = WorkflowRuntime(config=RuntimeConfig(initialize_database=False))
+        with pytest.raises(ValueError, match="infra failed"):
+            rt.run_pipeline("test.yaml", {}, hooks=hooks)
+
+        hook_fn.assert_called_once()
+        assert isinstance(hook_fn.call_args[0][0], ValueError)
+
+    @patch("temper_ai.workflow.runtime.WorkflowRuntime.cleanup")
+    @patch("temper_ai.workflow.runtime.WorkflowRuntime.setup_infrastructure")
+    @patch("temper_ai.workflow.runtime.WorkflowRuntime.load_config")
+    def test_cleanup_called_on_error(
+        self,
+        mock_load,
+        mock_setup,
+        mock_cleanup,
+    ):
+        """cleanup is called even when pipeline raises (after compile)."""
+        wf_config = {"workflow": {"name": "test", "stages": []}}
+        mock_load.return_value = (wf_config, {})
+
+        mock_tracker = MagicMock()
+        mock_infra = MagicMock()
+        mock_infra.tracker = mock_tracker
+        mock_setup.return_value = mock_infra
+
+        # compile succeeds but execute will fail
+        mock_engine = MagicMock()
+        with (
+            patch.object(WorkflowRuntime, "adapt_lifecycle", return_value=wf_config),
+            patch.object(
+                WorkflowRuntime, "compile", return_value=(mock_engine, MagicMock())
+            ),
+            patch.object(WorkflowRuntime, "build_state", return_value={}),
+            patch.object(WorkflowRuntime, "execute", side_effect=RuntimeError("boom")),
+        ):
+
+            mock_tracker.track_workflow.return_value.__enter__ = MagicMock(
+                return_value="wf-1"
+            )
+            mock_tracker.track_workflow.return_value.__exit__ = MagicMock(
+                return_value=False
+            )
+
+            rt = WorkflowRuntime(config=RuntimeConfig(initialize_database=False))
+            with pytest.raises(RuntimeError, match="boom"):
+                rt.run_pipeline("test.yaml", {})
+
+        mock_cleanup.assert_called_once_with(mock_engine)

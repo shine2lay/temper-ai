@@ -27,18 +27,18 @@ class TestExecutionEngine:
 
     def test_execution_engine_has_compile_method(self):
         """ExecutionEngine defines compile abstract method."""
-        assert hasattr(ExecutionEngine, 'compile')
-        assert getattr(ExecutionEngine.compile, '__isabstractmethod__', False)
+        assert hasattr(ExecutionEngine, "compile")
+        assert getattr(ExecutionEngine.compile, "__isabstractmethod__", False)
 
     def test_execution_engine_has_execute_method(self):
         """ExecutionEngine defines execute abstract method."""
-        assert hasattr(ExecutionEngine, 'execute')
-        assert getattr(ExecutionEngine.execute, '__isabstractmethod__', False)
+        assert hasattr(ExecutionEngine, "execute")
+        assert getattr(ExecutionEngine.execute, "__isabstractmethod__", False)
 
     def test_execution_engine_has_supports_feature_method(self):
         """ExecutionEngine defines supports_feature abstract method."""
-        assert hasattr(ExecutionEngine, 'supports_feature')
-        assert getattr(ExecutionEngine.supports_feature, '__isabstractmethod__', False)
+        assert hasattr(ExecutionEngine, "supports_feature")
+        assert getattr(ExecutionEngine.supports_feature, "__isabstractmethod__", False)
 
 
 class TestCompiledWorkflow:
@@ -51,33 +51,33 @@ class TestCompiledWorkflow:
 
     def test_compiled_workflow_has_invoke_method(self):
         """CompiledWorkflow defines invoke abstract method."""
-        assert hasattr(CompiledWorkflow, 'invoke')
-        assert getattr(CompiledWorkflow.invoke, '__isabstractmethod__', False)
+        assert hasattr(CompiledWorkflow, "invoke")
+        assert getattr(CompiledWorkflow.invoke, "__isabstractmethod__", False)
 
     def test_compiled_workflow_has_ainvoke_method(self):
         """CompiledWorkflow defines ainvoke abstract method."""
-        assert hasattr(CompiledWorkflow, 'ainvoke')
-        assert getattr(CompiledWorkflow.ainvoke, '__isabstractmethod__', False)
+        assert hasattr(CompiledWorkflow, "ainvoke")
+        assert getattr(CompiledWorkflow.ainvoke, "__isabstractmethod__", False)
 
     def test_compiled_workflow_has_get_metadata_method(self):
         """CompiledWorkflow defines get_metadata abstract method."""
-        assert hasattr(CompiledWorkflow, 'get_metadata')
-        assert getattr(CompiledWorkflow.get_metadata, '__isabstractmethod__', False)
+        assert hasattr(CompiledWorkflow, "get_metadata")
+        assert getattr(CompiledWorkflow.get_metadata, "__isabstractmethod__", False)
 
     def test_compiled_workflow_has_visualize_method(self):
         """CompiledWorkflow defines visualize abstract method."""
-        assert hasattr(CompiledWorkflow, 'visualize')
-        assert getattr(CompiledWorkflow.visualize, '__isabstractmethod__', False)
+        assert hasattr(CompiledWorkflow, "visualize")
+        assert getattr(CompiledWorkflow.visualize, "__isabstractmethod__", False)
 
     def test_compiled_workflow_has_cancel_method(self):
         """CompiledWorkflow defines cancel abstract method."""
-        assert hasattr(CompiledWorkflow, 'cancel')
-        assert getattr(CompiledWorkflow.cancel, '__isabstractmethod__', False)
+        assert hasattr(CompiledWorkflow, "cancel")
+        assert getattr(CompiledWorkflow.cancel, "__isabstractmethod__", False)
 
     def test_compiled_workflow_has_is_cancelled_method(self):
         """CompiledWorkflow defines is_cancelled abstract method."""
-        assert hasattr(CompiledWorkflow, 'is_cancelled')
-        assert getattr(CompiledWorkflow.is_cancelled, '__isabstractmethod__', False)
+        assert hasattr(CompiledWorkflow, "is_cancelled")
+        assert getattr(CompiledWorkflow.is_cancelled, "__isabstractmethod__", False)
 
 
 class TestExecutionMode:
@@ -163,9 +163,9 @@ class TestWorkflowCancellation:
                 "stages": [
                     {
                         "name": "test_stage",
-                        "agent_config": "configs/agents/simple_agent.yaml"
+                        "agent_config": "configs/agents/simple_agent.yaml",
                     }
-                ]
+                ],
             }
         }
 
@@ -173,9 +173,12 @@ class TestWorkflowCancellation:
     def engine(self):
         """Create LangGraphExecutionEngine instance."""
         from temper_ai.workflow.langgraph_engine import LangGraphExecutionEngine
+
         return LangGraphExecutionEngine()
 
-    def test_compiled_workflow_is_not_cancelled_initially(self, engine, minimal_workflow_config):
+    def test_compiled_workflow_is_not_cancelled_initially(
+        self, engine, minimal_workflow_config
+    ):
         """Newly compiled workflows are not cancelled."""
         from unittest.mock import MagicMock, Mock
 
@@ -227,7 +230,9 @@ class TestWorkflowCancellation:
         # Should still be cancelled (no errors)
         assert compiled.is_cancelled() is True
 
-    def test_invoke_raises_error_after_cancellation(self, engine, minimal_workflow_config):
+    def test_invoke_raises_error_after_cancellation(
+        self, engine, minimal_workflow_config
+    ):
         """invoke() raises WorkflowCancelledError after cancel()."""
         from unittest.mock import MagicMock, Mock
 
@@ -242,11 +247,15 @@ class TestWorkflowCancellation:
         compiled.cancel()
 
         # Attempting to invoke should raise error
-        with pytest.raises(WorkflowCancelledError, match="Workflow execution cancelled"):
+        with pytest.raises(
+            WorkflowCancelledError, match="Workflow execution cancelled"
+        ):
             compiled.invoke({"input": "test"})
 
     @pytest.mark.asyncio
-    async def test_ainvoke_raises_error_after_cancellation(self, engine, minimal_workflow_config):
+    async def test_ainvoke_raises_error_after_cancellation(
+        self, engine, minimal_workflow_config
+    ):
         """ainvoke() raises WorkflowCancelledError after cancel()."""
         from unittest.mock import MagicMock, Mock
 
@@ -261,10 +270,14 @@ class TestWorkflowCancellation:
         compiled.cancel()
 
         # Attempting to async invoke should raise error
-        with pytest.raises(WorkflowCancelledError, match="Workflow execution cancelled"):
+        with pytest.raises(
+            WorkflowCancelledError, match="Workflow execution cancelled"
+        ):
             await compiled.ainvoke({"input": "test"})
 
-    def test_cancellation_during_background_execution(self, engine, minimal_workflow_config):
+    def test_cancellation_during_background_execution(
+        self, engine, minimal_workflow_config
+    ):
         """Test cancelling workflow during background execution."""
         import threading
         from unittest.mock import MagicMock, Mock
@@ -289,9 +302,9 @@ class TestWorkflowCancellation:
 
         def run_workflow():
             try:
-                result['output'] = compiled.invoke({"input": "test"})
+                result["output"] = compiled.invoke({"input": "test"})
             except Exception as e:
-                error['exception'] = e
+                error["exception"] = e
 
         thread = threading.Thread(target=run_workflow)
         thread.start()

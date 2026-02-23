@@ -1,11 +1,12 @@
 """Tests for sampling strategy and performance tracker integration in ExecutionTracker."""
 
-import pytest
 from contextlib import contextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from temper_ai.observability.tracker import ExecutionTracker
+import pytest
+
 from temper_ai.observability.sampling import SamplingContext, SamplingDecision
+from temper_ai.observability.tracker import ExecutionTracker
 
 # ========== Fixtures ==========
 
@@ -145,7 +146,9 @@ class TestSyncWorkflowSampling:
         t = ExecutionTracker(backend=mock_backend, sampling_strategy=strategy)
         t._performance_tracker = mock_perf_tracker
 
-        with t.track_workflow("my_wf", {}, environment="production", tags=["critical"]) as wf_id:
+        with t.track_workflow(
+            "my_wf", {}, environment="production", tags=["critical"]
+        ) as wf_id:
             pass
 
         call_args = strategy.should_sample.call_args[0][0]
@@ -180,9 +183,13 @@ class TestAsyncWorkflowSampling:
         assert tracker_no_sample.context.workflow_id is None
 
     @pytest.mark.asyncio
-    async def test_full_tracking_when_sampled(self, tracker_always_sample, mock_backend):
+    async def test_full_tracking_when_sampled(
+        self, tracker_always_sample, mock_backend
+    ):
         """Async backend is fully called when sampling says yes."""
-        async with tracker_always_sample.atrack_workflow("sampled_wf", {"k": "v"}) as wf_id:
+        async with tracker_always_sample.atrack_workflow(
+            "sampled_wf", {"k": "v"}
+        ) as wf_id:
             assert wf_id is not None
 
         mock_backend.atrack_workflow_start.assert_called_once()
@@ -194,7 +201,9 @@ class TestAsyncWorkflowSampling:
 class TestPerfTrackerWorkflow:
     """Tests for PerformanceTracker recording in workflow tracking."""
 
-    def test_perf_recorded_on_workflow_success(self, tracker_always_sample, mock_perf_tracker):
+    def test_perf_recorded_on_workflow_success(
+        self, tracker_always_sample, mock_perf_tracker
+    ):
         """Performance is recorded after successful workflow."""
         with tracker_always_sample.track_workflow("perf_wf", {}) as wf_id:
             pass
@@ -205,7 +214,9 @@ class TestPerfTrackerWorkflow:
         assert call_args[0][1] > 0  # latency_ms > 0
         assert call_args[0][2]["workflow_id"] == wf_id
 
-    def test_perf_recorded_on_workflow_error(self, tracker_always_sample, mock_perf_tracker):
+    def test_perf_recorded_on_workflow_error(
+        self, tracker_always_sample, mock_perf_tracker
+    ):
         """Performance is recorded even when workflow raises."""
         with pytest.raises(ValueError):
             with tracker_always_sample.track_workflow("err_wf", {}) as wf_id:
@@ -216,7 +227,9 @@ class TestPerfTrackerWorkflow:
         assert call_args[0][0] == "workflow_execution"
 
     @pytest.mark.asyncio
-    async def test_async_perf_recorded_on_workflow(self, tracker_always_sample, mock_perf_tracker):
+    async def test_async_perf_recorded_on_workflow(
+        self, tracker_always_sample, mock_perf_tracker
+    ):
         """Performance is recorded in async workflow finally block."""
         async with tracker_always_sample.atrack_workflow("async_perf", {}) as wf_id:
             pass
@@ -238,7 +251,9 @@ class TestPerfTrackerStage:
 
         # Find the stage_execution call
         stage_calls = [
-            c for c in mock_perf_tracker.record.call_args_list if c[0][0] == "stage_execution"
+            c
+            for c in mock_perf_tracker.record.call_args_list
+            if c[0][0] == "stage_execution"
         ]
         assert len(stage_calls) == 1
         assert stage_calls[0][0][2]["stage_id"] == stage_id
@@ -251,11 +266,15 @@ class TestPerfTrackerAgent:
         """Performance is recorded after agent execution."""
         with tracker_no_strategy.track_workflow("wf", {}) as wf_id:
             with tracker_no_strategy.track_stage("s1", {}, wf_id) as stage_id:
-                with tracker_no_strategy.track_agent("agent1", {}, stage_id) as agent_id:
+                with tracker_no_strategy.track_agent(
+                    "agent1", {}, stage_id
+                ) as agent_id:
                     pass
 
         agent_calls = [
-            c for c in mock_perf_tracker.record.call_args_list if c[0][0] == "agent_execution"
+            c
+            for c in mock_perf_tracker.record.call_args_list
+            if c[0][0] == "agent_execution"
         ]
         assert len(agent_calls) == 1
         assert agent_calls[0][0][2]["agent_id"] == agent_id
@@ -271,7 +290,9 @@ class TestPerfTrackerLLMTool:
         """Performance tracker records llm_call latency."""
         from temper_ai.observability._tracker_helpers import LLMCallTrackingData
 
-        with patch("temper_ai.observability.performance.get_performance_tracker") as mock_get:
+        with patch(
+            "temper_ai.observability.performance.get_performance_tracker"
+        ) as mock_get:
             mock_pt = MagicMock()
             mock_get.return_value = mock_pt
 
@@ -300,7 +321,9 @@ class TestPerfTrackerLLMTool:
         """Performance tracker records tool_execution latency."""
         from temper_ai.observability._tracker_helpers import ToolCallTrackingData
 
-        with patch("temper_ai.observability.performance.get_performance_tracker") as mock_get:
+        with patch(
+            "temper_ai.observability.performance.get_performance_tracker"
+        ) as mock_get:
             mock_pt = MagicMock()
             mock_get.return_value = mock_pt
 
@@ -327,7 +350,9 @@ class TestPerfTrackerLLMTool:
 class TestPerfRecordingResilience:
     """Tests that perf recording failures do not break tracking."""
 
-    def test_perf_failure_does_not_break_workflow(self, tracker_always_sample, mock_perf_tracker):
+    def test_perf_failure_does_not_break_workflow(
+        self, tracker_always_sample, mock_perf_tracker
+    ):
         """Workflow completes even if perf recording raises."""
         mock_perf_tracker.record.side_effect = RuntimeError("perf boom")
 
@@ -342,7 +367,9 @@ class TestPerfRecordingResilience:
         """LLM tracking returns call ID even if perf recording fails."""
         from temper_ai.observability._tracker_helpers import LLMCallTrackingData
 
-        with patch("temper_ai.observability.performance.get_performance_tracker") as mock_get:
+        with patch(
+            "temper_ai.observability.performance.get_performance_tracker"
+        ) as mock_get:
             mock_pt = MagicMock()
             mock_pt.record.side_effect = RuntimeError("perf boom")
             mock_get.return_value = mock_pt
@@ -367,7 +394,9 @@ class TestPerfRecordingResilience:
         """Tool tracking returns execution ID even if perf recording fails."""
         from temper_ai.observability._tracker_helpers import ToolCallTrackingData
 
-        with patch("temper_ai.observability.performance.get_performance_tracker") as mock_get:
+        with patch(
+            "temper_ai.observability.performance.get_performance_tracker"
+        ) as mock_get:
             mock_pt = MagicMock()
             mock_pt.record.side_effect = RuntimeError("perf boom")
             mock_get.return_value = mock_pt

@@ -10,6 +10,7 @@ Features:
 - Circular symlink detection
 - Absolute symlink boundary checks
 """
+
 from pathlib import Path
 
 from temper_ai.shared.utils.path_safety.exceptions import PathSafetyError
@@ -26,11 +27,7 @@ class SymlinkSecurityValidator:
         """
         self.allowed_root = allowed_root
 
-    def validate_symlink_security(
-        self,
-        path: Path,
-        check_parents: bool = True
-    ) -> None:
+    def validate_symlink_security(self, path: Path, check_parents: bool = True) -> None:
         """Validate symlink doesn't create security vulnerability.
 
         SECURITY: Checks BEFORE resolution to prevent TOCTOU.

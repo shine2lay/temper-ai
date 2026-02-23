@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 from temper_ai.memory._schemas import MemoryEntry, MemoryScope
 from temper_ai.memory.constants import DEFAULT_RETRIEVAL_LIMIT
@@ -17,7 +17,7 @@ class MemoryStoreProtocol(Protocol):
         scope: MemoryScope,
         content: str,
         memory_type: str,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> str:
         """Store a memory and return its ID."""
         ...
@@ -28,16 +28,16 @@ class MemoryStoreProtocol(Protocol):
         query: str,
         limit: int = DEFAULT_RETRIEVAL_LIMIT,
         threshold: float = 0.0,
-        memory_type: Optional[str] = None,
-    ) -> List[MemoryEntry]:
+        memory_type: str | None = None,
+    ) -> list[MemoryEntry]:
         """Search memories by query within a scope."""
         ...
 
     def get_all(
         self,
         scope: MemoryScope,
-        memory_type: Optional[str] = None,
-    ) -> List[MemoryEntry]:
+        memory_type: str | None = None,
+    ) -> list[MemoryEntry]:
         """Return all memories for a scope."""
         ...
 

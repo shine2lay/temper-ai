@@ -46,7 +46,9 @@ class BackgroundAnalysisJob:
         """Run analysis at regular intervals."""
         while self._running:
             try:
-                await asyncio.sleep(self.interval_seconds)  # intentional: periodic analysis interval
+                await asyncio.sleep(
+                    self.interval_seconds
+                )  # intentional: periodic analysis interval
                 run = await asyncio.get_running_loop().run_in_executor(
                     None, self.orchestrator.run_analysis
                 )

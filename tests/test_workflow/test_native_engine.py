@@ -3,8 +3,7 @@
 Tests engine interface compliance, compile/execute lifecycle,
 feature detection, cancellation, and metadata.
 """
-import asyncio
-from typing import Any, Dict
+
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -112,7 +111,9 @@ class TestNativeExecutionEngine:
 
     def _make_engine(self):
         """Create engine with mocked safety stack."""
-        with patch("temper_ai.workflow.engines.dynamic_engine.create_safety_stack") as mock_safety:
+        with patch(
+            "temper_ai.workflow.engines.dynamic_engine.create_safety_stack"
+        ) as mock_safety:
             mock_safety.return_value = MagicMock()
             engine = NativeExecutionEngine()
         return engine
@@ -250,7 +251,9 @@ class TestEngineRegistration:
         from temper_ai.workflow.engine_registry import EngineRegistry
 
         registry = EngineRegistry()
-        with patch("temper_ai.workflow.engines.dynamic_engine.create_safety_stack") as mock:
+        with patch(
+            "temper_ai.workflow.engines.dynamic_engine.create_safety_stack"
+        ) as mock:
             mock.return_value = MagicMock()
             engine = registry.get_engine("native")
         assert isinstance(engine, NativeExecutionEngine)
@@ -262,7 +265,9 @@ class TestEngineRegistration:
         registry = EngineRegistry()
         config = {"workflow": {"engine": "native", "stages": ["s1"]}}
 
-        with patch("temper_ai.workflow.engines.dynamic_engine.create_safety_stack") as mock:
+        with patch(
+            "temper_ai.workflow.engines.dynamic_engine.create_safety_stack"
+        ) as mock:
             mock.return_value = MagicMock()
             engine = registry.get_engine_from_config(config)
         assert isinstance(engine, NativeExecutionEngine)

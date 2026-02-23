@@ -1,10 +1,11 @@
-"""Multi-agent collaboration strategies for the Meta-Autonomous Framework.
+"""Multi-agent collaboration strategies for Temper AI.
 
 This package provides abstract interfaces and concrete implementations for
 synthesizing outputs from multiple agents into unified decisions.
 
 Available strategies:
 - ConsensusStrategy: Simple majority voting
+- ConcatenateStrategy: Join independent parallel outputs
 - DebateStrategy: Multi-round argumentation
 - MeritWeightedStrategy: Weight votes by agent merit scores
 - HierarchicalStrategy: Lead agent with advisor review

@@ -1,14 +1,12 @@
 """Product-type quality gate defaults."""
 
-from typing import Dict
-
 from temper_ai.shared.constants.probabilities import PROB_HIGH, PROB_VERY_HIGH
 from temper_ai.workflow.templates._schemas import TemplateQualityGates
 
 # Confidence thresholds per product type
 CONFIDENCE_API = 0.75  # scanner: skip-magic — API quality gate threshold
 
-PRODUCT_QUALITY_GATES: Dict[str, TemplateQualityGates] = {
+PRODUCT_QUALITY_GATES: dict[str, TemplateQualityGates] = {
     "web_app": TemplateQualityGates(
         min_confidence=PROB_HIGH,
         require_citations=True,

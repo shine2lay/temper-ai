@@ -21,7 +21,9 @@ def store() -> LearningStore:
     return LearningStore(database_url=MEMORY_DB)
 
 
-def _save_pattern(store: LearningStore, ptype: str, title: str, confidence: float = 0.9) -> str:
+def _save_pattern(
+    store: LearningStore, ptype: str, title: str, confidence: float = 0.9
+) -> str:
     p = LearnedPattern(
         id=f"p-{title}",
         pattern_type=ptype,

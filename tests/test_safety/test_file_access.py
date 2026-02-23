@@ -12,6 +12,7 @@ Tests cover:
 - Pattern matching (wildcards, recursive)
 - Case sensitivity
 """
+
 from temper_ai.safety.file_access import FileAccessPolicy
 from temper_ai.safety.interfaces import ViolationSeverity
 
@@ -34,9 +35,7 @@ class TestFileAccessPolicyBasics:
 
     def test_allowlist_mode_initialization(self):
         """Test policy in allowlist mode."""
-        config = {
-            "allowed_paths": ["/project/**", "/tmp/**"]
-        }
+        config = {"allowed_paths": ["/project/**", "/tmp/**"]}
         policy = FileAccessPolicy(config)
 
         assert policy.mode == "allowlist"
@@ -44,9 +43,7 @@ class TestFileAccessPolicyBasics:
 
     def test_denylist_mode_initialization(self):
         """Test policy in denylist mode."""
-        config = {
-            "denied_paths": ["/etc/**", "/root/**"]
-        }
+        config = {"denied_paths": ["/etc/**", "/root/**"]}
         policy = FileAccessPolicy(config)
 
         assert policy.mode == "denylist"
@@ -80,8 +77,7 @@ class TestPathTraversalPrevention:
         policy = FileAccessPolicy()
 
         result = policy.validate(
-            action={"operation": "read", "path": "/project/../etc/passwd"},
-            context={}
+            action={"operation": "read", "path": "/project/../etc/passwd"}, context={}
         )
 
         assert not result.valid
@@ -94,8 +90,7 @@ class TestPathTraversalPrevention:
         policy = FileAccessPolicy()
 
         result = policy.validate(
-            action={"operation": "read", "path": "../../etc/passwd"},
-            context={}
+            action={"operation": "read", "path": "../../etc/passwd"}, context={}
         )
 
         assert not result.valid
@@ -105,19 +100,17 @@ class TestPathTraversalPrevention:
         """Test that ../ can be allowed via configuration."""
         config = {
             "allow_parent_traversal": True,
-            "allowed_paths": ["../**"]  # Allow parent access
+            "allowed_paths": ["../**"],  # Allow parent access
         }
         policy = FileAccessPolicy(config)
 
         result = policy.validate(
-            action={"operation": "read", "path": "../file.txt"},
-            context={}
+            action={"operation": "read", "path": "../file.txt"}, context={}
         )
 
         # Should pass traversal check, may fail allowlist
         violations_are_traversal = any(
-            "traversal" in v.message.lower()
-            for v in result.violations
+            "traversal" in v.message.lower() for v in result.violations
         )
         assert not violations_are_traversal
 
@@ -133,7 +126,7 @@ class TestPathTraversalPrevention:
 
         result = policy.validate(
             action={"operation": "read", "path": "/project/..hidden/file.txt"},
-            context={}
+            context={},
         )
 
         # '..hidden' is a valid directory name, not a traversal -- should pass
@@ -148,8 +141,7 @@ class TestForbiddenDirectories:
         policy = FileAccessPolicy()
 
         result = policy.validate(
-            action={"operation": "read", "path": "/etc/passwd"},
-            context={}
+            action={"operation": "read", "path": "/etc/passwd"}, context={}
         )
 
         assert not result.valid
@@ -162,8 +154,7 @@ class TestForbiddenDirectories:
         policy = FileAccessPolicy()
 
         result = policy.validate(
-            action={"operation": "read", "path": "/sys/kernel/config"},
-            context={}
+            action={"operation": "read", "path": "/sys/kernel/config"}, context={}
         )
 
         assert not result.valid
@@ -173,8 +164,7 @@ class TestForbiddenDirectories:
         policy = FileAccessPolicy()
 
         result = policy.validate(
-            action={"operation": "read", "path": "/proc/cpuinfo"},
-            context={}
+            action={"operation": "read", "path": "/proc/cpuinfo"}, context={}
         )
 
         assert not result.valid
@@ -184,22 +174,18 @@ class TestForbiddenDirectories:
         policy = FileAccessPolicy()
 
         result = policy.validate(
-            action={"operation": "read", "path": "/root/.bashrc"},
-            context={}
+            action={"operation": "read", "path": "/root/.bashrc"}, context={}
         )
 
         assert not result.valid
 
     def test_custom_forbidden_directories(self):
         """Test adding custom forbidden directories."""
-        config = {
-            "forbidden_directories": ["/secrets"]
-        }
+        config = {"forbidden_directories": ["/secrets"]}
         policy = FileAccessPolicy(config)
 
         result = policy.validate(
-            action={"operation": "read", "path": "/secrets/api_key.txt"},
-            context={}
+            action={"operation": "read", "path": "/secrets/api_key.txt"}, context={}
         )
 
         assert not result.valid
@@ -210,7 +196,7 @@ class TestForbiddenDirectories:
 
         result = policy.validate(
             action={"operation": "read", "path": "/etc/apache2/sites-enabled/default"},
-            context={}
+            context={},
         )
 
         assert not result.valid
@@ -224,8 +210,7 @@ class TestForbiddenFiles:
         policy = FileAccessPolicy()
 
         result = policy.validate(
-            action={"operation": "read", "path": "/.env"},
-            context={}
+            action={"operation": "read", "path": "/.env"}, context={}
         )
 
         assert not result.valid
@@ -236,8 +221,7 @@ class TestForbiddenFiles:
         policy = FileAccessPolicy()
 
         result = policy.validate(
-            action={"operation": "read", "path": "/etc/passwd"},
-            context={}
+            action={"operation": "read", "path": "/etc/passwd"}, context={}
         )
 
         assert not result.valid
@@ -247,8 +231,7 @@ class TestForbiddenFiles:
         policy = FileAccessPolicy()
 
         result = policy.validate(
-            action={"operation": "read", "path": "/etc/shadow"},
-            context={}
+            action={"operation": "read", "path": "/etc/shadow"}, context={}
         )
 
         assert not result.valid
@@ -259,8 +242,7 @@ class TestForbiddenFiles:
 
         # Absolute .env file
         result = policy.validate(
-            action={"operation": "read", "path": "/project/.env"},
-            context={}
+            action={"operation": "read", "path": "/project/.env"}, context={}
         )
 
         # Should be blocked as it ends with /.env
@@ -275,8 +257,7 @@ class TestForbiddenExtensions:
         policy = FileAccessPolicy()
 
         result = policy.validate(
-            action={"operation": "read", "path": "/project/cert.pem"},
-            context={}
+            action={"operation": "read", "path": "/project/cert.pem"}, context={}
         )
 
         # Will fail because .pem is forbidden (not because of path)
@@ -288,8 +269,7 @@ class TestForbiddenExtensions:
         policy = FileAccessPolicy()
 
         result = policy.validate(
-            action={"operation": "read", "path": "/project/private.key"},
-            context={}
+            action={"operation": "read", "path": "/project/private.key"}, context={}
         )
 
         violations = [v for v in result.violations if "extension" in v.message.lower()]
@@ -297,14 +277,11 @@ class TestForbiddenExtensions:
 
     def test_custom_forbidden_extensions(self):
         """Test custom forbidden extensions."""
-        config = {
-            "forbidden_extensions": [".secret", ".private"]
-        }
+        config = {"forbidden_extensions": [".secret", ".private"]}
         policy = FileAccessPolicy(config)
 
         result = policy.validate(
-            action={"operation": "read", "path": "/project/data.secret"},
-            context={}
+            action={"operation": "read", "path": "/project/data.secret"}, context={}
         )
 
         assert not result.valid
@@ -314,8 +291,7 @@ class TestForbiddenExtensions:
         policy = FileAccessPolicy()
 
         result = policy.validate(
-            action={"operation": "read", "path": "/project/cert.PEM"},
-            context={}
+            action={"operation": "read", "path": "/project/cert.PEM"}, context={}
         )
 
         violations = [v for v in result.violations if "extension" in v.message.lower()]
@@ -327,29 +303,23 @@ class TestAllowlistMode:
 
     def test_allowed_path_exact_match(self):
         """Test exact path match in allowlist."""
-        config = {
-            "allowed_paths": ["/project/src/main.py"]
-        }
+        config = {"allowed_paths": ["/project/src/main.py"]}
         policy = FileAccessPolicy(config)
 
         result = policy.validate(
-            action={"operation": "read", "path": "/project/src/main.py"},
-            context={}
+            action={"operation": "read", "path": "/project/src/main.py"}, context={}
         )
 
         assert result.valid
 
     def test_not_in_allowlist_blocked(self):
         """Test that paths not in allowlist are blocked."""
-        config = {
-            "allowed_paths": ["/project/src/**"]
-        }
+        config = {"allowed_paths": ["/project/src/**"]}
         policy = FileAccessPolicy(config)
 
         # Use a path that's not forbidden, just not in allowlist
         result = policy.validate(
-            action={"operation": "read", "path": "/home/user/data.txt"},
-            context={}
+            action={"operation": "read", "path": "/home/user/data.txt"}, context={}
         )
 
         assert not result.valid
@@ -358,65 +328,54 @@ class TestAllowlistMode:
 
     def test_wildcard_pattern_matching(self):
         """Test wildcard pattern in allowlist."""
-        config = {
-            "allowed_paths": ["/project/*.py"]
-        }
+        config = {"allowed_paths": ["/project/*.py"]}
         policy = FileAccessPolicy(config)
 
         result = policy.validate(
-            action={"operation": "read", "path": "/project/main.py"},
-            context={}
+            action={"operation": "read", "path": "/project/main.py"}, context={}
         )
 
         assert result.valid
 
     def test_recursive_wildcard_matching(self):
         """Test recursive wildcard (**) in allowlist."""
-        config = {
-            "allowed_paths": ["/project/**/*.py"]
-        }
+        config = {"allowed_paths": ["/project/**/*.py"]}
         policy = FileAccessPolicy(config)
 
         # Should match nested paths
         result = policy.validate(
             action={"operation": "read", "path": "/project/src/utils/helper.py"},
-            context={}
+            context={},
         )
 
         assert result.valid
 
     def test_directory_prefix_matching(self):
         """Test directory prefix pattern in allowlist."""
-        config = {
-            "allowed_paths": ["/project/src/"]
-        }
+        config = {"allowed_paths": ["/project/src/"]}
         policy = FileAccessPolicy(config)
 
         result = policy.validate(
-            action={"operation": "read", "path": "/project/src/main.py"},
-            context={}
+            action={"operation": "read", "path": "/project/src/main.py"}, context={}
         )
 
         assert result.valid
 
     def test_multiple_allowed_paths(self):
         """Test multiple allowed path patterns."""
-        config = {
-            "allowed_paths": ["/project/src/**", "/tmp/**", "/data/output/**"]
-        }
+        config = {"allowed_paths": ["/project/src/**", "/tmp/**", "/data/output/**"]}
         policy = FileAccessPolicy(config)
 
         # All should be allowed
         paths = [
             "/project/src/main.py",
             "/tmp/cache/data.json",
-            "/data/output/results.csv"
+            "/data/output/results.csv",
         ]
 
         for path in paths:
             result = policy.validate(
-                action={"operation": "read", "path": path},
-                context={}
+                action={"operation": "read", "path": path}, context={}
             )
             assert result.valid, f"Path {path} should be allowed"
 
@@ -426,14 +385,11 @@ class TestDenylistMode:
 
     def test_denied_path_blocked(self):
         """Test that denied paths are blocked."""
-        config = {
-            "denied_paths": ["/secrets/**"]
-        }
+        config = {"denied_paths": ["/secrets/**"]}
         policy = FileAccessPolicy(config)
 
         result = policy.validate(
-            action={"operation": "read", "path": "/secrets/api_key.txt"},
-            context={}
+            action={"operation": "read", "path": "/secrets/api_key.txt"}, context={}
         )
 
         assert not result.valid
@@ -442,29 +398,24 @@ class TestDenylistMode:
 
     def test_not_in_denylist_allowed(self):
         """Test that paths not in denylist are allowed."""
-        config = {
-            "denied_paths": ["/etc/**", "/root/**"]
-        }
+        config = {"denied_paths": ["/etc/**", "/root/**"]}
         policy = FileAccessPolicy(config)
 
         # Access to /project should be allowed (not in denylist, not forbidden)
         result = policy.validate(
             action={"operation": "read", "path": "/home/user/project/main.py"},
-            context={}
+            context={},
         )
 
         assert result.valid
 
     def test_denylist_wildcard_matching(self):
         """Test wildcard in denylist."""
-        config = {
-            "denied_paths": ["/project/*.log"]
-        }
+        config = {"denied_paths": ["/project/*.log"]}
         policy = FileAccessPolicy(config)
 
         result = policy.validate(
-            action={"operation": "read", "path": "/project/debug.log"},
-            context={}
+            action={"operation": "read", "path": "/project/debug.log"}, context={}
         )
 
         assert not result.valid
@@ -475,28 +426,22 @@ class TestAbsoluteAndRelativePaths:
 
     def test_absolute_path_allowed_by_default(self):
         """Test that absolute paths are allowed by default."""
-        config = {
-            "allowed_paths": ["/project/**"]
-        }
+        config = {"allowed_paths": ["/project/**"]}
         policy = FileAccessPolicy(config)
 
         result = policy.validate(
-            action={"operation": "read", "path": "/project/main.py"},
-            context={}
+            action={"operation": "read", "path": "/project/main.py"}, context={}
         )
 
         assert result.valid
 
     def test_absolute_path_blocked_when_configured(self):
         """Test blocking absolute paths."""
-        config = {
-            "allow_absolute_paths": False
-        }
+        config = {"allow_absolute_paths": False}
         policy = FileAccessPolicy(config)
 
         result = policy.validate(
-            action={"operation": "read", "path": "/project/main.py"},
-            context={}
+            action={"operation": "read", "path": "/project/main.py"}, context={}
         )
 
         assert not result.valid
@@ -505,14 +450,11 @@ class TestAbsoluteAndRelativePaths:
 
     def test_relative_path_allowed(self):
         """Test that relative paths work."""
-        config = {
-            "allowed_paths": ["project/**"]
-        }
+        config = {"allowed_paths": ["project/**"]}
         policy = FileAccessPolicy(config)
 
         result = policy.validate(
-            action={"operation": "read", "path": "project/main.py"},
-            context={}
+            action={"operation": "read", "path": "project/main.py"}, context={}
         )
 
         assert result.valid
@@ -523,9 +465,7 @@ class TestBatchOperations:
 
     def test_multiple_paths_in_action(self):
         """Test validating action with multiple paths."""
-        config = {
-            "allowed_paths": ["/project/**"]
-        }
+        config = {"allowed_paths": ["/project/**"]}
         policy = FileAccessPolicy(config)
 
         result = policy.validate(
@@ -534,10 +474,10 @@ class TestBatchOperations:
                 "paths": [
                     "/project/src/main.py",
                     "/project/src/utils.py",
-                    "/project/tests/test_main.py"
-                ]
+                    "/project/tests/test_main.py",
+                ],
             },
-            context={}
+            context={},
         )
 
         assert result.valid
@@ -545,9 +485,7 @@ class TestBatchOperations:
 
     def test_batch_with_one_violation(self):
         """Test batch where one path violates policy."""
-        config = {
-            "allowed_paths": ["/project/**"]
-        }
+        config = {"allowed_paths": ["/project/**"]}
         policy = FileAccessPolicy(config)
 
         result = policy.validate(
@@ -556,10 +494,10 @@ class TestBatchOperations:
                 "paths": [
                     "/project/main.py",
                     "/etc/passwd",  # Forbidden
-                    "/project/utils.py"
-                ]
+                    "/project/utils.py",
+                ],
             },
-            context={}
+            context={},
         )
 
         assert not result.valid
@@ -567,18 +505,16 @@ class TestBatchOperations:
 
     def test_source_destination_paths(self):
         """Test actions with source and destination paths."""
-        config = {
-            "allowed_paths": ["/project/**"]
-        }
+        config = {"allowed_paths": ["/project/**"]}
         policy = FileAccessPolicy(config)
 
         result = policy.validate(
             action={
                 "operation": "copy",
                 "source": "/project/data.txt",
-                "destination": "/project/backup/data.txt"
+                "destination": "/project/backup/data.txt",
             },
-            context={}
+            context={},
         )
 
         assert result.valid
@@ -590,15 +526,12 @@ class TestCaseSensitivity:
 
     def test_case_sensitive_by_default(self):
         """Test that matching is case-sensitive by default."""
-        config = {
-            "allowed_paths": ["/Project/**"]
-        }
+        config = {"allowed_paths": ["/Project/**"]}
         policy = FileAccessPolicy(config)
 
         # Lowercase 'project' should not match uppercase 'Project'
         result = policy.validate(
-            action={"operation": "read", "path": "/project/main.py"},
-            context={}
+            action={"operation": "read", "path": "/project/main.py"}, context={}
         )
 
         # Should fail allowlist check
@@ -606,16 +539,12 @@ class TestCaseSensitivity:
 
     def test_case_insensitive_mode(self):
         """Test case-insensitive matching."""
-        config = {
-            "allowed_paths": ["/PROJECT/**"],
-            "case_sensitive": False
-        }
+        config = {"allowed_paths": ["/PROJECT/**"], "case_sensitive": False}
         policy = FileAccessPolicy(config)
 
         # Lowercase should match uppercase
         result = policy.validate(
-            action={"operation": "read", "path": "/project/main.py"},
-            context={}
+            action={"operation": "read", "path": "/project/main.py"}, context={}
         )
 
         assert result.valid
@@ -629,28 +558,28 @@ class TestComplexCases:
         config = {
             "allowed_paths": ["/home/user/project/**"],
             "allow_parent_traversal": False,
-            "allow_symlinks": False
+            "allow_symlinks": False,
         }
         policy = FileAccessPolicy(config)
 
         # Allowed access
         result = policy.validate(
             action={"operation": "read", "path": "/home/user/project/src/main.py"},
-            context={"agent": "coder"}
+            context={"agent": "coder"},
         )
         assert result.valid
 
         # Attempt to escape via traversal
         result = policy.validate(
             action={"operation": "read", "path": "/home/user/project/../.ssh/id_rsa"},
-            context={"agent": "coder"}
+            context={"agent": "coder"},
         )
         assert not result.valid
 
         # Access outside project
         result = policy.validate(
             action={"operation": "read", "path": "/etc/passwd"},
-            context={"agent": "coder"}
+            context={"agent": "coder"},
         )
         assert not result.valid
 
@@ -658,14 +587,14 @@ class TestComplexCases:
         """Test read-only access to specific directories."""
         config = {
             "allowed_paths": ["/data/readonly/**"],
-            "denied_paths": []  # Explicit denylist mode
+            "denied_paths": [],  # Explicit denylist mode
         }
         policy = FileAccessPolicy(config)
 
         # Read allowed
         result = policy.validate(
             action={"operation": "read", "path": "/data/readonly/config.json"},
-            context={}
+            context={},
         )
         assert result.valid
 
@@ -673,29 +602,25 @@ class TestComplexCases:
         # but action tracking would catch this
         result = policy.validate(
             action={"operation": "write", "path": "/data/readonly/config.json"},
-            context={}
+            context={},
         )
         # From policy perspective, path is allowed
         assert result.valid
 
     def test_temporary_file_access(self):
         """Test access restricted to temporary directories."""
-        config = {
-            "allowed_paths": ["/tmp/**", "/var/tmp/**"]
-        }
+        config = {"allowed_paths": ["/tmp/**", "/var/tmp/**"]}
         policy = FileAccessPolicy(config)
 
         # Temp access allowed
         result = policy.validate(
-            action={"operation": "write", "path": "/tmp/output.txt"},
-            context={}
+            action={"operation": "write", "path": "/tmp/output.txt"}, context={}
         )
         assert result.valid
 
         # Non-temp blocked
         result = policy.validate(
-            action={"operation": "write", "path": "/home/user/output.txt"},
-            context={}
+            action={"operation": "write", "path": "/home/user/output.txt"}, context={}
         )
         assert not result.valid
 
@@ -708,8 +633,7 @@ class TestViolationMetadata:
         policy = FileAccessPolicy()
 
         result = policy.validate(
-            action={"operation": "read", "path": "/etc/passwd"},
-            context={}
+            action={"operation": "read", "path": "/etc/passwd"}, context={}
         )
 
         assert not result.valid
@@ -721,8 +645,7 @@ class TestViolationMetadata:
         policy = FileAccessPolicy()
 
         result = policy.validate(
-            action={"operation": "read", "path": "/etc/passwd"},
-            context={}
+            action={"operation": "read", "path": "/etc/passwd"}, context={}
         )
 
         assert "violation" in result.violations[0].metadata
@@ -731,14 +654,11 @@ class TestViolationMetadata:
 
     def test_remediation_hints_are_helpful(self):
         """Test that remediation hints provide actionable guidance."""
-        config = {
-            "allowed_paths": ["/project/**"]
-        }
+        config = {"allowed_paths": ["/project/**"]}
         policy = FileAccessPolicy(config)
 
         result = policy.validate(
-            action={"operation": "read", "path": "/etc/passwd"},
-            context={}
+            action={"operation": "read", "path": "/etc/passwd"}, context={}
         )
 
         # Should have remediation hint
@@ -753,10 +673,7 @@ class TestEdgeCases:
         """Test handling of empty path."""
         policy = FileAccessPolicy()
 
-        result = policy.validate(
-            action={"operation": "read", "path": ""},
-            context={}
-        )
+        result = policy.validate(action={"operation": "read", "path": ""}, context={})
 
         # Empty path passes in denylist mode (not explicitly denied)
         assert result.valid
@@ -765,10 +682,7 @@ class TestEdgeCases:
         """Test handling of root path /."""
         policy = FileAccessPolicy()
 
-        result = policy.validate(
-            action={"operation": "read", "path": "/"},
-            context={}
-        )
+        result = policy.validate(action={"operation": "read", "path": "/"}, context={})
 
         # Root path passes in denylist mode (not explicitly denied)
         assert result.valid
@@ -777,38 +691,30 @@ class TestEdgeCases:
         """Test action with no path information."""
         policy = FileAccessPolicy()
 
-        result = policy.validate(
-            action={"operation": "status"},
-            context={}
-        )
+        result = policy.validate(action={"operation": "status"}, context={})
 
         # Should validate successfully (no paths to check)
         assert result.valid
 
     def test_path_with_special_characters(self):
         """Test paths with special characters."""
-        config = {
-            "allowed_paths": ["/project/**"]
-        }
+        config = {"allowed_paths": ["/project/**"]}
         policy = FileAccessPolicy(config)
 
         result = policy.validate(
             action={"operation": "read", "path": "/project/file with spaces.txt"},
-            context={}
+            context={},
         )
 
         assert result.valid
 
     def test_unicode_paths(self):
         """Test paths with unicode characters."""
-        config = {
-            "allowed_paths": ["/project/**"]
-        }
+        config = {"allowed_paths": ["/project/**"]}
         policy = FileAccessPolicy(config)
 
         result = policy.validate(
-            action={"operation": "read", "path": "/project/文件.txt"},
-            context={}
+            action={"operation": "read", "path": "/project/文件.txt"}, context={}
         )
 
         assert result.valid
@@ -830,15 +736,11 @@ class TestPathNormalizationSecurity:
         policy = FileAccessPolicy(config)
 
         result = policy.validate(
-            action={"operation": "read", "path": "/allowed/../etc/passwd"},
-            context={}
+            action={"operation": "read", "path": "/allowed/../etc/passwd"}, context={}
         )
 
         assert not result.valid
-        has_forbidden = any(
-            "forbidden" in v.message.lower()
-            for v in result.violations
-        )
+        has_forbidden = any("forbidden" in v.message.lower() for v in result.violations)
         assert has_forbidden
 
     def test_normpath_resolves_dotdot_for_denylist(self):
@@ -851,7 +753,7 @@ class TestPathNormalizationSecurity:
 
         result = policy.validate(
             action={"operation": "read", "path": "/project/../secrets/key.pem"},
-            context={}
+            context={},
         )
 
         assert not result.valid
@@ -864,8 +766,7 @@ class TestPathNormalizationSecurity:
         policy = FileAccessPolicy(config)
 
         result = policy.validate(
-            action={"operation": "read", "path": "/project/src/main.py"},
-            context={}
+            action={"operation": "read", "path": "/project/src/main.py"}, context={}
         )
 
         assert result.valid

@@ -2,18 +2,17 @@
 
 Tests SearchResultItem, SearchResponse, and format_results_for_llm.
 """
-import pytest
 
 from temper_ai.tools._search_helpers import (
-    SearchResultItem,
     SearchResponse,
+    SearchResultItem,
     format_results_for_llm,
 )
-
 
 # ---------------------------------------------------------------------------
 # SearchResultItem
 # ---------------------------------------------------------------------------
+
 
 class TestSearchResultItem:
     """Test SearchResultItem model."""
@@ -71,6 +70,7 @@ class TestSearchResultItem:
 # SearchResponse
 # ---------------------------------------------------------------------------
 
+
 class TestSearchResponse:
     """Test SearchResponse model."""
 
@@ -113,6 +113,7 @@ class TestSearchResponse:
 # ---------------------------------------------------------------------------
 # format_results_for_llm
 # ---------------------------------------------------------------------------
+
 
 class TestFormatResultsForLlm:
     """Test the LLM formatter."""

@@ -4,6 +4,7 @@ Verifies:
 - _print_stage_header includes index format [N/M]
 - Stream callback stage context is set
 """
+
 from unittest.mock import MagicMock
 
 from temper_ai.stage.executors.parallel import _print_stage_header

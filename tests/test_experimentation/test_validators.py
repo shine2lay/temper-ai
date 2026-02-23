@@ -12,11 +12,11 @@ Covers:
 import pytest
 
 from temper_ai.experimentation.validators import (
-    validate_experiment_name,
-    validate_variant_name,
-    validate_variant_list,
     MAX_EXPERIMENT_NAME_LENGTH,
     MAX_VARIANT_NAME_LENGTH,
+    validate_experiment_name,
+    validate_variant_list,
+    validate_variant_name,
 )
 
 

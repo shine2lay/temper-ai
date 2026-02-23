@@ -1,13 +1,10 @@
 """Tests for profile registry."""
 
-import tempfile
 from pathlib import Path
 
 import pytest
 
 from temper_ai.lifecycle._schemas import (
-    AdaptationAction,
-    AdaptationRule,
     LifecycleProfile,
     ProjectCharacteristics,
     ProjectSize,
@@ -60,10 +57,20 @@ class TestProfileRegistry:
         assert registry.get_profile("nonexistent") is None
 
     def test_db_profiles_merged(self, config_dir, store):
-        store.save_profile(LifecycleProfileRecord(
-            id="p-db", name="db_profile",
-            rules=[{"name": "r1", "action": "skip", "stage_name": "test", "condition": "{{ true }}"}],
-        ))
+        store.save_profile(
+            LifecycleProfileRecord(
+                id="p-db",
+                name="db_profile",
+                rules=[
+                    {
+                        "name": "r1",
+                        "action": "skip",
+                        "stage_name": "test",
+                        "condition": "{{ true }}",
+                    }
+                ],
+            )
+        )
         registry = ProfileRegistry(config_dir=config_dir, store=store)
         profiles = registry.list_profiles()
         names = {p.name for p in profiles}
@@ -71,10 +78,13 @@ class TestProfileRegistry:
         assert "db_profile" in names
 
     def test_yaml_takes_priority_over_db(self, config_dir, store):
-        store.save_profile(LifecycleProfileRecord(
-            id="p-dup", name="lean",  # Same name as YAML
-            description="DB version",
-        ))
+        store.save_profile(
+            LifecycleProfileRecord(
+                id="p-dup",
+                name="lean",  # Same name as YAML
+                description="DB version",
+            )
+        )
         registry = ProfileRegistry(config_dir=config_dir, store=store)
         profile = registry.get_profile("lean")
         assert profile is not None
@@ -88,9 +98,13 @@ class TestProfileRegistry:
 
     def test_match_profiles_disabled_excluded(self, config_dir, store):
         # The YAML profile is enabled, add a disabled one via DB
-        store.save_profile(LifecycleProfileRecord(
-            id="p-dis", name="disabled_one", enabled=False,
-        ))
+        store.save_profile(
+            LifecycleProfileRecord(
+                id="p-dis",
+                name="disabled_one",
+                enabled=False,
+            )
+        )
         registry = ProfileRegistry(config_dir=config_dir, store=store)
         chars = ProjectCharacteristics()
         matched = registry.match_profiles(chars)
@@ -98,9 +112,7 @@ class TestProfileRegistry:
         assert "disabled_one" not in names
 
     def test_missing_config_dir(self, store):
-        registry = ProfileRegistry(
-            config_dir=Path("/nonexistent/dir"), store=store
-        )
+        registry = ProfileRegistry(config_dir=Path("/nonexistent/dir"), store=store)
         assert registry.list_profiles() == []
 
 

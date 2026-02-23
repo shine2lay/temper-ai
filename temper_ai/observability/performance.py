@@ -4,17 +4,18 @@ Performance instrumentation and metrics tracking.
 Tracks latency percentiles (p50, p95, p99) and detects slow operations
 across critical execution paths: stage execution, LLM calls, and tool execution.
 """
+
 import logging
 import statistics
 import threading
 import time
 from collections import defaultdict
+from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Any, Dict, Generator, List, Optional
+from typing import Any
 
-from temper_ai.storage.database.datetime_utils import utcnow
 from temper_ai.observability.constants import (
     DEFAULT_CLEANUP_INTERVAL,
     DEFAULT_SLOW_THRESHOLD_MS,
@@ -22,6 +23,7 @@ from temper_ai.observability.constants import (
     MAX_LATENCY_SAMPLES,
     MAX_SLOW_OPERATIONS,
 )
+from temper_ai.storage.database.datetime_utils import utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +38,7 @@ class LatencyMetrics:
     """Latency metrics for a specific operation type."""
 
     operation: str
-    samples: List[float] = field(default_factory=list)
+    samples: list[float] = field(default_factory=list)
     slow_threshold_ms: float = DEFAULT_SLOW_THRESHOLD_MS
     last_updated: datetime = field(default_factory=utcnow)
 
@@ -49,12 +51,13 @@ class LatencyMetrics:
         if len(self.samples) > MAX_LATENCY_SAMPLES:
             self.samples = self.samples[-MAX_LATENCY_SAMPLES:]
 
-    def get_percentiles(self) -> Dict[str, float]:
+    def get_percentiles(self) -> dict[str, float]:
         """
         Calculate latency percentiles.
 
         Returns:
-            Dict with p50, p95, p99 latencies in milliseconds
+            Dict with p50, p95, p99 latencies in milliseconds,
+            plus count, min, max, and mean
         """
         if not self.samples:
             return {"p50": 0.0, "p95": 0.0, "p99": 0.0, "count": 0}
@@ -72,7 +75,7 @@ class LatencyMetrics:
             "mean": statistics.mean(sorted_samples),
         }
 
-    def _percentile(self, sorted_samples: List[float], percentile: int) -> float:
+    def _percentile(self, sorted_samples: list[float], percentile: int) -> float:
         """Calculate percentile value."""
         if not sorted_samples:
             return 0.0
@@ -97,9 +100,9 @@ class SlowOperation:
     operation: str
     latency_ms: float
     timestamp: datetime
-    context: Dict[str, Any]
+    context: dict[str, Any]
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for logging/storage."""
         return {
             "operation": self.operation,
@@ -128,7 +131,7 @@ class PerformanceTracker:
         >>> print(f"p95 latency: {metrics['p95']}ms")
     """
 
-    def __init__(self, slow_thresholds: Optional[Dict[str, float]] = None):
+    def __init__(self, slow_thresholds: dict[str, float] | None = None):
         """
         Initialize performance tracker.
 
@@ -139,7 +142,7 @@ class PerformanceTracker:
                            - llm_call: 5000ms (5s)
                            - tool_execution: 3000ms (3s)
         """
-        self.metrics: Dict[str, LatencyMetrics] = defaultdict(
+        self.metrics: dict[str, LatencyMetrics] = defaultdict(
             lambda: LatencyMetrics(operation="unknown")
         )
 
@@ -149,7 +152,7 @@ class PerformanceTracker:
             self.default_thresholds.update(slow_thresholds)
 
         # Track slow operations for diagnostics
-        self.slow_operations: List[SlowOperation] = []
+        self.slow_operations: list[SlowOperation] = []
         self.max_slow_ops = MAX_SLOW_OPERATIONS
 
         # Cleanup tracking to prevent unbounded memory growth
@@ -158,7 +161,9 @@ class PerformanceTracker:
         self._expiration_hours = 24  # Remove metrics older than 24 hours
 
     @contextmanager
-    def measure(self, operation: str, context: Optional[Dict[str, Any]] = None) -> Generator[None, None, None]:
+    def measure(
+        self, operation: str, context: dict[str, Any] | None = None
+    ) -> Generator[None, None, None]:
         """
         Context manager to measure operation latency.
 
@@ -181,10 +186,7 @@ class PerformanceTracker:
             self.record(operation, latency_ms, context or {})
 
     def record(
-        self,
-        operation: str,
-        latency_ms: float,
-        context: Optional[Dict[str, Any]] = None
+        self, operation: str, latency_ms: float, context: dict[str, Any] | None = None
     ) -> None:
         """
         Record a latency measurement.
@@ -202,10 +204,11 @@ class PerformanceTracker:
 
         # Initialize metrics for this operation if not exists
         if operation not in self.metrics:
-            threshold = self.default_thresholds.get(operation, DEFAULT_SLOW_THRESHOLD_MS)
+            threshold = self.default_thresholds.get(
+                operation, DEFAULT_SLOW_THRESHOLD_MS
+            )
             self.metrics[operation] = LatencyMetrics(
-                operation=operation,
-                slow_threshold_ms=threshold
+                operation=operation, slow_threshold_ms=threshold
             )
 
         # Record latency
@@ -218,14 +221,14 @@ class PerformanceTracker:
                 operation=operation,
                 latency_ms=latency_ms,
                 timestamp=utcnow(),
-                context=context or {}
+                context=context or {},
             )
 
             self.slow_operations.append(slow_op)
 
             # Keep only recent slow operations
             if len(self.slow_operations) > self.max_slow_ops:
-                self.slow_operations = self.slow_operations[-self.max_slow_ops:]
+                self.slow_operations = self.slow_operations[-self.max_slow_ops :]
 
             # Log slow operation
             logger.warning(
@@ -233,7 +236,7 @@ class PerformanceTracker:
                 f"(threshold: {metrics.slow_threshold_ms}ms) - {context}"
             )
 
-    def get_metrics(self, operation: str) -> Dict[str, float]:
+    def get_metrics(self, operation: str) -> dict[str, float]:
         """
         Get latency metrics for a specific operation.
 
@@ -244,11 +247,19 @@ class PerformanceTracker:
             Dict with p50, p95, p99, count, min, max, mean
         """
         if operation not in self.metrics:
-            return {"p50": 0.0, "p95": 0.0, "p99": 0.0, "count": 0}
+            return {
+                "p50": 0.0,
+                "p95": 0.0,
+                "p99": 0.0,
+                "count": 0,
+                "min": 0.0,
+                "max": 0.0,
+                "mean": 0.0,
+            }
 
         return self.metrics[operation].get_percentiles()
 
-    def get_all_metrics(self) -> Dict[str, Dict[str, float]]:
+    def get_all_metrics(self) -> dict[str, dict[str, float]]:
         """
         Get metrics for all tracked operations.
 
@@ -261,10 +272,8 @@ class PerformanceTracker:
         }
 
     def get_slow_operations(
-        self,
-        operation: Optional[str] = None,
-        limit: int = 10
-    ) -> List[Dict[str, Any]]:
+        self, operation: str | None = None, limit: int = 10
+    ) -> list[dict[str, Any]]:
         """
         Get recent slow operations.
 
@@ -283,16 +292,14 @@ class PerformanceTracker:
         # Return most recent first
         return [op.to_dict() for op in reversed(ops[-limit:])]
 
-    def get_summary(self) -> Dict[str, Any]:
+    def get_summary(self) -> dict[str, Any]:
         """
         Get performance summary across all operations.
 
         Returns:
             Summary with total operations, slow count, metrics per operation
         """
-        total_operations = sum(
-            len(m.samples) for m in self.metrics.values()
-        )
+        total_operations = sum(len(m.samples) for m in self.metrics.values())
         total_slow = len(self.slow_operations)
 
         return {
@@ -372,7 +379,7 @@ class PerformanceTracker:
 
 
 # Global performance tracker instance (OB-06: double-check locking)
-_global_tracker: Optional[PerformanceTracker] = None
+_global_tracker: PerformanceTracker | None = None
 _perf_tracker_lock = threading.Lock()
 
 

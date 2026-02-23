@@ -1,7 +1,6 @@
 """Database persistence for goal proposal data."""
 
 import logging
-from typing import Dict, Optional
 
 from sqlalchemy import func
 from sqlalchemy.engine import Engine
@@ -17,7 +16,7 @@ logger = logging.getLogger(__name__)
 class GoalStore:
     """Database persistence for goal proposals and analysis runs."""
 
-    def __init__(self, database_url: Optional[str] = None) -> None:
+    def __init__(self, database_url: str | None = None) -> None:
         self.database_url = database_url or get_database_url()
         self.engine: Engine = create_app_engine(self.database_url)
 
@@ -36,17 +35,17 @@ class GoalStore:
             session.merge(record)
             session.commit()
 
-    def get_proposal(self, proposal_id: str) -> Optional[GoalProposalRecord]:
+    def get_proposal(self, proposal_id: str) -> GoalProposalRecord | None:
         """Get a proposal by ID, or None."""
         with Session(self.engine) as session:
             return session.get(GoalProposalRecord, proposal_id)
 
     def list_proposals(
         self,
-        status: Optional[str] = None,
-        goal_type: Optional[str] = None,
-        product_type: Optional[str] = None,
-        agent_id: Optional[str] = None,
+        status: str | None = None,
+        goal_type: str | None = None,
+        product_type: str | None = None,
+        agent_id: str | None = None,
         limit: int = DEFAULT_LIST_LIMIT,
     ) -> list[GoalProposalRecord]:
         """List proposals with optional filters."""
@@ -71,8 +70,8 @@ class GoalStore:
         self,
         proposal_id: str,
         status: str,
-        reviewer: Optional[str] = None,
-        reason: Optional[str] = None,
+        reviewer: str | None = None,
+        reason: str | None = None,
     ) -> bool:
         """Update a proposal's status. Returns True if found."""
         from temper_ai.storage.database.datetime_utils import utcnow as _utcnow
@@ -92,7 +91,7 @@ class GoalStore:
             session.commit()
             return True
 
-    def count_by_status(self) -> Dict[str, int]:
+    def count_by_status(self) -> dict[str, int]:
         """Count proposals grouped by status."""
         with Session(self.engine) as session:
             rows = session.exec(
@@ -111,9 +110,7 @@ class GoalStore:
             session.merge(run)
             session.commit()
 
-    def list_analysis_runs(
-        self, limit: int = DEFAULT_RUN_LIMIT
-    ) -> list[AnalysisRun]:
+    def list_analysis_runs(self, limit: int = DEFAULT_RUN_LIMIT) -> list[AnalysisRun]:
         """List recent analysis runs, newest first."""
         with Session(self.engine) as session:
             stmt = (

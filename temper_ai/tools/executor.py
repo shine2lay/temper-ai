@@ -4,15 +4,18 @@ Tool executor with safety checks and error handling.
 Provides robust thread pool management with guaranteed cleanup
 using weakref.finalize() to prevent thread leaks.
 """
+
 from __future__ import annotations
 
 import threading
 import weakref
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Dict, Optional, Union
+from typing import Any
 
 from temper_ai.shared.constants.limits import MIN_WORKERS
+from temper_ai.shared.utils.exceptions import RateLimitError
+from temper_ai.shared.utils.logging import get_logger
 from temper_ai.tools._executor_config import ToolExecutorConfig
 from temper_ai.tools._executor_helpers import (
     acquire_concurrent_slot,
@@ -42,17 +45,12 @@ from temper_ai.tools._executor_helpers import (
 )
 from temper_ai.tools.base import ToolResult
 from temper_ai.tools.registry import ToolRegistry
-from temper_ai.shared.utils.exceptions import RateLimitError
-from temper_ai.shared.utils.logging import get_logger
 
 # Module logger
 logger = get_logger(__name__)
 
-# Note: RateLimitError now imported from temper_ai.shared.utils.exceptions
-# (unified base class for all rate limit exceptions)
 
-
-def _build_tool_cache(cfg: "ToolExecutorConfig") -> Any:
+def _build_tool_cache(cfg: ToolExecutorConfig) -> Any:
     """Create ToolResultCache from config, or None if caching is disabled."""
     if not cfg.enable_tool_cache:
         return None
@@ -61,6 +59,7 @@ def _build_tool_cache(cfg: "ToolExecutorConfig") -> Any:
         DEFAULT_CACHE_MAX_SIZE,
         DEFAULT_CACHE_TTL_SECONDS,
     )
+
     return ToolResultCache(
         max_size=cfg.tool_cache_max_size or DEFAULT_CACHE_MAX_SIZE,
         ttl_seconds=cfg.tool_cache_ttl or DEFAULT_CACHE_TTL_SECONDS,
@@ -81,7 +80,7 @@ class ToolExecutor:
     def __init__(
         self,
         registry: ToolRegistry,
-        config: Optional[Union[ToolExecutorConfig, Dict[str, Any]]] = None,
+        config: ToolExecutorConfig | dict[str, Any] | None = None,
         **kwargs: Any,
     ):
         """
@@ -159,26 +158,30 @@ class ToolExecutor:
 
         # Register approval rejection callback if both workflows provided
         if self.approval_workflow and self.rollback_manager:
-            self.approval_workflow.on_rejected(lambda req: handle_approval_rejection(self, req))
+            self.approval_workflow.on_rejected(
+                lambda req: handle_approval_rejection(self, req)
+            )
 
-        logger.debug(f"ToolExecutor initialized with {cfg.max_workers} workers, "
-                    f"max_concurrent={cfg.max_concurrent}, rate_limit={cfg.rate_limit}/{cfg.rate_window}s, "
-                    f"rollback={'enabled' if cfg.rollback_manager else 'disabled'}")
+        logger.debug(
+            f"ToolExecutor initialized with {cfg.max_workers} workers, "
+            f"max_concurrent={cfg.max_concurrent}, rate_limit={cfg.rate_limit}/{cfg.rate_window}s, "
+            f"rollback={'enabled' if cfg.rollback_manager else 'disabled'}"
+        )
 
     def get_concurrent_execution_count(self) -> int:
         """Return current concurrent execution count."""
         return _get_concurrent_count(self)
 
-    def get_rate_limit_usage(self) -> Dict[str, Any]:
+    def get_rate_limit_usage(self) -> dict[str, Any]:
         """Return current rate limit usage stats."""
         return _get_rate_limit_usage(self)
 
     def _resolve_defaults(
         self,
-        params: Optional[Dict[str, Any]],
-        timeout: Optional[int],
-        context: Optional[Dict[str, Any]],
-    ) -> tuple[Dict[str, Any], int, Dict[str, Any]]:
+        params: dict[str, Any] | None,
+        timeout: int | None,
+        context: dict[str, Any] | None,
+    ) -> tuple[dict[str, Any], int, dict[str, Any]]:
         """Resolve None parameters to their defaults."""
         return (
             params if params is not None else {},
@@ -191,13 +194,11 @@ class ToolExecutor:
         error: Exception,
         snapshot: Any,
         tool_name: str,
-        context: Dict[str, Any],
+        context: dict[str, Any],
     ) -> ToolResult:
         """Handle exception during tool execution with optional rollback."""
         if snapshot and self.enable_auto_rollback and self.rollback_manager:
-            handle_exception_rollback(
-                self, snapshot, tool_name, error, context
-            )
+            handle_exception_rollback(self, snapshot, tool_name, error, context)
         logger.error(f"Tool execution failed: {error}", exc_info=True)
         return ToolResult(
             success=False,
@@ -208,14 +209,12 @@ class ToolExecutor:
     def execute(
         self,
         tool_name: str,
-        params: Optional[Dict[str, Any]] = None,
-        timeout: Optional[int] = None,
-        context: Optional[Dict[str, Any]] = None,
+        params: dict[str, Any] | None = None,
+        timeout: int | None = None,
+        context: dict[str, Any] | None = None,
     ) -> ToolResult:
         """Execute tool with parameters."""
-        params, timeout, context = self._resolve_defaults(
-            params, timeout, context
-        )
+        params, timeout, context = self._resolve_defaults(params, timeout, context)
 
         try:
             check_rate_limit(self)
@@ -226,9 +225,7 @@ class ToolExecutor:
         if error is not None:
             return error
         if tool is None:
-            return ToolResult(
-                success=False, error=f"Tool '{tool_name}' not found"
-            )
+            return ToolResult(success=False, error=f"Tool '{tool_name}' not found")
 
         policy_error = validate_policy(self, tool_name, params, context)
         if policy_error is not None:
@@ -241,31 +238,44 @@ class ToolExecutor:
                 self, tool, params, timeout, snapshot, tool_name, context
             )
         except (RuntimeError, OSError, MemoryError) as e:
-            return self._handle_execution_error(
-                e, snapshot, tool_name, context
-            )
+            return self._handle_execution_error(e, snapshot, tool_name, context)
 
-    def execute_batch(self, executions: list[tuple[str, Dict[str, Any]]], timeout: Optional[int] = None, overall_timeout: Optional[int] = None) -> list[ToolResult]:
+    def execute_batch(
+        self,
+        executions: list[tuple[str, dict[str, Any]]],
+        timeout: int | None = None,
+        overall_timeout: int | None = None,
+    ) -> list[ToolResult]:
         """Execute multiple tools in parallel."""
         return _execute_batch(self, executions, timeout, overall_timeout)
 
-    def validate_tool_call(self, tool_name: str, params: Dict[str, Any]) -> tuple[bool, Optional[str]]:
+    def validate_tool_call(
+        self, tool_name: str, params: dict[str, Any]
+    ) -> tuple[bool, str | None]:
         """Validate a tool call before execution."""
         return _validate_tool_call(self, tool_name, params)
 
-    def get_tool_info(self, tool_name: str) -> Optional[Dict[str, Any]]:
+    def get_tool_info(self, tool_name: str) -> dict[str, Any] | None:
         """Get metadata about a registered tool."""
         return _get_tool_info(self, tool_name)
 
     @staticmethod
-    def _cleanup_executor(executor: ThreadPoolExecutor, approval_executor: Optional[ThreadPoolExecutor] = None) -> None:
+    def _cleanup_executor(
+        executor: ThreadPoolExecutor,
+        approval_executor: ThreadPoolExecutor | None = None,
+    ) -> None:
         """Static cleanup method for thread pools."""
-        for pool_name, pool in [("tool-exec", executor), ("tool-approval", approval_executor)]:
+        for pool_name, pool in [
+            ("tool-exec", executor),
+            ("tool-approval", approval_executor),
+        ]:
             if pool is None:
                 continue
             try:
                 pool.shutdown(wait=True, cancel_futures=True)
-                logger.debug("ThreadPoolExecutor (%s) cleaned up successfully", pool_name)
+                logger.debug(
+                    "ThreadPoolExecutor (%s) cleaned up successfully", pool_name
+                )
             except (RuntimeError, OSError) as e:
                 logger.error("Error during thread pool cleanup (%s): %s", pool_name, e)
 
@@ -283,7 +293,7 @@ class ToolExecutor:
             logger.error(f"Error during executor shutdown: {e}")
             raise
 
-    def __enter__(self) -> "ToolExecutor":
+    def __enter__(self) -> ToolExecutor:
         logger.debug("Entering ToolExecutor context")
         return self
 
@@ -293,7 +303,7 @@ class ToolExecutor:
 
     def __del__(self) -> None:
         try:
-            if not self._shutdown and hasattr(self, '_executor'):
+            if not self._shutdown and hasattr(self, "_executor"):
                 logger.warning(
                     "ToolExecutor garbage collected without explicit shutdown. "
                     "Use context manager or call shutdown() explicitly."
@@ -316,17 +326,21 @@ class ToolExecutor:
 # god-class threshold while preserving backward compatibility.
 # --------------------------------------------------------------------------
 
+
 def _acquire_concurrent_slot_method(self: ToolExecutor) -> bool:
     """Acquire a concurrent slot."""
     return acquire_concurrent_slot(self)
+
 
 def _release_concurrent_slot_method(self: ToolExecutor) -> None:
     """Release a concurrent slot."""
     release_concurrent_slot(self)
 
+
 def _check_rate_limit_method(self: ToolExecutor) -> None:
     """Check rate limit."""
     check_rate_limit(self)
+
 
 ToolExecutor._acquire_concurrent_slot = _acquire_concurrent_slot_method  # type: ignore[attr-defined]
 ToolExecutor._release_concurrent_slot = _release_concurrent_slot_method  # type: ignore[attr-defined]

@@ -4,16 +4,9 @@ Enforces rate limits on operations (commits, deploys, tool/LLM/API calls)
 to prevent resource exhaustion and cost overruns. Uses token bucket algorithm
 for smooth rate limiting with burst support.
 """
-from typing import Any, Dict, List, Optional
 
-from temper_ai.shared.constants.durations import SECONDS_PER_HOUR
-from temper_ai.shared.constants.limits import (
-    LARGE_ITEM_LIMIT,
-    MULTIPLIER_LARGE,
-    SMALL_ITEM_LIMIT,
-    THRESHOLD_MEDIUM_COUNT,
-    VERY_LARGE_ITEM_LIMIT,
-)
+from typing import Any
+
 from temper_ai.safety.base import BaseSafetyPolicy
 from temper_ai.safety.constants import (
     ACTION_TYPE_API_CALL,
@@ -31,6 +24,14 @@ from temper_ai.safety.constants import (
 from temper_ai.safety.interfaces import SafetyViolation, ValidationResult
 from temper_ai.safety.policies._rate_limit_helpers import check_limit, format_wait_time
 from temper_ai.safety.token_bucket import RateLimit, TokenBucketManager
+from temper_ai.shared.constants.durations import SECONDS_PER_HOUR
+from temper_ai.shared.constants.limits import (
+    LARGE_ITEM_LIMIT,
+    MULTIPLIER_LARGE,
+    SMALL_ITEM_LIMIT,
+    THRESHOLD_MEDIUM_COUNT,
+    VERY_LARGE_ITEM_LIMIT,
+)
 
 # Default rate limits (per agent, per hour)
 DEFAULT_COMMITS_PER_HOUR = THRESHOLD_MEDIUM_COUNT
@@ -116,7 +117,7 @@ class TokenBucketRateLimitPolicy(BaseSafetyPolicy):
         "api_request": ACTION_TYPE_API_CALL,
     }
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: dict[str, Any] | None = None):
         """Initialize rate limit policy. Raises ValueError for invalid config."""
         super().__init__(config or {})
 
@@ -151,7 +152,7 @@ class TokenBucketRateLimitPolicy(BaseSafetyPolicy):
         self._load_global_limits(config or {})
 
     @property
-    def rate_limits(self) -> Dict[str, Any]:
+    def rate_limits(self) -> dict[str, Any]:
         """Per-agent rate limits (keyed by limit type)."""
         return self.per_agent_manager.limits
 
@@ -183,7 +184,7 @@ class TokenBucketRateLimitPolicy(BaseSafetyPolicy):
                 f"Invalid rate limit configuration for '{limit_type}': {e}"
             ) from e
 
-    def _load_per_agent_limits(self, config: Dict[str, Any]) -> None:
+    def _load_per_agent_limits(self, config: dict[str, Any]) -> None:
         """Load per-agent rate limits from config."""
         limits = self.DEFAULT_LIMITS.copy()
         if RATE_LIMITS_KEY not in config:
@@ -202,7 +203,7 @@ class TokenBucketRateLimitPolicy(BaseSafetyPolicy):
         for limit_type, rate_limit in limits.items():
             self.per_agent_manager.set_limit(limit_type, rate_limit)
 
-    def _load_global_limits(self, config: Dict[str, Any]) -> None:
+    def _load_global_limits(self, config: dict[str, Any]) -> None:
         """Load global rate limits from config."""
         limits = self.DEFAULT_GLOBAL_LIMITS.copy()
         if GLOBAL_LIMITS_KEY not in config:
@@ -236,7 +237,7 @@ class TokenBucketRateLimitPolicy(BaseSafetyPolicy):
         """Return policy priority (high to prevent resource exhaustion)."""
         return RATE_LIMIT_PRIORITY
 
-    def _get_entity_id_and_scope(self, context: Dict[str, Any]) -> tuple[str, str]:
+    def _get_entity_id_and_scope(self, context: dict[str, Any]) -> tuple[str, str]:
         """Return (entity_id, scope) based on per_agent setting."""
         if self.per_agent:
             return context.get("agent_id", "unknown"), "per-agent"
@@ -248,10 +249,10 @@ class TokenBucketRateLimitPolicy(BaseSafetyPolicy):
         action_type: str,
         entity_id: str,
         scope: str,
-        context: Dict[str, Any],
-    ) -> List[SafetyViolation]:
+        context: dict[str, Any],
+    ) -> list[SafetyViolation]:
         """Check all applicable rate limits and return violations."""
-        violations: List[SafetyViolation] = []
+        violations: list[SafetyViolation] = []
         agent_limited, agent_violation = check_limit(
             self.per_agent_manager,
             entity_id,
@@ -278,7 +279,7 @@ class TokenBucketRateLimitPolicy(BaseSafetyPolicy):
         return violations
 
     def _validate_impl(
-        self, action: Dict[str, Any], context: Dict[str, Any]
+        self, action: dict[str, Any], context: dict[str, Any]
     ) -> ValidationResult:
         """Validate action against rate limits."""
         action_type = action.get("operation") or action.get("type", "unknown")
@@ -316,9 +317,9 @@ class TokenBucketRateLimitPolicy(BaseSafetyPolicy):
         """Format wait time for human readability."""
         return format_wait_time(seconds)
 
-    def get_status(self, agent_id: str) -> Dict[str, Any]:
+    def get_status(self, agent_id: str) -> dict[str, Any]:
         """Get rate limit status for an agent."""
-        status: Dict[str, Any] = {"agent_id": agent_id, "limits": {}}
+        status: dict[str, Any] = {"agent_id": agent_id, "limits": {}}
         for limit_type in self.per_agent_manager.limits.keys():
             tokens = self.per_agent_manager.get_tokens(agent_id, limit_type)
             bucket = self.per_agent_manager.get_bucket(agent_id, limit_type)
@@ -334,8 +335,8 @@ class TokenBucketRateLimitPolicy(BaseSafetyPolicy):
 
     def reset_limits(
         self,
-        agent_id: Optional[str] = None,
-        limit_type: Optional[str] = None,
+        agent_id: str | None = None,
+        limit_type: str | None = None,
     ) -> None:
         """Reset rate limits. Pass agent_id/limit_type to reset specific limits."""
         self.per_agent_manager.reset(agent_id, limit_type)

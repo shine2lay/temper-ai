@@ -7,11 +7,13 @@ Contains:
 - Retry/failure handling
 - Agent metric merging
 """
+
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Any, Callable, Dict, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -19,18 +21,19 @@ logger = logging.getLogger(__name__)
 @dataclass
 class FlushBatchParams:
     """Parameters for preparing flush batch."""
+
     llm_calls: list
     tool_calls: list
     agent_metrics: dict
     retry_queue: list
-    pending_ids: Dict[str, float]
+    pending_ids: dict[str, float]
     retryable_item_cls: type
     agent_metric_update_cls: type
     merge_fn: Callable
 
 
 def purge_stale_pending_ids(
-    pending_ids: Dict[str, float],
+    pending_ids: dict[str, float],
     timeout: float,
 ) -> int:
     """Remove pending IDs older than timeout.
@@ -75,45 +78,51 @@ def prepare_flush_batch(params: FlushBatchParams) -> list:
     for llm_call in llm_calls:
         item_id = llm_call.llm_call_id
         if item_id not in pending_ids:
-            retryable_items.append(retryable_item_cls(
-                item=llm_call,
-                item_type="llm_call",
-                item_id=item_id,
-                retry_count=0
-            ))
+            retryable_items.append(
+                retryable_item_cls(
+                    item=llm_call, item_type="llm_call", item_id=item_id, retry_count=0
+                )
+            )
             pending_ids[item_id] = time.time()
 
     # Add new tool calls
     for tool_call in tool_calls:
         item_id = tool_call.tool_execution_id
         if item_id not in pending_ids:
-            retryable_items.append(retryable_item_cls(
-                item=tool_call,
-                item_type="tool_call",
-                item_id=item_id,
-                retry_count=0
-            ))
+            retryable_items.append(
+                retryable_item_cls(
+                    item=tool_call,
+                    item_type="tool_call",
+                    item_id=item_id,
+                    retry_count=0,
+                )
+            )
             pending_ids[item_id] = time.time()
 
     # Add agent metrics (merge if already in retry queue)
     for agent_id, metrics in agent_metrics.items():
         # Check if already in retry queue
         existing = next(
-            (item for item in retry_queue
-             if item.item_type == "agent_metric" and item.item_id == agent_id),
-            None
+            (
+                item
+                for item in retry_queue
+                if item.item_type == "agent_metric" and item.item_id == agent_id
+            ),
+            None,
         )
 
         if existing:
             # Merge new metrics into existing retry item
             merge_fn(existing.item, metrics)
         else:
-            retryable_items.append(retryable_item_cls(
-                item=metrics,
-                item_type="agent_metric",
-                item_id=agent_id,
-                retry_count=0
-            ))
+            retryable_items.append(
+                retryable_item_cls(
+                    item=metrics,
+                    item_type="agent_metric",
+                    item_id=agent_id,
+                    retry_count=0,
+                )
+            )
             pending_ids[agent_id] = time.time()
 
     # Add items from retry queue
@@ -126,7 +135,7 @@ def execute_flush(
     items_to_flush: list,
     flush_callback: Callable,
     lock: Any,
-    pending_ids: Dict[str, float],
+    pending_ids: dict[str, float],
     retry_queue_ref: list,
     handle_failure_fn: Callable,
     merge_fn: Callable,
@@ -150,7 +159,7 @@ def execute_flush(
 
     # Batch agent metric updates: merge all metrics per agent into a single
     # AgentMetricUpdate to avoid N+1 updates in the flush callback (M-44).
-    agent_metrics: Dict[str, Any] = {}
+    agent_metrics: dict[str, Any] = {}
     for item in items_to_flush:
         if item.item_type != "agent_metric":
             continue
@@ -204,14 +213,14 @@ def handle_flush_failure(
     error: str,
     max_retries: int,
     retry_queue: list,
-    pending_ids: Dict[str, float],
+    pending_ids: dict[str, float],
     move_to_dlq_fn: Callable,
 ) -> None:
     """Handle flush failure with retry logic and dead-letter queue.
 
     Items are retried up to max_retries times, then moved to DLQ.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     new_retry_queue = []
 
     for item in failed_items:
@@ -241,7 +250,7 @@ def move_to_dlq(
     enable_dlq: bool,
     dead_letter_queue: list,
     max_dlq_size: int,
-    dlq_callback: Optional[Callable],
+    dlq_callback: Callable | None,
     dead_letter_item_cls: type,
 ) -> None:
     """Move failed item to dead-letter queue.
@@ -262,7 +271,7 @@ def move_to_dlq(
         retry_count=item.retry_count,
         first_failed_at=item.first_failed_at or now,
         final_error=item.last_error or "Unknown error",
-        failed_at=now
+        failed_at=now,
     )
 
     dead_letter_queue.append(dlq_item)

@@ -7,6 +7,7 @@ Tests verify that:
 3. No execution occurs when circuit is OPEN
 4. State reservation is atomic and thread-safe
 """
+
 import threading
 import time
 
@@ -36,8 +37,8 @@ class TestCircuitBreakerRaceCondition:
             config=CircuitBreakerConfig(
                 failure_threshold=1,
                 success_threshold=2,  # Require 2 successes (so 1 success won't close)
-                timeout=1
-            )
+                timeout=1,
+            ),
         )
 
         # Open circuit with counted error (timeout)
@@ -53,7 +54,11 @@ class TestCircuitBreakerRaceCondition:
 
         execution_started = threading.Event()
         execution_continue = threading.Event()
-        results = {"thread1_executed": False, "thread2_executed": False, "thread1_result": None}
+        results = {
+            "thread1_executed": False,
+            "thread2_executed": False,
+            "thread1_result": None,
+        }
 
         def slow_success():
             """Slow function that allows race condition to occur."""
@@ -107,8 +112,8 @@ class TestCircuitBreakerRaceCondition:
             config=CircuitBreakerConfig(
                 failure_threshold=1,
                 success_threshold=3,  # Need 3 successes to close
-                timeout=1
-            )
+                timeout=1,
+            ),
         )
 
         # Open circuit with counted error
@@ -151,8 +156,12 @@ class TestCircuitBreakerRaceCondition:
         # With success_threshold=3, first 3 successes close the circuit
         # Remaining threads execute in CLOSED state (all succeed)
         # So ALL should succeed (3 in HALF_OPEN sequentially, 7 in CLOSED concurrently)
-        assert execution_count["value"] == 10, f"Expected 10 executions, got {execution_count['value']}"
-        assert rejected_count["value"] == 0, f"Expected 0 rejections, got {rejected_count['value']}"
+        assert (
+            execution_count["value"] == 10
+        ), f"Expected 10 executions, got {execution_count['value']}"
+        assert (
+            rejected_count["value"] == 0
+        ), f"Expected 0 rejections, got {rejected_count['value']}"
 
         # Circuit should be CLOSED after 3 successes
         assert breaker.state == CircuitState.CLOSED
@@ -160,8 +169,7 @@ class TestCircuitBreakerRaceCondition:
     def test_no_execution_when_open(self):
         """Test that OPEN circuit blocks ALL execution attempts."""
         breaker = CircuitBreaker(
-            name="test",
-            config=CircuitBreakerConfig(failure_threshold=1, timeout=10)
+            name="test", config=CircuitBreakerConfig(failure_threshold=1, timeout=10)
         )
 
         # Open circuit with counted error
@@ -177,6 +185,7 @@ class TestCircuitBreakerRaceCondition:
 
         def try_execute():
             try:
+
                 def increment():
                     with lock:
                         execution_count["value"] += 1
@@ -196,7 +205,9 @@ class TestCircuitBreakerRaceCondition:
             t.join(timeout=2.0)
 
         # NONE should have executed
-        assert execution_count["value"] == 0, f"Expected 0 executions, got {execution_count['value']}"
+        assert (
+            execution_count["value"] == 0
+        ), f"Expected 0 executions, got {execution_count['value']}"
 
         # Circuit should still be OPEN
         assert breaker.state == CircuitState.OPEN
@@ -234,8 +245,8 @@ class TestCircuitBreakerRaceCondition:
             config=CircuitBreakerConfig(
                 failure_threshold=1,
                 success_threshold=10,  # High threshold so circuit stays HALF_OPEN
-                timeout=0.5
-            )
+                timeout=0.5,
+            ),
         )
 
         # Open circuit
@@ -256,10 +267,13 @@ class TestCircuitBreakerRaceCondition:
             barrier.wait(timeout=2.0)
 
             try:
+
                 def slow_func():
                     with lock:
                         concurrent_count["current"] += 1
-                        concurrent_count["max"] = max(concurrent_count["max"], concurrent_count["current"])
+                        concurrent_count["max"] = max(
+                            concurrent_count["max"], concurrent_count["current"]
+                        )
 
                     time.sleep(0.1)  # Slow operation
 
@@ -281,8 +295,9 @@ class TestCircuitBreakerRaceCondition:
             t.join(timeout=5.0)
 
         # Maximum concurrent executions should be 1 (semaphore enforcement)
-        assert concurrent_count["max"] == 1, \
-            f"Expected max 1 concurrent execution, got {concurrent_count['max']}"
+        assert (
+            concurrent_count["max"] == 1
+        ), f"Expected max 1 concurrent execution, got {concurrent_count['max']}"
 
     def test_thundering_herd_prevention(self):
         """Test that thundering herd is prevented in HALF_OPEN state.
@@ -295,8 +310,8 @@ class TestCircuitBreakerRaceCondition:
             config=CircuitBreakerConfig(
                 failure_threshold=2,
                 success_threshold=3,  # Need 3 successes to close
-                timeout=0.5
-            )
+                timeout=0.5,
+            ),
         )
 
         # Open circuit with counted errors
@@ -322,10 +337,13 @@ class TestCircuitBreakerRaceCondition:
         def concurrent_test():
             barrier.wait(timeout=2.0)
             try:
+
                 def tracked_func():
                     with lock:
                         concurrent_count["current"] += 1
-                        concurrent_count["max"] = max(concurrent_count["max"], concurrent_count["current"])
+                        concurrent_count["max"] = max(
+                            concurrent_count["max"], concurrent_count["current"]
+                        )
 
                     time.sleep(0.01)  # Small delay
 
@@ -354,18 +372,23 @@ class TestCircuitBreakerRaceCondition:
         # - Most are rejected by semaphore
         # - Max concurrent execution is 1 (serial execution in HALF_OPEN)
 
-        assert concurrent_count["max"] == 1, \
-            f"Expected max 1 concurrent (serial), got {concurrent_count['max']}"
+        assert (
+            concurrent_count["max"] == 1
+        ), f"Expected max 1 concurrent (serial), got {concurrent_count['max']}"
 
         # Small number execute, most rejected (thundering herd prevented)
-        assert rejected_count["value"] >= 40, \
-            f"Expected most threads rejected (≥40), got {rejected_count['value']} rejections"
+        assert (
+            rejected_count["value"] >= 40
+        ), f"Expected most threads rejected (≥40), got {rejected_count['value']} rejections"
 
-        assert execution_count["value"] <= 10, \
-            f"Expected few executions (≤10), got {execution_count['value']}"
+        assert (
+            execution_count["value"] <= 10
+        ), f"Expected few executions (≤10), got {execution_count['value']}"
 
-        print(f"Thundering herd prevention: {execution_count['value']} executed, "
-              f"{rejected_count['value']} rejected out of 50")
+        print(
+            f"Thundering herd prevention: {execution_count['value']} executed, "
+            f"{rejected_count['value']} rejected out of 50"
+        )
 
 
 class TestCircuitBreakerConcurrency:
@@ -410,10 +433,8 @@ class TestCircuitBreakerConcurrency:
         breaker = CircuitBreaker(
             name="test",
             config=CircuitBreakerConfig(
-                failure_threshold=2,
-                success_threshold=2,
-                timeout=0.1
-            )
+                failure_threshold=2, success_threshold=2, timeout=0.1
+            ),
         )
 
         # Alternate between success and failure rapidly
@@ -452,10 +473,8 @@ class TestCircuitBreakerEdgeCases:
         breaker = CircuitBreaker(
             name="test",
             config=CircuitBreakerConfig(
-                failure_threshold=1,
-                success_threshold=1,
-                timeout=0.5
-            )
+                failure_threshold=1, success_threshold=1, timeout=0.5
+            ),
         )
 
         # Open circuit with counted error
@@ -495,10 +514,8 @@ class TestCircuitBreakerEdgeCases:
         breaker = CircuitBreaker(
             name="test",
             config=CircuitBreakerConfig(
-                failure_threshold=1,
-                success_threshold=1,
-                timeout=0.5
-            )
+                failure_threshold=1, success_threshold=1, timeout=0.5
+            ),
         )
 
         # Open circuit
@@ -511,7 +528,7 @@ class TestCircuitBreakerEdgeCases:
 
         # Call with non-countable error (HTTP 401)
         def auth_error():
-            response = type('obj', (object,), {'status_code': 401})()
+            response = type("obj", (object,), {"status_code": 401})()
             raise httpx.HTTPStatusError("Auth error", request=None, response=response)
 
         try:

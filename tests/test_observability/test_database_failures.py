@@ -4,6 +4,7 @@ Comprehensive tests for database failure scenarios and resilience.
 Tests database connection failures, transaction rollbacks, data integrity,
 and recovery mechanisms.
 """
+
 import asyncio
 import tempfile
 from datetime import datetime
@@ -22,7 +23,7 @@ from temper_ai.observability.models import (
 @pytest.fixture
 def temp_db_file():
     """Provide temporary database file."""
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.db', delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".db", delete=False) as f:
         db_path = f.name
 
     yield db_path
@@ -47,14 +48,17 @@ class TestConnectionFailures:
         """Test connection to nonexistent database."""
         # Invalid database URL should raise error or handle gracefully
         try:
-            manager = DatabaseManager(database_url="sqlite:////nonexistent/path/db.sqlite")
+            manager = DatabaseManager(
+                database_url="sqlite:////nonexistent/path/db.sqlite"
+            )
             # SQLite may create the file if directory exists
             assert manager is not None
         except OperationalError as e:
             # Expected file-not-found or permission error from SQLAlchemy
             error_msg = str(e).lower()
-            assert "unable to open" in error_msg or "no such file" in error_msg, \
-                f"Expected file/path error, got: {e}"
+            assert (
+                "unable to open" in error_msg or "no such file" in error_msg
+            ), f"Expected file/path error, got: {e}"
 
     def test_connection_with_invalid_url(self):
         """Test connection with invalid database URL."""
@@ -112,7 +116,7 @@ class TestTransactionFailures:
                 id="wf-1",
                 workflow_name="test",
                 started_at=datetime.now(),
-                status="running"
+                status="running",
             )
             session.add(workflow)
             session.commit()
@@ -141,7 +145,7 @@ class TestTransactionFailures:
                 id="wf-1",
                 workflow_name="test",
                 started_at=datetime.now(),
-                status="running"
+                status="running",
             )
             session.add(workflow)
             session.commit()
@@ -160,7 +164,7 @@ class TestTransactionFailures:
                         stage_name="test_stage",
                         stage_config_snapshot={},
                         started_at=datetime.now(),
-                        status="running"
+                        status="running",
                     )
                     session.add(stage)
                     session.flush()
@@ -180,7 +184,11 @@ class TestTransactionFailures:
             workflow = session.query(WorkflowExecution).filter_by(id="wf-1").first()
             assert workflow.status == "running"
 
-            stages = session.query(StageExecution).filter_by(workflow_execution_id="wf-1").all()
+            stages = (
+                session.query(StageExecution)
+                .filter_by(workflow_execution_id="wf-1")
+                .all()
+            )
             assert len(stages) == 0
 
     def test_partial_commit_failure(self, db_manager):
@@ -191,13 +199,13 @@ class TestTransactionFailures:
                 id="wf-1",
                 workflow_name="test1",
                 started_at=datetime.now(),
-                status="running"
+                status="running",
             )
             workflow2 = WorkflowExecution(
                 id="wf-2",
                 workflow_name="test2",
                 started_at=datetime.now(),
-                status="running"
+                status="running",
             )
             session.add_all([workflow1, workflow2])
             session.commit()
@@ -221,7 +229,7 @@ class TestConcurrentAccess:
                     id=f"wf-{i}",
                     workflow_name=f"test{i}",
                     started_at=datetime.now(),
-                    status="running"
+                    status="running",
                 )
                 session.add(workflow)
             session.commit()
@@ -240,7 +248,9 @@ class TestConcurrentAccess:
 
         # Verify all updated
         with db_manager.session() as session:
-            completed = session.query(WorkflowExecution).filter_by(status="completed").count()
+            completed = (
+                session.query(WorkflowExecution).filter_by(status="completed").count()
+            )
             assert completed == 5
 
     @pytest.mark.asyncio
@@ -253,7 +263,7 @@ class TestConcurrentAccess:
                 workflow_name="test",
                 started_at=datetime.now(),
                 status="running",
-                extra_metadata={"counter": 0}
+                extra_metadata={"counter": 0},
             )
             session.add(workflow)
             session.commit()
@@ -265,9 +275,15 @@ class TestConcurrentAccess:
             await asyncio.sleep(0.01)
             try:
                 with db_manager.session() as session:
-                    workflow = session.query(WorkflowExecution).filter_by(id="wf-1").first()
+                    workflow = (
+                        session.query(WorkflowExecution).filter_by(id="wf-1").first()
+                    )
                     # Simulate race condition
-                    current = workflow.extra_metadata.get("counter", 0) if workflow.extra_metadata else 0
+                    current = (
+                        workflow.extra_metadata.get("counter", 0)
+                        if workflow.extra_metadata
+                        else 0
+                    )
                     await asyncio.sleep(0.01)
                     workflow.extra_metadata = {"counter": current + 1}
                     session.commit()
@@ -284,7 +300,11 @@ class TestConcurrentAccess:
         # (This demonstrates the race condition - proper solution would use locks)
         with db_manager.session() as session:
             workflow = session.query(WorkflowExecution).filter_by(id="wf-1").first()
-            final_count = workflow.extra_metadata.get("counter", 0) if workflow.extra_metadata else 0
+            final_count = (
+                workflow.extra_metadata.get("counter", 0)
+                if workflow.extra_metadata
+                else 0
+            )
 
             # At least 1 update should have succeeded
             assert final_count >= 1
@@ -299,7 +319,7 @@ class TestConcurrentAccess:
                 id="wf-1",
                 workflow_name="test",
                 started_at=datetime.now(),
-                status="running"
+                status="running",
             )
             session.add(workflow)
             session.commit()
@@ -339,7 +359,7 @@ class TestDataIntegrity:
                 id="wf-1",
                 workflow_name="test",
                 started_at=datetime.now(),
-                status="running"
+                status="running",
             )
             session.add(workflow)
             session.commit()
@@ -351,7 +371,7 @@ class TestDataIntegrity:
                     id="wf-1",  # Same ID
                     workflow_name="test2",
                     started_at=datetime.now(),
-                    status="running"
+                    status="running",
                 )
                 session.add(duplicate)
                 session.commit()
@@ -367,7 +387,7 @@ class TestDataIntegrity:
                     stage_name="test",
                     stage_config_snapshot={},
                     started_at=datetime.now(),
-                    status="running"
+                    status="running",
                 )
                 session.add(stage)
                 session.commit()
@@ -388,7 +408,7 @@ class TestDataIntegrity:
                     id="wf-1",
                     workflow_name=None,  # Required field
                     started_at=datetime.now(),
-                    status="running"
+                    status="running",
                 )
                 session.add(workflow)
                 session.commit()
@@ -408,7 +428,7 @@ class TestRecoveryMechanisms:
                 id="wf-1",
                 workflow_name="test",
                 started_at=datetime.now(),
-                status="running"
+                status="running",
             )
             session.add(workflow)
             session.commit()
@@ -436,7 +456,7 @@ class TestRecoveryMechanisms:
                     id="wf-1",
                     workflow_name="test",
                     started_at=datetime.now(),
-                    status="running"
+                    status="running",
                 )
                 session.add(workflow)
                 session.flush()
@@ -450,7 +470,7 @@ class TestRecoveryMechanisms:
                 id="wf-2",
                 workflow_name="test2",
                 started_at=datetime.now(),
-                status="running"
+                status="running",
             )
             session.add(workflow)
             session.commit()
@@ -471,13 +491,13 @@ class TestRecoveryMechanisms:
                 id="wf-1",
                 workflow_name="test",
                 started_at=datetime.now(),
-                status="running"
+                status="running",
             )
             session.add(workflow)
             session.commit()
 
         # Force connection to close
-        if hasattr(manager, 'engine'):
+        if hasattr(manager, "engine"):
             manager.engine.dispose()
 
         # Should automatically reconnect
@@ -503,7 +523,9 @@ class TestQueryFailures:
         # SQLAlchemy 2.x raises ArgumentError for raw string SQL (requires text())
         with pytest.raises(ArgumentError):
             with db_manager.session() as session:
-                session.execute("SELECT * FORM workflow_executions")  # FORM instead of FROM
+                session.execute(
+                    "SELECT * FORM workflow_executions"
+                )  # FORM instead of FROM
 
     def test_query_timeout(self):
         """Test query timeout handling."""
@@ -524,7 +546,7 @@ class TestQueryFailures:
                     id=f"wf-{i}",
                     workflow_name=f"test{i}",
                     started_at=datetime.now(),
-                    status="running"
+                    status="running",
                 )
                 for i in range(1000)
             ]
@@ -549,7 +571,7 @@ class TestMemoryManagement:
                     id="wf-1",
                     workflow_name="test",
                     started_at=datetime.now(),
-                    status="running"
+                    status="running",
                 )
                 session.add(workflow)
                 raise RuntimeError("Test error")
@@ -572,7 +594,7 @@ class TestMemoryManagement:
                     id=f"wf-{i}",
                     workflow_name=f"test{i}",
                     started_at=datetime.now(),
-                    status="running"
+                    status="running",
                 )
                 session.add(workflow)
                 session.commit()
@@ -600,7 +622,7 @@ class TestDatabaseMigrations:
                 id="wf-1",
                 workflow_name="test",
                 started_at=datetime.now(),
-                status="running"
+                status="running",
             )
             session.add(workflow)
             session.commit()
@@ -631,7 +653,7 @@ class TestBackupAndRestore:
                 id="wf-1",
                 workflow_name="test",
                 started_at=datetime.now(),
-                status="running"
+                status="running",
             )
             session.add(workflow)
             session.commit()
@@ -640,6 +662,7 @@ class TestBackupAndRestore:
 
         # Copy database file
         import shutil
+
         backup_file = temp_db_file + ".backup"
         shutil.copy(temp_db_file, backup_file)
 

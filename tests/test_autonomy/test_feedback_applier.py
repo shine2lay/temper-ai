@@ -6,8 +6,8 @@ import pytest
 
 from temper_ai.autonomy.feedback_applier import FeedbackApplier, _parse_action
 
-
 # ── Helpers ────────────────────────────────────────────────────────────
+
 
 def _mock_recommendation(
     rec_id: str = "rec-001",
@@ -53,9 +53,13 @@ def _mock_goal(
     goal = MagicMock()
     goal.id = goal_id
     goal.proposed_actions = (
-        proposed_actions if proposed_actions is not None else list(_DEFAULT_GOAL_ACTIONS)
+        proposed_actions
+        if proposed_actions is not None
+        else list(_DEFAULT_GOAL_ACTIONS)
     )
-    goal.risk_assessment = risk_assessment if risk_assessment is not None else {"level": "low"}
+    goal.risk_assessment = (
+        risk_assessment if risk_assessment is not None else {"level": "low"}
+    )
     return goal
 
 
@@ -76,6 +80,7 @@ def _make_applier(
 
 # ── Learning Recommendation Tests ─────────────────────────────────────
 
+
 class TestApplyLearningRecommendations:
     """Tests for apply_learning_recommendations."""
 
@@ -91,7 +96,12 @@ class TestApplyLearningRecommendations:
         store.list_recommendations.return_value = [rec]
         store.get_pattern.return_value = pattern
         MockEngine.return_value.apply_recommendations.return_value = [
-            {"id": "rec-001", "status": "applied", "config_path": "c.yaml", "field_path": "f"}
+            {
+                "id": "rec-001",
+                "status": "applied",
+                "config_path": "c.yaml",
+                "field_path": "f",
+            }
         ]
 
         applier = FeedbackApplier(learning_store=store)
@@ -130,8 +140,14 @@ class TestApplyLearningRecommendations:
     @patch("temper_ai.learning.auto_tune.AutoTuneEngine")
     def test_respects_max_auto_apply(self, MockEngine: MagicMock) -> None:
         store = MagicMock()
-        recs = [_mock_recommendation(rec_id=f"rec-{i}", pattern_id=f"pat-{i}") for i in range(10)]
-        patterns = {f"pat-{i}": _mock_pattern(pattern_id=f"pat-{i}", confidence=0.95) for i in range(10)}
+        recs = [
+            _mock_recommendation(rec_id=f"rec-{i}", pattern_id=f"pat-{i}")
+            for i in range(10)
+        ]
+        patterns = {
+            f"pat-{i}": _mock_pattern(pattern_id=f"pat-{i}", confidence=0.95)
+            for i in range(10)
+        }
 
         store.list_recommendations.return_value = recs
         store.get_pattern.side_effect = lambda pid: patterns.get(pid)
@@ -240,6 +256,7 @@ class TestApplyLearningRecommendations:
 
 # ── Goal Translation Tests ────────────────────────────────────────────
 
+
 class TestTranslateGoalToRecommendations:
     """Tests for translate_goal_to_recommendations."""
 
@@ -257,9 +274,7 @@ class TestTranslateGoalToRecommendations:
         assert results[0]["new_value"] == "0.5"
 
     def test_unparseable_action(self) -> None:
-        goal = _mock_goal(
-            proposed_actions=["some free-form text recommendation"]
-        )
+        goal = _mock_goal(proposed_actions=["some free-form text recommendation"])
         applier = _make_applier()
         results = applier.translate_goal_to_recommendations(goal)
 
@@ -290,9 +305,7 @@ class TestTranslateGoalToRecommendations:
         assert results == []
 
     def test_action_with_equals_in_value(self) -> None:
-        goal = _mock_goal(
-            proposed_actions=["configs/a.yaml:key=val=with=equals"]
-        )
+        goal = _mock_goal(proposed_actions=["configs/a.yaml:key=val=with=equals"])
         applier = _make_applier()
         results = applier.translate_goal_to_recommendations(goal)
 
@@ -314,27 +327,22 @@ class TestTranslateGoalToRecommendations:
 
 # ── Goal Application Tests ────────────────────────────────────────────
 
+
 class TestApplyApprovedGoals:
     """Tests for apply_approved_goals."""
 
     def test_no_goal_store_returns_empty(self) -> None:
-        applier = FeedbackApplier(
-            learning_store=MagicMock(), goal_store=None
-        )
+        applier = FeedbackApplier(learning_store=MagicMock(), goal_store=None)
         results = applier.apply_approved_goals()
         assert results == []
 
     @patch("temper_ai.autonomy.feedback_applier.AuditLogger")
     def test_applies_approved_goals(self, MockAudit: MagicMock) -> None:
         goal_store = MagicMock()
-        goal = _mock_goal(
-            proposed_actions=["configs/a.yaml:model.temp=0.3"]
-        )
+        goal = _mock_goal(proposed_actions=["configs/a.yaml:model.temp=0.3"])
         goal_store.list_proposals.return_value = [goal]
 
-        applier = FeedbackApplier(
-            learning_store=MagicMock(), goal_store=goal_store
-        )
+        applier = FeedbackApplier(learning_store=MagicMock(), goal_store=goal_store)
         results = applier.apply_approved_goals()
 
         assert len(results) == 1
@@ -461,14 +469,10 @@ class TestApplyApprovedGoals:
 
     def test_unparseable_actions_not_applied(self) -> None:
         goal_store = MagicMock()
-        goal = _mock_goal(
-            proposed_actions=["some vague action"]
-        )
+        goal = _mock_goal(proposed_actions=["some vague action"])
         goal_store.list_proposals.return_value = [goal]
 
-        applier = FeedbackApplier(
-            learning_store=MagicMock(), goal_store=goal_store
-        )
+        applier = FeedbackApplier(learning_store=MagicMock(), goal_store=goal_store)
         results = applier.apply_approved_goals()
 
         assert len(results) == 1
@@ -476,6 +480,7 @@ class TestApplyApprovedGoals:
 
 
 # ── Audit Integration Tests ───────────────────────────────────────────
+
 
 class TestFeedbackApplierAudit:
     """Tests for audit logging in FeedbackApplier."""
@@ -504,6 +509,7 @@ class TestFeedbackApplierAudit:
         applier = FeedbackApplier(learning_store=store)
         # Replace internal audit logger with one using tmp_path
         from temper_ai.autonomy.audit import AuditLogger
+
         applier._audit = AuditLogger(base_dir=str(tmp_path / "audit"))
 
         results = applier.apply_learning_recommendations()
@@ -516,15 +522,12 @@ class TestFeedbackApplierAudit:
 
     def test_goal_apply_creates_audit_entries(self, tmp_path) -> None:
         goal_store = MagicMock()
-        goal = _mock_goal(
-            proposed_actions=["configs/a.yaml:key=val"]
-        )
+        goal = _mock_goal(proposed_actions=["configs/a.yaml:key=val"])
         goal_store.list_proposals.return_value = [goal]
 
-        applier = FeedbackApplier(
-            learning_store=MagicMock(), goal_store=goal_store
-        )
+        applier = FeedbackApplier(learning_store=MagicMock(), goal_store=goal_store)
         from temper_ai.autonomy.audit import AuditLogger
+
         applier._audit = AuditLogger(base_dir=str(tmp_path / "audit"))
 
         applier.apply_approved_goals()
@@ -537,6 +540,7 @@ class TestFeedbackApplierAudit:
 
 # ── Error Handling / Graceful Degradation ─────────────────────────────
 
+
 class TestFeedbackApplierErrorHandling:
     """Tests for graceful degradation."""
 
@@ -548,7 +552,9 @@ class TestFeedbackApplierErrorHandling:
 
         store.list_recommendations.return_value = [rec]
         store.get_pattern.return_value = pattern
-        MockEngine.return_value.apply_recommendations.side_effect = RuntimeError("engine boom")
+        MockEngine.return_value.apply_recommendations.side_effect = RuntimeError(
+            "engine boom"
+        )
 
         applier = FeedbackApplier(learning_store=store)
         with pytest.raises(RuntimeError, match="engine boom"):
@@ -558,9 +564,7 @@ class TestFeedbackApplierErrorHandling:
         goal_store = MagicMock()
         goal_store.list_proposals.side_effect = RuntimeError("db error")
 
-        applier = FeedbackApplier(
-            learning_store=MagicMock(), goal_store=goal_store
-        )
+        applier = FeedbackApplier(learning_store=MagicMock(), goal_store=goal_store)
         with pytest.raises(RuntimeError, match="db error"):
             applier.apply_approved_goals()
 
@@ -578,14 +582,16 @@ class TestGoalCompletionAfterApply:
         goal_store.list_proposals.return_value = [goal]
 
         applier = FeedbackApplier(
-            learning_store=MagicMock(), goal_store=goal_store,
+            learning_store=MagicMock(),
+            goal_store=goal_store,
         )
         results = applier.apply_approved_goals()
 
         assert len(results) == 1
         assert results[0]["status"] == "applied"
         goal_store.update_proposal_status.assert_called_once_with(
-            "goal-complete", "completed",
+            "goal-complete",
+            "completed",
         )
 
     def test_goal_not_marked_completed_if_unparseable(self) -> None:
@@ -597,7 +603,8 @@ class TestGoalCompletionAfterApply:
         goal_store.list_proposals.return_value = [goal]
 
         applier = FeedbackApplier(
-            learning_store=MagicMock(), goal_store=goal_store,
+            learning_store=MagicMock(),
+            goal_store=goal_store,
         )
         results = applier.apply_approved_goals()
 
@@ -615,7 +622,8 @@ class TestGoalCompletionAfterApply:
         goal_store.update_proposal_status.side_effect = RuntimeError("db error")
 
         applier = FeedbackApplier(
-            learning_store=MagicMock(), goal_store=goal_store,
+            learning_store=MagicMock(),
+            goal_store=goal_store,
         )
         # Should not raise despite the status update failing
         results = applier.apply_approved_goals()
@@ -642,6 +650,7 @@ class TestGoalCompletionAfterApply:
 
 
 # ── _parse_action Tests ───────────────────────────────────────────────
+
 
 class TestParseAction:
     """Tests for the _parse_action helper."""

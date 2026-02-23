@@ -3,7 +3,6 @@
 from unittest.mock import MagicMock, patch
 
 from temper_ai.agent.base_agent import AgentResponse
-from temper_ai.memory._schemas import MemoryScope
 from temper_ai.memory.constants import MEMORY_TYPE_EPISODIC
 from temper_ai.memory.service import MemoryService
 from temper_ai.storage.schemas.agent_config import (
@@ -40,10 +39,13 @@ def _make_shared_config(shared_namespace="team_shared"):
 
 def _make_agent(config):
     """Create a StandardAgent with mocked LLM and ToolRegistry."""
-    with patch("temper_ai.agent.base_agent.create_llm_from_config") as mock_factory, \
-         patch("temper_ai.agent.base_agent.ToolRegistry"):
+    with (
+        patch("temper_ai.agent.base_agent.create_llm_from_config") as mock_factory,
+        patch("temper_ai.agent.base_agent.ToolRegistry"),
+    ):
         mock_factory.return_value = MagicMock()
         from temper_ai.agent.standard_agent import StandardAgent
+
         agent = StandardAgent(config)
     return agent
 
@@ -156,7 +158,9 @@ class TestNoSharingWhenDisabled:
                 inference=InferenceConfig(provider="ollama", model="m"),
                 prompt=PromptConfig(inline="Hi"),
                 memory=MemoryConfig(
-                    enabled=True, type="episodic", scope="cross_session",
+                    enabled=True,
+                    type="episodic",
+                    scope="cross_session",
                     provider="in_memory",
                 ),
                 error_handling=ErrorHandlingConfig(),
@@ -181,8 +185,11 @@ class TestNoSharingWhenDisabled:
                 inference=InferenceConfig(provider="ollama", model="m"),
                 prompt=PromptConfig(inline="Hi"),
                 memory=MemoryConfig(
-                    enabled=True, type="episodic", scope="cross_session",
-                    provider="in_memory", relevance_threshold=0.0,
+                    enabled=True,
+                    type="episodic",
+                    scope="cross_session",
+                    provider="in_memory",
+                    relevance_threshold=0.0,
                 ),
                 error_handling=ErrorHandlingConfig(),
                 tools=[],

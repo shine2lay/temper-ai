@@ -1,11 +1,15 @@
 """AutonomyPolicy — safety policy for progressive autonomy enforcement."""
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from temper_ai.safety.autonomy.constants import AUTONOMY_POLICY_PRIORITY
 from temper_ai.safety.base import BaseSafetyPolicy
-from temper_ai.safety.interfaces import ValidationResult, ViolationSeverity, SafetyViolation
+from temper_ai.safety.interfaces import (
+    SafetyViolation,
+    ValidationResult,
+    ViolationSeverity,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +26,7 @@ class AutonomyPolicy(BaseSafetyPolicy):
     returns no violations for full backward compatibility.
     """
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None) -> None:
+    def __init__(self, config: dict[str, Any] | None = None) -> None:
         super().__init__(config or {})
         self._manager: Any = None
         self._budget_enforcer: Any = None
@@ -58,19 +62,21 @@ class AutonomyPolicy(BaseSafetyPolicy):
         self._emergency_stop = emergency_stop
 
     def _validate_impl(
-        self, action: Dict[str, Any], context: Dict[str, Any]
+        self, action: dict[str, Any], context: dict[str, Any]
     ) -> ValidationResult:
         """Validate action against autonomy rules."""
         autonomy_config = context.get("metadata", {}).get("autonomy_config")
         if autonomy_config is None or not getattr(autonomy_config, "enabled", False):
             return ValidationResult(valid=True, violations=[], policy_name=self.name)
 
-        violations: List[SafetyViolation] = []
+        violations: list[SafetyViolation] = []
 
         # Emergency stop check
         estop = self._check_emergency_stop(action, context)
         if estop is not None:
-            return ValidationResult(valid=False, violations=[estop], policy_name=self.name)
+            return ValidationResult(
+                valid=False, violations=[estop], policy_name=self.name
+            )
 
         # Budget check
         self._check_budget(action, context, violations)
@@ -79,11 +85,13 @@ class AutonomyPolicy(BaseSafetyPolicy):
         self._check_approval(action, context, violations)
 
         valid = not any(v.severity >= ViolationSeverity.HIGH for v in violations)
-        return ValidationResult(valid=valid, violations=violations, policy_name=self.name)
+        return ValidationResult(
+            valid=valid, violations=violations, policy_name=self.name
+        )
 
     def _check_emergency_stop(
-        self, action: Dict[str, Any], context: Dict[str, Any]
-    ) -> Optional[SafetyViolation]:
+        self, action: dict[str, Any], context: dict[str, Any]
+    ) -> SafetyViolation | None:
         """Check emergency stop; return violation if active."""
         if self._emergency_stop is None:
             return None
@@ -101,8 +109,10 @@ class AutonomyPolicy(BaseSafetyPolicy):
         return None
 
     def _check_budget(
-        self, action: Dict[str, Any], context: Dict[str, Any],
-        violations: List[SafetyViolation],
+        self,
+        action: dict[str, Any],
+        context: dict[str, Any],
+        violations: list[SafetyViolation],
     ) -> None:
         """Check budget enforcement; append violation if over budget."""
         if self._budget_enforcer is None:
@@ -111,20 +121,24 @@ class AutonomyPolicy(BaseSafetyPolicy):
         try:
             budget_result = self._budget_enforcer.check_budget(agent_name)
             if not budget_result.allowed:
-                violations.append(SafetyViolation(
-                    policy_name=self.name,
-                    severity=ViolationSeverity.HIGH,
-                    message=budget_result.message,
-                    action=str(action),
-                    context=context,
-                    metadata={"budget_status": budget_result.status},
-                ))
+                violations.append(
+                    SafetyViolation(
+                        policy_name=self.name,
+                        severity=ViolationSeverity.HIGH,
+                        message=budget_result.message,
+                        action=str(action),
+                        context=context,
+                        metadata={"budget_status": budget_result.status},
+                    )
+                )
         except (AttributeError, RuntimeError) as exc:
             logger.debug("Budget check error: %s", exc)
 
     def _check_approval(
-        self, action: Dict[str, Any], context: Dict[str, Any],
-        violations: List[SafetyViolation],
+        self,
+        action: dict[str, Any],
+        context: dict[str, Any],
+        violations: list[SafetyViolation],
     ) -> None:
         """Check approval routing; append violation if approval required."""
         if self._approval_router is None or self._manager is None:
@@ -135,20 +149,25 @@ class AutonomyPolicy(BaseSafetyPolicy):
             level = self._manager.get_level(agent_name, domain)
             existing_violations = context.get("metadata", {}).get("violations", [])
             decision = self._approval_router.route_action(
-                agent_name, domain, existing_violations, level,
+                agent_name,
+                domain,
+                existing_violations,
+                level,
             )
             if decision.requires_approval:
-                violations.append(SafetyViolation(
-                    policy_name=self.name,
-                    severity=ViolationSeverity.MEDIUM,
-                    message=decision.reason,
-                    action=str(action),
-                    context=context,
-                    metadata={
-                        "required_approvers": decision.required_approvers,
-                        "is_sampled": decision.is_sampled,
-                        "autonomy_level": level.name,
-                    },
-                ))
+                violations.append(
+                    SafetyViolation(
+                        policy_name=self.name,
+                        severity=ViolationSeverity.MEDIUM,
+                        message=decision.reason,
+                        action=str(action),
+                        context=context,
+                        metadata={
+                            "required_approvers": decision.required_approvers,
+                            "is_sampled": decision.is_sampled,
+                            "autonomy_level": level.name,
+                        },
+                    )
+                )
         except (AttributeError, RuntimeError) as exc:
             logger.debug("Approval routing error: %s", exc)

@@ -2,7 +2,6 @@
 
 import logging
 from pathlib import Path
-from typing import Dict, List
 
 import yaml
 
@@ -23,15 +22,15 @@ class TemplateRegistry:
 
     def __init__(self, templates_dir: Path) -> None:
         self._templates_dir = templates_dir
-        self._cache: Dict[str, TemplateManifest] = {}
+        self._cache: dict[str, TemplateManifest] = {}
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
-    def list_templates(self) -> List[TemplateManifest]:
+    def list_templates(self) -> list[TemplateManifest]:
         """Return manifests for every valid template found on disk."""
-        results: List[TemplateManifest] = []
+        results: list[TemplateManifest] = []
         if not self._templates_dir.is_dir():
             return results
         for child in sorted(self._templates_dir.iterdir()):
@@ -59,9 +58,9 @@ class TemplateRegistry:
         """Return the filesystem path for a product template."""
         return self._resolve_dir(product_type)
 
-    def validate_template(self, product_type: str) -> List[str]:
+    def validate_template(self, product_type: str) -> list[str]:
         """Check a template for structural problems. Returns error strings."""
-        errors: List[str] = []
+        errors: list[str] = []
         template_dir = self._templates_dir / product_type
         if not template_dir.is_dir():
             errors.append(f"Template directory missing: {product_type}")
@@ -84,13 +83,11 @@ class TemplateRegistry:
         """Resolve and verify a template directory exists."""
         template_dir = self._templates_dir / product_type
         if not template_dir.is_dir():
-            raise TemplateNotFoundError(
-                f"Template not found: '{product_type}'"
-            )
+            raise TemplateNotFoundError(f"Template not found: '{product_type}'")
         return template_dir
 
     def _load_manifest(self, path: Path) -> TemplateManifest:
         """Parse a manifest YAML file into a TemplateManifest."""
-        with open(path, "r", encoding="utf-8") as fh:
+        with open(path, encoding="utf-8") as fh:
             raw = yaml.safe_load(fh)
         return TemplateManifest(**raw)

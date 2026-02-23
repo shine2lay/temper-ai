@@ -14,7 +14,6 @@ import ast
 import inspect
 import re
 from pathlib import Path
-from typing import Dict, List, Tuple
 
 import pytest
 
@@ -22,7 +21,8 @@ import pytest
 # Code Block Extraction
 # ==============================================================================
 
-def extract_python_blocks(markdown_file: Path) -> List[Tuple[str, int]]:
+
+def extract_python_blocks(markdown_file: Path) -> list[tuple[str, int]]:
     """
     Extract Python code blocks from markdown file.
 
@@ -38,24 +38,24 @@ def extract_python_blocks(markdown_file: Path) -> List[Tuple[str, int]]:
     block_start_line = 0
     line_num = 0
 
-    for line in content.split('\n'):
+    for line in content.split("\n"):
         line_num += 1
 
-        if line.strip().startswith('```python'):
+        if line.strip().startswith("```python"):
             in_python_block = True
             block_start_line = line_num
             current_block = []
-        elif line.strip().startswith('```') and in_python_block:
+        elif line.strip().startswith("```") and in_python_block:
             in_python_block = False
             if current_block:
-                blocks.append(('\n'.join(current_block), block_start_line))
+                blocks.append(("\n".join(current_block), block_start_line))
         elif in_python_block:
             current_block.append(line)
 
     return blocks
 
 
-def extract_bash_commands(markdown_file: Path) -> List[Tuple[str, int]]:
+def extract_bash_commands(markdown_file: Path) -> list[tuple[str, int]]:
     """Extract bash/shell commands from markdown code blocks."""
     with open(markdown_file) as f:
         content = f.read()
@@ -66,20 +66,20 @@ def extract_bash_commands(markdown_file: Path) -> List[Tuple[str, int]]:
     block_start_line = 0
     line_num = 0
 
-    for line in content.split('\n'):
+    for line in content.split("\n"):
         line_num += 1
 
-        if re.match(r'```(bash|shell|sh)', line.strip()):
+        if re.match(r"```(bash|shell|sh)", line.strip()):
             in_bash_block = True
             block_start_line = line_num
             current_block = []
-        elif line.strip().startswith('```') and in_bash_block:
+        elif line.strip().startswith("```") and in_bash_block:
             in_bash_block = False
             if current_block:
-                commands.append(('\n'.join(current_block), block_start_line))
+                commands.append(("\n".join(current_block), block_start_line))
         elif in_bash_block:
             # Skip comment lines
-            if not line.strip().startswith('#') or line.strip().startswith('#!'):
+            if not line.strip().startswith("#") or line.strip().startswith("#!"):
                 current_block.append(line)
 
     return commands
@@ -89,7 +89,8 @@ def extract_bash_commands(markdown_file: Path) -> List[Tuple[str, int]]:
 # Signature Validation
 # ==============================================================================
 
-def parse_function_calls(code: str) -> List[Dict]:
+
+def parse_function_calls(code: str) -> list[dict]:
     """
     Parse Python code and extract function calls with their arguments.
 
@@ -115,12 +116,9 @@ def parse_function_calls(code: str) -> List[Dict]:
             args = [ast.unparse(arg) for arg in node.args]
             kwargs = {kw.arg: ast.unparse(kw.value) for kw in node.keywords}
 
-            calls.append({
-                'name': func_name,
-                'args': args,
-                'kwargs': kwargs,
-                'line': node.lineno
-            })
+            calls.append(
+                {"name": func_name, "args": args, "kwargs": kwargs, "line": node.lineno}
+            )
 
     return calls
 
@@ -128,7 +126,7 @@ def parse_function_calls(code: str) -> List[Dict]:
 def get_function_signature(module_path: str, function_name: str):
     """Get actual function signature from code."""
     try:
-        parts = module_path.rsplit('.', 1)
+        parts = module_path.rsplit(".", 1)
         if len(parts) == 2:
             module_name, attr_name = parts
         else:
@@ -149,6 +147,7 @@ def get_function_signature(module_path: str, function_name: str):
 # ==============================================================================
 # Tests
 # ==============================================================================
+
 
 class TestAPIReferenceExamples:
     """Test examples from API_REFERENCE.md."""
@@ -189,7 +188,7 @@ class TestAPIReferenceExamples:
 
             for call in calls:
                 # Check known framework methods
-                if call['name'] in ['register', 'get', 'has', 'execute']:
+                if call["name"] in ["register", "get", "has", "execute"]:
                     # These should exist in the codebase
                     # Actual validation would import and check
                     pass
@@ -215,16 +214,18 @@ class TestM4APIReferenceExamples:
             content = f.read()
 
         # Should not find .clear() being documented
-        assert '.clear()' not in content or 'clear_policies()' in content, \
-            "Found .clear() method - should be .clear_policies()"
+        assert (
+            ".clear()" not in content or "clear_policies()" in content
+        ), "Found .clear() method - should be .clear_policies()"
 
     def test_no_set_fail_fast_documented(self, m4_doc):
         """PolicyComposer.set_fail_fast() should not be documented (constructor param only)."""
         with open(m4_doc) as f:
             content = f.read()
 
-        assert 'set_fail_fast(' not in content, \
-            "Found set_fail_fast() method - this doesn't exist"
+        assert (
+            "set_fail_fast(" not in content
+        ), "Found set_fail_fast() method - this doesn't exist"
 
 
 class TestREADMEExamples:
@@ -244,10 +245,11 @@ class TestREADMEExamples:
             content = f.read()
 
         # Should have warning comment, but actual username or generic guidance
-        if 'yourusername' in content:
+        if "yourusername" in content:
             # Check if it has a warning
-            assert '⚠️ IMPORTANT' in content or 'Replace' in content, \
-                "Found 'yourusername' without prominent warning"
+            assert (
+                "⚠️ IMPORTANT" in content or "Replace" in content
+            ), "Found 'yourusername' without prominent warning"
 
     def test_milestone_status_consistent(self, readme):
         """Milestone status should be consistent throughout README."""
@@ -255,35 +257,35 @@ class TestREADMEExamples:
             content = f.read()
 
         # Should not have contradictory statements
-        assert not ('M3 ✅ COMPLETE' in content and 'M3 IN PROGRESS' in content), \
-            "Contradictory M3 status"
-        assert not ('M4 ✅ COMPLETE' in content and 'M4 ← NEXT' in content), \
-            "Contradictory M4 status"
+        assert not (
+            "M3 ✅ COMPLETE" in content and "M3 IN PROGRESS" in content
+        ), "Contradictory M3 status"
+        assert not (
+            "M4 ✅ COMPLETE" in content and "M4 ← NEXT" in content
+        ), "Contradictory M4 status"
 
 
 class TestCommandLineExamples:
     """Test CLI command examples work."""
 
+
 # ==============================================================================
 # Documentation Testing CLI
 # ==============================================================================
+
 
 def main():
     """Run documentation tests from command line."""
     import sys
 
-    pytest_args = [
-        'tests/test_documentation_examples.py',
-        '-v',
-        '--tb=short'
-    ]
+    pytest_args = ["tests/test_documentation_examples.py", "-v", "--tb=short"]
 
-    if '--strict' in sys.argv:
+    if "--strict" in sys.argv:
         # Strict mode: fail on skipped tests
-        pytest_args.extend(['-x', '--strict-markers'])
+        pytest_args.extend(["-x", "--strict-markers"])
 
     sys.exit(pytest.main(pytest_args))
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

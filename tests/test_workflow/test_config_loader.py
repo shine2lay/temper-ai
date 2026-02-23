@@ -4,6 +4,7 @@ Unit tests for ConfigLoader.
 Tests YAML/JSON loading, environment variable substitution,
 prompt template loading, and error handling.
 """
+
 import json
 import os
 import tempfile
@@ -81,7 +82,7 @@ class TestLoadYAMLConfigs:
         }
 
         agent_path = temp_config_dir / "agents" / "test_agent.yaml"
-        with open(agent_path, 'w') as f:
+        with open(agent_path, "w") as f:
             yaml.dump(agent_config, f)
 
         # Load the config
@@ -100,7 +101,7 @@ class TestLoadYAMLConfigs:
         }
 
         stage_path = temp_config_dir / "stages" / "research_stage.yaml"
-        with open(stage_path, 'w') as f:
+        with open(stage_path, "w") as f:
             yaml.dump(stage_config, f)
 
         loaded = config_loader.load_stage("research_stage", validate=False)
@@ -116,7 +117,7 @@ class TestLoadYAMLConfigs:
         }
 
         workflow_path = temp_config_dir / "workflows" / "mvp_lifecycle.yaml"
-        with open(workflow_path, 'w') as f:
+        with open(workflow_path, "w") as f:
             yaml.dump(workflow_config, f)
 
         loaded = config_loader.load_workflow("mvp_lifecycle", validate=False)
@@ -132,7 +133,7 @@ class TestLoadYAMLConfigs:
         }
 
         tool_path = temp_config_dir / "tools" / "WebScraper.yaml"
-        with open(tool_path, 'w') as f:
+        with open(tool_path, "w") as f:
             yaml.dump(tool_config, f)
 
         loaded = config_loader.load_tool("WebScraper", validate=False)
@@ -148,7 +149,7 @@ class TestLoadYAMLConfigs:
         }
 
         trigger_path = temp_config_dir / "triggers" / "daily_check.yaml"
-        with open(trigger_path, 'w') as f:
+        with open(trigger_path, "w") as f:
             yaml.dump(trigger_config, f)
 
         loaded = config_loader.load_trigger("daily_check", validate=False)
@@ -168,7 +169,7 @@ class TestLoadJSONConfigs:
         }
 
         agent_path = temp_config_dir / "agents" / "json_agent.json"
-        with open(agent_path, 'w') as f:
+        with open(agent_path, "w") as f:
             json.dump(agent_config, f)
 
         loaded = config_loader.load_agent("json_agent", validate=False)
@@ -183,7 +184,7 @@ class TestYMLExtension:
         agent_config = {"agent": {"name": "yml_agent"}}
 
         agent_path = temp_config_dir / "agents" / "yml_agent.yml"
-        with open(agent_path, 'w') as f:
+        with open(agent_path, "w") as f:
             yaml.dump(agent_config, f)
 
         loaded = config_loader.load_agent("yml_agent", validate=False)
@@ -206,7 +207,7 @@ class TestEnvironmentVariableSubstitution:
         }
 
         agent_path = temp_config_dir / "agents" / "env_agent.yaml"
-        with open(agent_path, 'w') as f:
+        with open(agent_path, "w") as f:
             yaml.dump(agent_config, f)
 
         loaded = config_loader.load_agent("env_agent", validate=False)
@@ -215,7 +216,9 @@ class TestEnvironmentVariableSubstitution:
         # Cleanup
         del os.environ["TEST_API_KEY"]
 
-    def test_substitute_optional_env_var_with_default(self, config_loader, temp_config_dir):
+    def test_substitute_optional_env_var_with_default(
+        self, config_loader, temp_config_dir
+    ):
         """Test substitution with default value when env var not set."""
         agent_config = {
             "agent": {
@@ -226,7 +229,7 @@ class TestEnvironmentVariableSubstitution:
         }
 
         agent_path = temp_config_dir / "agents" / "default_agent.yaml"
-        with open(agent_path, 'w') as f:
+        with open(agent_path, "w") as f:
             yaml.dump(agent_config, f)
 
         loaded = config_loader.load_agent("default_agent", validate=False)
@@ -245,7 +248,7 @@ class TestEnvironmentVariableSubstitution:
         }
 
         agent_path = temp_config_dir / "agents" / "custom_agent.yaml"
-        with open(agent_path, 'w') as f:
+        with open(agent_path, "w") as f:
             yaml.dump(agent_config, f)
 
         loaded = config_loader.load_agent("custom_agent", validate=False)
@@ -254,7 +257,9 @@ class TestEnvironmentVariableSubstitution:
         # Cleanup
         del os.environ["CUSTOM_URL"]
 
-    def test_missing_required_env_var_raises_error(self, config_loader, temp_config_dir):
+    def test_missing_required_env_var_raises_error(
+        self, config_loader, temp_config_dir
+    ):
         """Test that missing required env var raises error."""
         agent_config = {
             "agent": {
@@ -265,10 +270,13 @@ class TestEnvironmentVariableSubstitution:
         }
 
         agent_path = temp_config_dir / "agents" / "missing_env.yaml"
-        with open(agent_path, 'w') as f:
+        with open(agent_path, "w") as f:
             yaml.dump(agent_config, f)
 
-        with pytest.raises(ConfigValidationError, match="Environment variable 'MISSING_API_KEY' is required but not set"):
+        with pytest.raises(
+            ConfigValidationError,
+            match="Environment variable 'MISSING_API_KEY' is required but not set",
+        ):
             config_loader.load_agent("missing_env")
 
     def test_env_var_in_nested_structure(self, config_loader, temp_config_dir):
@@ -286,7 +294,7 @@ class TestEnvironmentVariableSubstitution:
         }
 
         workflow_path = temp_config_dir / "workflows" / "nested.yaml"
-        with open(workflow_path, 'w') as f:
+        with open(workflow_path, "w") as f:
             yaml.dump(config, f)
 
         loaded = config_loader.load_workflow("nested", validate=False)
@@ -306,7 +314,7 @@ class TestEnvironmentVariableSubstitution:
         }
 
         tool_path = temp_config_dir / "tools" / "list_tool.yaml"
-        with open(tool_path, 'w') as f:
+        with open(tool_path, "w") as f:
             yaml.dump(config, f)
 
         loaded = config_loader.load_tool("list_tool", validate=False)
@@ -324,7 +332,7 @@ class TestPromptTemplateLoading:
         template_content = "You are an expert in {{domain}}. Use a {{tone}} tone."
 
         template_path = temp_config_dir / "prompts" / "base.txt"
-        with open(template_path, 'w') as f:
+        with open(template_path, "w") as f:
             f.write(template_content)
 
         variables = {"domain": "SaaS", "tone": "professional"}
@@ -337,23 +345,28 @@ class TestPromptTemplateLoading:
         template_content = "This is a static prompt."
 
         template_path = temp_config_dir / "prompts" / "static.txt"
-        with open(template_path, 'w') as f:
+        with open(template_path, "w") as f:
             f.write(template_content)
 
         result = config_loader.load_prompt_template("static.txt")
         assert result == "This is a static prompt."
 
-    def test_load_template_missing_variable_raises_error(self, config_loader, temp_config_dir):
+    def test_load_template_missing_variable_raises_error(
+        self, config_loader, temp_config_dir
+    ):
         """Test that missing template variable raises error."""
         template_content = "Domain: {{domain}}, Tone: {{tone}}"
 
         template_path = temp_config_dir / "prompts" / "missing_var.txt"
-        with open(template_path, 'w') as f:
+        with open(template_path, "w") as f:
             f.write(template_content)
 
         variables = {"domain": "SaaS"}  # Missing 'tone'
 
-        with pytest.raises(ConfigValidationError, match="Template variable 'tone' is required but not provided"):
+        with pytest.raises(
+            ConfigValidationError,
+            match="Template variable 'tone' is required but not provided",
+        ):
             config_loader.load_prompt_template("missing_var.txt", variables)
 
     def test_load_nonexistent_template_raises_error(self, config_loader):
@@ -368,7 +381,7 @@ Your goal is to {{goal}}.
 Use {{style}} communication."""
 
         template_path = temp_config_dir / "prompts" / "multiline.txt"
-        with open(template_path, 'w') as f:
+        with open(template_path, "w") as f:
             f.write(template_content)
 
         variables = {
@@ -391,7 +404,7 @@ class TestPromptTemplateSecurityValidation:
         """Test that null byte injection in template path is blocked."""
         # Create a valid template file
         template_path = temp_config_dir / "prompts" / "test.txt"
-        with open(template_path, 'w') as f:
+        with open(template_path, "w") as f:
             f.write("Hello {{name}}")
 
         # Attempt to load with null byte injection (path traversal attack)
@@ -459,6 +472,7 @@ class TestPromptTemplateSecurityValidation:
     def test_security_violation_null_byte_logged(self, config_loader, caplog):
         """Test that null byte security violations are logged."""
         import logging
+
         caplog.set_level(logging.WARNING)
 
         malicious_path = "test\x00file.txt"
@@ -474,6 +488,7 @@ class TestPromptTemplateSecurityValidation:
     def test_security_violation_control_char_logged(self, config_loader, caplog):
         """Test that control character security violations are logged."""
         import logging
+
         caplog.set_level(logging.WARNING)
 
         malicious_path = "test\x01file.txt"
@@ -490,11 +505,11 @@ class TestPromptTemplateSecurityValidation:
         """Test that legitimate paths are not blocked by new validation."""
         # Create test templates
         simple_path = temp_config_dir / "prompts" / "simple.txt"
-        with open(simple_path, 'w') as f:
+        with open(simple_path, "w") as f:
             f.write("Hello")
 
         spaces_path = temp_config_dir / "prompts" / "with spaces.txt"
-        with open(spaces_path, 'w') as f:
+        with open(spaces_path, "w") as f:
             f.write("World")
 
         # Should work
@@ -504,7 +519,7 @@ class TestPromptTemplateSecurityValidation:
     def test_unicode_paths_work(self, config_loader, temp_config_dir):
         """Test that legitimate Unicode paths work."""
         unicode_file = temp_config_dir / "prompts" / "测试文件.txt"
-        with open(unicode_file, 'w', encoding='utf-8') as f:
+        with open(unicode_file, "w", encoding="utf-8") as f:
             f.write("Unicode content")
 
         result = config_loader.load_prompt_template("测试文件.txt")
@@ -514,7 +529,7 @@ class TestPromptTemplateSecurityValidation:
         """Test that existing path traversal check still works."""
         # Create a file outside prompts_dir
         outside_path = temp_config_dir / "outside.txt"
-        with open(outside_path, 'w') as f:
+        with open(outside_path, "w") as f:
             f.write("Outside content")
 
         # Attempt to load with path traversal
@@ -524,11 +539,12 @@ class TestPromptTemplateSecurityValidation:
     def test_path_traversal_logged(self, config_loader, temp_config_dir, caplog):
         """Test that path traversal attempts are logged."""
         import logging
+
         caplog.set_level(logging.WARNING)
 
         # Create a file outside prompts_dir
         outside_path = temp_config_dir / "outside.txt"
-        with open(outside_path, 'w') as f:
+        with open(outside_path, "w") as f:
             f.write("Outside content")
 
         # Attempt to load with path traversal
@@ -551,25 +567,29 @@ class TestPromptTemplateSecurityValidation:
         # Test all control characters except \n (0x0A), \r (0x0D), \t (0x09)
         for i in range(32):  # 0x00 to 0x1F
             char = chr(i)
-            if char in '\n\r\t':
+            if char in "\n\r\t":
                 # Skip safe whitespace characters
                 continue
 
             malicious_path = f"file{char}.txt"
 
-            with pytest.raises(ConfigValidationError, match="control character|null byte"):
+            with pytest.raises(
+                ConfigValidationError, match="control character|null byte"
+            ):
                 config_loader.load_prompt_template(malicious_path)
 
 
 class TestCaching:
     """Test configuration caching functionality."""
 
-    def test_caching_enabled_returns_cached_config(self, config_loader, temp_config_dir):
+    def test_caching_enabled_returns_cached_config(
+        self, config_loader, temp_config_dir
+    ):
         """Test that caching returns same object on second load."""
         agent_config = {"agent": {"name": "cached_agent"}}
 
         agent_path = temp_config_dir / "agents" / "cached_agent.yaml"
-        with open(agent_path, 'w') as f:
+        with open(agent_path, "w") as f:
             yaml.dump(agent_config, f)
 
         # First load
@@ -586,7 +606,7 @@ class TestCaching:
         agent_config = {"agent": {"name": "cache_test"}}
 
         agent_path = temp_config_dir / "agents" / "cache_test.yaml"
-        with open(agent_path, 'w') as f:
+        with open(agent_path, "w") as f:
             yaml.dump(agent_config, f)
 
         # Load and cache
@@ -608,7 +628,7 @@ class TestCaching:
         agent_config = {"agent": {"name": "no_cache"}}
 
         agent_path = temp_config_dir / "agents" / "no_cache.yaml"
-        with open(agent_path, 'w') as f:
+        with open(agent_path, "w") as f:
             yaml.dump(agent_config, f)
 
         # Load twice
@@ -631,7 +651,7 @@ class TestErrorHandling:
         """Test loading invalid YAML raises ConfigValidationError."""
         # Create invalid YAML file
         invalid_path = temp_config_dir / "agents" / "invalid.yaml"
-        with open(invalid_path, 'w') as f:
+        with open(invalid_path, "w") as f:
             f.write("invalid: yaml: content: [[[")
 
         with pytest.raises(ConfigValidationError, match="YAML parsing failed"):
@@ -641,7 +661,7 @@ class TestErrorHandling:
         """Test loading invalid JSON raises ConfigValidationError."""
         # Create invalid JSON file
         invalid_path = temp_config_dir / "agents" / "invalid_json.json"
-        with open(invalid_path, 'w') as f:
+        with open(invalid_path, "w") as f:
             f.write('{"invalid": json content}')
 
         with pytest.raises(ConfigValidationError, match="JSON parsing failed"):
@@ -656,7 +676,7 @@ class TestListConfigs:
         # Create multiple agent configs
         for name in ["agent1", "agent2", "agent3"]:
             path = temp_config_dir / "agents" / f"{name}.yaml"
-            with open(path, 'w') as f:
+            with open(path, "w") as f:
                 yaml.dump({"agent": {"name": name}}, f)
 
         configs = config_loader.list_configs("agent")
@@ -697,16 +717,21 @@ class TestEnvironmentVariableSecurityValidation:
         }
 
         agent_path = temp_config_dir / "agents" / "path_attack.yaml"
-        with open(agent_path, 'w') as f:
+        with open(agent_path, "w") as f:
             yaml.dump(agent_config, f)
 
-        with pytest.raises(ConfigValidationError, match="path traversal pattern|Path escapes base directory"):
+        with pytest.raises(
+            ConfigValidationError,
+            match="path traversal pattern|Path escapes base directory",
+        ):
             config_loader.load_agent("path_attack")
 
         # Cleanup
         del os.environ["CONFIG_PATH"]
 
-    def test_shell_metacharacters_in_command_rejected(self, config_loader, temp_config_dir):
+    def test_shell_metacharacters_in_command_rejected(
+        self, config_loader, temp_config_dir
+    ):
         """Test shell metacharacters in command variables are rejected."""
         os.environ["COMMAND"] = "echo hello; rm -rf /"
 
@@ -717,10 +742,13 @@ class TestEnvironmentVariableSecurityValidation:
         }
 
         tool_path = temp_config_dir / "tools" / "cmd_injection.yaml"
-        with open(tool_path, 'w') as f:
+        with open(tool_path, "w") as f:
             yaml.dump(config, f)
 
-        with pytest.raises(ConfigValidationError, match="shell metacharacters|dangerous pattern|Command separator"):
+        with pytest.raises(
+            ConfigValidationError,
+            match="shell metacharacters|dangerous pattern|Command separator",
+        ):
             config_loader.load_tool("cmd_injection")
 
         # Cleanup
@@ -737,7 +765,7 @@ class TestEnvironmentVariableSecurityValidation:
         }
 
         agent_path = temp_config_dir / "agents" / "sql_injection.yaml"
-        with open(agent_path, 'w') as f:
+        with open(agent_path, "w") as f:
             yaml.dump(config, f)
 
         with pytest.raises(ConfigValidationError, match="SQL injection pattern"):
@@ -757,10 +785,13 @@ class TestEnvironmentVariableSecurityValidation:
         }
 
         agent_path = temp_config_dir / "agents" / "url_creds.yaml"
-        with open(agent_path, 'w') as f:
+        with open(agent_path, "w") as f:
             yaml.dump(config, f)
 
-        with pytest.raises(ConfigValidationError, match="credentials in URL|validation failed|Config validation failed"):
+        with pytest.raises(
+            ConfigValidationError,
+            match="credentials in URL|validation failed|Config validation failed",
+        ):
             config_loader.load_agent("url_creds")
 
         # Cleanup
@@ -781,7 +812,7 @@ class TestEnvironmentVariableSecurityValidation:
         }
 
         agent_path = temp_config_dir / "agents" / "long_value.yaml"
-        with open(agent_path, 'w') as f:
+        with open(agent_path, "w") as f:
             yaml.dump(config, f)
 
         with pytest.raises(ConfigValidationError, match="value too long"):
@@ -803,7 +834,7 @@ class TestEnvironmentVariableSecurityValidation:
         }
 
         tool_path = temp_config_dir / "tools" / "safe_cmd.yaml"
-        with open(tool_path, 'w') as f:
+        with open(tool_path, "w") as f:
             yaml.dump(config, f)
 
         # Should not raise (skip schema validation, only test env var validation)
@@ -813,7 +844,9 @@ class TestEnvironmentVariableSecurityValidation:
         # Cleanup
         del os.environ["SAFE_CMD"]
 
-    def test_safe_url_without_credentials_accepted(self, config_loader, temp_config_dir):
+    def test_safe_url_without_credentials_accepted(
+        self, config_loader, temp_config_dir
+    ):
         """Test URLs without embedded credentials are accepted."""
         os.environ["SAFE_URL"] = "https://api.example.com/endpoint"
 
@@ -824,7 +857,7 @@ class TestEnvironmentVariableSecurityValidation:
         }
 
         agent_path = temp_config_dir / "agents" / "safe_url.yaml"
-        with open(agent_path, 'w') as f:
+        with open(agent_path, "w") as f:
             yaml.dump(config, f)
 
         # Should not raise (skip schema validation, only test env var validation)
@@ -845,7 +878,7 @@ class TestEnvironmentVariableSecurityValidation:
         }
 
         agent_path = temp_config_dir / "agents" / "safe_db.yaml"
-        with open(agent_path, 'w') as f:
+        with open(agent_path, "w") as f:
             yaml.dump(config, f)
 
         # Should not raise (skip schema validation, only test env var validation)

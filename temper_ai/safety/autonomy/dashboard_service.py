@@ -1,7 +1,7 @@
 """Data service for autonomy dashboard endpoints."""
 
 import logging
-from typing import Any, Dict, List
+from typing import Any
 
 from temper_ai.safety.autonomy.store import AutonomyStore
 
@@ -16,7 +16,7 @@ class AutonomyDataService:
     def __init__(self, store: AutonomyStore) -> None:
         self.store = store
 
-    def get_status_summary(self) -> Dict[str, Any]:
+    def get_status_summary(self) -> dict[str, Any]:
         """Get summary of all agents' autonomy levels."""
         states = self.store.list_states()
         return {
@@ -39,10 +39,11 @@ class AutonomyDataService:
         self,
         agent_name: str | None = None,
         limit: int = DEFAULT_TRANSITION_LIMIT,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Get recent transitions."""
         transitions = self.store.list_transitions(
-            agent_name=agent_name, limit=limit,
+            agent_name=agent_name,
+            limit=limit,
         )
         return [
             {
@@ -59,9 +60,10 @@ class AutonomyDataService:
             for t in transitions
         ]
 
-    def get_budget_overview(self) -> List[Dict[str, Any]]:
+    def get_budget_overview(self) -> list[dict[str, Any]]:
         """Get budget status across all scopes."""
         from sqlmodel import Session, select
+
         from temper_ai.safety.autonomy.models import BudgetRecord
 
         with Session(self.store.engine) as session:
@@ -80,7 +82,7 @@ class AutonomyDataService:
             for b in budgets
         ]
 
-    def get_emergency_status(self) -> Dict[str, Any]:
+    def get_emergency_status(self) -> dict[str, Any]:
         """Get current emergency stop state and recent history."""
         from temper_ai.safety.autonomy.emergency_stop import EmergencyStopController
 

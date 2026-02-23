@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any
 
 from temper_ai.optimization._schemas import (
     EvaluationResult,
@@ -22,36 +22,34 @@ class OptimizationEngine:
     def __init__(
         self,
         config: OptimizationConfig,
-        llm: Optional[Any] = None,
-        experiment_service: Optional[Any] = None,
-        registry: Optional[OptimizationRegistry] = None,
+        llm: Any | None = None,
+        experiment_service: Any | None = None,
+        registry: OptimizationRegistry | None = None,
     ) -> None:
         self.config = config
         self.llm = llm
         self.experiment_service = experiment_service
         self.registry = registry or OptimizationRegistry.get_instance()
-        self._evaluator_instances: Dict[str, Any] = {}
+        self._evaluator_instances: dict[str, Any] = {}
         self._build_evaluators()
 
     def _build_evaluators(self) -> None:
         """Instantiate evaluators from config."""
         for name, eval_config in self.config.evaluators.items():
             cls = self.registry.get_evaluator_class(eval_config.type)
-            self._evaluator_instances[name] = cls(
-                config=eval_config, llm=self.llm
-            )
+            self._evaluator_instances[name] = cls(config=eval_config, llm=self.llm)
 
     def run(
         self,
         runner: Any,
-        input_data: Dict[str, Any],
+        input_data: dict[str, Any],
     ) -> OptimizationResult:
         """Execute the optimization pipeline sequentially."""
         if not self.config.enabled or not self.config.pipeline:
             output = runner.execute(input_data)
             return OptimizationResult(output=output)
 
-        current_output: Dict[str, Any] = {}
+        current_output: dict[str, Any] = {}
         total_iterations = 0
         any_improved = False
 
@@ -76,14 +74,12 @@ class OptimizationEngine:
         self,
         step: PipelineStepConfig,
         runner: Any,
-        input_data: Dict[str, Any],
+        input_data: dict[str, Any],
     ) -> OptimizationResult:
         """Execute a single pipeline step."""
         evaluator = self._evaluator_instances.get(step.evaluator)
         if evaluator is None:
-            raise KeyError(
-                f"Evaluator '{step.evaluator}' not found in config"
-            )
+            raise KeyError(f"Evaluator '{step.evaluator}' not found in config")
 
         optimizer_cls = self.registry.get_optimizer_class(step.optimizer)
         kwargs = self._build_optimizer_kwargs(optimizer_cls)
@@ -100,13 +96,11 @@ class OptimizationEngine:
         )
         return result
 
-    def _build_optimizer_kwargs(
-        self, optimizer_cls: Any
-    ) -> Dict[str, Any]:
+    def _build_optimizer_kwargs(self, optimizer_cls: Any) -> dict[str, Any]:
         """Build kwargs for optimizer constructor based on its signature."""
         import inspect
 
-        kwargs: Dict[str, Any] = {}
+        kwargs: dict[str, Any] = {}
         sig = inspect.signature(optimizer_cls.__init__)
 
         if "experiment_service" in sig.parameters:
@@ -116,9 +110,7 @@ class OptimizationEngine:
 
         return kwargs
 
-    def _evaluate_final(
-        self, output: Dict[str, Any]
-    ) -> float:
+    def _evaluate_final(self, output: dict[str, Any]) -> float:
         """Evaluate final output with first evaluator if available."""
         if not self._evaluator_instances:
             return 1.0

@@ -1,5 +1,7 @@
 """Tests for src/observability/aggregation/period.py."""
+
 import pytest
+
 from temper_ai.observability.aggregation.period import AggregationPeriod
 
 
@@ -19,6 +21,7 @@ def test_aggregation_period_is_string_enum():
 
     # Verify it's an enum
     from enum import Enum
+
     assert issubclass(AggregationPeriod, Enum)
 
 

@@ -1,7 +1,8 @@
 """Main metric aggregator orchestrator."""
+
 import logging
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from temper_ai.observability.aggregation.metric_creator import MetricRecordCreator
 from temper_ai.observability.aggregation.period import AggregationPeriod
@@ -43,9 +44,9 @@ class AggregationOrchestrator:
     def aggregate_workflow_metrics(
         self,
         period: AggregationPeriod = AggregationPeriod.HOUR,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None
-    ) -> List[str]:
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
+    ) -> list[str]:
         """Aggregate workflow execution metrics.
 
         Computes:
@@ -73,9 +74,7 @@ class AggregationOrchestrator:
 
         try:
             # Build and execute query
-            query = AggregationQueryBuilder.build_workflow_query(
-                start_time, end_time
-            )
+            query = AggregationQueryBuilder.build_workflow_query(start_time, end_time)
             results = self.session.exec(query).all()
 
             # Create metrics for each workflow
@@ -100,9 +99,9 @@ class AggregationOrchestrator:
     def aggregate_agent_metrics(
         self,
         period: AggregationPeriod = AggregationPeriod.HOUR,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None
-    ) -> List[str]:
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
+    ) -> list[str]:
         """Aggregate agent execution metrics.
 
         Computes:
@@ -130,9 +129,7 @@ class AggregationOrchestrator:
 
         try:
             # Build and execute query
-            query = AggregationQueryBuilder.build_agent_query(
-                start_time, end_time
-            )
+            query = AggregationQueryBuilder.build_agent_query(start_time, end_time)
             results = self.session.exec(query).all()
 
             # Create metrics for each agent
@@ -157,9 +154,9 @@ class AggregationOrchestrator:
     def aggregate_llm_metrics(
         self,
         period: AggregationPeriod = AggregationPeriod.HOUR,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None
-    ) -> List[str]:
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
+    ) -> list[str]:
         """Aggregate LLM call metrics.
 
         Computes:
@@ -187,9 +184,7 @@ class AggregationOrchestrator:
 
         try:
             # Build and execute query
-            query = AggregationQueryBuilder.build_llm_query(
-                start_time, end_time
-            )
+            query = AggregationQueryBuilder.build_llm_query(start_time, end_time)
             results = self.session.exec(query).all()
 
             # Create metrics for each provider/model combination
@@ -214,9 +209,9 @@ class AggregationOrchestrator:
     def aggregate_all_metrics(
         self,
         period: AggregationPeriod = AggregationPeriod.HOUR,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None
-    ) -> Dict[str, List[str]]:
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
+    ) -> dict[str, list[str]]:
         """Aggregate all metric types.
 
         Convenience method that runs all aggregation pipelines.
@@ -232,7 +227,7 @@ class AggregationOrchestrator:
         results = {
             "workflow": self.aggregate_workflow_metrics(period, start_time, end_time),
             "agent": self.aggregate_agent_metrics(period, start_time, end_time),
-            "llm": self.aggregate_llm_metrics(period, start_time, end_time)
+            "llm": self.aggregate_llm_metrics(period, start_time, end_time),
         }
 
         total_metrics = sum(len(ids) for ids in results.values())

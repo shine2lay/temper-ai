@@ -2,6 +2,7 @@
 
 These are internal implementation details and should not be imported directly.
 """
+
 from __future__ import annotations
 
 import logging
@@ -9,7 +10,6 @@ import os
 import shlex
 import subprocess
 from pathlib import Path
-from typing import Dict, List, Optional, Set
 
 from temper_ai.tools.base import ToolResult
 from temper_ai.tools.constants import MAX_BASH_OUTPUT_LENGTH
@@ -22,7 +22,10 @@ logger = logging.getLogger(__name__)
 # Shell mode validation
 # ---------------------------------------------------------------------------
 
-def _check_metachar_simple(command: str, chars: str, error_msg: str) -> Optional[ToolResult]:
+
+def _check_metachar_simple(
+    command: str, chars: str, error_msg: str
+) -> ToolResult | None:
     """Check if command contains any of the given characters. Returns error or None."""
     for ch in chars:
         if ch in command:
@@ -30,7 +33,9 @@ def _check_metachar_simple(command: str, chars: str, error_msg: str) -> Optional
     return None
 
 
-def _check_metachar_substring(command: str, substrings: List[str], error_msg: str) -> Optional[ToolResult]:
+def _check_metachar_substring(
+    command: str, substrings: list[str], error_msg: str
+) -> ToolResult | None:
     """Check if command contains any of the given substrings. Returns error or None."""
     for sub in substrings:
         if sub in command:
@@ -38,7 +43,9 @@ def _check_metachar_substring(command: str, substrings: List[str], error_msg: st
     return None
 
 
-def _check_shell_metacharacters(command: str, allowed_commands: Set[str]) -> Optional[ToolResult]:
+def _check_shell_metacharacters(
+    command: str, allowed_commands: set[str]
+) -> ToolResult | None:
     """Check for dangerous shell metacharacters. Returns error or None."""
     import re as _re
 
@@ -46,7 +53,8 @@ def _check_shell_metacharacters(command: str, allowed_commands: Set[str]) -> Opt
 
     # SECURITY: Reject command substitution
     result = _check_metachar_substring(
-        command, ['`', '$('],
+        command,
+        ["`", "$("],
         f"Command substitution ($() and backticks) is not allowed. {allowed_list_msg}",
     )
     if result is not None:
@@ -54,7 +62,8 @@ def _check_shell_metacharacters(command: str, allowed_commands: Set[str]) -> Opt
 
     # SECURITY: Block heredoc syntax
     result = _check_metachar_substring(
-        command, ['<<'],
+        command,
+        ["<<"],
         "Heredoc syntax (<<) is not allowed in shell mode. Use echo or printf with redirection instead.",
     )
     if result is not None:
@@ -62,7 +71,8 @@ def _check_shell_metacharacters(command: str, allowed_commands: Set[str]) -> Opt
 
     # SECURITY: Block brace expansion
     result = _check_metachar_simple(
-        command, '{}',
+        command,
+        "{}",
         "Brace expansion ({, }) is not allowed in shell mode. List files explicitly instead.",
     )
     if result is not None:
@@ -70,7 +80,8 @@ def _check_shell_metacharacters(command: str, allowed_commands: Set[str]) -> Opt
 
     # H-20: Block glob patterns
     result = _check_metachar_simple(
-        command, '*?[',
+        command,
+        "*?[",
         "Glob patterns (*, ?, []) are not allowed in shell mode. List files explicitly instead.",
     )
     if result is not None:
@@ -78,14 +89,15 @@ def _check_shell_metacharacters(command: str, allowed_commands: Set[str]) -> Opt
 
     # SECURITY: Block process substitution
     result = _check_metachar_substring(
-        command, ['<(', '>('],
+        command,
+        ["<(", ">("],
         f"Process substitution (<() and >()) is not allowed. {allowed_list_msg}",
     )
     if result is not None:
         return result
 
     # SECURITY: Block stderr redirection
-    if _re.search(r'(?:^|[^<>])(?:2>|&>)', command):
+    if _re.search(r"(?:^|[^<>])(?:2>|&>)", command):
         return ToolResult(
             success=False,
             error="Stderr redirection (2>, &>) is not allowed in shell mode. Use stdout redirection only.",
@@ -95,9 +107,9 @@ def _check_shell_metacharacters(command: str, allowed_commands: Set[str]) -> Opt
 
 
 def _validate_command_allowlist(
-    sub_commands: List[str],
-    allowed_commands: Set[str],
-) -> Optional[ToolResult]:
+    sub_commands: list[str],
+    allowed_commands: set[str],
+) -> ToolResult | None:
     """Validate each sub-command against allowlist. Returns error or None."""
     for sub_cmd in sub_commands:
         sub_cmd = sub_cmd.strip()
@@ -116,7 +128,7 @@ def _validate_command_allowlist(
         if not shell_parts:
             continue
         cmd_name = shell_parts[0]
-        if '/' in cmd_name:
+        if "/" in cmd_name:
             return ToolResult(
                 success=False,
                 error=(
@@ -136,9 +148,9 @@ def _validate_command_allowlist(
 
 
 def _validate_path_arguments(
-    sub_commands: List[str],
+    sub_commands: list[str],
     workspace_root: Path,
-) -> Optional[ToolResult]:
+) -> ToolResult | None:
     """Validate path arguments against sandbox. Returns error or None."""
     for sub_cmd in sub_commands:
         sub_cmd = sub_cmd.strip()
@@ -154,7 +166,8 @@ def _validate_path_arguments(
             if arg in (">", ">>", "<"):
                 continue
             arg_path = (
-                Path(arg).resolve() if Path(arg).is_absolute()
+                Path(arg).resolve()
+                if Path(arg).is_absolute()
                 else (workspace_root / arg).resolve()
             )
             try:
@@ -172,9 +185,9 @@ def _validate_path_arguments(
 
 def validate_shell_mode_command(
     command: str,
-    allowed_commands: Set[str],
+    allowed_commands: set[str],
     workspace_root: Path,
-) -> Optional[ToolResult]:
+) -> ToolResult | None:
     """Validate command in shell mode. Returns ToolResult on error, None if valid.
 
     Also returns None and sets parts=None in the caller to signal shell=True.
@@ -206,11 +219,12 @@ def validate_shell_mode_command(
 # Strict mode validation
 # ---------------------------------------------------------------------------
 
+
 def validate_strict_mode_command(
     command: str,
-    allowed_commands: Set[str],
-    dangerous_chars: Set[str],
-) -> tuple[Optional[List[str]], Optional[ToolResult]]:
+    allowed_commands: set[str],
+    dangerous_chars: set[str],
+) -> tuple[list[str] | None, ToolResult | None]:
     """Validate command in strict mode.
 
     Returns (parts, None) on success, (None, ToolResult) on error.
@@ -267,7 +281,8 @@ def validate_strict_mode_command(
 # Sandbox validation
 # ---------------------------------------------------------------------------
 
-def _ensure_workspace_exists(workspace_root: Path) -> Optional[ToolResult]:
+
+def _ensure_workspace_exists(workspace_root: Path) -> ToolResult | None:
     """Ensure workspace root exists. Returns error or None."""
     if not workspace_root.exists():
         try:
@@ -284,7 +299,7 @@ def _check_path_in_sandbox(
     path: Path,
     workspace_root: Path,
     path_description: str,
-) -> Optional[ToolResult]:
+) -> ToolResult | None:
     """Check if path is within sandbox. Returns error or None."""
     try:
         path.relative_to(workspace_root.resolve())
@@ -300,16 +315,20 @@ def _check_path_in_sandbox(
 
 
 def _validate_command_arguments(
-    parts: List[str],
+    parts: list[str],
     resolved_cwd: Path,
     resolved_workspace: Path,
     workspace_root: Path,
-) -> Optional[ToolResult]:
+) -> ToolResult | None:
     """Validate command arguments for path traversal. Returns error or None."""
     for arg in parts[1:]:
         if arg.startswith("-"):
             continue
-        arg_path = (resolved_cwd / arg).resolve() if not Path(arg).is_absolute() else Path(arg).resolve()
+        arg_path = (
+            (resolved_cwd / arg).resolve()
+            if not Path(arg).is_absolute()
+            else Path(arg).resolve()
+        )
         error_result = _check_path_in_sandbox(
             arg_path, resolved_workspace, "Path argument"
         )
@@ -320,9 +339,9 @@ def _validate_command_arguments(
 
 def validate_sandbox(
     workspace_root: Path,
-    working_directory: Optional[str],
-    parts: Optional[List[str]],
-) -> tuple[Optional[Path], Optional[ToolResult]]:
+    working_directory: str | None,
+    parts: list[str] | None,
+) -> tuple[Path | None, ToolResult | None]:
     """Validate working directory and path arguments against sandbox.
 
     Returns (resolved_cwd, None) on success, (None, ToolResult) on error.
@@ -339,13 +358,17 @@ def validate_sandbox(
     resolved_cwd = cwd.resolve() if cwd != workspace_root else resolved_workspace
 
     # Check working directory is in sandbox
-    error_result = _check_path_in_sandbox(resolved_cwd, resolved_workspace, "Working directory")
+    error_result = _check_path_in_sandbox(
+        resolved_cwd, resolved_workspace, "Working directory"
+    )
     if error_result is not None:
         return None, error_result
 
     # Check command arguments for path traversal (strict mode only)
     if parts is not None:
-        error_result = _validate_command_arguments(parts, resolved_cwd, resolved_workspace, workspace_root)
+        error_result = _validate_command_arguments(
+            parts, resolved_cwd, resolved_workspace, workspace_root
+        )
         if error_result is not None:
             return None, error_result
 
@@ -366,6 +389,7 @@ def validate_sandbox(
 # Command execution
 # ---------------------------------------------------------------------------
 
+
 def _truncate_output(output: str) -> str:
     """Truncate output if it exceeds max length."""
     if len(output) > MAX_BASH_OUTPUT_LENGTH:
@@ -385,7 +409,11 @@ def _build_success_result(
     success = exit_code == 0
     return ToolResult(
         success=success,
-        result=stdout if success else f"Command failed (exit {exit_code}):\n{stderr}\n{stdout}",
+        result=(
+            stdout
+            if success
+            else f"Command failed (exit {exit_code}):\n{stderr}\n{stdout}"
+        ),
         error=stderr if not success and stderr else None,
         metadata={
             ToolResultFields.EXIT_CODE: exit_code,
@@ -401,7 +429,7 @@ def _build_success_result(
 def _handle_run_error(
     exc: Exception,
     command: str,
-    parts: Optional[List[str]],
+    parts: list[str] | None,
     resolved_cwd: Path,
     timeout: int,
     shell_mode: bool,
@@ -418,7 +446,9 @@ def _handle_run_error(
             },
         )
 
-    cmd_display = command.split()[0] if shell_mode else (parts[0] if parts else "unknown")
+    cmd_display = (
+        command.split()[0] if shell_mode else (parts[0] if parts else "unknown")
+    )
 
     if isinstance(exc, FileNotFoundError):
         return ToolResult(
@@ -444,24 +474,26 @@ def _handle_run_error(
 
 def run_command(
     command: str,
-    parts: Optional[List[str]],
+    parts: list[str] | None,
     resolved_cwd: Path,
     timeout: int,
     shell_mode: bool,
-    safe_env: Dict[str, str],
+    safe_env: dict[str, str],
 ) -> ToolResult:
     """Execute a validated command via subprocess."""
     try:
         use_shell = shell_mode
-        cmd_arg: str | List[str] = command if use_shell else (parts or [])
-        result = subprocess.run(  # noqa: S603 — bash tool requires subprocess  # nosec B602
-            cmd_arg,
-            cwd=str(resolved_cwd),
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            shell=use_shell,  # noqa: S602  # nosec B602
-            env=safe_env,
+        cmd_arg: str | list[str] = command if use_shell else (parts or [])
+        result = (
+            subprocess.run(  # noqa: S603 — bash tool requires subprocess  # nosec B602
+                cmd_arg,
+                cwd=str(resolved_cwd),
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                shell=use_shell,  # noqa: S602  # nosec B602
+                env=safe_env,
+            )
         )
 
         stdout = _truncate_output(result.stdout or "")
@@ -471,11 +503,16 @@ def run_command(
             stdout, stderr, result.returncode, command, resolved_cwd, timeout
         )
 
-    except (subprocess.TimeoutExpired, FileNotFoundError, PermissionError, OSError) as e:
+    except (
+        subprocess.TimeoutExpired,
+        FileNotFoundError,
+        PermissionError,
+        OSError,
+    ) as e:
         return _handle_run_error(e, command, parts, resolved_cwd, timeout, shell_mode)
 
 
-def get_safe_env(safe_env_vars: Set[str]) -> Dict[str, str]:
+def get_safe_env(safe_env_vars: set[str]) -> dict[str, str]:
     """Build a safe environment for subprocess execution."""
     env = {}
     for key in safe_env_vars:

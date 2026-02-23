@@ -4,9 +4,11 @@ Configuration migration framework for schema versioning.
 Provides utilities for migrating configuration files between schema versions,
 enabling backward compatibility and safe schema evolution.
 """
+
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
 from packaging import version
 
@@ -23,10 +25,11 @@ class MigrationStep:
         description: Human-readable description of changes
         migrate_fn: Function that transforms config dict
     """
+
     from_version: str
     to_version: str
     description: str
-    migrate_fn: Callable[[Dict[str, Any]], Dict[str, Any]]
+    migrate_fn: Callable[[dict[str, Any]], dict[str, Any]]
 
     def __post_init__(self) -> None:
         """Validate version strings."""
@@ -59,14 +62,14 @@ class ConfigMigrationRegistry:
 
     def __init__(self) -> None:
         """Initialize migration registry."""
-        self._migrations: Dict[str, List[MigrationStep]] = {}
+        self._migrations: dict[str, list[MigrationStep]] = {}
 
     def register(
-        self,
-        from_version: str,
-        to_version: str,
-        description: str
-    ) -> Callable[[Callable[[Dict[str, Any]], Dict[str, Any]]], Callable[[Dict[str, Any]], Dict[str, Any]]]:
+        self, from_version: str, to_version: str, description: str
+    ) -> Callable[
+        [Callable[[dict[str, Any]], dict[str, Any]]],
+        Callable[[dict[str, Any]], dict[str, Any]],
+    ]:
         """Decorator to register a migration function.
 
         Args:
@@ -83,16 +86,20 @@ class ConfigMigrationRegistry:
             ...     config['timeout'] = 30
             ...     return config
         """
-        def decorator(migrate_fn: Callable[[Dict[str, Any]], Dict[str, Any]]) -> Callable[[Dict[str, Any]], Dict[str, Any]]:
+
+        def decorator(
+            migrate_fn: Callable[[dict[str, Any]], dict[str, Any]],
+        ) -> Callable[[dict[str, Any]], dict[str, Any]]:
             """Migration decorator wrapper."""
             step = MigrationStep(
                 from_version=from_version,
                 to_version=to_version,
                 description=description,
-                migrate_fn=migrate_fn
+                migrate_fn=migrate_fn,
             )
             self.add_migration(step)
             return migrate_fn
+
         return decorator
 
     def add_migration(self, step: MigrationStep) -> None:
@@ -110,10 +117,8 @@ class ConfigMigrationRegistry:
         self._migrations[key].sort(key=lambda s: version.parse(s.to_version))
 
     def get_migration_path(
-        self,
-        from_version: str,
-        to_version: str
-    ) -> Optional[List[MigrationStep]]:
+        self, from_version: str, to_version: str
+    ) -> list[MigrationStep] | None:
         """Find migration path from one version to another.
 
         Uses breadth-first search to find shortest path.
@@ -136,7 +141,7 @@ class ConfigMigrationRegistry:
         # BFS to find shortest path
         from collections import deque
 
-        queue: deque[tuple[str, List[MigrationStep]]] = deque([(from_version, [])])
+        queue: deque[tuple[str, list[MigrationStep]]] = deque([(from_version, [])])
         visited = {from_version}
 
         while queue:
@@ -158,10 +163,10 @@ class ConfigMigrationRegistry:
 
     def migrate(
         self,
-        config: Dict[str, Any],
+        config: dict[str, Any],
         target_version: str,
-        source_version: Optional[str] = None
-    ) -> Dict[str, Any]:
+        source_version: str | None = None,
+    ) -> dict[str, Any]:
         """Migrate configuration to target version.
 
         Args:
@@ -212,7 +217,7 @@ class ConfigMigrationRegistry:
 
         return migrated_config
 
-    def list_migrations(self) -> List[MigrationStep]:
+    def list_migrations(self) -> list[MigrationStep]:
         """List all registered migrations.
 
         Returns:
@@ -235,10 +240,8 @@ stage_migration_registry = ConfigMigrationRegistry()
 
 
 def ensure_current_version(
-    config: Dict[str, Any],
-    config_type: str,
-    current_version: str
-) -> Dict[str, Any]:
+    config: dict[str, Any], config_type: str, current_version: str
+) -> dict[str, Any]:
     """Ensure configuration is at current schema version.
 
     Args:
@@ -266,9 +269,7 @@ def ensure_current_version(
 
     # If no schema_version field, assume oldest version (1.0)
     if "schema_version" not in config:
-        logger.warning(
-            "Config missing schema_version field, assuming 1.0"
-        )
+        logger.warning("Config missing schema_version field, assuming 1.0")
         config["schema_version"] = "1.0"
 
     return registry.migrate(config, current_version)
@@ -276,8 +277,9 @@ def ensure_current_version(
 
 # Example migrations (to be replaced with actual migrations)
 
+
 @agent_migration_registry.register("1.0", "1.1", "Add schema_version to metadata")
-def _migrate_agent_1_0_to_1_1(config: Dict[str, Any]) -> Dict[str, Any]:
+def _migrate_agent_1_0_to_1_1(config: dict[str, Any]) -> dict[str, Any]:
     """Example migration: Add schema_version field."""
     # Migrations are applied by the framework
     # This is just a placeholder showing structure
@@ -285,7 +287,7 @@ def _migrate_agent_1_0_to_1_1(config: Dict[str, Any]) -> Dict[str, Any]:
 
 
 @workflow_migration_registry.register("1.0", "1.1", "Rename 'pipeline' to 'stages'")
-def _migrate_workflow_1_0_to_1_1(config: Dict[str, Any]) -> Dict[str, Any]:
+def _migrate_workflow_1_0_to_1_1(config: dict[str, Any]) -> dict[str, Any]:
     """Example migration: Rename field."""
     if "pipeline" in config:
         config["stages"] = config.pop("pipeline")

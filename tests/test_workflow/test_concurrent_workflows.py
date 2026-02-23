@@ -4,9 +4,9 @@ Comprehensive tests for concurrent workflow execution.
 Tests concurrent execution patterns for workflows, stages, and agents.
 Verifies parallelism, isolation, error handling, and performance.
 """
+
 import asyncio
 import time
-from typing import List
 
 import pytest
 
@@ -72,6 +72,7 @@ class TestConcurrentStageExecution:
     @pytest.mark.asyncio
     async def test_stage_error_propagation(self):
         """Test error handling in parallel stage execution."""
+
         async def failing_stage(stage_id: str):
             """Stage that fails."""
             await asyncio.sleep(0.1)
@@ -97,7 +98,7 @@ class TestConcurrentStageExecution:
         """Test that stage dependencies are respected in concurrent execution."""
         execution_order = []
 
-        async def dependent_stage(stage_id: str, depends_on: List[str]):
+        async def dependent_stage(stage_id: str, depends_on: list[str]):
             """Stage that waits for dependencies."""
             # Wait for dependencies to complete
             while not all(dep in execution_order for dep in depends_on):
@@ -144,12 +145,15 @@ class TestConcurrentAgentExecution:
         total_time = time.time() - start_time
 
         # Should complete in ~0.3s (parallel), not 1.5s (sequential)
-        assert total_time < 0.6, f"Expected parallel execution <0.6s, took {total_time}s"
+        assert (
+            total_time < 0.6
+        ), f"Expected parallel execution <0.6s, took {total_time}s"
         assert len(results) == 5
 
     @pytest.mark.asyncio
     async def test_agent_result_aggregation(self):
         """Test that results from parallel agents are correctly aggregated."""
+
         async def agent_executor(agent_id: str, value: int):
             """Agent that returns a value."""
             await asyncio.sleep(0.1)
@@ -201,7 +205,7 @@ class TestConcurrentAgentExecution:
                 results.append(result)
 
         assert len(results) == 3  # 3 succeeded
-        assert len(errors) == 2    # 2 failed
+        assert len(errors) == 2  # 2 failed
 
 
 class TestConcurrentWorkflowExecution:
@@ -264,6 +268,7 @@ class TestConcurrentWorkflowExecution:
     @pytest.mark.asyncio
     async def test_high_concurrency_stress(self):
         """Test system under high concurrent load (50 workflows)."""
+
         async def lightweight_workflow(workflow_id: int):
             """Lightweight workflow for stress testing."""
             await asyncio.sleep(0.1)
@@ -301,8 +306,9 @@ class TestResourceManagement:
             max_observed["peak"] = max(max_observed["peak"], current_running["count"])
 
             # Ensure we never exceed limit
-            assert current_running["count"] <= max_concurrent, \
-                f"Exceeded max_concurrent: {current_running['count']}"
+            assert (
+                current_running["count"] <= max_concurrent
+            ), f"Exceeded max_concurrent: {current_running['count']}"
 
             await asyncio.sleep(0.2)
             current_running["count"] -= 1
@@ -380,8 +386,7 @@ class TestErrorHandlingConcurrency:
         # Wait for critical error
         try:
             await asyncio.wait_for(
-                asyncio.gather(*tasks, return_exceptions=False),
-                timeout=2.0
+                asyncio.gather(*tasks, return_exceptions=False), timeout=2.0
             )
         except Exception:
             # Cancel all remaining tasks
@@ -398,7 +403,8 @@ class TestErrorHandlingConcurrency:
     @pytest.mark.asyncio
     async def test_partial_failure_recovery(self):
         """Test system recovers from partial failures in concurrent execution."""
-        async def potentially_failing_task(task_id: int, fail_ids: List[int]):
+
+        async def potentially_failing_task(task_id: int, fail_ids: list[int]):
             """Task that may fail based on ID."""
             await asyncio.sleep(0.1)
             if task_id in fail_ids:
@@ -414,8 +420,8 @@ class TestErrorHandlingConcurrency:
         successes = [r for r in results if not isinstance(r, Exception)]
         failures = [r for r in results if isinstance(r, Exception)]
 
-        assert len(successes) == 7   # 10 - 3 = 7 succeeded
-        assert len(failures) == 3     # 3 failed
+        assert len(successes) == 7  # 10 - 3 = 7 succeeded
+        assert len(failures) == 3  # 3 failed
 
         # Verify successful tasks have correct IDs
         success_ids = {s["id"] for s in successes}
@@ -429,6 +435,7 @@ class TestPerformance:
     @pytest.mark.asyncio
     async def test_concurrent_speedup_verification(self):
         """Test that concurrent execution is faster than sequential."""
+
         async def slow_task(duration: float):
             """Task that takes specified duration."""
             await asyncio.sleep(duration)
@@ -453,6 +460,7 @@ class TestPerformance:
     @pytest.mark.asyncio
     async def test_throughput_under_load(self):
         """Test throughput with high concurrent workload."""
+
         async def quick_task(task_id: int):
             """Quick task for throughput testing."""
             await asyncio.sleep(0.05)
@@ -525,21 +533,21 @@ class TestDeadlockPrevention:
         try:
             results = await asyncio.wait_for(
                 asyncio.gather(
-                    task_with_ordered_locks_1(),
-                    task_with_ordered_locks_2()
+                    task_with_ordered_locks_1(), task_with_ordered_locks_2()
                 ),
-                timeout=2.0
+                timeout=2.0,
             )
             # If we get here, no deadlock occurred
             assert len(results) == 2
             assert "task1_done" in results
             assert "task2_done" in results
-        except asyncio.TimeoutError:
+        except TimeoutError:
             pytest.fail("Deadlock detected - lock ordering should prevent this")
 
     @pytest.mark.asyncio
     async def test_timeout_prevents_indefinite_wait(self):
         """Test that timeouts prevent indefinite waiting."""
+
         async def long_running_task():
             """Task that runs for a long time."""
             await asyncio.sleep(10.0)  # 10 seconds

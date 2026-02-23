@@ -13,15 +13,15 @@ Design:
 """
 
 import asyncio
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, cast
 
+from temper_ai.workflow.engines.langgraph_compiler import LangGraphCompiler
 from temper_ai.workflow.execution_engine import (
     CompiledWorkflow,
     ExecutionEngine,
     ExecutionMode,
     WorkflowCancelledError,
 )
-from temper_ai.workflow.engines.langgraph_compiler import LangGraphCompiler
 
 
 class LangGraphCompiledWorkflow(CompiledWorkflow):
@@ -35,8 +35,8 @@ class LangGraphCompiledWorkflow(CompiledWorkflow):
     def __init__(
         self,
         graph: Any,  # Compiled LangGraph StateGraph
-        workflow_config: Dict[str, Any],
-        tracker: Any = None
+        workflow_config: dict[str, Any],
+        tracker: Any = None,
     ) -> None:
         """Initialize compiled workflow.
 
@@ -50,7 +50,7 @@ class LangGraphCompiledWorkflow(CompiledWorkflow):
         self.tracker = tracker
         self._cancelled = False  # Cancellation flag
 
-    def _extract_stage_names(self, stages: List[Any]) -> List[str]:
+    def _extract_stage_names(self, stages: list[Any]) -> list[str]:
         """Extract stage names from various stage formats.
 
         Handles different stage representations:
@@ -78,11 +78,15 @@ class LangGraphCompiledWorkflow(CompiledWorkflow):
                 stage_names.append(name)
             else:
                 # Pydantic model or object
-                name = getattr(stage, 'name', None) or getattr(stage, 'stage_name', None) or str(stage)
+                name = (
+                    getattr(stage, "name", None)
+                    or getattr(stage, "stage_name", None)
+                    or str(stage)
+                )
                 stage_names.append(name)
         return stage_names
 
-    def invoke(self, state: Dict[str, Any]) -> Dict[str, Any]:
+    def invoke(self, state: dict[str, Any]) -> dict[str, Any]:
         """Execute workflow synchronously.
 
         Args:
@@ -107,9 +111,9 @@ class LangGraphCompiledWorkflow(CompiledWorkflow):
 
         # Execute graph (pass dict, validated against LangGraphWorkflowState schema)
         result = self.graph.invoke(state_dict)
-        return cast(Dict[str, Any], result)
+        return cast(dict[str, Any], result)
 
-    async def ainvoke(self, state: Dict[str, Any]) -> Dict[str, Any]:
+    async def ainvoke(self, state: dict[str, Any]) -> dict[str, Any]:
         """Execute workflow asynchronously.
 
         Args:
@@ -134,9 +138,9 @@ class LangGraphCompiledWorkflow(CompiledWorkflow):
 
         # Execute graph asynchronously (pass dict, validated against LangGraphWorkflowState schema)
         result = await self.graph.ainvoke(state_dict)
-        return cast(Dict[str, Any], result)
+        return cast(dict[str, Any], result)
 
-    def get_metadata(self) -> Dict[str, Any]:
+    def get_metadata(self) -> dict[str, Any]:
         """Get workflow metadata.
 
         Returns:
@@ -161,7 +165,7 @@ class LangGraphCompiledWorkflow(CompiledWorkflow):
             "engine": "langgraph",
             "version": "0.2.0",  # LangGraph integration version
             "config": self.workflow_config,
-            "stages": stage_names
+            "stages": stage_names,
         }
 
     def visualize(self) -> str:
@@ -242,9 +246,7 @@ class LangGraphExecutionEngine(ExecutionEngine):
     """
 
     def __init__(
-        self,
-        tool_registry: Optional[Any] = None,
-        config_loader: Optional[Any] = None
+        self, tool_registry: Any | None = None, config_loader: Any | None = None
     ) -> None:
         """Initialize engine.
 
@@ -254,13 +256,12 @@ class LangGraphExecutionEngine(ExecutionEngine):
         """
         # Wrap existing LangGraphCompiler
         self.compiler = LangGraphCompiler(
-            tool_registry=tool_registry,
-            config_loader=config_loader
+            tool_registry=tool_registry, config_loader=config_loader
         )
         self.tool_registry = tool_registry
         self.config_loader = config_loader
 
-    def compile(self, workflow_config: Dict[str, Any]) -> CompiledWorkflow:
+    def compile(self, workflow_config: dict[str, Any]) -> CompiledWorkflow:
         """Compile workflow configuration into executable form.
 
         Args:
@@ -285,15 +286,15 @@ class LangGraphExecutionEngine(ExecutionEngine):
         return LangGraphCompiledWorkflow(
             graph=graph,
             workflow_config=workflow_config,
-            tracker=None  # Tracker passed at execution time
+            tracker=None,  # Tracker passed at execution time
         )
 
     def execute(
         self,
         compiled_workflow: CompiledWorkflow,
-        input_data: Dict[str, Any],
-        mode: ExecutionMode = ExecutionMode.SYNC
-    ) -> Dict[str, Any]:
+        input_data: dict[str, Any],
+        mode: ExecutionMode = ExecutionMode.SYNC,
+    ) -> dict[str, Any]:
         """Execute compiled workflow.
 
         Args:
@@ -346,9 +347,9 @@ class LangGraphExecutionEngine(ExecutionEngine):
     async def async_execute(
         self,
         compiled_workflow: CompiledWorkflow,
-        input_data: Dict[str, Any],
-        mode: ExecutionMode = ExecutionMode.ASYNC
-    ) -> Dict[str, Any]:
+        input_data: dict[str, Any],
+        mode: ExecutionMode = ExecutionMode.ASYNC,
+    ) -> dict[str, Any]:
         """Execute compiled workflow asynchronously.
 
         Use from async contexts (FastAPI, Jupyter, pytest-asyncio).
@@ -370,9 +371,7 @@ class LangGraphExecutionEngine(ExecutionEngine):
             raise NotImplementedError("STREAM mode not yet supported")
 
         if mode == ExecutionMode.SYNC:
-            return await asyncio.to_thread(
-                compiled_workflow.invoke, input_data
-            )
+            return await asyncio.to_thread(compiled_workflow.invoke, input_data)
 
         return await compiled_workflow.ainvoke(input_data)
 
@@ -398,11 +397,11 @@ class LangGraphExecutionEngine(ExecutionEngine):
         """
         # LangGraph capabilities
         supported = {
-            "sequential_stages",      # Sequential execution
-            "parallel_stages",        # LangGraph supports parallel branches
-            "conditional_routing",    # Conditional edges in LangGraph
-            "checkpointing",          # LangGraph memory/checkpointing
-            "state_persistence",      # State passed between nodes
+            "sequential_stages",  # Sequential execution
+            "parallel_stages",  # LangGraph supports parallel branches
+            "conditional_routing",  # Conditional edges in LangGraph
+            "checkpointing",  # LangGraph memory/checkpointing
+            "state_persistence",  # State passed between nodes
         }
 
         return feature in supported

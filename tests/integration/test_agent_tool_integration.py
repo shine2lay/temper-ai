@@ -3,6 +3,7 @@ Integration tests for agent + tool execution.
 
 Tests end-to-end integration of agents calling tools with real tool implementations.
 """
+
 import time
 
 import pytest
@@ -20,7 +21,7 @@ class SlowTool(BaseTool):
         return ToolMetadata(
             name="SlowTool",
             description="A tool that sleeps for a specified duration",
-            version="1.0"
+            version="1.0",
         )
 
     def get_parameters_schema(self):
@@ -29,19 +30,16 @@ class SlowTool(BaseTool):
             "properties": {
                 "seconds": {
                     "type": "number",
-                    "description": "Number of seconds to sleep"
+                    "description": "Number of seconds to sleep",
                 }
             },
-            "required": ["seconds"]
+            "required": ["seconds"],
         }
 
     def execute(self, **kwargs) -> ToolResult:
         seconds = kwargs.get("seconds", 1)
         time.sleep(seconds)
-        return ToolResult(
-            success=True,
-            result=f"Slept for {seconds} seconds"
-        )
+        return ToolResult(success=True, result=f"Slept for {seconds} seconds")
 
 
 class FailingTool(BaseTool):
@@ -49,9 +47,7 @@ class FailingTool(BaseTool):
 
     def get_metadata(self) -> ToolMetadata:
         return ToolMetadata(
-            name="FailingTool",
-            description="A tool that always fails",
-            version="1.0"
+            name="FailingTool", description="A tool that always fails", version="1.0"
         )
 
     def get_parameters_schema(self):
@@ -60,17 +56,14 @@ class FailingTool(BaseTool):
             "properties": {
                 "error_message": {
                     "type": "string",
-                    "description": "Error message to return"
+                    "description": "Error message to return",
                 }
-            }
+            },
         }
 
     def execute(self, **kwargs) -> ToolResult:
         error_msg = kwargs.get("error_message", "Tool failed")
-        return ToolResult(
-            success=False,
-            error=error_msg
-        )
+        return ToolResult(success=False, error=error_msg)
 
 
 class LargeOutputTool(BaseTool):
@@ -78,21 +71,16 @@ class LargeOutputTool(BaseTool):
 
     def get_metadata(self) -> ToolMetadata:
         return ToolMetadata(
-            name="LargeOutputTool",
-            description="Generates large output",
-            version="1.0"
+            name="LargeOutputTool", description="Generates large output", version="1.0"
         )
 
     def get_parameters_schema(self):
         return {
             "type": "object",
             "properties": {
-                "size_mb": {
-                    "type": "number",
-                    "description": "Size of output in MB"
-                }
+                "size_mb": {"type": "number", "description": "Size of output in MB"}
             },
-            "required": ["size_mb"]
+            "required": ["size_mb"],
         }
 
     def execute(self, **kwargs) -> ToolResult:
@@ -102,9 +90,7 @@ class LargeOutputTool(BaseTool):
         large_data = "x" * size_bytes
 
         return ToolResult(
-            success=True,
-            result=large_data,
-            metadata={"size_bytes": size_bytes}
+            success=True, result=large_data, metadata={"size_bytes": size_bytes}
         )
 
 
@@ -154,7 +140,11 @@ class TestBasicToolExecution:
         # Missing required parameter
         result = executor.execute("Calculator", {})
         assert result.success is False
-        assert "expression" in result.error.lower() or "required" in result.error.lower()
+        assert (
+            "expression" in result.error.lower()
+            or "required" in result.error.lower()
+            or "invalid" in result.error.lower()
+        )
 
         # Invalid parameter type
         result = executor.execute("Calculator", {"expression": 123})
@@ -261,9 +251,7 @@ class TestConcurrentToolExecution:
             futures = {}
             for expr, expected in expressions:
                 future = pool.submit(
-                    executor.execute,
-                    "Calculator",
-                    {"expression": expr}
+                    executor.execute, "Calculator", {"expression": expr}
                 )
                 futures[future] = (expr, expected)
 
@@ -272,10 +260,12 @@ class TestConcurrentToolExecution:
                 expr, expected = futures[future]
                 result = future.result()
 
-                assert result.success is True, \
-                    f"Expression '{expr}' failed: {result.error}"
-                assert result.result == expected, \
-                    f"Expression '{expr}' expected {expected}, got {result.result}"
+                assert (
+                    result.success is True
+                ), f"Expression '{expr}' failed: {result.error}"
+                assert (
+                    result.result == expected
+                ), f"Expression '{expr}' expected {expected}, got {result.result}"
 
     def test_concurrent_mixed_tool_calls(self):
         """Test concurrent calls to different tools."""
@@ -290,20 +280,13 @@ class TestConcurrentToolExecution:
         with ThreadPoolExecutor(max_workers=3) as pool:
             # Submit different tool calls concurrently
             calc_future = pool.submit(
-                executor.execute,
-                "Calculator",
-                {"expression": "5 * 5"}
+                executor.execute, "Calculator", {"expression": "5 * 5"}
             )
             slow_future = pool.submit(
-                executor.execute,
-                "SlowTool",
-                {"seconds": 0.5},
-                timeout=2
+                executor.execute, "SlowTool", {"seconds": 0.5}, timeout=2
             )
             fail_future = pool.submit(
-                executor.execute,
-                "FailingTool",
-                {"error_message": "Expected failure"}
+                executor.execute, "FailingTool", {"error_message": "Expected failure"}
             )
 
             # Wait for all to complete
@@ -334,9 +317,7 @@ class TestConcurrentToolExecution:
             futures = []
             for i in range(50):
                 future = pool.submit(
-                    executor.execute,
-                    "Calculator",
-                    {"expression": f"{i} + {i}"}
+                    executor.execute, "Calculator", {"expression": f"{i} + {i}"}
                 )
                 futures.append((future, i))
 

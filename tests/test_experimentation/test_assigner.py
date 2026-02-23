@@ -86,10 +86,19 @@ class TestVariantAssignerInitialization:
         """Test that correct strategy instances are created."""
         assigner = VariantAssigner()
 
-        assert isinstance(assigner._strategies[AssignmentStrategyType.RANDOM], RandomAssignment)
-        assert isinstance(assigner._strategies[AssignmentStrategyType.HASH], HashAssignment)
-        assert isinstance(assigner._strategies[AssignmentStrategyType.STRATIFIED], StratifiedAssignment)
-        assert isinstance(assigner._strategies[AssignmentStrategyType.BANDIT], BanditAssignment)
+        assert isinstance(
+            assigner._strategies[AssignmentStrategyType.RANDOM], RandomAssignment
+        )
+        assert isinstance(
+            assigner._strategies[AssignmentStrategyType.HASH], HashAssignment
+        )
+        assert isinstance(
+            assigner._strategies[AssignmentStrategyType.STRATIFIED],
+            StratifiedAssignment,
+        )
+        assert isinstance(
+            assigner._strategies[AssignmentStrategyType.BANDIT], BanditAssignment
+        )
 
 
 class TestAssignVariant:
@@ -297,7 +306,9 @@ class TestStrategyDelegation:
         # Hash strategy: same ID → same variant
         results = []
         for _ in range(10):
-            variant_id = assigner.assign_variant(experiment, variants, "workflow-consistent")
+            variant_id = assigner.assign_variant(
+                experiment, variants, "workflow-consistent"
+            )
             results.append(variant_id)
 
         # All should be same
@@ -402,7 +413,9 @@ class TestEdgeCases:
         experiment.assignment_strategy = AssignmentStrategyType.HASH
         assigner = VariantAssigner()
 
-        variant_id = assigner.assign_variant(experiment, variants, "workflow-123", context=None)
+        variant_id = assigner.assign_variant(
+            experiment, variants, "workflow-123", context=None
+        )
 
         assert variant_id in [v.id for v in variants]
 
@@ -411,7 +424,9 @@ class TestEdgeCases:
         experiment.assignment_strategy = AssignmentStrategyType.HASH
         assigner = VariantAssigner()
 
-        variant_id = assigner.assign_variant(experiment, variants, "workflow-123", context={})
+        variant_id = assigner.assign_variant(
+            experiment, variants, "workflow-123", context={}
+        )
 
         assert variant_id in [v.id for v in variants]
 

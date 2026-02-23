@@ -1,25 +1,26 @@
 """Tests for workflow-level rate limiting (R0.9)."""
+
 from __future__ import annotations
 
 import threading
 import time
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
 from temper_ai.shared.utils.exceptions import RateLimitError
+from temper_ai.tools._executor_helpers import check_workflow_rate_limit
 from temper_ai.tools.workflow_rate_limiter import WorkflowRateLimiter
 from temper_ai.tools.workflow_rate_limiter_constants import (
     DEFAULT_MAX_RPM,
     DEFAULT_MAX_WAIT_SECONDS,
     SLIDING_WINDOW_SECONDS,
 )
-from temper_ai.tools._executor_helpers import check_workflow_rate_limit
-
 
 # ---------------------------------------------------------------------------
 # WorkflowRateLimiter unit tests
 # ---------------------------------------------------------------------------
+
 
 class TestWorkflowRateLimiter:
 
@@ -43,7 +44,9 @@ class TestWorkflowRateLimiter:
             limiter.acquire()
 
     def test_acquire_blocks_until_capacity(self) -> None:
-        limiter = WorkflowRateLimiter(max_rpm=2, block_on_limit=True, max_wait_seconds=5.0)
+        limiter = WorkflowRateLimiter(
+            max_rpm=2, block_on_limit=True, max_wait_seconds=5.0
+        )
 
         # Fill up the window
         limiter.acquire()
@@ -61,7 +64,9 @@ class TestWorkflowRateLimiter:
         assert elapsed < 2.0  # should not take long
 
     def test_acquire_timeout_raises(self) -> None:
-        limiter = WorkflowRateLimiter(max_rpm=1, block_on_limit=True, max_wait_seconds=0.1)
+        limiter = WorkflowRateLimiter(
+            max_rpm=1, block_on_limit=True, max_wait_seconds=0.1
+        )
         limiter.acquire()
         with pytest.raises(RateLimitError, match="after waiting"):
             limiter.acquire()
@@ -142,6 +147,7 @@ class TestWorkflowRateLimiter:
 # ---------------------------------------------------------------------------
 # check_workflow_rate_limit helper
 # ---------------------------------------------------------------------------
+
 
 class TestCheckWorkflowRateLimit:
 

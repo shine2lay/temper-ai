@@ -431,7 +431,7 @@ if approval.granted:
 ### Example 1: Development Environment (Lenient)
 
 ```yaml
-# config/safety/action_policies.yaml
+# configs/safety/action_policies.yaml
 environments:
   development:
     policy_engine:
@@ -1070,7 +1070,7 @@ print(engine.registry.get_action_types_for_policy("file_access_policy"))
 
 # 2. Check policy configuration
 from temper_ai.utils.config_loader import load_config
-config = load_config("config/safety/action_policies.yaml")
+config = load_config("configs/safety/action_policies.yaml")
 print(config["policy_config"]["file_access_policy"])
 
 # 3. Clear cache
@@ -1179,7 +1179,7 @@ context = PolicyExecutionContext(
 )
 
 # 3. Check configuration
-config = load_config("config/safety/action_policies.yaml")
+config = load_config("configs/safety/action_policies.yaml")
 if "my_policy" in config["policy_config"]:
     if config["policy_config"]["my_policy"].get("enabled") == False:
         print("Policy disabled in configuration!")

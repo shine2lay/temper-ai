@@ -7,12 +7,18 @@ Supports environment variable substitution, secret references, and prompt templa
 M5 Integration: Automatically checks ConfigDeployer for M5-improved configs before
 falling back to YAML files. This closes the self-improvement feedback loop.
 """
+
 import logging
 import os
 from collections import OrderedDict
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union, cast
+from typing import Any, cast
 
+from temper_ai.shared.constants.limits import MEDIUM_ITEM_LIMIT
+
+# Import enhanced exceptions
+from temper_ai.shared.utils.exceptions import ConfigNotFoundError, ConfigValidationError
+from temper_ai.shared.utils.logging import ASCII_CONTROL_CHAR_MAX
 from temper_ai.workflow._config_loader_helpers import (
     load_config_file,
     resolve_secrets,
@@ -24,11 +30,6 @@ from temper_ai.workflow._config_loader_helpers import (
 
 # Import security limits from shared configuration
 from temper_ai.workflow.security_limits import CONFIG_SECURITY
-from temper_ai.shared.constants.limits import MEDIUM_ITEM_LIMIT
-
-# Import enhanced exceptions
-from temper_ai.shared.utils.exceptions import ConfigNotFoundError, ConfigValidationError
-from temper_ai.shared.utils.logging import ASCII_CONTROL_CHAR_MAX
 
 # Security limit constants (imported from security_limits.py for consistency)
 MAX_CONFIG_SIZE = CONFIG_SECURITY.MAX_CONFIG_SIZE
@@ -58,7 +59,9 @@ class ConfigLoader:
     CACHE_SIZE_MULTIPLIER = 12  # Multiply base item limit by this for total cache size
 
     # Default maximum number of cached configs before LRU eviction
-    DEFAULT_MAX_CACHE_SIZE = MEDIUM_ITEM_LIMIT * CACHE_SIZE_MULTIPLIER  # 120 configs (10 * 12)
+    DEFAULT_MAX_CACHE_SIZE = (
+        MEDIUM_ITEM_LIMIT * CACHE_SIZE_MULTIPLIER
+    )  # 120 configs (10 * 12)
 
     @staticmethod
     def _find_config_root() -> Path:
@@ -84,10 +87,10 @@ class ConfigLoader:
 
     def __init__(
         self,
-        config_root: Optional[Union[str, Path]] = None,
+        config_root: str | Path | None = None,
         cache_enabled: bool = True,
         config_deployer: Any = None,
-        max_cache_size: int = DEFAULT_MAX_CACHE_SIZE
+        max_cache_size: int = DEFAULT_MAX_CACHE_SIZE,
     ) -> None:
         """
         Initialize config loader.
@@ -103,17 +106,19 @@ class ConfigLoader:
         self._config_deployer_available = False  # Whether ConfigDeployer is available
 
         # Resolve config root
-        self.config_root = Path(config_root) if config_root else self._find_config_root()
+        self.config_root = (
+            Path(config_root) if config_root else self._find_config_root()
+        )
 
         if not self.config_root.exists():
             raise ConfigNotFoundError(
                 message=f"Config root directory not found: {self.config_root}",
-                config_path=str(self.config_root)
+                config_path=str(self.config_root),
             )
 
         self.cache_enabled = cache_enabled
         self._max_cache_size = max_cache_size
-        self._cache: OrderedDict[str, Dict[str, Any]] = OrderedDict()
+        self._cache: OrderedDict[str, dict[str, Any]] = OrderedDict()
 
         # Subdirectories for each config type
         self.agents_dir = self.config_root / "agents"
@@ -124,12 +129,8 @@ class ConfigLoader:
         self.prompts_dir = self.config_root / "prompts"
 
     def _load_config(
-        self,
-        config_type: str,
-        name: str,
-        directory: Path,
-        validate: bool = True
-    ) -> Dict[str, Any]:
+        self, config_type: str, name: str, directory: Path, validate: bool = True
+    ) -> dict[str, Any]:
         """
         Generic config loading with caching, substitution, and validation.
 
@@ -167,7 +168,7 @@ class ConfigLoader:
             while len(self._cache) > self._max_cache_size:
                 self._cache.popitem(last=False)
 
-        return cast(Dict[str, Any], config)
+        return cast(dict[str, Any], config)
 
     def _ensure_config_deployer(self) -> None:
         """Lazy-initialize ConfigDeployer for M5 integration."""
@@ -183,11 +184,11 @@ class ConfigLoader:
             _logger.debug("Using provided ConfigDeployer for M5 integration")
             return
 
-        # ConfigDeployer integration removed (coordination system obsolete)
+        # ConfigDeployer auto-discovery disabled (only explicit injection supported)
         self.config_deployer = None
         self._config_deployer_available = False
 
-    def load_agent(self, agent_name: str, validate: bool = True) -> Dict[str, Any]:
+    def load_agent(self, agent_name: str, validate: bool = True) -> dict[str, Any]:
         """
         Load agent configuration.
 
@@ -214,7 +215,7 @@ class ConfigLoader:
         if self._config_deployer_available and self.config_deployer:
             try:
                 deployed_config_obj = self.config_deployer.get_agent_config(agent_name)
-                deployed_config: Dict[str, Any] = deployed_config_obj.to_dict()
+                deployed_config: dict[str, Any] = deployed_config_obj.to_dict()
 
                 if deployed_config.get("inference") or deployed_config.get("prompt"):
                     _logger.info(
@@ -235,19 +236,23 @@ class ConfigLoader:
         # Fall back to YAML file loading (baseline config)
         return self._load_config("agent", agent_name, self.agents_dir, validate)
 
-    def load_stage(self, stage_name: str, validate: bool = True) -> Dict[str, Any]:
+    def load_stage(self, stage_name: str, validate: bool = True) -> dict[str, Any]:
         """Load stage configuration."""
         return self._load_config("stage", stage_name, self.stages_dir, validate)
 
-    def load_workflow(self, workflow_name: str, validate: bool = True) -> Dict[str, Any]:
+    def load_workflow(
+        self, workflow_name: str, validate: bool = True
+    ) -> dict[str, Any]:
         """Load workflow configuration."""
-        return self._load_config("workflow", workflow_name, self.workflows_dir, validate)
+        return self._load_config(
+            "workflow", workflow_name, self.workflows_dir, validate
+        )
 
-    def load_tool(self, tool_name: str, validate: bool = True) -> Dict[str, Any]:
+    def load_tool(self, tool_name: str, validate: bool = True) -> dict[str, Any]:
         """Load tool configuration."""
         return self._load_config("tool", tool_name, self.tools_dir, validate)
 
-    def load_trigger(self, trigger_name: str, validate: bool = True) -> Dict[str, Any]:
+    def load_trigger(self, trigger_name: str, validate: bool = True) -> dict[str, Any]:
         """Load trigger configuration."""
         return self._load_config("trigger", trigger_name, self.triggers_dir, validate)
 
@@ -261,25 +266,33 @@ class ConfigLoader:
         _logger = logging.getLogger(__name__)
 
         # Check for null bytes
-        if '\x00' in template_path:
+        if "\x00" in template_path:
             _logger.warning(
                 "Security violation: Null byte detected in template path",
-                extra={"template_path": repr(template_path), "attack_type": "null_byte_injection"}
+                extra={
+                    "template_path": repr(template_path),
+                    "attack_type": "null_byte_injection",
+                },
             )
             raise ConfigValidationError(
-                'Invalid template path: null byte detected. '
-                'This may indicate a path traversal attack attempt.'
+                "Invalid template path: null byte detected. "
+                "This may indicate a path traversal attack attempt."
             )
 
         # Check for control characters
-        if any(ord(c) < ASCII_CONTROL_CHAR_MAX and c not in '\n\r\t' for c in template_path):
+        if any(
+            ord(c) < ASCII_CONTROL_CHAR_MAX and c not in "\n\r\t" for c in template_path
+        ):
             _logger.warning(
                 "Security violation: Control characters detected in template path",
-                extra={"template_path": repr(template_path), "attack_type": "control_character_injection"}
+                extra={
+                    "template_path": repr(template_path),
+                    "attack_type": "control_character_injection",
+                },
             )
             raise ConfigValidationError(
-                'Invalid template path: control characters detected. '
-                'Only printable characters are allowed in paths.'
+                "Invalid template path: control characters detected. "
+                "Only printable characters are allowed in paths."
             )
 
         # Validate path is within prompts directory
@@ -293,14 +306,16 @@ class ConfigLoader:
                     "template_path": repr(template_path),
                     "resolved_path": str(full_path),
                     "prompts_dir": str(prompts_dir),
-                    "attack_type": "path_traversal"
-                }
+                    "attack_type": "path_traversal",
+                },
             )
             raise ConfigValidationError(
                 f"Template path must be within prompts directory: {template_path}"
             )
 
-    def load_prompt_template(self, template_path: str, variables: Optional[Dict[str, str]] = None) -> str:
+    def load_prompt_template(
+        self, template_path: str, variables: dict[str, str] | None = None
+    ) -> str:
         """
         Load prompt template and substitute variables.
 
@@ -325,7 +340,7 @@ class ConfigLoader:
         if not full_path.exists():
             raise ConfigNotFoundError(
                 message=f"Prompt template not found: {full_path}",
-                config_path=str(full_path)
+                config_path=str(full_path),
             )
 
         # Check file size to prevent memory exhaustion
@@ -336,7 +351,7 @@ class ConfigLoader:
             )
 
         # Load and substitute
-        with open(full_path, 'r', encoding='utf-8') as f:
+        with open(full_path, encoding="utf-8") as f:
             template = f.read()
 
         if variables:
@@ -344,7 +359,7 @@ class ConfigLoader:
 
         return template
 
-    def list_configs(self, config_type: str) -> List[str]:
+    def list_configs(self, config_type: str) -> list[str]:
         """List available configuration files of a given type."""
         type_dirs = {
             "agent": self.agents_dir,
@@ -363,7 +378,7 @@ class ConfigLoader:
 
         configs = []
         for file_path in config_dir.iterdir():
-            if file_path.suffix in ['.yaml', '.yml', '.json']:
+            if file_path.suffix in [".yaml", ".yml", ".json"]:
                 configs.append(file_path.stem)
 
         return sorted(configs)
@@ -372,14 +387,17 @@ class ConfigLoader:
         """Clear the configuration cache."""
         self._cache.clear()
 
-    def _load_config_file(self, directory: Path, name: str) -> Dict[str, Any]:
+    def _load_config_file(self, directory: Path, name: str) -> dict[str, Any]:
         """Load a configuration file (YAML or JSON). Delegates to helper."""
         return load_config_file(directory, name)
 
     def _validate_config_structure(
-        self, config: Any, file_path: Path,
-        current_depth: int = 0, visited: Optional[set] = None,
-        node_count: Optional[list] = None
+        self,
+        config: Any,
+        file_path: Path,
+        current_depth: int = 0,
+        visited: set | None = None,
+        node_count: list | None = None,
     ) -> None:
         """Validate config structure for security issues. Delegates to helper."""
         validate_config_structure(config, file_path, current_depth, visited, node_count)
@@ -392,10 +410,12 @@ class ConfigLoader:
         """Recursively resolve secret references. Delegates to helper."""
         return resolve_secrets(config)
 
-    def _substitute_template_vars(self, template: str, variables: Dict[str, str]) -> str:
+    def _substitute_template_vars(
+        self, template: str, variables: dict[str, str]
+    ) -> str:
         """Substitute variables in a prompt template. Delegates to helper."""
         return substitute_template_vars(template, variables)
 
-    def _validate_config(self, config_type: str, config: Dict[str, Any]) -> None:
+    def _validate_config(self, config_type: str, config: dict[str, Any]) -> None:
         """Validate configuration against Pydantic schemas. Delegates to helper."""
         validate_config(config_type, config)

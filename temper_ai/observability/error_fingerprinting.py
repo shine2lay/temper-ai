@@ -13,12 +13,12 @@ Fingerprint algorithm::
 
 Output: deterministic 16-char hex string (e.g., "a3f7c9e2b1d045f8").
 """
+
 import hashlib
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import List, Optional
 
 from temper_ai.storage.database.datetime_utils import utcnow
 
@@ -50,6 +50,7 @@ _MEMORY_ADDR_PATTERN = re.compile(r"0x[0-9a-fA-F]+")  # Memory addresses
 
 class ErrorClassification(str, Enum):
     """Error classification for fingerprints."""
+
     TRANSIENT = "transient"
     PERMANENT = "permanent"
     SAFETY = "safety"
@@ -57,22 +58,26 @@ class ErrorClassification(str, Enum):
 
 
 # Error codes classified as transient (imported from _sequential_helpers pattern)
-_TRANSIENT_CODES = frozenset({
-    "LLM_CONNECTION_ERROR",
-    "LLM_TIMEOUT",
-    "LLM_RATE_LIMIT",
-    "SYSTEM_TIMEOUT",
-    "SYSTEM_RESOURCE_ERROR",
-    "TOOL_TIMEOUT",
-    "AGENT_TIMEOUT",
-    "WORKFLOW_TIMEOUT",
-})
+_TRANSIENT_CODES = frozenset(
+    {
+        "LLM_CONNECTION_ERROR",
+        "LLM_TIMEOUT",
+        "LLM_RATE_LIMIT",
+        "SYSTEM_TIMEOUT",
+        "SYSTEM_RESOURCE_ERROR",
+        "TOOL_TIMEOUT",
+        "AGENT_TIMEOUT",
+        "WORKFLOW_TIMEOUT",
+    }
+)
 
-_SAFETY_CODES = frozenset({
-    "SAFETY_VIOLATION",
-    "SAFETY_POLICY_ERROR",
-    "SAFETY_ACTION_BLOCKED",
-})
+_SAFETY_CODES = frozenset(
+    {
+        "SAFETY_VIOLATION",
+        "SAFETY_POLICY_ERROR",
+        "SAFETY_ACTION_BLOCKED",
+    }
+)
 
 
 def classify_error(error_code: str) -> ErrorClassification:
@@ -204,6 +209,7 @@ def compute_error_fingerprint(exc: Exception) -> "ErrorFingerprintResult":
 @dataclass
 class ErrorFingerprintResult:
     """Result of fingerprint computation."""
+
     fingerprint: str
     error_type: str
     error_code: str
@@ -217,6 +223,7 @@ class ErrorFingerprintResult:
 @dataclass
 class ErrorFingerprintRecord:
     """Persistent record for an error fingerprint (maps to DB table)."""
+
     fingerprint: str
     error_type: str
     error_code: str
@@ -226,8 +233,8 @@ class ErrorFingerprintRecord:
     occurrence_count: int = 1
     first_seen: datetime = field(default_factory=utcnow)
     last_seen: datetime = field(default_factory=utcnow)
-    recent_workflow_ids: List[str] = field(default_factory=list)
-    recent_agent_names: List[str] = field(default_factory=list)
+    recent_workflow_ids: list[str] = field(default_factory=list)
+    recent_agent_names: list[str] = field(default_factory=list)
     resolved: bool = False
-    resolved_at: Optional[datetime] = None
-    resolution_note: Optional[str] = None
+    resolved_at: datetime | None = None
+    resolution_note: str | None = None

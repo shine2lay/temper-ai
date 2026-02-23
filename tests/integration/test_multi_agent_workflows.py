@@ -4,6 +4,7 @@ Integration tests for multi-agent collaboration workflows.
 Tests workflows with multiple agents coordinating, reaching consensus,
 and handing off tasks between stages.
 """
+
 import uuid
 from datetime import UTC, datetime
 
@@ -28,6 +29,7 @@ class TestAgentHandoffWorkflows:
         """Initialize in-memory database for testing."""
         try:
             from temper_ai.observability.database import get_database
+
             get_database()
         except RuntimeError:
             init_database("sqlite:///:memory:")
@@ -37,14 +39,13 @@ class TestAgentHandoffWorkflows:
     def execution_tracker(self, sample_database):
         """Execution tracker with test database."""
         from temper_ai.observability.backends.sql_backend import SQLObservabilityBackend
+
         backend = SQLObservabilityBackend()
         return ExecutionTracker(backend=backend)
 
     @pytest.mark.integration
     def test_sequential_agent_handoff_with_state_transfer(
-        self,
-        sample_database,
-        execution_tracker
+        self, sample_database, execution_tracker
     ):
         """Test agent handoff with complete state transfer.
 
@@ -70,7 +71,7 @@ class TestAgentHandoffWorkflows:
             workflow_version="1.0",
             workflow_config_snapshot={},
             start_time=datetime.now(UTC),
-            status="running"
+            status="running",
         )
 
         with get_session() as session:
@@ -88,7 +89,7 @@ class TestAgentHandoffWorkflows:
                 "extracted_text": "This is the document content...",
                 "page_count": 5,
                 "word_count": 1250,
-                "metadata": {"format": "pdf", "author": "John Doe"}
+                "metadata": {"format": "pdf", "author": "John Doe"},
             }
             session.commit()
 
@@ -96,7 +97,9 @@ class TestAgentHandoffWorkflows:
         with execution_tracker.track_stage("analysis", {}, workflow_id) as stage2_id:
             # Simulate agent receiving previous output
             with get_session() as session:
-                prev_stage = session.query(StageExecution).filter_by(id=stage1_id).first()
+                prev_stage = (
+                    session.query(StageExecution).filter_by(id=stage1_id).first()
+                )
                 prev_output = prev_stage.output_data
 
                 # Verify handoff data
@@ -112,17 +115,22 @@ class TestAgentHandoffWorkflows:
                 "sentiment": "neutral",
                 "key_topics": ["AI", "automation", "testing"],
                 "complexity_score": 0.72,
-                "source_word_count": 1250  # Referenced from stage 1
+                "source_word_count": 1250,  # Referenced from stage 1
             }
             session.commit()
 
         # Stage 3: Summarization (receives stage 1 + stage 2 outputs)
-        with execution_tracker.track_stage("summarization", {}, workflow_id) as stage3_id:
+        with execution_tracker.track_stage(
+            "summarization", {}, workflow_id
+        ) as stage3_id:
             # Simulate agent receiving all previous outputs
             with get_session() as session:
-                prev_stages = session.query(StageExecution).filter_by(
-                    workflow_execution_id=workflow_id
-                ).filter(StageExecution.stage_name.in_(["extraction", "analysis"])).all()
+                prev_stages = (
+                    session.query(StageExecution)
+                    .filter_by(workflow_execution_id=workflow_id)
+                    .filter(StageExecution.stage_name.in_(["extraction", "analysis"]))
+                    .all()
+                )
 
                 prev_outputs = {s.stage_name: s.output_data for s in prev_stages}
 
@@ -140,7 +148,7 @@ class TestAgentHandoffWorkflows:
             stage3.output_data = {
                 "summary": "Document discusses AI automation and testing (1250 words, neutral tone)",
                 "key_points": ["Point 1", "Point 2", "Point 3"],
-                "derived_from_stages": ["extraction", "analysis"]
+                "derived_from_stages": ["extraction", "analysis"],
             }
             session.commit()
 
@@ -154,9 +162,12 @@ class TestAgentHandoffWorkflows:
 
         # VERIFICATION: Handoff integrity
         with get_session() as session:
-            stages = session.query(StageExecution).filter_by(
-                workflow_execution_id=workflow_id
-            ).order_by(StageExecution.start_time).all()
+            stages = (
+                session.query(StageExecution)
+                .filter_by(workflow_execution_id=workflow_id)
+                .order_by(StageExecution.start_time)
+                .all()
+            )
 
             assert len(stages) == 3, "Should have 3 stages"
 
@@ -166,8 +177,9 @@ class TestAgentHandoffWorkflows:
             summary_output = stages[2].output_data
 
             # Stage 2 referenced stage 1 data
-            assert analysis_output["source_word_count"] == extraction_output["word_count"], \
-                "Analysis should reference extraction word count"
+            assert (
+                analysis_output["source_word_count"] == extraction_output["word_count"]
+            ), "Analysis should reference extraction word count"
 
             # Stage 3 referenced both previous stages
             assert "extraction" in summary_output["derived_from_stages"]
@@ -180,9 +192,7 @@ class TestAgentHandoffWorkflows:
 
     @pytest.mark.integration
     def test_agent_handoff_with_partial_output(
-        self,
-        sample_database,
-        execution_tracker
+        self, sample_database, execution_tracker
     ):
         """Test agent handoff when previous stage has partial output.
 
@@ -202,7 +212,7 @@ class TestAgentHandoffWorkflows:
             workflow_version="1.0",
             workflow_config_snapshot={},
             start_time=datetime.now(UTC),
-            status="running"
+            status="running",
         )
 
         with get_session() as session:
@@ -210,7 +220,9 @@ class TestAgentHandoffWorkflows:
             session.commit()
 
         # Stage 1: Partial review
-        with execution_tracker.track_stage("initial_review", {}, workflow_id) as stage1_id:
+        with execution_tracker.track_stage(
+            "initial_review", {}, workflow_id
+        ) as stage1_id:
             with execution_tracker.track_agent("reviewer1", {}, stage1_id):
                 pass
 
@@ -219,18 +231,20 @@ class TestAgentHandoffWorkflows:
             stage1.output_data = {
                 "files_reviewed": ["file1.py", "file2.py"],
                 "files_remaining": ["file3.py", "file4.py"],
-                "issues_found": [
-                    {"file": "file1.py", "line": 10, "severity": "high"}
-                ],
-                "review_complete": False
+                "issues_found": [{"file": "file1.py", "line": 10, "severity": "high"}],
+                "review_complete": False,
             }
             session.commit()
 
         # Stage 2: Complete review
-        with execution_tracker.track_stage("complete_review", {}, workflow_id) as stage2_id:
+        with execution_tracker.track_stage(
+            "complete_review", {}, workflow_id
+        ) as stage2_id:
             # Access partial output from stage 1
             with get_session() as session:
-                stage1_data = session.query(StageExecution).filter_by(id=stage1_id).first()
+                stage1_data = (
+                    session.query(StageExecution).filter_by(id=stage1_id).first()
+                )
                 partial_output = stage1_data.output_data
 
                 assert partial_output["review_complete"] is False
@@ -247,7 +261,7 @@ class TestAgentHandoffWorkflows:
                     {"file": "file3.py", "line": 25, "severity": "medium"}
                 ],
                 "combined_issues": 2,  # From both stages
-                "review_complete": True
+                "review_complete": True,
             }
             session.commit()
 
@@ -261,9 +275,12 @@ class TestAgentHandoffWorkflows:
 
         # VERIFICATION
         with get_session() as session:
-            stages = session.query(StageExecution).filter_by(
-                workflow_execution_id=workflow_id
-            ).order_by(StageExecution.start_time).all()
+            stages = (
+                session.query(StageExecution)
+                .filter_by(workflow_execution_id=workflow_id)
+                .order_by(StageExecution.start_time)
+                .all()
+            )
 
             assert len(stages) == 2
 
@@ -272,9 +289,8 @@ class TestAgentHandoffWorkflows:
             assert stages[1].output_data["review_complete"] is True
 
             # Verify combined coverage
-            total_files = (
-                len(stages[0].output_data["files_reviewed"]) +
-                len(stages[1].output_data["files_reviewed"])
+            total_files = len(stages[0].output_data["files_reviewed"]) + len(
+                stages[1].output_data["files_reviewed"]
             )
             assert total_files == 4, "All 4 files should be reviewed"
 
@@ -287,6 +303,7 @@ class TestConsensusWorkflows:
         """Initialize in-memory database for testing."""
         try:
             from temper_ai.observability.database import get_database
+
             get_database()
         except RuntimeError:
             init_database("sqlite:///:memory:")
@@ -296,15 +313,12 @@ class TestConsensusWorkflows:
     def execution_tracker(self, sample_database):
         """Execution tracker with test database."""
         from temper_ai.observability.backends.sql_backend import SQLObservabilityBackend
+
         backend = SQLObservabilityBackend()
         return ExecutionTracker(backend=backend)
 
     @pytest.mark.integration
-    def test_multi_agent_consensus_workflow(
-        self,
-        sample_database,
-        execution_tracker
-    ):
+    def test_multi_agent_consensus_workflow(self, sample_database, execution_tracker):
         """Test workflow where multiple agents must reach consensus.
 
         Scenario: Code review workflow
@@ -327,7 +341,7 @@ class TestConsensusWorkflows:
             workflow_version="1.0",
             workflow_config_snapshot={},
             start_time=datetime.now(UTC),
-            status="running"
+            status="running",
         )
 
         with get_session() as session:
@@ -340,11 +354,13 @@ class TestConsensusWorkflows:
                 "name": "peer_review",
                 "agents": ["reviewer1", "reviewer2", "reviewer3"],
                 "execution": {"agent_mode": "parallel"},
-                "collaboration": {"strategy": "consensus", "min_agreement": 0.67}
+                "collaboration": {"strategy": "consensus", "min_agreement": 0.67},
             }
         }
 
-        with execution_tracker.track_stage("peer_review", stage_config, workflow_id) as stage_id:
+        with execution_tracker.track_stage(
+            "peer_review", stage_config, workflow_id
+        ) as stage_id:
             # Simulate 3 parallel reviews
             for i, agent_name in enumerate(["reviewer1", "reviewer2", "reviewer3"]):
                 with execution_tracker.track_agent(agent_name, {}, stage_id):
@@ -352,15 +368,32 @@ class TestConsensusWorkflows:
 
         # Set individual review outputs
         with get_session() as session:
-            agents = session.query(AgentExecution).filter_by(
-                stage_execution_id=stage_id
-            ).all()
+            agents = (
+                session.query(AgentExecution)
+                .filter_by(stage_execution_id=stage_id)
+                .all()
+            )
 
             # 2 agents approve, 1 rejects
             reviews = [
-                {"agent": "reviewer1", "decision": "approve", "score": 0.85, "comments": "Good code quality"},
-                {"agent": "reviewer2", "decision": "approve", "score": 0.90, "comments": "Well structured"},
-                {"agent": "reviewer3", "decision": "reject", "score": 0.45, "comments": "Needs refactoring"}
+                {
+                    "agent": "reviewer1",
+                    "decision": "approve",
+                    "score": 0.85,
+                    "comments": "Good code quality",
+                },
+                {
+                    "agent": "reviewer2",
+                    "decision": "approve",
+                    "score": 0.90,
+                    "comments": "Well structured",
+                },
+                {
+                    "agent": "reviewer3",
+                    "decision": "reject",
+                    "score": 0.45,
+                    "comments": "Needs refactoring",
+                },
             ]
 
             # Store reviews in stage output
@@ -369,21 +402,25 @@ class TestConsensusWorkflows:
                 "reviews": reviews,
                 "consensus": "approve",  # 2/3 = 67% agreement
                 "confidence": 0.67,
-                "minority_opinion": {"agent": "reviewer3", "decision": "reject"}
+                "minority_opinion": {"agent": "reviewer3", "decision": "reject"},
             }
             session.commit()
 
         # Stage: Final decision
-        with execution_tracker.track_stage("final_decision", {}, workflow_id) as decision_stage_id:
+        with execution_tracker.track_stage(
+            "final_decision", {}, workflow_id
+        ) as decision_stage_id:
             with execution_tracker.track_agent("decision_maker", {}, decision_stage_id):
                 pass
 
         with get_session() as session:
-            stage = session.query(StageExecution).filter_by(id=decision_stage_id).first()
+            stage = (
+                session.query(StageExecution).filter_by(id=decision_stage_id).first()
+            )
             stage.output_data = {
                 "decision": "approved_with_conditions",
                 "action_items": ["Address reviewer3 concerns", "Add more tests"],
-                "based_on_consensus": True
+                "based_on_consensus": True,
             }
             session.commit()
 
@@ -397,10 +434,11 @@ class TestConsensusWorkflows:
 
         # VERIFICATION: Consensus mechanism
         with get_session() as session:
-            peer_review_stage = session.query(StageExecution).filter_by(
-                workflow_execution_id=workflow_id,
-                stage_name="peer_review"
-            ).first()
+            peer_review_stage = (
+                session.query(StageExecution)
+                .filter_by(workflow_execution_id=workflow_id, stage_name="peer_review")
+                .first()
+            )
 
             output = peer_review_stage.output_data
 
@@ -418,20 +456,19 @@ class TestConsensusWorkflows:
             assert output["minority_opinion"]["decision"] == "reject"
 
             # Verify final decision considers consensus
-            decision_stage = session.query(StageExecution).filter_by(
-                workflow_execution_id=workflow_id,
-                stage_name="final_decision"
-            ).first()
+            decision_stage = (
+                session.query(StageExecution)
+                .filter_by(
+                    workflow_execution_id=workflow_id, stage_name="final_decision"
+                )
+                .first()
+            )
 
             assert decision_stage.output_data["based_on_consensus"] is True
             assert "reviewer3" in str(decision_stage.output_data["action_items"])
 
     @pytest.mark.integration
-    def test_debate_strategy_workflow(
-        self,
-        sample_database,
-        execution_tracker
-    ):
+    def test_debate_strategy_workflow(self, sample_database, execution_tracker):
         """Test workflow with debate strategy between agents.
 
         Scenario: Architecture decision workflow
@@ -452,7 +489,7 @@ class TestConsensusWorkflows:
             workflow_version="1.0",
             workflow_config_snapshot={},
             start_time=datetime.now(UTC),
-            status="running"
+            status="running",
         )
 
         with get_session() as session:
@@ -471,9 +508,13 @@ class TestConsensusWorkflows:
                 "proposals": [
                     {"agent": "architect1", "approach": "microservices", "score": 0.85},
                     {"agent": "architect2", "approach": "monolith", "score": 0.70},
-                    {"agent": "architect3", "approach": "modular_monolith", "score": 0.90}
+                    {
+                        "agent": "architect3",
+                        "approach": "modular_monolith",
+                        "score": 0.90,
+                    },
                 ],
-                "debate_required": True
+                "debate_required": True,
             }
             session.commit()
 
@@ -488,7 +529,7 @@ class TestConsensusWorkflows:
                 "debate_rounds": 2,
                 "arguments_exchanged": 9,
                 "emerging_consensus": "modular_monolith",
-                "trade_offs_discussed": ["scalability", "complexity", "cost"]
+                "trade_offs_discussed": ["scalability", "complexity", "cost"],
             }
             session.commit()
 
@@ -502,7 +543,7 @@ class TestConsensusWorkflows:
             stage.output_data = {
                 "final_decision": "modular_monolith",
                 "incorporates_ideas_from": ["architect1", "architect2", "architect3"],
-                "rationale": "Best balance of simplicity and scalability"
+                "rationale": "Best balance of simplicity and scalability",
             }
             session.commit()
 
@@ -516,9 +557,12 @@ class TestConsensusWorkflows:
 
         # VERIFICATION
         with get_session() as session:
-            stages = session.query(StageExecution).filter_by(
-                workflow_execution_id=workflow_id
-            ).order_by(StageExecution.start_time).all()
+            stages = (
+                session.query(StageExecution)
+                .filter_by(workflow_execution_id=workflow_id)
+                .order_by(StageExecution.start_time)
+                .all()
+            )
 
             assert len(stages) == 3
 
@@ -535,4 +579,8 @@ class TestConsensusWorkflows:
             # Verify synthesis incorporates multiple viewpoints
             synthesis = stages[2].output_data
             assert len(synthesis["incorporates_ideas_from"]) == 3
-            assert synthesis["final_decision"] in ["microservices", "monolith", "modular_monolith"]
+            assert synthesis["final_decision"] in [
+                "microservices",
+                "monolith",
+                "modular_monolith",
+            ]

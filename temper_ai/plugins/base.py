@@ -1,13 +1,16 @@
 """Base class for external agent plugin adapters."""
+
 from __future__ import annotations
 
+import importlib.util
 import logging
 import time
 from abc import abstractmethod
-from typing import TYPE_CHECKING, Any, ClassVar, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, ClassVar
 
 if TYPE_CHECKING:
     from pathlib import Path
+
     from temper_ai.storage.schemas import AgentConfig
 
 from temper_ai.agent.base_agent import BaseAgent, ExecutionContext
@@ -38,7 +41,7 @@ class ExternalAgentPlugin(BaseAgent):
         self.description = config.agent.description
         self.version = config.agent.version
 
-        # Infrastructure attrs — set by _setup() at execution time
+        # Infrastructure attrs — set by _on_setup() at execution time
         self.tool_executor: Any = None
         self.tracker: Any = None
         self._observer: Any = None
@@ -48,7 +51,7 @@ class ExternalAgentPlugin(BaseAgent):
         self._external_agent: Any = None
         self._initialized = False
 
-    def _get_plugin_config(self) -> Dict[str, Any]:
+    def _get_plugin_config(self) -> dict[str, Any]:
         """Extract plugin_config from agent config."""
         raw = getattr(self.config.agent, "plugin_config", None)
         if raw is None:
@@ -63,18 +66,18 @@ class ExternalAgentPlugin(BaseAgent):
         """Initialize the external framework agent. Called lazily on first run."""
 
     @abstractmethod
-    def _execute_external(self, input_data: Dict[str, Any]) -> str:
+    def _execute_external(self, input_data: dict[str, Any]) -> str:
         """Execute the external agent and return string output."""
 
     @classmethod
     @abstractmethod
-    def translate_config(cls, source_path: Path) -> List[Dict[str, Any]]:
+    def translate_config(cls, source_path: Path) -> list[dict[str, Any]]:
         """Translate external framework config to Temper AI config dicts."""
 
     def _on_setup(
         self,
-        input_data: Dict[str, Any],
-        context: Optional[ExecutionContext],
+        input_data: dict[str, Any],
+        context: ExecutionContext | None,
     ) -> None:
         """Lazily initialize external agent on first execution."""
         if not self._initialized:
@@ -83,8 +86,8 @@ class ExternalAgentPlugin(BaseAgent):
 
     def _run(
         self,
-        input_data: Dict[str, Any],
-        context: Optional[ExecutionContext],
+        input_data: dict[str, Any],
+        context: ExecutionContext | None,
         start_time: float,
     ) -> AgentResponse:
         """Execute external agent and wrap result as AgentResponse."""
@@ -103,14 +106,28 @@ class ExternalAgentPlugin(BaseAgent):
         )
 
     def _on_error(
-        self, error: Exception, start_time: float,
-    ) -> Optional[AgentResponse]:
+        self,
+        error: Exception,
+        start_time: float,
+    ) -> AgentResponse | None:
         """Handle plugin execution errors."""
         if isinstance(error, (ImportError, ValueError, RuntimeError, TimeoutError)):
             return self._build_error_response(error, start_time)
         return None
 
-    def get_capabilities(self) -> Dict[str, Any]:
+    async def health_check(self) -> dict[str, Any]:
+        """Check if the plugin adapter and its framework are available.
+
+        Returns a dict with at least 'status' and 'framework' keys.
+        Subclasses should override to check the specific framework package.
+        """
+        available = importlib.util.find_spec(self.REQUIRED_PACKAGE) is not None
+        return {
+            "status": "ok" if available else "unavailable",
+            "framework": self.FRAMEWORK_NAME,
+        }
+
+    def get_capabilities(self) -> dict[str, Any]:
         """Get plugin agent capabilities."""
         return {
             "name": self.name,
@@ -130,7 +147,7 @@ class ExternalAgentPlugin(BaseAgent):
         return True
 
     @staticmethod
-    def _extract_task_description(input_data: Dict[str, Any]) -> str:
+    def _extract_task_description(input_data: dict[str, Any]) -> str:
         """Extract task description from input data."""
         for key in _TASK_INPUT_KEYS:
             if key in input_data and input_data[key]:

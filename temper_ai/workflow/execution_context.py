@@ -3,7 +3,8 @@
 Canonical location for WorkflowExecutionContext TypedDict used
 throughout the framework as the runtime context bag.
 """
-from typing import Any, Dict, List, Optional
+
+from typing import Any
 
 from typing_extensions import TypedDict
 
@@ -31,47 +32,47 @@ class WorkflowExecutionContext(TypedDict, total=False):
     current_stage: str
 
     # Accumulated stage outputs: stage_name -> stage output dict
-    stage_outputs: Dict[str, Any]
+    stage_outputs: dict[str, Any]
 
     # Arbitrary user-supplied workflow inputs (survives LangGraph dataclass coercion)
-    workflow_inputs: Dict[str, Any]
+    workflow_inputs: dict[str, Any]
 
     # Common workflow inputs
-    topic: Optional[str]
-    depth: Optional[str]
-    focus_areas: Optional[List[str]]
-    query: Optional[str]
-    input: Optional[str]
-    context: Optional[str]
+    topic: str | None
+    depth: str | None
+    focus_areas: list[str] | None
+    query: str | None
+    input: str | None
+    context: str | None
     data: Any
 
     # Infrastructure (non-serializable)
-    tracker: Optional[TrackerProtocol]
-    tool_registry: Optional[DomainToolRegistryProtocol]
-    config_loader: Optional[ConfigLoaderProtocol]
-    visualizer: Optional[VisualizerProtocol]
+    tracker: TrackerProtocol | None
+    tool_registry: DomainToolRegistryProtocol | None
+    config_loader: ConfigLoaderProtocol | None
+    visualizer: VisualizerProtocol | None
 
     # Server / isolation
-    workspace_root: Optional[str]
-    run_id: Optional[str]
+    workspace_root: str | None
+    run_id: str | None
 
     # UI/display
     show_details: bool
     detail_console: Any  # Rich Console or None
-    stream_callback: Optional[Any]  # StreamCallback or None
+    stream_callback: Any | None  # StreamCallback or None
 
     # Quality gate retry tracking (parallel executor)
-    stage_retry_counts: Dict[str, int]
+    stage_retry_counts: dict[str, int]
 
     # Conversation history for stage:agent re-invocations
-    conversation_histories: Dict[str, Any]
+    conversation_histories: dict[str, Any]
 
     # Parallel executor internal state
-    agent_outputs: Dict[str, Any]
-    agent_statuses: Dict[str, Any]
-    agent_metrics: Dict[str, Any]
-    errors: Dict[str, Any]
-    stage_input: Dict[str, Any]
+    agent_outputs: dict[str, Any]
+    agent_statuses: dict[str, Any]
+    agent_metrics: dict[str, Any]
+    errors: dict[str, Any]
+    stage_input: dict[str, Any]
 
 
 # Deprecated alias for backward compatibility

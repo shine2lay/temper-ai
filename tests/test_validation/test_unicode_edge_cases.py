@@ -12,6 +12,7 @@ Covers:
 - Combining characters
 - Control characters in Unicode range
 """
+
 import unicodedata
 
 import pytest
@@ -22,16 +23,19 @@ from temper_ai.safety.validation import ValidationMixin
 class TestEmojiHandling:
     """Tests for emoji in names, paths, and configs."""
 
-    @pytest.mark.parametrize('text_with_emoji', [
-        'agent-😀',  # Grinning face
-        'agent-🚀',  # Rocket
-        'config_📝.yaml',  # Memo
-        '/path/to/📁',  # File folder
-        'task-✅-complete',  # Check mark (not an emoji, but Unicode symbol)
-        'agent-🔥🔥🔥',  # Multiple emojis
-        '👨‍👩‍👧‍👦',  # Family emoji (multiple codepoints)
-        '🏳️‍🌈',  # Rainbow flag (with ZWJ)
-    ])
+    @pytest.mark.parametrize(
+        "text_with_emoji",
+        [
+            "agent-😀",  # Grinning face
+            "agent-🚀",  # Rocket
+            "config_📝.yaml",  # Memo
+            "/path/to/📁",  # File folder
+            "task-✅-complete",  # Check mark (not an emoji, but Unicode symbol)
+            "agent-🔥🔥🔥",  # Multiple emojis
+            "👨‍👩‍👧‍👦",  # Family emoji (multiple codepoints)
+            "🏳️‍🌈",  # Rainbow flag (with ZWJ)
+        ],
+    )
     def test_emoji_in_strings(self, text_with_emoji):
         """Test that emoji characters are handled correctly."""
         assert isinstance(text_with_emoji, str)
@@ -45,18 +49,18 @@ class TestEmojiHandling:
     def test_emoji_grapheme_clusters(self):
         """Test emoji with multiple codepoints (grapheme clusters)."""
         # Family emoji = man + ZWJ + woman + ZWJ + girl + ZWJ + boy
-        family = '👨‍👩‍👧‍👦'
+        family = "👨‍👩‍👧‍👦"
 
         # Should be multiple codepoints
         assert len(family) > 1
 
         # Should contain zero-width joiners
-        assert '\u200D' in family
+        assert "\u200d" in family
 
     def test_emoji_skin_tone_modifiers(self):
         """Test emoji with skin tone modifiers."""
-        base_emoji = '👋'  # Waving hand
-        modified_emoji = '👋🏽'  # Waving hand: medium skin tone
+        base_emoji = "👋"  # Waving hand
+        modified_emoji = "👋🏽"  # Waving hand: medium skin tone
 
         # Modified version should be longer
         assert len(modified_emoji) > len(base_emoji)
@@ -69,13 +73,16 @@ class TestEmojiHandling:
 class TestZeroWidthCharacters:
     """Tests for zero-width characters that could be used for obfuscation."""
 
-    @pytest.mark.parametrize('text_with_zwc', [
-        ('agent\u200Bname', '\u200B'),  # Zero-width space
-        ('agent\u200Cname', '\u200C'),  # Zero-width non-joiner
-        ('agent\u200Dname', '\u200D'),  # Zero-width joiner
-        ('agent\uFEFFname', '\uFEFF'),  # Zero-width no-break space (BOM)
-        ('agent\u2060name', '\u2060'),  # Word joiner
-    ])
+    @pytest.mark.parametrize(
+        "text_with_zwc",
+        [
+            ("agent\u200bname", "\u200b"),  # Zero-width space
+            ("agent\u200cname", "\u200c"),  # Zero-width non-joiner
+            ("agent\u200dname", "\u200d"),  # Zero-width joiner
+            ("agent\ufeffname", "\ufeff"),  # Zero-width no-break space (BOM)
+            ("agent\u2060name", "\u2060"),  # Word joiner
+        ],
+    )
     def test_zero_width_characters_detected(self, text_with_zwc):
         """Test detection of zero-width characters."""
         text, zwc = text_with_zwc
@@ -84,35 +91,38 @@ class TestZeroWidthCharacters:
         assert zwc in text
 
         # Visible length should differ from actual length
-        visible_text = text.replace(zwc, '')
+        visible_text = text.replace(zwc, "")
         assert len(visible_text) < len(text)
 
     def test_zero_width_character_at_boundaries(self):
         """Test zero-width characters at string boundaries."""
         # At start
-        text_start = '\u200Bagent'
-        assert text_start.startswith('\u200B')
+        text_start = "\u200bagent"
+        assert text_start.startswith("\u200b")
 
         # At end
-        text_end = 'agent\u200B'
-        assert text_end.endswith('\u200B')
+        text_end = "agent\u200b"
+        assert text_end.endswith("\u200b")
 
         # Multiple at boundaries
-        text_both = '\u200Bagent\u200B'
-        assert text_both.startswith('\u200B')
-        assert text_both.endswith('\u200B')
+        text_both = "\u200bagent\u200b"
+        assert text_both.startswith("\u200b")
+        assert text_both.endswith("\u200b")
 
 
 class TestSurrogatePairs:
     """Tests for characters requiring surrogate pairs in UTF-16."""
 
-    @pytest.mark.parametrize('text_with_surrogate', [
-        'agent-\U0001F600',  # Grinning face (>BMP)
-        'file\U0001F4C1.txt',  # File folder
-        '\U0001F680rocket',  # Rocket
-        'test\U00010000char',  # First char beyond BMP
-        '\U0010FFFF',  # Last valid Unicode codepoint
-    ])
+    @pytest.mark.parametrize(
+        "text_with_surrogate",
+        [
+            "agent-\U0001f600",  # Grinning face (>BMP)
+            "file\U0001f4c1.txt",  # File folder
+            "\U0001f680rocket",  # Rocket
+            "test\U00010000char",  # First char beyond BMP
+            "\U0010ffff",  # Last valid Unicode codepoint
+        ],
+    )
     def test_surrogate_pair_characters(self, text_with_surrogate):
         """Test characters beyond Basic Multilingual Plane."""
         assert isinstance(text_with_surrogate, str)
@@ -123,11 +133,11 @@ class TestSurrogatePairs:
     def test_invalid_surrogate_sequences(self):
         """Test that invalid surrogate sequences are handled."""
         # Python 3 handles surrogates internally, but test encoding
-        valid_text = 'test\U0001F600text'
+        valid_text = "test\U0001f600text"
 
         # Should encode to UTF-8 without issues
-        encoded = valid_text.encode('utf-8')
-        decoded = encoded.decode('utf-8')
+        encoded = valid_text.encode("utf-8")
+        decoded = encoded.decode("utf-8")
 
         assert decoded == valid_text
 
@@ -138,21 +148,28 @@ class TestUnicodeNormalization:
     def test_precomposed_vs_decomposed(self):
         """Test composed vs decomposed Unicode normalization."""
         # é can be represented two ways:
-        precomposed = 'café'  # é as single character U+00E9
-        decomposed = 'cafe\u0301'  # e + combining acute accent
+        precomposed = "café"  # é as single character U+00E9
+        decomposed = "cafe\u0301"  # e + combining acute accent
 
         # Should look the same but be different
         assert precomposed != decomposed
 
         # Should normalize to same form
-        assert unicodedata.normalize('NFC', precomposed) == unicodedata.normalize('NFC', decomposed)
-        assert unicodedata.normalize('NFD', precomposed) == unicodedata.normalize('NFD', decomposed)
+        assert unicodedata.normalize("NFC", precomposed) == unicodedata.normalize(
+            "NFC", decomposed
+        )
+        assert unicodedata.normalize("NFD", precomposed) == unicodedata.normalize(
+            "NFD", decomposed
+        )
 
-    @pytest.mark.parametrize('text_pair', [
-        ('café', 'cafe\u0301'),  # é: composed vs decomposed
-        ('ñ', 'n\u0303'),  # ñ: composed vs decomposed
-        ('ä', 'a\u0308'),  # ä: composed vs decomposed
-    ])
+    @pytest.mark.parametrize(
+        "text_pair",
+        [
+            ("café", "cafe\u0301"),  # é: composed vs decomposed
+            ("ñ", "n\u0303"),  # ñ: composed vs decomposed
+            ("ä", "a\u0308"),  # ä: composed vs decomposed
+        ],
+    )
     def test_normalization_equivalence(self, text_pair):
         """Test that normalization makes equivalent strings equal."""
         composed, decomposed = text_pair
@@ -161,19 +178,23 @@ class TestUnicodeNormalization:
         assert composed != decomposed
 
         # Same after normalization
-        assert unicodedata.normalize('NFC', composed) == unicodedata.normalize('NFC', decomposed)
+        assert unicodedata.normalize("NFC", composed) == unicodedata.normalize(
+            "NFC", decomposed
+        )
 
     def test_normalization_security_implications(self):
         """Test security implications of normalization differences."""
         # Attacker could use decomposed form to bypass filters
-        normal_filename = 'résumé.pdf'
-        decomposed_filename = 're\u0301sume\u0301.pdf'
+        normal_filename = "résumé.pdf"
+        decomposed_filename = "re\u0301sume\u0301.pdf"
 
         # Different as strings
         assert normal_filename != decomposed_filename
 
         # Could normalize to same value
-        assert unicodedata.normalize('NFC', normal_filename) == unicodedata.normalize('NFC', decomposed_filename)
+        assert unicodedata.normalize("NFC", normal_filename) == unicodedata.normalize(
+            "NFC", decomposed_filename
+        )
 
 
 class TestCompatibilityNormalization:
@@ -183,15 +204,21 @@ class TestCompatibilityNormalization:
     characters into identical ones, bypassing security filters.
     """
 
-    @pytest.mark.parametrize('attack_pair', [
-        ('\uff07', "'"),  # U+FF07 Fullwidth apostrophe → U+0027 (SQL injection bypass)
-        ('\u212a', 'K'),  # U+212A Kelvin sign → U+004B Latin K (filter bypass)
-        ('\u210c', 'H'),  # U+210C Black-letter H → U+0048 Latin H
-        ('\u2460', '1'),  # U+2460 Circled digit one → U+0031 Digit one
-        ('\ufb01', 'fi'),  # U+FB01 Latin ligature fi → U+0066 U+0069
-        ('\u00b2', '2'),  # U+00B2 Superscript 2 → U+0032 Digit 2
-        ('\u2075', '5'),  # U+2075 Superscript 5 → U+0035 Digit 5
-    ])
+    @pytest.mark.parametrize(
+        "attack_pair",
+        [
+            (
+                "\uff07",
+                "'",
+            ),  # U+FF07 Fullwidth apostrophe → U+0027 (SQL injection bypass)
+            ("\u212a", "K"),  # U+212A Kelvin sign → U+004B Latin K (filter bypass)
+            ("\u210c", "H"),  # U+210C Black-letter H → U+0048 Latin H
+            ("\u2460", "1"),  # U+2460 Circled digit one → U+0031 Digit one
+            ("\ufb01", "fi"),  # U+FB01 Latin ligature fi → U+0066 U+0069
+            ("\u00b2", "2"),  # U+00B2 Superscript 2 → U+0032 Digit 2
+            ("\u2075", "5"),  # U+2075 Superscript 5 → U+0035 Digit 5
+        ],
+    )
     def test_nfkc_normalization_bypass(self, attack_pair):
         """Test NFKC normalization attack vectors."""
         original, expected_normalized = attack_pair
@@ -200,7 +227,7 @@ class TestCompatibilityNormalization:
         assert original != expected_normalized
 
         # NFKC normalization transforms to dangerous character
-        result = unicodedata.normalize('NFKC', original)
+        result = unicodedata.normalize("NFKC", original)
         assert result == expected_normalized
 
     def test_fullwidth_apostrophe_sql_injection(self):
@@ -216,58 +243,61 @@ class TestCompatibilityNormalization:
         assert "'" not in malicious
 
         # After NFKC normalization becomes SQL injection
-        normalized = unicodedata.normalize('NFKC', malicious)
+        normalized = unicodedata.normalize("NFKC", malicious)
         assert "'" in normalized  # Now contains regular apostrophe
         assert "admin' OR 1=1--" == normalized
 
     def test_kelvin_sign_filter_bypass(self):
         """Test Kelvin sign 'Special K' polyglot attack."""
         # Kelvin sign looks like K but bypasses K-based filters
-        kelvin = '\u212a'
-        latin_k = 'K'
+        kelvin = "\u212a"
+        latin_k = "K"
 
         # Different characters
         assert kelvin != latin_k
         assert ord(kelvin) != ord(latin_k)
 
         # But normalize to same character
-        assert unicodedata.normalize('NFKC', kelvin) == latin_k
+        assert unicodedata.normalize("NFKC", kelvin) == latin_k
 
     def test_superscript_digit_normalization(self):
         """Test superscript digits normalize to regular digits."""
-        superscript_123 = '\u00b9\u00b2\u00b3'  # ¹²³
-        regular_123 = '123'
+        superscript_123 = "\u00b9\u00b2\u00b3"  # ¹²³
+        regular_123 = "123"
 
         # Different before normalization
         assert superscript_123 != regular_123
 
         # Same after NFKC normalization
-        assert unicodedata.normalize('NFKC', superscript_123) == regular_123
+        assert unicodedata.normalize("NFKC", superscript_123) == regular_123
 
     def test_ligature_expansion(self):
         """Test ligature characters expand to multiple characters."""
         # Latin ligature 'fi'
-        ligature_fi = '\ufb01'
-        regular_fi = 'fi'
+        ligature_fi = "\ufb01"
+        regular_fi = "fi"
 
         # Single character vs two characters
         assert len(ligature_fi) == 1
         assert len(regular_fi) == 2
 
         # Normalize to two characters
-        assert unicodedata.normalize('NFKC', ligature_fi) == regular_fi
+        assert unicodedata.normalize("NFKC", ligature_fi) == regular_fi
 
 
 class TestHomographAttacks:
     """Tests for homograph attacks using visually similar characters."""
 
-    @pytest.mark.parametrize('homograph_pair', [
-        ('a', 'а'),  # Latin 'a' vs Cyrillic 'а' (U+0430)
-        ('e', 'е'),  # Latin 'e' vs Cyrillic 'е' (U+0435)
-        ('o', 'о'),  # Latin 'o' vs Cyrillic 'о' (U+043E)
-        ('p', 'р'),  # Latin 'p' vs Cyrillic 'р' (U+0440)
-        ('c', 'с'),  # Latin 'c' vs Cyrillic 'с' (U+0441)
-    ])
+    @pytest.mark.parametrize(
+        "homograph_pair",
+        [
+            ("a", "а"),  # Latin 'a' vs Cyrillic 'а' (U+0430)
+            ("e", "е"),  # Latin 'e' vs Cyrillic 'е' (U+0435)
+            ("o", "о"),  # Latin 'o' vs Cyrillic 'о' (U+043E)
+            ("p", "р"),  # Latin 'p' vs Cyrillic 'р' (U+0440)
+            ("c", "с"),  # Latin 'c' vs Cyrillic 'с' (U+0441)
+        ],
+    )
     def test_homograph_character_pairs(self, homograph_pair):
         """Test detection of homograph character pairs."""
         latin, cyrillic = homograph_pair
@@ -280,8 +310,8 @@ class TestHomographAttacks:
 
     def test_homograph_domain_spoofing(self):
         """Test homograph attack in domain-like strings."""
-        legitimate = 'api.example.com'
-        spoofed = 'аpi.example.com'  # First 'a' is Cyrillic
+        legitimate = "api.example.com"
+        spoofed = "аpi.example.com"  # First 'a' is Cyrillic
 
         # Different strings
         assert legitimate != spoofed
@@ -294,19 +324,19 @@ class TestHomographAttacks:
     def test_mixed_script_detection(self):
         """Test detection of mixed scripts (potential attack)."""
         # Mixed Latin and Cyrillic
-        mixed_text = 'pay раl.com'  # 'pay' in Latin, 'раl' in Cyrillic
+        mixed_text = "pay раl.com"  # 'pay' in Latin, 'раl' in Cyrillic
 
         # Should contain characters from different scripts
         scripts = set()
         for char in mixed_text:
             if char.isalpha():
-                script_name = unicodedata.name(char, '').split()[0]
+                script_name = unicodedata.name(char, "").split()[0]
                 scripts.add(script_name)
 
         # Verify mixed scripts detected
         assert len(scripts) >= 2, f"Expected mixed scripts, got {scripts}"
-        assert 'LATIN' in scripts
-        assert 'CYRILLIC' in scripts
+        assert "LATIN" in scripts
+        assert "CYRILLIC" in scripts
 
 
 class TestRTLAndBidiAttacks:
@@ -315,11 +345,11 @@ class TestRTLAndBidiAttacks:
     def test_rtl_override_character(self):
         """Test RTL override character detection."""
         # RTL override can reverse display order
-        normal_text = 'file.txt'
-        rtl_text = 'file\u202Etxt.'  # RTL override before 'txt.'
+        normal_text = "file.txt"
+        rtl_text = "file\u202etxt."  # RTL override before 'txt.'
 
         # Should contain RTL override
-        assert '\u202E' in rtl_text
+        assert "\u202e" in rtl_text
 
         # Codepoints are different
         assert normal_text != rtl_text
@@ -327,47 +357,53 @@ class TestRTLAndBidiAttacks:
     def test_rtl_override_spoofing(self):
         """Test file extension spoofing with RTL override."""
         # Displays as "test.txt" but actually "testexe.txt" reversed
-        spoofed_filename = 'test\u202Etxt.exe'
+        spoofed_filename = "test\u202etxt.exe"
 
         # Should contain dangerous RTL character
-        assert '\u202E' in spoofed_filename
+        assert "\u202e" in spoofed_filename
 
         # Real extension is .exe
-        assert spoofed_filename.endswith('exe')
+        assert spoofed_filename.endswith("exe")
 
-    @pytest.mark.parametrize('bidi_char', [
-        '\u202A',  # Left-to-Right Embedding
-        '\u202B',  # Right-to-Left Embedding
-        '\u202C',  # Pop Directional Formatting
-        '\u202D',  # Left-to-Right Override
-        '\u202E',  # Right-to-Left Override
-        '\u2066',  # Left-to-Right Isolate
-        '\u2067',  # Right-to-Left Isolate
-        '\u2068',  # First Strong Isolate
-        '\u2069',  # Pop Directional Isolate
-    ])
+    @pytest.mark.parametrize(
+        "bidi_char",
+        [
+            "\u202a",  # Left-to-Right Embedding
+            "\u202b",  # Right-to-Left Embedding
+            "\u202c",  # Pop Directional Formatting
+            "\u202d",  # Left-to-Right Override
+            "\u202e",  # Right-to-Left Override
+            "\u2066",  # Left-to-Right Isolate
+            "\u2067",  # Right-to-Left Isolate
+            "\u2068",  # First Strong Isolate
+            "\u2069",  # Pop Directional Isolate
+        ],
+    )
     def test_bidirectional_control_characters(self, bidi_char):
         """Test detection of bidirectional control characters."""
-        text = f'test{bidi_char}text'
+        text = f"test{bidi_char}text"
 
         # Should contain the bidi control character
         assert bidi_char in text
 
         # Character should be in Format category (Cf)
         category = unicodedata.category(bidi_char)
-        assert category == 'Cf', f"Expected Cf category, got {category}"
+        assert category == "Cf", f"Expected Cf category, got {category}"
 
 
 class TestCombiningCharacters:
     """Tests for combining characters and diacritical marks."""
 
-    @pytest.mark.parametrize('base_and_combining', [
-        ('e', '\u0301'),  # e + acute accent
-        ('a', '\u0308'),  # a + diaeresis (umlaut)
-        ('n', '\u0303'),  # n + tilde
-        ('c', '\u0327'),  # c + cedilla
-        ('o', '\u030A'),  # o + ring above
-    ])
+    @pytest.mark.parametrize(
+        "base_and_combining",
+        [
+            ("e", "\u0301"),  # e + acute accent
+            ("a", "\u0308"),  # a + diaeresis (umlaut)
+            ("n", "\u0303"),  # n + tilde
+            ("c", "\u0327"),  # c + cedilla
+            ("o", "\u030a"),  # o + ring above
+        ],
+    )
     def test_combining_character_attachment(self, base_and_combining):
         """Test combining characters attach to base characters."""
         base, combining = base_and_combining
@@ -377,25 +413,25 @@ class TestCombiningCharacters:
         assert len(combined) == 2
 
         # Second character should be combining mark
-        assert unicodedata.category(combining) in ['Mn', 'Mc', 'Me']
+        assert unicodedata.category(combining) in ["Mn", "Mc", "Me"]
 
     def test_multiple_combining_characters(self):
         """Test multiple combining marks on single base."""
         # Base character with multiple diacriticals
-        text = 'o\u0300\u0308'  # o + grave + diaeresis
+        text = "o\u0300\u0308"  # o + grave + diaeresis
 
         # Should be 3 codepoints
         assert len(text) == 3
 
         # Last two should be combining marks
-        assert unicodedata.category(text[1]) in ['Mn', 'Mc', 'Me']
-        assert unicodedata.category(text[2]) in ['Mn', 'Mc', 'Me']
+        assert unicodedata.category(text[1]) in ["Mn", "Mc", "Me"]
+        assert unicodedata.category(text[2]) in ["Mn", "Mc", "Me"]
 
     def test_combining_character_overflow(self):
         """Test excessive combining characters (potential DoS)."""
         # Zalgo text - excessive combining marks
-        base = 'a'
-        combining_marks = '\u0300\u0301\u0302\u0303\u0304\u0305\u0306\u0307\u0308\u0309'
+        base = "a"
+        combining_marks = "\u0300\u0301\u0302\u0303\u0304\u0305\u0306\u0307\u0308\u0309"
         zalgo = base + combining_marks
 
         # Should handle without crashing
@@ -406,26 +442,29 @@ class TestCombiningCharacters:
 class TestControlCharactersInUnicode:
     """Tests for Unicode control characters."""
 
-    @pytest.mark.parametrize('control_char', [
-        '\u0000',  # Null
-        '\u0001',  # Start of Heading
-        '\u0008',  # Backspace
-        '\u000B',  # Vertical Tab
-        '\u000C',  # Form Feed
-        '\u001B',  # Escape
-        '\u007F',  # Delete
-        '\u0085',  # Next Line
-    ])
+    @pytest.mark.parametrize(
+        "control_char",
+        [
+            "\u0000",  # Null
+            "\u0001",  # Start of Heading
+            "\u0008",  # Backspace
+            "\u000b",  # Vertical Tab
+            "\u000c",  # Form Feed
+            "\u001b",  # Escape
+            "\u007f",  # Delete
+            "\u0085",  # Next Line
+        ],
+    )
     def test_control_character_handling(self, control_char):
         """Test that control characters are detected."""
-        text = f'test{control_char}text'
+        text = f"test{control_char}text"
 
         # Should contain the control character
         assert control_char in text
 
         # Character should be in control category
         category = unicodedata.category(control_char)
-        assert category in ['Cc', 'Cf']  # Control or Format
+        assert category in ["Cc", "Cf"]  # Control or Format
 
 
 class TestValidationMixinUnicode:
@@ -435,18 +474,16 @@ class TestValidationMixinUnicode:
         """Test string list validation with emoji."""
         validator = ValidationMixin()
 
-        strings_with_emoji = ['agent-😀', 'task-🚀', 'config-📝']
+        strings_with_emoji = ["agent-😀", "task-🚀", "config-📝"]
         result = validator._validate_string_list(
-            strings_with_emoji,
-            'emoji_list',
-            allow_empty=False
+            strings_with_emoji, "emoji_list", allow_empty=False
         )
 
         assert result == strings_with_emoji
         # Verify emoji preserved in each string
-        assert '😀' in result[0]
-        assert '🚀' in result[1]
-        assert '📝' in result[2]
+        assert "😀" in result[0]
+        assert "🚀" in result[1]
+        assert "📝" in result[2]
 
     def test_string_list_with_rtl_text(self):
         """Test string list validation with RTL text."""
@@ -454,15 +491,13 @@ class TestValidationMixinUnicode:
 
         # Arabic and Hebrew text
         rtl_strings = [
-            'مرحبا',  # Arabic: Hello
-            'שלום',   # Hebrew: Hello
-            'agent-العربية'  # Mixed Latin and Arabic
+            "مرحبا",  # Arabic: Hello
+            "שלום",  # Hebrew: Hello
+            "agent-العربية",  # Mixed Latin and Arabic
         ]
 
         result = validator._validate_string_list(
-            rtl_strings,
-            'rtl_list',
-            allow_empty=False
+            rtl_strings, "rtl_list", allow_empty=False
         )
 
         assert result == rtl_strings
@@ -472,44 +507,47 @@ class TestValidationMixinUnicode:
         validator = ValidationMixin()
 
         # Emoji are multi-byte, so create a string with 1001 emoji characters
-        long_emoji_string = '😀' * 1001  # Exceeds max_item_length=1000
+        long_emoji_string = "😀" * 1001  # Exceeds max_item_length=1000
 
-        with pytest.raises(ValueError, match='exceeds maximum length'):
+        with pytest.raises(ValueError, match="exceeds maximum length"):
             validator._validate_string_list(
                 [long_emoji_string],
-                'long_list',
-                max_item_length=1000  # Character count, not bytes
+                "long_list",
+                max_item_length=1000,  # Character count, not bytes
             )
 
 
 class TestInternationalization:
     """Tests for international text handling."""
 
-    @pytest.mark.parametrize('international_text', [
-        '你好世界',  # Chinese: Hello World
-        'こんにちは',  # Japanese: Hello
-        '안녕하세요',  # Korean: Hello
-        'مرحبا بالعالم',  # Arabic: Hello World
-        'Здравствуй мир',  # Russian: Hello World
-        'γεια σου κόσμε',  # Greek: Hello World
-        'नमस्ते दुनिया',  # Hindi: Hello World
-    ])
+    @pytest.mark.parametrize(
+        "international_text",
+        [
+            "你好世界",  # Chinese: Hello World
+            "こんにちは",  # Japanese: Hello
+            "안녕하세요",  # Korean: Hello
+            "مرحبا بالعالم",  # Arabic: Hello World
+            "Здравствуй мир",  # Russian: Hello World
+            "γεια σου κόσμε",  # Greek: Hello World
+            "नमस्ते दुनिया",  # Hindi: Hello World
+        ],
+    )
     def test_international_text_handling(self, international_text):
         """Test handling of various international scripts."""
         assert isinstance(international_text, str)
         assert len(international_text) > 0
 
         # Should encode to UTF-8 without issues
-        encoded = international_text.encode('utf-8')
-        decoded = encoded.decode('utf-8')
+        encoded = international_text.encode("utf-8")
+        decoded = encoded.decode("utf-8")
 
         assert decoded == international_text
 
     def test_mixed_direction_text(self):
         """Test mixed LTR and RTL text in same string."""
-        mixed_text = 'Hello مرحبا World'  # English + Arabic + English
+        mixed_text = "Hello مرحبا World"  # English + Arabic + English
 
         # Should handle mixed directionality
         assert isinstance(mixed_text, str)
-        assert 'Hello' in mixed_text
-        assert 'مرحبا' in mixed_text
+        assert "Hello" in mixed_text
+        assert "مرحبا" in mixed_text

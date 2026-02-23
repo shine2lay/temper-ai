@@ -8,6 +8,7 @@ Tests:
 - Error context preservation
 - Timeout cascading through layers
 """
+
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -33,6 +34,7 @@ class TestToolToAgentErrorPropagation:
         """Initialize test database."""
         try:
             from temper_ai.observability.database import get_database
+
             get_database()
         except RuntimeError:
             init_database("sqlite:///:memory:")
@@ -42,14 +44,11 @@ class TestToolToAgentErrorPropagation:
     def execution_tracker(self, sample_database):
         """Execution tracker."""
         from temper_ai.observability.backends.sql_backend import SQLObservabilityBackend
-        backend = SQLObservabilityBackend()
+
+        backend = SQLObservabilityBackend(buffer=False)
         return ExecutionTracker(backend=backend)
 
-    def test_tool_exception_caught_by_agent(
-        self,
-        sample_database,
-        execution_tracker
-    ):
+    def test_tool_exception_caught_by_agent(self, sample_database, execution_tracker):
         """Test tool exception is caught and handled by agent."""
         workflow_id = str(uuid.uuid4())
 
@@ -60,7 +59,7 @@ class TestToolToAgentErrorPropagation:
             workflow_version="1.0",
             workflow_config_snapshot={},
             start_time=datetime.now(UTC),
-            status="running"
+            status="running",
         )
 
         with get_session() as session:
@@ -68,27 +67,30 @@ class TestToolToAgentErrorPropagation:
             session.commit()
 
         # Execute stage with failing tool
-        with execution_tracker.track_stage("compute_stage", {}, workflow_id) as stage_id:
+        with execution_tracker.track_stage(
+            "compute_stage", {}, workflow_id
+        ) as stage_id:
             with execution_tracker.track_agent("agent1", {}, stage_id) as agent_id:
                 # Tool fails
                 tool_exec_id = execution_tracker.track_tool_call(
                     agent_id,
                     tool_name="Calculator",
-                    tool_version="1.0",
                     input_params={"operation": "divide", "a": 10, "b": 0},
                     output_data=None,
+                    duration_seconds=0.1,
                     status="failed",
                     error_message="ZeroDivisionError: division by zero",
-                    error_type="ZeroDivisionError",
-                    safety_checks_applied=[],
-                    approval_required=False
+                    safety_checks=[],
+                    approval_required=False,
                 )
 
         # VERIFICATION: Tool error captured
         with get_session() as session:
-            tool_exec = session.query(ToolExecution).filter_by(
-                agent_execution_id=agent_id
-            ).first()
+            tool_exec = (
+                session.query(ToolExecution)
+                .filter_by(agent_execution_id=agent_id)
+                .first()
+            )
             assert tool_exec is not None
             assert tool_exec.status == "failed"
             assert "division by zero" in tool_exec.error_message
@@ -97,11 +99,7 @@ class TestToolToAgentErrorPropagation:
             agent_exec = session.query(AgentExecution).filter_by(id=agent_id).first()
             assert agent_exec.status == "completed"
 
-    def test_tool_timeout_propagated(
-        self,
-        sample_database,
-        execution_tracker
-    ):
+    def test_tool_timeout_propagated(self, sample_database, execution_tracker):
         """Test tool timeout is propagated to agent."""
         workflow_id = str(uuid.uuid4())
 
@@ -112,7 +110,7 @@ class TestToolToAgentErrorPropagation:
             workflow_version="1.0",
             workflow_config_snapshot={},
             start_time=datetime.now(UTC),
-            status="running"
+            status="running",
         )
 
         with get_session() as session:
@@ -126,30 +124,27 @@ class TestToolToAgentErrorPropagation:
                 tool_exec_id = execution_tracker.track_tool_call(
                     agent_id,
                     tool_name="WebScraper",
-                    tool_version="1.0",
                     input_params={"url": "http://slow-server.com"},
                     output_data=None,
+                    duration_seconds=5.0,
                     status="failed",
                     error_message="TimeoutError: Tool execution exceeded 5s timeout",
-                    error_type="TimeoutError",
-                    safety_checks_applied=["url_validation"],
-                    approval_required=False
+                    safety_checks=["url_validation"],
+                    approval_required=False,
                 )
 
         # VERIFICATION: Timeout recorded
         with get_session() as session:
-            tool_exec = session.query(ToolExecution).filter_by(
-                agent_execution_id=agent_id
-            ).first()
+            tool_exec = (
+                session.query(ToolExecution)
+                .filter_by(agent_execution_id=agent_id)
+                .first()
+            )
             assert tool_exec is not None
             assert tool_exec.status == "failed"
             assert "TimeoutError" in tool_exec.error_message
 
-    def test_tool_error_context_preserved(
-        self,
-        sample_database,
-        execution_tracker
-    ):
+    def test_tool_error_context_preserved(self, sample_database, execution_tracker):
         """Test tool error context includes tool details."""
         workflow_id = str(uuid.uuid4())
 
@@ -160,7 +155,7 @@ class TestToolToAgentErrorPropagation:
             workflow_version="1.0",
             workflow_config_snapshot={},
             start_time=datetime.now(UTC),
-            status="running"
+            status="running",
         )
 
         with get_session() as session:
@@ -174,24 +169,26 @@ class TestToolToAgentErrorPropagation:
                 tool_exec_id = execution_tracker.track_tool_call(
                     agent_id,
                     tool_name="DatabaseQuery",
-                    tool_version="2.1",
-                    input_params={"query": "SELECT * FROM users WHERE id = ?", "params": [999]},
+                    input_params={
+                        "query": "SELECT * FROM users WHERE id = ?",
+                        "params": [999],
+                    },
                     output_data=None,
+                    duration_seconds=0.5,
                     status="failed",
                     error_message="RecordNotFoundError: No user with id=999",
-                    error_type="RecordNotFoundError",
-                    safety_checks_applied=["sql_injection_check"],
-                    approval_required=False
+                    safety_checks=["sql_injection_check"],
+                    approval_required=False,
                 )
 
         # VERIFICATION: Error context preserved
         with get_session() as session:
-            tool_exec = session.query(ToolExecution).filter_by(
-                agent_execution_id=agent_id
-            ).first()
+            tool_exec = (
+                session.query(ToolExecution)
+                .filter_by(agent_execution_id=agent_id)
+                .first()
+            )
             assert tool_exec.tool_name == "DatabaseQuery"
-            assert tool_exec.tool_version == "2.1"
-            assert tool_exec.error_type == "RecordNotFoundError"
             assert tool_exec.error_message == "RecordNotFoundError: No user with id=999"
             assert "sql_injection_check" in tool_exec.safety_checks_applied
 
@@ -204,6 +201,7 @@ class TestAgentToStageErrorPropagation:
         """Initialize test database."""
         try:
             from temper_ai.observability.database import get_database
+
             get_database()
         except RuntimeError:
             init_database("sqlite:///:memory:")
@@ -213,14 +211,11 @@ class TestAgentToStageErrorPropagation:
     def execution_tracker(self, sample_database):
         """Execution tracker."""
         from temper_ai.observability.backends.sql_backend import SQLObservabilityBackend
-        backend = SQLObservabilityBackend()
+
+        backend = SQLObservabilityBackend(buffer=False)
         return ExecutionTracker(backend=backend)
 
-    def test_agent_failure_stops_stage(
-        self,
-        sample_database,
-        execution_tracker
-    ):
+    def test_agent_failure_stops_stage(self, sample_database, execution_tracker):
         """Test single-agent stage fails when agent fails."""
         workflow_id = str(uuid.uuid4())
 
@@ -231,7 +226,7 @@ class TestAgentToStageErrorPropagation:
             workflow_version="1.0",
             workflow_config_snapshot={},
             start_time=datetime.now(UTC),
-            status="running"
+            status="running",
         )
 
         with get_session() as session:
@@ -247,7 +242,7 @@ class TestAgentToStageErrorPropagation:
             stage_version="1.0",
             stage_config_snapshot={},
             start_time=datetime.now(UTC),
-            status="running"
+            status="running",
         )
 
         with get_session() as session:
@@ -267,7 +262,6 @@ class TestAgentToStageErrorPropagation:
             duration_seconds=1.0,
             status="failed",
             error_message="LLMError: API rate limit exceeded",
-            error_type="LLMError"
         )
 
         with get_session() as session:
@@ -278,7 +272,9 @@ class TestAgentToStageErrorPropagation:
         stage_exec.end_time = datetime.now(UTC)
         stage_exec.duration_seconds = 1.5
         stage_exec.status = "failed"
-        stage_exec.error_message = "Agent failing_agent failed: LLMError: API rate limit exceeded"
+        stage_exec.error_message = (
+            "Agent failing_agent failed: LLMError: API rate limit exceeded"
+        )
         stage_exec.num_agents_executed = 1
         stage_exec.num_agents_failed = 1
 
@@ -293,11 +289,7 @@ class TestAgentToStageErrorPropagation:
             assert "failing_agent" in stage.error_message
             assert stage.num_agents_failed == 1
 
-    def test_agent_failure_partial_success(
-        self,
-        sample_database,
-        execution_tracker
-    ):
+    def test_agent_failure_partial_success(self, sample_database, execution_tracker):
         """Test stage with multiple agents handles partial failure."""
         workflow_id = str(uuid.uuid4())
 
@@ -308,7 +300,7 @@ class TestAgentToStageErrorPropagation:
             workflow_version="1.0",
             workflow_config_snapshot={},
             start_time=datetime.now(UTC),
-            status="running"
+            status="running",
         )
 
         with get_session() as session:
@@ -324,7 +316,7 @@ class TestAgentToStageErrorPropagation:
             stage_version="1.0",
             stage_config_snapshot={},
             start_time=datetime.now(UTC),
-            status="running"
+            status="running",
         )
 
         with get_session() as session:
@@ -342,7 +334,7 @@ class TestAgentToStageErrorPropagation:
             start_time=datetime.now(UTC),
             end_time=datetime.now(UTC) + timedelta(seconds=1),
             duration_seconds=1.0,
-            status="success"
+            status="completed",
         )
 
         with get_session() as session:
@@ -362,7 +354,6 @@ class TestAgentToStageErrorPropagation:
             duration_seconds=1.0,
             status="failed",
             error_message="Connection timeout",
-            error_type="TimeoutError"
         )
 
         with get_session() as session:
@@ -380,7 +371,7 @@ class TestAgentToStageErrorPropagation:
             start_time=datetime.now(UTC),
             end_time=datetime.now(UTC) + timedelta(seconds=1),
             duration_seconds=1.0,
-            status="success"
+            status="completed",
         )
 
         with get_session() as session:
@@ -388,9 +379,10 @@ class TestAgentToStageErrorPropagation:
             session.commit()
 
         # Stage: Partial success (2/3 agents succeeded, min_successful_agents=2)
+        # Note: valid statuses are running/completed/failed/halted/timeout
         stage_exec.end_time = datetime.now(UTC)
         stage_exec.duration_seconds = 3.0
-        stage_exec.status = "partial_success"
+        stage_exec.status = "completed"
         stage_exec.num_agents_executed = 3
         stage_exec.num_agents_succeeded = 2
         stage_exec.num_agents_failed = 1
@@ -399,18 +391,15 @@ class TestAgentToStageErrorPropagation:
             session.merge(stage_exec)
             session.commit()
 
-        # VERIFICATION: Partial success recorded
+        # VERIFICATION: Partial success recorded (status=completed with partial failures)
         with get_session() as session:
             stage = session.query(StageExecution).filter_by(id=stage_id).first()
-            assert stage.status == "partial_success"
+            assert stage.status == "completed"
             assert stage.num_agents_executed == 3
             assert stage.num_agents_succeeded == 2
             assert stage.num_agents_failed == 1
 
-    def test_min_successful_agents_enforcement(
-        self,
-        sample_database
-    ):
+    def test_min_successful_agents_enforcement(self, sample_database):
         """Test stage fails if below min_successful_agents threshold."""
         workflow_id = str(uuid.uuid4())
 
@@ -421,7 +410,7 @@ class TestAgentToStageErrorPropagation:
             workflow_version="1.0",
             workflow_config_snapshot={},
             start_time=datetime.now(UTC),
-            status="running"
+            status="running",
         )
 
         with get_session() as session:
@@ -437,15 +426,15 @@ class TestAgentToStageErrorPropagation:
             stage_version="1.0",
             stage_config_snapshot={"error_handling": {"min_successful_agents": 2}},
             start_time=datetime.now(UTC),
-            status="running"
+            status="running",
         )
 
         with get_session() as session:
             session.add(stage_exec)
             session.commit()
 
-        # 3 agents: 1 success, 2 failures (below threshold of 2)
-        for i, status in enumerate(["success", "failed", "failed"]):
+        # 3 agents: 1 completed, 2 failures (below threshold of 2)
+        for i, status in enumerate(["completed", "failed", "failed"]):
             agent_id = str(uuid.uuid4())
             agent_exec = AgentExecution(
                 id=agent_id,
@@ -457,7 +446,7 @@ class TestAgentToStageErrorPropagation:
                 end_time=datetime.now(UTC) + timedelta(seconds=1),
                 duration_seconds=1.0,
                 status=status,
-                error_message="Failed" if status == "failed" else None
+                error_message="Failed" if status == "failed" else None,
             )
 
             with get_session() as session:
@@ -494,15 +483,13 @@ class TestStageToWorkflowErrorPropagation:
         """Initialize test database."""
         try:
             from temper_ai.observability.database import get_database
+
             get_database()
         except RuntimeError:
             init_database("sqlite:///:memory:")
         yield
 
-    def test_stage_failure_stops_workflow(
-        self,
-        sample_database
-    ):
+    def test_stage_failure_stops_workflow(self, sample_database):
         """Test workflow stops when critical stage fails."""
         workflow_id = str(uuid.uuid4())
 
@@ -513,7 +500,7 @@ class TestStageToWorkflowErrorPropagation:
             workflow_version="1.0",
             workflow_config_snapshot={"error_handling": {"on_stage_failure": "halt"}},
             start_time=datetime.now(UTC),
-            status="running"
+            status="running",
         )
 
         with get_session() as session:
@@ -531,7 +518,7 @@ class TestStageToWorkflowErrorPropagation:
             start_time=datetime.now(UTC),
             end_time=datetime.now(UTC) + timedelta(seconds=1),
             duration_seconds=1.0,
-            status="success"
+            status="completed",
         )
 
         with get_session() as session:
@@ -551,7 +538,6 @@ class TestStageToWorkflowErrorPropagation:
             duration_seconds=1.0,
             status="failed",
             error_message="Critical error: Data validation failed",
-            error_type="ValidationError"
         )
 
         with get_session() as session:
@@ -562,7 +548,9 @@ class TestStageToWorkflowErrorPropagation:
         workflow_exec.end_time = datetime.now(UTC)
         workflow_exec.duration_seconds = 2.5
         workflow_exec.status = "failed"
-        workflow_exec.error_message = "Workflow halted: stage2 failed with ValidationError"
+        workflow_exec.error_message = (
+            "Workflow halted: stage2 failed with ValidationError"
+        )
 
         with get_session() as session:
             session.merge(workflow_exec)
@@ -570,14 +558,18 @@ class TestStageToWorkflowErrorPropagation:
 
         # VERIFICATION: Workflow stopped
         with get_session() as session:
-            workflow = session.query(WorkflowExecution).filter_by(id=workflow_id).first()
+            workflow = (
+                session.query(WorkflowExecution).filter_by(id=workflow_id).first()
+            )
             assert workflow.status == "failed"
             assert "stage2" in workflow.error_message
 
             # Only 2 stages executed (stage 3 not reached)
-            stages = session.query(StageExecution).filter_by(
-                workflow_execution_id=workflow_id
-            ).all()
+            stages = (
+                session.query(StageExecution)
+                .filter_by(workflow_execution_id=workflow_id)
+                .all()
+            )
             assert len(stages) == 2
 
 
@@ -589,6 +581,7 @@ class TestTimeoutCascading:
         """Initialize test database."""
         try:
             from temper_ai.observability.database import get_database
+
             get_database()
         except RuntimeError:
             init_database("sqlite:///:memory:")
@@ -598,13 +591,12 @@ class TestTimeoutCascading:
     def execution_tracker(self, sample_database):
         """Execution tracker."""
         from temper_ai.observability.backends.sql_backend import SQLObservabilityBackend
-        backend = SQLObservabilityBackend()
+
+        backend = SQLObservabilityBackend(buffer=False)
         return ExecutionTracker(backend=backend)
 
     def test_timeout_enforcement_at_each_layer(
-        self,
-        sample_database,
-        execution_tracker
+        self, sample_database, execution_tracker
     ):
         """Test timeout is enforced at tool, agent, and stage layers."""
         workflow_id = str(uuid.uuid4())
@@ -618,7 +610,7 @@ class TestTimeoutCascading:
                 "execution": {"timeout_seconds": 60}  # Workflow timeout: 60s
             },
             start_time=datetime.now(UTC),
-            status="running"
+            status="running",
         )
 
         with get_session() as session:
@@ -634,7 +626,7 @@ class TestTimeoutCascading:
             stage_version="1.0",
             stage_config_snapshot={"execution": {"timeout_seconds": 30}},
             start_time=datetime.now(UTC),
-            status="running"
+            status="running",
         )
 
         with get_session() as session:
@@ -650,7 +642,7 @@ class TestTimeoutCascading:
             agent_version="1.0",
             agent_config_snapshot={"execution": {"timeout_seconds": 10}},
             start_time=datetime.now(UTC),
-            status="running"
+            status="running",
         )
 
         with get_session() as session:
@@ -661,14 +653,13 @@ class TestTimeoutCascading:
         tool_exec_id = execution_tracker.track_tool_call(
             agent_id,
             tool_name="SlowTool",
-            tool_version="1.0",
             input_params={"delay": 20},
             output_data=None,
+            duration_seconds=5.0,
             status="failed",
             error_message="TimeoutError: Tool execution exceeded 5s timeout",
-            error_type="TimeoutError",
-            safety_checks_applied=[],
-            approval_required=False
+            safety_checks=[],
+            approval_required=False,
         )
 
         # Agent times out due to tool timeout
@@ -676,7 +667,6 @@ class TestTimeoutCascading:
         agent_exec.duration_seconds = 5.1
         agent_exec.status = "failed"
         agent_exec.error_message = "Agent timeout: Tool execution exceeded timeout"
-        agent_exec.error_type = "TimeoutError"
 
         with get_session() as session:
             session.merge(agent_exec)
@@ -706,7 +696,11 @@ class TestTimeoutCascading:
 
         # VERIFICATION: Timeout cascaded through all layers
         with get_session() as session:
-            tool = session.query(ToolExecution).filter_by(agent_execution_id=agent_id).first()
+            tool = (
+                session.query(ToolExecution)
+                .filter_by(agent_execution_id=agent_id)
+                .first()
+            )
             assert tool.status == "failed"
             assert "TimeoutError" in tool.error_message
 
@@ -718,6 +712,8 @@ class TestTimeoutCascading:
             assert stage.status == "failed"
             assert "timeout" in stage.error_message.lower()
 
-            workflow = session.query(WorkflowExecution).filter_by(id=workflow_id).first()
+            workflow = (
+                session.query(WorkflowExecution).filter_by(id=workflow_id).first()
+            )
             assert workflow.status == "failed"
             assert "timeout" in workflow.error_message.lower()

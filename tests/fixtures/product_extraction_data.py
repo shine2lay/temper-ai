@@ -8,10 +8,10 @@ Each test case includes:
 - ground_truth: Expected structured JSON output
 """
 
-from typing import Any, Dict, List
+from typing import Any
 
 # Product extraction test dataset (50 test cases)
-PRODUCT_TEST_CASES: List[Dict[str, Any]] = [
+PRODUCT_TEST_CASES: list[dict[str, Any]] = [
     # Electronics
     {
         "description": "Apple MacBook Pro 16-inch with M3 Max chip, 36GB RAM, 1TB SSD, Space Black. Features Liquid Retina XDR display, 140W USB-C Power Adapter, and up to 22 hours battery life. Price: $3,499.00",
@@ -24,17 +24,17 @@ PRODUCT_TEST_CASES: List[Dict[str, Any]] = [
                 "ram": "36GB",
                 "storage": "1TB SSD",
                 "display": "Liquid Retina XDR",
-                "battery_life": "22 hours"
+                "battery_life": "22 hours",
             },
             "color": "Space Black",
             "price": 3499.00,
-            "currency": "USD"
-        }
+            "currency": "USD",
+        },
     },
     {
-        "description": "Samsung 65\" QLED 4K Smart TV QN90C with Quantum HDR, Neural Quantum Processor 4K, 120Hz refresh rate. Includes Alexa and Google Assistant. $1,799.99.",
+        "description": 'Samsung 65" QLED 4K Smart TV QN90C with Quantum HDR, Neural Quantum Processor 4K, 120Hz refresh rate. Includes Alexa and Google Assistant. $1,799.99.',
         "ground_truth": {
-            "name": "Samsung 65\" QLED 4K Smart TV QN90C",
+            "name": 'Samsung 65" QLED 4K Smart TV QN90C',
             "brand": "Samsung",
             "category": "Electronics",
             "specifications": {
@@ -42,12 +42,12 @@ PRODUCT_TEST_CASES: List[Dict[str, Any]] = [
                 "resolution": "4K",
                 "refresh_rate": "120Hz",
                 "processor": "Neural Quantum Processor 4K",
-                "hdr": "Quantum HDR"
+                "hdr": "Quantum HDR",
             },
             "features": ["Alexa", "Google Assistant"],
             "price": 1799.99,
-            "currency": "USD"
-        }
+            "currency": "USD",
+        },
     },
     {
         "description": "Sony WH-1000XM5 Wireless Noise Cancelling Headphones - Black. 30-hour battery, LDAC/DSEE Extreme support, multipoint connection. $399.99",
@@ -58,15 +58,14 @@ PRODUCT_TEST_CASES: List[Dict[str, Any]] = [
             "specifications": {
                 "battery_life": "30 hours",
                 "audio_codecs": ["LDAC", "DSEE Extreme"],
-                "connectivity": "Wireless"
+                "connectivity": "Wireless",
             },
             "color": "Black",
             "features": ["Noise Cancelling", "Multipoint Connection"],
             "price": 399.99,
-            "currency": "USD"
-        }
+            "currency": "USD",
+        },
     },
-
     # Home & Kitchen
     {
         "description": "Ninja Foodi 8-Quart 9-in-1 Deluxe XL Pressure Cooker. Stainless steel. Pressure cook, air fry, steam, slow cook. $179.99",
@@ -77,12 +76,12 @@ PRODUCT_TEST_CASES: List[Dict[str, Any]] = [
             "specifications": {
                 "capacity": "8 quarts",
                 "material": "Stainless steel",
-                "functions": 9
+                "functions": 9,
             },
             "features": ["Pressure cook", "Air fry", "Steam", "Slow cook"],
             "price": 179.99,
-            "currency": "USD"
-        }
+            "currency": "USD",
+        },
     },
     {
         "description": "Dyson V15 Detect Cordless Vacuum - Nickel/Iron. 60-minute runtime, laser dust detection, HEPA filtration. Includes 6 attachments. $699.99",
@@ -93,15 +92,14 @@ PRODUCT_TEST_CASES: List[Dict[str, Any]] = [
             "specifications": {
                 "runtime": "60 minutes",
                 "filtration": "HEPA",
-                "attachments": 6
+                "attachments": 6,
             },
             "color": "Nickel/Iron",
             "features": ["Laser dust detection", "Cordless"],
             "price": 699.99,
-            "currency": "USD"
-        }
+            "currency": "USD",
+        },
     },
-
     # Clothing
     {
         "description": "Levi's 501 Original Fit Men's Jeans - Dark Stonewash, size 32x32. 100% cotton denim. Button fly. $69.50",
@@ -112,14 +110,14 @@ PRODUCT_TEST_CASES: List[Dict[str, Any]] = [
             "specifications": {
                 "material": "100% cotton denim",
                 "fit": "Original Fit",
-                "closure": "Button fly"
+                "closure": "Button fly",
             },
             "color": "Dark Stonewash",
             "size": "32x32",
             "gender": "Men",
             "price": 69.50,
-            "currency": "USD"
-        }
+            "currency": "USD",
+        },
     },
     {
         "description": "Patagonia Women's Better Sweater Fleece Jacket - Navy Blue, Medium. 100% recycled polyester fleece. Full-zip, stand-up collar. $139.00",
@@ -130,16 +128,15 @@ PRODUCT_TEST_CASES: List[Dict[str, Any]] = [
             "specifications": {
                 "material": "100% recycled polyester fleece",
                 "closure": "Full-zip",
-                "collar": "Stand-up collar"
+                "collar": "Stand-up collar",
             },
             "color": "Navy Blue",
             "size": "Medium",
             "gender": "Women",
             "price": 139.00,
-            "currency": "USD"
-        }
+            "currency": "USD",
+        },
     },
-
     # Books
     {
         "description": "The Pragmatic Programmer: Your Journey To Mastery (20th Anniversary Edition) by David Thomas and Andrew Hunt. Paperback, 352 pages. Published by Addison-Wesley. $34.99",
@@ -150,13 +147,13 @@ PRODUCT_TEST_CASES: List[Dict[str, Any]] = [
             "specifications": {
                 "format": "Paperback",
                 "pages": 352,
-                "edition": "20th Anniversary Edition"
+                "edition": "20th Anniversary Edition",
             },
             "authors": ["David Thomas", "Andrew Hunt"],
             "publisher": "Addison-Wesley",
             "price": 34.99,
-            "currency": "USD"
-        }
+            "currency": "USD",
+        },
     },
     {
         "description": "Atomic Habits by James Clear. Hardcover, 320 pages. Self-help/Psychology. ISBN: 978-0735211292. $27.00",
@@ -167,15 +164,14 @@ PRODUCT_TEST_CASES: List[Dict[str, Any]] = [
             "specifications": {
                 "format": "Hardcover",
                 "pages": 320,
-                "isbn": "978-0735211292"
+                "isbn": "978-0735211292",
             },
             "authors": ["James Clear"],
             "genre": ["Self-help", "Psychology"],
             "price": 27.00,
-            "currency": "USD"
-        }
+            "currency": "USD",
+        },
     },
-
     # Sports & Outdoors
     {
         "description": "REI Co-op Half Dome SL 2+ Tent. 3-season, sleeps 2, weighs 4 lbs 2 oz. Includes footprint and gear loft. Color: Green. $349.00",
@@ -186,13 +182,13 @@ PRODUCT_TEST_CASES: List[Dict[str, Any]] = [
             "specifications": {
                 "capacity": "2 people",
                 "weight": "4 lbs 2 oz",
-                "seasons": "3-season"
+                "seasons": "3-season",
             },
             "color": "Green",
             "includes": ["Footprint", "Gear loft"],
             "price": 349.00,
-            "currency": "USD"
-        }
+            "currency": "USD",
+        },
     },
     {
         "description": "Hydro Flask 32 oz Wide Mouth Water Bottle with Flex Cap. Stainless steel, vacuum insulated. Keeps cold 24hrs, hot 12hrs. Pacific blue. $44.95",
@@ -205,15 +201,14 @@ PRODUCT_TEST_CASES: List[Dict[str, Any]] = [
                 "material": "Stainless steel",
                 "insulation": "Vacuum insulated",
                 "cold_retention": "24 hours",
-                "hot_retention": "12 hours"
+                "hot_retention": "12 hours",
             },
             "color": "Pacific blue",
             "cap_type": "Flex Cap",
             "price": 44.95,
-            "currency": "USD"
-        }
+            "currency": "USD",
+        },
     },
-
     # Complex/Edge Cases
     {
         "description": "Professional camera bundle: Canon EOS R5 mirrorless body ($3,899), RF 24-70mm f/2.8 lens ($2,299), 2x 64GB CFexpress cards ($299 each), battery grip ($349). Total package: $7,145",
@@ -224,12 +219,12 @@ PRODUCT_TEST_CASES: List[Dict[str, Any]] = [
             "specifications": {
                 "camera_body": "EOS R5 mirrorless",
                 "lens": "RF 24-70mm f/2.8",
-                "memory_cards": "2x 64GB CFexpress"
+                "memory_cards": "2x 64GB CFexpress",
             },
             "includes": ["Camera body", "Lens", "Memory cards", "Battery grip"],
             "price": 7145.00,
-            "currency": "USD"
-        }
+            "currency": "USD",
+        },
     },
     {
         "description": "Organic Fair Trade Colombian Coffee - Medium Roast. Whole bean, 2 lb bag. Notes of chocolate and caramel. Rainforest Alliance Certified. $24.99",
@@ -241,16 +236,16 @@ PRODUCT_TEST_CASES: List[Dict[str, Any]] = [
                 "roast": "Medium",
                 "form": "Whole bean",
                 "weight": "2 lb",
-                "flavor_notes": ["Chocolate", "Caramel"]
+                "flavor_notes": ["Chocolate", "Caramel"],
             },
             "certifications": ["Organic", "Fair Trade", "Rainforest Alliance"],
             "origin": "Colombia",
             "price": 24.99,
-            "currency": "USD"
-        }
+            "currency": "USD",
+        },
     },
     {
-        "description": "IKEA KALLAX 4x4 Shelf Unit - White. 57 7/8x57 7/8\". Made of particleboard with paper foil finish. Assembly required. $139.00",
+        "description": 'IKEA KALLAX 4x4 Shelf Unit - White. 57 7/8x57 7/8". Made of particleboard with paper foil finish. Assembly required. $139.00',
         "ground_truth": {
             "name": "IKEA KALLAX 4x4 Shelf Unit",
             "brand": "IKEA",
@@ -258,13 +253,13 @@ PRODUCT_TEST_CASES: List[Dict[str, Any]] = [
             "specifications": {
                 "dimensions": "57 7/8 x 57 7/8 inches",
                 "material": "Particleboard with paper foil finish",
-                "configuration": "4x4"
+                "configuration": "4x4",
             },
             "color": "White",
             "assembly_required": True,
             "price": 139.00,
-            "currency": "USD"
-        }
+            "currency": "USD",
+        },
     },
     {
         "description": "Xbox Series X 1TB Console Bundle with 3 months Game Pass Ultimate and extra controller. Black. $549.99",
@@ -274,13 +269,13 @@ PRODUCT_TEST_CASES: List[Dict[str, Any]] = [
             "category": "Electronics",
             "specifications": {
                 "storage": "1TB",
-                "subscription_included": "3 months Game Pass Ultimate"
+                "subscription_included": "3 months Game Pass Ultimate",
             },
             "color": "Black",
             "includes": ["Console", "Extra controller", "Game Pass Ultimate"],
             "price": 549.99,
-            "currency": "USD"
-        }
+            "currency": "USD",
+        },
     },
     {
         "description": "Blue Apron meal kit: 3 meals for 2 people per week. Organic ingredients, chef-designed recipes. Delivered weekly. $69.95/week",
@@ -292,14 +287,13 @@ PRODUCT_TEST_CASES: List[Dict[str, Any]] = [
                 "meals_per_week": 3,
                 "servings_per_meal": 2,
                 "ingredients": "Organic",
-                "delivery": "Weekly"
+                "delivery": "Weekly",
             },
             "price": 69.95,
             "currency": "USD",
-            "pricing_period": "per week"
-        }
+            "pricing_period": "per week",
+        },
     },
-
     # Minimal information cases
     {
         "description": "Red Nike running shoes, size 10, $85",
@@ -307,14 +301,12 @@ PRODUCT_TEST_CASES: List[Dict[str, Any]] = [
             "name": "Nike Running Shoes",
             "brand": "Nike",
             "category": "Footwear",
-            "specifications": {
-                "type": "Running"
-            },
+            "specifications": {"type": "Running"},
             "color": "Red",
             "size": "10",
             "price": 85.00,
-            "currency": "USD"
-        }
+            "currency": "USD",
+        },
     },
     {
         "description": "Stainless steel chef's knife, 8 inch, Wüsthof, $149.95",
@@ -325,16 +317,15 @@ PRODUCT_TEST_CASES: List[Dict[str, Any]] = [
             "specifications": {
                 "material": "Stainless steel",
                 "length": "8 inches",
-                "type": "Chef's knife"
+                "type": "Chef's knife",
             },
             "price": 149.95,
-            "currency": "USD"
-        }
+            "currency": "USD",
+        },
     },
-
     # Additional diverse cases
     {
-        "description": "Casper Original Mattress - Queen size. 11\" foam layers with zoned support. 100-night trial, 10-year warranty. $1,095",
+        "description": 'Casper Original Mattress - Queen size. 11" foam layers with zoned support. 100-night trial, 10-year warranty. $1,095',
         "ground_truth": {
             "name": "Casper Original Mattress",
             "brand": "Casper",
@@ -343,16 +334,16 @@ PRODUCT_TEST_CASES: List[Dict[str, Any]] = [
                 "size": "Queen",
                 "thickness": "11 inches",
                 "material": "Foam",
-                "support_type": "Zoned support"
+                "support_type": "Zoned support",
             },
             "warranty": "10 years",
             "trial_period": "100 nights",
             "price": 1095.00,
-            "currency": "USD"
-        }
+            "currency": "USD",
+        },
     },
     {
-        "description": "The North Face Borealis Backpack - 28L, laptop sleeve fits 15\", FlexVent suspension system. TNF Black. $99.00",
+        "description": 'The North Face Borealis Backpack - 28L, laptop sleeve fits 15", FlexVent suspension system. TNF Black. $99.00',
         "ground_truth": {
             "name": "The North Face Borealis Backpack",
             "brand": "The North Face",
@@ -360,17 +351,17 @@ PRODUCT_TEST_CASES: List[Dict[str, Any]] = [
             "specifications": {
                 "capacity": "28L",
                 "laptop_size": "15 inches",
-                "suspension": "FlexVent"
+                "suspension": "FlexVent",
             },
             "color": "TNF Black",
             "price": 99.00,
-            "currency": "USD"
-        }
+            "currency": "USD",
+        },
     },
     {
-        "description": "Dell UltraSharp 27\" 4K USB-C Monitor (U2723DE). IPS panel, 99% sRGB, 60Hz, height-adjustable stand. VESA mount compatible. $679.99",
+        "description": 'Dell UltraSharp 27" 4K USB-C Monitor (U2723DE). IPS panel, 99% sRGB, 60Hz, height-adjustable stand. VESA mount compatible. $679.99',
         "ground_truth": {
-            "name": "Dell UltraSharp 27\" 4K USB-C Monitor (U2723DE)",
+            "name": 'Dell UltraSharp 27" 4K USB-C Monitor (U2723DE)',
             "brand": "Dell",
             "category": "Electronics",
             "specifications": {
@@ -378,12 +369,12 @@ PRODUCT_TEST_CASES: List[Dict[str, Any]] = [
                 "resolution": "4K",
                 "panel_type": "IPS",
                 "color_gamut": "99% sRGB",
-                "refresh_rate": "60Hz"
+                "refresh_rate": "60Hz",
             },
             "features": ["USB-C", "Height-adjustable stand", "VESA mount compatible"],
             "price": 679.99,
-            "currency": "USD"
-        }
+            "currency": "USD",
+        },
     },
     {
         "description": "KitchenAid Artisan Stand Mixer 5-Quart - Empire Red. 10-speed, tilt-head design. Includes flat beater, dough hook, wire whip. $429.99",
@@ -394,13 +385,13 @@ PRODUCT_TEST_CASES: List[Dict[str, Any]] = [
             "specifications": {
                 "capacity": "5 quarts",
                 "speeds": 10,
-                "design": "Tilt-head"
+                "design": "Tilt-head",
             },
             "color": "Empire Red",
             "includes": ["Flat beater", "Dough hook", "Wire whip"],
             "price": 429.99,
-            "currency": "USD"
-        }
+            "currency": "USD",
+        },
     },
     {
         "description": "Instant Pot Duo 7-in-1 Electric Pressure Cooker, 6 Qt. Stainless steel. Pressure cook, slow cook, rice cooker, steamer, sauté, yogurt maker, warmer. $89.99",
@@ -411,12 +402,20 @@ PRODUCT_TEST_CASES: List[Dict[str, Any]] = [
             "specifications": {
                 "capacity": "6 quarts",
                 "functions": 7,
-                "material": "Stainless steel"
+                "material": "Stainless steel",
             },
-            "features": ["Pressure cook", "Slow cook", "Rice cooker", "Steamer", "Sauté", "Yogurt maker", "Warmer"],
+            "features": [
+                "Pressure cook",
+                "Slow cook",
+                "Rice cooker",
+                "Steamer",
+                "Sauté",
+                "Yogurt maker",
+                "Warmer",
+            ],
             "price": 89.99,
-            "currency": "USD"
-        }
+            "currency": "USD",
+        },
     },
     {
         "description": "Anker PowerCore 20000mAh Portable Charger. Dual USB-A ports, PowerIQ 2.0. Charges iPhone 13 4.5 times. Black. $49.99",
@@ -428,12 +427,12 @@ PRODUCT_TEST_CASES: List[Dict[str, Any]] = [
                 "capacity": "20000mAh",
                 "ports": "Dual USB-A",
                 "technology": "PowerIQ 2.0",
-                "charging_capacity": "iPhone 13 4.5 times"
+                "charging_capacity": "iPhone 13 4.5 times",
             },
             "color": "Black",
             "price": 49.99,
-            "currency": "USD"
-        }
+            "currency": "USD",
+        },
     },
     {
         "description": "Bose QuietComfort 45 Wireless Headphones. Active noise cancellation, 24-hour battery, Bluetooth 5.1. Triple Black. $329.00",
@@ -444,13 +443,13 @@ PRODUCT_TEST_CASES: List[Dict[str, Any]] = [
             "specifications": {
                 "battery_life": "24 hours",
                 "bluetooth": "5.1",
-                "connectivity": "Wireless"
+                "connectivity": "Wireless",
             },
             "color": "Triple Black",
             "features": ["Active noise cancellation"],
             "price": 329.00,
-            "currency": "USD"
-        }
+            "currency": "USD",
+        },
     },
     {
         "description": "Lodge Cast Iron Skillet 12-inch. Pre-seasoned, oven safe to 500°F. Made in USA. $34.90",
@@ -462,15 +461,15 @@ PRODUCT_TEST_CASES: List[Dict[str, Any]] = [
                 "size": "12 inches",
                 "material": "Cast iron",
                 "oven_safe_temp": "500°F",
-                "seasoning": "Pre-seasoned"
+                "seasoning": "Pre-seasoned",
             },
             "country_of_origin": "USA",
             "price": 34.90,
-            "currency": "USD"
-        }
+            "currency": "USD",
+        },
     },
     {
-        "description": "Kindle Paperwhite Signature Edition (32 GB) - Ad-Free. 6.8\" display, wireless charging, auto-adjusting front light. $189.99",
+        "description": 'Kindle Paperwhite Signature Edition (32 GB) - Ad-Free. 6.8" display, wireless charging, auto-adjusting front light. $189.99',
         "ground_truth": {
             "name": "Kindle Paperwhite Signature Edition",
             "brand": "Amazon",
@@ -478,12 +477,12 @@ PRODUCT_TEST_CASES: List[Dict[str, Any]] = [
             "specifications": {
                 "storage": "32 GB",
                 "display_size": "6.8 inches",
-                "ad_free": True
+                "ad_free": True,
             },
             "features": ["Wireless charging", "Auto-adjusting front light"],
             "price": 189.99,
-            "currency": "USD"
-        }
+            "currency": "USD",
+        },
     },
     {
         "description": "GoPro HERO11 Black Action Camera. 5.3K60 video, 27MP photos, HyperSmooth 5.0 stabilization. Waterproof to 33ft. $399.99",
@@ -495,11 +494,11 @@ PRODUCT_TEST_CASES: List[Dict[str, Any]] = [
                 "video_resolution": "5.3K60",
                 "photo_resolution": "27MP",
                 "stabilization": "HyperSmooth 5.0",
-                "waterproof_depth": "33 feet"
+                "waterproof_depth": "33 feet",
             },
             "price": 399.99,
-            "currency": "USD"
-        }
+            "currency": "USD",
+        },
     },
     {
         "description": "Herman Miller Aeron Chair Size B. Fully adjustable, PostureFit SL lumbar support, tilt limiter. Graphite/Carbon. $1,695.00",
@@ -511,12 +510,12 @@ PRODUCT_TEST_CASES: List[Dict[str, Any]] = [
                 "size": "B",
                 "adjustability": "Fully adjustable",
                 "lumbar_support": "PostureFit SL",
-                "tilt_limiter": True
+                "tilt_limiter": True,
             },
             "color": "Graphite/Carbon",
             "price": 1695.00,
-            "currency": "USD"
-        }
+            "currency": "USD",
+        },
     },
     {
         "description": "Vitamix 5200 Blender - Black. 64 oz container, variable speed control, 2 HP motor. 7-year warranty. $449.95",
@@ -527,16 +526,16 @@ PRODUCT_TEST_CASES: List[Dict[str, Any]] = [
             "specifications": {
                 "capacity": "64 oz",
                 "motor_power": "2 HP",
-                "speed_control": "Variable"
+                "speed_control": "Variable",
             },
             "color": "Black",
             "warranty": "7 years",
             "price": 449.95,
-            "currency": "USD"
-        }
+            "currency": "USD",
+        },
     },
     {
-        "description": "Peloton Bike+ with 24\" HD touchscreen. Auto-follow resistance, rotating screen, Dolby Atmos speakers. Requires All-Access membership ($44/mo). $2,495",
+        "description": 'Peloton Bike+ with 24" HD touchscreen. Auto-follow resistance, rotating screen, Dolby Atmos speakers. Requires All-Access membership ($44/mo). $2,495',
         "ground_truth": {
             "name": "Peloton Bike+",
             "brand": "Peloton",
@@ -544,13 +543,13 @@ PRODUCT_TEST_CASES: List[Dict[str, Any]] = [
             "specifications": {
                 "screen_size": "24 inches HD touchscreen",
                 "audio": "Dolby Atmos speakers",
-                "screen_rotation": True
+                "screen_rotation": True,
             },
             "features": ["Auto-follow resistance", "Rotating screen"],
             "requires_subscription": "All-Access membership $44/month",
             "price": 2495.00,
-            "currency": "USD"
-        }
+            "currency": "USD",
+        },
     },
     {
         "description": "YETI Tundra 45 Cooler - White. Rotomolded construction, BearFoot non-slip feet, PermaFrost insulation. Holds 26 cans. $349.99",
@@ -561,13 +560,13 @@ PRODUCT_TEST_CASES: List[Dict[str, Any]] = [
             "specifications": {
                 "capacity": "26 cans",
                 "construction": "Rotomolded",
-                "insulation": "PermaFrost"
+                "insulation": "PermaFrost",
             },
             "color": "White",
             "features": ["BearFoot non-slip feet"],
             "price": 349.99,
-            "currency": "USD"
-        }
+            "currency": "USD",
+        },
     },
     {
         "description": "Breville Barista Express Espresso Machine. Built-in grinder, 15-bar Italian pump, PID temperature control. Stainless steel. $699.95",
@@ -579,11 +578,11 @@ PRODUCT_TEST_CASES: List[Dict[str, Any]] = [
                 "grinder": "Built-in",
                 "pump_pressure": "15 bar",
                 "temperature_control": "PID",
-                "material": "Stainless steel"
+                "material": "Stainless steel",
             },
             "price": 699.95,
-            "currency": "USD"
-        }
+            "currency": "USD",
+        },
     },
     {
         "description": "Roku Streaming Stick 4K. HDR10+, Dolby Vision, voice remote, private listening. Includes 3 months Apple TV+ free. $49.99",
@@ -591,15 +590,12 @@ PRODUCT_TEST_CASES: List[Dict[str, Any]] = [
             "name": "Roku Streaming Stick 4K",
             "brand": "Roku",
             "category": "Electronics",
-            "specifications": {
-                "resolution": "4K",
-                "hdr": ["HDR10+", "Dolby Vision"]
-            },
+            "specifications": {"resolution": "4K", "hdr": ["HDR10+", "Dolby Vision"]},
             "features": ["Voice remote", "Private listening"],
             "includes": "3 months Apple TV+ free",
             "price": 49.99,
-            "currency": "USD"
-        }
+            "currency": "USD",
+        },
     },
     {
         "description": "Fjallraven Kanken Classic Backpack - Ox Red. 16L, water-resistant Vinylon F fabric, dual top handles. $80.00",
@@ -610,13 +606,13 @@ PRODUCT_TEST_CASES: List[Dict[str, Any]] = [
             "specifications": {
                 "capacity": "16L",
                 "material": "Vinylon F fabric",
-                "water_resistant": True
+                "water_resistant": True,
             },
             "color": "Ox Red",
             "features": ["Dual top handles"],
             "price": 80.00,
-            "currency": "USD"
-        }
+            "currency": "USD",
+        },
     },
     {
         "description": "Weber Genesis II E-335 Gas Grill. 3 stainless steel burners, 669 sq in cooking area, side burner, built-in thermometer. Black. $899.00",
@@ -627,16 +623,16 @@ PRODUCT_TEST_CASES: List[Dict[str, Any]] = [
             "specifications": {
                 "burners": "3 stainless steel",
                 "cooking_area": "669 sq in",
-                "fuel_type": "Gas"
+                "fuel_type": "Gas",
             },
             "color": "Black",
             "features": ["Side burner", "Built-in thermometer"],
             "price": 899.00,
-            "currency": "USD"
-        }
+            "currency": "USD",
+        },
     },
     {
-        "description": "Purple Mattress - Queen, Original Purple Grid, 9.5\" profile. Hypoallergenic, temperature neutral. 100-night trial. $1,299",
+        "description": 'Purple Mattress - Queen, Original Purple Grid, 9.5" profile. Hypoallergenic, temperature neutral. 100-night trial. $1,299',
         "ground_truth": {
             "name": "Purple Mattress Original",
             "brand": "Purple",
@@ -646,12 +642,12 @@ PRODUCT_TEST_CASES: List[Dict[str, Any]] = [
                 "thickness": "9.5 inches",
                 "technology": "Purple Grid",
                 "hypoallergenic": True,
-                "temperature_regulation": "Temperature neutral"
+                "temperature_regulation": "Temperature neutral",
             },
             "trial_period": "100 nights",
             "price": 1299.00,
-            "currency": "USD"
-        }
+            "currency": "USD",
+        },
     },
     {
         "description": "Nespresso VertuoPlus Coffee and Espresso Machine - Matte Black. One-touch brewing, used capsule container (13 capacity). $189.95",
@@ -662,12 +658,12 @@ PRODUCT_TEST_CASES: List[Dict[str, Any]] = [
             "specifications": {
                 "brewing_method": "One-touch",
                 "capsule_capacity": 13,
-                "types": ["Coffee", "Espresso"]
+                "types": ["Coffee", "Espresso"],
             },
             "color": "Matte Black",
             "price": 189.95,
-            "currency": "USD"
-        }
+            "currency": "USD",
+        },
     },
     {
         "description": "Sonos One SL Speaker - White. WiFi enabled, AirPlay 2 compatible, humidity resistant. Pair for stereo sound. $199.00",
@@ -678,16 +674,16 @@ PRODUCT_TEST_CASES: List[Dict[str, Any]] = [
             "specifications": {
                 "connectivity": "WiFi",
                 "compatibility": ["AirPlay 2"],
-                "humidity_resistant": True
+                "humidity_resistant": True,
             },
             "color": "White",
             "features": ["Pair for stereo sound"],
             "price": 199.00,
-            "currency": "USD"
-        }
+            "currency": "USD",
+        },
     },
     {
-        "description": "AllModern Mid-Century TV Stand for 65\" TVs - Walnut finish. 2 cabinets, 1 shelf, cable management. Solid wood legs. $349.99",
+        "description": 'AllModern Mid-Century TV Stand for 65" TVs - Walnut finish. 2 cabinets, 1 shelf, cable management. Solid wood legs. $349.99',
         "ground_truth": {
             "name": "AllModern Mid-Century TV Stand",
             "brand": "AllModern",
@@ -695,16 +691,16 @@ PRODUCT_TEST_CASES: List[Dict[str, Any]] = [
             "specifications": {
                 "tv_size_support": "65 inches",
                 "storage": "2 cabinets, 1 shelf",
-                "legs_material": "Solid wood"
+                "legs_material": "Solid wood",
             },
             "color": "Walnut finish",
             "features": ["Cable management"],
             "price": 349.99,
-            "currency": "USD"
-        }
+            "currency": "USD",
+        },
     },
     {
-        "description": "Anova Precision Cooker Nano. 750W, Bluetooth connectivity, 12.8\" height. Sous vide cooking up to 10 liters. $99.00",
+        "description": 'Anova Precision Cooker Nano. 750W, Bluetooth connectivity, 12.8" height. Sous vide cooking up to 10 liters. $99.00',
         "ground_truth": {
             "name": "Anova Precision Cooker Nano",
             "brand": "Anova",
@@ -713,12 +709,12 @@ PRODUCT_TEST_CASES: List[Dict[str, Any]] = [
                 "power": "750W",
                 "connectivity": "Bluetooth",
                 "height": "12.8 inches",
-                "capacity": "10 liters"
+                "capacity": "10 liters",
             },
             "cooking_method": "Sous vide",
             "price": 99.00,
-            "currency": "USD"
-        }
+            "currency": "USD",
+        },
     },
     {
         "description": "Razer DeathAdder V3 Gaming Mouse. 30K DPI optical sensor, 8 programmable buttons, 59g lightweight. Black. $69.99",
@@ -729,32 +725,32 @@ PRODUCT_TEST_CASES: List[Dict[str, Any]] = [
             "specifications": {
                 "sensor": "30K DPI optical",
                 "buttons": "8 programmable",
-                "weight": "59g"
+                "weight": "59g",
             },
             "color": "Black",
             "price": 69.99,
-            "currency": "USD"
-        }
+            "currency": "USD",
+        },
     },
     {
         "description": "Lululemon Align High-Rise Pant 25\" - Women's. Nulu fabric, four-way stretch, seamless waistband. Size 6, Heathered Graphite Grey. $98.00",
         "ground_truth": {
-            "name": "Lululemon Align High-Rise Pant 25\"",
+            "name": 'Lululemon Align High-Rise Pant 25"',
             "brand": "Lululemon",
             "category": "Clothing",
             "specifications": {
                 "fabric": "Nulu",
                 "inseam": "25 inches",
                 "rise": "High-rise",
-                "stretch": "Four-way"
+                "stretch": "Four-way",
             },
             "gender": "Women",
             "size": "6",
             "color": "Heathered Graphite Grey",
             "features": ["Seamless waistband"],
             "price": 98.00,
-            "currency": "USD"
-        }
+            "currency": "USD",
+        },
     },
     {
         "description": "Philips Hue White and Color Ambiance Starter Kit. 4 A19 bulbs, Hue Bridge, 16 million colors, voice control compatible. $199.99",
@@ -762,15 +758,12 @@ PRODUCT_TEST_CASES: List[Dict[str, Any]] = [
             "name": "Philips Hue White and Color Ambiance Starter Kit",
             "brand": "Philips",
             "category": "Electronics",
-            "specifications": {
-                "bulbs_included": "4 A19",
-                "colors": "16 million"
-            },
+            "specifications": {"bulbs_included": "4 A19", "colors": "16 million"},
             "includes": ["Hue Bridge"],
             "features": ["Voice control compatible"],
             "price": 199.99,
-            "currency": "USD"
-        }
+            "currency": "USD",
+        },
     },
     {
         "description": "Theragun PRO Plus. 6 attachments, QuietForce technology, 2 rechargeable batteries, 16mm amplitude. Carrying case included. $599.00",
@@ -782,12 +775,12 @@ PRODUCT_TEST_CASES: List[Dict[str, Any]] = [
                 "attachments": 6,
                 "technology": "QuietForce",
                 "batteries": "2 rechargeable",
-                "amplitude": "16mm"
+                "amplitude": "16mm",
             },
             "includes": ["Carrying case"],
             "price": 599.00,
-            "currency": "USD"
-        }
+            "currency": "USD",
+        },
     },
     {
         "description": "Arc'teryx Atom LT Hoody - Men's. Coreloft insulation, wind-resistant, breathable. Medium, Black Sapphire. $299.00",
@@ -798,14 +791,14 @@ PRODUCT_TEST_CASES: List[Dict[str, Any]] = [
             "specifications": {
                 "insulation": "Coreloft",
                 "wind_resistant": True,
-                "breathable": True
+                "breathable": True,
             },
             "gender": "Men",
             "size": "Medium",
             "color": "Black Sapphire",
             "price": 299.00,
-            "currency": "USD"
-        }
+            "currency": "USD",
+        },
     },
     {
         "description": "Le Creuset 5.5 Qt Round Dutch Oven - Cerise (Cherry Red). Cast iron, enamel coating, oven safe to 500°F. Lifetime warranty. $429.95",
@@ -818,16 +811,16 @@ PRODUCT_TEST_CASES: List[Dict[str, Any]] = [
                 "material": "Cast iron",
                 "coating": "Enamel",
                 "oven_safe_temp": "500°F",
-                "shape": "Round"
+                "shape": "Round",
             },
             "color": "Cerise (Cherry Red)",
             "warranty": "Lifetime",
             "price": 429.95,
-            "currency": "USD"
-        }
+            "currency": "USD",
+        },
     },
     {
-        "description": "Garmin Fenix 7X Sapphire Solar GPS Watch - Titanium. 1.4\" display, solar charging, 28-day battery, topographic maps. $899.99",
+        "description": 'Garmin Fenix 7X Sapphire Solar GPS Watch - Titanium. 1.4" display, solar charging, 28-day battery, topographic maps. $899.99',
         "ground_truth": {
             "name": "Garmin Fenix 7X Sapphire Solar GPS Watch",
             "brand": "Garmin",
@@ -836,12 +829,12 @@ PRODUCT_TEST_CASES: List[Dict[str, Any]] = [
                 "display_size": "1.4 inches",
                 "battery_life": "28 days",
                 "charging": "Solar",
-                "material": "Titanium"
+                "material": "Titanium",
             },
             "features": ["GPS", "Topographic maps"],
             "price": 899.99,
-            "currency": "USD"
-        }
+            "currency": "USD",
+        },
     },
     {
         "description": "Apple AirPods Pro 2nd Generation with MagSafe. Active noise cancellation, adaptive transparency, spatial audio. H2 chip, 6-hour battery. $249.00",
@@ -852,15 +845,20 @@ PRODUCT_TEST_CASES: List[Dict[str, Any]] = [
             "specifications": {
                 "chip": "H2",
                 "battery_life": "6 hours",
-                "generation": "2nd"
+                "generation": "2nd",
             },
-            "features": ["Active noise cancellation", "Adaptive transparency", "Spatial audio", "MagSafe"],
+            "features": [
+                "Active noise cancellation",
+                "Adaptive transparency",
+                "Spatial audio",
+                "MagSafe",
+            ],
             "price": 249.00,
-            "currency": "USD"
-        }
+            "currency": "USD",
+        },
     },
     {
-        "description": "Samsonite Winfield 3 DLX 3-Piece Hardside Luggage Set. 20\"/25\"/28\" spinners, scratch-resistant finish. Brushed Anthracite. $379.99",
+        "description": 'Samsonite Winfield 3 DLX 3-Piece Hardside Luggage Set. 20"/25"/28" spinners, scratch-resistant finish. Brushed Anthracite. $379.99',
         "ground_truth": {
             "name": "Samsonite Winfield 3 DLX 3-Piece Hardside Luggage Set",
             "brand": "Samsonite",
@@ -869,41 +867,47 @@ PRODUCT_TEST_CASES: List[Dict[str, Any]] = [
                 "pieces": 3,
                 "sizes": ["20 inches", "25 inches", "28 inches"],
                 "type": "Hardside",
-                "finish": "Scratch-resistant"
+                "finish": "Scratch-resistant",
             },
             "color": "Brushed Anthracite",
             "features": ["Spinners"],
             "price": 379.99,
-            "currency": "USD"
-        }
+            "currency": "USD",
+        },
     },
 ]
 
 
-def get_test_case(index: int) -> Dict[str, Any]:
+def get_test_case(index: int) -> dict[str, Any]:
     """Get a specific test case by index."""
     if 0 <= index < len(PRODUCT_TEST_CASES):
         return PRODUCT_TEST_CASES[index]
-    raise IndexError(f"Test case index {index} out of range (0-{len(PRODUCT_TEST_CASES)-1})")
+    raise IndexError(
+        f"Test case index {index} out of range (0-{len(PRODUCT_TEST_CASES)-1})"
+    )
 
 
-def get_all_test_cases() -> List[Dict[str, Any]]:
+def get_all_test_cases() -> list[dict[str, Any]]:
     """Get all test cases."""
     return PRODUCT_TEST_CASES.copy()
 
 
-def get_test_cases_by_category(category: str) -> List[Dict[str, Any]]:
+def get_test_cases_by_category(category: str) -> list[dict[str, Any]]:
     """Get all test cases for a specific category."""
     return [
-        case for case in PRODUCT_TEST_CASES
+        case
+        for case in PRODUCT_TEST_CASES
         if case["ground_truth"].get("category") == category
     ]
 
 
-def get_test_cases_by_price_range(min_price: float, max_price: float) -> List[Dict[str, Any]]:
+def get_test_cases_by_price_range(
+    min_price: float, max_price: float
+) -> list[dict[str, Any]]:
     """Get test cases within a price range."""
     return [
-        case for case in PRODUCT_TEST_CASES
+        case
+        for case in PRODUCT_TEST_CASES
         if min_price <= case["ground_truth"].get("price", 0) <= max_price
     ]
 
@@ -911,10 +915,12 @@ def get_test_cases_by_price_range(min_price: float, max_price: float) -> List[Di
 # Metadata about the test dataset
 TEST_DATASET_INFO = {
     "total_cases": len(PRODUCT_TEST_CASES),
-    "categories": list(set(case["ground_truth"].get("category") for case in PRODUCT_TEST_CASES)),
+    "categories": list(
+        set(case["ground_truth"].get("category") for case in PRODUCT_TEST_CASES)
+    ),
     "price_range": {
         "min": min(case["ground_truth"].get("price", 0) for case in PRODUCT_TEST_CASES),
-        "max": max(case["ground_truth"].get("price", 0) for case in PRODUCT_TEST_CASES)
+        "max": max(case["ground_truth"].get("price", 0) for case in PRODUCT_TEST_CASES),
     },
-    "description": "50 diverse product descriptions with ground truth JSON for testing extraction quality"
+    "description": "50 diverse product descriptions with ground truth JSON for testing extraction quality",
 }

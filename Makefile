@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: lint format type test test-all coverage quality security check test-random test-flaky mutate test-quality help
+.PHONY: setup dev lint format type test test-all coverage quality security check check-skipif test-random test-flaky mutate test-quality help
 
 PYTEST_CORE_DIRS := tests/test_workflow/ tests/test_stage/ tests/test_agent/ tests/test_safety/
 PYTEST_EXCLUDE := --ignore=tests/property --ignore=tests/self_improvement --ignore=tests/benchmarks --ignore=tests/test_benchmarks
@@ -41,8 +41,13 @@ quality:
 security:
 	bandit -r $(SRC) -c pyproject.toml 2>/dev/null || bandit -r $(SRC) -ll
 
-## check: Full local quality gate (lint + type + test + quality)
-check: lint type test quality
+## check-skipif: Ban unconditional skipif(True) in tests
+check-skipif:
+	@echo "Checking for unconditional skipif(True)..."
+	@! grep -rn 'skipif(True' tests/ || { echo "ERROR: Use @pytest.mark.skip(reason=...) instead of skipif(True, ...)"; exit 1; }
+
+## check: Full local quality gate (lint + type + test + quality + check-skipif)
+check: lint type test quality check-skipif
 
 ## test-random: Run tests in random order (catch ordering deps)
 test-random:
@@ -61,6 +66,22 @@ mutate:
 
 ## test-quality: All test quality checks (random + flaky + scanner)
 test-quality: test-random test-flaky quality
+
+## setup: Bootstrap dev environment (uv sync, pre-commit, .env)
+setup:
+	@command -v uv >/dev/null 2>&1 || { echo "Install uv: curl -LsSf https://astral.sh/uv/install.sh | sh"; exit 1; }
+	uv sync --extra dev --extra dashboard
+	uv run pre-commit install
+	@[ -f .env ] || (cp .env.example .env && echo "Copied .env.example -> .env")
+	@echo ""
+	@echo "Setup complete. Next steps:"
+	@echo "  1. Run commands via:   uv run <cmd>"
+	@echo "  2. Edit config:        \$$EDITOR .env"
+	@echo "  3. Run tests:          make test"
+
+## dev: Start the dev server (FastAPI dashboard + API on port 8420)
+dev:
+	temper-ai serve --dev
 
 ## help: Show available targets
 help:

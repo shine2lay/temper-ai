@@ -3,6 +3,7 @@ Tests for visualize_trace module.
 
 Tests Gantt chart generation, trace flattening, and visualization functions.
 """
+
 from datetime import datetime, timedelta
 
 import pytest
@@ -10,6 +11,7 @@ import pytest
 # Check if plotly is available
 try:
     import plotly.graph_objects as go
+
     PLOTLY_AVAILABLE = True
 except ImportError:
     PLOTLY_AVAILABLE = False
@@ -37,7 +39,7 @@ def simple_trace():
         "duration": 5.0,
         "status": "completed",
         "metadata": {},
-        "children": []
+        "children": [],
     }
 
 
@@ -85,7 +87,7 @@ def nested_trace():
                                 "duration": 2.0,
                                 "status": "completed",
                                 "metadata": {},
-                                "children": []
+                                "children": [],
                             },
                             {
                                 "id": "tool-1",
@@ -96,13 +98,13 @@ def nested_trace():
                                 "duration": 1.0,
                                 "status": "completed",
                                 "metadata": {},
-                                "children": []
-                            }
-                        ]
+                                "children": [],
+                            },
+                        ],
                     }
-                ]
+                ],
             }
-        ]
+        ],
     }
 
 
@@ -118,8 +120,12 @@ class TestCreateHierarchicalGantt:
         assert isinstance(fig, go.Figure)
         assert len(fig.data) >= 1
         # Verify the trace contains the workflow name in y-axis labels
-        all_y = [y for trace in fig.data if hasattr(trace, 'y') and trace.y for y in trace.y]
-        assert any("test_workflow" in str(y) for y in all_y), "Figure should contain workflow name"
+        all_y = [
+            y for trace in fig.data if hasattr(trace, "y") and trace.y for y in trace.y
+        ]
+        assert any(
+            "test_workflow" in str(y) for y in all_y
+        ), "Figure should contain workflow name"
 
     def test_create_gantt_nested_trace(self, nested_trace):
         """Test Gantt chart creation with nested trace."""
@@ -143,9 +149,15 @@ class TestCreateHierarchicalGantt:
 
         assert fig is not None
         # Verify y-axis labels contain tree characters (├─ or └─)
-        all_y = [y for trace in fig.data if hasattr(trace, 'y') and trace.y for y in trace.y]
-        has_tree = any("\u251c\u2500" in str(y) or "\u2514\u2500" in str(y) for y in all_y)
-        assert has_tree, "Y-axis labels should contain tree characters when show_tree_lines=True"
+        all_y = [
+            y for trace in fig.data if hasattr(trace, "y") and trace.y for y in trace.y
+        ]
+        has_tree = any(
+            "\u251c\u2500" in str(y) or "\u2514\u2500" in str(y) for y in all_y
+        )
+        assert (
+            has_tree
+        ), "Y-axis labels should contain tree characters when show_tree_lines=True"
 
     def test_create_gantt_without_tree_lines(self, nested_trace):
         """Test Gantt chart without tree structure lines."""
@@ -153,9 +165,15 @@ class TestCreateHierarchicalGantt:
 
         assert fig is not None
         # Verify y-axis labels do NOT contain tree characters
-        all_y = [y for trace in fig.data if hasattr(trace, 'y') and trace.y for y in trace.y]
-        no_tree = not any("\u251c\u2500" in str(y) or "\u2514\u2500" in str(y) for y in all_y)
-        assert no_tree, "Y-axis labels should NOT contain tree characters when show_tree_lines=False"
+        all_y = [
+            y for trace in fig.data if hasattr(trace, "y") and trace.y for y in trace.y
+        ]
+        no_tree = not any(
+            "\u251c\u2500" in str(y) or "\u2514\u2500" in str(y) for y in all_y
+        )
+        assert (
+            no_tree
+        ), "Y-axis labels should NOT contain tree characters when show_tree_lines=False"
 
     def test_create_gantt_colors(self, nested_trace):
         """Test that different types have different colors."""
@@ -164,7 +182,7 @@ class TestCreateHierarchicalGantt:
         # Get colors from traces
         colors = set()
         for trace in fig.data:
-            if hasattr(trace, 'marker') and trace.marker.color:
+            if hasattr(trace, "marker") and trace.marker.color:
                 colors.add(trace.marker.color)
 
         # Should have multiple colors for different types
@@ -221,7 +239,9 @@ class TestFlattenTraceWithTree:
         display_names = [item["display_name"] for item in result]
 
         # First item should not have prefix
-        assert not display_names[0].startswith("├─") and not display_names[0].startswith("└─")
+        assert not display_names[0].startswith("├─") and not display_names[
+            0
+        ].startswith("└─")
 
         # Other items should have tree characters
         has_tree_chars = any("├─" in name or "└─" in name for name in display_names[1:])
@@ -260,7 +280,7 @@ class TestFlattenTraceWithTree:
             "duration": 0,
             "status": "completed",
             "metadata": {},
-            "children": []
+            "children": [],
         }
 
         result = _flatten_trace_with_tree(trace, show_tree_lines=False)
@@ -292,7 +312,9 @@ class TestVisualizeTrace:
         """Test saving visualization to HTML file."""
         output_file = tmp_path / "gantt.html"
 
-        fig = visualize_trace(simple_trace, output_file=str(output_file), auto_open=False)
+        fig = visualize_trace(
+            simple_trace, output_file=str(output_file), auto_open=False
+        )
 
         assert fig is not None
         assert output_file.exists()
@@ -320,7 +342,7 @@ class TestEdgeCases:
             "duration": 1.0,
             "status": "completed",
             # metadata missing
-            "children": []
+            "children": [],
         }
 
         # Should handle missing metadata gracefully
@@ -339,7 +361,7 @@ class TestEdgeCases:
             "duration": 1.0,
             "status": "error",
             "metadata": {"error": "Something went wrong"},
-            "children": []
+            "children": [],
         }
 
         fig = create_hierarchical_gantt(trace)
@@ -369,7 +391,7 @@ class TestEdgeCases:
                     "duration": 3.0,
                     "status": "completed",
                     "metadata": {},
-                    "children": []
+                    "children": [],
                 },
                 {
                     "id": "stage-2",
@@ -380,9 +402,9 @@ class TestEdgeCases:
                     "duration": 5.0,
                     "status": "completed",
                     "metadata": {},
-                    "children": []
-                }
-            ]
+                    "children": [],
+                },
+            ],
         }
 
         fig = create_hierarchical_gantt(trace)
@@ -435,4 +457,8 @@ class TestHoverText:
             hover = item["hover_text"]
 
             # Should include duration info
-            assert "duration" in hover.lower() or "ms" in hover.lower() or "s" in hover.lower()
+            assert (
+                "duration" in hover.lower()
+                or "ms" in hover.lower()
+                or "s" in hover.lower()
+            )

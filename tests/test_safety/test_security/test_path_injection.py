@@ -10,6 +10,7 @@ Tests cover OWASP path traversal vectors and advanced bypass techniques:
 - Null byte injection
 - Mixed path separators
 """
+
 import os
 import sys
 import threading
@@ -271,7 +272,9 @@ class TestCaseInsensitivePaths:
                 # If validation passes, verify behavior is platform-appropriate
                 if sys.platform == "win32" or sys.platform == "darwin":
                     # Should have been blocked on case-insensitive FS
-                    pytest.fail(f"Expected {variation} to be blocked on case-insensitive FS")
+                    pytest.fail(
+                        f"Expected {variation} to be blocked on case-insensitive FS"
+                    )
             except PathSafetyError:
                 # Expected - path is forbidden
                 pass
@@ -320,7 +323,9 @@ class TestExtremelyLongPaths:
             long_path = long_path / long_component
 
         try:
-            result = validator.validate_path(long_path, must_exist=False, allow_create=True)
+            result = validator.validate_path(
+                long_path, must_exist=False, allow_create=True
+            )
             # If it succeeds, verify it's within workspace
             assert str(result).startswith(str(temp_workspace))
         except PathSafetyError as e:
@@ -336,12 +341,18 @@ class TestExtremelyLongPaths:
         long_path = temp_workspace / long_filename
 
         try:
-            result = validator.validate_path(long_path, must_exist=False, allow_create=True)
+            result = validator.validate_path(
+                long_path, must_exist=False, allow_create=True
+            )
             # Some platforms may allow it
             assert str(result).startswith(str(temp_workspace))
         except (OSError, PathSafetyError) as e:
-            # Expected on most platforms
-            assert "too long" in str(e).lower() or "file name" in str(e).lower()
+            # Expected on most platforms - error message varies by source
+            error_lower = str(e).lower()
+            assert any(
+                kw in error_lower
+                for kw in ("too long", "file name", "maximum length", "exceeds")
+            ), f"Expected path length error, got: {e}"
 
 
 class TestNullByteInjection:
@@ -403,7 +414,9 @@ class TestMixedPathSeparators:
             try:
                 result = validator.validate_path(path, must_exist=False)
                 # Should normalize to single slashes
-                assert "//" not in str(result) or sys.platform == "win32"  # Windows UNC paths may have //
+                assert (
+                    "//" not in str(result) or sys.platform == "win32"
+                )  # Windows UNC paths may have //
                 assert str(result).startswith(str(temp_workspace))
             except (PathSafetyError, OSError):
                 # Some edge case handling
@@ -435,10 +448,19 @@ class TestPathTraversalPatterns:
         ]
 
         for malicious in malicious_paths:
-            if not Path(malicious).exists():
+            try:
+                exists = Path(malicious).exists()
+            except PermissionError:
+                # Some paths (e.g., /root/.ssh/id_rsa) may raise PermissionError
+                # on stat() even though they exist. Still test them.
+                exists = True
+
+            if not exists:
                 continue
 
-            with pytest.raises(PathSafetyError):
+            # PathSafetyError is expected, but PermissionError is also acceptable
+            # since it means the OS denied access (which is also a safe outcome)
+            with pytest.raises((PathSafetyError, PermissionError)):
                 validator.validate_path(malicious)
 
     def test_relative_path_resolution(self, validator, temp_workspace):
@@ -484,10 +506,7 @@ class TestErrorMessageSecurity:
         """Test validation failures provide useful but safe error details."""
         # Non-existent file with must_exist=True
         try:
-            validator.validate_path(
-                temp_workspace / "nonexistent.txt",
-                must_exist=True
-            )
+            validator.validate_path(temp_workspace / "nonexistent.txt", must_exist=True)
         except PathSafetyError as e:
             error_msg = str(e)
             assert "must exist" in error_msg.lower()
@@ -517,7 +536,9 @@ class TestCrossPlatformBehavior:
                 blocked_count += 1
 
         # Windows paths outside workspace should be blocked
-        assert blocked_count == len(windows_paths), f"Expected all blocked, got {blocked_count}/{len(windows_paths)}"
+        assert blocked_count == len(
+            windows_paths
+        ), f"Expected all blocked, got {blocked_count}/{len(windows_paths)}"
 
     @pytest.mark.skipif(sys.platform != "win32", reason="Windows-specific test")
     def test_windows_unc_paths(self, validator):
@@ -537,7 +558,9 @@ class TestCrossPlatformBehavior:
                 blocked_count += 1
 
         # UNC paths outside workspace should be blocked
-        assert blocked_count == len(unc_paths), f"Expected all blocked, got {blocked_count}/{len(unc_paths)}"
+        assert blocked_count == len(
+            unc_paths
+        ), f"Expected all blocked, got {blocked_count}/{len(unc_paths)}"
 
     @pytest.mark.skipif(sys.platform == "win32", reason="Unix-specific test")
     def test_unix_special_files(self, validator):

@@ -1,8 +1,6 @@
 """Tests for event integration in stage_compiler (M9.2)."""
-from typing import Any, Dict, Optional
-from unittest.mock import MagicMock, patch
 
-import pytest
+from unittest.mock import MagicMock
 
 from temper_ai.workflow.stage_compiler import (
     _get_on_complete_config,
@@ -85,7 +83,7 @@ class TestMaybeWrapTriggerNode:
     def test_no_trigger_returns_original_node(self):
         node = MagicMock()
         ref = _make_stage_ref_obj(trigger=None)
-        result = _maybe_wrap_trigger_node("s1", node, ref, {})
+        result = _maybe_wrap_trigger_node("s1", node, ref)
         assert result is node
 
     def test_with_trigger_returns_wrapper(self):
@@ -93,7 +91,7 @@ class TestMaybeWrapTriggerNode:
         cfg = _make_trigger_config()
         ref = _make_stage_ref_obj(trigger=cfg)
 
-        wrapper = _maybe_wrap_trigger_node("s1", node, ref, {})
+        wrapper = _maybe_wrap_trigger_node("s1", node, ref)
         assert wrapper is not node
         assert callable(wrapper)
 
@@ -105,7 +103,7 @@ class TestMaybeWrapTriggerNode:
         event_bus = MagicMock()
         event_bus.wait_for_event.return_value = {"ok": True}
 
-        wrapper = _maybe_wrap_trigger_node("s1", inner, ref, {})
+        wrapper = _maybe_wrap_trigger_node("s1", inner, ref)
         wrapper({"event_bus": event_bus})
 
         event_bus.wait_for_event.assert_called_once()
@@ -115,7 +113,7 @@ class TestMaybeWrapTriggerNode:
         cfg = _make_trigger_config()
         ref = _make_stage_ref_obj(trigger=cfg)
 
-        wrapper = _maybe_wrap_trigger_node("s1", inner, ref, {})
+        wrapper = _maybe_wrap_trigger_node("s1", inner, ref)
         wrapper({})  # no event_bus key
 
         inner.assert_called_once()
@@ -124,7 +122,7 @@ class TestMaybeWrapTriggerNode:
         node = MagicMock()
         ref = _make_stage_ref_obj()  # trigger=None
 
-        result = _maybe_wrap_trigger_node("s1", node, ref, {})
+        result = _maybe_wrap_trigger_node("s1", node, ref)
         assert result is node
 
 
@@ -137,7 +135,7 @@ class TestMaybeWrapOnCompleteNode:
     def test_no_on_complete_returns_original_node(self):
         node = MagicMock()
         ref = _make_stage_ref_obj(on_complete=None)
-        result = _maybe_wrap_on_complete_node("s1", node, ref, {})
+        result = _maybe_wrap_on_complete_node("s1", node, ref)
         assert result is node
 
     def test_with_on_complete_returns_wrapper(self):
@@ -145,7 +143,7 @@ class TestMaybeWrapOnCompleteNode:
         cfg = _make_emit_config()
         ref = _make_stage_ref_obj(on_complete=cfg)
 
-        wrapper = _maybe_wrap_on_complete_node("s1", node, ref, {})
+        wrapper = _maybe_wrap_on_complete_node("s1", node, ref)
         assert wrapper is not node
         assert callable(wrapper)
 
@@ -155,7 +153,7 @@ class TestMaybeWrapOnCompleteNode:
         cfg = _make_emit_config(event_type="stage.done")
         ref = _make_stage_ref_obj(on_complete=cfg)
 
-        wrapper = _maybe_wrap_on_complete_node("s1", inner, ref, {})
+        wrapper = _maybe_wrap_on_complete_node("s1", inner, ref)
         wrapper({"event_bus": event_bus, "workflow_id": "wf-1"})
 
         event_bus.emit.assert_called_once()
@@ -168,7 +166,7 @@ class TestMaybeWrapOnCompleteNode:
         cfg = _make_emit_config()
         ref = _make_stage_ref_obj(on_complete=cfg)
 
-        wrapper = _maybe_wrap_on_complete_node("s1", inner, ref, {})
+        wrapper = _maybe_wrap_on_complete_node("s1", inner, ref)
         result = wrapper({})  # no event_bus in state or result
 
         assert result == inner.return_value  # no crash
@@ -182,7 +180,7 @@ class TestMaybeWrapOnCompleteNode:
         cfg = _make_emit_config(event_type="out.ready", include_output=True)
         ref = _make_stage_ref_obj(on_complete=cfg)
 
-        wrapper = _maybe_wrap_on_complete_node("s1", inner, ref, {})
+        wrapper = _maybe_wrap_on_complete_node("s1", inner, ref)
         wrapper({"event_bus": event_bus})
 
         call_kwargs = event_bus.emit.call_args[1]

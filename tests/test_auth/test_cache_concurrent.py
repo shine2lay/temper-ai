@@ -7,10 +7,10 @@ Tests concurrent access to the LLM cache using threading to verify:
 - TTL expiration behavior with concurrent access
 - Error handling during concurrent operations
 """
+
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from unittest.mock import patch
-
 
 from temper_ai.llm.cache.llm_cache import (
     InMemoryCache,

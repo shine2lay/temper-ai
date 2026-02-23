@@ -17,46 +17,53 @@ Architecture:
 
 Supports M2 (sequential) and M3 (parallel, adaptive) execution modes.
 """
+
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from langgraph.graph import StateGraph
 
 logger = logging.getLogger(__name__)
 
+from temper_ai.safety.factory import create_safety_stack
+from temper_ai.stage.executors import (
+    AdaptiveStageExecutor,
+    ParallelStageExecutor,
+    SequentialStageExecutor,
+)
+from temper_ai.tools.executor import ToolExecutor
+from temper_ai.tools.registry import ToolRegistry
 from temper_ai.workflow.condition_evaluator import ConditionEvaluator
 from temper_ai.workflow.config_loader import ConfigLoader
 from temper_ai.workflow.constants import (
     ERROR_MSG_AGENT_PREFIX,
     ERROR_MSG_STAGE_PREFIX,
 )
-from temper_ai.stage.executors import (
-    AdaptiveStageExecutor,
-    ParallelStageExecutor,
-    SequentialStageExecutor,
-)
 from temper_ai.workflow.node_builder import NodeBuilder
 from temper_ai.workflow.stage_compiler import StageCompiler
 from temper_ai.workflow.workflow_executor import CompiledGraphRunner
-from temper_ai.safety.factory import create_safety_stack
-from temper_ai.tools.executor import ToolExecutor
-from temper_ai.tools.registry import ToolRegistry
 
 # Re-export for backward compatibility
 WorkflowExecutor = CompiledGraphRunner  # noqa: duplicate
-__all__ = ['LangGraphCompiler', 'CompiledGraphRunner', 'WorkflowExecutor',
-           '_extract_agents_from_stage']
+__all__ = [
+    "LangGraphCompiler",
+    "CompiledGraphRunner",
+    "WorkflowExecutor",
+    "_extract_agents_from_stage",
+]
 
 
 def _extract_agents_from_stage(stage_config: Any) -> list:
     """Extract agent list from a stage config (object or dict)."""
-    if hasattr(stage_config, 'stage'):
+    if hasattr(stage_config, "stage"):
         agents: list = stage_config.stage.agents
         return agents
 
     from temper_ai.shared.utils.config_helpers import get_nested_value
 
-    agents_from_config: list = get_nested_value(stage_config, 'stage.agents') or stage_config.get('agents', [])
+    agents_from_config: list = get_nested_value(
+        stage_config, "stage.agents"
+    ) or stage_config.get("agents", [])
     return agents_from_config
 
 
@@ -88,11 +95,11 @@ class LangGraphCompiler:
 
     def __init__(
         self,
-        tool_registry: Optional[ToolRegistry] = None,
-        config_loader: Optional[ConfigLoader] = None,
-        tool_executor: Optional[ToolExecutor] = None,
-        safety_config_path: Optional[str] = None,
-        safety_environment: Optional[str] = None
+        tool_registry: ToolRegistry | None = None,
+        config_loader: ConfigLoader | None = None,
+        tool_executor: ToolExecutor | None = None,
+        safety_config_path: str | None = None,
+        safety_environment: str | None = None,
     ):
         """Initialize compiler with infrastructure components.
 
@@ -104,7 +111,7 @@ class LangGraphCompiler:
             tool_executor: Tool executor with safety stack
                          (default: creates via create_safety_stack())
             safety_config_path: Path to action_policies.yaml
-                              (default: config/safety/action_policies.yaml)
+                              (default: configs/safety/action_policies.yaml)
             safety_environment: Safety environment (dev/staging/production)
                               (default: from SAFETY_ENV or "development")
 
@@ -124,7 +131,7 @@ class LangGraphCompiler:
             self.tool_executor = create_safety_stack(
                 self.tool_registry,
                 config_path=safety_config_path,
-                environment=safety_environment
+                environment=safety_environment,
             )
         else:
             self.tool_executor = tool_executor
@@ -144,19 +151,20 @@ class LangGraphCompiler:
         """
         # Stage executors (receive tool_executor through constructor)
         self.executors = {
-            'sequential': SequentialStageExecutor(
+            "sequential": SequentialStageExecutor(
                 tool_executor=self.tool_executor,
             ),
-            'parallel': ParallelStageExecutor(
+            "parallel": ParallelStageExecutor(
                 tool_executor=self.tool_executor,
             ),
-            'adaptive': AdaptiveStageExecutor(
+            "adaptive": AdaptiveStageExecutor(
                 tool_executor=self.tool_executor,
             ),
         }
 
         # Context provider for selective stage input resolution
         from temper_ai.workflow.context_provider import SourceResolver
+
         self.context_provider = SourceResolver()
 
         # Node builder (depends on config_loader, tool_registry, executors, tool_executor)
@@ -177,7 +185,7 @@ class LangGraphCompiler:
             condition_evaluator=self.condition_evaluator,
         )
 
-    def compile(self, workflow_config: Dict[str, Any]) -> StateGraph:
+    def compile(self, workflow_config: dict[str, Any]) -> StateGraph:
         """Compile workflow configuration to executable LangGraph StateGraph.
 
         Orchestration Steps:
@@ -207,6 +215,7 @@ class LangGraphCompiler:
         """
         # Step 0: Create output extractor and inject into all executors
         from temper_ai.workflow.output_extractor import get_extractor
+
         extractor = get_extractor(workflow_config)
         for executor in self.executors.values():
             executor.output_extractor = extractor
@@ -229,11 +238,8 @@ class LangGraphCompiler:
         return self.stage_compiler.compile_stages(stage_names, workflow_config)  # type: ignore[return-value]
 
     def _validate_quality_gates(
-        self,
-        synthesis_result: Any,
-        stage_config: Dict[str, Any],
-        stage_name: str
-    ) -> Tuple[bool, List[str]]:
+        self, synthesis_result: Any, stage_config: dict[str, Any], stage_name: str
+    ) -> tuple[bool, list[str]]:
         """Validate synthesis result against quality gates.
 
         Delegates to ParallelStageExecutor for actual validation logic.
@@ -259,15 +265,15 @@ class LangGraphCompiler:
         """
         # Delegate to ParallelStageExecutor which has the validation logic
         # Pass empty state dict for backward compatibility (state not used in validation)
-        result: tuple[bool, list[str]] = self.executors['parallel']._validate_quality_gates(  # type: ignore[attr-defined]
+        result: tuple[bool, list[str]] = self.executors["parallel"]._validate_quality_gates(  # type: ignore[attr-defined]
             synthesis_result=synthesis_result,
             stage_config=stage_config,
             stage_name=stage_name,
-            state={}  # Empty state for testing/backward compatibility
+            state={},  # Empty state for testing/backward compatibility
         )
         return result
 
-    def _get_agent_mode(self, stage_config: Dict[str, Any]) -> str:
+    def _get_agent_mode(self, stage_config: dict[str, Any]) -> str:
         """Get agent execution mode from stage configuration.
 
         Determines whether agents should execute sequentially or in parallel.
@@ -290,11 +296,8 @@ class LangGraphCompiler:
         return "sequential"  # Default mode
 
     def _execute_parallel_stage(
-        self,
-        stage_name: str,
-        stage_config: Dict[str, Any],
-        state: Any
-    ) -> Dict[str, Any]:
+        self, stage_name: str, stage_config: dict[str, Any], state: Any
+    ) -> dict[str, Any]:
         """Execute stage with parallel agent execution.
 
         Delegates to ParallelStageExecutor for actual execution.
@@ -314,7 +317,7 @@ class LangGraphCompiler:
         """
         # Convert WorkflowState to dict if needed (for test compatibility)
         # Use exclude_internal=False to preserve infrastructure components (tracker, registry)
-        if hasattr(state, 'to_dict'):
+        if hasattr(state, "to_dict"):
             state_dict = state.to_dict(exclude_none=False, exclude_internal=False)
         else:
             state_dict = state
@@ -322,15 +325,15 @@ class LangGraphCompiler:
         # Delegate to ParallelStageExecutor
         # Note: This is a simplified wrapper for testing purposes
         # Real execution flow uses NodeBuilder and stage compilation
-        return self.executors['parallel'].execute_stage(
+        return self.executors["parallel"].execute_stage(
             stage_name=stage_name,
             stage_config=stage_config,
             state=state_dict,
             config_loader=self.config_loader,
-            tool_registry=None  # Tests don't use tool registry
+            tool_registry=None,  # Tests don't use tool registry
         )
 
-    def _parse_workflow(self, workflow_config: Dict[str, Any]) -> Dict[str, Any]:
+    def _parse_workflow(self, workflow_config: dict[str, Any]) -> dict[str, Any]:
         """Parse workflow section from config.
 
         Handles different config formats:
@@ -345,14 +348,18 @@ class LangGraphCompiler:
         """
         return workflow_config.get("workflow", workflow_config)  # type: ignore[no-any-return]
 
-    def _validate_all_configs(self, stages: list, workflow_config: Dict[str, Any]) -> None:
+    def _validate_all_configs(
+        self, stages: list, workflow_config: dict[str, Any]
+    ) -> None:
         """Validate all stage and agent configs against Pydantic schemas."""
         errors: list[str] = []
 
         for stage_ref in stages:
             stage_name = self.node_builder.extract_stage_name(stage_ref)
             stage_config = self._load_and_validate_stage(
-                stage_name, workflow_config, errors,
+                stage_name,
+                workflow_config,
+                errors,
             )
             if stage_config is None:
                 continue
@@ -368,7 +375,10 @@ class LangGraphCompiler:
         logger.info(f"Configuration validation passed for {len(stages)} stages")
 
     def _load_and_validate_stage(
-        self, stage_name: str, workflow_config: Dict[str, Any], errors: list,
+        self,
+        stage_name: str,
+        workflow_config: dict[str, Any],
+        errors: list,
     ) -> Any:
         """Load and validate a single stage config. Returns config or None on error."""
         from pydantic import ValidationError
@@ -376,7 +386,9 @@ class LangGraphCompiler:
         from temper_ai.stage._schemas import StageConfig
 
         try:
-            stage_config = self.node_builder._load_stage_config(stage_name, workflow_config)
+            stage_config = self.node_builder._load_stage_config(
+                stage_name, workflow_config
+            )
         except Exception as e:
             errors.append(
                 f"{ERROR_MSG_STAGE_PREFIX}{stage_name}': Failed to load config - {e}"
@@ -398,7 +410,10 @@ class LangGraphCompiler:
         return stage_config
 
     def _validate_agent_configs(
-        self, agents: list, stage_name: str, errors: list,
+        self,
+        agents: list,
+        stage_name: str,
+        errors: list,
     ) -> None:
         """Validate each agent config in a stage."""
         from pydantic import ValidationError
@@ -444,7 +459,4 @@ class LangGraphCompiler:
         Returns:
             List of stage names
         """
-        return [
-            self.node_builder.extract_stage_name(stage)
-            for stage in stages
-        ]
+        return [self.node_builder.extract_stage_name(stage) for stage in stages]

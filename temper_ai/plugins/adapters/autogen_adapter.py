@@ -1,12 +1,17 @@
 """AutoGen agent adapter for Temper AI plugin system."""
+
 from __future__ import annotations
 
+import importlib.util
 import logging
 from pathlib import Path
-from typing import Any, ClassVar, Dict, List
+from typing import Any, ClassVar
 
 from temper_ai.plugins.base import ExternalAgentPlugin
-from temper_ai.plugins.constants import PLUGIN_DEFAULT_TIMEOUT, PLUGIN_TYPE_AUTOGEN  # noqa: F401
+from temper_ai.plugins.constants import (  # noqa: F401
+    PLUGIN_DEFAULT_TIMEOUT,
+    PLUGIN_TYPE_AUTOGEN,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +29,19 @@ class AutoGenAgent(ExternalAgentPlugin):
     FRAMEWORK_NAME: ClassVar[str] = "AutoGen"
     AGENT_TYPE: ClassVar[str] = PLUGIN_TYPE_AUTOGEN
     REQUIRED_PACKAGE: ClassVar[str] = "autogen-agentchat"
+
+    async def health_check(self) -> dict[str, Any]:
+        """Check if autogen-agentchat package is importable and return its version."""
+        spec = importlib.util.find_spec("autogen_agentchat")
+        if spec is None:
+            return {"status": "unavailable", "framework": self.FRAMEWORK_NAME}
+        try:
+            import autogen_agentchat
+
+            version = getattr(autogen_agentchat, "__version__", "unknown")
+        except ImportError:
+            version = "unknown"
+        return {"status": "ok", "framework": self.FRAMEWORK_NAME, "version": version}
 
     def _initialize_external_agent(self) -> None:
         """Create the AutoGen agent from plugin config."""
@@ -50,9 +68,25 @@ class AutoGenAgent(ExternalAgentPlugin):
             system_message=self.description,
         )
 
-    def _execute_external(self, input_data: Dict[str, Any]) -> str:
-        """Execute AutoGen agent (async bridge to sync)."""
+    def _execute_external(self, input_data: dict[str, Any]) -> str:
+        """Execute AutoGen agent (async bridge to sync).
+
+        Must only be called from a sync context. Raises RuntimeError if an
+        event loop is already running (e.g. FastAPI, pytest-asyncio).
+        """
         import asyncio
+
+        try:
+            asyncio.get_running_loop()
+            # A running loop was found — asyncio.run() would fail here.
+            raise RuntimeError(
+                "AutoGenAgent._execute_external() cannot be called from an async "
+                "context. Await _run_autogen() directly instead."
+            )
+        except RuntimeError as exc:
+            if "_execute_external" in str(exc):
+                raise
+            # get_running_loop() raised RuntimeError — no loop running; safe to proceed.
 
         task = self._extract_task_description(input_data)
         return asyncio.run(self._run_autogen(task))
@@ -71,7 +105,7 @@ class AutoGenAgent(ExternalAgentPlugin):
         return ""
 
     @classmethod
-    def translate_config(cls, source_path: Path) -> List[Dict[str, Any]]:
+    def translate_config(cls, source_path: Path) -> list[dict[str, Any]]:
         """Translate AutoGen config to Temper AI config dicts."""
         from temper_ai.plugins._import_helpers import (
             build_agent_config_dict,
@@ -79,7 +113,7 @@ class AutoGenAgent(ExternalAgentPlugin):
         )
 
         data = load_yaml_safe(source_path)
-        configs: List[Dict[str, Any]] = []
+        configs: list[dict[str, Any]] = []
 
         agents = data.get("agents", [data] if "name" in data else [])
         for agent_data in agents:

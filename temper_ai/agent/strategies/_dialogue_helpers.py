@@ -2,12 +2,13 @@
 
 These are internal implementation details - use DialogueOrchestrator's public API.
 """
-import logging
-from typing import Any, Dict, List, Optional
 
-from temper_ai.shared.constants.probabilities import PROB_MEDIUM, PROB_VERY_HIGH_PLUS
+import logging
+from typing import Any
+
 from temper_ai.agent.strategies.base import AgentOutput, Conflict, SynthesisResult
 from temper_ai.agent.strategies.constants import FORMAT_FLOAT_3_DECIMAL
+from temper_ai.shared.constants.probabilities import PROB_MEDIUM, PROB_VERY_HIGH_PLUS
 
 logger = logging.getLogger(__name__)
 
@@ -16,9 +17,9 @@ MAX_TEXT_PREVIEW_LENGTH = 50  # Maximum characters to show in text preview/trunc
 
 
 def get_merit_weights(
-    agent_outputs: List[AgentOutput],
-    merit_domain: Optional[str],
-) -> Dict[str, float]:
+    agent_outputs: list[AgentOutput],
+    merit_domain: str | None,
+) -> dict[str, float]:
     """Get merit weights for each agent from observability tracker.
 
     Queries AgentMeritScore from observability database and converts to weights.
@@ -68,7 +69,9 @@ def get_merit_weights(
                     )
                 else:
                     weights[agent_name] = PROB_MEDIUM
-                    logger.debug(f"No merit score for {agent_name}, using neutral weight {PROB_MEDIUM}")
+                    logger.debug(
+                        f"No merit score for {agent_name}, using neutral weight {PROB_MEDIUM}"
+                    )
 
     except (ImportError, AttributeError, TypeError, ValueError) as e:
         logger.warning(f"Failed to load merit scores: {e}. Using equal weights.")
@@ -82,12 +85,12 @@ def get_merit_weights(
 
 
 def _count_weighted_votes(
-    agent_outputs: List[AgentOutput],
-    merit_weights: Dict[str, float]
-) -> Dict[Any, float]:
+    agent_outputs: list[AgentOutput], merit_weights: dict[str, float]
+) -> dict[Any, float]:
     """Count votes weighted by merit and confidence."""
     from collections import defaultdict
-    weighted_votes: Dict[Any, float] = defaultdict(float)
+
+    weighted_votes: dict[Any, float] = defaultdict(float)
 
     for output in agent_outputs:
         decision = output.decision
@@ -102,10 +105,10 @@ def _count_weighted_votes(
 
 
 def _calculate_merit_confidence(
-    agent_outputs: List[AgentOutput],
+    agent_outputs: list[AgentOutput],
     winning_decision: Any,
     decision_support: float,
-    merit_weights: Dict[str, float]
+    merit_weights: dict[str, float],
 ) -> float:
     """Calculate final confidence from merit-weighted supporters."""
     supporting_agents = [
@@ -119,19 +122,18 @@ def _calculate_merit_confidence(
         for out in supporting_agents
     )
     weight_sum = sum(
-        merit_weights.get(out.agent_name, 1.0)
-        for out in supporting_agents
+        merit_weights.get(out.agent_name, 1.0) for out in supporting_agents
     )
     avg_confidence = weighted_conf_sum / weight_sum if weight_sum > 0 else 0
     return decision_support * avg_confidence
 
 
 def _detect_merit_conflicts(
-    agent_outputs: List[AgentOutput],
+    agent_outputs: list[AgentOutput],
     winning_decision: Any,
     decision_support: float,
-    weighted_votes: Dict[Any, float]
-) -> List[Conflict]:
+    weighted_votes: dict[Any, float],
+) -> list[Conflict]:
     """Detect conflicts in merit-weighted voting."""
     conflicts = []
     if len(weighted_votes) > 1:
@@ -139,22 +141,24 @@ def _detect_merit_conflicts(
         all_decisions = list(weighted_votes.keys())
         disagreement_score = 1.0 - decision_support
 
-        conflicts.append(Conflict(
-            agents=all_agents,
-            decisions=all_decisions,
-            disagreement_score=disagreement_score,
-            context={"weighted_votes": dict(weighted_votes)},
-        ))
+        conflicts.append(
+            Conflict(
+                agents=all_agents,
+                decisions=all_decisions,
+                disagreement_score=disagreement_score,
+                context={"weighted_votes": dict(weighted_votes)},
+            )
+        )
     return conflicts
 
 
 def _build_merit_metadata(
-    agent_outputs: List[AgentOutput],
+    agent_outputs: list[AgentOutput],
     winning_decision: Any,
     decision_support: float,
-    merit_weights: Dict[str, float],
-    weighted_votes: Dict[Any, float],
-) -> Dict[str, Any]:
+    merit_weights: dict[str, float],
+    weighted_votes: dict[Any, float],
+) -> dict[str, Any]:
     """Build metadata dict for merit-weighted synthesis result."""
     supporting_agents = [
         out for out in agent_outputs if out.decision == winning_decision
@@ -165,13 +169,15 @@ def _build_merit_metadata(
         "merit_weights": merit_weights,
         "weighted_votes": weighted_votes,
         "supporters": [out.agent_name for out in supporting_agents],
-        "dissenters": [out.agent_name for out in agent_outputs if out.decision != winning_decision],
+        "dissenters": [
+            out.agent_name for out in agent_outputs if out.decision != winning_decision
+        ],
     }
 
 
 def merit_weighted_synthesis(
-    agent_outputs: List[AgentOutput],
-    merit_domain: Optional[str],
+    agent_outputs: list[AgentOutput],
+    merit_domain: str | None,
 ) -> SynthesisResult:
     """Synthesize decision using merit-weighted voting.
 
@@ -193,7 +199,9 @@ def merit_weighted_synthesis(
 
     winning_decision = max(weighted_votes, key=lambda k: weighted_votes[k])
     total_weight = sum(weighted_votes.values())
-    decision_support = weighted_votes[winning_decision] / total_weight if total_weight > 0 else 0
+    decision_support = (
+        weighted_votes[winning_decision] / total_weight if total_weight > 0 else 0
+    )
 
     final_confidence = _calculate_merit_confidence(
         agent_outputs, winning_decision, decision_support, merit_weights
@@ -226,9 +234,9 @@ def merit_weighted_synthesis(
 def build_merit_weighted_reasoning(
     decision: Any,
     support: float,
-    agent_outputs: List[AgentOutput],
-    merit_weights: Dict[str, float],
-    weighted_votes: Dict[Any, float],
+    agent_outputs: list[AgentOutput],
+    merit_weights: dict[str, float],
+    weighted_votes: dict[Any, float],
 ) -> str:
     """Build reasoning explanation for merit-weighted synthesis.
 
@@ -255,7 +263,9 @@ def build_merit_weighted_reasoning(
 
     if len(weighted_votes) > 1:
         reasoning += "Weighted vote breakdown:\n"
-        for dec, weight in sorted(weighted_votes.items(), key=lambda x: x[1], reverse=True):
+        for dec, weight in sorted(
+            weighted_votes.items(), key=lambda x: x[1], reverse=True
+        ):
             percentage = (weight / sum(weighted_votes.values())) * 100
             reasoning += f"  - '{dec}': {weight:.2f} ({percentage:.1f}%)\n"
 
@@ -265,9 +275,9 @@ def build_merit_weighted_reasoning(
 
 
 def curate_recent(
-    dialogue_history: List[Dict[str, Any]],
+    dialogue_history: list[dict[str, Any]],
     context_window_size: int,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Curate history to recent rounds only (sliding window).
 
     Args:
@@ -277,7 +287,7 @@ def curate_recent(
     Returns:
         Recent rounds only
     """
-    rounds_dict: Dict[int, List[Dict[str, Any]]] = {}
+    rounds_dict: dict[int, list[dict[str, Any]]] = {}
     for entry in dialogue_history:
         round_num = entry["round"]
         if round_num not in rounds_dict:
@@ -300,10 +310,10 @@ def curate_recent(
 
 
 def curate_relevant(
-    dialogue_history: List[Dict[str, Any]],
-    agent_name: Optional[str],
+    dialogue_history: list[dict[str, Any]],
+    agent_name: str | None,
     context_window_size: int,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Curate history to entries relevant to current agent.
 
     Uses keyword matching and agent participation to filter relevant history.
@@ -352,8 +362,8 @@ def curate_relevant(
 
 
 def calculate_semantic_similarity(
-    current_outputs: List[AgentOutput],
-    previous_outputs: List[AgentOutput],
+    current_outputs: list[AgentOutput],
+    previous_outputs: list[AgentOutput],
     get_embedding_model_fn: Any,
 ) -> float:
     """Calculate semantic similarity between current and previous outputs.
@@ -402,8 +412,8 @@ def calculate_semantic_similarity(
 
 
 def calculate_exact_match_convergence(
-    current_outputs: List[AgentOutput],
-    previous_outputs: List[AgentOutput],
+    current_outputs: list[AgentOutput],
+    previous_outputs: list[AgentOutput],
 ) -> float:
     """Calculate exact match convergence between current and previous outputs.
 
@@ -422,7 +432,8 @@ def calculate_exact_match_convergence(
         return 0.0
 
     unchanged = sum(
-        1 for agent in common_agents
+        1
+        for agent in common_agents
         if str(prev_decisions[agent]) == str(curr_decisions[agent])
     )
 

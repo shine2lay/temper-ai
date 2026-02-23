@@ -2,6 +2,7 @@ import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { useExecutionStore } from '@/store/executionStore';
 import { Badge } from '@/components/ui/badge';
 import { formatTimestamp, cn } from '@/lib/utils';
+import { SEARCH_DEBOUNCE_MS } from '@/lib/constants';
 import type { SelectionType } from '@/types';
 
 const EVENT_TYPE_STYLES: Record<string, string> = {
@@ -55,9 +56,16 @@ export function EventLogPanel() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [filter, setFilter] = useState<string | null>(null);
+  const [searchInput, setSearchInput] = useState('');
   const [searchText, setSearchText] = useState('');
-  const [isAtBottom, setIsAtBottom] = useState(true);
+  const [isAtBottom, setIsAtBottom] = useState(false);
   const [newEvents, setNewEvents] = useState(0);
+
+  // Debounce search input to avoid expensive re-filtering on every keystroke
+  useEffect(() => {
+    const timer = setTimeout(() => setSearchText(searchInput), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
 
   const handleScroll = useCallback(() => {
     const el = containerRef.current;
@@ -67,6 +75,7 @@ export function EventLogPanel() {
     if (atBottom) setNewEvents(0);
   }, []);
 
+  // Auto-scroll only when user has scrolled to the bottom themselves
   useEffect(() => {
     if (isAtBottom) {
       bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -153,11 +162,11 @@ export function EventLogPanel() {
         <input
           type="text"
           placeholder="Search events..."
-          value={searchText}
-          onChange={(e) => setSearchText(e.target.value)}
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
           className="px-2 py-0.5 rounded text-xs bg-temper-surface border border-temper-border text-temper-text placeholder:text-temper-text-dim focus:outline-none focus:ring-1 focus:ring-temper-accent w-full sm:w-40"
         />
-        <span className="ml-auto text-xs text-temper-text-muted">
+        <span className="ml-auto text-xs text-temper-text-muted" aria-live="polite">
           {filtered.length} events
         </span>
       </div>
@@ -169,8 +178,15 @@ export function EventLogPanel() {
         className="flex-1 overflow-y-auto px-4 py-2 space-y-1 min-h-0 relative"
         role="log"
         aria-label="Event log"
-        aria-live="polite"
       >
+        {!isAtBottom && newEvents > 0 && (
+          <button
+            onClick={scrollToBottom}
+            className="sticky top-0 z-20 w-full bg-temper-accent/10 border-b border-temper-accent/30 px-3 py-1 text-xs text-temper-accent text-center hover:bg-temper-accent/20 transition-colors"
+          >
+            {newEvents} new event{newEvents !== 1 ? 's' : ''} below
+          </button>
+        )}
         {filtered.map((entry, idx) => {
           const sel = resolveSelection(entry.event_type, entry.data);
           return (
@@ -196,14 +212,6 @@ export function EventLogPanel() {
           );
         })}
         <div ref={bottomRef} />
-        {!isAtBottom && (
-          <button
-            onClick={scrollToBottom}
-            className="sticky bottom-2 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full text-xs bg-temper-accent text-temper-panel shadow-lg z-10"
-          >
-            {newEvents > 0 ? `${newEvents} new events` : 'Jump to bottom'}
-          </button>
-        )}
       </div>
     </div>
   );

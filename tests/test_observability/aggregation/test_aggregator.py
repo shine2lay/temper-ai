@@ -8,13 +8,14 @@ Tests cover:
 - Multi-workflow/agent aggregation
 - Integration with MetricRecordCreator and QueryBuilder
 """
+
+from datetime import UTC, datetime, timedelta
+from unittest.mock import Mock, patch
+
 import pytest
-from datetime import datetime, timedelta, timezone
-from unittest.mock import Mock, MagicMock, patch
 
 from temper_ai.observability.aggregation.aggregator import AggregationOrchestrator
 from temper_ai.observability.aggregation.period import AggregationPeriod
-from temper_ai.storage.database.models import WorkflowExecution, AgentExecution, LLMCall, SystemMetric
 
 
 @pytest.fixture
@@ -36,7 +37,7 @@ def orchestrator(mock_session):
 @pytest.fixture
 def time_window():
     """Standard time window for tests."""
-    end_time = datetime(2024, 1, 15, 14, 0, 0, tzinfo=timezone.utc)
+    end_time = datetime(2024, 1, 15, 14, 0, 0, tzinfo=UTC)
     start_time = end_time - timedelta(hours=1)
     return start_time, end_time
 
@@ -56,7 +57,9 @@ class TestAggregationOrchestratorInit:
 class TestWorkflowMetricAggregation:
     """Test workflow metric aggregation."""
 
-    def test_aggregate_workflow_metrics_basic(self, orchestrator, mock_session, time_window):
+    def test_aggregate_workflow_metrics_basic(
+        self, orchestrator, mock_session, time_window
+    ):
         """Aggregates workflow metrics successfully."""
         start_time, end_time = time_window
 
@@ -72,49 +75,57 @@ class TestWorkflowMetricAggregation:
         mock_session.exec.return_value.all.return_value = [mock_result]
 
         # Mock metric creator
-        with patch.object(orchestrator._metric_creator, 'create_workflow_metrics') as mock_create:
-            mock_create.return_value = ['metric-abc123', 'metric-def456']
+        with patch.object(
+            orchestrator._metric_creator, "create_workflow_metrics"
+        ) as mock_create:
+            mock_create.return_value = ["metric-abc123", "metric-def456"]
 
             result = orchestrator.aggregate_workflow_metrics(
-                period=AggregationPeriod.HOUR,
-                start_time=start_time,
-                end_time=end_time
+                period=AggregationPeriod.HOUR, start_time=start_time, end_time=end_time
             )
 
         assert len(result) == 2
-        assert result == ['metric-abc123', 'metric-def456']
+        assert result == ["metric-abc123", "metric-def456"]
         mock_session.commit.assert_called_once()
-        mock_create.assert_called_once_with(mock_result, AggregationPeriod.HOUR, start_time)
+        mock_create.assert_called_once_with(
+            mock_result, AggregationPeriod.HOUR, start_time
+        )
 
-    def test_aggregate_workflow_metrics_default_time_window(self, orchestrator, mock_session):
+    def test_aggregate_workflow_metrics_default_time_window(
+        self, orchestrator, mock_session
+    ):
         """Uses default time window when not specified."""
         mock_session.exec.return_value.all.return_value = []
 
-        with patch('temper_ai.observability.aggregation.aggregator.TimeWindowCalculator.get_default_time_window') as mock_window:
+        with patch(
+            "temper_ai.observability.aggregation.aggregator.TimeWindowCalculator.get_default_time_window"
+        ) as mock_window:
             mock_window.return_value = (
-                datetime(2024, 1, 15, 13, 0, 0, tzinfo=timezone.utc),
-                datetime(2024, 1, 15, 14, 0, 0, tzinfo=timezone.utc)
+                datetime(2024, 1, 15, 13, 0, 0, tzinfo=UTC),
+                datetime(2024, 1, 15, 14, 0, 0, tzinfo=UTC),
             )
 
             orchestrator.aggregate_workflow_metrics(period=AggregationPeriod.HOUR)
 
             mock_window.assert_called_once_with(AggregationPeriod.HOUR, None)
 
-    def test_aggregate_workflow_metrics_empty_results(self, orchestrator, mock_session, time_window):
+    def test_aggregate_workflow_metrics_empty_results(
+        self, orchestrator, mock_session, time_window
+    ):
         """Handles empty query results."""
         start_time, end_time = time_window
         mock_session.exec.return_value.all.return_value = []
 
         result = orchestrator.aggregate_workflow_metrics(
-            period=AggregationPeriod.HOUR,
-            start_time=start_time,
-            end_time=end_time
+            period=AggregationPeriod.HOUR, start_time=start_time, end_time=end_time
         )
 
         assert result == []
         mock_session.commit.assert_called_once()
 
-    def test_aggregate_workflow_metrics_multiple_workflows(self, orchestrator, mock_session, time_window):
+    def test_aggregate_workflow_metrics_multiple_workflows(
+        self, orchestrator, mock_session, time_window
+    ):
         """Aggregates metrics for multiple workflows."""
         start_time, end_time = time_window
 
@@ -137,30 +148,30 @@ class TestWorkflowMetricAggregation:
 
         mock_session.exec.return_value.all.return_value = [mock_result1, mock_result2]
 
-        with patch.object(orchestrator._metric_creator, 'create_workflow_metrics') as mock_create:
+        with patch.object(
+            orchestrator._metric_creator, "create_workflow_metrics"
+        ) as mock_create:
             mock_create.side_effect = [
-                ['metric-1', 'metric-2'],
-                ['metric-3', 'metric-4', 'metric-5']
+                ["metric-1", "metric-2"],
+                ["metric-3", "metric-4", "metric-5"],
             ]
 
             result = orchestrator.aggregate_workflow_metrics(
-                period=AggregationPeriod.DAY,
-                start_time=start_time,
-                end_time=end_time
+                period=AggregationPeriod.DAY, start_time=start_time, end_time=end_time
             )
 
         assert len(result) == 5
         assert mock_create.call_count == 2
 
-    def test_aggregate_workflow_metrics_rollback_on_error(self, orchestrator, mock_session, time_window):
+    def test_aggregate_workflow_metrics_rollback_on_error(
+        self, orchestrator, mock_session, time_window
+    ):
         """Rolls back transaction on error."""
         start_time, end_time = time_window
         mock_session.exec.side_effect = Exception("Database error")
 
         result = orchestrator.aggregate_workflow_metrics(
-            period=AggregationPeriod.HOUR,
-            start_time=start_time,
-            end_time=end_time
+            period=AggregationPeriod.HOUR, start_time=start_time, end_time=end_time
         )
 
         assert result == []
@@ -171,7 +182,9 @@ class TestWorkflowMetricAggregation:
 class TestAgentMetricAggregation:
     """Test agent metric aggregation."""
 
-    def test_aggregate_agent_metrics_basic(self, orchestrator, mock_session, time_window):
+    def test_aggregate_agent_metrics_basic(
+        self, orchestrator, mock_session, time_window
+    ):
         """Aggregates agent metrics successfully."""
         start_time, end_time = time_window
 
@@ -186,34 +199,42 @@ class TestAgentMetricAggregation:
 
         mock_session.exec.return_value.all.return_value = [mock_result]
 
-        with patch.object(orchestrator._metric_creator, 'create_agent_metrics') as mock_create:
-            mock_create.return_value = ['metric-agent1', 'metric-agent2']
+        with patch.object(
+            orchestrator._metric_creator, "create_agent_metrics"
+        ) as mock_create:
+            mock_create.return_value = ["metric-agent1", "metric-agent2"]
 
             result = orchestrator.aggregate_agent_metrics(
-                period=AggregationPeriod.HOUR,
-                start_time=start_time,
-                end_time=end_time
+                period=AggregationPeriod.HOUR, start_time=start_time, end_time=end_time
             )
 
         assert len(result) == 2
         mock_session.commit.assert_called_once()
-        mock_create.assert_called_once_with(mock_result, AggregationPeriod.HOUR, start_time)
+        mock_create.assert_called_once_with(
+            mock_result, AggregationPeriod.HOUR, start_time
+        )
 
-    def test_aggregate_agent_metrics_default_time_window(self, orchestrator, mock_session):
+    def test_aggregate_agent_metrics_default_time_window(
+        self, orchestrator, mock_session
+    ):
         """Uses default time window when not specified."""
         mock_session.exec.return_value.all.return_value = []
 
-        with patch('temper_ai.observability.aggregation.aggregator.TimeWindowCalculator.get_default_time_window') as mock_window:
+        with patch(
+            "temper_ai.observability.aggregation.aggregator.TimeWindowCalculator.get_default_time_window"
+        ) as mock_window:
             mock_window.return_value = (
-                datetime(2024, 1, 15, 13, 0, 0, tzinfo=timezone.utc),
-                datetime(2024, 1, 15, 14, 0, 0, tzinfo=timezone.utc)
+                datetime(2024, 1, 15, 13, 0, 0, tzinfo=UTC),
+                datetime(2024, 1, 15, 14, 0, 0, tzinfo=UTC),
             )
 
             orchestrator.aggregate_agent_metrics(period=AggregationPeriod.HOUR)
 
             mock_window.assert_called_once_with(AggregationPeriod.HOUR, None)
 
-    def test_aggregate_agent_metrics_multiple_agents(self, orchestrator, mock_session, time_window):
+    def test_aggregate_agent_metrics_multiple_agents(
+        self, orchestrator, mock_session, time_window
+    ):
         """Aggregates metrics for multiple agents."""
         start_time, end_time = time_window
 
@@ -235,29 +256,31 @@ class TestAgentMetricAggregation:
 
         mock_session.exec.return_value.all.return_value = [mock_result1, mock_result2]
 
-        with patch.object(orchestrator._metric_creator, 'create_agent_metrics') as mock_create:
+        with patch.object(
+            orchestrator._metric_creator, "create_agent_metrics"
+        ) as mock_create:
             mock_create.side_effect = [
-                ['metric-a1', 'metric-a2'],
-                ['metric-b1', 'metric-b2', 'metric-b3']
+                ["metric-a1", "metric-a2"],
+                ["metric-b1", "metric-b2", "metric-b3"],
             ]
 
             result = orchestrator.aggregate_agent_metrics(
                 period=AggregationPeriod.MINUTE,
                 start_time=start_time,
-                end_time=end_time
+                end_time=end_time,
             )
 
         assert len(result) == 5
 
-    def test_aggregate_agent_metrics_rollback_on_error(self, orchestrator, mock_session, time_window):
+    def test_aggregate_agent_metrics_rollback_on_error(
+        self, orchestrator, mock_session, time_window
+    ):
         """Rolls back transaction on error."""
         start_time, end_time = time_window
         mock_session.exec.side_effect = Exception("Query failed")
 
         result = orchestrator.aggregate_agent_metrics(
-            period=AggregationPeriod.HOUR,
-            start_time=start_time,
-            end_time=end_time
+            period=AggregationPeriod.HOUR, start_time=start_time, end_time=end_time
         )
 
         assert result == []
@@ -284,20 +307,24 @@ class TestLLMMetricAggregation:
 
         mock_session.exec.return_value.all.return_value = [mock_result]
 
-        with patch.object(orchestrator._metric_creator, 'create_llm_metrics') as mock_create:
-            mock_create.return_value = ['metric-llm1', 'metric-llm2', 'metric-llm3']
+        with patch.object(
+            orchestrator._metric_creator, "create_llm_metrics"
+        ) as mock_create:
+            mock_create.return_value = ["metric-llm1", "metric-llm2", "metric-llm3"]
 
             result = orchestrator.aggregate_llm_metrics(
-                period=AggregationPeriod.HOUR,
-                start_time=start_time,
-                end_time=end_time
+                period=AggregationPeriod.HOUR, start_time=start_time, end_time=end_time
             )
 
         assert len(result) == 3
         mock_session.commit.assert_called_once()
-        mock_create.assert_called_once_with(mock_result, AggregationPeriod.HOUR, start_time)
+        mock_create.assert_called_once_with(
+            mock_result, AggregationPeriod.HOUR, start_time
+        )
 
-    def test_aggregate_llm_metrics_multiple_providers(self, orchestrator, mock_session, time_window):
+    def test_aggregate_llm_metrics_multiple_providers(
+        self, orchestrator, mock_session, time_window
+    ):
         """Aggregates metrics for multiple provider/model combinations."""
         start_time, end_time = time_window
 
@@ -323,21 +350,23 @@ class TestLLMMetricAggregation:
 
         mock_session.exec.return_value.all.return_value = [mock_result1, mock_result2]
 
-        with patch.object(orchestrator._metric_creator, 'create_llm_metrics') as mock_create:
+        with patch.object(
+            orchestrator._metric_creator, "create_llm_metrics"
+        ) as mock_create:
             mock_create.side_effect = [
-                ['metric-1', 'metric-2'],
-                ['metric-3', 'metric-4']
+                ["metric-1", "metric-2"],
+                ["metric-3", "metric-4"],
             ]
 
             result = orchestrator.aggregate_llm_metrics(
-                period=AggregationPeriod.DAY,
-                start_time=start_time,
-                end_time=end_time
+                period=AggregationPeriod.DAY, start_time=start_time, end_time=end_time
             )
 
         assert len(result) == 4
 
-    def test_aggregate_llm_metrics_rollback_on_error(self, orchestrator, mock_session, time_window):
+    def test_aggregate_llm_metrics_rollback_on_error(
+        self, orchestrator, mock_session, time_window
+    ):
         """Rolls back transaction on error."""
         start_time, end_time = time_window
 
@@ -347,13 +376,13 @@ class TestLLMMetricAggregation:
         mock_result.model = "gpt-4"
         mock_session.exec.return_value.all.return_value = [mock_result]
 
-        with patch.object(orchestrator._metric_creator, 'create_llm_metrics') as mock_create:
+        with patch.object(
+            orchestrator._metric_creator, "create_llm_metrics"
+        ) as mock_create:
             mock_create.side_effect = Exception("Metric creation failed")
 
             result = orchestrator.aggregate_llm_metrics(
-                period=AggregationPeriod.HOUR,
-                start_time=start_time,
-                end_time=end_time
+                period=AggregationPeriod.HOUR, start_time=start_time, end_time=end_time
             )
 
         assert result == []
@@ -367,35 +396,39 @@ class TestAggregateAllMetrics:
         """Aggregates all metric types successfully."""
         start_time, end_time = time_window
 
-        with patch.object(orchestrator, 'aggregate_workflow_metrics') as mock_workflow, \
-             patch.object(orchestrator, 'aggregate_agent_metrics') as mock_agent, \
-             patch.object(orchestrator, 'aggregate_llm_metrics') as mock_llm:
+        with (
+            patch.object(orchestrator, "aggregate_workflow_metrics") as mock_workflow,
+            patch.object(orchestrator, "aggregate_agent_metrics") as mock_agent,
+            patch.object(orchestrator, "aggregate_llm_metrics") as mock_llm,
+        ):
 
-            mock_workflow.return_value = ['wf-1', 'wf-2']
-            mock_agent.return_value = ['ag-1', 'ag-2', 'ag-3']
-            mock_llm.return_value = ['llm-1']
+            mock_workflow.return_value = ["wf-1", "wf-2"]
+            mock_agent.return_value = ["ag-1", "ag-2", "ag-3"]
+            mock_llm.return_value = ["llm-1"]
 
             result = orchestrator.aggregate_all_metrics(
-                period=AggregationPeriod.HOUR,
-                start_time=start_time,
-                end_time=end_time
+                period=AggregationPeriod.HOUR, start_time=start_time, end_time=end_time
             )
 
         assert result == {
-            'workflow': ['wf-1', 'wf-2'],
-            'agent': ['ag-1', 'ag-2', 'ag-3'],
-            'llm': ['llm-1']
+            "workflow": ["wf-1", "wf-2"],
+            "agent": ["ag-1", "ag-2", "ag-3"],
+            "llm": ["llm-1"],
         }
 
-        mock_workflow.assert_called_once_with(AggregationPeriod.HOUR, start_time, end_time)
+        mock_workflow.assert_called_once_with(
+            AggregationPeriod.HOUR, start_time, end_time
+        )
         mock_agent.assert_called_once_with(AggregationPeriod.HOUR, start_time, end_time)
         mock_llm.assert_called_once_with(AggregationPeriod.HOUR, start_time, end_time)
 
     def test_aggregate_all_metrics_default_time_window(self, orchestrator):
         """Uses default time window when not specified."""
-        with patch.object(orchestrator, 'aggregate_workflow_metrics') as mock_workflow, \
-             patch.object(orchestrator, 'aggregate_agent_metrics') as mock_agent, \
-             patch.object(orchestrator, 'aggregate_llm_metrics') as mock_llm:
+        with (
+            patch.object(orchestrator, "aggregate_workflow_metrics") as mock_workflow,
+            patch.object(orchestrator, "aggregate_agent_metrics") as mock_agent,
+            patch.object(orchestrator, "aggregate_llm_metrics") as mock_llm,
+        ):
 
             mock_workflow.return_value = []
             mock_agent.return_value = []
@@ -403,33 +436,29 @@ class TestAggregateAllMetrics:
 
             result = orchestrator.aggregate_all_metrics(period=AggregationPeriod.DAY)
 
-        assert result == {'workflow': [], 'agent': [], 'llm': []}
+        assert result == {"workflow": [], "agent": [], "llm": []}
         mock_workflow.assert_called_once_with(AggregationPeriod.DAY, None, None)
 
     def test_aggregate_all_metrics_partial_failures(self, orchestrator, time_window):
         """Handles partial failures gracefully."""
         start_time, end_time = time_window
 
-        with patch.object(orchestrator, 'aggregate_workflow_metrics') as mock_workflow, \
-             patch.object(orchestrator, 'aggregate_agent_metrics') as mock_agent, \
-             patch.object(orchestrator, 'aggregate_llm_metrics') as mock_llm:
+        with (
+            patch.object(orchestrator, "aggregate_workflow_metrics") as mock_workflow,
+            patch.object(orchestrator, "aggregate_agent_metrics") as mock_agent,
+            patch.object(orchestrator, "aggregate_llm_metrics") as mock_llm,
+        ):
 
             # Workflow fails, others succeed
             mock_workflow.return_value = []  # Returns empty on error
-            mock_agent.return_value = ['ag-1']
-            mock_llm.return_value = ['llm-1', 'llm-2']
+            mock_agent.return_value = ["ag-1"]
+            mock_llm.return_value = ["llm-1", "llm-2"]
 
             result = orchestrator.aggregate_all_metrics(
-                period=AggregationPeriod.HOUR,
-                start_time=start_time,
-                end_time=end_time
+                period=AggregationPeriod.HOUR, start_time=start_time, end_time=end_time
             )
 
-        assert result == {
-            'workflow': [],
-            'agent': ['ag-1'],
-            'llm': ['llm-1', 'llm-2']
-        }
+        assert result == {"workflow": [], "agent": ["ag-1"], "llm": ["llm-1", "llm-2"]}
 
 
 class TestPeriodVariations:
@@ -439,13 +468,11 @@ class TestPeriodVariations:
         """Supports minute-level aggregation."""
         mock_session.exec.return_value.all.return_value = []
 
-        end_time = datetime(2024, 1, 15, 14, 5, 0, tzinfo=timezone.utc)
+        end_time = datetime(2024, 1, 15, 14, 5, 0, tzinfo=UTC)
         start_time = end_time - timedelta(minutes=1)
 
         result = orchestrator.aggregate_workflow_metrics(
-            period=AggregationPeriod.MINUTE,
-            start_time=start_time,
-            end_time=end_time
+            period=AggregationPeriod.MINUTE, start_time=start_time, end_time=end_time
         )
 
         assert result == []
@@ -455,13 +482,11 @@ class TestPeriodVariations:
         """Supports day-level aggregation."""
         mock_session.exec.return_value.all.return_value = []
 
-        end_time = datetime(2024, 1, 15, 0, 0, 0, tzinfo=timezone.utc)
+        end_time = datetime(2024, 1, 15, 0, 0, 0, tzinfo=UTC)
         start_time = end_time - timedelta(days=1)
 
         result = orchestrator.aggregate_agent_metrics(
-            period=AggregationPeriod.DAY,
-            start_time=start_time,
-            end_time=end_time
+            period=AggregationPeriod.DAY, start_time=start_time, end_time=end_time
         )
 
         assert result == []

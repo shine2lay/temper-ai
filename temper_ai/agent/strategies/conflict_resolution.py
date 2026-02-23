@@ -32,10 +32,14 @@ import random
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-from temper_ai.shared.constants.probabilities import PROB_LOW_MEDIUM, PROB_MEDIUM, PROB_MODERATE
 from temper_ai.agent.strategies.base import AgentOutput, Conflict
+from temper_ai.shared.constants.probabilities import (
+    PROB_LOW_MEDIUM,
+    PROB_MEDIUM,
+    PROB_MODERATE,
+)
 
 # Capability flag keys
 CAP_SUPPORTS_NEGOTIATION = "supports_negotiation"
@@ -60,6 +64,7 @@ class ResolutionMethod(Enum):
         FALLBACK: Use safe default
         MAJORITY_PLUS_CONFIDENCE: Combine majority + confidence
     """
+
     HIGHEST_CONFIDENCE = "highest_confidence"
     MERIT_WEIGHTED = "merit_weighted"
     RANDOM_TIEBREAKER = "random_tiebreaker"
@@ -79,9 +84,7 @@ def _validate_confidence_range(confidence: float) -> None:
         ValueError: If confidence is outside [0, 1] range
     """
     if not 0 <= confidence <= 1:
-        raise ValueError(
-            f"Confidence must be between 0 and 1, got {confidence}"
-        )
+        raise ValueError(f"Confidence must be between 0 and 1, got {confidence}")
 
 
 @dataclass
@@ -106,12 +109,13 @@ class ResolutionResult:
         ...     metadata={"winner": "Agent1", "tiebreaker_used": False}
         ... )
     """
+
     decision: Any
     method: str
     reasoning: str
     success: bool  # True if resolved, False if needs escalation
     confidence: float  # Confidence in resolution
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         """Validate confidence is in valid range."""
@@ -148,8 +152,8 @@ class ConflictResolutionStrategy(ABC):
     def resolve(
         self,
         conflict: Conflict,
-        agent_outputs: List[AgentOutput],
-        config: Dict[str, Any]
+        agent_outputs: list[AgentOutput],
+        config: dict[str, Any],
     ) -> ResolutionResult:
         """Resolve a conflict between agents.
 
@@ -178,7 +182,7 @@ class ConflictResolutionStrategy(ABC):
         pass
 
     @abstractmethod
-    def get_capabilities(self) -> Dict[str, bool]:
+    def get_capabilities(self) -> dict[str, bool]:
         """Get resolver capabilities.
 
         Returns:
@@ -191,7 +195,7 @@ class ConflictResolutionStrategy(ABC):
         """
         pass
 
-    def get_metadata(self) -> Dict[str, Any]:
+    def get_metadata(self) -> dict[str, Any]:
         """Get resolver metadata.
 
         Returns:
@@ -205,13 +209,11 @@ class ConflictResolutionStrategy(ABC):
             "name": self.__class__.__name__,
             "version": "1.0",
             "description": self.__doc__ or "",
-            "config_schema": {}
+            "config_schema": {},
         }
 
     def validate_inputs(
-        self,
-        conflict: Conflict,
-        agent_outputs: List[AgentOutput]
+        self, conflict: Conflict, agent_outputs: list[AgentOutput]
     ) -> None:
         """Validate inputs before resolution.
 
@@ -237,12 +239,11 @@ class ConflictResolutionStrategy(ABC):
 
         if not conflict_agents.issubset(output_agents):
             missing = conflict_agents - output_agents
-            raise ValueError(
-                f"Conflict references agents not in outputs: {missing}"
-            )
+            raise ValueError(f"Conflict references agents not in outputs: {missing}")
 
 
 # Built-in Implementations
+
 
 class HighestConfidenceResolver(ConflictResolutionStrategy):
     """Resolve conflicts by selecting agent with highest confidence.
@@ -265,8 +266,8 @@ class HighestConfidenceResolver(ConflictResolutionStrategy):
     def resolve(
         self,
         conflict: Conflict,
-        agent_outputs: List[AgentOutput],
-        config: Dict[str, Any]
+        agent_outputs: list[AgentOutput],
+        config: dict[str, Any],
     ) -> ResolutionResult:
         """Resolve by selecting highest confidence agent."""
         self.validate_inputs(conflict, agent_outputs)
@@ -292,18 +293,18 @@ class HighestConfidenceResolver(ConflictResolutionStrategy):
                 META_WINNER: winner.agent_name,
                 "all_confidences": {
                     o.agent_name: o.confidence for o in conflicting_outputs
-                }
-            }
+                },
+            },
         )
 
-    def get_capabilities(self) -> Dict[str, bool]:
+    def get_capabilities(self) -> dict[str, bool]:
         """Capabilities of highest confidence resolver."""
         return {
             CAP_SUPPORTS_NEGOTIATION: False,
             CAP_SUPPORTS_ESCALATION: False,
             CAP_SUPPORTS_MERIT_WEIGHTING: False,
             CAP_SUPPORTS_ITERATIVE: False,
-            CAP_DETERMINISTIC: True
+            CAP_DETERMINISTIC: True,
         }
 
 
@@ -320,7 +321,7 @@ class RandomTiebreakerResolver(ConflictResolutionStrategy):
         True
     """
 
-    def __init__(self, seed: Optional[int] = None):
+    def __init__(self, seed: int | None = None):
         """Initialize with optional random seed for determinism.
 
         Args:
@@ -332,8 +333,8 @@ class RandomTiebreakerResolver(ConflictResolutionStrategy):
     def resolve(
         self,
         conflict: Conflict,
-        agent_outputs: List[AgentOutput],
-        config: Dict[str, Any]
+        agent_outputs: list[AgentOutput],
+        config: dict[str, Any],
     ) -> ResolutionResult:
         """Resolve by random selection."""
         self.validate_inputs(conflict, agent_outputs)
@@ -347,7 +348,9 @@ class RandomTiebreakerResolver(ConflictResolutionStrategy):
         winner = self.rng.choice(conflicting_outputs)
 
         # Average confidence as resolution confidence
-        avg_confidence = sum(o.confidence for o in conflicting_outputs) / len(conflicting_outputs)
+        avg_confidence = sum(o.confidence for o in conflicting_outputs) / len(
+            conflicting_outputs
+        )
 
         return ResolutionResult(
             decision=winner.decision,
@@ -358,18 +361,18 @@ class RandomTiebreakerResolver(ConflictResolutionStrategy):
             metadata={
                 META_WINNER: winner.agent_name,
                 "seed": self.seed,
-                "candidates": [o.agent_name for o in conflicting_outputs]
-            }
+                "candidates": [o.agent_name for o in conflicting_outputs],
+            },
         )
 
-    def get_capabilities(self) -> Dict[str, bool]:
+    def get_capabilities(self) -> dict[str, bool]:
         """Capabilities of random tiebreaker."""
         return {
             CAP_SUPPORTS_NEGOTIATION: False,
             CAP_SUPPORTS_ESCALATION: False,
             CAP_SUPPORTS_MERIT_WEIGHTING: False,
             CAP_SUPPORTS_ITERATIVE: False,
-            CAP_DETERMINISTIC: self.seed is not None
+            CAP_DETERMINISTIC: self.seed is not None,
         }
 
 
@@ -379,8 +382,8 @@ class MeritWeightedResolver(ConflictResolutionStrategy):
     This resolver uses agent merit scores (from metadata) to weight
     decisions. Agents with higher merit have more influence.
 
-    NOTE: Full merit tracking is in M4. This is a stub implementation
-    that uses confidence as a proxy for merit.
+    Uses confidence as a merit proxy when explicit merit scores are not
+    provided in agent output metadata.
 
     Example:
         >>> outputs = [
@@ -396,8 +399,8 @@ class MeritWeightedResolver(ConflictResolutionStrategy):
     def resolve(
         self,
         conflict: Conflict,
-        agent_outputs: List[AgentOutput],
-        config: Dict[str, Any]
+        agent_outputs: list[AgentOutput],
+        config: dict[str, Any],
     ) -> ResolutionResult:
         """Resolve by merit-weighted voting."""
         self.validate_inputs(conflict, agent_outputs)
@@ -429,26 +432,26 @@ class MeritWeightedResolver(ConflictResolutionStrategy):
             metadata={
                 META_WINNER: winner.agent_name,
                 "merit_scores": merit_scores,
-                "note": "Using confidence as merit proxy (full merit in M4)"
-            }
+                "note": "Using confidence as merit proxy when explicit merit not provided",
+            },
         )
 
-    def get_capabilities(self) -> Dict[str, bool]:
+    def get_capabilities(self) -> dict[str, bool]:
         """Capabilities of merit-weighted resolver."""
         return {
             CAP_SUPPORTS_NEGOTIATION: False,
             CAP_SUPPORTS_ESCALATION: False,
             CAP_SUPPORTS_MERIT_WEIGHTING: True,
             CAP_SUPPORTS_ITERATIVE: False,
-            CAP_DETERMINISTIC: True
+            CAP_DETERMINISTIC: True,
         }
 
 
 # Utility functions
 
+
 def create_resolver(
-    method: ResolutionMethod,
-    config: Optional[Dict[str, Any]] = None
+    method: ResolutionMethod, config: dict[str, Any] | None = None
 ) -> ConflictResolutionStrategy:
     """Factory function to create resolver by method.
 
@@ -508,6 +511,7 @@ class AgentMerit:
         >>> merit.calculate_weight({"domain_merit": 0.4, "overall_merit": 0.3, "recent_performance": 0.3})
         0.883...
     """
+
     agent_name: str
     domain_merit: float
     overall_merit: float
@@ -519,11 +523,9 @@ class AgentMerit:
         for score_name in ["domain_merit", "overall_merit", "recent_performance"]:
             score = getattr(self, score_name)
             if not 0 <= score <= 1:
-                raise ValueError(
-                    f"{score_name} must be between 0 and 1, got {score}"
-                )
+                raise ValueError(f"{score_name} must be between 0 and 1, got {score}")
 
-    def calculate_weight(self, weights: Dict[str, float]) -> float:
+    def calculate_weight(self, weights: dict[str, float]) -> float:
         """Calculate composite merit weight.
 
         Args:
@@ -545,9 +547,9 @@ class AgentMerit:
         recent_weight = weights.get("recent_performance", PROB_LOW_MEDIUM)
 
         return (
-            self.domain_merit * domain_weight +
-            self.overall_merit * overall_weight +
-            self.recent_performance * recent_weight
+            self.domain_merit * domain_weight
+            + self.overall_merit * overall_weight
+            + self.recent_performance * recent_weight
         )
 
 
@@ -573,12 +575,13 @@ class ResolutionContext:
         ...     previous_resolutions=[]
         ... )
     """
-    agent_merits: Dict[str, AgentMerit]
-    agent_outputs: Dict[str, AgentOutput]
+
+    agent_merits: dict[str, AgentMerit]
+    agent_outputs: dict[str, AgentOutput]
     stage_name: str
     workflow_name: str
-    workflow_config: Dict[str, Any]
-    previous_resolutions: List[Any] = field(default_factory=list)
+    workflow_config: dict[str, Any]
+    previous_resolutions: list[Any] = field(default_factory=list)
 
 
 @dataclass
@@ -603,12 +606,13 @@ class Resolution:
         ...     metadata={"decision_scores": {"Option A": 0.95}}
         ... )
     """
+
     decision: Any
     reasoning: str
     confidence: float
     method: str
-    winning_agents: List[str]
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    winning_agents: list[str]
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         """Validate confidence is in valid range."""
@@ -619,10 +623,8 @@ class Resolution:
 
 
 def calculate_merit_weighted_votes(
-    conflict: Conflict,
-    context: ResolutionContext,
-    merit_weights: Dict[str, float]
-) -> Dict[str, float]:
+    conflict: Conflict, context: ResolutionContext, merit_weights: dict[str, float]
+) -> dict[str, float]:
     """Calculate weighted votes for each decision option.
 
     Args:
@@ -651,7 +653,7 @@ def calculate_merit_weighted_votes(
         >>> scores["Option A"] > scores["Option B"]  # Expert has more weight
         True
     """
-    decision_scores: Dict[str, float] = {}
+    decision_scores: dict[str, float] = {}
 
     for agent_name in conflict.agents:
         # Get agent's output and merit
@@ -676,7 +678,7 @@ def calculate_merit_weighted_votes(
 
 
 def get_highest_weighted_decision(
-    decision_scores: Dict[str, float]
+    decision_scores: dict[str, float],
 ) -> tuple[str, float]:
     """Get decision with highest weighted score.
 

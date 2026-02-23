@@ -1,19 +1,12 @@
 """Tests for observability backend read API methods."""
-from datetime import datetime, timezone
+
+from datetime import UTC, datetime
 
 import pytest
 
-from temper_ai.storage.database import init_database
-from temper_ai.observability.constants import ObservabilityFields
-from temper_ai.storage.database.models import (
-    AgentExecution,
-    CollaborationEvent,
-    LLMCall,
-    StageExecution,
-    ToolExecution,
-    WorkflowExecution,
-)
 from temper_ai.observability.backends.sql_backend import SQLObservabilityBackend
+from temper_ai.observability.constants import ObservabilityFields
+from temper_ai.storage.database import init_database
 
 
 @pytest.fixture
@@ -41,7 +34,7 @@ def backend(db):
 @pytest.fixture
 def populated_db(backend):
     """Create a fully populated workflow hierarchy for read tests."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     # Create workflow
     backend.track_workflow_start(
@@ -107,15 +100,21 @@ def populated_db(backend):
     )
 
     # Create collaboration event
+    from temper_ai.observability.backend import (
+        CollaborationEventData as BackendCollaborationEventData,
+    )
+
     backend.track_collaboration_event(
         stage_id="st-read-1",
         event_type="vote",
         agents_involved=["ag-read-1"],
-        event_data={"votes": {"ag-read-1": "approve"}},
-        round_number=1,
-        resolution_strategy="majority",
-        outcome="approved",
-        confidence_score=0.95,
+        data=BackendCollaborationEventData(
+            event_data={"votes": {"ag-read-1": "approve"}},
+            round_number=1,
+            resolution_strategy="majority",
+            outcome="approved",
+            confidence_score=0.95,
+        ),
     )
 
     # End agent, stage, workflow
@@ -264,7 +263,7 @@ class TestListWorkflows:
 
     def test_list_workflows_pagination(self, backend):
         """Test limit and offset pagination."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         # Create 5 workflows
         for i in range(5):
             backend.track_workflow_start(
@@ -292,7 +291,7 @@ class TestListWorkflows:
 
     def test_list_workflows_status_filter(self, backend):
         """Test filtering by status."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         # Create completed workflow
         backend.track_workflow_start(
             workflow_id="wf-filter-1",
@@ -428,7 +427,9 @@ class TestGetToolCall:
         assert result["id"] == "tool-read-1"
         assert result["tool_name"] == "web_search"
         assert result["input_params"] == {"query": "test search"}
-        assert result[ObservabilityFields.OUTPUT_DATA] == {"results": ["result1", "result2"]}
+        assert result[ObservabilityFields.OUTPUT_DATA] == {
+            "results": ["result1", "result2"]
+        }
         assert result[ObservabilityFields.DURATION_SECONDS] == 1.5
         assert result[ObservabilityFields.STATUS] == "success"
         assert result["safety_checks_applied"] == ["url_allowlist"]
@@ -460,7 +461,9 @@ class TestPrometheusBackendReadStubs:
     """Verify Prometheus backend read stubs return expected defaults."""
 
     def test_prometheus_read_stubs(self):
-        from temper_ai.observability.backends.prometheus_backend import PrometheusObservabilityBackend
+        from temper_ai.observability.backends.prometheus_backend import (
+            PrometheusObservabilityBackend,
+        )
 
         backend = PrometheusObservabilityBackend()
         assert backend.get_workflow("any-id") is None

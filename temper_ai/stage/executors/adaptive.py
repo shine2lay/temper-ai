@@ -2,10 +2,15 @@
 
 Starts with parallel execution, switches to sequential if disagreement is high.
 """
+
 from dataclasses import dataclass
 from types import SimpleNamespace
-from typing import Any, Dict, Optional, cast
+from typing import Any, cast
 
+from temper_ai.observability.resilience_events import (
+    FallbackEventData,
+    emit_fallback_event,
+)
 from temper_ai.shared.constants.execution import (
     ADAPTIVE_META_DISAGREEMENT_RATE,
     ADAPTIVE_META_STARTED_WITH,
@@ -14,44 +19,47 @@ from temper_ai.shared.constants.execution import (
     EXECUTION_MODE_PARALLEL,
     EXECUTION_MODE_SEQUENTIAL,
 )
-from temper_ai.shared.core.protocols import ConfigLoaderProtocol, DomainToolRegistryProtocol
+from temper_ai.shared.constants.probabilities import PROB_MEDIUM
+from temper_ai.shared.core.protocols import (
+    ConfigLoaderProtocol,
+    DomainToolRegistryProtocol,
+)
 from temper_ai.stage.executors.base import StageExecutor
 from temper_ai.stage.executors.parallel import ParallelStageExecutor
 from temper_ai.stage.executors.sequential import SequentialStageExecutor
-from temper_ai.shared.constants.probabilities import PROB_MEDIUM
-from temper_ai.observability.resilience_events import (
-    FallbackEventData,
-    emit_fallback_event,
-)
 
 
 @dataclass
 class ParallelSwitchCheckParams:
     """Parameters for parallel execution with switch checking (bundles 8 params into 1)."""
+
     parallel_executor: Any
     stage_name: str
     stage_config: Any
-    state: Dict[str, Any]
+    state: dict[str, Any]
     config_loader: Any
-    tool_registry: Optional[Any]
+    tool_registry: Any | None
     disagreement_threshold: float
-    tracker: Optional[Any]
+    tracker: Any | None
 
 
 @dataclass
 class ParallelErrorHandlerParams:
     """Parameters for parallel error handling (bundles 8 params into 1)."""
+
     e: Exception
     stage_name: str
     stage_config: Any
-    state: Dict[str, Any]
+    state: dict[str, Any]
     config_loader: Any
-    tool_registry: Optional[Any]
+    tool_registry: Any | None
     disagreement_threshold: float
-    tracker: Optional[Any]
+    tracker: Any | None
 
 
-def _execute_parallel_with_switch_check(params: ParallelSwitchCheckParams) -> tuple[Dict[str, Any], bool, float, Dict[str, Any]]:
+def _execute_parallel_with_switch_check(
+    params: ParallelSwitchCheckParams,
+) -> tuple[dict[str, Any], bool, float, dict[str, Any]]:
     """Execute parallel and check if mode switch needed.
 
     Returns:
@@ -63,7 +71,7 @@ def _execute_parallel_with_switch_check(params: ParallelSwitchCheckParams) -> tu
         stage_config=params.stage_config,
         state=params.state,
         config_loader=params.config_loader,
-        tool_registry=params.tool_registry
+        tool_registry=params.tool_registry,
     )
 
     # Get synthesis result
@@ -79,7 +87,7 @@ def _execute_parallel_with_switch_check(params: ParallelSwitchCheckParams) -> tu
         ADAPTIVE_META_STARTED_WITH: EXECUTION_MODE_PARALLEL,
         ADAPTIVE_META_SWITCHED_TO: None,
         ADAPTIVE_META_DISAGREEMENT_RATE: disagreement_rate,
-        "disagreement_threshold": params.disagreement_threshold
+        "disagreement_threshold": params.disagreement_threshold,
     }
 
     # Check if switch needed
@@ -144,9 +152,9 @@ class AdaptiveStageExecutor(StageExecutor):
 
     def __init__(
         self,
-        synthesis_coordinator: Optional[Any] = None,
-        quality_gate_validator: Optional[Any] = None,
-        tool_executor: Optional[Any] = None,
+        synthesis_coordinator: Any | None = None,
+        quality_gate_validator: Any | None = None,
+        tool_executor: Any | None = None,
     ) -> None:
         """Initialize adaptive executor.
 
@@ -170,11 +178,11 @@ class AdaptiveStageExecutor(StageExecutor):
         self,
         stage_name: str,
         stage_config: Any,
-        state: Dict[str, Any],
+        state: dict[str, Any],
         config_loader: ConfigLoaderProtocol,
-        tool_registry: Optional[DomainToolRegistryProtocol],
-        mode_metadata: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        tool_registry: DomainToolRegistryProtocol | None,
+        mode_metadata: dict[str, Any],
+    ) -> dict[str, Any]:
         """Fall back to sequential execution and attach mode metadata."""
         state["stage_outputs"].pop(stage_name, None)
         sequential_state = self.sequential_executor.execute_stage(
@@ -182,20 +190,24 @@ class AdaptiveStageExecutor(StageExecutor):
             stage_config=stage_config,
             state=state,
             config_loader=config_loader,
-            tool_registry=tool_registry
+            tool_registry=tool_registry,
         )
         if isinstance(sequential_state["stage_outputs"].get(stage_name), dict):
-            sequential_state["stage_outputs"][stage_name][COLLAB_EVENT_MODE_SWITCH] = mode_metadata
+            sequential_state["stage_outputs"][stage_name][
+                COLLAB_EVENT_MODE_SWITCH
+            ] = mode_metadata
         return sequential_state
 
-    def _handle_parallel_error(self, params: ParallelErrorHandlerParams) -> Dict[str, Any]:
+    def _handle_parallel_error(
+        self, params: ParallelErrorHandlerParams
+    ) -> dict[str, Any]:
         """Handle parallel execution failure by falling back to sequential."""
         error_mode_metadata = {
             ADAPTIVE_META_STARTED_WITH: EXECUTION_MODE_PARALLEL,
             ADAPTIVE_META_SWITCHED_TO: EXECUTION_MODE_SEQUENTIAL,
             ADAPTIVE_META_DISAGREEMENT_RATE: None,
             "disagreement_threshold": params.disagreement_threshold,
-            "error": str(params.e)
+            "error": str(params.e),
         }
 
         if params.tracker:
@@ -213,18 +225,22 @@ class AdaptiveStageExecutor(StageExecutor):
             )
 
         return self._fallback_to_sequential(
-            params.stage_name, params.stage_config, params.state, params.config_loader,
-            params.tool_registry, error_mode_metadata
+            params.stage_name,
+            params.stage_config,
+            params.state,
+            params.config_loader,
+            params.tool_registry,
+            error_mode_metadata,
         )
 
     def execute_stage(
         self,
         stage_name: str,
         stage_config: Any,
-        state: Dict[str, Any],
+        state: dict[str, Any],
         config_loader: ConfigLoaderProtocol,
-        tool_registry: Optional[DomainToolRegistryProtocol] = None
-    ) -> Dict[str, Any]:
+        tool_registry: DomainToolRegistryProtocol | None = None,
+    ) -> dict[str, Any]:
         """Execute stage with adaptive mode.
 
         Starts with parallel execution. If disagreement rate exceeds threshold,
@@ -252,14 +268,20 @@ class AdaptiveStageExecutor(StageExecutor):
         stage_dict = stage_config if isinstance(stage_config, dict) else {}
         execution_config = stage_dict.get("execution", {})
         adaptive_config = execution_config.get("adaptive_config", {})
-        disagreement_threshold = adaptive_config.get("disagreement_threshold", PROB_MEDIUM)
+        disagreement_threshold = adaptive_config.get(
+            "disagreement_threshold", PROB_MEDIUM
+        )
 
         try:
             switch_params = ParallelSwitchCheckParams(
-                parallel_executor=self.parallel_executor, stage_name=stage_name,
-                stage_config=stage_config, state=state, config_loader=config_loader,
-                tool_registry=tool_registry, disagreement_threshold=disagreement_threshold,
-                tracker=tracker
+                parallel_executor=self.parallel_executor,
+                stage_name=stage_name,
+                stage_config=stage_config,
+                state=state,
+                config_loader=config_loader,
+                tool_registry=tool_registry,
+                disagreement_threshold=disagreement_threshold,
+                tracker=tracker,
             )
             parallel_state, should_switch, disagreement_rate, mode_metadata = (
                 _execute_parallel_with_switch_check(switch_params)
@@ -268,8 +290,12 @@ class AdaptiveStageExecutor(StageExecutor):
             if should_switch:
                 mode_metadata[ADAPTIVE_META_SWITCHED_TO] = EXECUTION_MODE_SEQUENTIAL
                 return self._fallback_to_sequential(
-                    stage_name, stage_config, state, config_loader,
-                    tool_registry, mode_metadata
+                    stage_name,
+                    stage_config,
+                    state,
+                    config_loader,
+                    tool_registry,
+                    mode_metadata,
                 )
 
             stage_output = parallel_state["stage_outputs"][stage_name]
@@ -281,9 +307,14 @@ class AdaptiveStageExecutor(StageExecutor):
 
         except (KeyError, TypeError, AttributeError, ValueError, RuntimeError) as e:
             error_params = ParallelErrorHandlerParams(
-                e=e, stage_name=stage_name, stage_config=stage_config,
-                state=state, config_loader=config_loader, tool_registry=tool_registry,
-                disagreement_threshold=disagreement_threshold, tracker=tracker
+                e=e,
+                stage_name=stage_name,
+                stage_config=stage_config,
+                state=state,
+                config_loader=config_loader,
+                tool_registry=tool_registry,
+                disagreement_threshold=disagreement_threshold,
+                tracker=tracker,
             )
             return self._handle_parallel_error(error_params)
 

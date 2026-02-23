@@ -2,7 +2,6 @@
 
 import logging
 from datetime import timedelta
-from typing import List, Optional
 
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, select
@@ -36,7 +35,7 @@ DEGRADATION_CONFIDENCE = 0.7
 class PerformanceAnalyzer(BaseAnalyzer):
     """Identifies slow stages and performance degradation trends."""
 
-    def __init__(self, engine: Optional[Engine] = None) -> None:
+    def __init__(self, engine: Engine | None = None) -> None:
         self._engine = engine
 
     @property
@@ -46,7 +45,7 @@ class PerformanceAnalyzer(BaseAnalyzer):
 
     def analyze(
         self, lookback_hours: int = DEFAULT_LOOKBACK_HOURS
-    ) -> List[GoalProposal]:
+    ) -> list[GoalProposal]:
         """Analyze stage execution history for slow/degrading stages."""
         if self._engine is None:
             return []
@@ -56,7 +55,7 @@ class PerformanceAnalyzer(BaseAnalyzer):
             return []
 
         by_name = _group_by_name(stages)
-        proposals: List[GoalProposal] = []
+        proposals: list[GoalProposal] = []
 
         for stage_name, executions in by_name.items():
             durations = [e.duration_seconds for e in executions if e.duration_seconds]
@@ -75,13 +74,15 @@ class PerformanceAnalyzer(BaseAnalyzer):
 
         cutoff = utcnow() - timedelta(hours=lookback_hours)
         with Session(self._engine) as session:
-            return list(session.exec(
-                select(StageExecution).where(
-                    StageExecution.start_time >= cutoff,
-                    StageExecution.status == "completed",
-                    StageExecution.duration_seconds.is_not(None),  # type: ignore[union-attr]
-                )
-            ).all())
+            return list(
+                session.exec(
+                    select(StageExecution).where(
+                        StageExecution.start_time >= cutoff,
+                        StageExecution.status == "completed",
+                        StageExecution.duration_seconds.is_not(None),  # type: ignore[union-attr]
+                    )
+                ).all()
+            )
 
 
 def _group_by_name(stages: list) -> dict[str, list]:
@@ -94,45 +95,57 @@ def _group_by_name(stages: list) -> dict[str, list]:
 
 def _check_slow(
     name: str, avg: float, durations: list, executions: list
-) -> List[GoalProposal]:
+) -> list[GoalProposal]:
     """Generate proposal if stage avg exceeds threshold."""
     if avg <= SLOW_STAGE_THRESHOLD_S:
         return []
     target = avg * HALF_FACTOR
     improvement = ((avg - target) / avg) * PCT_MULTIPLIER
-    return [GoalProposal(
-        goal_type=GoalType.PERFORMANCE_OPTIMIZATION,
-        title=f"Optimize slow stage: {name}",
-        description=(
-            f"Stage '{name}' averages {avg:.0f}s across "
-            f"{len(durations)} executions, exceeding "
-            f"the {SLOW_STAGE_THRESHOLD_S}s threshold."
-        ),
-        risk_assessment=RiskAssessment(
-            level=GoalRiskLevel.LOW,
-            blast_radius=f"stage:{name}",
-            reversible=True,
-        ),
-        effort_estimate=EffortLevel.MEDIUM,
-        expected_impacts=[ImpactEstimate(
-            metric_name="avg_duration_seconds",
-            current_value=avg, expected_value=target,
-            improvement_pct=improvement, confidence=SLOW_CONFIDENCE,
-        )],
-        evidence=GoalEvidence(
-            workflow_ids=[e.workflow_execution_id for e in executions[:EVIDENCE_WORKFLOW_LIMIT]],
-            metrics={"avg_duration_s": avg, "execution_count": float(len(durations))},
-            analysis_summary=f"Slow stage detected: {avg:.0f}s avg",
-        ),
-        proposed_actions=[
-            f"Profile stage '{name}' for bottlenecks",
-            "Consider parallel execution or caching",
-            "Review agent timeout configuration",
-        ],
-    )]
+    return [
+        GoalProposal(
+            goal_type=GoalType.PERFORMANCE_OPTIMIZATION,
+            title=f"Optimize slow stage: {name}",
+            description=(
+                f"Stage '{name}' averages {avg:.0f}s across "
+                f"{len(durations)} executions, exceeding "
+                f"the {SLOW_STAGE_THRESHOLD_S}s threshold."
+            ),
+            risk_assessment=RiskAssessment(
+                level=GoalRiskLevel.LOW,
+                blast_radius=f"stage:{name}",
+                reversible=True,
+            ),
+            effort_estimate=EffortLevel.MEDIUM,
+            expected_impacts=[
+                ImpactEstimate(
+                    metric_name="avg_duration_seconds",
+                    current_value=avg,
+                    expected_value=target,
+                    improvement_pct=improvement,
+                    confidence=SLOW_CONFIDENCE,
+                )
+            ],
+            evidence=GoalEvidence(
+                workflow_ids=[
+                    e.workflow_execution_id
+                    for e in executions[:EVIDENCE_WORKFLOW_LIMIT]
+                ],
+                metrics={
+                    "avg_duration_s": avg,
+                    "execution_count": float(len(durations)),
+                },
+                analysis_summary=f"Slow stage detected: {avg:.0f}s avg",
+            ),
+            proposed_actions=[
+                f"Profile stage '{name}' for bottlenecks",
+                "Consider parallel execution or caching",
+                "Review agent timeout configuration",
+            ],
+        )
+    ]
 
 
-def _check_degradation(name: str, durations: list) -> List[GoalProposal]:
+def _check_degradation(name: str, durations: list) -> list[GoalProposal]:
     """Generate proposal if recent performance degraded vs baseline."""
     if len(durations) < MIN_DURATIONS_FOR_TREND:
         return []
@@ -144,28 +157,41 @@ def _check_degradation(name: str, durations: list) -> List[GoalProposal]:
     degradation = ((second_avg - first_avg) / first_avg) * PCT_MULTIPLIER
     if degradation <= DEGRADATION_THRESHOLD_PCT:
         return []
-    return [GoalProposal(
-        goal_type=GoalType.PERFORMANCE_OPTIMIZATION,
-        title=f"Address degradation in: {name}",
-        description=(
-            f"Stage '{name}' shows {degradation:.0f}% performance "
-            f"degradation (recent avg {second_avg:.0f}s vs baseline "
-            f"{first_avg:.0f}s)."
-        ),
-        risk_assessment=RiskAssessment(
-            level=GoalRiskLevel.MEDIUM,
-            blast_radius=f"stage:{name}",
-            reversible=True,
-        ),
-        effort_estimate=EffortLevel.SMALL,
-        expected_impacts=[ImpactEstimate(
-            metric_name="avg_duration_seconds",
-            current_value=second_avg, expected_value=first_avg,
-            improvement_pct=degradation, confidence=DEGRADATION_CONFIDENCE,
-        )],
-        evidence=GoalEvidence(
-            metrics={"baseline_avg_s": first_avg, "recent_avg_s": second_avg, "degradation_pct": degradation},
-            analysis_summary=f"Performance degradation: {degradation:.0f}%",
-        ),
-        proposed_actions=["Investigate recent configuration changes", "Check for resource contention"],
-    )]
+    return [
+        GoalProposal(
+            goal_type=GoalType.PERFORMANCE_OPTIMIZATION,
+            title=f"Address degradation in: {name}",
+            description=(
+                f"Stage '{name}' shows {degradation:.0f}% performance "
+                f"degradation (recent avg {second_avg:.0f}s vs baseline "
+                f"{first_avg:.0f}s)."
+            ),
+            risk_assessment=RiskAssessment(
+                level=GoalRiskLevel.MEDIUM,
+                blast_radius=f"stage:{name}",
+                reversible=True,
+            ),
+            effort_estimate=EffortLevel.SMALL,
+            expected_impacts=[
+                ImpactEstimate(
+                    metric_name="avg_duration_seconds",
+                    current_value=second_avg,
+                    expected_value=first_avg,
+                    improvement_pct=degradation,
+                    confidence=DEGRADATION_CONFIDENCE,
+                )
+            ],
+            evidence=GoalEvidence(
+                metrics={
+                    "baseline_avg_s": first_avg,
+                    "recent_avg_s": second_avg,
+                    "degradation_pct": degradation,
+                },
+                analysis_summary=f"Performance degradation: {degradation:.0f}%",
+            ),
+            proposed_actions=[
+                "Investigate recent configuration changes",
+                "Check for resource contention",
+            ],
+        )
+    ]

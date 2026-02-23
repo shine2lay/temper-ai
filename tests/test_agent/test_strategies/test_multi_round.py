@@ -4,18 +4,21 @@ from unittest.mock import patch
 
 import pytest
 
-from temper_ai.agent.strategies.base import AgentOutput, CollaborationStrategy, SynthesisResult
+from temper_ai.agent.strategies.base import (
+    AgentOutput,
+    CollaborationStrategy,
+    SynthesisResult,
+)
 from temper_ai.agent.strategies.multi_round import (
     CommunicationHistory,
     CommunicationRound,
     MultiRoundStrategy,
-    VALID_MODES,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_outputs(*decisions: str, prefix: str = "agent") -> list[AgentOutput]:
     """Create AgentOutput list from decision strings."""
@@ -34,6 +37,7 @@ def _make_outputs(*decisions: str, prefix: str = "agent") -> list[AgentOutput]:
 # ---------------------------------------------------------------------------
 # Mode configuration defaults
 # ---------------------------------------------------------------------------
+
 
 class TestModeDefaults:
     """Test that mode-specific defaults are applied correctly."""
@@ -61,6 +65,7 @@ class TestModeDefaults:
 # requires_requery
 # ---------------------------------------------------------------------------
 
+
 class TestRequiresRequery:
 
     def test_debate_requires_requery(self):
@@ -76,6 +81,7 @@ class TestRequiresRequery:
 # ---------------------------------------------------------------------------
 # Convergence
 # ---------------------------------------------------------------------------
+
 
 class TestConvergence:
 
@@ -112,19 +118,22 @@ class TestConvergence:
 # Context curation
 # ---------------------------------------------------------------------------
 
+
 class TestContextCuration:
 
     def _build_history(self, n_rounds: int, n_agents: int = 2) -> list:
         history = []
         for r in range(n_rounds):
             for a in range(n_agents):
-                history.append({
-                    "agent": f"agent_{a}",
-                    "round": r,
-                    "output": f"output_r{r}_a{a}",
-                    "reasoning": f"reason_r{r}_a{a}",
-                    "confidence": 0.8,
-                })
+                history.append(
+                    {
+                        "agent": f"agent_{a}",
+                        "round": r,
+                        "output": f"output_r{r}_a{a}",
+                        "reasoning": f"reason_r{r}_a{a}",
+                        "confidence": 0.8,
+                    }
+                )
         return history
 
     def test_full_strategy_returns_all(self):
@@ -157,6 +166,7 @@ class TestContextCuration:
 # get_round_context
 # ---------------------------------------------------------------------------
 
+
 class TestGetRoundContext:
 
     def test_debate_context(self):
@@ -183,6 +193,7 @@ class TestGetRoundContext:
 # ---------------------------------------------------------------------------
 # Synthesis
 # ---------------------------------------------------------------------------
+
 
 class TestSynthesis:
 
@@ -221,6 +232,7 @@ class TestSynthesis:
 # Validation
 # ---------------------------------------------------------------------------
 
+
 class TestValidation:
 
     def test_invalid_mode(self):
@@ -244,6 +256,7 @@ class TestValidation:
 # Cost budget
 # ---------------------------------------------------------------------------
 
+
 class TestCostBudget:
 
     def test_budget_stores(self):
@@ -262,6 +275,7 @@ class TestCostBudget:
 # ---------------------------------------------------------------------------
 # Capabilities
 # ---------------------------------------------------------------------------
+
 
 class TestCapabilities:
 
@@ -283,10 +297,12 @@ class TestCapabilities:
 # Registry integration
 # ---------------------------------------------------------------------------
 
+
 class TestRegistryIntegration:
 
     def test_multi_round_registered(self):
         from temper_ai.agent.strategies.registry import StrategyRegistry
+
         registry = StrategyRegistry()
         strategy = registry.get_strategy("multi_round", mode="debate")
         assert isinstance(strategy, MultiRoundStrategy)
@@ -294,6 +310,7 @@ class TestRegistryIntegration:
 
     def test_multi_round_with_config(self):
         from temper_ai.agent.strategies.registry import get_strategy_from_config
+
         config = {
             "collaboration": {
                 "strategy": "multi_round",
@@ -308,6 +325,7 @@ class TestRegistryIntegration:
 # ---------------------------------------------------------------------------
 # CollaborationStrategy interface
 # ---------------------------------------------------------------------------
+
 
 class TestInterface:
 
@@ -324,6 +342,7 @@ class TestInterface:
 # ---------------------------------------------------------------------------
 # Data classes
 # ---------------------------------------------------------------------------
+
 
 class TestDataClasses:
 

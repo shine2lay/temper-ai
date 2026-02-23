@@ -1,5 +1,4 @@
 """Tests for DAG visualization (R3)."""
-import pytest
 
 from temper_ai.workflow.dag_builder import StageDAG
 

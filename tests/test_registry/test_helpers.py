@@ -1,6 +1,7 @@
 """Tests for temper_ai.registry._helpers."""
-import tempfile
+
 import os
+import tempfile
 
 import pytest
 import yaml
@@ -55,15 +56,18 @@ class TestGenerateAgentId:
 
     def test_hex_format(self):
         agent_id = generate_agent_id()
-        int(agent_id, 16)  # Raises if not valid hex
+        # uuid4().hex produces a 32-character lowercase hexadecimal string
+        assert len(agent_id) == 32
+        assert agent_id == agent_id.lower()
+        # int() with base 16 raises ValueError if not valid hex
+        parsed = int(agent_id, 16)
+        assert parsed > 0
 
 
 class TestLoadConfigFromPath:
     def test_loads_valid_yaml(self):
         data = {"name": "my-agent", "type": "standard"}
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".yaml", delete=False
-        ) as fh:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as fh:
             yaml.dump(data, fh)
             path = fh.name
         try:
@@ -78,9 +82,7 @@ class TestLoadConfigFromPath:
             load_config_from_path("/does/not/exist.yaml")
 
     def test_raises_value_error_for_non_mapping(self):
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".yaml", delete=False
-        ) as fh:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as fh:
             fh.write("- item1\n- item2\n")
             path = fh.name
         try:

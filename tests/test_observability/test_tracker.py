@@ -4,6 +4,8 @@ Tests for ExecutionTracker.
 
 import pytest
 
+from temper_ai.observability.tracker import ExecutionTracker
+from temper_ai.shared.core.context import ExecutionContext
 from temper_ai.storage.database import get_session, init_database
 from temper_ai.storage.database.models import (
     AgentExecution,
@@ -12,8 +14,6 @@ from temper_ai.storage.database.models import (
     ToolExecution,
     WorkflowExecution,
 )
-from temper_ai.observability.tracker import ExecutionTracker
-from temper_ai.shared.core.context import ExecutionContext
 
 
 @pytest.fixture
@@ -22,6 +22,7 @@ def db():
     # Reset global database before each test
     import temper_ai.storage.database as db_module
     from temper_ai.storage.database.manager import _db_lock
+
     with _db_lock:
         db_module._db_manager = None
 
@@ -36,7 +37,10 @@ def db():
 @pytest.fixture
 def tracker(db):
     """Create fresh tracker for each test."""
-    return ExecutionTracker()
+    from temper_ai.observability.backends import SQLObservabilityBackend
+
+    backend = SQLObservabilityBackend(buffer=False)
+    return ExecutionTracker(backend=backend)
 
 
 class TestExecutionContext:
@@ -52,9 +56,7 @@ class TestExecutionContext:
     def test_context_with_values(self):
         """Test context with values."""
         ctx = ExecutionContext(
-            workflow_id="wf-123",
-            stage_id="st-456",
-            agent_id="ag-789"
+            workflow_id="wf-123", stage_id="st-456", agent_id="ag-789"
         )
         assert ctx.workflow_id == "wf-123"
         assert ctx.stage_id == "st-456"
@@ -93,7 +95,7 @@ class TestWorkflowTracking:
             optimization_target="speed",
             product_type="research",
             environment="test",
-            tags=["test", "demo"]
+            tags=["test", "demo"],
         ) as workflow_id:
             pass
 
@@ -118,9 +120,9 @@ class TestWorkflowTracking:
 
         # Verify error recorded
         with get_session() as session:
-            wf = session.query(WorkflowExecution).filter_by(
-                workflow_name="test"
-            ).first()
+            wf = (
+                session.query(WorkflowExecution).filter_by(workflow_name="test").first()
+            )
             assert wf is not None
             assert wf.status == "failed"
             assert wf.error_message == "Test error"
@@ -167,10 +169,7 @@ class TestStageTracking:
 
         with tracker.track_workflow("test_wf", config_wf) as workflow_id:
             with tracker.track_stage(
-                "research",
-                config_st,
-                workflow_id,
-                input_data=input_data
+                "research", config_st, workflow_id, input_data=input_data
             ) as stage_id:
                 pass
 
@@ -186,14 +185,16 @@ class TestStageTracking:
 
         with tracker.track_workflow("test_wf", config_wf) as workflow_id:
             with pytest.raises(RuntimeError):
-                with tracker.track_stage("test_stage", config_st, workflow_id) as stage_id:
+                with tracker.track_stage(
+                    "test_stage", config_st, workflow_id
+                ) as stage_id:
                     raise RuntimeError("Stage failed")
 
         # Verify error recorded
         with get_session() as session:
-            st = session.query(StageExecution).filter_by(
-                stage_name="test_stage"
-            ).first()
+            st = (
+                session.query(StageExecution).filter_by(stage_name="test_stage").first()
+            )
             assert st.status == "failed"
             assert st.error_message == "Stage failed"
 
@@ -246,10 +247,7 @@ class TestAgentTracking:
         with tracker.track_workflow("test_wf", config_wf) as workflow_id:
             with tracker.track_stage("test_st", config_st, workflow_id) as stage_id:
                 with tracker.track_agent(
-                    "researcher",
-                    config_ag,
-                    stage_id,
-                    input_data=input_data
+                    "researcher", config_ag, stage_id, input_data=input_data
                 ) as agent_id:
                     pass
 
@@ -260,6 +258,8 @@ class TestAgentTracking:
 
     def test_set_agent_output(self, tracker):
         """Test setting agent output data."""
+        from temper_ai.observability.metric_aggregator import AgentOutputParams
+
         config_wf = {}
         config_st = {}
         config_ag = {}
@@ -270,10 +270,12 @@ class TestAgentTracking:
                     output_data = {"result": "success"}
                     reasoning = "Based on analysis..."
                     tracker.set_agent_output(
-                        agent_id,
-                        output_data,
-                        reasoning=reasoning,
-                        confidence_score=0.85
+                        AgentOutputParams(
+                            agent_id=agent_id,
+                            output_data=output_data,
+                            reasoning=reasoning,
+                            confidence_score=0.85,
+                        )
                     )
 
         # Verify output stored
@@ -307,7 +309,7 @@ class TestLLMTracking:
                         latency_ms=250,
                         estimated_cost_usd=0.001,
                         temperature=0.7,
-                        max_tokens=2048
+                        max_tokens=2048,
                     )
 
         # Verify LLM call recorded
@@ -336,12 +338,26 @@ class TestLLMTracking:
                 with tracker.track_agent("researcher", config_ag, stage_id) as agent_id:
                     # Make 2 LLM calls
                     tracker.track_llm_call(
-                        agent_id, "ollama", "llama3.2:3b", "Hi", "Hello",
-                        10, 5, 200, 0.001
+                        agent_id,
+                        provider="ollama",
+                        model="llama3.2:3b",
+                        prompt="Hi",
+                        response="Hello",
+                        prompt_tokens=10,
+                        completion_tokens=5,
+                        latency_ms=200,
+                        estimated_cost_usd=0.001,
                     )
                     tracker.track_llm_call(
-                        agent_id, "ollama", "llama3.2:3b", "Bye", "Goodbye",
-                        15, 8, 250, 0.002
+                        agent_id,
+                        provider="ollama",
+                        model="llama3.2:3b",
+                        prompt="Bye",
+                        response="Goodbye",
+                        prompt_tokens=15,
+                        completion_tokens=8,
+                        latency_ms=250,
+                        estimated_cost_usd=0.002,
                     )
 
         # Verify agent metrics updated
@@ -362,10 +378,19 @@ class TestLLMTracking:
         with tracker.track_workflow("test_wf", config_wf) as workflow_id:
             with tracker.track_stage("test_st", config_st, workflow_id) as stage_id:
                 with tracker.track_agent("researcher", config_ag, stage_id) as agent_id:
-                    with pytest.raises(ValueError, match="prompt_tokens must be non-negative"):
+                    with pytest.raises(
+                        ValueError, match="prompt_tokens must be non-negative"
+                    ):
                         tracker.track_llm_call(
-                            agent_id, "ollama", "llama3.2:3b", "Hello", "Hi",
-                            -10, 5, 200, 0.001  # Negative prompt_tokens
+                            agent_id,
+                            provider="ollama",
+                            model="llama3.2:3b",
+                            prompt="Hello",
+                            response="Hi",
+                            prompt_tokens=-10,
+                            completion_tokens=5,
+                            latency_ms=200,
+                            estimated_cost_usd=0.001,
                         )
 
     def test_reject_negative_completion_tokens(self, tracker):
@@ -377,10 +402,19 @@ class TestLLMTracking:
         with tracker.track_workflow("test_wf", config_wf) as workflow_id:
             with tracker.track_stage("test_st", config_st, workflow_id) as stage_id:
                 with tracker.track_agent("researcher", config_ag, stage_id) as agent_id:
-                    with pytest.raises(ValueError, match="completion_tokens must be non-negative"):
+                    with pytest.raises(
+                        ValueError, match="completion_tokens must be non-negative"
+                    ):
                         tracker.track_llm_call(
-                            agent_id, "ollama", "llama3.2:3b", "Hello", "Hi",
-                            10, -5, 200, 0.001  # Negative completion_tokens
+                            agent_id,
+                            provider="ollama",
+                            model="llama3.2:3b",
+                            prompt="Hello",
+                            response="Hi",
+                            prompt_tokens=10,
+                            completion_tokens=-5,
+                            latency_ms=200,
+                            estimated_cost_usd=0.001,
                         )
 
     def test_reject_negative_latency_ms(self, tracker):
@@ -392,10 +426,19 @@ class TestLLMTracking:
         with tracker.track_workflow("test_wf", config_wf) as workflow_id:
             with tracker.track_stage("test_st", config_st, workflow_id) as stage_id:
                 with tracker.track_agent("researcher", config_ag, stage_id) as agent_id:
-                    with pytest.raises(ValueError, match="latency_ms must be non-negative"):
+                    with pytest.raises(
+                        ValueError, match="latency_ms must be non-negative"
+                    ):
                         tracker.track_llm_call(
-                            agent_id, "ollama", "llama3.2:3b", "Hello", "Hi",
-                            10, 5, -200, 0.001  # Negative latency_ms
+                            agent_id,
+                            provider="ollama",
+                            model="llama3.2:3b",
+                            prompt="Hello",
+                            response="Hi",
+                            prompt_tokens=10,
+                            completion_tokens=5,
+                            latency_ms=-200,
+                            estimated_cost_usd=0.001,
                         )
 
     def test_reject_negative_estimated_cost(self, tracker):
@@ -407,10 +450,19 @@ class TestLLMTracking:
         with tracker.track_workflow("test_wf", config_wf) as workflow_id:
             with tracker.track_stage("test_st", config_st, workflow_id) as stage_id:
                 with tracker.track_agent("researcher", config_ag, stage_id) as agent_id:
-                    with pytest.raises(ValueError, match="estimated_cost_usd must be non-negative"):
+                    with pytest.raises(
+                        ValueError, match="estimated_cost_usd must be non-negative"
+                    ):
                         tracker.track_llm_call(
-                            agent_id, "ollama", "llama3.2:3b", "Hello", "Hi",
-                            10, 5, 200, -0.001  # Negative cost
+                            agent_id,
+                            provider="ollama",
+                            model="llama3.2:3b",
+                            prompt="Hello",
+                            response="Hi",
+                            prompt_tokens=10,
+                            completion_tokens=5,
+                            latency_ms=200,
+                            estimated_cost_usd=-0.001,
                         )
 
     def test_accept_zero_values(self, tracker):
@@ -424,8 +476,15 @@ class TestLLMTracking:
                 with tracker.track_agent("researcher", config_ag, stage_id) as agent_id:
                     # Should not raise - zeros are valid
                     llm_call_id = tracker.track_llm_call(
-                        agent_id, "ollama", "llama3.2:3b", "Hello", "Hi",
-                        0, 0, 0, 0.0  # All zeros (valid)
+                        agent_id,
+                        provider="ollama",
+                        model="llama3.2:3b",
+                        prompt="Hello",
+                        response="Hi",
+                        prompt_tokens=0,
+                        completion_tokens=0,
+                        latency_ms=0,
+                        estimated_cost_usd=0.0,
                     )
                     assert llm_call_id is not None
 
@@ -450,7 +509,7 @@ class TestToolTracking:
                         duration_seconds=0.01,
                         status="success",
                         safety_checks=["input_validation"],
-                        approval_required=False
+                        approval_required=False,
                     )
 
         # Verify tool execution recorded
@@ -476,10 +535,18 @@ class TestToolTracking:
                 with tracker.track_agent("researcher", config_ag, stage_id) as agent_id:
                     # Make 2 tool calls
                     tracker.track_tool_call(
-                        agent_id, "calculator", {"op": "add"}, {"result": 3}, 0.01
+                        agent_id,
+                        tool_name="calculator",
+                        input_params={"op": "add"},
+                        output_data={"result": 3},
+                        duration_seconds=0.01,
                     )
                     tracker.track_tool_call(
-                        agent_id, "search", {"query": "test"}, {"results": []}, 0.5
+                        agent_id,
+                        tool_name="search",
+                        input_params={"query": "test"},
+                        output_data={"results": []},
+                        duration_seconds=0.5,
                     )
 
         # Verify agent metrics updated
@@ -502,11 +569,22 @@ class TestNestedTracking:
                 with tracker.track_agent("agent1", config_ag, stage_id) as agent_id:
                     # Track LLM and tool calls
                     tracker.track_llm_call(
-                        agent_id, "ollama", "llama3.2:3b",
-                        "prompt", "response", 100, 50, 300, 0.005
+                        agent_id,
+                        provider="ollama",
+                        model="llama3.2:3b",
+                        prompt="prompt",
+                        response="response",
+                        prompt_tokens=100,
+                        completion_tokens=50,
+                        latency_ms=300,
+                        estimated_cost_usd=0.005,
                     )
                     tracker.track_tool_call(
-                        agent_id, "tool1", {}, {}, 0.1
+                        agent_id,
+                        tool_name="tool1",
+                        input_params={},
+                        output_data={},
+                        duration_seconds=0.1,
                     )
 
         # Verify full hierarchy in database
@@ -525,10 +603,16 @@ class TestNestedTracking:
             assert ag.num_llm_calls == 1
             assert ag.num_tool_calls == 1
 
-            llm_calls = session.query(LLMCall).filter_by(agent_execution_id=agent_id).all()
+            llm_calls = (
+                session.query(LLMCall).filter_by(agent_execution_id=agent_id).all()
+            )
             assert len(llm_calls) == 1
 
-            tool_calls = session.query(ToolExecution).filter_by(agent_execution_id=agent_id).all()
+            tool_calls = (
+                session.query(ToolExecution)
+                .filter_by(agent_execution_id=agent_id)
+                .all()
+            )
             assert len(tool_calls) == 1
 
     def test_multiple_stages_in_workflow(self, tracker):
@@ -548,9 +632,11 @@ class TestNestedTracking:
 
         # Verify both stages recorded
         with get_session() as session:
-            stages = session.query(StageExecution).filter_by(
-                workflow_execution_id=workflow_id
-            ).all()
+            stages = (
+                session.query(StageExecution)
+                .filter_by(workflow_execution_id=workflow_id)
+                .all()
+            )
             assert len(stages) == 2
             assert {s.stage_name for s in stages} == {"stage1", "stage2"}
 
@@ -570,9 +656,11 @@ class TestNestedTracking:
 
         # Verify both agents recorded
         with get_session() as session:
-            agents = session.query(AgentExecution).filter_by(
-                stage_execution_id=stage_id
-            ).all()
+            agents = (
+                session.query(AgentExecution)
+                .filter_by(stage_execution_id=stage_id)
+                .all()
+            )
             assert len(agents) == 2
             assert {a.agent_name for a in agents} == {"agent1", "agent2"}
 
@@ -611,11 +699,13 @@ class TestHighVolumePerformance:
         throughput = 10000 / elapsed_time
 
         # Verify acceptance criteria
-        assert throughput > 1000, \
-            f"Throughput {throughput:.0f} events/sec below requirement of 1000 events/sec"
+        assert (
+            throughput > 1000
+        ), f"Throughput {throughput:.0f} events/sec below requirement of 1000 events/sec"
 
-        assert memory_increase_mb < 500, \
-            f"Memory increase {memory_increase_mb:.1f}MB exceeds 500MB limit"
+        assert (
+            memory_increase_mb < 500
+        ), f"Memory increase {memory_increase_mb:.1f}MB exceeds 500MB limit"
 
         # Verify all workflows were tracked
         with get_session() as session:
@@ -643,9 +733,11 @@ class TestHighVolumePerformance:
 
         # Verify no errors and all stages tracked
         with get_session() as session:
-            count = session.query(StageExecution).filter_by(
-                workflow_execution_id=workflow_id
-            ).count()
+            count = (
+                session.query(StageExecution)
+                .filter_by(workflow_execution_id=workflow_id)
+                .count()
+            )
             assert count == 10000, f"Expected 10000 stages, got {count}"
 
     @pytest.mark.slow
@@ -665,9 +757,11 @@ class TestHighVolumePerformance:
 
         # Verify all agents tracked
         with get_session() as session:
-            count = session.query(AgentExecution).filter_by(
-                stage_execution_id=stage_id
-            ).count()
+            count = (
+                session.query(AgentExecution)
+                .filter_by(stage_execution_id=stage_id)
+                .count()
+            )
             assert count == 10000, f"Expected 10000 agents, got {count}"
 
     def test_concurrent_workflow_tracking(self, tracker):
@@ -693,7 +787,9 @@ class TestHighVolumePerformance:
                 for i in range(num_workflows):
                     # Serialize database operations for SQLite
                     with db_lock:
-                        with tracker.track_workflow(f"wf_{worker_id}_{i}", config) as wf_id:
+                        with tracker.track_workflow(
+                            f"wf_{worker_id}_{i}", config
+                        ) as wf_id:
                             workflow_ids.append(wf_id)
             except Exception as e:
                 with lock:
@@ -718,7 +814,9 @@ class TestHighVolumePerformance:
         assert len(errors) == 0, f"Errors during concurrent tracking: {errors}"
 
         # Verify all workflows tracked
-        assert len(workflow_ids) == 10000, f"Expected 10000 workflows, got {len(workflow_ids)}"
+        assert (
+            len(workflow_ids) == 10000
+        ), f"Expected 10000 workflows, got {len(workflow_ids)}"
 
         # Calculate throughput
         throughput = 10000 / elapsed_time
@@ -726,9 +824,11 @@ class TestHighVolumePerformance:
 
         # Verify all in database
         with get_session() as session:
-            count = session.query(WorkflowExecution).filter(
-                WorkflowExecution.workflow_name.like("wf_%")
-            ).count()
+            count = (
+                session.query(WorkflowExecution)
+                .filter(WorkflowExecution.workflow_name.like("wf_%"))
+                .count()
+            )
             assert count == 10000
 
     def test_memory_usage_stable_under_load(self, tracker):
@@ -760,8 +860,9 @@ class TestHighVolumePerformance:
                 memory_increase = current_memory_mb - baseline_memory_mb
 
                 # Memory increase should be reasonable (<500MB)
-                assert memory_increase < 500, \
-                    f"Memory increase {memory_increase:.1f}MB exceeds limit at iteration {i}"
+                assert (
+                    memory_increase < 500
+                ), f"Memory increase {memory_increase:.1f}MB exceeds limit at iteration {i}"
 
         # Final memory check
         gc.collect()
@@ -773,4 +874,6 @@ class TestHighVolumePerformance:
         print(f"  Final: {final_memory_mb:.1f}MB")
         print(f"  Increase: {total_increase:.1f}MB")
 
-        assert total_increase < 500, f"Total memory increase {total_increase:.1f}MB exceeds 500MB"
+        assert (
+            total_increase < 500
+        ), f"Total memory increase {total_increase:.1f}MB exceeds 500MB"

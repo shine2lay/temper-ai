@@ -1,7 +1,7 @@
 """SQLModel tables for portfolio management data."""
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from sqlalchemy import JSON, Column
 from sqlmodel import Field, SQLModel
@@ -17,12 +17,10 @@ class PortfolioRecord(SQLModel, table=True):
     id: str = Field(primary_key=True)
     name: str = Field(unique=True, index=True)
     description: str = ""
-    config: Dict[str, Any] = Field(
-        default_factory=dict, sa_column=Column(JSON)
-    )
+    config: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     enabled: bool = True
     created_at: datetime = Field(default_factory=utcnow)
-    updated_at: Optional[datetime] = None
+    updated_at: datetime | None = None
 
 
 class ProductRunRecord(SQLModel, table=True):
@@ -38,11 +36,9 @@ class ProductRunRecord(SQLModel, table=True):
     cost_usd: float = 0.0
     duration_s: float = 0.0
     success: bool = False
-    metadata_json: Dict[str, Any] = Field(
-        default_factory=dict, sa_column=Column(JSON)
-    )
+    metadata_json: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     started_at: datetime = Field(default_factory=utcnow)
-    completed_at: Optional[datetime] = None
+    completed_at: datetime | None = None
 
 
 class SharedComponentRecord(SQLModel, table=True):
@@ -54,12 +50,8 @@ class SharedComponentRecord(SQLModel, table=True):
     source_stage: str = Field(index=True)
     target_stage: str = Field(index=True)
     similarity: float = 0.0
-    shared_keys: List[str] = Field(
-        default_factory=list, sa_column=Column(JSON)
-    )
-    differing_keys: List[str] = Field(
-        default_factory=list, sa_column=Column(JSON)
-    )
+    shared_keys: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    differing_keys: list[str] = Field(default_factory=list, sa_column=Column(JSON))
     status: str = Field(default="detected")
     created_at: datetime = Field(default_factory=utcnow)
 
@@ -72,9 +64,7 @@ class KGConceptRecord(SQLModel, table=True):
     id: str = Field(primary_key=True)
     name: str = Field(index=True)
     concept_type: str = Field(index=True)
-    properties: Dict[str, Any] = Field(
-        default_factory=dict, sa_column=Column(JSON)
-    )
+    properties: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     created_at: datetime = Field(default_factory=utcnow)
 
 
@@ -88,9 +78,7 @@ class KGEdgeRecord(SQLModel, table=True):
     target_id: str = Field(index=True)
     relation: str = Field(index=True)
     weight: float = 1.0
-    properties: Dict[str, Any] = Field(
-        default_factory=dict, sa_column=Column(JSON)
-    )
+    properties: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     created_at: datetime = Field(default_factory=utcnow)
 
 

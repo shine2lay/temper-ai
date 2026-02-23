@@ -8,20 +8,19 @@ Tests cover:
 - Rate limit headers (X-RateLimit-*)
 - Burst handling
 """
-import asyncio
-import pytest
+
 import threading
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
+import pytest
+
 from temper_ai.auth.oauth.rate_limiter import (
+    OAuthRateLimiter,
     RateLimitExceeded,
     SlidingWindowRateLimiter,
-    OAuthRateLimiter,
 )
-from temper_ai.shared.constants.durations import SECONDS_PER_MINUTE, SECONDS_PER_HOUR
-
 
 # ==================== FIXTURES ====================
 
@@ -45,7 +44,9 @@ def test_sliding_window_allows_within_limit(rate_limiter):
     """Test requests are allowed when within limit."""
     # Should allow 5 requests
     for i in range(5):
-        result = rate_limiter.check_limit("test", "user1", max_requests=5, window_seconds=60)
+        result = rate_limiter.check_limit(
+            "test", "user1", max_requests=5, window_seconds=60
+        )
         # check_limit returns None on success (doesn't raise exception)
         assert result is None
 
@@ -105,9 +106,9 @@ def test_sliding_window_independent_limit_types(rate_limiter):
 
 def test_sliding_window_resets_after_window(rate_limiter):
     """Test rate limit resets after time window expires."""
-    base_time = datetime.now(timezone.utc)
+    base_time = datetime.now(UTC)
 
-    with patch('temper_ai.auth.oauth.rate_limiter.datetime') as mock_datetime:
+    with patch("temper_ai.auth.oauth.rate_limiter.datetime") as mock_datetime:
         mock_datetime.now.return_value = base_time
 
         # Fill up limit
@@ -127,9 +128,9 @@ def test_sliding_window_resets_after_window(rate_limiter):
 
 def test_sliding_window_partial_reset(rate_limiter):
     """Test sliding window allows partial resets."""
-    base_time = datetime.now(timezone.utc)
+    base_time = datetime.now(UTC)
 
-    with patch('temper_ai.auth.oauth.rate_limiter.datetime') as mock_datetime:
+    with patch("temper_ai.auth.oauth.rate_limiter.datetime") as mock_datetime:
         # Make 3 requests at T=0
         mock_datetime.now.return_value = base_time
         for i in range(3):
@@ -157,9 +158,9 @@ def test_sliding_window_partial_reset(rate_limiter):
 
 def test_sliding_window_retry_after_calculation(rate_limiter):
     """Test retry-after correctly calculated."""
-    base_time = datetime.now(timezone.utc)
+    base_time = datetime.now(UTC)
 
-    with patch('temper_ai.auth.oauth.rate_limiter.datetime') as mock_datetime:
+    with patch("temper_ai.auth.oauth.rate_limiter.datetime") as mock_datetime:
         mock_datetime.now.return_value = base_time
 
         # Fill limit
@@ -176,9 +177,9 @@ def test_sliding_window_retry_after_calculation(rate_limiter):
 
 def test_sliding_window_retry_after_decreases(rate_limiter):
     """Test retry-after decreases as time passes."""
-    base_time = datetime.now(timezone.utc)
+    base_time = datetime.now(UTC)
 
-    with patch('temper_ai.auth.oauth.rate_limiter.datetime') as mock_datetime:
+    with patch("temper_ai.auth.oauth.rate_limiter.datetime") as mock_datetime:
         mock_datetime.now.return_value = base_time
 
         # Fill limit
@@ -249,9 +250,9 @@ def test_get_remaining_zero_quota(rate_limiter):
 
 def test_cleanup_removes_old_data(rate_limiter):
     """Test cleanup removes expired data."""
-    base_time = datetime.now(timezone.utc)
+    base_time = datetime.now(UTC)
 
-    with patch('temper_ai.auth.oauth.rate_limiter.datetime') as mock_datetime:
+    with patch("temper_ai.auth.oauth.rate_limiter.datetime") as mock_datetime:
         mock_datetime.now.return_value = base_time
 
         # Make some requests
@@ -272,16 +273,18 @@ def test_cleanup_removes_old_data(rate_limiter):
 
 def test_cleanup_keeps_recent_data(rate_limiter):
     """Test cleanup keeps recent data."""
-    base_time = datetime.now(timezone.utc)
+    base_time = datetime.now(UTC)
 
-    with patch('temper_ai.auth.oauth.rate_limiter.datetime') as mock_datetime:
+    with patch("temper_ai.auth.oauth.rate_limiter.datetime") as mock_datetime:
         mock_datetime.now.return_value = base_time
 
         # Make request
         rate_limiter.check_limit("test", "user1", max_requests=10, window_seconds=60)
 
         # Advance time but not past cleanup threshold
-        mock_datetime.now.return_value = base_time + timedelta(seconds=1800)  # 30 minutes
+        mock_datetime.now.return_value = base_time + timedelta(
+            seconds=1800
+        )  # 30 minutes
 
         # Run cleanup
         rate_limiter.cleanup(older_than_seconds=3600)
@@ -308,7 +311,7 @@ def test_concurrent_requests_thread_safe(rate_limiter):
                     "test",
                     "concurrent_user",
                     max_requests=max_requests,
-                    window_seconds=60
+                    window_seconds=60,
                 )
             except RateLimitExceeded as e:
                 errors.append(e)
@@ -336,10 +339,7 @@ def test_concurrent_different_users_independent(rate_limiter):
         for i in range(60):  # Exceed limit of 50
             try:
                 rate_limiter.check_limit(
-                    "test",
-                    user_id,
-                    max_requests=max_requests,
-                    window_seconds=60
+                    "test", user_id, max_requests=max_requests, window_seconds=60
                 )
             except RateLimitExceeded as e:
                 errors[user_id].append(e)
@@ -473,7 +473,9 @@ def test_burst_exceeding_limit_blocked(rate_limiter):
 
     for i in range(15):
         try:
-            rate_limiter.check_limit("test", "user1", max_requests=10, window_seconds=60)
+            rate_limiter.check_limit(
+                "test", "user1", max_requests=10, window_seconds=60
+            )
             allowed += 1
         except RateLimitExceeded:
             blocked += 1
@@ -489,11 +491,15 @@ def test_rate_limit_exceeded_message_format(rate_limiter):
     """Test RateLimitExceeded error message format."""
     # Fill limit
     for i in range(5):
-        rate_limiter.check_limit("test_type", "user1", max_requests=5, window_seconds=60)
+        rate_limiter.check_limit(
+            "test_type", "user1", max_requests=5, window_seconds=60
+        )
 
     # Trigger error
     with pytest.raises(RateLimitExceeded) as exc_info:
-        rate_limiter.check_limit("test_type", "user1", max_requests=5, window_seconds=60)
+        rate_limiter.check_limit(
+            "test_type", "user1", max_requests=5, window_seconds=60
+        )
 
     error_msg = str(exc_info.value)
     assert "Rate limit exceeded" in error_msg

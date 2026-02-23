@@ -1,7 +1,7 @@
 """Experiment-workflow integration — variant assignment and config merging."""
 
 import logging
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -9,8 +9,8 @@ logger = logging.getLogger(__name__)
 def assign_and_merge(
     experiment_id: str,
     workflow_id: str,
-    workflow_config: Dict[str, Any],
-) -> Tuple[Dict[str, Any], Optional[str]]:
+    workflow_config: dict[str, Any],
+) -> tuple[dict[str, Any], str | None]:
     """Assign variant and merge config overrides into workflow config.
 
     Args:
@@ -48,7 +48,7 @@ def assign_and_merge(
 def _extract_variant_overrides(
     experiment: Any,
     variant_id: str,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Extract config_overrides from the matching variant."""
     for variant in getattr(experiment, "variants", []):
         if str(variant.id) == str(variant_id):
@@ -61,7 +61,7 @@ def _extract_variant_overrides(
 def track_experiment_completion(
     experiment_id: str,
     workflow_id: str,
-    result: Dict[str, Any],
+    result: dict[str, Any],
     duration_seconds: float,
 ) -> None:
     """Track workflow completion metrics for experiment analysis.
@@ -75,7 +75,7 @@ def track_experiment_completion(
     from temper_ai.experimentation.service import ExperimentService
 
     service = ExperimentService()
-    metrics: Dict[str, float] = {
+    metrics: dict[str, float] = {
         "duration_seconds": duration_seconds,
     }
 

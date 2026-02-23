@@ -8,13 +8,12 @@ Tests cover:
 - Security validations
 - Secret redaction in logs
 """
+
 import os
 import warnings
 
 import pytest
 
-from temper_ai.workflow.config_loader import ConfigLoader
-from temper_ai.storage.schemas.agent_config import InferenceConfig
 from temper_ai.shared.utils.config_helpers import sanitize_config_for_display
 from temper_ai.shared.utils.secrets import (
     ObfuscatedCredential,
@@ -23,6 +22,8 @@ from temper_ai.shared.utils.secrets import (
     detect_secret_patterns,
     resolve_secret,
 )
+from temper_ai.storage.schemas.agent_config import InferenceConfig
+from temper_ai.workflow.config_loader import ConfigLoader
 
 
 class TestSecretReference:
@@ -47,26 +48,26 @@ class TestSecretReference:
 
     def test_resolve_env_success(self):
         """Test successful environment variable resolution."""
-        os.environ['TEST_API_KEY'] = 'sk-test123'
+        os.environ["TEST_API_KEY"] = "sk-test123"
         try:
-            result = SecretReference.resolve('${env:TEST_API_KEY}')
-            assert result == 'sk-test123'
+            result = SecretReference.resolve("${env:TEST_API_KEY}")
+            assert result == "sk-test123"
         finally:
-            del os.environ['TEST_API_KEY']
+            del os.environ["TEST_API_KEY"]
 
     def test_resolve_env_missing(self):
         """Test error when environment variable not set."""
         with pytest.raises(ValueError, match="not set"):
-            SecretReference.resolve('${env:NONEXISTENT_KEY}')
+            SecretReference.resolve("${env:NONEXISTENT_KEY}")
 
     def test_resolve_env_empty_value(self):
         """Test error when environment variable is empty."""
-        os.environ['EMPTY_KEY'] = ''
+        os.environ["EMPTY_KEY"] = ""
         try:
             with pytest.raises(ValueError, match="is empty"):
-                SecretReference.resolve('${env:EMPTY_KEY}')
+                SecretReference.resolve("${env:EMPTY_KEY}")
         finally:
-            del os.environ['EMPTY_KEY']
+            del os.environ["EMPTY_KEY"]
 
     def test_resolve_env_null_bytes(self):
         """Test security validation for null bytes (Python prevents this at OS level)."""
@@ -74,6 +75,7 @@ class TestSecretReference:
         # so we can't actually test this. The validation exists for defense in depth.
         # Just verify the validation function exists
         from temper_ai.shared.utils.secrets import SecretReference
+
         try:
             SecretReference._validate_secret_value("test", "value\x00bad")
             assert False, "Should have raised ValueError"
@@ -82,27 +84,27 @@ class TestSecretReference:
 
     def test_resolve_env_too_long(self):
         """Test security validation rejects overly long values."""
-        os.environ['HUGE_KEY'] = 'x' * (11 * 1024)  # 11KB
+        os.environ["HUGE_KEY"] = "x" * (11 * 1024)  # 11KB
         try:
             with pytest.raises(ValueError, match="too long"):
-                SecretReference.resolve('${env:HUGE_KEY}')
+                SecretReference.resolve("${env:HUGE_KEY}")
         finally:
-            del os.environ['HUGE_KEY']
+            del os.environ["HUGE_KEY"]
 
     def test_resolve_vault_not_implemented(self):
         """Test Vault provider raises NotImplementedError."""
         with pytest.raises(NotImplementedError, match="Vault"):
-            SecretReference.resolve('${vault:secret/api-key}')
+            SecretReference.resolve("${vault:secret/api-key}")
 
     def test_resolve_aws_not_implemented(self):
         """Test AWS Secrets Manager raises NotImplementedError."""
         with pytest.raises(NotImplementedError, match="AWS"):
-            SecretReference.resolve('${aws:my-secret}')
+            SecretReference.resolve("${aws:my-secret}")
 
     def test_resolve_plain_text(self):
         """Test backward compatibility with plain text values."""
-        result = SecretReference.resolve('plain-api-key')
-        assert result == 'plain-api-key'
+        result = SecretReference.resolve("plain-api-key")
+        assert result == "plain-api-key"
 
 
 class TestObfuscatedCredential:
@@ -144,16 +146,17 @@ class TestObfuscatedCredential:
 
         # SECURITY LIMITATION: Key is accessible in same memory
         # An attacker with access to the object can extract the key
-        assert hasattr(cred, '_key')
-        assert hasattr(cred, '_cipher')
-        assert hasattr(cred, '_encrypted')
+        assert hasattr(cred, "_key")
+        assert hasattr(cred, "_cipher")
+        assert hasattr(cred, "_encrypted")
 
         # With both key and ciphertext, attacker can decrypt
         extracted_key = cred._key
         extracted_ciphertext = cred._encrypted
         from cryptography.fernet import Fernet
+
         attacker_cipher = Fernet(extracted_key)
-        decrypted = attacker_cipher.decrypt(extracted_ciphertext).decode('utf-8')
+        decrypted = attacker_cipher.decrypt(extracted_ciphertext).decode("utf-8")
 
         # Attacker successfully extracted the secret
         assert decrypted == secret_value
@@ -177,11 +180,17 @@ class TestSecureCredentialDeprecation:
             cred = SecureCredential("sk-secret-123")
 
             # Check deprecation warning was emitted
-            deprecation_warnings = [x for x in w if issubclass(x.category, DeprecationWarning)]
+            deprecation_warnings = [
+                x for x in w if issubclass(x.category, DeprecationWarning)
+            ]
             assert len(deprecation_warnings) >= 1
 
             # Check our warning message is present
-            our_warnings = [x for x in deprecation_warnings if "ObfuscatedCredential" in str(x.message)]
+            our_warnings = [
+                x
+                for x in deprecation_warnings
+                if "ObfuscatedCredential" in str(x.message)
+            ]
             assert len(our_warnings) >= 1
             assert "OBFUSCATION" in str(our_warnings[0].message)
 
@@ -196,13 +205,17 @@ class TestSecureCredentialDeprecation:
         with warnings.catch_warnings(record=True) as w1:
             warnings.simplefilter("always")
             SecureCredential("secret1")
-            first_count = len([x for x in w1 if issubclass(x.category, DeprecationWarning)])
+            first_count = len(
+                [x for x in w1 if issubclass(x.category, DeprecationWarning)]
+            )
 
         # Second instantiation should not warn again
         with warnings.catch_warnings(record=True) as w2:
             warnings.simplefilter("always")
             SecureCredential("secret2")
-            second_count = len([x for x in w2 if issubclass(x.category, DeprecationWarning)])
+            second_count = len(
+                [x for x in w2 if issubclass(x.category, DeprecationWarning)]
+            )
 
         # First should have warning, second should not (already shown)
         assert first_count >= 1
@@ -214,7 +227,9 @@ class TestSecureCredentialDeprecation:
         SecureCredential._warning_shown = False
 
         with warnings.catch_warnings():
-            warnings.simplefilter("ignore")  # Suppress deprecation warning for this test
+            warnings.simplefilter(
+                "ignore"
+            )  # Suppress deprecation warning for this test
 
             secure_cred = SecureCredential("sk-test-key")
             obfuscated_cred = ObfuscatedCredential("sk-test-key")
@@ -230,12 +245,12 @@ class TestResolveSecret:
 
     def test_resolve_string_reference(self):
         """Test resolving string with secret reference."""
-        os.environ['MY_KEY'] = 'sk-abc123'
+        os.environ["MY_KEY"] = "sk-abc123"
         try:
             result = resolve_secret("${env:MY_KEY}")
-            assert result == 'sk-abc123'
+            assert result == "sk-abc123"
         finally:
-            del os.environ['MY_KEY']
+            del os.environ["MY_KEY"]
 
     def test_resolve_plain_string(self):
         """Test resolving plain string (no change)."""
@@ -244,43 +259,34 @@ class TestResolveSecret:
 
     def test_resolve_dict(self):
         """Test resolving secrets in dict."""
-        os.environ['API_KEY'] = 'sk-secret'
+        os.environ["API_KEY"] = "sk-secret"
         try:
-            config = {
-                "api_key_ref": "${env:API_KEY}",
-                "model": "gpt-4"
-            }
+            config = {"api_key_ref": "${env:API_KEY}", "model": "gpt-4"}
             result = resolve_secret(config)
             assert result["api_key_ref"] == "sk-secret"
             assert result["model"] == "gpt-4"
         finally:
-            del os.environ['API_KEY']
+            del os.environ["API_KEY"]
 
     def test_resolve_list(self):
         """Test resolving secrets in list."""
-        os.environ['KEY1'] = 'secret1'
+        os.environ["KEY1"] = "secret1"
         try:
             secrets = ["${env:KEY1}", "plain"]
             result = resolve_secret(secrets)
             assert result == ["secret1", "plain"]
         finally:
-            del os.environ['KEY1']
+            del os.environ["KEY1"]
 
     def test_resolve_nested(self):
         """Test resolving secrets in nested structures."""
-        os.environ['NESTED_KEY'] = 'nested-secret'
+        os.environ["NESTED_KEY"] = "nested-secret"
         try:
-            config = {
-                "outer": {
-                    "inner": {
-                        "secret": "${env:NESTED_KEY}"
-                    }
-                }
-            }
+            config = {"outer": {"inner": {"secret": "${env:NESTED_KEY}"}}}
             result = resolve_secret(config)
             assert result["outer"]["inner"]["secret"] == "nested-secret"
         finally:
-            del os.environ['NESTED_KEY']
+            del os.environ["NESTED_KEY"]
 
 
 class TestDetectSecretPatterns:
@@ -288,13 +294,17 @@ class TestDetectSecretPatterns:
 
     def test_detect_openai_key(self):
         """Test detecting OpenAI API key pattern."""
-        is_secret, confidence = detect_secret_patterns("sk-proj-abc123def456ghi789jkl012mno345")
+        is_secret, confidence = detect_secret_patterns(
+            "sk-proj-abc123def456ghi789jkl012mno345"
+        )
         assert is_secret is True
         assert confidence == "high"
 
     def test_detect_anthropic_key(self):
         """Test detecting Anthropic API key pattern."""
-        is_secret, confidence = detect_secret_patterns("sk-ant-api03-abc123def456ghi789jkl012mno345")
+        is_secret, confidence = detect_secret_patterns(
+            "sk-ant-api03-abc123def456ghi789jkl012mno345"
+        )
         assert is_secret is True
         assert confidence == "high"
 
@@ -306,7 +316,9 @@ class TestDetectSecretPatterns:
 
     def test_detect_github_token(self):
         """Test detecting GitHub personal access token."""
-        is_secret, confidence = detect_secret_patterns("ghp_1234567890abcdefghijklmnopqrstuv")
+        is_secret, confidence = detect_secret_patterns(
+            "ghp_1234567890abcdefghijklmnopqrstuv"
+        )
         assert is_secret is True
         assert confidence == "high"
 
@@ -332,18 +344,20 @@ class TestInferenceConfigBackwardCompatibility:
             warnings.simplefilter("always")
 
             config = InferenceConfig(
-                provider="openai",
-                model="gpt-4",
-                api_key="sk-old-key"
+                provider="openai", model="gpt-4", api_key="sk-old-key"
             )
 
             # Check that at least one deprecation warning was issued
             # (may have multiple from Pydantic itself)
-            deprecation_warnings = [x for x in w if issubclass(x.category, DeprecationWarning)]
+            deprecation_warnings = [
+                x for x in w if issubclass(x.category, DeprecationWarning)
+            ]
             assert len(deprecation_warnings) >= 1
 
             # Check our custom warning is present
-            our_warnings = [x for x in deprecation_warnings if "api_key_ref" in str(x.message)]
+            our_warnings = [
+                x for x in deprecation_warnings if "api_key_ref" in str(x.message)
+            ]
             assert len(our_warnings) >= 1
 
             # Check migration happened
@@ -356,14 +370,17 @@ class TestInferenceConfigBackwardCompatibility:
             warnings.simplefilter("always")
 
             config = InferenceConfig(
-                provider="openai",
-                model="gpt-4",
-                api_key_ref="${env:OPENAI_API_KEY}"
+                provider="openai", model="gpt-4", api_key_ref="${env:OPENAI_API_KEY}"
             )
 
             # Our custom migration warning should not be issued
             # (Pydantic may issue its own deprecation warnings, but we don't check those)
-            our_warnings = [x for x in w if "api_key_ref" in str(x.message) and "deprecated" in str(x.message).lower()]
+            our_warnings = [
+                x
+                for x in w
+                if "api_key_ref" in str(x.message)
+                and "deprecated" in str(x.message).lower()
+            ]
             assert len(our_warnings) == 0
             assert config.api_key_ref == "${env:OPENAI_API_KEY}"
 
@@ -376,12 +393,17 @@ class TestInferenceConfigBackwardCompatibility:
                 provider="openai",
                 model="gpt-4",
                 api_key="sk-old",
-                api_key_ref="${env:NEW_KEY}"
+                api_key_ref="${env:NEW_KEY}",
             )
 
             # api_key_ref should take precedence
             # Our custom migration warning should not be issued (since api_key_ref is already set)
-            our_warnings = [x for x in w if "api_key_ref" in str(x.message) and "deprecated" in str(x.message).lower()]
+            our_warnings = [
+                x
+                for x in w
+                if "api_key_ref" in str(x.message)
+                and "deprecated" in str(x.message).lower()
+            ]
             assert len(our_warnings) == 0
             assert config.api_key_ref == "${env:NEW_KEY}"
 
@@ -397,7 +419,7 @@ class TestConfigLoaderSecretResolution:
         agents_dir = config_root / "agents"
         agents_dir.mkdir()
 
-        os.environ['TEST_OPENAI_KEY'] = 'sk-test-resolved'
+        os.environ["TEST_OPENAI_KEY"] = "sk-test-resolved"
         try:
             # Write config with secret reference
             config_file = agents_dir / "test_agent.yaml"
@@ -431,7 +453,7 @@ agent:
             assert config["agent"]["inference"]["api_key_ref"] == "sk-test-resolved"
 
         finally:
-            del os.environ['TEST_OPENAI_KEY']
+            del os.environ["TEST_OPENAI_KEY"]
 
     def test_missing_secret_raises_error(self, tmp_path):
         """Test that missing secret raises clear error."""
@@ -494,11 +516,8 @@ class TestSanitizeConfigForDisplay:
     def test_sanitize_nested_secrets(self):
         """Test that nested secrets are redacted."""
         config = {
-            "inference": {
-                "api_key_ref": "${env:SECRET}",
-                "model": "gpt-4"
-            },
-            "name": "test"
+            "inference": {"api_key_ref": "${env:SECRET}", "model": "gpt-4"},
+            "name": "test",
         }
         result = sanitize_config_for_display(config)
         assert result["inference"]["api_key_ref"] == "${env:***REDACTED***}"
@@ -507,11 +526,7 @@ class TestSanitizeConfigForDisplay:
 
     def test_sanitize_password_fields(self):
         """Test that password fields are redacted."""
-        config = {
-            "password": "secret123",
-            "db_password": "dbpass",
-            "user": "admin"
-        }
+        config = {"password": "secret123", "db_password": "dbpass", "user": "admin"}
         result = sanitize_config_for_display(config)
         assert result["password"] == "***REDACTED***"
         assert result["db_password"] == "***REDACTED***"
@@ -521,7 +536,7 @@ class TestSanitizeConfigForDisplay:
         """Test that values containing secret patterns are redacted."""
         config = {
             "token": "sk-proj-abc123def456ghi789jkl012mno345",
-            "setting": "normal-value"
+            "setting": "normal-value",
         }
         result = sanitize_config_for_display(config)
         assert result["token"] == "***REDACTED***"
@@ -550,7 +565,7 @@ class TestSecretNeverInLogs:
                 "provider": "openai",
                 "model": "gpt-4",
                 "api_key": "sk-real-secret-key-123",
-                "api_key_ref": "${env:OPENAI_API_KEY}"
+                "api_key_ref": "${env:OPENAI_API_KEY}",
             }
         }
 

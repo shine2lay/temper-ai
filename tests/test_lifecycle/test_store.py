@@ -34,11 +34,13 @@ class TestLifecycleStoreAdaptations:
 
     def test_filter_by_profile(self, store):
         for i, name in enumerate(["lean", "lean", "security"]):
-            store.save_adaptation(LifecycleAdaptation(
-                id=f"id-{i}",
-                workflow_id=f"wf-{i}",
-                profile_name=name,
-            ))
+            store.save_adaptation(
+                LifecycleAdaptation(
+                    id=f"id-{i}",
+                    workflow_id=f"wf-{i}",
+                    profile_name=name,
+                )
+            )
         lean = store.list_adaptations(profile_name="lean")
         assert len(lean) == 2
         sec = store.list_adaptations(profile_name="security")
@@ -46,9 +48,13 @@ class TestLifecycleStoreAdaptations:
 
     def test_list_limit(self, store):
         for i in range(5):
-            store.save_adaptation(LifecycleAdaptation(
-                id=f"id-{i}", workflow_id=f"wf-{i}", profile_name="lean",
-            ))
+            store.save_adaptation(
+                LifecycleAdaptation(
+                    id=f"id-{i}",
+                    workflow_id=f"wf-{i}",
+                    profile_name="lean",
+                )
+            )
         result = store.list_adaptations(limit=2)
         assert len(result) == 2
 
@@ -61,7 +67,14 @@ class TestLifecycleStoreProfiles:
             id="p-1",
             name="lean",
             description="Lean profile",
-            rules=[{"name": "r1", "action": "skip", "stage_name": "design", "condition": "{{ true }}"}],
+            rules=[
+                {
+                    "name": "r1",
+                    "action": "skip",
+                    "stage_name": "design",
+                    "condition": "{{ true }}",
+                }
+            ],
         )
         store.save_profile(profile)
         result = store.get_profile("lean")
@@ -73,16 +86,23 @@ class TestLifecycleStoreProfiles:
 
     def test_list_profiles(self, store):
         for name in ["alpha", "beta"]:
-            store.save_profile(LifecycleProfileRecord(
-                id=f"p-{name}", name=name,
-            ))
+            store.save_profile(
+                LifecycleProfileRecord(
+                    id=f"p-{name}",
+                    name=name,
+                )
+            )
         result = store.list_profiles()
         assert len(result) == 2
 
     def test_update_profile_status(self, store):
-        store.save_profile(LifecycleProfileRecord(
-            id="p-1", name="lean", enabled=True,
-        ))
+        store.save_profile(
+            LifecycleProfileRecord(
+                id="p-1",
+                name="lean",
+                enabled=True,
+            )
+        )
         assert store.update_profile_status("lean", enabled=False) is True
         updated = store.get_profile("lean")
         assert updated is not None

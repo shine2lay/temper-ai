@@ -6,6 +6,8 @@ calculations including mixed decisions, and edge cases like first updates
 and concurrent operations.
 """
 
+from datetime import UTC
+
 import pytest
 from sqlmodel import select
 
@@ -20,6 +22,7 @@ def db():
     # Reset global database before each test
     import temper_ai.observability.database as db_module
     from temper_ai.observability.database import _db_lock
+
     with _db_lock:
         db_module._db_manager = None
 
@@ -48,7 +51,7 @@ class TestMeritScoreServiceBasics:
                 agent_name="researcher",
                 domain="analysis",
                 decision_outcome="success",
-                confidence=0.85
+                confidence=0.85,
             )
             session.commit()
 
@@ -56,7 +59,7 @@ class TestMeritScoreServiceBasics:
         with get_session() as session:
             statement = select(AgentMeritScore).where(
                 AgentMeritScore.agent_name == "researcher",
-                AgentMeritScore.domain == "analysis"
+                AgentMeritScore.domain == "analysis",
             )
             merit = session.exec(statement).first()
 
@@ -78,14 +81,14 @@ class TestMeritScoreServiceBasics:
                 agent_name="researcher",
                 domain="analysis",
                 decision_outcome="failure",
-                confidence=0.40
+                confidence=0.40,
             )
             session.commit()
 
         with get_session() as session:
             statement = select(AgentMeritScore).where(
                 AgentMeritScore.agent_name == "researcher",
-                AgentMeritScore.domain == "analysis"
+                AgentMeritScore.domain == "analysis",
             )
             merit = session.exec(statement).first()
 
@@ -102,14 +105,14 @@ class TestMeritScoreServiceBasics:
                 agent_name="researcher",
                 domain="analysis",
                 decision_outcome="mixed",
-                confidence=0.65
+                confidence=0.65,
             )
             session.commit()
 
         with get_session() as session:
             statement = select(AgentMeritScore).where(
                 AgentMeritScore.agent_name == "researcher",
-                AgentMeritScore.domain == "analysis"
+                AgentMeritScore.domain == "analysis",
             )
             merit = session.exec(statement).first()
 
@@ -127,14 +130,14 @@ class TestMeritScoreServiceBasics:
                 session=session,
                 agent_name="researcher",
                 domain="analysis",
-                decision_outcome="neutral"
+                decision_outcome="neutral",
             )
             session.commit()
 
         with get_session() as session:
             statement = select(AgentMeritScore).where(
                 AgentMeritScore.agent_name == "researcher",
-                AgentMeritScore.domain == "analysis"
+                AgentMeritScore.domain == "analysis",
             )
             merit = session.exec(statement).first()
 
@@ -158,7 +161,7 @@ class TestCumulativeMetrics:
         with get_session() as session:
             statement = select(AgentMeritScore).where(
                 AgentMeritScore.agent_name == "researcher",
-                AgentMeritScore.domain == "analysis"
+                AgentMeritScore.domain == "analysis",
             )
             merit = session.exec(statement).first()
 
@@ -178,7 +181,7 @@ class TestCumulativeMetrics:
         with get_session() as session:
             statement = select(AgentMeritScore).where(
                 AgentMeritScore.agent_name == "researcher",
-                AgentMeritScore.domain == "analysis"
+                AgentMeritScore.domain == "analysis",
             )
             merit = session.exec(statement).first()
 
@@ -199,7 +202,7 @@ class TestCumulativeMetrics:
         with get_session() as session:
             statement = select(AgentMeritScore).where(
                 AgentMeritScore.agent_name == "researcher",
-                AgentMeritScore.domain == "analysis"
+                AgentMeritScore.domain == "analysis",
             )
             merit = session.exec(statement).first()
 
@@ -223,7 +226,7 @@ class TestConfidenceTracking:
 
             statement = select(AgentMeritScore).where(
                 AgentMeritScore.agent_name == "researcher",
-                AgentMeritScore.domain == "analysis"
+                AgentMeritScore.domain == "analysis",
             )
             merit = session.exec(statement).first()
             assert merit.average_confidence == 0.8
@@ -248,7 +251,7 @@ class TestConfidenceTracking:
         with get_session() as session:
             statement = select(AgentMeritScore).where(
                 AgentMeritScore.agent_name == "researcher",
-                AgentMeritScore.domain == "analysis"
+                AgentMeritScore.domain == "analysis",
             )
             merit = session.exec(statement).first()
             assert merit.average_confidence is None
@@ -263,7 +266,7 @@ class TestConfidenceTracking:
         with get_session() as session:
             statement = select(AgentMeritScore).where(
                 AgentMeritScore.agent_name == "researcher",
-                AgentMeritScore.domain == "analysis"
+                AgentMeritScore.domain == "analysis",
             )
             merit = session.exec(statement).first()
             assert merit.average_confidence == 0.85
@@ -282,7 +285,7 @@ class TestExpertiseScore:
         with get_session() as session:
             statement = select(AgentMeritScore).where(
                 AgentMeritScore.agent_name == "researcher",
-                AgentMeritScore.domain == "analysis"
+                AgentMeritScore.domain == "analysis",
             )
             merit = session.exec(statement).first()
 
@@ -299,7 +302,7 @@ class TestExpertiseScore:
         with get_session() as session:
             statement = select(AgentMeritScore).where(
                 AgentMeritScore.agent_name == "researcher",
-                AgentMeritScore.domain == "analysis"
+                AgentMeritScore.domain == "analysis",
             )
             merit = session.exec(statement).first()
 
@@ -321,13 +324,13 @@ class TestMultipleDomains:
         with get_session() as session:
             analysis_stmt = select(AgentMeritScore).where(
                 AgentMeritScore.agent_name == "researcher",
-                AgentMeritScore.domain == "analysis"
+                AgentMeritScore.domain == "analysis",
             )
             analysis = session.exec(analysis_stmt).first()
 
             coding_stmt = select(AgentMeritScore).where(
                 AgentMeritScore.agent_name == "researcher",
-                AgentMeritScore.domain == "coding"
+                AgentMeritScore.domain == "coding",
             )
             coding = session.exec(coding_stmt).first()
 
@@ -370,7 +373,7 @@ class TestTimestamps:
         with get_session() as session:
             statement = select(AgentMeritScore).where(
                 AgentMeritScore.agent_name == "researcher",
-                AgentMeritScore.domain == "analysis"
+                AgentMeritScore.domain == "analysis",
             )
             merit = session.exec(statement).first()
 
@@ -380,7 +383,6 @@ class TestTimestamps:
 
     def test_last_decision_date_updates(self, db, service):
         """Test last_decision_date updates on subsequent decisions."""
-        from datetime import timezone
 
         with get_session() as session:
             service.update(session, "researcher", "analysis", "success")
@@ -388,14 +390,14 @@ class TestTimestamps:
 
             statement = select(AgentMeritScore).where(
                 AgentMeritScore.agent_name == "researcher",
-                AgentMeritScore.domain == "analysis"
+                AgentMeritScore.domain == "analysis",
             )
             merit = session.exec(statement).first()
             first_date = merit.last_decision_date
 
             # Ensure timezone-aware if needed
             if first_date.tzinfo is None:
-                first_date = first_date.replace(tzinfo=timezone.utc)
+                first_date = first_date.replace(tzinfo=UTC)
 
             service.update(session, "researcher", "analysis", "success")
             session.flush()
@@ -405,7 +407,7 @@ class TestTimestamps:
 
             # Ensure timezone-aware if needed
             if second_date.tzinfo is None:
-                second_date = second_date.replace(tzinfo=timezone.utc)
+                second_date = second_date.replace(tzinfo=UTC)
 
             assert second_date >= first_date
             session.commit()
@@ -424,7 +426,7 @@ class TestTimeWindowedMetrics:
         with get_session() as session:
             statement = select(AgentMeritScore).where(
                 AgentMeritScore.agent_name == "researcher",
-                AgentMeritScore.domain == "analysis"
+                AgentMeritScore.domain == "analysis",
             )
             merit = session.exec(statement).first()
             # No DecisionOutcome records → windowed metric should be None
@@ -432,7 +434,7 @@ class TestTimeWindowedMetrics:
 
     def test_time_windowed_metrics_with_decisions(self, db, service):
         """Test time-windowed metrics with DecisionOutcome records."""
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         with get_session() as session:
             # Create DecisionOutcome records
@@ -441,7 +443,7 @@ class TestTimeWindowedMetrics:
                 decision_type="test",
                 decision_data={"agent_name": "researcher"},
                 outcome="success",
-                validation_timestamp=datetime.now(timezone.utc)
+                validation_timestamp=datetime.now(UTC),
             )
             session.add(decision)
             session.commit()
@@ -454,7 +456,7 @@ class TestTimeWindowedMetrics:
         with get_session() as session:
             statement = select(AgentMeritScore).where(
                 AgentMeritScore.agent_name == "researcher",
-                AgentMeritScore.domain == "analysis"
+                AgentMeritScore.domain == "analysis",
             )
             merit = session.exec(statement).first()
             assert merit is not None
@@ -477,7 +479,7 @@ class TestEdgeCases:
                 domain="test",
                 total_decisions=0,
                 successful_decisions=0,
-                failed_decisions=0
+                failed_decisions=0,
             )
             session.add(merit)
             session.commit()
@@ -500,7 +502,7 @@ class TestEdgeCases:
         with get_session() as session:
             statement = select(AgentMeritScore).where(
                 AgentMeritScore.agent_name == "researcher",
-                AgentMeritScore.domain == "analysis"
+                AgentMeritScore.domain == "analysis",
             )
             merit = session.exec(statement).first()
             assert merit.total_decisions == 3

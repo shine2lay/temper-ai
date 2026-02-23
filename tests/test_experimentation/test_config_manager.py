@@ -38,19 +38,10 @@ class TestDeepMerge:
         manager = ConfigManager()
 
         base = {
-            "agent": {
-                "model": "gpt-4",
-                "temperature": 0.7,
-                "max_tokens": 2048
-            },
-            "timeout": 30
+            "agent": {"model": "gpt-4", "temperature": 0.7, "max_tokens": 2048},
+            "timeout": 30,
         }
-        overrides = {
-            "agent": {
-                "temperature": 0.9,
-                "top_p": 0.95
-            }
-        }
+        overrides = {"agent": {"temperature": 0.9, "top_p": 0.95}}
 
         result = manager.merge_config(base, overrides, validate_protected=False)
 
@@ -59,9 +50,9 @@ class TestDeepMerge:
                 "model": "gpt-4",
                 "temperature": 0.9,  # Overridden
                 "max_tokens": 2048,  # Preserved
-                "top_p": 0.95  # Added
+                "top_p": 0.95,  # Added
             },
-            "timeout": 30  # Preserved
+            "timeout": 30,  # Preserved
         }
 
     def test_deep_nested_merge(self):
@@ -69,24 +60,9 @@ class TestDeepMerge:
         manager = ConfigManager()
 
         base = {
-            "level1": {
-                "level2": {
-                    "level3": {
-                        "value": "original",
-                        "keep": "preserved"
-                    }
-                }
-            }
+            "level1": {"level2": {"level3": {"value": "original", "keep": "preserved"}}}
         }
-        overrides = {
-            "level1": {
-                "level2": {
-                    "level3": {
-                        "value": "overridden"
-                    }
-                }
-            }
-        }
+        overrides = {"level1": {"level2": {"level3": {"value": "overridden"}}}}
 
         result = manager.merge_config(base, overrides, validate_protected=False)
 
@@ -166,13 +142,7 @@ class TestSecurityValidation:
         manager = ConfigManager()
 
         base = {}
-        overrides = {
-            "level1": {
-                "level2": {
-                    "password": "secret123"
-                }
-            }
-        }
+        overrides = {"level1": {"level2": {"password": "secret123"}}}
 
         with pytest.raises(SecurityViolationError, match="password"):
             manager.merge_config(base, overrides)
@@ -219,7 +189,7 @@ class TestSecurityValidation:
             "model": "gpt-4",
             "temperature": 0.9,
             "max_tokens": 4096,
-            "custom_setting": "value"
+            "custom_setting": "value",
         }
 
         # Should not raise
@@ -284,11 +254,9 @@ class TestConvenienceFunctions:
         base = {
             "name": "researcher",
             "model": "gpt-4",
-            "inference": {"temperature": 0.7}
+            "inference": {"temperature": 0.7},
         }
-        overrides = {
-            "inference": {"temperature": 0.9, "max_tokens": 4096}
-        }
+        overrides = {"inference": {"temperature": 0.9, "max_tokens": 4096}}
 
         result = merge_agent_config(base, overrides)
 
@@ -298,13 +266,8 @@ class TestConvenienceFunctions:
 
     def test_merge_stage_config(self):
         """Test stage config merge convenience function."""
-        base = {
-            "name": "research",
-            "agents": ["researcher", "analyzer"]
-        }
-        overrides = {
-            "agents": ["researcher", "analyzer", "synthesizer"]
-        }
+        base = {"name": "research", "agents": ["researcher", "analyzer"]}
+        overrides = {"agents": ["researcher", "analyzer", "synthesizer"]}
 
         result = merge_stage_config(base, overrides)
 
@@ -312,13 +275,8 @@ class TestConvenienceFunctions:
 
     def test_merge_workflow_config(self):
         """Test workflow config merge convenience function."""
-        base = {
-            "name": "research_workflow",
-            "stages": ["research", "analyze"]
-        }
-        overrides = {
-            "optimization_target": "speed"
-        }
+        base = {"name": "research_workflow", "stages": ["research", "analyze"]}
+        overrides = {"optimization_target": "speed"}
 
         result = merge_workflow_config(base, overrides)
 
@@ -382,22 +340,15 @@ class TestEdgeCases:
                         "config": {
                             "model": "gpt-4",
                             "temperature": 0.7,
-                            "max_tokens": 2048
-                        }
+                            "max_tokens": 2048,
+                        },
                     }
-                }
+                },
             }
         }
         overrides = {
             "workflow": {
-                "stages": {
-                    "research": {
-                        "config": {
-                            "temperature": 0.9,
-                            "top_p": 0.95
-                        }
-                    }
-                }
+                "stages": {"research": {"config": {"temperature": 0.9, "top_p": 0.95}}}
             }
         }
 
@@ -408,7 +359,9 @@ class TestEdgeCases:
         assert research_config["temperature"] == 0.9  # Overridden
         assert research_config["max_tokens"] == 2048  # Preserved
         assert research_config["top_p"] == 0.95  # Added
-        assert result["workflow"]["stages"]["research"]["agents"] == ["researcher"]  # Preserved
+        assert result["workflow"]["stages"]["research"]["agents"] == [
+            "researcher"
+        ]  # Preserved
 
 
 class TestApplyOverridesSafely:
@@ -450,8 +403,7 @@ class TestApplyOverridesSafely:
 
         # Should pass validation
         result = manager.apply_overrides_safely(
-            base, overrides,
-            schema_class=AgentConfig
+            base, overrides, schema_class=AgentConfig
         )
 
         assert result["temperature"] == 0.9
@@ -470,10 +422,7 @@ class TestApplyOverridesSafely:
         overrides = {"temperature": "invalid"}  # Should be float
 
         with pytest.raises(ExperimentConfigValidationError):
-            manager.apply_overrides_safely(
-                base, overrides,
-                schema_class=AgentConfig
-            )
+            manager.apply_overrides_safely(base, overrides, schema_class=AgentConfig)
 
 
 class TestExtractOverrides:
@@ -481,43 +430,42 @@ class TestExtractOverrides:
 
     def test_extract_config_overrides_key(self):
         """Test extracting from config_overrides key."""
-        from temper_ai.experimentation.config_manager import extract_overrides_from_variant
+        from temper_ai.experimentation.config_manager import (
+            extract_overrides_from_variant,
+        )
 
-        variant = {
-            "name": "variant_a",
-            "config_overrides": {"temperature": 0.9}
-        }
+        variant = {"name": "variant_a", "config_overrides": {"temperature": 0.9}}
 
         overrides = extract_overrides_from_variant(variant)
         assert overrides == {"temperature": 0.9}
 
     def test_extract_config_key(self):
         """Test extracting from config key."""
-        from temper_ai.experimentation.config_manager import extract_overrides_from_variant
+        from temper_ai.experimentation.config_manager import (
+            extract_overrides_from_variant,
+        )
 
-        variant = {
-            "name": "variant_a",
-            "config": {"temperature": 0.9}
-        }
+        variant = {"name": "variant_a", "config": {"temperature": 0.9}}
 
         overrides = extract_overrides_from_variant(variant)
         assert overrides == {"temperature": 0.9}
 
     def test_extract_overrides_key(self):
         """Test extracting from overrides key."""
-        from temper_ai.experimentation.config_manager import extract_overrides_from_variant
+        from temper_ai.experimentation.config_manager import (
+            extract_overrides_from_variant,
+        )
 
-        variant = {
-            "name": "variant_a",
-            "overrides": {"temperature": 0.9}
-        }
+        variant = {"name": "variant_a", "overrides": {"temperature": 0.9}}
 
         overrides = extract_overrides_from_variant(variant)
         assert overrides == {"temperature": 0.9}
 
     def test_extract_no_known_key(self):
         """Test extracting when no known key exists - returns entire dict."""
-        from temper_ai.experimentation.config_manager import extract_overrides_from_variant
+        from temper_ai.experimentation.config_manager import (
+            extract_overrides_from_variant,
+        )
 
         variant = {
             "temperature": 0.9,
@@ -529,7 +477,9 @@ class TestExtractOverrides:
 
     def test_extract_priority(self):
         """Test that config_overrides has priority over other keys."""
-        from temper_ai.experimentation.config_manager import extract_overrides_from_variant
+        from temper_ai.experimentation.config_manager import (
+            extract_overrides_from_variant,
+        )
 
         variant = {
             "name": "variant_a",

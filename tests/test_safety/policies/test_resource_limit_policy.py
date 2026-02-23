@@ -9,6 +9,7 @@ Tests cover:
 - Resource usage reporting
 - Custom configuration
 """
+
 import os
 import tempfile
 import time
@@ -45,7 +46,7 @@ class TestResourceLimitPolicyBasics:
             "max_cpu_time": 10.0,
             "min_free_disk_space": 500 * 1024 * 1024,
             "track_memory": False,
-            "track_cpu": False
+            "track_cpu": False,
         }
         policy = ResourceLimitPolicy(config)
 
@@ -66,14 +67,14 @@ class TestFileSizeLimits:
         policy = ResourceLimitPolicy()
 
         # Create a small temp file
-        with tempfile.NamedTemporaryFile(mode='w', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
             f.write("small content")
             temp_path = f.name
 
         try:
             result = policy.validate(
                 action={"operation": "file_read", "path": temp_path},
-                context={"agent_id": "agent-123"}
+                context={"agent_id": "agent-123"},
             )
 
             assert result.valid
@@ -83,20 +84,18 @@ class TestFileSizeLimits:
 
     def test_large_file_read_blocked(self):
         """Test that large file reads are blocked."""
-        config = {
-            "max_file_size_read": 1024  # 1KB limit for testing
-        }
+        config = {"max_file_size_read": 1024}  # 1KB limit for testing
         policy = ResourceLimitPolicy(config)
 
         # Create a file larger than limit
-        with tempfile.NamedTemporaryFile(mode='w', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
             f.write("x" * 2048)  # 2KB
             temp_path = f.name
 
         try:
             result = policy.validate(
                 action={"operation": "file_read", "path": temp_path},
-                context={"agent_id": "agent-123"}
+                context={"agent_id": "agent-123"},
             )
 
             assert not result.valid
@@ -110,27 +109,29 @@ class TestFileSizeLimits:
 
     def test_large_file_write_blocked(self):
         """Test that large file writes are blocked."""
-        config = {
-            "max_file_size_write": 512  # 512B limit for testing
-        }
+        config = {"max_file_size_write": 512}  # 512B limit for testing
         policy = ResourceLimitPolicy(config)
 
         # Create a file larger than write limit
-        with tempfile.NamedTemporaryFile(mode='w', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
             f.write("x" * 1024)  # 1KB
             temp_path = f.name
 
         try:
             result = policy.validate(
                 action={"operation": "file_write", "path": temp_path},
-                context={"agent_id": "agent-123"}
+                context={"agent_id": "agent-123"},
             )
 
             assert not result.valid
             assert len(result.violations) >= 1  # May also have disk space violation
 
             # Find file size violation
-            file_violations = [v for v in result.violations if "exceeds write limit" in v.message.lower()]
+            file_violations = [
+                v
+                for v in result.violations
+                if "exceeds write limit" in v.message.lower()
+            ]
             assert len(file_violations) == 1
             assert file_violations[0].metadata["operation"] == "write"
         finally:
@@ -140,12 +141,12 @@ class TestFileSizeLimits:
         """Test that read and write operations have different limits."""
         config = {
             "max_file_size_read": 2048,  # 2KB read limit
-            "max_file_size_write": 512   # 512B write limit
+            "max_file_size_write": 512,  # 512B write limit
         }
         policy = ResourceLimitPolicy(config)
 
         # Create a 1KB file
-        with tempfile.NamedTemporaryFile(mode='w', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
             f.write("x" * 1024)
             temp_path = f.name
 
@@ -153,17 +154,19 @@ class TestFileSizeLimits:
             # Read should be allowed (1KB < 2KB limit)
             read_result = policy.validate(
                 action={"operation": "file_read", "path": temp_path},
-                context={"agent_id": "agent-123"}
+                context={"agent_id": "agent-123"},
             )
             assert read_result.valid
 
             # Write should be blocked (1KB > 512B limit)
             write_result = policy.validate(
                 action={"operation": "file_write", "path": temp_path},
-                context={"agent_id": "agent-123"}
+                context={"agent_id": "agent-123"},
             )
             # Check for file size violation specifically
-            file_violations = [v for v in write_result.violations if "file size" in v.message.lower()]
+            file_violations = [
+                v for v in write_result.violations if "file size" in v.message.lower()
+            ]
             assert len(file_violations) == 1
         finally:
             os.unlink(temp_path)
@@ -174,7 +177,7 @@ class TestFileSizeLimits:
 
         result = policy.validate(
             action={"operation": "file_read", "path": "/nonexistent/file.txt"},
-            context={"agent_id": "agent-123"}
+            context={"agent_id": "agent-123"},
         )
 
         # Should be valid (no file size violation since file doesn't exist)
@@ -186,7 +189,7 @@ class TestFileSizeLimits:
         policy = ResourceLimitPolicy({"max_file_size_read": 100})
 
         # Create small temp file
-        with tempfile.NamedTemporaryFile(mode='w', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
             f.write("x" * 50)
             temp_path = f.name
 
@@ -194,16 +197,14 @@ class TestFileSizeLimits:
             # Test read aliases
             for op in ["read", "read_file", "load", "open"]:
                 result = policy.validate(
-                    action={"operation": op, "path": temp_path},
-                    context={}
+                    action={"operation": op, "path": temp_path}, context={}
                 )
                 assert result.valid, f"Operation {op} should be allowed"
 
             # Test write aliases
             for op in ["write", "write_file", "save", "create"]:
                 result = policy.validate(
-                    action={"operation": op, "path": temp_path},
-                    context={}
+                    action={"operation": op, "path": temp_path}, context={}
                 )
                 # May have disk space violation, but should process write operations
                 assert result.metadata["limits_checked"]["disk_space"]
@@ -216,18 +217,16 @@ class TestDiskSpaceLimits:
 
     def test_sufficient_disk_space_allowed(self):
         """Test that operations with sufficient disk space are allowed."""
-        config = {
-            "min_free_disk_space": 100  # Very low limit (100 bytes)
-        }
+        config = {"min_free_disk_space": 100}  # Very low limit (100 bytes)
         policy = ResourceLimitPolicy(config)
 
-        with tempfile.NamedTemporaryFile(mode='w', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
             temp_path = f.name
 
         try:
             result = policy.validate(
                 action={"operation": "file_write", "path": temp_path},
-                context={"agent_id": "agent-123"}
+                context={"agent_id": "agent-123"},
             )
 
             # Should be valid (plenty of disk space)
@@ -235,7 +234,7 @@ class TestDiskSpaceLimits:
         finally:
             os.unlink(temp_path)
 
-    @patch('psutil.disk_usage')
+    @patch("psutil.disk_usage")
     def test_insufficient_disk_space_blocked(self, mock_disk_usage):
         """Test that operations with insufficient disk space are blocked."""
         # Mock disk usage to simulate low space (psutil.sdiskusage object)
@@ -246,14 +245,12 @@ class TestDiskSpaceLimits:
         mock_usage.percent = 95.0
         mock_disk_usage.return_value = mock_usage
 
-        config = {
-            "min_free_disk_space": 1024 * 1024 * 1024  # 1GB required
-        }
+        config = {"min_free_disk_space": 1024 * 1024 * 1024}  # 1GB required
         policy = ResourceLimitPolicy(config)
 
         result = policy.validate(
             action={"operation": "file_write", "path": "/tmp/test.txt"},
-            context={"agent_id": "agent-123"}
+            context={"agent_id": "agent-123"},
         )
 
         assert not result.valid
@@ -265,19 +262,18 @@ class TestDiskSpaceLimits:
         """Test that disk tracking can be disabled."""
         config = {
             "track_disk": False,
-            "min_free_disk_space": 1024 * 1024 * 1024 * 1024  # Impossibly high
+            "min_free_disk_space": 1024 * 1024 * 1024 * 1024,  # Impossibly high
         }
         policy = ResourceLimitPolicy(config)
 
         result = policy.validate(
-            action={"operation": "file_write", "path": "/tmp/test.txt"},
-            context={}
+            action={"operation": "file_write", "path": "/tmp/test.txt"}, context={}
         )
 
         # Should be valid even with impossibly high limit (tracking disabled)
         assert result.valid
 
-    @patch('psutil.disk_usage')
+    @patch("psutil.disk_usage")
     def test_disk_space_safety_margin(self, mock_disk_usage):
         """Test that 20% safety margin is applied to prevent TOCTOU race conditions.
 
@@ -300,14 +296,12 @@ class TestDiskSpaceLimits:
         mock_usage.percent = 89.0
         mock_disk_usage.return_value = mock_usage
 
-        config = {
-            "min_free_disk_space": 1024 * 1024 * 1024  # 1GB base requirement
-        }
+        config = {"min_free_disk_space": 1024 * 1024 * 1024}  # 1GB base requirement
         policy = ResourceLimitPolicy(config)
 
         result = policy.validate(
             action={"operation": "file_write", "path": "/tmp/test.txt"},
-            context={"agent_id": "agent-123"}
+            context={"agent_id": "agent-123"},
         )
 
         # Should be blocked: 1.1GB free < 1.2GB required (with 20% margin)
@@ -319,14 +313,16 @@ class TestDiskSpaceLimits:
         assert violation.metadata["safety_margin_percent"] == 20
         assert violation.metadata["required_space_base"] == 1024 * 1024 * 1024
         # Required with margin = 1GB * 1.2 = 1.2GB
-        assert violation.metadata["required_space_with_margin"] == int(1024 * 1024 * 1024 * 1.2)
+        assert violation.metadata["required_space_with_margin"] == int(
+            1024 * 1024 * 1024 * 1.2
+        )
 
 
 class TestMemoryMonitoring:
     """Tests for memory usage monitoring."""
 
-    @patch('psutil.Process')
-    @patch('psutil.virtual_memory')
+    @patch("psutil.Process")
+    @patch("psutil.virtual_memory")
     def test_normal_memory_usage_allowed(self, mock_virtual_memory, mock_process):
         """Test that normal memory usage is allowed."""
         # Mock process memory
@@ -346,14 +342,13 @@ class TestMemoryMonitoring:
         policy = ResourceLimitPolicy()
 
         result = policy.validate(
-            action={"operation": "compute"},
-            context={"agent_id": "agent-123"}
+            action={"operation": "compute"}, context={"agent_id": "agent-123"}
         )
 
         assert result.valid
 
-    @patch('psutil.Process')
-    @patch('psutil.virtual_memory')
+    @patch("psutil.Process")
+    @patch("psutil.virtual_memory")
     def test_excessive_memory_usage_blocked(self, mock_virtual_memory, mock_process):
         """Test that excessive memory usage is blocked."""
         # Mock process using too much memory
@@ -373,8 +368,7 @@ class TestMemoryMonitoring:
         policy = ResourceLimitPolicy()
 
         result = policy.validate(
-            action={"operation": "compute"},
-            context={"agent_id": "agent-123"}
+            action={"operation": "compute"}, context={"agent_id": "agent-123"}
         )
 
         assert not result.valid
@@ -386,14 +380,11 @@ class TestMemoryMonitoring:
         """Test that memory tracking can be disabled."""
         config = {
             "track_memory": False,
-            "max_memory_per_operation": 1  # Impossibly low
+            "max_memory_per_operation": 1,  # Impossibly low
         }
         policy = ResourceLimitPolicy(config)
 
-        result = policy.validate(
-            action={"operation": "compute"},
-            context={}
-        )
+        result = policy.validate(action={"operation": "compute"}, context={})
 
         # Should be valid even with impossibly low limit (tracking disabled)
         assert result.valid
@@ -417,9 +408,7 @@ class TestOperationTracking:
 
     def test_cpu_time_exceeded(self):
         """Test detection of CPU time limit exceeded."""
-        config = {
-            "max_cpu_time": 0.05  # 50ms limit
-        }
+        config = {"max_cpu_time": 0.05}  # 50ms limit
         policy = ResourceLimitPolicy(config)
 
         policy.start_operation("slow-task")
@@ -428,7 +417,7 @@ class TestOperationTracking:
 
         assert stats["cpu_exceeded"] is True
 
-    @patch('psutil.Process')
+    @patch("psutil.Process")
     def test_memory_delta_tracking(self, mock_process):
         """Test memory delta tracking for operations."""
         # Mock memory growth during operation
@@ -468,14 +457,18 @@ class TestOperationTracking:
 class TestResourceUsageReporting:
     """Tests for resource usage reporting."""
 
-    @patch('psutil.Process')
-    @patch('psutil.virtual_memory')
-    @patch('psutil.disk_usage')
-    @patch('psutil.cpu_percent')
-    @patch('psutil.cpu_count')
+    @patch("psutil.Process")
+    @patch("psutil.virtual_memory")
+    @patch("psutil.disk_usage")
+    @patch("psutil.cpu_percent")
+    @patch("psutil.cpu_count")
     def test_get_current_usage(
-        self, mock_cpu_count, mock_cpu_percent, mock_disk_usage,
-        mock_virtual_memory, mock_process
+        self,
+        mock_cpu_count,
+        mock_cpu_percent,
+        mock_disk_usage,
+        mock_virtual_memory,
+        mock_process,
     ):
         """Test getting current resource usage."""
         # Mock process memory
@@ -549,19 +542,19 @@ class TestIntegration:
         """Test that multiple violations can be detected simultaneously."""
         config = {
             "max_file_size_write": 100,  # 100 bytes
-            "min_free_disk_space": 1024 * 1024 * 1024 * 1024  # 1TB (likely exceeded)
+            "min_free_disk_space": 1024 * 1024 * 1024 * 1024,  # 1TB (likely exceeded)
         }
         policy = ResourceLimitPolicy(config)
 
         # Create a file larger than limit
-        with tempfile.NamedTemporaryFile(mode='w', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
             f.write("x" * 200)  # 200 bytes
             temp_path = f.name
 
         try:
             result = policy.validate(
                 action={"operation": "file_write", "path": temp_path},
-                context={"agent_id": "agent-123"}
+                context={"agent_id": "agent-123"},
             )
 
             assert not result.valid
@@ -574,10 +567,7 @@ class TestIntegration:
         """Test that unknown operation types don't cause errors."""
         policy = ResourceLimitPolicy()
 
-        result = policy.validate(
-            action={"operation": "unknown_op"},
-            context={}
-        )
+        result = policy.validate(action={"operation": "unknown_op"}, context={})
 
         # Should be valid (no specific checks for unknown operations)
         assert result.valid
@@ -586,13 +576,12 @@ class TestIntegration:
         """Test that metadata includes information about which limits were checked."""
         policy = ResourceLimitPolicy()
 
-        with tempfile.NamedTemporaryFile(mode='w', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
             temp_path = f.name
 
         try:
             result = policy.validate(
-                action={"operation": "file_write", "path": temp_path},
-                context={}
+                action={"operation": "file_write", "path": temp_path}, context={}
             )
 
             assert "limits_checked" in result.metadata

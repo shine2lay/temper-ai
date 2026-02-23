@@ -8,27 +8,32 @@ Usage:
     service = LLMService(llm, inference_config)
     result = service.run(prompt, tools=[...], tool_executor=executor, ...)
 """
+
 from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
+from temper_ai.llm._prompt import inject_results
+from temper_ai.llm._retry import call_with_retry_async, call_with_retry_sync
+from temper_ai.llm._schemas import build_native_tool_defs, build_text_schemas
+from temper_ai.llm._tool_execution import execute_single_tool, execute_tools
+from temper_ai.llm._tracking import track_call, track_failed_call, validate_safety
 from temper_ai.llm.constants import FALLBACK_UNKNOWN_VALUE
 from temper_ai.llm.cost_estimator import estimate_cost
+from temper_ai.llm.llm_loop_events import (
+    LLMIterationEventData,
+    emit_llm_iteration_event,
+)
 from temper_ai.llm.response_parser import (
     extract_final_answer,
     extract_reasoning,
     parse_tool_calls,
 )
 from temper_ai.llm.tool_keys import ToolKeys
-from temper_ai.llm._prompt import inject_results
-from temper_ai.llm._retry import call_with_retry_async, call_with_retry_sync
-from temper_ai.llm._schemas import build_native_tool_defs, build_text_schemas
-from temper_ai.llm._tool_execution import execute_single_tool, execute_tools
-from temper_ai.llm._tracking import track_call, track_failed_call, validate_safety
-from temper_ai.llm.llm_loop_events import LLMIterationEventData, emit_llm_iteration_event
 from temper_ai.shared.utils.exceptions import MaxIterationsError, sanitize_error_message
 
 logger = logging.getLogger(__name__)
@@ -47,7 +52,7 @@ class _MessagesLLMWrapper:
     underlying LLM so that the wrapper is transparent to callers.
     """
 
-    def __init__(self, llm: Any, messages: List[Dict[str, str]]) -> None:
+    def __init__(self, llm: Any, messages: list[dict[str, str]]) -> None:
         self._llm = llm
         self._messages = messages
 
@@ -79,92 +84,101 @@ class _MessagesLLMWrapper:
 # LLMRunResult
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class LLMRunResult:
     """Result of an LLMService.run() / .arun() call."""
+
     output: str
-    reasoning: Optional[str] = None
-    tool_calls: List[Dict[str, Any]] = field(default_factory=list)
+    reasoning: str | None = None
+    tool_calls: list[dict[str, Any]] = field(default_factory=list)
     tokens: int = 0
     cost: float = 0.0
     iterations: int = 0
-    error: Optional[str] = None
-    raw_response: Optional[Any] = None
+    error: str | None = None
+    raw_response: Any | None = None
     # Conversation history support: the user/assistant texts for this turn
-    user_message: Optional[str] = None
-    assistant_message: Optional[str] = None
+    user_message: str | None = None
+    assistant_message: str | None = None
 
 
 # ---------------------------------------------------------------------------
 # Internal loop state
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class _RunState:
     """Mutable state for an LLM iteration loop."""
 
     # Configuration (set once during init)
-    tools: Optional[List[Any]] = None
+    tools: list[Any] | None = None
     tool_executor: Any = None
     observer: Any = None
     safety_config: Any = None
     agent_name: str = "unknown"
-    stream_callback: Optional[Any] = None
+    stream_callback: Any | None = None
     resolved_max_iterations: int = _DEFAULT_MAX_ITERATIONS
     max_tool_result_size: int = 10000  # scanner: skip-magic
     max_prompt_length: int = 32000  # scanner: skip-magic
     effective_start: float = 0.0
     effective_timeout: float = field(default_factory=lambda: float("inf"))
-    native_tool_defs: Optional[List[Dict[str, Any]]] = None
+    native_tool_defs: list[dict[str, Any]] | None = None
     # Mutable state (changes per iteration)
     iteration_number: int = 0
-    tool_calls_made: List[Dict[str, Any]] = field(default_factory=list)
+    tool_calls_made: list[dict[str, Any]] = field(default_factory=list)
     total_tokens: int = 0
     total_cost: float = 0.0
-    conversation_turns: List[str] = field(default_factory=list)
+    conversation_turns: list[str] = field(default_factory=list)
     system_prompt: str = ""
     prompt: str = ""
     llm_response: Any = None
     # Multi-turn conversation history support
-    messages: Optional[List[Dict[str, str]]] = None
-    user_prompt_text: Optional[str] = None
+    messages: list[dict[str, str]] | None = None
+    user_prompt_text: str | None = None
     # Structured output: response format pass-through (R0.1)
-    response_format: Optional[Dict[str, Any]] = None
+    response_format: dict[str, Any] | None = None
 
 
 # ---------------------------------------------------------------------------
 # Limit resolution helpers (module-level, consumed by LLMService)
 # ---------------------------------------------------------------------------
 
+
 def resolve_max_iterations(
-    explicit: Optional[int],
+    explicit: int | None,
     safety_config: Any,
 ) -> int:
     """Resolve max iterations from explicit param or safety config."""
     if explicit is not None:
         return explicit
     if safety_config is not None:
-        return getattr(safety_config, 'max_tool_calls_per_execution', _DEFAULT_MAX_ITERATIONS)
+        return getattr(
+            safety_config, "max_tool_calls_per_execution", _DEFAULT_MAX_ITERATIONS
+        )
     return _DEFAULT_MAX_ITERATIONS
 
 
 def resolve_max_tool_result_size(safety_config: Any) -> int:
     """Resolve max tool result size from safety config."""
     if safety_config is not None:
-        return getattr(safety_config, 'max_tool_result_size', 10000)  # scanner: skip-magic
+        return getattr(
+            safety_config, "max_tool_result_size", 10000
+        )  # scanner: skip-magic
     return 10000  # scanner: skip-magic
 
 
 def resolve_max_prompt_length(safety_config: Any) -> int:
     """Resolve max prompt length from safety config."""
     if safety_config is not None:
-        return getattr(safety_config, 'max_prompt_length', 32000)  # scanner: skip-magic
+        return getattr(safety_config, "max_prompt_length", 32000)  # scanner: skip-magic
     return 32000  # scanner: skip-magic
 
 
 # ---------------------------------------------------------------------------
 # LLMService
 # ---------------------------------------------------------------------------
+
 
 class LLMService:
     """Self-contained LLM call lifecycle manager.
@@ -180,16 +194,16 @@ class LLMService:
         self,
         llm: Any,
         inference_config: Any,
-        pre_call_hooks: Optional[List[Callable]] = None,
+        pre_call_hooks: list[Callable] | None = None,
     ) -> None:
         self.llm = llm
         self.inference_config = inference_config
         self.pre_call_hooks = pre_call_hooks or []
         # Cached tool schemas (persists across run() calls)
-        self._cached_text_schemas: Optional[str] = None
+        self._cached_text_schemas: str | None = None
         self._cached_text_schemas_version: int = 0
-        self._cached_native_defs: Optional[List[Dict[str, Any]]] = None
-        self._cached_native_defs_hash: Optional[str] = None
+        self._cached_native_defs: list[dict[str, Any]] | None = None
+        self._cached_native_defs_hash: str | None = None
 
     # ------------------------------------------------------------------
     # Public API
@@ -199,16 +213,16 @@ class LLMService:
         self,
         prompt: str,
         *,
-        tools: Optional[List[Any]] = None,
+        tools: list[Any] | None = None,
         tool_executor: Any = None,
         observer: Any = None,
-        stream_callback: Optional[Callable] = None,
+        stream_callback: Callable | None = None,
         safety_config: Any = None,
         agent_name: str = "unknown",
-        max_iterations: Optional[int] = None,
-        max_execution_time: Optional[float] = None,
-        start_time: Optional[float] = None,
-        messages: Optional[List[Dict[str, str]]] = None,
+        max_iterations: int | None = None,
+        max_execution_time: float | None = None,
+        start_time: float | None = None,
+        messages: list[dict[str, str]] | None = None,
     ) -> LLMRunResult:
         """Execute the LLM call lifecycle (sync).
 
@@ -216,11 +230,16 @@ class LLMService:
         If *tools* is a list of BaseTool instances, enters the tool-calling loop.
         """
         s = _RunState(
-            tools=tools, tool_executor=tool_executor, observer=observer,
-            stream_callback=stream_callback, safety_config=safety_config,
+            tools=tools,
+            tool_executor=tool_executor,
+            observer=observer,
+            stream_callback=stream_callback,
+            safety_config=safety_config,
             agent_name=agent_name,
         )
-        self._prepare_run_state(s, prompt, max_iterations, max_execution_time, start_time, messages)
+        self._prepare_run_state(
+            s, prompt, max_iterations, max_execution_time, start_time, messages
+        )
 
         for iteration in range(s.resolved_max_iterations):
             guard = self._check_iteration_guards(s, iteration)
@@ -228,7 +247,10 @@ class LLMService:
                 return guard
 
             s.llm_response, last_error = self._call_with_retry_sync(
-                s.prompt, s.stream_callback, s.native_tool_defs, s.observer,
+                s.prompt,
+                s.stream_callback,
+                s.native_tool_defs,
+                s.observer,
                 messages=s.messages,
             )
             if s.llm_response is None:
@@ -248,27 +270,32 @@ class LLMService:
         self,
         prompt: str,
         *,
-        tools: Optional[List[Any]] = None,
+        tools: list[Any] | None = None,
         tool_executor: Any = None,
         observer: Any = None,
-        stream_callback: Optional[Callable] = None,
+        stream_callback: Callable | None = None,
         safety_config: Any = None,
         agent_name: str = "unknown",
-        max_iterations: Optional[int] = None,
-        max_execution_time: Optional[float] = None,
-        start_time: Optional[float] = None,
-        messages: Optional[List[Dict[str, str]]] = None,
+        max_iterations: int | None = None,
+        max_execution_time: float | None = None,
+        start_time: float | None = None,
+        messages: list[dict[str, str]] | None = None,
     ) -> LLMRunResult:
         """Execute the LLM call lifecycle (async).
 
         Async counterpart to run(). Same interface and behavior.
         """
         s = _RunState(
-            tools=tools, tool_executor=tool_executor, observer=observer,
-            stream_callback=stream_callback, safety_config=safety_config,
+            tools=tools,
+            tool_executor=tool_executor,
+            observer=observer,
+            stream_callback=stream_callback,
+            safety_config=safety_config,
             agent_name=agent_name,
         )
-        self._prepare_run_state(s, prompt, max_iterations, max_execution_time, start_time, messages)
+        self._prepare_run_state(
+            s, prompt, max_iterations, max_execution_time, start_time, messages
+        )
 
         for iteration in range(s.resolved_max_iterations):
             guard = self._check_iteration_guards(s, iteration)
@@ -276,7 +303,10 @@ class LLMService:
                 return guard
 
             s.llm_response, last_error = await self._call_with_retry_async(
-                s.prompt, s.stream_callback, s.native_tool_defs, s.observer,
+                s.prompt,
+                s.stream_callback,
+                s.native_tool_defs,
+                s.observer,
                 messages=s.messages,
             )
             if s.llm_response is None:
@@ -300,13 +330,15 @@ class LLMService:
         self,
         s: _RunState,
         prompt: str,
-        max_iterations: Optional[int],
-        max_execution_time: Optional[float],
-        start_time: Optional[float],
-        messages: Optional[List[Dict[str, str]]] = None,
+        max_iterations: int | None,
+        max_execution_time: float | None,
+        start_time: float | None,
+        messages: list[dict[str, str]] | None = None,
     ) -> None:
         """Resolve settings, build tool schemas, and initialize loop state."""
-        s.resolved_max_iterations = resolve_max_iterations(max_iterations, s.safety_config)
+        s.resolved_max_iterations = resolve_max_iterations(
+            max_iterations, s.safety_config
+        )
         s.max_tool_result_size = resolve_max_tool_result_size(s.safety_config)
         s.max_prompt_length = resolve_max_prompt_length(s.safety_config)
         s.effective_start = start_time if start_time is not None else time.time()
@@ -324,34 +356,51 @@ class LLMService:
             s.messages = list(messages)
 
     def _check_iteration_guards(
-        self, s: _RunState, iteration: int,
-    ) -> Optional[LLMRunResult]:
+        self,
+        s: _RunState,
+        iteration: int,
+    ) -> LLMRunResult | None:
         """Check timeout, pre-call hooks, and safety. Returns result if blocked."""
         if time.time() - s.effective_start >= s.effective_timeout:
             return LLMRunResult(
-                output="", tool_calls=s.tool_calls_made, tokens=s.total_tokens,
-                cost=s.total_cost, iterations=iteration,
+                output="",
+                tool_calls=s.tool_calls_made,
+                tokens=s.total_tokens,
+                cost=s.total_cost,
+                iterations=iteration,
                 error=f"Execution time limit exceeded ({s.effective_timeout}s)",
             )
 
         blocked = self._run_pre_call_hooks(s.prompt)
         if blocked is not None:
             return LLMRunResult(
-                output="", tool_calls=s.tool_calls_made, tokens=s.total_tokens,
-                cost=s.total_cost, iterations=iteration,
+                output="",
+                tool_calls=s.tool_calls_made,
+                tokens=s.total_tokens,
+                cost=s.total_cost,
+                iterations=iteration,
                 error=f"LLM call blocked by pre-call hook: {blocked}",
             )
 
-        safety_error = validate_safety(s.tool_executor, self.inference_config, s.prompt, s.agent_name)
+        safety_error = validate_safety(
+            s.tool_executor, self.inference_config, s.prompt, s.agent_name
+        )
         if safety_error is not None:
             return LLMRunResult(
-                output="", tool_calls=s.tool_calls_made, tokens=s.total_tokens,
-                cost=s.total_cost, iterations=iteration, error=safety_error,
+                output="",
+                tool_calls=s.tool_calls_made,
+                tokens=s.total_tokens,
+                cost=s.total_cost,
+                iterations=iteration,
+                error=safety_error,
             )
         return None
 
     def _handle_llm_failure(
-        self, last_error: Optional[Exception], s: _RunState, iteration: int,
+        self,
+        last_error: Exception | None,
+        s: _RunState,
+        iteration: int,
     ) -> LLMRunResult:
         """Build error result when LLM call fails after retries."""
         max_attempts = self.inference_config.max_retries + 1
@@ -359,14 +408,20 @@ class LLMService:
         if last_error:
             error_msg += f": {sanitize_error_message(str(last_error))}"
         return LLMRunResult(
-            output="", tool_calls=s.tool_calls_made, tokens=s.total_tokens,
-            cost=s.total_cost, iterations=iteration + 1, error=error_msg,
+            output="",
+            tool_calls=s.tool_calls_made,
+            tokens=s.total_tokens,
+            cost=s.total_cost,
+            iterations=iteration + 1,
+            error=error_msg,
         )
 
-    def _track_and_parse(self, s: _RunState) -> List[Dict[str, Any]]:
+    def _track_and_parse(self, s: _RunState) -> list[dict[str, Any]]:
         """Track response metrics and return parsed tool calls."""
         resp = s.llm_response
-        logger.info("[%s] LLM responded (%s tokens)", s.agent_name, resp.total_tokens or "?")
+        logger.info(
+            "[%s] LLM responded (%s tokens)", s.agent_name, resp.total_tokens or "?"
+        )
         iter_tokens = resp.total_tokens or 0
         if iter_tokens:
             s.total_tokens += iter_tokens
@@ -376,14 +431,17 @@ class LLMService:
 
         parsed_calls = parse_tool_calls(resp.content) if s.tools else []
 
-        emit_llm_iteration_event(s.observer, LLMIterationEventData(
-            iteration_number=s.iteration_number,
-            agent_name=s.agent_name,
-            conversation_turns_count=len(s.conversation_turns),
-            tool_calls_this_iteration=len(parsed_calls),
-            total_tokens_this_iteration=iter_tokens,
-            total_cost_this_iteration=cost,
-        ))
+        emit_llm_iteration_event(
+            s.observer,
+            LLMIterationEventData(
+                iteration_number=s.iteration_number,
+                agent_name=s.agent_name,
+                conversation_turns_count=len(s.conversation_turns),
+                tool_calls_this_iteration=len(parsed_calls),
+                total_tokens_this_iteration=iter_tokens,
+                total_cost_this_iteration=cost,
+            ),
+        )
 
         return parsed_calls
 
@@ -393,20 +451,29 @@ class LLMService:
         return LLMRunResult(
             output=output,
             reasoning=extract_reasoning(s.llm_response.content),
-            tool_calls=s.tool_calls_made, tokens=s.total_tokens,
-            cost=s.total_cost, iterations=iteration + 1,
+            tool_calls=s.tool_calls_made,
+            tokens=s.total_tokens,
+            cost=s.total_cost,
+            iterations=iteration + 1,
             raw_response=s.llm_response,
             user_message=s.user_prompt_text,
             assistant_message=output,
         )
 
-    def _execute_and_inject(self, s: _RunState, parsed_calls: List[Dict[str, Any]]) -> None:
+    def _execute_and_inject(
+        self, s: _RunState, parsed_calls: list[dict[str, Any]]
+    ) -> None:
         """Execute tool calls and inject results into prompt."""
         tool_names = ", ".join(tc.get(ToolKeys.NAME, "?") for tc in parsed_calls)
-        logger.info("[%s] Calling %d tool(s): %s", s.agent_name, len(parsed_calls), tool_names)
+        logger.info(
+            "[%s] Calling %d tool(s): %s", s.agent_name, len(parsed_calls), tool_names
+        )
 
         tool_results = self._execute_tools(
-            parsed_calls, s.tool_executor, s.observer, s.safety_config,
+            parsed_calls,
+            s.tool_executor,
+            s.observer,
+            s.safety_config,
         )
         s.tool_calls_made.extend(tool_results)
 
@@ -415,8 +482,12 @@ class LLMService:
             remaining_budget = s.resolved_max_iterations - len(s.tool_calls_made)
 
         s.prompt = inject_results(
-            s.system_prompt, s.llm_response.content, tool_results,
-            s.conversation_turns, s.max_tool_result_size, s.max_prompt_length,
+            s.system_prompt,
+            s.llm_response.content,
+            tool_results,
+            s.conversation_turns,
+            s.max_tool_result_size,
+            s.max_prompt_length,
             remaining_budget,
         )
         # After first tool iteration, clear messages so subsequent
@@ -428,9 +499,12 @@ class LLMService:
         raise MaxIterationsError(
             iterations=s.resolved_max_iterations or 0,
             tool_calls=s.tool_calls_made,
-            tokens=s.total_tokens, cost=s.total_cost,
+            tokens=s.total_tokens,
+            cost=s.total_cost,
             last_output=s.llm_response.content if s.llm_response else "",
-            last_reasoning=extract_reasoning(s.llm_response.content) if s.llm_response else None,
+            last_reasoning=(
+                extract_reasoning(s.llm_response.content) if s.llm_response else None
+            ),
         )
 
     # ------------------------------------------------------------------
@@ -440,62 +514,79 @@ class LLMService:
     def _call_with_retry_sync(
         self,
         prompt: str,
-        stream_callback: Optional[Callable],
-        native_tool_defs: Optional[List[Dict[str, Any]]],
+        stream_callback: Callable | None,
+        native_tool_defs: list[dict[str, Any]] | None,
         observer: Any,
-        messages: Optional[List[Dict[str, str]]] = None,
-    ) -> tuple[Optional[Any], Optional[Exception]]:
+        messages: list[dict[str, str]] | None = None,
+    ) -> tuple[Any | None, Exception | None]:
         """Call LLM with retries (sync). Delegates to _retry module."""
         llm = _MessagesLLMWrapper(self.llm, messages) if messages else self.llm
         return call_with_retry_sync(
-            llm, self.inference_config,
-            prompt, stream_callback, native_tool_defs,
-            observer, self._track_failed_call,
+            llm,
+            self.inference_config,
+            prompt,
+            stream_callback,
+            native_tool_defs,
+            observer,
+            self._track_failed_call,
         )
 
     async def _call_with_retry_async(
         self,
         prompt: str,
-        stream_callback: Optional[Callable],
-        native_tool_defs: Optional[List[Dict[str, Any]]],
+        stream_callback: Callable | None,
+        native_tool_defs: list[dict[str, Any]] | None,
         observer: Any,
-        messages: Optional[List[Dict[str, str]]] = None,
-    ) -> tuple[Optional[Any], Optional[Exception]]:
+        messages: list[dict[str, str]] | None = None,
+    ) -> tuple[Any | None, Exception | None]:
         """Call LLM with retries (async). Delegates to _retry module."""
         llm = _MessagesLLMWrapper(self.llm, messages) if messages else self.llm
         return await call_with_retry_async(
-            llm, self.inference_config,
-            prompt, stream_callback, native_tool_defs,
-            observer, self._track_failed_call,
+            llm,
+            self.inference_config,
+            prompt,
+            stream_callback,
+            native_tool_defs,
+            observer,
+            self._track_failed_call,
         )
 
     def _execute_tools(
         self,
-        tool_calls: List[Dict[str, Any]],
+        tool_calls: list[dict[str, Any]],
         tool_executor: Any,
         observer: Any,
         safety_config: Any,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Execute tool calls. Delegates to _tool_execution module."""
         return execute_tools(
-            tool_calls, tool_executor, observer, safety_config,
+            tool_calls,
+            tool_executor,
+            observer,
+            safety_config,
             execute_single_tool,
         )
 
-    def _build_text_schemas(self, tools: Optional[List[Any]]) -> Optional[str]:
+    def _build_text_schemas(self, tools: list[Any] | None) -> str | None:
         """Build text-based tool schemas. Delegates to _schemas module."""
         schemas, version = build_text_schemas(
-            tools, self._cached_text_schemas, self._cached_text_schemas_version,
+            tools,
+            self._cached_text_schemas,
+            self._cached_text_schemas_version,
         )
         self._cached_text_schemas = schemas
         self._cached_text_schemas_version = version
         return schemas
 
-    def _build_native_tool_defs(self, tools: Optional[List[Any]]) -> Optional[List[Dict[str, Any]]]:
+    def _build_native_tool_defs(
+        self, tools: list[Any] | None
+    ) -> list[dict[str, Any]] | None:
         """Build native tool definitions. Delegates to _schemas module."""
         defs, hash_val = build_native_tool_defs(
-            self.llm, tools,
-            self._cached_native_defs, self._cached_native_defs_hash,
+            self.llm,
+            tools,
+            self._cached_native_defs,
+            self._cached_native_defs_hash,
         )
         self._cached_native_defs = defs
         self._cached_native_defs_hash = hash_val
@@ -505,7 +596,7 @@ class LLMService:
         """Estimate cost for an LLM response."""
         return estimate_cost(
             llm_response,
-            fallback_model=getattr(self.llm, 'model', FALLBACK_UNKNOWN_VALUE),
+            fallback_model=getattr(self.llm, "model", FALLBACK_UNKNOWN_VALUE),
         )
 
     def _track_call(
@@ -527,13 +618,15 @@ class LLMService:
         max_attempts: int,
     ) -> None:
         """Track a failed LLM call."""
-        track_failed_call(observer, self.inference_config, prompt, error, attempt, max_attempts)
+        track_failed_call(
+            observer, self.inference_config, prompt, error, attempt, max_attempts
+        )
 
     # ------------------------------------------------------------------
     # Pre-call hooks
     # ------------------------------------------------------------------
 
-    def _run_pre_call_hooks(self, prompt: str) -> Optional[str]:
+    def _run_pre_call_hooks(self, prompt: str) -> str | None:
         """Run pre-call hooks. Returns blocking reason or None."""
         for hook in self.pre_call_hooks:
             try:

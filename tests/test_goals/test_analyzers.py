@@ -1,9 +1,6 @@
 """Tests for goal analyzers."""
 
-from datetime import timedelta
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from temper_ai.goals._schemas import GoalType
 from temper_ai.goals.analyzers.cost import CostAnalyzer
@@ -76,7 +73,9 @@ class TestPerformanceAnalyzer:
         analyzer = PerformanceAnalyzer(engine=engine)
         stages = [_mock_stage("slow_stage", 400) for _ in range(3)]
         with patch("temper_ai.goals.analyzers.performance.Session") as mock_session:
-            mock_session.return_value.__enter__.return_value.exec.return_value.all.return_value = stages
+            mock_session.return_value.__enter__.return_value.exec.return_value.all.return_value = (
+                stages
+            )
             results = analyzer.analyze()
         assert len(results) >= 1
         assert results[0].goal_type == GoalType.PERFORMANCE_OPTIMIZATION
@@ -87,7 +86,9 @@ class TestPerformanceAnalyzer:
         analyzer = PerformanceAnalyzer(engine=engine)
         stages = [_mock_stage("fast_stage", 50) for _ in range(3)]
         with patch("temper_ai.goals.analyzers.performance.Session") as mock_session:
-            mock_session.return_value.__enter__.return_value.exec.return_value.all.return_value = stages
+            mock_session.return_value.__enter__.return_value.exec.return_value.all.return_value = (
+                stages
+            )
             results = analyzer.analyze()
         slow_proposals = [r for r in results if "slow" in r.title.lower()]
         assert len(slow_proposals) == 0
@@ -96,12 +97,13 @@ class TestPerformanceAnalyzer:
         engine = MagicMock()
         analyzer = PerformanceAnalyzer(engine=engine)
         # First half fast, second half much slower
-        stages = (
-            [_mock_stage("degrading", 100) for _ in range(4)]
-            + [_mock_stage("degrading", 200) for _ in range(4)]
-        )
+        stages = [_mock_stage("degrading", 100) for _ in range(4)] + [
+            _mock_stage("degrading", 200) for _ in range(4)
+        ]
         with patch("temper_ai.goals.analyzers.performance.Session") as mock_session:
-            mock_session.return_value.__enter__.return_value.exec.return_value.all.return_value = stages
+            mock_session.return_value.__enter__.return_value.exec.return_value.all.return_value = (
+                stages
+            )
             results = analyzer.analyze()
         degradation = [r for r in results if "degradation" in r.title.lower()]
         assert len(degradation) >= 1
@@ -194,7 +196,9 @@ class TestCrossProductAnalyzer:
             session = mock_session.return_value.__enter__.return_value
             session.exec.return_value.all.return_value = workflows
             results = analyzer.analyze()
-        cross = [r for r in results if r.goal_type == GoalType.CROSS_PRODUCT_OPPORTUNITY]
+        cross = [
+            r for r in results if r.goal_type == GoalType.CROSS_PRODUCT_OPPORTUNITY
+        ]
         assert len(cross) >= 1
 
     def test_single_product_type_ignored(self):
@@ -225,7 +229,9 @@ class TestCrossProductAnalyzer:
         with patch("temper_ai.goals.analyzers.cross_product.Session") as mock_session:
             session = mock_session.return_value.__enter__.return_value
             session.exec.return_value.all.return_value = workflows
-            with patch("temper_ai.goals.analyzers.cross_product.isinstance", return_value=True):
+            with patch(
+                "temper_ai.goals.analyzers.cross_product.isinstance", return_value=True
+            ):
                 results = analyzer.analyze()
         # Should include cross-product opportunities (at least from _analyze_learned_patterns)
         assert isinstance(results, list)

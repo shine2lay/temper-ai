@@ -87,7 +87,9 @@ class TestAuthorizedRejection:
             requester="agent-1",
         )
 
-        result = authorized_workflow.reject(request.id, rejecter="bob", reason="Too risky")
+        result = authorized_workflow.reject(
+            request.id, rejecter="bob", reason="Too risky"
+        )
 
         assert result is True
         assert request.is_rejected()

@@ -3,10 +3,11 @@ Tests for M3-12: Quality Gates and Confidence Thresholds.
 
 Tests quality gate validation after synthesis.
 """
+
 from unittest.mock import Mock
 
-from temper_ai.workflow.langgraph_compiler import LangGraphCompiler
 from temper_ai.agent.strategies.base import SynthesisResult
+from temper_ai.workflow.langgraph_compiler import LangGraphCompiler
 
 
 class TestQualityGateValidation:
@@ -25,15 +26,10 @@ class TestQualityGateValidation:
             votes={"A": 1},
             conflicts=[],
             reasoning="test",
-            metadata={}
+            metadata={},
         )
 
-        stage_config = {
-            "quality_gates": {
-                "enabled": False,
-                "min_confidence": 0.7
-            }
-        }
+        stage_config = {"quality_gates": {"enabled": False, "min_confidence": 0.7}}
 
         passed, violations = self.compiler._validate_quality_gates(
             synthesis_result, stage_config, "test_stage"
@@ -51,7 +47,7 @@ class TestQualityGateValidation:
             votes={"A": 2, "B": 1},
             conflicts=[],
             reasoning="test",
-            metadata={}
+            metadata={},
         )
 
         stage_config = {
@@ -59,7 +55,7 @@ class TestQualityGateValidation:
                 "enabled": True,
                 "min_confidence": 0.7,
                 "min_findings": 0,  # Disable findings check
-                "require_citations": False  # Disable citations check
+                "require_citations": False,  # Disable citations check
             }
         }
 
@@ -79,7 +75,7 @@ class TestQualityGateValidation:
             votes={"A": 1},
             conflicts=[],
             reasoning="test",
-            metadata={}
+            metadata={},
         )
 
         stage_config = {
@@ -87,7 +83,7 @@ class TestQualityGateValidation:
                 "enabled": True,
                 "min_confidence": 0.7,
                 "min_findings": 0,
-                "require_citations": False
+                "require_citations": False,
             }
         }
 
@@ -110,7 +106,7 @@ class TestQualityGateValidation:
             reasoning="test",
             metadata={
                 "findings": ["finding1", "finding2", "finding3", "finding4", "finding5"]
-            }
+            },
         )
 
         stage_config = {
@@ -118,7 +114,7 @@ class TestQualityGateValidation:
                 "enabled": True,
                 "min_confidence": 0.7,
                 "min_findings": 5,
-                "require_citations": False
+                "require_citations": False,
             }
         }
 
@@ -138,9 +134,7 @@ class TestQualityGateValidation:
             votes={"A": 2},
             conflicts=[],
             reasoning="test",
-            metadata={
-                "findings": ["finding1", "finding2"]  # Only 2 findings
-            }
+            metadata={"findings": ["finding1", "finding2"]},  # Only 2 findings
         )
 
         stage_config = {
@@ -148,7 +142,7 @@ class TestQualityGateValidation:
                 "enabled": True,
                 "min_confidence": 0.7,
                 "min_findings": 5,
-                "require_citations": False
+                "require_citations": False,
             }
         }
 
@@ -169,9 +163,7 @@ class TestQualityGateValidation:
             votes={"A": 2},
             conflicts=[],
             reasoning="test",
-            metadata={
-                "citations": ["source1", "source2"]
-            }
+            metadata={"citations": ["source1", "source2"]},
         )
 
         stage_config = {
@@ -179,7 +171,7 @@ class TestQualityGateValidation:
                 "enabled": True,
                 "min_confidence": 0.7,
                 "min_findings": 0,
-                "require_citations": True
+                "require_citations": True,
             }
         }
 
@@ -199,7 +191,7 @@ class TestQualityGateValidation:
             votes={"A": 2},
             conflicts=[],
             reasoning="test",
-            metadata={}  # No citations
+            metadata={},  # No citations
         )
 
         stage_config = {
@@ -207,7 +199,7 @@ class TestQualityGateValidation:
                 "enabled": True,
                 "min_confidence": 0.7,
                 "min_findings": 0,
-                "require_citations": True
+                "require_citations": True,
             }
         }
 
@@ -231,7 +223,7 @@ class TestQualityGateValidation:
             metadata={
                 "findings": ["finding1"]  # Too few
                 # No citations
-            }
+            },
         )
 
         stage_config = {
@@ -239,7 +231,7 @@ class TestQualityGateValidation:
                 "enabled": True,
                 "min_confidence": 0.7,
                 "min_findings": 5,
-                "require_citations": True
+                "require_citations": True,
             }
         }
 
@@ -262,7 +254,7 @@ class TestQualityGateValidation:
             votes={"A": 2},
             conflicts=[],
             reasoning="test",
-            metadata={}
+            metadata={},
         )
 
         # Empty config - should use defaults (enabled=False for backward compatibility)
@@ -276,5 +268,3 @@ class TestQualityGateValidation:
         # This should pass (quality gates not enforced)
         assert passed is True
         assert violations == []
-
-

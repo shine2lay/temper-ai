@@ -1,7 +1,7 @@
-import { useState, useMemo } from 'react';
+import { memo, useState, useMemo } from 'react';
 import { useExecutionStore } from '@/store/executionStore';
-import { STATUS_COLORS } from './constants';
-import { cn, formatDuration, formatTokens } from '@/lib/utils';
+import { STATUS_COLORS, confidenceBadgeClass } from './constants';
+import { cn, formatDuration, formatTokens, formatCost } from '@/lib/utils';
 
 interface AgentCardProps {
   agentId: string;
@@ -12,7 +12,7 @@ interface AgentCardProps {
  * Uses fine-grained Zustand selector so it only re-renders when
  * THIS agent's data changes.
  */
-export function AgentCard({ agentId }: AgentCardProps) {
+export const AgentCard = memo(function AgentCard({ agentId }: AgentCardProps) {
   const agent = useExecutionStore((s) => s.agents.get(agentId));
   const streaming = useExecutionStore((s) => s.streamingContent.get(agentId));
   const select = useExecutionStore((s) => s.select);
@@ -40,7 +40,7 @@ export function AgentCard({ agentId }: AgentCardProps) {
 
   return (
     <div
-      className="bg-temper-panel rounded px-3 py-2 cursor-pointer hover:bg-temper-panel-light transition-colors"
+      className="bg-temper-panel rounded px-3 py-2 cursor-pointer hover:bg-temper-panel-light transition-colors focus:outline-none focus:ring-2 focus:ring-temper-accent/50 focus:ring-offset-1 focus:ring-offset-temper-panel"
       style={{ borderLeft: `4px solid ${borderColor}` }}
       onClick={(e) => {
         e.stopPropagation();
@@ -63,12 +63,7 @@ export function AgentCard({ agentId }: AgentCardProps) {
           </span>
         )}
         {agent.confidence_score != null && (
-          <span className={cn(
-            'text-[10px] px-1.5 py-0.5 rounded shrink-0 font-mono',
-            agent.confidence_score >= 0.8 ? 'bg-emerald-950/50 text-emerald-400' :
-            agent.confidence_score >= 0.5 ? 'bg-amber-950/50 text-amber-400' :
-            'bg-red-950/50 text-red-400'
-          )}>
+          <span className={cn('text-[10px] px-1.5 py-0.5 rounded shrink-0 font-mono', confidenceBadgeClass(agent.confidence_score))}>
             {(agent.confidence_score * 100).toFixed(0)}%
           </span>
         )}
@@ -86,7 +81,7 @@ export function AgentCard({ agentId }: AgentCardProps) {
       {totalTokens > 0 && (
         <div
           className="h-1.5 w-full rounded-full bg-temper-surface mb-1 overflow-hidden flex"
-          title={`Prompt: ${promptTokens} tokens | Completion: ${completionTokens} tokens | Total: ${totalTokens}`}
+          title={`Prompt: ${formatTokens(promptTokens)} | Completion: ${formatTokens(completionTokens)} | Total: ${formatTokens(totalTokens)}`}
         >
           <div
             className="h-full bg-temper-token-prompt"
@@ -103,6 +98,9 @@ export function AgentCard({ agentId }: AgentCardProps) {
       <div className="flex items-center gap-3 text-[10px] text-temper-text-muted">
         <span>{formatDuration(agent.duration_seconds)}</span>
         <span>{formatTokens(totalTokens)} tok</span>
+        {agent.estimated_cost_usd > 0 && (
+          <span className="text-emerald-400">{formatCost(agent.estimated_cost_usd)}</span>
+        )}
         {agent.total_llm_calls > 0 && <span>{agent.total_llm_calls} llm</span>}
         {agent.total_tool_calls > 0 && <span>{agent.total_tool_calls} tool</span>}
       </div>
@@ -126,4 +124,4 @@ export function AgentCard({ agentId }: AgentCardProps) {
       )}
     </div>
   );
-}
+});

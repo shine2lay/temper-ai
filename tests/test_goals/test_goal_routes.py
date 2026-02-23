@@ -76,7 +76,9 @@ class TestAnalysisEndpoints:
         assert resp.json() == []
 
     def test_trigger_analysis(self, client):
-        with patch("temper_ai.goals.analysis_orchestrator.AnalysisOrchestrator") as MockOrch:
+        with patch(
+            "temper_ai.goals.analysis_orchestrator.AnalysisOrchestrator"
+        ) as MockOrch:
             run = MagicMock()
             run.id = "ar-1"
             run.status = "completed"

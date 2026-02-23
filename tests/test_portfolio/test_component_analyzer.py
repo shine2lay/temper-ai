@@ -2,7 +2,6 @@
 
 import os
 import tempfile
-from pathlib import Path
 
 import pytest
 import yaml
@@ -138,7 +137,9 @@ class TestFindSimilarStages:
             )
         )
         results = analyzer.find_similar_stages(
-            {"name": "x", "timeout": 100}, "web_app", min_similarity=0.5,
+            {"name": "x", "timeout": 100},
+            "web_app",
+            min_similarity=0.5,
         )
         assert len(results) >= 1
         assert results[0].similarity >= 0.5
@@ -156,7 +157,9 @@ class TestFindSimilarStages:
             )
         )
         results = analyzer.find_similar_stages(
-            {"name": "x"}, "web_app", min_similarity=0.5,
+            {"name": "x"},
+            "web_app",
+            min_similarity=0.5,
         )
         assert len(results) == 0
 
@@ -195,11 +198,13 @@ class TestComponentMatchDetails:
             # Stages share most keys but differ on one
             with open(wf1, "w") as f:
                 yaml.dump(
-                    {"stages": [{"name": "s", "a": 1, "b": 2, "c": 3}]}, f,
+                    {"stages": [{"name": "s", "a": 1, "b": 2, "c": 3}]},
+                    f,
                 )
             with open(wf2, "w") as f:
                 yaml.dump(
-                    {"stages": [{"name": "s", "a": 1, "b": 2, "d": 4}]}, f,
+                    {"stages": [{"name": "s", "a": 1, "b": 2, "d": 4}]},
+                    f,
                 )
 
             portfolio = PortfolioConfig(

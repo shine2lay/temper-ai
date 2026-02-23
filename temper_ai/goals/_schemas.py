@@ -1,7 +1,6 @@
 """Pydantic schemas for the goal proposal system."""
 
 from enum import Enum
-from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -55,8 +54,8 @@ class RiskAssessment(BaseModel):
     level: GoalRiskLevel = GoalRiskLevel.LOW
     blast_radius: str = ""
     reversible: bool = True
-    safety_concerns: List[str] = Field(default_factory=list)
-    mitigation_steps: List[str] = Field(default_factory=list)
+    safety_concerns: list[str] = Field(default_factory=list)
+    mitigation_steps: list[str] = Field(default_factory=list)
 
 
 class ImpactEstimate(BaseModel):
@@ -72,9 +71,9 @@ class ImpactEstimate(BaseModel):
 class GoalEvidence(BaseModel):
     """Evidence supporting a goal proposal."""
 
-    pattern_ids: List[str] = Field(default_factory=list)
-    workflow_ids: List[str] = Field(default_factory=list)
-    metrics: Dict[str, object] = Field(default_factory=dict)
+    pattern_ids: list[str] = Field(default_factory=list)
+    workflow_ids: list[str] = Field(default_factory=list)
+    metrics: dict[str, object] = Field(default_factory=dict)
     analysis_summary: str = ""
 
 
@@ -86,13 +85,13 @@ class GoalProposal(BaseModel):
     description: str
     risk_assessment: RiskAssessment = Field(default_factory=RiskAssessment)
     effort_estimate: EffortLevel = EffortLevel.MEDIUM
-    expected_impacts: List[ImpactEstimate] = Field(default_factory=list)
+    expected_impacts: list[ImpactEstimate] = Field(default_factory=list)
     evidence: GoalEvidence = Field(default_factory=GoalEvidence)
-    source_product_type: Optional[str] = None
-    applicable_product_types: List[str] = Field(default_factory=list)
-    proposed_actions: List[str] = Field(default_factory=list)
+    source_product_type: str | None = None
+    applicable_product_types: list[str] = Field(default_factory=list)
+    proposed_actions: list[str] = Field(default_factory=list)
     priority_score: float = 0.0
-    source_agent_id: Optional[str] = None  # M9: persistent agent that proposed this goal
+    source_agent_id: str | None = None  # M9: persistent agent that proposed this goal
 
 
 class GoalReviewAction(str, Enum):
@@ -108,5 +107,5 @@ class GoalReview(BaseModel):
 
     action: GoalReviewAction
     reviewer: str
-    reason: Optional[str] = None
-    defer_until: Optional[str] = None
+    reason: str | None = None
+    defer_until: str | None = None

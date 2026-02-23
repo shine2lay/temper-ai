@@ -1,6 +1,7 @@
 """
 Tests for prompt template rendering engine.
 """
+
 import tempfile
 from pathlib import Path
 
@@ -226,7 +227,7 @@ class TestEngineInitialization:
         """Test that init can find project root configs/prompts."""
         engine = PromptEngine()  # Uses default path finding
         # Should either find configs/prompts or set jinja_env to None
-        assert hasattr(engine, 'jinja_env')
+        assert hasattr(engine, "jinja_env")
 
 
 class TestTemplateCaching:
@@ -282,6 +283,7 @@ class TestTemplateCaching:
     def test_cache_performance_improvement(self):
         """Test that cached renders are significantly faster."""
         import time
+
         engine = PromptEngine()
 
         template = """
@@ -297,7 +299,9 @@ class TestTemplateCaching:
         start = time.time()
         for _ in range(10):
             engine.clear_cache()  # Force recompilation each time
-            engine.render(template, {"agent_name": "researcher", "domain": "AI", "detailed": True})
+            engine.render(
+                template, {"agent_name": "researcher", "domain": "AI", "detailed": True}
+            )
         uncached_time = time.time() - start
 
         # Clear cache for fair comparison
@@ -306,13 +310,16 @@ class TestTemplateCaching:
         # Second set of renders (cached)
         start = time.time()
         for _ in range(10):
-            engine.render(template, {"agent_name": "researcher", "domain": "AI", "detailed": True})
+            engine.render(
+                template, {"agent_name": "researcher", "domain": "AI", "detailed": True}
+            )
         cached_time = time.time() - start
 
         # Verify cache is used deterministically via stats
         stats = engine.get_cache_stats()
-        assert stats["cache_hits"] >= 9, \
-            f"Expected at least 9 cache hits from 10 renders, got {stats['cache_hits']}"
+        assert (
+            stats["cache_hits"] >= 9
+        ), f"Expected at least 9 cache hits from 10 renders, got {stats['cache_hits']}"
 
     def test_cache_lru_eviction(self):
         """Test that cache evicts oldest entries when full."""
@@ -405,8 +412,8 @@ class TestTemplateCaching:
         # All should use same cached template
         stats = engine.get_cache_stats()
         assert stats["cache_misses"] == 1  # Only first is miss
-        assert stats["cache_hits"] == 2    # Next 2 are hits
-        assert stats["cache_size"] == 1    # Only 1 template cached
+        assert stats["cache_hits"] == 2  # Next 2 are hits
+        assert stats["cache_size"] == 1  # Only 1 template cached
 
     def test_cache_with_conditional_blocks(self):
         """Test caching works with conditional blocks."""
@@ -461,15 +468,16 @@ class TestTemplateCaching:
 
         # Render multiple times with different data
         for i in range(5):
-            tools = [
-                {"name": f"tool{i}", "description": f"Tool {i}"}
-            ]
-            engine.render(template, {
-                "agent_name": f"agent_{i}",
-                "role": "research",
-                "tools": tools,
-                "task": f"Task {i}"
-            })
+            tools = [{"name": f"tool{i}", "description": f"Tool {i}"}]
+            engine.render(
+                template,
+                {
+                    "agent_name": f"agent_{i}",
+                    "role": "research",
+                    "tools": tools,
+                    "task": f"Task {i}",
+                },
+            )
 
         # Should have 1 miss (first) and 4 hits
         stats = engine.get_cache_stats()
@@ -507,6 +515,7 @@ class TestTemplateCaching:
         engine.render("Test", {})
         assert engine.get_cache_stats()["cache_hit_rate"] == 0.75
 
+
 class TestRealWorld:
     """Tests simulating real-world usage."""
 
@@ -525,15 +534,18 @@ Other team members:
 Collaboration mode: {{collaboration_mode}}
 """
 
-        result = engine.render(template, {
-            "team_size": 3,
-            "role": "Researcher",
-            "team_members": [
-                {"name": "Alice", "role": "Designer"},
-                {"name": "Bob", "role": "Developer"}
-            ],
-            "collaboration_mode": "consensus"
-        })
+        result = engine.render(
+            template,
+            {
+                "team_size": 3,
+                "role": "Researcher",
+                "team_members": [
+                    {"name": "Alice", "role": "Designer"},
+                    {"name": "Bob", "role": "Developer"},
+                ],
+                "collaboration_mode": "consensus",
+            },
+        )
 
         assert "3 agents" in result
         assert "Alice" in result
@@ -554,7 +566,9 @@ class TestTemplateInjectionPrevention:
         result = engine.render(template, {"user_input": malicious_input})
 
         # Should render as literal text, not execute the expression
-        assert "49" not in result, "Jinja2 expression was evaluated — injection succeeded"
+        assert (
+            "49" not in result
+        ), "Jinja2 expression was evaluated — injection succeeded"
 
     def test_user_input_cannot_inject_jinja_statements(self):
         """Test that user input with {% %} is rendered as literal text."""
@@ -566,7 +580,9 @@ class TestTemplateInjectionPrevention:
         result = engine.render(template, {"user_input": malicious_input})
 
         # Should render as literal text, not execute the loop
-        assert result.count("X") < 10, "Jinja2 for-loop was executed — injection succeeded"
+        assert (
+            result.count("X") < 10
+        ), "Jinja2 for-loop was executed — injection succeeded"
 
     def test_cannot_access_python_builtins(self):
         """Test that Python builtins are not accessible from templates."""
@@ -690,7 +706,9 @@ class TestTemplateInjectionPrevention:
             with pytest.raises((PromptRenderError, Exception)):
                 result = engine.render(template, {})
                 # Should not allow imports
-                assert "module" not in result.lower() or "PromptRenderError" in str(type(result))
+                assert "module" not in result.lower() or "PromptRenderError" in str(
+                    type(result)
+                )
 
     def test_nested_attribute_access_is_blocked(self):
         """Test that deeply nested attribute access is blocked."""
@@ -721,7 +739,9 @@ class TestTemplateInjectionPrevention:
             with pytest.raises((PromptRenderError, Exception)):
                 result = engine.render(template, {})
                 # Should not expose env vars
-                assert "/home/" not in result or "PromptRenderError" in str(type(result))
+                assert "/home/" not in result or "PromptRenderError" in str(
+                    type(result)
+                )
 
     def test_macro_abuse_prevention(self):
         """Test that macros cannot be abused for code execution."""
@@ -753,7 +773,9 @@ class TestTemplateInjectionPrevention:
         for template in dangerous_templates:
             result = engine.render(template, {})
             # Should not execute even with encoding tricks
-            assert "class 'str'" not in result or "PromptRenderError" in str(type(result))
+            assert "class 'str'" not in result or "PromptRenderError" in str(
+                type(result)
+            )
 
     def test_safe_filters_still_work(self):
         """Test that safe, useful filters are still available."""
@@ -823,6 +845,7 @@ class TestLargeTemplatePerformance:
         without significant overhead from template size alone.
         """
         import time
+
         engine = PromptEngine()
 
         # Create 10KB template (~10,000 characters)
@@ -838,7 +861,7 @@ class TestLargeTemplatePerformance:
         variables = {
             "agent_name": "researcher",
             "domain": "artificial intelligence",
-            "data": "test_data_value"
+            "data": "test_data_value",
         }
 
         # First render to compile template (don't count compilation time)
@@ -853,7 +876,9 @@ class TestLargeTemplatePerformance:
         assert len(result) > 5000, "Template should produce substantial output"
 
         # Performance requirement: <50ms for 10KB template
-        assert elapsed_ms < 50, f"10KB template took {elapsed_ms:.2f}ms (baseline: <50ms)"
+        assert (
+            elapsed_ms < 50
+        ), f"10KB template took {elapsed_ms:.2f}ms (baseline: <50ms)"
 
     @pytest.mark.slow
     def test_100kb_template_performance(self):
@@ -864,6 +889,7 @@ class TestLargeTemplatePerformance:
         in reasonable time (<500ms) for production use.
         """
         import time
+
         engine = PromptEngine()
 
         # Create 100KB template (~100,000 characters)
@@ -890,7 +916,7 @@ class TestLargeTemplatePerformance:
             "agent_name": "analyzer",
             "task": "comprehensive_analysis",
             "domain": "machine_learning",
-            "value": "test_value"
+            "value": "test_value",
         }
 
         # First render to compile template (don't count compilation time)
@@ -905,7 +931,9 @@ class TestLargeTemplatePerformance:
         assert len(result) > 50000, "Template should produce very large output"
 
         # Performance requirement: <500ms for 100KB template
-        assert elapsed_ms < 500, f"100KB template took {elapsed_ms:.2f}ms (baseline: <500ms)"
+        assert (
+            elapsed_ms < 500
+        ), f"100KB template took {elapsed_ms:.2f}ms (baseline: <500ms)"
 
     def test_large_template_memory_efficiency(self):
         """
@@ -915,6 +943,7 @@ class TestLargeTemplatePerformance:
         or result during rendering.
         """
         import gc
+
         engine = PromptEngine()
 
         # Create large template
@@ -924,10 +953,7 @@ class TestLargeTemplatePerformance:
         {% endfor %}
         """
 
-        variables = {
-            "data": "test_data",
-            "message": "processing"
-        }
+        variables = {"data": "test_data", "message": "processing"}
 
         # Force garbage collection before measurement
         gc.collect()
@@ -942,7 +968,9 @@ class TestLargeTemplatePerformance:
         gc.collect()
 
         # All results should be the same (verifies correctness)
-        assert all(r == results[0] for r in results), "All renders should produce identical output"
+        assert all(
+            r == results[0] for r in results
+        ), "All renders should produce identical output"
 
         # Verify substantial output
         assert len(results[0]) > 10000, "Each result should be substantial"
@@ -955,6 +983,7 @@ class TestLargeTemplatePerformance:
         all working together in a large template.
         """
         import time
+
         engine = PromptEngine()
 
         # Complex template with multiple features
@@ -993,15 +1022,14 @@ class TestLargeTemplatePerformance:
         for i in range(10):
             items = []
             for j in range(10):
-                items.append({
-                    "name": f"Item_{i}_{j}",
-                    "value": f"Value_{j}",
-                    "priority": ["high", "medium", "low"][j % 3]
-                })
-            categories.append({
-                "name": f"Category_{i}",
-                "items": items
-            })
+                items.append(
+                    {
+                        "name": f"Item_{i}_{j}",
+                        "value": f"Value_{j}",
+                        "priority": ["high", "medium", "low"][j % 3],
+                    }
+                )
+            categories.append({"name": f"Category_{i}", "items": items})
 
         variables = {
             "agent_name": "analyzer",
@@ -1010,7 +1038,7 @@ class TestLargeTemplatePerformance:
             "include_summary": True,
             "categories": categories,
             "tools": [{"name": f"tool_{i}"} for i in range(5)],
-            "progress": 95
+            "progress": 95,
         }
 
         # First render to compile
@@ -1028,7 +1056,9 @@ class TestLargeTemplatePerformance:
         assert "5 tools available" in result  # Filter worked
 
         # Performance should still be reasonable
-        assert elapsed_ms < 200, f"Complex template took {elapsed_ms:.2f}ms (should be <200ms)"
+        assert (
+            elapsed_ms < 200
+        ), f"Complex template took {elapsed_ms:.2f}ms (should be <200ms)"
 
     @pytest.mark.slow
     def test_very_large_loop_performance(self):
@@ -1039,6 +1069,7 @@ class TestLargeTemplatePerformance:
         with many iterations.
         """
         import time
+
         engine = PromptEngine()
 
         # Template with very large loop
@@ -1048,10 +1079,7 @@ class TestLargeTemplatePerformance:
         {% endfor %}
         """
 
-        variables = {
-            "prefix": "item",
-            "suffix": "processed"
-        }
+        variables = {"prefix": "item", "suffix": "processed"}
 
         # First render to compile
         engine.render(template, variables)
@@ -1065,7 +1093,9 @@ class TestLargeTemplatePerformance:
         assert "1999: item_1999_processed" in result
 
         # Should complete in reasonable time
-        assert elapsed_ms < 100, f"Large loop took {elapsed_ms:.2f}ms (should be <100ms)"
+        assert (
+            elapsed_ms < 100
+        ), f"Large loop took {elapsed_ms:.2f}ms (should be <100ms)"
 
     def test_large_template_caching_benefit(self):
         """
@@ -1075,6 +1105,7 @@ class TestLargeTemplatePerformance:
         so caching should provide meaningful speedup.
         """
         import time
+
         engine = PromptEngine()
 
         # Large template
@@ -1104,8 +1135,9 @@ class TestLargeTemplatePerformance:
         assert result1 == result2
 
         # Cached render should be faster (at least 30% faster to account for variance)
-        assert cached_time_ms < uncached_time_ms * 0.7, \
-            f"Cached ({cached_time_ms:.2f}ms) should be faster than uncached ({uncached_time_ms:.2f}ms)"
+        assert (
+            cached_time_ms < uncached_time_ms * 0.7
+        ), f"Cached ({cached_time_ms:.2f}ms) should be faster than uncached ({uncached_time_ms:.2f}ms)"
 
     def test_template_size_scaling(self):
         """
@@ -1115,6 +1147,7 @@ class TestLargeTemplatePerformance:
         not quadratically or worse.
         """
         import time
+
         engine = PromptEngine()
 
         times = []
@@ -1148,7 +1181,9 @@ class TestLargeTemplatePerformance:
         # If quadratic, times[3] would be 64x times[0]
         # We allow up to 12x due to timing variance and overhead
         ratio = times[-1] / times[0]
-        assert ratio < 12, f"Scaling appears super-linear: {times} (ratio: {ratio:.1f}x)"
+        assert (
+            ratio < 12
+        ), f"Scaling appears super-linear: {times} (ratio: {ratio:.1f}x)"
 
     def test_large_variable_substitution_count(self):
         """
@@ -1158,6 +1193,7 @@ class TestLargeTemplatePerformance:
         with hundreds of substitutions.
         """
         import time
+
         engine = PromptEngine()
 
         # Template with many variable substitutions
@@ -1179,4 +1215,6 @@ class TestLargeTemplatePerformance:
         assert "value_499" in result
 
         # Should complete quickly despite many substitutions
-        assert elapsed_ms < 50, f"Many substitutions took {elapsed_ms:.2f}ms (should be <50ms)"
+        assert (
+            elapsed_ms < 50
+        ), f"Many substitutions took {elapsed_ms:.2f}ms (should be <50ms)"

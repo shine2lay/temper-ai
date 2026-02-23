@@ -22,11 +22,17 @@ Module boundary between ``safety/`` and ``security/``:
   ``safety/`` can depend on ``security/`` via interfaces, not concrete
   implementations.
 """
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional, Protocol, Tuple, TypedDict, runtime_checkable
+from typing import (
+    Any,
+    Protocol,
+    TypedDict,
+    runtime_checkable,
+)
 
 
 class ActionDescriptor(TypedDict, total=False):
@@ -52,12 +58,13 @@ class ActionDescriptor(TypedDict, total=False):
         ...     "args": {"path": "/tmp/file.txt"}
         ... }
     """
+
     # Common discriminator
     type: str
 
     # Tool call fields
     tool: str
-    args: Dict[str, Any]
+    args: dict[str, Any]
 
     # File operation fields
     operation: str
@@ -81,6 +88,7 @@ class ViolationSeverity(Enum):
     - LOW: Logging only
     - INFO: Informational
     """
+
     CRITICAL = 5
     HIGH = 4
     MEDIUM = 3
@@ -137,16 +145,19 @@ class SafetyViolation:
         ...     remediation_hint="Remove /etc/passwd from file access list"
         ... )
     """
+
     policy_name: str
     severity: ViolationSeverity
     message: str
     action: str
-    context: Dict[str, Any]
-    timestamp: str = field(default_factory=lambda: datetime.now(UTC).isoformat().replace("+00:00", "Z"))
-    remediation_hint: Optional[str] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    context: dict[str, Any]
+    timestamp: str = field(
+        default_factory=lambda: datetime.now(UTC).isoformat().replace("+00:00", "Z")
+    )
+    remediation_hint: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert violation to dictionary for logging/serialization."""
         return {
             "policy_name": self.policy_name,
@@ -157,7 +168,7 @@ class SafetyViolation:
             "context": self.context,
             "timestamp": self.timestamp,
             "remediation_hint": self.remediation_hint,
-            "metadata": self.metadata
+            "metadata": self.metadata,
         }
 
 
@@ -187,9 +198,10 @@ class ValidationResult:
         ...     policy_name="RateLimit"
         ... )
     """
+
     valid: bool
-    violations: List[SafetyViolation] = field(default_factory=list)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    violations: list[SafetyViolation] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
     policy_name: str = "unknown"
 
     def has_critical_violations(self) -> bool:
@@ -200,7 +212,9 @@ class ValidationResult:
         """Check if result contains violations that should block execution."""
         return any(v.severity >= ViolationSeverity.HIGH for v in self.violations)
 
-    def get_violations_by_severity(self, severity: ViolationSeverity) -> List[SafetyViolation]:
+    def get_violations_by_severity(
+        self, severity: ViolationSeverity
+    ) -> list[SafetyViolation]:
         """Get all violations of a specific severity level."""
         return [v for v in self.violations if v.severity == severity]
 
@@ -279,9 +293,7 @@ class SafetyPolicy(ABC):
 
     @abstractmethod
     def validate(
-        self,
-        action: Dict[str, Any],
-        context: Dict[str, Any]
+        self, action: dict[str, Any], context: dict[str, Any]
     ) -> ValidationResult:
         """Validate action against safety policy (synchronous).
 
@@ -312,9 +324,7 @@ class SafetyPolicy(ABC):
         pass
 
     async def validate_async(
-        self,
-        action: Dict[str, Any],
-        context: Dict[str, Any]
+        self, action: dict[str, Any], context: dict[str, Any]
     ) -> ValidationResult:
         """Validate action against safety policy (asynchronous).
 
@@ -359,11 +369,7 @@ class Validator(ABC):
     """
 
     @abstractmethod
-    def validate(
-        self,
-        value: Any,
-        context: Dict[str, Any]
-    ) -> ValidationResult:
+    def validate(self, value: Any, context: dict[str, Any]) -> ValidationResult:
         """Validate a specific value against validator rules.
 
         Args:
@@ -387,14 +393,14 @@ class Validator(ABC):
 class PromptInjectionDetectorProtocol(Protocol):
     """Protocol for prompt injection / jailbreak detection."""
 
-    def detect(self, prompt: str) -> Tuple[bool, list]:
+    def detect(self, prompt: str) -> tuple[bool, list]:
         """Detect prompt injection attacks.
 
         Args:
             prompt: User or agent prompt to scan.
 
         Returns:
-            (is_injection, violations) tuple.
+            (is_safe, violations) tuple.
         """
         ...
 
@@ -403,7 +409,7 @@ class PromptInjectionDetectorProtocol(Protocol):
 class OutputSanitizerProtocol(Protocol):
     """Protocol for sanitizing LLM output."""
 
-    def sanitize(self, output: str) -> Tuple[str, list]:
+    def sanitize(self, output: str) -> tuple[str, list]:
         """Sanitize LLM output by removing secrets and dangerous content.
 
         Args:
@@ -419,7 +425,7 @@ class OutputSanitizerProtocol(Protocol):
 class LLMRateLimiterProtocol(Protocol):
     """Protocol for LLM-layer rate limiting."""
 
-    def check_rate_limit(self, entity_id: str) -> Tuple[bool, Optional[str]]:
+    def check_rate_limit(self, entity_id: str) -> tuple[bool, str | None]:
         """Check whether the entity is within rate limits.
 
         Args:

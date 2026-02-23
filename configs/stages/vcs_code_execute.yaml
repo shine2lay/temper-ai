@@ -1,15 +1,19 @@
 # VCS Code Execute Stage
-# Purpose: Single coder agent writes files based on spec and plan
+# Purpose: 3 parallel coders write files based on task splitter assignments
 
 stage:
   name: vcs_code_execute
-  description: "Generates code files based on the implementation spec and plan"
-  version: "1.0"
+  description: "3 parallel coders write assigned files from task splitter"
+  version: "2.0"
 
   agents:
-    - vcs_coder
+    - vcs_coder_a
+    - vcs_coder_b
+    - vcs_coder_c
 
   execution:
+    agent_mode: parallel
+    max_concurrent: 3
     max_iterations: 1
     convergence_threshold: 0.9
     timeout_seconds: 1800
@@ -18,11 +22,22 @@ stage:
     workspace_path:
       source: vcs_git_setup.structured.worktree_path
       required: true
+    task_assignments:
+      source: vcs_task_split.output
+      required: true
     task_specs:
       source: vcs_task_planning.output
       required: true
     design_output:
       source: vcs_design.output
+      required: false
+      default: ""
+    quality_gate_output:
+      source: vcs_quality_gate.output
+      required: false
+      default: ""
+    static_check_output:
+      source: vcs_static_check.output
       required: false
       default: ""
 
@@ -41,9 +56,8 @@ stage:
       description: "Dependencies installed"
 
   collaboration:
-    strategy: "sequential"
+    strategy: "concatenate"
     max_rounds: 1
-    convergence_threshold: 0.8
 
   conflict_resolution:
     strategy: "highest_confidence"

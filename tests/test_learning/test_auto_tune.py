@@ -15,7 +15,9 @@ def store() -> LearningStore:
     return LearningStore(database_url=MEMORY_DB)
 
 
-def _save_rec(store: LearningStore, rec_id: str = "rec-1", config_path: str = "test.yaml") -> str:
+def _save_rec(
+    store: LearningStore, rec_id: str = "rec-1", config_path: str = "test.yaml"
+) -> str:
     rec = TuneRecommendation(
         id=rec_id,
         pattern_id="p1",

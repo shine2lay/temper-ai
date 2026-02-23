@@ -8,7 +8,7 @@ Resolves conflicts by weighting votes based on agent merit:
 Higher-merit agents have more influence in close decisions.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from temper_ai.agent.strategies.base import AgentOutput, Conflict
 from temper_ai.agent.strategies.conflict_resolution import (
@@ -68,7 +68,7 @@ class MeritWeightedResolver(ConflictResolver):
         >>> # Expert's vote weighs ~1.5x novice's vote
     """
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: dict[str, Any] | None = None):
         """Initialize resolver.
 
         Args:
@@ -79,19 +79,26 @@ class MeritWeightedResolver(ConflictResolver):
                 - recency_decay_days: Days for 50% decay (default: 30)
         """
         self.config = config or {}
-        self.merit_weights = self.config.get("merit_weights", {
-            "domain_merit": DEFAULT_DOMAIN_MERIT_WEIGHT,
-            "overall_merit": DEFAULT_OVERALL_MERIT_WEIGHT,
-            "recent_performance": DEFAULT_RECENT_PERFORMANCE_WEIGHT
-        })
-        self.auto_resolve_threshold = self.config.get("auto_resolve_threshold", DEFAULT_AUTO_RESOLVE_THRESHOLD)
-        self.escalation_threshold = self.config.get("escalation_threshold", DEFAULT_ESCALATION_THRESHOLD)
-        self.recency_decay_days = self.config.get("recency_decay_days", DEFAULT_RECENCY_DECAY_DAYS)
+        self.merit_weights = self.config.get(
+            "merit_weights",
+            {
+                "domain_merit": DEFAULT_DOMAIN_MERIT_WEIGHT,
+                "overall_merit": DEFAULT_OVERALL_MERIT_WEIGHT,
+                "recent_performance": DEFAULT_RECENT_PERFORMANCE_WEIGHT,
+            },
+        )
+        self.auto_resolve_threshold = self.config.get(
+            "auto_resolve_threshold", DEFAULT_AUTO_RESOLVE_THRESHOLD
+        )
+        self.escalation_threshold = self.config.get(
+            "escalation_threshold", DEFAULT_ESCALATION_THRESHOLD
+        )
+        self.recency_decay_days = self.config.get(
+            "recency_decay_days", DEFAULT_RECENCY_DECAY_DAYS
+        )
 
     def _validate_resolution_inputs(
-        self,
-        conflict: Conflict,
-        context: ResolutionContext
+        self, conflict: Conflict, context: ResolutionContext
     ) -> None:
         """Validate conflict and context inputs."""
         if not conflict.agents:
@@ -113,9 +120,7 @@ class MeritWeightedResolver(ConflictResolver):
             return "merit_weighted_flagged", True
 
     def resolve_with_context(
-        self,
-        conflict: Conflict,
-        context: ResolutionContext
+        self, conflict: Conflict, context: ResolutionContext
     ) -> Resolution:
         """Resolve conflict using merit-weighted voting.
 
@@ -134,9 +139,7 @@ class MeritWeightedResolver(ConflictResolver):
 
         # Calculate weighted votes
         decision_scores = calculate_merit_weighted_votes(
-            conflict,
-            context,
-            self.merit_weights
+            conflict, context, self.merit_weights
         )
 
         if not decision_scores:
@@ -154,7 +157,8 @@ class MeritWeightedResolver(ConflictResolver):
 
         # Identify winning agents
         winning_agents = [
-            agent for agent in conflict.agents
+            agent
+            for agent in conflict.agents
             if str(context.agent_outputs[agent].decision) == decision
         ]
 
@@ -176,18 +180,18 @@ class MeritWeightedResolver(ConflictResolver):
                 "merit_weights_used": self.merit_weights,
                 "threshold_info": {
                     "auto_resolve": self.auto_resolve_threshold,
-                    "escalation": self.escalation_threshold
-                }
-            }
+                    "escalation": self.escalation_threshold,
+                },
+            },
         )
 
     def _build_reasoning(
         self,
         decision: str,
         confidence: float,
-        winning_agents: List[str],
+        winning_agents: list[str],
         context: ResolutionContext,
-        decision_scores: Dict[str, float]
+        decision_scores: dict[str, float],
     ) -> str:
         """Build detailed reasoning for resolution.
 
@@ -237,7 +241,12 @@ class MeritWeightedResolver(ConflictResolver):
         return " ".join(lines)
 
     # Backward-compatible resolve method (old API)
-    def resolve(self, conflict: Conflict, agent_outputs: List[AgentOutput], config: Dict[str, Any]) -> ResolutionResult:
+    def resolve(
+        self,
+        conflict: Conflict,
+        agent_outputs: list[AgentOutput],
+        config: dict[str, Any],
+    ) -> ResolutionResult:
         """Backward-compatible resolve method.
 
         Uses confidence as merit proxy for backward compatibility.
@@ -252,7 +261,7 @@ class MeritWeightedResolver(ConflictResolver):
                 domain_merit=output.confidence,
                 overall_merit=output.confidence,
                 recent_performance=output.confidence,
-                expertise_level=MODE_VALUE_UNKNOWN
+                expertise_level=MODE_VALUE_UNKNOWN,
             )
             agent_output_dict[output.agent_name] = output
 
@@ -262,23 +271,24 @@ class MeritWeightedResolver(ConflictResolver):
             stage_name=MODE_VALUE_UNKNOWN,
             workflow_name=MODE_VALUE_UNKNOWN,
             workflow_config=config,
-            previous_resolutions=[]
+            previous_resolutions=[],
         )
 
         resolution = self.resolve_with_context(conflict, context)
 
         # Convert Resolution to ResolutionResult for backward compatibility
         from temper_ai.agent.strategies.conflict_resolution import ResolutionResult
+
         return ResolutionResult(
             decision=resolution.decision,
             method=resolution.method,
             reasoning=resolution.reasoning,
             success=not resolution.metadata.get("needs_review", False),
             confidence=resolution.confidence,
-            metadata=resolution.metadata
+            metadata=resolution.metadata,
         )
 
-    def get_capabilities(self) -> Dict[str, bool]:
+    def get_capabilities(self) -> dict[str, bool]:
         """Get resolver capabilities."""
         return {
             "requires_merit": True,  # Needs merit scores
@@ -289,10 +299,10 @@ class MeritWeightedResolver(ConflictResolver):
             "supports_negotiation": False,
             "supports_escalation": True,
             "supports_merit_weighting": True,
-            "supports_iterative": False
+            "supports_iterative": False,
         }
 
-    def get_metadata(self) -> Dict[str, Any]:
+    def get_metadata(self) -> dict[str, Any]:
         """Get resolver metadata."""
         return {
             **super().get_metadata(),
@@ -302,26 +312,26 @@ class MeritWeightedResolver(ConflictResolver):
                     "default": {
                         "domain_merit": DEFAULT_DOMAIN_MERIT_WEIGHT,
                         "overall_merit": DEFAULT_OVERALL_MERIT_WEIGHT,
-                        "recent_performance": DEFAULT_RECENT_PERFORMANCE_WEIGHT
+                        "recent_performance": DEFAULT_RECENT_PERFORMANCE_WEIGHT,
                     },
-                    "description": "Weights for merit components"
+                    "description": "Weights for merit components",
                 },
                 "auto_resolve_threshold": {
                     "type": "float",
                     "default": DEFAULT_AUTO_RESOLVE_THRESHOLD,
-                    "description": "Confidence for auto-resolve (0-1)"
+                    "description": "Confidence for auto-resolve (0-1)",
                 },
                 "escalation_threshold": {
                     "type": "float",
                     "default": DEFAULT_ESCALATION_THRESHOLD,
-                    "description": "Confidence for escalation (0-1)"
+                    "description": "Confidence for escalation (0-1)",
                 },
                 "recency_decay_days": {
                     "type": "int",
                     "default": DEFAULT_RECENCY_DECAY_DAYS,
-                    "description": "Days for 50% merit decay"
-                }
-            }
+                    "description": "Days for 50% merit decay",
+                },
+            },
         }
 
 
@@ -332,9 +342,7 @@ class HumanEscalationResolver(ConflictResolver):
     """
 
     def resolve_with_context(
-        self,
-        conflict: Conflict,
-        context: ResolutionContext
+        self, conflict: Conflict, context: ResolutionContext
     ) -> Resolution:
         """Escalate to human.
 
@@ -356,11 +364,14 @@ class HumanEscalationResolver(ConflictResolver):
             f"Disagreement severity: {conflict.disagreement_score:.1%}."
         )
 
-        raise RuntimeError(
-            f"Human escalation required: {message}"
-        )
+        raise RuntimeError(f"Human escalation required: {message}")
 
-    def resolve(self, conflict: Conflict, agent_outputs: List[AgentOutput], config: Dict[str, Any]) -> ResolutionResult:
+    def resolve(
+        self,
+        conflict: Conflict,
+        agent_outputs: list[AgentOutput],
+        config: dict[str, Any],
+    ) -> ResolutionResult:
         """Backward-compatible resolve method. Always raises RuntimeError."""
         # Create minimal context (agent_outputs unused — resolve_with_context always raises)
         context = ResolutionContext(
@@ -369,7 +380,7 @@ class HumanEscalationResolver(ConflictResolver):
             stage_name=MODE_VALUE_UNKNOWN,
             workflow_name=MODE_VALUE_UNKNOWN,
             workflow_config=config,
-            previous_resolutions=[]
+            previous_resolutions=[],
         )
         resolution = self.resolve_with_context(conflict, context)
 
@@ -380,10 +391,10 @@ class HumanEscalationResolver(ConflictResolver):
             reasoning=resolution.reasoning,
             success=True,
             confidence=resolution.confidence,
-            metadata=resolution.metadata
+            metadata=resolution.metadata,
         )
 
-    def get_capabilities(self) -> Dict[str, bool]:
+    def get_capabilities(self) -> dict[str, bool]:
         """Get resolver capabilities."""
         return {
             "requires_merit": False,
@@ -394,5 +405,5 @@ class HumanEscalationResolver(ConflictResolver):
             "supports_negotiation": False,
             "supports_escalation": True,
             "supports_merit_weighting": False,
-            "supports_iterative": False
+            "supports_iterative": False,
         }

@@ -1,11 +1,11 @@
 """Tests for events/models.py."""
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
-from sqlmodel import Session, SQLModel, create_engine
 from sqlalchemy.pool import StaticPool
+from sqlmodel import Session, SQLModel, create_engine
 
 from temper_ai.events.models import EventLog, EventSubscription
 
@@ -59,7 +59,7 @@ class TestEventLog:
         assert fetched.source_workflow_id == "wf-1"
 
     def test_consumed_fields(self, session):
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         record = EventLog(
             id=str(uuid.uuid4()),
             event_type="stage.completed",

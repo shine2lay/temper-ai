@@ -6,10 +6,9 @@ import pytest
 
 from temper_ai.autonomy.memory_bridge import (
     APPROVED_STATUS,
-    DEFAULT_MIN_CONFIDENCE,
     GOALS_NAMESPACE,
-    LearningToMemoryBridge,
     PROCEDURAL_NAMESPACE,
+    LearningToMemoryBridge,
 )
 from temper_ai.memory.constants import MEMORY_TYPE_PROCEDURAL
 from temper_ai.memory.registry import MemoryProviderRegistry

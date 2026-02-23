@@ -3,6 +3,7 @@
 RELIABILITY FIX (code-high-05): Tests for reset methods that prevent
 unbounded memory growth in long-running processes.
 """
+
 import threading
 import time
 
@@ -26,10 +27,7 @@ class CustomTestStrategy(CollaborationStrategy):
 
     def get_metadata(self):
         """Get strategy metadata."""
-        return {
-            "description": "Custom test strategy",
-            "config_schema": {}
-        }
+        return {"description": "Custom test strategy", "config_schema": {}}
 
 
 class CustomTestResolver(ConflictResolutionStrategy):
@@ -45,10 +43,7 @@ class CustomTestResolver(ConflictResolutionStrategy):
 
     def get_metadata(self):
         """Get resolver metadata."""
-        return {
-            "description": "Custom test resolver",
-            "config_schema": {}
-        }
+        return {"description": "Custom test resolver", "config_schema": {}}
 
 
 class TestRegistryReset:
@@ -239,8 +234,7 @@ class TestThreadSafety:
                 errors.append(e)
 
         threads = [
-            threading.Thread(target=register_strategy, args=(i,))
-            for i in range(10)
+            threading.Thread(target=register_strategy, args=(i,)) for i in range(10)
         ]
 
         for t in threads:

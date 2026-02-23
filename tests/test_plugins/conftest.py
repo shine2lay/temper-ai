@@ -1,7 +1,8 @@
 """Shared fixtures for plugin tests."""
+
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -16,12 +17,15 @@ def _make_agent_config_inner(**overrides: Any) -> MagicMock:
     inner.description = overrides.get("description", "Test agent")
     inner.version = overrides.get("version", "1.0")
     inner.type = overrides.get("type", PLUGIN_TYPE_CREWAI)
-    inner.plugin_config = overrides.get("plugin_config", {
-        "framework": PLUGIN_TYPE_CREWAI,
-        "role": "Researcher",
-        "goal": "Research things",
-        "backstory": "Expert researcher",
-    })
+    inner.plugin_config = overrides.get(
+        "plugin_config",
+        {
+            "framework": PLUGIN_TYPE_CREWAI,
+            "role": "Researcher",
+            "goal": "Research things",
+            "backstory": "Expert researcher",
+        },
+    )
     inner.script = None
     inner.inference = None
     inner.prompt = None
@@ -42,7 +46,7 @@ def mock_agent_config() -> MagicMock:
 
 
 @pytest.fixture()
-def crewai_plugin_config() -> Dict[str, Any]:
+def crewai_plugin_config() -> dict[str, Any]:
     """Fixture: CrewAI plugin config dict."""
     return {
         "framework": PLUGIN_TYPE_CREWAI,

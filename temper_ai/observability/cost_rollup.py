@@ -4,11 +4,12 @@ Provides a stateless function that takes accumulated agent_metrics from
 sequential or parallel executors and computes per-agent + total cost
 summaries. Results are emitted via structured logging and tracker events.
 """
+
 from __future__ import annotations
 
 import logging
 from dataclasses import asdict, dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -36,14 +37,14 @@ class StageCostSummary:
     total_tokens: int = 0
     total_duration_seconds: float = 0.0
     agent_count: int = 0
-    agents: List[AgentCostEntry] = field(default_factory=list)
-    cost_attribution_tags: Optional[Dict[str, str]] = None
+    agents: list[AgentCostEntry] = field(default_factory=list)
+    cost_attribution_tags: dict[str, str] | None = None
 
 
 def compute_stage_cost_summary(
     stage_name: str,
-    agent_metrics: Dict[str, Any],
-    agent_statuses: Optional[Dict[str, Any]] = None,
+    agent_metrics: dict[str, Any],
+    agent_statuses: dict[str, Any] | None = None,
 ) -> StageCostSummary:
     """Compute per-agent + total cost summary from agent metrics.
 
@@ -67,7 +68,8 @@ def compute_stage_cost_summary(
         summary.total_cost_usd += entry.cost_usd
         summary.total_tokens += entry.tokens
         summary.total_duration_seconds = max(
-            summary.total_duration_seconds, entry.duration_seconds,
+            summary.total_duration_seconds,
+            entry.duration_seconds,
         )
 
     summary.agent_count = len(summary.agents)
@@ -76,8 +78,8 @@ def compute_stage_cost_summary(
 
 def _build_agent_entry(
     agent_name: str,
-    metrics: Dict[str, Any],
-    statuses: Dict[str, Any],
+    metrics: dict[str, Any],
+    statuses: dict[str, Any],
 ) -> AgentCostEntry:
     """Build a single agent cost entry from metrics dict."""
     status = statuses.get(agent_name, "unknown")
@@ -123,7 +125,7 @@ def _emit_via_tracker(
     tracker: Any,
     stage_id: str,
     event_type: str,
-    event_dict: Dict[str, Any],
+    event_dict: dict[str, Any],
 ) -> None:
     """Route a cost event through the tracker's collaboration event API.
 
@@ -150,5 +152,7 @@ def _emit_via_tracker(
         )
     except Exception:  # noqa: BLE001 — best-effort observability
         logger.debug(
-            "Failed to emit %s event via tracker", event_type, exc_info=True,
+            "Failed to emit %s event via tracker",
+            event_type,
+            exc_info=True,
         )

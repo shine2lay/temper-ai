@@ -1,5 +1,4 @@
 """Tests for context window management (R0.5)."""
-import pytest
 
 from temper_ai.llm.context_window import (
     _CHARS_PER_TOKEN,
@@ -17,12 +16,12 @@ class TestCountTokens:
     def test_approximate_mode(self):
         """Should estimate tokens as len(text) / 4."""
         text = "a" * 100
-        result = count_tokens(text, "approximate")
+        result = count_tokens(text)
         assert result == 100 // _CHARS_PER_TOKEN
 
     def test_approximate_empty_string(self):
         """Should return 0 for empty string."""
-        assert count_tokens("", "approximate") == 0
+        assert count_tokens("") == 0
 
     def test_tiktoken_fallback_when_not_installed(self):
         """Should fall back to approximate when tiktoken is not available."""
@@ -36,7 +35,7 @@ class TestCountTokens:
     def test_approximate_long_text(self):
         """Should handle long texts."""
         text = "word " * 10000
-        result = count_tokens(text, "approximate")
+        result = count_tokens(text)
         assert result == len(text) // _CHARS_PER_TOKEN
 
 
@@ -87,20 +86,20 @@ class TestTruncate:
 
     def test_short_text_unchanged(self):
         """Should not truncate short text."""
-        result = _truncate("Hello", 1000, "approximate")
+        result = _truncate("Hello", 1000)
         assert result == "Hello"
 
     def test_truncates_long_text(self):
         """Should truncate from the end."""
         text = "a" * 10000
-        result = _truncate(text, 100, "approximate")
+        result = _truncate(text, 100)
         assert len(result) <= 100 * _CHARS_PER_TOKEN
         assert result.endswith("[Content truncated to fit context window]")
 
     def test_preserves_beginning(self):
         """Should preserve content from the beginning."""
         text = "BEGINNING" + "x" * 10000
-        result = _truncate(text, 100, "approximate")
+        result = _truncate(text, 100)
         assert result.startswith("BEGINNING")
 
 
@@ -109,13 +108,13 @@ class TestSlidingWindow:
 
     def test_short_text_unchanged(self):
         """Should not modify short text."""
-        result = _sliding_window("Hello", 1000, "approximate")
+        result = _sliding_window("Hello", 1000)
         assert result == "Hello"
 
     def test_keeps_recent_content(self):
         """Should keep the most recent content."""
         text = "x" * 10000 + "RECENT"
-        result = _sliding_window(text, 100, "approximate")
+        result = _sliding_window(text, 100)
         assert "RECENT" in result
         assert result.startswith("[Earlier content omitted]")
 
@@ -125,17 +124,17 @@ class TestSummarize:
 
     def test_short_text_unchanged(self):
         """Should not modify short text."""
-        result = _summarize("Hello", 1000, "approximate")
+        result = _summarize("Hello", 1000)
         assert result == "Hello"
 
     def test_truncates_with_marker(self):
         """Should truncate with summary marker."""
         text = "a" * 10000
-        result = _summarize(text, 100, "approximate")
+        result = _summarize(text, 100)
         assert "[Content summarized" in result
 
     def test_preserves_beginning(self):
         """Should preserve content from the beginning."""
         text = "BEGINNING" + "x" * 10000
-        result = _summarize(text, 100, "approximate")
+        result = _summarize(text, 100)
         assert result.startswith("BEGINNING")

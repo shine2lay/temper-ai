@@ -3,11 +3,12 @@
 Determines which workflows/executions should be fully tracked vs skipped,
 reducing overhead in high-throughput environments.
 """
+
 import logging
 import random
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 logger = logging.getLogger(__name__)
 
@@ -19,8 +20,8 @@ class SamplingContext:
     workflow_id: str = ""
     workflow_name: str = ""
     environment: str = ""
-    tags: List[str] = field(default_factory=list)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    tags: list[str] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -89,9 +90,7 @@ class RateSample:
     def __init__(self, rate: float) -> None:
         """Initialize with sampling rate (0.0-1.0)."""
         if not 0.0 <= rate <= 1.0:
-            raise ValueError(
-                f"Sample rate must be between 0.0 and 1.0, got {rate}"
-            )
+            raise ValueError(f"Sample rate must be between 0.0 and 1.0, got {rate}")
         self._rate = rate
 
     @property
@@ -123,9 +122,9 @@ class RuleBasedSample:
 
     def __init__(
         self,
-        name_patterns: Optional[List[str]] = None,
-        tag_whitelist: Optional[List[str]] = None,
-        environment_whitelist: Optional[List[str]] = None,
+        name_patterns: list[str] | None = None,
+        tag_whitelist: list[str] | None = None,
+        environment_whitelist: list[str] | None = None,
         default_sampled: bool = True,
     ) -> None:
         """Initialize with name patterns and filter rules."""
@@ -163,9 +162,7 @@ class RuleBasedSample:
             strategy_name=self.name,
         )
 
-    def _check_name_patterns(
-        self, context: SamplingContext
-    ) -> Optional[SamplingDecision]:
+    def _check_name_patterns(self, context: SamplingContext) -> SamplingDecision | None:
         """Check workflow name against regex patterns."""
         for pattern in self._name_patterns:
             if pattern.search(context.workflow_name):
@@ -176,9 +173,7 @@ class RuleBasedSample:
                 )
         return None
 
-    def _check_tag_whitelist(
-        self, context: SamplingContext
-    ) -> Optional[SamplingDecision]:
+    def _check_tag_whitelist(self, context: SamplingContext) -> SamplingDecision | None:
         """Check if any context tags are in the whitelist."""
         if self._tag_whitelist and context.tags:
             matched = self._tag_whitelist.intersection(context.tags)
@@ -190,9 +185,7 @@ class RuleBasedSample:
                 )
         return None
 
-    def _check_environment(
-        self, context: SamplingContext
-    ) -> Optional[SamplingDecision]:
+    def _check_environment(self, context: SamplingContext) -> SamplingDecision | None:
         """Check if the environment is whitelisted."""
         if self._environment_whitelist and context.environment:
             if context.environment in self._environment_whitelist:
@@ -211,7 +204,7 @@ class CompositeSampler:
         strategies: List of sampling strategies to evaluate
     """
 
-    def __init__(self, strategies: List[SamplingStrategy]) -> None:
+    def __init__(self, strategies: list[SamplingStrategy]) -> None:
         """Initialize with list of strategies (OR logic)."""
         self._strategies = strategies
 

@@ -5,7 +5,7 @@ don't corrupt internal dictionaries or indexes.
 """
 
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -108,7 +108,7 @@ class TestSessionStoreConcurrency:
                     user_id=user.user_id,
                     email=user.email,
                     name=user.name,
-                    expires_at=datetime.now(timezone.utc) - timedelta(seconds=10),
+                    expires_at=datetime.now(UTC) - timedelta(seconds=10),
                 )
 
         # Also create 5 valid sessions
@@ -149,7 +149,7 @@ class TestSessionStoreConcurrency:
                 user_id=user.user_id,
                 email=user.email,
                 name=user.name,
-                expires_at=datetime.now(timezone.utc) - timedelta(seconds=10),
+                expires_at=datetime.now(UTC) - timedelta(seconds=10),
             )
 
         result = await store.get_session(session.session_id)
@@ -245,12 +245,16 @@ class TestUserStoreConcurrency:
 
         # Verify _emails index maps correctly to _users
         for email, user_id in store._emails.items():
-            assert user_id in store._users, f"Email index points to missing user: {email} -> {user_id}"
+            assert (
+                user_id in store._users
+            ), f"Email index points to missing user: {email} -> {user_id}"
             assert store._users[user_id].email == email
 
         # Verify _oauth_subjects index maps correctly to _users
         for key, user_id in store._oauth_subjects.items():
-            assert user_id in store._users, f"OAuth index points to missing user: {key} -> {user_id}"
+            assert (
+                user_id in store._users
+            ), f"OAuth index points to missing user: {key} -> {user_id}"
 
     @pytest.mark.asyncio
     async def test_concurrent_reads_during_writes(self):
@@ -274,7 +278,9 @@ class TestUserStoreConcurrency:
                 for i in range(10):
                     user = await store.get_user_by_email(f"user{i}@example.com")
                     if user is not None and user.user_id != f"user-{i}":
-                        errors.append(f"Inconsistent: email user{i}@example.com -> user_id {user.user_id}")
+                        errors.append(
+                            f"Inconsistent: email user{i}@example.com -> user_id {user.user_id}"
+                        )
                 await asyncio.sleep(0)
 
         async def writer():
@@ -345,4 +351,5 @@ class TestLockIsolation:
             tasks.append(user_ops(i))
 
         # Should complete without deadlock (timeout would indicate deadlock)
-        await asyncio.wait_for(asyncio.gather(*tasks), timeout=10.0)
+        results = await asyncio.wait_for(asyncio.gather(*tasks), timeout=10.0)
+        assert len(results) == 40  # 20 session_ops + 20 user_ops all completed

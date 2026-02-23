@@ -5,7 +5,7 @@ control variant = no adaptation (baseline), treatment = named profile.
 """
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any
 
 from temper_ai.lifecycle._schemas import LifecycleProfile
 
@@ -45,8 +45,8 @@ class LifecycleExperimenter:
         self,
         experiment_id: str,
         workflow_id: str,
-        available_profiles: Optional[Dict[str, LifecycleProfile]] = None,
-    ) -> Optional[LifecycleProfile]:
+        available_profiles: dict[str, LifecycleProfile] | None = None,
+    ) -> LifecycleProfile | None:
         """Assign variant and return profile (None = control/baseline).
 
         Args:
@@ -58,9 +58,7 @@ class LifecycleExperimenter:
             LifecycleProfile for the assigned variant, or None for control.
         """
         try:
-            assignment = self._service.assign_variant(
-                workflow_id, experiment_id
-            )
+            assignment = self._service.assign_variant(workflow_id, experiment_id)
             if assignment is None:
                 return None
 
@@ -100,7 +98,7 @@ class LifecycleExperimenter:
         self,
         experiment_id: str,
         workflow_id: str,
-        metrics: Dict[str, float],
+        metrics: dict[str, float],
     ) -> None:
         """Record workflow outcome metrics for experiment analysis.
 

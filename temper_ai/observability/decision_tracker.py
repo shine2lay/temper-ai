@@ -4,11 +4,13 @@ Records decisions made by the M5 self-improvement system and their outcomes,
 enabling audit trails and learning from past decisions. Extracted from
 ExecutionTracker to separate SQL model manipulation from observability tracking.
 """
+
 import logging
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
 from temper_ai.observability.merit_score_service import MeritScoreService
 
@@ -21,20 +23,21 @@ UUID_HEX_LENGTH = 12
 @dataclass
 class DecisionTrackingParams:
     """Parameters for tracking decision outcomes."""
+
     decision_type: str
-    decision_data: Dict[str, Any]
+    decision_data: dict[str, Any]
     outcome: str
-    impact_metrics: Optional[Dict[str, Any]] = None
-    lessons_learned: Optional[str] = None
-    should_repeat: Optional[bool] = None
-    tags: Optional[List[str]] = None
-    agent_execution_id: Optional[str] = None
-    stage_execution_id: Optional[str] = None
-    workflow_execution_id: Optional[str] = None
-    validation_method: Optional[str] = None
-    validation_timestamp: Optional[datetime] = None
-    validation_duration_seconds: Optional[float] = None
-    extra_metadata: Optional[Dict[str, Any]] = None
+    impact_metrics: dict[str, Any] | None = None
+    lessons_learned: str | None = None
+    should_repeat: bool | None = None
+    tags: list[str] | None = None
+    agent_execution_id: str | None = None
+    stage_execution_id: str | None = None
+    workflow_execution_id: str | None = None
+    validation_method: str | None = None
+    validation_timestamp: datetime | None = None
+    validation_duration_seconds: float | None = None
+    extra_metadata: dict[str, Any] | None = None
 
 
 def _resolve_decision_params(
@@ -44,9 +47,7 @@ def _resolve_decision_params(
     if isinstance(params_or_decision_type, DecisionTrackingParams):
         return params_or_decision_type
     if params_or_decision_type is not None:
-        return DecisionTrackingParams(
-            decision_type=params_or_decision_type, **kwargs
-        )
+        return DecisionTrackingParams(decision_type=params_or_decision_type, **kwargs)
     if "decision_type" in kwargs:
         return DecisionTrackingParams(**kwargs)
     p = kwargs.get("params")
@@ -70,15 +71,18 @@ class DecisionTracker:
         )
     """
 
-    def __init__(self, sanitize_fn: Optional[Callable[[Dict[str, Any], int], Dict[str, Any]]] = None) -> None:
+    def __init__(
+        self, sanitize_fn: Callable[[dict[str, Any], int], dict[str, Any]] | None = None
+    ) -> None:
         """Initialize decision tracker.
 
         Args:
             sanitize_fn: Function to sanitize dicts (removes secrets/PII).
                          Signature: (dict, depth) -> dict
         """
+
         # Default no-op sanitizer with explicit type
-        def default_sanitize(d: Dict[str, Any], _depth: int = 0) -> Dict[str, Any]:
+        def default_sanitize(d: dict[str, Any], _depth: int = 0) -> dict[str, Any]:
             """Default no-op sanitizer that returns dict unchanged."""
             return d
 
@@ -110,13 +114,15 @@ class DecisionTracker:
         return self._persist_decision(session, decision_record, params, decision_id)
 
     def _create_decision_record(
-        self,
-        params: DecisionTrackingParams,
-        decision_id: str
-    ) -> Optional[Any]:
+        self, params: DecisionTrackingParams, decision_id: str
+    ) -> Any | None:
         """Create DecisionOutcome record from params."""
-        safe_decision_data = self._sanitize(params.decision_data, 0) if params.decision_data else {}
-        safe_impact_metrics = self._sanitize(params.impact_metrics, 0) if params.impact_metrics else None
+        safe_decision_data = (
+            self._sanitize(params.decision_data, 0) if params.decision_data else {}
+        )
+        safe_impact_metrics = (
+            self._sanitize(params.impact_metrics, 0) if params.impact_metrics else None
+        )
 
         try:
             from temper_ai.storage.database.models import DecisionOutcome
@@ -126,8 +132,8 @@ class DecisionTracker:
                 exc_info=True,
                 extra={
                     "decision_type": params.decision_type,
-                    "outcome": params.outcome
-                }
+                    "outcome": params.outcome,
+                },
             )
             return None
 
@@ -147,7 +153,7 @@ class DecisionTracker:
                 lessons_learned=params.lessons_learned,
                 should_repeat=params.should_repeat,
                 tags=params.tags or [],
-                extra_metadata=params.extra_metadata
+                extra_metadata=params.extra_metadata,
             )
         except (TypeError, ValueError) as e:
             logger.error(
@@ -156,8 +162,8 @@ class DecisionTracker:
                 extra={
                     "decision_type": params.decision_type,
                     "outcome": params.outcome,
-                    "decision_id": decision_id
-                }
+                    "decision_id": decision_id,
+                },
             )
             return None
 
@@ -166,7 +172,7 @@ class DecisionTracker:
         session: Any,
         decision_record: Any,
         params: DecisionTrackingParams,
-        decision_id: str
+        decision_id: str,
     ) -> str:
         """Persist decision record and update merit scores."""
         try:
@@ -183,8 +189,8 @@ class DecisionTracker:
                 extra={
                     "decision_id": decision_id,
                     "decision_type": params.decision_type,
-                    "outcome": params.outcome
-                }
+                    "outcome": params.outcome,
+                },
             )
 
             return decision_id
@@ -196,8 +202,8 @@ class DecisionTracker:
                 extra={
                     "decision_type": params.decision_type,
                     "outcome": params.outcome,
-                    "decision_id": decision_id
-                }
+                    "decision_id": decision_id,
+                },
             )
             return ""
         except Exception as e:
@@ -208,8 +214,8 @@ class DecisionTracker:
                 extra={
                     "decision_type": params.decision_type,
                     "outcome": params.outcome,
-                    "decision_id": decision_id
-                }
+                    "decision_id": decision_id,
+                },
             )
             try:
                 session.rollback()
@@ -218,26 +224,29 @@ class DecisionTracker:
             return ""
 
     def _update_merit_score_if_applicable(
-        self,
-        session: Any,
-        params: DecisionTrackingParams,
-        decision_id: str
+        self, session: Any, params: DecisionTrackingParams, decision_id: str
     ) -> None:
         """Update merit score if agent_name is present in decision data."""
-        if params.decision_data and 'agent_name' in params.decision_data:
+        if params.decision_data and "agent_name" in params.decision_data:
             try:
-                agent_name_val = params.decision_data['agent_name']
-                domain = params.tags[0] if params.tags and len(params.tags) > 0 else params.decision_type
+                agent_name_val = params.decision_data["agent_name"]
+                domain = (
+                    params.tags[0]
+                    if params.tags and len(params.tags) > 0
+                    else params.decision_type
+                )
                 confidence_val = None
-                if params.impact_metrics and 'confidence' in params.impact_metrics:
-                    confidence_val = params.impact_metrics['confidence']
+                if params.impact_metrics and "confidence" in params.impact_metrics:
+                    confidence_val = params.impact_metrics["confidence"]
 
                 self._merit_service.update(
                     session=session,
                     agent_name=agent_name_val,
                     domain=domain,
                     decision_outcome=params.outcome,
-                    confidence=confidence_val
+                    confidence=confidence_val,
                 )
             except Exception as merit_e:
-                logger.warning(f"Failed to update merit score for decision {decision_id}: {merit_e}")
+                logger.warning(
+                    f"Failed to update merit score for decision {decision_id}: {merit_e}"
+                )

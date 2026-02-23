@@ -10,20 +10,21 @@ Models:
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from sqlalchemy import JSON, DateTime, ForeignKey, String, func
 from sqlmodel import Column, Field, Index, Relationship, SQLModel
 
+from temper_ai.experimentation.constants import FK_EXPERIMENTS_ID
 from temper_ai.shared.constants.limits import THRESHOLD_LARGE_COUNT
 from temper_ai.shared.constants.probabilities import FRACTION_HALF, PROB_NEAR_CERTAIN
 from temper_ai.storage.database.datetime_utils import utcnow
-from temper_ai.experimentation.constants import FK_EXPERIMENTS_ID
 
 
 # Enum types for type safety
 class ExperimentStatus(str, Enum):
     """Experiment lifecycle status."""
+
     DRAFT = "draft"
     RUNNING = "running"
     PAUSED = "paused"
@@ -33,6 +34,7 @@ class ExperimentStatus(str, Enum):
 
 class AssignmentStrategyType(str, Enum):
     """Variant assignment strategy types."""
+
     RANDOM = "random"
     HASH = "hash"
     STRATIFIED = "stratified"
@@ -41,6 +43,7 @@ class AssignmentStrategyType(str, Enum):
 
 class ConfigType(str, Enum):
     """Configuration override types."""
+
     AGENT = "agent"
     STAGE = "stage"
     WORKFLOW = "workflow"
@@ -49,6 +52,7 @@ class ConfigType(str, Enum):
 
 class ExecutionStatus(str, Enum):
     """Workflow execution status in experiment context."""
+
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -57,6 +61,7 @@ class ExecutionStatus(str, Enum):
 
 class RecommendationType(str, Enum):
     """Experiment analysis recommendation types."""
+
     CONTINUE = "continue"
     STOP_WINNER = "stop_winner"
     STOP_NO_DIFFERENCE = "stop_no_difference"
@@ -114,41 +119,51 @@ class Experiment(SQLModel, table=True):
     status: ExperimentStatus = Field(default=ExperimentStatus.DRAFT, index=True)
 
     # Assignment configuration
-    assignment_strategy: AssignmentStrategyType = Field(default=AssignmentStrategyType.RANDOM)
-    traffic_allocation: Dict[str, float] = Field(sa_column=Column(JSON))
+    assignment_strategy: AssignmentStrategyType = Field(
+        default=AssignmentStrategyType.RANDOM
+    )
+    traffic_allocation: dict[str, float] = Field(sa_column=Column(JSON))
 
     # Success criteria
     primary_metric: str
-    secondary_metrics: List[str] = Field(default_factory=list, sa_column=Column(JSON))
-    guardrail_metrics: Optional[List[Dict[str, Any]]] = Field(default=None, sa_column=Column(JSON))
+    secondary_metrics: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    guardrail_metrics: list[dict[str, Any]] | None = Field(
+        default=None, sa_column=Column(JSON)
+    )
 
     # Statistical settings
     confidence_level: float = Field(default=PROB_NEAR_CERTAIN)
     min_sample_size_per_variant: int = Field(default=THRESHOLD_LARGE_COUNT)
 
     # Results (cached)
-    winner_variant_id: Optional[str] = None
-    winning_confidence: Optional[float] = None
+    winner_variant_id: str | None = None
+    winning_confidence: float | None = None
     total_executions: int = Field(default=0)
 
     # Metadata
-    tags: List[str] = Field(default_factory=list, sa_column=Column(JSON))
-    created_by: Optional[str] = None
-    extra_metadata: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
+    tags: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    created_by: str | None = None
+    extra_metadata: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
 
     # Timestamps
     created_at: datetime = Field(default_factory=utcnow, index=True)
-    started_at: Optional[datetime] = None
-    stopped_at: Optional[datetime] = None
+    started_at: datetime | None = None
+    stopped_at: datetime | None = None
     updated_at: datetime = Field(
         default_factory=utcnow,
         sa_column=Column(DateTime, default=utcnow, onupdate=func.now()),
     )
 
     # Relationships
-    variants: List["Variant"] = Relationship(back_populates="experiment", cascade_delete=True)
-    assignments: List["VariantAssignment"] = Relationship(back_populates="experiment", cascade_delete=True)
-    results: List["ExperimentResult"] = Relationship(back_populates="experiment", cascade_delete=True)
+    variants: list["Variant"] = Relationship(
+        back_populates="experiment", cascade_delete=True
+    )
+    assignments: list["VariantAssignment"] = Relationship(
+        back_populates="experiment", cascade_delete=True
+    )
+    results: list["ExperimentResult"] = Relationship(
+        back_populates="experiment", cascade_delete=True
+    )
 
 
 class Variant(SQLModel, table=True):
@@ -190,7 +205,9 @@ class Variant(SQLModel, table=True):
     # Identity
     id: str = Field(primary_key=True)
     experiment_id: str = Field(
-        sa_column=Column(String, ForeignKey(FK_EXPERIMENTS_ID, ondelete="CASCADE"), index=True)
+        sa_column=Column(
+            String, ForeignKey(FK_EXPERIMENTS_ID, ondelete="CASCADE"), index=True
+        )
     )
     name: str
     description: str
@@ -198,7 +215,7 @@ class Variant(SQLModel, table=True):
 
     # Configuration
     config_type: ConfigType = Field(default=ConfigType.AGENT)
-    config_overrides: Dict[str, Any] = Field(sa_column=Column(JSON))
+    config_overrides: dict[str, Any] = Field(sa_column=Column(JSON))
 
     # Traffic allocation
     allocated_traffic: float = Field(default=FRACTION_HALF)
@@ -210,12 +227,14 @@ class Variant(SQLModel, table=True):
     failed_executions: int = Field(default=0)
 
     # Metadata
-    extra_metadata: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
+    extra_metadata: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
     created_at: datetime = Field(default_factory=utcnow)
 
     # Relationships
     experiment: Experiment = Relationship(back_populates="variants")
-    assignments: List["VariantAssignment"] = Relationship(back_populates="variant", cascade_delete=True)
+    assignments: list["VariantAssignment"] = Relationship(
+        back_populates="variant", cascade_delete=True
+    )
 
 
 class VariantAssignment(SQLModel, table=True):
@@ -254,28 +273,38 @@ class VariantAssignment(SQLModel, table=True):
     # Identity
     id: str = Field(primary_key=True)
     experiment_id: str = Field(
-        sa_column=Column(String, ForeignKey(FK_EXPERIMENTS_ID, ondelete="CASCADE"), index=True)
+        sa_column=Column(
+            String, ForeignKey(FK_EXPERIMENTS_ID, ondelete="CASCADE"), index=True
+        )
     )
     variant_id: str = Field(
-        sa_column=Column(String, ForeignKey("variants.id", ondelete="CASCADE"), index=True)
+        sa_column=Column(
+            String, ForeignKey("variants.id", ondelete="CASCADE"), index=True
+        )
     )
-    workflow_execution_id: str = Field(index=True, unique=True)  # One assignment per workflow
+    workflow_execution_id: str = Field(
+        index=True, unique=True
+    )  # One assignment per workflow
 
     # Assignment metadata
     assigned_at: datetime = Field(default_factory=utcnow, index=True)
     assignment_strategy: AssignmentStrategyType
-    assignment_context: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
+    assignment_context: dict[str, Any] | None = Field(
+        default=None, sa_column=Column(JSON)
+    )
 
     # Execution tracking
-    execution_status: ExecutionStatus = Field(default=ExecutionStatus.PENDING, index=True)
-    execution_started_at: Optional[datetime] = None
-    execution_completed_at: Optional[datetime] = None
+    execution_status: ExecutionStatus = Field(
+        default=ExecutionStatus.PENDING, index=True
+    )
+    execution_started_at: datetime | None = None
+    execution_completed_at: datetime | None = None
 
     # Metrics (denormalized for performance)
-    metrics: Optional[Dict[str, float]] = Field(default=None, sa_column=Column(JSON))
+    metrics: dict[str, float] | None = Field(default=None, sa_column=Column(JSON))
 
     # Metadata
-    extra_metadata: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
+    extra_metadata: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
 
     # Relationships
     experiment: Experiment = Relationship(back_populates="assignments")
@@ -322,7 +351,9 @@ class ExperimentResult(SQLModel, table=True):
     # Identity
     id: str = Field(primary_key=True)
     experiment_id: str = Field(
-        sa_column=Column(String, ForeignKey(FK_EXPERIMENTS_ID, ondelete="CASCADE"), index=True)
+        sa_column=Column(
+            String, ForeignKey(FK_EXPERIMENTS_ID, ondelete="CASCADE"), index=True
+        )
     )
 
     # Analysis metadata
@@ -330,14 +361,14 @@ class ExperimentResult(SQLModel, table=True):
     sample_size: int
 
     # Variant metrics (aggregated)
-    variant_metrics: Dict[str, Dict[str, Any]] = Field(sa_column=Column(JSON))
+    variant_metrics: dict[str, dict[str, Any]] = Field(sa_column=Column(JSON))
     # Example: {
     #   "control": {"mean": 45.2, "std": 5.1, "median": 44.0, "p95": 52.3, "count": 150},
     #   "variant_a": {"mean": 38.7, "std": 4.8, "median": 37.5, "p95": 46.2, "count": 145}
     # }
 
     # Statistical tests
-    statistical_tests: Dict[str, Dict[str, Any]] = Field(sa_column=Column(JSON))
+    statistical_tests: dict[str, dict[str, Any]] = Field(sa_column=Column(JSON))
     # Example: {
     #   "control_vs_variant_a": {
     #     "metric": "duration_seconds",
@@ -350,16 +381,18 @@ class ExperimentResult(SQLModel, table=True):
     # }
 
     # Guardrail checks
-    guardrail_violations: List[Dict[str, Any]] = Field(default_factory=list, sa_column=Column(JSON))
+    guardrail_violations: list[dict[str, Any]] = Field(
+        default_factory=list, sa_column=Column(JSON)
+    )
     # Example: [{"variant": "variant_a", "metric": "error_rate", "value": 0.08, "threshold": 0.05}]
 
     # Recommendations
     recommendation: RecommendationType
-    recommended_winner: Optional[str] = None
+    recommended_winner: str | None = None
     confidence: float
 
     # Metadata
-    extra_metadata: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
+    extra_metadata: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
 
     # Relationships
     experiment: Experiment = Relationship(back_populates="results")
@@ -368,6 +401,10 @@ class ExperimentResult(SQLModel, table=True):
 # Composite indexes for query performance
 Index("idx_experiment_status_created", Experiment.status, Experiment.created_at)  # type: ignore[arg-type]
 Index("idx_variant_experiment_name", Variant.experiment_id, Variant.name)
-Index("idx_assignment_experiment_variant", VariantAssignment.experiment_id, VariantAssignment.variant_id)
+Index(
+    "idx_assignment_experiment_variant",
+    VariantAssignment.experiment_id,
+    VariantAssignment.variant_id,
+)
 Index("idx_assignment_status_completed", VariantAssignment.execution_status, VariantAssignment.execution_completed_at)  # type: ignore[arg-type]
 Index("idx_result_experiment_analyzed", ExperimentResult.experiment_id, ExperimentResult.analyzed_at)  # type: ignore[arg-type]

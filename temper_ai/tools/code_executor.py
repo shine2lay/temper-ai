@@ -4,11 +4,12 @@ Code executor tool for running Python code snippets in a sandboxed subprocess.
 Security: No shell=True, blocked import scanning, restricted env vars.
 Only Python is supported.
 """
+
 import logging
 import re
 import subprocess
 import sys
-from typing import Any, Dict, Optional
+from typing import Any
 
 from temper_ai.tools.base import BaseTool, ToolMetadata, ToolResult
 from temper_ai.tools.code_executor_constants import (
@@ -27,7 +28,7 @@ _IMPORT_RE = re.compile(
 )
 
 
-def _find_blocked_import(code: str) -> Optional[str]:
+def _find_blocked_import(code: str) -> str | None:
     """
     Scan code for blocked module imports.
 
@@ -74,27 +75,24 @@ class CodeExecutorTool(BaseTool):
             modifies_state=True,
         )
 
-    def get_parameters_schema(self) -> Dict[str, Any]:
+    def get_parameters_schema(self) -> dict[str, Any]:
         """Return JSON schema for code executor parameters."""
         return {
             "type": "object",
             "properties": {
-                "code": {
-                    "type": "string",
-                    "description": "Python code to execute"
-                },
+                "code": {"type": "string", "description": "Python code to execute"},
                 "timeout": {
                     "type": "integer",
                     "description": f"Execution timeout in seconds (default: {CODE_EXEC_DEFAULT_TIMEOUT})",
-                    "default": CODE_EXEC_DEFAULT_TIMEOUT
+                    "default": CODE_EXEC_DEFAULT_TIMEOUT,
                 },
                 "language": {
                     "type": "string",
                     "description": "Programming language (only 'python' supported)",
-                    "default": CODE_EXEC_LANGUAGE
+                    "default": CODE_EXEC_LANGUAGE,
                 },
             },
-            "required": ["code"]
+            "required": ["code"],
         }
 
     def execute(self, **kwargs: Any) -> ToolResult:
@@ -119,14 +117,14 @@ class CodeExecutorTool(BaseTool):
         if language != CODE_EXEC_LANGUAGE:
             return ToolResult(
                 success=False,
-                error=f"Unsupported language '{language}'. Only 'python' is supported."
+                error=f"Unsupported language '{language}'. Only 'python' is supported.",
             )
 
         blocked_module = _find_blocked_import(code)
         if blocked_module:
             return ToolResult(
                 success=False,
-                error=f"Blocked import detected: '{blocked_module}' is not allowed for security reasons"
+                error=f"Blocked import detected: '{blocked_module}' is not allowed for security reasons",
             )
 
         env = {"PYTHONDONTWRITEBYTECODE": "1"}
@@ -145,13 +143,17 @@ class CodeExecutorTool(BaseTool):
             stderr, stderr_truncated = _truncate(proc.stderr)
 
             success = proc.returncode == 0
-            error_msg: Optional[str] = None
+            error_msg: str | None = None
             if not success:
                 error_msg = stderr or f"Process exited with code {proc.returncode}"
 
             return ToolResult(
                 success=success,
-                result={"stdout": stdout, "stderr": stderr, "returncode": proc.returncode},
+                result={
+                    "stdout": stdout,
+                    "stderr": stderr,
+                    "returncode": proc.returncode,
+                },
                 error=error_msg,
                 metadata={
                     "stdout_truncated": stdout_truncated,
@@ -160,6 +162,8 @@ class CodeExecutorTool(BaseTool):
             )
 
         except subprocess.TimeoutExpired:
-            return ToolResult(success=False, error=f"Execution timed out after {timeout} seconds")
+            return ToolResult(
+                success=False, error=f"Execution timed out after {timeout} seconds"
+            )
         except (OSError, ValueError) as exc:
             return ToolResult(success=False, error=f"Execution error: {exc}")

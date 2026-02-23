@@ -3,9 +3,10 @@
 Free functions that implement reasoning, context management, structured output
 validation, and guardrail features for the agent execution pipeline.
 """
+
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any
 
 
 def apply_reasoning(llm_service: Any, config: Any, prompt: str) -> str:
@@ -26,14 +27,20 @@ def apply_context_management(config: Any, prompt: str) -> str:
     cfg = config.agent.context_management
     max_tokens = cfg.max_context_tokens or DEFAULT_MODEL_CONTEXT
     return trim_to_budget(
-        prompt, max_tokens, cfg.reserved_output_tokens,
-        cfg.strategy, cfg.token_counter,
+        prompt,
+        max_tokens,
+        cfg.reserved_output_tokens,
+        cfg.strategy,
+        cfg.token_counter,
     )
 
 
 def validate_and_retry_output(
-    llm_service: Any, config: Any,
-    result: Any, prompt: str, kwargs: Dict[str, Any],
+    llm_service: Any,
+    config: Any,
+    result: Any,
+    prompt: str,
+    kwargs: dict[str, Any],
 ) -> Any:
     """Validate output against JSON schema, retrying on failure (R0.1)."""
     from temper_ai.llm.output_validation import (
@@ -46,11 +53,16 @@ def validate_and_retry_output(
         return result
 
     for _attempt in range(cfg.max_retries):
-        valid, error_msg = validate_output_against_schema(result.output, cfg.json_schema)
+        valid, error_msg = validate_output_against_schema(
+            result.output, cfg.json_schema
+        )
         if valid:
             return result
         retry_prompt = build_retry_prompt_with_error(
-            prompt, result.output, error_msg or "", cfg.json_schema,
+            prompt,
+            result.output,
+            error_msg or "",
+            cfg.json_schema,
         )
         retry_kwargs = {**kwargs, "prompt": retry_prompt}
         result = llm_service.run(**retry_kwargs)
@@ -58,8 +70,11 @@ def validate_and_retry_output(
 
 
 async def avalidate_and_retry_output(
-    llm_service: Any, config: Any,
-    result: Any, prompt: str, kwargs: Dict[str, Any],
+    llm_service: Any,
+    config: Any,
+    result: Any,
+    prompt: str,
+    kwargs: dict[str, Any],
 ) -> Any:
     """Async: validate output against JSON schema, retrying on failure (R0.1)."""
     from temper_ai.llm.output_validation import (
@@ -72,11 +87,16 @@ async def avalidate_and_retry_output(
         return result
 
     for _attempt in range(cfg.max_retries):
-        valid, error_msg = validate_output_against_schema(result.output, cfg.json_schema)
+        valid, error_msg = validate_output_against_schema(
+            result.output, cfg.json_schema
+        )
         if valid:
             return result
         retry_prompt = build_retry_prompt_with_error(
-            prompt, result.output, error_msg or "", cfg.json_schema,
+            prompt,
+            result.output,
+            error_msg or "",
+            cfg.json_schema,
         )
         retry_kwargs = {**kwargs, "prompt": retry_prompt}
         result = await llm_service.arun(**retry_kwargs)
@@ -84,8 +104,11 @@ async def avalidate_and_retry_output(
 
 
 def apply_guardrails(
-    llm_service: Any, config: Any,
-    result: Any, prompt: str, kwargs: Dict[str, Any],
+    llm_service: Any,
+    config: Any,
+    result: Any,
+    prompt: str,
+    kwargs: dict[str, Any],
 ) -> Any:
     """Run guardrail checks and retry with feedback on blocking failures (R0.2)."""
     from temper_ai.agent.guardrails import (
@@ -111,8 +134,11 @@ def apply_guardrails(
 
 
 async def aapply_guardrails(
-    llm_service: Any, config: Any,
-    result: Any, prompt: str, kwargs: Dict[str, Any],
+    llm_service: Any,
+    config: Any,
+    result: Any,
+    prompt: str,
+    kwargs: dict[str, Any],
 ) -> Any:
     """Async: run guardrail checks and retry with feedback (R0.2)."""
     from temper_ai.agent.guardrails import (

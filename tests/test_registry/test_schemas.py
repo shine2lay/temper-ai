@@ -1,8 +1,6 @@
 """Tests for temper_ai.registry._schemas."""
-from datetime import timezone
-from datetime import datetime
 
-import pytest
+from datetime import UTC, datetime
 
 from temper_ai.registry._schemas import (
     AgentRegistryEntry,
@@ -28,7 +26,7 @@ class TestAgentRegistryEntry:
         defaults = dict(
             id="abc123",
             name="test-agent",
-            registered_at=datetime.now(timezone.utc),
+            registered_at=datetime.now(UTC),
         )
         defaults.update(kwargs)
         return AgentRegistryEntry(**defaults)
@@ -65,7 +63,7 @@ class TestAgentRegistryEntry:
         assert entry.config_snapshot == {}
 
     def test_custom_values(self):
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         entry = self._make_entry(
             description="A test agent",
             version="2.0",

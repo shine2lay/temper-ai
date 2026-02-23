@@ -162,7 +162,7 @@ The framework includes a policy engine (`temper_ai/safety/action_policy_engine.p
 - Validates tool calls against configured policies
 - Supports sync and async validation
 - Built-in policies in `temper_ai/safety/stub_policies.py`
-- Custom policies via `config/safety/action_policies.yaml`
+- Custom policies via `configs/safety/action_policies.yaml`
 
 ## Security Checklist
 

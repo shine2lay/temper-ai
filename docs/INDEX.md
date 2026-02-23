@@ -3,17 +3,8 @@
 ## Getting Started
 
 - [README](../README.md) - Project overview and quick start
-- [Vision Document](./VISION.md) - Long-term vision
-- [Technical Specification](../TECHNICAL_SPECIFICATION.md) - Complete technical spec
+- [Quick Start](./QUICK_START.md) - Getting started guide
 - [Glossary](./GLOSSARY.md) - Terminology reference and common confusions
-
-## Milestone Reports
-
-- [Milestone 1 Completion](./milestones/milestone1_completion.md) - Core Agent System ✅
-- [Milestone 2 Completion](./milestones/milestone2_completion.md) - Workflow Orchestration ✅
-- [Milestone 2.5 Completion](./milestones/milestone2.5_completion.md) - Execution Engine Abstraction ✅
-- [Milestone 3 Completion](./milestones/milestone3_completion.md) - Multi-Agent Collaboration ✅
-- [All Milestones](./milestones/README.md) - Overview and index
 
 ## Architecture Decision Records
 
@@ -22,11 +13,6 @@
   - Process for creating and updating ADRs
   - Best practices and guidelines
   - Existing ADRs indexed by topic
-
-## Archives
-
-- [Task Reports Archive](./archive/task_reports/README.md) - Historical task status reports (2026-01)
-- [Session Summaries Archive](./archive/session_summaries/) - Historical session summaries
 
 ## Architecture
 
@@ -109,15 +95,3 @@ See interface documentation for detailed examples:
 - [Contributing Guide](./CONTRIBUTING.md) (TODO)
 - [Code Style Guide](./CODE_STYLE.md) (TODO)
 - [Architecture Decision Records](./adr/README.md) - Document architectural decisions
-
-## Roadmap
-
-- **M1 (✅ Complete)**: Core Agent System - Observability infrastructure, agents, tools
-- **M2 (✅ Complete)**: Workflow Orchestration - LangGraph compiler, stage execution
-- **M2.5 (✅ Complete)**: Execution Engine Abstraction - Multi-engine support
-- **M3 (✅ Complete)**: Multi-Agent Collaboration - Parallel execution, strategies
-- **M4 (🚧 In Progress)**: Safety & Governance System - Policies, approval workflows
-- **M5 (Planned)**: Self-Improvement Loop
-- **M6 (Planned)**: Multiple Product Types
-
-See: [Vision Document](./VISION.md) | [Milestone Reports](./milestones/README.md)

@@ -1,4 +1,5 @@
 """Tests for LangGraph adapter."""
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
@@ -153,7 +154,9 @@ class TestLangGraphExecuteExternal:
         assert response.output == "done"
         assert response.metadata["framework"] == "LangGraph"
 
-    def test_fallback_when_output_key_missing(self, langgraph_config: MagicMock) -> None:
+    def test_fallback_when_output_key_missing(
+        self, langgraph_config: MagicMock
+    ) -> None:
         agent = LangGraphAgent(langgraph_config)
         mock_graph = MagicMock()
         # Return dict without expected output key

@@ -111,7 +111,9 @@ class TestComposerSyncAsyncConsistency:
     """Verify sync and async validation produce identical results."""
 
     def _compare_results(
-        self, sync_result: CompositeValidationResult, async_result: CompositeValidationResult
+        self,
+        sync_result: CompositeValidationResult,
+        async_result: CompositeValidationResult,
     ):
         assert sync_result.valid == async_result.valid
         assert len(sync_result.violations) == len(async_result.violations)
@@ -137,6 +139,7 @@ class TestComposerSyncAsyncConsistency:
         sync_result = composer.validate(ACTION, CONTEXT)
         async_result = await composer.validate_async(ACTION, CONTEXT)
         self._compare_results(sync_result, async_result)
+        assert async_result.valid is True
 
     @pytest.mark.asyncio
     async def test_fail_policy_consistent(self):
@@ -222,7 +225,9 @@ class TestComposerHelpers:
         policy = PassPolicy({})
         error = RuntimeError("test error")
 
-        composer._handle_policy_error(policy, error, ACTION, CONTEXT, violations, results)
+        composer._handle_policy_error(
+            policy, error, ACTION, CONTEXT, violations, results
+        )
 
         assert len(violations) == 1
         assert violations[0].severity == ViolationSeverity.CRITICAL
@@ -237,8 +242,11 @@ class TestComposerHelpers:
     def test_build_composite_result_invalid(self):
         composer = PolicyComposer()
         v = SafetyViolation(
-            policy_name="test", severity=ViolationSeverity.HIGH,
-            message="x", action="a", context={},
+            policy_name="test",
+            severity=ViolationSeverity.HIGH,
+            message="x",
+            action="a",
+            context={},
         )
         result = composer._build_composite_result([v], {}, 1, 0, ["p1"])
         assert result.valid is False
@@ -301,7 +309,9 @@ class TestBasePolicyHelpers:
         violations = []
         metadata = policy._init_validation_metadata()
 
-        should_break = policy._merge_child_result(child, child_result, violations, metadata)
+        should_break = policy._merge_child_result(
+            child, child_result, violations, metadata
+        )
         assert should_break is False
         assert len(violations) == 0
 
@@ -313,7 +323,9 @@ class TestBasePolicyHelpers:
         violations = []
         metadata = policy._init_validation_metadata()
 
-        should_break = policy._merge_child_result(child, child_result, violations, metadata)
+        should_break = policy._merge_child_result(
+            child, child_result, violations, metadata
+        )
         assert should_break is True
         assert metadata["short_circuit"] is True
         assert len(violations) > 0
@@ -326,8 +338,11 @@ class TestBasePolicyHelpers:
     def test_finalize_validation_invalid(self):
         policy = PassPolicy({})
         v = SafetyViolation(
-            policy_name="test", severity=ViolationSeverity.HIGH,
-            message="x", action="a", context={},
+            policy_name="test",
+            severity=ViolationSeverity.HIGH,
+            message="x",
+            action="a",
+            context={},
         )
         result = policy._finalize_validation([v], {"policy_name": "test"})
         assert result.valid is False

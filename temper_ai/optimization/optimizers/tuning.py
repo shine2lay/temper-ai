@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from temper_ai.optimization._schemas import OptimizationResult
 from temper_ai.optimization.engine_constants import DEFAULT_RUNS
@@ -15,17 +15,15 @@ logger = logging.getLogger(__name__)
 class TuningOptimizer:
     """Optimizer that searches config space using ExperimentService."""
 
-    def __init__(
-        self, experiment_service: Optional[Any] = None
-    ) -> None:
+    def __init__(self, experiment_service: Any | None = None) -> None:
         self.experiment_service = experiment_service
 
     def optimize(
         self,
         runner: Any,
-        input_data: Dict[str, Any],
+        input_data: dict[str, Any],
         evaluator: EvaluatorProtocol,
-        config: Dict[str, Any],
+        config: dict[str, Any],
     ) -> OptimizationResult:
         """Run config variants and select the best via experimentation."""
         if self.experiment_service:
@@ -35,29 +33,27 @@ class TuningOptimizer:
     def _run_without_service(
         self,
         runner: Any,
-        input_data: Dict[str, Any],
+        input_data: dict[str, Any],
         evaluator: EvaluatorProtocol,
-        config: Dict[str, Any],
+        config: dict[str, Any],
     ) -> OptimizationResult:
         """Fallback: run each strategy and pick best (no persistence)."""
-        strategies: List[Dict[str, Any]] = config.get("strategies", [])
+        strategies: list[dict[str, Any]] = config.get("strategies", [])
         runs_per_config: int = config.get("runs", DEFAULT_RUNS)
 
         if not strategies:
             output = runner.execute(input_data)
             result = evaluator.evaluate(output)
-            return OptimizationResult(
-                output=output, score=result.score
-            )
+            return OptimizationResult(output=output, score=result.score)
 
-        best_output: Dict[str, Any] = {}
+        best_output: dict[str, Any] = {}
         best_score = -1.0
-        strategy_scores: Dict[str, float] = {}
+        strategy_scores: dict[str, float] = {}
 
         for strategy in strategies:
             name = strategy.get("name", "unnamed")
             total_score = 0.0
-            last_output: Dict[str, Any] = {}
+            last_output: dict[str, Any] = {}
 
             for _ in range(runs_per_config):
                 merged_input = {**input_data, **strategy}
@@ -83,9 +79,9 @@ class TuningOptimizer:
     def _run_with_service(
         self,
         runner: Any,
-        input_data: Dict[str, Any],
+        input_data: dict[str, Any],
         evaluator: EvaluatorProtocol,
-        config: Dict[str, Any],
+        config: dict[str, Any],
     ) -> OptimizationResult:
         """Run via ExperimentService with proper tracking."""
         from temper_ai.optimization._experiment_helpers import (
@@ -93,23 +89,27 @@ class TuningOptimizer:
             finalize_experiment,
         )
 
-        strategies: List[Dict[str, Any]] = config.get("strategies", [])
+        strategies: list[dict[str, Any]] = config.get("strategies", [])
         runs_per_config: int = config.get("runs", DEFAULT_RUNS)
 
         evaluator_name = getattr(evaluator, "name", "unknown")
         experiment_id = create_tuning_experiment(
-            self.experiment_service, evaluator_name,
-            strategies, runs_per_config,
+            self.experiment_service,
+            evaluator_name,
+            strategies,
+            runs_per_config,
         )
 
         best_output, best_score, run_idx = self._execute_strategy_runs(
-            runner, input_data, evaluator, strategies,
-            runs_per_config, experiment_id,
+            runner,
+            input_data,
+            evaluator,
+            strategies,
+            runs_per_config,
+            experiment_id,
         )
 
-        experiment_results = finalize_experiment(
-            self.experiment_service, experiment_id
-        )
+        experiment_results = finalize_experiment(self.experiment_service, experiment_id)
 
         return OptimizationResult(
             output=best_output,
@@ -123,9 +123,9 @@ class TuningOptimizer:
     def _execute_strategy_runs(
         self,
         runner: Any,
-        input_data: Dict[str, Any],
+        input_data: dict[str, Any],
         evaluator: EvaluatorProtocol,
-        strategies: List[Dict[str, Any]],
+        strategies: list[dict[str, Any]],
         runs_per_config: int,
         experiment_id: str,
     ) -> tuple:
@@ -135,7 +135,7 @@ class TuningOptimizer:
             track_run_result,
         )
 
-        best_output: Dict[str, Any] = {}
+        best_output: dict[str, Any] = {}
         best_score = -1.0
         run_idx = 0
 
@@ -150,9 +150,7 @@ class TuningOptimizer:
                 output = runner.execute(merged_input)
                 result = evaluator.evaluate(output)
 
-                track_run_result(
-                    self.experiment_service, workflow_id, result.score
-                )
+                track_run_result(self.experiment_service, workflow_id, result.score)
 
                 if result.score > best_score:
                     best_score = result.score

@@ -3,8 +3,8 @@
 Uses SQLModel/SQLAlchemy with a dedicated engine so the server's run
 history is independent of the main observability database.
 """
+
 import logging
-from typing import Optional
 
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, SQLModel, select
@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 class RunStore:
     """Persistent storage for server run metadata."""
 
-    def __init__(self, database_url: Optional[str] = None) -> None:
+    def __init__(self, database_url: str | None = None) -> None:
         """Initialize the store and create tables if needed.
 
         Args:
@@ -37,14 +37,14 @@ class RunStore:
             session.merge(run)
             session.commit()
 
-    def get_run(self, execution_id: str) -> Optional[ServerRun]:
+    def get_run(self, execution_id: str) -> ServerRun | None:
         """Get a run by execution_id, or None."""
         with Session(self.engine) as session:
             return session.get(ServerRun, execution_id)
 
     def list_runs(
         self,
-        status: Optional[str] = None,
+        status: str | None = None,
         limit: int = 100,
         offset: int = 0,
     ) -> list[ServerRun]:

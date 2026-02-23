@@ -9,7 +9,7 @@ real multi-round agent re-invocation via MultiRoundStrategy.
 """
 
 import warnings
-from typing import Any, Dict, List
+from typing import Any
 
 from temper_ai.agent.strategies.base import AgentOutput, SynthesisResult
 from temper_ai.agent.strategies.multi_round import (
@@ -46,8 +46,8 @@ class DebateAndSynthesize(MultiRoundStrategy):
 
     def synthesize(
         self,
-        agent_outputs: List[AgentOutput],
-        config: Dict[str, Any],
+        agent_outputs: list[AgentOutput],
+        config: dict[str, Any],
     ) -> SynthesisResult:
         """Synthesize agent outputs.
 
@@ -60,7 +60,7 @@ class DebateAndSynthesize(MultiRoundStrategy):
             result.method = "debate_and_synthesize"
         return result
 
-    def get_capabilities(self) -> Dict[str, bool]:
+    def get_capabilities(self) -> dict[str, bool]:
         """Get capabilities, including legacy keys."""
         caps = super().get_capabilities()
         # Add legacy capability keys

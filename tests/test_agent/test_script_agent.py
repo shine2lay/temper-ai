@@ -1,4 +1,5 @@
 """Tests for ScriptAgent — deterministic bash script execution."""
+
 from __future__ import annotations
 
 import subprocess
@@ -23,7 +24,6 @@ from temper_ai.storage.schemas.agent_config import (
     InferenceConfig,
     PromptConfig,
 )
-
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
@@ -146,7 +146,8 @@ class TestExecuteScript:
     @patch("temper_ai.agent.script_agent.subprocess")
     def test_success(self, mock_subprocess: MagicMock) -> None:
         mock_subprocess.run.return_value = _make_mock_proc(
-            returncode=0, stdout="ok",
+            returncode=0,
+            stdout="ok",
         )
         mock_subprocess.TimeoutExpired = subprocess.TimeoutExpired
 
@@ -158,7 +159,8 @@ class TestExecuteScript:
     @patch("temper_ai.agent.script_agent.subprocess")
     def test_nonzero_exit(self, mock_subprocess: MagicMock) -> None:
         mock_subprocess.run.return_value = _make_mock_proc(
-            returncode=1, stderr="fail",
+            returncode=1,
+            stderr="fail",
         )
         mock_subprocess.TimeoutExpired = subprocess.TimeoutExpired
 
@@ -197,7 +199,9 @@ class TestScriptAgentRun:
     @patch("temper_ai.agent.script_agent._build_safe_env", return_value={})
     @patch("temper_ai.agent.script_agent.subprocess")
     def test_success_with_outputs(
-        self, mock_subprocess: MagicMock, mock_env: MagicMock,
+        self,
+        mock_subprocess: MagicMock,
+        mock_env: MagicMock,
     ) -> None:
         mock_subprocess.run.return_value = _make_mock_proc(
             returncode=0,
@@ -223,7 +227,9 @@ class TestScriptAgentRun:
     @patch("temper_ai.agent.script_agent._build_safe_env", return_value={})
     @patch("temper_ai.agent.script_agent.subprocess")
     def test_template_rendering(
-        self, mock_subprocess: MagicMock, mock_env: MagicMock,
+        self,
+        mock_subprocess: MagicMock,
+        mock_env: MagicMock,
     ) -> None:
         """Verify Jinja2 variables are rendered with shlex.quote."""
         mock_subprocess.run.return_value = _make_mock_proc(returncode=0)
@@ -241,10 +247,13 @@ class TestScriptAgentRun:
     @patch("temper_ai.agent.script_agent._build_safe_env", return_value={})
     @patch("temper_ai.agent.script_agent.subprocess")
     def test_nonzero_exit_code(
-        self, mock_subprocess: MagicMock, mock_env: MagicMock,
+        self,
+        mock_subprocess: MagicMock,
+        mock_env: MagicMock,
     ) -> None:
         mock_subprocess.run.return_value = _make_mock_proc(
-            returncode=1, stderr="command failed",
+            returncode=1,
+            stderr="command failed",
         )
         mock_subprocess.TimeoutExpired = subprocess.TimeoutExpired
 
@@ -261,7 +270,9 @@ class TestScriptAgentRun:
     @patch("temper_ai.agent.script_agent._build_safe_env", return_value={})
     @patch("temper_ai.agent.script_agent.subprocess")
     def test_timeout_handling(
-        self, mock_subprocess: MagicMock, mock_env: MagicMock,
+        self,
+        mock_subprocess: MagicMock,
+        mock_env: MagicMock,
     ) -> None:
         mock_subprocess.run.side_effect = subprocess.TimeoutExpired("cmd", 10)
         mock_subprocess.TimeoutExpired = subprocess.TimeoutExpired
@@ -279,7 +290,9 @@ class TestScriptAgentRun:
     @patch("temper_ai.agent.script_agent._build_safe_env", return_value={})
     @patch("temper_ai.agent.script_agent.subprocess")
     def test_custom_timeout_used(
-        self, mock_subprocess: MagicMock, mock_env: MagicMock,
+        self,
+        mock_subprocess: MagicMock,
+        mock_env: MagicMock,
     ) -> None:
         """Verify custom timeout_seconds from config is passed to subprocess."""
         mock_subprocess.run.return_value = _make_mock_proc(returncode=0)
@@ -297,7 +310,9 @@ class TestScriptAgentRun:
     @patch("temper_ai.agent.script_agent._build_safe_env", return_value={})
     @patch("temper_ai.agent.script_agent.subprocess")
     def test_default_timeout_used(
-        self, mock_subprocess: MagicMock, mock_env: MagicMock,
+        self,
+        mock_subprocess: MagicMock,
+        mock_env: MagicMock,
     ) -> None:
         """Verify DEFAULT_SCRIPT_TIMEOUT when not specified in config."""
         mock_subprocess.run.return_value = _make_mock_proc(returncode=0)
@@ -315,11 +330,14 @@ class TestScriptAgentRun:
     @patch("temper_ai.agent.script_agent._build_safe_env", return_value={})
     @patch("temper_ai.agent.script_agent.subprocess")
     def test_stream_events_emitted(
-        self, mock_subprocess: MagicMock, mock_env: MagicMock,
+        self,
+        mock_subprocess: MagicMock,
+        mock_env: MagicMock,
     ) -> None:
         """Verify stream events are sent to callback."""
         mock_subprocess.run.return_value = _make_mock_proc(
-            returncode=0, stdout="output",
+            returncode=0,
+            stdout="output",
         )
         mock_subprocess.TimeoutExpired = subprocess.TimeoutExpired
 
@@ -342,7 +360,9 @@ class TestScriptAgentExecute:
     @patch("temper_ai.agent.script_agent._build_safe_env", return_value={})
     @patch("temper_ai.agent.script_agent.subprocess")
     def test_full_execute_flow(
-        self, mock_subprocess: MagicMock, mock_env: MagicMock,
+        self,
+        mock_subprocess: MagicMock,
+        mock_env: MagicMock,
     ) -> None:
         """Test execute() including _setup path."""
         mock_subprocess.run.return_value = _make_mock_proc(
@@ -361,7 +381,9 @@ class TestScriptAgentExecute:
     @patch("temper_ai.agent.script_agent._build_safe_env", return_value={})
     @patch("temper_ai.agent.script_agent.subprocess")
     def test_execute_error_handling(
-        self, mock_subprocess: MagicMock, mock_env: MagicMock,
+        self,
+        mock_subprocess: MagicMock,
+        mock_env: MagicMock,
     ) -> None:
         """Test that execute() handles errors gracefully via _on_error."""
         mock_subprocess.run.side_effect = OSError("exec failed")

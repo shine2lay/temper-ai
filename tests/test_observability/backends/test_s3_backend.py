@@ -8,6 +8,7 @@ Tests cover:
 - Context management
 - Proper stub behavior (no errors, logs only)
 """
+
 import logging
 import uuid
 from datetime import datetime
@@ -24,7 +25,7 @@ def s3_backend():
     return S3ObservabilityBackend(
         bucket_name="test-observability-bucket",
         prefix="observability",
-        region="us-west-2"
+        region="us-west-2",
     )
 
 
@@ -55,9 +56,7 @@ def make_agent_id() -> str:
 def test_init_with_full_config():
     """Test initialization with full configuration."""
     backend = S3ObservabilityBackend(
-        bucket_name="my-bucket",
-        prefix="custom-prefix",
-        region="eu-west-1"
+        bucket_name="my-bucket", prefix="custom-prefix", region="eu-west-1"
     )
 
     assert backend.bucket_name == "my-bucket"
@@ -97,7 +96,7 @@ def test_track_workflow_start(s3_backend: S3ObservabilityBackend, caplog):
             workflow_name="test_workflow",
             workflow_config={"workflow": {"version": "1.0"}},
             start_time=datetime.utcnow(),
-            trigger_type="manual"
+            trigger_type="manual",
         )
 
     assert result is None
@@ -111,9 +110,7 @@ def test_track_workflow_end(s3_backend: S3ObservabilityBackend, caplog):
     # Should not raise any errors
     with caplog.at_level(logging.DEBUG):
         result = s3_backend.track_workflow_end(
-            workflow_id=workflow_id,
-            end_time=datetime.utcnow(),
-            status="completed"
+            workflow_id=workflow_id, end_time=datetime.utcnow(), status="completed"
         )
 
     assert result is None
@@ -131,7 +128,7 @@ def test_update_workflow_metrics(s3_backend: S3ObservabilityBackend, caplog):
             total_llm_calls=10,
             total_tool_calls=5,
             total_tokens=1000,
-            total_cost_usd=0.05
+            total_cost_usd=0.05,
         )
 
     assert result is None
@@ -153,7 +150,7 @@ def test_track_stage_start(s3_backend: S3ObservabilityBackend, caplog):
             workflow_id=workflow_id,
             stage_name="analysis",
             stage_config={"stage": {"version": "1.0"}},
-            start_time=datetime.utcnow()
+            start_time=datetime.utcnow(),
         )
 
     assert result is None
@@ -167,9 +164,7 @@ def test_track_stage_end(s3_backend: S3ObservabilityBackend, caplog):
     # Should not raise any errors
     with caplog.at_level(logging.DEBUG):
         result = s3_backend.track_stage_end(
-            stage_id=stage_id,
-            end_time=datetime.utcnow(),
-            status="completed"
+            stage_id=stage_id, end_time=datetime.utcnow(), status="completed"
         )
 
     assert result is None
@@ -183,8 +178,7 @@ def test_set_stage_output(s3_backend: S3ObservabilityBackend, caplog):
     # Should not raise any errors
     with caplog.at_level(logging.DEBUG):
         result = s3_backend.set_stage_output(
-            stage_id=stage_id,
-            output_data={"result": "success"}
+            stage_id=stage_id, output_data={"result": "success"}
         )
 
     assert result is None
@@ -206,7 +200,7 @@ def test_track_agent_start(s3_backend: S3ObservabilityBackend, caplog):
             stage_id=stage_id,
             agent_name="researcher",
             agent_config={"agent": {"version": "1.0"}},
-            start_time=datetime.utcnow()
+            start_time=datetime.utcnow(),
         )
 
     assert result is None
@@ -220,9 +214,7 @@ def test_track_agent_end(s3_backend: S3ObservabilityBackend, caplog):
     # Should not raise any errors
     with caplog.at_level(logging.DEBUG):
         result = s3_backend.track_agent_end(
-            agent_id=agent_id,
-            end_time=datetime.utcnow(),
-            status="completed"
+            agent_id=agent_id, end_time=datetime.utcnow(), status="completed"
         )
 
     assert result is None
@@ -239,7 +231,7 @@ def test_set_agent_output(s3_backend: S3ObservabilityBackend, caplog):
             agent_id=agent_id,
             output_data={"analysis": "complete"},
             reasoning="Based on data",
-            confidence_score=0.9
+            confidence_score=0.9,
         )
 
     assert result is None
@@ -267,14 +259,16 @@ def test_track_llm_call(s3_backend: S3ObservabilityBackend, caplog):
             completion_tokens=20,
             latency_ms=500,
             estimated_cost_usd=0.001,
-            start_time=datetime.utcnow()
+            start_time=datetime.utcnow(),
         )
 
     assert result is None
     assert any("S3 STUB" in record.message for record in caplog.records)
 
 
-def test_track_llm_call_with_optional_params(s3_backend: S3ObservabilityBackend, caplog):
+def test_track_llm_call_with_optional_params(
+    s3_backend: S3ObservabilityBackend, caplog
+):
     """Test LLM call tracking with optional parameters (stub)."""
     agent_id = make_agent_id()
     llm_call_id = f"llm-{uuid.uuid4().hex[:12]}"
@@ -294,7 +288,7 @@ def test_track_llm_call_with_optional_params(s3_backend: S3ObservabilityBackend,
             estimated_cost_usd=0.001,
             start_time=datetime.utcnow(),
             temperature=0.7,
-            max_tokens=100
+            max_tokens=100,
         )
 
     assert result is None
@@ -318,7 +312,7 @@ def test_track_tool_call(s3_backend: S3ObservabilityBackend, caplog):
             input_params={"url": "https://example.com"},
             output_data={"content": "scraped"},
             start_time=datetime.utcnow(),
-            duration_seconds=2.5
+            duration_seconds=2.5,
         )
 
     assert result is None
@@ -341,7 +335,7 @@ def test_track_tool_call_with_error(s3_backend: S3ObservabilityBackend, caplog):
             start_time=datetime.utcnow(),
             duration_seconds=1.0,
             status="failed",
-            error_message="Connection lost"
+            error_message="Connection lost",
         )
 
     assert result is None
@@ -361,7 +355,7 @@ def test_track_safety_violation(s3_backend: S3ObservabilityBackend, caplog):
             agent_id=make_agent_id(),
             violation_severity="CRITICAL",
             violation_message="Dangerous action attempted",
-            policy_name="security_policy"
+            policy_name="security_policy",
         )
 
     assert result is None
@@ -379,7 +373,7 @@ def test_track_collaboration_event(s3_backend: S3ObservabilityBackend):
         stage_id=stage_id,
         event_type="consensus",
         agents_involved=[agent1_id, agent2_id],
-        event_data={"decision": "proceed"}
+        event_data={"decision": "proceed"},
     )
 
     assert event_id == "collab-stub-consensus"
@@ -449,7 +443,7 @@ def test_track_workflow_start_logs(mock_logger, s3_backend: S3ObservabilityBacke
         workflow_id=workflow_id,
         workflow_name="test_workflow",
         workflow_config={"workflow": {"version": "1.0"}},
-        start_time=datetime.utcnow()
+        start_time=datetime.utcnow(),
     )
 
     # Verify logging was called with relevant content
@@ -459,7 +453,9 @@ def test_track_workflow_start_logs(mock_logger, s3_backend: S3ObservabilityBacke
 
 
 @patch("temper_ai.observability.backends.s3_backend.logger")
-def test_track_safety_violation_logs_warning(mock_logger, s3_backend: S3ObservabilityBackend):
+def test_track_safety_violation_logs_warning(
+    mock_logger, s3_backend: S3ObservabilityBackend
+):
     """Test that safety violation logs warning."""
     s3_backend.track_safety_violation(
         workflow_id=None,
@@ -467,7 +463,7 @@ def test_track_safety_violation_logs_warning(mock_logger, s3_backend: S3Observab
         agent_id=None,
         violation_severity="HIGH",
         violation_message="Test violation",
-        policy_name="test_policy"
+        policy_name="test_policy",
     )
 
     # Verify warning was logged with relevant content
@@ -490,7 +486,7 @@ def test_full_workflow_lifecycle(s3_backend: S3ObservabilityBackend):
         workflow_id=workflow_id,
         workflow_name="test",
         workflow_config={},
-        start_time=datetime.utcnow()
+        start_time=datetime.utcnow(),
     )
 
     s3_backend.track_stage_start(
@@ -498,7 +494,7 @@ def test_full_workflow_lifecycle(s3_backend: S3ObservabilityBackend):
         workflow_id=workflow_id,
         stage_name="analysis",
         stage_config={},
-        start_time=datetime.utcnow()
+        start_time=datetime.utcnow(),
     )
 
     s3_backend.track_agent_start(
@@ -506,7 +502,7 @@ def test_full_workflow_lifecycle(s3_backend: S3ObservabilityBackend):
         stage_id=stage_id,
         agent_name="researcher",
         agent_config={},
-        start_time=datetime.utcnow()
+        start_time=datetime.utcnow(),
     )
 
     s3_backend.track_llm_call(
@@ -520,7 +516,7 @@ def test_full_workflow_lifecycle(s3_backend: S3ObservabilityBackend):
         completion_tokens=20,
         latency_ms=500,
         estimated_cost_usd=0.001,
-        start_time=datetime.utcnow()
+        start_time=datetime.utcnow(),
     )
 
     s3_backend.track_tool_call(
@@ -530,25 +526,19 @@ def test_full_workflow_lifecycle(s3_backend: S3ObservabilityBackend):
         input_params={},
         output_data={},
         start_time=datetime.utcnow(),
-        duration_seconds=0.1
+        duration_seconds=0.1,
     )
 
     s3_backend.track_agent_end(
-        agent_id=agent_id,
-        end_time=datetime.utcnow(),
-        status="completed"
+        agent_id=agent_id, end_time=datetime.utcnow(), status="completed"
     )
 
     s3_backend.track_stage_end(
-        stage_id=stage_id,
-        end_time=datetime.utcnow(),
-        status="completed"
+        stage_id=stage_id, end_time=datetime.utcnow(), status="completed"
     )
 
     s3_backend.track_workflow_end(
-        workflow_id=workflow_id,
-        end_time=datetime.utcnow(),
-        status="completed"
+        workflow_id=workflow_id, end_time=datetime.utcnow(), status="completed"
     )
 
     # Verify backend still reports consistent stats after full lifecycle

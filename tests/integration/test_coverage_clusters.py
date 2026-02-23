@@ -8,20 +8,17 @@ Tests integration between different system clusters:
 Note: These tests verify integration points exist and work together,
 without requiring full end-to-end execution.
 """
+
 import asyncio
-from datetime import datetime, timedelta, timezone
-from unittest.mock import Mock, patch
 import uuid
+from datetime import UTC, datetime
 
 import pytest
-
-from tests.fixtures.auth_fixtures import sample_user, sample_session, oauth_config
-from tests.fixtures.database_fixtures import db_session
-
 
 # ============================================================================
 # Auth + Observability Integration
 # ============================================================================
+
 
 class TestAuthObservabilityIntegration:
     """Test auth session tracking in observability system."""
@@ -30,6 +27,7 @@ class TestAuthObservabilityIntegration:
     def session_store(self):
         """Create in-memory session store."""
         from temper_ai.auth.session import InMemorySessionStore
+
         return InMemorySessionStore()
 
     @pytest.mark.asyncio
@@ -37,9 +35,7 @@ class TestAuthObservabilityIntegration:
         """Session creation should be tracked in observability system."""
         # Create session using async API
         session = await session_store.create_session(
-            user=sample_user,
-            ip_address="127.0.0.1",
-            user_agent="TestAgent/1.0"
+            user=sample_user, ip_address="127.0.0.1", user_agent="TestAgent/1.0"
         )
 
         # Verify session exists
@@ -59,14 +55,11 @@ class TestAuthObservabilityIntegration:
             email="user@example.com",
             name="User",
             oauth_provider="google",
-            oauth_subject="google_123"
+            oauth_subject="google_123",
         )
 
         # Create session with very short TTL (1 second)
-        session = await session_store.create_session(
-            user=user,
-            session_max_age=1
-        )
+        session = await session_store.create_session(user=user, session_max_age=1)
 
         # Wait for expiry
         await asyncio.sleep(1.5)
@@ -92,7 +85,7 @@ class TestAuthObservabilityIntegration:
                 email=f"user{i}@example.com",
                 name=f"User {i}",
                 oauth_provider="google",
-                oauth_subject=f"google_{i}"
+                oauth_subject=f"google_{i}",
             )
             for i in range(5)
         ]
@@ -114,6 +107,7 @@ class TestAuthObservabilityIntegration:
 # Experimentation + Self-improvement Integration
 # ============================================================================
 
+
 class TestExperimentationSelfImprovementIntegration:
     """Test A/B testing strategies in self-improvement workflows."""
 
@@ -122,7 +116,7 @@ class TestExperimentationSelfImprovementIntegration:
         """Create strategy configuration for testing."""
         return {
             "aggressive_improvement": {"risk_threshold": 0.8, "iterations": 10},
-            "conservative_improvement": {"risk_threshold": 0.3, "iterations": 3}
+            "conservative_improvement": {"risk_threshold": 0.3, "iterations": 3},
         }
 
     def test_ab_test_strategy_selection(self, strategy_config):
@@ -133,8 +127,8 @@ class TestExperimentationSelfImprovementIntegration:
             "name": "strategy_selection_test",
             "variants": {
                 "variant_a": {"strategy": "aggressive_improvement", "traffic": 50},
-                "variant_b": {"strategy": "conservative_improvement", "traffic": 50}
-            }
+                "variant_b": {"strategy": "conservative_improvement", "traffic": 50},
+            },
         }
 
         # Simulate variant assignment (deterministic based on user hash)
@@ -159,7 +153,7 @@ class TestExperimentationSelfImprovementIntegration:
                 "user": user,
                 "variant": variant_name,
                 "success": hash(user) % 3 != 0,  # Random success
-                "latency_ms": abs(hash(user) % 1000)
+                "latency_ms": abs(hash(user) % 1000),
             }
             metrics.append(metric)
 
@@ -184,8 +178,8 @@ class TestExperimentationSelfImprovementIntegration:
                 "before_score": 0.6,
                 "after_score": 0.8,
                 "improvement_delta": 0.2,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "metrics": {"accuracy": 0.85, "latency_ms": 150}
+                "timestamp": datetime.now(UTC).isoformat(),
+                "metrics": {"accuracy": 0.85, "latency_ms": 150},
             }
             performance_records.append(record)
 
@@ -198,6 +192,7 @@ class TestExperimentationSelfImprovementIntegration:
 # CLI + All Systems Integration
 # ============================================================================
 
+
 class TestCLISystemsIntegration:
     """Test CLI integration with all system components."""
 
@@ -207,7 +202,7 @@ class TestCLISystemsIntegration:
         from temper_ai.interfaces.cli import main
 
         # Verify main function exists
-        assert hasattr(main, 'main')
+        assert hasattr(main, "main")
         assert callable(main.main)
 
     def test_cli_config_validation(self, tmp_path):
@@ -232,6 +227,7 @@ class TestCLISystemsIntegration:
 
         # Verify database initialized
         from temper_ai.storage.database import get_session
+
         with get_session() as session:
             assert session is not None
 
@@ -241,7 +237,7 @@ class TestCLISystemsIntegration:
         error_data = {
             "error_type": "ConfigurationError",
             "error_message": "nonexistent_agent",
-            "handled": True
+            "handled": True,
         }
 
         # Verify error can be captured
@@ -253,12 +249,13 @@ class TestCLISystemsIntegration:
 # Cross-Module Data Flow Integration
 # ============================================================================
 
+
 class TestCrossModuleDataFlow:
     """Test data flow across multiple modules."""
 
     def test_workflow_to_observability_flow(self):
         """Workflow execution data should flow to observability system."""
-        from temper_ai.storage.database import init_database, get_session
+        from temper_ai.storage.database import get_session, init_database
 
         init_database("sqlite:///:memory:")
 
@@ -270,7 +267,7 @@ class TestCrossModuleDataFlow:
             workflow_data = {
                 "workflow_id": str(uuid.uuid4()),
                 "stages": [],
-                "context": {}
+                "context": {},
             }
 
             assert workflow_data["workflow_id"] is not None
@@ -293,10 +290,9 @@ class TestCrossModuleDataFlow:
         experiment_data = {
             "id": str(uuid.uuid4()),
             "name": "user_experiment",
-            "user_id": sample_user.user_id
+            "user_id": sample_user.user_id,
         }
 
         # User ID from session can be used for variant assignment
         assert retrieved_session.user_id == sample_user.user_id
         assert experiment_data["user_id"] == sample_user.user_id
-

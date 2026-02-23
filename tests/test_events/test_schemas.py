@@ -2,8 +2,15 @@
 
 import pytest
 
-from temper_ai.events._schemas import EventBusConfig, StageEventEmitConfig, StageTriggerConfig
-from temper_ai.events.constants import DEFAULT_EVENT_RETENTION_DAYS, DEFAULT_TRIGGER_TIMEOUT_SECONDS
+from temper_ai.events._schemas import (
+    EventBusConfig,
+    StageEventEmitConfig,
+    StageTriggerConfig,
+)
+from temper_ai.events.constants import (
+    DEFAULT_EVENT_RETENTION_DAYS,
+    DEFAULT_TRIGGER_TIMEOUT_SECONDS,
+)
 
 
 class TestEventBusConfig:

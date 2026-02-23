@@ -2,7 +2,6 @@
 
 import logging
 from dataclasses import dataclass, field
-from typing import List, Optional
 
 from temper_ai.goals._schemas import GoalProposal, GoalRiskLevel
 from temper_ai.goals.constants import (
@@ -29,7 +28,7 @@ class GoalSafetyResult:
     """Result of safety policy validation."""
 
     allowed: bool
-    reasons: List[str] = field(default_factory=list)
+    reasons: list[str] = field(default_factory=list)
     requires_approval: bool = True
     approval_level: str = "human"
 
@@ -40,8 +39,8 @@ class GoalSafetyPolicy:
     def __init__(
         self,
         store: GoalStore,
-        autonomy_manager: Optional[object] = None,
-        budget_enforcer: Optional[object] = None,
+        autonomy_manager: object | None = None,
+        budget_enforcer: object | None = None,
         max_proposals_per_day: int = MAX_PROPOSALS_PER_DAY,
     ) -> None:
         self._store = store
@@ -49,11 +48,9 @@ class GoalSafetyPolicy:
         self._budget_enforcer = budget_enforcer
         self._max_per_day = max_proposals_per_day
 
-    def validate_proposal(
-        self, proposal: GoalProposal
-    ) -> GoalSafetyResult:
+    def validate_proposal(self, proposal: GoalProposal) -> GoalSafetyResult:
         """Validate a proposal against safety constraints."""
-        reasons: List[str] = []
+        reasons: list[str] = []
 
         # Check daily rate limit
         today_count = self._store.count_proposals_today()
@@ -86,23 +83,18 @@ class GoalSafetyPolicy:
                     f"auto-approve limit ({MAX_BLAST_RADIUS_AUTO})"
                 )
 
-        requires_approval = (
-            proposal.risk_assessment.level != GoalRiskLevel.LOW
-            or bool(reasons)
+        requires_approval = proposal.risk_assessment.level != GoalRiskLevel.LOW or bool(
+            reasons
         )
 
         return GoalSafetyResult(
             allowed=True,
             reasons=reasons,
             requires_approval=requires_approval,
-            approval_level=(
-                "human" if requires_approval else "auto"
-            ),
+            approval_level=("human" if requires_approval else "auto"),
         )
 
-    def can_auto_approve(
-        self, proposal: GoalProposal, autonomy_level: int
-    ) -> bool:
+    def can_auto_approve(self, proposal: GoalProposal, autonomy_level: int) -> bool:
         """Check if a proposal can be auto-approved at the given autonomy level."""
         # Look up the max risk level auto-approvable at this autonomy level
         max_risk_str = AUTO_APPROVE_RISK_MATRIX.get(autonomy_level)
@@ -136,9 +128,7 @@ class GoalSafetyPolicy:
         # Estimate cost impact from expected impacts
         for impact in proposal.expected_impacts:
             if "cost" in impact.metric_name.lower():
-                estimated_impact = abs(
-                    impact.current_value - impact.expected_value
-                )
+                estimated_impact = abs(impact.current_value - impact.expected_value)
                 if estimated_impact > MAX_BUDGET_IMPACT_AUTO_USD:
                     return False
 

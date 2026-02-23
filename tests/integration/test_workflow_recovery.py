@@ -4,6 +4,7 @@ Integration tests for workflow error recovery and retry mechanisms.
 Tests workflows that handle failures gracefully through retry logic,
 checkpointing, and resume capabilities.
 """
+
 import time
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -29,6 +30,7 @@ class TestWorkflowRecovery:
         """Initialize in-memory database for testing."""
         try:
             from temper_ai.observability.database import get_database
+
             get_database()
         except RuntimeError:
             init_database("sqlite:///:memory:")
@@ -38,14 +40,13 @@ class TestWorkflowRecovery:
     def execution_tracker(self, sample_database):
         """Execution tracker with test database."""
         from temper_ai.observability.backends.sql_backend import SQLObservabilityBackend
+
         backend = SQLObservabilityBackend()
         return ExecutionTracker(backend=backend)
 
     @pytest.mark.integration
     def test_workflow_with_agent_retry_on_transient_failure(
-        self,
-        sample_database,
-        execution_tracker
+        self, sample_database, execution_tracker
     ):
         """Test workflow retries agent execution on transient failures.
 
@@ -73,12 +74,12 @@ class TestWorkflowRecovery:
                     "retry_policy": {
                         "max_retries": 3,
                         "backoff_multiplier": 2.0,
-                        "transient_errors": ["RateLimitError", "TimeoutError"]
+                        "transient_errors": ["RateLimitError", "TimeoutError"],
                     }
                 }
             },
             start_time=datetime.now(UTC),
-            status="running"
+            status="running",
         )
 
         with get_session() as session:
@@ -98,9 +99,9 @@ class TestWorkflowRecovery:
                 start_time=datetime.now(UTC),
                 end_time=datetime.now(UTC) + timedelta(seconds=0.5),
                 duration_seconds=0.5,
-                status="failed",
+                status="failed",  # valid: running, completed, failed, halted, timeout
                 error_message="RateLimitError: Too many requests",
-                retry_count=1
+                retry_count=1,
             )
 
             with get_session() as session:
@@ -121,8 +122,8 @@ class TestWorkflowRecovery:
                 start_time=datetime.now(UTC),
                 end_time=datetime.now(UTC) + timedelta(seconds=1.0),
                 duration_seconds=1.0,
-                status="success",
-                retry_count=2
+                status="completed",
+                retry_count=2,
             )
 
             with get_session() as session:
@@ -135,7 +136,7 @@ class TestWorkflowRecovery:
             stage.output_data = {
                 "api_response": {"status": "success", "data": "..."},
                 "retry_count": 1,
-                "total_attempts": 2
+                "total_attempts": 2,
             }
             session.commit()
 
@@ -149,13 +150,20 @@ class TestWorkflowRecovery:
 
         # VERIFICATION: Retry behavior
         with get_session() as session:
-            workflow = session.query(WorkflowExecution).filter_by(id=workflow_id).first()
-            assert workflow.status == "completed", "Workflow should complete after retry"
+            workflow = (
+                session.query(WorkflowExecution).filter_by(id=workflow_id).first()
+            )
+            assert (
+                workflow.status == "completed"
+            ), "Workflow should complete after retry"
 
             # Verify retry attempts
-            agents = session.query(AgentExecution).filter_by(
-                stage_execution_id=stage_id
-            ).order_by(AgentExecution.retry_count).all()
+            agents = (
+                session.query(AgentExecution)
+                .filter_by(stage_execution_id=stage_id)
+                .order_by(AgentExecution.retry_count)
+                .all()
+            )
 
             assert len(agents) == 2, "Should have 2 retry attempts"
 
@@ -165,7 +173,7 @@ class TestWorkflowRecovery:
             assert agents[0].retry_count == 1
 
             # Second attempt succeeded
-            assert agents[1].status == "success"
+            assert agents[1].status == "completed"
             assert agents[1].retry_count == 2
 
             # Verify stage output
@@ -174,11 +182,7 @@ class TestWorkflowRecovery:
             assert stage.output_data["total_attempts"] == 2
 
     @pytest.mark.integration
-    def test_workflow_with_stage_retry(
-        self,
-        sample_database,
-        execution_tracker
-    ):
+    def test_workflow_with_stage_retry(self, sample_database, execution_tracker):
         """Test workflow handles stage failure and recovery.
 
         Scenario: Data processing workflow
@@ -198,7 +202,7 @@ class TestWorkflowRecovery:
             workflow_version="1.0",
             workflow_config_snapshot={},
             start_time=datetime.now(UTC),
-            status="running"
+            status="running",
         )
 
         with get_session() as session:
@@ -206,7 +210,9 @@ class TestWorkflowRecovery:
             session.commit()
 
         # Stage attempt 1: Fails
-        with execution_tracker.track_stage("data_processing_attempt1", {}, workflow_id) as stage1_id:
+        with execution_tracker.track_stage(
+            "data_processing_attempt1", {}, workflow_id
+        ) as stage1_id:
             pass
 
         with get_session() as session:
@@ -216,7 +222,9 @@ class TestWorkflowRecovery:
             session.commit()
 
         # Stage attempt 2: Succeeds
-        with execution_tracker.track_stage("data_processing_attempt2", {}, workflow_id) as stage2_id:
+        with execution_tracker.track_stage(
+            "data_processing_attempt2", {}, workflow_id
+        ) as stage2_id:
             pass
 
         with get_session() as session:
@@ -234,13 +242,18 @@ class TestWorkflowRecovery:
 
         # VERIFICATION
         with get_session() as session:
-            workflow = session.query(WorkflowExecution).filter_by(id=workflow_id).first()
+            workflow = (
+                session.query(WorkflowExecution).filter_by(id=workflow_id).first()
+            )
             assert workflow.status == "completed"
 
             # Verify both stage attempts exist
-            stages = session.query(StageExecution).filter_by(
-                workflow_execution_id=workflow_id
-            ).order_by(StageExecution.start_time).all()
+            stages = (
+                session.query(StageExecution)
+                .filter_by(workflow_execution_id=workflow_id)
+                .order_by(StageExecution.start_time)
+                .all()
+            )
 
             assert len(stages) == 2
 
@@ -254,9 +267,7 @@ class TestWorkflowRecovery:
 
     @pytest.mark.integration
     def test_workflow_with_exponential_backoff(
-        self,
-        sample_database,
-        execution_tracker
+        self, sample_database, execution_tracker
     ):
         """Test workflow uses exponential backoff for retries.
 
@@ -280,11 +291,11 @@ class TestWorkflowRecovery:
                 "retry_policy": {
                     "max_retries": 3,
                     "initial_backoff_seconds": 1,
-                    "backoff_multiplier": 2.0
+                    "backoff_multiplier": 2.0,
                 }
             },
             start_time=datetime.now(UTC),
-            status="running"
+            status="running",
         )
 
         with get_session() as session:
@@ -295,14 +306,16 @@ class TestWorkflowRecovery:
         retry_counts = []
         backoff_seconds = 1
 
-        with execution_tracker.track_stage("external_service_call", {}, workflow_id) as stage_id:
+        with execution_tracker.track_stage(
+            "external_service_call", {}, workflow_id
+        ) as stage_id:
             # Simulate 3 failures, then success
             for attempt in range(1, 5):
                 if attempt > 1:
                     time.sleep(0.01)  # Simulated backoff
 
                 agent_id = str(uuid.uuid4())
-                status = "success" if attempt == 4 else "failed"
+                status = "completed" if attempt == 4 else "failed"
 
                 agent_exec = AgentExecution(
                     id=agent_id,
@@ -315,18 +328,20 @@ class TestWorkflowRecovery:
                     duration_seconds=0.1,
                     status=status,
                     error_message="ServiceUnavailable" if status == "failed" else None,
-                    retry_count=attempt
+                    retry_count=attempt,
                 )
 
                 with get_session() as session:
                     session.add(agent_exec)
                     session.commit()
 
-                retry_counts.append({
-                    "attempt": attempt,
-                    "backoff_seconds": backoff_seconds if attempt > 1 else 0,
-                    "status": status
-                })
+                retry_counts.append(
+                    {
+                        "attempt": attempt,
+                        "backoff_seconds": backoff_seconds if attempt > 1 else 0,
+                        "status": status,
+                    }
+                )
 
                 backoff_seconds *= 2  # Exponential increase
 
@@ -336,7 +351,7 @@ class TestWorkflowRecovery:
             stage.output_data = {
                 "service_response": {"data": "success"},
                 "retry_counts": retry_counts,
-                "total_retries": 3
+                "total_retries": 3,
             }
             session.commit()
 
@@ -350,13 +365,18 @@ class TestWorkflowRecovery:
 
         # VERIFICATION
         with get_session() as session:
-            workflow = session.query(WorkflowExecution).filter_by(id=workflow_id).first()
+            workflow = (
+                session.query(WorkflowExecution).filter_by(id=workflow_id).first()
+            )
             assert workflow.status == "completed"
 
             # Verify retry attempts
-            agents = session.query(AgentExecution).filter_by(
-                stage_execution_id=stage_id
-            ).order_by(AgentExecution.retry_count).all()
+            agents = (
+                session.query(AgentExecution)
+                .filter_by(stage_execution_id=stage_id)
+                .order_by(AgentExecution.retry_count)
+                .all()
+            )
 
             assert len(agents) == 4
 
@@ -378,6 +398,7 @@ class TestCheckpointResume:
         """Initialize in-memory database for testing."""
         try:
             from temper_ai.observability.database import get_database
+
             get_database()
         except RuntimeError:
             init_database("sqlite:///:memory:")
@@ -387,15 +408,12 @@ class TestCheckpointResume:
     def execution_tracker(self, sample_database):
         """Execution tracker with test database."""
         from temper_ai.observability.backends.sql_backend import SQLObservabilityBackend
+
         backend = SQLObservabilityBackend()
         return ExecutionTracker(backend=backend)
 
     @pytest.mark.integration
-    def test_workflow_checkpoint_and_resume(
-        self,
-        sample_database,
-        execution_tracker
-    ):
+    def test_workflow_checkpoint_and_resume(self, sample_database, execution_tracker):
         """Test workflow can be checkpointed and resumed.
 
         Scenario: Long-running data processing workflow
@@ -420,7 +438,7 @@ class TestCheckpointResume:
             workflow_version="1.0",
             workflow_config_snapshot={},
             start_time=datetime.now(UTC),
-            status="running"
+            status="running",
         )
 
         with get_session() as session:
@@ -438,7 +456,9 @@ class TestCheckpointResume:
             session.commit()
 
         # Stage 2: Data transformation
-        with execution_tracker.track_stage("transformation", {}, workflow_id) as stage2_id:
+        with execution_tracker.track_stage(
+            "transformation", {}, workflow_id
+        ) as stage2_id:
             with execution_tracker.track_agent("transformer", {}, stage2_id):
                 pass
 
@@ -453,13 +473,13 @@ class TestCheckpointResume:
             "completed_stages": ["extraction", "transformation"],
             "stage_outputs": {
                 "extraction": {"records_extracted": 1000},
-                "transformation": {"records_transformed": 1000}
+                "transformation": {"records_transformed": 1000},
             },
-            "next_stage": "validation"
+            "next_stage": "validation",
         }
 
         # Simulate interruption (workflow status = paused)
-        workflow_exec.status = "checkpointed"
+        workflow_exec.status = "halted"
         with get_session() as session:
             session.merge(workflow_exec)
             session.commit()
@@ -487,10 +507,7 @@ class TestCheckpointResume:
 
         with get_session() as session:
             stage3 = session.query(StageExecution).filter_by(id=stage3_id).first()
-            stage3.output_data = {
-                "records_validated": 1000,
-                "validation_errors": 0
-            }
+            stage3.output_data = {"records_validated": 1000, "validation_errors": 0}
             session.commit()
 
         # Complete workflow
@@ -503,13 +520,17 @@ class TestCheckpointResume:
 
         # VERIFICATION: Checkpoint/resume integrity
         with get_session() as session:
-            workflow = session.query(WorkflowExecution).filter_by(id=workflow_id).first()
+            workflow = (
+                session.query(WorkflowExecution).filter_by(id=workflow_id).first()
+            )
             assert workflow.status == "completed"
 
             # Verify all 3 stages executed (no duplication)
-            stages = session.query(StageExecution).filter_by(
-                workflow_execution_id=workflow_id
-            ).all()
+            stages = (
+                session.query(StageExecution)
+                .filter_by(workflow_execution_id=workflow_id)
+                .all()
+            )
             assert len(stages) == 3
 
             stage_names = [s.stage_name for s in stages]
@@ -522,11 +543,7 @@ class TestCheckpointResume:
             assert validation_stage.output_data["records_validated"] == 1000
 
     @pytest.mark.integration
-    def test_partial_checkpoint_recovery(
-        self,
-        sample_database,
-        execution_tracker
-    ):
+    def test_partial_checkpoint_recovery(self, sample_database, execution_tracker):
         """Test workflow can recover from partial checkpoint.
 
         Scenario: Workflow checkpoints mid-stage
@@ -547,7 +564,7 @@ class TestCheckpointResume:
             workflow_version="1.0",
             workflow_config_snapshot={},
             start_time=datetime.now(UTC),
-            status="running"
+            status="running",
         )
 
         with get_session() as session:
@@ -555,7 +572,9 @@ class TestCheckpointResume:
             session.commit()
 
         # Stage: Batch processing (partial completion)
-        with execution_tracker.track_stage("batch_processing", {}, workflow_id) as stage_id:
+        with execution_tracker.track_stage(
+            "batch_processing", {}, workflow_id
+        ) as stage_id:
             with execution_tracker.track_agent("processor", {}, stage_id):
                 pass
 
@@ -566,12 +585,12 @@ class TestCheckpointResume:
                 "total_records": 1000,
                 "processed_records": 600,
                 "remaining_records": 400,
-                "checkpoint_progress": 0.6
+                "checkpoint_progress": 0.6,
             }
             session.commit()
 
         # Mark as checkpointed
-        workflow_exec.status = "checkpointed"
+        workflow_exec.status = "halted"
         with get_session() as session:
             session.merge(workflow_exec)
             session.commit()
@@ -590,7 +609,7 @@ class TestCheckpointResume:
                 "processed_records": 1000,
                 "remaining_records": 0,
                 "checkpoint_progress": 1.0,
-                "resumed_from_checkpoint": True
+                "resumed_from_checkpoint": True,
             }
             session.commit()
 
@@ -604,12 +623,16 @@ class TestCheckpointResume:
 
         # VERIFICATION
         with get_session() as session:
-            workflow = session.query(WorkflowExecution).filter_by(id=workflow_id).first()
+            workflow = (
+                session.query(WorkflowExecution).filter_by(id=workflow_id).first()
+            )
             assert workflow.status == "completed"
 
-            stage = session.query(StageExecution).filter_by(
-                workflow_execution_id=workflow_id
-            ).first()
+            stage = (
+                session.query(StageExecution)
+                .filter_by(workflow_execution_id=workflow_id)
+                .first()
+            )
 
             # Verify resume completed all work
             assert stage.output_data["processed_records"] == 1000

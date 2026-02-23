@@ -1,7 +1,7 @@
 """Bridge between merit score updates and autonomy evaluation."""
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from temper_ai.safety.autonomy.constants import EVALUATION_INTERVAL_DECISIONS
 
@@ -17,7 +17,7 @@ class MeritSafetyBridge:
 
     def __init__(
         self,
-        autonomy_manager: Optional[Any] = None,
+        autonomy_manager: Any | None = None,
         evaluation_interval: int = EVALUATION_INTERVAL_DECISIONS,
     ) -> None:
         self._manager = autonomy_manager
@@ -56,8 +56,10 @@ class MeritSafetyBridge:
             if transition is not None:
                 logger.info(
                     "Autonomy transition for %s/%s: level %d -> %d (%s)",
-                    agent_name, domain,
-                    transition.from_level, transition.to_level,
+                    agent_name,
+                    domain,
+                    transition.from_level,
+                    transition.to_level,
                     transition.reason,
                 )
         except (AttributeError, TypeError, ValueError, RuntimeError) as exc:

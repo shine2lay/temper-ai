@@ -1,4 +1,5 @@
 """Tests for workflow schema integration with events (M9.2)."""
+
 import pytest
 from pydantic import ValidationError
 
@@ -33,7 +34,9 @@ class TestWorkflowStageReferenceOnComplete:
     def test_on_complete_dict_include_output_true(self):
         from temper_ai.events._schemas import StageEventEmitConfig
 
-        ref = _make_stage_ref(on_complete={"event_type": "out.ready", "include_output": True})
+        ref = _make_stage_ref(
+            on_complete={"event_type": "out.ready", "include_output": True}
+        )
         assert isinstance(ref.on_complete, StageEventEmitConfig)
         assert ref.on_complete.include_output is True
 
@@ -79,7 +82,9 @@ class TestWorkflowStageReferenceTrigger:
         assert ref.trigger is cfg
 
     def test_trigger_and_depends_on_are_mutually_exclusive(self):
-        with pytest.raises(ValidationError, match="event-triggered stages are DAG roots"):
+        with pytest.raises(
+            ValidationError, match="event-triggered stages are DAG roots"
+        ):
             _make_stage_ref(
                 trigger={"event_type": "my.event"},
                 depends_on=["other_stage"],

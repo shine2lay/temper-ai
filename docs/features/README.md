@@ -45,15 +45,13 @@ Workflow execution and engine abstraction:
 ---
 
 ### [Observability Features](./observability/)
-Execution tracking, visualization, and analytics:
-- **[Gantt Visualization](./observability/GANTT_VISUALIZATION.md)** - Timeline visualization for workflow execution
+Execution tracking, visualization, and analytics.
 
 **Key Capabilities:**
 - Hierarchical execution tracking (workflow → stage → agent → LLM/tool)
 - Real-time and historical trace visualization
 - Token and cost tracking
 - Performance analytics
-- Gantt chart generation for timing analysis
 
 **Use Cases:**
 - Debugging workflow failures
@@ -72,26 +70,11 @@ Execution tracking, visualization, and analytics:
 - **M2.5**: Execution engine abstraction layer
 - **M3**: Multi-agent collaboration strategies
 
-### 🚧 In Progress
-- **M4**: Safety and governance system
-  - Safety policies (blast radius, secret detection, rate limiting)
-  - Approval workflows
-  - Rollback mechanisms
-
-### 📋 Planned
-- **M5**: Self-improvement loop
-- **M6**: Multiple product types
-
-See [Roadmap](../ROADMAP.md) for detailed feature planning.
-
 ---
 
 ## Related Documentation
 
-- [Documentation Index](../INDEX.md) - All documentation
-- [Interfaces](../interfaces/) - Core interfaces and data models
 - [Architecture](../architecture/) - System architecture
-- [Milestones](../milestones/) - Milestone completion reports
 - [Quick Start](../QUICK_START.md) - Getting started guide
 
 ---

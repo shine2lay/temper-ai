@@ -4,11 +4,12 @@ Computes per-round confidence trajectories, convergence speed, and
 stance change detection. Enriches dialogue tracking events with derived
 analytics without storing additional per-round state.
 """
+
 from __future__ import annotations
 
 import logging
 from dataclasses import asdict, dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -22,9 +23,9 @@ class RoundMetrics:
     """Computed metrics for a single dialogue round."""
 
     round_number: int
-    confidence_trajectory: List[float] = field(default_factory=list)
+    confidence_trajectory: list[float] = field(default_factory=list)
     avg_confidence: float = 0.0
-    convergence_speed: Optional[float] = None
+    convergence_speed: float | None = None
     stance_changes: int = 0
     agent_count: int = 0
 
@@ -36,15 +37,15 @@ class QualityGateViolationDetail:
     gate_name: str
     expected: Any = None
     actual: Any = None
-    deficit: Optional[float] = None
+    deficit: float | None = None
 
 
 def compute_round_metrics(
     current_outputs: list,
-    dialogue_history: List[Dict[str, Any]],
+    dialogue_history: list[dict[str, Any]],
     round_number: int,
-    convergence_score: Optional[float] = None,
-    previous_convergence: Optional[float] = None,
+    convergence_score: float | None = None,
+    previous_convergence: float | None = None,
 ) -> RoundMetrics:
     """Compute derived metrics for a dialogue round.
 
@@ -67,32 +68,37 @@ def compute_round_metrics(
     )
 
     metrics.confidence_trajectory = _build_confidence_trajectory(
-        dialogue_history, round_number,
+        dialogue_history,
+        round_number,
     )
     metrics.avg_confidence = _compute_avg_confidence(current_outputs)
     metrics.convergence_speed = _compute_convergence_speed(
-        convergence_score, previous_convergence,
+        convergence_score,
+        previous_convergence,
     )
     metrics.stance_changes = _count_stance_changes(
-        dialogue_history, current_outputs, round_number,
+        dialogue_history,
+        current_outputs,
+        round_number,
     )
 
     return metrics
 
 
 def _build_confidence_trajectory(
-    dialogue_history: List[Dict[str, Any]],
+    dialogue_history: list[dict[str, Any]],
     current_round: int,
-) -> List[float]:
+) -> list[float]:
     """Build per-round average confidence from dialogue history.
 
     Returns a list of average confidence values, one per completed round
     up to and including current_round.
     """
-    trajectory: List[float] = []
+    trajectory: list[float] = []
     for rnd in range(current_round + 1):
         entries = [
-            e for e in dialogue_history
+            e
+            for e in dialogue_history
             if e.get("round") == rnd and e.get("confidence") is not None
         ]
         if entries:
@@ -105,16 +111,14 @@ def _compute_avg_confidence(current_outputs: list) -> float:
     """Compute average confidence from current round outputs."""
     if not current_outputs:
         return 0.0
-    confidences = [
-        getattr(o, "confidence", 0.0) or 0.0 for o in current_outputs
-    ]
+    confidences = [getattr(o, "confidence", 0.0) or 0.0 for o in current_outputs]
     return sum(confidences) / len(confidences)
 
 
 def _compute_convergence_speed(
-    current: Optional[float],
-    previous: Optional[float],
-) -> Optional[float]:
+    current: float | None,
+    previous: float | None,
+) -> float | None:
     """Compute convergence speed as delta between rounds.
 
     Positive = converging, negative = diverging, None = insufficient data.
@@ -125,7 +129,7 @@ def _compute_convergence_speed(
 
 
 def _count_stance_changes(
-    dialogue_history: List[Dict[str, Any]],
+    dialogue_history: list[dict[str, Any]],
     current_outputs: list,
     round_number: int,
 ) -> int:
@@ -134,7 +138,7 @@ def _count_stance_changes(
         return 0
 
     prev_round = round_number - 1
-    prev_stances: Dict[str, str] = {}
+    prev_stances: dict[str, str] = {}
     for entry in dialogue_history:
         if entry.get("round") == prev_round and entry.get("stance"):
             prev_stances[entry["agent"]] = entry["stance"]
@@ -178,10 +182,10 @@ def emit_round_metrics(
 
 
 def build_quality_gate_details(
-    violations: List[str],
+    violations: list[str],
     synthesis_result: Any,
-    quality_gates_config: Dict[str, Any],
-) -> List[QualityGateViolationDetail]:
+    quality_gates_config: dict[str, Any],
+) -> list[QualityGateViolationDetail]:
     """Build per-gate violation details from violations list.
 
     Parses violation messages to extract structured gate-level information
@@ -195,7 +199,7 @@ def build_quality_gate_details(
     Returns:
         List of QualityGateViolationDetail
     """
-    details: List[QualityGateViolationDetail] = []
+    details: list[QualityGateViolationDetail] = []
 
     for violation in violations:
         detail = _parse_violation(violation, synthesis_result, quality_gates_config)
@@ -207,7 +211,7 @@ def build_quality_gate_details(
 def _parse_violation(
     violation: str,
     synthesis_result: Any,
-    config: Dict[str, Any],
+    config: dict[str, Any],
 ) -> QualityGateViolationDetail:
     """Parse a single violation message into structured detail."""
     violation_lower = violation.lower()
@@ -245,7 +249,7 @@ def emit_quality_gate_details(
     tracker: Any,
     stage_id: str,
     stage_name: str,
-    details: List[QualityGateViolationDetail],
+    details: list[QualityGateViolationDetail],
 ) -> None:
     """Emit quality gate violation details via tracker.
 
@@ -268,13 +272,16 @@ def emit_quality_gate_details(
         },
     )
 
-    event_dict: Dict[str, Any] = {
+    event_dict: dict[str, Any] = {
         "stage_name": stage_name,
         "violation_count": len(details),
         "violations": details_dicts,
     }
     _emit_via_tracker(
-        tracker, stage_id, EVENT_TYPE_QUALITY_GATE_DETAIL, event_dict,
+        tracker,
+        stage_id,
+        EVENT_TYPE_QUALITY_GATE_DETAIL,
+        event_dict,
     )
 
 
@@ -282,7 +289,7 @@ def _emit_via_tracker(
     tracker: Any,
     stage_id: str,
     event_type: str,
-    event_dict: Dict[str, Any],
+    event_dict: dict[str, Any],
 ) -> None:
     """Route a dialogue/quality event through the tracker.
 
@@ -309,5 +316,7 @@ def _emit_via_tracker(
         )
     except Exception:  # noqa: BLE001 — best-effort observability
         logger.debug(
-            "Failed to emit %s event via tracker", event_type, exc_info=True,
+            "Failed to emit %s event via tracker",
+            event_type,
+            exc_info=True,
         )

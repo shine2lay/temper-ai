@@ -8,7 +8,8 @@ Tests cover:
 - Duplicate detection
 - Statistics and utilities
 """
-from typing import Any, Dict
+
+from typing import Any
 
 import pytest
 
@@ -18,6 +19,7 @@ from temper_ai.safety.policy_registry import PolicyRegistry
 # ============================================================================
 # Mock Policies for Testing
 # ============================================================================
+
 
 class MockPolicy(SafetyPolicy):
     """Mock policy for testing."""
@@ -38,13 +40,16 @@ class MockPolicy(SafetyPolicy):
     def priority(self) -> int:
         return self._priority
 
-    def validate(self, action: Dict[str, Any], context: Dict[str, Any]) -> ValidationResult:
+    def validate(
+        self, action: dict[str, Any], context: dict[str, Any]
+    ) -> ValidationResult:
         return ValidationResult(valid=True, policy_name=self.name)
 
 
 # ============================================================================
 # Test Policy Registration
 # ============================================================================
+
 
 class TestPolicyRegistration:
     """Test policy registration functionality."""
@@ -104,6 +109,7 @@ class TestPolicyRegistration:
 # ============================================================================
 # Test Policy Lookup
 # ============================================================================
+
 
 class TestPolicyLookup:
     """Test policy lookup functionality."""
@@ -182,6 +188,7 @@ class TestPolicyLookup:
 # Test Priority Ordering
 # ============================================================================
 
+
 class TestPriorityOrdering:
     """Test policy priority ordering."""
 
@@ -249,6 +256,7 @@ class TestPriorityOrdering:
 # Test Policy Unregistration
 # ============================================================================
 
+
 class TestPolicyUnregistration:
     """Test policy unregistration functionality."""
 
@@ -297,10 +305,7 @@ class TestPolicyUnregistration:
         registry = PolicyRegistry()
         policy = MockPolicy("multi_action_policy")
 
-        registry.register_policy(
-            policy,
-            action_types=["action1", "action2", "action3"]
-        )
+        registry.register_policy(policy, action_types=["action1", "action2", "action3"])
 
         registry.unregister_policy("multi_action_policy")
 
@@ -313,6 +318,7 @@ class TestPolicyUnregistration:
 # ============================================================================
 # Test Utility Methods
 # ============================================================================
+
 
 class TestUtilityMethods:
     """Test utility and helper methods."""
@@ -402,8 +408,12 @@ class TestUtilityMethods:
         registry.register_policy(MockPolicy("global1"))
         registry.register_policy(MockPolicy("global2"))
         registry.register_policy(MockPolicy("action1_policy"), action_types=["action1"])
-        registry.register_policy(MockPolicy("action2_policy1"), action_types=["action2"])
-        registry.register_policy(MockPolicy("action2_policy2"), action_types=["action2"])
+        registry.register_policy(
+            MockPolicy("action2_policy1"), action_types=["action2"]
+        )
+        registry.register_policy(
+            MockPolicy("action2_policy2"), action_types=["action2"]
+        )
 
         stats = registry.get_statistics()
 
@@ -430,6 +440,7 @@ class TestUtilityMethods:
 # ============================================================================
 # Test Edge Cases
 # ============================================================================
+
 
 class TestEdgeCases:
     """Test edge cases and boundary conditions."""
@@ -473,6 +484,7 @@ class TestEdgeCases:
 # ============================================================================
 # Test Integration Scenarios
 # ============================================================================
+
 
 class TestIntegration:
     """Test realistic integration scenarios."""

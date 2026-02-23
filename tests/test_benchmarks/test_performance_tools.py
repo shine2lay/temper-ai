@@ -18,6 +18,7 @@ Compare with regression detection:
     pytest tests/test_benchmarks/test_performance_tools.py --benchmark-only \
         --benchmark-compare=tools --benchmark-compare-fail=mean:10%
 """
+
 from concurrent.futures import ThreadPoolExecutor, wait
 
 import pytest
@@ -29,6 +30,7 @@ from temper_ai.tools.executor import ToolExecutor
 # ============================================================================
 # CATEGORY 4: Tool Execution (8 benchmarks)
 # ============================================================================
+
 
 @pytest.mark.benchmark(group="tools")
 def test_tool_registry_lookup(tool_registry, benchmark):
@@ -42,6 +44,7 @@ def test_tool_registry_lookup(tool_registry, benchmark):
 
     result = benchmark(tool_registry.get, "calculator")
     assert result is not None
+
 
 @pytest.mark.benchmark(group="tools")
 def test_tool_calculator_execution(benchmark):
@@ -57,6 +60,7 @@ def test_tool_calculator_execution(benchmark):
     assert result.success is True
     assert result.result == 4
 
+
 @pytest.mark.benchmark(group="tools")
 def test_tool_executor_overhead(tool_registry, benchmark):
     """Benchmark tool executor overhead.
@@ -68,14 +72,11 @@ def test_tool_executor_overhead(tool_registry, benchmark):
     executor = ToolExecutor(registry=tool_registry, max_workers=4)
 
     try:
-        result = benchmark(
-            executor.execute,
-            "calculator",
-            {"expression": "2 + 2"}
-        )
+        result = benchmark(executor.execute, "calculator", {"expression": "2 + 2"})
         assert result.success is True
     finally:
         executor.shutdown()
+
 
 @pytest.mark.benchmark(group="tools")
 def test_tool_concurrent_execution_4_workers(tool_registry, benchmark):
@@ -93,9 +94,7 @@ def test_tool_concurrent_execution_4_workers(tool_registry, benchmark):
         with ThreadPoolExecutor(max_workers=4) as pool:
             for i in range(10):
                 future = pool.submit(
-                    executor.execute,
-                    "calculator",
-                    {"expression": f"{i} + {i}"}
+                    executor.execute, "calculator", {"expression": f"{i} + {i}"}
                 )
                 futures.append(future)
 
@@ -108,6 +107,7 @@ def test_tool_concurrent_execution_4_workers(tool_registry, benchmark):
         assert all(r.success for r in results)
     finally:
         executor.shutdown()
+
 
 @pytest.mark.benchmark(group="tools")
 def test_tool_concurrent_execution_10_workers(tool_registry, benchmark):
@@ -125,9 +125,7 @@ def test_tool_concurrent_execution_10_workers(tool_registry, benchmark):
         with ThreadPoolExecutor(max_workers=10) as pool:
             for i in range(10):
                 future = pool.submit(
-                    executor.execute,
-                    "calculator",
-                    {"expression": f"{i} + {i}"}
+                    executor.execute, "calculator", {"expression": f"{i} + {i}"}
                 )
                 futures.append(future)
 
@@ -139,6 +137,7 @@ def test_tool_concurrent_execution_10_workers(tool_registry, benchmark):
         assert len(results) == 10
     finally:
         executor.shutdown()
+
 
 @pytest.mark.benchmark(group="tools")
 def test_tool_parameter_validation(benchmark):
@@ -156,6 +155,7 @@ def test_tool_parameter_validation(benchmark):
     result = benchmark(validate_and_execute)
     assert result.success is True
 
+
 @pytest.mark.benchmark(group="tools")
 def test_tool_error_handling(benchmark):
     """Benchmark tool error handling.
@@ -170,6 +170,7 @@ def test_tool_error_handling(benchmark):
     assert result.success is False
     assert result.error is not None
 
+
 @pytest.mark.benchmark(group="tools")
 def test_tool_result_serialization(benchmark):
     """Benchmark tool result serialization.
@@ -177,12 +178,13 @@ def test_tool_result_serialization(benchmark):
     Target: <5ms
     Measures: Result object creation overhead
     """
+
     def create_result():
         return ToolResult(
             success=True,
             result="test result",
             error=None,
-            metadata={"execution_time": 0.1}
+            metadata={"execution_time": 0.1},
         )
 
     result = benchmark(create_result)

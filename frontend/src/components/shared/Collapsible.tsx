@@ -23,6 +23,7 @@ export function CollapsibleSection({ title, children, defaultOpen = false }: Col
             'inline-block transition-transform text-temper-text-muted text-xs',
             open && 'rotate-90',
           )}
+          aria-hidden="true"
         >
           &#9654;
         </span>

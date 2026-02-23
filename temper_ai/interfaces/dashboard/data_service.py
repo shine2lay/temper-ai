@@ -1,6 +1,8 @@
 """Bridge between backend DB, event bus, and API/WebSocket."""
+
 import logging
-from typing import Any, Callable, Dict, List, Optional
+from collections.abc import Callable
+from typing import Any
 
 from temper_ai.observability.constants import ObservabilityFields
 
@@ -26,68 +28,115 @@ class DashboardDataService:
     # Read helpers
     # ------------------------------------------------------------------
 
-    def get_workflow_snapshot(self, workflow_id: str) -> Optional[Dict[str, Any]]:
+    def get_workflow_snapshot(
+        self, workflow_id: str, tenant_id: str | None = None
+    ) -> dict[str, Any] | None:
         """Full workflow state from DB."""
         if self._backend is None:
             return None
-        return self._backend.get_workflow(workflow_id)  # type: ignore
+        result = self._backend.get_workflow(workflow_id)  # type: ignore
+        if result is None:
+            return None
+        if tenant_id is not None and result.get("tenant_id") != tenant_id:
+            return None
+        return result
 
     def list_workflows(
-        self, limit: int = DEFAULT_PAGE_LIMIT, offset: int = 0, status: Optional[str] = None
-    ) -> List[Dict[str, Any]]:
+        self,
+        limit: int = DEFAULT_PAGE_LIMIT,
+        offset: int = 0,
+        status: str | None = None,
+        tenant_id: str | None = None,
+    ) -> list[dict[str, Any]]:
         """List workflow executions with optional filtering."""
         if self._backend is None:
             return []
-        return self._backend.list_workflows(limit=limit, offset=offset, status=status)  # type: ignore
+        return self._backend.list_workflows(  # type: ignore
+            limit=limit, offset=offset, status=status, tenant_id=tenant_id
+        )
 
-    def get_workflow_trace(self, workflow_id: str) -> Optional[Dict[str, Any]]:
+    def get_workflow_trace(
+        self, workflow_id: str, tenant_id: str | None = None
+    ) -> dict[str, Any] | None:
         """Hierarchical trace tree, reusing export_waterfall logic."""
         if self._backend is None:
             return None
         try:
-            from examples.export_waterfall import export_waterfall_trace
+            from temper_ai.observability.trace_export import export_waterfall_trace
 
             trace = export_waterfall_trace(workflow_id)
             if "error" in trace:
                 return None
+            if tenant_id is not None and trace.get("tenant_id") != tenant_id:
+                return None
             return trace
         except (ImportError, RuntimeError):
-            # ImportError: export_waterfall not available
+            # ImportError: trace_export not available
             # RuntimeError: Database not initialized (uses direct DB access)
-            return self.get_workflow_snapshot(workflow_id)
+            return self.get_workflow_snapshot(workflow_id, tenant_id=tenant_id)
 
-    def get_stage(self, stage_id: str) -> Optional[Dict[str, Any]]:
+    def get_stage(
+        self, stage_id: str, tenant_id: str | None = None
+    ) -> dict[str, Any] | None:
         """Get stage execution by ID."""
         if self._backend is None:
             return None
-        return self._backend.get_stage(stage_id)  # type: ignore
+        result = self._backend.get_stage(stage_id)  # type: ignore
+        if result is None:
+            return None
+        if tenant_id is not None and result.get("tenant_id") != tenant_id:
+            return None
+        return result
 
-    def get_agent(self, agent_id: str) -> Optional[Dict[str, Any]]:
+    def get_agent(
+        self, agent_id: str, tenant_id: str | None = None
+    ) -> dict[str, Any] | None:
         """Get agent execution by ID."""
         if self._backend is None:
             return None
-        return self._backend.get_agent(agent_id)  # type: ignore
+        result = self._backend.get_agent(agent_id)  # type: ignore
+        if result is None:
+            return None
+        if tenant_id is not None and result.get("tenant_id") != tenant_id:
+            return None
+        return result
 
-    def get_llm_call(self, llm_call_id: str) -> Optional[Dict[str, Any]]:
+    def get_llm_call(
+        self, llm_call_id: str, tenant_id: str | None = None
+    ) -> dict[str, Any] | None:
         """Get LLM call by ID."""
         if self._backend is None:
             return None
-        return self._backend.get_llm_call(llm_call_id)  # type: ignore
+        result = self._backend.get_llm_call(llm_call_id)  # type: ignore
+        if result is None:
+            return None
+        if tenant_id is not None and result.get("tenant_id") != tenant_id:
+            return None
+        return result
 
-    def get_tool_call(self, tool_call_id: str) -> Optional[Dict[str, Any]]:
+    def get_tool_call(
+        self, tool_call_id: str, tenant_id: str | None = None
+    ) -> dict[str, Any] | None:
         """Get tool call by ID."""
         if self._backend is None:
             return None
-        return self._backend.get_tool_call(tool_call_id)  # type: ignore
+        result = self._backend.get_tool_call(tool_call_id)  # type: ignore
+        if result is None:
+            return None
+        if tenant_id is not None and result.get("tenant_id") != tenant_id:
+            return None
+        return result
 
-    def get_data_flow(self, workflow_id: str) -> Dict[str, Any]:
+    def get_data_flow(
+        self, workflow_id: str, tenant_id: str | None = None
+    ) -> dict[str, Any]:
         """Extract data flow between stages, including agent nodes and collaboration edges."""
-        workflow = self.get_workflow_snapshot(workflow_id)
+        workflow = self.get_workflow_snapshot(workflow_id, tenant_id=tenant_id)
         if not workflow:
             return {"nodes": [], "edges": []}
 
-        nodes: List[Dict[str, Any]] = []
-        edges: List[Dict[str, Any]] = []
+        nodes: list[dict[str, Any]] = []
+        edges: list[dict[str, Any]] = []
         stages = workflow.get("stages", [])
 
         for stage in stages:
@@ -104,56 +153,65 @@ class DashboardDataService:
         return {"nodes": nodes, "edges": edges}
 
     @staticmethod
-    def _add_stage_nodes(nodes: List[Dict[str, Any]], stage: Dict[str, Any]) -> None:
+    def _add_stage_nodes(nodes: list[dict[str, Any]], stage: dict[str, Any]) -> None:
         """Add stage and agent nodes to the node list."""
         stage_id = stage.get("id")
         if not stage_id:
             return
-        nodes.append({
-            "id": stage_id,
-            "name": stage.get("stage_name", ""),
-            "type": "stage",
-            ObservabilityFields.STATUS: stage.get(ObservabilityFields.STATUS),
-            "has_input": stage.get(ObservabilityFields.INPUT_DATA) is not None,
-            "has_output": stage.get(ObservabilityFields.OUTPUT_DATA) is not None,
-        })
+        nodes.append(
+            {
+                "id": stage_id,
+                "name": stage.get("stage_name", ""),
+                "type": "stage",
+                ObservabilityFields.STATUS: stage.get(ObservabilityFields.STATUS),
+                "has_input": stage.get(ObservabilityFields.INPUT_DATA) is not None,
+                "has_output": stage.get(ObservabilityFields.OUTPUT_DATA) is not None,
+            }
+        )
         for agent in stage.get("agents", []):
             agent_id = agent.get("id")
             if not agent_id:
                 continue
             config_snapshot = agent.get("agent_config_snapshot") or {}
-            nodes.append({
-                "id": agent_id,
-                "name": agent.get(ObservabilityFields.AGENT_NAME, "agent"),
-                "type": "agent",
-                "parent": stage_id,
-                ObservabilityFields.STATUS: agent.get(ObservabilityFields.STATUS),
-                "model": config_snapshot.get("model"),
-                ObservabilityFields.TOTAL_TOKENS: agent.get(ObservabilityFields.TOTAL_TOKENS),
-                "estimated_cost_usd": agent.get("estimated_cost_usd"),
-                "num_llm_calls": agent.get("num_llm_calls"),
-                "num_tool_calls": agent.get("num_tool_calls"),
-            })
+            nodes.append(
+                {
+                    "id": agent_id,
+                    "name": agent.get(ObservabilityFields.AGENT_NAME, "agent"),
+                    "type": "agent",
+                    "parent": stage_id,
+                    ObservabilityFields.STATUS: agent.get(ObservabilityFields.STATUS),
+                    "model": config_snapshot.get("model"),
+                    ObservabilityFields.TOTAL_TOKENS: agent.get(
+                        ObservabilityFields.TOTAL_TOKENS
+                    ),
+                    "estimated_cost_usd": agent.get("estimated_cost_usd"),
+                    "num_llm_calls": agent.get("num_llm_calls"),
+                    "num_tool_calls": agent.get("num_tool_calls"),
+                }
+            )
 
     @staticmethod
     def _add_collaboration_edges(
-        edges: List[Dict[str, Any]], stage: Dict[str, Any],
+        edges: list[dict[str, Any]],
+        stage: dict[str, Any],
     ) -> None:
         """Add collaboration edges from stage events."""
         for event in stage.get("collaboration_events", []):
             agents_involved = event.get("agents_involved", [])
             if len(agents_involved) >= 2:
-                edges.append({
-                    "from": agents_involved[0],
-                    "to": agents_involved[1],
-                    "type": "collaboration",
-                    "label": event.get("event_type", ""),
-                })
+                edges.append(
+                    {
+                        "from": agents_involved[0],
+                        "to": agents_involved[1],
+                        "type": "collaboration",
+                        "label": event.get("event_type", ""),
+                    }
+                )
 
     @staticmethod
     def _extract_dependency_map(
-        workflow: Dict[str, Any],
-    ) -> Optional[Dict[str, Any]]:
+        workflow: dict[str, Any],
+    ) -> dict[str, Any] | None:
         """Extract DAG info from workflow config snapshot.
 
         Returns dict with 'dep_map' and 'loops_back_to', or None if no
@@ -166,8 +224,8 @@ class DashboardDataService:
         wf_config = config_snap.get("workflow", config_snap)
         config_stages = wf_config.get("stages", [])
 
-        dep_map: Dict[str, List[str]] = {}
-        loops_back_to: Dict[str, str] = {}
+        dep_map: dict[str, list[str]] = {}
+        loops_back_to: dict[str, str] = {}
         has_deps = False
         for cs in config_stages:
             if not isinstance(cs, dict):
@@ -189,10 +247,10 @@ class DashboardDataService:
 
     @staticmethod
     def _add_dependency_edges(
-        edges: List[Dict[str, Any]],
+        edges: list[dict[str, Any]],
         stage_id: str,
-        deps: List[str],
-        name_to_latest: Dict[str, Dict[str, Any]],
+        deps: list[str],
+        name_to_latest: dict[str, dict[str, Any]],
     ) -> None:
         """Add edges from dependencies to current stage.
 
@@ -208,21 +266,23 @@ class DashboardDataService:
                 continue
             dep_output = dep_stage.get(ObservabilityFields.OUTPUT_DATA) or {}
             data_keys = list(dep_output.keys())
-            edges.append({
-                "from": dep_stage["id"],
-                "to": stage_id,
-                "type": "data_flow",
-                "data_keys": data_keys,
-                "label": ", ".join(data_keys) if data_keys else "",
-            })
+            edges.append(
+                {
+                    "from": dep_stage["id"],
+                    "to": stage_id,
+                    "type": "data_flow",
+                    "data_keys": data_keys,
+                    "label": ", ".join(data_keys) if data_keys else "",
+                }
+            )
 
     @staticmethod
     def _add_loop_back_edges(
-        edges: List[Dict[str, Any]],
+        edges: list[dict[str, Any]],
         stage_id: str,
         name: str,
-        loops_back_to: Dict[str, str],
-        name_to_latest: Dict[str, Dict[str, Any]],
+        loops_back_to: dict[str, str],
+        name_to_latest: dict[str, dict[str, Any]],
     ) -> None:
         """Add loop-back edges if this stage is a loop target.
 
@@ -239,24 +299,26 @@ class DashboardDataService:
             src_stage = name_to_latest.get(src_name)
             if not src_stage or src_stage["id"] == stage_id:
                 continue
-            edges.append({
-                "from": src_stage["id"],
-                "to": stage_id,
-                "type": "data_flow",
-                "data_keys": [],
-                "label": "loop",
-            })
+            edges.append(
+                {
+                    "from": src_stage["id"],
+                    "to": stage_id,
+                    "type": "data_flow",
+                    "data_keys": [],
+                    "label": "loop",
+                }
+            )
 
     @staticmethod
     def _add_dag_flow_edges(
-        edges: List[Dict[str, Any]],
-        stages: List[Dict[str, Any]],
-        dag_info: Dict[str, Any],
+        edges: list[dict[str, Any]],
+        stages: list[dict[str, Any]],
+        dag_info: dict[str, Any],
     ) -> None:
         """Add data flow edges based on DAG depends_on relationships."""
         dep_map = dag_info["dep_map"]
         loops_back_to = dag_info["loops_back_to"]
-        name_to_latest: Dict[str, Dict[str, Any]] = {}
+        name_to_latest: dict[str, dict[str, Any]] = {}
         seen_names: set = set()
 
         for stage in stages:
@@ -282,7 +344,8 @@ class DashboardDataService:
 
     @staticmethod
     def _add_sequential_flow_edges(
-        edges: List[Dict[str, Any]], stages: List[Dict[str, Any]],
+        edges: list[dict[str, Any]],
+        stages: list[dict[str, Any]],
     ) -> None:
         """Add sequential data flow edges (fallback when no depends_on)."""
         for i in range(1, len(stages)):
@@ -292,21 +355,21 @@ class DashboardDataService:
                 continue
             prev_output = stages[i - 1].get(ObservabilityFields.OUTPUT_DATA) or {}
             data_keys = list(prev_output.keys())
-            edges.append({
-                "from": prev_id,
-                "to": curr_id,
-                "type": "data_flow",
-                "data_keys": data_keys,
-                "label": ", ".join(data_keys) if data_keys else "",
-            })
+            edges.append(
+                {
+                    "from": prev_id,
+                    "to": curr_id,
+                    "type": "data_flow",
+                    "data_keys": data_keys,
+                    "label": ", ".join(data_keys) if data_keys else "",
+                }
+            )
 
     # ------------------------------------------------------------------
     # Event-bus helpers
     # ------------------------------------------------------------------
 
-    def subscribe_workflow(
-        self, workflow_id: str, callback: Callable
-    ) -> Optional[str]:
+    def subscribe_workflow(self, workflow_id: str, callback: Callable) -> str | None:
         """Subscribe to events for a specific workflow via event bus."""
         if self._event_bus is None:
             return None

@@ -3,9 +3,8 @@
 Verifies that failed/timed-out LLM calls are recorded via the tracker
 so they appear in observability data.
 """
-from unittest.mock import MagicMock
 
-import pytest
+from unittest.mock import MagicMock
 
 from temper_ai.llm.service import LLMService
 
@@ -67,7 +66,9 @@ class TestTrackFailedLLMCall:
         call_kwargs = observer.track_llm_call.call_args[1]
         assert call_kwargs["status"] == "failed"
         assert "error_message" in call_kwargs
-        assert len(call_kwargs["error_message"]) > 0, "Error message should not be empty"
+        assert (
+            len(call_kwargs["error_message"]) > 0
+        ), "Error message should not be empty"
 
     def test_observer_none_does_not_raise(self):
         """When observer is None, _track_failed_call completes silently."""

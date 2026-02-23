@@ -9,20 +9,24 @@ with error handling via _on_error / _build_error_response.
 
 Subclasses implement _run() (the core logic) and optionally override hooks.
 """
+
 from __future__ import annotations
 
 import logging
 import time
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from temper_ai.storage.schemas import AgentConfig
 from temper_ai.agent.models.response import AgentResponse, ToolCallRecord  # noqa: F401
 from temper_ai.agent.utils.constants import OUTPUT_PREVIEW_LENGTH
-from temper_ai.shared.core.context import ExecutionContext  # canonical definition; re-exported here
-from temper_ai.llm.providers.factory import create_llm_from_config
 from temper_ai.llm.prompts.engine import PromptEngine
+from temper_ai.llm.providers.factory import create_llm_from_config
+from temper_ai.shared.core.context import (
+    ExecutionContext,  # canonical definition; re-exported here
+)
 from temper_ai.tools.loader import (
     apply_tool_config,
     ensure_tools_discovered,
@@ -35,7 +39,7 @@ logger = logging.getLogger(__name__)
 
 
 def _register_mcp_tools(
-    mcp_configs: Optional[list],
+    mcp_configs: list | None,
     registry: ToolRegistry,
 ) -> Any:
     """Register MCP tools from configured servers into the tool registry.
@@ -66,9 +70,44 @@ def _register_mcp_tools(
         return None
 
 
+def _sync_tool_configs_to_executor(
+    agent_registry: ToolRegistry,
+    tool_executor: Any,
+    agent_name: str,
+) -> None:
+    """Sync agent tool configs to the tool_executor's registry.
+
+    The safety-stack ToolExecutor has its own ToolRegistry with default
+    tool instances (no agent-specific configs). This function copies the
+    resolved configs from the agent's tools to matching tools in the
+    executor's registry so that runtime config (e.g. allowed_root) is
+    respected during execution.
+    """
+    exec_registry = getattr(tool_executor, "registry", None)
+    if exec_registry is None:
+        return
+    try:
+        agent_tools = agent_registry.get_all_tools()
+    except (AttributeError, TypeError):
+        return
+    for tool_name, agent_tool in agent_tools.items():
+        agent_config = getattr(agent_tool, "config", None)
+        if not agent_config or not isinstance(agent_config, dict):
+            continue
+        # Skip internal keys
+        config_to_sync = {
+            k: v for k, v in agent_config.items() if not k.startswith("_")
+        }
+        if not config_to_sync:
+            continue
+        exec_tool = exec_registry.get(tool_name)
+        if exec_tool is not None:
+            apply_tool_config(exec_tool, tool_name, config_to_sync)
+
+
 def load_tools_from_config(
     registry: Any,
-    configured_tools: List[Any],
+    configured_tools: list[Any],
 ) -> None:
     """Load specific tools from configuration into *registry*."""
     ensure_tools_discovered(registry)
@@ -118,9 +157,7 @@ class BaseAgent(ABC):
 
         self.prompt_engine = PromptEngine()
         if config.agent.inference is None:
-            raise ValueError(
-                f"Agent '{config.agent.name}' requires inference config"
-            )
+            raise ValueError(f"Agent '{config.agent.name}' requires inference config")
         self.llm = create_llm_from_config(config.agent.inference)
 
         # Infrastructure attributes — set by _setup() at execution time
@@ -136,9 +173,7 @@ class BaseAgent(ABC):
     # ------------------------------------------------------------------
 
     def execute(
-        self,
-        input_data: Dict[str, Any],
-        context: Optional[ExecutionContext] = None
+        self, input_data: dict[str, Any], context: ExecutionContext | None = None
     ) -> AgentResponse:
         """Execute agent using template method pattern.
 
@@ -153,7 +188,9 @@ class BaseAgent(ABC):
             input_data = self._on_before_run(input_data, context)
             result = self._run(input_data, context, start_time)
             return self._on_after_run(result)
-        except Exception as e:  # noqa: BLE001 -- template method catch-all routes to _on_error hook
+        except (
+            Exception
+        ) as e:  # noqa: BLE001 -- template method catch-all routes to _on_error hook
             custom = self._on_error(e, start_time)
             if custom is not None:
                 return custom
@@ -162,8 +199,8 @@ class BaseAgent(ABC):
     @abstractmethod
     def _run(
         self,
-        input_data: Dict[str, Any],
-        context: Optional[ExecutionContext],
+        input_data: dict[str, Any],
+        context: ExecutionContext | None,
         start_time: float,
     ) -> AgentResponse:
         """Core execution logic — subclasses implement this.
@@ -178,9 +215,7 @@ class BaseAgent(ABC):
         """
 
     async def aexecute(
-        self,
-        input_data: Dict[str, Any],
-        context: Optional[ExecutionContext] = None
+        self, input_data: dict[str, Any], context: ExecutionContext | None = None
     ) -> AgentResponse:
         """Async template method — mirrors execute() but calls _arun().
 
@@ -195,7 +230,9 @@ class BaseAgent(ABC):
             input_data = self._on_before_run(input_data, context)
             result = await self._arun(input_data, context, start_time)
             return self._on_after_run(result)
-        except Exception as e:  # noqa: BLE001 -- template method catch-all routes to _on_error hook
+        except (
+            Exception
+        ) as e:  # noqa: BLE001 -- template method catch-all routes to _on_error hook
             custom = self._on_error(e, start_time)
             if custom is not None:
                 return custom
@@ -203,8 +240,8 @@ class BaseAgent(ABC):
 
     async def _arun(
         self,
-        input_data: Dict[str, Any],
-        context: Optional[ExecutionContext],
+        input_data: dict[str, Any],
+        context: ExecutionContext | None,
         start_time: float,
     ) -> AgentResponse:
         """Async core logic — default wraps sync _run() in a thread.
@@ -212,10 +249,11 @@ class BaseAgent(ABC):
         Override for native async implementations (e.g., async LLM calls).
         """
         import asyncio
+
         return await asyncio.to_thread(self._run, input_data, context, start_time)
 
     @abstractmethod
-    def get_capabilities(self) -> Dict[str, Any]:
+    def get_capabilities(self) -> dict[str, Any]:
         """Get agent capabilities and metadata."""
 
     # ------------------------------------------------------------------
@@ -224,16 +262,16 @@ class BaseAgent(ABC):
 
     def _on_setup(
         self,
-        input_data: Dict[str, Any],
-        context: Optional[ExecutionContext],
+        input_data: dict[str, Any],
+        context: ExecutionContext | None,
     ) -> None:
         """Hook called after _setup(), before _run(). Override for custom setup."""
 
     def _on_before_run(
         self,
-        input_data: Dict[str, Any],
-        context: Optional[ExecutionContext],
-    ) -> Dict[str, Any]:
+        input_data: dict[str, Any],
+        context: ExecutionContext | None,
+    ) -> dict[str, Any]:
         """Hook called before _run(). Can modify input_data. Must return input_data."""
         return input_data
 
@@ -241,9 +279,7 @@ class BaseAgent(ABC):
         """Hook called after _run() succeeds. Can modify result. Must return result."""
         return result
 
-    def _on_error(
-        self, error: Exception, start_time: float
-    ) -> Optional[AgentResponse]:
+    def _on_error(self, error: Exception, start_time: float) -> AgentResponse | None:
         """Hook called on _run() error. Return AgentResponse to override default."""
         return None
 
@@ -254,7 +290,7 @@ class BaseAgent(ABC):
     def _validate_input(
         self,
         input_data: Any,
-        context: Optional[ExecutionContext] = None,
+        context: ExecutionContext | None = None,
     ) -> None:
         """Validate input_data and context parameters."""
         if input_data is None:
@@ -284,8 +320,8 @@ class BaseAgent(ABC):
 
     def _setup(
         self,
-        input_data: Dict[str, Any],
-        context: Optional[ExecutionContext],
+        input_data: dict[str, Any],
+        context: ExecutionContext | None,
         async_mode: bool = False,
     ) -> None:
         """Common setup for sync and async execute paths."""
@@ -293,7 +329,7 @@ class BaseAgent(ABC):
         from temper_ai.tools.executor import ToolExecutor
 
         self._execution_context = context
-        _tool_executor = input_data.get('tool_executor', None)
+        _tool_executor = input_data.get("tool_executor", None)
         if _tool_executor is not None:
             if not isinstance(_tool_executor, ToolExecutor):
                 raise TypeError(
@@ -301,19 +337,28 @@ class BaseAgent(ABC):
                     f"got {type(_tool_executor).__name__}"
                 )
         self.tool_executor = _tool_executor
-        self.tracker = input_data.get('tracker', None)
+        self.tracker = input_data.get("tracker", None)
         self._observer = AgentObserver(self.tracker, self._execution_context)
-        _stream_cb = input_data.get('stream_callback', None)
-        if _stream_cb is not None and hasattr(_stream_cb, 'make_callback'):
+        _stream_cb = input_data.get("stream_callback", None)
+        if _stream_cb is not None and hasattr(_stream_cb, "make_callback"):
             self._stream_callback = _stream_cb.make_callback(self.name)
         else:
             self._stream_callback = _stream_cb
 
-        resolve_tool_config_templates(
-            getattr(self, "tool_registry", None), input_data, self.name,
-        )
+        agent_registry = getattr(self, "tool_registry", None)
+        resolve_tool_config_templates(agent_registry, input_data, self.name)
+        # Sync resolved tool configs to tool_executor's registry (the safety
+        # stack has its own tool instances that lack agent-specific configs)
+        if self.tool_executor is not None and agent_registry is not None:
+            _sync_tool_configs_to_executor(
+                agent_registry,
+                self.tool_executor,
+                self.name,
+            )
 
-        logger.info("[%s] Starting %sexecution", self.name, "async " if async_mode else "")
+        logger.info(
+            "[%s] Starting %sexecution", self.name, "async " if async_mode else ""
+        )
 
     # ------------------------------------------------------------------
     # Response building
@@ -322,23 +367,27 @@ class BaseAgent(ABC):
     def _build_response(
         self,
         output: str,
-        reasoning: Optional[str],
-        tool_calls: List[Dict[str, Any]],
+        reasoning: str | None,
+        tool_calls: list[dict[str, Any]],
         tokens: int,
         cost: float,
         start_time: float,
-        error: Optional[str] = None,
+        error: str | None = None,
     ) -> AgentResponse:
         """Build final AgentResponse with logging."""
         duration = time.time() - start_time
         output_preview = (
-            (output[:OUTPUT_PREVIEW_LENGTH].replace('\n', ' ').strip() + "...")
+            (output[:OUTPUT_PREVIEW_LENGTH].replace("\n", " ").strip() + "...")
             if len(output) > OUTPUT_PREVIEW_LENGTH
-            else output.replace('\n', ' ').strip()
+            else output.replace("\n", " ").strip()
         )
         logger.info(
             "[%s] Execution complete (%d tokens, $%.4f, %.1fs) → %s",
-            self.name, tokens, cost, duration, output_preview or "(empty)",
+            self.name,
+            tokens,
+            cost,
+            duration,
+            output_preview or "(empty)",
         )
         return AgentResponse(
             output=output,
@@ -354,7 +403,7 @@ class BaseAgent(ABC):
         self,
         error: Exception,
         start_time: float,
-        tool_calls: Optional[List[Dict[str, Any]]] = None,
+        tool_calls: list[dict[str, Any]] | None = None,
         total_tokens: int = 0,
         total_cost: float = 0.0,
         async_mode: bool = False,
@@ -379,10 +428,10 @@ class BaseAgent(ABC):
     # Stream callback
     # ------------------------------------------------------------------
 
-    def _make_stream_callback(self) -> Optional[Callable]:
+    def _make_stream_callback(self) -> Callable | None:
         """Create a combined stream callback for CLI display and observability."""
-        user_cb = getattr(self, '_stream_callback', None)
-        observer = getattr(self, '_observer', None)
+        user_cb = getattr(self, "_stream_callback", None)
+        observer = getattr(self, "_observer", None)
         has_observer = observer is not None and observer.active
 
         if user_cb is None and not has_observer:
@@ -393,7 +442,9 @@ class BaseAgent(ABC):
             if user_cb is not None:
                 try:
                     user_cb(chunk)
-                except Exception:  # noqa: BLE001 -- streaming display must not disrupt execution
+                except (
+                    Exception
+                ):  # noqa: BLE001 -- streaming display must not disrupt execution
                     pass
             if has_observer and observer is not None:
                 try:
@@ -405,7 +456,9 @@ class BaseAgent(ABC):
                         prompt_tokens=chunk.prompt_tokens,
                         completion_tokens=chunk.completion_tokens,
                     )
-                except Exception:  # noqa: BLE001 -- streaming event must not disrupt execution
+                except (
+                    Exception
+                ):  # noqa: BLE001 -- streaming event must not disrupt execution
                     pass
 
         return combined_callback
@@ -416,15 +469,20 @@ class BaseAgent(ABC):
 
     def _render_template(
         self,
-        input_data: Dict[str, Any],
+        input_data: dict[str, Any],
     ) -> str:
         """Render the base template with variables."""
-        from temper_ai.llm.prompts.validation import PromptRenderError, _is_safe_template_value
+        from temper_ai.llm.prompts.validation import (
+            PromptRenderError,
+            _is_safe_template_value,
+        )
 
         prompt_config = self.config.agent.prompt
         if prompt_config is None:
             raise ValueError("No prompt configured for this agent")
-        filtered_input = {k: v for k, v in input_data.items() if _is_safe_template_value(v)}
+        filtered_input = {
+            k: v for k, v in input_data.items() if _is_safe_template_value(v)
+        }
         all_variables = {**filtered_input, **prompt_config.variables}
 
         if prompt_config.template:
@@ -444,7 +502,7 @@ class BaseAgent(ABC):
     def _inject_input_context(
         self,
         template: str,
-        input_data: Dict[str, Any],
+        input_data: dict[str, Any],
         exclude_keys: frozenset[str] = frozenset(),
     ) -> str:
         """Auto-inject string input context into template.
@@ -454,7 +512,7 @@ class BaseAgent(ABC):
         """
         from temper_ai.llm.prompts.validation import _is_safe_template_value
 
-        input_parts: List[str] = []
+        input_parts: list[str] = []
         for key, value in input_data.items():
             if not _is_safe_template_value(value):
                 continue
@@ -463,7 +521,9 @@ class BaseAgent(ABC):
                 input_parts.append(f"## {label}\n{value}")
 
         if input_parts:
-            return template + "\n\n---\n\n# Input Context\n\n" + "\n\n".join(input_parts)
+            return (
+                template + "\n\n---\n\n# Input Context\n\n" + "\n\n".join(input_parts)
+            )
         return template
 
     # ------------------------------------------------------------------
@@ -491,4 +551,3 @@ class BaseAgent(ABC):
         )
 
         return registry
-

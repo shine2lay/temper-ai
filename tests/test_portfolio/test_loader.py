@@ -1,11 +1,9 @@
 """Tests for PortfolioLoader."""
 
-import os
 import tempfile
 from pathlib import Path
 
 import pytest
-import yaml
 
 from temper_ai.portfolio.loader import PortfolioLoader
 

@@ -31,11 +31,11 @@ MAX_PROPOSALS_PER_DAY = 20
 MAX_BUDGET_IMPACT_AUTO_USD = 10.0
 MAX_BLAST_RADIUS_AUTO = 5
 AUTO_APPROVE_RISK_MATRIX = {
-    0: None,       # SUPERVISED — never auto-approve
-    1: None,       # SPOT_CHECKED — never auto-approve
-    2: "low",      # RISK_GATED — low risk only
-    3: "medium",   # AUTONOMOUS — low + medium
-    4: "high",     # STRATEGIC — up to high (never critical)
+    0: None,  # SUPERVISED — never auto-approve
+    1: None,  # SPOT_CHECKED — never auto-approve
+    2: "low",  # RISK_GATED — low risk only
+    3: "medium",  # AUTONOMOUS — low + medium
+    4: "high",  # STRATEGIC — up to high (never critical)
 }
 
 # Analyzer thresholds

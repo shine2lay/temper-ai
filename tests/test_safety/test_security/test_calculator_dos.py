@@ -139,7 +139,9 @@ class TestCalculatorDepthLimiting:
         assert not result.success
         assert "nesting depth" in result.error.lower()
         assert "10" in result.error  # Mentions the limit
-        assert "denial-of-service" in result.error.lower() or "dos" in result.error.lower()
+        assert (
+            "denial-of-service" in result.error.lower() or "dos" in result.error.lower()
+        )
 
 
 class TestCalculatorDoSAttackVectors:
@@ -320,7 +322,7 @@ class TestCalculatorExponentBounding:
 
         result = calc.execute(expression="2 ** 1000")
         assert result.success
-        assert result.result == 2 ** 1000
+        assert result.result == 2**1000
 
     def test_over_boundary_exponent_rejected(self):
         """Test exponent at MAX_EXPONENT + 1 is rejected."""
@@ -366,7 +368,9 @@ class TestCalculatorExponentBounding:
 
         assert calc.execute(expression="100 + 200").result == 300
         assert calc.execute(expression="999 * 999").result == 998001
-        assert calc.execute(expression="1000000 / 3").result == pytest.approx(333333.333, rel=1e-3)
+        assert calc.execute(expression="1000000 / 3").result == pytest.approx(
+            333333.333, rel=1e-3
+        )
         assert calc.execute(expression="sqrt(144)").result == 12.0
 
     def test_zero_exponent_passes(self):
@@ -429,8 +433,10 @@ class TestCalculatorSecurityProperties:
         assert not result.success
         # Should get controlled error (either our depth limit or parser limit)
         # Both are valid protections
-        assert ("nesting depth" in result.error.lower() or
-                "too many nested" in result.error.lower())
+        assert (
+            "nesting depth" in result.error.lower()
+            or "too many nested" in result.error.lower()
+        )
         assert "recursion" not in result.error.lower()  # Not a recursion error
 
     def test_depth_limit_prevents_memory_exhaustion(self):
@@ -451,8 +457,10 @@ class TestCalculatorSecurityProperties:
         result = calc.execute(expression=nested)
         assert not result.success
         # Should fail quickly with controlled error (either limit works)
-        assert ("nesting depth" in result.error.lower() or
-                "too many nested" in result.error.lower())
+        assert (
+            "nesting depth" in result.error.lower()
+            or "too many nested" in result.error.lower()
+        )
 
     def test_fail_secure_behavior(self):
         """Test that failures are secure (don't expose internals)."""
@@ -480,17 +488,17 @@ class TestCalculatorSecurityProperties:
         # Mix of lists, tuples, operations, function calls
         # Each should increment depth
         nested = "1"
-        nested = f"abs({nested})"      # depth 1: function call
-        nested = f"[{nested}]"          # depth 2: list
-        nested = f"({nested},)"         # depth 3: tuple
-        nested = f"{nested} + 1"        # depth 4: binop
-        nested = f"-{nested}"           # depth 5: unaryop
-        nested = f"[{nested}]"          # depth 6: list
-        nested = f"abs({nested})"       # depth 7: function call
-        nested = f"[{nested}]"          # depth 8: list
-        nested = f"[{nested}]"          # depth 9: list
-        nested = f"[{nested}]"          # depth 10: list
-        nested = f"[{nested}]"          # depth 11: list - EXCEEDS
+        nested = f"abs({nested})"  # depth 1: function call
+        nested = f"[{nested}]"  # depth 2: list
+        nested = f"({nested},)"  # depth 3: tuple
+        nested = f"{nested} + 1"  # depth 4: binop
+        nested = f"-{nested}"  # depth 5: unaryop
+        nested = f"[{nested}]"  # depth 6: list
+        nested = f"abs({nested})"  # depth 7: function call
+        nested = f"[{nested}]"  # depth 8: list
+        nested = f"[{nested}]"  # depth 9: list
+        nested = f"[{nested}]"  # depth 10: list
+        nested = f"[{nested}]"  # depth 11: list - EXCEEDS
 
         result = calc.execute(expression=nested)
         assert not result.success

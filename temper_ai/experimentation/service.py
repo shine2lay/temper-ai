@@ -6,14 +6,11 @@ Delegates to specialized modules for CRUD, lifecycle, and tracking.
 """
 
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from sqlalchemy import update
 from sqlmodel import select
 
-from temper_ai.shared.constants.limits import THRESHOLD_LARGE_COUNT
-from temper_ai.shared.core.service import Service
-from temper_ai.storage.database import get_session
 from temper_ai.experimentation.analyzer import StatisticalAnalyzer
 from temper_ai.experimentation.assignment import VariantAssigner
 from temper_ai.experimentation.config_manager import ConfigManager
@@ -34,7 +31,10 @@ from temper_ai.experimentation.models import (
     VariantAssignment,
     utcnow,
 )
+from temper_ai.shared.constants.limits import THRESHOLD_LARGE_COUNT
+from temper_ai.shared.core.service import Service
 from temper_ai.shared.utils.logging import get_logger
+from temper_ai.storage.database import get_session
 
 logger = get_logger(__name__)
 
@@ -106,14 +106,14 @@ class ExperimentService(Service):
         self,
         name: str,
         description: str,
-        variants: List[Dict[str, Any]],
+        variants: list[dict[str, Any]],
         assignment_strategy: str = "random",
         primary_metric: str = "duration_seconds",
-        secondary_metrics: Optional[List[str]] = None,
-        guardrail_metrics: Optional[List[Dict[str, Any]]] = None,
+        secondary_metrics: list[str] | None = None,
+        guardrail_metrics: list[dict[str, Any]] | None = None,
         confidence_level: float = DEFAULT_CREDIBLE_LEVEL,
         min_sample_size_per_variant: int = THRESHOLD_LARGE_COUNT,
-        **kwargs: Any
+        **kwargs: Any,
     ) -> str:
         """
         Create new experiment.
@@ -155,15 +155,14 @@ class ExperimentService(Service):
             )
         )
 
-    def get_experiment(self, experiment_id: str) -> Optional[Experiment]:
+    def get_experiment(self, experiment_id: str) -> Experiment | None:
         """Get experiment by ID."""
         # Delegate to CRUD layer which handles caching
         return self._crud.get_experiment(experiment_id)
 
     def list_experiments(
-        self,
-        status: Optional[ExperimentStatus] = None
-    ) -> List[Experiment]:
+        self, status: ExperimentStatus | None = None
+    ) -> list[Experiment]:
         """List experiments, optionally filtered by status."""
         with get_session() as session:
             statement = select(Experiment)
@@ -182,7 +181,9 @@ class ExperimentService(Service):
                 raise ValueError(f"{ERROR_EXPERIMENT_NOT_FOUND}{experiment_id}")
 
             if experiment.status != ExperimentStatus.DRAFT:
-                raise ValueError(f"Cannot start experiment in status: {experiment.status}")
+                raise ValueError(
+                    f"Cannot start experiment in status: {experiment.status}"
+                )
 
             experiment.status = ExperimentStatus.RUNNING
             experiment.started_at = utcnow()
@@ -210,11 +211,7 @@ class ExperimentService(Service):
 
         logger.info(f"Paused experiment: {experiment_id}")
 
-    def stop_experiment(
-        self,
-        experiment_id: str,
-        winner: Optional[str] = None
-    ) -> None:
+    def stop_experiment(self, experiment_id: str, winner: str | None = None) -> None:
         """Stop experiment and optionally declare winner."""
         with get_session() as session:
             experiment = session.get(Experiment, experiment_id)
@@ -239,7 +236,7 @@ class ExperimentService(Service):
         self,
         workflow_id: str,
         experiment_id: str,
-        context: Optional[Dict[str, Any]] = None
+        context: dict[str, Any] | None = None,
     ) -> VariantAssignment:
         """
         Assign workflow to variant.
@@ -273,10 +270,7 @@ class ExperimentService(Service):
 
             # Assign variant
             variant_id = self._assigner.assign_variant(
-                experiment,
-                variants,
-                workflow_id,
-                context
+                experiment, variants, workflow_id, context
             )
 
             # Create assignment record
@@ -301,7 +295,7 @@ class ExperimentService(Service):
         logger.info(f"Assigned workflow {workflow_id} to variant {variant_id}")
         return assignment
 
-    def get_variant_config(self, variant_id: str) -> Dict[str, Any]:
+    def get_variant_config(self, variant_id: str) -> dict[str, Any]:
         """Get variant config overrides."""
         with get_session() as session:
             variant = session.get(Variant, variant_id)
@@ -312,10 +306,7 @@ class ExperimentService(Service):
     # ========== Tracking ==========
 
     def track_execution_complete(
-        self,
-        workflow_id: str,
-        metrics: Dict[str, float],
-        status: str = "completed"
+        self, workflow_id: str, metrics: dict[str, float], status: str = "completed"
     ) -> None:
         """Update assignment with execution metrics."""
         with get_session() as session:
@@ -370,10 +361,8 @@ class ExperimentService(Service):
     # ========== Analysis ==========
 
     def get_experiment_results(
-        self,
-        experiment_id: str,
-        _include_raw_data: bool = False
-    ) -> Dict[str, Any]:
+        self, experiment_id: str, _include_raw_data: bool = False
+    ) -> dict[str, Any]:
         """Run statistical analysis and return results."""
         with get_session() as session:
             # Load experiment
@@ -393,9 +382,7 @@ class ExperimentService(Service):
 
             # Run analysis
             analysis_results = self._analyzer.analyze_experiment(
-                experiment,
-                assignments,  # type: ignore[arg-type]
-                variants
+                experiment, assignments, variants  # type: ignore[arg-type]
             )
 
             # Store results (simplified for MVP)
@@ -418,7 +405,7 @@ class ExperimentService(Service):
 
         return analysis_results
 
-    def check_early_stopping(self, experiment_id: str) -> Dict[str, Any]:
+    def check_early_stopping(self, experiment_id: str) -> dict[str, Any]:
         """Check if experiment should stop early."""
         results = self.get_experiment_results(experiment_id)
 

@@ -3,15 +3,16 @@
 Tests async workflow execution, parallel processing, race conditions,
 and deadlock prevention to ensure thread-safety and proper async handling.
 """
+
 import asyncio
 import time
 from unittest.mock import Mock, patch
 
 import pytest
 
-from temper_ai.llm.providers import LLMResponse
 from temper_ai.agent.standard_agent import StandardAgent
-from temper_ai.workflow.langgraph_engine import LangGraphExecutionEngine
+from temper_ai.llm.service import LLMRunResult
+from temper_ai.observability.database import DatabaseManager
 from temper_ai.storage.schemas.agent_config import (
     AgentConfig,
     AgentConfigInner,
@@ -19,11 +20,12 @@ from temper_ai.storage.schemas.agent_config import (
     InferenceConfig,
     PromptConfig,
 )
-from temper_ai.observability.database import DatabaseManager
+from temper_ai.workflow.langgraph_engine import LangGraphExecutionEngine
 
 # ============================================================================
 # Fixtures
 # ============================================================================
+
 
 @pytest.fixture
 def db_fixture():
@@ -67,10 +69,7 @@ def workflow_config():
             "name": "async_test_workflow",
             "description": "Test workflow for async execution",
             "version": "1.0",
-            "stages": [
-                {"name": "stage1"},
-                {"name": "stage2"}
-            ]
+            "stages": [{"name": "stage1"}, {"name": "stage2"}],
         }
     }
 
@@ -79,8 +78,9 @@ def workflow_config():
 # Test 1: Async Workflow Execution
 # ============================================================================
 
+
 @pytest.mark.asyncio
-@patch('temper_ai.workflow.langgraph_compiler.ConfigLoader')
+@patch("temper_ai.workflow.engines.langgraph_compiler.ConfigLoader")
 async def test_async_workflow_execution(mock_config_loader, workflow_config):
     """Test end-to-end async workflow execution.
 
@@ -120,8 +120,9 @@ async def test_async_workflow_execution(mock_config_loader, workflow_config):
 # Test 2: Concurrent Workflow Execution
 # ============================================================================
 
+
 @pytest.mark.asyncio
-@patch('temper_ai.workflow.langgraph_compiler.ConfigLoader')
+@patch("temper_ai.workflow.engines.langgraph_compiler.ConfigLoader")
 async def test_concurrent_workflow_execution(mock_config_loader, workflow_config):
     """Test 10+ parallel workflow executions.
 
@@ -173,8 +174,9 @@ async def test_concurrent_workflow_execution(mock_config_loader, workflow_config
 # Test 3: Async LLM Streaming
 # ============================================================================
 
+
 @pytest.mark.asyncio
-@patch('temper_ai.agent.base_agent.ToolRegistry')
+@patch("temper_ai.agent.base_agent.ToolRegistry")
 async def test_async_llm_streaming(mock_tool_registry, minimal_agent_config):
     """Test streaming LLM responses asynchronously.
 
@@ -206,8 +208,9 @@ async def test_async_llm_streaming(mock_tool_registry, minimal_agent_config):
 # Test 4: Parallel Agent Execution
 # ============================================================================
 
+
 @pytest.mark.asyncio
-@patch('temper_ai.agent.base_agent.ToolRegistry')
+@patch("temper_ai.agent.base_agent.ToolRegistry")
 async def test_parallel_agent_execution(mock_tool_registry, minimal_agent_config):
     """Test multiple agents executing in parallel.
 
@@ -219,16 +222,14 @@ async def test_parallel_agent_execution(mock_tool_registry, minimal_agent_config
     # Create 5 agents
     agents = [StandardAgent(minimal_agent_config) for _ in range(5)]
 
-    # Mock LLM responses
+    # Mock LLM service responses
     for i, agent in enumerate(agents):
-        mock_response = LLMResponse(
-            content=f"<answer>Agent {i} result</answer>",
-            model="llama2",
-            provider="ollama",
-            total_tokens=20,
+        mock_run_result = LLMRunResult(
+            output=f"<answer>Agent {i} result</answer>",
+            tokens=20,
         )
-        agent.llm = Mock()
-        agent.llm.complete.return_value = mock_response
+        agent.llm_service = Mock()
+        agent.llm_service.run.return_value = mock_run_result
 
     # Execute agents in parallel
     async def run_agent(agent, agent_id):
@@ -256,6 +257,7 @@ async def test_parallel_agent_execution(mock_tool_registry, minimal_agent_config
 # ============================================================================
 # Test 5: Shared Resource Access
 # ============================================================================
+
 
 @pytest.mark.asyncio
 async def test_shared_resource_access():
@@ -287,6 +289,7 @@ async def test_shared_resource_access():
 # Test 6: Database Transaction Isolation
 # ============================================================================
 
+
 @pytest.mark.asyncio
 async def test_database_transaction_isolation(db_fixture):
     """Test database ACID properties with SERIALIZABLE isolation.
@@ -296,12 +299,13 @@ async def test_database_transaction_isolation(db_fixture):
     """
     from sqlalchemy import text
 
-
     # Setup test table
     with db_fixture.session() as session:
-        session.execute(text(
-            "CREATE TABLE IF NOT EXISTS test_counter (id INTEGER PRIMARY KEY, value INTEGER)"
-        ))
+        session.execute(
+            text(
+                "CREATE TABLE IF NOT EXISTS test_counter (id INTEGER PRIMARY KEY, value INTEGER)"
+            )
+        )
         session.execute(text("INSERT INTO test_counter (id, value) VALUES (1, 0)"))
         session.commit()
 
@@ -326,14 +330,16 @@ async def test_database_transaction_isolation(db_fixture):
         final_value = result.fetchone()[0]
 
     # CRITICAL: Enforce exact count - no race conditions allowed
-    assert final_value == 10, \
-        f"Race condition detected! Expected 10, got {final_value}. " \
+    assert final_value == 10, (
+        f"Race condition detected! Expected 10, got {final_value}. "
         f"Lost {10 - final_value} updates due to insufficient isolation."
+    )
 
 
 # ============================================================================
 # Test 7: Race Condition Detection
 # ============================================================================
+
 
 @pytest.mark.asyncio
 async def test_race_condition_detection_and_prevention():
@@ -358,9 +364,10 @@ async def test_race_condition_detection_and_prevention():
     await asyncio.gather(*tasks)
 
     # Verify race condition occurred (demonstrative test)
-    assert unsafe_state["writes"] < 50, \
-        f"Race condition NOT detected - got {unsafe_state['writes']} (expected <50). " \
+    assert unsafe_state["writes"] < 50, (
+        f"Race condition NOT detected - got {unsafe_state['writes']} (expected <50). "
         f"This test should demonstrate the race condition exists!"
+    )
 
     # ============================================================
     # PART 2: SAFE - Prove race condition prevention works
@@ -380,14 +387,16 @@ async def test_race_condition_detection_and_prevention():
     await asyncio.gather(*tasks)
 
     # Verify NO race condition - strict equality
-    assert safe_state["writes"] == 50, \
-        f"Lock failed to prevent race condition! Expected 50, got {safe_state['writes']}. " \
+    assert safe_state["writes"] == 50, (
+        f"Lock failed to prevent race condition! Expected 50, got {safe_state['writes']}. "
         f"Lost {50 - safe_state['writes']} writes."
+    )
 
 
 # ============================================================================
 # Test 8: Deadlock Prevention
 # ============================================================================
+
 
 @pytest.mark.asyncio
 async def test_deadlock_prevention():
@@ -407,7 +416,7 @@ async def test_deadlock_prevention():
                 async with asyncio.timeout(0.1):
                     async with lock2:
                         return "A_success"
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 return "A_timeout"
 
     async def task_b():
@@ -419,7 +428,7 @@ async def test_deadlock_prevention():
                 async with asyncio.timeout(0.1):
                     async with lock1:
                         return "B_success"
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 return "B_timeout"
 
     # Run both tasks concurrently
@@ -434,12 +443,14 @@ async def test_deadlock_prevention():
 # Test 9: Async Error Handling
 # ============================================================================
 
+
 @pytest.mark.asyncio
 async def test_async_error_handling():
     """Test exception propagation in async execution.
 
     Tests: Errors propagate correctly in async contexts
     """
+
     async def failing_task():
         """Task that raises an exception."""
         await asyncio.sleep(0.01)
@@ -454,7 +465,7 @@ async def test_async_error_handling():
     results = await asyncio.gather(
         successful_task(),
         failing_task(),
-        return_exceptions=True  # Capture exceptions instead of raising
+        return_exceptions=True,  # Capture exceptions instead of raising
     )
 
     # Verify results
@@ -467,14 +478,17 @@ async def test_async_error_handling():
 # Test 10: Async Context Managers
 # ============================================================================
 
+
 @pytest.mark.asyncio
 async def test_async_context_managers():
     """Test async context manager lifecycle.
 
     Tests: Proper resource acquisition and cleanup
     """
+
     class AsyncResource:
         """Mock async resource with lifecycle tracking."""
+
         def __init__(self):
             self.opened = False
             self.closed = False
@@ -513,6 +527,7 @@ async def test_async_context_managers():
 # Test 11: Cancellation Handling
 # ============================================================================
 
+
 @pytest.mark.asyncio
 async def test_cancellation_handling():
     """Test task cancellation and cleanup.
@@ -549,6 +564,7 @@ async def test_cancellation_handling():
 # Test 12: Concurrent Database Writes
 # ============================================================================
 
+
 @pytest.mark.asyncio
 async def test_concurrent_database_writes(db_fixture):
     """Test concurrent database writes with proper isolation.
@@ -559,9 +575,11 @@ async def test_concurrent_database_writes(db_fixture):
 
     # Setup test table
     with db_fixture.session() as session:
-        session.execute(text(
-            "CREATE TABLE IF NOT EXISTS test_writes (id INTEGER PRIMARY KEY, data TEXT)"
-        ))
+        session.execute(
+            text(
+                "CREATE TABLE IF NOT EXISTS test_writes (id INTEGER PRIMARY KEY, data TEXT)"
+            )
+        )
         session.commit()
 
     # Function to write to database
@@ -570,7 +588,7 @@ async def test_concurrent_database_writes(db_fixture):
         with db_fixture.session() as session:
             session.execute(
                 text("INSERT INTO test_writes (id, data) VALUES (:id, :data)"),
-                {"id": record_id, "data": data}
+                {"id": record_id, "data": data},
             )
             session.commit()
 
@@ -590,12 +608,14 @@ async def test_concurrent_database_writes(db_fixture):
 # Test 13: Async Workflow Timeout
 # ============================================================================
 
+
 @pytest.mark.asyncio
 async def test_async_workflow_timeout():
     """Test workflow execution with timeout enforcement.
 
     Tests: Long-running workflows can be timed out
     """
+
     async def slow_workflow():
         """Workflow that takes too long."""
         await asyncio.sleep(2.0)  # 2 seconds
@@ -606,13 +626,14 @@ async def test_async_workflow_timeout():
         async with asyncio.timeout(0.5):
             result = await slow_workflow()
             assert False, "Should have timed out"
-    except asyncio.TimeoutError:
+    except TimeoutError:
         pass  # Expected
 
 
 # ============================================================================
 # Test 14: Semaphore Rate Limiting
 # ============================================================================
+
 
 @pytest.mark.asyncio
 async def test_semaphore_rate_limiting():
@@ -627,7 +648,9 @@ async def test_semaphore_rate_limiting():
         """Task with rate limiting."""
         async with semaphore:
             concurrent_count["value"] += 1
-            concurrent_count["max"] = max(concurrent_count["max"], concurrent_count["value"])
+            concurrent_count["max"] = max(
+                concurrent_count["max"], concurrent_count["value"]
+            )
             await asyncio.sleep(0.05)
             concurrent_count["value"] -= 1
             return f"task_{task_id}"
@@ -645,6 +668,7 @@ async def test_semaphore_rate_limiting():
 # ============================================================================
 # Test 15: Event-Driven Coordination
 # ============================================================================
+
 
 @pytest.mark.asyncio
 async def test_event_driven_coordination():

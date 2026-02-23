@@ -42,21 +42,28 @@ class TestActivateDeactivate:
         assert event.triggered_by == "admin"
         assert event.reason == "safety issue"
 
-    def test_activate_persists_event(self, controller: EmergencyStopController, store: AutonomyStore) -> None:
+    def test_activate_persists_event(
+        self, controller: EmergencyStopController, store: AutonomyStore
+    ) -> None:
         """Activate persists event to store."""
         controller.activate(triggered_by="admin", reason="test")
         events = store.list_emergency_events()
         assert len(events) == 1
 
-    def test_activate_with_agents_halted(self, controller: EmergencyStopController) -> None:
+    def test_activate_with_agents_halted(
+        self, controller: EmergencyStopController
+    ) -> None:
         """Activate can list halted agents."""
         event = controller.activate(
-            triggered_by="system", reason="test",
+            triggered_by="system",
+            reason="test",
             agents_halted=["agent-a", "agent-b"],
         )
         assert event.agents_halted == ["agent-a", "agent-b"]
 
-    def test_deactivate_clears_active(self, controller: EmergencyStopController) -> None:
+    def test_deactivate_clears_active(
+        self, controller: EmergencyStopController
+    ) -> None:
         """Deactivate clears emergency stop."""
         controller.activate(triggered_by="admin", reason="test")
         assert controller.is_active()
@@ -100,7 +107,9 @@ class TestResetState:
 class TestTimeout:
     """Tests for get_timeout."""
 
-    def test_returns_configured_timeout(self, controller: EmergencyStopController) -> None:
+    def test_returns_configured_timeout(
+        self, controller: EmergencyStopController
+    ) -> None:
         """Returns the configured emergency stop timeout."""
         timeout = controller.get_timeout()
         assert timeout == 5

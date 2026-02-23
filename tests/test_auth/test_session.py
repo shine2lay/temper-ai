@@ -1,14 +1,13 @@
 """Tests for session management."""
+
 import asyncio
-from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, Mock, patch
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
 from temper_ai.auth.models import Session, User
 from temper_ai.auth.session import (
     InMemorySessionStore,
-    RedisSessionStore,
     SessionStoreProtocol,
     UserStore,
 )
@@ -24,9 +23,9 @@ def sample_user():
         picture="https://example.com/pic.jpg",
         oauth_provider="google",
         oauth_subject="google_123",
-        created_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc),
-        last_login=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+        last_login=datetime.now(UTC),
     )
 
 
@@ -40,8 +39,8 @@ def sample_session(sample_user):
         name=sample_user.name,
         picture=sample_user.picture,
         provider=sample_user.oauth_provider,
-        authenticated_at=datetime.now(timezone.utc),
-        expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+        authenticated_at=datetime.now(UTC),
+        expires_at=datetime.now(UTC) + timedelta(hours=1),
         ip_address="192.168.1.1",
         user_agent="Mozilla/5.0",
     )
@@ -57,6 +56,7 @@ class TestSessionStoreProtocol:
 
     def test_protocol_requires_implementation(self):
         """Test that subclasses must implement abstract methods."""
+
         class IncompleteStore(SessionStoreProtocol):
             pass
 
@@ -317,8 +317,7 @@ class TestUserStore:
         store._oauth_subjects[oauth_key] = sample_user.user_id
 
         result = await store.get_user_by_oauth(
-            sample_user.oauth_provider,
-            sample_user.oauth_subject
+            sample_user.oauth_provider, sample_user.oauth_subject
         )
 
         assert result is not None
@@ -393,247 +392,6 @@ class TestUserStore:
         assert len(users) == 10
         assert len(store._users) == 10
         assert len(store._emails) == 10
-
-
-class TestRedisSessionStore:
-    """Test RedisSessionStore implementation."""
-
-    @pytest.mark.asyncio
-    async def test_initialization_without_redis(self):
-        """Test initialization fails without redis package."""
-        with patch.dict('sys.modules', {'redis': None}):
-            with pytest.raises(ImportError, match="redis"):
-                RedisSessionStore("redis://localhost:6379")
-
-    @pytest.mark.asyncio
-    async def test_initialization_with_redis(self):
-        """Test initialization with redis package."""
-        mock_redis_module = Mock()
-        mock_redis_module.asyncio.from_url = Mock(return_value=Mock())
-
-        with patch.dict('sys.modules', {'redis': mock_redis_module}):
-            store = RedisSessionStore("redis://localhost:6379/0")
-
-            assert store._key_prefix == "session:"
-            mock_redis_module.asyncio.from_url.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_key_generation(self):
-        """Test Redis key generation."""
-        mock_redis_module = Mock()
-        mock_redis_module.asyncio.from_url = Mock(return_value=Mock())
-
-        with patch.dict('sys.modules', {'redis': mock_redis_module}):
-            store = RedisSessionStore("redis://localhost:6379", key_prefix="test:")
-
-            key = store._key("session_123")
-            assert key == "test:session_123"
-
-    @pytest.mark.asyncio
-    async def test_session_to_dict(self, sample_session):
-        """Test converting session to dict."""
-        mock_redis_module = Mock()
-        mock_redis_module.asyncio.from_url = Mock(return_value=Mock())
-
-        with patch.dict('sys.modules', {'redis': mock_redis_module}):
-            store = RedisSessionStore("redis://localhost:6379")
-
-            session_dict = store._session_to_dict(sample_session)
-
-            assert session_dict["session_id"] == sample_session.session_id
-            assert session_dict["user_id"] == sample_session.user_id
-            assert session_dict["email"] == sample_session.email
-            assert isinstance(session_dict["authenticated_at"], str)
-
-    @pytest.mark.asyncio
-    async def test_dict_to_session(self, sample_session):
-        """Test converting dict to session."""
-        mock_redis_module = Mock()
-        mock_redis_module.asyncio.from_url = Mock(return_value=Mock())
-
-        with patch.dict('sys.modules', {'redis': mock_redis_module}):
-            store = RedisSessionStore("redis://localhost:6379")
-
-            session_dict = store._session_to_dict(sample_session)
-            restored = store._dict_to_session(session_dict)
-
-            assert restored.session_id == sample_session.session_id
-            assert restored.user_id == sample_session.user_id
-            assert restored.email == sample_session.email
-
-    @pytest.mark.asyncio
-    async def test_create_session(self, sample_user):
-        """Test creating session in Redis."""
-        mock_redis = AsyncMock()
-        mock_redis.setex = AsyncMock()
-
-        mock_redis_module = Mock()
-        mock_redis_module.asyncio.from_url = Mock(return_value=mock_redis)
-
-        with patch.dict('sys.modules', {'redis': mock_redis_module}):
-            store = RedisSessionStore("redis://localhost:6379")
-
-            session = await store.create_session(
-                user=sample_user,
-                ip_address="192.168.1.1",
-                user_agent="Mozilla/5.0",
-                session_max_age=3600,
-            )
-
-            assert session.session_id.startswith("sess_")
-            assert session.user_id == sample_user.user_id
-            mock_redis.setex.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_get_session(self, sample_session):
-        """Test retrieving session from Redis."""
-        mock_redis = AsyncMock()
-
-        mock_redis_module = Mock()
-        mock_redis_module.asyncio.from_url = Mock(return_value=mock_redis)
-
-        with patch.dict('sys.modules', {'redis': mock_redis_module}):
-            store = RedisSessionStore("redis://localhost:6379")
-
-            # Mock Redis returning serialized session
-            session_dict = store._session_to_dict(sample_session)
-            import json
-            mock_redis.get = AsyncMock(return_value=json.dumps(session_dict))
-
-            result = await store.get_session(sample_session.session_id)
-
-            assert result is not None
-            assert result.session_id == sample_session.session_id
-
-    @pytest.mark.asyncio
-    async def test_get_session_not_found(self):
-        """Test retrieving non-existent session from Redis."""
-        mock_redis = AsyncMock()
-        mock_redis.get = AsyncMock(return_value=None)
-
-        mock_redis_module = Mock()
-        mock_redis_module.asyncio.from_url = Mock(return_value=mock_redis)
-
-        with patch.dict('sys.modules', {'redis': mock_redis_module}):
-            store = RedisSessionStore("redis://localhost:6379")
-
-            result = await store.get_session("nonexistent")
-
-            assert result is None
-
-    @pytest.mark.asyncio
-    async def test_delete_session(self):
-        """Test deleting session from Redis."""
-        mock_redis = AsyncMock()
-        mock_redis.delete = AsyncMock(return_value=1)
-
-        mock_redis_module = Mock()
-        mock_redis_module.asyncio.from_url = Mock(return_value=mock_redis)
-
-        with patch.dict('sys.modules', {'redis': mock_redis_module}):
-            store = RedisSessionStore("redis://localhost:6379")
-
-            result = await store.delete_session("session_123")
-
-            assert result is True
-            mock_redis.delete.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_cleanup_expired_noop(self):
-        """Test cleanup_expired is no-op for Redis (TTL handles it)."""
-        mock_redis = AsyncMock()
-
-        mock_redis_module = Mock()
-        mock_redis_module.asyncio.from_url = Mock(return_value=mock_redis)
-
-        with patch.dict('sys.modules', {'redis': mock_redis_module}):
-            store = RedisSessionStore("redis://localhost:6379")
-
-            # Should not raise
-            await store.cleanup_expired()
-
-    @pytest.mark.asyncio
-    async def test_get_session_expired_cleanup(self, sample_user):
-        """Test expired session cleanup in Redis."""
-        mock_redis = AsyncMock()
-
-        mock_redis_module = Mock()
-        mock_redis_module.asyncio.from_url = Mock(return_value=mock_redis)
-
-        with patch.dict('sys.modules', {'redis': mock_redis_module}):
-            store = RedisSessionStore("redis://localhost:6379")
-
-            # Create expired session
-            expired_session = Session(
-                session_id="sess_expired",
-                user_id=sample_user.user_id,
-                email=sample_user.email,
-                name=sample_user.name,
-                provider=sample_user.oauth_provider,
-                authenticated_at=datetime.now(timezone.utc) - timedelta(hours=2),
-                expires_at=datetime.now(timezone.utc) - timedelta(hours=1),
-            )
-
-            # Mock Redis returning expired session
-            import json
-            session_dict = store._session_to_dict(expired_session)
-            mock_redis.get = AsyncMock(return_value=json.dumps(session_dict))
-            mock_redis.delete = AsyncMock(return_value=1)
-
-            result = await store.get_session("sess_expired")
-
-            # Should return None and delete expired session
-            assert result is None
-            mock_redis.delete.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_redis_create_session_error(self, sample_user):
-        """Test Redis error handling during session creation."""
-        mock_redis = AsyncMock()
-        mock_redis.setex = AsyncMock(side_effect=Exception("Redis connection error"))
-
-        mock_redis_module = Mock()
-        mock_redis_module.asyncio.from_url = Mock(return_value=mock_redis)
-
-        with patch.dict('sys.modules', {'redis': mock_redis_module}):
-            store = RedisSessionStore("redis://localhost:6379")
-
-            with pytest.raises(Exception, match="Redis connection error"):
-                await store.create_session(sample_user)
-
-    @pytest.mark.asyncio
-    async def test_redis_get_session_error(self):
-        """Test Redis error handling during session retrieval."""
-        mock_redis = AsyncMock()
-        mock_redis.get = AsyncMock(side_effect=Exception("Redis timeout"))
-
-        mock_redis_module = Mock()
-        mock_redis_module.asyncio.from_url = Mock(return_value=mock_redis)
-
-        with patch.dict('sys.modules', {'redis': mock_redis_module}):
-            store = RedisSessionStore("redis://localhost:6379")
-
-            result = await store.get_session("session_123")
-
-            # Should return None on error
-            assert result is None
-
-    @pytest.mark.asyncio
-    async def test_redis_delete_session_error(self):
-        """Test Redis error handling during session deletion."""
-        mock_redis = AsyncMock()
-        mock_redis.delete = AsyncMock(side_effect=Exception("Redis error"))
-
-        mock_redis_module = Mock()
-        mock_redis_module.asyncio.from_url = Mock(return_value=mock_redis)
-
-        with patch.dict('sys.modules', {'redis': mock_redis_module}):
-            store = RedisSessionStore("redis://localhost:6379")
-
-            result = await store.delete_session("session_123")
-
-            # Should return False on error
-            assert result is False
 
 
 class TestSessionSecurity:
@@ -785,6 +543,7 @@ class TestSessionSecurity:
 
         # Time lookup for valid session
         import time
+
         start_valid = time.perf_counter()
         await store.get_session(valid_session.session_id)
         time_valid = time.perf_counter() - start_valid

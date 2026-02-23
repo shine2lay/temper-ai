@@ -3,17 +3,14 @@
 Verifies that StageCompiler correctly builds LangGraph graphs with
 fan-out/fan-in edges when stages declare depends_on.
 """
-from typing import Dict
+
 from unittest.mock import Mock, patch
 
-import pytest
-
-from temper_ai.workflow.condition_evaluator import ConditionEvaluator
-from temper_ai.workflow.config_loader import ConfigLoader
-from temper_ai.workflow.node_builder import NodeBuilder
 from temper_ai.stage.executors.state_keys import StateKeys
 from temper_ai.stage.stage_compiler import StageCompiler
 from temper_ai.tools.registry import ToolRegistry
+from temper_ai.workflow.config_loader import ConfigLoader
+from temper_ai.workflow.node_builder import NodeBuilder
 
 
 def _make_compiler():
@@ -60,6 +57,7 @@ class TestBackwardCompatibility:
                 return {
                     "stage_outputs": {name: f"out_{name}"},
                 }
+
             return node
 
         with patch.object(node_builder, "create_stage_node", side_effect=_tracker):
@@ -210,9 +208,7 @@ class TestDAGGraphStructure:
         """A -> [B, C]: graph has correct number of edges."""
         compiler, node_builder = _make_compiler()
 
-        with patch.object(
-            node_builder, "create_stage_node", return_value=Mock()
-        ):
+        with patch.object(node_builder, "create_stage_node", return_value=Mock()):
             stages = ["A", "B", "C"]
             config = {
                 "workflow": {
@@ -247,9 +243,7 @@ class TestDAGGraphStructure:
         """A -> [B, C] -> D: correct edge structure."""
         compiler, node_builder = _make_compiler()
 
-        with patch.object(
-            node_builder, "create_stage_node", return_value=Mock()
-        ):
+        with patch.object(node_builder, "create_stage_node", return_value=Mock()):
             stages = ["A", "B", "C", "D"]
             config = {
                 "workflow": {
@@ -282,9 +276,7 @@ class TestDAGLoopBack:
         """Stage with loops_back_to gets a loop gate node."""
         compiler, node_builder = _make_compiler()
 
-        with patch.object(
-            node_builder, "create_stage_node", return_value=Mock()
-        ):
+        with patch.object(node_builder, "create_stage_node", return_value=Mock()):
             stages = ["A", "B", "C"]
             config = {
                 "workflow": {
@@ -321,9 +313,7 @@ class TestDAGBarrierNodes:
         """A → [B, C], B → D, [C, D] → E: barrier on C→E edge."""
         compiler, node_builder = _make_compiler()
 
-        with patch.object(
-            node_builder, "create_stage_node", return_value=Mock()
-        ):
+        with patch.object(node_builder, "create_stage_node", return_value=Mock()):
             stages = ["A", "B", "C", "D", "E"]
             config = {
                 "workflow": {
@@ -364,6 +354,7 @@ class TestDAGBarrierNodes:
                     "stage_outputs": {name: f"output_{name}"},
                     "current_stage": name,
                 }
+
             return node
 
         with patch.object(node_builder, "create_stage_node", side_effect=_node_factory):
@@ -393,9 +384,7 @@ class TestDAGBarrierNodes:
         """A → [B, C] → D: no barrier needed (B and C at same depth)."""
         compiler, node_builder = _make_compiler()
 
-        with patch.object(
-            node_builder, "create_stage_node", return_value=Mock()
-        ):
+        with patch.object(node_builder, "create_stage_node", return_value=Mock()):
             stages = ["A", "B", "C", "D"]
             config = {
                 "workflow": {
@@ -424,9 +413,7 @@ class TestDAGLoopGateFanOut:
         """Loop stage with 2 successors: gate exits to both."""
         compiler, node_builder = _make_compiler()
 
-        with patch.object(
-            node_builder, "create_stage_node", return_value=Mock()
-        ):
+        with patch.object(node_builder, "create_stage_node", return_value=Mock()):
             stages = ["A", "B", "C", "D"]
             config = {
                 "workflow": {
@@ -469,9 +456,12 @@ class TestDAGVCSPattern:
 
         with patch.object(node_builder, "create_stage_node", side_effect=_node_factory):
             stages = [
-                "code", "static",
-                "review", "validate",
-                "review_dec", "validate_dec",
+                "code",
+                "static",
+                "review",
+                "validate",
+                "review_dec",
+                "validate_dec",
             ]
             config = {
                 "workflow": {
@@ -502,13 +492,14 @@ class TestDAGVCSPattern:
         """VCS pattern has barrier on validate→validate_dec edge."""
         compiler, node_builder = _make_compiler()
 
-        with patch.object(
-            node_builder, "create_stage_node", return_value=Mock()
-        ):
+        with patch.object(node_builder, "create_stage_node", return_value=Mock()):
             stages = [
-                "code", "static",
-                "review", "validate",
-                "review_dec", "validate_dec",
+                "code",
+                "static",
+                "review",
+                "validate",
+                "review_dec",
+                "validate_dec",
             ]
             config = {
                 "workflow": {
@@ -554,7 +545,7 @@ class TestDAGVCSPattern:
         because validate is reachable via review → validate.
         """
         compiler, node_builder = _make_compiler()
-        exec_counts: Dict[str, int] = {}
+        exec_counts: dict[str, int] = {}
 
         def _counting_factory(name, _cfg):
             def node(state):
@@ -563,6 +554,7 @@ class TestDAGVCSPattern:
                     "stage_outputs": {name: f"output_{name}"},
                     "current_stage": name,
                 }
+
             return node
 
         with patch.object(
@@ -597,9 +589,9 @@ class TestDAGVCSPattern:
         # Every stage should execute exactly once
         for name in stages:
             assert name in result[StateKeys.STAGE_OUTPUTS], f"{name} missing"
-            assert exec_counts.get(name, 0) == 1, (
-                f"{name} executed {exec_counts.get(name, 0)} times, expected 1"
-            )
+            assert (
+                exec_counts.get(name, 0) == 1
+            ), f"{name} executed {exec_counts.get(name, 0)} times, expected 1"
 
     def test_vcs_loop_gate_filters_reachable_targets(self):
         """Loop gate for static exits to review only, not validate.
@@ -609,9 +601,7 @@ class TestDAGVCSPattern:
         """
         compiler, node_builder = _make_compiler()
 
-        with patch.object(
-            node_builder, "create_stage_node", return_value=Mock()
-        ):
+        with patch.object(node_builder, "create_stage_node", return_value=Mock()):
             stages = ["code", "static", "review", "validate"]
             config = {
                 "workflow": {
@@ -645,12 +635,12 @@ class TestDAGVCSPattern:
         assert "code" in gate_exits, "Gate should loop back to code"
         assert "review" in gate_exits, "Gate should exit to review"
         # validate should NOT be a direct exit — it's reachable via review
-        assert "validate" not in gate_exits, (
-            "Gate should not exit directly to validate (reachable via review)"
-        )
+        assert (
+            "validate" not in gate_exits
+        ), "Gate should not exit directly to validate (reachable via review)"
         # No barrier from static to validate (loop stage pred skipped)
         barrier = "_barrier_static_to_validate_0"
         node_ids = {n.id for n in structure.nodes.values()}
-        assert barrier not in node_ids, (
-            "No barrier should exist from loop stage static to validate"
-        )
+        assert (
+            barrier not in node_ids
+        ), "No barrier should exist from loop stage static to validate"

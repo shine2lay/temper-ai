@@ -1,4 +1,5 @@
 """Tests for workflow planning pass (R0.8)."""
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
@@ -10,7 +11,6 @@ from temper_ai.workflow.planning import (
     build_planning_prompt,
     generate_workflow_plan,
 )
-
 
 # ─── PlanningConfig tests ────────────────────────────────────────────
 
@@ -223,21 +223,15 @@ class TestGenerateWorkflowPlan:
         assert result == "Plan with whitespace"
 
     @patch("temper_ai.agent.llm.create_llm_provider")
-    def test_passes_temperature_and_max_tokens(
-        self, mock_create: MagicMock
-    ) -> None:
+    def test_passes_temperature_and_max_tokens(self, mock_create: MagicMock) -> None:
         mock_llm = MagicMock()
         mock_response = MagicMock()
         mock_response.content = "plan"
         mock_llm.complete.return_value = mock_response
         mock_create.return_value = mock_llm
 
-        config = PlanningConfig(
-            enabled=True, temperature=0.5, max_tokens=1024
-        )
-        generate_workflow_plan(
-            {"workflow": {"name": "t", "stages": []}}, {}, config
-        )
+        config = PlanningConfig(enabled=True, temperature=0.5, max_tokens=1024)
+        generate_workflow_plan({"workflow": {"name": "t", "stages": []}}, {}, config)
 
         mock_llm.complete.assert_called_once()
         call_kwargs = mock_llm.complete.call_args

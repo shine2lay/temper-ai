@@ -1,11 +1,14 @@
 """Tests for the CodeExecutorTool."""
+
 import subprocess
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from temper_ai.tools.code_executor import CodeExecutorTool
-from temper_ai.tools.code_executor_constants import CODE_EXEC_DEFAULT_TIMEOUT, CODE_EXEC_MAX_OUTPUT
+from temper_ai.tools.code_executor_constants import (
+    CODE_EXEC_MAX_OUTPUT,
+)
 
 
 @pytest.fixture

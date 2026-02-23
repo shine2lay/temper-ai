@@ -12,7 +12,7 @@ import uuid
 import pytest
 
 # Set TESTING env var before importing service
-os.environ['TESTING'] = '1'
+os.environ["TESTING"] = "1"
 
 from temper_ai.experimentation.models import ExperimentStatus
 from temper_ai.experimentation.service import ExperimentService
@@ -155,7 +155,7 @@ class TestEagerLoading:
         exp = service.get_experiment(experiment_id)
 
         # Clear cache to force re-query
-        service._experiment_cache.clear()
+        service._crud._experiment_cache.clear()
 
         # Reload — variants should be available without DetachedInstanceError
         exp = service.get_experiment(experiment_id)
@@ -169,6 +169,6 @@ class TestEagerLoading:
 
         # The object should be detached (not in any session)
         insp = inspect(exp)
-        assert insp.detached or insp.persistent is False, (
-            "Cached experiment should be detached from session"
-        )
+        assert (
+            insp.detached or insp.persistent is False
+        ), "Cached experiment should be detached from session"

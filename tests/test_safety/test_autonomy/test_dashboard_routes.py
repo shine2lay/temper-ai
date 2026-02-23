@@ -7,7 +7,11 @@ from fastapi.testclient import TestClient
 from temper_ai.safety.autonomy.dashboard_routes import create_autonomy_router
 from temper_ai.safety.autonomy.dashboard_service import AutonomyDataService
 from temper_ai.safety.autonomy.emergency_stop import reset_emergency_state
-from temper_ai.safety.autonomy.models import AutonomyState, AutonomyTransition, BudgetRecord
+from temper_ai.safety.autonomy.models import (
+    AutonomyState,
+    AutonomyTransition,
+    BudgetRecord,
+)
 from temper_ai.safety.autonomy.store import AutonomyStore
 
 
@@ -42,9 +46,14 @@ class TestGetStatus:
 
     def test_with_agents(self, store: AutonomyStore, client: TestClient) -> None:
         """Returns agent states."""
-        store.save_state(AutonomyState(
-            id="as-1", agent_name="agent-a", domain="code", current_level=1,
-        ))
+        store.save_state(
+            AutonomyState(
+                id="as-1",
+                agent_name="agent-a",
+                domain="code",
+                current_level=1,
+            )
+        )
         resp = client.get("/autonomy/status")
         data = resp.json()
         assert data["total_agents"] == 1
@@ -62,10 +71,17 @@ class TestGetTransitions:
 
     def test_with_transitions(self, store: AutonomyStore, client: TestClient) -> None:
         """Returns transitions."""
-        store.save_transition(AutonomyTransition(
-            id="at-1", agent_name="a", domain="d",
-            from_level=0, to_level=1, reason="test", trigger="manual",
-        ))
+        store.save_transition(
+            AutonomyTransition(
+                id="at-1",
+                agent_name="a",
+                domain="d",
+                from_level=0,
+                to_level=1,
+                reason="test",
+                trigger="manual",
+            )
+        )
         resp = client.get("/autonomy/transitions")
         data = resp.json()
         assert len(data) == 1
@@ -83,9 +99,14 @@ class TestGetBudget:
 
     def test_with_budgets(self, store: AutonomyStore, client: TestClient) -> None:
         """Returns budget records."""
-        store.save_budget(BudgetRecord(
-            id="bg-1", scope="agent-a", period="monthly", budget_usd=100.0,
-        ))
+        store.save_budget(
+            BudgetRecord(
+                id="bg-1",
+                scope="agent-a",
+                period="monthly",
+                budget_usd=100.0,
+            )
+        )
         resp = client.get("/autonomy/budget")
         data = resp.json()
         assert len(data) == 1

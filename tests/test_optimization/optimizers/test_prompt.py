@@ -2,9 +2,6 @@
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
-from temper_ai.optimization._schemas import OptimizationResult
 from temper_ai.optimization.optimizers.prompt import PromptOptimizer
 from temper_ai.optimization.protocols import OptimizerProtocol
 from temper_ai.optimization.registry import OptimizationRegistry
@@ -40,12 +37,15 @@ class TestPromptOptimizer:
         mock_opt_config.min_quality_score = 0.7
         mock_opt_config.lookback_hours = 720
 
-        with patch(
-            "temper_ai.optimization.optimizers.prompt.TrainingDataCollector",
-            return_value=mock_collector,
-        ), patch(
-            "temper_ai.optimization.optimizers.prompt.PromptOptimizationConfig",
-            return_value=mock_opt_config,
+        with (
+            patch(
+                "temper_ai.optimization.optimizers.prompt.TrainingDataCollector",
+                return_value=mock_collector,
+            ),
+            patch(
+                "temper_ai.optimization.optimizers.prompt.PromptOptimizationConfig",
+                return_value=mock_opt_config,
+            ),
         ):
             result = optimizer.optimize(
                 runner=MagicMock(),
@@ -77,17 +77,22 @@ class TestPromptOptimizer:
 
         mock_store = MagicMock()
 
-        with patch(
-            "temper_ai.optimization.optimizers.prompt.TrainingDataCollector",
-            return_value=mock_collector,
-        ), patch(
-            "temper_ai.optimization.optimizers.prompt.DSPyProgramBuilder",
-        ) as MockBuilder, patch(
-            "temper_ai.optimization.optimizers.prompt.DSPyCompiler",
-            return_value=mock_compiler,
-        ), patch(
-            "temper_ai.optimization.optimizers.prompt.CompiledProgramStore",
-            return_value=mock_store,
+        with (
+            patch(
+                "temper_ai.optimization.optimizers.prompt.TrainingDataCollector",
+                return_value=mock_collector,
+            ),
+            patch(
+                "temper_ai.optimization.optimizers.prompt.DSPyProgramBuilder",
+            ) as MockBuilder,
+            patch(
+                "temper_ai.optimization.optimizers.prompt.DSPyCompiler",
+                return_value=mock_compiler,
+            ),
+            patch(
+                "temper_ai.optimization.optimizers.prompt.CompiledProgramStore",
+                return_value=mock_store,
+            ),
         ):
             result = optimizer.optimize(
                 runner=MagicMock(),

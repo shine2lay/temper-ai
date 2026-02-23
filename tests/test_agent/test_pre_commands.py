@@ -1,4 +1,5 @@
 """Tests for pre_commands feature: schema, execution, formatting, integration."""
+
 from __future__ import annotations
 
 import subprocess
@@ -12,10 +13,8 @@ from temper_ai.agent.utils._pre_command_helpers import (
     execute_pre_commands,
     format_pre_command_results,
 )
-from temper_ai.agent.utils.constants import PRE_COMMAND_MAX_OUTPUT_CHARS
 from temper_ai.storage.schemas.agent_config import AgentConfig, PreCommand
 from temper_ai.tools.field_names import ToolResultFields
-
 
 # ============================================================================
 # Schema tests
@@ -101,7 +100,9 @@ class TestRenderCommand:
     """Test {{ var }} substitution in command strings."""
 
     def test_simple_substitution(self) -> None:
-        result = _render_command("cd {{ workspace_path }} && ls", {"workspace_path": "/tmp/ws"})
+        result = _render_command(
+            "cd {{ workspace_path }} && ls", {"workspace_path": "/tmp/ws"}
+        )
         assert result == "cd /tmp/ws && ls"
 
     def test_multiple_vars(self) -> None:
@@ -152,47 +153,65 @@ class TestFormatPreCommandResults:
     """Test markdown formatting of results."""
 
     def test_pass_result(self) -> None:
-        results = [{
-            "name": "check_syntax",
-            ToolResultFields.EXIT_CODE: 0,
-            ToolResultFields.STDOUT: "OK",
-            ToolResultFields.STDERR: "",
-            ToolResultFields.ERROR: None,
-        }]
+        results = [
+            {
+                "name": "check_syntax",
+                ToolResultFields.EXIT_CODE: 0,
+                ToolResultFields.STDOUT: "OK",
+                ToolResultFields.STDERR: "",
+                ToolResultFields.ERROR: None,
+            }
+        ]
         output = format_pre_command_results(results)
         assert "PASS" in output
         assert "check_syntax" in output
         assert "OK" in output
 
     def test_fail_result(self) -> None:
-        results = [{
-            "name": "import_test",
-            ToolResultFields.EXIT_CODE: 1,
-            ToolResultFields.STDOUT: "",
-            ToolResultFields.STDERR: "ModuleNotFoundError: No module named 'foo'",
-            ToolResultFields.ERROR: None,
-        }]
+        results = [
+            {
+                "name": "import_test",
+                ToolResultFields.EXIT_CODE: 1,
+                ToolResultFields.STDOUT: "",
+                ToolResultFields.STDERR: "ModuleNotFoundError: No module named 'foo'",
+                ToolResultFields.ERROR: None,
+            }
+        ]
         output = format_pre_command_results(results)
         assert "FAIL" in output
         assert "import_test" in output
         assert "ModuleNotFoundError" in output
 
     def test_error_result(self) -> None:
-        results = [{
-            "name": "timeout_cmd",
-            ToolResultFields.EXIT_CODE: -1,
-            ToolResultFields.STDOUT: "",
-            ToolResultFields.STDERR: "",
-            ToolResultFields.ERROR: "Timed out after 30s",
-        }]
+        results = [
+            {
+                "name": "timeout_cmd",
+                ToolResultFields.EXIT_CODE: -1,
+                ToolResultFields.STDOUT: "",
+                ToolResultFields.STDERR: "",
+                ToolResultFields.ERROR: "Timed out after 30s",
+            }
+        ]
         output = format_pre_command_results(results)
         assert "FAIL" in output
         assert "Timed out" in output
 
     def test_multiple_results(self) -> None:
         results = [
-            {"name": "a", ToolResultFields.EXIT_CODE: 0, ToolResultFields.STDOUT: "ok", ToolResultFields.STDERR: "", ToolResultFields.ERROR: None},
-            {"name": "b", ToolResultFields.EXIT_CODE: 1, ToolResultFields.STDOUT: "", ToolResultFields.STDERR: "err", ToolResultFields.ERROR: None},
+            {
+                "name": "a",
+                ToolResultFields.EXIT_CODE: 0,
+                ToolResultFields.STDOUT: "ok",
+                ToolResultFields.STDERR: "",
+                ToolResultFields.ERROR: None,
+            },
+            {
+                "name": "b",
+                ToolResultFields.EXIT_CODE: 1,
+                ToolResultFields.STDOUT: "",
+                ToolResultFields.STDERR: "err",
+                ToolResultFields.ERROR: None,
+            },
         ]
         output = format_pre_command_results(results)
         assert output.count("##") == 2
@@ -226,9 +245,7 @@ class TestExecutePreCommands:
 
     @patch("temper_ai.agent.utils._pre_command_helpers.subprocess.run")
     def test_successful_command(self, mock_run: MagicMock) -> None:
-        mock_run.return_value = MagicMock(
-            returncode=0, stdout="all good", stderr=""
-        )
+        mock_run.return_value = MagicMock(returncode=0, stdout="all good", stderr="")
         cmd = MagicMock(name="check", command="echo ok", timeout_seconds=30)
         cmd.name = "check"
         cmd.command = "echo ok"
@@ -341,9 +358,9 @@ class TestConfigLoading:
         assert cfg.agent.name == "vcs_static_checker"
         assert cfg.agent.type == "static_checker"
         assert cfg.agent.pre_commands is not None
-        assert len(cfg.agent.pre_commands) == 3
-        assert cfg.agent.pre_commands[0].name == "py_compile_all"
-        assert cfg.agent.pre_commands[1].name == "ruff_lint"
+        assert len(cfg.agent.pre_commands) == 5
+        assert cfg.agent.pre_commands[0].name == "validate_workspace"
+        assert cfg.agent.pre_commands[1].name == "py_compile_all"
         assert cfg.agent.tools is None  # static_checker has no tools key
         assert cfg.agent.inference.temperature == 0.1
 
@@ -367,6 +384,8 @@ class TestReExport:
     """Test PreCommand is re-exported from compiler/schemas."""
 
     def test_pre_command_importable_from_compiler_schemas(self) -> None:
-        from temper_ai.storage.schemas.agent_config import PreCommand as ReExportedPreCommand
+        from temper_ai.storage.schemas.agent_config import (
+            PreCommand as ReExportedPreCommand,
+        )
 
         assert ReExportedPreCommand is PreCommand

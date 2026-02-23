@@ -2,7 +2,7 @@
 
 Tests Tavily web search with mocked HTTP responses.
 """
-import time
+
 from unittest.mock import MagicMock, Mock, patch
 
 import httpx
@@ -11,10 +11,10 @@ from pydantic import ValidationError
 
 from temper_ai.tools.tavily_search import TavilySearch, TavilySearchParams
 
-
 # ---------------------------------------------------------------------------
 # TavilySearchParams validation
 # ---------------------------------------------------------------------------
+
 
 class TestTavilySearchParams:
     """Test parameter validation via the Pydantic model."""
@@ -80,6 +80,7 @@ class TestTavilySearchParams:
 # TavilySearch metadata
 # ---------------------------------------------------------------------------
 
+
 class TestTavilySearchMetadata:
     """Test tool metadata."""
 
@@ -132,6 +133,7 @@ class TestTavilySearchMetadata:
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def mock_httpx_client():
     """Create a mock httpx.Client for testing."""
@@ -172,6 +174,7 @@ def _make_tavily_response(results=None, query="test query"):
 # API key validation
 # ---------------------------------------------------------------------------
 
+
 class TestApiKeyValidation:
     """Test API key handling."""
 
@@ -203,6 +206,7 @@ class TestApiKeyValidation:
 # ---------------------------------------------------------------------------
 # Successful execution
 # ---------------------------------------------------------------------------
+
 
 class TestSuccessfulExecution:
     """Test successful search execution with mocked httpx."""
@@ -277,7 +281,11 @@ class TestSuccessfulExecution:
         mock_response.json.return_value = {
             "query": "test",
             "results": [
-                {"title": "No Score", "url": "https://example.com", "content": "snippet"},
+                {
+                    "title": "No Score",
+                    "url": "https://example.com",
+                    "content": "snippet",
+                },
             ],
         }
         mock_httpx_client.post.return_value = mock_response
@@ -321,6 +329,7 @@ class TestSuccessfulExecution:
 # ---------------------------------------------------------------------------
 # Error handling
 # ---------------------------------------------------------------------------
+
 
 class TestErrorHandling:
     """Test error handling for API failures."""
@@ -438,6 +447,7 @@ class TestErrorHandling:
 # Rate limiting
 # ---------------------------------------------------------------------------
 
+
 class TestRateLimiting:
     """Test rate limiting."""
 
@@ -477,6 +487,7 @@ class TestRateLimiting:
 # Client lifecycle
 # ---------------------------------------------------------------------------
 
+
 class TestClientLifecycle:
     """Test httpx client management."""
 
@@ -501,6 +512,7 @@ class TestClientLifecycle:
         tool._get_client()
         # Should not raise during cleanup
         tool.__del__()
+        assert tool._client is None  # client cleaned up after __del__
 
     def test_custom_base_url(self):
         """Test that custom base_url from config is used."""

@@ -1,9 +1,11 @@
 """MCP configuration schemas."""
-from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
-from temper_ai.mcp.constants import MCP_DEFAULT_CALL_TIMEOUT, MCP_DEFAULT_CONNECT_TIMEOUT
+from temper_ai.mcp.constants import (
+    MCP_DEFAULT_CALL_TIMEOUT,
+    MCP_DEFAULT_CONNECT_TIMEOUT,
+)
 
 
 class MCPServerConfig(BaseModel):
@@ -14,23 +16,23 @@ class MCPServerConfig(BaseModel):
     """
 
     name: str = Field(description="Unique server identifier")
-    namespace: Optional[str] = Field(
+    namespace: str | None = Field(
         default=None,
         description="Tool namespace prefix (defaults to name)",
     )
-    command: Optional[str] = Field(
+    command: str | None = Field(
         default=None,
         description="Executable for stdio transport",
     )
-    args: List[str] = Field(
+    args: list[str] = Field(
         default_factory=list,
         description="Arguments for the stdio command",
     )
-    url: Optional[str] = Field(
+    url: str | None = Field(
         default=None,
         description="URL for HTTP/SSE transport",
     )
-    env: Dict[str, str] = Field(
+    env: dict[str, str] = Field(
         default_factory=dict,
         description="Extra environment variables for the server process",
     )

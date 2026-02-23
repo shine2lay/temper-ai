@@ -4,6 +4,7 @@ Concurrent execution safety tests.
 Tests for concurrent workflow execution, multi-agent safety,
 and async resource management.
 """
+
 import asyncio
 import tempfile
 from pathlib import Path
@@ -45,10 +46,12 @@ class TestConcurrentWorkflowExecution:
         assert len(workflow_states) == 20, "All workflows should complete"
 
         for workflow_id, state in workflow_states.items():
-            assert state["counter"] == 10, \
-                f"{workflow_id} has incorrect counter: {state['counter']}"
-            assert state["id"] == workflow_id, \
-                f"{workflow_id} has incorrect ID: {state['id']}"
+            assert (
+                state["counter"] == 10
+            ), f"{workflow_id} has incorrect counter: {state['counter']}"
+            assert (
+                state["id"] == workflow_id
+            ), f"{workflow_id} has incorrect ID: {state['id']}"
 
     @pytest.mark.asyncio
     async def test_concurrent_workflow_resource_contention(self):
@@ -81,8 +84,9 @@ class TestConcurrentWorkflowExecution:
         await asyncio.gather(*tasks)
 
         # Verify resource was updated correctly
-        assert shared_resource["value"] == 10, \
-            f"Expected 10, got {shared_resource['value']}"
+        assert (
+            shared_resource["value"] == 10
+        ), f"Expected 10, got {shared_resource['value']}"
 
         # Verify all accesses were serialized (no interleaving)
         # Each workflow should have read_N followed by write_N+1
@@ -113,10 +117,7 @@ class TestConcurrentWorkflowExecution:
                 raise
 
         # Start 10 workflows
-        tasks = [
-            asyncio.create_task(cancellable_workflow(i))
-            for i in range(10)
-        ]
+        tasks = [asyncio.create_task(cancellable_workflow(i)) for i in range(10)]
 
         # Let them start
         await asyncio.sleep(0.01)
@@ -129,12 +130,14 @@ class TestConcurrentWorkflowExecution:
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         # Verify 5 were cancelled
-        assert cancelled["count"] == 5, \
-            f"Expected 5 cancelled, got {cancelled['count']}"
+        assert (
+            cancelled["count"] == 5
+        ), f"Expected 5 cancelled, got {cancelled['count']}"
 
         # Verify 5 completed normally
-        assert completed["count"] == 5, \
-            f"Expected 5 completed, got {completed['count']}"
+        assert (
+            completed["count"] == 5
+        ), f"Expected 5 completed, got {completed['count']}"
 
     @pytest.mark.asyncio
     async def test_concurrent_workflow_exception_isolation(self):
@@ -165,10 +168,10 @@ class TestConcurrentWorkflowExecution:
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         # Verify 5 succeeded and 5 failed
-        assert successful["count"] == 5, \
-            f"Expected 5 successful, got {successful['count']}"
-        assert failed["count"] == 5, \
-            f"Expected 5 failed, got {failed['count']}"
+        assert (
+            successful["count"] == 5
+        ), f"Expected 5 successful, got {successful['count']}"
+        assert failed["count"] == 5, f"Expected 5 failed, got {failed['count']}"
 
         # Verify correct results
         exceptions = [r for r in results if isinstance(r, Exception)]
@@ -198,10 +201,7 @@ class TestMultiAgentSafety:
             while True:
                 try:
                     # Get task with timeout
-                    task_id = await asyncio.wait_for(
-                        tasks_queue.get(),
-                        timeout=0.1
-                    )
+                    task_id = await asyncio.wait_for(tasks_queue.get(), timeout=0.1)
 
                     # Process task
                     await asyncio.sleep(0.001)
@@ -214,7 +214,7 @@ class TestMultiAgentSafety:
 
                     tasks_queue.task_done()
 
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     # No more tasks
                     break
 
@@ -223,8 +223,9 @@ class TestMultiAgentSafety:
         await asyncio.gather(*agents)
 
         # Verify all 100 tasks were processed exactly once
-        assert len(processed_tasks) == 100, \
-            f"Expected 100 tasks processed, got {len(processed_tasks)}"
+        assert (
+            len(processed_tasks) == 100
+        ), f"Expected 100 tasks processed, got {len(processed_tasks)}"
 
     @pytest.mark.asyncio
     async def test_multi_agent_coordinator_pattern(self):
@@ -249,10 +250,7 @@ class TestMultiAgentSafety:
                 """Worker that processes items."""
                 while True:
                     try:
-                        item = await asyncio.wait_for(
-                            work_queue.get(),
-                            timeout=0.1
-                        )
+                        item = await asyncio.wait_for(work_queue.get(), timeout=0.1)
 
                         # Process item (double the value)
                         result = item * 2
@@ -264,7 +262,7 @@ class TestMultiAgentSafety:
 
                         work_queue.task_done()
 
-                    except asyncio.TimeoutError:
+                    except TimeoutError:
                         break
 
             # Start workers
@@ -310,8 +308,9 @@ class TestMultiAgentSafety:
             after_barrier["count"] += 1
 
             # Verify all agents reached barrier before any proceeded
-            assert current_before <= num_agents, \
-                f"Agent {agent_id} saw {current_before} at barrier"
+            assert (
+                current_before <= num_agents
+            ), f"Agent {agent_id} saw {current_before} at barrier"
 
         # Run all agents
         agents = [agent_with_barrier(i) for i in range(num_agents)]
@@ -353,8 +352,7 @@ class TestAsyncResourceManagement:
                     active_connections["count"] += 1
                     total_acquired["count"] += 1
                     max_concurrent["count"] = max(
-                        max_concurrent["count"],
-                        active_connections["count"]
+                        max_concurrent["count"], active_connections["count"]
                     )
 
             async def release(self):
@@ -380,16 +378,19 @@ class TestAsyncResourceManagement:
         await asyncio.gather(*tasks)
 
         # Verify pool size was never exceeded
-        assert max_concurrent["count"] <= pool_size, \
-            f"Pool size exceeded! Max concurrent: {max_concurrent['count']}"
+        assert (
+            max_concurrent["count"] <= pool_size
+        ), f"Pool size exceeded! Max concurrent: {max_concurrent['count']}"
 
         # Verify all connections were released
-        assert active_connections["count"] == 0, \
-            f"Connections leaked! {active_connections['count']} still active"
+        assert (
+            active_connections["count"] == 0
+        ), f"Connections leaked! {active_connections['count']} still active"
 
         # Verify all tasks acquired connections
-        assert total_acquired["count"] == 20, \
-            f"Expected 20 acquisitions, got {total_acquired['count']}"
+        assert (
+            total_acquired["count"] == 20
+        ), f"Expected 20 acquisitions, got {total_acquired['count']}"
 
     @pytest.mark.asyncio
     async def test_async_file_handle_cleanup(self):

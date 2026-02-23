@@ -4,24 +4,19 @@ Tests for LLM response caching.
 Tests cover:
 - Cache key generation
 - In-memory cache backend
-- Redis cache backend (mocked)
 - Cache hit/miss statistics
 - TTL expiration
 - LRU eviction
 - Thread safety
 - Integration with LLM providers
 """
+
 import time
-from importlib.util import find_spec
 from threading import Thread
-from unittest.mock import MagicMock, patch
 
 import pytest
 
-from temper_ai.llm.cache.llm_cache import CacheStats, InMemoryCache, LLMCache, RedisCache
-
-# Check if redis is available
-REDIS_AVAILABLE = find_spec("redis") is not None
+from temper_ai.llm.cache.llm_cache import CacheStats, InMemoryCache, LLMCache
 
 
 class TestCacheKeyGeneration:
@@ -36,14 +31,14 @@ class TestCacheKeyGeneration:
             prompt="Hello world",
             temperature=0.7,
             max_tokens=2048,
-            tenant_id="test_tenant"
+            tenant_id="test_tenant",
         )
         key2 = cache.generate_key(
             model="gpt-4",
             prompt="Hello world",
             temperature=0.7,
             max_tokens=2048,
-            tenant_id="test_tenant"
+            tenant_id="test_tenant",
         )
 
         assert key1 == key2
@@ -61,8 +56,12 @@ class TestCacheKeyGeneration:
         """Test that different temperatures produce different keys."""
         cache = LLMCache()
 
-        key1 = cache.generate_key(model="gpt-4", prompt="Hello", temperature=0.7, tenant_id="test")
-        key2 = cache.generate_key(model="gpt-4", prompt="Hello", temperature=0.9, tenant_id="test")
+        key1 = cache.generate_key(
+            model="gpt-4", prompt="Hello", temperature=0.7, tenant_id="test"
+        )
+        key2 = cache.generate_key(
+            model="gpt-4", prompt="Hello", temperature=0.9, tenant_id="test"
+        )
 
         assert key1 != key2
 
@@ -71,7 +70,9 @@ class TestCacheKeyGeneration:
         cache = LLMCache()
 
         key1 = cache.generate_key(model="gpt-4", prompt="Hello", tenant_id="test")
-        key2 = cache.generate_key(model="gpt-3.5-turbo", prompt="Hello", tenant_id="test")
+        key2 = cache.generate_key(
+            model="gpt-3.5-turbo", prompt="Hello", tenant_id="test"
+        )
 
         assert key1 != key2
 
@@ -79,8 +80,12 @@ class TestCacheKeyGeneration:
         """Test that additional kwargs are included in key."""
         cache = LLMCache()
 
-        key1 = cache.generate_key(model="gpt-4", prompt="Hello", top_p=0.9, tenant_id="test")
-        key2 = cache.generate_key(model="gpt-4", prompt="Hello", top_p=0.95, tenant_id="test")
+        key1 = cache.generate_key(
+            model="gpt-4", prompt="Hello", top_p=0.9, tenant_id="test"
+        )
+        key2 = cache.generate_key(
+            model="gpt-4", prompt="Hello", top_p=0.95, tenant_id="test"
+        )
 
         assert key1 != key2
 
@@ -93,7 +98,7 @@ class TestCacheKeyGeneration:
         # Should be 64 characters (256 bits / 4 bits per hex char)
         assert len(key) == 64
         # Should be valid hex
-        assert all(c in '0123456789abcdef' for c in key)
+        assert all(c in "0123456789abcdef" for c in key)
 
 
 class TestInMemoryCache:
@@ -203,9 +208,9 @@ class TestInMemoryCache:
 
         stats = cache.get_stats()
 
-        assert stats['size'] == 2
-        assert stats['max_size'] == 5
-        assert stats['evictions'] == 0
+        assert stats["size"] == 2
+        assert stats["max_size"] == 5
+        assert stats["evictions"] == 0
 
     def test_expired_cleanup_prevents_memory_leak(self):
         """
@@ -251,7 +256,7 @@ class TestInMemoryCache:
         stats = cache.get_stats(cleanup_expired=True)
 
         # Verify cleanup happened
-        assert stats['expired_cleaned'] == 2  # expired2 and expired3 cleaned
+        assert stats["expired_cleaned"] == 2  # expired2 and expired3 cleaned
         assert len(cache._cache) == 1  # Only persistent remains
         assert len(cache._access_order) == 1  # CRITICAL: access_order also cleaned
         assert "expired2" not in cache._access_order
@@ -306,93 +311,9 @@ class TestInMemoryCache:
         stats = cache.get_stats(cleanup_expired=False)
 
         # Should not have cleaned anything
-        assert stats['expired_cleaned'] == 0
+        assert stats["expired_cleaned"] == 0
         # Expired entry still in cache (not accessed)
         assert "expired" in cache._cache
-
-
-@pytest.mark.skipif(not REDIS_AVAILABLE, reason="redis package not installed")
-class TestRedisCache:
-    """Tests for Redis cache backend."""
-
-    @patch('redis.Redis')
-    def test_redis_connection(self, mock_redis_class):
-        """Test Redis connection initialization."""
-        mock_client = MagicMock()
-        mock_redis_class.return_value = mock_client
-        mock_client.ping.return_value = True
-
-        cache = RedisCache(host="localhost", port=6379)
-
-        mock_redis_class.assert_called_once()
-        mock_client.ping.assert_called_once()
-
-    @patch('redis.Redis')
-    def test_redis_set_get(self, mock_redis_class):
-        """Test Redis set and get operations."""
-        mock_client = MagicMock()
-        mock_redis_class.return_value = mock_client
-        mock_client.ping.return_value = True
-        mock_client.get.return_value = "cached_value"
-
-        cache = RedisCache()
-        cache.set("key1", "value1")
-        result = cache.get("key1")
-
-        mock_client.set.assert_called()
-        mock_client.get.assert_called_with("key1")
-
-    @patch('redis.Redis')
-    def test_redis_ttl(self, mock_redis_class):
-        """Test Redis TTL support."""
-        mock_client = MagicMock()
-        mock_redis_class.return_value = mock_client
-        mock_client.ping.return_value = True
-
-        cache = RedisCache()
-        cache.set("key1", "value1", ttl=3600)
-
-        # Should use setex for TTL
-        mock_client.setex.assert_called_once_with("key1", 3600, "value1")
-
-    @patch('redis.Redis')
-    def test_redis_delete(self, mock_redis_class):
-        """Test Redis delete operation."""
-        mock_client = MagicMock()
-        mock_redis_class.return_value = mock_client
-        mock_client.ping.return_value = True
-        mock_client.delete.return_value = 1
-
-        cache = RedisCache()
-        result = cache.delete("key1")
-
-        assert result is True
-        mock_client.delete.assert_called_with("key1")
-
-    @patch('redis.Redis')
-    def test_redis_clear(self, mock_redis_class):
-        """Test Redis clear operation."""
-        mock_client = MagicMock()
-        mock_redis_class.return_value = mock_client
-        mock_client.ping.return_value = True
-
-        cache = RedisCache()
-        cache.clear()
-
-        mock_client.flushdb.assert_called_once()
-
-    @patch('redis.Redis')
-    @patch('redis.ConnectionError', Exception)
-    def test_redis_connection_error(self, mock_conn_error, mock_redis_class):
-        """Test Redis connection error handling."""
-        mock_client = MagicMock()
-        mock_redis_class.return_value = mock_client
-
-        # Simulate connection error
-        mock_client.ping.side_effect = Exception("Connection refused")
-
-        with pytest.raises(ConnectionError, match="Failed to connect"):
-            RedisCache()
 
 
 class TestLLMCache:
@@ -459,10 +380,10 @@ class TestLLMCache:
 
         stats = cache.get_stats()
 
-        assert stats['hits'] == 1
-        assert stats['misses'] == 2
-        assert stats['writes'] == 1
-        assert stats['hit_rate'] == 1/3
+        assert stats["hits"] == 1
+        assert stats["misses"] == 2
+        assert stats["writes"] == 1
+        assert stats["hit_rate"] == 1 / 3
 
     def test_reset_stats(self):
         """Test resetting cache statistics."""
@@ -482,26 +403,6 @@ class TestLLMCache:
         """Test that unknown backend raises ValueError."""
         with pytest.raises(ValueError, match="Unknown cache backend"):
             LLMCache(backend="invalid")
-
-    @pytest.mark.skipif(not REDIS_AVAILABLE, reason="redis package not installed")
-    @patch('redis.Redis')
-    def test_redis_backend_initialization(self, mock_redis_class):
-        """Test Redis backend initialization."""
-        mock_client = MagicMock()
-        mock_redis_class.return_value = mock_client
-        mock_client.ping.return_value = True
-
-        cache = LLMCache(
-            backend="redis",
-            redis_config={
-                "host": "localhost",
-                "port": 6379,
-                "db": 1,
-                "password": "secret",
-            },
-        )
-
-        mock_redis_class.assert_called_once()
 
     def test_cache_exists(self):
         """Test checking if key exists in cache."""
@@ -565,12 +466,12 @@ class TestCacheStats:
 
         result = stats.to_dict()
 
-        assert result['hits'] == 10
-        assert result['misses'] == 5
-        assert result['writes'] == 15
-        assert result['errors'] == 1
-        assert result['evictions'] == 2
-        assert result['hit_rate'] == 10/15
+        assert result["hits"] == 10
+        assert result["misses"] == 5
+        assert result["writes"] == 15
+        assert result["errors"] == 1
+        assert result["evictions"] == 2
+        assert result["hit_rate"] == 10 / 15
 
 
 class TestCacheIntegration:
@@ -586,7 +487,7 @@ class TestCacheIntegration:
             prompt="What is the capital of France?",
             temperature=0.7,
             max_tokens=100,
-            tenant_id="test"
+            tenant_id="test",
         )
 
         result1 = cache.get(key1)
@@ -606,7 +507,7 @@ class TestCacheIntegration:
             prompt="What is the capital of Germany?",
             temperature=0.7,
             max_tokens=100,
-            tenant_id="test"
+            tenant_id="test",
         )
 
         result3 = cache.get(key2)
@@ -614,9 +515,9 @@ class TestCacheIntegration:
 
         # Check stats
         stats = cache.get_stats()
-        assert stats['hits'] == 1
-        assert stats['misses'] == 2
-        assert stats['writes'] == 1
+        assert stats["hits"] == 1
+        assert stats["misses"] == 2
+        assert stats["writes"] == 1
 
     def test_concurrent_cache_access(self):
         """Test concurrent access to cache."""
@@ -628,7 +529,7 @@ class TestCacheIntegration:
                     model=f"model-{thread_id}",
                     prompt=f"prompt-{i}",
                     temperature=0.7,
-                    tenant_id=f"tenant-{thread_id}"
+                    tenant_id=f"tenant-{thread_id}",
                 )
                 cache.set(key, f"response-{thread_id}-{i}")
                 result = cache.get(key)
@@ -661,7 +562,9 @@ class TestCacheIntegration:
         """Test caching large responses."""
         cache = LLMCache(backend="memory")
 
-        key = cache.generate_key(model="gpt-4", prompt="Write a long essay", tenant_id="test")
+        key = cache.generate_key(
+            model="gpt-4", prompt="Write a long essay", tenant_id="test"
+        )
 
         # Large response (10KB)
         large_response = "A" * 10240
@@ -689,7 +592,7 @@ class TestMultiTenantCacheSecurity:
             prompt="Hello world",  # IDENTICAL prompt
             temperature=0.7,
             tenant_id="tenant_a",
-            user_id="user_123"
+            user_id="user_123",
         )
 
         key_tenant_b = cache.generate_key(
@@ -697,7 +600,7 @@ class TestMultiTenantCacheSecurity:
             prompt="Hello world",  # IDENTICAL prompt
             temperature=0.7,
             tenant_id="tenant_b",  # DIFFERENT tenant
-            user_id="user_123"
+            user_id="user_123",
         )
 
         # SECURITY: Different tenants must have different keys
@@ -708,17 +611,14 @@ class TestMultiTenantCacheSecurity:
         cache = LLMCache()
 
         key_user_a = cache.generate_key(
-            model="gpt-4",
-            prompt="Hello",
-            tenant_id="acme_corp",
-            user_id="user_1"
+            model="gpt-4", prompt="Hello", tenant_id="acme_corp", user_id="user_1"
         )
 
         key_user_b = cache.generate_key(
             model="gpt-4",
             prompt="Hello",  # IDENTICAL prompt
             tenant_id="acme_corp",  # SAME tenant
-            user_id="user_2"  # DIFFERENT user
+            user_id="user_2",  # DIFFERENT user
         )
 
         # SECURITY: Different users must have different keys
@@ -733,7 +633,7 @@ class TestMultiTenantCacheSecurity:
             model="gpt-4",
             prompt="Summarize patient data",
             tenant_id="hospital_a",
-            user_id="doctor_1"
+            user_id="doctor_1",
         )
         cache.set(key_a, "SENSITIVE: Patient John Doe, SSN 123-45-6789")
 
@@ -742,7 +642,7 @@ class TestMultiTenantCacheSecurity:
             model="gpt-4",
             prompt="Summarize patient data",  # IDENTICAL
             tenant_id="hospital_b",  # DIFFERENT tenant
-            user_id="doctor_2"
+            user_id="doctor_2",
         )
         cached_b = cache.get(key_b)
 
@@ -753,11 +653,13 @@ class TestMultiTenantCacheSecurity:
         """Test that missing user/tenant context raises security error."""
         cache = LLMCache()
 
-        with pytest.raises(ValueError, match="requires user_id or tenant_id for security"):
+        with pytest.raises(
+            ValueError, match="requires user_id or tenant_id for security"
+        ):
             cache.generate_key(
                 model="gpt-4",
                 prompt="Hello",
-                temperature=0.7
+                temperature=0.7,
                 # Missing user_id and tenant_id
             )
 
@@ -770,7 +672,7 @@ class TestMultiTenantCacheSecurity:
             prompt="Continue conversation",
             tenant_id="acme",
             user_id="user_1",
-            session_id="session_abc"
+            session_id="session_abc",
         )
 
         key_session_2 = cache.generate_key(
@@ -778,7 +680,7 @@ class TestMultiTenantCacheSecurity:
             prompt="Continue conversation",  # IDENTICAL
             tenant_id="acme",
             user_id="user_1",
-            session_id="session_xyz"  # DIFFERENT session
+            session_id="session_xyz",  # DIFFERENT session
         )
 
         # SECURITY: Different sessions must have different keys
@@ -792,7 +694,7 @@ class TestMultiTenantCacheSecurity:
         key = cache.generate_key(
             model="gpt-4",
             prompt="Test",
-            tenant_id="tenant_a"
+            tenant_id="tenant_a",
             # No user_id - should still work
         )
 
@@ -807,7 +709,7 @@ class TestMultiTenantCacheSecurity:
         key = cache.generate_key(
             model="gpt-4",
             prompt="Test",
-            user_id="user_123"
+            user_id="user_123",
             # No tenant_id - should still work
         )
 
@@ -824,7 +726,7 @@ class TestMultiTenantCacheSecurity:
             temperature=0.7,
             tenant_id="acme",
             user_id="user_1",
-            session_id="session_abc"
+            session_id="session_abc",
         )
 
         key2 = cache.generate_key(
@@ -833,7 +735,7 @@ class TestMultiTenantCacheSecurity:
             temperature=0.7,
             tenant_id="acme",
             user_id="user_1",
-            session_id="session_abc"
+            session_id="session_abc",
         )
 
         # Idempotent: Same context = same key
@@ -845,17 +747,14 @@ class TestMultiTenantCacheSecurity:
 
         # Generate key with security context
         key_with_context = cache.generate_key(
-            model="gpt-4",
-            prompt="Test",
-            tenant_id="acme",
-            user_id="user_1"
+            model="gpt-4", prompt="Test", tenant_id="acme", user_id="user_1"
         )
 
         # Try to generate hash without security context (should fail)
         with pytest.raises(ValueError, match="requires user_id or tenant_id"):
             cache.generate_key(
                 model="gpt-4",
-                prompt="Test"
+                prompt="Test",
                 # Missing tenant_id and user_id
             )
 
@@ -870,10 +769,7 @@ class TestMultiTenantCacheSecurity:
         keys = []
         for tenant in tenants:
             key = cache.generate_key(
-                model="gpt-4",
-                prompt=prompt,
-                tenant_id=tenant,
-                user_id=f"user_{tenant}"
+                model="gpt-4", prompt=prompt, tenant_id=tenant, user_id=f"user_{tenant}"
             )
             keys.append(key)
 
@@ -928,7 +824,7 @@ class TestCacheKeySecurityValidation:
                 model="gpt-4",
                 prompt="Hello",
                 tenant_id="test",
-                **duplicate_kwargs  # Duplicate keyword - Python TypeError
+                **duplicate_kwargs,  # Duplicate keyword - Python TypeError
             )
 
     def test_validation_logic_with_intersection_check(self):
@@ -939,8 +835,15 @@ class TestCacheKeySecurityValidation:
         triggering in normal use).
         """
         # Test the validation logic directly
-        RESERVED_PARAMS = {'model', 'prompt', 'temperature', 'max_tokens',
-                           'user_id', 'tenant_id', 'session_id'}
+        RESERVED_PARAMS = {
+            "model",
+            "prompt",
+            "temperature",
+            "max_tokens",
+            "user_id",
+            "tenant_id",
+            "session_id",
+        }
 
         # Case 1: No conflicts (legitimate kwargs)
         good_kwargs = {"top_p": 0.9, "frequency_penalty": 0.5}
@@ -951,7 +854,7 @@ class TestCacheKeySecurityValidation:
         bad_kwargs = {"top_p": 0.9, "model": "injected"}
         conflicts = RESERVED_PARAMS.intersection(bad_kwargs.keys())
         assert len(conflicts) == 1, "Should detect 'model' conflict"
-        assert 'model' in conflicts
+        assert "model" in conflicts
 
         # Case 3: Multiple conflicts
         worse_kwargs = {"model": "bad", "prompt": "bad", "temperature": 999}
@@ -967,9 +870,9 @@ class TestCacheKeySecurityValidation:
             model="gpt-4",
             prompt="Hello",
             tenant_id="test",
-            top_p=0.9,                    # Legitimate param
-            frequency_penalty=0.5,         # Legitimate param
-            presence_penalty=0.2           # Legitimate param
+            top_p=0.9,  # Legitimate param
+            frequency_penalty=0.5,  # Legitimate param
+            presence_penalty=0.2,  # Legitimate param
         )
 
         assert key is not None
@@ -985,7 +888,7 @@ class TestCacheKeySecurityValidation:
             prompt="Hello",
             tenant_id="test",
             top_p=0.9,
-            frequency_penalty=0.5
+            frequency_penalty=0.5,
         )
 
         key2 = cache.generate_key(
@@ -993,7 +896,7 @@ class TestCacheKeySecurityValidation:
             prompt="Hello",
             tenant_id="test",
             frequency_penalty=0.5,
-            top_p=0.9
+            top_p=0.9,
         )
 
         assert key1 == key2  # Deterministic hashing (sort_keys=True)
@@ -1002,11 +905,7 @@ class TestCacheKeySecurityValidation:
         """Verify that calls without kwargs still work."""
         cache = LLMCache()
 
-        key = cache.generate_key(
-            model="gpt-4",
-            prompt="Hello",
-            tenant_id="test"
-        )
+        key = cache.generate_key(model="gpt-4", prompt="Hello", tenant_id="test")
 
         assert key is not None
         assert len(key) == 64
@@ -1015,15 +914,15 @@ class TestCacheKeySecurityValidation:
         """Document which parameters are reserved and cannot appear in kwargs."""
         # This serves as documentation of the security contract
         RESERVED_PARAMS = {
-            'model',         # LLM model name
-            'prompt',        # Input prompt
-            'temperature',   # Sampling temperature
-            'max_tokens',    # Max response length
-            'user_id',       # User security context
-            'tenant_id',     # Tenant security context
-            'session_id',    # Session security context
-            'security_context',  # Namespace protection
-            'request'        # Namespace protection
+            "model",  # LLM model name
+            "prompt",  # Input prompt
+            "temperature",  # Sampling temperature
+            "max_tokens",  # Max response length
+            "user_id",  # User security context
+            "tenant_id",  # Tenant security context
+            "session_id",  # Session security context
+            "security_context",  # Namespace protection
+            "request",  # Namespace protection
         }
 
         # Verify this matches the validation in the code
@@ -1041,12 +940,14 @@ class TestCacheKeySecurityValidation:
 
         malicious_kwargs = {"security_context": {"tenant_id": "evil"}}
 
-        with pytest.raises(ValueError, match="Cannot override reserved parameters.*security_context"):
+        with pytest.raises(
+            ValueError, match="Cannot override reserved parameters.*security_context"
+        ):
             cache.generate_key(
                 model="gpt-4",
                 prompt="Hello",
                 tenant_id="legitimate",
-                **malicious_kwargs
+                **malicious_kwargs,
             )
 
     def test_prevent_request_injection_via_kwargs(self):
@@ -1055,12 +956,11 @@ class TestCacheKeySecurityValidation:
 
         malicious_kwargs = {"request": {"model": "cheap-model"}}
 
-        with pytest.raises(ValueError, match="Cannot override reserved parameters.*request"):
+        with pytest.raises(
+            ValueError, match="Cannot override reserved parameters.*request"
+        ):
             cache.generate_key(
-                model="gpt-4",
-                prompt="Hello",
-                tenant_id="test",
-                **malicious_kwargs
+                model="gpt-4", prompt="Hello", tenant_id="test", **malicious_kwargs
             )
 
 
@@ -1073,23 +973,19 @@ class TestCacheKeyTypeValidation:
 
         with pytest.raises(TypeError, match="model must be str"):
             cache.generate_key(
-                model=123,  # Invalid: integer
-                prompt="test",
-                tenant_id="test"
+                model=123, prompt="test", tenant_id="test"  # Invalid: integer
             )
 
         with pytest.raises(TypeError, match="model must be str"):
             cache.generate_key(
-                model=None,  # Invalid: None
-                prompt="test",
-                tenant_id="test"
+                model=None, prompt="test", tenant_id="test"  # Invalid: None
             )
 
         with pytest.raises(TypeError, match="model must be str"):
             cache.generate_key(
                 model={"name": "gpt-4"},  # Invalid: dict
                 prompt="test",
-                tenant_id="test"
+                tenant_id="test",
             )
 
     def test_reject_non_string_prompt(self):
@@ -1098,16 +994,14 @@ class TestCacheKeyTypeValidation:
 
         with pytest.raises(TypeError, match="prompt must be str"):
             cache.generate_key(
-                model="gpt-4",
-                prompt=123,  # Invalid: integer
-                tenant_id="test"
+                model="gpt-4", prompt=123, tenant_id="test"  # Invalid: integer
             )
 
         with pytest.raises(TypeError, match="prompt must be str"):
             cache.generate_key(
                 model="gpt-4",
                 prompt=["list", "prompt"],  # Invalid: list
-                tenant_id="test"
+                tenant_id="test",
             )
 
     def test_reject_non_numeric_temperature(self):
@@ -1119,7 +1013,7 @@ class TestCacheKeyTypeValidation:
                 model="gpt-4",
                 prompt="test",
                 temperature="0.7",  # Invalid: string
-                tenant_id="test"
+                tenant_id="test",
             )
 
         with pytest.raises(TypeError, match="temperature must be numeric"):
@@ -1127,7 +1021,7 @@ class TestCacheKeyTypeValidation:
                 model="gpt-4",
                 prompt="test",
                 temperature=None,  # Invalid: None
-                tenant_id="test"
+                tenant_id="test",
             )
 
     def test_reject_non_integer_max_tokens(self):
@@ -1139,7 +1033,7 @@ class TestCacheKeyTypeValidation:
                 model="gpt-4",
                 prompt="test",
                 max_tokens="2048",  # Invalid: string
-                tenant_id="test"
+                tenant_id="test",
             )
 
         with pytest.raises(TypeError, match="max_tokens must be int"):
@@ -1147,7 +1041,7 @@ class TestCacheKeyTypeValidation:
                 model="gpt-4",
                 prompt="test",
                 max_tokens=2048.5,  # Invalid: float
-                tenant_id="test"
+                tenant_id="test",
             )
 
     def test_reject_non_string_user_id(self):
@@ -1159,7 +1053,7 @@ class TestCacheKeyTypeValidation:
                 model="gpt-4",
                 prompt="test",
                 user_id=123,  # Invalid: integer
-                tenant_id="test"
+                tenant_id="test",
             )
 
     def test_reject_non_string_tenant_id(self):
@@ -1168,9 +1062,7 @@ class TestCacheKeyTypeValidation:
 
         with pytest.raises(TypeError, match="tenant_id must be str or None"):
             cache.generate_key(
-                model="gpt-4",
-                prompt="test",
-                tenant_id=123  # Invalid: integer
+                model="gpt-4", prompt="test", tenant_id=123  # Invalid: integer
             )
 
     def test_reject_non_string_session_id(self):
@@ -1182,7 +1074,7 @@ class TestCacheKeyTypeValidation:
                 model="gpt-4",
                 prompt="test",
                 session_id=123,  # Invalid: integer
-                tenant_id="test"
+                tenant_id="test",
             )
 
     def test_accept_valid_types(self):
@@ -1197,7 +1089,7 @@ class TestCacheKeyTypeValidation:
             max_tokens=2048,
             user_id="user123",
             tenant_id="tenant456",
-            session_id="session789"
+            session_id="session789",
         )
 
         assert isinstance(key, str)
@@ -1209,18 +1101,12 @@ class TestCacheKeyTypeValidation:
 
         # Integer temperature
         key1 = cache.generate_key(
-            model="gpt-4",
-            prompt="test",
-            temperature=1,  # int
-            tenant_id="test"
+            model="gpt-4", prompt="test", temperature=1, tenant_id="test"  # int
         )
 
         # Float temperature
         key2 = cache.generate_key(
-            model="gpt-4",
-            prompt="test",
-            temperature=1.0,  # float
-            tenant_id="test"
+            model="gpt-4", prompt="test", temperature=1.0, tenant_id="test"  # float
         )
 
         assert isinstance(key1, str)
@@ -1235,10 +1121,12 @@ class TestCacheKeyTypeValidation:
 
         non_serializable_kwargs = {"custom": CustomObject()}
 
-        with pytest.raises(ValueError, match="Cache key generation failed.*JSON-serializable"):
+        with pytest.raises(
+            ValueError, match="Cache key generation failed.*JSON-serializable"
+        ):
             cache.generate_key(
                 model="gpt-4",
                 prompt="test",
                 tenant_id="test",
-                **non_serializable_kwargs
+                **non_serializable_kwargs,
             )

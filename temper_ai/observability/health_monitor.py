@@ -6,10 +6,14 @@ fires alerts when thresholds are breached.
 
 import logging
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
-from temper_ai.shared.constants.limits import THRESHOLD_LARGE_COUNT, THRESHOLD_MEDIUM_COUNT
+from temper_ai.shared.constants.limits import (
+    THRESHOLD_LARGE_COUNT,
+    THRESHOLD_MEDIUM_COUNT,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -22,8 +26,8 @@ class HealthStatus:
     """Result of an observability health check."""
 
     healthy: bool
-    issues: List[str] = field(default_factory=list)
-    stats: Dict[str, Any] = field(default_factory=dict)
+    issues: list[str] = field(default_factory=list)
+    stats: dict[str, Any] = field(default_factory=dict)
 
 
 class ObservabilityHealthMonitor:
@@ -38,24 +42,24 @@ class ObservabilityHealthMonitor:
 
     def __init__(
         self,
-        buffer: Optional[Any] = None,
-        alert_manager: Optional[Any] = None,
+        buffer: Any | None = None,
+        alert_manager: Any | None = None,
         check_interval: int = DEFAULT_CHECK_INTERVAL_SECONDS,
-        backend: Optional[Any] = None,
-        db_session_factory: Optional[Callable] = None,
+        backend: Any | None = None,
+        db_session_factory: Callable | None = None,
     ):
         self._buffer = buffer
         self._alert_manager = alert_manager
         self._check_interval = check_interval
         self._backend_ref = backend
         self._db_session_factory = db_session_factory
-        self._check_thread: Optional[threading.Thread] = None
+        self._check_thread: threading.Thread | None = None
         self._stop_event = threading.Event()
 
     def check_health(self) -> HealthStatus:
         """Check current health of the observability pipeline."""
-        issues: List[str] = []
-        stats: Dict[str, Any] = {}
+        issues: list[str] = []
+        stats: dict[str, Any] = {}
 
         # DB connectivity check
         if self._db_session_factory is not None:
@@ -116,11 +120,11 @@ class ObservabilityHealthMonitor:
             logger.debug("Health alert failed", exc_info=True)
 
 
-def _check_db_health(db_session_factory: Any) -> List[str]:
+def _check_db_health(db_session_factory: Any) -> list[str]:
     """Check database connectivity. Returns list of issues."""
     import sqlalchemy as sa  # lazy import to avoid top-level dep
 
-    issues: List[str] = []
+    issues: list[str] = []
     try:
         session = db_session_factory()
         try:
@@ -132,9 +136,9 @@ def _check_db_health(db_session_factory: Any) -> List[str]:
     return issues
 
 
-def _check_backend_health(backend: Any) -> List[str]:
+def _check_backend_health(backend: Any) -> list[str]:
     """Check backend responsiveness. Returns list of issues."""
-    issues: List[str] = []
+    issues: list[str] = []
     try:
         if hasattr(backend, "get_stats"):
             backend.get_stats()
@@ -160,26 +164,34 @@ def _format_threshold_warning(
     return f"{severity}: {label} ({value}) exceeds {threshold}"
 
 
-def _evaluate_thresholds(stats: Dict[str, Any]) -> List[str]:
+def _evaluate_thresholds(stats: dict[str, Any]) -> list[str]:
     """Evaluate buffer stats against health thresholds."""
-    issues: List[str] = []
+    issues: list[str] = []
 
     dlq_size = stats.get("dlq_size", 0)
     if dlq_size > THRESHOLD_LARGE_COUNT:
         issues.append(
-            _format_threshold_warning("DLQ size", dlq_size, THRESHOLD_LARGE_COUNT, "CRITICAL")
+            _format_threshold_warning(
+                "DLQ size", dlq_size, THRESHOLD_LARGE_COUNT, "CRITICAL"
+            )
         )
     elif dlq_size > THRESHOLD_MEDIUM_COUNT:
-        issues.append(_format_threshold_warning("DLQ size", dlq_size, THRESHOLD_MEDIUM_COUNT))
+        issues.append(
+            _format_threshold_warning("DLQ size", dlq_size, THRESHOLD_MEDIUM_COUNT)
+        )
 
     retry_size = stats.get("retry_queue_size", 0)
     if retry_size > THRESHOLD_MEDIUM_COUNT:
-        issues.append(_format_threshold_warning("Retry queue", retry_size, THRESHOLD_MEDIUM_COUNT))
+        issues.append(
+            _format_threshold_warning("Retry queue", retry_size, THRESHOLD_MEDIUM_COUNT)
+        )
 
     pending_count = stats.get("pending_ids", 0)
     if pending_count > THRESHOLD_LARGE_COUNT:
         issues.append(
-            _format_threshold_warning("Pending IDs", pending_count, THRESHOLD_LARGE_COUNT)
+            _format_threshold_warning(
+                "Pending IDs", pending_count, THRESHOLD_LARGE_COUNT
+            )
         )
 
     return issues

@@ -355,7 +355,7 @@ registry.register_policy(MyCustomPolicy())  # Applies to all actions
 ### Step 7: Configure in YAML
 
 ```yaml
-# config/safety/action_policies.yaml
+# configs/safety/action_policies.yaml
 
 policy_mappings:
   custom_action:

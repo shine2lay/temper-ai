@@ -1,6 +1,7 @@
 """
 Tests for tool registry.
 """
+
 import pytest
 
 from temper_ai.tools.base import BaseTool, ToolMetadata, ToolResult
@@ -9,6 +10,7 @@ from temper_ai.tools.registry import ToolRegistry, ToolRegistryError
 # ============================================
 # MOCK TOOLS FOR TESTING
 # ============================================
+
 
 class MockCalculator(BaseTool):
     """Mock calculator tool for testing."""
@@ -22,7 +24,7 @@ class MockCalculator(BaseTool):
             name="calculator",
             description="Performs basic math operations",
             version="1.0",
-            category="utility"
+            category="utility",
         )
 
     def get_parameters_schema(self) -> dict:
@@ -32,18 +34,12 @@ class MockCalculator(BaseTool):
                 "operation": {
                     "type": "string",
                     "description": "Math operation: add, subtract, multiply, divide",
-                    "enum": ["add", "subtract", "multiply", "divide"]
+                    "enum": ["add", "subtract", "multiply", "divide"],
                 },
-                "a": {
-                    "type": "number",
-                    "description": "First number"
-                },
-                "b": {
-                    "type": "number",
-                    "description": "Second number"
-                }
+                "a": {"type": "number", "description": "First number"},
+                "b": {"type": "number", "description": "Second number"},
             },
-            "required": ["operation", "a", "b"]
+            "required": ["operation", "a", "b"],
         }
 
     def execute(self, **kwargs) -> ToolResult:
@@ -55,26 +51,17 @@ class MockCalculator(BaseTool):
             "add": a + b,
             "subtract": a - b,
             "multiply": a * b,
-            "divide": a / b if b != 0 else None
+            "divide": a / b if b != 0 else None,
         }
 
         if operation not in operations:
-            return ToolResult(
-                success=False,
-                error=f"Unknown operation: {operation}"
-            )
+            return ToolResult(success=False, error=f"Unknown operation: {operation}")
 
         result = operations[operation]
         if result is None:
-            return ToolResult(
-                success=False,
-                error="Division by zero"
-            )
+            return ToolResult(success=False, error="Division by zero")
 
-        return ToolResult(
-            success=True,
-            result=result
-        )
+        return ToolResult(success=True, result=result)
 
 
 class MockWebScraper(BaseTool):
@@ -90,24 +77,21 @@ class MockWebScraper(BaseTool):
             description="Scrapes web pages",
             version="1.0",
             category="web",
-            requires_network=True
+            requires_network=True,
         )
 
     def get_parameters_schema(self) -> dict:
         return {
             "type": "object",
             "properties": {
-                "url": {
-                    "type": "string",
-                    "description": "URL to scrape"
-                },
+                "url": {"type": "string", "description": "URL to scrape"},
                 "max_pages": {
                     "type": "integer",
                     "description": "Maximum pages to scrape",
-                    "default": 1
-                }
+                    "default": 1,
+                },
             },
-            "required": ["url"]
+            "required": ["url"],
         }
 
     def execute(self, **kwargs) -> ToolResult:
@@ -119,19 +103,21 @@ class MockWebScraper(BaseTool):
             result={
                 "url": url,
                 "pages_scraped": max_pages,
-                "content": f"Mock content from {url}"
-            }
+                "content": f"Mock content from {url}",
+            },
         )
 
 
 class InvalidTool:
     """Invalid tool that doesn't inherit from BaseTool."""
+
     pass
 
 
 # ============================================
 # REGISTRY TESTS
 # ============================================
+
 
 class TestToolRegistry:
     """Tests for ToolRegistry class."""
@@ -326,6 +312,9 @@ class TestToolRegistry:
 
     def test_auto_discover_empty(self):
         """Test auto-discover with no tools."""
+        from temper_ai.tools.registry import clear_global_cache
+
+        clear_global_cache()
         registry = ToolRegistry()
         count = registry.auto_discover("nonexistent.package")
         assert count == 0
@@ -371,12 +360,7 @@ class TestToolParameterValidation:
     def test_unknown_parameter(self):
         """Test validation with unknown parameter."""
         calc = MockCalculator()
-        params = {
-            "operation": "add",
-            "a": 5,
-            "b": 3,
-            "unknown": "value"
-        }
+        params = {"operation": "add", "a": 5, "b": 3, "unknown": "value"}
         result = calc.validate_params(params)
         assert result.valid is False
         assert len(result.errors) > 0
@@ -384,11 +368,7 @@ class TestToolParameterValidation:
     def test_wrong_type(self):
         """Test validation with wrong parameter type."""
         calc = MockCalculator()
-        params = {
-            "operation": "add",
-            "a": "not_a_number",  # Should be number
-            "b": 3
-        }
+        params = {"operation": "add", "a": "not_a_number", "b": 3}  # Should be number
         result = calc.validate_params(params)
         assert result.valid is False
         assert len(result.errors) > 0
@@ -468,11 +448,15 @@ class TestEnhancedAutoDiscovery:
 
         class IncompleteTool(BaseTool):
             """Tool missing execute method."""
+
             def get_metadata(self):
-                return ToolMetadata(name="incomplete", description="Test", version="1.0")
+                return ToolMetadata(
+                    name="incomplete", description="Test", version="1.0"
+                )
 
             def get_parameters_schema(self):
                 return {"type": "object", "properties": {}}
+
             # Missing execute() method
 
         is_valid, errors = registry._validate_tool_interface(IncompleteTool)
@@ -574,7 +558,13 @@ class TestEnhancedAutoDiscovery:
     def test_auto_discover_logs_success(self, caplog):
         """Test that auto-discover logs successful tool loading."""
         import logging
+
+        from temper_ai.tools.registry import clear_global_cache
+
         caplog.set_level(logging.INFO)
+
+        # Clear global cache so previous discovery results don't interfere
+        clear_global_cache()
 
         # Create a temporary module structure with a valid tool
         # For this test, we'll just verify the registry doesn't crash
@@ -628,7 +618,7 @@ class TestToolVersioning:
             name="calculator",
             description="Calculator v1",
             version="1.0",
-            category="utility"
+            category="utility",
         )
 
         # Create calculator v2.0
@@ -637,7 +627,7 @@ class TestToolVersioning:
             name="calculator",
             description="Calculator v2",
             version="2.0",
-            category="utility"
+            category="utility",
         )
 
         # Register both versions
@@ -658,7 +648,7 @@ class TestToolVersioning:
             name="calculator",
             description="Calculator v1",
             version="1.0",
-            category="utility"
+            category="utility",
         )
 
         calc_v2 = MockCalculator()
@@ -666,7 +656,7 @@ class TestToolVersioning:
             name="calculator",
             description="Calculator v2",
             version="2.0",
-            category="utility"
+            category="utility",
         )
 
         registry.register(calc_v1)
@@ -687,7 +677,7 @@ class TestToolVersioning:
             name="calculator",
             description="Calculator v1",
             version="1.0",
-            category="utility"
+            category="utility",
         )
 
         calc_v2 = MockCalculator()
@@ -695,7 +685,7 @@ class TestToolVersioning:
             name="calculator",
             description="Calculator v2",
             version="2.0",
-            category="utility"
+            category="utility",
         )
 
         registry.register(calc_v1)
@@ -749,7 +739,7 @@ class TestToolVersioning:
                 name="calculator",
                 description=f"Calculator v{v}",
                 version=v,
-                category="utility"
+                category="utility",
             )
             registry.register(calc)
 
@@ -770,7 +760,7 @@ class TestToolVersioning:
             name="calculator",
             description="Calculator v1",
             version="1.0",
-            category="utility"
+            category="utility",
         )
 
         calc_v2 = MockCalculator()
@@ -778,7 +768,7 @@ class TestToolVersioning:
             name="calculator",
             description="Calculator v2",
             version="2.0",
-            category="utility"
+            category="utility",
         )
 
         registry.register(calc_v1)
@@ -802,7 +792,7 @@ class TestToolVersioning:
                 name="calculator",
                 description=f"Calculator v{v}",
                 version=v,
-                category="utility"
+                category="utility",
             )
             registry.register(calc)
 
@@ -822,7 +812,7 @@ class TestToolVersioning:
             name="calculator",
             description="Calculator v1",
             version="1.0",
-            category="utility"
+            category="utility",
         )
 
         registry.register(calc_v1)
@@ -843,7 +833,7 @@ class TestToolVersioning:
                 name="calculator",
                 description=f"Calculator v{v}",
                 version=v,
-                category="utility"
+                category="utility",
             )
             registry.register(calc)
 
@@ -872,10 +862,7 @@ class TestToolVersioning:
                 if tool_name == "calculator":
                     tool = MockCalculator()
                     tool.get_metadata = lambda n=tool_name, v=version: ToolMetadata(
-                        name=n,
-                        description=f"{n} v{v}",
-                        version=v,
-                        category="utility"
+                        name=n, description=f"{n} v{v}", version=v, category="utility"
                     )
                 else:
                     tool = MockWebScraper()
@@ -884,7 +871,7 @@ class TestToolVersioning:
                         description=f"{n} v{v}",
                         version=v,
                         category="web",
-                        requires_network=True
+                        requires_network=True,
                     )
                 registry.register(tool)
 
@@ -902,7 +889,7 @@ class TestToolVersioning:
                 name="calculator",
                 description="Calculator",
                 version=v,
-                category="utility"
+                category="utility",
             )
             registry.register(calc)
 
@@ -921,6 +908,7 @@ class TestRegistryEdgeCases:
     def test_unregister_specific_version_not_found(self):
         """Test unregistering a version that doesn't exist."""
         from temper_ai.shared.utils.exceptions import ToolRegistryError
+
         registry = ToolRegistry()
         calc = MockCalculator()
         registry.register(calc)
@@ -949,13 +937,13 @@ class TestRegistryEdgeCases:
         versions = registry.list_tool_versions("nonexistent")
         assert versions == []
 
+    @pytest.mark.timeout(30)
     def test_global_registry_singleton(self):
         """Test that get_global_registry returns same instance."""
-        from temper_ai.tools.registry import get_global_registry, clear_global_cache, _GLOBAL_LOCK
+        from temper_ai.tools.registry import clear_global_cache, get_global_registry
 
         # Clear first to ensure clean state
-        with _GLOBAL_LOCK:
-            clear_global_cache()
+        clear_global_cache()
 
         # Get registry twice
         registry1 = get_global_registry()
@@ -965,22 +953,20 @@ class TestRegistryEdgeCases:
         assert registry1 is registry2
 
         # Cleanup
-        with _GLOBAL_LOCK:
-            clear_global_cache()
+        clear_global_cache()
 
+    @pytest.mark.timeout(30)
     def test_clear_global_cache(self):
         """Test clearing global cache and registry."""
-        from temper_ai.tools.registry import get_global_registry, clear_global_cache, _GLOBAL_LOCK
+        from temper_ai.tools.registry import clear_global_cache, get_global_registry
 
-        # Get initial registry
-        with _GLOBAL_LOCK:
-            clear_global_cache()
+        # Clear first to ensure clean state
+        clear_global_cache()
 
         registry1 = get_global_registry()
 
         # Clear and get new one
-        with _GLOBAL_LOCK:
-            clear_global_cache()
+        clear_global_cache()
 
         registry2 = get_global_registry()
 
@@ -988,8 +974,7 @@ class TestRegistryEdgeCases:
         assert registry1 is not registry2
 
         # Cleanup
-        with _GLOBAL_LOCK:
-            clear_global_cache()
+        clear_global_cache()
 
     def test_registry_protocol_methods(self):
         """Test attached protocol methods work correctly."""

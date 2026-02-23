@@ -1,4 +1,5 @@
 """Tests for LangGraph compiler."""
+
 from unittest.mock import Mock
 
 import pytest
@@ -19,11 +20,16 @@ def test_workflow_state_creation():
 def test_compiler_initialization():
     """Test LangGraphCompiler can be initialized."""
     compiler = LangGraphCompiler()
-    assert isinstance(compiler, LangGraphCompiler), \
-        f"Expected LangGraphCompiler instance, got {type(compiler)}"
-    assert hasattr(compiler, 'tool_registry'), "Compiler must have tool_registry attribute"
-    assert hasattr(compiler, 'config_loader'), "Compiler must have config_loader attribute"
-    assert hasattr(compiler, 'compile'), "Compiler must have compile method"
+    assert isinstance(
+        compiler, LangGraphCompiler
+    ), f"Expected LangGraphCompiler instance, got {type(compiler)}"
+    assert hasattr(
+        compiler, "tool_registry"
+    ), "Compiler must have tool_registry attribute"
+    assert hasattr(
+        compiler, "config_loader"
+    ), "Compiler must have config_loader attribute"
+    assert hasattr(compiler, "compile"), "Compiler must have compile method"
 
 
 def test_compiler_with_custom_registry():
@@ -46,7 +52,7 @@ def test_compile_validates_workflow_config():
             "name": "test_workflow",
             "description": "Test workflow",
             "version": "1.0",
-            "stages": []
+            "stages": [],
         }
     }
 
@@ -69,8 +75,10 @@ def test_compile_creates_state_graph():
             "description": "Simple test workflow",
             "version": "1.0",
             "stages": [
-                {"name": "research"}  # Use pre-configured stage in REALISTIC_CONFIG_LOADER
-            ]
+                {
+                    "name": "research"
+                }  # Use pre-configured stage in REALISTIC_CONFIG_LOADER
+            ],
         }
     }
 
@@ -78,8 +86,8 @@ def test_compile_creates_state_graph():
     graph = compiler.compile(workflow_config)
 
     # Should return a compiled graph
-    assert hasattr(graph, 'invoke'), "Graph must have invoke method for execution"
-    assert hasattr(graph, 'get_graph'), "Graph must have get_graph for introspection"
+    assert hasattr(graph, "invoke"), "Graph must have invoke method for execution"
+    assert hasattr(graph, "get_graph"), "Graph must have get_graph for introspection"
     assert callable(graph.invoke), "invoke must be callable"
 
 
@@ -100,15 +108,15 @@ def test_compile_sequential_stages():
             "stages": [
                 {"name": "research"},
                 {"name": "analysis"},
-                {"name": "synthesis"}
-            ]
+                {"name": "synthesis"},
+            ],
         }
     }
 
     # Compile (should not raise)
     graph = compiler.compile(workflow_config)
-    assert hasattr(graph, 'invoke'), "Graph must have invoke method for execution"
-    assert hasattr(graph, 'get_graph'), "Graph must have get_graph for introspection"
+    assert hasattr(graph, "invoke"), "Graph must have invoke method for execution"
+    assert hasattr(graph, "get_graph"), "Graph must have get_graph for introspection"
 
 
 def test_workflow_executor_initialization():
@@ -200,6 +208,7 @@ async def test_workflow_executor_async_execute():
     """Test async execute method."""
 
     mock_graph = Mock()
+
     # Create a coroutine that returns the expected result
     async def mock_ainvoke(state):
         return {"result": "success"}

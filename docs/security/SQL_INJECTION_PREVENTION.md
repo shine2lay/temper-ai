@@ -8,7 +8,7 @@
 
 ## Overview
 
-This document provides security guidelines for preventing SQL injection vulnerabilities in the Meta Autonomous Framework. All developers MUST follow these guidelines when working with database queries.
+This document provides security guidelines for preventing SQL injection vulnerabilities in Temper AI. All developers MUST follow these guidelines when working with database queries.
 
 ---
 

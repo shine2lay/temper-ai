@@ -1,22 +1,21 @@
 """Tests for temper_ai.registry.service."""
-import tempfile
+
 import os
+import tempfile
+from collections.abc import Generator
 from contextlib import contextmanager
-from datetime import timezone
-from datetime import datetime
-from typing import Generator
 from unittest.mock import MagicMock, patch
 
 import pytest
 import yaml
 from sqlmodel import Session, SQLModel
 
-from temper_ai.storage.database.engine import create_test_engine
-from temper_ai.storage.database.models_registry import AgentRegistryDB  # noqa: F401
 from temper_ai.registry._schemas import MessageRequest
 from temper_ai.registry.constants import STATUS_INACTIVE, STATUS_REGISTERED
 from temper_ai.registry.service import AgentRegistryService
 from temper_ai.registry.store import AgentRegistryStore
+from temper_ai.storage.database.engine import create_test_engine
+from temper_ai.storage.database.models_registry import AgentRegistryDB  # noqa: F401
 
 
 def _make_store() -> AgentRegistryStore:
@@ -40,9 +39,7 @@ def _make_store() -> AgentRegistryStore:
 
 def _write_agent_yaml(data: dict) -> str:
     """Write a YAML agent config to a temp file and return path."""
-    fh = tempfile.NamedTemporaryFile(
-        mode="w", suffix=".yaml", delete=False
-    )
+    fh = tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False)
     yaml.dump(data, fh)
     fh.close()
     return fh.name

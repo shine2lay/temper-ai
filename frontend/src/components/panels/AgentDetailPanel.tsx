@@ -1,12 +1,15 @@
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useExecutionStore } from '@/store/executionStore';
+import { authFetch } from '@/lib/authFetch';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { CollapsibleSection } from '@/components/shared/Collapsible';
 import { JsonViewer } from '@/components/shared/JsonViewer';
 import { MetricCell } from '@/components/shared/MetricCell';
 import { MarkdownDisplay } from '@/components/shared/MarkdownDisplay';
 import { CopyButton } from '@/components/shared/CopyButton';
+import { ErrorDisplay } from '@/components/shared/ErrorDisplay';
+import { EmptyState } from '@/components/shared/EmptyState';
 import { StreamingPanel } from '@/components/panels/StreamingPanel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -16,7 +19,6 @@ import {
   formatTimestamp,
   formatTokens,
   formatCost,
-  categorizeError,
 } from '@/lib/utils';
 import { AGENT_DETAIL_REFETCH_MS } from '@/lib/constants';
 import type { AgentExecution } from '@/types';
@@ -34,7 +36,7 @@ export function AgentDetailPanel({ agentId }: AgentDetailPanelProps) {
   const { data: detailAgent, isFetching, error: fetchError } = useQuery<AgentExecution>({
     queryKey: ['agent-detail', agentId],
     queryFn: async () => {
-      const res = await fetch(`/api/agents/${agentId}`);
+      const res = await authFetch(`/api/agents/${agentId}`);
       if (!res.ok) throw new Error('Failed to fetch agent detail');
       return res.json();
     },
@@ -45,9 +47,7 @@ export function AgentDetailPanel({ agentId }: AgentDetailPanelProps) {
   const ag = detailAgent ?? agent;
 
   if (!ag) {
-    return (
-      <div className="p-4 text-sm text-temper-text-muted">Agent not found.</div>
-    );
+    return <EmptyState title="Agent not found" />;
   }
 
   const config = ag.agent_config_snapshot?.agent;
@@ -106,35 +106,24 @@ export function AgentDetailPanel({ agentId }: AgentDetailPanelProps) {
         </div>
       )}
 
-      {/* Metrics grid */}
-      <div className="grid grid-cols-2 gap-3">
-        <MetricCell
-          label="Prompt Tokens"
-          value={formatTokens(ag.prompt_tokens)}
-        />
-        <MetricCell
-          label="Completion Tokens"
-          value={formatTokens(ag.completion_tokens)}
-        />
-        <MetricCell
-          label="Total Tokens"
-          value={formatTokens(ag.total_tokens)}
-        />
-        <MetricCell label="Cost" value={formatCost(ag.estimated_cost_usd)} />
-        <MetricCell
-          label="Duration"
-          value={formatDuration(ag.duration_seconds)}
-        />
-        <MetricCell label="LLM Calls" value={String(ag.total_llm_calls)} />
-        <MetricCell label="Tool Calls" value={String(ag.total_tool_calls)} />
+      {/* Metrics grid — short values */}
+      <div className="grid grid-cols-3 gap-2">
+        <MetricCell label="Prompt Tokens" value={formatTokens(ag.prompt_tokens)} compact />
+        <MetricCell label="Completion Tokens" value={formatTokens(ag.completion_tokens)} compact />
+        <MetricCell label="Total Tokens" value={formatTokens(ag.total_tokens)} compact />
+        <MetricCell label="Cost" value={formatCost(ag.estimated_cost_usd)} compact />
+        <MetricCell label="Duration" value={formatDuration(ag.duration_seconds)} compact />
+        <MetricCell label="LLM Calls" value={String(ag.total_llm_calls)} compact />
+        <MetricCell label="Tool Calls" value={String(ag.total_tool_calls)} compact />
         {ag.confidence_score != null && (
-          <MetricCell
-            label="Confidence"
-            value={`${(ag.confidence_score * 100).toFixed(1)}%`}
-          />
+          <MetricCell label="Confidence" value={`${(ag.confidence_score * 100).toFixed(1)}%`} compact />
         )}
-        <MetricCell label="Start Time" value={formatTimestamp(ag.start_time)} />
-        <MetricCell label="End Time" value={formatTimestamp(ag.end_time)} />
+      </div>
+
+      {/* Metrics grid — timestamps */}
+      <div className="grid grid-cols-2 gap-2">
+        <MetricCell label="Start Time" value={formatTimestamp(ag.start_time)} compact />
+        <MetricCell label="End Time" value={formatTimestamp(ag.end_time)} compact />
       </div>
 
       {/* Token bar */}
@@ -165,18 +154,7 @@ export function AgentDetailPanel({ agentId }: AgentDetailPanelProps) {
       )}
 
       {/* Error */}
-      {ag.error_message && (() => {
-        const { type, retryable } = categorizeError(ag.error_message);
-        return (
-          <div className="rounded-md bg-temper-bg-failed p-3 text-sm text-temper-failed">
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-red-950 border border-red-900/50">{type}</span>
-              {retryable && <span className="text-xs text-amber-400">Retryable</span>}
-            </div>
-            {ag.error_message}
-          </div>
-        );
-      })()}
+      {ag.error_message && <ErrorDisplay error={ag.error_message} />}
 
       {/* Streaming panel when running */}
       {isRunning && (

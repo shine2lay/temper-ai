@@ -7,11 +7,12 @@ Provides base exception classes that include:
 - Structured error messages
 - Automatic sanitization of sensitive data (API keys, passwords, tokens)
 """
+
 import re
 import traceback
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
     from temper_ai.shared.core.context import ExecutionContext
@@ -19,28 +20,24 @@ if TYPE_CHECKING:
 
 def _sanitize_aws_keys(message: str) -> str:
     """Sanitize AWS API keys from message."""
-    return re.sub(
-        r'\b(AKIA|ASIA)[A-Z0-9]{16}\b',
-        '[REDACTED-AWS-KEY]',
-        message
-    )
+    return re.sub(r"\b(AKIA|ASIA)[A-Z0-9]{16}\b", "[REDACTED-AWS-KEY]", message)
 
 
 def _sanitize_api_keys(message: str) -> str:
     """Sanitize API keys from message."""
     # Pattern keys (sk-*, api-*, key-*, etc.)
     message = re.sub(
-        r'\b(sk|api|key|secret)[-_][a-zA-Z0-9\-_]{3,}\b',
-        '[REDACTED-API-KEY]',
+        r"\b(sk|api|key|secret)[-_][a-zA-Z0-9\-_]{3,}\b",
+        "[REDACTED-API-KEY]",
         message,
-        flags=re.IGNORECASE
+        flags=re.IGNORECASE,
     )
     # Assignment format (api_key=*, apiKey=*, etc.)
     message = re.sub(
         r'(api[_-]?key|apikey)\s*[:=]\s*["\']?[a-zA-Z0-9\-_]{10,}["\']?',
-        r'\1=[REDACTED-API-KEY]',
+        r"\1=[REDACTED-API-KEY]",
         message,
-        flags=re.IGNORECASE
+        flags=re.IGNORECASE,
     )
     return message
 
@@ -48,17 +45,9 @@ def _sanitize_api_keys(message: str) -> str:
 def _sanitize_jwt_tokens(message: str) -> str:
     """Sanitize JWT tokens from message."""
     # Bearer tokens
-    message = re.sub(
-        r'Bearer\s+[a-zA-Z0-9._-]+',
-        'Bearer [REDACTED-TOKEN]',
-        message
-    )
+    message = re.sub(r"Bearer\s+[a-zA-Z0-9._-]+", "Bearer [REDACTED-TOKEN]", message)
     # Bare JWT tokens
-    message = re.sub(
-        r'\beyJ[a-zA-Z0-9._-]{20,}',
-        '[REDACTED-JWT-TOKEN]',
-        message
-    )
+    message = re.sub(r"\beyJ[a-zA-Z0-9._-]{20,}", "[REDACTED-JWT-TOKEN]", message)
     return message
 
 
@@ -66,9 +55,9 @@ def _sanitize_passwords(message: str) -> str:
     """Sanitize passwords from message."""
     return re.sub(
         r'(password|passwd|pwd|pass)\s*[:=]\s*["\']?[^\s"\']{3,}["\']?',
-        r'\1=[REDACTED-PASSWORD]',
+        r"\1=[REDACTED-PASSWORD]",
         message,
-        flags=re.IGNORECASE
+        flags=re.IGNORECASE,
     )
 
 
@@ -76,9 +65,9 @@ def _sanitize_generic_tokens(message: str) -> str:
     """Sanitize generic tokens and auth headers from message."""
     return re.sub(
         r'(token|auth|authorization|x-api-key)\s*[:=]\s*["\']?[a-zA-Z0-9\-_]{10,}["\']?',
-        r'\1=[REDACTED-TOKEN]',
+        r"\1=[REDACTED-TOKEN]",
         message,
-        flags=re.IGNORECASE
+        flags=re.IGNORECASE,
     )
 
 
@@ -86,17 +75,17 @@ def _sanitize_connection_strings(message: str) -> str:
     """Sanitize database connection strings from message."""
     # Connection string credentials
     message = re.sub(
-        r'(mysql|postgres|postgresql|mongodb|redis)://[^:]+:[^@]+@',
-        r'\1://[REDACTED-CREDENTIALS]@',
+        r"(mysql|postgres|postgresql|mongodb|redis)://[^:]+:[^@]+@",
+        r"\1://[REDACTED-CREDENTIALS]@",
         message,
-        flags=re.IGNORECASE
+        flags=re.IGNORECASE,
     )
     # Query param passwords
     message = re.sub(
-        r'[?&](password|pwd|pass|token|key|secret)=[^&\s]+',
-        r'?\1=[REDACTED]',
+        r"[?&](password|pwd|pass|token|key|secret)=[^&\s]+",
+        r"?\1=[REDACTED]",
         message,
-        flags=re.IGNORECASE
+        flags=re.IGNORECASE,
     )
     return message
 
@@ -151,6 +140,7 @@ class ErrorCode(str, Enum):
     - SAFETY_*: Safety policy errors
     - VALIDATION_*: Validation errors
     """
+
     # Configuration errors (1000-1099)
     CONFIG_NOT_FOUND = "CONFIG_NOT_FOUND"
     CONFIG_INVALID = "CONFIG_INVALID"
@@ -204,8 +194,10 @@ class ErrorCode(str, Enum):
     UNKNOWN_ERROR = "UNKNOWN_ERROR"
 
 
-class FrameworkException(Exception):  # noqa: N818 — intentional: base exception, not a specific error
-    """Root exception for the entire meta-autonomous framework.
+class FrameworkException(
+    Exception
+):  # noqa: N818 — intentional: base exception, not a specific error
+    """Root exception for Temper AI.
 
     All framework-specific exceptions should ultimately inherit from this class,
     providing a single catch-all base for framework error handling.
@@ -217,6 +209,7 @@ class FrameworkException(Exception):  # noqa: N818 — intentional: base excepti
         ...     # Catches any framework-originated error
         ...     handle_error()
     """
+
     pass
 
 
@@ -252,18 +245,19 @@ class BaseError(FrameworkException):
         message: str,
         error_code: ErrorCode = ErrorCode.UNKNOWN_ERROR,
         context: Optional["ExecutionContext"] = None,
-        cause: Optional[Exception] = None,
-        extra_data: Optional[Dict[str, Any]] = None
+        cause: Exception | None = None,
+        extra_data: dict[str, Any] | None = None,
     ):
         self.message = message
         self.error_code = error_code
         # Lazy import to avoid circular dependency
         if context is None:
             from temper_ai.shared.core.context import ExecutionContext
+
             context = ExecutionContext()
         self.context = context
         self.cause = cause
-        self.timestamp = datetime.now(timezone.utc)
+        self.timestamp = datetime.now(UTC)
         self.extra_data = extra_data or {}
 
         # Build detailed message
@@ -312,7 +306,7 @@ class BaseError(FrameworkException):
         # but sanitize again for safety in case message was modified
         return sanitize_error_message(super().__str__())
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert error to dictionary for serialization.
 
         SECURITY: All string fields are sanitized to remove sensitive data.
@@ -325,7 +319,9 @@ class BaseError(FrameworkException):
             "timestamp": self.timestamp.isoformat(),
             "cause": sanitize_error_message(str(self.cause)) if self.cause else None,
             "extra_data": self.extra_data,
-            "traceback": sanitize_error_message(traceback.format_exc()) if self.cause else None
+            "traceback": (
+                sanitize_error_message(traceback.format_exc()) if self.cause else None
+            ),
         }
 
     def __repr__(self) -> str:
@@ -339,6 +335,7 @@ class BaseError(FrameworkException):
 
 # Configuration Exceptions
 
+
 class ConfigurationError(BaseError):
     """Base class for configuration-related errors."""
 
@@ -347,20 +344,20 @@ class ConfigurationError(BaseError):
         message: str,
         error_code: ErrorCode = ErrorCode.CONFIG_INVALID,
         context: Optional["ExecutionContext"] = None,
-        cause: Optional[Exception] = None,
-        config_path: Optional[str] = None,
-        **kwargs: Any
+        cause: Exception | None = None,
+        config_path: str | None = None,
+        **kwargs: Any,
     ) -> None:
-        extra_data = kwargs.get('extra_data', {})
+        extra_data = kwargs.get("extra_data", {})
         if config_path:
-            extra_data['config_path'] = config_path
+            extra_data["config_path"] = config_path
 
         super().__init__(
             message=message,
             error_code=error_code,
             context=context,
             cause=cause,
-            extra_data=extra_data
+            extra_data=extra_data,
         )
 
 
@@ -372,27 +369,28 @@ class ConfigNotFoundError(ConfigurationError):
             message=message,
             error_code=ErrorCode.CONFIG_NOT_FOUND,
             config_path=config_path,
-            **kwargs
+            **kwargs,
         )
 
 
 class ConfigValidationError(ConfigurationError):
     """Raised when configuration fails validation."""
 
-    def __init__(self, message: str, validation_errors: Optional[list[Any]] = None, **kwargs: Any) -> None:
-        extra_data = kwargs.get('extra_data', {})
+    def __init__(
+        self, message: str, validation_errors: list[Any] | None = None, **kwargs: Any
+    ) -> None:
+        extra_data = kwargs.get("extra_data", {})
         if validation_errors:
-            extra_data['validation_errors'] = validation_errors
-        kwargs['extra_data'] = extra_data
+            extra_data["validation_errors"] = validation_errors
+        kwargs["extra_data"] = extra_data
 
         super().__init__(
-            message=message,
-            error_code=ErrorCode.CONFIG_VALIDATION_ERROR,
-            **kwargs
+            message=message, error_code=ErrorCode.CONFIG_VALIDATION_ERROR, **kwargs
         )
 
 
 # LLM Exceptions
+
 
 class LLMError(BaseError):
     """Base class for LLM provider errors."""
@@ -402,41 +400,39 @@ class LLMError(BaseError):
         message: str,
         error_code: ErrorCode = ErrorCode.LLM_CONNECTION_ERROR,
         context: Optional["ExecutionContext"] = None,
-        cause: Optional[Exception] = None,
-        provider: Optional[str] = None,
-        model: Optional[str] = None,
-        **kwargs: Any
+        cause: Exception | None = None,
+        provider: str | None = None,
+        model: str | None = None,
+        **kwargs: Any,
     ) -> None:
-        extra_data = kwargs.get('extra_data', {})
+        extra_data = kwargs.get("extra_data", {})
         if provider:
-            extra_data['provider'] = provider
+            extra_data["provider"] = provider
         if model:
-            extra_data['model'] = model
-        kwargs['extra_data'] = extra_data
+            extra_data["model"] = model
+        kwargs["extra_data"] = extra_data
 
         super().__init__(
             message=message,
             error_code=error_code,
             context=context,
             cause=cause,
-            **kwargs
+            **kwargs,
         )
 
 
 class LLMTimeoutError(LLMError):
     """Raised when LLM call times out."""
 
-    def __init__(self, message: str, timeout_seconds: Optional[int] = None, **kwargs: Any) -> None:
-        extra_data = kwargs.get('extra_data', {})
+    def __init__(
+        self, message: str, timeout_seconds: int | None = None, **kwargs: Any
+    ) -> None:
+        extra_data = kwargs.get("extra_data", {})
         if timeout_seconds:
-            extra_data['timeout_seconds'] = timeout_seconds
-        kwargs['extra_data'] = extra_data
+            extra_data["timeout_seconds"] = timeout_seconds
+        kwargs["extra_data"] = extra_data
 
-        super().__init__(
-            message=message,
-            error_code=ErrorCode.LLM_TIMEOUT,
-            **kwargs
-        )
+        super().__init__(message=message, error_code=ErrorCode.LLM_TIMEOUT, **kwargs)
 
 
 class RateLimitError(FrameworkException):
@@ -452,7 +448,7 @@ class RateLimitError(FrameworkException):
         retry_after: Optional seconds until rate limit resets
     """
 
-    def __init__(self, message: str, retry_after: Optional[int] = None) -> None:
+    def __init__(self, message: str, retry_after: int | None = None) -> None:
         """Initialize rate limit exception.
 
         Args:
@@ -471,18 +467,17 @@ class LLMRateLimitError(LLMError, RateLimitError):
     - RateLimitError: Unified rate limit base class for isinstance checks
     """
 
-    def __init__(self, message: str, retry_after: Optional[int] = None, **kwargs: Any) -> None:
-        extra_data = kwargs.get('extra_data', {})
+    def __init__(
+        self, message: str, retry_after: int | None = None, **kwargs: Any
+    ) -> None:
+        extra_data = kwargs.get("extra_data", {})
         if retry_after:
-            extra_data['retry_after'] = retry_after
-        kwargs['extra_data'] = extra_data
+            extra_data["retry_after"] = retry_after
+        kwargs["extra_data"] = extra_data
 
         # Initialize LLMError (which handles BaseError and FrameworkException)
         LLMError.__init__(
-            self,
-            message=message,
-            error_code=ErrorCode.LLM_RATE_LIMIT,
-            **kwargs
+            self, message=message, error_code=ErrorCode.LLM_RATE_LIMIT, **kwargs
         )
         # Store retry_after on self (from RateLimitError interface)
         self.retry_after = retry_after
@@ -493,13 +488,12 @@ class LLMAuthenticationError(LLMError):
 
     def __init__(self, message: str, **kwargs: Any) -> None:
         super().__init__(
-            message=message,
-            error_code=ErrorCode.LLM_AUTHENTICATION_ERROR,
-            **kwargs
+            message=message, error_code=ErrorCode.LLM_AUTHENTICATION_ERROR, **kwargs
         )
 
 
 # Tool Exceptions
+
 
 class ToolError(BaseError):
     """Base class for tool-related errors."""
@@ -509,15 +503,16 @@ class ToolError(BaseError):
         message: str,
         error_code: ErrorCode = ErrorCode.TOOL_EXECUTION_ERROR,
         context: Optional["ExecutionContext"] = None,
-        cause: Optional[Exception] = None,
-        tool_name: Optional[str] = None,
-        **kwargs: Any
+        cause: Exception | None = None,
+        tool_name: str | None = None,
+        **kwargs: Any,
     ) -> None:
         # Ensure tool_name is in context
         if tool_name and context:
             context.tool_name = tool_name
         elif tool_name:
             from temper_ai.shared.core.context import ExecutionContext
+
             context = ExecutionContext(tool_name=tool_name)
 
         super().__init__(
@@ -525,7 +520,7 @@ class ToolError(BaseError):
             error_code=error_code,
             context=context,
             cause=cause,
-            **kwargs
+            **kwargs,
         )
 
 
@@ -537,7 +532,7 @@ class ToolExecutionError(ToolError):
             message=message,
             error_code=ErrorCode.TOOL_EXECUTION_ERROR,
             tool_name=tool_name,
-            **kwargs
+            **kwargs,
         )
 
 
@@ -549,7 +544,7 @@ class ToolNotFoundError(ToolError):
             message=message,
             error_code=ErrorCode.TOOL_NOT_FOUND,
             tool_name=tool_name,
-            **kwargs
+            **kwargs,
         )
 
 
@@ -558,13 +553,12 @@ class ToolRegistryError(ToolError):
 
     def __init__(self, message: str, **kwargs: Any) -> None:
         super().__init__(
-            message=message,
-            error_code=ErrorCode.TOOL_REGISTRY_ERROR,
-            **kwargs
+            message=message, error_code=ErrorCode.TOOL_REGISTRY_ERROR, **kwargs
         )
 
 
 # Agent Exceptions
+
 
 class AgentError(BaseError):
     """Base class for agent-related errors."""
@@ -574,21 +568,21 @@ class AgentError(BaseError):
         message: str,
         error_code: ErrorCode = ErrorCode.AGENT_EXECUTION_ERROR,
         context: Optional["ExecutionContext"] = None,
-        cause: Optional[Exception] = None,
-        agent_name: Optional[str] = None,
-        **kwargs: Any
+        cause: Exception | None = None,
+        agent_name: str | None = None,
+        **kwargs: Any,
     ) -> None:
-        extra_data = kwargs.get('extra_data', {})
+        extra_data = kwargs.get("extra_data", {})
         if agent_name:
-            extra_data['agent_name'] = agent_name
-        kwargs['extra_data'] = extra_data
+            extra_data["agent_name"] = agent_name
+        kwargs["extra_data"] = extra_data
 
         super().__init__(
             message=message,
             error_code=error_code,
             context=context,
             cause=cause,
-            **kwargs
+            **kwargs,
         )
 
 
@@ -598,11 +592,11 @@ class MaxIterationsError(AgentError):
     def __init__(
         self,
         iterations: int,
-        tool_calls: Optional[list] = None,
+        tool_calls: list | None = None,
         tokens: int = 0,
         cost: float = 0.0,
         last_output: str = "",
-        last_reasoning: Optional[str] = None,
+        last_reasoning: str | None = None,
         **kwargs: Any,
     ) -> None:
         self.iterations = iterations
@@ -620,6 +614,7 @@ class MaxIterationsError(AgentError):
 
 # Workflow Exceptions
 
+
 class WorkflowError(BaseError):
     """Base class for workflow-related errors."""
 
@@ -628,21 +623,21 @@ class WorkflowError(BaseError):
         message: str,
         error_code: ErrorCode = ErrorCode.WORKFLOW_EXECUTION_ERROR,
         context: Optional["ExecutionContext"] = None,
-        cause: Optional[Exception] = None,
-        workflow_name: Optional[str] = None,
-        **kwargs: Any
+        cause: Exception | None = None,
+        workflow_name: str | None = None,
+        **kwargs: Any,
     ) -> None:
-        extra_data = kwargs.get('extra_data', {})
+        extra_data = kwargs.get("extra_data", {})
         if workflow_name:
-            extra_data['workflow_name'] = workflow_name
-        kwargs['extra_data'] = extra_data
+            extra_data["workflow_name"] = workflow_name
+        kwargs["extra_data"] = extra_data
 
         super().__init__(
             message=message,
             error_code=error_code,
             context=context,
             cause=cause,
-            **kwargs
+            **kwargs,
         )
 
 
@@ -659,8 +654,8 @@ class WorkflowStageError(WorkflowError):
         stage_name: str,
         error_code: ErrorCode = ErrorCode.WORKFLOW_EXECUTION_ERROR,
         context: Optional["ExecutionContext"] = None,
-        cause: Optional[Exception] = None,
-        **kwargs: Any
+        cause: Exception | None = None,
+        **kwargs: Any,
     ) -> None:
         self.stage_name = stage_name
         super().__init__(
@@ -668,11 +663,12 @@ class WorkflowStageError(WorkflowError):
             error_code=error_code,
             context=context,
             cause=cause,
-            **kwargs
+            **kwargs,
         )
 
 
 # Safety Exceptions
+
 
 class SecurityError(FrameworkException):
     """Raised when a security requirement or constraint is violated.
@@ -685,6 +681,7 @@ class SecurityError(FrameworkException):
     ``except FrameworkException`` handler can catch security errors
     without needing a separate ``except Exception`` fallback.
     """
+
     pass
 
 
@@ -696,28 +693,29 @@ class SafetyError(BaseError):
         message: str,
         error_code: ErrorCode = ErrorCode.SAFETY_VIOLATION,
         context: Optional["ExecutionContext"] = None,
-        cause: Optional[Exception] = None,
-        policy_name: Optional[str] = None,
-        severity: Optional[str] = None,
-        **kwargs: Any
+        cause: Exception | None = None,
+        policy_name: str | None = None,
+        severity: str | None = None,
+        **kwargs: Any,
     ) -> None:
-        extra_data = kwargs.get('extra_data', {})
+        extra_data = kwargs.get("extra_data", {})
         if policy_name:
-            extra_data['policy_name'] = policy_name
+            extra_data["policy_name"] = policy_name
         if severity:
-            extra_data['severity'] = severity
-        kwargs['extra_data'] = extra_data
+            extra_data["severity"] = severity
+        kwargs["extra_data"] = extra_data
 
         super().__init__(
             message=message,
             error_code=error_code,
             context=context,
             cause=cause,
-            **kwargs
+            **kwargs,
         )
 
 
 # Validation Exceptions
+
 
 class FrameworkValidationError(BaseError):
     """Base class for validation errors.
@@ -733,21 +731,21 @@ class FrameworkValidationError(BaseError):
         message: str,
         error_code: ErrorCode = ErrorCode.VALIDATION_ERROR,
         context: Optional["ExecutionContext"] = None,
-        cause: Optional[Exception] = None,
-        field_name: Optional[str] = None,
-        **kwargs: Any
+        cause: Exception | None = None,
+        field_name: str | None = None,
+        **kwargs: Any,
     ) -> None:
-        extra_data = kwargs.get('extra_data', {})
+        extra_data = kwargs.get("extra_data", {})
         if field_name:
-            extra_data['field_name'] = field_name
-        kwargs['extra_data'] = extra_data
+            extra_data["field_name"] = field_name
+        kwargs["extra_data"] = extra_data
 
         super().__init__(
             message=message,
             error_code=error_code,
             context=context,
             cause=cause,
-            **kwargs
+            **kwargs,
         )
 
 
@@ -757,23 +755,26 @@ class ValidationError(FrameworkValidationError):
 
     DEPRECATED: Use FrameworkValidationError directly.
     """
+
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         import warnings
+
         warnings.warn(
             "ValidationError is deprecated. Use FrameworkValidationError instead.",
             DeprecationWarning,
-            stacklevel=2
+            stacklevel=2,
         )
         super().__init__(*args, **kwargs)
 
 
 # Utility Functions
 
+
 def wrap_exception(
     exc: Exception,
     message: str,
     error_code: ErrorCode = ErrorCode.UNKNOWN_ERROR,
-    context: Optional["ExecutionContext"] = None
+    context: Optional["ExecutionContext"] = None,
 ) -> BaseError:
     """Wrap a standard exception in a BaseError with context.
 
@@ -799,15 +800,10 @@ def wrap_exception(
         ...         ExecutionContext(workflow_id="wf-123")
         ...     )
     """
-    return BaseError(
-        message=message,
-        error_code=error_code,
-        context=context,
-        cause=exc
-    )
+    return BaseError(message=message, error_code=error_code, context=context, cause=exc)
 
 
-def get_error_info(exc: Exception) -> Dict[str, Any]:
+def get_error_info(exc: Exception) -> dict[str, Any]:
     """Extract error information from any exception.
 
     If the exception is a BaseError, returns full context.
@@ -834,6 +830,6 @@ def get_error_info(exc: Exception) -> Dict[str, Any]:
         "message": str(exc),
         "error_code": ErrorCode.UNKNOWN_ERROR.value,
         "context": {},
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "traceback": traceback.format_exc()
+        "timestamp": datetime.now(UTC).isoformat(),
+        "traceback": traceback.format_exc(),
     }

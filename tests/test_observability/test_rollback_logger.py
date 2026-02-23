@@ -1,12 +1,11 @@
 """Comprehensive tests for rollback logger module."""
+
 from datetime import UTC, datetime, timedelta
 from unittest.mock import Mock, patch
 from uuid import uuid4
 
 import pytest
 
-from temper_ai.storage.database import DatabaseManager
-from temper_ai.storage.database.models import RollbackEvent, RollbackSnapshotDB
 from temper_ai.observability.rollback_logger import (
     get_rollback_events,
     get_rollback_snapshots,
@@ -18,6 +17,8 @@ from temper_ai.observability.rollback_types import (
     RollbackSnapshot,
     RollbackStatus,
 )
+from temper_ai.storage.database import DatabaseManager
+from temper_ai.storage.database.models import RollbackEvent, RollbackSnapshotDB
 
 
 @pytest.fixture
@@ -63,7 +64,7 @@ def rollback_snapshot():
         file_snapshots={"/test/file.py": "original content"},
         state_snapshots={"counter": 42},
         metadata={"reason": "test"},
-        expires_at=datetime.now(UTC) + timedelta(hours=24)
+        expires_at=datetime.now(UTC) + timedelta(hours=24),
     )
 
 
@@ -78,7 +79,7 @@ def rollback_result(rollback_snapshot):
         failed_items=[],
         errors=[],
         metadata={"operator": "test-agent"},
-        completed_at=datetime.now(UTC)
+        completed_at=datetime.now(UTC),
     )
 
 
@@ -90,9 +91,11 @@ class TestLogRollbackSnapshot:
         log_rollback_snapshot(rollback_snapshot, db_manager=db_manager)
 
         with db_manager.session() as session:
-            snapshot = session.query(RollbackSnapshotDB).filter_by(
-                id=rollback_snapshot.id
-            ).first()
+            snapshot = (
+                session.query(RollbackSnapshotDB)
+                .filter_by(id=rollback_snapshot.id)
+                .first()
+            )
 
             assert snapshot is not None
             assert snapshot.id == rollback_snapshot.id
@@ -104,15 +107,15 @@ class TestLogRollbackSnapshot:
         workflow_id = "wf-999"
 
         log_rollback_snapshot(
-            rollback_snapshot,
-            workflow_execution_id=workflow_id,
-            db_manager=db_manager
+            rollback_snapshot, workflow_execution_id=workflow_id, db_manager=db_manager
         )
 
         with db_manager.session() as session:
-            snapshot = session.query(RollbackSnapshotDB).filter_by(
-                id=rollback_snapshot.id
-            ).first()
+            snapshot = (
+                session.query(RollbackSnapshotDB)
+                .filter_by(id=rollback_snapshot.id)
+                .first()
+            )
 
             assert snapshot.workflow_execution_id == workflow_id
 
@@ -121,15 +124,15 @@ class TestLogRollbackSnapshot:
         checkpoint_id = "ckpt-123"
 
         log_rollback_snapshot(
-            rollback_snapshot,
-            checkpoint_id=checkpoint_id,
-            db_manager=db_manager
+            rollback_snapshot, checkpoint_id=checkpoint_id, db_manager=db_manager
         )
 
         with db_manager.session() as session:
-            snapshot = session.query(RollbackSnapshotDB).filter_by(
-                id=rollback_snapshot.id
-            ).first()
+            snapshot = (
+                session.query(RollbackSnapshotDB)
+                .filter_by(id=rollback_snapshot.id)
+                .first()
+            )
 
             assert snapshot.checkpoint_id == checkpoint_id
 
@@ -138,9 +141,11 @@ class TestLogRollbackSnapshot:
         log_rollback_snapshot(rollback_snapshot, db_manager=db_manager)
 
         with db_manager.session() as session:
-            snapshot = session.query(RollbackSnapshotDB).filter_by(
-                id=rollback_snapshot.id
-            ).first()
+            snapshot = (
+                session.query(RollbackSnapshotDB)
+                .filter_by(id=rollback_snapshot.id)
+                .first()
+            )
 
             assert snapshot.file_snapshots == {"/test/file.py": "original content"}
 
@@ -149,9 +154,11 @@ class TestLogRollbackSnapshot:
         log_rollback_snapshot(rollback_snapshot, db_manager=db_manager)
 
         with db_manager.session() as session:
-            snapshot = session.query(RollbackSnapshotDB).filter_by(
-                id=rollback_snapshot.id
-            ).first()
+            snapshot = (
+                session.query(RollbackSnapshotDB)
+                .filter_by(id=rollback_snapshot.id)
+                .first()
+            )
 
             assert snapshot.state_snapshots == {"counter": 42}
 
@@ -160,16 +167,18 @@ class TestLogRollbackSnapshot:
         log_rollback_snapshot(rollback_snapshot, db_manager=db_manager)
 
         with db_manager.session() as session:
-            snapshot = session.query(RollbackSnapshotDB).filter_by(
-                id=rollback_snapshot.id
-            ).first()
+            snapshot = (
+                session.query(RollbackSnapshotDB)
+                .filter_by(id=rollback_snapshot.id)
+                .first()
+            )
 
             assert snapshot.created_at is not None
             assert snapshot.expires_at is not None
             # Expires_at should be after created_at
             assert snapshot.expires_at > snapshot.created_at
 
-    @patch('temper_ai.observability.rollback_logger.get_database')
+    @patch("temper_ai.observability.rollback_logger.get_database")
     def test_log_snapshot_uses_singleton_db(self, mock_get_db, rollback_snapshot):
         """Test logging uses singleton database when db_manager is None."""
         mock_db = Mock(spec=DatabaseManager)
@@ -186,7 +195,7 @@ class TestLogRollbackSnapshot:
     def test_log_snapshot_error_handling(self, db_manager, rollback_snapshot, caplog):
         """Test error handling when logging fails."""
         # Make session.add raise an error
-        with patch.object(db_manager, 'session') as mock_session_ctx:
+        with patch.object(db_manager, "session") as mock_session_ctx:
             mock_session = Mock()
             mock_session.add.side_effect = Exception("Database error")
             mock_session_ctx.return_value.__enter__ = Mock(return_value=mock_session)
@@ -194,7 +203,10 @@ class TestLogRollbackSnapshot:
 
             log_rollback_snapshot(rollback_snapshot, db_manager=db_manager)
 
-            assert any("Failed to log rollback snapshot" in rec.message for rec in caplog.records)
+            assert any(
+                "Failed to log rollback snapshot" in rec.message
+                for rec in caplog.records
+            )
 
 
 class TestLogRollbackEvent:
@@ -203,15 +215,15 @@ class TestLogRollbackEvent:
     def test_log_basic_event(self, db_manager, rollback_result):
         """Test logging basic rollback event."""
         log_rollback_event(
-            result=rollback_result,
-            trigger="auto",
-            db_manager=db_manager
+            result=rollback_result, trigger="auto", db_manager=db_manager
         )
 
         with db_manager.session() as session:
-            event = session.query(RollbackEvent).filter_by(
-                snapshot_id=rollback_result.snapshot_id
-            ).first()
+            event = (
+                session.query(RollbackEvent)
+                .filter_by(snapshot_id=rollback_result.snapshot_id)
+                .first()
+            )
 
             assert event is not None
             assert event.snapshot_id == rollback_result.snapshot_id
@@ -224,13 +236,15 @@ class TestLogRollbackEvent:
             result=rollback_result,
             trigger="manual",
             operator="admin-user",
-            db_manager=db_manager
+            db_manager=db_manager,
         )
 
         with db_manager.session() as session:
-            event = session.query(RollbackEvent).filter_by(
-                snapshot_id=rollback_result.snapshot_id
-            ).first()
+            event = (
+                session.query(RollbackEvent)
+                .filter_by(snapshot_id=rollback_result.snapshot_id)
+                .first()
+            )
 
             assert event.operator == "admin-user"
             assert event.trigger == "manual"
@@ -241,28 +255,30 @@ class TestLogRollbackEvent:
             result=rollback_result,
             trigger="manual",
             reason="User requested rollback due to error",
-            db_manager=db_manager
+            db_manager=db_manager,
         )
 
         with db_manager.session() as session:
-            event = session.query(RollbackEvent).filter_by(
-                snapshot_id=rollback_result.snapshot_id
-            ).first()
+            event = (
+                session.query(RollbackEvent)
+                .filter_by(snapshot_id=rollback_result.snapshot_id)
+                .first()
+            )
 
             assert event.reason == "User requested rollback due to error"
 
     def test_log_event_reverted_items(self, db_manager, rollback_result):
         """Test event stores reverted items."""
         log_rollback_event(
-            result=rollback_result,
-            trigger="auto",
-            db_manager=db_manager
+            result=rollback_result, trigger="auto", db_manager=db_manager
         )
 
         with db_manager.session() as session:
-            event = session.query(RollbackEvent).filter_by(
-                snapshot_id=rollback_result.snapshot_id
-            ).first()
+            event = (
+                session.query(RollbackEvent)
+                .filter_by(snapshot_id=rollback_result.snapshot_id)
+                .first()
+            )
 
             assert event.reverted_items == ["/test/file.py"]
 
@@ -272,15 +288,15 @@ class TestLogRollbackEvent:
         rollback_result.errors = ["Permission denied"]
 
         log_rollback_event(
-            result=rollback_result,
-            trigger="auto",
-            db_manager=db_manager
+            result=rollback_result, trigger="auto", db_manager=db_manager
         )
 
         with db_manager.session() as session:
-            event = session.query(RollbackEvent).filter_by(
-                snapshot_id=rollback_result.snapshot_id
-            ).first()
+            event = (
+                session.query(RollbackEvent)
+                .filter_by(snapshot_id=rollback_result.snapshot_id)
+                .first()
+            )
 
             assert event.failed_items == ["/test/other.py"]
             assert event.errors == ["Permission denied"]
@@ -288,15 +304,15 @@ class TestLogRollbackEvent:
     def test_log_event_metadata(self, db_manager, rollback_result):
         """Test event stores metadata."""
         log_rollback_event(
-            result=rollback_result,
-            trigger="auto",
-            db_manager=db_manager
+            result=rollback_result, trigger="auto", db_manager=db_manager
         )
 
         with db_manager.session() as session:
-            event = session.query(RollbackEvent).filter_by(
-                snapshot_id=rollback_result.snapshot_id
-            ).first()
+            event = (
+                session.query(RollbackEvent)
+                .filter_by(snapshot_id=rollback_result.snapshot_id)
+                .first()
+            )
 
             assert event.rollback_metadata == {"operator": "test-agent"}
 
@@ -306,25 +322,21 @@ class TestLogRollbackEvent:
 
         for trigger in triggers:
             result = RollbackResult(
-                success=True,
-                snapshot_id=str(uuid4()),
-                status=RollbackStatus.COMPLETED
+                success=True, snapshot_id=str(uuid4()), status=RollbackStatus.COMPLETED
             )
 
-            log_rollback_event(
-                result=result,
-                trigger=trigger,
-                db_manager=db_manager
-            )
+            log_rollback_event(result=result, trigger=trigger, db_manager=db_manager)
 
             with db_manager.session() as session:
-                event = session.query(RollbackEvent).filter_by(
-                    snapshot_id=result.snapshot_id
-                ).first()
+                event = (
+                    session.query(RollbackEvent)
+                    .filter_by(snapshot_id=result.snapshot_id)
+                    .first()
+                )
 
                 assert event.trigger == trigger
 
-    @patch('temper_ai.observability.rollback_logger.get_database')
+    @patch("temper_ai.observability.rollback_logger.get_database")
     def test_log_event_uses_singleton_db(self, mock_get_db, rollback_result):
         """Test logging uses singleton database when db_manager is None."""
         mock_db = Mock(spec=DatabaseManager)
@@ -339,19 +351,19 @@ class TestLogRollbackEvent:
 
     def test_log_event_error_handling(self, db_manager, rollback_result, caplog):
         """Test error handling when logging event fails."""
-        with patch.object(db_manager, 'session') as mock_session_ctx:
+        with patch.object(db_manager, "session") as mock_session_ctx:
             mock_session = Mock()
             mock_session.add.side_effect = Exception("Database error")
             mock_session_ctx.return_value.__enter__ = Mock(return_value=mock_session)
             mock_session_ctx.return_value.__exit__ = Mock(return_value=None)
 
             log_rollback_event(
-                result=rollback_result,
-                trigger="auto",
-                db_manager=db_manager
+                result=rollback_result, trigger="auto", db_manager=db_manager
             )
 
-            assert any("Failed to log rollback event" in rec.message for rec in caplog.records)
+            assert any(
+                "Failed to log rollback event" in rec.message for rec in caplog.records
+            )
 
 
 class TestGetRollbackEvents:
@@ -363,9 +375,7 @@ class TestGetRollbackEvents:
         log_rollback_event(rollback_result, "auto", db_manager=db_manager)
 
         result2 = RollbackResult(
-            success=True,
-            snapshot_id=str(uuid4()),
-            status=RollbackStatus.COMPLETED
+            success=True, snapshot_id=str(uuid4()), status=RollbackStatus.COMPLETED
         )
         log_rollback_event(result2, "manual", db_manager=db_manager)
 
@@ -378,18 +388,19 @@ class TestGetRollbackEvents:
         log_rollback_event(rollback_result, "auto", db_manager=db_manager)
 
         result2 = RollbackResult(
-            success=True,
-            snapshot_id=str(uuid4()),
-            status=RollbackStatus.COMPLETED
+            success=True, snapshot_id=str(uuid4()), status=RollbackStatus.COMPLETED
         )
         log_rollback_event(result2, "manual", db_manager=db_manager)
 
         # Access within session context
         with db_manager.session() as session:
             from temper_ai.storage.database.models import RollbackEvent
-            events_query = session.query(RollbackEvent).filter_by(
-                snapshot_id=rollback_result.snapshot_id
-            ).all()
+
+            events_query = (
+                session.query(RollbackEvent)
+                .filter_by(snapshot_id=rollback_result.snapshot_id)
+                .all()
+            )
 
             assert len(events_query) == 1
             assert events_query[0].snapshot_id == rollback_result.snapshot_id
@@ -399,18 +410,17 @@ class TestGetRollbackEvents:
         log_rollback_event(rollback_result, "auto", db_manager=db_manager)
 
         result2 = RollbackResult(
-            success=True,
-            snapshot_id=str(uuid4()),
-            status=RollbackStatus.COMPLETED
+            success=True, snapshot_id=str(uuid4()), status=RollbackStatus.COMPLETED
         )
         log_rollback_event(result2, "manual", db_manager=db_manager)
 
         # Access within session context
         with db_manager.session() as session:
             from temper_ai.storage.database.models import RollbackEvent
-            events_query = session.query(RollbackEvent).filter_by(
-                trigger="manual"
-            ).all()
+
+            events_query = (
+                session.query(RollbackEvent).filter_by(trigger="manual").all()
+            )
 
             assert len(events_query) == 1
             assert events_query[0].trigger == "manual"
@@ -420,9 +430,7 @@ class TestGetRollbackEvents:
         # Create multiple events
         for _ in range(5):
             result = RollbackResult(
-                success=True,
-                snapshot_id=str(uuid4()),
-                status=RollbackStatus.COMPLETED
+                success=True, snapshot_id=str(uuid4()), status=RollbackStatus.COMPLETED
             )
             log_rollback_event(result, "auto", db_manager=db_manager)
 
@@ -437,16 +445,19 @@ class TestGetRollbackEvents:
                 success=True,
                 snapshot_id=str(uuid4()),
                 status=RollbackStatus.COMPLETED,
-                completed_at=datetime.now(UTC) + timedelta(seconds=i)
+                completed_at=datetime.now(UTC) + timedelta(seconds=i),
             )
             log_rollback_event(result, "auto", db_manager=db_manager)
 
         # Access within session context
         with db_manager.session() as session:
             from temper_ai.storage.database.models import RollbackEvent
-            events_query = session.query(RollbackEvent).order_by(
-                RollbackEvent.executed_at.desc()
-            ).all()
+
+            events_query = (
+                session.query(RollbackEvent)
+                .order_by(RollbackEvent.executed_at.desc())
+                .all()
+            )
 
             # Should be in descending order (newest first)
             assert len(events_query) == 3
@@ -455,7 +466,7 @@ class TestGetRollbackEvents:
 
     def test_get_events_error_handling(self, db_manager, caplog):
         """Test error handling when query fails."""
-        with patch.object(db_manager, 'session') as mock_session_ctx:
+        with patch.object(db_manager, "session") as mock_session_ctx:
             mock_session = Mock()
             mock_session.query.side_effect = Exception("Query error")
             mock_session_ctx.return_value.__enter__ = Mock(return_value=mock_session)
@@ -464,7 +475,10 @@ class TestGetRollbackEvents:
             events = get_rollback_events(db_manager=db_manager)
 
             assert events == []
-            assert any("Failed to query rollback events" in rec.message for rec in caplog.records)
+            assert any(
+                "Failed to query rollback events" in rec.message
+                for rec in caplog.records
+            )
 
 
 class TestGetRollbackSnapshots:
@@ -477,7 +491,7 @@ class TestGetRollbackSnapshots:
         snapshot2 = RollbackSnapshot(
             id=str(uuid4()),
             action={"type": "state_change"},
-            context={"workflow_id": "wf-999"}
+            context={"workflow_id": "wf-999"},
         )
         log_rollback_snapshot(snapshot2, db_manager=db_manager)
 
@@ -490,24 +504,23 @@ class TestGetRollbackSnapshots:
         workflow_id = "wf-specific"
 
         log_rollback_snapshot(
-            rollback_snapshot,
-            workflow_execution_id=workflow_id,
-            db_manager=db_manager
+            rollback_snapshot, workflow_execution_id=workflow_id, db_manager=db_manager
         )
 
         snapshot2 = RollbackSnapshot()
         log_rollback_snapshot(
-            snapshot2,
-            workflow_execution_id="wf-other",
-            db_manager=db_manager
+            snapshot2, workflow_execution_id="wf-other", db_manager=db_manager
         )
 
         # Access within session context
         with db_manager.session() as session:
             from temper_ai.storage.database.models import RollbackSnapshotDB
-            snapshots_query = session.query(RollbackSnapshotDB).filter_by(
-                workflow_execution_id=workflow_id
-            ).all()
+
+            snapshots_query = (
+                session.query(RollbackSnapshotDB)
+                .filter_by(workflow_execution_id=workflow_id)
+                .all()
+            )
 
             assert len(snapshots_query) == 1
             assert snapshots_query[0].workflow_execution_id == workflow_id
@@ -533,17 +546,22 @@ class TestGetRollbackSnapshots:
         # Access within session context
         with db_manager.session() as session:
             from temper_ai.storage.database.models import RollbackSnapshotDB
-            snapshots_query = session.query(RollbackSnapshotDB).order_by(
-                RollbackSnapshotDB.created_at.desc()
-            ).all()
+
+            snapshots_query = (
+                session.query(RollbackSnapshotDB)
+                .order_by(RollbackSnapshotDB.created_at.desc())
+                .all()
+            )
 
             assert len(snapshots_query) == 3
             for i in range(len(snapshots_query) - 1):
-                assert snapshots_query[i].created_at >= snapshots_query[i + 1].created_at
+                assert (
+                    snapshots_query[i].created_at >= snapshots_query[i + 1].created_at
+                )
 
     def test_get_snapshots_error_handling(self, db_manager, caplog):
         """Test error handling when query fails."""
-        with patch.object(db_manager, 'session') as mock_session_ctx:
+        with patch.object(db_manager, "session") as mock_session_ctx:
             mock_session = Mock()
             mock_session.query.side_effect = Exception("Query error")
             mock_session_ctx.return_value.__enter__ = Mock(return_value=mock_session)
@@ -552,19 +570,22 @@ class TestGetRollbackSnapshots:
             snapshots = get_rollback_snapshots(db_manager=db_manager)
 
             assert snapshots == []
-            assert any("Failed to query rollback snapshots" in rec.message for rec in caplog.records)
+            assert any(
+                "Failed to query rollback snapshots" in rec.message
+                for rec in caplog.records
+            )
 
 
 class TestIntegration:
     """Integration tests combining snapshots and events."""
 
-    def test_snapshot_and_event_lifecycle(self, db_manager, rollback_snapshot, rollback_result):
+    def test_snapshot_and_event_lifecycle(
+        self, db_manager, rollback_snapshot, rollback_result
+    ):
         """Test complete lifecycle: snapshot -> event -> query."""
         # Log snapshot
         log_rollback_snapshot(
-            rollback_snapshot,
-            workflow_execution_id="wf-123",
-            db_manager=db_manager
+            rollback_snapshot, workflow_execution_id="wf-123", db_manager=db_manager
         )
 
         # Log rollback event
@@ -572,20 +593,27 @@ class TestIntegration:
             result=rollback_result,
             trigger="auto",
             operator="system",
-            db_manager=db_manager
+            db_manager=db_manager,
         )
 
         # Query both within session context
         with db_manager.session() as session:
-            from temper_ai.storage.database.models import RollbackEvent, RollbackSnapshotDB
+            from temper_ai.storage.database.models import (
+                RollbackEvent,
+                RollbackSnapshotDB,
+            )
 
-            snapshots_query = session.query(RollbackSnapshotDB).filter_by(
-                workflow_execution_id="wf-123"
-            ).all()
+            snapshots_query = (
+                session.query(RollbackSnapshotDB)
+                .filter_by(workflow_execution_id="wf-123")
+                .all()
+            )
 
-            events_query = session.query(RollbackEvent).filter_by(
-                snapshot_id=rollback_snapshot.id
-            ).all()
+            events_query = (
+                session.query(RollbackEvent)
+                .filter_by(snapshot_id=rollback_snapshot.id)
+                .all()
+            )
 
             assert len(snapshots_query) == 1
             assert len(events_query) == 1

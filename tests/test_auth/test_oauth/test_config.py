@@ -8,26 +8,27 @@ Tests cover:
 - Invalid config error handling
 - Scope validation
 """
+
 import os
-import pytest
 import tempfile
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any
+
+import pytest
 
 from temper_ai.auth.oauth.config import (
-    OAuthConfig,
-    OAuthProviderConfig,
-    OAuthConfigurationError,
-    get_provider_endpoints,
     PROVIDER_DEFAULTS,
+    OAuthConfig,
+    OAuthConfigurationError,
+    OAuthProviderConfig,
+    get_provider_endpoints,
 )
-
 
 # ==================== FIXTURES ====================
 
 
 @pytest.fixture
-def valid_provider_config() -> Dict[str, Any]:
+def valid_provider_config() -> dict[str, Any]:
     """Valid provider configuration dict."""
     return {
         "provider": "google",
@@ -39,7 +40,7 @@ def valid_provider_config() -> Dict[str, Any]:
 
 
 @pytest.fixture
-def valid_oauth_config() -> Dict[str, Any]:
+def valid_oauth_config() -> dict[str, Any]:
     """Valid OAuth system configuration dict."""
     return {
         "providers": [
@@ -196,7 +197,9 @@ def test_provider_config_resolve_env_missing_var():
         scopes=["openid"],
     )
 
-    with pytest.raises(OAuthConfigurationError, match="Environment variable 'MISSING_VAR' not found"):
+    with pytest.raises(
+        OAuthConfigurationError, match="Environment variable 'MISSING_VAR' not found"
+    ):
         config.resolve_env_references()
 
 
@@ -307,7 +310,7 @@ def test_oauth_config_callback_url_validation_with_env():
 
 def test_oauth_config_token_expiry_bounds():
     """Test token expiry seconds validation."""
-    from temper_ai.shared.constants.durations import SECONDS_PER_MINUTE, SECONDS_PER_DAY
+    from temper_ai.shared.constants.durations import SECONDS_PER_DAY, SECONDS_PER_MINUTE
 
     base_config = {
         "providers": [
@@ -437,7 +440,9 @@ def test_oauth_config_resolve_env_missing_var():
 
     config = OAuthConfig(**config_data)
 
-    with pytest.raises(OAuthConfigurationError, match="Environment variable 'MISSING_KEY' not found"):
+    with pytest.raises(
+        OAuthConfigurationError, match="Environment variable 'MISSING_KEY' not found"
+    ):
         config.resolve_env_references()
 
 
@@ -465,7 +470,7 @@ state_secret_key: ${env:OAUTH_STATE_SECRET}
 token_expiry_seconds: 3600
 """
 
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
         f.write(yaml_content)
         config_path = Path(f.name)
 
@@ -490,12 +495,14 @@ def test_oauth_config_from_yaml_invalid_format():
     """Test error when YAML format is invalid."""
     yaml_content = "invalid: yaml: content: ["
 
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
         f.write(yaml_content)
         config_path = Path(f.name)
 
     try:
-        with pytest.raises(OAuthConfigurationError, match="Invalid OAuth config format"):
+        with pytest.raises(
+            OAuthConfigurationError, match="Invalid OAuth config format"
+        ):
             OAuthConfig.from_yaml_file(config_path)
     finally:
         config_path.unlink()
@@ -510,12 +517,14 @@ providers:
     # Missing client_secret, redirect_uri, scopes
 """
 
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
         f.write(yaml_content)
         config_path = Path(f.name)
 
     try:
-        with pytest.raises(OAuthConfigurationError, match="Invalid OAuth config format"):
+        with pytest.raises(
+            OAuthConfigurationError, match="Invalid OAuth config format"
+        ):
             OAuthConfig.from_yaml_file(config_path)
     finally:
         config_path.unlink()
@@ -536,10 +545,19 @@ def test_get_provider_endpoints_google():
 
     endpoints = get_provider_endpoints(config)
 
-    assert endpoints["authorization_endpoint"] == PROVIDER_DEFAULTS["google"]["authorization_endpoint"]
+    assert (
+        endpoints["authorization_endpoint"]
+        == PROVIDER_DEFAULTS["google"]["authorization_endpoint"]
+    )
     assert endpoints["token_endpoint"] == PROVIDER_DEFAULTS["google"]["token_endpoint"]
-    assert endpoints["revocation_endpoint"] == PROVIDER_DEFAULTS["google"]["revocation_endpoint"]
-    assert endpoints["userinfo_endpoint"] == PROVIDER_DEFAULTS["google"]["userinfo_endpoint"]
+    assert (
+        endpoints["revocation_endpoint"]
+        == PROVIDER_DEFAULTS["google"]["revocation_endpoint"]
+    )
+    assert (
+        endpoints["userinfo_endpoint"]
+        == PROVIDER_DEFAULTS["google"]["userinfo_endpoint"]
+    )
 
 
 def test_get_provider_endpoints_github():
@@ -554,9 +572,15 @@ def test_get_provider_endpoints_github():
 
     endpoints = get_provider_endpoints(config)
 
-    assert endpoints["authorization_endpoint"] == PROVIDER_DEFAULTS["github"]["authorization_endpoint"]
+    assert (
+        endpoints["authorization_endpoint"]
+        == PROVIDER_DEFAULTS["github"]["authorization_endpoint"]
+    )
     assert endpoints["token_endpoint"] == PROVIDER_DEFAULTS["github"]["token_endpoint"]
-    assert endpoints["userinfo_endpoint"] == PROVIDER_DEFAULTS["github"]["userinfo_endpoint"]
+    assert (
+        endpoints["userinfo_endpoint"]
+        == PROVIDER_DEFAULTS["github"]["userinfo_endpoint"]
+    )
 
 
 def test_get_provider_endpoints_custom_override():
@@ -618,8 +642,7 @@ def test_get_provider_endpoints_unsupported_with_custom():
 def test_oauth_configuration_error_with_path():
     """Test OAuthConfigurationError includes config path."""
     error = OAuthConfigurationError(
-        "Test error message",
-        config_path="oauth.providers.google.client_id"
+        "Test error message", config_path="oauth.providers.google.client_id"
     )
 
     assert str(error) == "Test error message"

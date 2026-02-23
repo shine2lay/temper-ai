@@ -7,7 +7,7 @@ outcomes, and lifecycle profiles before the config reaches LangGraph compilation
 import copy
 import logging
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from temper_ai.lifecycle._schemas import (
     AdaptationAction,
@@ -42,10 +42,10 @@ class LifecycleAdapter:
         self,
         profile_registry: ProfileRegistry,
         classifier: ProjectClassifier,
-        store: Optional[LifecycleStore] = None,
-        history_analyzer: Optional[HistoryAnalyzer] = None,
-        experimenter: Optional[Any] = None,
-        autonomy_manager: Optional[Any] = None,
+        store: LifecycleStore | None = None,
+        history_analyzer: HistoryAnalyzer | None = None,
+        experimenter: Any | None = None,
+        autonomy_manager: Any | None = None,
     ) -> None:
         self._registry = profile_registry
         self._classifier = classifier
@@ -56,10 +56,10 @@ class LifecycleAdapter:
 
     def adapt(
         self,
-        workflow_config: Dict[str, Any],
-        input_data: Dict[str, Any],
-        workflow_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        workflow_config: dict[str, Any],
+        input_data: dict[str, Any],
+        workflow_id: str | None = None,
+    ) -> dict[str, Any]:
         """Adapt a workflow config based on project characteristics.
 
         Returns deep-copied adapted workflow config dict.
@@ -75,24 +75,20 @@ class LifecycleAdapter:
         lifecycle_cfg = wf.get("lifecycle", {})
         chars = self._classify(config, input_data, lifecycle_cfg)
 
-        profile = self._resolve_profile(
-            chars, lifecycle_cfg, wf, workflow_id
-        )
+        profile = self._resolve_profile(chars, lifecycle_cfg, wf, workflow_id)
         if profile is None:
             return config
 
-        self._apply_and_record(
-            wf, profile, chars, lifecycle_cfg, workflow_id
-        )
+        self._apply_and_record(wf, profile, chars, lifecycle_cfg, workflow_id)
         return config
 
     def _resolve_profile(
         self,
         chars: ProjectCharacteristics,
-        lifecycle_cfg: Dict[str, Any],
-        wf: Dict[str, Any],
-        workflow_id: Optional[str],
-    ) -> Optional[LifecycleProfile]:
+        lifecycle_cfg: dict[str, Any],
+        wf: dict[str, Any],
+        workflow_id: str | None,
+    ) -> LifecycleProfile | None:
         """Select and gate-check the lifecycle profile."""
         profile = self._select_profile(chars, lifecycle_cfg, wf)
         if profile is None:
@@ -118,20 +114,18 @@ class LifecycleAdapter:
 
     def _apply_and_record(
         self,
-        wf: Dict[str, Any],
+        wf: dict[str, Any],
         profile: LifecycleProfile,
         chars: ProjectCharacteristics,
-        lifecycle_cfg: Dict[str, Any],
-        workflow_id: Optional[str],
+        lifecycle_cfg: dict[str, Any],
+        workflow_id: str | None,
     ) -> None:
         """Apply adaptation rules and record the result."""
         stages = wf.get("stages", [])
         original_names = [s.get("name", "") for s in stages]
 
         history_context = self._get_history_context(wf.get("name", ""))
-        adapted_stages = _apply_rules(
-            stages, profile.rules, chars, history_context
-        )
+        adapted_stages = _apply_rules(stages, profile.rules, chars, history_context)
 
         if len(adapted_stages) < MIN_STAGES_REQUIRED:
             raise ValueError(
@@ -156,14 +150,17 @@ class LifecycleAdapter:
         )
         logger.info(
             "Adapted workflow: %s -> %s (profile: %s, rules: %d)",
-            original_names, adapted_names, profile.name, len(rules_applied),
+            original_names,
+            adapted_names,
+            profile.name,
+            len(rules_applied),
         )
 
     def _classify(
         self,
-        config: Dict[str, Any],
-        input_data: Dict[str, Any],
-        lifecycle_cfg: Dict[str, Any],
+        config: dict[str, Any],
+        input_data: dict[str, Any],
+        lifecycle_cfg: dict[str, Any],
     ) -> ProjectCharacteristics:
         """Classify project characteristics."""
         if lifecycle_cfg.get("auto_classify", True):
@@ -173,26 +170,22 @@ class LifecycleAdapter:
     def _select_profile(
         self,
         chars: ProjectCharacteristics,
-        lifecycle_cfg: Dict[str, Any],
-        wf: Dict[str, Any],
-    ) -> Optional[LifecycleProfile]:
+        lifecycle_cfg: dict[str, Any],
+        wf: dict[str, Any],
+    ) -> LifecycleProfile | None:
         """Select the lifecycle profile to apply."""
         # Explicit profile name
         profile_name = lifecycle_cfg.get("profile")
         if profile_name:
             profile = self._registry.get_profile(profile_name)
             if profile is None:
-                logger.warning(
-                    "Named profile not found: %s", profile_name
-                )
+                logger.warning("Named profile not found: %s", profile_name)
             return profile
 
         # Auto-match
-        matched = self._registry.match_profiles(
-            chars, wf.get("name", "")
-        )
+        matched = self._registry.match_profiles(chars, wf.get("name", ""))
         if matched:
-            return matched[0]  # Use first match (highest priority)
+            return matched[0]  # Use first match
         return None
 
     def _check_autonomy(
@@ -206,9 +199,7 @@ class LifecycleAdapter:
             return not profile.requires_approval
 
         try:
-            level = self._autonomy_manager.get_level(
-                "lifecycle_adapter", "lifecycle"
-            )
+            level = self._autonomy_manager.get_level("lifecycle_adapter", "lifecycle")
             level_value = int(level)
 
             # Check minimum autonomy level
@@ -233,9 +224,7 @@ class LifecycleAdapter:
             )
             return not profile.requires_approval
 
-    def _get_history_context(
-        self, workflow_name: str
-    ) -> Dict[str, Any]:
+    def _get_history_context(self, workflow_name: str) -> dict[str, Any]:
         """Build history context for Jinja2 condition evaluation."""
         if self._history is None:
             return {}
@@ -243,8 +232,7 @@ class LifecycleAdapter:
         stage_metrics = self._history.get_stage_metrics(workflow_name)
         return {
             "history": {
-                name: metrics.model_dump()
-                for name, metrics in stage_metrics.items()
+                name: metrics.model_dump() for name, metrics in stage_metrics.items()
             }
         }
 
@@ -253,10 +241,10 @@ class LifecycleAdapter:
         workflow_id: str,
         profile_name: str,
         chars: ProjectCharacteristics,
-        rules_applied: List[str],
-        original_names: List[str],
-        adapted_names: List[str],
-        lifecycle_cfg: Dict[str, Any],
+        rules_applied: list[str],
+        original_names: list[str],
+        adapted_names: list[str],
+        lifecycle_cfg: dict[str, Any],
     ) -> None:
         """Record adaptation in the store for audit trail."""
         if self._store is None:
@@ -278,17 +266,15 @@ class LifecycleAdapter:
         try:
             self._store.save_adaptation(adaptation)
         except Exception:  # noqa: BLE001 -- recording is best-effort
-            logger.warning(
-                "Failed to record adaptation", exc_info=True
-            )
+            logger.warning("Failed to record adaptation", exc_info=True)
 
 
 def _apply_rules(
-    stages: List[Dict[str, Any]],
-    rules: List[AdaptationRule],
+    stages: list[dict[str, Any]],
+    rules: list[AdaptationRule],
     chars: ProjectCharacteristics,
-    history_context: Dict[str, Any],
-) -> List[Dict[str, Any]]:
+    history_context: dict[str, Any],
+) -> list[dict[str, Any]]:
     """Apply adaptation rules to the stages list.
 
     Rules are sorted by priority (descending) and applied sequentially.
@@ -321,24 +307,20 @@ def _apply_rules(
     return result
 
 
-def _evaluate_condition(
-    env: Any, condition: str, context: Dict[str, Any]
-) -> bool:
+def _evaluate_condition(env: Any, condition: str, context: dict[str, Any]) -> bool:
     """Evaluate a Jinja2 condition expression."""
     try:
         template = env.from_string(condition)
         rendered = template.render(**context).strip().lower()
         return rendered in TRUTHY_VALUES
     except Exception:  # noqa: BLE001 -- condition failure = skip rule
-        logger.warning(
-            "Condition evaluation failed: %s", condition, exc_info=True
-        )
+        logger.warning("Condition evaluation failed: %s", condition, exc_info=True)
         return False
 
 
 def _apply_skip(
-    stages: List[Dict[str, Any]], rule: AdaptationRule
-) -> List[Dict[str, Any]]:
+    stages: list[dict[str, Any]], rule: AdaptationRule
+) -> list[dict[str, Any]]:
     """Remove a stage by name."""
     original_count = len(stages)
     result = [s for s in stages if s.get("name") != rule.stage_name]
@@ -352,8 +334,8 @@ def _apply_skip(
 
 
 def _apply_add(
-    stages: List[Dict[str, Any]], rule: AdaptationRule
-) -> List[Dict[str, Any]]:
+    stages: list[dict[str, Any]], rule: AdaptationRule
+) -> list[dict[str, Any]]:
     """Add a new stage at the specified position."""
     # Check if stage already exists
     existing = {s.get("name") for s in stages}
@@ -390,8 +372,9 @@ def _apply_add(
 
 
 def _find_stage_index(
-    stages: List[Dict[str, Any]], name: Optional[str],
-) -> Optional[int]:
+    stages: list[dict[str, Any]],
+    name: str | None,
+) -> int | None:
     """Find the index of a stage by name, or None."""
     if name is None:
         return None
@@ -402,8 +385,8 @@ def _find_stage_index(
 
 
 def _apply_reorder(
-    stages: List[Dict[str, Any]], rule: AdaptationRule
-) -> List[Dict[str, Any]]:
+    stages: list[dict[str, Any]], rule: AdaptationRule
+) -> list[dict[str, Any]]:
     """Move a stage to a new position."""
     stage_idx = _find_stage_index(stages, rule.stage_name)
     if stage_idx is None:
@@ -430,8 +413,8 @@ def _apply_reorder(
 
 
 def _apply_modify(
-    stages: List[Dict[str, Any]], rule: AdaptationRule
-) -> List[Dict[str, Any]]:
+    stages: list[dict[str, Any]], rule: AdaptationRule
+) -> list[dict[str, Any]]:
     """Merge modifications into a stage dict."""
     result = list(stages)
     for i, s in enumerate(result):
@@ -448,11 +431,11 @@ def _apply_modify(
 
 
 def _get_applied_rule_names(
-    rules: List[AdaptationRule],
-    original_names: List[str],
-    adapted_names: List[str],
-) -> List[str]:
-    """Determine which rules were actually applied."""
+    rules: list[AdaptationRule],
+    original_names: list[str],
+    adapted_names: list[str],
+) -> list[str]:
+    """Infer which rules may have applied by comparing stage lists."""
     if original_names == adapted_names:
         return []
     return [r.name for r in rules]
@@ -470,7 +453,5 @@ def _check_emergency_stop() -> bool:
     except ImportError:
         return True  # No autonomy module = proceed
     except Exception:  # noqa: BLE001 -- safety check failure = proceed
-        logger.warning(
-            "Emergency stop check failed, proceeding", exc_info=True
-        )
+        logger.warning("Emergency stop check failed, proceeding", exc_info=True)
         return True

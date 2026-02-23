@@ -6,7 +6,6 @@ from temper_ai.safety.autonomy.models import (
     BudgetRecord,
     EmergencyStopEvent,
 )
-from temper_ai.storage.database.datetime_utils import utcnow
 
 
 class TestAutonomyState:
@@ -85,9 +84,7 @@ class TestBudgetRecord:
 
     def test_update_spent(self) -> None:
         """Can update spent amount."""
-        b = BudgetRecord(
-            id="bg-test2", scope="s", period="p", budget_usd=50.0
-        )
+        b = BudgetRecord(id="bg-test2", scope="s", period="p", budget_usd=50.0)
         b.spent_usd = 25.0
         b.action_count = 10
         assert b.spent_usd == 25.0

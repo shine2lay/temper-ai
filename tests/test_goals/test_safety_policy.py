@@ -7,10 +7,10 @@ import pytest
 from temper_ai.goals._schemas import (
     EffortLevel,
     GoalProposal,
+    GoalRiskLevel,
     GoalType,
     ImpactEstimate,
     RiskAssessment,
-    GoalRiskLevel,
 )
 from temper_ai.goals.safety_policy import GoalSafetyPolicy
 from temper_ai.goals.store import GoalStore
@@ -23,9 +23,7 @@ def _make_proposal(risk=GoalRiskLevel.LOW, blast_radius="stage:x"):
         goal_type=GoalType.COST_REDUCTION,
         title="Test proposal",
         description="Test",
-        risk_assessment=RiskAssessment(
-            level=risk, blast_radius=blast_radius
-        ),
+        risk_assessment=RiskAssessment(level=risk, blast_radius=blast_radius),
         effort_estimate=EffortLevel.SMALL,
         expected_impacts=[
             ImpactEstimate(
@@ -51,9 +49,7 @@ class TestValidateProposal:
 
     def test_critical_risk_requires_review(self, store):
         policy = GoalSafetyPolicy(store=store)
-        result = policy.validate_proposal(
-            _make_proposal(risk=GoalRiskLevel.CRITICAL)
-        )
+        result = policy.validate_proposal(_make_proposal(risk=GoalRiskLevel.CRITICAL))
         assert result.allowed is True
         assert result.requires_approval is True
         assert any("critical" in r.lower() for r in result.reasons)
@@ -66,9 +62,7 @@ class TestValidateProposal:
 
     def test_large_blast_radius(self, store):
         policy = GoalSafetyPolicy(store=store)
-        result = policy.validate_proposal(
-            _make_proposal(blast_radius="a,b,c,d,e,f,g")
-        )
+        result = policy.validate_proposal(_make_proposal(blast_radius="a,b,c,d,e,f,g"))
         assert result.requires_approval is True
         assert any("blast radius" in r.lower() for r in result.reasons)
 
@@ -92,43 +86,46 @@ class TestCanAutoApprove:
 
     def test_risk_gated_low_ok(self, store):
         policy = GoalSafetyPolicy(store=store)
-        assert policy.can_auto_approve(_make_proposal(risk=GoalRiskLevel.LOW), 2) is True
+        assert (
+            policy.can_auto_approve(_make_proposal(risk=GoalRiskLevel.LOW), 2) is True
+        )
 
     def test_risk_gated_medium_blocked(self, store):
         policy = GoalSafetyPolicy(store=store)
-        assert policy.can_auto_approve(
-            _make_proposal(risk=GoalRiskLevel.MEDIUM), 2
-        ) is False
+        assert (
+            policy.can_auto_approve(_make_proposal(risk=GoalRiskLevel.MEDIUM), 2)
+            is False
+        )
 
     def test_autonomous_medium_ok(self, store):
         policy = GoalSafetyPolicy(store=store)
-        assert policy.can_auto_approve(
-            _make_proposal(risk=GoalRiskLevel.MEDIUM), 3
-        ) is True
+        assert (
+            policy.can_auto_approve(_make_proposal(risk=GoalRiskLevel.MEDIUM), 3)
+            is True
+        )
 
     def test_autonomous_high_blocked(self, store):
         policy = GoalSafetyPolicy(store=store)
-        assert policy.can_auto_approve(
-            _make_proposal(risk=GoalRiskLevel.HIGH), 3
-        ) is False
+        assert (
+            policy.can_auto_approve(_make_proposal(risk=GoalRiskLevel.HIGH), 3) is False
+        )
 
     def test_strategic_high_ok(self, store):
         policy = GoalSafetyPolicy(store=store)
-        assert policy.can_auto_approve(
-            _make_proposal(risk=GoalRiskLevel.HIGH), 4
-        ) is True
+        assert (
+            policy.can_auto_approve(_make_proposal(risk=GoalRiskLevel.HIGH), 4) is True
+        )
 
     def test_critical_never(self, store):
         policy = GoalSafetyPolicy(store=store)
-        assert policy.can_auto_approve(
-            _make_proposal(risk=GoalRiskLevel.CRITICAL), 4
-        ) is False
+        assert (
+            policy.can_auto_approve(_make_proposal(risk=GoalRiskLevel.CRITICAL), 4)
+            is False
+        )
 
     def test_budget_check_blocks(self, store):
         enforcer = MagicMock()
-        policy = GoalSafetyPolicy(
-            store=store, budget_enforcer=enforcer
-        )
+        policy = GoalSafetyPolicy(store=store, budget_enforcer=enforcer)
         proposal = _make_proposal(risk=GoalRiskLevel.LOW)
         proposal.expected_impacts[0].metric_name = "cost_usd"
         proposal.expected_impacts[0].current_value = 100.0

@@ -1,8 +1,8 @@
 """Tests for API key authentication middleware."""
+
 import os
 from unittest.mock import patch
 
-import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 

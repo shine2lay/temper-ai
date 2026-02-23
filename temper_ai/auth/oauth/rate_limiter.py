@@ -6,16 +6,18 @@ Prevents abuse and DoS attacks on OAuth flows with multi-tier rate limiting:
 - Global limits (protect OAuth provider quota)
 
 This is a simplified implementation suitable for moderate traffic.
-For high-scale production, consider using redis-based rate limiting
-with libraries like slowapi or limits.
 """
+
 import logging
 import threading
 from collections import defaultdict, deque
-from datetime import datetime, timedelta, timezone
-from typing import Dict, Optional, Tuple
+from datetime import UTC, datetime, timedelta
 
-from temper_ai.shared.constants.durations import DURATION_INSTANT, SECONDS_PER_HOUR, SECONDS_PER_MINUTE
+from temper_ai.shared.constants.durations import (
+    DURATION_INSTANT,
+    SECONDS_PER_HOUR,
+    SECONDS_PER_MINUTE,
+)
 from temper_ai.shared.utils.exceptions import RateLimitError
 
 logger = logging.getLogger(__name__)
@@ -24,8 +26,12 @@ logger = logging.getLogger(__name__)
 LIMIT_OAUTH_INIT_IP = "oauth_init_ip"
 LIMIT_OAUTH_INIT_USER = "oauth_init_user"
 LIMIT_OAUTH_INIT_GLOBAL = "oauth_init_global"
-LIMIT_TOKEN_EXCHANGE_IP = "token_exchange_ip"  # noqa: S105 — rate limit key, not password
-LIMIT_TOKEN_EXCHANGE_GLOBAL = "token_exchange_global"  # noqa: S105 — rate limit key, not password
+LIMIT_TOKEN_EXCHANGE_IP = (
+    "token_exchange_ip"  # noqa: S105 — rate limit key, not password
+)
+LIMIT_TOKEN_EXCHANGE_GLOBAL = (
+    "token_exchange_global"  # noqa: S105 — rate limit key, not password
+)
 LIMIT_USERINFO_USER = "userinfo_user"
 LIMIT_USERINFO_GLOBAL = "userinfo_global"
 # Global identifier for rate limiting
@@ -72,15 +78,13 @@ class SlidingWindowRateLimiter:
     def __init__(self) -> None:
         """Initialize rate limiter."""
         # Storage: {limit_type: {identifier: deque of timestamps}}
-        self._windows: Dict[str, Dict[str, deque]] = defaultdict(lambda: defaultdict(deque))
+        self._windows: dict[str, dict[str, deque]] = defaultdict(
+            lambda: defaultdict(deque)
+        )
         self._lock = threading.Lock()
 
     def check_limit(
-        self,
-        limit_type: str,
-        identifier: str,
-        max_requests: int,
-        window_seconds: int
+        self, limit_type: str, identifier: str, max_requests: int, window_seconds: int
     ) -> None:
         """Check if request is within rate limit.
 
@@ -94,7 +98,7 @@ class SlidingWindowRateLimiter:
             RateLimitExceeded: If rate limit exceeded
         """
         with self._lock:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             window_start = now - timedelta(seconds=window_seconds)
 
             # Get timestamp queue for this identifier
@@ -108,7 +112,14 @@ class SlidingWindowRateLimiter:
             if len(timestamps) >= max_requests:
                 # Calculate retry-after (time until oldest request expires)
                 oldest_timestamp = timestamps[0]
-                retry_after = int((oldest_timestamp + timedelta(seconds=window_seconds) - now).total_seconds()) + DURATION_INSTANT
+                retry_after = (
+                    int(
+                        (
+                            oldest_timestamp + timedelta(seconds=window_seconds) - now
+                        ).total_seconds()
+                    )
+                    + DURATION_INSTANT
+                )
 
                 logger.warning(
                     f"Rate limit exceeded: {limit_type}={identifier}, "
@@ -118,7 +129,7 @@ class SlidingWindowRateLimiter:
                 raise RateLimitExceeded(
                     f"Rate limit exceeded for {limit_type}. "
                     f"Maximum {max_requests} requests per {window_seconds} seconds.",
-                    retry_after=retry_after
+                    retry_after=retry_after,
                 )
 
             # Add current request timestamp
@@ -130,12 +141,8 @@ class SlidingWindowRateLimiter:
             )
 
     def get_remaining(
-        self,
-        limit_type: str,
-        identifier: str,
-        max_requests: int,
-        window_seconds: int
-    ) -> Tuple[int, int]:
+        self, limit_type: str, identifier: str, max_requests: int, window_seconds: int
+    ) -> tuple[int, int]:
         """Get remaining requests and reset time.
 
         Args:
@@ -148,7 +155,7 @@ class SlidingWindowRateLimiter:
             (remaining_requests, reset_after_seconds) tuple
         """
         with self._lock:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             window_start = now - timedelta(seconds=window_seconds)
 
             timestamps = self._windows[limit_type][identifier]
@@ -162,7 +169,9 @@ class SlidingWindowRateLimiter:
             # Calculate reset time (when oldest request expires)
             if timestamps:
                 oldest = timestamps[0]
-                reset_after = int((oldest + timedelta(seconds=window_seconds) - now).total_seconds())
+                reset_after = int(
+                    (oldest + timedelta(seconds=window_seconds) - now).total_seconds()
+                )
             else:
                 reset_after = window_seconds
 
@@ -177,7 +186,7 @@ class SlidingWindowRateLimiter:
             older_than_seconds: Remove data older than this (default: 1 hour)
         """
         with self._lock:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             cutoff = now - timedelta(seconds=older_than_seconds)
 
             for limit_type in list(self._windows.keys()):
@@ -224,7 +233,7 @@ class OAuthRateLimiter:
       - 5000 global per hour
     """
 
-    def __init__(self, limiter: Optional[SlidingWindowRateLimiter] = None):
+    def __init__(self, limiter: SlidingWindowRateLimiter | None = None):
         """Initialize OAuth rate limiter.
 
         Args:
@@ -235,24 +244,30 @@ class OAuthRateLimiter:
         # Define OAuth-specific limits (rate limit tuples are instance config, not extractable constants)
         self.limits = {  # noqa: Instance-specific configuration
             # OAuth flow initiation
-            LIMIT_OAUTH_INIT_IP: (10, SECONDS_PER_MINUTE),      # 10 per IP per minute
-            LIMIT_OAUTH_INIT_USER: (5, SECONDS_PER_MINUTE),     # 5 per user per minute  # noqa
+            LIMIT_OAUTH_INIT_IP: (10, SECONDS_PER_MINUTE),  # 10 per IP per minute
+            LIMIT_OAUTH_INIT_USER: (
+                5,
+                SECONDS_PER_MINUTE,
+            ),  # 5 per user per minute  # noqa
             LIMIT_OAUTH_INIT_GLOBAL: (1000, SECONDS_PER_HOUR),  # 1000 global per hour
-
             # Token exchange
-            LIMIT_TOKEN_EXCHANGE_IP: (5, SECONDS_PER_MINUTE),   # 5 per IP per minute  # noqa
-            LIMIT_TOKEN_EXCHANGE_GLOBAL: (500, SECONDS_PER_HOUR),  # 500 global per hour  # noqa
-
+            LIMIT_TOKEN_EXCHANGE_IP: (
+                5,
+                SECONDS_PER_MINUTE,
+            ),  # 5 per IP per minute  # noqa
+            LIMIT_TOKEN_EXCHANGE_GLOBAL: (
+                500,
+                SECONDS_PER_HOUR,
+            ),  # 500 global per hour  # noqa
             # User info retrieval
-            LIMIT_USERINFO_USER: (60, SECONDS_PER_MINUTE),      # 60 per user per minute
-            LIMIT_USERINFO_GLOBAL: (5000, SECONDS_PER_HOUR),  # 5000 global per hour  # noqa
+            LIMIT_USERINFO_USER: (60, SECONDS_PER_MINUTE),  # 60 per user per minute
+            LIMIT_USERINFO_GLOBAL: (
+                5000,
+                SECONDS_PER_HOUR,
+            ),  # 5000 global per hour  # noqa
         }
 
-    def check_oauth_init(
-        self,
-        ip_address: str,
-        user_id: str
-    ) -> None:
+    def check_oauth_init(self, ip_address: str, user_id: str) -> None:
         """Check rate limits for OAuth flow initiation.
 
         Args:
@@ -272,12 +287,11 @@ class OAuthRateLimiter:
 
         # Check global limit
         max_requests, window = self.limits[LIMIT_OAUTH_INIT_GLOBAL]
-        self.limiter.check_limit(LIMIT_OAUTH_INIT_GLOBAL, GLOBAL_IDENTIFIER, max_requests, window)
+        self.limiter.check_limit(
+            LIMIT_OAUTH_INIT_GLOBAL, GLOBAL_IDENTIFIER, max_requests, window
+        )
 
-    def check_token_exchange(
-        self,
-        ip_address: str
-    ) -> None:
+    def check_token_exchange(self, ip_address: str) -> None:
         """Check rate limits for token exchange.
 
         Args:
@@ -288,16 +302,17 @@ class OAuthRateLimiter:
         """
         # Check IP limit
         max_requests, window = self.limits[LIMIT_TOKEN_EXCHANGE_IP]
-        self.limiter.check_limit(LIMIT_TOKEN_EXCHANGE_IP, ip_address, max_requests, window)
+        self.limiter.check_limit(
+            LIMIT_TOKEN_EXCHANGE_IP, ip_address, max_requests, window
+        )
 
         # Check global limit
         max_requests, window = self.limits[LIMIT_TOKEN_EXCHANGE_GLOBAL]
-        self.limiter.check_limit(LIMIT_TOKEN_EXCHANGE_GLOBAL, GLOBAL_IDENTIFIER, max_requests, window)
+        self.limiter.check_limit(
+            LIMIT_TOKEN_EXCHANGE_GLOBAL, GLOBAL_IDENTIFIER, max_requests, window
+        )
 
-    def check_userinfo(
-        self,
-        user_id: str
-    ) -> None:
+    def check_userinfo(self, user_id: str) -> None:
         """Check rate limits for user info retrieval.
 
         Args:
@@ -312,4 +327,6 @@ class OAuthRateLimiter:
 
         # Check global limit
         max_requests, window = self.limits[LIMIT_USERINFO_GLOBAL]
-        self.limiter.check_limit(LIMIT_USERINFO_GLOBAL, GLOBAL_IDENTIFIER, max_requests, window)
+        self.limiter.check_limit(
+            LIMIT_USERINFO_GLOBAL, GLOBAL_IDENTIFIER, max_requests, window
+        )

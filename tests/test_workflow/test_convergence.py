@@ -3,28 +3,25 @@
 Phase 6: Dedup, converge signal, state copy per thread, predecessor
 integration.
 """
-from unittest.mock import MagicMock, patch
 
-import pytest
+from unittest.mock import MagicMock
 
 from temper_ai.stage.executors.state_keys import StateKeys
-from temper_ai.workflow.engines.workflow_executor import (
-    _normalize_dict_signal,
-    _normalize_next_stage_signal,
-    _run_parallel_stage_batch,
-    _run_stage_node,
-)
 from temper_ai.workflow.engines._dynamic_edge_helpers import (
     _dedup_targets,
     _execute_convergence,
     _follow_parallel_targets,
-    follow_dynamic_edges,
 )
-
+from temper_ai.workflow.engines.workflow_executor import (
+    _normalize_dict_signal,
+    _normalize_next_stage_signal,
+    _run_parallel_stage_batch,
+)
 
 # ---------------------------------------------------------------------------
 # Converge signal parsing
 # ---------------------------------------------------------------------------
+
 
 class TestConvergeSignalParsing:
     """Test _normalize_dict_signal with converge field."""
@@ -91,6 +88,7 @@ class TestConvergeSignalParsing:
 # Target deduplication
 # ---------------------------------------------------------------------------
 
+
 class TestDedupTargets:
     """Test _dedup_targets."""
 
@@ -132,7 +130,9 @@ class TestDedupTargets:
             {"name": "A", "inputs": {}},
         ]
         stage_nodes = {
-            "A": MagicMock(), "B": MagicMock(), "C": MagicMock(),
+            "A": MagicMock(),
+            "B": MagicMock(),
+            "C": MagicMock(),
         }
         result = _dedup_targets(targets, stage_nodes)
 
@@ -143,6 +143,7 @@ class TestDedupTargets:
 # ---------------------------------------------------------------------------
 # State copy per thread
 # ---------------------------------------------------------------------------
+
 
 class TestStateCopyPerThread:
     """Test that _run_parallel_stage_batch uses state copies."""
@@ -160,6 +161,7 @@ class TestStateCopyPerThread:
                     },
                     "current_stage": name_prefix,
                 }
+
             return node_fn
 
         stage_nodes = {
@@ -179,6 +181,7 @@ class TestStateCopyPerThread:
 
     def test_original_state_not_mutated_by_threads(self):
         """Original state dict is not mutated by parallel threads."""
+
         def mutating_node(state):
             state["injected_key"] = "mutated"
             return {
@@ -201,6 +204,7 @@ class TestStateCopyPerThread:
 # ---------------------------------------------------------------------------
 # Convergence execution
 # ---------------------------------------------------------------------------
+
 
 class TestExecuteConvergence:
     """Test _execute_convergence."""
@@ -231,6 +235,7 @@ class TestExecuteConvergence:
 
     def test_convergence_sets_predecessors(self):
         """Convergence records predecessors for PredecessorResolver."""
+
         def negotiate_fn(name, nodes, state, wf_config):
             return state
 
@@ -251,6 +256,7 @@ class TestExecuteConvergence:
 
     def test_convergence_missing_node_skipped(self):
         """Missing convergence stage is skipped without error."""
+
         def negotiate_fn(name, nodes, state, wf_config):
             return state
 
@@ -281,7 +287,10 @@ class TestExecuteConvergence:
         stage_nodes = {"D": MagicMock()}
         state = {StateKeys.STAGE_OUTPUTS: {}}
 
-        from temper_ai.workflow.engines._dynamic_edge_helpers import DEFAULT_MAX_DYNAMIC_HOPS
+        from temper_ai.workflow.engines._dynamic_edge_helpers import (
+            DEFAULT_MAX_DYNAMIC_HOPS,
+        )
+
         state, hop_count = _execute_convergence(
             {"name": "D"},
             ["B"],
@@ -300,6 +309,7 @@ class TestExecuteConvergence:
 # Full parallel fan-out with convergence
 # ---------------------------------------------------------------------------
 
+
 class TestFollowParallelWithConvergence:
     """Integration tests for parallel fan-out + convergence."""
 
@@ -314,6 +324,7 @@ class TestFollowParallelWithConvergence:
                     "stage_outputs": {name: {"output": f"{name}_done"}},
                     "current_stage": name,
                 }
+
             return node_fn
 
         def negotiate_fn(name, nodes, state, wf_config):
@@ -341,8 +352,12 @@ class TestFollowParallelWithConvergence:
             "converge": {"name": "D"},
         }
         state, hop_count = _follow_parallel_targets(
-            signal, stage_nodes, state, {},
-            0, negotiate_fn,
+            signal,
+            stage_nodes,
+            state,
+            {},
+            0,
+            negotiate_fn,
         )
 
         # D should be in execution order (negotiate)
@@ -367,6 +382,7 @@ class TestFollowParallelWithConvergence:
                     "stage_outputs": {name: {"output": "done"}},
                     "current_stage": name,
                 }
+
             return node_fn
 
         def negotiate_fn(name, nodes, state, wf_config):
@@ -385,8 +401,12 @@ class TestFollowParallelWithConvergence:
         signal = {"targets": targets, "mode": "parallel"}
 
         _follow_parallel_targets(
-            signal, stage_nodes, state, {},
-            0, negotiate_fn,
+            signal,
+            stage_nodes,
+            state,
+            {},
+            0,
+            negotiate_fn,
         )
 
         # B should only run once (deduped)
@@ -396,6 +416,7 @@ class TestFollowParallelWithConvergence:
 # ---------------------------------------------------------------------------
 # PredecessorResolver integration with convergence
 # ---------------------------------------------------------------------------
+
 
 class TestConvergencePredecessorIntegration:
     """Test PredecessorResolver uses _convergence_predecessors."""
@@ -430,6 +451,7 @@ class TestConvergencePredecessorIntegration:
 # ---------------------------------------------------------------------------
 # Signal normalization with converge (via _normalize_next_stage_signal)
 # ---------------------------------------------------------------------------
+
 
 class TestNormalizeSignalConverge:
     """Test _normalize_next_stage_signal passes converge through."""

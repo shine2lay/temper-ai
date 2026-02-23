@@ -29,7 +29,7 @@ def test_resolution_result_boundaries():
         reasoning="test reasoning",
         success=True,
         confidence=0.9,
-        metadata={}
+        metadata={},
     )
     assert result.confidence == 0.9
     assert result.success is True
@@ -50,14 +50,11 @@ def test_highest_confidence_resolver():
     outputs = [
         AgentOutput("a1", "yes", "r1", 0.9, {}),
         AgentOutput("a2", "no", "r2", 0.7, {}),
-        AgentOutput("a3", "yes", "r3", 0.8, {})
+        AgentOutput("a3", "yes", "r3", 0.8, {}),
     ]
 
     conflict = Conflict(
-        agents=["a1", "a2"],
-        decisions=["yes", "no"],
-        disagreement_score=1.0,
-        context={}
+        agents=["a1", "a2"], decisions=["yes", "no"], disagreement_score=1.0, context={}
     )
 
     result = resolver.resolve(conflict, outputs, {})
@@ -88,14 +85,11 @@ def test_random_tiebreaker_deterministic():
 
     outputs = [
         AgentOutput("a1", "yes", "r1", 0.9, {}),
-        AgentOutput("a2", "no", "r2", 0.8, {})
+        AgentOutput("a2", "no", "r2", 0.8, {}),
     ]
 
     conflict = Conflict(
-        agents=["a1", "a2"],
-        decisions=["yes", "no"],
-        disagreement_score=1.0,
-        context={}
+        agents=["a1", "a2"], decisions=["yes", "no"], disagreement_score=1.0, context={}
     )
 
     result1 = resolver1.resolve(conflict, outputs, {})
@@ -125,14 +119,11 @@ def test_random_tiebreaker_metadata():
 
     outputs = [
         AgentOutput("a1", "yes", "r1", 0.9, {}),
-        AgentOutput("a2", "no", "r2", 0.8, {})
+        AgentOutput("a2", "no", "r2", 0.8, {}),
     ]
 
     conflict = Conflict(
-        agents=["a1", "a2"],
-        decisions=["yes", "no"],
-        disagreement_score=1.0,
-        context={}
+        agents=["a1", "a2"], decisions=["yes", "no"], disagreement_score=1.0, context={}
     )
 
     result = resolver.resolve(conflict, outputs, {})
@@ -150,14 +141,14 @@ def test_merit_weighted_resolver():
 
     outputs = [
         AgentOutput("expert", "yes", "r1", 0.8, {"merit": 0.95}),
-        AgentOutput("novice", "no", "r2", 0.9, {"merit": 0.6})
+        AgentOutput("novice", "no", "r2", 0.9, {"merit": 0.6}),
     ]
 
     conflict = Conflict(
         agents=["expert", "novice"],
         decisions=["yes", "no"],
         disagreement_score=1.0,
-        context={}
+        context={},
     )
 
     result = resolver.resolve(conflict, outputs, {})
@@ -175,14 +166,11 @@ def test_merit_weighted_resolver_fallback_to_confidence():
 
     outputs = [
         AgentOutput("a1", "yes", "r1", 0.9, {}),  # No merit, uses confidence
-        AgentOutput("a2", "no", "r2", 0.7, {})  # No merit, uses confidence
+        AgentOutput("a2", "no", "r2", 0.7, {}),  # No merit, uses confidence
     ]
 
     conflict = Conflict(
-        agents=["a1", "a2"],
-        decisions=["yes", "no"],
-        disagreement_score=1.0,
-        context={}
+        agents=["a1", "a2"], decisions=["yes", "no"], disagreement_score=1.0, context={}
     )
 
     result = resolver.resolve(conflict, outputs, {})
@@ -211,10 +199,7 @@ def test_resolver_factory():
     assert isinstance(resolver, HighestConfidenceResolver)
 
     # Random with seed
-    resolver = create_resolver(
-        ResolutionMethod.RANDOM_TIEBREAKER,
-        {"seed": 42}
-    )
+    resolver = create_resolver(ResolutionMethod.RANDOM_TIEBREAKER, {"seed": 42})
     assert isinstance(resolver, RandomTiebreakerResolver)
     assert resolver.seed == 42
 
@@ -244,7 +229,7 @@ def test_validate_inputs_missing_agents():
         agents=["a1", "a2"],  # a2 not in outputs
         decisions=["yes", "no"],
         disagreement_score=1.0,
-        context={}
+        context={},
     )
 
     with pytest.raises(ValueError, match="not in outputs"):
@@ -256,10 +241,7 @@ def test_validate_inputs_empty_outputs():
     resolver = HighestConfidenceResolver()
 
     conflict = Conflict(
-        agents=["a1"],
-        decisions=["yes"],
-        disagreement_score=0.0,
-        context={}
+        agents=["a1"], decisions=["yes"], disagreement_score=0.0, context={}
     )
 
     with pytest.raises(ValueError, match="cannot be empty"):
@@ -274,10 +256,7 @@ def test_validate_inputs_wrong_type():
     outputs = [{"agent_name": "a1", "decision": "yes"}]
 
     conflict = Conflict(
-        agents=["a1"],
-        decisions=["yes"],
-        disagreement_score=0.0,
-        context={}
+        agents=["a1"], decisions=["yes"], disagreement_score=0.0, context={}
     )
 
     with pytest.raises(ValueError, match="must be AgentOutput instances"):
@@ -315,13 +294,13 @@ def test_integration_with_conflict_dataclass():
         agents=["agent1", "agent2", "agent3"],
         decisions=["Option A", "Option B"],
         disagreement_score=0.67,
-        context={"num_decisions": 2, "largest_group_size": 2}
+        context={"num_decisions": 2, "largest_group_size": 2},
     )
 
     outputs = [
         AgentOutput("agent1", "Option A", "I think A is best", 0.9, {}),
         AgentOutput("agent2", "Option A", "I agree with A", 0.85, {}),
-        AgentOutput("agent3", "Option B", "B is better", 0.8, {})
+        AgentOutput("agent3", "Option B", "B is better", 0.8, {}),
     ]
 
     resolver = HighestConfidenceResolver()
@@ -339,7 +318,7 @@ def test_resolution_result_metadata_default():
         method="test",
         reasoning="test",
         success=True,
-        confidence=0.9
+        confidence=0.9,
         # metadata not provided
     )
 

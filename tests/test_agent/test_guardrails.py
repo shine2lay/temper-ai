@@ -1,7 +1,4 @@
 """Tests for output guardrails with feedback injection (R0.2)."""
-from unittest.mock import MagicMock, Mock, patch
-
-import pytest
 
 from temper_ai.agent.guardrails import (
     GuardrailResult,
@@ -9,7 +6,10 @@ from temper_ai.agent.guardrails import (
     has_blocking_failures,
     run_guardrail_checks,
 )
-from temper_ai.storage.schemas.agent_config import GuardrailCheck, OutputGuardrailsConfig
+from temper_ai.storage.schemas.agent_config import (
+    GuardrailCheck,
+    OutputGuardrailsConfig,
+)
 
 
 class TestRunGuardrailChecks:
@@ -107,7 +107,10 @@ class TestRunGuardrailChecks:
     def test_severity_preserved(self):
         """Should preserve severity from check definition."""
         check = GuardrailCheck(
-            name="warn_check", type="regex", pattern=r"hello", severity="warn",
+            name="warn_check",
+            type="regex",
+            pattern=r"hello",
+            severity="warn",
         )
         results = run_guardrail_checks("hello", [check])
         assert results[0].severity == "warn"
@@ -157,7 +160,12 @@ class TestBuildFeedbackInjection:
     def test_single_failure(self):
         """Should build feedback for a single failure."""
         failures = [
-            GuardrailResult(passed=False, check_name="json_check", severity="block", message="Not JSON"),
+            GuardrailResult(
+                passed=False,
+                check_name="json_check",
+                severity="block",
+                message="Not JSON",
+            ),
         ]
         feedback = build_feedback_injection(failures)
         assert "json_check" in feedback
@@ -167,8 +175,12 @@ class TestBuildFeedbackInjection:
     def test_multiple_failures(self):
         """Should include all failures."""
         failures = [
-            GuardrailResult(passed=False, check_name="check1", severity="block", message="fail1"),
-            GuardrailResult(passed=False, check_name="check2", severity="warn", message="fail2"),
+            GuardrailResult(
+                passed=False, check_name="check1", severity="block", message="fail1"
+            ),
+            GuardrailResult(
+                passed=False, check_name="check2", severity="warn", message="fail2"
+            ),
         ]
         feedback = build_feedback_injection(failures)
         assert "check1" in feedback

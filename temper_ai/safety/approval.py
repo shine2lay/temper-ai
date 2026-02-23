@@ -21,19 +21,21 @@ Example:
     >>> workflow.approve(request.id, approver="alice")
     >>> result = workflow.get_result(request.id)
 """
+
 import logging
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 from uuid import uuid4
 
 logger = logging.getLogger(__name__)
 
-from temper_ai.shared.constants.durations import SECONDS_PER_MINUTE
 from temper_ai.safety.constants import DEFAULT_APPROVAL_TIMEOUT_SECONDS
 from temper_ai.safety.interfaces import SafetyViolation
+from temper_ai.shared.constants.durations import SECONDS_PER_MINUTE
 
 
 class ApprovalStatus(Enum):
@@ -46,6 +48,7 @@ class ApprovalStatus(Enum):
         EXPIRED: Timeout reached without approval
         CANCELLED: Request was cancelled
     """
+
     PENDING = "pending"
     APPROVED = "approved"
     REJECTED = "rejected"
@@ -60,14 +63,15 @@ class ApprovalRequestParams:
     Bundles the multiple parameters needed to create an approval request,
     reducing function parameter count from 8 to 1.
     """
-    action: Dict[str, Any]
+
+    action: dict[str, Any]
     reason: str
-    context: Optional[Dict[str, Any]] = None
-    violations: Optional[List[SafetyViolation]] = None
+    context: dict[str, Any] | None = None
+    violations: list[SafetyViolation] | None = None
     required_approvers: int = 1
-    timeout_minutes: Optional[int] = None
-    metadata: Optional[Dict[str, Any]] = None
-    requester: Optional[str] = None
+    timeout_minutes: int | None = None
+    metadata: dict[str, Any] | None = None
+    requester: str | None = None
 
 
 @dataclass
@@ -89,20 +93,21 @@ class ApprovalRequest:
         decision_reason: Reason for approval/rejection
         metadata: Additional request metadata
     """
+
     id: str = field(default_factory=lambda: str(uuid4()))
-    action: Dict[str, Any] = field(default_factory=dict)
+    action: dict[str, Any] = field(default_factory=dict)
     reason: str = ""
-    requester: Optional[str] = None
-    context: Dict[str, Any] = field(default_factory=dict)
-    violations: List[SafetyViolation] = field(default_factory=list)
+    requester: str | None = None
+    context: dict[str, Any] = field(default_factory=dict)
+    violations: list[SafetyViolation] = field(default_factory=list)
     status: ApprovalStatus = ApprovalStatus.PENDING
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
-    expires_at: Optional[datetime] = None
+    expires_at: datetime | None = None
     required_approvers: int = 1
-    approvers: List[str] = field(default_factory=list)
-    rejecters: List[str] = field(default_factory=list)
-    decision_reason: Optional[str] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    approvers: list[str] = field(default_factory=list)
+    rejecters: list[str] = field(default_factory=list)
+    decision_reason: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def is_pending(self) -> bool:
         """Check if request is still pending."""
@@ -134,7 +139,7 @@ class ApprovalRequest:
         """Check if more approvals are needed."""
         return self.approval_count() < self.required_approvers
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
         return {
             "id": self.id,
@@ -149,7 +154,7 @@ class ApprovalRequest:
             "approvers": self.approvers,
             "rejecters": self.rejecters,
             "decision_reason": self.decision_reason,
-            "metadata": self.metadata
+            "metadata": self.metadata,
         }
 
 
@@ -193,10 +198,11 @@ class ApprovalWorkflow:
 
     def __init__(
         self,
-        default_timeout_minutes: int = DEFAULT_APPROVAL_TIMEOUT_SECONDS // SECONDS_PER_MINUTE,
+        default_timeout_minutes: int = DEFAULT_APPROVAL_TIMEOUT_SECONDS
+        // SECONDS_PER_MINUTE,
         auto_reject_on_timeout: bool = True,
         max_requests: int = MAX_REQUESTS,
-        authorized_approvers: Optional[List[str]] = None,
+        authorized_approvers: list[str] | None = None,
     ):
         """Initialize approval workflow.
 
@@ -212,26 +218,30 @@ class ApprovalWorkflow:
         self.default_timeout_minutes = default_timeout_minutes
         self.auto_reject_on_timeout = auto_reject_on_timeout
         self._max_requests = max_requests
-        self._authorized_approvers: Optional[frozenset[str]] = (
-            frozenset(authorized_approvers) if authorized_approvers is not None else None
+        self._authorized_approvers: frozenset[str] | None = (
+            frozenset(authorized_approvers)
+            if authorized_approvers is not None
+            else None
         )
-        self._lock = threading.Lock()  # C-02: Protect _requests dict from race conditions
-        self._requests: Dict[str, ApprovalRequest] = {}
-        self._on_approved_callbacks: List[Callable[[ApprovalRequest], None]] = []
-        self._on_rejected_callbacks: List[Callable[[ApprovalRequest], None]] = []
+        self._lock = (
+            threading.Lock()
+        )  # C-02: Protect _requests dict from race conditions
+        self._requests: dict[str, ApprovalRequest] = {}
+        self._on_approved_callbacks: list[Callable[[ApprovalRequest], None]] = []
+        self._on_rejected_callbacks: list[Callable[[ApprovalRequest], None]] = []
 
     def request_approval(  # noqa: params — legacy compat wrapper
         self,
-        params: Optional[ApprovalRequestParams] = None,
+        params: ApprovalRequestParams | None = None,
         # Legacy positional parameters for backward compatibility
-        action: Optional[Dict[str, Any]] = None,
-        reason: Optional[str] = None,
-        context: Optional[Dict[str, Any]] = None,
-        violations: Optional[List[SafetyViolation]] = None,
+        action: dict[str, Any] | None = None,
+        reason: str | None = None,
+        context: dict[str, Any] | None = None,
+        violations: list[SafetyViolation] | None = None,
         required_approvers: int = 1,
-        timeout_minutes: Optional[int] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-        requester: Optional[str] = None,
+        timeout_minutes: int | None = None,
+        metadata: dict[str, Any] | None = None,
+        requester: str | None = None,
     ) -> ApprovalRequest:
         """Create a new approval request.
 
@@ -277,10 +287,14 @@ class ApprovalWorkflow:
                 required_approvers=required_approvers,
                 timeout_minutes=timeout_minutes,
                 metadata=metadata,
-                requester=requester
+                requester=requester,
             )
 
-        timeout = params.timeout_minutes if params.timeout_minutes is not None else self.default_timeout_minutes
+        timeout = (
+            params.timeout_minutes
+            if params.timeout_minutes is not None
+            else self.default_timeout_minutes
+        )
         expires_at = datetime.now(UTC) + timedelta(minutes=timeout)
 
         request = ApprovalRequest(
@@ -291,7 +305,7 @@ class ApprovalWorkflow:
             violations=params.violations or [],
             expires_at=expires_at,
             required_approvers=params.required_approvers,
-            metadata=params.metadata or {}
+            metadata=params.metadata or {},
         )
 
         with self._lock:
@@ -304,10 +318,7 @@ class ApprovalWorkflow:
         return request
 
     def approve(
-        self,
-        request_id: str,
-        approver: str,
-        reason: Optional[str] = None
+        self, request_id: str, approver: str, reason: str | None = None
     ) -> bool:
         """Approve a request.
 
@@ -341,7 +352,9 @@ class ApprovalWorkflow:
                 return False
 
             # Authorization check
-            error = check_approver_authorized(approver, request, self._authorized_approvers)
+            error = check_approver_authorized(
+                approver, request, self._authorized_approvers
+            )
             if error:
                 raise PermissionError(error)
 
@@ -357,12 +370,7 @@ class ApprovalWorkflow:
 
             return True
 
-    def reject(
-        self,
-        request_id: str,
-        rejecter: str,
-        reason: Optional[str] = None
-    ) -> bool:
+    def reject(self, request_id: str, rejecter: str, reason: str | None = None) -> bool:
         """Reject a request.
 
         Args:
@@ -407,7 +415,7 @@ class ApprovalWorkflow:
 
             return True
 
-    def cancel(self, request_id: str, reason: Optional[str] = None) -> bool:
+    def cancel(self, request_id: str, reason: str | None = None) -> bool:
         """Cancel a pending request.
 
         Args:
@@ -429,7 +437,7 @@ class ApprovalWorkflow:
             request.decision_reason = reason
             return True
 
-    def get_request(self, request_id: str) -> Optional[ApprovalRequest]:
+    def get_request(self, request_id: str) -> ApprovalRequest | None:
         """Get an approval request by ID.
 
         Args:
@@ -489,7 +497,7 @@ class ApprovalWorkflow:
 
             return request.is_pending()
 
-    def list_pending_requests(self) -> List[ApprovalRequest]:
+    def list_pending_requests(self) -> list[ApprovalRequest]:
         """Get all pending approval requests.
 
         Returns:
@@ -582,15 +590,15 @@ class NoOpApprover(ApprovalWorkflow):
 
     def request_approval(  # noqa: params — override of legacy compat interface
         self,
-        params: Optional[ApprovalRequestParams] = None,
-        action: Optional[Dict[str, Any]] = None,
-        reason: Optional[str] = None,
-        context: Optional[Dict[str, Any]] = None,
-        violations: Optional[List[SafetyViolation]] = None,
+        params: ApprovalRequestParams | None = None,
+        action: dict[str, Any] | None = None,
+        reason: str | None = None,
+        context: dict[str, Any] | None = None,
+        violations: list[SafetyViolation] | None = None,
         required_approvers: int = 1,
-        timeout_minutes: Optional[int] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-        requester: Optional[str] = None,
+        timeout_minutes: int | None = None,
+        metadata: dict[str, Any] | None = None,
+        requester: str | None = None,
     ) -> ApprovalRequest:
         """Create and immediately approve an approval request."""
         request = super().request_approval(

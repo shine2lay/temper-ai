@@ -36,12 +36,108 @@ interface ExecutionState {
 
   applySnapshot: (workflow: WorkflowExecution) => void;
   applyEvent: (msg: WSEvent) => void;
+  reset: () => void;
   select: (type: Selection['type'], id: string) => void;
   clearSelection: () => void;
   setWSStatus: (partial: Partial<WSStatus>) => void;
   toggleStageExpanded: (stageName: string) => void;
   openStageDetail: (stageId: string) => void;
   closeStageDetail: () => void;
+}
+
+/**
+ * Build a full chronological event log from a completed workflow snapshot.
+ * Used on first load from REST API when no prior diff state exists.
+ */
+function _buildSnapshotEvents(workflow: WorkflowExecution): EventLogEntry[] {
+  const events: EventLogEntry[] = [];
+
+  if (workflow.start_time) {
+    events.push({
+      timestamp: workflow.start_time,
+      event_type: 'workflow_start',
+      label: workflow.workflow_name,
+      data: { workflow_id: workflow.id, status: workflow.status },
+    });
+  }
+
+  for (const stage of workflow.stages ?? []) {
+    const stageLabel = stage.stage_name ?? stage.name ?? stage.id;
+
+    if (stage.start_time) {
+      events.push({
+        timestamp: stage.start_time,
+        event_type: 'stage_start',
+        label: stageLabel,
+        data: { stage_id: stage.id, status: stage.status },
+      });
+    }
+
+    for (const agent of stage.agents ?? []) {
+      const agentLabel = agent.agent_name ?? agent.name ?? agent.id;
+
+      if (agent.start_time) {
+        events.push({
+          timestamp: agent.start_time,
+          event_type: 'agent_start',
+          label: agentLabel,
+          data: { agent_id: agent.id, stage_id: stage.id, status: agent.status },
+        });
+      }
+
+      for (const llm of agent.llm_calls ?? []) {
+        if (llm.start_time) {
+          events.push({
+            timestamp: llm.start_time,
+            event_type: 'llm_call',
+            label: llm.model ?? llm.provider ?? '',
+            data: { llm_call_id: llm.id, agent_id: agent.id },
+          });
+        }
+      }
+
+      for (const tool of agent.tool_calls ?? []) {
+        if (tool.start_time) {
+          events.push({
+            timestamp: tool.start_time,
+            event_type: 'tool_call',
+            label: tool.tool_name ?? '',
+            data: { tool_execution_id: tool.id, agent_id: agent.id },
+          });
+        }
+      }
+
+      if (agent.end_time) {
+        events.push({
+          timestamp: agent.end_time,
+          event_type: 'agent_end',
+          label: agentLabel,
+          data: { agent_id: agent.id, stage_id: stage.id, status: agent.status },
+        });
+      }
+    }
+
+    if (stage.end_time) {
+      events.push({
+        timestamp: stage.end_time,
+        event_type: 'stage_end',
+        label: stageLabel,
+        data: { stage_id: stage.id, status: stage.status },
+      });
+    }
+  }
+
+  if (workflow.end_time) {
+    events.push({
+      timestamp: workflow.end_time,
+      event_type: 'workflow_end',
+      label: workflow.workflow_name,
+      data: { workflow_id: workflow.id, status: workflow.status },
+    });
+  }
+
+  events.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+  return events;
 }
 
 /**
@@ -53,6 +149,8 @@ function _diffSnapshotEvents(
   oldStages: Map<string, StageExecution>,
   oldAgents: Map<string, AgentExecution>,
   newWorkflow: WorkflowExecution,
+  oldLlmCalls: Map<string, LLMCall>,
+  oldToolCalls: Map<string, ToolCall>,
 ): EventLogEntry[] {
   const now = new Date().toISOString();
   const events: EventLogEntry[] = [];
@@ -107,6 +205,30 @@ function _diffSnapshotEvents(
           data: { agent_id: agent.id, stage_id: stage.id, status: agent.status },
         });
       }
+
+      // LLM call changes
+      for (const llm of agent.llm_calls ?? []) {
+        if (!oldLlmCalls.has(llm.id)) {
+          events.push({
+            timestamp: now,
+            event_type: 'llm_call',
+            label: llm.model ?? llm.provider ?? '',
+            data: { llm_call_id: llm.id, agent_id: agent.id },
+          });
+        }
+      }
+
+      // Tool call changes
+      for (const tool of agent.tool_calls ?? []) {
+        if (!oldToolCalls.has(tool.id)) {
+          events.push({
+            timestamp: now,
+            event_type: 'tool_call',
+            label: tool.tool_name ?? '',
+            data: { tool_execution_id: tool.id, agent_id: agent.id },
+          });
+        }
+      }
     }
   }
 
@@ -129,12 +251,25 @@ export const useExecutionStore = create<ExecutionState>()(
 
     applySnapshot: (workflow) =>
       set((state) => {
+        // Clear selection when a new workflow loads to avoid stale selection state
+        state.selection = null;
+
         // Generate synthetic events from snapshot diff (for DB-polled workflows)
         if (state.workflow) {
           const syntheticEvents = _diffSnapshotEvents(
             state.workflow, state.stages, state.agents, workflow,
+            state.llmCalls, state.toolCalls,
           );
           for (const evt of syntheticEvents) {
+            state.eventLog.push(evt);
+          }
+          if (state.eventLog.length > MAX_EVENT_LOG_SIZE) {
+            state.eventLog = state.eventLog.slice(-MAX_EVENT_LOG_SIZE);
+          }
+        } else {
+          // First load from REST API — build full event log from snapshot
+          const snapshotEvents = _buildSnapshotEvents(workflow);
+          for (const evt of snapshotEvents) {
             state.eventLog.push(evt);
           }
           if (state.eventLog.length > MAX_EVENT_LOG_SIZE) {
@@ -290,6 +425,19 @@ export const useExecutionStore = create<ExecutionState>()(
         }
       }),
 
+    reset: () =>
+      set((state) => {
+        state.workflow = null;
+        state.stages = new Map();
+        state.agents = new Map();
+        state.llmCalls = new Map();
+        state.toolCalls = new Map();
+        state.streamingContent = new Map();
+        state.eventLog = [];
+        state.selection = { type: 'workflow', id: '' };
+        state.wsStatus = { connected: false, reconnectAttempt: 0, lastHeartbeat: null };
+      }),
+
     select: (type, id) =>
       set((state) => {
         state.selection = { type, id };
@@ -336,10 +484,10 @@ function _eventLabel(msg: WSEvent): string {
     return (data.agent_name ?? data.name ?? msg.agent_id ?? '') as string;
   }
   if (msg.event_type === 'llm_call') {
-    return (data.model ?? data.provider ?? '') as string;
+    return (data.model ?? data.provider ?? msg.event_type) as string;
   }
   if (msg.event_type === 'tool_call') {
-    return (data.tool_name ?? '') as string;
+    return (data.tool_name ?? msg.event_type) as string;
   }
   return msg.event_type;
 }

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import threading
-from typing import Any, Dict, Type
+from typing import Any
 
 from temper_ai.optimization.engine_constants import (
     EVALUATOR_COMPARATIVE,
@@ -32,8 +32,8 @@ class OptimizationRegistry:
     _lock = threading.RLock()
 
     def __init__(self) -> None:
-        self._evaluators: Dict[str, Type[Any]] = {}
-        self._optimizers: Dict[str, Type[Any]] = {}
+        self._evaluators: dict[str, type[Any]] = {}
+        self._optimizers: dict[str, type[Any]] = {}
         self._register_builtins()
 
     @classmethod
@@ -56,30 +56,26 @@ class OptimizationRegistry:
         self._optimizers[OPTIMIZER_TUNING] = TuningOptimizer
         self._optimizers[OPTIMIZER_PROMPT] = PromptOptimizer
 
-    def get_evaluator_class(self, name: str) -> Type[Any]:
+    def get_evaluator_class(self, name: str) -> type[Any]:
         """Get evaluator class by name."""
         with self._lock:
             if name not in self._evaluators:
                 raise KeyError(f"Unknown evaluator: {name}")
             return self._evaluators[name]
 
-    def get_optimizer_class(self, name: str) -> Type[Any]:
+    def get_optimizer_class(self, name: str) -> type[Any]:
         """Get optimizer class by name."""
         with self._lock:
             if name not in self._optimizers:
                 raise KeyError(f"Unknown optimizer: {name}")
             return self._optimizers[name]
 
-    def register_evaluator(
-        self, name: str, cls: Type[Any]
-    ) -> None:
+    def register_evaluator(self, name: str, cls: type[Any]) -> None:
         """Register a custom evaluator class."""
         with self._lock:
             self._evaluators[name] = cls
 
-    def register_optimizer(
-        self, name: str, cls: Type[Any]
-    ) -> None:
+    def register_optimizer(self, name: str, cls: type[Any]) -> None:
         """Register a custom optimizer class."""
         with self._lock:
             self._optimizers[name] = cls

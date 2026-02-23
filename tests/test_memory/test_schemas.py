@@ -1,7 +1,6 @@
 """Tests for memory data schemas (MemoryScope, MemoryEntry, MemorySearchResult)."""
 
-import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -89,7 +88,7 @@ class TestMemoryEntry:
 
     def test_created_at_utc(self):
         entry = MemoryEntry(content="x", memory_type="episodic")
-        assert entry.created_at.tzinfo == timezone.utc
+        assert entry.created_at.tzinfo == UTC
 
 
 class TestMemorySearchResult:

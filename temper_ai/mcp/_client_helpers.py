@@ -1,12 +1,13 @@
 """Helper functions for MCP client — event loop bridging and annotation mapping."""
+
 import asyncio
 import threading
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 from temper_ai.mcp.constants import MCP_EVENT_LOOP_THREAD_NAME
 
 
-def create_event_loop_thread() -> Tuple[asyncio.AbstractEventLoop, threading.Thread]:
+def create_event_loop_thread() -> tuple[asyncio.AbstractEventLoop, threading.Thread]:
     """Create a daemon thread running a dedicated asyncio event loop.
 
     Used to bridge synchronous BaseTool.execute() calls into async MCP SDK calls.
@@ -46,7 +47,7 @@ def stop_event_loop(
     thread.join(timeout=join_timeout)
 
 
-def map_annotations_to_metadata(annotations: Optional[Any]) -> Dict[str, Any]:
+def map_annotations_to_metadata(annotations: Any | None) -> dict[str, Any]:
     """Map MCP tool annotations to ToolMetadata field values.
 
     Annotation semantics:
@@ -60,7 +61,7 @@ def map_annotations_to_metadata(annotations: Optional[Any]) -> Dict[str, Any]:
     Returns:
         Dict of ToolMetadata keyword arguments inferred from annotations.
     """
-    result: Dict[str, Any] = {}
+    result: dict[str, Any] = {}
 
     if annotations is None:
         return result

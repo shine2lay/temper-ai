@@ -1,10 +1,5 @@
 """Tests for CompiledProgramStore."""
 
-import json
-from pathlib import Path
-
-import pytest
-
 from temper_ai.optimization.dspy.program_store import CompiledProgramStore
 
 
@@ -35,6 +30,7 @@ class TestCompiledProgramStore:
         store = CompiledProgramStore(store_dir=str(tmp_path))
         store.save("researcher", {"v": 1})
         import time
+
         time.sleep(0.05)  # intentional delay for mtime ordering
         id2 = store.save("researcher", {"v": 2})
         latest = store.load_latest("researcher")

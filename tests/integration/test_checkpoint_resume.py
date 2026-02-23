@@ -7,16 +7,23 @@ Tests:
 - State preservation across resume
 - Recovery after failures
 """
+
 import uuid
 from datetime import UTC, datetime
 
 import pytest
 
-from temper_ai.workflow.checkpoint import CheckpointManager, FileCheckpointBackend
-from temper_ai.workflow.domain_state import WorkflowDomainState
 from temper_ai.observability.database import get_session, init_database
 from temper_ai.observability.models import StageExecution, WorkflowExecution
 from temper_ai.observability.tracker import ExecutionTracker
+from temper_ai.workflow.checkpoint import CheckpointManager, FileCheckpointBackend
+from temper_ai.workflow.domain_state import WORKFLOW_ID_PREFIX, WorkflowDomainState
+
+
+def _make_wf_id() -> str:
+    """Generate a workflow ID with the required wf- prefix."""
+    return f"{WORKFLOW_ID_PREFIX}{uuid.uuid4().hex[:12]}"
+
 
 pytestmark = [pytest.mark.integration, pytest.mark.critical_path]
 
@@ -29,6 +36,7 @@ class TestCheckpointCreation:
         """Initialize test database."""
         try:
             from temper_ai.observability.database import get_database
+
             get_database()
         except RuntimeError:
             init_database("sqlite:///:memory:")
@@ -38,6 +46,7 @@ class TestCheckpointCreation:
     def execution_tracker(self, sample_database):
         """Execution tracker."""
         from temper_ai.observability.backends.sql_backend import SQLObservabilityBackend
+
         backend = SQLObservabilityBackend()
         return ExecutionTracker(backend=backend)
 
@@ -48,13 +57,10 @@ class TestCheckpointCreation:
         return CheckpointManager(backend=backend)
 
     def test_checkpoint_after_stage_one(
-        self,
-        sample_database,
-        checkpoint_manager,
-        execution_tracker
+        self, sample_database, checkpoint_manager, execution_tracker
     ):
         """Test checkpoint is created after stage 1 completes."""
-        workflow_id = str(uuid.uuid4())
+        workflow_id = _make_wf_id()
 
         # Create workflow
         workflow_exec = WorkflowExecution(
@@ -63,7 +69,7 @@ class TestCheckpointCreation:
             workflow_version="1.0",
             workflow_config_snapshot={},
             start_time=datetime.now(UTC),
-            status="running"
+            status="running",
         )
 
         with get_session() as session:
@@ -86,8 +92,7 @@ class TestCheckpointCreation:
             workflow_id=workflow_id,
             current_stage="stage1",
             stage_outputs={"stage1": {"stage1_result": "completed"}},
-            input_data={},
-            num_stages_completed=1
+            workflow_inputs={},
         )
 
         checkpoint_manager.save_checkpoint(workflow_id, domain_state)
@@ -99,17 +104,14 @@ class TestCheckpointCreation:
         loaded = checkpoint_manager.load_checkpoint(workflow_id)
         assert loaded.workflow_id == workflow_id
         assert loaded.current_stage == "stage1"
-        assert loaded.num_stages_completed == 1
+        assert len(loaded.stage_outputs) == 1
         assert "stage1" in loaded.stage_outputs
 
     def test_checkpoint_after_stage_two(
-        self,
-        sample_database,
-        checkpoint_manager,
-        execution_tracker
+        self, sample_database, checkpoint_manager, execution_tracker
     ):
         """Test checkpoint after stage 2 includes stage 1 output."""
-        workflow_id = str(uuid.uuid4())
+        workflow_id = _make_wf_id()
 
         # Create workflow
         workflow_exec = WorkflowExecution(
@@ -118,7 +120,7 @@ class TestCheckpointCreation:
             workflow_version="1.0",
             workflow_config_snapshot={},
             start_time=datetime.now(UTC),
-            status="running"
+            status="running",
         )
 
         with get_session() as session:
@@ -140,10 +142,11 @@ class TestCheckpointCreation:
             workflow_id=workflow_id,
             current_stage="stage1",
             stage_outputs={"stage1": {"result": "stage1 done"}},
-            input_data={},
-            num_stages_completed=1
+            workflow_inputs={},
         )
-        checkpoint_manager.save_checkpoint(workflow_id, domain_state_1, checkpoint_id="checkpoint_1")
+        checkpoint_manager.save_checkpoint(
+            workflow_id, domain_state_1, checkpoint_id="cp-checkpoint-1"
+        )
 
         # Execute stage 2
         with execution_tracker.track_stage("stage2", {}, workflow_id) as stage2_id:
@@ -161,44 +164,40 @@ class TestCheckpointCreation:
             current_stage="stage2",
             stage_outputs={
                 "stage1": {"result": "stage1 done"},
-                "stage2": {"result": "stage2 done"}
+                "stage2": {"result": "stage2 done"},
             },
-            input_data={},
-            num_stages_completed=2
+            workflow_inputs={},
         )
-        checkpoint_manager.save_checkpoint(workflow_id, domain_state_2, checkpoint_id="checkpoint_2")
+        checkpoint_manager.save_checkpoint(
+            workflow_id, domain_state_2, checkpoint_id="cp-checkpoint-2"
+        )
 
         # VERIFICATION: Both checkpoints exist
         checkpoints = checkpoint_manager.list_checkpoints(workflow_id)
         assert len(checkpoints) == 2
 
         # Load checkpoint 2
-        loaded = checkpoint_manager.load_checkpoint(workflow_id, checkpoint_id="checkpoint_2")
+        loaded = checkpoint_manager.load_checkpoint(
+            workflow_id, checkpoint_id="cp-checkpoint-2"
+        )
         assert loaded.current_stage == "stage2"
-        assert loaded.num_stages_completed == 2
+        assert len(loaded.stage_outputs) == 2
         assert "stage1" in loaded.stage_outputs
         assert "stage2" in loaded.stage_outputs
 
     def test_checkpoint_includes_complete_state(
-        self,
-        sample_database,
-        checkpoint_manager,
-        execution_tracker
+        self, sample_database, checkpoint_manager, execution_tracker
     ):
         """Test checkpoint contains all required state fields."""
-        workflow_id = str(uuid.uuid4())
+        workflow_id = _make_wf_id()
 
         # Create comprehensive domain state
         domain_state = WorkflowDomainState(
             workflow_id=workflow_id,
             current_stage="stage2",
-            stage_outputs={
-                "stage1": {"data": "value1"},
-                "stage2": {"data": "value2"}
-            },
-            input_data={"query": "test"},
-            num_stages_completed=2,
-            metadata={"custom": "metadata"}
+            stage_outputs={"stage1": {"data": "value1"}, "stage2": {"data": "value2"}},
+            query="test",
+            metadata={"custom": "metadata"},
         )
 
         # Save checkpoint
@@ -209,8 +208,8 @@ class TestCheckpointCreation:
 
         assert loaded.workflow_id == workflow_id
         assert loaded.current_stage == "stage2"
-        assert loaded.num_stages_completed == 2
-        assert loaded.input_data == {"query": "test"}
+        assert len(loaded.stage_outputs) == 2
+        assert loaded.query == "test"
         assert loaded.metadata == {"custom": "metadata"}
         assert len(loaded.stage_outputs) == 2
 
@@ -223,6 +222,7 @@ class TestWorkflowResume:
         """Initialize test database."""
         try:
             from temper_ai.observability.database import get_database
+
             get_database()
         except RuntimeError:
             init_database("sqlite:///:memory:")
@@ -232,6 +232,7 @@ class TestWorkflowResume:
     def execution_tracker(self, sample_database):
         """Execution tracker."""
         from temper_ai.observability.backends.sql_backend import SQLObservabilityBackend
+
         backend = SQLObservabilityBackend()
         return ExecutionTracker(backend=backend)
 
@@ -242,13 +243,10 @@ class TestWorkflowResume:
         return CheckpointManager(backend=backend)
 
     def test_resume_from_stage_one(
-        self,
-        sample_database,
-        checkpoint_manager,
-        execution_tracker
+        self, sample_database, checkpoint_manager, execution_tracker
     ):
         """Test resuming workflow from stage 1 checkpoint."""
-        workflow_id = str(uuid.uuid4())
+        workflow_id = _make_wf_id()
 
         # Create initial workflow execution
         workflow_exec = WorkflowExecution(
@@ -257,7 +255,7 @@ class TestWorkflowResume:
             workflow_version="1.0",
             workflow_config_snapshot={},
             start_time=datetime.now(UTC),
-            status="running"
+            status="running",
         )
 
         with get_session() as session:
@@ -273,8 +271,7 @@ class TestWorkflowResume:
             workflow_id=workflow_id,
             current_stage="stage1",
             stage_outputs={"stage1": {"completed": True}},
-            input_data={"query": "original"},
-            num_stages_completed=1
+            query="original",
         )
         checkpoint_manager.save_checkpoint(workflow_id, domain_state)
 
@@ -288,7 +285,7 @@ class TestWorkflowResume:
         loaded_state = checkpoint_manager.load_checkpoint(workflow_id)
 
         # Create new workflow execution for resume
-        resume_workflow_id = str(uuid.uuid4())
+        resume_workflow_id = _make_wf_id()
         resume_workflow_exec = WorkflowExecution(
             id=resume_workflow_id,
             workflow_name="resume_test",
@@ -296,7 +293,7 @@ class TestWorkflowResume:
             workflow_config_snapshot={},
             start_time=datetime.now(UTC),
             status="running",
-            resumed_from_workflow_id=workflow_id
+            extra_metadata={"resumed_from_workflow_id": workflow_id},
         )
 
         with get_session() as session:
@@ -304,7 +301,9 @@ class TestWorkflowResume:
             session.commit()
 
         # Continue from stage 2 (stage 1 already done)
-        with execution_tracker.track_stage("stage2", {}, resume_workflow_id) as stage_id:
+        with execution_tracker.track_stage(
+            "stage2", {}, resume_workflow_id
+        ) as stage_id:
             # Stage 2 should have access to stage 1 output
             assert "stage1" in loaded_state.stage_outputs
 
@@ -321,20 +320,19 @@ class TestWorkflowResume:
 
         # VERIFICATION: Resume succeeded
         with get_session() as session:
-            resumed = session.query(WorkflowExecution).filter_by(
-                id=resume_workflow_id
-            ).first()
+            resumed = (
+                session.query(WorkflowExecution)
+                .filter_by(id=resume_workflow_id)
+                .first()
+            )
             assert resumed.status == "completed"
-            assert resumed.resumed_from_workflow_id == workflow_id
+            assert resumed.extra_metadata["resumed_from_workflow_id"] == workflow_id
 
     def test_resume_skips_completed_stages(
-        self,
-        sample_database,
-        checkpoint_manager,
-        execution_tracker
+        self, sample_database, checkpoint_manager, execution_tracker
     ):
         """Test resumed workflow skips already-completed stages."""
-        workflow_id = str(uuid.uuid4())
+        workflow_id = _make_wf_id()
 
         # Original workflow: complete stages 1 and 2
         workflow_exec = WorkflowExecution(
@@ -343,7 +341,7 @@ class TestWorkflowResume:
             workflow_version="1.0",
             workflow_config_snapshot={},
             start_time=datetime.now(UTC),
-            status="running"
+            status="running",
         )
 
         with get_session() as session:
@@ -368,8 +366,7 @@ class TestWorkflowResume:
             workflow_id=workflow_id,
             current_stage="stage2",
             stage_outputs=stage_outputs,
-            input_data={},
-            num_stages_completed=2
+            workflow_inputs={},
         )
         checkpoint_manager.save_checkpoint(workflow_id, domain_state)
 
@@ -382,7 +379,7 @@ class TestWorkflowResume:
         # RESUME: Should start from stage 3
         loaded_state = checkpoint_manager.load_checkpoint(workflow_id)
 
-        resume_workflow_id = str(uuid.uuid4())
+        resume_workflow_id = _make_wf_id()
         resume_workflow_exec = WorkflowExecution(
             id=resume_workflow_id,
             workflow_name="skip_test",
@@ -390,7 +387,7 @@ class TestWorkflowResume:
             workflow_config_snapshot={},
             start_time=datetime.now(UTC),
             status="running",
-            resumed_from_workflow_id=workflow_id
+            extra_metadata={"resumed_from_workflow_id": workflow_id},
         )
 
         with get_session() as session:
@@ -398,7 +395,9 @@ class TestWorkflowResume:
             session.commit()
 
         # Only execute stage 3 (stages 1-2 already done)
-        with execution_tracker.track_stage("stage3", {}, resume_workflow_id) as stage_id:
+        with execution_tracker.track_stage(
+            "stage3", {}, resume_workflow_id
+        ) as stage_id:
             # Verify previous stages' outputs available
             assert "stage1" in loaded_state.stage_outputs
             assert "stage2" in loaded_state.stage_outputs
@@ -408,19 +407,17 @@ class TestWorkflowResume:
 
         # VERIFICATION: Only stage 3 executed in resume
         with get_session() as session:
-            resumed_stages = session.query(StageExecution).filter_by(
-                workflow_execution_id=resume_workflow_id
-            ).all()
+            resumed_stages = (
+                session.query(StageExecution)
+                .filter_by(workflow_execution_id=resume_workflow_id)
+                .all()
+            )
             assert len(resumed_stages) == 1  # Only stage 3
             assert resumed_stages[0].stage_name == "stage3"
 
-    def test_resume_preserves_state(
-        self,
-        sample_database,
-        checkpoint_manager
-    ):
+    def test_resume_preserves_state(self, sample_database, checkpoint_manager):
         """Test resume preserves all state from checkpoint."""
-        workflow_id = str(uuid.uuid4())
+        workflow_id = _make_wf_id()
 
         # Create rich domain state
         original_state = WorkflowDomainState(
@@ -428,11 +425,10 @@ class TestWorkflowResume:
             current_stage="stage2",
             stage_outputs={
                 "stage1": {"key1": "value1", "nested": {"a": 1}},
-                "stage2": {"key2": "value2", "list": [1, 2, 3]}
+                "stage2": {"key2": "value2", "list": [1, 2, 3]},
             },
-            input_data={"original_query": "test query"},
-            num_stages_completed=2,
-            metadata={"run_id": "abc123", "environment": "test"}
+            workflow_inputs={"original_query": "test query"},
+            metadata={"run_id": "abc123", "environment": "test"},
         )
 
         # Save checkpoint
@@ -444,8 +440,8 @@ class TestWorkflowResume:
         # VERIFICATION: All state preserved
         assert loaded_state.workflow_id == original_state.workflow_id
         assert loaded_state.current_stage == original_state.current_stage
-        assert loaded_state.num_stages_completed == original_state.num_stages_completed
-        assert loaded_state.input_data == original_state.input_data
+        assert len(loaded_state.stage_outputs) == len(original_state.stage_outputs)
+        assert loaded_state.workflow_inputs == original_state.workflow_inputs
         assert loaded_state.metadata == original_state.metadata
 
         # Verify nested structures preserved
@@ -461,6 +457,7 @@ class TestCheckpointFailureRecovery:
         """Initialize test database."""
         try:
             from temper_ai.observability.database import get_database
+
             get_database()
         except RuntimeError:
             init_database("sqlite:///:memory:")
@@ -472,38 +469,29 @@ class TestCheckpointFailureRecovery:
         backend = FileCheckpointBackend(checkpoint_dir=str(tmp_path / "checkpoints"))
         return CheckpointManager(backend=backend)
 
-    def test_resume_after_agent_failure(
-        self,
-        sample_database,
-        checkpoint_manager
-    ):
+    def test_resume_after_agent_failure(self, sample_database, checkpoint_manager):
         """Test resume after agent failure mid-stage."""
-        workflow_id = str(uuid.uuid4())
+        workflow_id = _make_wf_id()
 
         # Checkpoint before failed stage
         domain_state = WorkflowDomainState(
             workflow_id=workflow_id,
             current_stage="stage1",
             stage_outputs={"stage1": {"completed": True}},
-            input_data={},
-            num_stages_completed=1
+            workflow_inputs={},
         )
         checkpoint_manager.save_checkpoint(workflow_id, domain_state)
 
         # RESUME: Can restart from checkpoint
         loaded = checkpoint_manager.load_checkpoint(workflow_id)
-        assert loaded.num_stages_completed == 1
+        assert len(loaded.stage_outputs) == 1
 
         # Workflow can continue from stage 2
         assert loaded.current_stage == "stage1"
 
-    def test_resume_after_timeout(
-        self,
-        sample_database,
-        checkpoint_manager
-    ):
+    def test_resume_after_timeout(self, sample_database, checkpoint_manager):
         """Test resume after timeout."""
-        workflow_id = str(uuid.uuid4())
+        workflow_id = _make_wf_id()
 
         # Checkpoint before timeout
         domain_state = WorkflowDomainState(
@@ -512,42 +500,36 @@ class TestCheckpointFailureRecovery:
             stage_outputs={
                 "stage1": {"done": True},
                 "stage2": {"done": True},
-                "stage3": {"done": True}
+                "stage3": {"done": True},
             },
-            input_data={},
-            num_stages_completed=3
+            workflow_inputs={},
         )
         checkpoint_manager.save_checkpoint(workflow_id, domain_state)
 
         # RESUME: Restore state after timeout
         loaded = checkpoint_manager.load_checkpoint(workflow_id)
-        assert loaded.num_stages_completed == 3
+        assert len(loaded.stage_outputs) == 3
         assert len(loaded.stage_outputs) == 3
 
-    def test_checkpoint_corruption_detection(
-        self,
-        checkpoint_manager,
-        tmp_path
-    ):
+    def test_checkpoint_corruption_detection(self, checkpoint_manager, tmp_path):
         """Test detection of corrupted checkpoint files."""
-        workflow_id = str(uuid.uuid4())
+        workflow_id = _make_wf_id()
 
         # Create valid checkpoint
         domain_state = WorkflowDomainState(
             workflow_id=workflow_id,
             current_stage="stage1",
             stage_outputs={"stage1": {}},
-            input_data={},
-            num_stages_completed=1
+            workflow_inputs={},
         )
         checkpoint_manager.save_checkpoint(workflow_id, domain_state)
 
         # Corrupt the checkpoint file
         checkpoint_dir = tmp_path / "checkpoints"
-        checkpoint_files = list(checkpoint_dir.glob(f"{workflow_id}_*.json"))
+        checkpoint_files = list(checkpoint_dir.glob(f"{workflow_id}/cp-*.json"))
         assert len(checkpoint_files) > 0
 
-        with open(checkpoint_files[0], 'w') as f:
+        with open(checkpoint_files[0], "w") as f:
             f.write("{ invalid json }")
 
         # VERIFICATION: Loading corrupted checkpoint raises error

@@ -1,18 +1,22 @@
 # VCS Suggestion Input
 # Usage: maf run configs/workflows/vcs_suggestion.yaml --input examples/vcs_suggestion_input.yaml --show-details
 #
-# Pre-requisite: VISION.md must exist in workspace_path/
+# The vcs_work_discovery stage reads VISION.md from workspace_path/docs/products/VISION.md
+# and analyzes the codebase to determine the next work item automatically.
 
-suggestion_text: |
-  Add a frontend suggestion page served by FastAPI at GET / with:
-  - Clean, modern HTML page using Jinja2 templates (templates/index.html)
-  - A form with fields: suggestion text (textarea, required) and category (dropdown: feature, bug, improvement, other)
-  - On submit, POST to /api/suggestions via fetch(), show success/error feedback inline (no page reload)
-  - Below the form, display all existing suggestions fetched from GET /api/suggestions on page load
-  - Each suggestion card shows: text, category badge, status badge, relative timestamp
-  - Minimal CSS in a static/style.css file — clean layout, responsive, no frameworks
-  - Add GET / route in app/main.py that renders the template with Jinja2Templates
-  - Mount static files directory for CSS
-  - Keep all existing API endpoints working (don't break /api/suggestions or /api/vision)
+# suggestion_text is no longer required — the work discovery stage generates it.
+# Kept here commented out for reference:
+#
+# suggestion_text: |
+#   Add a frontend suggestion page served by FastAPI at GET / with:
+#   - Clean, modern HTML page using Jinja2 templates (templates/index.html)
+#   - A form with fields: suggestion text (textarea, required) and category (dropdown: feature, bug, improvement, other)
+#   - On submit, POST to /api/suggestions via fetch(), show success/error feedback inline (no page reload)
+#   - Below the form, display all existing suggestions fetched from GET /api/suggestions on page load
+#   - Each suggestion card shows: text, category badge, status badge, relative timestamp
+#   - Minimal CSS in a static/style.css file — clean layout, responsive, no frameworks
+#   - Add GET / route in app/main.py that renders the template with Jinja2Templates
+#   - Mount static files directory for CSS
+#   - Keep all existing API endpoints working (don't break /api/suggestions or /api/vision)
 
-workspace_path: /home/shinelay/vibe-coding-squad
+workspace_path: /home/shinelay/temper-ai/workspace/vibe-coding-squad

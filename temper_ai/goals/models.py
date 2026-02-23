@@ -1,7 +1,7 @@
 """SQLModel tables for goal proposal data."""
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from sqlalchemy import JSON, Column
 from sqlmodel import Field, SQLModel
@@ -19,28 +19,26 @@ class GoalProposalRecord(SQLModel, table=True):
     title: str
     description: str
     status: str = Field(default="proposed", index=True)
-    risk_assessment: Dict[str, Any] = Field(
+    risk_assessment: dict[str, Any] = Field(
         default_factory=dict, sa_column=Column(JSON)
     )
     effort_estimate: str = Field(default="medium")
-    expected_impacts: List[Dict[str, Any]] = Field(
+    expected_impacts: list[dict[str, Any]] = Field(
         default_factory=list, sa_column=Column(JSON)
     )
-    evidence: Dict[str, Any] = Field(
-        default_factory=dict, sa_column=Column(JSON)
-    )
-    source_product_type: Optional[str] = Field(default=None, index=True)
-    source_agent_id: Optional[str] = Field(default=None, index=True)  # M9: persistent agent
-    applicable_product_types: List[str] = Field(
+    evidence: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    source_product_type: str | None = Field(default=None, index=True)
+    source_agent_id: str | None = Field(
+        default=None, index=True
+    )  # M9: persistent agent
+    applicable_product_types: list[str] = Field(
         default_factory=list, sa_column=Column(JSON)
     )
-    proposed_actions: List[str] = Field(
-        default_factory=list, sa_column=Column(JSON)
-    )
+    proposed_actions: list[str] = Field(default_factory=list, sa_column=Column(JSON))
     priority_score: float = Field(default=0.0)
-    reviewer: Optional[str] = None
-    review_reason: Optional[str] = None
-    reviewed_at: Optional[datetime] = None
+    reviewer: str | None = None
+    review_reason: str | None = None
+    reviewed_at: datetime | None = None
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
 
@@ -52,10 +50,8 @@ class AnalysisRun(SQLModel, table=True):
 
     id: str = Field(primary_key=True)
     started_at: datetime = Field(default_factory=utcnow)
-    completed_at: Optional[datetime] = None
+    completed_at: datetime | None = None
     status: str = Field(default="running")
     proposals_generated: int = Field(default=0)
-    analyzer_stats: Dict[str, Any] = Field(
-        default_factory=dict, sa_column=Column(JSON)
-    )
-    error_message: Optional[str] = None
+    analyzer_stats: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    error_message: str | None = None

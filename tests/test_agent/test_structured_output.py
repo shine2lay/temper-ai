@@ -1,10 +1,10 @@
 """Integration tests for structured output enforcement in StandardAgent (R0.1)."""
+
 import json
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
-from temper_ai.agent.base_agent import AgentResponse
 from temper_ai.llm.service import LLMRunResult
 from temper_ai.storage.schemas.agent_config import (
     AgentConfig,
@@ -14,7 +14,6 @@ from temper_ai.storage.schemas.agent_config import (
     OutputSchemaConfig,
     PromptConfig,
 )
-
 
 SIMPLE_SCHEMA = {
     "type": "object",
@@ -89,7 +88,11 @@ class TestStructuredOutputValidation:
         result = LLMRunResult(output=valid_output)
 
         final = validate_and_retry_output(
-            llm_service, agent_config_with_output_schema, result, "test", {"prompt": "test"},
+            llm_service,
+            agent_config_with_output_schema,
+            result,
+            "test",
+            {"prompt": "test"},
         )
         assert final.output == valid_output
 
@@ -104,7 +107,11 @@ class TestStructuredOutputValidation:
 
         bad_result = LLMRunResult(output="not json")
         final = validate_and_retry_output(
-            llm_service, agent_config_with_output_schema, bad_result, "test", {"prompt": "test"},
+            llm_service,
+            agent_config_with_output_schema,
+            bad_result,
+            "test",
+            {"prompt": "test"},
         )
         assert llm_service.run.called
         assert final.output == good_output
@@ -116,7 +123,11 @@ class TestStructuredOutputValidation:
         llm_service = MagicMock()
         result = LLMRunResult(output="plain text")
         final = validate_and_retry_output(
-            llm_service, agent_config_no_schema, result, "test", {"prompt": "test"},
+            llm_service,
+            agent_config_no_schema,
+            result,
+            "test",
+            {"prompt": "test"},
         )
         assert final.output == "plain text"
 
@@ -129,8 +140,11 @@ class TestStructuredOutputValidation:
         llm_service.run.return_value = bad_result
 
         final = validate_and_retry_output(
-            llm_service, agent_config_with_output_schema,
-            LLMRunResult(output="bad"), "test", {"prompt": "test"},
+            llm_service,
+            agent_config_with_output_schema,
+            LLMRunResult(output="bad"),
+            "test",
+            {"prompt": "test"},
         )
         # After 2 retries, still returns the bad result
         assert final.output == "still bad"

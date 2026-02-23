@@ -53,7 +53,10 @@ class TestFullWorkflow:
             assert product is not None
             scheduler.record_start(product, f"wf-{i}", portfolio_id="p1")
             scheduler.record_complete(
-                product, f"wf-{i}", cost_usd=0.5, success=i % 3 != 0,
+                product,
+                f"wf-{i}",
+                cost_usd=0.5,
+                success=i % 3 != 0,
             )
 
         # Compute scorecards and recommendations
@@ -80,7 +83,9 @@ class TestFullWorkflow:
         # Run web_app with high success, api with low success
         for i in range(10):
             scheduler.record_start("web_app", f"wf-wa-{i}")
-            scheduler.record_complete("web_app", f"wf-wa-{i}", cost_usd=1.0, success=True)
+            scheduler.record_complete(
+                "web_app", f"wf-wa-{i}", cost_usd=1.0, success=True
+            )
         for i in range(10):
             scheduler.record_start("api", f"wf-api-{i}")
             scheduler.record_complete("api", f"wf-api-{i}", cost_usd=1.0, success=i < 3)
@@ -96,10 +101,14 @@ class TestKnowledgeGraphLifecycle:
     def test_knowledge_graph_lifecycle(self, store):
         """Populate from config → query → find path."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            wf_path = _make_workflow(tmpdir, "wf1", [
-                {"name": "build", "agents": ["builder_agent"]},
-                {"name": "test", "agents": ["test_agent"]},
-            ])
+            wf_path = _make_workflow(
+                tmpdir,
+                "wf1",
+                [
+                    {"name": "build", "agents": ["builder_agent"]},
+                    {"name": "test", "agents": ["test_agent"]},
+                ],
+            )
             portfolio = PortfolioConfig(
                 name="kg-test",
                 products=[
@@ -124,9 +133,13 @@ class TestKnowledgeGraphLifecycle:
     def test_knowledge_query_after_runs(self, store):
         """Populate from runs, query outcomes."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            wf_path = _make_workflow(tmpdir, "wf1", [
-                {"name": "build", "agents": ["a1"]},
-            ])
+            wf_path = _make_workflow(
+                tmpdir,
+                "wf1",
+                [
+                    {"name": "build", "agents": ["a1"]},
+                ],
+            )
             portfolio = PortfolioConfig(
                 name="run-test",
                 products=[
@@ -138,14 +151,16 @@ class TestKnowledgeGraphLifecycle:
 
             populator.populate_from_config(portfolio)
 
-            store.save_product_run(ProductRunRecord(
-                id=str(uuid.uuid4()),
-                portfolio_id="p1",
-                product_type="web_app",
-                workflow_id="wf-1",
-                status="completed",
-                success=True,
-            ))
+            store.save_product_run(
+                ProductRunRecord(
+                    id=str(uuid.uuid4()),
+                    portfolio_id="p1",
+                    product_type="web_app",
+                    workflow_id="wf-1",
+                    status="completed",
+                    success=True,
+                )
+            )
             added = populator.populate_from_runs("web_app")
             assert added >= 1
 
@@ -212,7 +227,9 @@ class TestSchedulerBudgetTracking:
             name="budget-track",
             products=[
                 ProductDefinition(
-                    name="web_app", weight=1.0, max_concurrent=5,
+                    name="web_app",
+                    weight=1.0,
+                    max_concurrent=5,
                     budget_limit_usd=5.0,
                 ),
             ],
@@ -224,7 +241,10 @@ class TestSchedulerBudgetTracking:
                 break
             scheduler.record_start("web_app", f"wf-{i}")
             scheduler.record_complete(
-                "web_app", f"wf-{i}", cost_usd=1.0, success=True,
+                "web_app",
+                f"wf-{i}",
+                cost_usd=1.0,
+                success=True,
             )
 
         # Should have stopped at 5 runs (5 * $1 = $5 budget)

@@ -14,6 +14,7 @@ Tests cover:
 
 Target Coverage: 95%+ for blast_radius.py
 """
+
 import time
 
 from temper_ai.safety.blast_radius import BlastRadiusPolicy
@@ -45,7 +46,7 @@ class TestBlastRadiusPolicyBasics:
             "max_total_lines": 1000,
             "max_entities_affected": 50,
             "max_operations_per_minute": 10,
-            "forbidden_patterns": ["DELETE FROM", "DROP TABLE"]
+            "forbidden_patterns": ["DELETE FROM", "DROP TABLE"],
         }
         policy = BlastRadiusPolicy(config)
 
@@ -59,9 +60,7 @@ class TestBlastRadiusPolicyBasics:
 
     def test_partial_configuration(self):
         """Test that unspecified config values use defaults."""
-        config = {
-            "max_files_per_operation": 15
-        }
+        config = {"max_files_per_operation": 15}
         policy = BlastRadiusPolicy(config)
 
         # Custom value
@@ -96,11 +95,8 @@ class TestFileCountLimits:
         policy = BlastRadiusPolicy({"max_files_per_operation": 5})
 
         result = policy.validate(
-            action={
-                "operation": "modify_files",
-                "files": ["a.py", "b.py", "c.py"]
-            },
-            context={}
+            action={"operation": "modify_files", "files": ["a.py", "b.py", "c.py"]},
+            context={},
         )
 
         assert result.valid
@@ -111,11 +107,8 @@ class TestFileCountLimits:
         policy = BlastRadiusPolicy({"max_files_per_operation": 3})
 
         result = policy.validate(
-            action={
-                "operation": "modify_files",
-                "files": ["a.py", "b.py", "c.py"]
-            },
-            context={}
+            action={"operation": "modify_files", "files": ["a.py", "b.py", "c.py"]},
+            context={},
         )
 
         assert result.valid
@@ -128,9 +121,9 @@ class TestFileCountLimits:
         result = policy.validate(
             action={
                 "operation": "modify_files",
-                "files": ["a.py", "b.py", "c.py", "d.py"]
+                "files": ["a.py", "b.py", "c.py", "d.py"],
             },
-            context={}
+            context={},
         )
 
         assert not result.valid
@@ -146,9 +139,9 @@ class TestFileCountLimits:
         result = policy.validate(
             action={
                 "operation": "modify_files",
-                "files": [f"file_{i}.py" for i in range(20)]
+                "files": [f"file_{i}.py" for i in range(20)],
             },
-            context={}
+            context={},
         )
 
         assert not result.valid
@@ -159,8 +152,7 @@ class TestFileCountLimits:
         policy = BlastRadiusPolicy({"max_files_per_operation": 5})
 
         result = policy.validate(
-            action={"operation": "modify_files", "files": []},
-            context={}
+            action={"operation": "modify_files", "files": []}, context={}
         )
 
         assert result.valid
@@ -171,8 +163,7 @@ class TestFileCountLimits:
 
         # String instead of list
         result = policy.validate(
-            action={"operation": "modify_files", "files": "not_a_list"},
-            context={}
+            action={"operation": "modify_files", "files": "not_a_list"}, context={}
         )
 
         # Should not crash, should be valid (type check fails gracefully)
@@ -182,10 +173,7 @@ class TestFileCountLimits:
         """Test action without files field."""
         policy = BlastRadiusPolicy({"max_files_per_operation": 5})
 
-        result = policy.validate(
-            action={"operation": "other_operation"},
-            context={}
-        )
+        result = policy.validate(action={"operation": "other_operation"}, context={})
 
         assert result.valid
 
@@ -196,9 +184,9 @@ class TestFileCountLimits:
         result = policy.validate(
             action={
                 "operation": "modify_files",
-                "files": [f"file_{i}.py" for i in range(10)]
+                "files": [f"file_{i}.py" for i in range(10)],
             },
-            context={}
+            context={},
         )
 
         assert result.violations[0].remediation_hint is not None
@@ -215,12 +203,9 @@ class TestLinesPerFileLimits:
         result = policy.validate(
             action={
                 "operation": "modify_files",
-                "lines_changed": {
-                    "file1.py": 50,
-                    "file2.py": 80
-                }
+                "lines_changed": {"file1.py": 50, "file2.py": 80},
             },
-            context={}
+            context={},
         )
 
         assert result.valid
@@ -230,11 +215,8 @@ class TestLinesPerFileLimits:
         policy = BlastRadiusPolicy({"max_lines_per_file": 100})
 
         result = policy.validate(
-            action={
-                "operation": "modify_files",
-                "lines_changed": {"file1.py": 100}
-            },
-            context={}
+            action={"operation": "modify_files", "lines_changed": {"file1.py": 100}},
+            context={},
         )
 
         assert result.valid
@@ -244,11 +226,8 @@ class TestLinesPerFileLimits:
         policy = BlastRadiusPolicy({"max_lines_per_file": 100})
 
         result = policy.validate(
-            action={
-                "operation": "modify_files",
-                "lines_changed": {"file1.py": 101}
-            },
-            context={}
+            action={"operation": "modify_files", "lines_changed": {"file1.py": 101}},
+            context={},
         )
 
         assert not result.valid
@@ -267,10 +246,10 @@ class TestLinesPerFileLimits:
                 "lines_changed": {
                     "file1.py": 50,
                     "file2.py": 150,  # Violates
-                    "file3.py": 80
-                }
+                    "file3.py": 80,
+                },
             },
-            context={}
+            context={},
         )
 
         assert not result.valid
@@ -287,10 +266,10 @@ class TestLinesPerFileLimits:
                 "lines_changed": {
                     "file1.py": 150,  # Violates
                     "file2.py": 200,  # Violates
-                    "file3.py": 50
-                }
+                    "file3.py": 50,
+                },
             },
-            context={}
+            context={},
         )
 
         assert not result.valid
@@ -305,11 +284,8 @@ class TestLinesPerFileLimits:
         policy = BlastRadiusPolicy({"max_lines_per_file": 100})
 
         result = policy.validate(
-            action={
-                "operation": "modify_files",
-                "lines_changed": "not_a_dict"
-            },
-            context={}
+            action={"operation": "modify_files", "lines_changed": "not_a_dict"},
+            context={},
         )
 
         # Should not crash
@@ -319,10 +295,7 @@ class TestLinesPerFileLimits:
         """Test action without lines_changed field."""
         policy = BlastRadiusPolicy({"max_lines_per_file": 100})
 
-        result = policy.validate(
-            action={"operation": "modify_files"},
-            context={}
-        )
+        result = policy.validate(action={"operation": "modify_files"}, context={})
 
         assert result.valid
 
@@ -331,11 +304,7 @@ class TestLinesPerFileLimits:
         policy = BlastRadiusPolicy({"max_lines_per_file": 100})
 
         result = policy.validate(
-            action={
-                "operation": "modify_files",
-                "lines_changed": {}
-            },
-            context={}
+            action={"operation": "modify_files", "lines_changed": {}}, context={}
         )
 
         assert result.valid
@@ -345,11 +314,8 @@ class TestLinesPerFileLimits:
         policy = BlastRadiusPolicy({"max_lines_per_file": 100})
 
         result = policy.validate(
-            action={
-                "operation": "modify_files",
-                "lines_changed": {"file1.py": 200}
-            },
-            context={}
+            action={"operation": "modify_files", "lines_changed": {"file1.py": 200}},
+            context={},
         )
 
         assert result.violations[0].remediation_hint is not None
@@ -364,11 +330,7 @@ class TestTotalLinesLimits:
         policy = BlastRadiusPolicy({"max_total_lines": 1000})
 
         result = policy.validate(
-            action={
-                "operation": "modify_files",
-                "total_lines": 500
-            },
-            context={}
+            action={"operation": "modify_files", "total_lines": 500}, context={}
         )
 
         assert result.valid
@@ -378,11 +340,7 @@ class TestTotalLinesLimits:
         policy = BlastRadiusPolicy({"max_total_lines": 1000})
 
         result = policy.validate(
-            action={
-                "operation": "modify_files",
-                "total_lines": 1000
-            },
-            context={}
+            action={"operation": "modify_files", "total_lines": 1000}, context={}
         )
 
         assert result.valid
@@ -392,11 +350,7 @@ class TestTotalLinesLimits:
         policy = BlastRadiusPolicy({"max_total_lines": 1000})
 
         result = policy.validate(
-            action={
-                "operation": "modify_files",
-                "total_lines": 1001
-            },
-            context={}
+            action={"operation": "modify_files", "total_lines": 1001}, context={}
         )
 
         assert not result.valid
@@ -409,11 +363,7 @@ class TestTotalLinesLimits:
         policy = BlastRadiusPolicy({"max_total_lines": 1000})
 
         result = policy.validate(
-            action={
-                "operation": "modify_files",
-                "total_lines": 5000
-            },
-            context={}
+            action={"operation": "modify_files", "total_lines": 5000}, context={}
         )
 
         assert not result.valid
@@ -424,11 +374,7 @@ class TestTotalLinesLimits:
         policy = BlastRadiusPolicy({"max_total_lines": 1000})
 
         result = policy.validate(
-            action={
-                "operation": "modify_files",
-                "total_lines": 0
-            },
-            context={}
+            action={"operation": "modify_files", "total_lines": 0}, context={}
         )
 
         assert result.valid
@@ -437,10 +383,7 @@ class TestTotalLinesLimits:
         """Test action without total_lines field."""
         policy = BlastRadiusPolicy({"max_total_lines": 1000})
 
-        result = policy.validate(
-            action={"operation": "modify_files"},
-            context={}
-        )
+        result = policy.validate(action={"operation": "modify_files"}, context={})
 
         assert result.valid
 
@@ -449,11 +392,7 @@ class TestTotalLinesLimits:
         policy = BlastRadiusPolicy({"max_total_lines": 1000})
 
         result = policy.validate(
-            action={
-                "operation": "modify_files",
-                "total_lines": 2000
-            },
-            context={}
+            action={"operation": "modify_files", "total_lines": 2000}, context={}
         )
 
         assert result.violations[0].remediation_hint is not None
@@ -470,9 +409,9 @@ class TestEntityLimits:
         result = policy.validate(
             action={
                 "operation": "update_users",
-                "entities": [f"user_{i}" for i in range(30)]
+                "entities": [f"user_{i}" for i in range(30)],
             },
-            context={}
+            context={},
         )
 
         assert result.valid
@@ -484,9 +423,9 @@ class TestEntityLimits:
         result = policy.validate(
             action={
                 "operation": "update_users",
-                "entities": [f"user_{i}" for i in range(50)]
+                "entities": [f"user_{i}" for i in range(50)],
             },
-            context={}
+            context={},
         )
 
         assert result.valid
@@ -498,9 +437,9 @@ class TestEntityLimits:
         result = policy.validate(
             action={
                 "operation": "update_users",
-                "entities": [f"user_{i}" for i in range(51)]
+                "entities": [f"user_{i}" for i in range(51)],
             },
-            context={}
+            context={},
         )
 
         assert not result.valid
@@ -516,9 +455,9 @@ class TestEntityLimits:
         result = policy.validate(
             action={
                 "operation": "delete_users",
-                "entities": [f"user_{i}" for i in range(500)]
+                "entities": [f"user_{i}" for i in range(500)],
             },
-            context={}
+            context={},
         )
 
         assert not result.valid
@@ -530,8 +469,7 @@ class TestEntityLimits:
         policy = BlastRadiusPolicy({"max_entities_affected": 50})
 
         result = policy.validate(
-            action={"operation": "update_users", "entities": []},
-            context={}
+            action={"operation": "update_users", "entities": []}, context={}
         )
 
         assert result.valid
@@ -541,8 +479,7 @@ class TestEntityLimits:
         policy = BlastRadiusPolicy({"max_entities_affected": 50})
 
         result = policy.validate(
-            action={"operation": "update_users", "entities": "not_a_list"},
-            context={}
+            action={"operation": "update_users", "entities": "not_a_list"}, context={}
         )
 
         # Should not crash
@@ -552,10 +489,7 @@ class TestEntityLimits:
         """Test action without entities field."""
         policy = BlastRadiusPolicy({"max_entities_affected": 50})
 
-        result = policy.validate(
-            action={"operation": "update_users"},
-            context={}
-        )
+        result = policy.validate(action={"operation": "update_users"}, context={})
 
         assert result.valid
 
@@ -566,9 +500,9 @@ class TestEntityLimits:
         result = policy.validate(
             action={
                 "operation": "update_users",
-                "entities": [f"user_{i}" for i in range(100)]
+                "entities": [f"user_{i}" for i in range(100)],
             },
-            context={}
+            context={},
         )
 
         assert result.violations[0].remediation_hint is not None
@@ -585,25 +519,25 @@ class TestForbiddenPatterns:
         result = policy.validate(
             action={
                 "operation": "execute",
-                "content": "DELETE FROM users WHERE id = 1"
+                "content": "DELETE FROM users WHERE id = 1",
             },
-            context={}
+            context={},
         )
 
         assert result.valid
 
     def test_forbidden_pattern_detected(self):
         """Test detection of forbidden pattern."""
-        policy = BlastRadiusPolicy({
-            "forbidden_patterns": ["DELETE FROM", "DROP TABLE"]
-        })
+        policy = BlastRadiusPolicy(
+            {"forbidden_patterns": ["DELETE FROM", "DROP TABLE"]}
+        )
 
         result = policy.validate(
             action={
                 "operation": "execute",
-                "content": "DELETE FROM users WHERE id = 1"
+                "content": "DELETE FROM users WHERE id = 1",
             },
-            context={}
+            context={},
         )
 
         assert not result.valid
@@ -613,17 +547,11 @@ class TestForbiddenPatterns:
 
     def test_case_insensitive_pattern_matching(self):
         """Test that pattern matching is case-insensitive."""
-        policy = BlastRadiusPolicy({
-            "forbidden_patterns": ["DELETE FROM"]
-        })
+        policy = BlastRadiusPolicy({"forbidden_patterns": ["DELETE FROM"]})
 
         # Lowercase pattern, uppercase content
         result = policy.validate(
-            action={
-                "operation": "execute",
-                "content": "delete from users"
-            },
-            context={}
+            action={"operation": "execute", "content": "delete from users"}, context={}
         )
 
         assert not result.valid
@@ -631,27 +559,23 @@ class TestForbiddenPatterns:
 
         # Uppercase pattern, mixed case content
         result = policy.validate(
-            action={
-                "operation": "execute",
-                "content": "DeLeTe FrOm users"
-            },
-            context={}
+            action={"operation": "execute", "content": "DeLeTe FrOm users"}, context={}
         )
 
         assert not result.valid
 
     def test_multiple_forbidden_patterns_detected(self):
         """Test detection of multiple forbidden patterns."""
-        policy = BlastRadiusPolicy({
-            "forbidden_patterns": ["DELETE FROM", "DROP TABLE", "rm -rf"]
-        })
+        policy = BlastRadiusPolicy(
+            {"forbidden_patterns": ["DELETE FROM", "DROP TABLE", "rm -rf"]}
+        )
 
         result = policy.validate(
             action={
                 "operation": "execute",
-                "content": "DELETE FROM users; DROP TABLE sessions; rm -rf /data"
+                "content": "DELETE FROM users; DROP TABLE sessions; rm -rf /data",
             },
-            context={}
+            context={},
         )
 
         assert not result.valid
@@ -664,64 +588,45 @@ class TestForbiddenPatterns:
 
     def test_pattern_at_start_of_content(self):
         """Test pattern detection at start of content."""
-        policy = BlastRadiusPolicy({
-            "forbidden_patterns": ["DROP TABLE"]
-        })
+        policy = BlastRadiusPolicy({"forbidden_patterns": ["DROP TABLE"]})
 
         result = policy.validate(
-            action={
-                "operation": "execute",
-                "content": "DROP TABLE users"
-            },
-            context={}
+            action={"operation": "execute", "content": "DROP TABLE users"}, context={}
         )
 
         assert not result.valid
 
     def test_pattern_at_end_of_content(self):
         """Test pattern detection at end of content."""
-        policy = BlastRadiusPolicy({
-            "forbidden_patterns": ["rm -rf"]
-        })
+        policy = BlastRadiusPolicy({"forbidden_patterns": ["rm -rf"]})
 
         result = policy.validate(
-            action={
-                "operation": "execute",
-                "content": "cleanup with rm -rf"
-            },
-            context={}
+            action={"operation": "execute", "content": "cleanup with rm -rf"},
+            context={},
         )
 
         assert not result.valid
 
     def test_pattern_in_middle_of_content(self):
         """Test pattern detection in middle of content."""
-        policy = BlastRadiusPolicy({
-            "forbidden_patterns": ["DROP TABLE"]
-        })
+        policy = BlastRadiusPolicy({"forbidden_patterns": ["DROP TABLE"]})
 
         result = policy.validate(
             action={
                 "operation": "execute",
-                "content": "First we DROP TABLE users then we proceed"
+                "content": "First we DROP TABLE users then we proceed",
             },
-            context={}
+            context={},
         )
 
         assert not result.valid
 
     def test_content_not_a_string(self):
         """Test graceful handling when content is not a string."""
-        policy = BlastRadiusPolicy({
-            "forbidden_patterns": ["DELETE FROM"]
-        })
+        policy = BlastRadiusPolicy({"forbidden_patterns": ["DELETE FROM"]})
 
         result = policy.validate(
-            action={
-                "operation": "execute",
-                "content": 123  # Not a string
-            },
-            context={}
+            action={"operation": "execute", "content": 123}, context={}  # Not a string
         )
 
         # Should not crash
@@ -729,45 +634,28 @@ class TestForbiddenPatterns:
 
     def test_content_field_missing(self):
         """Test action without content field."""
-        policy = BlastRadiusPolicy({
-            "forbidden_patterns": ["DELETE FROM"]
-        })
+        policy = BlastRadiusPolicy({"forbidden_patterns": ["DELETE FROM"]})
 
-        result = policy.validate(
-            action={"operation": "execute"},
-            context={}
-        )
+        result = policy.validate(action={"operation": "execute"}, context={})
 
         assert result.valid
 
     def test_empty_content_string(self):
         """Test action with empty content string."""
-        policy = BlastRadiusPolicy({
-            "forbidden_patterns": ["DELETE FROM"]
-        })
+        policy = BlastRadiusPolicy({"forbidden_patterns": ["DELETE FROM"]})
 
         result = policy.validate(
-            action={
-                "operation": "execute",
-                "content": ""
-            },
-            context={}
+            action={"operation": "execute", "content": ""}, context={}
         )
 
         assert result.valid
 
     def test_remediation_hint_for_forbidden_pattern(self):
         """Test remediation hint for forbidden pattern."""
-        policy = BlastRadiusPolicy({
-            "forbidden_patterns": ["DROP TABLE"]
-        })
+        policy = BlastRadiusPolicy({"forbidden_patterns": ["DROP TABLE"]})
 
         result = policy.validate(
-            action={
-                "operation": "execute",
-                "content": "DROP TABLE users"
-            },
-            context={}
+            action={"operation": "execute", "content": "DROP TABLE users"}, context={}
         )
 
         assert result.violations[0].remediation_hint is not None
@@ -779,18 +667,17 @@ class TestCombinedViolations:
 
     def test_files_and_total_lines_violations(self):
         """Test violation of both file count and total lines."""
-        policy = BlastRadiusPolicy({
-            "max_files_per_operation": 3,
-            "max_total_lines": 500
-        })
+        policy = BlastRadiusPolicy(
+            {"max_files_per_operation": 3, "max_total_lines": 500}
+        )
 
         result = policy.validate(
             action={
                 "operation": "modify_files",
                 "files": ["a.py", "b.py", "c.py", "d.py", "e.py"],  # 5 > 3
-                "total_lines": 1000  # 1000 > 500
+                "total_lines": 1000,  # 1000 > 500
             },
-            context={}
+            context={},
         )
 
         assert not result.valid
@@ -802,27 +689,26 @@ class TestCombinedViolations:
 
     def test_all_limits_violated(self):
         """Test violation of all limits simultaneously."""
-        policy = BlastRadiusPolicy({
-            "max_files_per_operation": 2,
-            "max_lines_per_file": 100,
-            "max_total_lines": 200,
-            "max_entities_affected": 10,
-            "forbidden_patterns": ["DROP TABLE"]
-        })
+        policy = BlastRadiusPolicy(
+            {
+                "max_files_per_operation": 2,
+                "max_lines_per_file": 100,
+                "max_total_lines": 200,
+                "max_entities_affected": 10,
+                "forbidden_patterns": ["DROP TABLE"],
+            }
+        )
 
         result = policy.validate(
             action={
                 "operation": "dangerous_operation",
                 "files": ["a.py", "b.py", "c.py"],  # 3 > 2
-                "lines_changed": {
-                    "a.py": 150,  # 150 > 100
-                    "b.py": 120   # 120 > 100
-                },
+                "lines_changed": {"a.py": 150, "b.py": 120},  # 150 > 100  # 120 > 100
                 "total_lines": 500,  # 500 > 200
                 "entities": [f"user_{i}" for i in range(20)],  # 20 > 10
-                "content": "DROP TABLE users"  # Forbidden pattern
+                "content": "DROP TABLE users",  # Forbidden pattern
             },
-            context={}
+            context={},
         )
 
         assert not result.valid
@@ -830,8 +716,12 @@ class TestCombinedViolations:
         assert len(result.violations) == 6
 
         # Check severity distribution
-        critical_violations = [v for v in result.violations if v.severity == ViolationSeverity.CRITICAL]
-        high_violations = [v for v in result.violations if v.severity == ViolationSeverity.HIGH]
+        critical_violations = [
+            v for v in result.violations if v.severity == ViolationSeverity.CRITICAL
+        ]
+        high_violations = [
+            v for v in result.violations if v.severity == ViolationSeverity.HIGH
+        ]
 
         # Entities and pattern are CRITICAL
         assert len(critical_violations) == 2
@@ -840,17 +730,16 @@ class TestCombinedViolations:
 
     def test_combined_violations_invalid_overall(self):
         """Test that any HIGH/CRITICAL violation makes result invalid."""
-        policy = BlastRadiusPolicy({
-            "max_files_per_operation": 3,
-            "max_total_lines": 500
-        })
+        policy = BlastRadiusPolicy(
+            {"max_files_per_operation": 3, "max_total_lines": 500}
+        )
 
         result = policy.validate(
             action={
                 "operation": "modify_files",
-                "files": ["a.py", "b.py", "c.py", "d.py"]  # 4 > 3
+                "files": ["a.py", "b.py", "c.py", "d.py"],  # 4 > 3
             },
-            context={}
+            context={},
         )
 
         assert not result.valid
@@ -873,52 +762,53 @@ class TestEdgeCases:
         """Test action with only operation field."""
         policy = BlastRadiusPolicy()
 
-        result = policy.validate(
-            action={"operation": "some_operation"},
-            context={}
-        )
+        result = policy.validate(action={"operation": "some_operation"}, context={})
 
         assert result.valid
 
     def test_all_limits_at_zero(self):
         """Test policy rejects zero limits via validation."""
         import pytest
+
         with pytest.raises(ValueError, match="must be >= 1"):
-            BlastRadiusPolicy({
-                "max_files_per_operation": 0,
-                "max_lines_per_file": 0,
-                "max_total_lines": 0,
-                "max_entities_affected": 0
-            })
+            BlastRadiusPolicy(
+                {
+                    "max_files_per_operation": 0,
+                    "max_lines_per_file": 0,
+                    "max_total_lines": 0,
+                    "max_entities_affected": 0,
+                }
+            )
 
     def test_very_large_limits(self):
         """Test policy rejects limits above maximum via validation."""
         import pytest
+
         with pytest.raises(ValueError, match="must be <="):
-            BlastRadiusPolicy({
-                "max_files_per_operation": 1000000,
-                "max_lines_per_file": 1000000,
-                "max_total_lines": 10000000,
-                "max_entities_affected": 1000000
-            })
+            BlastRadiusPolicy(
+                {
+                    "max_files_per_operation": 1000000,
+                    "max_lines_per_file": 1000000,
+                    "max_total_lines": 10000000,
+                    "max_entities_affected": 1000000,
+                }
+            )
 
     def test_max_allowed_limits(self):
         """Test policy with maximum allowed limits."""
-        policy = BlastRadiusPolicy({
-            "max_files_per_operation": 10000,
-            "max_lines_per_file": 10000,
-            "max_total_lines": 10000,
-            "max_entities_affected": 10000
-        })
+        policy = BlastRadiusPolicy(
+            {
+                "max_files_per_operation": 10000,
+                "max_lines_per_file": 10000,
+                "max_total_lines": 10000,
+                "max_entities_affected": 10000,
+            }
+        )
 
         # Normal action should pass
         result = policy.validate(
-            action={
-                "files": ["a.py"],
-                "total_lines": 100,
-                "entities": ["user1"]
-            },
-            context={}
+            action={"files": ["a.py"], "total_lines": 100, "entities": ["user1"]},
+            context={},
         )
 
         assert result.valid
@@ -929,10 +819,7 @@ class TestEdgeCases:
 
         context = {"agent": "test_agent", "workflow_id": "wf_123"}
         result = policy.validate(
-            action={
-                "files": ["a.py", "b.py", "c.py"]
-            },
-            context=context
+            action={"files": ["a.py", "b.py", "c.py"]}, context=context
         )
 
         assert not result.valid
@@ -957,10 +844,7 @@ class TestValidationResultStructure:
         """Test structure of valid result."""
         policy = BlastRadiusPolicy()
 
-        result = policy.validate(
-            action={"files": ["a.py"]},
-            context={}
-        )
+        result = policy.validate(action={"files": ["a.py"]}, context={})
 
         assert result.valid is True
         assert result.violations == []
@@ -970,10 +854,7 @@ class TestValidationResultStructure:
         """Test structure of invalid result."""
         policy = BlastRadiusPolicy({"max_files_per_operation": 2})
 
-        result = policy.validate(
-            action={"files": ["a.py", "b.py", "c.py"]},
-            context={}
-        )
+        result = policy.validate(action={"files": ["a.py", "b.py", "c.py"]}, context={})
 
         assert result.valid is False
         assert len(result.violations) > 0
@@ -983,10 +864,7 @@ class TestValidationResultStructure:
         """Test that violations include timestamp."""
         policy = BlastRadiusPolicy({"max_files_per_operation": 2})
 
-        result = policy.validate(
-            action={"files": ["a.py", "b.py", "c.py"]},
-            context={}
-        )
+        result = policy.validate(action={"files": ["a.py", "b.py", "c.py"]}, context={})
 
         violation = result.violations[0]
         assert violation.timestamp is not None
@@ -1000,8 +878,7 @@ class TestValidationResultStructure:
         policy = BlastRadiusPolicy({"max_files_per_operation": 2})
 
         result = policy.validate(
-            action={"files": ["a.py", "b.py", "c.py"]},
-            context={"test": "value"}
+            action={"files": ["a.py", "b.py", "c.py"]}, context={"test": "value"}
         )
 
         violation_dict = result.violations[0].to_dict()
@@ -1034,16 +911,16 @@ class TestPerformanceRequirements:
 
     def test_validation_performance_complex_action(self):
         """Test validation completes in <1ms for complex action."""
-        policy = BlastRadiusPolicy({
-            "forbidden_patterns": ["DELETE FROM", "DROP TABLE", "rm -rf"]
-        })
+        policy = BlastRadiusPolicy(
+            {"forbidden_patterns": ["DELETE FROM", "DROP TABLE", "rm -rf"]}
+        )
 
         action = {
             "files": [f"file_{i}.py" for i in range(10)],
             "lines_changed": {f"file_{i}.py": 50 for i in range(10)},
             "total_lines": 500,
             "entities": [f"user_{i}" for i in range(50)],
-            "content": "SELECT * FROM users"
+            "content": "SELECT * FROM users",
         }
 
         start = time.perf_counter()
@@ -1056,13 +933,15 @@ class TestPerformanceRequirements:
 
     def test_validation_performance_with_violations(self):
         """Test validation completes in <1ms even with violations."""
-        policy = BlastRadiusPolicy({
-            "max_files_per_operation": 5,
-            "max_lines_per_file": 100,
-            "max_total_lines": 500,
-            "max_entities_affected": 20,
-            "forbidden_patterns": ["DELETE FROM"]
-        })
+        policy = BlastRadiusPolicy(
+            {
+                "max_files_per_operation": 5,
+                "max_lines_per_file": 100,
+                "max_total_lines": 500,
+                "max_entities_affected": 20,
+                "forbidden_patterns": ["DELETE FROM"],
+            }
+        )
 
         # Action that violates all limits
         action = {
@@ -1070,7 +949,7 @@ class TestPerformanceRequirements:
             "lines_changed": {f"file_{i}.py": 150 for i in range(5)},
             "total_lines": 1000,
             "entities": [f"user_{i}" for i in range(50)],
-            "content": "DELETE FROM users"
+            "content": "DELETE FROM users",
         }
 
         start = time.perf_counter()
@@ -1084,15 +963,11 @@ class TestPerformanceRequirements:
 
     def test_validation_performance_many_patterns(self):
         """Test validation with many forbidden patterns."""
-        policy = BlastRadiusPolicy({
-            "forbidden_patterns": [
-                f"PATTERN_{i}" for i in range(20)
-            ]
-        })
+        policy = BlastRadiusPolicy(
+            {"forbidden_patterns": [f"PATTERN_{i}" for i in range(20)]}
+        )
 
-        action = {
-            "content": "Safe content that doesn't match any patterns"
-        }
+        action = {"content": "Safe content that doesn't match any patterns"}
 
         start = time.perf_counter()
         result = policy.validate(action, context={})

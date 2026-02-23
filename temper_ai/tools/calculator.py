@@ -3,10 +3,11 @@ Calculator tool for safe mathematical expression evaluation.
 
 Uses ast.literal_eval and a whitelist approach to safely evaluate math expressions.
 """
+
 import ast
 import math
 import operator
-from typing import Any, Dict
+from typing import Any
 
 from temper_ai.tools.base import BaseTool, ToolMetadata, ToolResult
 from temper_ai.tools.constants import (
@@ -34,22 +35,22 @@ SAFE_OPERATORS = {
 
 # Safe functions allowed in expressions
 SAFE_FUNCTIONS = {
-    'abs': abs,
-    'round': round,
-    'min': min,
-    'max': max,
-    'sum': sum,
-    'sqrt': math.sqrt,
-    'ceil': math.ceil,
-    'floor': math.floor,
-    'sin': math.sin,
-    'cos': math.cos,
-    'tan': math.tan,
-    'log': math.log,
-    'log10': math.log10,
-    'exp': math.exp,
-    'pi': math.pi,
-    'e': math.e,
+    "abs": abs,
+    "round": round,
+    "min": min,
+    "max": max,
+    "sum": sum,
+    "sqrt": math.sqrt,
+    "ceil": math.ceil,
+    "floor": math.floor,
+    "sin": math.sin,
+    "cos": math.cos,
+    "tan": math.tan,
+    "log": math.log,
+    "log10": math.log10,
+    "exp": math.exp,
+    "pi": math.pi,
+    "e": math.e,
 }
 
 # Maximum nesting depth for lists/tuples to prevent DoS attacks
@@ -86,17 +87,17 @@ class Calculator(BaseTool):
             requires_credentials=False,
         )
 
-    def get_parameters_schema(self) -> Dict[str, Any]:
+    def get_parameters_schema(self) -> dict[str, Any]:
         """Return JSON schema for calculator parameters."""
         return {
             "type": "object",
             "properties": {
                 "expression": {
                     "type": "string",
-                    "description": "Mathematical expression to evaluate (e.g., '2 + 2', 'sqrt(16)', 'sin(pi/2)')"
+                    "description": "Mathematical expression to evaluate (e.g., '2 + 2', 'sqrt(16)', 'sin(pi/2)')",
                 }
             },
-            "required": ["expression"]
+            "required": ["expression"],
         }
 
     def execute(self, **kwargs: Any) -> ToolResult:
@@ -113,8 +114,7 @@ class Calculator(BaseTool):
 
         if not expression or not isinstance(expression, str):
             return ToolResult(
-                success=False,
-                error="Expression must be a non-empty string"
+                success=False, error="Expression must be a non-empty string"
             )
 
         # Remove whitespace
@@ -122,7 +122,7 @@ class Calculator(BaseTool):
 
         try:
             # Parse expression into AST
-            tree = ast.parse(expression, mode='eval')
+            tree = ast.parse(expression, mode="eval")
 
             # Evaluate safely with depth tracking (prevents DoS via deep nesting)
             result = self._safe_eval(tree.body, depth=0)
@@ -132,39 +132,26 @@ class Calculator(BaseTool):
                 result=result,
                 metadata={
                     "expression": expression,
-                    "result_type": type(result).__name__
-                }
+                    "result_type": type(result).__name__,
+                },
             )
 
         except ZeroDivisionError:
-            return ToolResult(
-                success=False,
-                error="Division by zero"
-            )
+            return ToolResult(success=False, error="Division by zero")
 
         except ValueError as e:
-            return ToolResult(
-                success=False,
-                error=f"Invalid value: {str(e)}"
-            )
+            return ToolResult(success=False, error=f"Invalid value: {str(e)}")
 
         except SyntaxError as e:
             return ToolResult(
-                success=False,
-                error=f"Invalid expression syntax: {str(e)}"
+                success=False, error=f"Invalid expression syntax: {str(e)}"
             )
 
         except OverflowError as e:
-            return ToolResult(
-                success=False,
-                error=f"Math error: {str(e)}"
-            )
+            return ToolResult(success=False, error=f"Math error: {str(e)}")
 
         except (TypeError, AttributeError) as e:
-            return ToolResult(
-                success=False,
-                error=f"Evaluation error: {str(e)}"
-            )
+            return ToolResult(success=False, error=f"Evaluation error: {str(e)}")
 
     def _eval_constant(self, node: ast.Constant) -> Any:
         """Evaluate a constant node."""
@@ -248,7 +235,9 @@ class Calculator(BaseTool):
         """Evaluate a list literal node."""
         # TO-08: Bound list size to prevent DoS via large literals
         if len(node.elts) > MAX_COLLECTION_SIZE:
-            raise ValueError(f"List size {len(node.elts)} exceeds maximum of {MAX_COLLECTION_SIZE}")
+            raise ValueError(
+                f"List size {len(node.elts)} exceeds maximum of {MAX_COLLECTION_SIZE}"
+            )
         # Increment depth for nested lists
         return [self._safe_eval(item, depth + 1) for item in node.elts]
 
@@ -256,7 +245,9 @@ class Calculator(BaseTool):
         """Evaluate a tuple literal node."""
         # TO-08: Bound tuple size to prevent DoS via large literals
         if len(node.elts) > MAX_COLLECTION_SIZE:
-            raise ValueError(f"Tuple size {len(node.elts)} exceeds maximum of {MAX_COLLECTION_SIZE}")
+            raise ValueError(
+                f"Tuple size {len(node.elts)} exceeds maximum of {MAX_COLLECTION_SIZE}"
+            )
         # Increment depth for nested tuples
         return tuple(self._safe_eval(item, depth + 1) for item in node.elts)
 

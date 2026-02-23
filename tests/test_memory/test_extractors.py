@@ -5,8 +5,8 @@ import pytest
 from temper_ai.memory.extractors import (
     MAX_PATTERN_LENGTH,
     MAX_PATTERNS_PER_EXTRACTION,
-    extract_procedural_patterns,
     _parse_patterns,
+    extract_procedural_patterns,
 )
 
 

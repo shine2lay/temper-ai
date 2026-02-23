@@ -1,7 +1,7 @@
 """Pydantic schemas for self-modifying lifecycle configuration."""
 
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -29,13 +29,11 @@ class ProjectCharacteristics(BaseModel):
     """Characteristics of a project used for lifecycle adaptation."""
 
     size: ProjectSize = ProjectSize.MEDIUM
-    product_type: Optional[str] = None
+    product_type: str | None = None
     risk_level: RiskLevel = RiskLevel.MEDIUM
-    estimated_complexity: float = Field(
-        default=DEFAULT_COMPLEXITY, ge=0.0, le=1.0
-    )
+    estimated_complexity: float = Field(default=DEFAULT_COMPLEXITY, ge=0.0, le=1.0)
     is_prototype: bool = False
-    tags: List[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
 
 
 class AdaptationAction(str, Enum):
@@ -56,16 +54,16 @@ class AdaptationRule(BaseModel):
     condition: str  # Jinja2: "{{ size == 'small' }}"
 
     # ADD action fields
-    stage_ref: Optional[str] = None
-    insert_after: Optional[str] = None
-    insert_before: Optional[str] = None
+    stage_ref: str | None = None
+    insert_after: str | None = None
+    insert_before: str | None = None
 
     # REORDER action fields
-    move_after: Optional[str] = None
-    move_before: Optional[str] = None
+    move_after: str | None = None
+    move_before: str | None = None
 
     # MODIFY action fields
-    modifications: Dict[str, Any] = Field(default_factory=dict)
+    modifications: dict[str, Any] = Field(default_factory=dict)
 
     rationale: str = ""
     priority: int = Field(default=MIN_PRIORITY, ge=0)
@@ -77,8 +75,8 @@ class LifecycleProfile(BaseModel):
     name: str
     description: str = ""
     version: str = "1.0"
-    product_types: List[str] = Field(default_factory=list)
-    rules: List[AdaptationRule] = Field(default_factory=list)
+    product_types: list[str] = Field(default_factory=list)
+    rules: list[AdaptationRule] = Field(default_factory=list)
     enabled: bool = True
     source: str = "manual"
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
@@ -90,9 +88,9 @@ class LifecycleConfig(BaseModel):
     """Lifecycle configuration embedded in WorkflowConfigInner."""
 
     enabled: bool = False
-    profile: Optional[str] = None
+    profile: str | None = None
     auto_classify: bool = True
-    experiment_id: Optional[str] = None
+    experiment_id: str | None = None
 
 
 class AdaptationRecord(BaseModel):
@@ -101,11 +99,11 @@ class AdaptationRecord(BaseModel):
     workflow_id: str
     profile_name: str
     characteristics: ProjectCharacteristics
-    rules_applied: List[str] = Field(default_factory=list)
-    stages_original: List[str] = Field(default_factory=list)
-    stages_adapted: List[str] = Field(default_factory=list)
-    experiment_id: Optional[str] = None
-    experiment_variant: Optional[str] = None
+    rules_applied: list[str] = Field(default_factory=list)
+    stages_original: list[str] = Field(default_factory=list)
+    stages_adapted: list[str] = Field(default_factory=list)
+    experiment_id: str | None = None
+    experiment_variant: str | None = None
 
 
 class StageMetrics(BaseModel):

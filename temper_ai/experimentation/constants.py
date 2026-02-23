@@ -4,7 +4,6 @@ Centralized constants for experiment configuration, statistical testing,
 sample sizes, and assignment parameters.
 """
 
-
 # ============================================================================
 # Statistical Testing Defaults
 # ============================================================================

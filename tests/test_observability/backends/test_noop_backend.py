@@ -9,6 +9,7 @@ Tests cover:
 - Stats retrieval
 - Context management
 """
+
 import uuid
 from datetime import datetime
 
@@ -67,7 +68,7 @@ def test_track_workflow_start(noop_backend: NoOpBackend):
         product_type="demo",
         environment="test",
         tags=["test", "demo"],
-        extra_metadata={"key": "value"}
+        extra_metadata={"key": "value"},
     )
     assert result is None
 
@@ -82,7 +83,7 @@ def test_track_workflow_end(noop_backend: NoOpBackend):
         end_time=datetime.utcnow(),
         status="completed",
         error_message=None,
-        error_stack_trace=None
+        error_stack_trace=None,
     )
     assert result is None
 
@@ -97,7 +98,7 @@ def test_track_workflow_end_with_error(noop_backend: NoOpBackend):
         end_time=datetime.utcnow(),
         status="failed",
         error_message="Test error",
-        error_stack_trace="Traceback..."
+        error_stack_trace="Traceback...",
     )
     assert result is None
 
@@ -112,7 +113,7 @@ def test_update_workflow_metrics(noop_backend: NoOpBackend):
         total_llm_calls=100,
         total_tool_calls=50,
         total_tokens=10000,
-        total_cost_usd=1.50
+        total_cost_usd=1.50,
     )
     assert result is None
 
@@ -132,7 +133,7 @@ def test_track_stage_start(noop_backend: NoOpBackend):
         stage_name="analysis",
         stage_config={"stage": {"version": "1.0"}},
         start_time=datetime.utcnow(),
-        input_data={"query": "test"}
+        input_data={"query": "test"},
     )
     assert result is None
 
@@ -149,7 +150,7 @@ def test_track_stage_end(noop_backend: NoOpBackend):
         error_message=None,
         num_agents_executed=3,
         num_agents_succeeded=2,
-        num_agents_failed=1
+        num_agents_failed=1,
     )
     assert result is None
 
@@ -160,8 +161,7 @@ def test_set_stage_output(noop_backend: NoOpBackend):
 
     # Should not raise any errors
     result = noop_backend.set_stage_output(
-        stage_id=stage_id,
-        output_data={"result": "success", "score": 0.95}
+        stage_id=stage_id, output_data={"result": "success", "score": 0.95}
     )
     assert result is None
 
@@ -181,7 +181,7 @@ def test_track_agent_start(noop_backend: NoOpBackend):
         agent_name="researcher",
         agent_config={"agent": {"version": "1.0"}},
         start_time=datetime.utcnow(),
-        input_data={"task": "analyze"}
+        input_data={"task": "analyze"},
     )
     assert result is None
 
@@ -195,7 +195,7 @@ def test_track_agent_end(noop_backend: NoOpBackend):
         agent_id=agent_id,
         end_time=datetime.utcnow(),
         status="completed",
-        error_message=None
+        error_message=None,
     )
     assert result is None
 
@@ -209,7 +209,7 @@ def test_track_agent_end_with_error(noop_backend: NoOpBackend):
         agent_id=agent_id,
         end_time=datetime.utcnow(),
         status="failed",
-        error_message="Agent failed"
+        error_message="Agent failed",
     )
     assert result is None
 
@@ -229,7 +229,7 @@ def test_set_agent_output(noop_backend: NoOpBackend):
         completion_tokens=200,
         estimated_cost_usd=0.01,
         num_llm_calls=2,
-        num_tool_calls=3
+        num_tool_calls=3,
     )
     assert result is None
 
@@ -239,10 +239,7 @@ def test_set_agent_output_minimal(noop_backend: NoOpBackend):
     agent_id = make_agent_id()
 
     # Should not raise any errors with minimal data
-    result = noop_backend.set_agent_output(
-        agent_id=agent_id,
-        output_data={}
-    )
+    result = noop_backend.set_agent_output(agent_id=agent_id, output_data={})
     assert result is None
 
 
@@ -270,7 +267,7 @@ def test_track_llm_call(noop_backend: NoOpBackend):
         temperature=0.7,
         max_tokens=500,
         status="success",
-        error_message=None
+        error_message=None,
     )
     assert result is None
 
@@ -294,7 +291,7 @@ def test_track_llm_call_with_error(noop_backend: NoOpBackend):
         estimated_cost_usd=0.0,
         start_time=datetime.utcnow(),
         status="failed",
-        error_message="API timeout"
+        error_message="API timeout",
     )
     assert result is None
 
@@ -319,7 +316,7 @@ def test_track_tool_call(noop_backend: NoOpBackend):
         status="success",
         error_message=None,
         safety_checks=["url_validation", "content_filter"],
-        approval_required=False
+        approval_required=False,
     )
     assert result is None
 
@@ -341,7 +338,7 @@ def test_track_tool_call_with_error(noop_backend: NoOpBackend):
         status="failed",
         error_message="Connection timeout",
         safety_checks=["sql_injection_check"],
-        approval_required=True
+        approval_required=True,
     )
     assert result is None
 
@@ -361,7 +358,7 @@ def test_track_safety_violation(noop_backend: NoOpBackend):
         policy_name="security_policy",
         service_name="action_validator",
         context={"action": "delete_all", "resource": "database"},
-        timestamp=datetime.utcnow()
+        timestamp=datetime.utcnow(),
     )
     assert result is None
 
@@ -375,7 +372,7 @@ def test_track_safety_violation_minimal(noop_backend: NoOpBackend):
         agent_id=None,
         violation_severity="LOW",
         violation_message="Minor issue",
-        policy_name="basic_policy"
+        policy_name="basic_policy",
     )
     assert result is None
 
@@ -397,7 +394,7 @@ def test_track_collaboration_event(noop_backend: NoOpBackend):
         outcome="consensus",
         confidence_score=0.95,
         extra_metadata={"key": "value"},
-        timestamp=datetime.utcnow()
+        timestamp=datetime.utcnow(),
     )
 
     assert event_id == ""
@@ -409,9 +406,7 @@ def test_track_collaboration_event_minimal(noop_backend: NoOpBackend):
 
     # Should return empty string
     event_id = noop_backend.track_collaboration_event(
-        stage_id=stage_id,
-        event_type="conflict",
-        agents_involved=[]
+        stage_id=stage_id, event_type="conflict", agents_involved=[]
     )
 
     assert event_id == ""
@@ -485,12 +480,10 @@ def test_high_volume_operations(noop_backend: NoOpBackend):
             workflow_id=workflow_id,
             workflow_name=f"workflow_{i}",
             workflow_config={},
-            start_time=datetime.utcnow()
+            start_time=datetime.utcnow(),
         )
         noop_backend.track_workflow_end(
-            workflow_id=workflow_id,
-            end_time=datetime.utcnow(),
-            status="completed"
+            workflow_id=workflow_id, end_time=datetime.utcnow(), status="completed"
         )
     duration = time.time() - start
 
@@ -511,14 +504,12 @@ def test_concurrent_operations(noop_backend: NoOpBackend):
             workflow_id=wf_id,
             workflow_name="test",
             workflow_config={},
-            start_time=datetime.utcnow()
+            start_time=datetime.utcnow(),
         )
 
     for wf_id in workflow_ids:
         noop_backend.track_workflow_end(
-            workflow_id=wf_id,
-            end_time=datetime.utcnow(),
-            status="completed"
+            workflow_id=wf_id, end_time=datetime.utcnow(), status="completed"
         )
     duration = time.time() - start
 
@@ -542,7 +533,7 @@ def test_full_workflow_lifecycle(noop_backend: NoOpBackend):
         workflow_id=workflow_id,
         workflow_name="full_test",
         workflow_config={},
-        start_time=datetime.utcnow()
+        start_time=datetime.utcnow(),
     )
 
     noop_backend.track_stage_start(
@@ -550,7 +541,7 @@ def test_full_workflow_lifecycle(noop_backend: NoOpBackend):
         workflow_id=workflow_id,
         stage_name="analysis",
         stage_config={},
-        start_time=datetime.utcnow()
+        start_time=datetime.utcnow(),
     )
 
     noop_backend.track_agent_start(
@@ -558,7 +549,7 @@ def test_full_workflow_lifecycle(noop_backend: NoOpBackend):
         stage_id=stage_id,
         agent_name="researcher",
         agent_config={},
-        start_time=datetime.utcnow()
+        start_time=datetime.utcnow(),
     )
 
     noop_backend.track_llm_call(
@@ -572,7 +563,7 @@ def test_full_workflow_lifecycle(noop_backend: NoOpBackend):
         completion_tokens=20,
         latency_ms=500,
         estimated_cost_usd=0.001,
-        start_time=datetime.utcnow()
+        start_time=datetime.utcnow(),
     )
 
     noop_backend.track_tool_call(
@@ -582,29 +573,21 @@ def test_full_workflow_lifecycle(noop_backend: NoOpBackend):
         input_params={},
         output_data={},
         start_time=datetime.utcnow(),
-        duration_seconds=0.1
+        duration_seconds=0.1,
     )
 
-    noop_backend.set_agent_output(
-        agent_id=agent_id,
-        output_data={"result": "done"}
-    )
+    noop_backend.set_agent_output(agent_id=agent_id, output_data={"result": "done"})
 
     noop_backend.track_agent_end(
-        agent_id=agent_id,
-        end_time=datetime.utcnow(),
-        status="completed"
+        agent_id=agent_id, end_time=datetime.utcnow(), status="completed"
     )
 
     noop_backend.set_stage_output(
-        stage_id=stage_id,
-        output_data={"stage_result": "done"}
+        stage_id=stage_id, output_data={"stage_result": "done"}
     )
 
     noop_backend.track_stage_end(
-        stage_id=stage_id,
-        end_time=datetime.utcnow(),
-        status="completed"
+        stage_id=stage_id, end_time=datetime.utcnow(), status="completed"
     )
 
     noop_backend.update_workflow_metrics(
@@ -612,13 +595,11 @@ def test_full_workflow_lifecycle(noop_backend: NoOpBackend):
         total_llm_calls=1,
         total_tool_calls=1,
         total_tokens=30,
-        total_cost_usd=0.001
+        total_cost_usd=0.001,
     )
 
     noop_backend.track_workflow_end(
-        workflow_id=workflow_id,
-        end_time=datetime.utcnow(),
-        status="completed"
+        workflow_id=workflow_id, end_time=datetime.utcnow(), status="completed"
     )
 
     # Verify backend still reports consistent stats after full lifecycle
@@ -638,13 +619,11 @@ def test_null_object_pattern_no_exceptions():
         workflow_id="",
         workflow_name="",
         workflow_config={},
-        start_time=datetime.utcnow()
+        start_time=datetime.utcnow(),
     )
 
     backend.track_workflow_end(
-        workflow_id="nonexistent",
-        end_time=datetime.utcnow(),
-        status="completed"
+        workflow_id="nonexistent", end_time=datetime.utcnow(), status="completed"
     )
 
     # Verify stats still work after invalid data (null object contract)
@@ -665,7 +644,7 @@ def test_idempotency():
             workflow_id=workflow_id,
             workflow_name="test",
             workflow_config={},
-            start_time=datetime.utcnow()
+            start_time=datetime.utcnow(),
         )
 
     # Stats should remain stable after repeated calls

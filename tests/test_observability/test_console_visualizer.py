@@ -1,6 +1,6 @@
 """Tests for WorkflowVisualizer and StreamingVisualizer console components."""
-import time
-from datetime import datetime, timezone
+
+from datetime import datetime
 from io import StringIO
 from unittest.mock import Mock, patch
 
@@ -417,9 +417,7 @@ class TestStreamingVisualizer:
     def test_initialization(self):
         """Test StreamingVisualizer initialization."""
         visualizer = StreamingVisualizer(
-            workflow_id="wf-123",
-            verbosity="standard",
-            poll_interval=0.5
+            workflow_id="wf-123", verbosity="standard", poll_interval=0.5
         )
 
         assert visualizer.workflow_id == "wf-123"

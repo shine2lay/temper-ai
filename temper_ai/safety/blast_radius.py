@@ -10,9 +10,9 @@ widespread damage. Enforces constraints on:
 This policy helps prevent "blast radius" issues where a single malfunction
 or malicious action could affect many resources.
 """
-from typing import Any, Dict, List, Optional
 
-from temper_ai.shared.constants.probabilities import PROB_VERY_LOW
+from typing import Any
+
 from temper_ai.safety.base import BaseSafetyPolicy
 from temper_ai.safety.constants import (
     BLAST_RADIUS_SEPARATOR,
@@ -27,8 +27,13 @@ from temper_ai.safety.constants import (
     MAX_OPS_UPPER_BOUND,
     MAX_TOTAL_LINES_UPPER_BOUND,
 )
-from temper_ai.safety.interfaces import SafetyViolation, ValidationResult, ViolationSeverity
+from temper_ai.safety.interfaces import (
+    SafetyViolation,
+    ValidationResult,
+    ViolationSeverity,
+)
 from temper_ai.safety.validation import ValidationMixin
+from temper_ai.shared.constants.probabilities import PROB_VERY_LOW
 
 # Blast radius policy priority
 BLAST_RADIUS_PRIORITY = 90
@@ -73,7 +78,7 @@ class BlastRadiusPolicy(BaseSafetyPolicy, ValidationMixin):
     max_ops_per_minute: int
     forbidden_patterns: list
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: dict[str, Any] | None = None):
         """Initialize blast radius policy with validated configuration.
 
         Args:
@@ -97,24 +102,63 @@ class BlastRadiusPolicy(BaseSafetyPolicy, ValidationMixin):
     def _init_limits(self) -> None:
         """Validate and set numeric limit config values."""
         limit_defs = [
-            ("max_files", "max_files_per_operation", self.DEFAULT_MAX_FILES, MAX_FILES_UPPER_BOUND),
-            ("max_lines_per_file", "max_lines_per_file", self.DEFAULT_MAX_LINES_PER_FILE, MAX_LINES_UPPER_BOUND),
-            ("max_total_lines", "max_total_lines", self.DEFAULT_MAX_TOTAL_LINES, MAX_TOTAL_LINES_UPPER_BOUND),
-            ("max_entities", "max_entities_affected", self.DEFAULT_MAX_ENTITIES, MAX_ENTITIES_UPPER_BOUND),
-            ("max_ops_per_minute", "max_operations_per_minute", self.DEFAULT_MAX_OPS_PER_MINUTE, MAX_OPS_UPPER_BOUND),
+            (
+                "max_files",
+                "max_files_per_operation",
+                self.DEFAULT_MAX_FILES,
+                MAX_FILES_UPPER_BOUND,
+            ),
+            (
+                "max_lines_per_file",
+                "max_lines_per_file",
+                self.DEFAULT_MAX_LINES_PER_FILE,
+                MAX_LINES_UPPER_BOUND,
+            ),
+            (
+                "max_total_lines",
+                "max_total_lines",
+                self.DEFAULT_MAX_TOTAL_LINES,
+                MAX_TOTAL_LINES_UPPER_BOUND,
+            ),
+            (
+                "max_entities",
+                "max_entities_affected",
+                self.DEFAULT_MAX_ENTITIES,
+                MAX_ENTITIES_UPPER_BOUND,
+            ),
+            (
+                "max_ops_per_minute",
+                "max_operations_per_minute",
+                self.DEFAULT_MAX_OPS_PER_MINUTE,
+                MAX_OPS_UPPER_BOUND,
+            ),
         ]
         for attr, key, default, upper in limit_defs:
-            setattr(self, attr, self._validate_positive_int(
-                self.config.get(key, default), key, min_value=1, max_value=upper))
+            setattr(
+                self,
+                attr,
+                self._validate_positive_int(
+                    self.config.get(key, default), key, min_value=1, max_value=upper
+                ),
+            )
 
     def _init_forbidden_patterns(self) -> None:
         """Validate and compile forbidden regex patterns."""
         raw = self.config.get("forbidden_patterns", [])
         validated = self._validate_string_list(
-            raw, "forbidden_patterns", allow_empty=True, max_items=1000, max_item_length=1000)
+            raw,
+            "forbidden_patterns",
+            allow_empty=True,
+            max_items=1000,
+            max_item_length=1000,
+        )
         self.forbidden_patterns = [
             self._validate_regex_pattern(
-                p, f"forbidden_patterns['{p}']", max_length=1000, test_timeout=PROB_VERY_LOW)
+                p,
+                f"forbidden_patterns['{p}']",
+                max_length=1000,
+                test_timeout=PROB_VERY_LOW,
+            )
             for p in validated
         ]
 
@@ -137,10 +181,8 @@ class BlastRadiusPolicy(BaseSafetyPolicy, ValidationMixin):
         return BLAST_RADIUS_PRIORITY
 
     def _check_file_count(
-        self,
-        action: Dict[str, Any],
-        context: Dict[str, Any]
-    ) -> Optional[SafetyViolation]:
+        self, action: dict[str, Any], context: dict[str, Any]
+    ) -> SafetyViolation | None:
         """Check if file count exceeds limit."""
         files = action.get("files", [])
         if isinstance(files, list) and len(files) > self.max_files:
@@ -150,37 +192,35 @@ class BlastRadiusPolicy(BaseSafetyPolicy, ValidationMixin):
                 message=f"Too many files affected: {len(files)}{BLAST_RADIUS_SEPARATOR}{self.max_files}",
                 action=str(action),
                 context=context,
-                remediation_hint=f"Reduce file count to {self.max_files} or less"
+                remediation_hint=f"Reduce file count to {self.max_files} or less",
             )
         return None
 
     def _check_lines_per_file(
-        self,
-        action: Dict[str, Any],
-        context: Dict[str, Any]
-    ) -> List[SafetyViolation]:
+        self, action: dict[str, Any], context: dict[str, Any]
+    ) -> list[SafetyViolation]:
         """Check if any file exceeds line change limit."""
-        violations: List[SafetyViolation] = []
+        violations: list[SafetyViolation] = []
         lines_changed = action.get("lines_changed", {})
 
         if isinstance(lines_changed, dict):
             for file_path, line_count in lines_changed.items():
                 if line_count > self.max_lines_per_file:
-                    violations.append(SafetyViolation(
-                        policy_name=self.name,
-                        severity=ViolationSeverity.HIGH,
-                        message=f"Too many lines changed in {file_path}: {line_count}{BLAST_RADIUS_SEPARATOR}{self.max_lines_per_file}",
-                        action=str(action),
-                        context=context,
-                        remediation_hint="Split changes across multiple operations"
-                    ))
+                    violations.append(
+                        SafetyViolation(
+                            policy_name=self.name,
+                            severity=ViolationSeverity.HIGH,
+                            message=f"Too many lines changed in {file_path}: {line_count}{BLAST_RADIUS_SEPARATOR}{self.max_lines_per_file}",
+                            action=str(action),
+                            context=context,
+                            remediation_hint="Split changes across multiple operations",
+                        )
+                    )
         return violations
 
     def _check_total_lines(
-        self,
-        action: Dict[str, Any],
-        context: Dict[str, Any]
-    ) -> Optional[SafetyViolation]:
+        self, action: dict[str, Any], context: dict[str, Any]
+    ) -> SafetyViolation | None:
         """Check if total lines changed exceeds limit."""
         total_lines = action.get("total_lines", 0)
         if total_lines > self.max_total_lines:
@@ -190,15 +230,13 @@ class BlastRadiusPolicy(BaseSafetyPolicy, ValidationMixin):
                 message=f"Too many total lines changed: {total_lines}{BLAST_RADIUS_SEPARATOR}{self.max_total_lines}",
                 action=str(action),
                 context=context,
-                remediation_hint="Break operation into smaller batches"
+                remediation_hint="Break operation into smaller batches",
             )
         return None
 
     def _check_entities_affected(
-        self,
-        action: Dict[str, Any],
-        context: Dict[str, Any]
-    ) -> Optional[SafetyViolation]:
+        self, action: dict[str, Any], context: dict[str, Any]
+    ) -> SafetyViolation | None:
         """Check if entities affected exceeds limit."""
         entities = action.get("entities", [])
         if isinstance(entities, list) and len(entities) > self.max_entities:
@@ -208,37 +246,35 @@ class BlastRadiusPolicy(BaseSafetyPolicy, ValidationMixin):
                 message=f"Too many entities affected: {len(entities)}{BLAST_RADIUS_SEPARATOR}{self.max_entities}",
                 action=str(action),
                 context=context,
-                remediation_hint=f"Limit operation scope to {self.max_entities} entities"
+                remediation_hint=f"Limit operation scope to {self.max_entities} entities",
             )
         return None
 
     def _check_forbidden_patterns(
-        self,
-        action: Dict[str, Any],
-        context: Dict[str, Any]
-    ) -> List[SafetyViolation]:
+        self, action: dict[str, Any], context: dict[str, Any]
+    ) -> list[SafetyViolation]:
         """Check for forbidden patterns in content."""
-        violations: List[SafetyViolation] = []
+        violations: list[SafetyViolation] = []
         content = action.get("content", "")
 
         if isinstance(content, str):
             for compiled_pattern in self.forbidden_patterns:
                 match = compiled_pattern.search(content)
                 if match:
-                    violations.append(SafetyViolation(
-                        policy_name=self.name,
-                        severity=ViolationSeverity.CRITICAL,
-                        message=f"Forbidden pattern detected: '{compiled_pattern.pattern}'",
-                        action=str(action),
-                        context=context,
-                        remediation_hint=f"Remove or refactor code containing '{compiled_pattern.pattern}'"
-                    ))
+                    violations.append(
+                        SafetyViolation(
+                            policy_name=self.name,
+                            severity=ViolationSeverity.CRITICAL,
+                            message=f"Forbidden pattern detected: '{compiled_pattern.pattern}'",
+                            action=str(action),
+                            context=context,
+                            remediation_hint=f"Remove or refactor code containing '{compiled_pattern.pattern}'",
+                        )
+                    )
         return violations
 
     def _validate_impl(
-        self,
-        action: Dict[str, Any],
-        context: Dict[str, Any]
+        self, action: dict[str, Any], context: dict[str, Any]
     ) -> ValidationResult:
         """Validate action against blast radius limits.
 
@@ -249,7 +285,7 @@ class BlastRadiusPolicy(BaseSafetyPolicy, ValidationMixin):
         Returns:
             ValidationResult with violations if limits exceeded
         """
-        violations: List[SafetyViolation] = []
+        violations: list[SafetyViolation] = []
 
         # Check all limits
         file_count_violation = self._check_file_count(action, context)
@@ -269,13 +305,8 @@ class BlastRadiusPolicy(BaseSafetyPolicy, ValidationMixin):
         violations.extend(self._check_forbidden_patterns(action, context))
 
         # Determine validity (invalid if any HIGH or CRITICAL violations)
-        valid = not any(
-            v.severity >= ViolationSeverity.HIGH
-            for v in violations
-        )
+        valid = not any(v.severity >= ViolationSeverity.HIGH for v in violations)
 
         return ValidationResult(
-            valid=valid,
-            violations=violations,
-            policy_name=self.name
+            valid=valid, violations=violations, policy_name=self.name
         )

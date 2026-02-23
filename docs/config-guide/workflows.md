@@ -448,37 +448,40 @@ workflow:
     enable_rollback: false
 ```
 
-### Code Generation with Test-Fix Loop
+### Code Generation with Quality Gate Loop
 
 ```yaml
 workflow:
-  name: erc721_generator
-  description: "Generate, test, fix Solidity contracts"
+  name: vcs_suggestion
+  description: "Vision-driven code generation with quality gates"
+  engine: dynamic
 
   stages:
-    - name: scaffold
-      stage_ref: configs/stages/erc721_scaffold.yaml
+    - name: vcs_design
+      stage_ref: configs/stages/vcs_design.yaml
 
-    - name: code
-      stage_ref: configs/stages/erc721_code.yaml
+    - name: vcs_code_execute
+      stage_ref: configs/stages/vcs_code_execute.yaml
+      depends_on: [vcs_design]
 
-    - name: test
-      stage_ref: configs/stages/erc721_test.yaml
-
-    - name: fix
-      stage_ref: configs/stages/erc721_fix.yaml
-      conditional: true
-      loops_back_to: test
+    - name: vcs_quality_gate
+      stage_ref: configs/stages/vcs_quality_gate.yaml
+      depends_on: [vcs_code_execute]
+      loops_back_to: vcs_code_execute
       max_loops: 3
+      loop_condition: "{{ 'OVERALL: FAIL' in stage_outputs.vcs_quality_gate.output | upper }}"
+
+    - name: vcs_git_commit
+      stage_ref: configs/stages/vcs_git_commit.yaml
+      depends_on: [vcs_quality_gate]
+      condition: "{{ 'OVERALL: PASS' in stage_outputs.vcs_quality_gate.output | upper }}"
 
   inputs:
     required:
-      - contract_name
-      - token_name
-      - token_symbol
+      - workspace_path
 
   error_handling:
-    on_stage_failure: retry
+    on_stage_failure: halt
     max_stage_retries: 2
     escalation_policy: GracefulDegradation
     enable_rollback: true

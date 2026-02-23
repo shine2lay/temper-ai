@@ -1,7 +1,7 @@
 """SQLModel tables for progressive autonomy persistence."""
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from sqlalchemy import JSON, Column
 from sqlmodel import Field, SQLModel
@@ -26,11 +26,11 @@ class AutonomyState(SQLModel, table=True):
     agent_name: str = Field(index=True)
     domain: str = Field(index=True)
     current_level: int = Field(default=0)
-    shadow_level: Optional[int] = None
+    shadow_level: int | None = None
     shadow_runs: int = Field(default=0)
     shadow_agreements: int = Field(default=0)
-    last_escalation: Optional[datetime] = None
-    last_de_escalation: Optional[datetime] = None
+    last_escalation: datetime | None = None
+    last_de_escalation: datetime | None = None
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
 
@@ -47,9 +47,7 @@ class AutonomyTransition(SQLModel, table=True):
     to_level: int
     reason: str
     trigger: str
-    merit_snapshot: Dict[str, Any] = Field(
-        default_factory=dict, sa_column=Column(JSON)
-    )
+    merit_snapshot: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     created_at: datetime = Field(default_factory=utcnow)
 
 
@@ -77,9 +75,7 @@ class EmergencyStopEvent(SQLModel, table=True):
     id: str = Field(primary_key=True)
     triggered_by: str
     reason: str
-    agents_halted: List[str] = Field(
-        default_factory=list, sa_column=Column(JSON)
-    )
-    halt_duration_ms: Optional[float] = None
-    resolved_at: Optional[datetime] = None
+    agents_halted: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    halt_duration_ms: float | None = None
+    resolved_at: datetime | None = None
     created_at: datetime = Field(default_factory=utcnow)

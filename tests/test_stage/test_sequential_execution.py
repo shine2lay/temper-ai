@@ -15,8 +15,13 @@ from temper_ai.stage.executors import SequentialStageExecutor
 from temper_ai.stage.executors.state_keys import StateKeys
 
 
-def _make_agent_response(output="test output", reasoning="test reasoning",
-                         confidence=0.85, tokens=100, cost=0.001):
+def _make_agent_response(
+    output="test output",
+    reasoning="test reasoning",
+    confidence=0.85,
+    tokens=100,
+    cost=0.001,
+):
     """Create an AgentResponse with given values."""
     return AgentResponse(
         output=output,
@@ -80,7 +85,8 @@ class TestSequentialOutputAccumulation:
     def test_single_agent_returns_structured_dict(self, mock_factory, mock_config_cls):
         """Single agent stage returns dict with agent_outputs, not bare string."""
         _setup_factory_and_config(
-            mock_config_cls, mock_factory,
+            mock_config_cls,
+            mock_factory,
             _make_agent_response(output="research result"),
         )
 
@@ -106,18 +112,24 @@ class TestSequentialOutputAccumulation:
     @patch(FACTORY_PATCH)
     def test_multiple_agents_all_accumulated(self, mock_factory, mock_config_cls):
         """All agent outputs are preserved, not just the last one."""
-        _setup_factory_and_config(mock_config_cls, mock_factory, [
-            _make_agent_response(output="findings from research", tokens=100),
-            _make_agent_response(output="analysis of findings", tokens=200),
-            _make_agent_response(output="final synthesis", tokens=150),
-        ])
+        _setup_factory_and_config(
+            mock_config_cls,
+            mock_factory,
+            [
+                _make_agent_response(output="findings from research", tokens=100),
+                _make_agent_response(output="analysis of findings", tokens=200),
+                _make_agent_response(output="final synthesis", tokens=150),
+            ],
+        )
 
         executor = SequentialStageExecutor()
         state = {"stage_outputs": {}, "workflow_id": "wf-test"}
 
         result = executor.execute_stage(
             stage_name="pipeline",
-            stage_config={"stage": {"agents": ["researcher", "analyzer", "synthesizer"]}},
+            stage_config={
+                "stage": {"agents": ["researcher", "analyzer", "synthesizer"]}
+            },
             state=state,
             config_loader=_mock_config_loader(),
         )
@@ -131,8 +143,13 @@ class TestSequentialOutputAccumulation:
         assert "synthesizer" in stage_out["agent_outputs"]
 
         # Each has correct output
-        assert stage_out["agent_outputs"]["researcher"]["output"] == "findings from research"
-        assert stage_out["agent_outputs"]["analyzer"]["output"] == "analysis of findings"
+        assert (
+            stage_out["agent_outputs"]["researcher"]["output"]
+            == "findings from research"
+        )
+        assert (
+            stage_out["agent_outputs"]["analyzer"]["output"] == "analysis of findings"
+        )
         assert stage_out["agent_outputs"]["synthesizer"]["output"] == "final synthesis"
 
         # "output" key concatenates all non-empty agent outputs
@@ -160,9 +177,13 @@ class TestAgentContextSharing:
 
         def make_agent(config):
             agent = Mock()
+
             def execute(input_data, context):
                 captured_inputs.append(dict(input_data))
-                return _make_agent_response(output=f"output from {len(captured_inputs)}")
+                return _make_agent_response(
+                    output=f"output from {len(captured_inputs)}"
+                )
+
             agent.execute.side_effect = execute
             return agent
 
@@ -184,7 +205,10 @@ class TestAgentContextSharing:
 
         # Agent B should see Agent A's output
         assert "agent_a" in captured_inputs[1]["current_stage_agents"]
-        assert captured_inputs[1]["current_stage_agents"]["agent_a"]["output"] == "output from 1"
+        assert (
+            captured_inputs[1]["current_stage_agents"]["agent_a"]["output"]
+            == "output from 1"
+        )
 
     @patch(CONFIG_PATCH)
     @patch(FACTORY_PATCH)
@@ -194,9 +218,11 @@ class TestAgentContextSharing:
 
         def make_agent(config):
             agent = Mock()
+
             def execute(input_data, context):
                 captured_inputs.append(dict(input_data))
                 return _make_agent_response(output=f"output-{len(captured_inputs)}")
+
             agent.execute.side_effect = execute
             return agent
 
@@ -241,10 +267,12 @@ class TestAgentFailureHandling:
 
         result = executor.execute_stage(
             stage_name="resilient",
-            stage_config={"stage": {
-                "agents": ["flaky_agent", "reliable_agent"],
-                "error_handling": {"on_agent_failure": "continue_with_remaining"},
-            }},
+            stage_config={
+                "stage": {
+                    "agents": ["flaky_agent", "reliable_agent"],
+                    "error_handling": {"on_agent_failure": "continue_with_remaining"},
+                }
+            },
             state=state,
             config_loader=_mock_config_loader(),
         )
@@ -255,7 +283,10 @@ class TestAgentFailureHandling:
         assert isinstance(stage_out["agent_statuses"]["flaky_agent"], dict)
         assert stage_out["agent_statuses"]["flaky_agent"]["status"] == "failed"
         assert stage_out["agent_statuses"]["flaky_agent"]["error"] == "LLM timeout"
-        assert stage_out["agent_statuses"]["flaky_agent"]["error_type"] == "AGENT_EXECUTION_ERROR"
+        assert (
+            stage_out["agent_statuses"]["flaky_agent"]["error_type"]
+            == "AGENT_EXECUTION_ERROR"
+        )
 
         # Failed agent output_data includes error fields
         failed_output = stage_out["agent_outputs"]["flaky_agent"]
@@ -276,7 +307,9 @@ class TestAgentFailureHandling:
         failing_agent.execute.side_effect = ValueError("Invalid input")
 
         succeeding_agent = Mock()
-        succeeding_agent.execute.return_value = _make_agent_response(output="should not run")
+        succeeding_agent.execute.return_value = _make_agent_response(
+            output="should not run"
+        )
 
         mock_config_cls.side_effect = lambda **kwargs: Mock()
         mock_factory.create.side_effect = [failing_agent, succeeding_agent]
@@ -311,7 +344,7 @@ class TestAgentFailureHandling:
             def __init__(self):
                 super().__init__(
                     message="API key invalid",
-                    error_code=ErrorCode.LLM_AUTHENTICATION_ERROR
+                    error_code=ErrorCode.LLM_AUTHENTICATION_ERROR,
                 )
 
         failing_agent = Mock()
@@ -374,7 +407,8 @@ class TestMetricsTracking:
     def test_metrics_include_duration(self, mock_factory, mock_config_cls):
         """Each agent's metrics include duration_seconds."""
         _setup_factory_and_config(
-            mock_config_cls, mock_factory,
+            mock_config_cls,
+            mock_factory,
             _make_agent_response(tokens=500, cost=0.005),
         )
 
@@ -399,7 +433,8 @@ class TestMetricsTracking:
     def test_output_data_includes_confidence(self, mock_factory, mock_config_cls):
         """Agent output data includes confidence score."""
         _setup_factory_and_config(
-            mock_config_cls, mock_factory,
+            mock_config_cls,
+            mock_factory,
             _make_agent_response(confidence=0.92),
         )
 
@@ -413,7 +448,9 @@ class TestMetricsTracking:
             config_loader=_mock_config_loader(),
         )
 
-        output_data = result[StateKeys.STAGE_OUTPUTS]["confident"]["agent_outputs"]["agent1"]
+        output_data = result[StateKeys.STAGE_OUTPUTS]["confident"]["agent_outputs"][
+            "agent1"
+        ]
         assert output_data["confidence"] == 0.92
         assert output_data["reasoning"] == "test reasoning"
 
@@ -443,18 +480,28 @@ class TestConvergenceLoop:
         executor._execute_once = mock_execute_once
 
         from temper_ai.stage._schemas import ConvergenceConfig
+
         convergence_cfg = ConvergenceConfig(
-            enabled=True, max_iterations=10, method="exact_hash",
+            enabled=True,
+            max_iterations=10,
+            method="exact_hash",
         )
 
         state: dict = {"stage_outputs": {}, "workflow_id": "wf-conv"}
         result = executor._execute_with_convergence(
-            "converge_stage", {}, state, _mock_config_loader(), convergence_cfg,
+            "converge_stage",
+            {},
+            state,
+            _mock_config_loader(),
+            convergence_cfg,
         )
 
         # Should stop at iteration 4 (outputs[2]==outputs[3] -> converged)
         assert call_count == 4
-        assert result[StateKeys.STAGE_OUTPUTS]["converge_stage"][StateKeys.OUTPUT] == "final answer"
+        assert (
+            result[StateKeys.STAGE_OUTPUTS]["converge_stage"][StateKeys.OUTPUT]
+            == "final answer"
+        )
 
     def test_convergence_respects_max_iterations(self):
         """Loop stops at max_iterations when outputs never stabilise."""
@@ -475,13 +522,20 @@ class TestConvergenceLoop:
         executor._execute_once = mock_execute_once
 
         from temper_ai.stage._schemas import ConvergenceConfig
+
         convergence_cfg = ConvergenceConfig(
-            enabled=True, max_iterations=3, method="exact_hash",
+            enabled=True,
+            max_iterations=3,
+            method="exact_hash",
         )
 
         state: dict = {"stage_outputs": {}, "workflow_id": "wf-conv"}
         executor._execute_with_convergence(
-            "no_conv", {}, state, _mock_config_loader(), convergence_cfg,
+            "no_conv",
+            {},
+            state,
+            _mock_config_loader(),
+            convergence_cfg,
         )
 
         assert call_count == 3
@@ -498,7 +552,12 @@ class TestConvergenceLoop:
 
         executor._execute_with_convergence = mock_convergence
 
-        from temper_ai.stage._schemas import ConvergenceConfig, StageConfig, StageConfigInner
+        from temper_ai.stage._schemas import (
+            ConvergenceConfig,
+            StageConfig,
+            StageConfigInner,
+        )
+
         inner = StageConfigInner(
             name="conv_stage",
             description="test",
@@ -509,7 +568,10 @@ class TestConvergenceLoop:
 
         state: dict = {"stage_outputs": {}, "workflow_id": "wf-test"}
         executor.execute_stage(
-            "conv_stage", stage_config, state, _mock_config_loader(),
+            "conv_stage",
+            stage_config,
+            state,
+            _mock_config_loader(),
         )
 
         assert convergence_called is True
@@ -536,13 +598,20 @@ class TestConvergenceLoop:
         executor._execute_once = mock_execute_once
 
         from temper_ai.stage._schemas import ConvergenceConfig
+
         convergence_cfg = ConvergenceConfig(
-            enabled=True, max_iterations=5, method="exact_hash",
+            enabled=True,
+            max_iterations=5,
+            method="exact_hash",
         )
 
         state: dict = {"stage_outputs": {}, "workflow_id": "wf-empty"}
         executor._execute_with_convergence(
-            "empty_stage", {}, state, _mock_config_loader(), convergence_cfg,
+            "empty_stage",
+            {},
+            state,
+            _mock_config_loader(),
+            convergence_cfg,
         )
 
         # Should run twice: iter 0 skips check (no previous), iter 1 compares "" vs "" → converges

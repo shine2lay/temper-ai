@@ -8,6 +8,7 @@ Tests resilience of observability under edge conditions:
 - Missing metrics
 - Long error traces
 """
+
 import uuid
 from datetime import datetime
 
@@ -20,13 +21,13 @@ from temper_ai.observability.hooks import (
     reset_tracker,
     track_workflow,
 )
-from temper_ai.observability.tracker import ExecutionTracker
 from temper_ai.observability.models import (
     AgentExecution,
     LLMCall,
     StageExecution,
     WorkflowExecution,
 )
+from temper_ai.observability.tracker import ExecutionTracker
 
 
 @pytest.fixture(autouse=True)
@@ -42,6 +43,7 @@ def db():
     """Initialize in-memory database for testing."""
     import temper_ai.observability.database as db_module
     from temper_ai.observability.database import _db_lock
+
     with _db_lock:
         db_module._db_manager = None
 
@@ -64,6 +66,7 @@ class TestHookFailureResilience:
 
         # Close database to simulate failure
         from temper_ai.observability.database import _db_lock, _db_manager
+
         with _db_lock:
             if _db_manager:
                 _db_manager.engine.dispose()
@@ -71,8 +74,9 @@ class TestHookFailureResilience:
         # Main function should still execute even if tracking fails
         config = {"workflow": {"name": "test"}}
         result = run_workflow(config)
-        assert result == "workflow_success", \
-            "Decorator should not block main execution when database fails"
+        assert (
+            result == "workflow_success"
+        ), "Decorator should not block main execution when database fails"
 
     def test_decorator_with_invalid_config(self, db):
         """Test decorator handles invalid config gracefully."""
@@ -111,6 +115,7 @@ class TestCircularDependencies:
         No detection is currently implemented — this verifies the structure
         can be created and traversed without infinite loops or errors.
         """
+
         class HookA(ExecutionHook):
             def __init__(self, name):
                 self.name = name
@@ -150,24 +155,24 @@ class TestLargeOutputHandling:
             workflow_version="1.0",
             workflow_config_snapshot={},
             start_time=datetime.utcnow(),
-            status="running"
+            status="running",
         )
 
         with get_session() as session:
             session.add(workflow_exec)
             session.commit()
 
-        # Create agent with large output
+        # Create agent with large output (stage_execution_id is nullable)
         agent_id = str(uuid.uuid4())
         agent_exec = AgentExecution(
             id=agent_id,
-            stage_execution_id=workflow_id,  # Using workflow_id as placeholder
+            stage_execution_id=None,  # FK is nullable
             agent_name="large_output_agent",
             agent_version="1.0",
             agent_config_snapshot={},
             start_time=datetime.utcnow(),
-            status="success",
-            output_data={"large_field": large_output[:1000]}  # Store only first 1KB
+            status="completed",
+            output_data={"large_field": large_output[:1000]},  # Store only first 1KB
         )
 
         with get_session() as session:
@@ -190,13 +195,13 @@ class TestLargeOutputHandling:
         llm_call_id = str(uuid.uuid4())
         llm_call = LLMCall(
             id=llm_call_id,
-            agent_execution_id=str(uuid.uuid4()),
+            agent_execution_id=None,  # FK is nullable
             provider="test",
             model="test-model",
             start_time=datetime.utcnow(),
-            status="success",  # Required field
+            status="success",  # Valid LLM status: success, error, timeout, cancelled
             # Store truncated version
-            response=very_long_response[:10000] + "... (truncated)"
+            response=very_long_response[:10000] + "... (truncated)",
         )
 
         with get_session() as session:
@@ -226,7 +231,7 @@ class TestTelemetrySampling:
                 workflow_version="1.0",
                 workflow_config_snapshot={},
                 start_time=datetime.utcnow(),
-                status="completed"
+                status="completed",
             )
 
             with get_session() as session:
@@ -237,9 +242,11 @@ class TestTelemetrySampling:
 
         # Verify all were recorded (no sampling here, but demonstrates load handling)
         with get_session() as session:
-            count = session.query(WorkflowExecution).filter(
-                WorkflowExecution.workflow_name.like("load_test_workflow_%")
-            ).count()
+            count = (
+                session.query(WorkflowExecution)
+                .filter(WorkflowExecution.workflow_name.like("load_test_workflow_%"))
+                .count()
+            )
 
             # All 100 should be recorded
             assert count == 100
@@ -252,8 +259,9 @@ class TestTelemetrySampling:
         """
         tracker = get_tracker()
 
-        assert isinstance(tracker, ExecutionTracker), \
-            f"get_tracker() should return ExecutionTracker, got {type(tracker)}"
+        assert isinstance(
+            tracker, ExecutionTracker
+        ), f"get_tracker() should return ExecutionTracker, got {type(tracker)}"
 
 
 class TestMissingMetricsHandling:
@@ -263,22 +271,22 @@ class TestMissingMetricsHandling:
         """Test that missing metrics don't cause errors."""
         agent_id = str(uuid.uuid4())
 
-        # Create agent with NO metrics
+        # Create agent with NO metrics (stage_execution_id is nullable)
         agent_exec = AgentExecution(
             id=agent_id,
-            stage_execution_id=str(uuid.uuid4()),
+            stage_execution_id=None,
             agent_name="no_metrics_agent",
             agent_version="1.0",
             agent_config_snapshot={},
             start_time=datetime.utcnow(),
-            status="success",
+            status="completed",
             # All optional metric fields left as None
             total_tokens=None,
             prompt_tokens=None,
             completion_tokens=None,
             estimated_cost_usd=None,
             num_llm_calls=None,
-            num_tool_calls=None
+            num_tool_calls=None,
         )
 
         with get_session() as session:
@@ -296,20 +304,20 @@ class TestMissingMetricsHandling:
         """Test that partial metrics are accepted."""
         agent_id = str(uuid.uuid4())
 
-        # Create agent with SOME metrics
+        # Create agent with SOME metrics (stage_execution_id is nullable)
         agent_exec = AgentExecution(
             id=agent_id,
-            stage_execution_id=str(uuid.uuid4()),
+            stage_execution_id=None,
             agent_name="partial_metrics_agent",
             agent_version="1.0",
             agent_config_snapshot={},
             start_time=datetime.utcnow(),
-            status="success",
+            status="completed",
             total_tokens=100,  # Have this
             prompt_tokens=None,  # Missing
             completion_tokens=None,  # Missing
             estimated_cost_usd=0.001,  # Have this
-            num_llm_calls=None  # Missing
+            num_llm_calls=None,  # Missing
         )
 
         with get_session() as session:
@@ -330,6 +338,7 @@ class TestLongErrorTraces:
 
     def test_extremely_long_error_stack_trace(self, db):
         """Test that very long error stack traces are handled."""
+
         # Create extremely long error trace
         def deeply_nested_function(depth):
             if depth == 0:
@@ -341,6 +350,7 @@ class TestLongErrorTraces:
             deeply_nested_function(100)  # Create deep call stack
         except ValueError:
             import traceback
+
             long_trace = traceback.format_exc()
 
         # Store workflow with long error trace
@@ -353,7 +363,7 @@ class TestLongErrorTraces:
             start_time=datetime.utcnow(),
             status="failed",
             error_message="Deep error occurred",
-            error_stack_trace=long_trace[:10000]  # Truncate to first 10KB
+            error_stack_trace=long_trace[:10000],  # Truncate to first 10KB
         )
 
         with get_session() as session:
@@ -382,20 +392,21 @@ class TestLongErrorTraces:
                 raise Exception("Top level error") from e2
         except Exception as final_error:
             import traceback
+
             full_trace = traceback.format_exc()
             error_message = str(final_error)
 
-        # Store stage with error chain
+        # Store stage with error chain (no parent workflow needed)
         stage_id = str(uuid.uuid4())
         stage_exec = StageExecution(
             id=stage_id,
-            workflow_execution_id=str(uuid.uuid4()),
+            workflow_execution_id=None,  # FK is nullable
             stage_name="error_chain_stage",
             stage_version="1.0",
             stage_config_snapshot={},
             start_time=datetime.utcnow(),
             status="failed",
-            error_message=f"Error chain: {error_message}"
+            error_message=f"Error chain: {error_message}",
         )
 
         with get_session() as session:
@@ -428,8 +439,10 @@ class TestObservabilityPerformanceImpact:
 
         # Verify all executions tracked
         with get_session() as session:
-            count = session.query(WorkflowExecution).filter(
-                WorkflowExecution.workflow_name == "perf_test_workflow"
-            ).count()
+            count = (
+                session.query(WorkflowExecution)
+                .filter(WorkflowExecution.workflow_name == "perf_test_workflow")
+                .count()
+            )
             # Should have tracked all 10 executions
             assert count == 10

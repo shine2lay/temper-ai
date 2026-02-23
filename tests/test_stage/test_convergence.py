@@ -12,7 +12,6 @@ from pydantic import ValidationError
 from temper_ai.stage._schemas import ConvergenceConfig
 from temper_ai.stage.convergence import StageConvergenceDetector
 
-
 # ── Exact Hash Comparison ──
 
 
@@ -53,29 +52,41 @@ class TestSemanticConvergence:
     def test_high_similarity_converges(self):
         """Strings with minor differences exceed default threshold."""
         config = ConvergenceConfig(
-            enabled=True, method="semantic", similarity_threshold=0.8,
+            enabled=True,
+            method="semantic",
+            similarity_threshold=0.8,
         )
         detector = StageConvergenceDetector(config)
-        assert detector.has_converged(
-            "The analysis shows strong growth in Q4 revenue.",
-            "The analysis shows strong growth in Q4 revenues.",
-        ) is True
+        assert (
+            detector.has_converged(
+                "The analysis shows strong growth in Q4 revenue.",
+                "The analysis shows strong growth in Q4 revenues.",
+            )
+            is True
+        )
 
     def test_low_similarity_does_not_converge(self):
         """Completely different strings fall below threshold."""
         config = ConvergenceConfig(
-            enabled=True, method="semantic", similarity_threshold=0.8,
+            enabled=True,
+            method="semantic",
+            similarity_threshold=0.8,
         )
         detector = StageConvergenceDetector(config)
-        assert detector.has_converged(
-            "The weather is sunny today.",
-            "Stock markets crashed overnight.",
-        ) is False
+        assert (
+            detector.has_converged(
+                "The weather is sunny today.",
+                "Stock markets crashed overnight.",
+            )
+            is False
+        )
 
     def test_identical_strings_converge_semantic(self):
         """Identical strings have ratio 1.0 which exceeds any threshold."""
         config = ConvergenceConfig(
-            enabled=True, method="semantic", similarity_threshold=1.0,
+            enabled=True,
+            method="semantic",
+            similarity_threshold=1.0,
         )
         detector = StageConvergenceDetector(config)
         assert detector.has_converged("same text", "same text") is True
@@ -83,7 +94,9 @@ class TestSemanticConvergence:
     def test_threshold_boundary(self):
         """Ratio exactly at threshold is considered converged (>=)."""
         config = ConvergenceConfig(
-            enabled=True, method="semantic", similarity_threshold=0.0,
+            enabled=True,
+            method="semantic",
+            similarity_threshold=0.0,
         )
         detector = StageConvergenceDetector(config)
         # Any two strings should converge with threshold=0.0

@@ -23,10 +23,11 @@ Example:
     >>> domain = WorkflowDomainState.from_dict(json.load(file))
     >>> context = ExecutionContext(...) # Recreate infrastructure
 """
+
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from temper_ai.shared.constants.execution import DEFAULT_VERSION, WORKFLOW_ID_PREFIX
 from temper_ai.shared.core.protocols import (  # noqa: F401
@@ -43,6 +44,7 @@ WORKFLOW_ID_HEX_LENGTH = 12  # Length of hex portion in workflow IDs (wf-<12 hex
 # Protocol definitions for InfrastructureContext field types
 # (canonical in temper_ai.shared.core.protocols, re-exported above for compat)
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class WorkflowDomainState:
@@ -93,28 +95,30 @@ class WorkflowDomainState:
     """
 
     # Core workflow state (required fields with defaults)
-    stage_outputs: Dict[str, Any] = field(default_factory=dict)
+    stage_outputs: dict[str, Any] = field(default_factory=dict)
     current_stage: str = ""
-    workflow_id: str = field(default_factory=lambda: f"{WORKFLOW_ID_PREFIX}{uuid.uuid4().hex[:WORKFLOW_ID_HEX_LENGTH]}")
-    stage_loop_counts: Dict[str, int] = field(default_factory=dict)
-    conversation_histories: Dict[str, Any] = field(default_factory=dict)
+    workflow_id: str = field(
+        default_factory=lambda: f"{WORKFLOW_ID_PREFIX}{uuid.uuid4().hex[:WORKFLOW_ID_HEX_LENGTH]}"
+    )
+    stage_loop_counts: dict[str, int] = field(default_factory=dict)
+    conversation_histories: dict[str, Any] = field(default_factory=dict)
 
     # Common workflow inputs (all optional)
-    topic: Optional[str] = None
-    depth: Optional[str] = None
-    focus_areas: Optional[List[str]] = None
-    query: Optional[str] = None
-    input: Optional[str] = None
-    context: Optional[str] = None
-    data: Optional[Dict[str, Any]] = None
+    topic: str | None = None
+    depth: str | None = None
+    focus_areas: list[str] | None = None
+    query: str | None = None
+    input: str | None = None
+    context: str | None = None
+    data: dict[str, Any] | None = None
 
     # Arbitrary user-supplied workflow inputs (survives LangGraph dataclass coercion)
-    workflow_inputs: Dict[str, Any] = field(default_factory=dict)
+    workflow_inputs: dict[str, Any] = field(default_factory=dict)
 
     # Metadata and versioning
     version: str = DEFAULT_VERSION
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         """Validate state after initialization."""
@@ -173,7 +177,7 @@ class WorkflowDomainState:
         """
         return stage_name in self.stage_outputs
 
-    def get_previous_outputs(self) -> Dict[str, Any]:
+    def get_previous_outputs(self) -> dict[str, Any]:
         """Get all previous stage outputs.
 
         Returns:
@@ -186,8 +190,10 @@ class WorkflowDomainState:
         return self.stage_outputs.copy()
 
     def to_dict(  # noqa: duplicate
-        self, exclude_none: bool = False, exclude_internal: bool = False,  # noqa: kept for backward compat
-    ) -> Dict[str, Any]:
+        self,
+        exclude_none: bool = False,
+        exclude_internal: bool = False,  # noqa: kept for backward compat
+    ) -> dict[str, Any]:
         """Convert state to dictionary for serialization.
 
         All fields are guaranteed serializable (no infrastructure objects).
@@ -224,7 +230,7 @@ class WorkflowDomainState:
 
         return state_dict
 
-    def to_typed_dict(self) -> Dict[str, Any]:
+    def to_typed_dict(self) -> dict[str, Any]:
         """Convert to dict for LangGraph node compatibility.
 
         LangGraph nodes call ``state.to_typed_dict()`` to obtain a plain
@@ -235,7 +241,7 @@ class WorkflowDomainState:
         return self.to_dict()
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'WorkflowDomainState':
+    def from_dict(cls, data: dict[str, Any]) -> "WorkflowDomainState":
         """Create WorkflowDomainState from dictionary.
 
         Used for deserializing checkpoints.
@@ -256,10 +262,22 @@ class WorkflowDomainState:
 
         # Filter to only known domain fields
         known_fields = {
-            "stage_outputs", "current_stage", "workflow_id", "stage_loop_counts",
+            "stage_outputs",
+            "current_stage",
+            "workflow_id",
+            "stage_loop_counts",
             "conversation_histories",
-            "topic", "depth", "focus_areas", "query", "input", "context", "data",
-            "workflow_inputs", "version", "created_at", "metadata"
+            "topic",
+            "depth",
+            "focus_areas",
+            "query",
+            "input",
+            "context",
+            "data",
+            "workflow_inputs",
+            "version",
+            "created_at",
+            "metadata",
         }
 
         filtered_data = {k: v for k, v in data.items() if k in known_fields}
@@ -276,7 +294,7 @@ class WorkflowDomainState:
 
         return cls(**filtered_data)
 
-    def validate(self) -> tuple[bool, List[str]]:
+    def validate(self) -> tuple[bool, list[str]]:
         """Validate state consistency.
 
         Returns:
@@ -307,7 +325,7 @@ class WorkflowDomainState:
 
         return len(errors) == 0, errors
 
-    def copy(self) -> 'WorkflowDomainState':
+    def copy(self) -> "WorkflowDomainState":
         """Create a copy of the state with deep-copied mutable fields.
 
         Returns:
@@ -318,18 +336,27 @@ class WorkflowDomainState:
             >>> # Modifying new_state won't affect original
         """
         import copy as copy_module
+
         state_dict = self.to_dict()
         # Deep copy mutable fields to ensure independence
         if "stage_outputs" in state_dict:
-            state_dict["stage_outputs"] = copy_module.deepcopy(state_dict["stage_outputs"])
+            state_dict["stage_outputs"] = copy_module.deepcopy(
+                state_dict["stage_outputs"]
+            )
         if "metadata" in state_dict:
             state_dict["metadata"] = copy_module.deepcopy(state_dict["metadata"])
         if "workflow_inputs" in state_dict:
-            state_dict["workflow_inputs"] = copy_module.deepcopy(state_dict["workflow_inputs"])
+            state_dict["workflow_inputs"] = copy_module.deepcopy(
+                state_dict["workflow_inputs"]
+            )
         if "stage_loop_counts" in state_dict:
-            state_dict["stage_loop_counts"] = copy_module.deepcopy(state_dict["stage_loop_counts"])
+            state_dict["stage_loop_counts"] = copy_module.deepcopy(
+                state_dict["stage_loop_counts"]
+            )
         if "conversation_histories" in state_dict:
-            state_dict["conversation_histories"] = copy_module.deepcopy(state_dict["conversation_histories"])
+            state_dict["conversation_histories"] = copy_module.deepcopy(
+                state_dict["conversation_histories"]
+            )
         if "focus_areas" in state_dict and state_dict["focus_areas"] is not None:
             state_dict["focus_areas"] = list(state_dict["focus_areas"])
         return WorkflowDomainState.from_dict(state_dict)
@@ -379,10 +406,10 @@ class InfrastructureContext:
     """
 
     # Infrastructure components (all optional, typed via Protocols)
-    tracker: Optional[TrackerProtocol] = None
-    tool_registry: Optional[DomainToolRegistryProtocol] = None
-    config_loader: Optional[ConfigLoaderProtocol] = None
-    visualizer: Optional[VisualizerProtocol] = None
+    tracker: TrackerProtocol | None = None
+    tool_registry: DomainToolRegistryProtocol | None = None
+    config_loader: ConfigLoaderProtocol | None = None
+    visualizer: VisualizerProtocol | None = None
 
     def __repr__(self) -> str:
         """String representation of context."""
@@ -404,12 +431,14 @@ class DomainExecutionContext(InfrastructureContext):
 
     DEPRECATED: Use InfrastructureContext directly.
     """
+
     def __init_subclass__(cls, **kwargs: Any) -> None:
         import warnings
+
         warnings.warn(
             "DomainExecutionContext is deprecated. Use InfrastructureContext.",
             DeprecationWarning,
-            stacklevel=2
+            stacklevel=2,
         )
         super().__init_subclass__(**kwargs)
 
@@ -418,6 +447,7 @@ def __getattr__(name: str) -> object:
     """Module-level __getattr__ for backward-compatible access to ExecutionContext."""
     if name == "ExecutionContext":
         import warnings
+
         warnings.warn(
             "Importing ExecutionContext from temper_ai.workflow.domain_state is deprecated. "
             "Use InfrastructureContext (or DomainExecutionContext) instead. "
@@ -451,8 +481,7 @@ def create_initial_domain_state(**kwargs: Any) -> WorkflowDomainState:
 
 
 def merge_domain_states(
-    base_state: WorkflowDomainState,
-    updates: Dict[str, Any]
+    base_state: WorkflowDomainState, updates: dict[str, Any]
 ) -> WorkflowDomainState:
     """Merge updates into base domain state.
 

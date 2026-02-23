@@ -4,9 +4,11 @@ Contains dialogue-specific dataclasses, agent re-invocation logic,
 convergence detection, tracking, and synthesis for dialogue mode.
 Extracted from _base_helpers.py and base.py to reduce file sizes.
 """
+
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any
 
 from temper_ai.shared.constants.execution import ERROR_MSG_FOR_STAGE_SUFFIX
 from temper_ai.shared.core.protocols import ConfigLoaderProtocol
@@ -17,12 +19,14 @@ logger = logging.getLogger(__name__)
 
 # ── Dataclasses ──────────────────────────────────────────────────────
 
+
 @dataclass
 class DialogueReinvocationParams:
     """Parameters for dialogue agent re-invocation (reduces 9 params to 1)."""
+
     agents: list
     stage_name: str
-    state: Dict[str, Any]
+    state: dict[str, Any]
     config_loader: ConfigLoaderProtocol
     dialogue_history: list
     round_number: int
@@ -34,40 +38,43 @@ class DialogueReinvocationParams:
 @dataclass
 class DialogueRoundParams:
     """Parameters for dialogue round execution (bundles 10 params into 1)."""
+
     round_num: int
-    reinvoke_fn: Callable[..., Tuple[list, Dict[str, Any]]]
+    reinvoke_fn: Callable[..., tuple[list, dict[str, Any]]]
     agents: list
     strategy: Any
     stage_name: str
-    state: Dict[str, Any]
+    state: dict[str, Any]
     config_loader: ConfigLoaderProtocol
     tracker: Any
-    dialogue_history: List[Dict[str, Any]]
+    dialogue_history: list[dict[str, Any]]
     previous_outputs: list
 
 
 @dataclass
 class DialogueTrackingParams:
     """Parameters for dialogue round tracking (bundles 10 params into 1)."""
+
     tracker: Any
     strategy: Any
-    state: Dict[str, Any]
+    state: dict[str, Any]
     current_outputs: list
     round_num: int
     round_outcome: str
-    conv_score: Optional[float] = None
-    agent_stances: Optional[Dict[str, str]] = None
-    dialogue_history: Optional[List[Dict[str, Any]]] = None
-    previous_convergence: Optional[float] = None
+    conv_score: float | None = None
+    agent_stances: dict[str, str] | None = None
+    dialogue_history: list[dict[str, Any]] | None = None
+    previous_convergence: float | None = None
 
 
 @dataclass
 class SingleDialogueAgentParams:
     """Parameters for single dialogue agent invocation (bundles 9 params into 1)."""
+
     agent_name: str
     agent_ref: Any
     config_loader: ConfigLoaderProtocol
-    state: Dict[str, Any]
+    state: dict[str, Any]
     stage_name: str
     dialogue_history: list
     round_number: int
@@ -78,11 +85,12 @@ class SingleDialogueAgentParams:
 @dataclass
 class FinalSynthesisResultParams:
     """Parameters for building final synthesis result (bundles 8 params into 1)."""
+
     strategy: Any
     current_outputs: list
     final_round: int
     total_cost: float
-    dialogue_history: List[Dict[str, Any]]
+    dialogue_history: list[dict[str, Any]]
     converged: bool
     convergence_round: int
     stage_name: str
@@ -91,39 +99,41 @@ class FinalSynthesisResultParams:
 @dataclass
 class DialogueRoundsParams:
     """Parameters for running dialogue rounds (reduces 10 params)."""
+
     executor: Any
     strategy: Any
     agents: list
     stage_name: str
-    state: Dict[str, Any]
+    state: dict[str, Any]
     config_loader: ConfigLoaderProtocol
     tracker: Any
-    dialogue_history: List[Dict[str, Any]]
+    dialogue_history: list[dict[str, Any]]
     initial_outputs: list
     total_cost: float
 
 
 # ── Agent invocation helpers ─────────────────────────────────────────
 
-def _extract_agent_role(agent_config: Any) -> Optional[str]:
+
+def _extract_agent_role(agent_config: Any) -> str | None:
     """Extract role from agent config metadata."""
     agent_role = None
-    if hasattr(agent_config.agent, 'metadata') and agent_config.agent.metadata:
+    if hasattr(agent_config.agent, "metadata") and agent_config.agent.metadata:
         if agent_config.agent.metadata.tags:
             agent_role = agent_config.agent.metadata.tags[0]
-        if hasattr(agent_config.agent.metadata, 'role'):
+        if hasattr(agent_config.agent.metadata, "role"):
             agent_role = agent_config.agent.metadata.role
     return agent_role
 
 
 def _prepare_dialogue_input(
-    state: Dict[str, Any],
+    state: dict[str, Any],
     curated_history: list,
     round_number: int,
     max_rounds: int,
-    agent_role: Optional[str],
-    mode_context: Dict[str, Any],
-) -> Dict[str, Any]:
+    agent_role: str | None,
+    mode_context: dict[str, Any],
+) -> dict[str, Any]:
     """Build enriched input data for a dialogue round agent invocation."""
     return {
         **state,
@@ -140,7 +150,7 @@ def _curate_history_and_resolve_context(
     dialogue_history: list,
     round_number: int,
     agent_name: str,
-) -> Tuple[list, Dict[str, Any]]:
+) -> tuple[list, dict[str, Any]]:
     """Curate dialogue history and get mode-specific context from strategy."""
     from temper_ai.stage.executors._protocols import StanceCuratingStrategy
 
@@ -151,7 +161,9 @@ def _curate_history_and_resolve_context(
             current_round=round_number,
             agent_name=agent_name,
         )
-        mode_context: Dict[str, Any] = strategy.get_round_context(round_number, agent_name)
+        mode_context: dict[str, Any] = strategy.get_round_context(
+            round_number, agent_name
+        )
         return curated_history, mode_context
 
     return curated_history, {}
@@ -159,14 +171,13 @@ def _curate_history_and_resolve_context(
 
 def _invoke_single_dialogue_agent(
     params: SingleDialogueAgentParams,
-) -> Tuple[Any, Any]:
+) -> tuple[Any, Any]:
     """Invoke a single agent for a dialogue round.
 
     Returns:
         Tuple of (AgentOutput, llm_provider)
     """
     from temper_ai.agent.utils.agent_factory import AgentFactory
-    from temper_ai.storage.schemas.agent_config import AgentConfig
     from temper_ai.stage.executors._base_helpers import (
         AgentExecutionParams,
         _build_agent_output,
@@ -174,6 +185,7 @@ def _invoke_single_dialogue_agent(
         _execute_agent_without_tracking,
         _get_stage_id,
     )
+    from temper_ai.storage.schemas.agent_config import AgentConfig
 
     agent_config_dict = params.config_loader.load_agent(params.agent_name)
     agent_config = AgentConfig(**agent_config_dict)
@@ -181,11 +193,18 @@ def _invoke_single_dialogue_agent(
 
     agent_role = _extract_agent_role(agent_config)
     curated_history, mode_context = _curate_history_and_resolve_context(
-        params.strategy, params.dialogue_history, params.round_number, params.agent_name,
+        params.strategy,
+        params.dialogue_history,
+        params.round_number,
+        params.agent_name,
     )
     input_data = _prepare_dialogue_input(
-        params.state, curated_history, params.round_number, params.max_rounds,
-        agent_role, mode_context,
+        params.state,
+        curated_history,
+        params.round_number,
+        params.max_rounds,
+        agent_role,
+        mode_context,
     )
 
     tracker = params.state.get(StateKeys.TRACKER)
@@ -194,11 +213,18 @@ def _invoke_single_dialogue_agent(
     tracking_input = {"round": params.round_number, "max_rounds": params.max_rounds}
 
     exec_params = AgentExecutionParams(
-        agent=agent, input_data=input_data, current_stage_id=current_stage_id,
-        stage_name=params.stage_name, agent_name=params.agent_name,
-        state=params.state, execution_mode="dialogue", tracker=tracker,
-        agent_config=agent_config, agent_config_dict=agent_config_dict,
-        tracking_input=tracking_input, extra_metadata=extra_meta,
+        agent=agent,
+        input_data=input_data,
+        current_stage_id=current_stage_id,
+        stage_name=params.stage_name,
+        agent_name=params.agent_name,
+        state=params.state,
+        execution_mode="dialogue",
+        tracker=tracker,
+        agent_config=agent_config,
+        agent_config_dict=agent_config_dict,
+        tracking_input=tracking_input,
+        extra_metadata=extra_meta,
     )
     if tracker:
         response = _execute_agent_with_tracking(exec_params)
@@ -206,7 +232,9 @@ def _invoke_single_dialogue_agent(
         response = _execute_agent_without_tracking(exec_params)
 
     output = _build_agent_output(
-        params.agent_name, response, role="dialogue",
+        params.agent_name,
+        response,
+        role="dialogue",
         extra_metadata={"round": params.round_number},
     )
     return output, agent.llm
@@ -214,7 +242,7 @@ def _invoke_single_dialogue_agent(
 
 def reinvoke_agents_with_dialogue(
     params: DialogueReinvocationParams,
-) -> Tuple[list, Dict[str, Any]]:
+) -> tuple[list, dict[str, Any]]:
     """Re-invoke agents with dialogue history as context.
 
     Returns:
@@ -222,15 +250,19 @@ def reinvoke_agents_with_dialogue(
         maps agent_name -> LLM provider for stance extraction.
     """
     agent_outputs: list = []
-    llm_providers: Dict[str, Any] = {}
+    llm_providers: dict[str, Any] = {}
 
     for agent_ref in params.agents:
         agent_name = params.extract_agent_name_fn(agent_ref)
         single_agent_params = SingleDialogueAgentParams(
-            agent_name=agent_name, agent_ref=agent_ref,
-            config_loader=params.config_loader, state=params.state,
-            stage_name=params.stage_name, dialogue_history=params.dialogue_history,
-            round_number=params.round_number, max_rounds=params.max_rounds,
+            agent_name=agent_name,
+            agent_ref=agent_ref,
+            config_loader=params.config_loader,
+            state=params.state,
+            stage_name=params.stage_name,
+            dialogue_history=params.dialogue_history,
+            round_number=params.round_number,
+            max_rounds=params.max_rounds,
             strategy=params.strategy,
         )
         output, llm = _invoke_single_dialogue_agent(single_agent_params)
@@ -242,14 +274,15 @@ def reinvoke_agents_with_dialogue(
 
 # ── Synthesis helpers ────────────────────────────────────────────────
 
+
 def fallback_consensus_synthesis(agent_outputs: list) -> Any:
     """Fallback consensus synthesis when strategy registry is unavailable."""
-    from temper_ai.shared.constants.probabilities import PROB_MEDIUM
     from temper_ai.agent.strategies.base import (
         SynthesisResult,
         calculate_vote_distribution,
         extract_majority_decision,
     )
+    from temper_ai.shared.constants.probabilities import PROB_MEDIUM
 
     decision = extract_majority_decision(agent_outputs)
     votes = calculate_vote_distribution(agent_outputs)
@@ -275,11 +308,12 @@ def fallback_consensus_synthesis(agent_outputs: list) -> Any:
 
 # ── Recording and tracking ──────────────────────────────────────────
 
+
 def record_dialogue_outputs_and_cost(
     current_outputs: list,
     round_num: int,
-    agent_stances: Dict[str, str],
-    dialogue_history: List[Dict[str, Any]],
+    agent_stances: dict[str, str],
+    dialogue_history: list[dict[str, Any]],
 ) -> float:
     """Record outputs from a dialogue round into history.
 
@@ -288,7 +322,7 @@ def record_dialogue_outputs_and_cost(
     """
     round_cost = 0.0
     for output in current_outputs:
-        entry: Dict[str, Any] = {
+        entry: dict[str, Any] = {
             "agent": output.agent_name,
             "round": round_num,
             "output": output.decision,
@@ -312,18 +346,21 @@ def track_dialogue_round(params: DialogueTrackingParams) -> None:
 
     try:
         agent_names = [o.agent_name for o in params.current_outputs]
-        event_data: Dict[str, Any] = _build_dialogue_event_data(params, agent_names)
+        event_data: dict[str, Any] = _build_dialogue_event_data(params, agent_names)
 
         from temper_ai.observability._tracker_helpers import CollaborationEventData
-        params.tracker.track_collaboration_event(CollaborationEventData(
-            event_type=f"{params.strategy.mode}_round",
-            stage_id=params.state.get(StateKeys.CURRENT_STAGE_ID),
-            agents_involved=agent_names,
-            round_number=params.round_num,
-            outcome=params.round_outcome,
-            confidence_score=params.conv_score,
-            event_data=event_data,
-        ))
+
+        params.tracker.track_collaboration_event(
+            CollaborationEventData(
+                event_type=f"{params.strategy.mode}_round",
+                stage_id=params.state.get(StateKeys.CURRENT_STAGE_ID),
+                agents_involved=agent_names,
+                round_number=params.round_num,
+                outcome=params.round_outcome,
+                confidence_score=params.conv_score,
+                event_data=event_data,
+            )
+        )
     except Exception:
         logger.warning(
             "Failed to track round %d collaboration event",
@@ -334,19 +371,21 @@ def track_dialogue_round(params: DialogueTrackingParams) -> None:
 
 def _build_dialogue_event_data(
     params: DialogueTrackingParams,
-    agent_names: List[str],
-) -> Dict[str, Any]:
+    agent_names: list[str],
+) -> dict[str, Any]:
     """Build event data dict for dialogue round tracking."""
-    event_data: Dict[str, Any] = {
+    event_data: dict[str, Any] = {
         "agent_count": len(agent_names),
         "avg_confidence": (
-            sum(o.confidence for o in params.current_outputs) / len(params.current_outputs)
-            if params.current_outputs else 0.0
+            sum(o.confidence for o in params.current_outputs)
+            / len(params.current_outputs)
+            if params.current_outputs
+            else 0.0
         ),
     }
 
     if params.agent_stances:
-        stance_dist: Dict[str, int] = {}
+        stance_dist: dict[str, int] = {}
         for s in params.agent_stances.values():
             if s:
                 stance_dist[s] = stance_dist.get(s, 0) + 1
@@ -359,7 +398,7 @@ def _build_dialogue_event_data(
 
 def _enrich_with_round_metrics(
     params: DialogueTrackingParams,
-    event_data: Dict[str, Any],
+    event_data: dict[str, Any],
 ) -> None:
     """Enrich event data with computed dialogue round metrics."""
     try:
@@ -386,13 +425,14 @@ def _enrich_with_round_metrics(
 
 # ── Convergence ──────────────────────────────────────────────────────
 
+
 def check_dialogue_convergence(
     strategy: Any,
     current_outputs: list,
     previous_outputs: list,
     round_num: int,
     stage_name: str,
-) -> Tuple[Optional[float], bool, str]:
+) -> tuple[float | None, bool, str]:
     """Check convergence after min_rounds.
 
     Returns:
@@ -418,7 +458,7 @@ def check_dialogue_convergence(
 
 def execute_dialogue_round(
     params: DialogueRoundParams,
-) -> Tuple[list, float, Optional[float], bool, int, str]:
+) -> tuple[list, float, float | None, bool, int, str]:
     """Execute a single dialogue round: re-invoke, record, check convergence.
 
     Returns:
@@ -426,9 +466,13 @@ def execute_dialogue_round(
                   convergence_round, round_outcome)
     """
     reinvoke_params = DialogueReinvocationParams(
-        agents=params.agents, stage_name=params.stage_name, state=params.state,
-        config_loader=params.config_loader, dialogue_history=params.dialogue_history,
-        round_number=params.round_num, max_rounds=params.strategy.max_rounds,
+        agents=params.agents,
+        stage_name=params.stage_name,
+        state=params.state,
+        config_loader=params.config_loader,
+        dialogue_history=params.dialogue_history,
+        round_number=params.round_num,
+        max_rounds=params.strategy.max_rounds,
         strategy=params.strategy,
         extract_agent_name_fn=lambda ref: ref,  # placeholder, set by caller
     )
@@ -436,39 +480,58 @@ def execute_dialogue_round(
 
     from temper_ai.stage.executors._protocols import StanceCuratingStrategy
 
-    agent_stances: Dict[str, str] = {}
+    agent_stances: dict[str, str] = {}
     if isinstance(params.strategy, StanceCuratingStrategy):
         agent_stances = params.strategy.extract_stances(current_outputs, llm_providers)
 
     round_cost = record_dialogue_outputs_and_cost(
-        current_outputs, params.round_num, agent_stances, params.dialogue_history,
+        current_outputs,
+        params.round_num,
+        agent_stances,
+        params.dialogue_history,
     )
 
-    conv_score: Optional[float] = None
+    conv_score: float | None = None
     converged = False
     convergence_round = -1
     round_outcome = "in_progress"
 
     if params.round_num >= params.strategy.min_rounds:
         conv_score, converged, round_outcome = check_dialogue_convergence(
-            params.strategy, current_outputs, params.previous_outputs,
-            params.round_num, params.stage_name,
+            params.strategy,
+            current_outputs,
+            params.previous_outputs,
+            params.round_num,
+            params.stage_name,
         )
         if converged:
             convergence_round = params.round_num
 
     track_params = DialogueTrackingParams(
-        tracker=params.tracker, strategy=params.strategy, state=params.state,
-        current_outputs=current_outputs, round_num=params.round_num,
-        round_outcome=round_outcome, conv_score=conv_score,
-        agent_stances=agent_stances, dialogue_history=params.dialogue_history,
+        tracker=params.tracker,
+        strategy=params.strategy,
+        state=params.state,
+        current_outputs=current_outputs,
+        round_num=params.round_num,
+        round_outcome=round_outcome,
+        conv_score=conv_score,
+        agent_stances=agent_stances,
+        dialogue_history=params.dialogue_history,
     )
     track_dialogue_round(track_params)
 
-    return current_outputs, round_cost, conv_score, converged, convergence_round, round_outcome
+    return (
+        current_outputs,
+        round_cost,
+        conv_score,
+        converged,
+        convergence_round,
+        round_outcome,
+    )
 
 
 # ── Dialogue round orchestration (from base.py) ─────────────────────
+
 
 def run_dialogue_rounds(params: DialogueRoundsParams) -> tuple:
     """Run dialogue rounds until convergence, budget, or max rounds.
@@ -488,9 +551,12 @@ def run_dialogue_rounds(params: DialogueRoundsParams) -> tuple:
         round_params = DialogueRoundParams(
             round_num=round_num,
             reinvoke_fn=params.executor._reinvoke_agents_with_dialogue,
-            agents=params.agents, strategy=params.strategy,
-            stage_name=params.stage_name, state=params.state,
-            config_loader=params.config_loader, tracker=params.tracker,
+            agents=params.agents,
+            strategy=params.strategy,
+            stage_name=params.stage_name,
+            state=params.state,
+            config_loader=params.config_loader,
+            tracker=params.tracker,
             dialogue_history=params.dialogue_history,
             previous_outputs=previous_outputs,
         )
@@ -501,7 +567,10 @@ def run_dialogue_rounds(params: DialogueRoundsParams) -> tuple:
             converged = True
             convergence_round = conv_round
             break
-        if params.strategy.cost_budget_usd and total_cost >= params.strategy.cost_budget_usd:
+        if (
+            params.strategy.cost_budget_usd
+            and total_cost >= params.strategy.cost_budget_usd
+        ):
             logger.warning(
                 f"Dialogue stopped at round {round_num + 1} for stage '{params.stage_name}': "
                 f"budget ${params.strategy.cost_budget_usd:.2f} reached (cost: ${total_cost:.2f})"
@@ -514,7 +583,7 @@ def run_dialogue_rounds(params: DialogueRoundsParams) -> tuple:
 
 def record_initial_round(
     current_outputs: list,
-    dialogue_history: List[Dict[str, Any]],
+    dialogue_history: list[dict[str, Any]],
 ) -> float:
     """Record initial round outputs in dialogue history.
 
@@ -523,13 +592,15 @@ def record_initial_round(
     """
     total_cost = 0.0
     for output in current_outputs:
-        dialogue_history.append({
-            "agent": output.agent_name,
-            "round": 0,
-            StateKeys.OUTPUT: output.decision,
-            StateKeys.REASONING: output.reasoning,
-            StateKeys.CONFIDENCE: output.confidence,
-        })
+        dialogue_history.append(
+            {
+                "agent": output.agent_name,
+                "round": 0,
+                StateKeys.OUTPUT: output.decision,
+                StateKeys.REASONING: output.reasoning,
+                StateKeys.CONFIDENCE: output.confidence,
+            }
+        )
         total_cost += output.metadata.get(StateKeys.COST_USD, 0.0)
     return total_cost
 
@@ -545,7 +616,10 @@ def build_final_synthesis_result(params: FinalSynthesisResultParams) -> Any:
     if params.converged:
         result.metadata["convergence_round"] = params.convergence_round
         result.metadata["early_stop_reason"] = "convergence"
-    elif params.strategy.cost_budget_usd and params.total_cost >= params.strategy.cost_budget_usd:
+    elif (
+        params.strategy.cost_budget_usd
+        and params.total_cost >= params.strategy.cost_budget_usd
+    ):
         result.metadata["early_stop_reason"] = "budget"
     else:
         result.metadata["early_stop_reason"] = "max_rounds"

@@ -2,12 +2,11 @@
 
 Tests collaboration event tracking for multi-agent interactions.
 """
+
 from unittest.mock import Mock
 
-import pytest
-
-from temper_ai.shared.core.context import ExecutionContext
 from temper_ai.observability.collaboration_tracker import CollaborationEventTracker
+from temper_ai.shared.core.context import ExecutionContext
 
 
 class TestCollaborationEventTracker:
@@ -35,7 +34,7 @@ class TestCollaborationEventTracker:
         event_id = tracker.track_collaboration_event(
             event_type="voting",
             agents_involved=["agent1", "agent2"],
-            outcome="consensus"
+            outcome="consensus",
         )
 
         assert event_id == "event-123"
@@ -60,18 +59,18 @@ class TestCollaborationEventTracker:
             resolution_strategy="majority_vote",
             outcome="approved",
             confidence_score=0.85,
-            extra_metadata={"duration": 5.2}
+            extra_metadata={"duration": 5.2},
         )
 
         assert event_id == "event-456"
         backend.track_collaboration_event.assert_called_once()
         call_kwargs = backend.track_collaboration_event.call_args[1]
         assert call_kwargs["event_type"] == "debate"
-        assert call_kwargs["round_number"] == 2
-        assert call_kwargs["confidence_score"] == 0.85
+        assert call_kwargs["data"].round_number == 2
+        assert call_kwargs["data"].confidence_score == 0.85
 
-    def test_track_collaboration_event_legacy_params(self):
-        """Test backward compatibility with legacy parameter names."""
+    def test_track_collaboration_event_with_current_params(self):
+        """Test tracking event with current parameter names."""
         backend = Mock()
         backend.track_collaboration_event = Mock(return_value="event-789")
         sanitize_fn = Mock(side_effect=lambda x: x)
@@ -80,22 +79,20 @@ class TestCollaborationEventTracker:
 
         tracker = CollaborationEventTracker(backend, sanitize_fn, get_context)
 
-        # Use legacy parameters
+        # Use current parameter names
         event_id = tracker.track_collaboration_event(
             event_type="voting",
-            stage_name="old-stage",  # Legacy param
-            agents=["agent1", "agent2"],  # Legacy param
-            decision="approved",  # Legacy param
-            confidence=0.9,  # Legacy param
-            metadata={"key": "value"}  # Legacy param
+            agents_involved=["agent1", "agent2"],
+            outcome="approved",
+            confidence_score=0.9,
+            extra_metadata={"key": "value"},
         )
 
         assert event_id == "event-789"
         call_kwargs = backend.track_collaboration_event.call_args[1]
-        # Legacy params should be mapped to new names
         assert call_kwargs["agents_involved"] == ["agent1", "agent2"]
-        assert call_kwargs["outcome"] == "approved"
-        assert call_kwargs["confidence_score"] == 0.9
+        assert call_kwargs["data"].outcome == "approved"
+        assert call_kwargs["data"].confidence_score == 0.9
 
     def test_track_collaboration_event_missing_stage_id(self):
         """Test that missing stage_id returns empty string."""
@@ -107,8 +104,7 @@ class TestCollaborationEventTracker:
         tracker = CollaborationEventTracker(backend, sanitize_fn, get_context)
 
         event_id = tracker.track_collaboration_event(
-            event_type="voting",
-            agents_involved=["agent1", "agent2"]
+            event_type="voting", agents_involved=["agent1", "agent2"]
         )
 
         assert event_id == ""
@@ -124,8 +120,7 @@ class TestCollaborationEventTracker:
         tracker = CollaborationEventTracker(backend, sanitize_fn, get_context)
 
         event_id = tracker.track_collaboration_event(
-            event_type="",  # Empty event type
-            agents_involved=["agent1"]
+            event_type="", agents_involved=["agent1"]  # Empty event type
         )
 
         assert event_id == ""
@@ -142,14 +137,11 @@ class TestCollaborationEventTracker:
         tracker = CollaborationEventTracker(backend, sanitize_fn, get_context)
 
         event_data = {"proposal": "option_a", "votes": 3}
-        tracker.track_collaboration_event(
-            event_type="voting",
-            event_data=event_data
-        )
+        tracker.track_collaboration_event(event_type="voting", event_data=event_data)
 
-        # Event data should be passed to backend
+        # Event data should be passed to backend wrapped in CollaborationEventData
         call_kwargs = backend.track_collaboration_event.call_args[1]
-        assert call_kwargs["event_data"] == event_data
+        assert call_kwargs["data"].event_data == event_data
 
     def test_backend_write_failure(self):
         """Test handling of backend write failure."""
@@ -163,8 +155,7 @@ class TestCollaborationEventTracker:
 
         # Should handle exception gracefully and return empty string
         event_id = tracker.track_collaboration_event(
-            event_type="voting",
-            agents_involved=["agent1"]
+            event_type="voting", agents_involved=["agent1"]
         )
 
         assert event_id == ""
@@ -179,9 +170,7 @@ class TestCollaborationEventTracker:
 
         tracker = CollaborationEventTracker(backend, sanitize_fn, get_context)
 
-        tracker.track_collaboration_event(
-            event_type="voting"
-        )
+        tracker.track_collaboration_event(event_type="voting")
 
         call_kwargs = backend.track_collaboration_event.call_args[1]
         assert call_kwargs["stage_id"] == "context-stage"
@@ -197,8 +186,7 @@ class TestCollaborationEventTracker:
         tracker = CollaborationEventTracker(backend, sanitize_fn, get_context)
 
         tracker.track_collaboration_event(
-            event_type="voting",
-            stage_id="explicit-stage"
+            event_type="voting", stage_id="explicit-stage"
         )
 
         call_kwargs = backend.track_collaboration_event.call_args[1]
@@ -239,11 +227,8 @@ class TestCollaborationEventTracker:
             event_data={
                 "proposals": ["A", "B", "C"],
                 "votes": {"A": 2, "B": 1, "C": 0},
-                "metadata": {
-                    "duration": 3.5,
-                    "rounds": 2
-                }
-            }
+                "metadata": {"duration": 3.5, "rounds": 2},
+            },
         )
 
         backend.track_collaboration_event.assert_called_once()

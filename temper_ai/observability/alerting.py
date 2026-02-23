@@ -6,12 +6,12 @@ workflow halting.
 """
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
-from temper_ai.shared.constants.durations import HOURS_PER_DAY, SECONDS_PER_5_MINUTES
 from temper_ai.observability.constants import (
     DEFAULT_ALERT_COOLDOWN_SECONDS,
     DEFAULT_ERROR_RATE_ALERT_THRESHOLD,
@@ -19,6 +19,7 @@ from temper_ai.observability.constants import (
     DEFAULT_PERSISTED_ALERTS_LIMIT,
     MAX_ALERT_HISTORY,
 )
+from temper_ai.shared.constants.durations import HOURS_PER_DAY, SECONDS_PER_5_MINUTES
 
 logger = logging.getLogger(__name__)
 
@@ -80,9 +81,11 @@ class AlertRule:
     threshold: float
     window_seconds: float = 0
     severity: AlertSeverity = AlertSeverity.WARNING
-    actions: List[AlertAction] = field(default_factory=lambda: [AlertAction.LOG_WARNING])
+    actions: list[AlertAction] = field(
+        default_factory=lambda: [AlertAction.LOG_WARNING]
+    )
     enabled: bool = True
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -104,11 +107,11 @@ class Alert:
     message: str
     metric_value: float
     threshold: float
-    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    context: Dict[str, Any] = field(default_factory=dict)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
+    context: dict[str, Any] = field(default_factory=dict)
 
 
-def _build_cost_and_latency_rules() -> List[AlertRule]:
+def _build_cost_and_latency_rules() -> list[AlertRule]:
     """Build default cost and latency alert rules."""
     return [
         AlertRule(
@@ -126,7 +129,9 @@ def _build_cost_and_latency_rules() -> List[AlertRule]:
             severity=AlertSeverity.CRITICAL,
             actions=[AlertAction.LOG_ERROR, AlertAction.HALT_WORKFLOW],
             enabled=False,
-            metadata={"description": "Critical cost budget exceeded - halting workflow"},
+            metadata={
+                "description": "Critical cost budget exceeded - halting workflow"
+            },
         ),
         AlertRule(
             name="extreme_latency_p99",
@@ -139,7 +144,7 @@ def _build_cost_and_latency_rules() -> List[AlertRule]:
     ]
 
 
-def _build_error_rules() -> List[AlertRule]:
+def _build_error_rules() -> list[AlertRule]:
     """Build default error monitoring alert rules."""
     return [
         AlertRule(
@@ -187,12 +192,12 @@ class AlertManager:
 
     def __init__(self) -> None:
         """Initialize alert manager with default rules."""
-        self.rules: Dict[str, AlertRule] = {}
-        self.alert_history: List[Alert] = []
-        self.webhook_handlers: Dict[str, Callable] = {}
-        self.email_handlers: Dict[str, Callable] = {}
-        self._last_alert_times: Dict[str, datetime] = {}
-        self._halt_callback: Optional[Callable[[str], None]] = None
+        self.rules: dict[str, AlertRule] = {}
+        self.alert_history: list[Alert] = []
+        self.webhook_handlers: dict[str, Callable] = {}
+        self.email_handlers: dict[str, Callable] = {}
+        self._last_alert_times: dict[str, datetime] = {}
+        self._halt_callback: Callable[[str], None] | None = None
 
         # Add built-in default rules
         self._add_default_rules()
@@ -209,7 +214,9 @@ class AlertManager:
             rule: AlertRule to add
         """
         self.rules[rule.name] = rule
-        logger.info(f"Added alert rule: {rule.name} ({rule.metric_type.value} > {rule.threshold})")
+        logger.info(
+            f"Added alert rule: {rule.name} ({rule.metric_type.value} > {rule.threshold})"
+        )
 
     def remove_rule(self, rule_name: str) -> None:
         """Remove an alert rule.
@@ -242,8 +249,8 @@ class AlertManager:
             logger.info(f"Disabled alert rule: {rule_name}")
 
     def check_metric(
-        self, metric_type: str, value: float, context: Optional[Dict[str, Any]] = None
-    ) -> List[Alert]:
+        self, metric_type: str, value: float, context: dict[str, Any] | None = None
+    ) -> list[Alert]:
         """Check if metric value triggers any alerts.
 
         Args:
@@ -254,7 +261,7 @@ class AlertManager:
         Returns:
             List of triggered alerts
         """
-        triggered_alerts: List[Alert] = []
+        triggered_alerts: list[Alert] = []
         context = context or {}
 
         # Normalize metric_type to enum
@@ -275,9 +282,13 @@ class AlertManager:
             # Check threshold
             if value > rule.threshold:
                 # Cooldown: skip if same rule fired recently
-                now = datetime.now(timezone.utc)
+                now = datetime.now(UTC)
                 last_time = self._last_alert_times.get(rule.name)
-                if last_time and (now - last_time).total_seconds() < DEFAULT_ALERT_COOLDOWN_SECONDS:
+                if (
+                    last_time
+                    and (now - last_time).total_seconds()
+                    < DEFAULT_ALERT_COOLDOWN_SECONDS
+                ):
                     continue
 
                 alert = Alert(
@@ -375,7 +386,9 @@ class AlertManager:
         if handler:
             handler(alert, rule)
         else:
-            logger.info(f"Webhook trigger (no handler): {alert.message} -> {webhook_url}")
+            logger.info(
+                f"Webhook trigger (no handler): {alert.message} -> {webhook_url}"
+            )
 
     def _trigger_email(self, alert: Alert, rule: AlertRule) -> None:
         """Trigger email for alert.
@@ -427,7 +440,9 @@ class AlertManager:
                 },
             )
         else:
-            logger.warning(f"Cannot halt workflow - no workflow_id in context for {rule.name}")
+            logger.warning(
+                f"Cannot halt workflow - no workflow_id in context for {rule.name}"
+            )
 
     def register_webhook_handler(self, rule_name: str, handler: Callable) -> None:
         """Register custom webhook handler for a rule.
@@ -450,8 +465,8 @@ class AlertManager:
         logger.info(f"Registered email handler for rule: {rule_name}")
 
     def get_recent_alerts(
-        self, hours: int = HOURS_PER_DAY, severity: Optional[AlertSeverity] = None
-    ) -> List[Alert]:
+        self, hours: int = HOURS_PER_DAY, severity: AlertSeverity | None = None
+    ) -> list[Alert]:
         """Get recent alerts within time window.
 
         Args:
@@ -461,7 +476,7 @@ class AlertManager:
         Returns:
             List of alerts
         """
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+        cutoff = datetime.now(UTC) - timedelta(hours=hours)
 
         alerts = [alert for alert in self.alert_history if alert.timestamp >= cutoff]
 

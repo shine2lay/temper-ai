@@ -3,10 +3,9 @@
 Verifies that custom user inputs (e.g., problem_description, technical_context)
 survive LangGraph dataclass coercion and reach agents.
 """
-import pytest
 
-from temper_ai.workflow.domain_state import WorkflowDomainState
 from temper_ai.stage.executors.state_keys import StateKeys
+from temper_ai.workflow.domain_state import WorkflowDomainState
 from temper_ai.workflow.langgraph_state import LangGraphWorkflowState
 from temper_ai.workflow.state_manager import initialize_state
 
@@ -24,8 +23,13 @@ class TestInputPassthrough:
         }
         state = WorkflowDomainState.from_dict(data)
 
-        assert state.workflow_inputs["problem_description"] == "Memory leak in production"
-        assert state.workflow_inputs["technical_context"] == "Python 3.11, asyncio-based service"
+        assert (
+            state.workflow_inputs["problem_description"] == "Memory leak in production"
+        )
+        assert (
+            state.workflow_inputs["technical_context"]
+            == "Python 3.11, asyncio-based service"
+        )
         assert state.workflow_inputs["constraints"] == "Must not increase latency"
 
     def test_known_fields_not_duplicated_in_workflow_inputs(self):
@@ -45,17 +49,13 @@ class TestInputPassthrough:
 
     def test_workflow_inputs_in_to_dict(self):
         """workflow_inputs appears in to_dict() output."""
-        state = WorkflowDomainState(
-            workflow_inputs={"custom_field": "value"}
-        )
+        state = WorkflowDomainState(workflow_inputs={"custom_field": "value"})
         d = state.to_dict()
         assert d["workflow_inputs"] == {"custom_field": "value"}
 
     def test_workflow_inputs_survives_copy(self):
         """workflow_inputs is deep-copied."""
-        state = WorkflowDomainState(
-            workflow_inputs={"nested": {"key": "value"}}
-        )
+        state = WorkflowDomainState(workflow_inputs={"nested": {"key": "value"}})
         copied = state.copy()
 
         # Modify original - copy should be independent
@@ -64,9 +64,7 @@ class TestInputPassthrough:
 
     def test_langgraph_state_inherits_workflow_inputs(self):
         """LangGraphWorkflowState has workflow_inputs via inheritance."""
-        state = LangGraphWorkflowState(
-            workflow_inputs={"problem_description": "test"}
-        )
+        state = LangGraphWorkflowState(workflow_inputs={"problem_description": "test"})
         assert state.workflow_inputs["problem_description"] == "test"
 
         d = state.to_dict()
@@ -124,8 +122,12 @@ class TestInputPassthrough:
             "current_stage": "stage1",
         }
         ctx = AgentExecutionContext(
-            executor=None, stage_id="s1", stage_name="stage1",
-            workflow_id="wf-1", state=state_dict, tracker=None,
+            executor=None,
+            stage_id="s1",
+            stage_name="stage1",
+            workflow_id="wf-1",
+            state=state_dict,
+            tracker=None,
             config_loader=None,
         )
         input_data = _build_legacy_input(ctx, {})

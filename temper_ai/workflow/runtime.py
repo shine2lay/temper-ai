@@ -9,22 +9,35 @@ Each consumer keeps its unique responsibilities:
 
 This module provides the shared skeleton so both paths always validate,
 lifecycle-adapt, and compile identically.
+
+The ``run_pipeline()`` method is the single-call entry point that
+encapsulates the full sequence.  ``ExecutionHooks`` lets callers inject
+behaviour (CLI Rich output, planning pass, autonomous loop) without
+forking the pipeline.
 """
+
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional
+from typing import Any
 
 import yaml
 
+from temper_ai.workflow._runtime_helpers import (
+    check_required_inputs,
+    create_tracker,
+    emit_lifecycle_event,
+    resolve_path,
+    validate_file_size,
+    validate_schema,
+    validate_structure,
+)
+
 logger = logging.getLogger(__name__)
 
-# Lazy-imported in _emit_lifecycle_event to avoid import fan-out
-_ObservabilityEvent: Optional[type] = None
 
-
-def _create_temper_event_bus(workflow_config: Dict[str, Any]) -> Optional[Any]:
+def _create_temper_event_bus(workflow_config: dict[str, Any]) -> Any | None:
     """Create a TemperEventBus if event_bus is enabled in workflow config options.
 
     Args:
@@ -36,7 +49,8 @@ def _create_temper_event_bus(workflow_config: Dict[str, Any]) -> Optional[Any]:
     wf = workflow_config.get("workflow", {})
     config = wf.get("config", {}) if isinstance(wf, dict) else {}
     event_bus_cfg = (
-        config.get("event_bus") if isinstance(config, dict)
+        config.get("event_bus")
+        if isinstance(config, dict)
         else getattr(config, "event_bus", None)
     )
     if event_bus_cfg is None:
@@ -57,6 +71,7 @@ def _create_temper_event_bus(workflow_config: Dict[str, Any]) -> Optional[Any]:
     )
     try:
         from temper_ai.events.event_bus import TemperEventBus
+
         return TemperEventBus(persist=persist)
     except ImportError:
         logger.debug("TemperEventBus not available, skipping event bus creation")
@@ -65,8 +80,8 @@ def _create_temper_event_bus(workflow_config: Dict[str, Any]) -> Optional[Any]:
 
 def _emit_workflow_completed(
     event_bus: Any,
-    workflow_name: Optional[str],
-    workflow_id: Optional[str],
+    workflow_name: str | None,
+    workflow_id: str | None,
 ) -> None:
     """Emit workflow.completed event via the event bus.
 
@@ -95,7 +110,10 @@ class RuntimeConfig:
     trigger_type: str = "cli"
     verbose: bool = False
     db_path: str = ".meta-autonomous/observability.db"
-    tracker_backend_factory: Optional[Callable] = None
+    tracker_backend_factory: Callable | None = None
+    environment: str = "development"
+    initialize_database: bool = True
+    event_bus: Any | None = None
 
 
 @dataclass
@@ -105,7 +123,45 @@ class InfrastructureBundle:
     config_loader: Any = None
     tool_registry: Any = None
     tracker: Any = None
-    event_bus: Optional[Any] = None
+    event_bus: Any | None = None
+
+
+@dataclass
+class ExecutionHooks:
+    """Optional hooks that callers inject into ``run_pipeline()``.
+
+    Each hook is an optional callable invoked at a specific pipeline phase.
+    Hooks let callers layer CLI Rich output, planning passes, autonomous
+    loops, and optimization engines onto the shared pipeline without
+    forking the execution flow.
+    """
+
+    on_config_loaded: Callable | None = None
+    """(workflow_config, input_data) -> workflow_config.  Called after
+    load_config + adapt_lifecycle, before compile.  Return a (possibly
+    modified) workflow_config."""
+
+    on_state_built: Callable | None = None
+    """(state, infra) -> None.  Called after build_state, before execute.
+    Mutate *state* in-place to wire CLI-specific overlays."""
+
+    on_before_execute: Callable | None = None
+    """(compiled, state) -> None.  Final chance before compiled.invoke()."""
+
+    on_after_execute: Callable | None = None
+    """(result, workflow_id) -> None.  Called after successful execution."""
+
+    on_error: Callable | None = None
+    """(exception) -> None.  Called when execution raises."""
+
+
+@dataclass
+class RunOptions:
+    """Keyword-only options for a single pipeline execution."""
+
+    workspace: str | None = None
+    run_id: str | None = None
+    show_details: bool = False
 
 
 class WorkflowRuntime:
@@ -117,9 +173,9 @@ class WorkflowRuntime:
 
     def __init__(
         self,
-        config: Optional[RuntimeConfig] = None,
-        event_bus: Optional[Any] = None,
-        workflow_id: Optional[str] = None,
+        config: RuntimeConfig | None = None,
+        event_bus: Any | None = None,
+        workflow_id: str | None = None,
     ) -> None:
         self.config = config or RuntimeConfig()
         self._event_bus = event_bus
@@ -128,9 +184,13 @@ class WorkflowRuntime:
     def load_config(
         self,
         workflow_path: str,
-        input_data: Optional[Dict[str, Any]] = None,
-    ) -> tuple[Dict[str, Any], Dict[str, Any]]:
+        input_data: dict[str, Any] | None = None,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
         """Load and validate workflow configuration.
+
+        Applies the full security pipeline: file size check, YAML parse,
+        mapping check, structure validation (depth/nodes/circular refs),
+        and Pydantic schema validation.
 
         Args:
             workflow_path: Path to workflow YAML (absolute or relative
@@ -143,12 +203,26 @@ class WorkflowRuntime:
 
         Raises:
             FileNotFoundError: If workflow file does not exist.
-            ValueError: If workflow config is invalid YAML.
+            ConfigValidationError: If file too large, structure invalid,
+                or schema validation fails.
+            ValueError: If workflow config is not a YAML mapping.
         """
-        workflow_file = self._resolve_path(workflow_path)
+        from temper_ai.shared.utils.exceptions import ConfigValidationError
 
-        with open(workflow_file) as f:
-            workflow_config: Dict[str, Any] = yaml.safe_load(f)
+        workflow_file = resolve_path(workflow_path, self.config.config_root)
+
+        validate_file_size(workflow_file)
+
+        try:
+            with open(workflow_file, encoding="utf-8") as f:
+                workflow_config: dict[str, Any] = yaml.safe_load(f)
+        except yaml.YAMLError as exc:
+            raise ConfigValidationError(
+                f"YAML parsing failed for {workflow_file}: {exc}"
+            )
+
+        if workflow_config is None:
+            raise ConfigValidationError("Empty workflow file")
 
         if not isinstance(workflow_config, dict):
             raise ValueError(
@@ -156,23 +230,73 @@ class WorkflowRuntime:
                 f"got {type(workflow_config).__name__}"
             )
 
+        validate_structure(workflow_config, workflow_file)
+        validate_schema(workflow_config)
+
         inputs = dict(input_data) if input_data else {}
 
         from temper_ai.observability.constants import EVENT_CONFIG_LOADED
-        self._emit_lifecycle_event(EVENT_CONFIG_LOADED, {
-            "workflow_path": str(workflow_file),
-            "stage_count": len(
-                workflow_config.get("workflow", {}).get("stages", []),
-            ),
-        })
+
+        emit_lifecycle_event(
+            self._event_bus,
+            self._workflow_id,
+            EVENT_CONFIG_LOADED,
+            {
+                "workflow_path": str(workflow_file),
+                "stage_count": len(
+                    workflow_config.get("workflow", {}).get("stages", []),
+                ),
+            },
+        )
 
         return workflow_config, inputs
 
+    def load_input_file(self, input_path: str) -> dict[str, Any]:
+        """Load an input YAML file with security checks.
+
+        Args:
+            input_path: Path to input YAML file.
+
+        Returns:
+            Parsed input dict (empty dict for empty files).
+
+        Raises:
+            FileNotFoundError: If input file does not exist.
+            ConfigValidationError: If file too large or structure invalid.
+        """
+        from temper_ai.shared.utils.exceptions import ConfigValidationError
+
+        path = Path(input_path)
+        if not path.exists():
+            raise FileNotFoundError(f"Input file not found: {input_path}")
+
+        validate_file_size(path)
+
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = yaml.safe_load(f)
+        except yaml.YAMLError as exc:
+            raise ConfigValidationError(f"YAML parsing failed for {path}: {exc}")
+
+        if data is None:
+            return {}
+
+        if not isinstance(data, dict):
+            raise ConfigValidationError(
+                f"Input file must be a YAML mapping, " f"got {type(data).__name__}"
+            )
+
+        validate_structure(data, path)
+        return data
+
+    # Keep as a static method for backward compatibility
+    check_required_inputs = staticmethod(check_required_inputs)
+
     def adapt_lifecycle(
         self,
-        workflow_config: Dict[str, Any],
-        inputs: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        workflow_config: dict[str, Any],
+        inputs: dict[str, Any],
+    ) -> dict[str, Any]:
         """Apply lifecycle adaptation if enabled in workflow config.
 
         Args:
@@ -205,13 +329,17 @@ class WorkflowRuntime:
                 classifier=classifier,
                 store=store,
             )
-            adapted: Dict[str, Any] = adapter.adapt(workflow_config, inputs)
+            adapted: dict[str, Any] = adapter.adapt(workflow_config, inputs)
             logger.info("Lifecycle adaptation applied")
 
             from temper_ai.observability.constants import EVENT_LIFECYCLE_ADAPTED
-            self._emit_lifecycle_event(EVENT_LIFECYCLE_ADAPTED, {
-                "status": "adapted",
-            })
+
+            emit_lifecycle_event(
+                self._event_bus,
+                self._workflow_id,
+                EVENT_LIFECYCLE_ADAPTED,
+                {"status": "adapted"},
+            )
 
             return adapted
         except ImportError:
@@ -223,34 +351,49 @@ class WorkflowRuntime:
 
     def setup_infrastructure(
         self,
-        event_bus: Optional[Any] = None,
+        event_bus: Any | None = None,
     ) -> InfrastructureBundle:
         """Create infrastructure components (loader, registry, tracker).
 
         Args:
             event_bus: Optional pre-existing event bus for tracker.
+                Falls back to ``self.config.event_bus`` when *None*.
 
         Returns:
             InfrastructureBundle with config_loader, tool_registry, tracker.
         """
+        if self.config.initialize_database:
+            from temper_ai.observability.tracker import (
+                ExecutionTracker as _ET,
+            )
+
+            _ET.ensure_database(self.config.db_path)
+
         from temper_ai.tools.registry import ToolRegistry
         from temper_ai.workflow.config_loader import ConfigLoader
+
+        effective_event_bus = (
+            event_bus if event_bus is not None else self.config.event_bus
+        )
 
         config_loader = ConfigLoader(config_root=self.config.config_root)
         tool_registry = ToolRegistry(auto_discover=True)
 
-        tracker = self._create_tracker(event_bus)
+        tracker = create_tracker(
+            self.config.tracker_backend_factory,
+            effective_event_bus,
+        )
 
         return InfrastructureBundle(
             config_loader=config_loader,
             tool_registry=tool_registry,
             tracker=tracker,
-            event_bus=event_bus,
+            event_bus=effective_event_bus,
         )
 
     def compile(
         self,
-        workflow_config: Dict[str, Any],
+        workflow_config: dict[str, Any],
         infra: InfrastructureBundle,
     ) -> tuple[Any, Any]:
         """Compile workflow config into an executable graph.
@@ -279,33 +422,39 @@ class WorkflowRuntime:
         )
 
         engine_name = type(engine).__name__
-        self._emit_lifecycle_event(EVENT_WORKFLOW_COMPILING, {
-            "engine": engine_name,
-        })
+        emit_lifecycle_event(
+            self._event_bus,
+            self._workflow_id,
+            EVENT_WORKFLOW_COMPILING,
+            {"engine": engine_name},
+        )
 
         compiled = engine.compile(workflow_config)
 
-        self._emit_lifecycle_event(EVENT_WORKFLOW_COMPILED, {
-            "engine": engine_name,
-        })
+        emit_lifecycle_event(
+            self._event_bus,
+            self._workflow_id,
+            EVENT_WORKFLOW_COMPILED,
+            {"engine": engine_name},
+        )
 
         return engine, compiled
 
     def build_state(
         self,
-        inputs: Dict[str, Any],
+        inputs: dict[str, Any],
         infra: InfrastructureBundle,
         workflow_id: str,
-        workflow_config: Optional[Dict[str, Any]] = None,
+        workflow_config: dict[str, Any] | None = None,
         **extras: Any,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Build the initial workflow state dict.
 
         Args:
             inputs: Input data for the workflow.
             infra: Infrastructure bundle.
             workflow_id: Unique workflow execution ID.
-            workflow_config: Parsed workflow config — used to create TemperEventBus
+            workflow_config: Parsed workflow config -- used to create TemperEventBus
                 when event_bus is enabled in config options.
             **extras: Optional keys forwarded to state. Common keys:
                 show_details, detail_console, stream_callback,
@@ -314,7 +463,7 @@ class WorkflowRuntime:
         Returns:
             State dict ready for ``compiled.invoke(state)``.
         """
-        state: Dict[str, Any] = {
+        state: dict[str, Any] = {
             "workflow_inputs": inputs,
             "tracker": infra.tracker,
             "config_loader": infra.config_loader,
@@ -324,8 +473,11 @@ class WorkflowRuntime:
             "detail_console": extras.get("detail_console"),
             "stream_callback": extras.get("stream_callback"),
         }
-        _OPTIONAL_KEYS = {"workspace": "workspace_root", "run_id": "run_id",
-                          "workflow_name": "workflow_name"}
+        _OPTIONAL_KEYS = {
+            "workspace": "workspace_root",
+            "run_id": "run_id",
+            "workflow_name": "workflow_name",
+        }
         for key, state_key in _OPTIONAL_KEYS.items():
             value = extras.get(key)
             if value is not None:
@@ -337,23 +489,42 @@ class WorkflowRuntime:
                 state["event_bus"] = temper_event_bus
                 infra.event_bus = temper_event_bus
 
+            # Auto-inject total_stages and workflow_name from config
+            stages = workflow_config.get("workflow", {}).get("stages", [])
+            state.setdefault("total_stages", len(stages))
+            wf_name = workflow_config.get("workflow", {}).get("name", "")
+            state.setdefault("workflow_name", wf_name)
+
         return state
 
     def execute(
         self,
         compiled: Any,
-        state: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        state: dict[str, Any],
+        mode: Any | None = None,
+    ) -> dict[str, Any]:
         """Execute a compiled workflow with the given state.
 
         Args:
             compiled: Compiled workflow from ``compile()``.
             state: Workflow state from ``build_state()``.
+            mode: Optional ExecutionMode. STREAM mode falls back to ASYNC
+                execution at the workflow level -- streaming happens at the
+                LLM layer via stream_callback in state.
 
         Returns:
             Final workflow state dict.
         """
-        result: Dict[str, Any] = compiled.invoke(state)
+        from temper_ai.workflow.execution_engine import ExecutionMode
+
+        if mode is ExecutionMode.STREAM:
+            logger.warning(
+                "ExecutionMode.STREAM requested but full pipeline streaming is not yet "
+                "supported. Falling back to ASYNC mode. LLM-layer streaming remains "
+                "active via stream_callback."
+            )
+
+        result: dict[str, Any] = compiled.invoke(state)
 
         event_bus = state.get("event_bus")
         if event_bus is not None:
@@ -368,6 +539,9 @@ class WorkflowRuntime:
     def cleanup(self, engine: Any) -> None:
         """Clean up engine resources (tool executor shutdown).
 
+        Checks ``engine.tool_executor`` first, then falls back to
+        ``engine.compiler.tool_executor`` (LangGraph engines store it there).
+
         Args:
             engine: Engine instance to clean up.
         """
@@ -376,66 +550,143 @@ class WorkflowRuntime:
                 engine.tool_executor.shutdown()
             except Exception as exc:  # noqa: BLE001
                 logger.debug("Error during tool executor shutdown: %s", exc)
+        elif (
+            hasattr(engine, "compiler")
+            and hasattr(engine.compiler, "tool_executor")
+            and engine.compiler.tool_executor
+        ):
+            try:
+                engine.compiler.tool_executor.shutdown()
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Error during compiler tool executor shutdown: %s", exc)
 
-    # ── helpers ───────────────────────────────────────────────────────
+    # ── run_pipeline helpers ────────────────────────────────────────────
 
-    def _resolve_path(self, workflow_path: str) -> Path:
-        """Resolve workflow path, checking config_root if not absolute."""
-        path = Path(workflow_path)
-        if path.is_absolute() and path.exists():
-            return path
-
-        config_path = Path(self.config.config_root) / workflow_path
-        if config_path.exists():
-            return config_path
-
-        if path.exists():
-            return path
-
-        raise FileNotFoundError(f"Workflow file not found: {workflow_path}")
-
-    def _emit_lifecycle_event(
+    def _execute_in_tracker_scope(
         self,
-        event_type: str,
-        data: Dict[str, Any],
-    ) -> None:
-        """Emit a lifecycle event via the event bus.
+        compiled: Any,
+        workflow_config: dict[str, Any],
+        workflow_path: str,
+        inputs: dict[str, Any],
+        infra: InfrastructureBundle,
+        hooks: ExecutionHooks,
+        opts: RunOptions,
+    ) -> dict[str, Any]:
+        """Build state, invoke hooks, and execute inside a tracker scope.
 
-        These events cover pre-execution pipeline phases (config loading,
-        lifecycle adaptation, compilation) that occur before the tracker
-        opens its workflow scope.
+        Returns:
+            Final workflow state dict with ``workflow_id`` injected.
+        """
+        from temper_ai.observability.tracker import WorkflowTrackingParams
+
+        wf = workflow_config.get("workflow", {})
+        workflow_name = wf.get("name", Path(workflow_path).stem)
+
+        with infra.tracker.track_workflow(
+            WorkflowTrackingParams(
+                workflow_name=workflow_name,
+                workflow_config=workflow_config,
+                trigger_type=self.config.trigger_type,
+                environment=self.config.environment,
+            )
+        ) as workflow_id:
+            state = self.build_state(
+                inputs,
+                infra,
+                workflow_id,
+                workflow_config=workflow_config,
+                workspace=opts.workspace,
+                run_id=opts.run_id,
+                show_details=opts.show_details,
+                workflow_name=workflow_name,
+            )
+
+            if hooks.on_state_built is not None:
+                hooks.on_state_built(state, infra)
+            if hooks.on_before_execute is not None:
+                hooks.on_before_execute(compiled, state)
+
+            result = self.execute(compiled, state)
+            result["workflow_id"] = workflow_id
+
+        if hooks.on_after_execute is not None:
+            hooks.on_after_execute(result, workflow_id)
+
+        return result
+
+    # ── run_pipeline (single-call entry point) ─────────────────────────
+
+    def run_pipeline(
+        self,
+        workflow_path: str,
+        input_data: dict[str, Any],
+        hooks: ExecutionHooks | None = None,
+        workspace: str | None = None,
+        run_id: str | None = None,
+        show_details: bool = False,
+        mode: Any | None = None,
+    ) -> dict[str, Any]:
+        """Execute a workflow through the full pipeline in one call.
+
+        Encapsulates: load_config -> adapt_lifecycle -> [hook] ->
+        setup_infrastructure -> compile -> build_state -> [hook] ->
+        execute -> [hook] -> cleanup.
 
         Args:
-            event_type: Event type constant from observability.constants.
-            data: Event payload dict.
+            workflow_path: Path to workflow YAML (absolute or relative
+                to config_root).
+            input_data: Input data dict for the workflow.
+            hooks: Optional ExecutionHooks to inject caller behaviour.
+            workspace: Optional workspace root for file ops.
+            run_id: Optional externally-provided run ID.
+            show_details: Whether to show detailed progress.
+            mode: Optional ExecutionMode. STREAM raises NotImplementedError
+                immediately before any pipeline work begins.
+
+        Returns:
+            Final workflow state dict.
+
+        Raises:
+            FileNotFoundError: If workflow file does not exist.
+            ConfigValidationError: If validation fails.
+            NotImplementedError: If mode is ExecutionMode.STREAM.
         """
-        if self._event_bus is None:
-            return
+        from temper_ai.workflow.execution_engine import ExecutionMode
 
-        global _ObservabilityEvent  # noqa: PLW0603
-        if _ObservabilityEvent is None:
-            from temper_ai.observability.event_bus import (
-                ObservabilityEvent as _OE,
+        if mode is ExecutionMode.STREAM:
+            logger.warning(
+                "ExecutionMode.STREAM requested but full pipeline streaming is not yet "
+                "supported. Falling back to ASYNC mode. LLM-layer streaming remains "
+                "active via stream_callback."
             )
-            _ObservabilityEvent = _OE
 
-        event = _ObservabilityEvent(
-            event_type=event_type,
-            timestamp=datetime.now(timezone.utc),
-            data=data,
-            workflow_id=self._workflow_id,
-        )
-        self._event_bus.emit(event)
+        hooks = hooks or ExecutionHooks()
+        engine = None
 
-    def _create_tracker(self, event_bus: Optional[Any] = None) -> Any:
-        """Create ExecutionTracker with optional event bus."""
-        from temper_ai.observability.tracker import ExecutionTracker
+        try:
+            workflow_config, inputs = self.load_config(workflow_path, input_data)
+            workflow_config = self.adapt_lifecycle(workflow_config, inputs)
+            if hooks.on_config_loaded is not None:
+                workflow_config = hooks.on_config_loaded(workflow_config, inputs)
 
-        if self.config.tracker_backend_factory is not None:
-            backend = self.config.tracker_backend_factory()
-            return ExecutionTracker(backend=backend, event_bus=event_bus)
+            infra = self.setup_infrastructure()
+            engine, compiled = self.compile(workflow_config, infra)
 
-        if event_bus is not None:
-            return ExecutionTracker(event_bus=event_bus)
-
-        return ExecutionTracker()
+            return self._execute_in_tracker_scope(
+                compiled,
+                workflow_config,
+                workflow_path,
+                inputs,
+                infra,
+                hooks,
+                RunOptions(
+                    workspace=workspace, run_id=run_id, show_details=show_details
+                ),
+            )
+        except Exception as exc:
+            if hooks.on_error is not None:
+                hooks.on_error(exc)
+            raise
+        finally:
+            if engine is not None:
+                self.cleanup(engine)

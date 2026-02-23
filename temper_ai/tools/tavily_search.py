@@ -2,10 +2,11 @@
 
 Uses httpx for HTTP requests and returns structured SearchResponse results.
 """
+
 import logging
 import os
 import time
-from typing import Any, Dict, List, Literal, Optional, Type
+from typing import Any, Literal
 
 import httpx
 from pydantic import BaseModel, Field, field_validator
@@ -48,11 +49,11 @@ class TavilySearchParams(BaseModel):
         default="basic",
         description="Search depth: 'basic' for fast results, 'advanced' for deeper search",
     )
-    include_domains: Optional[List[str]] = Field(
+    include_domains: list[str] | None = Field(
         default=None,
         description="Only include results from these domains",
     )
-    exclude_domains: Optional[List[str]] = Field(
+    exclude_domains: list[str] | None = Field(
         default=None,
         description="Exclude results from these domains",
     )
@@ -81,7 +82,7 @@ class TavilySearch(BaseTool):
     - TAVILY_API_KEY environment variable
     """
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: dict[str, Any] | None = None):
         """Initialize TavilySearch with rate limiter.
 
         Args:
@@ -94,7 +95,7 @@ class TavilySearch(BaseTool):
             time_window=RATE_LIMIT_WINDOW_SECONDS,
         )
         self._base_url = (config or {}).get("base_url", TAVILY_DEFAULT_BASE_URL)
-        self._client: Optional[httpx.Client] = None
+        self._client: httpx.Client | None = None
 
     def _get_client(self) -> httpx.Client:
         """Return shared httpx.Client, creating it on first use."""
@@ -129,11 +130,11 @@ class TavilySearch(BaseTool):
             modifies_state=False,
         )
 
-    def get_parameters_model(self) -> Type[BaseModel]:
+    def get_parameters_model(self) -> type[BaseModel]:
         """Return Pydantic model for parameter validation."""
         return TavilySearchParams
 
-    def get_parameters_schema(self) -> Dict[str, Any]:
+    def get_parameters_schema(self) -> dict[str, Any]:
         """Return JSON schema for TavilySearch parameters."""
         return {
             "type": "object",
@@ -185,7 +186,7 @@ class TavilySearch(BaseTool):
             )
         return api_key
 
-    def _validate_query(self, query: Any) -> Optional[ToolResult]:
+    def _validate_query(self, query: Any) -> ToolResult | None:
         """Validate query input. Returns error or None."""
         if not query or not isinstance(query, str) or not query.strip():
             return ToolResult(
@@ -194,7 +195,7 @@ class TavilySearch(BaseTool):
             )
         return None
 
-    def _check_rate_limit(self) -> Optional[ToolResult]:
+    def _check_rate_limit(self) -> ToolResult | None:
         """Check rate limit. Returns error or None."""
         if not self.rate_limiter.can_proceed():
             wait_time = self.rate_limiter.wait_time()
@@ -205,11 +206,16 @@ class TavilySearch(BaseTool):
         return None
 
     def _build_request_body(
-        self, api_key: str, query: str, max_results: int, search_depth: str,
-        include_domains: Optional[List[str]], exclude_domains: Optional[List[str]]
-    ) -> Dict[str, Any]:
+        self,
+        api_key: str,
+        query: str,
+        max_results: int,
+        search_depth: str,
+        include_domains: list[str] | None,
+        exclude_domains: list[str] | None,
+    ) -> dict[str, Any]:
         """Build request body for Tavily API."""
-        body: Dict[str, Any] = {
+        body: dict[str, Any] = {
             "api_key": api_key,
             "query": query,
             "max_results": max_results,
@@ -221,7 +227,9 @@ class TavilySearch(BaseTool):
             body["exclude_domains"] = exclude_domains
         return body
 
-    def _execute_api_call(self, body: Dict[str, Any]) -> tuple[Optional[Any], Optional[ToolResult], float]:
+    def _execute_api_call(
+        self, body: dict[str, Any]
+    ) -> tuple[Any | None, ToolResult | None, float]:
         """Execute Tavily API call. Returns (response, error, elapsed_ms)."""
         start_time = time.monotonic()
         try:
@@ -236,26 +244,38 @@ class TavilySearch(BaseTool):
             return response, None, elapsed_ms
 
         except httpx.TimeoutException:
-            return None, ToolResult(
-                success=False,
-                error=f"Tavily API request timed out after {DEFAULT_SEARCH_TIMEOUT} seconds",
-            ), 0
+            return (
+                None,
+                ToolResult(
+                    success=False,
+                    error=f"Tavily API request timed out after {DEFAULT_SEARCH_TIMEOUT} seconds",
+                ),
+                0,
+            )
         except httpx.HTTPStatusError as e:
             status = e.response.status_code
             if status == HTTP_STATUS_UNAUTHORIZED:
-                error_msg = "Tavily API authentication failed. Check your TAVILY_API_KEY."
+                error_msg = (
+                    "Tavily API authentication failed. Check your TAVILY_API_KEY."
+                )
             elif status == HTTP_STATUS_TOO_MANY_REQUESTS:
                 error_msg = "Tavily API rate limit exceeded. Try again later."
             else:
                 error_msg = f"Tavily API error (HTTP {status}): {e.response.text[:ERROR_RESPONSE_TEXT_MAX_LENGTH]}"
             return None, ToolResult(success=False, error=error_msg), 0
         except httpx.RequestError as e:
-            return None, ToolResult(
-                success=False,
-                error=f"Tavily API request error: {str(e)}",
-            ), 0
+            return (
+                None,
+                ToolResult(
+                    success=False,
+                    error=f"Tavily API request error: {str(e)}",
+                ),
+                0,
+            )
 
-    def _parse_response(self, response: Any, query: str, elapsed_ms: float) -> tuple[Optional[SearchResponse], Optional[ToolResult]]:
+    def _parse_response(
+        self, response: Any, query: str, elapsed_ms: float
+    ) -> tuple[SearchResponse | None, ToolResult | None]:
         """Parse response and build SearchResponse. Returns (response, error)."""
         try:
             data = response.json()
@@ -324,7 +344,9 @@ class TavilySearch(BaseTool):
             return error_result
 
         # Build request body
-        body = self._build_request_body(api_key, query, max_results, search_depth, include_domains, exclude_domains)
+        body = self._build_request_body(
+            api_key, query, max_results, search_depth, include_domains, exclude_domains
+        )
 
         # Record request for rate limiting
         self.rate_limiter.record_request()
@@ -335,7 +357,9 @@ class TavilySearch(BaseTool):
             return error_result
 
         # Parse response
-        search_response, error_result = self._parse_response(response, query, elapsed_ms)
+        search_response, error_result = self._parse_response(
+            response, query, elapsed_ms
+        )
         if error_result is not None:
             return error_result
         if search_response is None:

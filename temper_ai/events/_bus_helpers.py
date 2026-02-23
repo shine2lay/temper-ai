@@ -3,12 +3,12 @@
 import logging
 import uuid
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from sqlmodel import select
 
 from temper_ai.events._subscription_helpers import matches_filter
-from temper_ai.storage.database.datetime_utils import utcnow
+from temper_ai.shared.utils.datetime_utils import utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -16,10 +16,10 @@ logger = logging.getLogger(__name__)
 def persist_event(
     session: Any,
     event_type: str,
-    payload: Optional[Dict[str, Any]],
-    source_workflow_id: Optional[str],
-    source_stage_name: Optional[str],
-    agent_id: Optional[str],
+    payload: dict[str, Any] | None,
+    source_workflow_id: str | None,
+    source_stage_name: str | None,
+    agent_id: str | None,
 ) -> str:
     """Create and persist an EventLog record, returning the new event ID.
 
@@ -53,9 +53,9 @@ def persist_event(
 def evaluate_subscriptions(
     session: Any,
     event_type: str,
-    payload: Optional[Dict[str, Any]],
-    source_workflow_id: Optional[str],
-) -> List[Any]:
+    payload: dict[str, Any] | None,
+    source_workflow_id: str | None,
+) -> list[Any]:
     """Find active subscriptions matching the given event.
 
     Args:
@@ -75,16 +75,17 @@ def evaluate_subscriptions(
     active_subs = session.exec(stmt).all()
 
     return [
-        sub for sub in active_subs
+        sub
+        for sub in active_subs
         if matches_filter(sub, event_type, payload, source_workflow_id)
     ]
 
 
 def convert_to_observability_event(
     event_type: str,
-    payload: Optional[Dict[str, Any]],
-    source_workflow_id: Optional[str],
-    agent_id: Optional[str],
+    payload: dict[str, Any] | None,
+    source_workflow_id: str | None,
+    agent_id: str | None,
 ) -> Any:
     """Build an ObservabilityEvent from event bus data.
 
@@ -99,7 +100,7 @@ def convert_to_observability_event(
     """
     from temper_ai.observability.event_bus import ObservabilityEvent
 
-    data: Dict[str, Any] = payload or {}
+    data: dict[str, Any] = payload or {}
     return ObservabilityEvent(
         event_type=event_type,
         timestamp=datetime.now(),

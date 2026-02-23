@@ -1,7 +1,7 @@
 # Dynamic Edge Routing Demo — demonstrates _next_stage mechanism
 #
 # Usage:
-#   maf run configs/workflows/dynamic_retry_demo.yaml --input examples/dynamic_retry_demo_input.yaml --show-details
+#   curl -X POST localhost:8420/api/runs -d '{"workflow": "configs/workflows/dynamic_retry_demo.yaml", "input_file": "examples/dynamic_retry_demo_input.yaml"}'
 #
 # Flow:
 #   1. analyze stage → produces brief analysis (intentionally vague)

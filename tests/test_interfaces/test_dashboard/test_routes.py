@@ -1,4 +1,5 @@
 """Tests for dashboard REST API routes."""
+
 from unittest.mock import MagicMock
 
 import pytest
@@ -71,8 +72,16 @@ def _make_backend():
     backend = MagicMock()
     backend.get_workflow.return_value = SAMPLE_WORKFLOW
     backend.list_workflows.return_value = [
-        {"id": "wf-1", "workflow_name": "test-workflow", ObservabilityFields.STATUS: "completed"},
-        {"id": "wf-2", "workflow_name": "test-workflow-2", ObservabilityFields.STATUS: "running"},
+        {
+            "id": "wf-1",
+            "workflow_name": "test-workflow",
+            ObservabilityFields.STATUS: "completed",
+        },
+        {
+            "id": "wf-2",
+            "workflow_name": "test-workflow-2",
+            ObservabilityFields.STATUS: "running",
+        },
     ]
     backend.get_stage.return_value = SAMPLE_STAGE
     backend.get_agent.return_value = SAMPLE_AGENT
@@ -285,8 +294,15 @@ class TestGetDataFlow:
                     ObservabilityFields.INPUT_DATA: None,
                     ObservabilityFields.OUTPUT_DATA: None,
                     "agents": [
-                        {ObservabilityFields.AGENT_NAME: "no-id-agent", ObservabilityFields.STATUS: "completed"},
-                        {"id": "ag-ok", ObservabilityFields.AGENT_NAME: "good", ObservabilityFields.STATUS: "completed"},
+                        {
+                            ObservabilityFields.AGENT_NAME: "no-id-agent",
+                            ObservabilityFields.STATUS: "completed",
+                        },
+                        {
+                            "id": "ag-ok",
+                            ObservabilityFields.AGENT_NAME: "good",
+                            ObservabilityFields.STATUS: "completed",
+                        },
                     ],
                 },
             ],
@@ -326,14 +342,30 @@ class TestGetDataFlow:
                 }
             },
             "stages": [
-                {"id": "st-a", "stage_name": "A", ObservabilityFields.STATUS: "completed",
-                 ObservabilityFields.OUTPUT_DATA: {"result": 1}},
-                {"id": "st-b", "stage_name": "B", ObservabilityFields.STATUS: "completed",
-                 ObservabilityFields.OUTPUT_DATA: {"b_out": 2}},
-                {"id": "st-c", "stage_name": "C", ObservabilityFields.STATUS: "completed",
-                 ObservabilityFields.OUTPUT_DATA: {"c_out": 3}},
-                {"id": "st-d", "stage_name": "D", ObservabilityFields.STATUS: "completed",
-                 ObservabilityFields.OUTPUT_DATA: None},
+                {
+                    "id": "st-a",
+                    "stage_name": "A",
+                    ObservabilityFields.STATUS: "completed",
+                    ObservabilityFields.OUTPUT_DATA: {"result": 1},
+                },
+                {
+                    "id": "st-b",
+                    "stage_name": "B",
+                    ObservabilityFields.STATUS: "completed",
+                    ObservabilityFields.OUTPUT_DATA: {"b_out": 2},
+                },
+                {
+                    "id": "st-c",
+                    "stage_name": "C",
+                    ObservabilityFields.STATUS: "completed",
+                    ObservabilityFields.OUTPUT_DATA: {"c_out": 3},
+                },
+                {
+                    "id": "st-d",
+                    "stage_name": "D",
+                    ObservabilityFields.STATUS: "completed",
+                    ObservabilityFields.OUTPUT_DATA: None,
+                },
             ],
         }
         backend = _make_backend()
@@ -368,22 +400,42 @@ class TestGetDataFlow:
                 "workflow": {
                     "stages": [
                         {"name": "code", "stage_ref": "code.yaml"},
-                        {"name": "check", "stage_ref": "check.yaml",
-                         "depends_on": ["code"],
-                         "loops_back_to": "code", "max_loops": 2},
+                        {
+                            "name": "check",
+                            "stage_ref": "check.yaml",
+                            "depends_on": ["code"],
+                            "loops_back_to": "code",
+                            "max_loops": 2,
+                        },
                     ]
                 }
             },
             "stages": [
-                {"id": "st-code-1", "stage_name": "code", ObservabilityFields.STATUS: "completed",
-                 ObservabilityFields.OUTPUT_DATA: {"files": ["a.py"]}},
-                {"id": "st-check-1", "stage_name": "check", ObservabilityFields.STATUS: "completed",
-                 ObservabilityFields.OUTPUT_DATA: {"pass": False}},
+                {
+                    "id": "st-code-1",
+                    "stage_name": "code",
+                    ObservabilityFields.STATUS: "completed",
+                    ObservabilityFields.OUTPUT_DATA: {"files": ["a.py"]},
+                },
+                {
+                    "id": "st-check-1",
+                    "stage_name": "check",
+                    ObservabilityFields.STATUS: "completed",
+                    ObservabilityFields.OUTPUT_DATA: {"pass": False},
+                },
                 # Loop iteration 2
-                {"id": "st-code-2", "stage_name": "code", ObservabilityFields.STATUS: "completed",
-                 ObservabilityFields.OUTPUT_DATA: {"files": ["a.py", "b.py"]}},
-                {"id": "st-check-2", "stage_name": "check", ObservabilityFields.STATUS: "completed",
-                 ObservabilityFields.OUTPUT_DATA: {"pass": True}},
+                {
+                    "id": "st-code-2",
+                    "stage_name": "code",
+                    ObservabilityFields.STATUS: "completed",
+                    ObservabilityFields.OUTPUT_DATA: {"files": ["a.py", "b.py"]},
+                },
+                {
+                    "id": "st-check-2",
+                    "stage_name": "check",
+                    ObservabilityFields.STATUS: "completed",
+                    ObservabilityFields.OUTPUT_DATA: {"pass": True},
+                },
             ],
         }
         backend = _make_backend()
@@ -418,8 +470,12 @@ class TestGetDataFlow:
             ObservabilityFields.STATUS: "completed",
             "stages": [
                 {"stage_name": "missing-id", ObservabilityFields.STATUS: "completed"},
-                {"id": "st-ok", "stage_name": "ok", ObservabilityFields.STATUS: "completed",
-                 ObservabilityFields.OUTPUT_DATA: None},
+                {
+                    "id": "st-ok",
+                    "stage_name": "ok",
+                    ObservabilityFields.STATUS: "completed",
+                    ObservabilityFields.OUTPUT_DATA: None,
+                },
             ],
         }
         backend = _make_backend()
@@ -441,10 +497,18 @@ class TestGetDataFlow:
             "workflow_name": "seq-test",
             ObservabilityFields.STATUS: "completed",
             "stages": [
-                {"id": "st-1", "stage_name": "first", ObservabilityFields.STATUS: "completed",
-                 ObservabilityFields.OUTPUT_DATA: {"x": 1}},
-                {"id": "st-2", "stage_name": "second", ObservabilityFields.STATUS: "completed",
-                 ObservabilityFields.OUTPUT_DATA: None},
+                {
+                    "id": "st-1",
+                    "stage_name": "first",
+                    ObservabilityFields.STATUS: "completed",
+                    ObservabilityFields.OUTPUT_DATA: {"x": 1},
+                },
+                {
+                    "id": "st-2",
+                    "stage_name": "second",
+                    ObservabilityFields.STATUS: "completed",
+                    ObservabilityFields.OUTPUT_DATA: None,
+                },
             ],
         }
         backend = _make_backend()

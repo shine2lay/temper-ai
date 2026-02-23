@@ -3,19 +3,21 @@
 Encapsulates regex pattern management and provides iterator interface
 for processing matches in a clean, composable way.
 """
+
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass
-from typing import Dict, Iterator, List
 
 
 @dataclass
 class PatternMatch:
     """Result of a single pattern match."""
-    pattern_name: str      # e.g., "aws_access_key"
-    matched_text: str      # Full regex match
-    secret_value: str      # Extracted secret (from capture group 2)
-    match_position: int    # Character offset in content
-    match_length: int      # Length of matched text
+
+    pattern_name: str  # e.g., "aws_access_key"
+    matched_text: str  # Full regex match
+    secret_value: str  # Extracted secret (capture group 2 if present, else full match)
+    match_position: int  # Character offset in content
+    match_length: int  # Length of matched text
 
 
 class PatternMatcher:
@@ -28,11 +30,7 @@ class PatternMatcher:
     - Iterator interface for clean processing
     """
 
-    def __init__(
-        self,
-        enabled_patterns: List[str],
-        patterns_dict: Dict[str, str]
-    ):
+    def __init__(self, enabled_patterns: list[str], patterns_dict: dict[str, str]):
         """Initialize pattern matcher.
 
         Args:
@@ -46,7 +44,7 @@ class PatternMatcher:
         self.patterns_dict = patterns_dict
         self.compiled_patterns = self._compile_patterns()
 
-    def _compile_patterns(self) -> Dict[str, re.Pattern]:
+    def _compile_patterns(self) -> dict[str, re.Pattern]:
         """Compile enabled regex patterns.
 
         Returns:
@@ -97,5 +95,5 @@ class PatternMatcher:
                     matched_text=matched_text,
                     secret_value=secret_value,
                     match_position=regex_match.start(),
-                    match_length=len(matched_text)
+                    match_length=len(matched_text),
                 )

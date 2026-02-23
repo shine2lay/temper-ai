@@ -1,7 +1,8 @@
 """Agent performance tracking across executions (M9)."""
+
 import logging
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from dataclasses import dataclass
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -10,6 +11,7 @@ FORMAT_TEMPLATE = (
     "Performance: {total} runs, {rate:.0%} success rate, "
     "avg {duration:.1f}s, avg {tokens:.0f} tokens/run"
 )
+_DEFAULT_MAX_CONTEXT_CHARS = 500
 
 
 @dataclass
@@ -20,7 +22,7 @@ class ExecutionMetrics:
     success: bool = True
     tokens_used: int = 0
     tool_calls: int = 0
-    error_message: Optional[str] = None
+    error_message: str | None = None
 
 
 @dataclass
@@ -44,11 +46,9 @@ class AgentPerformanceTracker:
 
     def __init__(self, memory_service: Any = None) -> None:
         self._memory_service = memory_service
-        self._records: Dict[str, List[ExecutionMetrics]] = {}
+        self._records: dict[str, list[ExecutionMetrics]] = {}
 
-    def record_execution(
-        self, agent_name: str, metrics: ExecutionMetrics
-    ) -> None:
+    def record_execution(self, agent_name: str, metrics: ExecutionMetrics) -> None:
         """Record execution metrics for an agent."""
         if agent_name not in self._records:
             self._records[agent_name] = []
@@ -75,7 +75,9 @@ class AgentPerformanceTracker:
             success_rate=successes / total if total else 0.0,
         )
 
-    def format_context(self, agent_name: str, max_chars: int = 500) -> str:
+    def format_context(
+        self, agent_name: str, max_chars: int = _DEFAULT_MAX_CONTEXT_CHARS
+    ) -> str:
         """Format performance stats as context string for prompt injection."""
         summary = self.get_summary(agent_name)
         if summary.total_executions == 0:

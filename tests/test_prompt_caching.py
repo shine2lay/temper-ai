@@ -7,10 +7,12 @@ Tests cover:
 - Cache invalidation when tools change
 - Performance improvements
 """
+
 import time
 from unittest.mock import Mock, patch
 
 from temper_ai.agent.standard_agent import StandardAgent
+from temper_ai.llm.service import LLMService
 from temper_ai.storage.schemas.agent_config import (
     AgentConfig,
     AgentConfigInner,
@@ -19,7 +21,6 @@ from temper_ai.storage.schemas.agent_config import (
     PromptConfig,
     SafetyConfig,
 )
-from temper_ai.llm.service import LLMService
 from temper_ai.tools.base import BaseTool, ToolMetadata, ToolResult
 
 
@@ -46,14 +47,12 @@ class DummyTool(BaseTool):
             "type": "object",
             "properties": {
                 "test_param": {"type": "string", "description": "Test parameter"}
-            }
+            },
         }
 
     def get_metadata(self) -> ToolMetadata:
         return ToolMetadata(
-            name=self.name,
-            description=self.description,
-            version="1.0.0"
+            name=self.name, description=self.description, version="1.0.0"
         )
 
 
@@ -81,26 +80,24 @@ class TestPromptCaching:
                     model="test-model",
                     base_url="http://localhost:11434",
                     temperature=0.7,
-                    max_tokens=2048
+                    max_tokens=2048,
                 ),
-                prompt=PromptConfig(
-                    inline="Test prompt: {{ query }}"
-                ),
-                safety=SafetyConfig(
-                    max_tool_calls_per_execution=5
-                ),
+                prompt=PromptConfig(inline="Test prompt: {{ query }}"),
+                safety=SafetyConfig(max_tool_calls_per_execution=5),
                 error_handling=ErrorHandlingConfig(
-                    retry_strategy="ExponentialBackoff",
-                    fallback="GracefulDegradation"
+                    retry_strategy="ExponentialBackoff", fallback="GracefulDegradation"
                 ),
-                tools=[]
+                tools=[],
             )
         )
 
-        with patch('temper_ai.agent.base_agent.create_llm_from_config') as mock_llm, \
-             patch.object(StandardAgent, '_create_tool_registry') as mock_registry:
+        with (
+            patch("temper_ai.agent.base_agent.create_llm_from_config") as mock_llm,
+            patch.object(StandardAgent, "_create_tool_registry") as mock_registry,
+        ):
             mock_llm.return_value = Mock()
             from temper_ai.tools.registry import ToolRegistry
+
             mock_registry.return_value = ToolRegistry(auto_discover=False)
             agent = StandardAgent(config)
 
@@ -229,16 +226,16 @@ class TestPromptCaching:
                         "param2": {"type": "number"},
                         "param3": {
                             "type": "object",
-                            "properties": {
-                                "nested": {"type": "boolean"}
-                            }
-                        }
+                            "properties": {"nested": {"type": "boolean"}},
+                        },
                     },
-                    "required": ["param1"]
+                    "required": ["param1"],
                 }
 
             def get_metadata(self) -> ToolMetadata:
-                return ToolMetadata(name=self.name, description=self.description, version="1.0.0")
+                return ToolMetadata(
+                    name=self.name, description=self.description, version="1.0.0"
+                )
 
         tool = ComplexTool()
         schemas = service._build_text_schemas([tool])
@@ -289,13 +286,15 @@ class TestPromptCaching:
                     "properties": {
                         "text": {
                             "type": "string",
-                            "description": 'Parameter with "quotes"'
+                            "description": 'Parameter with "quotes"',
                         }
-                    }
+                    },
                 }
 
             def get_metadata(self) -> ToolMetadata:
-                return ToolMetadata(name=self.name, description=self.description, version="1.0.0")
+                return ToolMetadata(
+                    name=self.name, description=self.description, version="1.0.0"
+                )
 
         tool = SpecialTool()
         schemas = service._build_text_schemas([tool])

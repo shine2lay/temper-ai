@@ -2,6 +2,7 @@
 
 Tests async completion, parallel execution, and context manager support.
 """
+
 import asyncio
 import time
 from unittest.mock import AsyncMock, Mock, patch
@@ -26,6 +27,7 @@ from temper_ai.shared.utils.exceptions import (
 # Fixtures
 # ============================================================================
 
+
 @pytest.fixture
 def ollama_config():
     """Basic Ollama configuration."""
@@ -44,19 +46,22 @@ def mock_async_response():
     mock_response = AsyncMock(spec=httpx.Response)
     mock_response.status_code = 200
     # json() is synchronous in httpx, so use Mock not AsyncMock
-    mock_response.json = Mock(return_value={
-        "response": "Test response",
-        "model": "llama3.2:3b",
-        "done": True,
-        "prompt_eval_count": 10,
-        "eval_count": 20,
-    })
+    mock_response.json = Mock(
+        return_value={
+            "response": "Test response",
+            "model": "llama3.2:3b",
+            "done": True,
+            "prompt_eval_count": 10,
+            "eval_count": 20,
+        }
+    )
     return mock_response
 
 
 # ============================================================================
 # Test 1: Async Client Creation
 # ============================================================================
+
 
 def test_async_client_lazy_initialization(ollama_config):
     """Test that async client is created lazily."""
@@ -69,9 +74,12 @@ def test_async_client_lazy_initialization(ollama_config):
     client = llm._get_async_client()
 
     # Now it should be created
-    assert isinstance(client, httpx.AsyncClient), \
-        f"Expected httpx.AsyncClient, got {type(client)}"
-    assert not client.is_closed, "Client should not be closed immediately after creation"
+    assert isinstance(
+        client, httpx.AsyncClient
+    ), f"Expected httpx.AsyncClient, got {type(client)}"
+    assert (
+        not client.is_closed
+    ), "Client should not be closed immediately after creation"
 
     # Getting again should return same instance
     client2 = llm._get_async_client()
@@ -85,18 +93,21 @@ def test_async_client_lazy_initialization(ollama_config):
 # Test 2: Async Context Manager
 # ============================================================================
 
+
 @pytest.mark.asyncio
 async def test_async_context_manager(ollama_config):
     """Test async context manager properly cleans up resources."""
     async with OllamaLLM(**ollama_config) as llm:
         # Client should exist
-        assert isinstance(llm, OllamaLLM), \
-            f"Expected OllamaLLM instance, got {type(llm)}"
+        assert isinstance(
+            llm, OllamaLLM
+        ), f"Expected OllamaLLM instance, got {type(llm)}"
 
         # Get async client to initialize it
         client = llm._get_async_client()
-        assert isinstance(client, httpx.AsyncClient), \
-            f"Expected httpx.AsyncClient, got {type(client)}"
+        assert isinstance(
+            client, httpx.AsyncClient
+        ), f"Expected httpx.AsyncClient, got {type(client)}"
 
     # After exiting context, client should be closed
     # Note: We can't directly test if client is closed,
@@ -107,9 +118,12 @@ async def test_async_context_manager(ollama_config):
 # Test 3: Async Complete Method
 # ============================================================================
 
+
 @pytest.mark.asyncio
-@patch('httpx.AsyncClient')
-async def test_acomplete_success(mock_async_client_class, ollama_config, mock_async_response):
+@patch("httpx.AsyncClient")
+async def test_acomplete_success(
+    mock_async_client_class, ollama_config, mock_async_response
+):
     """Test successful async completion."""
     # Setup mock
     mock_client_instance = AsyncMock()
@@ -140,9 +154,12 @@ async def test_acomplete_success(mock_async_client_class, ollama_config, mock_as
 # Test 4: Parallel Execution
 # ============================================================================
 
+
 @pytest.mark.asyncio
-@patch('httpx.AsyncClient')
-async def test_parallel_execution(mock_async_client_class, ollama_config, mock_async_response):
+@patch("httpx.AsyncClient")
+async def test_parallel_execution(
+    mock_async_client_class, ollama_config, mock_async_response
+):
     """Test that multiple async completions can run in parallel."""
     # Setup mock
     mock_client_instance = AsyncMock()
@@ -176,7 +193,9 @@ async def test_parallel_execution(mock_async_client_class, ollama_config, mock_a
 
     # Parallel execution should take ~0.1s, not ~0.3s
     # Allow some margin for test overhead
-    assert elapsed_time < 0.25, f"Parallel execution took {elapsed_time}s, expected <0.25s"
+    assert (
+        elapsed_time < 0.25
+    ), f"Parallel execution took {elapsed_time}s, expected <0.25s"
 
     await llm.aclose()
 
@@ -185,8 +204,9 @@ async def test_parallel_execution(mock_async_client_class, ollama_config, mock_a
 # Test 5: Async Retry Logic
 # ============================================================================
 
+
 @pytest.mark.asyncio
-@patch('httpx.AsyncClient')
+@patch("httpx.AsyncClient")
 async def test_acomplete_retry_on_timeout(mock_async_client_class, ollama_config):
     """Test async retry logic on timeout."""
     # Setup mock that fails twice then succeeds
@@ -203,11 +223,13 @@ async def test_acomplete_retry_on_timeout(mock_async_client_class, ollama_config
         mock_response = AsyncMock(spec=httpx.Response)
         mock_response.status_code = 200
         # json() is synchronous in httpx, so use Mock not AsyncMock
-        mock_response.json = Mock(return_value={
-            "response": "Success",
-            "model": "llama3.2:3b",
-            "done": True,
-        })
+        mock_response.json = Mock(
+            return_value={
+                "response": "Success",
+                "model": "llama3.2:3b",
+                "done": True,
+            }
+        )
         return mock_response
 
     mock_client_instance.post = mock_post
@@ -230,8 +252,9 @@ async def test_acomplete_retry_on_timeout(mock_async_client_class, ollama_config
 # Test 6: Async Timeout Error
 # ============================================================================
 
+
 @pytest.mark.asyncio
-@patch('httpx.AsyncClient')
+@patch("httpx.AsyncClient")
 async def test_acomplete_timeout_error(mock_async_client_class, ollama_config):
     """Test async timeout raises LLMTimeoutError after max retries."""
     # Setup mock that always times out
@@ -255,31 +278,39 @@ async def test_acomplete_timeout_error(mock_async_client_class, ollama_config):
 # Test 7: All Provider Types Support Async
 # ============================================================================
 
+
 @pytest.mark.asyncio
 async def test_all_providers_have_async_methods():
     """Test that all provider types have async methods."""
     providers = [
         OllamaLLM(model="llama3.2:3b", base_url="http://localhost:11434"),
         OpenAILLM(model="gpt-4", base_url="https://api.openai.com", api_key="test"),
-        AnthropicLLM(model="claude-3", base_url="https://api.anthropic.com", api_key="test"),
+        AnthropicLLM(
+            model="claude-3", base_url="https://api.anthropic.com", api_key="test"
+        ),
     ]
 
     for provider in providers:
         # Verify async methods exist and are coroutines
-        assert asyncio.iscoroutinefunction(provider.acomplete), \
-            f"{type(provider).__name__}.acomplete is not a coroutine"
-        assert asyncio.iscoroutinefunction(provider.aclose), \
-            f"{type(provider).__name__}.aclose is not a coroutine"
+        assert asyncio.iscoroutinefunction(
+            provider.acomplete
+        ), f"{type(provider).__name__}.acomplete is not a coroutine"
+        assert asyncio.iscoroutinefunction(
+            provider.aclose
+        ), f"{type(provider).__name__}.aclose is not a coroutine"
 
         # Verify async context manager protocol
-        assert hasattr(provider, '__aenter__'), \
-            f"{type(provider).__name__} missing __aenter__"
-        assert hasattr(provider, '__aexit__'), \
-            f"{type(provider).__name__} missing __aexit__"
+        assert hasattr(
+            provider, "__aenter__"
+        ), f"{type(provider).__name__} missing __aenter__"
+        assert hasattr(
+            provider, "__aexit__"
+        ), f"{type(provider).__name__} missing __aexit__"
 
         # Verify provider name is correctly set
-        assert provider.model is not None, \
-            f"{type(provider).__name__} model should not be None"
+        assert (
+            provider.model is not None
+        ), f"{type(provider).__name__} model should not be None"
 
         # Cleanup
         await provider.aclose()
@@ -289,9 +320,12 @@ async def test_all_providers_have_async_methods():
 # Test 8: Async Performance Baseline
 # ============================================================================
 
+
 @pytest.mark.asyncio
-@patch('httpx.AsyncClient')
-async def test_async_performance_baseline(mock_async_client_class, ollama_config, mock_async_response):
+@patch("httpx.AsyncClient")
+async def test_async_performance_baseline(
+    mock_async_client_class, ollama_config, mock_async_response
+):
     """Baseline test showing async is faster than sequential."""
     # Setup mock with simulated latency
     mock_client_instance = AsyncMock()
@@ -335,6 +369,7 @@ async def test_async_performance_baseline(mock_async_client_class, ollama_config
 # ASYNC ERROR PATH TESTS (test-crit-async-errors-01)
 # ============================================================================
 
+
 class TestAsyncErrorPaths:
     """Test async-specific error handling in LLM providers.
 
@@ -354,7 +389,7 @@ class TestAsyncErrorPaths:
     # ========================================================================
 
     @pytest.mark.asyncio
-    @patch('httpx.AsyncClient')
+    @patch("httpx.AsyncClient")
     async def test_acomplete_connection_errors_no_retry(
         self, mock_httpx_client_class, ollama_config
     ):
@@ -367,7 +402,9 @@ class TestAsyncErrorPaths:
         """
         # Setup: Mock async client that fails with connection error
         mock_client_instance = AsyncMock()
-        mock_client_instance.post = AsyncMock(side_effect=httpx.ConnectError("Connection refused"))
+        mock_client_instance.post = AsyncMock(
+            side_effect=httpx.ConnectError("Connection refused")
+        )
         mock_httpx_client_class.return_value = mock_client_instance
 
         llm = OllamaLLM(**ollama_config)
@@ -389,7 +426,7 @@ class TestAsyncErrorPaths:
     # ========================================================================
 
     @pytest.mark.asyncio
-    @patch('httpx.AsyncClient')
+    @patch("httpx.AsyncClient")
     async def test_acomplete_timeout_retry_then_success(
         self, mock_httpx_client_class, ollama_config
     ):
@@ -417,19 +454,21 @@ class TestAsyncErrorPaths:
 
             mock_response = AsyncMock(spec=httpx.Response)
             mock_response.status_code = 200
-            mock_response.json = Mock(return_value={
-                "response": "Success after timeout retry",
-                "model": "llama3.2:3b",
-                "done": True,
-                "prompt_eval_count": 10,
-                "eval_count": 20,
-            })
+            mock_response.json = Mock(
+                return_value={
+                    "response": "Success after timeout retry",
+                    "model": "llama3.2:3b",
+                    "done": True,
+                    "prompt_eval_count": 10,
+                    "eval_count": 20,
+                }
+            )
             return mock_response
 
         mock_client_instance.post = mock_post_timeout_then_success
 
         # Should succeed after retry
-        with patch('asyncio.sleep', new_callable=AsyncMock):
+        with patch("asyncio.sleep", new_callable=AsyncMock):
             result = await llm.acomplete("test prompt")
 
         assert result.content == "Success after timeout retry"
@@ -452,12 +491,15 @@ class TestAsyncErrorPaths:
 
         # Track connection pool state
         async_client = llm._get_async_client()
-        assert isinstance(async_client, httpx.AsyncClient), \
-            f"Expected httpx.AsyncClient, got {type(async_client)}"
-        assert llm._async_client is async_client, "Should return same client instance (singleton)"
+        assert isinstance(
+            async_client, httpx.AsyncClient
+        ), f"Expected httpx.AsyncClient, got {type(async_client)}"
+        assert (
+            llm._async_client is async_client
+        ), "Should return same client instance (singleton)"
 
         # Mock connection error
-        with patch.object(async_client, 'post', new_callable=AsyncMock) as mock_post:
+        with patch.object(async_client, "post", new_callable=AsyncMock) as mock_post:
             mock_post.side_effect = httpx.ConnectError("Connection refused")
             llm.max_retries = 1
             llm.retry_delay = 0.01
@@ -468,8 +510,9 @@ class TestAsyncErrorPaths:
                     await llm.acomplete("test prompt")
 
         # Verify client still exists (lazy cleanup)
-        assert isinstance(llm._async_client, httpx.AsyncClient), \
-            "Client should persist after connection errors (lazy cleanup)"
+        assert isinstance(
+            llm._async_client, httpx.AsyncClient
+        ), "Client should persist after connection errors (lazy cleanup)"
 
         # Cleanup
         await llm.aclose()
@@ -497,10 +540,12 @@ class TestAsyncErrorPaths:
         # Initialize both clients
         sync_client = llm._get_client()
         async_client = llm._get_async_client()
-        assert isinstance(sync_client, httpx.Client), \
-            f"Expected httpx.Client, got {type(sync_client)}"
-        assert isinstance(async_client, httpx.AsyncClient), \
-            f"Expected httpx.AsyncClient, got {type(async_client)}"
+        assert isinstance(
+            sync_client, httpx.Client
+        ), f"Expected httpx.Client, got {type(sync_client)}"
+        assert isinstance(
+            async_client, httpx.AsyncClient
+        ), f"Expected httpx.AsyncClient, got {type(async_client)}"
 
         # Mock aclose() to fail
         original_aclose = async_client.aclose
@@ -518,8 +563,9 @@ class TestAsyncErrorPaths:
             assert "aclose failed" in str(e)
 
         # Verify state is marked as closed despite error
-        assert llm._closed is True, \
-            "LLM should be marked as closed even when aclose() fails"
+        assert (
+            llm._closed is True
+        ), "LLM should be marked as closed even when aclose() fails"
 
     # ========================================================================
     # Test 5: Concurrent Async Errors Don't Leak Connections
@@ -533,16 +579,14 @@ class TestAsyncErrorPaths:
         FIX: Each failed request should properly release connection back to pool.
         """
         llm = OllamaLLM(
-            model="llama2",
-            base_url="http://localhost:11434",
-            max_retries=1
+            model="llama2", base_url="http://localhost:11434", max_retries=1
         )
         llm.retry_delay = 0.01
 
         # Mock client to always fail
         async_client = llm._get_async_client()
 
-        with patch.object(async_client, 'post', new_callable=AsyncMock) as mock_post:
+        with patch.object(async_client, "post", new_callable=AsyncMock) as mock_post:
             mock_post.side_effect = httpx.ConnectError("Connection refused")
 
             # Make 50 concurrent failing requests (well within connection pool limit of 100)
@@ -551,12 +595,15 @@ class TestAsyncErrorPaths:
                     await llm.acomplete("test prompt")
 
             # Execute concurrently
-            await asyncio.gather(*[failing_request() for _ in range(50)], return_exceptions=True)
+            await asyncio.gather(
+                *[failing_request() for _ in range(50)], return_exceptions=True
+            )
 
         # Verify: Connection pool should not be exhausted
         # Note: httpx.AsyncClient uses connection pooling, we verify client is still functional
-        assert isinstance(llm._async_client, httpx.AsyncClient), \
-            "Client should remain functional after concurrent failures"
+        assert isinstance(
+            llm._async_client, httpx.AsyncClient
+        ), "Client should remain functional after concurrent failures"
 
         # Cleanup
         await llm.aclose()
@@ -578,24 +625,30 @@ class TestAsyncErrorPaths:
             model="llama2",
             base_url="http://localhost:11434",
             max_retries=3,
-            retry_delay=2.0
+            retry_delay=2.0,
         )
 
         async_client = llm._get_async_client()
 
-        with patch.object(async_client, 'post', new_callable=AsyncMock) as mock_post:
+        with patch.object(async_client, "post", new_callable=AsyncMock) as mock_post:
             mock_post.side_effect = httpx.TimeoutException("Timeout")
 
-            with patch('asyncio.sleep', new_callable=AsyncMock) as mock_sleep:
+            with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
                 with pytest.raises(LLMTimeoutError):
                     await llm.acomplete("test prompt")
 
                 # Verify exponential backoff with jitter (R-15):
                 # Base delays are 2s, 4s; jitter multiplier is (0.5 + random()) in [0.5, 1.5)
                 sleep_calls = [call[0][0] for call in mock_sleep.call_args_list]
-                assert len(sleep_calls) == 2, f"Expected 2 sleep calls, got {len(sleep_calls)}"
-                assert 1.0 <= sleep_calls[0] < 3.0, f"First delay {sleep_calls[0]} not in [1.0, 3.0)"
-                assert 2.0 <= sleep_calls[1] < 6.0, f"Second delay {sleep_calls[1]} not in [2.0, 6.0)"
+                assert (
+                    len(sleep_calls) == 2
+                ), f"Expected 2 sleep calls, got {len(sleep_calls)}"
+                assert (
+                    1.0 <= sleep_calls[0] < 3.0
+                ), f"First delay {sleep_calls[0]} not in [1.0, 3.0)"
+                assert (
+                    2.0 <= sleep_calls[1] < 6.0
+                ), f"Second delay {sleep_calls[1]} not in [2.0, 6.0)"
                 assert mock_post.call_count == 3
 
         await llm.aclose()
@@ -615,7 +668,7 @@ class TestAsyncErrorPaths:
             model="llama2",
             base_url="http://localhost:11434",
             max_retries=3,
-            retry_delay=0.1  # Fast for testing
+            retry_delay=0.1,  # Fast for testing
         )
 
         async_client = llm._get_async_client()
@@ -625,10 +678,10 @@ class TestAsyncErrorPaths:
         mock_response.status_code = 429
         mock_response.text = "Rate limit exceeded"
 
-        with patch.object(async_client, 'post', new_callable=AsyncMock) as mock_post:
+        with patch.object(async_client, "post", new_callable=AsyncMock) as mock_post:
             mock_post.return_value = mock_response
 
-            with patch('asyncio.sleep', new_callable=AsyncMock):
+            with patch("asyncio.sleep", new_callable=AsyncMock):
                 with pytest.raises(LLMRateLimitError, match="Rate limited"):
                     await llm.acomplete("test prompt")
 
@@ -655,7 +708,7 @@ class TestAsyncErrorPaths:
         # Create original error
         original_error = httpx.ConnectError("Original connection error")
 
-        with patch.object(async_client, 'post', new_callable=AsyncMock) as mock_post:
+        with patch.object(async_client, "post", new_callable=AsyncMock) as mock_post:
             mock_post.side_effect = original_error
             llm.max_retries = 1
             llm.retry_delay = 0.01
@@ -684,7 +737,7 @@ class TestAsyncErrorPaths:
         llm = OllamaLLM(
             model="llama2",
             base_url="http://localhost:11434",
-            max_retries=3  # Should not retry even with max_retries=3
+            max_retries=3,  # Should not retry even with max_retries=3
         )
         llm.retry_delay = 0.01
 
@@ -695,7 +748,7 @@ class TestAsyncErrorPaths:
         mock_response.status_code = 401
         mock_response.text = "Invalid API key"
 
-        with patch.object(async_client, 'post', new_callable=AsyncMock) as mock_post:
+        with patch.object(async_client, "post", new_callable=AsyncMock) as mock_post:
             mock_post.return_value = mock_response
 
             # Auth error should fail immediately
@@ -718,8 +771,15 @@ class TestAsyncErrorPaths:
         COVERAGE: Validates per-instance isolation - one failing client doesn't affect others.
         EXPECTED: Async clients should have separate connection pools and state.
         """
-        llm1 = OllamaLLM(model="llama2", base_url="http://localhost:11434", max_retries=1)
-        llm2 = OpenAILLM(model="gpt-4", base_url="https://api.openai.com", api_key="test", max_retries=1)
+        llm1 = OllamaLLM(
+            model="llama2", base_url="http://localhost:11434", max_retries=1
+        )
+        llm2 = OpenAILLM(
+            model="gpt-4",
+            base_url="https://api.openai.com",
+            api_key="test",
+            max_retries=1,
+        )
         llm1.retry_delay = 0.01
         llm2.retry_delay = 0.01
 
@@ -732,7 +792,7 @@ class TestAsyncErrorPaths:
         assert llm1._async_client is not llm2._async_client
 
         # Fail llm1 multiple times
-        with patch.object(client1, 'post', new_callable=AsyncMock) as mock_post1:
+        with patch.object(client1, "post", new_callable=AsyncMock) as mock_post1:
             mock_post1.side_effect = httpx.ConnectError("Connection refused")
 
             for _ in range(5):
@@ -740,8 +800,9 @@ class TestAsyncErrorPaths:
                     await llm1.acomplete("test prompt")
 
         # Verify llm2 is still functional (independent)
-        assert isinstance(llm2._async_client, httpx.AsyncClient), \
-            "llm2 should remain functional when llm1 fails (isolation)"
+        assert isinstance(
+            llm2._async_client, httpx.AsyncClient
+        ), "llm2 should remain functional when llm1 fails (isolation)"
         assert llm2._closed is False, "llm2 should not be closed when llm1 fails"
 
         # Cleanup

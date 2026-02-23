@@ -5,6 +5,7 @@ Tests the three main safety policies:
 - SecretDetectionPolicy
 - RateLimiterPolicy
 """
+
 from temper_ai.safety import (
     BlastRadiusPolicy,
     RateLimiterPolicy,
@@ -27,10 +28,7 @@ class TestBlastRadiusPolicy:
 
     def test_initialization_with_custom_config(self):
         """Test policy initializes with custom config."""
-        config = {
-            "max_files_per_operation": 5,
-            "max_lines_per_file": 100
-        }
+        config = {"max_files_per_operation": 5, "max_lines_per_file": 100}
         policy = BlastRadiusPolicy(config)
 
         assert policy.max_files == 5
@@ -41,8 +39,7 @@ class TestBlastRadiusPolicy:
         policy = BlastRadiusPolicy()
 
         result = policy.validate(
-            action={"files": ["a.py", "b.py"], "total_lines": 50},
-            context={}
+            action={"files": ["a.py", "b.py"], "total_lines": 50}, context={}
         )
 
         assert result.valid is True
@@ -53,8 +50,7 @@ class TestBlastRadiusPolicy:
         policy = BlastRadiusPolicy({"max_files_per_operation": 3})
 
         result = policy.validate(
-            action={"files": ["a.py", "b.py", "c.py", "d.py"]},
-            context={}
+            action={"files": ["a.py", "b.py", "c.py", "d.py"]}, context={}
         )
 
         assert result.valid is False
@@ -67,8 +63,7 @@ class TestBlastRadiusPolicy:
         policy = BlastRadiusPolicy({"max_lines_per_file": 100})
 
         result = policy.validate(
-            action={"lines_changed": {"large.py": 500}},
-            context={}
+            action={"lines_changed": {"large.py": 500}}, context={}
         )
 
         assert result.valid is False
@@ -80,10 +75,7 @@ class TestBlastRadiusPolicy:
         """Test policy blocks when total lines changed is too high."""
         policy = BlastRadiusPolicy({"max_total_lines": 1000})
 
-        result = policy.validate(
-            action={"total_lines": 5000},
-            context={}
-        )
+        result = policy.validate(action={"total_lines": 5000}, context={})
 
         assert result.valid is False
         assert len(result.violations) == 1
@@ -94,8 +86,7 @@ class TestBlastRadiusPolicy:
         policy = BlastRadiusPolicy({"max_entities_affected": 50})
 
         result = policy.validate(
-            action={"entities": [f"user-{i}" for i in range(100)]},
-            context={}
+            action={"entities": [f"user-{i}" for i in range(100)]}, context={}
         )
 
         assert result.valid is False
@@ -104,13 +95,12 @@ class TestBlastRadiusPolicy:
 
     def test_detects_forbidden_patterns(self):
         """Test policy detects forbidden patterns in content."""
-        policy = BlastRadiusPolicy({
-            "forbidden_patterns": ["DELETE FROM", "DROP TABLE"]
-        })
+        policy = BlastRadiusPolicy(
+            {"forbidden_patterns": ["DELETE FROM", "DROP TABLE"]}
+        )
 
         result = policy.validate(
-            action={"content": "DELETE FROM users WHERE 1=1"},
-            context={}
+            action={"content": "DELETE FROM users WHERE 1=1"}, context={}
         )
 
         assert result.valid is False
@@ -144,8 +134,7 @@ class TestSecretDetectionPolicy:
         policy = SecretDetectionPolicy()
 
         result = policy.validate(
-            action={"content": "def hello_world():\n    print('Hello!')"},
-            context={}
+            action={"content": "def hello_world():\n    print('Hello!')"}, context={}
         )
 
         assert result.valid is True
@@ -156,22 +145,25 @@ class TestSecretDetectionPolicy:
         policy = SecretDetectionPolicy()
 
         result = policy.validate(
-            action={"content": "api_key='sk_live_abcdef123456789012345678901234567890'"},
-            context={}
+            action={
+                "content": "api_key='sk_live_abcdef123456789012345678901234567890'"
+            },
+            context={},
         )
 
         assert result.valid is False
         assert len(result.violations) >= 1
-        assert any("api" in v.message.lower() or "secret" in v.message.lower()
-                  for v in result.violations)
+        assert any(
+            "api" in v.message.lower() or "secret" in v.message.lower()
+            for v in result.violations
+        )
 
     def test_detects_aws_access_key(self):
         """Test policy detects AWS access keys."""
         policy = SecretDetectionPolicy({"allow_test_secrets": False})
 
         result = policy.validate(
-            action={"content": "AWS_ACCESS_KEY=AKIAIOSFODNN7EXAMPLE"},
-            context={}
+            action={"content": "AWS_ACCESS_KEY=AKIAIOSFODNN7EXAMPLE"}, context={}
         )
 
         assert result.valid is False
@@ -183,7 +175,7 @@ class TestSecretDetectionPolicy:
 
         result = policy.validate(
             action={"content": "token = 'ghp_1234567890abcdefghijklmnopqrstuvwxyz'"},
-            context={}
+            context={},
         )
 
         assert result.valid is False
@@ -195,7 +187,7 @@ class TestSecretDetectionPolicy:
 
         result = policy.validate(
             action={"content": "-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQEA..."},
-            context={}
+            context={},
         )
 
         assert result.valid is False
@@ -206,26 +198,23 @@ class TestSecretDetectionPolicy:
         """Test policy allows obvious test secrets."""
         policy = SecretDetectionPolicy({"allow_test_secrets": True})
 
-        result = policy.validate(
-            action={"content": "password='test123'"},
-            context={}
-        )
+        result = policy.validate(action={"content": "password='test123'"}, context={})
 
         # Should allow since it contains 'test'
-        assert result.valid is True or all(v.severity < ViolationSeverity.HIGH for v in result.violations)
+        assert result.valid is True or all(
+            v.severity < ViolationSeverity.HIGH for v in result.violations
+        )
 
     def test_respects_excluded_paths(self):
         """Test policy respects excluded file paths."""
-        policy = SecretDetectionPolicy({
-            "excluded_paths": ["tests/", ".env.example"]
-        })
+        policy = SecretDetectionPolicy({"excluded_paths": ["tests/", ".env.example"]})
 
         result = policy.validate(
             action={
                 "file_path": "tests/fixtures/secrets.py",
-                "content": "api_key='sk_live_very_secret_key_12345678'"
+                "content": "api_key='sk_live_very_secret_key_12345678'",
             },
-            context={}
+            context={},
         )
 
         assert result.valid is True
@@ -259,11 +248,7 @@ class TestRateLimiterPolicy:
 
     def test_initialization_with_custom_limits(self):
         """Test policy initializes with custom limits."""
-        config = {
-            "limits": {
-                "my_operation": {"max_per_minute": 10}
-            }
-        }
+        config = {"limits": {"my_operation": {"max_per_minute": 10}}}
         policy = RateLimiterPolicy(config)
 
         assert "my_operation" in policy.limits
@@ -271,14 +256,11 @@ class TestRateLimiterPolicy:
 
     def test_allows_operation_under_limit(self):
         """Test policy allows operations under rate limit."""
-        policy = RateLimiterPolicy({
-            "limits": {"test_op": {"max_per_minute": 10}}
-        })
+        policy = RateLimiterPolicy({"limits": {"test_op": {"max_per_minute": 10}}})
 
         # First operation should be allowed
         result = policy.validate(
-            action={"operation": "test_op"},
-            context={"agent_id": "agent-123"}
+            action={"operation": "test_op"}, context={"agent_id": "agent-123"}
         )
 
         assert result.valid is True
@@ -286,15 +268,12 @@ class TestRateLimiterPolicy:
 
     def test_blocks_operation_over_limit(self):
         """Test policy blocks operations over rate limit."""
-        policy = RateLimiterPolicy({
-            "limits": {"test_op": {"max_per_second": 2}}
-        })
+        policy = RateLimiterPolicy({"limits": {"test_op": {"max_per_second": 2}}})
 
         # Make 3 rapid operations (should block 3rd)
         for i in range(3):
             result = policy.validate(
-                action={"operation": "test_op"},
-                context={"agent_id": "agent-123"}
+                action={"operation": "test_op"}, context={"agent_id": "agent-123"}
             )
 
             if i < 2:
@@ -306,41 +285,40 @@ class TestRateLimiterPolicy:
 
     def test_tracks_per_entity(self):
         """Test policy tracks limits per entity."""
-        policy = RateLimiterPolicy({
-            "limits": {"test_op": {"max_per_second": 2}},
-            "per_entity": True
-        })
+        policy = RateLimiterPolicy(
+            {"limits": {"test_op": {"max_per_second": 2}}, "per_entity": True}
+        )
 
         # Agent 1 makes 2 operations
         for _ in range(2):
             policy.validate(
-                action={"operation": "test_op"},
-                context={"agent_id": "agent-1"}
+                action={"operation": "test_op"}, context={"agent_id": "agent-1"}
             )
 
         # Agent 2 should still be allowed (separate limit)
         result = policy.validate(
-            action={"operation": "test_op"},
-            context={"agent_id": "agent-2"}
+            action={"operation": "test_op"}, context={"agent_id": "agent-2"}
         )
 
         assert result.valid is True
 
     def test_tracks_global_limit(self):
         """Test policy tracks global limits across entities."""
-        policy = RateLimiterPolicy({
-            "limits": {"test_op": {"max_per_second": 2}},
-            "per_entity": False
-        })
+        policy = RateLimiterPolicy(
+            {"limits": {"test_op": {"max_per_second": 2}}, "per_entity": False}
+        )
 
         # Different agents share same limit
-        policy.validate(action={"operation": "test_op"}, context={"agent_id": "agent-1"})
-        policy.validate(action={"operation": "test_op"}, context={"agent_id": "agent-2"})
+        policy.validate(
+            action={"operation": "test_op"}, context={"agent_id": "agent-1"}
+        )
+        policy.validate(
+            action={"operation": "test_op"}, context={"agent_id": "agent-2"}
+        )
 
         # Third operation should be blocked (global limit)
         result = policy.validate(
-            action={"operation": "test_op"},
-            context={"agent_id": "agent-3"}
+            action={"operation": "test_op"}, context={"agent_id": "agent-3"}
         )
 
         assert result.valid is False
@@ -349,19 +327,14 @@ class TestRateLimiterPolicy:
         """Test policy allows operations with no defined limits."""
         policy = RateLimiterPolicy()
 
-        result = policy.validate(
-            action={"operation": "unknown_operation"},
-            context={}
-        )
+        result = policy.validate(action={"operation": "unknown_operation"}, context={})
 
         assert result.valid is True
         assert len(result.violations) == 0
 
     def test_reset_limits(self):
         """Test resetting rate limits."""
-        policy = RateLimiterPolicy({
-            "limits": {"test_op": {"max_per_second": 1}}
-        })
+        policy = RateLimiterPolicy({"limits": {"test_op": {"max_per_second": 1}}})
 
         # Use up limit
         policy.validate(action={"operation": "test_op"}, context={})
@@ -375,12 +348,9 @@ class TestRateLimiterPolicy:
 
     def test_reset_specific_operation(self):
         """Test resetting specific operation limits."""
-        policy = RateLimiterPolicy({
-            "limits": {
-                "op1": {"max_per_second": 1},
-                "op2": {"max_per_second": 1}
-            }
-        })
+        policy = RateLimiterPolicy(
+            {"limits": {"op1": {"max_per_second": 1}, "op2": {"max_per_second": 1}}}
+        )
 
         # Use up both limits
         policy.validate(action={"operation": "op1"}, context={"agent_id": "agent-1"})
@@ -390,8 +360,12 @@ class TestRateLimiterPolicy:
         policy.reset_limits(operation="op1")
 
         # op1 should be allowed, op2 still blocked
-        result1 = policy.validate(action={"operation": "op1"}, context={"agent_id": "agent-1"})
-        result2 = policy.validate(action={"operation": "op2"}, context={"agent_id": "agent-1"})
+        result1 = policy.validate(
+            action={"operation": "op1"}, context={"agent_id": "agent-1"}
+        )
+        result2 = policy.validate(
+            action={"operation": "op2"}, context={"agent_id": "agent-1"}
+        )
 
         assert result1.valid is True
         assert result2.valid is False
@@ -406,9 +380,7 @@ class TestRateLimiterPolicy:
 
     def test_violation_includes_wait_time(self):
         """Test violation message includes wait time hint."""
-        policy = RateLimiterPolicy({
-            "limits": {"test_op": {"max_per_second": 1}}
-        })
+        policy = RateLimiterPolicy({"limits": {"test_op": {"max_per_second": 1}}})
 
         # Use up limit
         policy.validate(action={"operation": "test_op"}, context={})

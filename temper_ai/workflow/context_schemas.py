@@ -22,8 +22,9 @@ Example YAML::
           type: string
           description: "Approved, rejected, or needs revision"
 """
+
 import re
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Literal
 
 from pydantic import BaseModel, field_validator
 
@@ -31,8 +32,8 @@ from pydantic import BaseModel, field_validator
 # or <stage>.raw.<field> — with nested dot paths allowed
 _SOURCE_PATTERN = re.compile(
     r"^(workflow|[a-zA-Z_][a-zA-Z0-9_]*)"  # prefix: "workflow" or stage name
-    r"(\.(structured|raw))?"               # optional compartment
-    r"(\.[a-zA-Z_][a-zA-Z0-9_]*)+"         # at least one .field segment
+    r"(\.(structured|raw))?"  # optional compartment
+    r"(\.[a-zA-Z_][a-zA-Z0-9_]*)+"  # at least one .field segment
     r"$"
 )
 
@@ -52,7 +53,7 @@ class StageInputDeclaration(BaseModel):
     source: str
     required: bool = True
     default: Any = None
-    description: Optional[str] = None
+    description: str | None = None
 
     @field_validator("source")
     @classmethod
@@ -76,12 +77,12 @@ class StageOutputDeclaration(BaseModel):
     """
 
     type: Literal["string", "list", "dict", "number", "boolean", "any"] = "string"
-    description: Optional[str] = None
+    description: str | None = None
 
 
 def parse_stage_inputs(
-    raw: Optional[Dict[str, Any]],
-) -> Optional[Dict[str, StageInputDeclaration]]:
+    raw: dict[str, Any] | None,
+) -> dict[str, StageInputDeclaration] | None:
     """Parse raw YAML inputs into input declarations.
 
     Returns None if inputs are omitted/None (legacy passthrough mode).
@@ -101,16 +102,13 @@ def parse_stage_inputs(
         return None
 
     # Check if any entry uses the new source-ref format
-    has_source_refs = any(
-        isinstance(v, dict) and "source" in v
-        for v in raw.values()
-    )
+    has_source_refs = any(isinstance(v, dict) and "source" in v for v in raw.values())
 
     if not has_source_refs:
         # All entries are old documentation-only format — treat as passthrough
         return None
 
-    result: Dict[str, StageInputDeclaration] = {}
+    result: dict[str, StageInputDeclaration] = {}
     for name, value in raw.items():
         if isinstance(value, dict) and "source" in value:
             result[name] = StageInputDeclaration(**value)
@@ -120,8 +118,8 @@ def parse_stage_inputs(
 
 
 def parse_stage_outputs(
-    raw: Optional[Dict[str, Any]],
-) -> Dict[str, StageOutputDeclaration]:
+    raw: dict[str, Any] | None,
+) -> dict[str, StageOutputDeclaration]:
     """Parse raw YAML outputs into output declarations.
 
     Args:
@@ -133,7 +131,7 @@ def parse_stage_outputs(
     if not raw:
         return {}
 
-    result: Dict[str, StageOutputDeclaration] = {}
+    result: dict[str, StageOutputDeclaration] = {}
     for name, value in raw.items():
         if isinstance(value, dict):
             result[name] = StageOutputDeclaration(**value)

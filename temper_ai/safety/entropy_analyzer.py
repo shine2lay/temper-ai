@@ -3,8 +3,8 @@
 Provides pure entropy analysis functions reusable across multiple
 security policies and threat detection systems.
 """
+
 import math
-from typing import Dict
 
 
 class EntropyAnalyzer:
@@ -46,7 +46,7 @@ class EntropyAnalyzer:
             return 0.0
 
         # Count character frequencies
-        frequencies: Dict[str, int] = {}
+        frequencies: dict[str, int] = {}
         for char in text:
             frequencies[char] = frequencies.get(char, 0) + 1
 

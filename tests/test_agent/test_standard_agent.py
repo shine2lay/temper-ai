@@ -1,19 +1,22 @@
 """Tests for StandardAgent."""
+
 from unittest.mock import Mock, patch
 
 import pytest
 
 from temper_ai.agent.base_agent import AgentResponse, ExecutionContext
+from temper_ai.agent.standard_agent import StandardAgent
+from temper_ai.llm._tool_execution import (
+    validate_tool_calls_input as _validate_tool_calls_input,
+)
 from temper_ai.llm.providers import LLMResponse
-from temper_ai.shared.utils.exceptions import LLMError
 from temper_ai.llm.response_parser import (
     extract_final_answer,
     extract_reasoning,
     parse_tool_calls,
 )
-from temper_ai.agent.standard_agent import StandardAgent
 from temper_ai.llm.service import LLMService
-from temper_ai.llm._tool_execution import validate_tool_calls_input as _validate_tool_calls_input
+from temper_ai.shared.utils.exceptions import LLMError
 from temper_ai.tools.base import ToolResult
 from temper_ai.tools.executor import ToolExecutor
 
@@ -21,20 +24,20 @@ from temper_ai.tools.executor import ToolExecutor
 # Tests for StandardAgent class
 def test_standard_agent_initialization(minimal_agent_config):
     """Test StandardAgent initialization."""
-    with patch('temper_ai.agent.base_agent.ToolRegistry'):
+    with patch("temper_ai.agent.base_agent.ToolRegistry"):
         agent = StandardAgent(minimal_agent_config)
 
         assert agent.name == "test_agent"
         assert agent.description == "Test agent for unit tests"
         assert agent.version == "1.0"
         assert agent.config == minimal_agent_config
-        assert hasattr(agent, 'llm_service')
+        assert hasattr(agent, "llm_service")
         assert isinstance(agent.llm_service, LLMService)
 
 
 def test_standard_agent_get_capabilities(minimal_agent_config):
     """Test StandardAgent get_capabilities."""
-    with patch('temper_ai.agent.base_agent.ToolRegistry') as mock_registry:
+    with patch("temper_ai.agent.base_agent.ToolRegistry") as mock_registry:
         mock_registry.return_value.list_tools.return_value = []
         agent = StandardAgent(minimal_agent_config)
 
@@ -50,7 +53,7 @@ def test_standard_agent_get_capabilities(minimal_agent_config):
 
 def test_standard_agent_validate_config(minimal_agent_config):
     """Test StandardAgent config validation."""
-    with patch('temper_ai.agent.base_agent.ToolRegistry'):
+    with patch("temper_ai.agent.base_agent.ToolRegistry"):
         agent = StandardAgent(minimal_agent_config)
 
         # Should pass validation
@@ -59,7 +62,7 @@ def test_standard_agent_validate_config(minimal_agent_config):
 
 def test_standard_agent_execute_simple_response(minimal_agent_config):
     """Test StandardAgent execute with simple LLM response (no tools)."""
-    with patch('temper_ai.agent.base_agent.ToolRegistry') as mock_registry:
+    with patch("temper_ai.agent.base_agent.ToolRegistry") as mock_registry:
         mock_registry.return_value.list_tools.return_value = []
 
         agent = StandardAgent(minimal_agent_config)
@@ -89,7 +92,7 @@ def test_standard_agent_execute_simple_response(minimal_agent_config):
 
 def test_standard_agent_execute_with_tool_calls(minimal_agent_config):
     """Test StandardAgent execute with tool calling loop."""
-    with patch('temper_ai.agent.base_agent.ToolRegistry') as mock_registry:
+    with patch("temper_ai.agent.base_agent.ToolRegistry") as mock_registry:
         # Setup mock tool
         mock_tool = Mock()
         mock_tool.name = "calculator"
@@ -97,12 +100,10 @@ def test_standard_agent_execute_with_tool_calls(minimal_agent_config):
         mock_tool.get_parameters_schema.return_value = {
             "type": "object",
             "properties": {"expression": {"type": "string"}},
-            "required": ["expression"]
+            "required": ["expression"],
         }
         mock_tool.execute.return_value = ToolResult(
-            success=True,
-            result="42",
-            error=None
+            success=True, result="42", error=None
         )
 
         mock_registry_instance = Mock()
@@ -138,7 +139,9 @@ def test_standard_agent_execute_with_tool_calls(minimal_agent_config):
         mock_executor.execute.return_value = ToolResult(success=True, result="42")
 
         # Execute
-        response = agent.execute({"input": "What is 2+2?", "tool_executor": mock_executor})
+        response = agent.execute(
+            {"input": "What is 2+2?", "tool_executor": mock_executor}
+        )
 
         # Verify response
         assert isinstance(response, AgentResponse)
@@ -153,12 +156,15 @@ def test_standard_agent_execute_with_tool_calls(minimal_agent_config):
 
 def test_standard_agent_execute_tool_not_found(minimal_agent_config):
     """Test StandardAgent handles missing tool gracefully."""
-    with patch('temper_ai.agent.base_agent.ToolRegistry') as mock_registry:
+    with patch("temper_ai.agent.base_agent.ToolRegistry") as mock_registry:
         # Provide a dummy tool so LLMService enters tool-calling mode
         mock_tool = Mock()
         mock_tool.name = "dummy"
         mock_tool.description = "Dummy tool"
-        mock_tool.get_parameters_schema.return_value = {"type": "object", "properties": {}}
+        mock_tool.get_parameters_schema.return_value = {
+            "type": "object",
+            "properties": {},
+        }
 
         mock_registry_instance = Mock()
         mock_registry_instance.list_tools.return_value = [mock_tool]
@@ -194,7 +200,9 @@ def test_standard_agent_execute_tool_not_found(minimal_agent_config):
             success=False, result=None, error="Tool 'nonexistent_tool' not found"
         )
 
-        response = agent.execute({"input": "Use missing tool", "tool_executor": mock_executor})
+        response = agent.execute(
+            {"input": "Use missing tool", "tool_executor": mock_executor}
+        )
 
         assert isinstance(response, AgentResponse)
         assert len(response.tool_calls) >= 1, "Should record the failed tool call"
@@ -206,7 +214,7 @@ def test_standard_agent_execute_tool_not_found(minimal_agent_config):
 
 def test_standard_agent_execute_llm_error(minimal_agent_config):
     """Test StandardAgent handles LLM errors."""
-    with patch('temper_ai.agent.base_agent.ToolRegistry') as mock_registry:
+    with patch("temper_ai.agent.base_agent.ToolRegistry") as mock_registry:
         mock_registry.return_value.list_tools.return_value = []
 
         agent = StandardAgent(minimal_agent_config)
@@ -220,25 +228,28 @@ def test_standard_agent_execute_llm_error(minimal_agent_config):
         response = agent.execute({"input": "Hello"})
 
         # Should return error response
-        assert isinstance(response, AgentResponse), \
-            f"Expected AgentResponse, got {type(response)}"
+        assert isinstance(
+            response, AgentResponse
+        ), f"Expected AgentResponse, got {type(response)}"
         assert response.error is not None, "Error should be set for LLM failures"
         assert isinstance(response.error, str), "Error should be string message"
-        assert "LLM call failed" in response.error, \
-            f"Error should mention LLM failure, got: {response.error}"
-        assert "Connection failed" in response.error, \
-            f"Error should include root cause, got: {response.error}"
+        assert (
+            "LLM call failed" in response.error
+        ), f"Error should mention LLM failure, got: {response.error}"
+        assert (
+            "Connection failed" in response.error
+        ), f"Error should include root cause, got: {response.error}"
 
 
 def test_standard_agent_execute_max_iterations(minimal_agent_config):
     """Test StandardAgent respects max tool call iterations."""
-    with patch('temper_ai.agent.base_agent.ToolRegistry') as mock_registry:
+    with patch("temper_ai.agent.base_agent.ToolRegistry") as mock_registry:
         mock_tool = Mock()
         mock_tool.name = "calculator"
         mock_tool.description = "Calculator tool"
         mock_tool.get_parameters_schema.return_value = {
             "type": "object",
-            "properties": {}
+            "properties": {},
         }
         mock_tool.get_result_schema.return_value = None
         mock_tool.execute.return_value = ToolResult(success=True, result="42")
@@ -267,13 +278,18 @@ def test_standard_agent_execute_max_iterations(minimal_agent_config):
         response = agent.execute({"input": "Test"})
 
         # Should stop after max iterations
-        assert isinstance(response, AgentResponse), \
-            f"Expected AgentResponse, got {type(response)}"
-        assert response.error is not None, "Should have error when max iterations reached"
-        assert "Max tool calling iterations" in response.error, \
-            f"Error should mention max iterations, got: {response.error}"
-        assert len(response.tool_calls) >= 1, \
-            f"Should record tool calls made before stopping, got {len(response.tool_calls)}"
+        assert isinstance(
+            response, AgentResponse
+        ), f"Expected AgentResponse, got {type(response)}"
+        assert (
+            response.error is not None
+        ), "Should have error when max iterations reached"
+        assert (
+            "Max tool calling iterations" in response.error
+        ), f"Error should mention max iterations, got: {response.error}"
+        assert (
+            len(response.tool_calls) >= 1
+        ), f"Should record tool calls made before stopping, got {len(response.tool_calls)}"
 
 
 def test_extract_reasoning():
@@ -317,10 +333,10 @@ def test_parse_tool_calls():
     assert calls[0]["parameters"]["expression"] == "2+2"
 
     # Multiple tool calls
-    text = '''
+    text = """
 <tool_call>{"name": "tool1", "parameters": {}}</tool_call>
 <tool_call>{"name": "tool2", "parameters": {"arg": "value"}}</tool_call>
-    '''
+    """
     calls = parse_tool_calls(text)
     assert len(calls) == 2
     assert calls[0]["name"] == "tool1"
@@ -332,14 +348,14 @@ def test_parse_tool_calls():
     assert len(calls) == 0
 
     # Invalid JSON in tool call
-    text = '<tool_call>invalid json</tool_call>'
+    text = "<tool_call>invalid json</tool_call>"
     calls = parse_tool_calls(text)
     assert len(calls) == 0  # Should skip invalid JSON
 
 
 def test_standard_agent_execute_with_context(minimal_agent_config):
     """Test StandardAgent execute propagates execution context."""
-    with patch('temper_ai.agent.base_agent.ToolRegistry') as mock_registry:
+    with patch("temper_ai.agent.base_agent.ToolRegistry") as mock_registry:
         mock_registry.return_value.list_tools.return_value = []
 
         agent = StandardAgent(minimal_agent_config)
@@ -357,9 +373,7 @@ def test_standard_agent_execute_with_context(minimal_agent_config):
 
         # Execute with context
         context = ExecutionContext(
-            workflow_id="wf-001",
-            stage_id="stage-001",
-            agent_id="agent-001"
+            workflow_id="wf-001", stage_id="stage-001", agent_id="agent-001"
         )
         response = agent.execute({"input": "Test"}, context=context)
 
@@ -380,7 +394,7 @@ class TestInputValidation:
 
     def test_execute_rejects_none_input_data(self, minimal_agent_config):
         """Test that execute() rejects None input_data."""
-        with patch('temper_ai.agent.base_agent.ToolRegistry'):
+        with patch("temper_ai.agent.base_agent.ToolRegistry"):
             agent = StandardAgent(minimal_agent_config)
 
             with pytest.raises(ValueError) as exc_info:
@@ -390,7 +404,7 @@ class TestInputValidation:
 
     def test_execute_rejects_non_dict_input_data(self, minimal_agent_config):
         """Test that execute() rejects non-dict input_data."""
-        with patch('temper_ai.agent.base_agent.ToolRegistry'):
+        with patch("temper_ai.agent.base_agent.ToolRegistry"):
             agent = StandardAgent(minimal_agent_config)
 
             with pytest.raises(TypeError) as exc_info:
@@ -401,7 +415,7 @@ class TestInputValidation:
 
     def test_execute_rejects_invalid_context(self, minimal_agent_config):
         """Test that execute() rejects invalid context."""
-        with patch('temper_ai.agent.base_agent.ToolRegistry'):
+        with patch("temper_ai.agent.base_agent.ToolRegistry"):
             agent = StandardAgent(minimal_agent_config)
 
             with pytest.raises(TypeError) as exc_info:
@@ -451,18 +465,22 @@ class TestInputValidation:
 
         assert "tool_call 'name' must be a string" in str(exc_info.value)
 
-    def test_execute_single_tool_rejects_non_dict_parameters(self, minimal_agent_config):
+    def test_execute_single_tool_rejects_non_dict_parameters(
+        self, minimal_agent_config
+    ):
         """Test that execute_single_tool rejects non-dict 'parameters'."""
         from temper_ai.llm._tool_execution import execute_single_tool
 
         with pytest.raises(TypeError) as exc_info:
-            execute_single_tool({"name": "test_tool", "parameters": "not a dict"}, None, None, None)
+            execute_single_tool(
+                {"name": "test_tool", "parameters": "not a dict"}, None, None, None
+            )
 
         assert "tool_call 'parameters' must be a dictionary" in str(exc_info.value)
 
     def test_execute_accepts_valid_input(self, minimal_agent_config):
         """Test that execute() accepts valid input."""
-        with patch('temper_ai.agent.base_agent.ToolRegistry'):
+        with patch("temper_ai.agent.base_agent.ToolRegistry"):
             agent = StandardAgent(minimal_agent_config)
 
             # Mock LLM response
@@ -470,7 +488,7 @@ class TestInputValidation:
                 content="Test response",
                 model="test-model",
                 provider="test-provider",
-                total_tokens=10
+                total_tokens=10,
             )
             agent.llm = Mock()
             agent.llm.complete.return_value = mock_response
@@ -485,7 +503,9 @@ class TestInputValidation:
         from temper_ai.llm._tool_execution import execute_single_tool
 
         # Valid tool call with no executor should return security error
-        result = execute_single_tool({"name": "unknown_tool", "parameters": {}}, None, None, None)
+        result = execute_single_tool(
+            {"name": "unknown_tool", "parameters": {}}, None, None, None
+        )
         assert "error" in result
         assert result["success"] is False
 
@@ -493,12 +513,12 @@ class TestInputValidation:
 def test_tool_loading_with_configuration():
     """Test that tools can be loaded with configuration passed to constructor."""
     from temper_ai.storage.schemas.agent_config import (
-    AgentConfig,
-    AgentConfigInner,
-    ErrorHandlingConfig,
-    InferenceConfig,
-    PromptConfig,
-)
+        AgentConfig,
+        AgentConfigInner,
+        ErrorHandlingConfig,
+        InferenceConfig,
+        PromptConfig,
+    )
 
     # Create minimal config with tools
     config = AgentConfig(
@@ -507,21 +527,18 @@ def test_tool_loading_with_configuration():
             description="Test agent with tool config",
             version="1.0",
             prompt=PromptConfig(inline="You are a helpful assistant."),
-            inference=InferenceConfig(
-                provider="ollama",
-                model="llama2"
-            ),
+            inference=InferenceConfig(provider="ollama", model="llama2"),
             error_handling=ErrorHandlingConfig(
-                retry_strategy="ExponentialBackoff",
-                fallback="GracefulDegradation"
+                retry_strategy="ExponentialBackoff", fallback="GracefulDegradation"
             ),
-            tools=["Calculator"]
+            tools=["Calculator"],
         )
     )
 
-    with patch('temper_ai.agent.base_agent.ToolRegistry') as mock_registry_class:
+    with patch("temper_ai.agent.base_agent.ToolRegistry") as mock_registry_class:
         # Create a real registry instance
         from temper_ai.tools.registry import ToolRegistry
+
         real_registry = ToolRegistry(auto_discover=False)
         mock_registry_class.return_value = real_registry
 
@@ -531,11 +548,12 @@ def test_tool_loading_with_configuration():
         # Verify Calculator was loaded
         calc = agent.tool_registry.get("Calculator")
         assert calc is not None, "Calculator should be loaded from tool registry"
-        assert type(calc).__name__ == 'Calculator', \
-            f"Expected Calculator tool, got {type(calc).__name__}"
-        assert hasattr(calc, 'execute'), "Calculator must have execute method"
+        assert (
+            type(calc).__name__ == "Calculator"
+        ), f"Expected Calculator tool, got {type(calc).__name__}"
+        assert hasattr(calc, "execute"), "Calculator must have execute method"
         # Verify config is set (even if empty)
-        assert hasattr(calc, 'config')
+        assert hasattr(calc, "config")
         assert isinstance(calc.config, dict)
 
 
@@ -544,15 +562,16 @@ def test_tool_loading_with_custom_config():
     from pydantic import BaseModel
 
     from temper_ai.storage.schemas.agent_config import (
-    AgentConfig,
-    AgentConfigInner,
-    ErrorHandlingConfig,
-    InferenceConfig,
-    PromptConfig,
-)
+        AgentConfig,
+        AgentConfigInner,
+        ErrorHandlingConfig,
+        InferenceConfig,
+        PromptConfig,
+    )
 
     class ToolReference(BaseModel):
         """Tool reference with config."""
+
         name: str
         config: dict = {}
 
@@ -563,23 +582,20 @@ def test_tool_loading_with_custom_config():
             description="Test agent",
             version="1.0",
             prompt=PromptConfig(inline="You are a helpful assistant."),
-            inference=InferenceConfig(
-                provider="ollama",
-                model="llama2"
-            ),
+            inference=InferenceConfig(provider="ollama", model="llama2"),
             error_handling=ErrorHandlingConfig(
-                retry_strategy="ExponentialBackoff",
-                fallback="GracefulDegradation"
+                retry_strategy="ExponentialBackoff", fallback="GracefulDegradation"
             ),
-            tools=[]  # Will be patched
+            tools=[],  # Will be patched
         )
     )
 
     # Manually create ToolReference with custom config
     tool_ref = ToolReference(name="Calculator", config={"precision": 10})
 
-    with patch('temper_ai.agent.base_agent.ToolRegistry') as mock_registry_class:
+    with patch("temper_ai.agent.base_agent.ToolRegistry") as mock_registry_class:
         from temper_ai.tools.registry import ToolRegistry
+
         real_registry = ToolRegistry(auto_discover=False)
         mock_registry_class.return_value = real_registry
 
@@ -591,12 +607,15 @@ def test_tool_loading_with_custom_config():
         # Manually load tool with config using the method
         # (simulating what would happen if tools list had ToolReference objects)
         from temper_ai.agent.base_agent import load_tools_from_config
+
         load_tools_from_config(agent.tool_registry, [tool_ref])
 
         # Verify Calculator was loaded with custom config
         calc = agent.tool_registry.get("Calculator")
         assert calc is not None, "Calculator should be loaded from tool registry"
-        assert type(calc).__name__ == 'Calculator', \
-            f"Expected Calculator tool, got {type(calc).__name__}"
-        assert calc.config == {"precision": 10}, \
-            f"Expected config with precision=10, got {calc.config}"
+        assert (
+            type(calc).__name__ == "Calculator"
+        ), f"Expected Calculator tool, got {type(calc).__name__}"
+        assert calc.config == {
+            "precision": 10
+        }, f"Expected config with precision=10, got {calc.config}"

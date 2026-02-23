@@ -1,4 +1,5 @@
 """Observability backend implementations."""
+
 from typing import Any
 
 from .prometheus_backend import PrometheusObservabilityBackend

@@ -8,16 +8,20 @@ StandardAgent is the default agent type that executes a multi-turn loop:
 5. Inject tool results back into prompt
 6. Repeat until no more tool calls or max iterations reached
 """
+
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from temper_ai.storage.schemas import AgentConfig
 
 from temper_ai.agent.base_agent import AgentResponse, BaseAgent, ExecutionContext
-from temper_ai.agent.utils.constants import DEFAULT_MAX_DIALOGUE_CONTEXT_CHARS, PROMPT_PREVIEW_LENGTH
+from temper_ai.agent.utils.constants import (
+    DEFAULT_MAX_DIALOGUE_CONTEXT_CHARS,
+    PROMPT_PREVIEW_LENGTH,
+)
 from temper_ai.llm.prompts.validation import PromptRenderError, _is_safe_template_value
 from temper_ai.llm.service import LLMRunResult, LLMService
 from temper_ai.memory._schemas import MemoryScope
@@ -33,9 +37,35 @@ from temper_ai.shared.utils.exceptions import (
 logger = logging.getLogger(__name__)
 
 # Keys excluded from input context injection (handled by interaction mode logic)
-_MODE_CONTEXT_KEYS = frozenset({
-    "interaction_mode", "mode_instruction", "debate_framing",
-})
+_MODE_CONTEXT_KEYS = frozenset(
+    {
+        "interaction_mode",
+        "mode_instruction",
+        "debate_framing",
+    }
+)
+
+
+def _build_messages_from_history(
+    input_data: dict[str, Any],
+    current_prompt: str,
+) -> list | None:
+    """Build multi-turn messages list from conversation history.
+
+    Returns None when no history is present (single-turn mode).
+    """
+    history = input_data.get("_conversation_history")
+    if history is None or len(history) == 0:
+        return None
+    messages: list = history.to_message_list()
+    messages.append({"role": "user", "content": current_prompt})
+    return messages
+
+
+def _extract_memory_query(input_data: dict[str, Any]) -> str:
+    """Build a query string from input_data string values (truncated to limit)."""
+    parts = [str(v) for v in input_data.values() if isinstance(v, str)]
+    return " ".join(parts)[:MEMORY_QUERY_MAX_CHARS]
 
 
 class StandardAgent(BaseAgent):
@@ -61,20 +91,22 @@ class StandardAgent(BaseAgent):
             inference_config=config.agent.inference,
         )
 
-        self._memory_service: Optional[MemoryService] = None
+        self._memory_service: MemoryService | None = None
 
         self.validate_config()
 
     def _run(
         self,
-        input_data: Dict[str, Any],
-        context: Optional[ExecutionContext],
+        input_data: dict[str, Any],
+        context: ExecutionContext | None,
         start_time: float,
     ) -> AgentResponse:
         """Execute multi-turn tool-calling loop via LLMService."""
         from temper_ai.agent._r0_pipeline_helpers import (
-            apply_context_management, apply_guardrails,
-            apply_reasoning, validate_and_retry_output,
+            apply_context_management,
+            apply_guardrails,
+            apply_reasoning,
+            validate_and_retry_output,
         )
 
         prompt = self._prepare_prompt(input_data, context)
@@ -83,14 +115,21 @@ class StandardAgent(BaseAgent):
         if self.config.agent.context_management.enabled:
             prompt = apply_context_management(self.config, prompt)
         kwargs = self._llm_kwargs(prompt, start_time)
-        messages = self._build_messages_from_history(input_data, prompt)
+        messages = _build_messages_from_history(input_data, prompt)
         if messages is not None:
             kwargs["messages"] = messages
         result = self.llm_service.run(**kwargs)
-        if self.config.agent.output_schema and self.config.agent.output_schema.json_schema:
-            result = validate_and_retry_output(self.llm_service, self.config, result, prompt, kwargs)
+        if (
+            self.config.agent.output_schema
+            and self.config.agent.output_schema.json_schema
+        ):
+            result = validate_and_retry_output(
+                self.llm_service, self.config, result, prompt, kwargs
+            )
         if self.config.agent.output_guardrails.enabled:
-            result = apply_guardrails(self.llm_service, self.config, result, prompt, kwargs)
+            result = apply_guardrails(
+                self.llm_service, self.config, result, prompt, kwargs
+            )
         response = self._convert_result(result, start_time)
         response.metadata["_rendered_prompt"] = prompt
         response.metadata["_user_message"] = result.user_message
@@ -99,14 +138,16 @@ class StandardAgent(BaseAgent):
 
     async def _arun(
         self,
-        input_data: Dict[str, Any],
-        context: Optional[ExecutionContext],
+        input_data: dict[str, Any],
+        context: ExecutionContext | None,
         start_time: float,
     ) -> AgentResponse:
         """Async multi-turn tool-calling loop via LLMService."""
         from temper_ai.agent._r0_pipeline_helpers import (
-            aapply_guardrails, apply_context_management,
-            apply_reasoning, avalidate_and_retry_output,
+            aapply_guardrails,
+            apply_context_management,
+            apply_reasoning,
+            avalidate_and_retry_output,
         )
 
         prompt = self._prepare_prompt(input_data, context)
@@ -115,44 +156,40 @@ class StandardAgent(BaseAgent):
         if self.config.agent.context_management.enabled:
             prompt = apply_context_management(self.config, prompt)
         kwargs = self._llm_kwargs(prompt, start_time)
-        messages = self._build_messages_from_history(input_data, prompt)
+        messages = _build_messages_from_history(input_data, prompt)
         if messages is not None:
             kwargs["messages"] = messages
         result = await self.llm_service.arun(**kwargs)
-        if self.config.agent.output_schema and self.config.agent.output_schema.json_schema:
-            result = await avalidate_and_retry_output(self.llm_service, self.config, result, prompt, kwargs)
+        if (
+            self.config.agent.output_schema
+            and self.config.agent.output_schema.json_schema
+        ):
+            result = await avalidate_and_retry_output(
+                self.llm_service, self.config, result, prompt, kwargs
+            )
         if self.config.agent.output_guardrails.enabled:
-            result = await aapply_guardrails(self.llm_service, self.config, result, prompt, kwargs)
+            result = await aapply_guardrails(
+                self.llm_service, self.config, result, prompt, kwargs
+            )
         response = self._convert_result(result, start_time)
         response.metadata["_rendered_prompt"] = prompt
         response.metadata["_user_message"] = result.user_message
         response.metadata["_assistant_message"] = result.assistant_message
         return response
 
-    @staticmethod
-    def _build_messages_from_history(
-        input_data: Dict[str, Any], current_prompt: str,
-    ) -> Optional[list]:
-        """Build multi-turn messages list from conversation history.
-
-        Returns None when no history is present (single-turn mode).
-        """
-        history = input_data.get("_conversation_history")
-        if history is None or len(history) == 0:
-            return None
-        messages: list = history.to_message_list()
-        messages.append({"role": "user", "content": current_prompt})
-        return messages
-
-    def _prepare_prompt(self, input_data: Dict[str, Any], context: Optional[ExecutionContext]) -> str:
+    def _prepare_prompt(
+        self, input_data: dict[str, Any], context: ExecutionContext | None
+    ) -> str:
         """Render prompt, store as system prompt, and log preview."""
         prompt = self._build_prompt(input_data, context)
         self._system_prompt = prompt
-        preview = prompt[-PROMPT_PREVIEW_LENGTH:].replace('\n', ' ').strip()
-        logger.info("[%s] Prompt ready (%d chars) ...%s", self.name, len(prompt), preview)
+        preview = prompt[-PROMPT_PREVIEW_LENGTH:].replace("\n", " ").strip()
+        logger.info(
+            "[%s] Prompt ready (%d chars) ...%s", self.name, len(prompt), preview
+        )
         return prompt
 
-    def _llm_kwargs(self, prompt: str, start_time: float) -> Dict[str, Any]:
+    def _llm_kwargs(self, prompt: str, start_time: float) -> dict[str, Any]:
         """Build kwargs shared between sync run() and async arun()."""
         tools = list(self.tool_registry.get_all_tools().values())
         return dict(
@@ -168,9 +205,7 @@ class StandardAgent(BaseAgent):
             start_time=start_time,
         )
 
-    def _on_error(
-        self, error: Exception, start_time: float
-    ) -> Optional[AgentResponse]:
+    def _on_error(self, error: Exception, start_time: float) -> AgentResponse | None:
         """Handle expected execution errors with accumulated metrics."""
         if isinstance(error, MaxIterationsError):
             response = self._build_response(
@@ -184,9 +219,18 @@ class StandardAgent(BaseAgent):
             )
             response.metadata = {"iterations": error.iterations}
             return response
-        if isinstance(error, (LLMError, ToolExecutionError, PromptRenderError,
-                              ConfigValidationError, RuntimeError, ValueError,
-                              TimeoutError)):
+        if isinstance(
+            error,
+            (
+                LLMError,
+                ToolExecutionError,
+                PromptRenderError,
+                ConfigValidationError,
+                RuntimeError,
+                ValueError,
+                TimeoutError,
+            ),
+        ):
             return self._build_error_response(error, start_time)
         return None
 
@@ -202,17 +246,26 @@ class StandardAgent(BaseAgent):
             error=result.error,
         )
 
-    def _inject_dialogue_context(self, template: str, input_data: Dict[str, Any]) -> str:
+    def _inject_dialogue_context(
+        self, template: str, input_data: dict[str, Any]
+    ) -> str:
         """Auto-inject dialogue history and stage agent outputs."""
-        if not getattr(self.config.agent, 'dialogue_aware', True):
+        if not getattr(self.config.agent, "dialogue_aware", True):
             return template
 
         from temper_ai.llm.prompts.dialogue_formatter import (
             format_dialogue_history,
             format_stage_agent_outputs,
         )
-        filtered_input = {k: v for k, v in input_data.items() if _is_safe_template_value(v)}
-        max_chars = getattr(self.config.agent, 'max_dialogue_context_chars', DEFAULT_MAX_DIALOGUE_CONTEXT_CHARS)
+
+        filtered_input = {
+            k: v for k, v in input_data.items() if _is_safe_template_value(v)
+        }
+        max_chars = getattr(
+            self.config.agent,
+            "max_dialogue_context_chars",
+            DEFAULT_MAX_DIALOGUE_CONTEXT_CHARS,
+        )
 
         dialogue_history = filtered_input.get("dialogue_history")
         if dialogue_history and isinstance(dialogue_history, list):
@@ -229,9 +282,7 @@ class StandardAgent(BaseAgent):
         return template
 
     def _build_prompt(
-        self,
-        input_data: Dict[str, Any],
-        context: Optional[ExecutionContext] = None
+        self, input_data: dict[str, Any], context: ExecutionContext | None = None
     ) -> str:
         """Render prompt template with input data.
 
@@ -254,7 +305,9 @@ class StandardAgent(BaseAgent):
             self._memory_service = MemoryService(provider_name=mem_cfg.provider)
         return self._memory_service
 
-    def _build_memory_scope(self, context: Optional[ExecutionContext] = None) -> MemoryScope:
+    def _build_memory_scope(
+        self, context: ExecutionContext | None = None
+    ) -> MemoryScope:
         """Build a MemoryScope from agent config and execution context."""
         mem_cfg = self.config.agent.memory
         workflow_name = ""
@@ -281,8 +334,8 @@ class StandardAgent(BaseAgent):
     def _inject_memory_context(
         self,
         template: str,
-        input_data: Dict[str, Any],
-        context: Optional[ExecutionContext] = None,
+        input_data: dict[str, Any],
+        context: ExecutionContext | None = None,
     ) -> str:
         """Inject relevant memories into the prompt template.
 
@@ -295,20 +348,23 @@ class StandardAgent(BaseAgent):
             mem_cfg = self.config.agent.memory
             svc = self._get_memory_service()
             scope = self._build_memory_scope(context)
-            query = self._extract_memory_query(input_data)
+            query = _extract_memory_query(input_data)
             shared_ns = getattr(mem_cfg, "shared_namespace", None)
 
             if shared_ns:
                 shared_scope = svc.build_shared_scope(scope, shared_ns)
                 memory_text = svc.retrieve_with_shared(
-                    scope, shared_scope, query,
+                    scope,
+                    shared_scope,
+                    query,
                     retrieval_k=mem_cfg.retrieval_k,
                     relevance_threshold=mem_cfg.relevance_threshold,
                     decay_factor=mem_cfg.decay_factor,
                 )
             else:
                 memory_text = svc.retrieve_context(
-                    scope, query,
+                    scope,
+                    query,
                     retrieval_k=mem_cfg.retrieval_k,
                     relevance_threshold=mem_cfg.relevance_threshold,
                     decay_factor=mem_cfg.decay_factor,
@@ -320,20 +376,41 @@ class StandardAgent(BaseAgent):
             # Retrieve procedural memories (learned best practices)
             try:
                 procedural_text = svc.retrieve_procedural_context(
-                    scope, query,
+                    scope,
+                    query,
                     retrieval_k=mem_cfg.retrieval_k,
                     relevance_threshold=mem_cfg.relevance_threshold,
                 )
                 if procedural_text:
                     template += "\n\n" + procedural_text
-            except (ValueError, TypeError, KeyError, RuntimeError, OSError, ImportError) as exc:
-                logger.warning("Procedural memory injection failed for agent %s: %s", self.name, exc)
-        except (ValueError, TypeError, KeyError, RuntimeError, OSError, ImportError) as exc:
+            except (
+                ValueError,
+                TypeError,
+                KeyError,
+                RuntimeError,
+                OSError,
+                ImportError,
+            ) as exc:
+                logger.warning(
+                    "Procedural memory injection failed for agent %s: %s",
+                    self.name,
+                    exc,
+                )
+        except (
+            ValueError,
+            TypeError,
+            KeyError,
+            RuntimeError,
+            OSError,
+            ImportError,
+        ) as exc:
             logger.warning("Memory injection failed for agent %s: %s", self.name, exc)
 
         return template
 
-    def _inject_persistent_context(self, prompt: str, context: Optional[ExecutionContext]) -> str:
+    def _inject_persistent_context(
+        self, prompt: str, context: ExecutionContext | None
+    ) -> str:
         """Inject persistent agent context into prompt (M9)."""
         if not getattr(self.config.agent, "persistent", False):
             return prompt
@@ -345,7 +422,7 @@ class StandardAgent(BaseAgent):
             inject_project_goal_context,
         )
 
-        ctx_dict: Dict[str, Any] = {}
+        ctx_dict: dict[str, Any] = {}
         if context:
             ctx_dict = {"workflow_id": context.workflow_id}
 
@@ -374,8 +451,8 @@ class StandardAgent(BaseAgent):
         if opt_cfg is None or not getattr(opt_cfg, "enabled", False):
             return template
         try:
-            from temper_ai.optimization.dspy.prompt_adapter import DSPyPromptAdapter
             from temper_ai.optimization.dspy.program_store import CompiledProgramStore
+            from temper_ai.optimization.dspy.prompt_adapter import DSPyPromptAdapter
 
             store = CompiledProgramStore(store_dir=opt_cfg.program_store_dir)
             adapter = DSPyPromptAdapter(store=store)
@@ -391,13 +468,8 @@ class StandardAgent(BaseAgent):
             logger.warning("Prompt optimization injection failed: %s", exc)
             return template
 
-    def _extract_memory_query(self, input_data: Dict[str, Any]) -> str:
-        """Build a query string from input_data string values (truncated to 500 chars)."""
-        parts = [str(v) for v in input_data.values() if isinstance(v, str)]
-        return " ".join(parts)[:MEMORY_QUERY_MAX_CHARS]
-
     def _on_after_run(self, result: AgentResponse) -> AgentResponse:
-        """Store execution output as episodic memory after run."""
+        """Store execution output as episodic memory and publish to cross-pollination namespace."""
         if self.config.agent.memory.enabled:
             try:
                 mem_cfg = self.config.agent.memory
@@ -413,7 +485,14 @@ class StandardAgent(BaseAgent):
                     )
                     self._maybe_extract_procedural(svc, scope, output_text, mem_cfg)
                     self._maybe_store_shared(svc, scope, output_text, mem_cfg)
-            except (ValueError, TypeError, KeyError, RuntimeError, OSError, ImportError) as exc:
+            except (
+                ValueError,
+                TypeError,
+                KeyError,
+                RuntimeError,
+                OSError,
+                ImportError,
+            ) as exc:
                 logger.warning("Memory storage failed for agent %s: %s", self.name, exc)
 
         self._maybe_publish_persistent_output(result)
@@ -441,8 +520,11 @@ class StandardAgent(BaseAgent):
             logger.debug("Failed to publish agent output", exc_info=True)
 
     def _maybe_extract_procedural(
-        self, svc: MemoryService, scope: MemoryScope,
-        output_text: str, mem_cfg: Any,
+        self,
+        svc: MemoryService,
+        scope: MemoryScope,
+        output_text: str,
+        mem_cfg: Any,
     ) -> None:
         """Auto-extract procedural patterns when configured."""
         if not getattr(mem_cfg, "auto_extract_procedural", False):
@@ -454,15 +536,21 @@ class StandardAgent(BaseAgent):
             patterns = extract_procedural_patterns(output_text, llm_fn)
             for pattern in patterns:
                 svc.store_procedural(
-                    scope, pattern,
+                    scope,
+                    pattern,
                     metadata={"agent_name": self.name, "source": "auto_extract"},
                 )
         except (ValueError, TypeError, RuntimeError, OSError, ImportError) as exc:
-            logger.warning("Procedural extraction failed for agent %s: %s", self.name, exc)
+            logger.warning(
+                "Procedural extraction failed for agent %s: %s", self.name, exc
+            )
 
     def _maybe_store_shared(
-        self, svc: MemoryService, scope: MemoryScope,
-        output_text: str, mem_cfg: Any,
+        self,
+        svc: MemoryService,
+        scope: MemoryScope,
+        output_text: str,
+        mem_cfg: Any,
     ) -> None:
         """Store memory in shared namespace when configured."""
         shared_ns = getattr(mem_cfg, "shared_namespace", None)
@@ -471,13 +559,16 @@ class StandardAgent(BaseAgent):
         try:
             shared_scope = svc.build_shared_scope(scope, shared_ns)
             svc.store_episodic(
-                shared_scope, output_text,
+                shared_scope,
+                output_text,
                 metadata={"source_agent": self.name},
             )
         except (ValueError, TypeError, RuntimeError, OSError, ImportError) as exc:
-            logger.warning("Shared memory storage failed for agent %s: %s", self.name, exc)
+            logger.warning(
+                "Shared memory storage failed for agent %s: %s", self.name, exc
+            )
 
-    def get_capabilities(self) -> Dict[str, Any]:
+    def get_capabilities(self) -> dict[str, Any]:
         """Get agent capabilities."""
         tools_list = self.tool_registry.list_tools()
         return {
@@ -485,10 +576,18 @@ class StandardAgent(BaseAgent):
             "description": self.description,
             "version": self.version,
             "type": "standard",
-            "llm_provider": self.config.agent.inference.provider if self.config.agent.inference else "none",
-            "llm_model": self.config.agent.inference.model if self.config.agent.inference else "none",
+            "llm_provider": (
+                self.config.agent.inference.provider
+                if self.config.agent.inference
+                else "none"
+            ),
+            "llm_model": (
+                self.config.agent.inference.model
+                if self.config.agent.inference
+                else "none"
+            ),
             "tools": tools_list,
             "max_tool_calls": self.config.agent.safety.max_tool_calls_per_execution,
             "supports_streaming": True,
-            "supports_multimodal": False
+            "supports_multimodal": False,
         }

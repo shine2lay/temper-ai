@@ -1,949 +1,380 @@
-# Configuration Guide
+# YAML Configuration Reference
 
-**Scope:** General Framework Configuration (Agents, Workflows, LLM Providers, Tools, Multi-Agent, Observability)
-
-**For M4 Safety System Configuration:** See [M4_CONFIGURATION_GUIDE.md](M4_CONFIGURATION_GUIDE.md) for detailed safety policy, approval workflows, rollback, circuit breakers, and safety gate configuration.
-
-Complete guide to configuring Temper AI.
+This reference covers the YAML configuration format for Temper AI. For working examples, see the `configs/` directory. For safety system configuration (approval workflows, rollback, circuit breakers), see `docs/security/`.
 
 ---
 
-## Table of Contents
+## Overview
 
-1. [Quick Start](#quick-start)
-2. [Configuration Basics](#configuration-basics)
-3. [Agent Configuration](#agent-configuration)
-4. [Workflow Configuration](#workflow-configuration)
-5. [LLM Provider Configuration](#llm-provider-configuration)
-6. [Tool Configuration](#tool-configuration)
-7. [Safety Configuration](#safety-configuration)
-8. [Multi-Agent Configuration](#multi-agent-configuration)
-9. [Observability Configuration](#observability-configuration)
-10. [Environment Variables](#environment-variables)
-11. [Best Practices](#best-practices)
-12. [Examples](#examples)
+Three config types control every workflow:
+
+| Type | Location | Purpose |
+|---|---|---|
+| Agent | `configs/agents/*.yaml` | Defines a single LLM agent — its prompt, model, tools, and safety settings |
+| Stage | `configs/stages/*.yaml` | Groups agents into a named execution unit with a collaboration strategy |
+| Workflow | `configs/workflows/*.yaml` | Chains stages together and defines inputs, outputs, and error handling |
+
+The top-level key matches the type: `agent:`, `stage:`, or `workflow:`. All files also accept an optional `schema_version: "1.0"` key for migration support.
 
 ---
 
-## Quick Start
+## Agent Config
 
-### Minimal Agent Config
+### Required Fields
 
-**File:** `configs/agents/simple_agent.yaml`
+| Field | Type | Description |
+|---|---|---|
+| `name` | string | Unique agent name |
+| `description` | string | What the agent does |
+| `prompt` | object | Inline text or file path (see below) |
+| `inference` | object | LLM provider settings |
+| `error_handling` | object | Retry and fallback behavior |
+
+### Full Reference
 
 ```yaml
 agent:
-  name: simple_researcher
-  description: Basic research agent
-  version: 1.0
-  type: standard
-
-  prompt:
-    inline: |
-      You are a research assistant.
-      Query: {{ query }}
-      Provide a detailed response.
-
-  inference:
-    provider: ollama
-    model: llama3.2:3b
-    temperature: 0.7
-
-  tools: []
-```
-
-### Minimal Workflow Config
-
-**File:** `configs/workflows/simple_workflow.yaml`
-
-```yaml
-workflow:
-  name: simple_research
-  description: Single-agent research workflow
-  version: 1.0
-
-  stages:
-    - name: research
-      stage_ref: configs/stages/research.yaml
-```
-
-### Run Your Config
-
-```bash
-temper-ai run configs/workflows/simple_workflow.yaml \
-  --input inputs.yaml --show-details
-```
-
----
-
-## Configuration Basics
-
-### File Structure
-
-```
-configs/
-├── agents/          # Agent definitions
-│   ├── researcher.yaml
-│   ├── writer.yaml
-│   └── reviewer.yaml
-│
-├── workflows/       # Workflow definitions
-│   ├── simple_research.yaml
-│   └── multi_agent_debate.yaml
-│
-├── tools/           # Tool configurations (optional)
-│   └── custom_tool.yaml
-│
-└── prompts/         # Reusable prompt templates
-    └── research_prompt.j2
-```
-
-### YAML Basics
-
-```yaml
-# Comments start with #
-key: value
-number: 42
-float: 3.14
-boolean: true
-list:
-  - item1
-  - item2
-nested:
-  child_key: child_value
-```
-
-### Environment Variables
-
-Reference environment variables in configs:
-
-```yaml
-inference:
-  provider: openai
-  api_key: ${env:OPENAI_API_KEY}  # From environment
-  model: gpt-4
-```
-
----
-
-## Agent Configuration
-
-### Full Agent Config
-
-```yaml
-agent:
-  name: research_agent
-  description: "Advanced research agent with tools"
+  name: researcher              # Required
+  description: "..."            # Required
   version: "1.0"
-  type: standard
+  type: standard                # standard | script | crewai | langgraph | openai_agents | autogen
 
-  # Prompt Configuration
   prompt:
-    template: prompts/research.j2      # External template file
-    # OR
-    inline: |                          # Inline template
-      You are a research assistant.
-      Topic: {{ topic }}
-    variables:                         # Default variables
-      max_depth: 3
-      format: markdown
+    inline: |                   # Jinja2 template; use {{ variable }} placeholders
+      You are a {{ role }}.
+      Task: {{ task }}
+    # OR use an external file:
+    # template: prompts/researcher.j2
+    variables:                  # Default variable values (optional)
+      role: researcher
 
-  # LLM Configuration
   inference:
-    provider: ollama                   # ollama | openai | anthropic | vllm
-    model: llama3.2:3b
-    base_url: http://localhost:11434
-    temperature: 0.7
-    max_tokens: 2048
-    top_p: 0.9
-    timeout_seconds: 60
-    max_retries: 3
-    retry_delay_seconds: 1.0
+    provider: ollama             # Required: ollama | vllm | openai | anthropic | custom
+    model: llama3.2:3b           # Required: model name
+    base_url: http://localhost:11434   # Required for ollama and vllm
+    api_key_ref: ${env:OPENAI_API_KEY} # Secret ref — use ${env:VAR} not inline secrets
+    temperature: 0.7             # 0.0–2.0, default 0.7
+    max_tokens: 16384            # Default 16384
+    top_p: 0.9                   # 0.0–1.0, default 0.9
+    timeout_seconds: 1800        # Default 1800 (30 min)
+    max_retries: 3               # Default 3
+    retry_delay_seconds: 2       # Default 2
 
-  # Tools
-  tools:
+  tools:                         # null = auto-discover, [] = none, list = exact set
+    - Bash
+    - HTTP
+    - JSON
+    - FileWriter
+    - CodeExecutor
+    - Git
     - WebScraper
     - Calculator
-    - FileWriter
 
-  # Safety Limits
   safety:
-    max_tool_calls_per_execution: 10
-    allowed_domains:
-      - wikipedia.org
-      - arxiv.org
-    forbidden_operations:
-      - delete_file
-      - modify_system
+    mode: execute                # execute | dry_run | require_approval (default: execute)
+    require_approval_for_tools: []   # Tool names that require human approval
+    max_tool_calls_per_execution: 50
+    max_execution_time_seconds: 3600
+    risk_level: medium           # low | medium | high (default: medium)
 
-  # Error Handling
-  error_handling:
-    retry_strategy: ExponentialBackoff
-    fallback: GracefulDegradation
-    max_retries: 3
-
-  # Memory (optional)
   memory:
-    type: conversation
-    max_messages: 10
-```
+    enabled: false
+    type: vector                 # vector | episodic | procedural | semantic | cross_session
+    scope: session               # session | project | cross_session | permanent
+    provider: in_memory          # in_memory | mem0
+    retrieval_k: 5
+    relevance_threshold: 0.8
 
-### Prompt Configuration Options
-
-**Option 1: Inline Prompt**
-```yaml
-prompt:
-  inline: |
-    You are {{ role }}.
-    Task: {{ task }}
-```
-
-**Option 2: External Template**
-```yaml
-prompt:
-  template: prompts/my_prompt.j2
-  variables:
-    role: researcher
-    task: analyze data
-```
-
-**Template File (`prompts/my_prompt.j2`):**
-```jinja2
-You are a {{ role }}.
-
-Your task: {{ task }}
-
-{% if context %}
-Context: {{ context }}
-{% endif %}
-
-Provide a detailed response.
-```
-
-### Inference Provider Options
-
-**Ollama (Local):**
-```yaml
-inference:
-  provider: ollama
-  model: llama3.2:3b
-  base_url: http://localhost:11434
-  temperature: 0.7
-```
-
-**OpenAI:**
-```yaml
-inference:
-  provider: openai
-  model: gpt-4
-  api_key: ${env:OPENAI_API_KEY}
-  base_url: https://api.openai.com/v1
-  temperature: 0.7
-  max_tokens: 2048
-```
-
-**Anthropic:**
-```yaml
-inference:
-  provider: anthropic
-  model: claude-3-opus-20240229
-  api_key: ${env:ANTHROPIC_API_KEY}
-  base_url: https://api.anthropic.com/v1
-  temperature: 0.7
-```
-
-**vLLM (Custom):**
-```yaml
-inference:
-  provider: vllm
-  model: custom-model
-  base_url: http://localhost:8000
-  temperature: 0.7
-```
-
----
-
-## Workflow Configuration
-
-### Workflow Structure
-
-```yaml
-workflow:
-  name: my_workflow
-  description: "Multi-stage workflow"
-  version: "1.0"
-
-  # Execution Engine
-  engine: langgraph                   # Default: langgraph
-  engine_config:
+  error_handling:                # Required
+    retry_strategy: ExponentialBackoff   # ExponentialBackoff | LinearBackoff | FixedDelay
     max_retries: 3
-    timeout: 300
-
-  # Stages
-  stages:
-    - name: stage1
-      stage_ref: configs/stages/research.yaml
-
-    - name: stage2
-      stage_ref: configs/stages/writing.yaml
-      depends_on:
-        - stage1
-```
-
-### Stage Types
-
-**1. Agent Stage (Sequential)**
-```yaml
-stages:
-  - name: research
-    stage_ref: configs/stages/research.yaml
-```
-
-**2. Parallel Stage**
-```yaml
-stages:
-  - name: parallel_research
-    type: parallel
-    agents:
-      - researcher1
-      - researcher2
-      - researcher3
-    execution:
-      agent_mode: parallel
-      max_concurrent: 3
-    collaboration:
-      strategy: consensus
-```
-
-**3. Debate Stage**
-```yaml
-stages:
-  - name: debate_decision
-    type: debate
-    agents:
-      - analyst1
-      - analyst2
-      - analyst3
-    collaboration:
-      strategy: debate
-      config:
-        max_rounds: 5
-        convergence_threshold: 0.8
-```
-
-### Data Flow
-
-**Input Mapping:**
-```yaml
-input_mapping:
-  query: $input.topic              # From workflow input
-  context: $stages.prev.output     # From previous stage
-  config: $workflow.metadata       # From workflow metadata
-```
-
-**Output Mapping:**
-```yaml
-output_mapping:
-  final_result: $stages.writer.output
-  research_data: $stages.research.output
-  metadata:
-    total_time: $execution.duration
-    cost: $execution.total_cost
-```
-
----
-
-## LLM Provider Configuration
-
-### Ollama Configuration
-
-```yaml
-inference:
-  provider: ollama
-  model: llama3.2:3b              # Or: mistral, codellama, etc.
-  base_url: http://localhost:11434
-  temperature: 0.7
-  max_tokens: 2048
-  top_p: 0.9
-```
-
-**Available Models:**
-- `llama3.2:3b` - Fast, good for simple tasks
-- `llama3.2:8b` - Balanced, better reasoning
-- `mistral` - Alternative, good quality
-- `codellama` - Optimized for code
-
-**Pull Models:**
-```bash
-ollama pull llama3.2:3b
-```
-
-### OpenAI Configuration
-
-```yaml
-inference:
-  provider: openai
-  model: gpt-4                    # Or: gpt-3.5-turbo, gpt-4-turbo
-  api_key: ${env:OPENAI_API_KEY}
-  base_url: https://api.openai.com/v1
-  temperature: 0.7
-  max_tokens: 2048
-  timeout_seconds: 60
-  max_retries: 3
-```
-
-**Model Options:**
-- `gpt-4` - Best quality, expensive
-- `gpt-4-turbo` - Fast, cheaper than gpt-4
-- `gpt-3.5-turbo` - Fast, cheap, good for simple tasks
-
-### Anthropic Configuration
-
-```yaml
-inference:
-  provider: anthropic
-  model: claude-3-opus-20240229   # Or: sonnet, haiku
-  api_key: ${env:ANTHROPIC_API_KEY}
-  base_url: https://api.anthropic.com/v1
-  temperature: 0.7
-  max_tokens: 4096
-```
-
-**Model Options:**
-- `claude-3-opus-20240229` - Best quality
-- `claude-3-sonnet-20240229` - Balanced
-- `claude-3-haiku-20240307` - Fast, cheap
-
-### Cost Optimization
-
-```yaml
-# Use cheaper models for simple tasks
-inference:
-  provider: openai
-  model: gpt-3.5-turbo
-  temperature: 0.7
-  max_tokens: 500                # Limit tokens
-
-# Or use local models (free)
-inference:
-  provider: ollama
-  model: llama3.2:3b
-```
-
----
-
-## Tool Configuration
-
-### Basic Tool List
-
-```yaml
-tools:
-  - Calculator
-  - WebScraper
-  - FileWriter
-```
-
-### Tool with Configuration
-
-```yaml
-tools:
-  - name: WebScraper
-    config:
-      timeout: 30
-      max_retries: 3
-      rate_limit: 10  # requests per minute
-
-  - name: FileWriter
-    config:
-      base_directory: /tmp/outputs
-      allowed_extensions:
-        - .txt
-        - .md
-        - .json
-```
-
-### Custom Tool
-
-**Define tool class:**
-```python
-# temper_ai/tools/my_tool.py
-from temper_ai.tools.base import BaseTool, ToolResult
-
-class MyTool(BaseTool):
-    @property
-    def name(self) -> str:
-        return "MyTool"
-
-    @property
-    def description(self) -> str:
-        return "My custom tool"
-
-    def execute(self, **kwargs) -> ToolResult:
-        # Implementation
-        return ToolResult(success=True, result="done")
-```
-
-**Register in config:**
-```yaml
-tools:
-  - MyTool
-```
-
----
-
-## Safety Configuration
-
-**Note:** This section covers basic safety constraints (timeouts, rate limits, allowed operations). For advanced safety features (policies, approval workflows, rollback, circuit breakers), see [M4_CONFIGURATION_GUIDE.md](M4_CONFIGURATION_GUIDE.md).
-
-### Agent-Level Safety
-
-```yaml
-safety:
-  max_tool_calls_per_execution: 10
-  max_execution_time_seconds: 300
-
-  allowed_domains:
-    - wikipedia.org
-    - github.com
-    - arxiv.org
-
-  forbidden_operations:
-    - delete_file
-    - modify_system
-    - execute_code
-
-  rate_limits:
-    max_requests_per_minute: 10
-    max_tokens_per_hour: 100000
-```
-
-### Stage-Level Safety
-
-```yaml
-stages:
-  - name: research
-    type: agent
-    agent_ref: researcher
-
-    safety:
-      max_duration_seconds: 60
-      max_cost_usd: 0.10
-      require_approval: false
-```
-
-### Workflow-Level Safety
-
-```yaml
-workflow:
-  name: my_workflow
-
-  safety:
-    max_total_cost_usd: 1.00
-    max_total_duration_seconds: 600
-    require_human_approval_for:
-      - high_cost_operations
-      - destructive_operations
-```
-
----
-
-## Multi-Agent Configuration
-
-### Parallel Execution
-
-```yaml
-stages:
-  - name: parallel_research
-    type: parallel
-
-    execution:
-      agent_mode: parallel        # Run concurrently
-      max_concurrent: 3           # Max 3 at once
-      min_success: 2              # At least 2 must succeed
-
-    agents:
-      - researcher1
-      - researcher2
-      - researcher3
-
-    input_mapping:
-      topic: $input.topic
-```
-
-### Consensus Strategy
-
-```yaml
-collaboration:
-  strategy: consensus
-  conflict_resolver: merit_weighted
-
-  config:
-    threshold: 0.5                # 50% agreement needed
-    conflict_threshold: 0.3       # 30% disagreement = conflict
-    weights:                      # Optional agent weights
-      researcher1: 1.0
-      researcher2: 1.2            # Higher expertise
-      researcher3: 1.0
-```
-
-### Debate Strategy
-
-```yaml
-collaboration:
-  strategy: debate
-  conflict_resolver: merit_weighted
-
-  config:
-    max_rounds: 5
-    convergence_threshold: 0.8    # 80% agents unchanged
-    min_confidence: 0.7           # Min confidence for acceptance
-    allow_early_termination: true
-```
-
-### Merit-Weighted Resolution
-
-```yaml
-conflict_resolution:
-  strategy: merit_weighted
+    fallback: GracefulDegradation        # GracefulDegradation | ReturnDefault | RaiseError | LogAndContinue
+    escalate_to_human_after: 3
+
+  reasoning:
+    enabled: false
+    inject_as: context_section   # system_prefix | context_section
+    max_planning_tokens: 1024
+
+  context_management:
+    enabled: false
+    strategy: truncate           # truncate | summarize | sliding_window
+    reserved_output_tokens: 2048
 
   merit_tracking:
     enabled: true
-    decay_factor: 0.9             # Recent success weighs more
-    min_executions: 3             # Min runs before weighting
+    domain_expertise: []         # Domain tags for weighted conflict resolution
+    decay_enabled: true
+    half_life_days: 90
 
-  domain_expertise:
-    researcher1:
-      - python
-      - machine_learning
-    researcher2:
-      - javascript
-      - web_development
+  observability:
+    log_inputs: true
+    log_outputs: true
+    log_full_llm_responses: false
+    track_latency: true
+    track_token_usage: true
+
+  # M9: persistent agent identity across workflow runs
+  persistent: false
+  agent_id: null                 # Auto-assigned on registration
+
+  metadata:
+    tags: []
+    owner: null
 ```
+
+### Notes
+
+- `prompt.inline` and `prompt.template` are mutually exclusive. Exactly one must be set.
+- `tools: null` triggers auto-discovery. `tools: []` disables all tools. Provide a list to pin specific tools.
+- `api_key` (bare string) is deprecated. Use `api_key_ref: ${env:VAR_NAME}` instead.
+- `type: script` agents require a `script:` field (Jinja2 bash template) and no `prompt` or `inference`.
 
 ---
 
-## Observability Configuration
+## Stage Config
 
-### Database Configuration
+### Required Fields
 
-**SQLite (Development):**
-```yaml
-observability:
-  enabled: true
-  database_url: sqlite:///./observability.db
-```
+| Field | Type | Description |
+|---|---|---|
+| `name` | string | Unique stage name |
+| `description` | string | What the stage does |
+| `agents` | list | At least one agent name (resolved from `configs/agents/`) |
 
-**PostgreSQL (Production):**
-```yaml
-observability:
-  enabled: true
-  database_url: postgresql://user:pass@localhost:5432/dbname
-```
-
-**Environment Variable:**
-```yaml
-observability:
-  enabled: true
-  database_url: ${env:DATABASE_URL}
-```
-
-### Tracking Configuration
+### Full Reference
 
 ```yaml
-observability:
-  enabled: true
-  database_url: sqlite:///./obs.db
+stage:
+  name: analysis                # Required
+  description: "..."            # Required
+  version: "1.0"
 
-  track_llm_calls: true
-  track_tool_calls: true
-  track_errors: true
+  agents:                       # Required: one or more agent names
+    - researcher
+    - analyst
 
-  retention_days: 30              # Auto-cleanup old data
+  execution:
+    agent_mode: parallel        # parallel | sequential | adaptive (default: parallel)
+    timeout_seconds: 1800       # Default 1800 (30 min)
 
-  console_streaming: true         # Real-time console output
-  log_level: INFO                 # DEBUG | INFO | WARNING | ERROR
+  inputs:
+    required:
+      - topic
+    optional:
+      - context
+
+  outputs:
+    summary: "Final summary output"
+    confidence: "Confidence score"
+
+  collaboration:                # Optional: enables multi-round agent interaction
+    strategy: multi_round       # Strategy name (e.g., multi_round, debate)
+    max_rounds: 3
+    convergence_threshold: 0.8  # 0.0–1.0
+    dialogue_mode: false        # Enable multi-turn dialogue
+    roles:                      # Optional agent role assignments
+      researcher: proposer
+      analyst: critic
+    context_window_rounds: 3
+
+  conflict_resolution:          # Optional: how to resolve agent disagreements
+    strategy: HighestConfidenceResolver   # HighestConfidenceResolver | MajorityVote | merit_weighted
+    metrics:
+      - confidence
+    metric_weights:             # Custom weights (normalized at runtime)
+      confidence: 1.0
+    auto_resolve_threshold: 0.8  # 0.0–1.0; auto-resolve if winning option exceeds this
+    escalation_threshold: 0.5   # 0.0–1.0; escalate if no option meets this
+
+  safety:
+    mode: execute               # execute | dry_run | require_approval
+    dry_run_first: false
+    require_approval: false
+
+  error_handling:
+    on_agent_failure: continue_with_remaining  # halt_stage | retry_agent | skip_agent | continue_with_remaining
+    min_successful_agents: 1
+    retry_failed_agents: true
+    max_agent_retries: 2
+
+  quality_gates:                # Optional output quality enforcement
+    enabled: false
+    min_confidence: 0.8
+    require_citations: true
+    on_failure: retry_stage     # retry_stage | escalate | proceed_with_warning
+    max_retries: 2
+
+  convergence:                  # Optional: re-run until outputs stabilize
+    enabled: false
+    max_iterations: 5
+    similarity_threshold: 0.95
+    method: exact_hash          # exact_hash | semantic
+
+  metadata:
+    tags: []
+    owner: null
 ```
+
+### `on_agent_failure` Values
+
+| Value | Behavior |
+|---|---|
+| `halt_stage` | Fail the stage immediately |
+| `retry_agent` | Retry the failed agent |
+| `skip_agent` | Skip the failed agent, continue with others |
+| `continue_with_remaining` | Default — skip failed agents silently |
+
+---
+
+## Workflow Config
+
+### Required Fields
+
+| Field | Type | Description |
+|---|---|---|
+| `name` | string | Unique workflow name |
+| `description` | string | What the workflow does |
+| `stages` | list | At least one stage reference |
+| `error_handling` | object | Stage failure policy |
+
+### Full Reference
+
+```yaml
+workflow:
+  name: my_workflow             # Required
+  description: "..."            # Required
+  version: "1.0"
+
+  stages:                       # Required: at least one
+    - name: research            # Instance name (used in depends_on, outputs.source)
+      stage_ref: configs/stages/research.yaml   # Required
+
+    - name: writing
+      stage_ref: configs/stages/writing.yaml
+      depends_on:
+        - research              # DAG dependency — waits for research to complete
+      optional: false           # If true, stage failure does not fail workflow
+      conditional: false
+      condition: null           # Jinja2 expression evaluated at runtime
+      skip_if: null             # Mutually exclusive with condition
+      loops_back_to: null       # Stage name to loop back to
+      loop_condition: null      # Jinja2 expression: loop continues while true
+      max_loops: 3              # Default 3
+
+  inputs:
+    required:
+      - question
+      - options
+    optional:
+      - context
+
+  outputs:
+    - name: decision
+      description: "The recommended choice"
+      source: decision.final_decision  # Format: <stage_name>.<output_field>
+
+    - name: confidence
+      description: "Confidence score"
+      source: decision.confidence
+
+  config:
+    timeout_seconds: 3600       # Default 3600 (1 hour)
+    max_iterations: 10
+    convergence_detection: false
+    tool_cache_enabled: false   # Cache read-only tool results
+    budget:
+      max_cost_usd: null
+      max_tokens: null
+      action_on_exceed: halt    # halt | continue | notify
+    rate_limit:
+      enabled: false
+      max_rpm: 60
+      block_on_limit: true
+      max_wait_seconds: 60.0
+
+  error_handling:               # Required
+    on_stage_failure: halt      # halt | skip | retry
+    max_stage_retries: 2
+    escalation_policy: GracefulDegradation   # GracefulDegradation | FailFast
+    enable_rollback: true
+    rollback_on: []             # List of stage names that trigger rollback on failure
+
+  safety:
+    global_mode: execute        # execute | dry_run | require_approval
+    composition_strategy: MostRestrictive
+    approval_required_stages: []
+    dry_run_stages: []
+
+  observability:
+    console_mode: standard      # minimal | standard | verbose
+    trace_everything: true
+    export_format:
+      - json
+    generate_dag_visualization: true
+    waterfall_in_console: true
+    alert_on: []
+
+  predecessor_injection: false  # When true, stages receive only DAG predecessor outputs, not full state
+
+  metadata:
+    tags: []
+    owner: null
+```
+
+### Stage Dependencies and Loops
+
+By default, stages run sequentially in declaration order. Use `depends_on` to model a DAG. Event-triggered stages (using `trigger:`) cannot have `depends_on`.
+
+Loop stages require both `loops_back_to` (the target stage name) and `loop_condition` (a Jinja2 boolean expression). `max_loops` caps iterations to prevent infinite loops.
 
 ---
 
 ## Environment Variables
 
-### Required Variables
-
-```bash
-# For OpenAI
-export OPENAI_API_KEY=sk-...
-
-# For Anthropic
-export ANTHROPIC_API_KEY=sk-ant-...
-
-# For Ollama (optional - uses default)
-export OLLAMA_BASE_URL=http://localhost:11434
-```
-
-### Optional Variables
-
-```bash
-# Database
-export DATABASE_URL=postgresql://user:pass@localhost/db
-
-# Observability
-export OBSERVABILITY_ENABLED=true
-export LOG_LEVEL=INFO
-
-# Safety
-export MAX_COST_USD=10.00
-export MAX_EXECUTION_TIME=3600
-```
-
-### .env File
-
-**Create `.env` file:**
-```bash
-# LLM Providers
-OPENAI_API_KEY=sk-...
-ANTHROPIC_API_KEY=sk-ant-...
-OLLAMA_BASE_URL=http://localhost:11434
-
-# Database
-DATABASE_URL=sqlite:///./observability.db
-
-# Observability
-OBSERVABILITY_ENABLED=true
-LOG_LEVEL=INFO
-
-# Safety
-MAX_COST_USD=10.00
-```
-
-**Load automatically:**
-```python
-from dotenv import load_dotenv
-load_dotenv()
-```
-
----
-
-## Best Practices
-
-### 1. Separate Configs by Environment
-
-```
-configs/
-├── agents/
-│   ├── base/
-│   │   └── researcher.yaml
-│   ├── dev/
-│   │   └── researcher_dev.yaml
-│   └── prod/
-│       └── researcher_prod.yaml
-```
-
-### 2. Use Environment Variables for Secrets
-
-**Bad:**
-```yaml
-api_key: sk-1234567890abcdef  # Hard-coded secret
-```
-
-**Good:**
-```yaml
-api_key: ${env:OPENAI_API_KEY}  # From environment
-```
-
-### 3. Start Simple, Add Complexity
-
-**Start with:**
-```yaml
-inference:
-  provider: ollama
-  model: llama3.2:3b
-  temperature: 0.7
-```
-
-**Then optimize:**
-```yaml
-inference:
-  provider: openai
-  model: gpt-4
-  temperature: 0.7
-  max_tokens: 2048
-  timeout_seconds: 60
-  max_retries: 3
-```
-
-### 4. Use Descriptive Names
-
-**Bad:**
-```yaml
-agent:
-  name: a1
-  description: agent
-```
-
-**Good:**
-```yaml
-agent:
-  name: research_agent
-  description: "Research agent specialized in technical documentation"
-```
-
-### 5. Document Your Configs
-
-```yaml
-agent:
-  name: researcher
-
-  # Using Ollama for cost savings during development
-  # Switch to OpenAI in production for better quality
-  inference:
-    provider: ollama
-    model: llama3.2:3b
-    temperature: 0.7  # Higher = more creative
-```
+| Variable | Description | Default |
+|---|---|---|
+| `TEMPER_LLM_PROVIDER` | Default LLM provider for agents that do not specify one | `ollama` |
+| `TEMPER_LLM_MODEL` | Default model name | `llama3.2` |
+| `TEMPER_LLM_BASE_URL` | Provider API endpoint | `http://localhost:11434` |
+| `TEMPER_DATABASE_URL` | PostgreSQL connection string | SQLite fallback |
+| `TEMPER_LOG_LEVEL` | Log verbosity: `DEBUG`, `INFO`, `WARNING`, `ERROR` | `INFO` |
+| `TEMPER_CONFIG_ROOT` | Root directory for config file resolution | `./configs` |
+| `OPENAI_API_KEY` | Referenced via `api_key_ref: ${env:OPENAI_API_KEY}` | — |
+| `ANTHROPIC_API_KEY` | Referenced via `api_key_ref: ${env:ANTHROPIC_API_KEY}` | — |
 
 ---
 
 ## Examples
 
-### Example 1: Simple Research Agent
+The `configs/` directory contains ready-to-run examples:
 
-```yaml
-agent:
-  name: simple_researcher
-  description: Basic research agent
-  version: 1.0
+| Path | What it shows |
+|---|---|
+| `configs/agents/researcher.yaml` | Minimal agent with vLLM and no tools |
+| `configs/agents/calculator_agent.yaml` | Agent with Calculator tool enabled |
+| `configs/stages/quick_debate.yaml` | Three-agent sequential debate with convergence |
+| `configs/stages/problem_analysis_parallel.yaml` | Parallel multi-agent analysis |
+| `configs/workflows/quick_decision_demo.yaml` | Single-stage decision workflow |
+| `configs/workflows/technical_problem_solving_parallel.yaml` | Four-stage parallel workflow with DAG deps |
+| `configs/workflows/multi_agent_research.yaml` | End-to-end research pipeline |
 
-  prompt:
-    inline: |
-      Research the following topic: {{ topic }}
-      Provide a comprehensive summary.
+Run any workflow via the HTTP API (after starting the server with `temper-ai serve`):
 
-  inference:
-    provider: ollama
-    model: llama3.2:3b
-    temperature: 0.7
-
-  tools:
-    - WebScraper
-```
-
-### Example 2: Multi-Agent Parallel Research
-
-```yaml
-workflow:
-  name: parallel_research
-  description: "3 agents research in parallel"
-
-stages:
-  - name: research
-    type: parallel
-
-    execution:
-      agent_mode: parallel
-      max_concurrent: 3
-
-    agents:
-      - researcher1
-      - researcher2
-      - researcher3
-
-    collaboration:
-      strategy: consensus
-      config:
-        threshold: 0.5
-
-    input_mapping:
-      topic: $input.topic
-```
-
-### Example 3: Production-Ready Agent
-
-```yaml
-agent:
-  name: production_agent
-  description: "Production-ready agent with full config"
-  version: 1.0
-
-  prompt:
-    template: prompts/production.j2
-
-  inference:
-    provider: openai
-    model: gpt-4
-    api_key: ${env:OPENAI_API_KEY}
-    temperature: 0.7
-    max_tokens: 2048
-    timeout_seconds: 60
-    max_retries: 3
-
-  tools:
-    - WebScraper
-    - Calculator
-
-  safety:
-    max_tool_calls_per_execution: 10
-    max_execution_time_seconds: 300
-    allowed_domains:
-      - wikipedia.org
-
-  error_handling:
-    retry_strategy: ExponentialBackoff
-    max_retries: 3
-
-  observability:
-    enabled: true
-    track_llm_calls: true
-    track_tool_calls: true
-```
-
----
-
-## Troubleshooting
-
-### Issue: Config Not Loading
-
-**Error:** `FileNotFoundError: configs/agents/my_agent.yaml`
-
-**Solution:**
-- Check file path is correct
-- Ensure file exists
-- Verify working directory
-
-### Issue: Validation Error
-
-**Error:** `ValidationError: field required (type=value_error.missing)`
-
-**Solution:**
-- Check all required fields are present
-- Verify field names match schema
-- Check indentation in YAML
-
-### Issue: API Key Not Found
-
-**Error:** `ValueError: API key not found`
-
-**Solution:**
 ```bash
-# Set environment variable
-export OPENAI_API_KEY=sk-...
-
-# Or create .env file
-echo "OPENAI_API_KEY=sk-..." >> .env
+curl -X POST http://localhost:8000/api/runs \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "workflow_name": "quick_decision_demo",
+    "input_file": "examples/vcs_suggestion_input.yaml"
+  }'
 ```
 
----
+Validate a config by importing it (the server validates on import):
 
-## Summary
-
-- **Configuration is YAML-based** with Pydantic validation
-- **Three main config types:** Agents, Workflows, Tools
-- **Environment variables** for secrets and environment-specific values
-- **Multiple LLM providers** supported (Ollama, OpenAI, Anthropic, vLLM)
-- **Safety policies** at agent, stage, and workflow levels
-- **Multi-agent collaboration** with parallel execution and synthesis
-- **Best practices:** Separate configs by environment, use env vars for secrets, start simple
-
-For detailed schema reference, see [Config Schemas](./interfaces/models/config_schema.md).
-
-Happy configuring! ⚙️
+```bash
+curl -X POST http://localhost:8000/api/configs/import \
+  -H "Authorization: Bearer $API_KEY" \
+  -F "file=@configs/workflows/quick_decision_demo.yaml"
+```

@@ -13,7 +13,9 @@ from temper_ai.observability.tracker import ExecutionContext, ExecutionTracker
 def _make_mock_backend():
     """Create a mock observability backend with session context."""
     backend = MagicMock()
-    backend.get_session_context.return_value.__enter__ = MagicMock(return_value=MagicMock())
+    backend.get_session_context.return_value.__enter__ = MagicMock(
+        return_value=MagicMock()
+    )
     backend.get_session_context.return_value.__exit__ = MagicMock(return_value=False)
     return backend
 
@@ -50,8 +52,16 @@ class TestContextIsolation:
         t1.join()
         t2.join()
 
-        assert thread_contexts["t1"] == {"workflow_id": "wf-1", "stage_id": "st-1", "agent_id": "ag-1"}
-        assert thread_contexts["t2"] == {"workflow_id": "wf-2", "stage_id": "st-2", "agent_id": "ag-2"}
+        assert thread_contexts["t1"] == {
+            "workflow_id": "wf-1",
+            "stage_id": "st-1",
+            "agent_id": "ag-1",
+        }
+        assert thread_contexts["t2"] == {
+            "workflow_id": "wf-2",
+            "stage_id": "st-2",
+            "agent_id": "ag-2",
+        }
 
     def test_main_thread_context_unaffected_by_child(self):
         """Child thread's context writes don't leak to main thread."""
@@ -92,7 +102,10 @@ class TestContextIsolation:
             t.join()
 
         for i in range(10):
-            assert results[i] == (f"wf-{i}", f"st-{i}"), f"Thread {i} context was corrupted"
+            assert results[i] == (
+                f"wf-{i}",
+                f"st-{i}",
+            ), f"Thread {i} context was corrupted"
 
     def test_context_setter_works(self):
         """Setting tracker.context to a new ExecutionContext works."""
@@ -190,12 +203,15 @@ class TestConcurrentWorkflowTracking:
                 threading.Event().wait(0.01)
 
                 # Verify context hasn't been corrupted
-                assert tracker.context.workflow_id == f"wf-{idx}", \
-                    f"Thread {idx}: workflow_id was {tracker.context.workflow_id}"
-                assert tracker.context.stage_id == f"st-{idx}", \
-                    f"Thread {idx}: stage_id was {tracker.context.stage_id}"
-                assert tracker.context.agent_id == f"ag-{idx}", \
-                    f"Thread {idx}: agent_id was {tracker.context.agent_id}"
+                assert (
+                    tracker.context.workflow_id == f"wf-{idx}"
+                ), f"Thread {idx}: workflow_id was {tracker.context.workflow_id}"
+                assert (
+                    tracker.context.stage_id == f"st-{idx}"
+                ), f"Thread {idx}: stage_id was {tracker.context.stage_id}"
+                assert (
+                    tracker.context.agent_id == f"ag-{idx}"
+                ), f"Thread {idx}: agent_id was {tracker.context.agent_id}"
 
                 # Clean up
                 tracker.context.workflow_id = None

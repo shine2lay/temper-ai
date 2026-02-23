@@ -15,16 +15,17 @@ Compare with regression detection:
     pytest tests/test_benchmarks/test_performance_llm.py --benchmark-only \
         --benchmark-compare=llm --benchmark-compare-fail=mean:10%
 """
+
 import asyncio
 import time
 
 import pytest
-
 from temper_ai.agent.llm_providers import LLMResponse, OllamaLLM
 
 # ============================================================================
 # CATEGORY 3: LLM Provider Performance (8 benchmarks)
 # ============================================================================
+
 
 @pytest.mark.benchmark(group="llm")
 def test_llm_mock_call_fast(mock_llm_fast, benchmark):
@@ -37,6 +38,7 @@ def test_llm_mock_call_fast(mock_llm_fast, benchmark):
     assert result is not None
     assert result.content is not None
 
+
 @pytest.mark.benchmark(group="llm")
 def test_llm_mock_call_realistic(mock_llm_realistic, benchmark):
     """Benchmark realistic mock LLM call (100ms).
@@ -46,6 +48,7 @@ def test_llm_mock_call_realistic(mock_llm_realistic, benchmark):
     """
     result = benchmark(mock_llm_realistic.complete, "test prompt")
     assert result is not None
+
 
 @pytest.mark.benchmark(group="llm")
 @pytest.mark.asyncio
@@ -65,9 +68,7 @@ async def test_llm_async_speedup_3_calls(mock_async_llm):
 
     # Parallel execution
     start_par = time.perf_counter()
-    await asyncio.gather(*[
-        llm.acomplete(f"prompt {i}") for i in range(3)
-    ])
+    await asyncio.gather(*[llm.acomplete(f"prompt {i}") for i in range(3)])
     parallel_time = time.perf_counter() - start_par
 
     speedup = sequential_time / parallel_time
@@ -76,6 +77,7 @@ async def test_llm_async_speedup_3_calls(mock_async_llm):
     assert speedup <= 3.2, f"Speedup {speedup:.2f}x suspiciously high"
 
     print(f"Async speedup (3 calls): {speedup:.2f}x")
+
 
 @pytest.mark.benchmark(group="llm")
 @pytest.mark.asyncio
@@ -95,9 +97,7 @@ async def test_llm_async_speedup_10_calls(mock_async_llm):
 
     # Parallel execution
     start_par = time.perf_counter()
-    await asyncio.gather(*[
-        llm.acomplete(f"prompt {i}") for i in range(10)
-    ])
+    await asyncio.gather(*[llm.acomplete(f"prompt {i}") for i in range(10)])
     parallel_time = time.perf_counter() - start_par
 
     speedup = sequential_time / parallel_time
@@ -106,6 +106,7 @@ async def test_llm_async_speedup_10_calls(mock_async_llm):
 
     print(f"Async speedup (10 calls): {speedup:.2f}x")
 
+
 @pytest.mark.benchmark(group="llm")
 def test_llm_provider_creation(benchmark):
     """Benchmark LLM provider instantiation.
@@ -113,14 +114,13 @@ def test_llm_provider_creation(benchmark):
     Target: <50ms
     Measures: Provider initialization overhead
     """
+
     def create_provider():
-        return OllamaLLM(
-            model="llama2",
-            base_url="http://localhost:11434"
-        )
+        return OllamaLLM(model="llama2", base_url="http://localhost:11434")
 
     result = benchmark(create_provider)
     assert result is not None
+
 
 @pytest.mark.benchmark(group="llm")
 def test_llm_response_parsing(benchmark):
@@ -136,7 +136,7 @@ def test_llm_response_parsing(benchmark):
         "done": True,
         "total_duration": 1000000,
         "prompt_eval_count": 10,
-        "eval_count": 20
+        "eval_count": 20,
     }
 
     def parse_response():
@@ -146,11 +146,13 @@ def test_llm_response_parsing(benchmark):
             provider="ollama",
             prompt_tokens=raw_response.get("prompt_eval_count"),
             completion_tokens=raw_response.get("eval_count"),
-            total_tokens=raw_response.get("prompt_eval_count", 0) + raw_response.get("eval_count", 0)
+            total_tokens=raw_response.get("prompt_eval_count", 0)
+            + raw_response.get("eval_count", 0),
         )
 
     result = benchmark(parse_response)
     assert result is not None
+
 
 @pytest.mark.benchmark(group="llm")
 def test_llm_cache_hit(benchmark):
@@ -161,6 +163,7 @@ def test_llm_cache_hit(benchmark):
     """
     try:
         from temper_ai.llm.cache.llm_cache import LLMCache
+
         cache = LLMCache()
 
         # Pre-populate cache
@@ -171,6 +174,7 @@ def test_llm_cache_hit(benchmark):
     except ImportError:
         pytest.skip("LLM cache not available")
 
+
 @pytest.mark.benchmark(group="llm")
 def test_llm_cache_miss(benchmark):
     """Benchmark LLM cache miss performance.
@@ -180,6 +184,7 @@ def test_llm_cache_miss(benchmark):
     """
     try:
         from temper_ai.llm.cache.llm_cache import LLMCache
+
         cache = LLMCache()
 
         result = benchmark(cache.get, "nonexistent_key")

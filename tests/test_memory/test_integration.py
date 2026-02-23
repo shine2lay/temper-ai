@@ -2,8 +2,6 @@
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from temper_ai.agent.base_agent import AgentResponse
 from temper_ai.memory._schemas import MemoryScope
 from temper_ai.memory.constants import MEMORY_TYPE_EPISODIC, MEMORY_TYPE_PROCEDURAL
@@ -39,8 +37,10 @@ def _make_config(memory_enabled=True):
 
 def _make_agent(config):
     """Create a StandardAgent with mocked LLM and ToolRegistry."""
-    with patch("temper_ai.agent.base_agent.create_llm_from_config") as mock_factory, \
-         patch("temper_ai.agent.base_agent.ToolRegistry"):
+    with (
+        patch("temper_ai.agent.base_agent.create_llm_from_config") as mock_factory,
+        patch("temper_ai.agent.base_agent.ToolRegistry"),
+    ):
         mock_factory.return_value = MagicMock()
         from temper_ai.agent.standard_agent import StandardAgent
 
@@ -97,7 +97,8 @@ class TestMemoryInjection:
         agent = _make_agent(config)
 
         with patch.object(
-            agent, "_get_memory_service",
+            agent,
+            "_get_memory_service",
             side_effect=RuntimeError("memory down"),
         ):
             template = agent._inject_memory_context("safe prompt", {"x": "y"})
@@ -128,7 +129,8 @@ class TestMemoryAfterRun:
         agent = _make_agent(config)
 
         with patch.object(
-            agent, "_get_memory_service",
+            agent,
+            "_get_memory_service",
             side_effect=RuntimeError("storage down"),
         ):
             result = AgentResponse(output="output", metadata={})
@@ -205,7 +207,8 @@ class TestProceduralExtraction:
 
         scope = agent._build_memory_scope()
         entries = agent._get_memory_service().list_memories(
-            scope, memory_type=MEMORY_TYPE_PROCEDURAL,
+            scope,
+            memory_type=MEMORY_TYPE_PROCEDURAL,
         )
         assert len(entries) == 2
         assert "Always validate input" in entries[0].content
@@ -219,7 +222,8 @@ class TestProceduralExtraction:
 
         scope = agent._build_memory_scope()
         procedural = agent._get_memory_service().list_memories(
-            scope, memory_type=MEMORY_TYPE_PROCEDURAL,
+            scope,
+            memory_type=MEMORY_TYPE_PROCEDURAL,
         )
         assert len(procedural) == 0
 
@@ -238,6 +242,7 @@ class TestProceduralExtraction:
         # Episodic should still be stored
         scope = agent._build_memory_scope()
         entries = agent._get_memory_service().list_memories(
-            scope, memory_type=MEMORY_TYPE_EPISODIC,
+            scope,
+            memory_type=MEMORY_TYPE_EPISODIC,
         )
         assert len(entries) == 1

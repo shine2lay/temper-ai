@@ -14,9 +14,9 @@ References:
 - OWASP: https://cheatsheetseries.owasp.org/cheatsheets/Unvalidated_Redirects_and_Forwards_Cheat_Sheet.html
 - OAuth 2.0 Security: https://datatracker.ietf.org/doc/html/rfc6749#section-10.15
 """
+
 import ipaddress
 import os
-from typing import List, Optional, Tuple
 from urllib.parse import urlparse, urlunparse
 
 # RFC 1035 maximum hostname length
@@ -43,10 +43,10 @@ class CallbackURLValidator:
     """
 
     # SECURITY: Only allow http/https schemes (blocks javascript:, file:, data:, etc.)
-    ALLOWED_SCHEMES = {'http', 'https'}
+    ALLOWED_SCHEMES = {"http", "https"}
     MAX_HOSTNAME_LENGTH = MAX_HOSTNAME_LENGTH
 
-    def __init__(self, allowed_urls: List[str], allow_localhost: Optional[bool] = None):
+    def __init__(self, allowed_urls: list[str], allow_localhost: bool | None = None):
         """Initialize validator with whitelist.
 
         Args:
@@ -71,11 +71,10 @@ class CallbackURLValidator:
         Returns:
             Normalized URL with lowercase scheme and hostname
         """
-        parsed = urlparse(url.rstrip('/'))
+        parsed = urlparse(url.rstrip("/"))
         # Lowercase scheme and hostname, preserve path case
         normalized = parsed._replace(
-            scheme=parsed.scheme.lower(),
-            netloc=parsed.netloc.lower()
+            scheme=parsed.scheme.lower(), netloc=parsed.netloc.lower()
         )
         return urlunparse(normalized)
 
@@ -97,10 +96,10 @@ class CallbackURLValidator:
             return False
 
         # Remove brackets for IPv6 addresses
-        hostname = hostname.strip('[]')
+        hostname = hostname.strip("[]")
 
         # Check common localhost names
-        if hostname in ['localhost', 'localhost.localdomain']:
+        if hostname in ["localhost", "localhost.localdomain"]:
             return True
 
         # Validate IP addresses (handles all IPv4/IPv6 loopback variations)
@@ -110,7 +109,7 @@ class CallbackURLValidator:
         except ValueError:
             return False
 
-    def validate(self, callback_url: str) -> Tuple[bool, Optional[str]]:
+    def validate(self, callback_url: str) -> tuple[bool, str | None]:
         """Validate callback URL against whitelist.
 
         Args:
@@ -139,7 +138,10 @@ class CallbackURLValidator:
 
         # 1. SECURITY: Validate URL scheme (blocks javascript:, file:, data:, etc.)
         if parsed.scheme not in self.ALLOWED_SCHEMES:
-            return False, f"Invalid URL scheme '{parsed.scheme}'. Only http/https allowed."
+            return (
+                False,
+                f"Invalid URL scheme '{parsed.scheme}'. Only http/https allowed.",
+            )
 
         # 2. SECURITY: Validate hostname exists
         if not parsed.hostname:
@@ -174,7 +176,7 @@ class CallbackURLValidator:
 
         return True, None
 
-    def get_allowed_urls(self) -> List[str]:
+    def get_allowed_urls(self) -> list[str]:
         """Get list of allowed URLs (for display/debugging).
 
         Returns:

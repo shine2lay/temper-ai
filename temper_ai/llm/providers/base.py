@@ -1,4 +1,5 @@
 """Base LLM provider: abstract class, response types, and provider enum."""
+
 import asyncio
 import collections
 import logging
@@ -6,15 +7,17 @@ import random
 import threading
 import time
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any, Optional
 
 import httpx
 
 # Optional caching support
 try:
     from temper_ai.llm.cache.llm_cache import LLMCache
+
     CACHE_AVAILABLE = True
 except ImportError:
     CACHE_AVAILABLE = False
@@ -97,6 +100,7 @@ HTTP_SERVER_ERROR = 500  # Server error threshold
 
 class LLMProvider(str, Enum):
     """Supported LLM providers."""
+
     OLLAMA = "ollama"
     OPENAI = "openai"
     ANTHROPIC = "anthropic"
@@ -106,33 +110,35 @@ class LLMProvider(str, Enum):
 @dataclass
 class LLMResponse:
     """Standardized LLM response."""
+
     content: str
     model: str
     provider: str
 
     # Token usage
-    prompt_tokens: Optional[int] = None
-    completion_tokens: Optional[int] = None
-    total_tokens: Optional[int] = None
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    total_tokens: int | None = None
 
     # Timing
-    latency_ms: Optional[int] = None
+    latency_ms: int | None = None
 
     # Metadata
-    finish_reason: Optional[str] = None
-    raw_response: Optional[Dict[str, Any]] = None
+    finish_reason: str | None = None
+    raw_response: dict[str, Any] | None = None
 
 
 @dataclass
 class LLMStreamChunk:
     """Chunk from streaming response."""
+
     content: str
     chunk_type: str = "content"  # "thinking" | "content"
-    finish_reason: Optional[str] = None
+    finish_reason: str | None = None
     done: bool = False
-    model: Optional[str] = None
-    prompt_tokens: Optional[int] = None      # final chunk only
-    completion_tokens: Optional[int] = None  # final chunk only
+    model: str | None = None
+    prompt_tokens: int | None = None  # final chunk only
+    completion_tokens: int | None = None  # final chunk only
 
 
 @dataclass
@@ -142,9 +148,10 @@ class LLMConfig:
     Groups the 12 parameters into a single config object to reduce
     parameter count and improve maintainability.
     """
+
     model: str
     base_url: str
-    api_key: Optional[str] = None
+    api_key: str | None = None
     temperature: float = DEFAULT_TEMPERATURE
     max_tokens: int = 2048
     top_p: float = DEFAULT_TOP_P
@@ -152,8 +159,8 @@ class LLMConfig:
     max_retries: int = DEFAULT_MAX_RETRIES
     retry_delay: float = 2.0
     enable_cache: bool = False
-    cache_ttl: Optional[int] = DEFAULT_CACHE_TTL
-    rate_limiter: Optional[Any] = None
+    cache_ttl: int | None = DEFAULT_CACHE_TTL
+    rate_limiter: Any | None = None
 
 
 # Callback type for streaming: called with each chunk as it arrives
@@ -167,42 +174,48 @@ class BaseLLM(LLMContextManagerMixin, ABC):
     """
 
     # Instance attributes set by _init_infrastructure()
-    _client: Optional[httpx.Client]
-    _async_client: Optional[httpx.AsyncClient]
+    _client: httpx.Client | None
+    _async_client: httpx.AsyncClient | None
     _closed: bool
     _sync_cleanup_lock: threading.Lock
-    _async_cleanup_lock: Optional[asyncio.Lock]
+    _async_cleanup_lock: asyncio.Lock | None
     _cache: Optional["LLMCache"]
     _circuit_breaker: CircuitBreaker
-    _rate_limiter: Optional[Any]
+    _rate_limiter: Any | None
 
     # Callable attributes bound dynamically by _bind_callable_attributes()
-    _build_bearer_auth_headers: Callable[[], Dict[str, str]]
-    _check_cache: Callable[..., Tuple[Optional[str], Optional["LLMResponse"]]]  # scanner: skip-magic
-    _cache_response: Callable[[Optional[str], "LLMResponse"], None]  # scanner: skip-magic
-    _execute_and_parse: Callable[[httpx.Response, float, Optional[str]], "LLMResponse"]  # scanner: skip-magic
-    _make_streaming_call_impl: Callable[..., Tuple[Optional[str], Optional["LLMResponse"]]]  # scanner: skip-magic
+    _build_bearer_auth_headers: Callable[[], dict[str, str]]
+    _check_cache: Callable[
+        ..., tuple[str | None, Optional["LLMResponse"]]
+    ]  # scanner: skip-magic
+    _cache_response: Callable[[str | None, "LLMResponse"], None]  # scanner: skip-magic
+    _execute_and_parse: Callable[
+        [httpx.Response, float, str | None], "LLMResponse"
+    ]  # scanner: skip-magic
+    _make_streaming_call_impl: Callable[
+        ..., tuple[str | None, Optional["LLMResponse"]]
+    ]  # scanner: skip-magic
     _execute_streaming_impl: Callable[..., "LLMResponse"]  # scanner: skip-magic
     _execute_streaming_async_impl: Callable[..., Any]
 
     _MAX_CIRCUIT_BREAKERS = DEFAULT_MAX_CIRCUIT_BREAKERS
-    _circuit_breakers: collections.OrderedDict[Tuple[str, str, str], CircuitBreaker] = (
+    _circuit_breakers: collections.OrderedDict[tuple[str, str, str], CircuitBreaker] = (
         collections.OrderedDict()
     )
     _circuit_breaker_lock = threading.Lock()
 
     _MAX_HTTP_CLIENTS = DEFAULT_MAX_HTTP_CLIENTS
-    _http_clients: Dict[Tuple[str, str], httpx.Client] = {}
+    _http_clients: dict[tuple[str, str], httpx.Client] = {}
     _http_client_lock = threading.Lock()
 
-    _async_client_lock: Optional[asyncio.Lock] = None
+    _async_client_lock: asyncio.Lock | None = None
 
     def __init__(
         self,
-        model: Optional[str] = None,
-        base_url: Optional[str] = None,
-        config: Optional[LLMConfig] = None,
-        **kwargs: Any
+        model: str | None = None,
+        base_url: str | None = None,
+        config: LLMConfig | None = None,
+        **kwargs: Any,
     ):
         """Initialize LLM provider.
 
@@ -218,7 +231,7 @@ class BaseLLM(LLMContextManagerMixin, ABC):
         # Extract params from config or kwargs
         if config is not None:
             self.model = config.model
-            self.base_url = _validate_base_url(config.base_url.rstrip('/'))
+            self.base_url = _validate_base_url(config.base_url.rstrip("/"))
             self.api_key = config.api_key
             self.temperature = config.temperature
             self.max_tokens = config.max_tokens
@@ -231,19 +244,21 @@ class BaseLLM(LLMContextManagerMixin, ABC):
             rate_limiter = config.rate_limiter
         else:
             if model is None or base_url is None:
-                raise ValueError("model and base_url are required when config is not provided")
+                raise ValueError(
+                    "model and base_url are required when config is not provided"
+                )
             self.model = model
-            self.base_url = _validate_base_url(base_url.rstrip('/'))
-            self.api_key = kwargs.get('api_key')
-            self.temperature = kwargs.get('temperature', DEFAULT_TEMPERATURE)
-            self.max_tokens = kwargs.get('max_tokens', 2048)
-            self.top_p = kwargs.get('top_p', DEFAULT_TOP_P)
-            self.timeout = kwargs.get('timeout', DEFAULT_REQUEST_TIMEOUT)
-            self.max_retries = kwargs.get('max_retries', DEFAULT_MAX_RETRIES)
-            self.retry_delay = kwargs.get('retry_delay', 2.0)
-            enable_cache = kwargs.get('enable_cache', False)
-            cache_ttl = kwargs.get('cache_ttl', DEFAULT_CACHE_TTL)
-            rate_limiter = kwargs.get('rate_limiter')
+            self.base_url = _validate_base_url(base_url.rstrip("/"))
+            self.api_key = kwargs.get("api_key")
+            self.temperature = kwargs.get("temperature", DEFAULT_TEMPERATURE)
+            self.max_tokens = kwargs.get("max_tokens", 2048)
+            self.top_p = kwargs.get("top_p", DEFAULT_TOP_P)
+            self.timeout = kwargs.get("timeout", DEFAULT_REQUEST_TIMEOUT)
+            self.max_retries = kwargs.get("max_retries", DEFAULT_MAX_RETRIES)
+            self.retry_delay = kwargs.get("retry_delay", 2.0)
+            enable_cache = kwargs.get("enable_cache", False)
+            cache_ttl = kwargs.get("cache_ttl", DEFAULT_CACHE_TTL)
+            rate_limiter = kwargs.get("rate_limiter")
 
         _init_infrastructure(self, enable_cache, cache_ttl, rate_limiter)
 
@@ -279,31 +294,34 @@ class BaseLLM(LLMContextManagerMixin, ABC):
 
     def __del__(self) -> None:
         """Warn about improper cleanup - DO NOT attempt cleanup in finalizer."""
-        if not hasattr(self, '_closed'):
+        if not hasattr(self, "_closed"):
             return
 
-        if not self._closed and (self._client is not None or self._async_client is not None):
+        if not self._closed and (
+            self._client is not None or self._async_client is not None
+        ):
             import warnings
+
             warnings.warn(
                 f"{self.__class__.__name__} was not properly closed. "
                 f"Use 'async with' or 'with' context manager to avoid resource leaks. "
                 f"Leaked clients will be reclaimed by OS on process exit.",
                 ResourceWarning,
-                stacklevel=2
+                stacklevel=2,
             )
 
     @abstractmethod
-    def _build_request(self, prompt: str, **kwargs: Any) -> Dict[str, Any]:
+    def _build_request(self, prompt: str, **kwargs: Any) -> dict[str, Any]:
         """Build provider-specific request payload."""
         pass
 
     @abstractmethod
-    def _parse_response(self, response: Dict[str, Any], latency_ms: int) -> LLMResponse:
+    def _parse_response(self, response: dict[str, Any], latency_ms: int) -> LLMResponse:
         """Parse provider-specific response into standardized format."""
         pass
 
     @abstractmethod
-    def _get_headers(self) -> Dict[str, str]:
+    def _get_headers(self) -> dict[str, str]:
         """Get provider-specific HTTP headers."""
         pass
 
@@ -326,7 +344,9 @@ class BaseLLM(LLMContextManagerMixin, ABC):
         Returns:
             LLMResponse with aggregated content and metadata
         """
-        raise NotImplementedError("Subclass must implement _consume_stream for streaming support")
+        raise NotImplementedError(
+            "Subclass must implement _consume_stream for streaming support"
+        )
 
     async def _aconsume_stream(
         self,
@@ -342,14 +362,16 @@ class BaseLLM(LLMContextManagerMixin, ABC):
         Returns:
             LLMResponse with aggregated content and metadata
         """
-        raise NotImplementedError("Subclass must implement _aconsume_stream for streaming support")
+        raise NotImplementedError(
+            "Subclass must implement _aconsume_stream for streaming support"
+        )
 
     def stream(
         self,
         prompt: str,
-        context: Optional[ExecutionContext] = None,
-        on_chunk: Optional[StreamCallback] = None,
-        **kwargs: Any
+        context: ExecutionContext | None = None,
+        on_chunk: StreamCallback | None = None,
+        **kwargs: Any,
     ) -> LLMResponse:
         """Generate completion with streaming. Default: fallback to complete().
 
@@ -361,9 +383,9 @@ class BaseLLM(LLMContextManagerMixin, ABC):
     async def astream(
         self,
         prompt: str,
-        context: Optional[ExecutionContext] = None,
-        on_chunk: Optional[StreamCallback] = None,
-        **kwargs: Any
+        context: ExecutionContext | None = None,
+        on_chunk: StreamCallback | None = None,
+        **kwargs: Any,
     ) -> LLMResponse:
         """Async streaming completion. Default: fallback to acomplete().
 
@@ -373,14 +395,15 @@ class BaseLLM(LLMContextManagerMixin, ABC):
         return await self.acomplete(prompt, context, **kwargs)
 
     def complete(
-        self,
-        prompt: str,
-        context: Optional[ExecutionContext] = None,
-        **kwargs: Any
+        self, prompt: str, context: ExecutionContext | None = None, **kwargs: Any
     ) -> LLMResponse:
         """Generate completion for prompt."""
         if self._rate_limiter is not None:
-            entity_id = (context.agent_id if context and hasattr(context, 'agent_id') else self.model)
+            entity_id = (
+                context.agent_id
+                if context and hasattr(context, "agent_id")
+                else self.model
+            )
             allowed, reason = self._rate_limiter.check_and_record_rate_limit(entity_id)
             if not allowed:
                 raise LLMRateLimitError(reason or ERROR_MSG_RATE_LIMIT_EXCEEDED)
@@ -398,7 +421,9 @@ class BaseLLM(LLMContextManagerMixin, ABC):
                     endpoint = f"{self.base_url}{self._get_endpoint()}"
 
                     response = self._get_client().post(
-                        endpoint, json=request_data, headers=headers,
+                        endpoint,
+                        json=request_data,
+                        headers=headers,
                     )
 
                     return self._execute_and_parse(response, start_time, cache_key)
@@ -410,14 +435,26 @@ class BaseLLM(LLMContextManagerMixin, ABC):
                         )
                     # Exponential backoff with jitter (R-15) to decorrelate
                     # retries across concurrent callers.
-                    delay = self.retry_delay * (DEFAULT_BACKOFF_FACTOR ** attempt) * (RETRY_JITTER_MIN + random.random())  # noqa: S311 -- jitter/backoff, not crypto
-                    time.sleep(delay)  # Intentional blocking: sync retry uses sleep; use acomplete() for async contexts
+                    delay = (
+                        self.retry_delay
+                        * (DEFAULT_BACKOFF_FACTOR**attempt)
+                        * (RETRY_JITTER_MIN + random.random())
+                    )  # noqa: S311 -- jitter/backoff, not crypto
+                    time.sleep(
+                        delay
+                    )  # Intentional blocking: sync retry uses sleep; use acomplete() for async contexts
 
                 except LLMRateLimitError:
                     if attempt == self.max_retries - 1:
                         raise
-                    delay = self.retry_delay * (DEFAULT_BACKOFF_FACTOR ** attempt) * (RETRY_JITTER_MIN + random.random())  # noqa: S311 -- jitter/backoff, not crypto
-                    time.sleep(delay)  # Intentional blocking: sync rate limit backoff; use acomplete() for async contexts
+                    delay = (
+                        self.retry_delay
+                        * (DEFAULT_BACKOFF_FACTOR**attempt)
+                        * (RETRY_JITTER_MIN + random.random())
+                    )  # noqa: S311 -- jitter/backoff, not crypto
+                    time.sleep(
+                        delay
+                    )  # Intentional blocking: sync rate limit backoff; use acomplete() for async contexts
 
                 except (LLMAuthenticationError, httpx.HTTPStatusError):
                     raise
@@ -427,14 +464,15 @@ class BaseLLM(LLMContextManagerMixin, ABC):
         return self._circuit_breaker.call(_make_api_call)
 
     async def acomplete(
-        self,
-        prompt: str,
-        context: Optional[ExecutionContext] = None,
-        **kwargs: Any
+        self, prompt: str, context: ExecutionContext | None = None, **kwargs: Any
     ) -> LLMResponse:
         """Async version: Generate completion for prompt."""
         if self._rate_limiter is not None:
-            entity_id = (context.agent_id if context and hasattr(context, 'agent_id') else self.model)
+            entity_id = (
+                context.agent_id
+                if context and hasattr(context, "agent_id")
+                else self.model
+            )
             allowed, reason = self._rate_limiter.check_and_record_rate_limit(entity_id)
             if not allowed:
                 raise LLMRateLimitError(reason or ERROR_MSG_RATE_LIMIT_EXCEEDED)
@@ -453,7 +491,9 @@ class BaseLLM(LLMContextManagerMixin, ABC):
 
                     client = await self._get_async_client_safe()
                     response = await client.post(
-                        endpoint, json=request_data, headers=headers,
+                        endpoint,
+                        json=request_data,
+                        headers=headers,
                     )
 
                     return self._execute_and_parse(response, start_time, cache_key)
@@ -464,13 +504,21 @@ class BaseLLM(LLMContextManagerMixin, ABC):
                             f"Request timed out after {self.timeout}s (attempt {attempt + 1}/{self.max_retries})"
                         )
                     # Exponential backoff with jitter (R-15)
-                    delay = self.retry_delay * (DEFAULT_BACKOFF_FACTOR ** attempt) * (RETRY_JITTER_MIN + random.random())  # noqa: S311 -- jitter/backoff, not crypto
+                    delay = (
+                        self.retry_delay
+                        * (DEFAULT_BACKOFF_FACTOR**attempt)
+                        * (RETRY_JITTER_MIN + random.random())
+                    )  # noqa: S311 -- jitter/backoff, not crypto
                     await asyncio.sleep(delay)
 
                 except LLMRateLimitError:
                     if attempt == self.max_retries - 1:
                         raise
-                    delay = self.retry_delay * (DEFAULT_BACKOFF_FACTOR ** attempt) * (RETRY_JITTER_MIN + random.random())  # noqa: S311 -- jitter/backoff, not crypto
+                    delay = (
+                        self.retry_delay
+                        * (DEFAULT_BACKOFF_FACTOR**attempt)
+                        * (RETRY_JITTER_MIN + random.random())
+                    )  # noqa: S311 -- jitter/backoff, not crypto
                     await asyncio.sleep(delay)
 
                 except (LLMAuthenticationError, httpx.HTTPStatusError):
@@ -478,7 +526,9 @@ class BaseLLM(LLMContextManagerMixin, ABC):
 
             raise LLMError(f"Failed after {self.max_retries} attempts")
 
-        result: LLMResponse = await self._circuit_breaker.async_call(_make_async_api_call)
+        result: LLMResponse = await self._circuit_breaker.async_call(
+            _make_async_api_call
+        )
         return result
 
 
@@ -499,6 +549,7 @@ def _init_infrastructure(
             llm._cache = LLMCache(backend="memory", ttl=cache_ttl)
         else:
             import warnings
+
             warnings.warn(
                 "LLM caching requested but cache module not available. "
                 "Install with: pip install src/cache",
@@ -506,10 +557,11 @@ def _init_infrastructure(
             )
 
     llm._circuit_breaker = _get_shared_cb(
-        llm, BaseLLM._circuit_breakers, BaseLLM._circuit_breaker_lock,
+        llm,
+        BaseLLM._circuit_breakers,
+        BaseLLM._circuit_breaker_lock,
         BaseLLM._MAX_CIRCUIT_BREAKERS,
     )
 
     llm._rate_limiter = rate_limiter
     _bind_callable_attributes(llm)
-

@@ -2,25 +2,23 @@
 
 States: CLOSED (normal) -> OPEN (fast-fail) -> HALF_OPEN (testing recovery).
 """
+
 import logging
 import threading
 import time
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import Enum
 from typing import (
     Any,
-    Callable,
-    Dict,
-    Generator,
-    List,
     Optional,
     Protocol,
     TypeVar,
 )
 
-T = TypeVar('T')
+T = TypeVar("T")
 logger = logging.getLogger(__name__)
 
 from temper_ai.shared.constants.retries import (
@@ -65,7 +63,7 @@ from temper_ai.shared.utils.exceptions import FrameworkException
 class StateStorage(Protocol):
     """Protocol for state persistence storage backends."""
 
-    def get(self, key: str) -> Optional[str]:
+    def get(self, key: str) -> str | None:
         """Retrieve state by key."""
         ...
 
@@ -80,6 +78,7 @@ class StateStorage(Protocol):
 
 class CircuitState(Enum):
     """Circuit breaker states."""
+
     CLOSED = "closed"
     OPEN = "open"
     HALF_OPEN = "half_open"
@@ -92,6 +91,7 @@ CircuitBreakerState = CircuitState
 @dataclass
 class CircuitBreakerConfig:
     """Circuit breaker configuration."""
+
     failure_threshold: int = CIRCUIT_BREAKER_FAILURE_THRESHOLD
     success_threshold: int = 2
     timeout: int = CIRCUIT_BREAKER_RESET_TIMEOUT  # seconds before trying half-open
@@ -99,6 +99,7 @@ class CircuitBreakerConfig:
 
 class CircuitBreakerError(FrameworkException):
     """Raised when circuit breaker is open (LLM module interface)."""
+
     pass
 
 
@@ -109,13 +110,14 @@ CircuitBreakerOpen = CircuitBreakerError
 @dataclass
 class CircuitBreakerMetrics:
     """Metrics for circuit breaker monitoring."""
+
     total_calls: int = 0
     successful_calls: int = 0
     failed_calls: int = 0
     rejected_calls: int = 0
     state_changes: int = 0
-    last_failure_time: Optional[datetime] = None
-    last_state_change_time: Optional[datetime] = None
+    last_failure_time: datetime | None = None
+    last_state_change_time: datetime | None = None
 
     def success_rate(self) -> float:
         """Calculate success rate (0.0 to 1.0)."""
@@ -127,15 +129,25 @@ class CircuitBreakerMetrics:
         """Calculate failure rate (0.0 to 1.0)."""
         return 1.0 - self.success_rate()
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
         lft = self.last_failure_time.isoformat() if self.last_failure_time else None
-        lsct = self.last_state_change_time.isoformat() if self.last_state_change_time else None
-        return {"total_calls": self.total_calls, "successful_calls": self.successful_calls,
-                "failed_calls": self.failed_calls, "rejected_calls": self.rejected_calls,
-                "state_changes": self.state_changes, "success_rate": self.success_rate(),
-                "failure_rate": self.failure_rate(), "last_failure_time": lft,
-                "last_state_change_time": lsct}
+        lsct = (
+            self.last_state_change_time.isoformat()
+            if self.last_state_change_time
+            else None
+        )
+        return {
+            "total_calls": self.total_calls,
+            "successful_calls": self.successful_calls,
+            "failed_calls": self.failed_calls,
+            "rejected_calls": self.rejected_calls,
+            "state_changes": self.state_changes,
+            "success_rate": self.success_rate(),
+            "failure_rate": self.failure_rate(),
+            "last_failure_time": lft,
+            "last_state_change_time": lsct,
+        }
 
 
 def _apply_loaded_state(breaker: "CircuitBreaker", loaded: dict) -> None:
@@ -159,9 +171,9 @@ def _validate_name(name: str) -> None:
 
 def _build_config(
     config: Optional["CircuitBreakerConfig"],
-    failure_threshold: Optional[int],
-    timeout_seconds: Optional[int],
-    success_threshold: Optional[int],
+    failure_threshold: int | None,
+    timeout_seconds: int | None,
+    success_threshold: int | None,
     name: str,
 ) -> "CircuitBreakerConfig":
     """Build config from explicit config object or individual params."""
@@ -176,11 +188,23 @@ def _build_config(
     if config is not None:
         return config
 
-    ft = failure_threshold if failure_threshold is not None else CIRCUIT_BREAKER_FAILURE_THRESHOLD
-    ts = timeout_seconds if timeout_seconds is not None else CIRCUIT_BREAKER_RESET_TIMEOUT
+    ft = (
+        failure_threshold
+        if failure_threshold is not None
+        else CIRCUIT_BREAKER_FAILURE_THRESHOLD
+    )
+    ts = (
+        timeout_seconds
+        if timeout_seconds is not None
+        else CIRCUIT_BREAKER_RESET_TIMEOUT
+    )
     st = success_threshold if success_threshold is not None else 2
 
-    if not isinstance(ft, int) or ft < MIN_FAILURE_THRESHOLD or ft > MAX_FAILURE_THRESHOLD:
+    if (
+        not isinstance(ft, int)
+        or ft < MIN_FAILURE_THRESHOLD
+        or ft > MAX_FAILURE_THRESHOLD
+    ):
         raise ValueError(
             f"failure_threshold must be int {MIN_FAILURE_THRESHOLD}-{MAX_FAILURE_THRESHOLD}, got {ft}"
         )
@@ -188,7 +212,11 @@ def _build_config(
         raise ValueError(
             f"timeout_seconds must be int {MIN_TIMEOUT_SECONDS}-{MAX_TIMEOUT_SECONDS}, got {ts}"
         )
-    if not isinstance(st, int) or st < MIN_SUCCESS_THRESHOLD or st > MAX_SUCCESS_THRESHOLD:
+    if (
+        not isinstance(st, int)
+        or st < MIN_SUCCESS_THRESHOLD
+        or st > MAX_SUCCESS_THRESHOLD
+    ):
         raise ValueError(
             f"success_threshold must be int {MIN_SUCCESS_THRESHOLD}-{MAX_SUCCESS_THRESHOLD}, got {st}"
         )
@@ -223,23 +251,25 @@ class CircuitBreaker:
     _state: CircuitState
     _failure_count: int
     _success_count: int
-    _last_failure_time: Optional[float]
-    _opened_at: Optional[datetime]
+    _last_failure_time: float | None
+    _opened_at: datetime | None
 
     def __init__(
         self,
         name: str,
-        config: Optional[CircuitBreakerConfig] = None,
-        storage: Optional[StateStorage] = None,
-        failure_threshold: Optional[int] = None,
-        timeout_seconds: Optional[int] = None,
-        success_threshold: Optional[int] = None,
-        observability_callback: Optional[Callable] = None,
+        config: CircuitBreakerConfig | None = None,
+        storage: StateStorage | None = None,
+        failure_threshold: int | None = None,
+        timeout_seconds: int | None = None,
+        success_threshold: int | None = None,
+        observability_callback: Callable | None = None,
     ):
         _validate_name(name)
         self.name = name
 
-        self.config = _build_config(config, failure_threshold, timeout_seconds, success_threshold, name)
+        self.config = _build_config(
+            config, failure_threshold, timeout_seconds, success_threshold, name
+        )
 
         self.failure_threshold = self.config.failure_threshold
         self.success_threshold = self.config.success_threshold
@@ -250,10 +280,10 @@ class CircuitBreaker:
         self._half_open_semaphore = threading.Semaphore(1)
 
         self.metrics = CircuitBreakerMetrics()
-        self._on_state_change_callbacks: List[
+        self._on_state_change_callbacks: list[
             Callable[[CircuitState, CircuitState], None]
         ] = []
-        self._observability_callbacks: List[Callable] = (
+        self._observability_callbacks: list[Callable] = (
             [observability_callback] if observability_callback is not None else []
         )
 
@@ -261,39 +291,56 @@ class CircuitBreaker:
         self._state = loaded["state"]
         self._failure_count = loaded["failure_count"]
         self._success_count = loaded["success_count"]
-        self._last_failure_time: Optional[float] = loaded["last_failure_time"]
-        self._opened_at: Optional[datetime] = loaded["opened_at"]
+        self._last_failure_time: float | None = loaded["last_failure_time"]
+        self._opened_at: datetime | None = loaded["opened_at"]
         if loaded["config"] is not None:
             self.config = loaded["config"]
 
-        self._on_success = lambda reserved_state=None: _on_call_success_helper(self, reserved_state)
-        self._on_failure = lambda error, reserved_state=None: _on_call_failure_helper(self, error, reserved_state)
+        self._on_success = lambda reserved_state=None: _on_call_success_helper(
+            self, reserved_state
+        )
+        self._on_failure = lambda error, reserved_state=None: _on_call_failure_helper(
+            self, error, reserved_state
+        )
         self._reserve_execution = lambda: _reserve_execution_helper(self)
         self.can_execute = lambda: self.state != CircuitState.OPEN
         self.get_metrics = lambda: self.metrics
         self._save_state = lambda: _save_state_helper(
-            self.storage, self.name, self._state,
-            self._failure_count, self._success_count,
-            self._last_failure_time, self.config,
+            self.storage,
+            self.name,
+            self._state,
+            self._failure_count,
+            self._success_count,
+            self._last_failure_time,
+            self.config,
         )
-        self._load_state = lambda: _apply_loaded_state(self, _load_state_helper(self.storage, self.name))
+        self._load_state = lambda: _apply_loaded_state(
+            self, _load_state_helper(self.storage, self.name)
+        )
 
     @property
     def state(self) -> CircuitState:
         """Get current circuit breaker state, checking for auto-transitions."""
         with self.lock:
-            # Inline _check_state_transition: OPEN -> HALF_OPEN if timeout elapsed
+            # Auto-transition: OPEN -> HALF_OPEN if timeout elapsed
             # Uses local time module so tests can mock temper_ai.shared.core.circuit_breaker.time
             pending = None
             if self._state == CircuitState.OPEN:
-                if self._last_failure_time is None or (time.time() - self._last_failure_time) >= self.config.timeout:
+                if (
+                    self._last_failure_time is None
+                    or (time.time() - self._last_failure_time) >= self.config.timeout
+                ):
                     pending = self._transition_to(CircuitState.HALF_OPEN)
                     self._success_count = 0
                     if self.storage:
                         _save_state_helper(
-                            self.storage, self.name, self._state,
-                            self._failure_count, self._success_count,
-                            self._last_failure_time, self.config,
+                            self.storage,
+                            self.name,
+                            self._state,
+                            self._failure_count,
+                            self._success_count,
+                            self._last_failure_time,
+                            self.config,
                         )
             current = self._state
         _fire_callbacks_helper(pending, breaker=self)
@@ -325,7 +372,7 @@ class CircuitBreaker:
         self._success_count = value
 
     @property
-    def last_failure_time(self) -> Optional[float]:
+    def last_failure_time(self) -> float | None:
         """Timestamp of most recent failure."""
         return self._last_failure_time
 
@@ -346,13 +393,17 @@ class CircuitBreaker:
 
             if self.storage:
                 _save_state_helper(
-                    self.storage, self.name, self._state,
-                    self._failure_count, self._success_count,
-                    self._last_failure_time, self.config,
+                    self.storage,
+                    self.name,
+                    self._state,
+                    self._failure_count,
+                    self._success_count,
+                    self._last_failure_time,
+                    self.config,
                 )
         _fire_callbacks_helper(pending, breaker=self)
 
-    def record_failure(self, error: Optional[Exception] = None) -> None:
+    def record_failure(self, error: Exception | None = None) -> None:
         """Record failed execution (safety module interface)."""
         pending = None
         with self.lock:
@@ -376,9 +427,13 @@ class CircuitBreaker:
 
             if self.storage:
                 _save_state_helper(
-                    self.storage, self.name, self._state,
-                    self._failure_count, self._success_count,
-                    self._last_failure_time, self.config,
+                    self.storage,
+                    self.name,
+                    self._state,
+                    self._failure_count,
+                    self._success_count,
+                    self._last_failure_time,
+                    self.config,
                 )
         _fire_callbacks_helper(pending, breaker=self)
 
@@ -466,9 +521,13 @@ class CircuitBreaker:
             self._opened_at = None
             if self.storage:
                 _save_state_helper(
-                    self.storage, self.name, self._state,
-                    self._failure_count, self._success_count,
-                    self._last_failure_time, self.config,
+                    self.storage,
+                    self.name,
+                    self._state,
+                    self._failure_count,
+                    self._success_count,
+                    self._last_failure_time,
+                    self.config,
                 )
         _fire_callbacks_helper(pending, breaker=self)
 
@@ -480,7 +539,7 @@ class CircuitBreaker:
             self._last_failure_time = time.time()
         _fire_callbacks_helper(pending, breaker=self)
 
-    def _transition_to(self, new_state: CircuitState) -> Optional[tuple]:
+    def _transition_to(self, new_state: CircuitState) -> tuple | None:
         """Transition to new state. Must hold self.lock. Returns callback info or None."""
         if self._state != new_state:
             old_state = self._state

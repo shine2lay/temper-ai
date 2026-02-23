@@ -1,6 +1,7 @@
 """Tests for AsyncObservabilityEventBus."""
+
 import asyncio
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -13,7 +14,7 @@ from temper_ai.observability.event_bus import (
 def _make_event(event_type: str = "test") -> ObservabilityEvent:
     return ObservabilityEvent(
         event_type=event_type,
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
         data={"key": "value"},
     )
 

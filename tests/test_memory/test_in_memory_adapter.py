@@ -79,7 +79,9 @@ class TestInMemoryAdapterSearch:
 
     def test_search_threshold(self, scope, adapter):
         adapter.add(scope, "short", MEMORY_TYPE_EPISODIC)
-        adapter.add(scope, "a very long string with word short in it", MEMORY_TYPE_EPISODIC)
+        adapter.add(
+            scope, "a very long string with word short in it", MEMORY_TYPE_EPISODIC
+        )
         # "short" in "short" gives score 1.0; in long string gives lower score
         results = adapter.search(scope, "short", threshold=0.9)
         assert len(results) == 1

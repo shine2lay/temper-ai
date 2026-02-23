@@ -1,8 +1,7 @@
 """Time window calculations for metric aggregation periods."""
-from datetime import datetime, timedelta, timezone
-from typing import Optional, Tuple
 
-from typing_extensions import assert_never
+from datetime import UTC, datetime, timedelta
+from typing import assert_never
 
 from temper_ai.observability.aggregation.period import AggregationPeriod
 
@@ -11,10 +10,7 @@ class TimeWindowCalculator:
     """Calculates time windows for metric aggregation periods."""
 
     @staticmethod
-    def get_period_start(
-        end_time: datetime,
-        period: AggregationPeriod
-    ) -> datetime:
+    def get_period_start(end_time: datetime, period: AggregationPeriod) -> datetime:
         """Calculate period start time from end time.
 
         Args:
@@ -41,9 +37,8 @@ class TimeWindowCalculator:
 
     @staticmethod
     def get_default_time_window(
-        period: AggregationPeriod,
-        end_time: Optional[datetime] = None
-    ) -> Tuple[datetime, datetime]:
+        period: AggregationPeriod, end_time: datetime | None = None
+    ) -> tuple[datetime, datetime]:
         """Get default time window for aggregation period.
 
         Args:
@@ -54,7 +49,7 @@ class TimeWindowCalculator:
             Tuple of (start_time, end_time)
         """
         if end_time is None:
-            end_time = datetime.now(timezone.utc)
+            end_time = datetime.now(UTC)
 
         start_time = TimeWindowCalculator.get_period_start(end_time, period)
         return start_time, end_time

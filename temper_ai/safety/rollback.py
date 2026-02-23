@@ -36,14 +36,14 @@ Example:
     ...     if result.success:
     ...         print("Successfully rolled back changes")
 """
+
 import logging
 import os
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
-
-from temper_ai.shared.constants.limits import MAX_MEDIUM_STRING_LENGTH, THRESHOLD_LARGE_COUNT
+from typing import Any
 
 # Import rollback data types from observability (canonical location)
 from temper_ai.observability.rollback_types import (
@@ -52,6 +52,10 @@ from temper_ai.observability.rollback_types import (
     RollbackStatus,
 )
 from temper_ai.safety.constants import EXISTED_SUFFIX, STRATEGY_PREFIX
+from temper_ai.shared.constants.limits import (
+    MAX_MEDIUM_STRING_LENGTH,
+    THRESHOLD_LARGE_COUNT,
+)
 from temper_ai.shared.utils.exceptions import SecurityError
 
 logger = logging.getLogger(__name__)
@@ -59,18 +63,24 @@ logger = logging.getLogger(__name__)
 
 class RollbackSecurityError(SecurityError):
     """Raised when rollback operation fails security validation."""
+
     pass
 
 
 # Re-export types for backward compatibility
-__all__ = ["RollbackResult", "RollbackSnapshot", "RollbackStatus", "RollbackSecurityError"]
+__all__ = [
+    "RollbackResult",
+    "RollbackSnapshot",
+    "RollbackStatus",
+    "RollbackSecurityError",
+]
 
 
 def validate_rollback_path(
     file_path: str,
-    allowed_directories: Optional[List[str]] = None,
-    check_symlinks: bool = True
-) -> tuple[bool, Optional[str]]:
+    allowed_directories: list[str] | None = None,
+    check_symlinks: bool = True,
+) -> tuple[bool, str | None]:
     """Validate file path for rollback operations.
 
     Security validation for file paths to prevent:
@@ -141,7 +151,7 @@ def validate_rollback_path(
         return False, f"Path validation failed: {str(e)}"
 
 
-def _get_default_allowed_directories() -> List[str]:
+def _get_default_allowed_directories() -> list[str]:
     """Get default allowed directories for rollback operations.
 
     Returns:
@@ -156,6 +166,7 @@ def _get_default_allowed_directories() -> List[str]:
 
     # Add platform-specific temp directories
     import tempfile
+
     temp_dir = tempfile.gettempdir()
     if temp_dir not in allowed_directories:
         allowed_directories.append(temp_dir)
@@ -163,7 +174,7 @@ def _get_default_allowed_directories() -> List[str]:
     return allowed_directories
 
 
-def _resolve_path(file_path: str) -> Optional[str]:
+def _resolve_path(file_path: str) -> str | None:
     """Resolve file path to absolute real path.
 
     Args:
@@ -179,7 +190,7 @@ def _resolve_path(file_path: str) -> Optional[str]:
         return None
 
 
-def _check_symlinks(file_path: str, real_path: str) -> Optional[str]:
+def _check_symlinks(file_path: str, real_path: str) -> str | None:
     """Check for symlinks in path.
 
     Args:
@@ -209,7 +220,7 @@ def _check_symlinks(file_path: str, real_path: str) -> Optional[str]:
         return f"Cannot verify symlink status: {str(e)}"
 
 
-def _is_path_in_allowed_dirs(real_path: str, allowed_directories: List[str]) -> bool:
+def _is_path_in_allowed_dirs(real_path: str, allowed_directories: list[str]) -> bool:
     """Check if path is within allowed directories.
 
     Args:
@@ -241,7 +252,7 @@ def _is_path_in_allowed_dirs(real_path: str, allowed_directories: List[str]) -> 
     return False
 
 
-def _check_dangerous_directories(real_path: str) -> Optional[str]:
+def _check_dangerous_directories(real_path: str) -> str | None:
     """Check if path is in dangerous system directory.
 
     Args:
@@ -295,9 +306,7 @@ class RollbackStrategy(ABC):
 
     @abstractmethod
     def create_snapshot(
-        self,
-        action: Dict[str, Any],
-        context: Dict[str, Any]
+        self, action: dict[str, Any], context: dict[str, Any]
     ) -> RollbackSnapshot:
         """Create snapshot before action execution.
 
@@ -311,10 +320,7 @@ class RollbackStrategy(ABC):
         pass
 
     @abstractmethod
-    def execute_rollback(
-        self,
-        snapshot: RollbackSnapshot
-    ) -> RollbackResult:
+    def execute_rollback(self, snapshot: RollbackSnapshot) -> RollbackResult:
         """Execute rollback using snapshot.
 
         Args:
@@ -325,10 +331,7 @@ class RollbackStrategy(ABC):
         """
         pass
 
-    def validate_rollback(
-        self,
-        snapshot: RollbackSnapshot
-    ) -> tuple[bool, List[str]]:
+    def validate_rollback(self, snapshot: RollbackSnapshot) -> tuple[bool, list[str]]:
         """Validate that rollback is safe to execute.
 
         Args:
@@ -353,9 +356,7 @@ class FileRollbackStrategy(RollbackStrategy):
         return "file_rollback"
 
     def create_snapshot(
-        self,
-        action: Dict[str, Any],
-        context: Dict[str, Any]
+        self, action: dict[str, Any], context: dict[str, Any]
     ) -> RollbackSnapshot:
         """Snapshot file state before modification."""
         snapshot = RollbackSnapshot(action=action, context=context)
@@ -370,7 +371,7 @@ class FileRollbackStrategy(RollbackStrategy):
             if not is_valid:
                 logger.error(
                     f"SECURITY: Rejected invalid path in snapshot: {file_path}",
-                    extra={"error": error, "action": action}
+                    extra={"error": error, "action": action},
                 )
                 raise RollbackSecurityError(
                     f"Invalid file path rejected: {file_path}\n"
@@ -381,7 +382,7 @@ class FileRollbackStrategy(RollbackStrategy):
             path = Path(file_path)
             if path.exists() and path.is_file():
                 try:
-                    with open(path, 'r') as f:
+                    with open(path) as f:
                         snapshot.file_snapshots[file_path] = f.read()
                     snapshot.metadata[f"{file_path}{EXISTED_SUFFIX}"] = True
                 except (OSError, UnicodeDecodeError):
@@ -394,15 +395,10 @@ class FileRollbackStrategy(RollbackStrategy):
 
         return snapshot
 
-    def execute_rollback(
-        self,
-        snapshot: RollbackSnapshot
-    ) -> RollbackResult:
+    def execute_rollback(self, snapshot: RollbackSnapshot) -> RollbackResult:
         """Restore files to snapshot state."""
         result = RollbackResult(
-            success=False,
-            snapshot_id=snapshot.id,
-            status=RollbackStatus.IN_PROGRESS
+            success=False, snapshot_id=snapshot.id, status=RollbackStatus.IN_PROGRESS
         )
 
         # Validate rollback
@@ -424,9 +420,7 @@ class FileRollbackStrategy(RollbackStrategy):
         return result
 
     def _restore_file_contents(
-        self,
-        snapshot: RollbackSnapshot,
-        result: RollbackResult
+        self, snapshot: RollbackSnapshot, result: RollbackResult
     ) -> None:
         """Restore file contents from snapshot.
 
@@ -441,7 +435,7 @@ class FileRollbackStrategy(RollbackStrategy):
                 if not is_valid:
                     logger.error(
                         f"SECURITY: Rejected invalid path in rollback restore: {file_path}",
-                        extra={"error": error, "snapshot_id": snapshot.id}
+                        extra={"error": error, "snapshot_id": snapshot.id},
                     )
                     result.failed_items.append(file_path)
                     result.errors.append(f"Security violation: {error}")
@@ -451,15 +445,12 @@ class FileRollbackStrategy(RollbackStrategy):
                 if self._restore_file_atomically(file_path, content, result):
                     result.reverted_items.append(file_path)
 
-            except (OSError, IOError) as e:
+            except OSError as e:
                 result.failed_items.append(file_path)
                 result.errors.append(f"Failed to restore {file_path}: {str(e)}")
 
     def _restore_file_atomically(
-        self,
-        file_path: str,
-        content: str,
-        result: RollbackResult
+        self, file_path: str, content: str, result: RollbackResult
     ) -> bool:
         """Restore file content atomically.
 
@@ -480,10 +471,11 @@ class FileRollbackStrategy(RollbackStrategy):
 
         # Use atomic write: tempfile + os.replace
         import tempfile as _tempfile
+
         dir_path = os.path.dirname(os.path.abspath(file_path))
         fd, tmp_path = _tempfile.mkstemp(dir=dir_path)
         try:
-            with os.fdopen(fd, 'w') as f:
+            with os.fdopen(fd, "w") as f:
                 f.write(content)
             os.replace(tmp_path, file_path)
             return True
@@ -496,9 +488,7 @@ class FileRollbackStrategy(RollbackStrategy):
             raise
 
     def _delete_created_files(
-        self,
-        snapshot: RollbackSnapshot,
-        result: RollbackResult
+        self, snapshot: RollbackSnapshot, result: RollbackResult
     ) -> None:
         """Delete files that were created (didn't exist before).
 
@@ -517,7 +507,7 @@ class FileRollbackStrategy(RollbackStrategy):
             if not is_valid:
                 logger.error(
                     f"SECURITY: Rejected invalid path in rollback deletion: {file_path}",
-                    extra={"error": error, "snapshot_id": snapshot.id}
+                    extra={"error": error, "snapshot_id": snapshot.id},
                 )
                 result.failed_items.append(file_path)
                 result.errors.append(f"Security violation (delete): {error}")
@@ -525,15 +515,11 @@ class FileRollbackStrategy(RollbackStrategy):
 
             try:
                 self._delete_file_safely(file_path, result)
-            except (OSError, IOError) as e:
+            except OSError as e:
                 result.failed_items.append(file_path)
                 result.errors.append(f"Failed to delete {file_path}: {str(e)}")
 
-    def _delete_file_safely(
-        self,
-        file_path: str,
-        result: RollbackResult
-    ) -> None:
+    def _delete_file_safely(self, file_path: str, result: RollbackResult) -> None:
         """Delete file with TOCTOU protection.
 
         Args:
@@ -546,7 +532,7 @@ class FileRollbackStrategy(RollbackStrategy):
         if not is_valid2:
             logger.error(
                 f"SECURITY: Resolved path failed validation: {real_path}",
-                extra={"original": file_path, "error": error2}
+                extra={"original": file_path, "error": error2},
             )
             result.failed_items.append(file_path)
             result.errors.append(f"Security violation (resolved path): {error2}")
@@ -572,7 +558,7 @@ class FileRollbackStrategy(RollbackStrategy):
             result.status = RollbackStatus.FAILED
             result.success = False
 
-    def _extract_file_paths(self, action: Dict[str, Any]) -> List[str]:
+    def _extract_file_paths(self, action: dict[str, Any]) -> list[str]:
         """Extract file paths from action."""
         paths = []
 
@@ -600,7 +586,7 @@ class StateRollbackStrategy(RollbackStrategy):
         """Rollback handler name."""
         return "state_rollback"
 
-    def __init__(self, state_getter: Optional[Callable[[], Dict[str, Any]]] = None):
+    def __init__(self, state_getter: Callable[[], dict[str, Any]] | None = None):
         """Initialize with optional state getter.
 
         Args:
@@ -609,9 +595,7 @@ class StateRollbackStrategy(RollbackStrategy):
         self.state_getter = state_getter
 
     def create_snapshot(
-        self,
-        action: Dict[str, Any],
-        context: Dict[str, Any]
+        self, action: dict[str, Any], context: dict[str, Any]
     ) -> RollbackSnapshot:
         """Snapshot current state."""
         snapshot = RollbackSnapshot(action=action, context=context)
@@ -626,15 +610,10 @@ class StateRollbackStrategy(RollbackStrategy):
 
         return snapshot
 
-    def execute_rollback(
-        self,
-        snapshot: RollbackSnapshot
-    ) -> RollbackResult:
+    def execute_rollback(self, snapshot: RollbackSnapshot) -> RollbackResult:
         """Restore state to snapshot values."""
         result = RollbackResult(
-            success=True,
-            snapshot_id=snapshot.id,
-            status=RollbackStatus.COMPLETED
+            success=True, snapshot_id=snapshot.id, status=RollbackStatus.COMPLETED
         )
 
         # State rollback requires custom implementation
@@ -657,22 +636,20 @@ class CompositeRollbackStrategy(RollbackStrategy):
         """Rollback handler name."""
         return "composite_rollback"
 
-    def __init__(self, strategies: Optional[List[RollbackStrategy]] = None):
+    def __init__(self, strategies: list[RollbackStrategy] | None = None):
         """Initialize with list of strategies.
 
         Args:
             strategies: List of rollback strategies to compose
         """
-        self.strategies: List[RollbackStrategy] = strategies or []
+        self.strategies: list[RollbackStrategy] = strategies or []
 
     def add_strategy(self, strategy: RollbackStrategy) -> None:
         """Add a strategy to the composite."""
         self.strategies.append(strategy)
 
     def create_snapshot(
-        self,
-        action: Dict[str, Any],
-        context: Dict[str, Any]
+        self, action: dict[str, Any], context: dict[str, Any]
     ) -> RollbackSnapshot:
         """Create composite snapshot from all strategies."""
         snapshot = RollbackSnapshot(action=action, context=context)
@@ -695,15 +672,10 @@ class CompositeRollbackStrategy(RollbackStrategy):
 
         return snapshot
 
-    def execute_rollback(
-        self,
-        snapshot: RollbackSnapshot
-    ) -> RollbackResult:
+    def execute_rollback(self, snapshot: RollbackSnapshot) -> RollbackResult:
         """Execute rollback across all strategies."""
         composite_result = RollbackResult(
-            success=True,
-            snapshot_id=snapshot.id,
-            status=RollbackStatus.IN_PROGRESS
+            success=True, snapshot_id=snapshot.id, status=RollbackStatus.IN_PROGRESS
         )
 
         # Execute rollback for each strategy
@@ -719,10 +691,14 @@ class CompositeRollbackStrategy(RollbackStrategy):
                 if not result.success:
                     composite_result.success = False
 
-                composite_result.metadata[f"{STRATEGY_PREFIX}{strategy.name}_status"] = result.status.value
+                composite_result.metadata[
+                    f"{STRATEGY_PREFIX}{strategy.name}_status"
+                ] = result.status.value
             except Exception as e:  # noqa: BLE001 -- arbitrary strategy callback
                 composite_result.success = False
-                composite_result.errors.append(f"Strategy {strategy.name} failed: {str(e)}")
+                composite_result.errors.append(
+                    f"Strategy {strategy.name} failed: {str(e)}"
+                )
 
         # Determine final status
         if composite_result.success and not composite_result.failed_items:
@@ -763,7 +739,7 @@ class RollbackManager:
 
     def __init__(
         self,
-        default_strategy: Optional[RollbackStrategy] = None,
+        default_strategy: RollbackStrategy | None = None,
         max_snapshots: int = MAX_SNAPSHOTS,
         max_history: int = MAX_HISTORY,
     ):
@@ -775,12 +751,12 @@ class RollbackManager:
             max_history: Maximum stored history entries before oldest are evicted
         """
         self.default_strategy = default_strategy or FileRollbackStrategy()
-        self._strategies: Dict[str, RollbackStrategy] = {}
-        self._snapshots: Dict[str, RollbackSnapshot] = {}
-        self._history: List[RollbackResult] = []
+        self._strategies: dict[str, RollbackStrategy] = {}
+        self._snapshots: dict[str, RollbackSnapshot] = {}
+        self._history: list[RollbackResult] = []
         self._max_snapshots = max_snapshots
         self._max_history = max_history
-        self._on_rollback_callbacks: List[Callable[[RollbackResult], None]] = []
+        self._on_rollback_callbacks: list[Callable[[RollbackResult], None]] = []
 
     def register_strategy(self, action_type: str, strategy: RollbackStrategy) -> None:
         """Register a rollback strategy for an action type.
@@ -793,9 +769,9 @@ class RollbackManager:
 
     def create_snapshot(
         self,
-        action: Dict[str, Any],
-        context: Optional[Dict[str, Any]] = None,
-        strategy_name: Optional[str] = None
+        action: dict[str, Any],
+        context: dict[str, Any] | None = None,
+        strategy_name: str | None = None,
     ) -> RollbackSnapshot:
         """Create snapshot before action execution.
 
@@ -825,16 +801,15 @@ class RollbackManager:
         self._snapshots[snapshot.id] = snapshot
         if len(self._snapshots) > self._max_snapshots:
             # Remove oldest snapshot (by creation time)
-            oldest_id = min(self._snapshots, key=lambda k: self._snapshots[k].created_at)
+            oldest_id = min(
+                self._snapshots, key=lambda k: self._snapshots[k].created_at
+            )
             del self._snapshots[oldest_id]
 
         return snapshot
 
     def execute_rollback(
-        self,
-        snapshot_id: str,
-        strategy_name: Optional[str] = None,
-        dry_run: bool = False
+        self, snapshot_id: str, strategy_name: str | None = None, dry_run: bool = False
     ) -> RollbackResult:
         """Execute rollback for a snapshot.
 
@@ -864,7 +839,7 @@ class RollbackManager:
                 failed_items=[],
                 errors=[],
                 metadata={"dry_run": True},
-                completed_at=datetime.now(UTC)
+                completed_at=datetime.now(UTC),
             )
 
         # Select strategy
@@ -884,14 +859,14 @@ class RollbackManager:
         # Record in history with eviction of oldest when over limit
         self._history.append(result)
         if len(self._history) > self._max_history:
-            self._history = self._history[-self._max_history:]
+            self._history = self._history[-self._max_history :]
 
         # Trigger callbacks
         self._trigger_rollback_callbacks(result)
 
         return result
 
-    def get_snapshot(self, snapshot_id: str) -> Optional[RollbackSnapshot]:
+    def get_snapshot(self, snapshot_id: str) -> RollbackSnapshot | None:
         """Get snapshot by ID.
 
         Args:
@@ -902,7 +877,7 @@ class RollbackManager:
         """
         return self._snapshots.get(snapshot_id)
 
-    def list_snapshots(self) -> List[RollbackSnapshot]:
+    def list_snapshots(self) -> list[RollbackSnapshot]:
         """Get all snapshots.
 
         Returns:
@@ -910,7 +885,7 @@ class RollbackManager:
         """
         return list(self._snapshots.values())
 
-    def get_history(self) -> List[RollbackResult]:
+    def get_history(self) -> list[RollbackResult]:
         """Get rollback history.
 
         Returns:
@@ -931,7 +906,9 @@ class RollbackManager:
         for callback in self._on_rollback_callbacks:
             try:
                 callback(result)
-            except Exception:  # noqa: BLE001 -- defensive cleanup for arbitrary callback
+            except (
+                Exception
+            ):  # noqa: BLE001 -- defensive cleanup for arbitrary callback
                 # Don't let callback errors break rollback
                 pass
 

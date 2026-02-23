@@ -1,9 +1,6 @@
 """Tests for plugin registry."""
+
 from __future__ import annotations
-
-from unittest.mock import MagicMock, patch
-
-import pytest
 
 from temper_ai.plugins.constants import (
     ALL_PLUGIN_TYPES,
@@ -52,9 +49,11 @@ class TestEnsurePluginRegistered:
 
     def test_import_error_returns_false(self) -> None:
         from temper_ai.agent.utils.agent_factory import AgentFactory
+
         AgentFactory.reset_for_testing()
         # Point to a non-existent module path to force ImportError
         import temper_ai.plugins.registry as reg_module
+
         original_map = dict(reg_module._PLUGIN_MAP)
         reg_module._PLUGIN_MAP[PLUGIN_TYPE_CREWAI] = (
             "temper_ai.plugins.adapters._nonexistent_module_xyz",
@@ -65,19 +64,26 @@ class TestEnsurePluginRegistered:
             result = ensure_plugin_registered(PLUGIN_TYPE_CREWAI)
             assert result is False
         finally:
-            reg_module._PLUGIN_MAP[PLUGIN_TYPE_CREWAI] = original_map[PLUGIN_TYPE_CREWAI]
+            reg_module._PLUGIN_MAP[PLUGIN_TYPE_CREWAI] = original_map[
+                PLUGIN_TYPE_CREWAI
+            ]
             AgentFactory.reset_for_testing()
 
     def test_already_registered_returns_true(self) -> None:
         from temper_ai.agent.base_agent import BaseAgent
         from temper_ai.agent.utils.agent_factory import AgentFactory
+
         AgentFactory.reset_for_testing()
 
         # Register a dummy class first
-        dummy = type("Dummy", (BaseAgent,), {
-            "_run": lambda self, *a: None,
-            "get_capabilities": lambda self: {},
-        })
+        dummy = type(
+            "Dummy",
+            (BaseAgent,),
+            {
+                "_run": lambda self, *a: None,
+                "get_capabilities": lambda self: {},
+            },
+        )
         AgentFactory.register_type(PLUGIN_TYPE_CREWAI, dummy)
 
         result = ensure_plugin_registered(PLUGIN_TYPE_CREWAI)

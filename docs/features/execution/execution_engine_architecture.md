@@ -101,7 +101,7 @@ Abstract base class for all execution engines.
 Compiles workflow configuration into executable form.
 
 - **Args:**
-  - `workflow_config`: Framework-agnostic workflow configuration dict conforming to the meta-autonomous-framework schema
+  - `workflow_config`: Framework-agnostic workflow configuration dict conforming to the Temper AI schema
 - **Returns:** CompiledWorkflow ready for execution (engine-specific but common interface)
 - **Raises:**
   - `ValueError`: If workflow config is invalid or malformed

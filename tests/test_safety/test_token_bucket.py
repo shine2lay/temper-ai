@@ -7,6 +7,7 @@ Tests cover:
 - TokenBucketManager multi-bucket management
 - Edge cases and boundary conditions
 """
+
 import threading
 import time
 from unittest.mock import patch
@@ -22,10 +23,7 @@ class TestRateLimit:
     def test_create_rate_limit(self):
         """Test creating RateLimit configuration."""
         limit = RateLimit(
-            max_tokens=10,
-            refill_rate=1.0,
-            refill_period=1.0,
-            burst_size=5
+            max_tokens=10, refill_rate=1.0, refill_period=1.0, burst_size=5
         )
 
         assert limit.max_tokens == 10
@@ -69,9 +67,7 @@ class TestRateLimit:
         """Test calculating refill rate for hourly limits."""
         # 10 requests per hour
         limit = RateLimit(
-            max_tokens=10,
-            refill_rate=10/3600,  # 10 per hour
-            refill_period=1.0
+            max_tokens=10, refill_rate=10 / 3600, refill_period=1.0  # 10 per hour
         )
 
         assert limit.refill_rate == pytest.approx(0.00278, rel=0.01)
@@ -166,7 +162,7 @@ class TestTokenBucket:
         assert bucket.get_tokens() == pytest.approx(0.0, abs=0.1)
 
         # Mock time to advance 1.1 seconds (no flaky sleep)
-        with patch('temper_ai.safety.token_bucket.time') as mock_time:
+        with patch("temper_ai.safety.token_bucket.time") as mock_time:
             initial_time = bucket.last_refill
             mock_time.time.return_value = initial_time + 1.1
 
@@ -185,7 +181,7 @@ class TestTokenBucket:
         bucket.consume(5)
 
         # Mock time to advance 1.1 seconds (no flaky sleep)
-        with patch('temper_ai.safety.token_bucket.time') as mock_time:
+        with patch("temper_ai.safety.token_bucket.time") as mock_time:
             initial_time = bucket.last_refill
             mock_time.time.return_value = initial_time + 1.1
 
@@ -199,7 +195,7 @@ class TestTokenBucket:
         bucket = TokenBucket(limit)
 
         # Mock time to advance 2 seconds (no flaky sleep)
-        with patch('temper_ai.safety.token_bucket.time') as mock_time:
+        with patch("temper_ai.safety.token_bucket.time") as mock_time:
             initial_time = bucket.last_refill
             mock_time.time.return_value = initial_time + 2.0
 
@@ -245,7 +241,9 @@ class TestTokenBucket:
 
     def test_get_info(self):
         """Test get_info returns bucket information."""
-        limit = RateLimit(max_tokens=10, refill_rate=1.0, refill_period=1.0, burst_size=5)
+        limit = RateLimit(
+            max_tokens=10, refill_rate=1.0, refill_period=1.0, burst_size=5
+        )
         bucket = TokenBucket(limit)
 
         bucket.consume(3)
@@ -302,7 +300,9 @@ class TestTokenBucketThreadSafety:
         lock = threading.Lock()
 
         def consume_with_wait():
-            time.sleep(0.5)  # Wait longer for refill (increased margin for slow runners)
+            time.sleep(
+                0.5
+            )  # Wait longer for refill (increased margin for slow runners)
             if bucket.consume(1):
                 with lock:
                     successes.append(1)
@@ -461,7 +461,9 @@ class TestTokenBucketManager:
     def test_get_wait_time_via_manager(self):
         """Test get_wait_time via manager."""
         manager = TokenBucketManager()
-        manager.set_limit("test_limit", RateLimit(max_tokens=10, refill_rate=1.0, refill_period=1.0))
+        manager.set_limit(
+            "test_limit", RateLimit(max_tokens=10, refill_rate=1.0, refill_period=1.0)
+        )
 
         manager.consume("agent-123", "test_limit", 10)
 
@@ -492,7 +494,9 @@ class TestTokenBucketManager:
         # agent-123 should be full
         assert manager.get_tokens("agent-123", "test_limit") == 10.0
         # agent-456 should still be at 5
-        assert manager.get_tokens("agent-456", "test_limit") == pytest.approx(5.0, abs=0.1)
+        assert manager.get_tokens("agent-456", "test_limit") == pytest.approx(
+            5.0, abs=0.1
+        )
 
     def test_reset_all_for_entity(self):
         """Test resetting all limits for an entity."""
@@ -556,8 +560,12 @@ class TestTokenBucketManager:
 
         assert ("agent-123", "test_limit") in info
         assert ("agent-456", "test_limit") in info
-        assert info[("agent-123", "test_limit")]["current_tokens"] == pytest.approx(7.0, abs=0.1)
-        assert info[("agent-456", "test_limit")]["current_tokens"] == pytest.approx(5.0, abs=0.1)
+        assert info[("agent-123", "test_limit")]["current_tokens"] == pytest.approx(
+            7.0, abs=0.1
+        )
+        assert info[("agent-456", "test_limit")]["current_tokens"] == pytest.approx(
+            5.0, abs=0.1
+        )
 
     def test_multiple_limit_types(self):
         """Test managing multiple limit types."""
@@ -582,9 +590,9 @@ class TestRealWorld:
         # 10 commits per hour, burst of 2
         limit = RateLimit(
             max_tokens=10,
-            refill_rate=10/3600,  # 10 per hour
+            refill_rate=10 / 3600,  # 10 per hour
             refill_period=1.0,
-            burst_size=2
+            burst_size=2,
         )
         bucket = TokenBucket(limit)
 
@@ -600,9 +608,9 @@ class TestRealWorld:
         # 2 deploys per hour, burst of 1
         limit = RateLimit(
             max_tokens=2,
-            refill_rate=2/3600,  # 2 per hour
+            refill_rate=2 / 3600,  # 2 per hour
             refill_period=1.0,
-            burst_size=1
+            burst_size=1,
         )
         bucket = TokenBucket(limit)
 
@@ -628,7 +636,7 @@ class TestRealWorld:
         assert bucket.consume(1) is False
 
         # Mock time to advance 1.1 seconds (no flaky sleep)
-        with patch('temper_ai.safety.token_bucket.time') as mock_time:
+        with patch("temper_ai.safety.token_bucket.time") as mock_time:
             initial_time = bucket.last_refill
             mock_time.time.return_value = initial_time + 1.1
 

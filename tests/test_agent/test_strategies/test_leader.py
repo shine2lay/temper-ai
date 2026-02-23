@@ -2,12 +2,19 @@
 
 import pytest
 
-from temper_ai.agent.strategies.base import AgentOutput, CollaborationStrategy, SynthesisResult
+from temper_ai.agent.strategies.base import (
+    AgentOutput,
+    CollaborationStrategy,
+    SynthesisResult,
+)
 from temper_ai.agent.strategies.leader import LeaderCollaborationStrategy
-from temper_ai.agent.strategies.registry import StrategyRegistry, get_strategy_from_config
-
+from temper_ai.agent.strategies.registry import (
+    StrategyRegistry,
+    get_strategy_from_config,
+)
 
 # -- Fixtures ---------------------------------------------------------------
+
 
 @pytest.fixture
 def strategy():
@@ -59,6 +66,7 @@ def leader_config():
 
 # -- Property tests ---------------------------------------------------------
 
+
 class TestLeaderProperties:
     """Test strategy properties."""
 
@@ -73,6 +81,7 @@ class TestLeaderProperties:
 
 
 # -- get_leader_agent_name tests --------------------------------------------
+
 
 class TestGetLeaderAgentName:
     """Test leader name extraction from config."""
@@ -89,6 +98,7 @@ class TestGetLeaderAgentName:
 
 
 # -- format_team_outputs tests ----------------------------------------------
+
 
 class TestFormatTeamOutputs:
     """Test formatting of perspective outputs for leader prompt."""
@@ -123,6 +133,7 @@ class TestFormatTeamOutputs:
 
 
 # -- synthesize tests -------------------------------------------------------
+
 
 class TestSynthesize:
     """Test synthesis with leader output present."""
@@ -159,9 +170,7 @@ class TestSynthesize:
         assert result.metadata["fallback"] is True
         assert result.decision == "high priority"
 
-    def test_leader_missing_no_fallback_raises(
-        self, strategy, perspective_outputs
-    ):
+    def test_leader_missing_no_fallback_raises(self, strategy, perspective_outputs):
         """Leader not in outputs, fallback_to_consensus=False -> error."""
         config = {"leader_agent": "decider", "fallback_to_consensus": False}
 
@@ -182,6 +191,7 @@ class TestSynthesize:
 
 
 # -- consensus fallback tests -----------------------------------------------
+
 
 class TestConsensusFallback:
     """Test consensus fallback when leader is missing."""
@@ -213,6 +223,7 @@ class TestConsensusFallback:
 
 # -- capabilities and metadata tests ----------------------------------------
 
+
 class TestCapabilities:
     """Test capabilities and metadata reporting."""
 
@@ -230,6 +241,7 @@ class TestCapabilities:
 
 
 # -- registry integration tests ---------------------------------------------
+
 
 class TestRegistryIntegration:
     """Test leader strategy is properly registered."""

@@ -1,7 +1,8 @@
 """Tests for ScoredEvaluator."""
 
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
 
 from temper_ai.optimization._schemas import EvaluatorConfig
 from temper_ai.optimization.evaluators.scored import ScoredEvaluator

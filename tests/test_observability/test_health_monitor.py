@@ -1,15 +1,16 @@
 """Tests for the ObservabilityHealthMonitor."""
-import threading
-from unittest.mock import MagicMock, patch
 
-import pytest
+from unittest.mock import MagicMock
 
 from temper_ai.observability.health_monitor import (
     DEFAULT_CHECK_INTERVAL_SECONDS,
     HealthStatus,
     ObservabilityHealthMonitor,
 )
-from temper_ai.shared.constants.limits import THRESHOLD_LARGE_COUNT, THRESHOLD_MEDIUM_COUNT
+from temper_ai.shared.constants.limits import (
+    THRESHOLD_LARGE_COUNT,
+    THRESHOLD_MEDIUM_COUNT,
+)
 
 
 def _make_buffer(
@@ -171,9 +172,7 @@ class TestHealthAlerts:
         """Alert manager check_metric is called for unhealthy status."""
         alert_mgr = MagicMock()
         buf = _make_buffer(dlq_size=THRESHOLD_LARGE_COUNT + 1)
-        monitor = ObservabilityHealthMonitor(
-            buffer=buf, alert_manager=alert_mgr
-        )
+        monitor = ObservabilityHealthMonitor(buffer=buf, alert_manager=alert_mgr)
 
         status = monitor.check_health()
         monitor._fire_health_alert(status)

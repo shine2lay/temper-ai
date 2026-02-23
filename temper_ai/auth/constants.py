@@ -77,7 +77,6 @@ PROVIDER_GOOGLE = "google"
 
 ERROR_PROVIDER_NOT_CONFIGURED = "' not configured"
 ERROR_PROVIDER_PREFIX = "Provider '"
-ERROR_REDIS_NOT_AVAILABLE = "Redis connection not available"
 
 # ============================================================================
 # HTTP Headers

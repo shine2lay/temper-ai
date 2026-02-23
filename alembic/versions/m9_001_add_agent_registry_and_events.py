@@ -7,16 +7,17 @@ Revises: k2f3g4567890
 Create Date: 2026-02-20
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
+
+import sqlalchemy as sa
 
 from alembic import op
-import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = "m9_001"
-down_revision: Union[str, None] = "k2f3g4567890"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "k2f3g4567890"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -57,7 +58,9 @@ def upgrade() -> None:
     )
     op.create_index("ix_event_log_event_type", "event_log", ["event_type"])
     op.create_index("ix_event_log_timestamp", "event_log", ["timestamp"])
-    op.create_index("ix_event_log_source_workflow_id", "event_log", ["source_workflow_id"])
+    op.create_index(
+        "ix_event_log_source_workflow_id", "event_log", ["source_workflow_id"]
+    )
 
     # Event subscriptions table
     op.create_table(
@@ -73,8 +76,12 @@ def upgrade() -> None:
         sa.Column("last_event_id", sa.String(), nullable=True),
         sa.Column("last_triggered_at", sa.DateTime(), nullable=True),
     )
-    op.create_index("ix_event_subscriptions_agent_id", "event_subscriptions", ["agent_id"])
-    op.create_index("ix_event_subscriptions_event_type", "event_subscriptions", ["event_type"])
+    op.create_index(
+        "ix_event_subscriptions_agent_id", "event_subscriptions", ["agent_id"]
+    )
+    op.create_index(
+        "ix_event_subscriptions_event_type", "event_subscriptions", ["event_type"]
+    )
     op.create_index("ix_event_subscriptions_active", "event_subscriptions", ["active"])
 
     # Add source_agent_id to goal_proposals (if table exists)

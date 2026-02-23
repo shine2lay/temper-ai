@@ -3,11 +3,10 @@
 import hashlib
 import logging
 import uuid
-from datetime import datetime, timezone
-from typing import List, Optional
+from datetime import UTC, datetime
 
 from temper_ai.learning.miners.agent_performance import AgentPerformanceMiner
-from temper_ai.learning.miners.base import BaseMiner, DEFAULT_LOOKBACK_HOURS
+from temper_ai.learning.miners.base import DEFAULT_LOOKBACK_HOURS, BaseMiner
 from temper_ai.learning.miners.collaboration_patterns import CollaborationPatternMiner
 from temper_ai.learning.miners.cost_patterns import CostPatternMiner
 from temper_ai.learning.miners.failure_patterns import FailurePatternMiner
@@ -19,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 _DEDUP_KEY_LENGTH = 16
 
-ALL_MINERS: List[BaseMiner] = [
+ALL_MINERS: list[BaseMiner] = [
     AgentPerformanceMiner(),
     ModelEffectivenessMiner(),
     FailurePatternMiner(),
@@ -34,8 +33,8 @@ class MiningOrchestrator:
     def __init__(
         self,
         store: LearningStore,
-        miners: Optional[List[BaseMiner]] = None,
-        memory_service: Optional[object] = None,
+        miners: list[BaseMiner] | None = None,
+        memory_service: object | None = None,
     ) -> None:
         self.store = store
         self.miners = miners if miners is not None else ALL_MINERS
@@ -43,8 +42,8 @@ class MiningOrchestrator:
 
     def run_mining(self, lookback_hours: int = DEFAULT_LOOKBACK_HOURS) -> MiningRun:
         """Execute all miners, deduplicate results, persist, return run record."""
-        run = MiningRun(id=uuid.uuid4().hex, started_at=datetime.now(timezone.utc))
-        all_patterns: List[LearnedPattern] = []
+        run = MiningRun(id=uuid.uuid4().hex, started_at=datetime.now(UTC))
+        all_patterns: list[LearnedPattern] = []
         miner_stats: dict = {}
 
         for miner in self.miners:
@@ -62,7 +61,7 @@ class MiningOrchestrator:
 
         self._publish_to_memory(deduped)
 
-        run.completed_at = datetime.now(timezone.utc)
+        run.completed_at = datetime.now(UTC)
         run.status = STATUS_COMPLETED
         run.patterns_found = len(all_patterns)
         run.patterns_new = len(deduped)
@@ -71,18 +70,18 @@ class MiningOrchestrator:
         self.store.save_mining_run(run)
         return run
 
-    def _deduplicate(self, patterns: List[LearnedPattern]) -> List[LearnedPattern]:
+    def _deduplicate(self, patterns: list[LearnedPattern]) -> list[LearnedPattern]:
         """Remove patterns that already exist (by type+title hash)."""
         existing = self.store.list_patterns(status=None, limit=1000)
         existing_keys = {_pattern_key(p) for p in existing}
-        new_patterns: List[LearnedPattern] = []
+        new_patterns: list[LearnedPattern] = []
         for p in patterns:
             if _pattern_key(p) not in existing_keys:
                 new_patterns.append(p)
                 existing_keys.add(_pattern_key(p))
         return new_patterns
 
-    def _publish_to_memory(self, patterns: List[LearnedPattern]) -> None:
+    def _publish_to_memory(self, patterns: list[LearnedPattern]) -> None:
         """Store patterns in MemoryService shared namespace if available."""
         if self.memory_service is None or not patterns:
             return

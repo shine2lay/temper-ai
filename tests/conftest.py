@@ -2,6 +2,7 @@
 
 Provides automatic global state isolation between tests.
 """
+
 import pytest
 
 # Register shared fixture plugins
@@ -22,4 +23,5 @@ def _reset_globals_after_test():
     """
     yield
     from temper_ai.shared.core.test_support import reset_all_globals
+
     reset_all_globals()

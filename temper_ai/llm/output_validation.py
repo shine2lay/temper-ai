@@ -3,17 +3,16 @@
 Validates LLM output against a JSON schema and provides retry prompts
 when validation fails.
 """
+
 from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
-_SCHEMA_INSTRUCTION = (
-    "\n\nYou MUST respond with valid JSON matching this schema:\n"
-)
+_SCHEMA_INSTRUCTION = "\n\nYou MUST respond with valid JSON matching this schema:\n"
 
 _RETRY_INSTRUCTION = (
     "Your previous output was invalid JSON.\n"
@@ -24,8 +23,8 @@ _RETRY_INSTRUCTION = (
 
 def validate_output_against_schema(
     output_text: str,
-    json_schema: Dict[str, Any],
-) -> Tuple[bool, Optional[str]]:
+    json_schema: dict[str, Any],
+) -> tuple[bool, str | None]:
     """Validate output text against a JSON schema.
 
     Returns:
@@ -51,7 +50,7 @@ def validate_output_against_schema(
 
 def build_schema_enforcement_prompt(
     original_prompt: str,
-    json_schema: Dict[str, Any],
+    json_schema: dict[str, Any],
 ) -> str:
     """Append JSON schema instructions to the prompt."""
     schema_text = json.dumps(json_schema, indent=2)
@@ -62,7 +61,7 @@ def build_retry_prompt_with_error(
     original_prompt: str,
     output: str,
     error_msg: str,
-    json_schema: Dict[str, Any],
+    json_schema: dict[str, Any],
 ) -> str:
     """Build a retry prompt that includes the error and schema."""
     schema_text = json.dumps(json_schema, indent=2)

@@ -1,10 +1,10 @@
 """Tests for MCP server — mocks FastMCP and all workflow dependencies."""
+
 import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -42,6 +42,7 @@ def mock_fastmcp():
         def inner(fn):
             registered[fn.__name__] = fn
             return fn
+
         return inner
 
     mock_server.tool = tool_decorator
@@ -84,9 +85,7 @@ class TestScanWorkflowConfigs:
         wf_dir = tmp_path / "workflows"
         wf_dir.mkdir()
         (wf_dir / "readme.txt").write_text("ignore me")
-        (wf_dir / "real.yaml").write_text(
-            "workflow:\n  name: real\n  stages: []\n"
-        )
+        (wf_dir / "real.yaml").write_text("workflow:\n  name: real\n  stages: []\n")
 
         from temper_ai.mcp._server_helpers import scan_workflow_configs
 
@@ -274,7 +273,10 @@ class TestGetRunStatusImpl:
 
     def test_run_found_returns_data(self):
         mock_run = MagicMock()
-        mock_run.model_dump.return_value = {"execution_id": "abc", "status": "completed"}
+        mock_run.model_dump.return_value = {
+            "execution_id": "abc",
+            "status": "completed",
+        }
         mock_store = MagicMock()
         mock_store.get_run.return_value = mock_run
 

@@ -2,7 +2,6 @@
 
 import logging
 from datetime import datetime, timedelta
-from typing import Dict, List, Tuple
 
 from temper_ai.portfolio._schemas import (
     OptimizationAction,
@@ -55,9 +54,9 @@ class PortfolioOptimizer:
         self,
         portfolio: PortfolioConfig,
         lookback_hours: int = DEFAULT_LOOKBACK_HOURS,
-    ) -> List[ProductScorecard]:
+    ) -> list[ProductScorecard]:
         """Compute a 4-metric scorecard for each product."""
-        scorecards: List[ProductScorecard] = []
+        scorecards: list[ProductScorecard] = []
         for product in portfolio.products:
             scorecard = self._compute_product_scorecard(
                 product.name,
@@ -69,18 +68,17 @@ class PortfolioOptimizer:
             "optimizer_scorecards",
             {"product_count": len(scorecards), "lookback_hours": lookback_hours},
             "computed",
-            impact_metrics={
-                sc.product_type: sc.composite_score for sc in scorecards
-            },
+            impact_metrics={sc.product_type: sc.composite_score for sc in scorecards},
             tags=["portfolio", "optimizer"],
         )
         return scorecards
 
     def recommend(
-        self, scorecards: List[ProductScorecard],
-    ) -> List[PortfolioRecommendation]:
+        self,
+        scorecards: list[ProductScorecard],
+    ) -> list[PortfolioRecommendation]:
         """Generate an action recommendation for each product scorecard."""
-        recommendations: List[PortfolioRecommendation] = []
+        recommendations: list[PortfolioRecommendation] = []
         for sc in scorecards:
             action, rationale = _classify_action(sc)
             recommendations.append(
@@ -95,17 +93,15 @@ class PortfolioOptimizer:
             "optimizer_recommendations",
             {"product_count": len(recommendations)},
             "computed",
-            impact_metrics={
-                r.product_type: r.action.value for r in recommendations
-            },
+            impact_metrics={r.product_type: r.action.value for r in recommendations},
             tags=["portfolio", "optimizer"],
         )
         return recommendations
 
     def optimize_weights(
         self,
-        scorecards: List[ProductScorecard],
-    ) -> Dict[str, float]:
+        scorecards: list[ProductScorecard],
+    ) -> dict[str, float]:
         """Suggest new weights proportional to composite scores."""
         total_score = sum(sc.composite_score for sc in scorecards)
         if total_score <= 0:
@@ -113,8 +109,7 @@ class PortfolioOptimizer:
             weights = {sc.product_type: 1.0 / count for sc in scorecards}
         else:
             weights = {
-                sc.product_type: sc.composite_score / total_score
-                for sc in scorecards
+                sc.product_type: sc.composite_score / total_score for sc in scorecards
             }
         track_portfolio_event(
             "optimizer_weights",
@@ -143,7 +138,9 @@ class PortfolioOptimizer:
         cost_efficiency = _calc_cost_efficiency(period_runs)
         trend = _calc_trend(period_runs, recent_cutoff)
         utilization = _calc_utilization(
-            period_runs, max_concurrent, lookback_hours,
+            period_runs,
+            max_concurrent,
+            lookback_hours,
         )
 
         trend_clamped = max(0.0, min(1.0, trend + TREND_OFFSET))
@@ -169,7 +166,7 @@ def _fmt_trend(value: float) -> str:
     return f"{value:+.2f}"
 
 
-def _classify_action(sc: ProductScorecard) -> Tuple[OptimizationAction, str]:
+def _classify_action(sc: ProductScorecard) -> tuple[OptimizationAction, str]:
     """Determine OptimizationAction and rationale from a scorecard."""
     score = sc.composite_score
     trend = sc.trend
@@ -196,7 +193,7 @@ def _classify_action(sc: ProductScorecard) -> Tuple[OptimizationAction, str]:
     )
 
 
-def _calc_success_rate(runs: List[ProductRunRecord]) -> float:
+def _calc_success_rate(runs: list[ProductRunRecord]) -> float:
     """Successful / total, 0.0 if no runs."""
     if not runs:
         return 0.0
@@ -204,7 +201,7 @@ def _calc_success_rate(runs: List[ProductRunRecord]) -> float:
     return successful / len(runs)
 
 
-def _calc_cost_efficiency(runs: List[ProductRunRecord]) -> float:
+def _calc_cost_efficiency(runs: list[ProductRunRecord]) -> float:
     """success_count / total_cost, normalized 0-1, capped at 1.0."""
     if not runs:
         return 0.0
@@ -216,7 +213,7 @@ def _calc_cost_efficiency(runs: List[ProductRunRecord]) -> float:
     return min(1.0, raw)
 
 
-def _calc_trend(runs: List[ProductRunRecord], recent_cutoff: datetime) -> float:
+def _calc_trend(runs: list[ProductRunRecord], recent_cutoff: datetime) -> float:
     """recent_success_rate - historical_success_rate."""
     recent = [r for r in runs if _utc_at_or_after(r, recent_cutoff)]
     historical = [r for r in runs if _utc_before(r, recent_cutoff)]
@@ -226,7 +223,9 @@ def _calc_trend(runs: List[ProductRunRecord], recent_cutoff: datetime) -> float:
 
 
 def _calc_utilization(
-    runs: List[ProductRunRecord], max_concurrent: int, lookback_hours: int,
+    runs: list[ProductRunRecord],
+    max_concurrent: int,
+    lookback_hours: int,
 ) -> float:
     """actual_runs / (max_concurrent * time_factor), capped at 1.0."""
     if max_concurrent <= 0 or lookback_hours <= 0:

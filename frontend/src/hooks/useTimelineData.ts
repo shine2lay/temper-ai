@@ -77,13 +77,11 @@ export function useTimelineData(): {
       const stageStart = toEpoch(executions[0].start_time);
       const stageEnd = toEpoch(latest.end_time);
 
-      // Collect agent IDs for this stage
-      const stageAgentIds: string[] = [];
-      for (const exec of executions) {
-        for (const a of exec.agents ?? []) {
-          stageAgentIds.push(a.id);
-        }
-      }
+      // Count total agents across all iterations to determine hasChildren
+      const totalAgentCount = executions.reduce(
+        (sum, exec) => sum + (exec.agents?.length ?? 0),
+        0,
+      );
 
       rows.push({
         id: `stage-${stageName}`,
@@ -94,26 +92,36 @@ export function useTimelineData(): {
         startTime: stageStart,
         endTime: stageEnd,
         parentId: workflow.id,
-        hasChildren: stageAgentIds.length > 0,
+        hasChildren: totalAgentCount > 0,
         color: STATUS_COLORS[latest.status] ?? STATUS_COLORS.pending,
       });
 
-      // Agent rows
-      for (const agentId of stageAgentIds) {
-        const agent = agents.get(agentId);
-        if (!agent) continue;
-        rows.push({
-          id: agentId,
-          entityId: agentId,
-          label: agent.agent_name ?? agent.name ?? agentId,
-          level: 'agent',
-          status: agent.status,
-          startTime: toEpoch(agent.start_time),
-          endTime: toEpoch(agent.end_time),
-          parentId: `stage-${stageName}`,
-          hasChildren: false,
-          color: STATUS_COLORS[agent.status] ?? STATUS_COLORS.pending,
-        });
+      // Agent rows — track iteration index for labels
+      const CIRCLED_NUMS = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩'];
+      let iterIdx = 0;
+      for (const exec of executions) {
+        iterIdx++;
+        for (const a of exec.agents ?? []) {
+          const agent = agents.get(a.id);
+          if (!agent) continue;
+          const baseName = agent.agent_name ?? agent.name ?? a.id;
+          const label =
+            executions.length > 1
+              ? `${CIRCLED_NUMS[iterIdx - 1] ?? `(${iterIdx})`} ${baseName}`
+              : baseName;
+          rows.push({
+            id: a.id,
+            entityId: a.id,
+            label,
+            level: 'agent',
+            status: agent.status,
+            startTime: toEpoch(agent.start_time),
+            endTime: toEpoch(agent.end_time),
+            parentId: `stage-${stageName}`,
+            hasChildren: false,
+            color: STATUS_COLORS[agent.status] ?? STATUS_COLORS.pending,
+          });
+        }
       }
     }
 

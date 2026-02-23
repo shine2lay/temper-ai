@@ -5,13 +5,11 @@ Provides hypothesis testing, confidence intervals, and winner determination
 using scipy statistical methods.
 """
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import numpy as np
 from scipy import stats  # type: ignore[import-untyped]
 
-from temper_ai.shared.constants.limits import PERCENT_50, PERCENT_95, PERCENT_99
-from temper_ai.shared.constants.probabilities import TOLERANCE_TIGHT
 from temper_ai.experimentation.constants import DEFAULT_CREDIBLE_LEVEL
 from temper_ai.experimentation.models import (
     ExecutionStatus,
@@ -20,6 +18,8 @@ from temper_ai.experimentation.models import (
     Variant,
     VariantAssignment,
 )
+from temper_ai.shared.constants.limits import PERCENT_50, PERCENT_95, PERCENT_99
+from temper_ai.shared.constants.probabilities import TOLERANCE_TIGHT
 
 
 class StatisticalAnalyzer:
@@ -36,7 +36,11 @@ class StatisticalAnalyzer:
         ...     print(f"Winner: {result.recommended_winner}")
     """
 
-    def __init__(self, confidence_level: float = DEFAULT_CREDIBLE_LEVEL, min_effect_size: float = TOLERANCE_TIGHT):
+    def __init__(
+        self,
+        confidence_level: float = DEFAULT_CREDIBLE_LEVEL,
+        min_effect_size: float = TOLERANCE_TIGHT,
+    ):
         """
         Initialize statistical analyzer.
 
@@ -50,9 +54,9 @@ class StatisticalAnalyzer:
     def analyze_experiment(
         self,
         experiment: Experiment,
-        assignments: List[VariantAssignment],
-        variants: List[Variant]
-    ) -> Dict[str, Any]:
+        assignments: list[VariantAssignment],
+        variants: list[Variant],
+    ) -> dict[str, Any]:
         """
         Perform complete statistical analysis on experiment.
 
@@ -66,7 +70,8 @@ class StatisticalAnalyzer:
         """
         # Filter to completed executions only
         completed_assignments = [
-            a for a in assignments
+            a
+            for a in assignments
             if a.execution_status == ExecutionStatus.COMPLETED and a.metrics
         ]
 
@@ -78,13 +83,15 @@ class StatisticalAnalyzer:
 
         # Calculate aggregate metrics per variant
         variant_metrics = self._calculate_variant_metrics(
-            variant_assignments,
-            experiment.primary_metric
+            variant_assignments, experiment.primary_metric
         )
 
         # Check minimum sample size
         min_samples = experiment.min_sample_size_per_variant
-        if any(metrics.get("count", 0) < min_samples for metrics in variant_metrics.values()):
+        if any(
+            metrics.get("count", 0) < min_samples
+            for metrics in variant_metrics.values()
+        ):
             return self._inconclusive_result("Insufficient sample size")
 
         # Find control variant
@@ -99,20 +106,17 @@ class StatisticalAnalyzer:
             variant_assignments,
             experiment.primary_metric,
             experiment.confidence_level,
-            control_variant_id
+            control_variant_id,
         )
 
         # Check guardrails
         guardrail_violations = self._check_guardrails(
-            variant_metrics,
-            experiment.guardrail_metrics or []
+            variant_metrics, experiment.guardrail_metrics or []
         )
 
         # Generate recommendation
         recommendation, recommended_winner, confidence = self._generate_recommendation(
-            statistical_tests,
-            guardrail_violations,
-            experiment.confidence_level
+            statistical_tests, guardrail_violations, experiment.confidence_level
         )
 
         return {
@@ -126,11 +130,10 @@ class StatisticalAnalyzer:
         }
 
     def _group_by_variant(
-        self,
-        assignments: List[VariantAssignment]
-    ) -> Dict[str, List[VariantAssignment]]:
+        self, assignments: list[VariantAssignment]
+    ) -> dict[str, list[VariantAssignment]]:
         """Group assignments by variant_id."""
-        grouped: Dict[str, List[VariantAssignment]] = {}
+        grouped: dict[str, list[VariantAssignment]] = {}
         for assignment in assignments:
             if assignment.variant_id not in grouped:
                 grouped[assignment.variant_id] = []
@@ -138,7 +141,7 @@ class StatisticalAnalyzer:
         return grouped
 
     @staticmethod
-    def _compute_primary_metric_stats(values: List[float]) -> Dict[str, Any]:
+    def _compute_primary_metric_stats(values: list[float]) -> dict[str, Any]:
         """Compute full statistics for the primary metric values."""
         return {
             "count": len(values),
@@ -149,16 +152,20 @@ class StatisticalAnalyzer:
             "max": float(np.max(values)),
             "p50": float(np.percentile(values, PERCENT_50)),
             "p95": float(np.percentile(values, PERCENT_95)),
-            "p99": float(np.percentile(values, PERCENT_99)) if len(values) >= 100 else float(np.max(values)),
+            "p99": (
+                float(np.percentile(values, PERCENT_99))
+                if len(values) >= 100
+                else float(np.max(values))
+            ),
         }
 
     def _calculate_variant_metrics(
         self,
-        variant_assignments: Dict[str, List[VariantAssignment]],
-        primary_metric: str
-    ) -> Dict[str, Dict[str, Any]]:
+        variant_assignments: dict[str, list[VariantAssignment]],
+        primary_metric: str,
+    ) -> dict[str, dict[str, Any]]:
         """Calculate aggregate metrics for each variant."""
-        variant_metrics: Dict[str, Dict[str, Any]] = {}
+        variant_metrics: dict[str, dict[str, Any]] = {}
 
         for variant_id, assignments in variant_assignments.items():
             variant_metrics[variant_id] = {}
@@ -186,9 +193,9 @@ class StatisticalAnalyzer:
 
     @staticmethod
     def _resolve_control_id(
-        variant_assignments: Dict[str, List[VariantAssignment]],
-        control_variant_id: Optional[str],
-    ) -> Optional[str]:
+        variant_assignments: dict[str, list[VariantAssignment]],
+        control_variant_id: str | None,
+    ) -> str | None:
         """Resolve control variant ID (use provided or default to first)."""
         control_id = control_variant_id
         if not control_id:
@@ -201,30 +208,31 @@ class StatisticalAnalyzer:
 
     @staticmethod
     def _extract_metric_values(
-        assignments: List[VariantAssignment], metric: str,
-    ) -> List[float]:
+        assignments: list[VariantAssignment],
+        metric: str,
+    ) -> list[float]:
         """Extract metric values from assignments that have the given metric."""
         return [
-            a.metrics[metric] for a in assignments
-            if a.metrics and metric in a.metrics
+            a.metrics[metric] for a in assignments if a.metrics and metric in a.metrics
         ]
 
     def _run_hypothesis_tests(
         self,
-        variant_assignments: Dict[str, List[VariantAssignment]],
+        variant_assignments: dict[str, list[VariantAssignment]],
         primary_metric: str,
         confidence_level: float,
-        control_variant_id: Optional[str] = None
-    ) -> Dict[str, Dict[str, Any]]:
+        control_variant_id: str | None = None,
+    ) -> dict[str, dict[str, Any]]:
         """Run t-tests comparing each variant to control."""
         control_id = self._resolve_control_id(variant_assignments, control_variant_id)
         if control_id is None:
             return {}
 
         control_values = self._extract_metric_values(
-            variant_assignments[control_id], primary_metric,
+            variant_assignments[control_id],
+            primary_metric,
         )
-        statistical_tests: Dict[str, Dict[str, Any]] = {}
+        statistical_tests: dict[str, dict[str, Any]] = {}
         for variant_id, assignments in variant_assignments.items():
             if variant_id == control_id:
                 continue
@@ -233,16 +241,18 @@ class StatisticalAnalyzer:
                 continue
             test_key = f"control_vs_{variant_id}"
             statistical_tests[test_key] = self._t_test(
-                control_values, treatment_values, confidence_level,
+                control_values,
+                treatment_values,
+                confidence_level,
             )
         return statistical_tests
 
     def _t_test(
         self,
-        control_values: List[float],
-        treatment_values: List[float],
-        confidence_level: float
-    ) -> Dict[str, Any]:
+        control_values: list[float],
+        treatment_values: list[float],
+        confidence_level: float,
+    ) -> dict[str, Any]:
         """
         Perform independent samples t-test.
 
@@ -273,9 +283,7 @@ class StatisticalAnalyzer:
 
         # Confidence interval for difference in means
         ci_low, ci_high = self._confidence_interval(
-            control_values,
-            treatment_values,
-            confidence_level
+            control_values, treatment_values, confidence_level
         )
 
         return {
@@ -292,10 +300,10 @@ class StatisticalAnalyzer:
 
     def _confidence_interval(
         self,
-        control_values: List[float],
-        treatment_values: List[float],
-        confidence_level: float
-    ) -> Tuple[float, float]:
+        control_values: list[float],
+        treatment_values: list[float],
+        confidence_level: float,
+    ) -> tuple[float, float]:
         """Calculate confidence interval for difference in means."""
         control_mean = np.mean(control_values)
         treatment_mean = np.mean(treatment_values)
@@ -307,7 +315,7 @@ class StatisticalAnalyzer:
         n2 = len(treatment_values)
 
         # Standard error of difference
-        se_diff = np.sqrt((control_std ** 2 / n1) + (treatment_std ** 2 / n2))
+        se_diff = np.sqrt((control_std**2 / n1) + (treatment_std**2 / n2))
 
         # Critical value for confidence level
         alpha = 1 - confidence_level
@@ -322,11 +330,11 @@ class StatisticalAnalyzer:
 
     def _check_guardrails(
         self,
-        variant_metrics: Dict[str, Dict[str, Any]],
-        guardrail_metrics: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
+        variant_metrics: dict[str, dict[str, Any]],
+        guardrail_metrics: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
         """Check if any variants violate guardrail thresholds."""
-        violations: List[Dict[str, Any]] = []
+        violations: list[dict[str, Any]] = []
 
         for guardrail in guardrail_metrics:
             metric_name = guardrail.get("metric")
@@ -337,19 +345,21 @@ class StatisticalAnalyzer:
 
             for variant_id, metrics in variant_metrics.items():
                 if metric_name in metrics and metrics[metric_name] > max_value:
-                    violations.append({
-                        "variant": variant_id,
-                        "metric": metric_name,
-                        "value": metrics[metric_name],
-                        "threshold": max_value,
-                    })
+                    violations.append(
+                        {
+                            "variant": variant_id,
+                            "metric": metric_name,
+                            "value": metrics[metric_name],
+                            "threshold": max_value,
+                        }
+                    )
 
         return violations
 
     @staticmethod
     def _find_best_variant(
-        significant_tests: List[Tuple[str, Dict[str, Any]]],
-    ) -> Tuple[Optional[str], float, float]:
+        significant_tests: list[tuple[str, dict[str, Any]]],
+    ) -> tuple[str | None, float, float]:
         """Find the variant with highest absolute improvement from significant tests.
 
         Returns:
@@ -363,17 +373,19 @@ class StatisticalAnalyzer:
             improvement_abs = abs(result.get("improvement", 0))
             if improvement_abs > best_improvement_abs:
                 best_improvement_abs = improvement_abs
-                best_variant = test_key.split("control_vs_")[1] if "_" in test_key else None
+                best_variant = (
+                    test_key.split("control_vs_")[1] if "_" in test_key else None
+                )
                 best_confidence = 1 - result.get("p_value", 1.0)
 
         return best_variant, best_improvement_abs, best_confidence
 
     def _generate_recommendation(
         self,
-        statistical_tests: Dict[str, Dict[str, Any]],
-        guardrail_violations: List[Dict[str, Any]],
-        confidence_level: float
-    ) -> Tuple[RecommendationType, Optional[str], float]:
+        statistical_tests: dict[str, dict[str, Any]],
+        guardrail_violations: list[dict[str, Any]],
+        confidence_level: float,
+    ) -> tuple[RecommendationType, str | None, float]:
         """
         Generate recommendation based on analysis results.
 
@@ -401,7 +413,7 @@ class StatisticalAnalyzer:
 
         return (RecommendationType.STOP_NO_DIFFERENCE, None, confidence_level)
 
-    def _inconclusive_result(self, reason: str) -> Dict[str, Any]:
+    def _inconclusive_result(self, reason: str) -> dict[str, Any]:
         """Return inconclusive result."""
         return {
             "sample_size": 0,

@@ -1,9 +1,7 @@
 """Tests for individual pattern miners."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from temper_ai.learning.miners.agent_performance import AgentPerformanceMiner
 from temper_ai.learning.miners.collaboration_patterns import CollaborationPatternMiner
@@ -12,13 +10,10 @@ from temper_ai.learning.miners.failure_patterns import FailurePatternMiner
 from temper_ai.learning.miners.model_effectiveness import ModelEffectivenessMiner
 from temper_ai.learning.models import (
     PATTERN_AGENT_PERFORMANCE,
-    PATTERN_COLLABORATION,
-    PATTERN_COST,
     PATTERN_FAILURE,
-    PATTERN_MODEL_EFFECTIVENESS,
 )
 
-_NOW = datetime.now(timezone.utc)
+_NOW = datetime.now(UTC)
 
 
 def _mock_agent_execution(name: str, status: str, duration: float = 5.0):
@@ -32,7 +27,9 @@ def _mock_agent_execution(name: str, status: str, duration: float = 5.0):
     return ex
 
 
-def _mock_llm_call(model: str, status: str = "success", cost: float = 0.01, tokens: int = 100):
+def _mock_llm_call(
+    model: str, status: str = "success", cost: float = 0.01, tokens: int = 100
+):
     call = MagicMock()
     call.model = model
     call.status = status
@@ -43,7 +40,9 @@ def _mock_llm_call(model: str, status: str = "success", cost: float = 0.01, toke
     return call
 
 
-def _mock_error_fingerprint(error_type: str, count: int, classification: str = "transient"):
+def _mock_error_fingerprint(
+    error_type: str, count: int, classification: str = "transient"
+):
     fp = MagicMock()
     fp.fingerprint = "abc123"
     fp.error_type = error_type

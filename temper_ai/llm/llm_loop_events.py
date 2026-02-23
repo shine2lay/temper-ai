@@ -13,11 +13,13 @@ violation -- infrastructure (llm) was importing from cross_cutting
 (observability)).  A re-export shim is kept at the old path for backward
 compatibility.
 """
+
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +37,7 @@ class LLMIterationEventData:
     tool_calls_this_iteration: int = 0
     total_tokens_this_iteration: int = 0
     total_cost_this_iteration: float = 0.0
-    cache_hit: Optional[bool] = None
+    cache_hit: bool | None = None
 
 
 @dataclass
@@ -44,8 +46,8 @@ class CacheEventData:
 
     event_type: str  # "hit", "miss", "write", "eviction"
     key_prefix: str = ""
-    model: Optional[str] = None
-    cache_size: Optional[int] = None
+    model: str | None = None
+    cache_size: int | None = None
 
 
 def emit_llm_iteration_event(
@@ -85,7 +87,7 @@ def _try_emit_to_observer(
 
 
 def emit_cache_event(
-    callback: Optional[Callable[..., Any]],
+    callback: Callable[..., Any] | None,
     event_data: CacheEventData,
 ) -> None:
     """Emit a cache event via the opt-in callback and structured log.

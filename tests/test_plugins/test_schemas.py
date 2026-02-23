@@ -1,4 +1,5 @@
 """Tests for plugin configuration schemas."""
+
 import pytest
 from pydantic import ValidationError
 
@@ -129,7 +130,9 @@ class TestOpenAIAgentsPluginConfig:
         assert config.model == "gpt-4o"
 
     def test_custom_model(self) -> None:
-        config = OpenAIAgentsPluginConfig(model="gpt-4o-mini", instructions="Be helpful")
+        config = OpenAIAgentsPluginConfig(
+            model="gpt-4o-mini", instructions="Be helpful"
+        )
         assert config.model == "gpt-4o-mini"
         assert config.instructions == "Be helpful"
 

@@ -2,8 +2,6 @@
 
 from unittest.mock import MagicMock
 
-import pytest
-
 from temper_ai.lifecycle._schemas import ProjectCharacteristics, ProjectSize, RiskLevel
 from temper_ai.lifecycle.classifier import (
     ProjectClassifier,
@@ -23,13 +21,15 @@ class TestExtractExplicit:
         assert chars.risk_level == RiskLevel.MEDIUM
 
     def test_full_explicit(self):
-        chars = _extract_explicit({
-            "size": "small",
-            "risk_level": "high",
-            "is_prototype": True,
-            "tags": ["test"],
-            "product_type": "api",
-        })
+        chars = _extract_explicit(
+            {
+                "size": "small",
+                "risk_level": "high",
+                "is_prototype": True,
+                "tags": ["test"],
+                "product_type": "api",
+            }
+        )
         assert chars.size == ProjectSize.SMALL
         assert chars.risk_level == RiskLevel.HIGH
         assert chars.is_prototype is True
@@ -89,9 +89,7 @@ class TestMergeCharacteristics:
 
     def test_explicit_overrides_llm(self):
         explicit = ProjectCharacteristics(size=ProjectSize.SMALL)
-        llm = ProjectCharacteristics(
-            size=ProjectSize.LARGE, risk_level=RiskLevel.HIGH
-        )
+        llm = ProjectCharacteristics(size=ProjectSize.LARGE, risk_level=RiskLevel.HIGH)
         merged = _merge_characteristics(explicit, llm)
         assert merged.size == ProjectSize.SMALL  # Explicit wins
         assert merged.risk_level == RiskLevel.HIGH  # LLM fills gap

@@ -3,11 +3,12 @@
 Provides centralized pricing configuration for LLM cost estimation.
 Supports per-model pricing, runtime updates, and graceful fallbacks.
 """
+
 import logging
 import threading
 from datetime import date
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 import yaml
 from pydantic import BaseModel, Field, ValidationError, field_validator
@@ -20,7 +21,11 @@ logger = logging.getLogger(__name__)
 
 
 # Consolidated: canonical definition in src/utils/exceptions.py
-from temper_ai.shared.utils.exceptions import ConfigurationError, ErrorCode, SecurityError  # noqa: F401
+from temper_ai.shared.utils.exceptions import (  # noqa: F401
+    ConfigurationError,
+    ErrorCode,
+    SecurityError,
+)
 
 # Pricing constants
 TOKENS_PER_MILLION = MULTIPLIER_VERY_LARGE * MULTIPLIER_VERY_LARGE  # 1,000,000
@@ -37,9 +42,7 @@ class PricingConfigNotFoundError(ConfigurationError):
 
     def __init__(self, message: str, **kwargs: Any) -> None:
         super().__init__(
-            message=message,
-            error_code=ErrorCode.CONFIG_NOT_FOUND,
-            **kwargs
+            message=message, error_code=ErrorCode.CONFIG_NOT_FOUND, **kwargs
         )
 
 
@@ -47,11 +50,7 @@ class PricingConfigInvalidError(ConfigurationError):
     """Raised when pricing configuration is invalid."""
 
     def __init__(self, message: str, **kwargs: Any) -> None:
-        super().__init__(
-            message=message,
-            error_code=ErrorCode.CONFIG_INVALID,
-            **kwargs
-        )
+        super().__init__(message=message, error_code=ErrorCode.CONFIG_INVALID, **kwargs)
 
 
 class ModelPricing(BaseModel):
@@ -64,16 +63,14 @@ class ModelPricing(BaseModel):
         source_url: Optional URL to pricing documentation
         notes: Optional notes about pricing
     """
+
     input_price: float = Field(ge=0, description="USD per 1M input tokens")
     output_price: float = Field(ge=0, description="USD per 1M output tokens")
     effective_date: date
-    source_url: Optional[str] = Field(
-        None,
-        description="URL to pricing documentation"
-    )
-    notes: Optional[str] = None
+    source_url: str | None = Field(None, description="URL to pricing documentation")
+    notes: str | None = None
 
-    @field_validator('input_price', 'output_price')
+    @field_validator("input_price", "output_price")
     @classmethod
     def validate_reasonable_price(cls, v: float) -> float:
         """Validate that prices are reasonable (< $1000 per 1M tokens).
@@ -81,7 +78,9 @@ class ModelPricing(BaseModel):
         This is a sanity check to catch configuration errors.
         """
         if v > MAX_REASONABLE_PRICE_PER_MILLION:
-            raise ValueError(f"Price {v} unreasonably high (>${MAX_REASONABLE_PRICE_PER_MILLION}/1M tokens)")
+            raise ValueError(
+                f"Price {v} unreasonably high (>${MAX_REASONABLE_PRICE_PER_MILLION}/1M tokens)"
+            )
         return v
 
 
@@ -94,9 +93,10 @@ class PricingConfig(BaseModel):
         models: Dictionary mapping model names to pricing
         default: Default pricing for unknown models
     """
+
     schema_version: str = "1.0"
     last_updated: date
-    models: Dict[str, ModelPricing]
+    models: dict[str, ModelPricing]
     default: ModelPricing
 
 
@@ -129,7 +129,7 @@ class PricingManager:
                 cls._instance = super().__new__(cls)
             return cls._instance
 
-    def __init__(self, config_path: str = "config/model_pricing.yaml"):
+    def __init__(self, config_path: str = "configs/model_pricing.yaml"):
         """Initialize pricing manager.
 
         Args:
@@ -140,12 +140,12 @@ class PricingManager:
             PricingConfigInvalidError: If config file is invalid
         """
         # Only initialize once (singleton pattern)
-        if hasattr(self, '_initialized'):
+        if hasattr(self, "_initialized"):
             return
 
         self.config_path = Path(config_path).resolve()
-        self.pricing: Dict[str, ModelPricing] = {}
-        self._config_mtime: Optional[float] = None
+        self.pricing: dict[str, ModelPricing] = {}
+        self._config_mtime: float | None = None
 
         # Validate config path security
         self._validate_config_path()
@@ -161,16 +161,14 @@ class PricingManager:
         Raises:
             SecurityError: If path is outside project or file is too large
         """
-        # Get project root (3 levels up from src/agents/pricing.py)
+        # Get project root (3 levels up from temper_ai/llm/pricing.py)
         project_root = Path(__file__).parent.parent.parent.resolve()
 
         # Ensure config path is within project directory (prevent path traversal)
         try:
             self.config_path.relative_to(project_root)
         except ValueError:
-            raise SecurityError(
-                f"Config path outside project: {self.config_path}"
-            )
+            raise SecurityError(f"Config path outside project: {self.config_path}")
 
         # Check file size if it exists (prevent DoS)
         if self.config_path.exists():
@@ -226,7 +224,9 @@ class PricingManager:
             self.pricing[PRICING_DEFAULT_KEY] = config.default
             self._config_mtime = self.config_path.stat().st_mtime
 
-            logger.info(f"Loaded pricing for {len(self.pricing) - THRESHOLD_MIN_COUNT} models")
+            logger.info(
+                f"Loaded pricing for {len(self.pricing) - THRESHOLD_MIN_COUNT} models"
+            )
 
         except yaml.YAMLError as e:
             logger.error(f"Invalid YAML in pricing config: {e}")
@@ -240,7 +240,7 @@ class PricingManager:
             self.pricing = self._get_hardcoded_defaults()
             logger.warning("Using hardcoded default pricing due to validation error")
 
-    def _get_hardcoded_defaults(self) -> Dict[str, ModelPricing]:
+    def _get_hardcoded_defaults(self) -> dict[str, ModelPricing]:
         """Get emergency fallback pricing.
 
         Used when configuration file is missing or invalid.
@@ -254,16 +254,11 @@ class PricingManager:
                 input_price=DEFAULT_FALLBACK_INPUT_PRICE,
                 output_price=DEFAULT_FALLBACK_OUTPUT_PRICE,
                 effective_date=date(FALLBACK_PRICING_YEAR, 1, 1),
-                source_url=None
+                source_url=None,
             )
         }
 
-    def get_cost(
-        self,
-        model: str,
-        input_tokens: int,
-        output_tokens: int
-    ) -> float:
+    def get_cost(self, model: str, input_tokens: int, output_tokens: int) -> float:
         """Calculate cost for LLM usage.
 
         Args:
@@ -328,7 +323,7 @@ class PricingManager:
         self._load_pricing()
         logger.info("Pricing configuration reloaded")
 
-    def get_pricing_info(self, model: str) -> Optional[ModelPricing]:
+    def get_pricing_info(self, model: str) -> ModelPricing | None:
         """Get pricing information for a specific model.
 
         Args:
@@ -347,7 +342,7 @@ class PricingManager:
         """
         return [m for m in self.pricing.keys() if m != PRICING_DEFAULT_KEY]
 
-    def health_check(self) -> Dict[str, Any]:
+    def health_check(self) -> dict[str, Any]:
         """Health check for monitoring systems.
 
         Returns:
@@ -355,11 +350,12 @@ class PricingManager:
         """
         return {
             "status": "healthy" if self.pricing else "degraded",
-            "models_loaded": len(self.pricing) - THRESHOLD_MIN_COUNT,  # Exclude _default
+            "models_loaded": len(self.pricing)
+            - THRESHOLD_MIN_COUNT,  # Exclude _default
             "config_path": str(self.config_path),
             "config_exists": self.config_path.exists(),
             "last_reload_mtime": self._config_mtime,
-            "using_fallback": not self.config_path.exists()
+            "using_fallback": not self.config_path.exists(),
         }
 
     @classmethod
@@ -371,12 +367,14 @@ class PricingManager:
         Should only be used in test code.
         """
         with cls._lock:
-            if cls._instance is not None and hasattr(cls._instance, '_initialized'):
+            if cls._instance is not None and hasattr(cls._instance, "_initialized"):
                 del cls._instance._initialized
             cls._instance = None
 
 
-def get_pricing_manager(config_path: str = "config/model_pricing.yaml") -> PricingManager:
+def get_pricing_manager(
+    config_path: str = "configs/model_pricing.yaml",
+) -> PricingManager:
     """Get global pricing manager instance.
 
     Routes through PricingManager.__new__ singleton, so there is only

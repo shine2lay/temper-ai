@@ -4,10 +4,9 @@ import uuid
 from contextlib import contextmanager
 
 import pytest
-from sqlmodel import Session, SQLModel, create_engine
 from sqlalchemy.pool import StaticPool
+from sqlmodel import Session, SQLModel, create_engine
 
-from temper_ai.events.models import EventLog, EventSubscription  # noqa: F401 — table registration
 from temper_ai.events.subscription_registry import SubscriptionRegistry
 
 

@@ -4,10 +4,11 @@ This module contains pure data structures for rollback operations.
 These types are shared between safety (which performs rollbacks) and
 observability (which logs rollback events).
 """
+
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 from uuid import uuid4
 
 
@@ -21,6 +22,7 @@ class RollbackStatus(Enum):
         FAILED: Rollback failed with errors
         PARTIAL: Rollback partially completed (some items failed)
     """
+
     PENDING = "pending"
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
@@ -42,16 +44,17 @@ class RollbackSnapshot:
         metadata: Additional snapshot metadata
         expires_at: Optional expiration time for cleanup
     """
-    id: str = field(default_factory=lambda: str(uuid4()))
-    action: Dict[str, Any] = field(default_factory=dict)
-    context: Dict[str, Any] = field(default_factory=dict)
-    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
-    file_snapshots: Dict[str, str] = field(default_factory=dict)
-    state_snapshots: Dict[str, Any] = field(default_factory=dict)
-    metadata: Dict[str, Any] = field(default_factory=dict)
-    expires_at: Optional[datetime] = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    id: str = field(default_factory=lambda: str(uuid4()))
+    action: dict[str, Any] = field(default_factory=dict)
+    context: dict[str, Any] = field(default_factory=dict)
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    file_snapshots: dict[str, str] = field(default_factory=dict)
+    state_snapshots: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
+    expires_at: datetime | None = None
+
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
         return {
             "id": self.id,
@@ -61,7 +64,7 @@ class RollbackSnapshot:
             "file_snapshots": self.file_snapshots,
             "state_snapshots": self.state_snapshots,
             "metadata": self.metadata,
-            "expires_at": self.expires_at.isoformat() if self.expires_at else None
+            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
         }
 
 
@@ -79,16 +82,17 @@ class RollbackResult:
         metadata: Additional result metadata
         completed_at: When rollback completed
     """
+
     success: bool
     snapshot_id: str
     status: RollbackStatus
-    reverted_items: List[str] = field(default_factory=list)
-    failed_items: List[str] = field(default_factory=list)
-    errors: List[str] = field(default_factory=list)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    reverted_items: list[str] = field(default_factory=list)
+    failed_items: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
     completed_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
         return {
             "success": self.success,
@@ -98,5 +102,5 @@ class RollbackResult:
             "failed_items": self.failed_items,
             "errors": self.errors,
             "metadata": self.metadata,
-            "completed_at": self.completed_at.isoformat()
+            "completed_at": self.completed_at.isoformat(),
         }

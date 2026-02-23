@@ -4,14 +4,15 @@ Consolidates duplicated code from _sequential_helpers.py and
 _parallel_helpers.py into a single module, reducing ~100 lines of
 duplicate code across the two helper files.
 """
+
 import logging
 import threading
-from typing import Any, Dict
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 # Module-level cache for persistent agents — survives across workflow runs.
-_persistent_agent_cache: Dict[str, Any] = {}
+_persistent_agent_cache: dict[str, Any] = {}
 _persistent_cache_lock = threading.Lock()
 
 
@@ -27,13 +28,14 @@ def resolve_agent_factory(agent_factory_cls: Any) -> Any:
     if agent_factory_cls is not None:
         return agent_factory_cls
     from temper_ai.agent.utils.agent_factory import AgentFactory as _AgentFactory
+
     return _AgentFactory
 
 
 def load_or_cache_agent(
     agent_name: str,
     config_loader: Any,
-    agent_cache: Dict[str, Any],
+    agent_cache: dict[str, Any],
     agent_factory: Any,
 ) -> tuple:
     """Load agent config, create or retrieve cached agent instance.
@@ -59,7 +61,11 @@ def load_or_cache_agent(
     if is_persistent:
         with _persistent_cache_lock:
             if agent_name in _persistent_agent_cache:
-                return _persistent_agent_cache[agent_name], agent_config, agent_config_dict
+                return (
+                    _persistent_agent_cache[agent_name],
+                    agent_config,
+                    agent_config_dict,
+                )
             agent = agent_factory.create(agent_config)
             _persistent_agent_cache[agent_name] = agent
         return agent, agent_config, agent_config_dict
@@ -74,8 +80,8 @@ def load_or_cache_agent(
 
 def config_to_tracking_dict(
     agent_config: Any,
-    agent_config_dict: Dict[str, Any],
-) -> Dict[str, Any]:
+    agent_config_dict: dict[str, Any],
+) -> dict[str, Any]:
     """Convert agent config to a dict suitable for tracking.
 
     Handles Pydantic model_dump(), legacy dict(), and plain dict fallback.
@@ -87,16 +93,16 @@ def config_to_tracking_dict(
     Returns:
         Dict representation of the config
     """
-    if hasattr(agent_config, 'model_dump'):
-        result: Dict[str, Any] = agent_config.model_dump()
+    if hasattr(agent_config, "model_dump"):
+        result: dict[str, Any] = agent_config.model_dump()
         return result
-    if hasattr(agent_config, 'dict'):
-        result2: Dict[str, Any] = agent_config.dict()
+    if hasattr(agent_config, "dict"):
+        result2: dict[str, Any] = agent_config.dict()
         return result2
     return dict(agent_config_dict)
 
 
-def extract_response_data(response: Any) -> Dict[str, Any]:
+def extract_response_data(response: Any) -> dict[str, Any]:
     """Extract common data fields from an agent response.
 
     Args:
@@ -115,7 +121,7 @@ def extract_response_data(response: Any) -> Dict[str, Any]:
     }
 
 
-def extract_response_metrics(response: Any, duration: float) -> Dict[str, Any]:
+def extract_response_metrics(response: Any, duration: float) -> dict[str, Any]:
     """Extract common metrics from an agent response.
 
     Args:

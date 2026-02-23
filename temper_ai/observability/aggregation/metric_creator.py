@@ -1,8 +1,9 @@
 """SystemMetric record creation from aggregated query results."""
+
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from temper_ai.observability.aggregation.period import AggregationPeriod
 
@@ -13,15 +14,16 @@ UUID_HEX_LENGTH = 12
 @dataclass
 class MetricParams:
     """Parameters for creating a metric record."""
+
     metric_name: str
     metric_value: float
     metric_unit: str
     period: AggregationPeriod
     timestamp: datetime
-    workflow_name: Optional[str] = None
-    stage_name: Optional[str] = None
-    agent_name: Optional[str] = None
-    tags: Optional[Dict[str, Any]] = None
+    workflow_name: str | None = None
+    stage_name: str | None = None
+    agent_name: str | None = None
+    tags: dict[str, Any] | None = None
 
 
 class MetricRecordCreator:
@@ -40,11 +42,8 @@ class MetricRecordCreator:
         self.session = session
 
     def create_workflow_metrics(
-        self,
-        result: Any,
-        period: AggregationPeriod,
-        timestamp: datetime
-    ) -> List[str]:
+        self, result: Any, period: AggregationPeriod, timestamp: datetime
+    ) -> list[str]:
         """Create metric records for a single workflow's aggregated data.
 
         Creates up to 4 metrics:
@@ -106,11 +105,8 @@ class MetricRecordCreator:
         return created
 
     def create_agent_metrics(
-        self,
-        result: Any,
-        period: AggregationPeriod,
-        timestamp: datetime
-    ) -> List[str]:
+        self, result: Any, period: AggregationPeriod, timestamp: datetime
+    ) -> list[str]:
         """Create metric records for a single agent's aggregated data.
 
         Creates up to 4 metrics:
@@ -146,25 +142,28 @@ class MetricRecordCreator:
                 agent_name=agent_name,
                 period=period,
                 timestamp=timestamp,
-                tags={"total": total, "successful": successful}
+                tags={"total": total, "successful": successful},
             )
             created.append(self._create_metric_from_params(params))
 
         # Average duration, cost, tokens metrics
         created.extend(
             self._create_agent_performance_metrics(
-                agent_name, avg_duration, total_cost, avg_tokens, total, period, timestamp
+                agent_name,
+                avg_duration,
+                total_cost,
+                avg_tokens,
+                total,
+                period,
+                timestamp,
             )
         )
 
         return created
 
     def create_llm_metrics(
-        self,
-        result: Any,
-        period: AggregationPeriod,
-        timestamp: datetime
-    ) -> List[str]:
+        self, result: Any, period: AggregationPeriod, timestamp: datetime
+    ) -> list[str]:
         """Create metric records for a single LLM provider/model combination.
 
         Creates up to 5 metrics:
@@ -203,14 +202,20 @@ class MetricRecordCreator:
                 metric_unit="ratio",
                 period=period,
                 timestamp=timestamp,
-                tags=tags
+                tags=tags,
             )
             created.append(self._create_metric_from_params(params))
 
         # Latency and cost metrics
         created.extend(
             self._create_llm_performance_metrics(
-                avg_latency, p95_latency, p99_latency, total_cost, tags, period, timestamp
+                avg_latency,
+                p95_latency,
+                p99_latency,
+                total_cost,
+                tags,
+                period,
+                timestamp,
             )
         )
 
@@ -223,10 +228,10 @@ class MetricRecordCreator:
         metric_unit: str,
         period: AggregationPeriod,
         timestamp: datetime,
-        workflow_name: Optional[str] = None,
-        stage_name: Optional[str] = None,
-        agent_name: Optional[str] = None,
-        tags: Optional[Dict[str, Any]] = None
+        workflow_name: str | None = None,
+        stage_name: str | None = None,
+        agent_name: str | None = None,
+        tags: dict[str, Any] | None = None,
     ) -> str:
         """Create and add SystemMetric record to session (legacy interface).
 
@@ -255,7 +260,7 @@ class MetricRecordCreator:
             workflow_name=workflow_name,
             stage_name=stage_name,
             agent_name=agent_name,
-            tags=tags
+            tags=tags,
         )
         return self._create_metric_from_params(params)
 
@@ -284,7 +289,7 @@ class MetricRecordCreator:
             agent_name=params.agent_name,
             timestamp=params.timestamp,
             aggregation_period=params.period.value,
-            tags=params.tags or {}
+            tags=params.tags or {},
         )
 
         self.session.add(metric)
@@ -297,7 +302,7 @@ class MetricRecordCreator:
         total: int,
         successful: int,
         period: AggregationPeriod,
-        timestamp: datetime
+        timestamp: datetime,
     ) -> str:
         """Create workflow success rate metric."""
         params = MetricParams(
@@ -307,7 +312,7 @@ class MetricRecordCreator:
             workflow_name=workflow_name,
             period=period,
             timestamp=timestamp,
-            tags={"total": total, "successful": successful}
+            tags={"total": total, "successful": successful},
         )
         return self._create_metric_from_params(params)
 
@@ -317,7 +322,7 @@ class MetricRecordCreator:
         avg_duration: float,
         total: int,
         period: AggregationPeriod,
-        timestamp: datetime
+        timestamp: datetime,
     ) -> str:
         """Create workflow average duration metric."""
         params = MetricParams(
@@ -327,7 +332,7 @@ class MetricRecordCreator:
             workflow_name=workflow_name,
             period=period,
             timestamp=timestamp,
-            tags={"total": total}
+            tags={"total": total},
         )
         return self._create_metric_from_params(params)
 
@@ -337,7 +342,7 @@ class MetricRecordCreator:
         total_cost: float,
         total: int,
         period: AggregationPeriod,
-        timestamp: datetime
+        timestamp: datetime,
     ) -> str:
         """Create workflow total cost metric."""
         params = MetricParams(
@@ -347,7 +352,7 @@ class MetricRecordCreator:
             workflow_name=workflow_name,
             period=period,
             timestamp=timestamp,
-            tags={"total": total}
+            tags={"total": total},
         )
         return self._create_metric_from_params(params)
 
@@ -357,7 +362,7 @@ class MetricRecordCreator:
         p95_duration: float,
         total: int,
         period: AggregationPeriod,
-        timestamp: datetime
+        timestamp: datetime,
     ) -> str:
         """Create workflow P95 duration metric."""
         params = MetricParams(
@@ -367,7 +372,7 @@ class MetricRecordCreator:
             workflow_name=workflow_name,
             period=period,
             timestamp=timestamp,
-            tags={"total": total}
+            tags={"total": total},
         )
         return self._create_metric_from_params(params)
 
@@ -379,8 +384,8 @@ class MetricRecordCreator:
         avg_tokens: float,
         total: int,
         period: AggregationPeriod,
-        timestamp: datetime
-    ) -> List[str]:
+        timestamp: datetime,
+    ) -> list[str]:
         """Create agent performance metrics (duration, cost, tokens)."""
         created = []
 
@@ -392,7 +397,7 @@ class MetricRecordCreator:
                 agent_name=agent_name,
                 period=period,
                 timestamp=timestamp,
-                tags={"total": total}
+                tags={"total": total},
             )
             created.append(self._create_metric_from_params(params))
 
@@ -404,7 +409,7 @@ class MetricRecordCreator:
                 agent_name=agent_name,
                 period=period,
                 timestamp=timestamp,
-                tags={"total": total}
+                tags={"total": total},
             )
             created.append(self._create_metric_from_params(params))
 
@@ -416,7 +421,7 @@ class MetricRecordCreator:
                 agent_name=agent_name,
                 period=period,
                 timestamp=timestamp,
-                tags={"total": total}
+                tags={"total": total},
             )
             created.append(self._create_metric_from_params(params))
 
@@ -428,10 +433,10 @@ class MetricRecordCreator:
         p95_latency: float,
         p99_latency: float,
         total_cost: float,
-        tags: Dict[str, Any],
+        tags: dict[str, Any],
         period: AggregationPeriod,
-        timestamp: datetime
-    ) -> List[str]:
+        timestamp: datetime,
+    ) -> list[str]:
         """Create LLM performance metrics (latencies and cost)."""
         metric_specs = [
             ("llm_avg_latency", avg_latency, "ms"),
@@ -448,7 +453,7 @@ class MetricRecordCreator:
                     metric_unit=unit,
                     period=period,
                     timestamp=timestamp,
-                    tags=tags
+                    tags=tags,
                 )
                 created.append(self._create_metric_from_params(params))
         return created

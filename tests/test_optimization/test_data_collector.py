@@ -1,16 +1,11 @@
 """Tests for TrainingDataCollector."""
 
-import json
 from contextlib import contextmanager
-from datetime import datetime, timezone, timedelta
-from unittest.mock import MagicMock, patch
+from datetime import UTC, datetime
+from unittest.mock import MagicMock
 
-import pytest
-
-from temper_ai.optimization.dspy._schemas import TrainingExample
-from temper_ai.optimization.dspy.data_collector import TrainingDataCollector
 from temper_ai.optimization.dspy.constants import DEFAULT_FALLBACK_QUALITY_SCORE
-
+from temper_ai.optimization.dspy.data_collector import TrainingDataCollector
 
 _MISSING = object()
 
@@ -30,15 +25,20 @@ def _make_execution(
     mock.agent_name = agent_name
     mock.status = status
     mock.input_data = {"topic": "AI safety"} if input_data is _MISSING else input_data
-    mock.output_data = {"analysis": "AI safety is critical"} if output_data is _MISSING else output_data
+    mock.output_data = (
+        {"analysis": "AI safety is critical"}
+        if output_data is _MISSING
+        else output_data
+    )
     mock.output_quality_score = quality_score
-    mock.start_time = start_time or datetime.now(timezone.utc)
+    mock.start_time = start_time or datetime.now(UTC)
     return mock
 
 
-def _make_llm_call(template_hash="abc123"):
+def _make_llm_call(template_hash="abc123", prompt=None):
     mock = MagicMock()
     mock.prompt_template_hash = template_hash
+    mock.prompt = prompt
     return mock
 
 

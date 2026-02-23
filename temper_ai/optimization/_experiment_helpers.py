@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Any, Dict, List
+from datetime import UTC, datetime
+from typing import Any
 
 METRIC_OPTIMIZATION_SCORE = "optimization_score"
 STATUS_COMPLETED = "completed"
@@ -11,11 +11,9 @@ MIN_SAMPLE_SIZE_SINGLE = 1
 BASELINE_TRAFFIC_SHARE = 0.5
 
 
-def generate_experiment_name(
-    optimizer_type: str, evaluator_name: str
-) -> str:
+def generate_experiment_name(optimizer_type: str, evaluator_name: str) -> str:
     """Generate unique experiment name."""
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    timestamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     return f"{optimizer_type}-{timestamp}-{evaluator_name}"
 
 
@@ -31,8 +29,7 @@ def create_selection_experiment(
 ) -> str:
     """Create and start experiment for SelectionOptimizer."""
     variants = [
-        {"name": f"run-{i}", "traffic": 1.0 / max(num_runs, 1)}
-        for i in range(num_runs)
+        {"name": f"run-{i}", "traffic": 1.0 / max(num_runs, 1)} for i in range(num_runs)
     ]
     exp_id: str = service.create_experiment(
         name=generate_experiment_name("selection", evaluator_name),
@@ -51,11 +48,14 @@ def create_refinement_experiment(
     max_iterations: int,
 ) -> str:
     """Create and start experiment for RefinementOptimizer."""
-    variants: List[Dict[str, Any]] = [
+    variants: list[dict[str, Any]] = [
         {"name": "baseline", "traffic": BASELINE_TRAFFIC_SHARE}
     ]
     variants.extend(
-        {"name": f"iteration-{i}", "traffic": BASELINE_TRAFFIC_SHARE / max(max_iterations, 1)}
+        {
+            "name": f"iteration-{i}",
+            "traffic": BASELINE_TRAFFIC_SHARE / max(max_iterations, 1),
+        }
         for i in range(1, max_iterations + 1)
     )
     exp_id: str = service.create_experiment(
@@ -72,7 +72,7 @@ def create_refinement_experiment(
 def create_tuning_experiment(
     service: Any,
     evaluator_name: str,
-    strategies: List[Dict[str, Any]],
+    strategies: list[dict[str, Any]],
     runs_per_config: int,
 ) -> str:
     """Create and start experiment for TuningOptimizer."""
@@ -106,9 +106,9 @@ def track_run_result(
 def finalize_experiment(
     service: Any,
     experiment_id: str,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Stop experiment and get results."""
-    results: Dict[str, Any] = service.get_experiment_results(experiment_id)
+    results: dict[str, Any] = service.get_experiment_results(experiment_id)
     winner = results.get("recommended_winner")
     service.stop_experiment(experiment_id, winner=winner)
     return results

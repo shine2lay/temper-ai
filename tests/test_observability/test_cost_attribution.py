@@ -3,9 +3,11 @@
 Tests cost_attribution_tags round-trip through SQL, OTEL span attributes,
 None default compatibility, and cost_rollup integration.
 """
+
+from datetime import UTC, datetime
+from unittest.mock import MagicMock
+
 import pytest
-from datetime import datetime, timezone
-from unittest.mock import MagicMock, patch
 
 from temper_ai.observability.backend import WorkflowStartData
 from temper_ai.observability.cost_rollup import StageCostSummary
@@ -58,7 +60,9 @@ class TestCostAttributionOTEL:
         span attributes for cost attribution tags.
         """
         try:
-            from temper_ai.observability.backends.otel_backend import OTELObservabilityBackend  # noqa: F401
+            from temper_ai.observability.backends.otel_backend import (
+                OTELObservabilityBackend,
+            )  # noqa: F401
         except ImportError:
             pytest.skip("opentelemetry not installed")
 
@@ -119,7 +123,7 @@ class TestCostAttributionBackwardCompat:
             workflow_id="wf-1",
             workflow_name="test",
             workflow_config={},
-            start_time=datetime.now(timezone.utc),
+            start_time=datetime.now(UTC),
         )
         assert result is None
 
@@ -138,7 +142,7 @@ class TestCostAttributionBackwardCompat:
             workflow_id="wf-1",
             workflow_name="test",
             workflow_config={},
-            start_time=datetime.now(timezone.utc),
+            start_time=datetime.now(UTC),
             data=data,
         )
 
@@ -147,6 +151,10 @@ class TestCostAttributionBackwardCompat:
         secondary.track_workflow_start.assert_called_once()
         # Verify tags were forwarded via the data argument
         call_kwargs = primary.track_workflow_start.call_args
-        passed_data = call_kwargs.kwargs.get("data") or call_kwargs[1].get("data") if len(call_kwargs) > 1 else None
+        passed_data = (
+            call_kwargs.kwargs.get("data") or call_kwargs[1].get("data")
+            if len(call_kwargs) > 1
+            else None
+        )
         if passed_data is not None:
             assert passed_data.cost_attribution_tags == tags

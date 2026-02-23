@@ -1,16 +1,20 @@
 """Tests for ExperimentDataService."""
 
+from datetime import UTC
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from temper_ai.experimentation.dashboard_service import ExperimentDataService, _experiment_to_dict
+from temper_ai.experimentation.dashboard_service import (
+    ExperimentDataService,
+    _experiment_to_dict,
+)
 
 
 @pytest.fixture
 def mock_experiment():
     """Create a mock experiment with standard attributes."""
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     exp = MagicMock()
     exp.id = "exp-001"
@@ -22,8 +26,8 @@ def mock_experiment():
     exp.confidence_level = 0.95
     exp.total_executions = 10
     exp.winner_variant_id = None
-    exp.created_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
-    exp.started_at = datetime(2026, 1, 2, tzinfo=timezone.utc)
+    exp.created_at = datetime(2026, 1, 1, tzinfo=UTC)
+    exp.started_at = datetime(2026, 1, 2, tzinfo=UTC)
     exp.stopped_at = None
     exp.tags = ["test"]
     return exp
@@ -32,7 +36,10 @@ def mock_experiment():
 @pytest.fixture
 def service():
     """Create ExperimentDataService with mocked internals."""
-    with patch("temper_ai.experimentation.dashboard_service.ExperimentDataService.__init__", return_value=None):
+    with patch(
+        "temper_ai.experimentation.dashboard_service.ExperimentDataService.__init__",
+        return_value=None,
+    ):
         svc = ExperimentDataService.__new__(ExperimentDataService)
         svc._service = MagicMock()
         return svc

@@ -4,19 +4,20 @@ Comprehensive boundary value and edge case tests.
 Tests extreme values, limits, and edge cases across the system to ensure
 robust error handling and graceful degradation.
 """
+
 import asyncio
 from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
 
+from temper_ai.shared.utils.exceptions import (
+    ValidationError,
+)
 from temper_ai.storage.schemas.agent_config import PromptConfig
 from temper_ai.tools.base import BaseTool, ToolMetadata, ToolResult
 from temper_ai.tools.executor import ToolExecutor
 from temper_ai.tools.registry import ToolRegistry
-from temper_ai.shared.utils.exceptions import (
-    ValidationError,
-)
 
 
 class TestStringBoundaries:
@@ -111,11 +112,7 @@ class TestNumericBoundaries:
         tiny = 1e-308
 
         # Should handle tiny values
-        result = ToolResult(
-            success=True,
-            result=tiny,
-            metadata={"value": tiny}
-        )
+        result = ToolResult(success=True, result=tiny, metadata={"value": tiny})
 
         assert result.result == tiny
 
@@ -124,11 +121,7 @@ class TestNumericBoundaries:
         # Python ints have arbitrary precision, but test system limits
         huge_int = 2**128
 
-        result = ToolResult(
-            success=True,
-            result=huge_int,
-            metadata={"huge": huge_int}
-        )
+        result = ToolResult(success=True, result=huge_int, metadata={"huge": huge_int})
 
         assert result.result == huge_int
 
@@ -136,19 +129,15 @@ class TestNumericBoundaries:
         """Test maximum integer value."""
         max_int = 2**63 - 1  # Max 64-bit signed int
 
-        result = ToolResult(
-            success=True,
-            result=max_int,
-            metadata={"value": max_int}
-        )
+        result = ToolResult(success=True, result=max_int, metadata={"value": max_int})
 
         assert result.result == max_int
 
     def test_infinity_values(self):
         """Test infinity and NaN values."""
-        inf_positive = float('inf')
-        inf_negative = float('-inf')
-        nan = float('nan')
+        inf_positive = float("inf")
+        inf_negative = float("-inf")
+        nan = float("nan")
 
         # Should handle special float values
         result_inf = ToolResult(success=True, result=inf_positive)
@@ -159,6 +148,7 @@ class TestNumericBoundaries:
         assert result_neg_inf.result == inf_negative
         # NaN != NaN, so use isnan
         import math
+
         assert math.isnan(result_nan.result)
 
 
@@ -169,11 +159,7 @@ class TestListBoundaries:
         """Test handling of empty lists in tool results."""
         empty_list = []
 
-        result = ToolResult(
-            success=True,
-            result=empty_list,
-            metadata={}
-        )
+        result = ToolResult(success=True, result=empty_list, metadata={})
 
         # Should handle empty lists gracefully
         assert result.result == []
@@ -183,11 +169,7 @@ class TestListBoundaries:
         """Test handling of very large lists (100k items)."""
         large_list = list(range(100_000))
 
-        result = ToolResult(
-            success=True,
-            result=large_list,
-            metadata={}
-        )
+        result = ToolResult(success=True, result=large_list, metadata={})
 
         assert len(result.result) == 100_000
 
@@ -201,11 +183,7 @@ class TestListBoundaries:
             current.append(new_list)
             current = new_list
 
-        result = ToolResult(
-            success=True,
-            result=nested,
-            metadata={}
-        )
+        result = ToolResult(success=True, result=nested, metadata={})
 
         # Should handle deep nesting
         assert result.result == nested
@@ -214,11 +192,7 @@ class TestListBoundaries:
         """Test list with mixed types."""
         mixed = [1, "two", 3.0, None, True, {"key": "value"}, [1, 2, 3]]
 
-        result = ToolResult(
-            success=True,
-            result=mixed,
-            metadata={}
-        )
+        result = ToolResult(success=True, result=mixed, metadata={})
 
         assert result.result == mixed
 
@@ -226,11 +200,7 @@ class TestListBoundaries:
         """Test list with many duplicates."""
         duplicates = ["same"] * 10_000
 
-        result = ToolResult(
-            success=True,
-            result=duplicates,
-            metadata={}
-        )
+        result = ToolResult(success=True, result=duplicates, metadata={})
 
         assert len(result.result) == 10_000
 
@@ -240,11 +210,7 @@ class TestDictBoundaries:
 
     def test_empty_dict(self):
         """Test handling of empty dictionaries."""
-        result = ToolResult(
-            success=True,
-            result={},
-            metadata={}
-        )
+        result = ToolResult(success=True, result={}, metadata={})
 
         assert result.result == {}
         assert result.metadata == {}
@@ -253,11 +219,7 @@ class TestDictBoundaries:
         """Test handling of very large dictionaries (10k keys)."""
         large_dict = {f"key_{i}": f"value_{i}" for i in range(10_000)}
 
-        result = ToolResult(
-            success=True,
-            result=large_dict,
-            metadata={}
-        )
+        result = ToolResult(success=True, result=large_dict, metadata={})
 
         assert len(result.result) == 10_000
 
@@ -271,11 +233,7 @@ class TestDictBoundaries:
             if i < 99:
                 current = current["level"]
 
-        result = ToolResult(
-            success=True,
-            result=nested,
-            metadata={}
-        )
+        result = ToolResult(success=True, result=nested, metadata={})
 
         # Should handle deep nesting
         assert "level" in result.result
@@ -291,11 +249,7 @@ class TestDictBoundaries:
             "123": "numeric string",
         }
 
-        result = ToolResult(
-            success=True,
-            result=special_keys,
-            metadata={}
-        )
+        result = ToolResult(success=True, result=special_keys, metadata={})
 
         assert result.result == special_keys
 
@@ -308,11 +262,7 @@ class TestDictBoundaries:
             "false": False,
         }
 
-        result = ToolResult(
-            success=True,
-            result=none_dict,
-            metadata={}
-        )
+        result = ToolResult(success=True, result=none_dict, metadata={})
 
         assert result.result["null_value"] is None
 
@@ -404,6 +354,7 @@ class TestConcurrencyBoundaries:
     @pytest.mark.asyncio
     async def test_single_concurrent_task(self):
         """Test concurrency with just 1 task."""
+
         async def single_task():
             return "done"
 
@@ -415,6 +366,7 @@ class TestConcurrencyBoundaries:
     @pytest.mark.asyncio
     async def test_maximum_concurrent_tasks(self):
         """Test very high concurrency (1000 tasks)."""
+
         async def quick_task(task_id):
             await asyncio.sleep(0.001)
             return task_id
@@ -429,6 +381,7 @@ class TestConcurrencyBoundaries:
     @pytest.mark.asyncio
     async def test_zero_sleep_duration(self):
         """Test async sleep with zero duration."""
+
         async def zero_sleep_task():
             await asyncio.sleep(0)
             return "done"
@@ -443,11 +396,7 @@ class TestErrorMessageBoundaries:
 
     def test_empty_error_message(self):
         """Test handling of empty error messages."""
-        result = ToolResult(
-            success=False,
-            error="",
-            metadata={}
-        )
+        result = ToolResult(success=False, error="", metadata={})
 
         assert result.success is False
         assert result.error == ""
@@ -456,11 +405,7 @@ class TestErrorMessageBoundaries:
         """Test handling of very long error messages (1MB)."""
         long_error = "Error: " + "x" * (1024 * 1024)
 
-        result = ToolResult(
-            success=False,
-            error=long_error,
-            metadata={}
-        )
+        result = ToolResult(success=False, error=long_error, metadata={})
 
         assert len(result.error) > 1024 * 1024
 
@@ -468,11 +413,7 @@ class TestErrorMessageBoundaries:
         """Test error messages with Unicode characters."""
         unicode_error = "错误: Something went wrong 💥"
 
-        result = ToolResult(
-            success=False,
-            error=unicode_error,
-            metadata={}
-        )
+        result = ToolResult(success=False, error=unicode_error, metadata={})
 
         assert result.error == unicode_error
 
@@ -480,11 +421,7 @@ class TestErrorMessageBoundaries:
         """Test multi-line error messages."""
         multiline_error = "Error on line 1\nError on line 2\nError on line 3"
 
-        result = ToolResult(
-            success=False,
-            error=multiline_error,
-            metadata={}
-        )
+        result = ToolResult(success=False, error=multiline_error, metadata={})
 
         assert "\n" in result.error
 
@@ -505,11 +442,7 @@ class TestMetadataBoundaries:
             "tuple": (1, 2, 3),
         }
 
-        result = ToolResult(
-            success=True,
-            result="test",
-            metadata=metadata
-        )
+        result = ToolResult(success=True, result="test", metadata=metadata)
 
         assert result.metadata["string"] == "value"
         assert result.metadata["int"] == 42
@@ -523,11 +456,7 @@ class TestMetadataBoundaries:
             current["next"] = {"level": i + 1}
             current = current["next"]
 
-        result = ToolResult(
-            success=True,
-            result="test",
-            metadata=nested
-        )
+        result = ToolResult(success=True, result="test", metadata=nested)
 
         # Should handle deep nesting
         assert result.metadata["level"] == 0
@@ -537,9 +466,7 @@ class TestMetadataBoundaries:
         large_value = "x" * (10 * 1024 * 1024)
 
         result = ToolResult(
-            success=True,
-            result="test",
-            metadata={"large": large_value}
+            success=True, result="test", metadata={"large": large_value}
         )
 
         assert len(result.metadata["large"]) == 10 * 1024 * 1024
@@ -550,6 +477,7 @@ class TestToolNameBoundaries:
 
     def test_single_char_tool_name(self):
         """Test tool with single character name."""
+
         class SingleCharTool(BaseTool):
             def get_metadata(self):
                 return ToolMetadata(name="A", description="Test", version="1.0")
@@ -582,12 +510,11 @@ class TestToolNameBoundaries:
 
     def test_tool_name_with_special_chars(self):
         """Test tool name with special characters."""
+
         class SpecialCharTool(BaseTool):
             def get_metadata(self):
                 return ToolMetadata(
-                    name="Tool-Name_123",
-                    description="Test",
-                    version="1.0"
+                    name="Tool-Name_123", description="Test", version="1.0"
                 )
 
             def get_parameters_schema(self):
@@ -621,7 +548,9 @@ class TestVersionBoundaries:
         """Test version with special characters."""
         special_version = "1.0.0-alpha+build.123"
 
-        metadata = ToolMetadata(name="Test", description="Test", version=special_version)
+        metadata = ToolMetadata(
+            name="Test", description="Test", version=special_version
+        )
 
         assert metadata.version == special_version
 
@@ -631,11 +560,7 @@ class TestNullAndNoneBoundaries:
 
     def test_none_result(self):
         """Test ToolResult with None as result."""
-        result = ToolResult(
-            success=True,
-            result=None,
-            metadata={}
-        )
+        result = ToolResult(success=True, result=None, metadata={})
 
         assert result.result is None
 
@@ -644,7 +569,7 @@ class TestNullAndNoneBoundaries:
         result = ToolResult(
             success=False,
             error=None,  # Should probably be a string, but test boundary
-            metadata={}
+            metadata={},
         )
 
         # Depending on validation, may convert to string or allow None
@@ -655,10 +580,7 @@ class TestNullAndNoneBoundaries:
         result = ToolResult(
             success=True,
             result="test",
-            metadata={
-                "none_value": None,
-                "some_value": "present"
-            }
+            metadata={"none_value": None, "some_value": "present"},
         )
 
         assert result.metadata["none_value"] is None

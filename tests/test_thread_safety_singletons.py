@@ -6,12 +6,13 @@ Tests concurrent access to:
 - ToolRegistry TOCTOU fix in register()
 - core/service.py _sanitizer initialization
 """
+
 import threading
 
 import pytest
 
-from temper_ai.agent.utils.agent_factory import AgentFactory
 from temper_ai.agent.base_agent import BaseAgent
+from temper_ai.agent.utils.agent_factory import AgentFactory
 from temper_ai.llm.pricing import PricingManager, get_pricing_manager
 from temper_ai.tools.base import BaseTool, ToolMetadata, ToolResult
 from temper_ai.tools.registry import (
@@ -21,6 +22,7 @@ from temper_ai.tools.registry import (
 )
 
 # ---------- Helpers ----------
+
 
 class StubAgent(BaseAgent):
     """Minimal agent stub for factory registration tests."""
@@ -53,6 +55,7 @@ class StubTool(BaseTool):
 
 
 # ---------- PricingManager tests ----------
+
 
 class TestPricingManagerSingleton:
     """Verify PricingManager has a single instance regardless of access path."""
@@ -90,12 +93,13 @@ class TestPricingManagerSingleton:
     def test_reset_for_testing_clears_initialized_flag(self):
         """After reset, next PricingManager() re-initializes."""
         pm1 = PricingManager()
-        assert hasattr(pm1, '_initialized')
+        assert hasattr(pm1, "_initialized")
         PricingManager.reset_for_testing()
         assert PricingManager._instance is None
 
 
 # ---------- AgentFactory tests ----------
+
 
 class TestAgentFactoryThreadSafety:
     """Verify AgentFactory._agent_types is protected by lock."""
@@ -153,8 +157,7 @@ class TestAgentFactoryThreadSafety:
                 results.append(result)
 
         threads = [
-            threading.Thread(target=register_and_list, args=(i,))
-            for i in range(20)
+            threading.Thread(target=register_and_list, args=(i,)) for i in range(20)
         ]
         for t in threads:
             t.start()
@@ -177,6 +180,7 @@ class TestAgentFactoryThreadSafety:
 
 
 # ---------- ToolRegistry tests ----------
+
 
 class TestToolRegistryThreadSafety:
     """Verify ToolRegistry register/unregister are atomic."""
@@ -269,6 +273,7 @@ class TestToolRegistryThreadSafety:
 
 # ---------- Global registry tests ----------
 
+
 class TestGlobalRegistryThreadSafety:
     """Verify global registry singleton is thread-safe."""
 
@@ -278,6 +283,7 @@ class TestGlobalRegistryThreadSafety:
         yield
         clear_global_cache()
 
+    @pytest.mark.timeout(30)
     def test_concurrent_get_global_registry_same_instance(self):
         """Multiple threads calling get_global_registry() get same instance."""
         instances = []
@@ -299,12 +305,14 @@ class TestGlobalRegistryThreadSafety:
 
 # ---------- Service _sanitizer tests ----------
 
+
 class TestServiceSanitizerThreadSafety:
     """Verify _get_sanitizer() creates exactly one instance under concurrency."""
 
     @pytest.fixture(autouse=True)
     def reset_sanitizer(self):
         import temper_ai.safety.service_mixin as svc
+
         svc._sanitizer = None
         yield
         svc._sanitizer = None

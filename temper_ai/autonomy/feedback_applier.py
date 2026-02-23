@@ -2,7 +2,7 @@
 
 import logging
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from temper_ai.autonomy.audit import AuditEntry, AuditLogger
 
@@ -24,8 +24,8 @@ class FeedbackApplier:
     def __init__(
         self,
         learning_store: object,
-        goal_store: Optional[object] = None,
-        safety_policy: Optional[object] = None,
+        goal_store: object | None = None,
+        safety_policy: object | None = None,
         max_auto_apply: int = DEFAULT_MAX_AUTO_APPLY,
     ) -> None:
         self._learning_store = learning_store
@@ -40,7 +40,7 @@ class FeedbackApplier:
         self,
         min_confidence: float = DEFAULT_MIN_CONFIDENCE,
         dry_run: bool = False,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Fetch pending recommendations, filter by confidence, and apply.
 
         Returns a list of result dicts, one per recommendation processed.
@@ -89,7 +89,7 @@ class FeedbackApplier:
         return filtered
 
     def _audit_learning_results(
-        self, results: List[Dict[str, Any]], recs: list
+        self, results: list[dict[str, Any]], recs: list
     ) -> None:
         """Log audit entries for successfully applied recommendations."""
         rec_map = {r.id: r for r in recs}
@@ -106,17 +106,13 @@ class FeedbackApplier:
                 config_path=result.get("config_path", rec.config_path),
                 field_path=result.get("field_path", rec.field_path),
                 old_value=str(result.get("current_value", rec.current_value)),
-                new_value=str(
-                    result.get("recommended_value", rec.recommended_value)
-                ),
+                new_value=str(result.get("recommended_value", rec.recommended_value)),
             )
             self._audit.log(entry)
 
     # ── Goal application ──────────────────────────────────────────────
 
-    def translate_goal_to_recommendations(
-        self, goal: object
-    ) -> List[Dict[str, Any]]:
+    def translate_goal_to_recommendations(self, goal: object) -> list[dict[str, Any]]:
         """Convert a GoalProposalRecord's proposed_actions to recommendation-like dicts.
 
         Each proposed_action string is parsed as ``config_path:field_path=value``.
@@ -125,7 +121,7 @@ class FeedbackApplier:
         from temper_ai.goals.models import GoalProposalRecord
 
         record: GoalProposalRecord = goal  # type: ignore[assignment]
-        results: List[Dict[str, Any]] = []
+        results: list[dict[str, Any]] = []
         for action in record.proposed_actions:
             parsed = _parse_action(action)
             if parsed is None:
@@ -148,7 +144,7 @@ class FeedbackApplier:
             )
         return results
 
-    def apply_approved_goals(self) -> List[Dict[str, Any]]:
+    def apply_approved_goals(self) -> list[dict[str, Any]]:
         """Fetch approved goals, translate their actions, and return results.
 
         Safety policy is consulted when available. Each applied action is
@@ -161,11 +157,11 @@ class FeedbackApplier:
         from temper_ai.goals.store import GoalStore
 
         store: GoalStore = self._goal_store  # type: ignore[assignment]
-        approved: List[GoalProposalRecord] = store.list_proposals(
+        approved: list[GoalProposalRecord] = store.list_proposals(
             status=STATUS_APPROVED
         )
 
-        all_results: List[Dict[str, Any]] = []
+        all_results: list[dict[str, Any]] = []
         applied_count = 0
 
         for goal in approved:
@@ -173,9 +169,7 @@ class FeedbackApplier:
                 break
 
             if not self._check_goal_safety(goal):
-                all_results.append(
-                    {"goal_id": goal.id, "status": "blocked_by_safety"}
-                )
+                all_results.append({"goal_id": goal.id, "status": "blocked_by_safety"})
                 continue
 
             translated = self.translate_goal_to_recommendations(goal)
@@ -202,7 +196,7 @@ class FeedbackApplier:
             logger.warning("Failed to mark goal %s as completed: %s", goal_id, exc)
 
     def _check_goal_safety(self, goal: object) -> bool:
-        """Validate a goal through the safety policy if one is configured."""
+        """Block high/critical risk goals when a safety policy is configured."""
         if self._safety_policy is None:
             return True
         try:
@@ -221,9 +215,7 @@ class FeedbackApplier:
             logger.warning("Safety check failed, blocking goal: %s", exc)
             return False
 
-    def _audit_goal_action(
-        self, goal_id: str, action: Dict[str, Any]
-    ) -> None:
+    def _audit_goal_action(self, goal_id: str, action: dict[str, Any]) -> None:
         """Log an audit entry for an applied goal action."""
         entry = AuditEntry(
             id=uuid.uuid4().hex,
@@ -237,7 +229,7 @@ class FeedbackApplier:
         self._audit.log(entry)
 
 
-def _parse_action(action_str: str) -> Optional[Dict[str, str]]:
+def _parse_action(action_str: str) -> dict[str, str] | None:
     """Parse ``config_path:field_path=value`` into a dict.
 
     Returns None if the format doesn't match.

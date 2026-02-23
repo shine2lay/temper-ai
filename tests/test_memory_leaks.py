@@ -1,4 +1,4 @@
-"""Memory leak detection tests for meta-autonomous-framework.
+"""Memory leak detection tests for Temper AI.
 
 Tests for memory leaks in long-running agent/workflow execution to ensure
 stable memory usage over time. Uses psutil for memory monitoring and gc
@@ -6,13 +6,13 @@ for garbage collection verification.
 
 Run with: pytest tests/test_memory_leaks.py -v
 """
+
 import asyncio
 import gc
 import os
 import time
 from datetime import datetime
 from itertools import count
-from typing import List, Tuple
 from unittest.mock import Mock, patch
 
 import pytest
@@ -20,11 +20,15 @@ import pytest
 try:
     import psutil
 except ImportError:
-    pytest.skip("psutil not installed (optional for memory leak tests)", allow_module_level=True)
+    pytest.skip(
+        "psutil not installed (optional for memory leak tests)", allow_module_level=True
+    )
 
-from temper_ai.llm.providers import LLMResponse
 from temper_ai.agent.standard_agent import StandardAgent
-from temper_ai.workflow.langgraph_compiler import LangGraphCompiler
+from temper_ai.llm.providers import LLMResponse
+from temper_ai.observability.backends.noop_backend import NoOpBackend
+from temper_ai.observability.database import DatabaseManager
+from temper_ai.observability.tracker import ExecutionTracker
 from temper_ai.storage.schemas.agent_config import (
     AgentConfig,
     AgentConfigInner,
@@ -32,8 +36,7 @@ from temper_ai.storage.schemas.agent_config import (
     InferenceConfig,
     PromptConfig,
 )
-from temper_ai.observability.database import DatabaseManager
-from temper_ai.observability.tracker import ExecutionTracker
+from temper_ai.workflow.langgraph_compiler import LangGraphCompiler
 
 # ============================================================================
 # Constants
@@ -49,6 +52,7 @@ MEMORY_STABILIZATION_TIME = 0.5  # seconds
 # ============================================================================
 # Helper Functions
 # ============================================================================
+
 
 def get_memory_usage() -> float:
     """Get current memory usage in MB.
@@ -72,7 +76,7 @@ def measure_memory_growth(
     operation_func,
     warmup_iterations: int = WARMUP_ITERATIONS,
     test_iterations: int = TEST_ITERATIONS,
-) -> Tuple[float, float, float]:
+) -> tuple[float, float, float]:
     """Measure memory growth over repeated operations.
 
     Args:
@@ -111,6 +115,7 @@ def measure_memory_growth(
 # ============================================================================
 # Fixtures
 # ============================================================================
+
 
 @pytest.fixture
 def minimal_agent_config():
@@ -161,7 +166,7 @@ def simple_workflow_config():
                 {"name": "stage1"},
                 {"name": "stage2"},
                 {"name": "stage3"},
-            ]
+            ],
         }
     }
 
@@ -180,6 +185,7 @@ def leak_db():
 # Test 1: Agent Execution Memory Leak
 # ============================================================================
 
+
 @pytest.mark.memory
 def test_agent_execution_no_memory_leak(minimal_agent_config, mock_llm_response):
     """Test that repeated agent execution doesn't leak memory.
@@ -188,7 +194,7 @@ def test_agent_execution_no_memory_leak(minimal_agent_config, mock_llm_response)
     - Memory growth <10MB per 100 executions
     - Memory usage stabilizes after warmup
     """
-    with patch('temper_ai.agent.base_agent.ToolRegistry') as mock_tool_registry:
+    with patch("temper_ai.agent.base_agent.ToolRegistry") as mock_tool_registry:
         # Setup
         mock_tool_registry.return_value.list_tools.return_value = []
 
@@ -212,8 +218,12 @@ def test_agent_execution_no_memory_leak(minimal_agent_config, mock_llm_response)
         print(f"Final memory:     {final:.2f} MB")
         print(f"Memory growth:    {growth:.2f} MB")
         print(f"Growth per exec:  {growth / TEST_ITERATIONS:.3f} MB")
-        print(f"Target:           <{MAX_MEMORY_GROWTH_PER_100_EXECUTIONS} MB per 100 executions")
-        print(f"Status:           {'✓ PASS' if growth < MAX_MEMORY_GROWTH_PER_100_EXECUTIONS else '✗ FAIL'}")
+        print(
+            f"Target:           <{MAX_MEMORY_GROWTH_PER_100_EXECUTIONS} MB per 100 executions"
+        )
+        print(
+            f"Status:           {'✓ PASS' if growth < MAX_MEMORY_GROWTH_PER_100_EXECUTIONS else '✗ FAIL'}"
+        )
         print(f"{'='*70}\n")
 
         # Assert
@@ -227,6 +237,7 @@ def test_agent_execution_no_memory_leak(minimal_agent_config, mock_llm_response)
 # Test 2: Workflow Compilation Memory Leak
 # ============================================================================
 
+
 @pytest.mark.memory
 def test_workflow_compilation_no_memory_leak(simple_workflow_config):
     """Test that repeated workflow compilation doesn't leak memory.
@@ -235,7 +246,7 @@ def test_workflow_compilation_no_memory_leak(simple_workflow_config):
     - Memory growth <10MB per 100 compilations
     - Compiled workflows are properly garbage collected
     """
-    with patch('temper_ai.workflow.langgraph_compiler.ConfigLoader'):
+    with patch("temper_ai.workflow.engines.langgraph_compiler.ConfigLoader"):
         # Setup
         mock_loader_instance = Mock()
         mock_stage_config = Mock()
@@ -262,8 +273,12 @@ def test_workflow_compilation_no_memory_leak(simple_workflow_config):
         print(f"Final memory:     {final:.2f} MB")
         print(f"Memory growth:    {growth:.2f} MB")
         print(f"Growth per exec:  {growth / TEST_ITERATIONS:.3f} MB")
-        print(f"Target:           <{MAX_MEMORY_GROWTH_PER_100_EXECUTIONS} MB per 100 executions")
-        print(f"Status:           {'✓ PASS' if growth < MAX_MEMORY_GROWTH_PER_100_EXECUTIONS else '✗ FAIL'}")
+        print(
+            f"Target:           <{MAX_MEMORY_GROWTH_PER_100_EXECUTIONS} MB per 100 executions"
+        )
+        print(
+            f"Status:           {'✓ PASS' if growth < MAX_MEMORY_GROWTH_PER_100_EXECUTIONS else '✗ FAIL'}"
+        )
         print(f"{'='*70}\n")
 
         # Assert
@@ -277,6 +292,7 @@ def test_workflow_compilation_no_memory_leak(simple_workflow_config):
 # Test 3: LLM Provider Connection Memory Leak
 # ============================================================================
 
+
 @pytest.mark.memory
 def test_llm_provider_no_memory_leak(minimal_agent_config):
     """Test that LLM provider connections don't leak memory.
@@ -285,7 +301,7 @@ def test_llm_provider_no_memory_leak(minimal_agent_config):
     - Memory growth <10MB per 100 calls
     - Connection pooling doesn't accumulate
     """
-    with patch('temper_ai.agent.base_agent.ToolRegistry') as mock_tool_registry:
+    with patch("temper_ai.agent.base_agent.ToolRegistry") as mock_tool_registry:
         # Setup
         mock_tool_registry.return_value.list_tools.return_value = []
 
@@ -307,6 +323,7 @@ def test_llm_provider_no_memory_leak(minimal_agent_config):
 
         # Define operation
         call_counter = count()
+
         def llm_call():
             agent.llm.complete(f"Prompt {next(call_counter)}")
 
@@ -321,8 +338,12 @@ def test_llm_provider_no_memory_leak(minimal_agent_config):
         print(f"Final memory:     {final:.2f} MB")
         print(f"Memory growth:    {growth:.2f} MB")
         print(f"Growth per call:  {growth / TEST_ITERATIONS:.3f} MB")
-        print(f"Target:           <{MAX_MEMORY_GROWTH_PER_100_EXECUTIONS} MB per 100 calls")
-        print(f"Status:           {'✓ PASS' if growth < MAX_MEMORY_GROWTH_PER_100_EXECUTIONS else '✗ FAIL'}")
+        print(
+            f"Target:           <{MAX_MEMORY_GROWTH_PER_100_EXECUTIONS} MB per 100 calls"
+        )
+        print(
+            f"Status:           {'✓ PASS' if growth < MAX_MEMORY_GROWTH_PER_100_EXECUTIONS else '✗ FAIL'}"
+        )
         print(f"{'='*70}\n")
 
         # Assert
@@ -336,6 +357,7 @@ def test_llm_provider_no_memory_leak(minimal_agent_config):
 # Test 4: Observability Tracking Memory Leak
 # ============================================================================
 
+
 @pytest.mark.memory
 def test_observability_tracking_no_memory_leak(leak_db):
     """Test that observability tracking doesn't leak memory.
@@ -345,26 +367,15 @@ def test_observability_tracking_no_memory_leak(leak_db):
     - Database connections properly closed
     """
     # Setup tracker
-    tracker = ExecutionTracker(db=leak_db)
+    tracker = ExecutionTracker(backend=NoOpBackend())
 
     # Define operation
-    event_counter = count()
     def track_event():
-        workflow_id = f"workflow_{next(event_counter)}"
-        tracker.start_workflow(
-            workflow_id=workflow_id,
-            workflow_name="memory_test"
-        )
-        tracker.end_workflow(
-            workflow_id=workflow_id,
-            status="completed"
-        )
+        with tracker.track_workflow(workflow_name="memory_test"):
+            pass
 
     # Measure memory growth
     baseline, final, growth = measure_memory_growth(track_event)
-
-    # Cleanup
-    tracker.stop()
 
     # Log results
     print(f"\n{'='*70}")
@@ -374,8 +385,12 @@ def test_observability_tracking_no_memory_leak(leak_db):
     print(f"Final memory:     {final:.2f} MB")
     print(f"Memory growth:    {growth:.2f} MB")
     print(f"Growth per event: {growth / TEST_ITERATIONS:.3f} MB")
-    print(f"Target:           <{MAX_MEMORY_GROWTH_PER_100_EXECUTIONS} MB per 100 events")
-    print(f"Status:           {'✓ PASS' if growth < MAX_MEMORY_GROWTH_PER_100_EXECUTIONS else '✗ FAIL'}")
+    print(
+        f"Target:           <{MAX_MEMORY_GROWTH_PER_100_EXECUTIONS} MB per 100 events"
+    )
+    print(
+        f"Status:           {'✓ PASS' if growth < MAX_MEMORY_GROWTH_PER_100_EXECUTIONS else '✗ FAIL'}"
+    )
     print(f"{'='*70}\n")
 
     # Assert
@@ -389,6 +404,7 @@ def test_observability_tracking_no_memory_leak(leak_db):
 # Test 5: Long-Running Agent Session
 # ============================================================================
 
+
 @pytest.mark.memory
 @pytest.mark.slow
 def test_long_running_agent_session_stability(minimal_agent_config, mock_llm_response):
@@ -401,7 +417,7 @@ def test_long_running_agent_session_stability(minimal_agent_config, mock_llm_res
     - Memory growth <50MB over 500 executions
     - No continuous memory increase trend
     """
-    with patch('temper_ai.agent.base_agent.ToolRegistry') as mock_tool_registry:
+    with patch("temper_ai.agent.base_agent.ToolRegistry") as mock_tool_registry:
         # Setup
         mock_tool_registry.return_value.list_tools.return_value = []
 
@@ -417,7 +433,7 @@ def test_long_running_agent_session_stability(minimal_agent_config, mock_llm_res
         baseline_memory = get_memory_usage()
 
         # Track memory over time
-        memory_samples: List[float] = []
+        memory_samples: list[float] = []
         sample_interval = 50  # Sample every 50 executions
 
         for i in range(500):
@@ -434,7 +450,7 @@ def test_long_running_agent_session_stability(minimal_agent_config, mock_llm_res
         # Check for continuous increase (each sample should not grow unbounded)
         # Use 95th percentile to avoid flakiness from OS background processes
         growth_values = [
-            memory_samples[i] - memory_samples[i-1]
+            memory_samples[i] - memory_samples[i - 1]
             for i in range(1, len(memory_samples))
         ]
         growth_values_sorted = sorted(growth_values)
@@ -453,7 +469,9 @@ def test_long_running_agent_session_stability(minimal_agent_config, mock_llm_res
         print(f"P95 growth between samples:  {p95_growth:.2f} MB")
         print(f"Memory samples:              {[f'{m:.1f}' for m in memory_samples]}")
         print("Target:                      <50 MB total growth")
-        print(f"Status:                      {'✓ PASS' if total_growth < 50 else '✗ FAIL'}")
+        print(
+            f"Status:                      {'✓ PASS' if total_growth < 50 else '✗ FAIL'}"
+        )
         print(f"{'='*70}\n")
 
         # Assert
@@ -473,6 +491,7 @@ def test_long_running_agent_session_stability(minimal_agent_config, mock_llm_res
 # Test 6: Async LLM Provider Memory Leak
 # ============================================================================
 
+
 @pytest.mark.asyncio
 @pytest.mark.memory
 async def test_async_llm_provider_no_memory_leak():
@@ -482,6 +501,7 @@ async def test_async_llm_provider_no_memory_leak():
     - Memory growth <10MB per 100 async calls
     - Async task cleanup is proper
     """
+
     # Mock async LLM
     class MockAsyncLLM:
         async def acomplete(self, prompt: str, **kwargs) -> LLMResponse:
@@ -523,7 +543,9 @@ async def test_async_llm_provider_no_memory_leak():
     print(f"Memory growth:    {growth:.2f} MB")
     print(f"Growth per call:  {growth / TEST_ITERATIONS:.3f} MB")
     print(f"Target:           <{MAX_MEMORY_GROWTH_PER_100_EXECUTIONS} MB per 100 calls")
-    print(f"Status:           {'✓ PASS' if growth < MAX_MEMORY_GROWTH_PER_100_EXECUTIONS else '✗ FAIL'}")
+    print(
+        f"Status:           {'✓ PASS' if growth < MAX_MEMORY_GROWTH_PER_100_EXECUTIONS else '✗ FAIL'}"
+    )
     print(f"{'='*70}\n")
 
     # Assert
@@ -537,6 +559,7 @@ async def test_async_llm_provider_no_memory_leak():
 # Test 7: Concurrent Workflow Execution Memory Leak
 # ============================================================================
 
+
 @pytest.mark.asyncio
 @pytest.mark.memory
 async def test_concurrent_workflows_no_memory_leak(simple_workflow_config):
@@ -546,7 +569,7 @@ async def test_concurrent_workflows_no_memory_leak(simple_workflow_config):
     - Memory growth <20MB per 100 concurrent workflow executions
     - Concurrent resources properly cleaned up
     """
-    with patch('temper_ai.workflow.langgraph_compiler.ConfigLoader'):
+    with patch("temper_ai.workflow.engines.langgraph_compiler.ConfigLoader"):
         # Setup
         mock_loader_instance = Mock()
         mock_stage_config = Mock()
@@ -609,6 +632,7 @@ async def test_concurrent_workflows_no_memory_leak(simple_workflow_config):
 # Test 8: Database Connection Pool Memory Leak
 # ============================================================================
 
+
 @pytest.mark.memory
 def test_database_connection_pool_no_memory_leak(leak_db):
     """Test that database connection pool doesn't leak memory.
@@ -621,6 +645,7 @@ def test_database_connection_pool_no_memory_leak(leak_db):
 
     # Define operation
     db_counter = count()
+
     def db_operation():
         with leak_db.session() as session:
             # Simulate database operation
@@ -630,7 +655,7 @@ def test_database_connection_pool_no_memory_leak(leak_db):
                 status="completed",
                 start_time=datetime.utcnow(),
                 end_time=datetime.utcnow(),
-                workflow_config_snapshot={}  # Required field
+                workflow_config_snapshot={},  # Required field
             )
             session.add(workflow)
             session.commit()
@@ -646,8 +671,12 @@ def test_database_connection_pool_no_memory_leak(leak_db):
     print(f"Final memory:     {final:.2f} MB")
     print(f"Memory growth:    {growth:.2f} MB")
     print(f"Growth per op:    {growth / TEST_ITERATIONS:.3f} MB")
-    print(f"Target:           <{MAX_MEMORY_GROWTH_PER_100_EXECUTIONS} MB per 100 operations")
-    print(f"Status:           {'✓ PASS' if growth < MAX_MEMORY_GROWTH_PER_100_EXECUTIONS else '✗ FAIL'}")
+    print(
+        f"Target:           <{MAX_MEMORY_GROWTH_PER_100_EXECUTIONS} MB per 100 operations"
+    )
+    print(
+        f"Status:           {'✓ PASS' if growth < MAX_MEMORY_GROWTH_PER_100_EXECUTIONS else '✗ FAIL'}"
+    )
     print(f"{'='*70}\n")
 
     # Assert
@@ -660,6 +689,7 @@ def test_database_connection_pool_no_memory_leak(leak_db):
 # ============================================================================
 # Test Summary
 # ============================================================================
+
 
 def test_memory_leak_summary():
     """Generate memory leak test summary.

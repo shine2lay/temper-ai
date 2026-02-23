@@ -1,4 +1,5 @@
 """Tests for approval workflow system."""
+
 from datetime import UTC, datetime, timedelta
 from time import sleep
 
@@ -16,7 +17,7 @@ class TestApprovalRequest:
         request = ApprovalRequest(
             action={"tool": "deploy"},
             reason="Production deployment",
-            context={"agent": "deployer"}
+            context={"agent": "deployer"},
         )
 
         assert request.id is not None
@@ -97,7 +98,7 @@ class TestApprovalRequest:
             action={"tool": "test"},
             reason="Test",
             required_approvers=2,
-            approvers=["alice"]
+            approvers=["alice"],
         )
 
         data = request.to_dict()
@@ -141,8 +142,7 @@ class TestRequestApproval:
         workflow = ApprovalWorkflow()
 
         request = workflow.request_approval(
-            action={"tool": "deploy"},
-            reason="Production deployment"
+            action={"tool": "deploy"}, reason="Production deployment"
         )
 
         assert request is not None
@@ -158,7 +158,7 @@ class TestRequestApproval:
         request = workflow.request_approval(
             action={"tool": "delete"},
             reason="Delete operation",
-            context={"agent": "admin", "stage": "cleanup"}
+            context={"agent": "admin", "stage": "cleanup"},
         )
 
         assert request.context == {"agent": "admin", "stage": "cleanup"}
@@ -170,14 +170,14 @@ class TestRequestApproval:
             severity=ViolationSeverity.HIGH,
             message="High risk action",
             action="deploy",
-            context={}
+            context={},
         )
 
         workflow = ApprovalWorkflow()
         request = workflow.request_approval(
             action={"tool": "deploy"},
             reason="Safety violation detected",
-            violations=[violation]
+            violations=[violation],
         )
 
         assert len(request.violations) == 1
@@ -188,9 +188,7 @@ class TestRequestApproval:
         workflow = ApprovalWorkflow()
 
         request = workflow.request_approval(
-            action={"tool": "deploy"},
-            reason="Critical operation",
-            required_approvers=3
+            action={"tool": "deploy"}, reason="Critical operation", required_approvers=3
         )
 
         assert request.required_approvers == 3
@@ -201,9 +199,7 @@ class TestRequestApproval:
         workflow = ApprovalWorkflow(default_timeout_minutes=60)
 
         request = workflow.request_approval(
-            action={"tool": "deploy"},
-            reason="Test",
-            timeout_minutes=15
+            action={"tool": "deploy"}, reason="Test", timeout_minutes=15
         )
 
         # Timeout should be ~15 minutes from now
@@ -217,10 +213,7 @@ class TestApprove:
     def test_approve_basic(self):
         """Test basic approval."""
         workflow = ApprovalWorkflow()
-        request = workflow.request_approval(
-            action={"tool": "deploy"},
-            reason="Test"
-        )
+        request = workflow.request_approval(action={"tool": "deploy"}, reason="Test")
 
         success = workflow.approve(request.id, approver="alice")
 
@@ -231,10 +224,7 @@ class TestApprove:
     def test_approve_with_reason(self):
         """Test approval with reason."""
         workflow = ApprovalWorkflow()
-        request = workflow.request_approval(
-            action={"tool": "deploy"},
-            reason="Test"
-        )
+        request = workflow.request_approval(action={"tool": "deploy"}, reason="Test")
 
         workflow.approve(request.id, approver="alice", reason="Looks good")
 
@@ -244,9 +234,7 @@ class TestApprove:
         """Test approval requiring multiple approvers."""
         workflow = ApprovalWorkflow()
         request = workflow.request_approval(
-            action={"tool": "deploy"},
-            reason="Test",
-            required_approvers=2
+            action={"tool": "deploy"}, reason="Test", required_approvers=2
         )
 
         # First approval - still pending
@@ -263,9 +251,7 @@ class TestApprove:
         """Test that same approver can't approve twice."""
         workflow = ApprovalWorkflow()
         request = workflow.request_approval(
-            action={"tool": "deploy"},
-            reason="Test",
-            required_approvers=2
+            action={"tool": "deploy"}, reason="Test", required_approvers=2
         )
 
         workflow.approve(request.id, approver="alice")
@@ -284,10 +270,7 @@ class TestApprove:
     def test_approve_already_approved_request(self):
         """Test approving already approved request."""
         workflow = ApprovalWorkflow()
-        request = workflow.request_approval(
-            action={"tool": "deploy"},
-            reason="Test"
-        )
+        request = workflow.request_approval(action={"tool": "deploy"}, reason="Test")
 
         workflow.approve(request.id, approver="alice")
         assert request.is_approved() is True
@@ -300,10 +283,7 @@ class TestApprove:
     def test_approve_rejected_request(self):
         """Test approving already rejected request."""
         workflow = ApprovalWorkflow()
-        request = workflow.request_approval(
-            action={"tool": "deploy"},
-            reason="Test"
-        )
+        request = workflow.request_approval(action={"tool": "deploy"}, reason="Test")
 
         workflow.reject(request.id, rejecter="alice")
         assert request.is_rejected() is True
@@ -320,10 +300,7 @@ class TestReject:
     def test_reject_basic(self):
         """Test basic rejection."""
         workflow = ApprovalWorkflow()
-        request = workflow.request_approval(
-            action={"tool": "deploy"},
-            reason="Test"
-        )
+        request = workflow.request_approval(action={"tool": "deploy"}, reason="Test")
 
         success = workflow.reject(request.id, rejecter="alice")
 
@@ -334,10 +311,7 @@ class TestReject:
     def test_reject_with_reason(self):
         """Test rejection with reason."""
         workflow = ApprovalWorkflow()
-        request = workflow.request_approval(
-            action={"tool": "deploy"},
-            reason="Test"
-        )
+        request = workflow.request_approval(action={"tool": "deploy"}, reason="Test")
 
         workflow.reject(request.id, rejecter="alice", reason="Too risky")
 
@@ -354,10 +328,7 @@ class TestReject:
     def test_reject_already_approved_request(self):
         """Test rejecting already approved request."""
         workflow = ApprovalWorkflow()
-        request = workflow.request_approval(
-            action={"tool": "deploy"},
-            reason="Test"
-        )
+        request = workflow.request_approval(action={"tool": "deploy"}, reason="Test")
 
         workflow.approve(request.id, approver="alice")
 
@@ -373,10 +344,7 @@ class TestCancel:
     def test_cancel_basic(self):
         """Test basic cancellation."""
         workflow = ApprovalWorkflow()
-        request = workflow.request_approval(
-            action={"tool": "deploy"},
-            reason="Test"
-        )
+        request = workflow.request_approval(action={"tool": "deploy"}, reason="Test")
 
         success = workflow.cancel(request.id)
 
@@ -386,10 +354,7 @@ class TestCancel:
     def test_cancel_with_reason(self):
         """Test cancellation with reason."""
         workflow = ApprovalWorkflow()
-        request = workflow.request_approval(
-            action={"tool": "deploy"},
-            reason="Test"
-        )
+        request = workflow.request_approval(action={"tool": "deploy"}, reason="Test")
 
         workflow.cancel(request.id, reason="No longer needed")
 
@@ -406,10 +371,7 @@ class TestCancel:
     def test_cancel_already_approved_request(self):
         """Test cancelling already approved request."""
         workflow = ApprovalWorkflow()
-        request = workflow.request_approval(
-            action={"tool": "deploy"},
-            reason="Test"
-        )
+        request = workflow.request_approval(action={"tool": "deploy"}, reason="Test")
 
         workflow.approve(request.id, approver="alice")
 
@@ -428,7 +390,7 @@ class TestTimeout:
         request = workflow.request_approval(
             action={"tool": "deploy"},
             reason="Test",
-            timeout_minutes=0  # Immediate expiration
+            timeout_minutes=0,  # Immediate expiration
         )
 
         # Wait a moment
@@ -447,9 +409,7 @@ class TestTimeout:
         # Create several requests that expire immediately
         for i in range(5):
             workflow.request_approval(
-                action={"tool": f"action{i}"},
-                reason="Test",
-                timeout_minutes=0
+                action={"tool": f"action{i}"}, reason="Test", timeout_minutes=0
             )
 
         sleep(0.1)
@@ -462,14 +422,11 @@ class TestTimeout:
     def test_auto_reject_disabled(self):
         """Test that auto-reject can be disabled."""
         workflow = ApprovalWorkflow(
-            default_timeout_minutes=0,
-            auto_reject_on_timeout=False
+            default_timeout_minutes=0, auto_reject_on_timeout=False
         )
 
         request = workflow.request_approval(
-            action={"tool": "deploy"},
-            reason="Test",
-            timeout_minutes=0
+            action={"tool": "deploy"}, reason="Test", timeout_minutes=0
         )
 
         sleep(0.1)
@@ -484,10 +441,7 @@ class TestQueryMethods:
     def test_get_request(self):
         """Test getting request by ID."""
         workflow = ApprovalWorkflow()
-        request = workflow.request_approval(
-            action={"tool": "deploy"},
-            reason="Test"
-        )
+        request = workflow.request_approval(action={"tool": "deploy"}, reason="Test")
 
         retrieved = workflow.get_request(request.id)
 
@@ -504,10 +458,7 @@ class TestQueryMethods:
     def test_is_approved(self):
         """Test is_approved check."""
         workflow = ApprovalWorkflow()
-        request = workflow.request_approval(
-            action={"tool": "deploy"},
-            reason="Test"
-        )
+        request = workflow.request_approval(action={"tool": "deploy"}, reason="Test")
 
         assert workflow.is_approved(request.id) is False
 
@@ -518,10 +469,7 @@ class TestQueryMethods:
     def test_is_rejected(self):
         """Test is_rejected check."""
         workflow = ApprovalWorkflow()
-        request = workflow.request_approval(
-            action={"tool": "deploy"},
-            reason="Test"
-        )
+        request = workflow.request_approval(action={"tool": "deploy"}, reason="Test")
 
         assert workflow.is_rejected(request.id) is False
 
@@ -562,10 +510,7 @@ class TestCallbacks:
 
         workflow.on_approved(on_approved)
 
-        request = workflow.request_approval(
-            action={"tool": "deploy"},
-            reason="Test"
-        )
+        request = workflow.request_approval(action={"tool": "deploy"}, reason="Test")
 
         workflow.approve(request.id, approver="alice")
 
@@ -582,10 +527,7 @@ class TestCallbacks:
 
         workflow.on_rejected(on_rejected)
 
-        request = workflow.request_approval(
-            action={"tool": "deploy"},
-            reason="Test"
-        )
+        request = workflow.request_approval(action={"tool": "deploy"}, reason="Test")
 
         workflow.reject(request.id, rejecter="alice")
 
@@ -601,10 +543,7 @@ class TestCallbacks:
 
         workflow.on_approved(failing_callback)
 
-        request = workflow.request_approval(
-            action={"tool": "deploy"},
-            reason="Test"
-        )
+        request = workflow.request_approval(action={"tool": "deploy"}, reason="Test")
 
         # Should not raise exception
         workflow.approve(request.id, approver="alice")
@@ -620,10 +559,7 @@ class TestUtilityMethods:
         workflow = ApprovalWorkflow()
 
         for i in range(5):
-            workflow.request_approval(
-                action={"tool": f"action{i}"},
-                reason="Test"
-            )
+            workflow.request_approval(action={"tool": f"action{i}"}, reason="Test")
 
         assert workflow.request_count() == 5
 

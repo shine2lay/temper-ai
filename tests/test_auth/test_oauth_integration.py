@@ -13,6 +13,7 @@ Tests cover:
 - Token revocation (provider-level and local)
 - Expired state cleanup
 """
+
 import asyncio
 import secrets
 from datetime import datetime
@@ -68,12 +69,18 @@ def user_store():
 @pytest.fixture
 def mock_oauth_service(mock_oauth_config):
     """Create mock OAuth service."""
+    from temper_ai.auth.oauth.service import OAuthStateError
+
     service = Mock(spec=OAuthService)
     service.config = mock_oauth_config
+
+    # Track valid states issued by get_authorization_url
+    valid_states: set = set()
 
     # Mock get_authorization_url
     async def mock_get_auth_url(provider, user_id, ip_address):
         state = secrets.token_urlsafe(32)
+        valid_states.add(state)
         auth_url = (
             f"https://accounts.google.com/o/oauth2/v2/auth?"
             f"client_id=test_client_id&state={state}"
@@ -82,8 +89,10 @@ def mock_oauth_service(mock_oauth_config):
 
     service.get_authorization_url = AsyncMock(side_effect=mock_get_auth_url)
 
-    # Mock exchange_code_for_tokens
+    # Mock exchange_code_for_tokens (validates state like real service)
     async def mock_exchange(provider, code, state, ip_address):
+        if state not in valid_states:
+            raise OAuthStateError("Invalid or expired state parameter")
         return {
             "access_token": "mock_access_token",
             "refresh_token": "mock_refresh_token",
@@ -216,7 +225,9 @@ async def test_session_fixation_prevention(oauth_handlers, session_store):
     )
 
     # Extract new session ID
-    new_session_id = callback_headers["Set-Cookie"].split("session_id=")[1].split(";")[0]
+    new_session_id = (
+        callback_headers["Set-Cookie"].split("session_id=")[1].split(";")[0]
+    )
 
     # CRITICAL: Session IDs must be different
     assert new_session_id != initial_session_id, (
@@ -256,8 +267,12 @@ async def test_tokens_not_in_response(oauth_handlers):
     )
 
     # CRITICAL: No tokens in redirect URL
-    assert "access_token" not in callback_url.lower(), "Access token exposed in redirect URL!"
-    assert "refresh_token" not in callback_url.lower(), "Refresh token exposed in redirect URL!"
+    assert (
+        "access_token" not in callback_url.lower()
+    ), "Access token exposed in redirect URL!"
+    assert (
+        "refresh_token" not in callback_url.lower()
+    ), "Refresh token exposed in redirect URL!"
     assert "id_token" not in callback_url.lower(), "ID token exposed in redirect URL!"
 
     # CRITICAL: No tokens in headers
@@ -389,9 +404,9 @@ async def test_session_cookie_security_flags(oauth_handlers):
     assert "Secure" in cookie, "Session cookie missing Secure flag!"
 
     # CRITICAL: SameSite prevents CSRF
-    assert "SameSite=Lax" in cookie or "SameSite=Strict" in cookie, (
-        "Session cookie missing SameSite flag!"
-    )
+    assert (
+        "SameSite=Lax" in cookie or "SameSite=Strict" in cookie
+    ), "Session cookie missing SameSite flag!"
 
     # Expiration set
     assert "Max-Age" in cookie
@@ -493,7 +508,8 @@ async def test_logout_without_session(oauth_handlers):
 
     # Should still redirect to login gracefully
     assert redirect_url == "/login"
-    assert "Set-Cookie" in headers
+    # No Set-Cookie when there's no session to clear — just security headers
+    assert "Referrer-Policy" in headers
 
 
 # Error Handling Tests
@@ -621,13 +637,14 @@ def _make_mock_config():
 
 def test_revoke_tokens_is_async():
     """revoke_tokens must be awaitable (async) and delete tokens."""
+
     async def _test():
         mock_config = _make_mock_config()
         state_store = InMemoryStateStore()
         token_store = Mock(spec=SecureTokenStore)
         token_store.retrieve_token.return_value = {
-            'access_token': 'test_token',
-            'provider': 'google',
+            "access_token": "test_token",
+            "provider": "google",
         }
         token_store.delete_token.return_value = True
 
@@ -637,7 +654,7 @@ def test_revoke_tokens_is_async():
             state_store=state_store,
         )
 
-        with patch.object(service, '_get_http_client') as mock_client:
+        with patch.object(service, "_get_http_client") as mock_client:
             mock_response = MagicMock()
             mock_response.status_code = 200
             async_client = AsyncMock()
@@ -654,6 +671,7 @@ def test_revoke_tokens_is_async():
 
 def test_revoke_tokens_no_tokens():
     """revoke_tokens returns False when user has no tokens."""
+
     async def _test():
         mock_config = _make_mock_config()
         state_store = InMemoryStateStore()
@@ -674,13 +692,14 @@ def test_revoke_tokens_no_tokens():
 
 def test_revoke_tokens_provider_failure_still_deletes_locally():
     """If provider revocation fails, local tokens are still deleted."""
+
     async def _test():
         mock_config = _make_mock_config()
         state_store = InMemoryStateStore()
         token_store = Mock(spec=SecureTokenStore)
         token_store.retrieve_token.return_value = {
-            'access_token': 'test_token',
-            'provider': 'google',
+            "access_token": "test_token",
+            "provider": "google",
         }
         token_store.delete_token.return_value = True
 
@@ -690,7 +709,7 @@ def test_revoke_tokens_provider_failure_still_deletes_locally():
             state_store=state_store,
         )
 
-        with patch.object(service, '_get_http_client') as mock_client:
+        with patch.object(service, "_get_http_client") as mock_client:
             async_client = AsyncMock()
             async_client.post.side_effect = httpx.HTTPError("Connection refused")
             mock_client.return_value = async_client
@@ -708,6 +727,7 @@ def test_revoke_tokens_provider_failure_still_deletes_locally():
 
 def test_cleanup_expired_states_uses_state_store():
     """cleanup_expired_states delegates to StateStore.cleanup_expired()."""
+
     async def _test():
         mock_config = _make_mock_config()
         state_store = AsyncMock()
@@ -730,6 +750,7 @@ def test_cleanup_expired_states_uses_state_store():
 
 def test_cleanup_expired_states_no_error():
     """cleanup_expired_states does not raise AttributeError."""
+
     async def _test():
         mock_config = _make_mock_config()
         state_store = InMemoryStateStore()

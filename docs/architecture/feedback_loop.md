@@ -59,9 +59,9 @@ graph TB
 
 ### 1. Post-Execution Trigger
 ```
-temper-ai run workflow.yaml --autonomous
-    --> _handle_post_execution()
-    --> _run_autonomous_loop()
+POST /api/runs { workflow_name: "workflow", input: {...} }
+    (workflow YAML has autonomous_loop.enabled: true)
+    --> on_after_execute hook fires
     --> PostExecutionOrchestrator.run(context)
 ```
 

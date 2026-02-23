@@ -6,39 +6,49 @@ Tests the new modular aggregation pipeline:
 - MetricRecordCreator
 - AggregationOrchestrator (orchestrator)
 """
-from datetime import datetime, timezone
+
+from datetime import UTC, datetime
 from unittest.mock import Mock
 
-from temper_ai.observability.aggregation import AggregationOrchestrator, AggregationPeriod
-from temper_ai.observability.aggregation.time_window import TimeWindowCalculator
-from temper_ai.observability.aggregation.query_builder import AggregationQueryBuilder
+from temper_ai.observability.aggregation import (
+    AggregationOrchestrator,
+    AggregationPeriod,
+)
 from temper_ai.observability.aggregation.metric_creator import MetricRecordCreator
+from temper_ai.observability.aggregation.query_builder import AggregationQueryBuilder
+from temper_ai.observability.aggregation.time_window import TimeWindowCalculator
 
 
 class TestTimeWindowCalculator:
     """Tests for TimeWindowCalculator."""
 
     def test_get_period_start_minute(self):
-        end_time = datetime(2024, 1, 1, 14, 30, 0, tzinfo=timezone.utc)
-        start_time = TimeWindowCalculator.get_period_start(end_time, AggregationPeriod.MINUTE)
-        assert start_time == datetime(2024, 1, 1, 14, 29, 0, tzinfo=timezone.utc)
+        end_time = datetime(2024, 1, 1, 14, 30, 0, tzinfo=UTC)
+        start_time = TimeWindowCalculator.get_period_start(
+            end_time, AggregationPeriod.MINUTE
+        )
+        assert start_time == datetime(2024, 1, 1, 14, 29, 0, tzinfo=UTC)
 
     def test_get_period_start_hour(self):
-        end_time = datetime(2024, 1, 1, 14, 30, 0, tzinfo=timezone.utc)
-        start_time = TimeWindowCalculator.get_period_start(end_time, AggregationPeriod.HOUR)
-        assert start_time == datetime(2024, 1, 1, 13, 30, 0, tzinfo=timezone.utc)
+        end_time = datetime(2024, 1, 1, 14, 30, 0, tzinfo=UTC)
+        start_time = TimeWindowCalculator.get_period_start(
+            end_time, AggregationPeriod.HOUR
+        )
+        assert start_time == datetime(2024, 1, 1, 13, 30, 0, tzinfo=UTC)
 
     def test_get_period_start_day(self):
-        end_time = datetime(2024, 1, 2, 14, 30, 0, tzinfo=timezone.utc)
-        start_time = TimeWindowCalculator.get_period_start(end_time, AggregationPeriod.DAY)
-        assert start_time == datetime(2024, 1, 1, 14, 30, 0, tzinfo=timezone.utc)
+        end_time = datetime(2024, 1, 2, 14, 30, 0, tzinfo=UTC)
+        start_time = TimeWindowCalculator.get_period_start(
+            end_time, AggregationPeriod.DAY
+        )
+        assert start_time == datetime(2024, 1, 1, 14, 30, 0, tzinfo=UTC)
 
     def test_get_default_time_window(self):
-        end_time = datetime(2024, 1, 1, 14, 30, 0, tzinfo=timezone.utc)
+        end_time = datetime(2024, 1, 1, 14, 30, 0, tzinfo=UTC)
         start_time, returned_end = TimeWindowCalculator.get_default_time_window(
             AggregationPeriod.HOUR, end_time
         )
-        assert start_time == datetime(2024, 1, 1, 13, 30, 0, tzinfo=timezone.utc)
+        assert start_time == datetime(2024, 1, 1, 13, 30, 0, tzinfo=UTC)
         assert returned_end == end_time
 
     def test_get_default_time_window_no_end_time(self):
@@ -55,38 +65,38 @@ class TestAggregationQueryBuilder:
     """Tests for AggregationQueryBuilder."""
 
     def test_build_workflow_query_returns_select(self):
-        start_time = datetime(2024, 1, 1, 13, 0, 0, tzinfo=timezone.utc)
-        end_time = datetime(2024, 1, 1, 14, 0, 0, tzinfo=timezone.utc)
+        start_time = datetime(2024, 1, 1, 13, 0, 0, tzinfo=UTC)
+        end_time = datetime(2024, 1, 1, 14, 0, 0, tzinfo=UTC)
 
         query = AggregationQueryBuilder.build_workflow_query(start_time, end_time)
 
         # Verify it compiles to SQL referencing workflowexecution
         sql_str = str(query).lower()
         assert "workflowexecution" in sql_str or "workflow_execution" in sql_str
-        assert hasattr(query, 'where')
-        assert hasattr(query, 'group_by')
+        assert hasattr(query, "where")
+        assert hasattr(query, "group_by")
 
     def test_build_agent_query_returns_select(self):
-        start_time = datetime(2024, 1, 1, 13, 0, 0, tzinfo=timezone.utc)
-        end_time = datetime(2024, 1, 1, 14, 0, 0, tzinfo=timezone.utc)
+        start_time = datetime(2024, 1, 1, 13, 0, 0, tzinfo=UTC)
+        end_time = datetime(2024, 1, 1, 14, 0, 0, tzinfo=UTC)
 
         query = AggregationQueryBuilder.build_agent_query(start_time, end_time)
 
         sql_str = str(query).lower()
         assert "agentexecution" in sql_str or "agent_execution" in sql_str
-        assert hasattr(query, 'where')
-        assert hasattr(query, 'group_by')
+        assert hasattr(query, "where")
+        assert hasattr(query, "group_by")
 
     def test_build_llm_query_returns_select(self):
-        start_time = datetime(2024, 1, 1, 13, 0, 0, tzinfo=timezone.utc)
-        end_time = datetime(2024, 1, 1, 14, 0, 0, tzinfo=timezone.utc)
+        start_time = datetime(2024, 1, 1, 13, 0, 0, tzinfo=UTC)
+        end_time = datetime(2024, 1, 1, 14, 0, 0, tzinfo=UTC)
 
         query = AggregationQueryBuilder.build_llm_query(start_time, end_time)
 
         sql_str = str(query).lower()
         assert "llmcall" in sql_str or "llm_call" in sql_str
-        assert hasattr(query, 'where')
-        assert hasattr(query, 'group_by')
+        assert hasattr(query, "where")
+        assert hasattr(query, "group_by")
 
 
 class TestMetricRecordCreator:
@@ -105,7 +115,7 @@ class TestMetricRecordCreator:
         result.total_cost = 0.05
         result.p95_duration = 8.2
 
-        timestamp = datetime(2024, 1, 1, 13, 0, 0, tzinfo=timezone.utc)
+        timestamp = datetime(2024, 1, 1, 13, 0, 0, tzinfo=UTC)
         metric_ids = creator.create_workflow_metrics(
             result, AggregationPeriod.HOUR, timestamp
         )
@@ -130,7 +140,7 @@ class TestMetricRecordCreator:
         result.total_cost = 0.0
         result.p95_duration = 0.0
 
-        timestamp = datetime(2024, 1, 1, 13, 0, 0, tzinfo=timezone.utc)
+        timestamp = datetime(2024, 1, 1, 13, 0, 0, tzinfo=UTC)
         metric_ids = creator.create_workflow_metrics(
             result, AggregationPeriod.HOUR, timestamp
         )
@@ -151,7 +161,7 @@ class TestMetricRecordCreator:
         result.total_cost = 0.03
         result.avg_tokens = 1500
 
-        timestamp = datetime(2024, 1, 1, 13, 0, 0, tzinfo=timezone.utc)
+        timestamp = datetime(2024, 1, 1, 13, 0, 0, tzinfo=UTC)
         metric_ids = creator.create_agent_metrics(
             result, AggregationPeriod.HOUR, timestamp
         )
@@ -173,7 +183,7 @@ class TestMetricRecordCreator:
         result.p99_latency = 600.0
         result.total_cost = 0.10
 
-        timestamp = datetime(2024, 1, 1, 13, 0, 0, tzinfo=timezone.utc)
+        timestamp = datetime(2024, 1, 1, 13, 0, 0, tzinfo=UTC)
         metric_ids = creator.create_llm_metrics(
             result, AggregationPeriod.HOUR, timestamp
         )
@@ -195,7 +205,7 @@ class TestMetricRecordCreator:
         result.total_cost = 0.01
         result.p95_duration = 3.0
 
-        timestamp = datetime(2024, 1, 1, 13, 0, 0, tzinfo=timezone.utc)
+        timestamp = datetime(2024, 1, 1, 13, 0, 0, tzinfo=UTC)
         metric_ids = creator.create_workflow_metrics(
             result, AggregationPeriod.HOUR, timestamp
         )
@@ -220,13 +230,11 @@ class TestAggregationOrchestratorOrchestrator:
 
         aggregator = AggregationOrchestrator(mock_session)
 
-        start_time = datetime(2024, 1, 1, 13, 0, 0, tzinfo=timezone.utc)
-        end_time = datetime(2024, 1, 1, 14, 0, 0, tzinfo=timezone.utc)
+        start_time = datetime(2024, 1, 1, 13, 0, 0, tzinfo=UTC)
+        end_time = datetime(2024, 1, 1, 14, 0, 0, tzinfo=UTC)
 
         result = aggregator.aggregate_workflow_metrics(
-            period=AggregationPeriod.HOUR,
-            start_time=start_time,
-            end_time=end_time
+            period=AggregationPeriod.HOUR, start_time=start_time, end_time=end_time
         )
 
         assert result == []
@@ -249,13 +257,11 @@ class TestAggregationOrchestratorOrchestrator:
 
         aggregator = AggregationOrchestrator(mock_session)
 
-        start_time = datetime(2024, 1, 1, 13, 0, 0, tzinfo=timezone.utc)
-        end_time = datetime(2024, 1, 1, 14, 0, 0, tzinfo=timezone.utc)
+        start_time = datetime(2024, 1, 1, 13, 0, 0, tzinfo=UTC)
+        end_time = datetime(2024, 1, 1, 14, 0, 0, tzinfo=UTC)
 
         result = aggregator.aggregate_workflow_metrics(
-            period=AggregationPeriod.HOUR,
-            start_time=start_time,
-            end_time=end_time
+            period=AggregationPeriod.HOUR, start_time=start_time, end_time=end_time
         )
 
         # Should create 4 metrics
@@ -268,13 +274,11 @@ class TestAggregationOrchestratorOrchestrator:
 
         aggregator = AggregationOrchestrator(mock_session)
 
-        start_time = datetime(2024, 1, 1, 13, 0, 0, tzinfo=timezone.utc)
-        end_time = datetime(2024, 1, 1, 14, 0, 0, tzinfo=timezone.utc)
+        start_time = datetime(2024, 1, 1, 13, 0, 0, tzinfo=UTC)
+        end_time = datetime(2024, 1, 1, 14, 0, 0, tzinfo=UTC)
 
         result = aggregator.aggregate_workflow_metrics(
-            period=AggregationPeriod.HOUR,
-            start_time=start_time,
-            end_time=end_time
+            period=AggregationPeriod.HOUR, start_time=start_time, end_time=end_time
         )
 
         assert result == []
@@ -287,9 +291,7 @@ class TestAggregationOrchestratorOrchestrator:
 
         aggregator = AggregationOrchestrator(mock_session)
 
-        result = aggregator.aggregate_agent_metrics(
-            period=AggregationPeriod.HOUR
-        )
+        result = aggregator.aggregate_agent_metrics(period=AggregationPeriod.HOUR)
 
         assert result == []
         assert mock_session.commit.called
@@ -300,9 +302,7 @@ class TestAggregationOrchestratorOrchestrator:
 
         aggregator = AggregationOrchestrator(mock_session)
 
-        result = aggregator.aggregate_llm_metrics(
-            period=AggregationPeriod.HOUR
-        )
+        result = aggregator.aggregate_llm_metrics(period=AggregationPeriod.HOUR)
 
         assert result == []
         assert mock_session.commit.called
@@ -313,9 +313,7 @@ class TestAggregationOrchestratorOrchestrator:
 
         aggregator = AggregationOrchestrator(mock_session)
 
-        result = aggregator.aggregate_all_metrics(
-            period=AggregationPeriod.HOUR
-        )
+        result = aggregator.aggregate_all_metrics(period=AggregationPeriod.HOUR)
 
         assert "workflow" in result
         assert "agent" in result
@@ -335,6 +333,7 @@ class TestBackwardCompatibility:
         and resolves to the canonical classes.
         """
         import warnings
+
         warnings.simplefilter("ignore")
 
         from temper_ai.observability import aggregation
@@ -347,12 +346,13 @@ class TestBackwardCompatibility:
     def test_classes_accessible_from_aggregation_module(self):
         """Test that classes are accessible from old import path."""
         import warnings
+
         warnings.simplefilter("ignore")
 
         from temper_ai.observability import aggregation
 
-        assert hasattr(aggregation, 'AggregationOrchestrator')
-        assert hasattr(aggregation, 'AggregationPeriod')
+        assert hasattr(aggregation, "AggregationOrchestrator")
+        assert hasattr(aggregation, "AggregationPeriod")
 
     def test_import_from_package_no_warning(self):
         """Test importing from new package path has no warning."""
@@ -364,11 +364,16 @@ class TestBackwardCompatibility:
             # Import from the canonical package path
             from temper_ai.observability.aggregation import (  # noqa: F811
                 AggregationOrchestrator as _AO,
+            )
+            from temper_ai.observability.aggregation import (
                 AggregationPeriod as _AP,
             )
+
             assert _AO is not None
             assert _AP is not None
 
             # Filter for deprecation warnings only (ignore unrelated warnings)
             dep_warnings = [x for x in w if issubclass(x.category, DeprecationWarning)]
-            assert len(dep_warnings) == 0, f"Unexpected DeprecationWarning: {dep_warnings}"
+            assert (
+                len(dep_warnings) == 0
+            ), f"Unexpected DeprecationWarning: {dep_warnings}"

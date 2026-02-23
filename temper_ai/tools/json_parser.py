@@ -3,9 +3,10 @@ JSON parser tool for parsing, extracting, validating, and formatting JSON data.
 
 Uses stdlib json — no external dependencies required.
 """
+
 import json
 import logging
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 from temper_ai.tools.base import BaseTool, ToolMetadata, ToolResult
 
@@ -15,7 +16,7 @@ JSON_OPERATIONS = frozenset({"parse", "extract", "validate", "format"})
 JSON_FORMAT_INDENT = 2
 
 
-def _parse_json(data: str) -> tuple[Any, Optional[str]]:
+def _parse_json(data: str) -> tuple[Any, str | None]:
     """Parse JSON string. Returns (parsed, error)."""
     try:
         return json.loads(data), None
@@ -23,7 +24,7 @@ def _parse_json(data: str) -> tuple[Any, Optional[str]]:
         return None, f"Invalid JSON: {exc}"
 
 
-def _extract_by_path(parsed: Any, path: str) -> tuple[Any, Optional[str]]:
+def _extract_by_path(parsed: Any, path: str) -> tuple[Any, str | None]:
     """
     Extract value using dot-notation + array index path.
 
@@ -32,21 +33,30 @@ def _extract_by_path(parsed: Any, path: str) -> tuple[Any, Optional[str]]:
     """
     parts = path.split(".")
     current: Any = parsed
-    traversed: List[str] = []
+    traversed: list[str] = []
 
     for part in parts:
         try:
             index = int(part)
             if not isinstance(current, list):
                 joined = ".".join(traversed) or "(root)"
-                return None, f"Path segment '{part}' is an array index but '{joined}' is not a list"
+                return (
+                    None,
+                    f"Path segment '{part}' is an array index but '{joined}' is not a list",
+                )
             if index < 0 or index >= len(current):
-                return None, f"Array index {index} is out of range (length: {len(current)})"
+                return (
+                    None,
+                    f"Array index {index} is out of range (length: {len(current)})",
+                )
             current = current[index]
         except ValueError:
             if not isinstance(current, dict):
                 joined = ".".join(traversed) or "(root)"
-                return None, f"Path segment '{part}' expects a dict but '{joined}' is not a dict"
+                return (
+                    None,
+                    f"Path segment '{part}' expects a dict but '{joined}' is not a dict",
+                )
             if part not in current:
                 return None, f"Key '{part}' not found"
             current = current[part]
@@ -55,7 +65,7 @@ def _extract_by_path(parsed: Any, path: str) -> tuple[Any, Optional[str]]:
     return current, None
 
 
-def _validate_json(data: str, schema: Optional[Dict[str, Any]]) -> tuple[bool, Optional[str]]:
+def _validate_json(data: str, schema: dict[str, Any] | None) -> tuple[bool, str | None]:
     """
     Validate that data is valid JSON and optionally check required keys.
 
@@ -66,7 +76,7 @@ def _validate_json(data: str, schema: Optional[Dict[str, Any]]) -> tuple[bool, O
         return False, parse_error
 
     if schema and isinstance(schema, dict):
-        required_keys: Union[List[str], Any] = schema.get("required", [])
+        required_keys: list[str] | Any = schema.get("required", [])
         if isinstance(required_keys, list) and isinstance(parsed, dict):
             missing = [k for k in required_keys if k not in parsed]
             if missing:
@@ -101,29 +111,26 @@ class JSONParserTool(BaseTool):
             modifies_state=False,
         )
 
-    def get_parameters_schema(self) -> Dict[str, Any]:
+    def get_parameters_schema(self) -> dict[str, Any]:
         """Return JSON schema for JSON parser parameters."""
         return {
             "type": "object",
             "properties": {
-                "data": {
-                    "type": "string",
-                    "description": "JSON string to operate on"
-                },
+                "data": {"type": "string", "description": "JSON string to operate on"},
                 "operation": {
                     "type": "string",
-                    "description": "Operation: parse | extract | validate | format"
+                    "description": "Operation: parse | extract | validate | format",
                 },
                 "path": {
                     "type": "string",
-                    "description": "Dot-notation path for extract operation (e.g., 'users.0.name')"
+                    "description": "Dot-notation path for extract operation (e.g., 'users.0.name')",
                 },
                 "schema": {
                     "type": "object",
-                    "description": "Optional schema for validate operation (supports 'required' key list)"
+                    "description": "Optional schema for validate operation (supports 'required' key list)",
                 },
             },
-            "required": ["data", "operation"]
+            "required": ["data", "operation"],
         }
 
     def execute(self, **kwargs: Any) -> ToolResult:
@@ -137,7 +144,7 @@ class JSONParserTool(BaseTool):
         if operation not in JSON_OPERATIONS:
             return ToolResult(
                 success=False,
-                error=f"Invalid operation '{operation}'. Must be one of: {sorted(JSON_OPERATIONS)}"
+                error=f"Invalid operation '{operation}'. Must be one of: {sorted(JSON_OPERATIONS)}",
             )
 
         dispatch = {
@@ -148,18 +155,20 @@ class JSONParserTool(BaseTool):
         }
         return dispatch[operation](data, kwargs)
 
-    def _op_parse(self, data: str, kwargs: Dict[str, Any]) -> ToolResult:
+    def _op_parse(self, data: str, kwargs: dict[str, Any]) -> ToolResult:
         """Execute parse operation."""
         parsed, error = _parse_json(data)
         if error:
             return ToolResult(success=False, error=error)
         return ToolResult(success=True, result=parsed)
 
-    def _op_extract(self, data: str, kwargs: Dict[str, Any]) -> ToolResult:
+    def _op_extract(self, data: str, kwargs: dict[str, Any]) -> ToolResult:
         """Execute extract operation."""
         path = kwargs.get("path")
         if not path or not isinstance(path, str):
-            return ToolResult(success=False, error="path is required for extract operation")
+            return ToolResult(
+                success=False, error="path is required for extract operation"
+            )
         parsed, error = _parse_json(data)
         if error:
             return ToolResult(success=False, error=error)
@@ -168,7 +177,7 @@ class JSONParserTool(BaseTool):
             return ToolResult(success=False, error=extract_error)
         return ToolResult(success=True, result=value, metadata={"path": path})
 
-    def _op_validate(self, data: str, kwargs: Dict[str, Any]) -> ToolResult:
+    def _op_validate(self, data: str, kwargs: dict[str, Any]) -> ToolResult:
         """Execute validate operation."""
         schema = kwargs.get("schema")
         schema_dict = schema if isinstance(schema, dict) else None
@@ -179,7 +188,7 @@ class JSONParserTool(BaseTool):
             error=error,
         )
 
-    def _op_format(self, data: str, kwargs: Dict[str, Any]) -> ToolResult:
+    def _op_format(self, data: str, kwargs: dict[str, Any]) -> ToolResult:
         """Execute format operation."""
         parsed, error = _parse_json(data)
         if error:

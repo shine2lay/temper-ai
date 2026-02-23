@@ -2,12 +2,11 @@
 
 import uuid
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
-from typing import Dict, List
+from datetime import UTC, datetime, timedelta
 
 from sqlmodel import select
 
-from temper_ai.learning.miners.base import BaseMiner, DEFAULT_LOOKBACK_HOURS
+from temper_ai.learning.miners.base import DEFAULT_LOOKBACK_HOURS, BaseMiner
 from temper_ai.learning.models import PATTERN_COLLABORATION, LearnedPattern
 from temper_ai.storage.database import get_session
 from temper_ai.storage.database.models import CollaborationEvent
@@ -28,10 +27,12 @@ class CollaborationPatternMiner(BaseMiner):
         """Return pattern type identifier."""
         return PATTERN_COLLABORATION
 
-    def mine(self, lookback_hours: int = DEFAULT_LOOKBACK_HOURS) -> List[LearnedPattern]:
+    def mine(
+        self, lookback_hours: int = DEFAULT_LOOKBACK_HOURS
+    ) -> list[LearnedPattern]:
         """Mine collaboration events for debate/consensus patterns."""
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=lookback_hours)
-        patterns: List[LearnedPattern] = []
+        cutoff = datetime.now(UTC) - timedelta(hours=lookback_hours)
+        patterns: list[LearnedPattern] = []
 
         with get_session() as session:
             stmt = select(CollaborationEvent).where(
@@ -49,9 +50,9 @@ class CollaborationPatternMiner(BaseMiner):
         return patterns
 
 
-def _aggregate_by_stage(events: list) -> Dict[str, dict]:
+def _aggregate_by_stage(events: list) -> dict[str, dict]:
     """Group events by stage and count rounds and resolutions."""
-    stages: Dict[str, dict] = defaultdict(
+    stages: dict[str, dict] = defaultdict(
         lambda: {"rounds": 0, "resolutions": 0, "event_types": []}
     )
     for ev in events:
@@ -64,42 +65,46 @@ def _aggregate_by_stage(events: list) -> Dict[str, dict]:
     return dict(stages)
 
 
-def _check_stage(stage_id: str, stats: dict) -> List[LearnedPattern]:
+def _check_stage(stage_id: str, stats: dict) -> list[LearnedPattern]:
     """Check stage collaboration stats for patterns."""
-    patterns: List[LearnedPattern] = []
+    patterns: list[LearnedPattern] = []
 
     # Excessive debate rounds without resolution
     if stats["rounds"] > WASTED_ROUND_THRESHOLD and stats["resolutions"] == 0:
-        patterns.append(LearnedPattern(
-            id=uuid.uuid4().hex,
-            pattern_type=PATTERN_COLLABORATION,
-            title=f"Unresolved debate: stage {stage_id[:_ID_DISPLAY_LEN]}",
-            description=f"{stats['rounds']} debate rounds with no resolution",
-            evidence={
-                "stage_id": stage_id,
-                "rounds": stats["rounds"],
-                "resolutions": stats["resolutions"],
-            },
-            confidence=HIGH_CONFIDENCE,
-            impact_score=min(stats["rounds"] / 10, 1.0),  # noqa
-            recommendation="Reduce max debate rounds or adjust resolution strategy",
-        ))
+        patterns.append(
+            LearnedPattern(
+                id=uuid.uuid4().hex,
+                pattern_type=PATTERN_COLLABORATION,
+                title=f"Unresolved debate: stage {stage_id[:_ID_DISPLAY_LEN]}",
+                description=f"{stats['rounds']} debate rounds with no resolution",
+                evidence={
+                    "stage_id": stage_id,
+                    "rounds": stats["rounds"],
+                    "resolutions": stats["resolutions"],
+                },
+                confidence=HIGH_CONFIDENCE,
+                impact_score=min(stats["rounds"] / 10, 1.0),  # noqa
+                recommendation="Reduce max debate rounds or adjust resolution strategy",
+            )
+        )
 
     # Many rounds even with resolution (inefficient consensus)
     if stats["rounds"] > WASTED_ROUND_THRESHOLD and stats["resolutions"] > 0:
-        patterns.append(LearnedPattern(
-            id=uuid.uuid4().hex,
-            pattern_type=PATTERN_COLLABORATION,
-            title=f"Slow consensus: stage {stage_id[:_ID_DISPLAY_LEN]}",
-            description=f"{stats['rounds']} rounds to reach {stats['resolutions']} resolution(s)",
-            evidence={
-                "stage_id": stage_id,
-                "rounds": stats["rounds"],
-                "resolutions": stats["resolutions"],
-            },
-            confidence=MEDIUM_CONFIDENCE,
-            impact_score=SLOW_CONSENSUS_IMPACT,
-            recommendation="Consider fewer agents or weighted voting",
-        ))
+        patterns.append(
+            LearnedPattern(
+                id=uuid.uuid4().hex,
+                pattern_type=PATTERN_COLLABORATION,
+                title=f"Slow consensus: stage {stage_id[:_ID_DISPLAY_LEN]}",
+                description=f"{stats['rounds']} rounds to reach {stats['resolutions']} resolution(s)",
+                evidence={
+                    "stage_id": stage_id,
+                    "rounds": stats["rounds"],
+                    "resolutions": stats["resolutions"],
+                },
+                confidence=MEDIUM_CONFIDENCE,
+                impact_score=SLOW_CONSENSUS_IMPACT,
+                recommendation="Consider fewer agents or weighted voting",
+            )
+        )
 
     return patterns

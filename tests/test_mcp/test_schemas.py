@@ -1,16 +1,22 @@
 """Tests for MCP configuration schemas."""
+
 import pytest
 from pydantic import ValidationError
 
 from temper_ai.mcp._schemas import MCPServerConfig
-from temper_ai.mcp.constants import MCP_DEFAULT_CALL_TIMEOUT, MCP_DEFAULT_CONNECT_TIMEOUT
+from temper_ai.mcp.constants import (
+    MCP_DEFAULT_CALL_TIMEOUT,
+    MCP_DEFAULT_CONNECT_TIMEOUT,
+)
 
 
 class TestMCPServerConfig:
     """Tests for MCPServerConfig validation."""
 
     def test_stdio_transport_valid(self):
-        cfg = MCPServerConfig(name="github", command="npx", args=["-y", "server-github"])
+        cfg = MCPServerConfig(
+            name="github", command="npx", args=["-y", "server-github"]
+        )
         assert cfg.name == "github"
         assert cfg.command == "npx"
         assert cfg.url is None
@@ -53,9 +59,7 @@ class TestMCPServerConfig:
             MCPServerConfig(name="s", command="x", connect_timeout=0)
 
     def test_env_dict(self):
-        cfg = MCPServerConfig(
-            name="gh", command="npx", env={"GITHUB_TOKEN": "tok123"}
-        )
+        cfg = MCPServerConfig(name="gh", command="npx", env={"GITHUB_TOKEN": "tok123"})
         assert cfg.env == {"GITHUB_TOKEN": "tok123"}
 
     def test_from_dict(self):

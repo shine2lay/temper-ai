@@ -1,7 +1,6 @@
 """Tests for src/observability/models.py (deprecation shim)."""
-import warnings
 
-import pytest
+import warnings
 
 
 def test_models_import_raises_deprecation_warning():
@@ -11,6 +10,7 @@ def test_models_import_raises_deprecation_warning():
     verify source content to confirm the deprecation warning is present.
     """
     import pathlib
+
     import temper_ai.observability
 
     pkg_dir = pathlib.Path(temper_ai.observability.__file__).parent
@@ -32,7 +32,7 @@ def test_models_re_exports_work():
 
         # Verify the class exists
         assert WorkflowExecution is not None
-        assert hasattr(WorkflowExecution, '__tablename__')
+        assert hasattr(WorkflowExecution, "__tablename__")
 
 
 def test_models_new_import_location():
@@ -44,7 +44,9 @@ def test_models_new_import_location():
         from temper_ai.storage.database.models import WorkflowExecution
 
         # Verify no deprecation warnings were raised
-        deprecation_warnings = [warning for warning in w if issubclass(warning.category, DeprecationWarning)]
+        deprecation_warnings = [
+            warning for warning in w if issubclass(warning.category, DeprecationWarning)
+        ]
         assert len(deprecation_warnings) == 0
 
         # Verify the class works

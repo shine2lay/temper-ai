@@ -1,4 +1,5 @@
 """Tests for OpenAI Agents SDK adapter."""
+
 from __future__ import annotations
 
 import sys
@@ -82,7 +83,9 @@ class TestOpenAIAgentsInitializeExternal:
         finally:
             del sys.modules["agents"]
 
-    def test_import_error_without_package(self, openai_agents_config: MagicMock) -> None:
+    def test_import_error_without_package(
+        self, openai_agents_config: MagicMock
+    ) -> None:
         # Ensure "agents" is not in sys.modules
         sys.modules.pop("agents", None)
         agent = OpenAIAgentsAgent(openai_agents_config)

@@ -1,7 +1,8 @@
 """Tests for RefinementOptimizer."""
 
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
 
 from temper_ai.optimization._schemas import EvaluationResult
 from temper_ai.optimization.optimizers.refinement import RefinementOptimizer
@@ -16,9 +17,11 @@ class TestRefinementOptimizer:
     def test_first_pass_success(self):
         runner = MagicMock()
         runner.execute.return_value = {"result": "great"}
-        evaluator = self._make_evaluator([
-            EvaluationResult(passed=True, score=1.0),
-        ])
+        evaluator = self._make_evaluator(
+            [
+                EvaluationResult(passed=True, score=1.0),
+            ]
+        )
         optimizer = RefinementOptimizer()
 
         result = optimizer.optimize(
@@ -35,10 +38,12 @@ class TestRefinementOptimizer:
             {"result": "bad"},
             {"result": "good"},
         ]
-        evaluator = self._make_evaluator([
-            EvaluationResult(passed=False, score=0.3),
-            EvaluationResult(passed=True, score=0.9),
-        ])
+        evaluator = self._make_evaluator(
+            [
+                EvaluationResult(passed=False, score=0.3),
+                EvaluationResult(passed=True, score=0.9),
+            ]
+        )
         optimizer = RefinementOptimizer()
 
         result = optimizer.optimize(
@@ -52,11 +57,13 @@ class TestRefinementOptimizer:
     def test_max_iterations_reached(self):
         runner = MagicMock()
         runner.execute.return_value = {"result": "mediocre"}
-        evaluator = self._make_evaluator([
-            EvaluationResult(passed=False, score=0.4),
-            EvaluationResult(passed=False, score=0.5),
-            EvaluationResult(passed=False, score=0.5),
-        ])
+        evaluator = self._make_evaluator(
+            [
+                EvaluationResult(passed=False, score=0.4),
+                EvaluationResult(passed=False, score=0.5),
+                EvaluationResult(passed=False, score=0.5),
+            ]
+        )
         optimizer = RefinementOptimizer()
 
         result = optimizer.optimize(
@@ -74,10 +81,12 @@ class TestRefinementOptimizer:
             {"result": "v1"},
             {"result": "v2"},
         ]
-        evaluator = self._make_evaluator([
-            EvaluationResult(passed=False, score=0.3),
-            EvaluationResult(passed=True, score=0.8),
-        ])
+        evaluator = self._make_evaluator(
+            [
+                EvaluationResult(passed=False, score=0.3),
+                EvaluationResult(passed=True, score=0.8),
+            ]
+        )
         optimizer = RefinementOptimizer(llm=mock_llm)
 
         result = optimizer.optimize(
@@ -93,15 +102,15 @@ class TestRefinementOptimizer:
             {"result": "v1"},
             {"result": "v2"},
         ]
-        evaluator = self._make_evaluator([
-            EvaluationResult(passed=False, score=0.3),
-            EvaluationResult(passed=True, score=0.9),
-        ])
+        evaluator = self._make_evaluator(
+            [
+                EvaluationResult(passed=False, score=0.3),
+                EvaluationResult(passed=True, score=0.9),
+            ]
+        )
         optimizer = RefinementOptimizer()
 
-        optimizer.optimize(
-            runner, {"input": "data"}, evaluator, {"max_iterations": 1}
-        )
+        optimizer.optimize(runner, {"input": "data"}, evaluator, {"max_iterations": 1})
 
         # Second call should have critique injected
         second_call_input = runner.execute.call_args_list[1][0][0]
@@ -120,10 +129,12 @@ class TestRefinementOptimizer:
             {"result": "baseline"},
             {"result": "improved"},
         ]
-        evaluator = self._make_evaluator([
-            EvaluationResult(passed=False, score=0.4),
-            EvaluationResult(passed=True, score=0.9),
-        ])
+        evaluator = self._make_evaluator(
+            [
+                EvaluationResult(passed=False, score=0.4),
+                EvaluationResult(passed=True, score=0.9),
+            ]
+        )
         optimizer = RefinementOptimizer(experiment_service=mock_service)
 
         result = optimizer.optimize(
@@ -152,9 +163,11 @@ class TestRefinementOptimizer:
 
         runner = MagicMock()
         runner.execute.return_value = {"result": "perfect"}
-        evaluator = self._make_evaluator([
-            EvaluationResult(passed=True, score=1.0),
-        ])
+        evaluator = self._make_evaluator(
+            [
+                EvaluationResult(passed=True, score=1.0),
+            ]
+        )
         optimizer = RefinementOptimizer(experiment_service=mock_service)
 
         result = optimizer.optimize(
@@ -171,9 +184,11 @@ class TestRefinementOptimizer:
     def test_without_service_no_experiment_fields(self):
         runner = MagicMock()
         runner.execute.return_value = {"result": "ok"}
-        evaluator = self._make_evaluator([
-            EvaluationResult(passed=True, score=0.9),
-        ])
+        evaluator = self._make_evaluator(
+            [
+                EvaluationResult(passed=True, score=0.9),
+            ]
+        )
         optimizer = RefinementOptimizer()
 
         result = optimizer.optimize(

@@ -6,7 +6,6 @@ Verifies that:
 3. RollbackManager evicts oldest history entries when over max_history
 """
 
-
 from temper_ai.safety.approval import ApprovalWorkflow
 from temper_ai.safety.rollback import RollbackManager
 

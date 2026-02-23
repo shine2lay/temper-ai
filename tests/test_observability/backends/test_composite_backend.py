@@ -1,14 +1,12 @@
 """Tests for CompositeBackend — fan-out, error isolation, read delegation."""
-from contextlib import contextmanager
-from datetime import datetime, timezone
+
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from temper_ai.observability.backend import (
     LLMCallData,
-    ObservabilityBackend,
-    ToolCallData,
     WorkflowStartData,
 )
 from temper_ai.observability.backends.composite_backend import CompositeBackend
@@ -16,7 +14,7 @@ from temper_ai.observability.backends.noop_backend import NoOpBackend
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class TestCompositeBackendFanOut:
@@ -28,7 +26,10 @@ class TestCompositeBackendFanOut:
         backend = CompositeBackend(primary=primary, secondaries=[secondary])
 
         backend.track_workflow_start(
-            "wf-1", "test_wf", {"key": "val"}, _utcnow(),
+            "wf-1",
+            "test_wf",
+            {"key": "val"},
+            _utcnow(),
             data=WorkflowStartData(environment="test"),
         )
 
@@ -50,9 +51,12 @@ class TestCompositeBackendFanOut:
         backend = CompositeBackend(primary=primary, secondaries=[secondary])
 
         data = LLMCallData(
-            prompt="hello", response="world",
-            prompt_tokens=10, completion_tokens=20,
-            latency_ms=100, estimated_cost_usd=0.01,
+            prompt="hello",
+            response="world",
+            prompt_tokens=10,
+            completion_tokens=20,
+            latency_ms=100,
+            estimated_cost_usd=0.01,
         )
         backend.track_llm_call("llm-1", "agent-1", "ollama", "test", _utcnow(), data)
         primary.track_llm_call.assert_called_once()
@@ -78,7 +82,9 @@ class TestCompositeBackendErrorIsolation:
         secondary.track_stage_start.side_effect = RuntimeError("oops")
 
         backend = CompositeBackend(primary=primary, secondaries=[secondary])
-        with patch("temper_ai.observability.backends.composite_backend.logger") as mock_logger:
+        with patch(
+            "temper_ai.observability.backends.composite_backend.logger"
+        ) as mock_logger:
             backend.track_stage_start("s1", "wf-1", "stage", {}, _utcnow())
             mock_logger.warning.assert_called_once()
 
@@ -124,7 +130,9 @@ class TestCompositeBackendReadDelegation:
     def test_getattr_forwards_to_primary(self) -> None:
         """aggregate_workflow_metrics and similar are forwarded."""
         primary = MagicMock(spec=NoOpBackend)
-        primary.aggregate_workflow_metrics = MagicMock(return_value={"total_tokens": 42})
+        primary.aggregate_workflow_metrics = MagicMock(
+            return_value={"total_tokens": 42}
+        )
         backend = CompositeBackend(primary=primary)
 
         result = backend.aggregate_workflow_metrics("wf-1")

@@ -11,11 +11,17 @@ Key Features:
 - Configurable failure modes (fail-fast vs fail-safe)
 - Violation reporting and observability integration
 """
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
 
+from dataclasses import dataclass, field
+from typing import Any
+
+from temper_ai.safety.interfaces import (
+    SafetyPolicy,
+    SafetyViolation,
+    ValidationResult,
+    ViolationSeverity,
+)
 from temper_ai.shared.core.circuit_breaker import CircuitBreakerError
-from temper_ai.safety.interfaces import SafetyPolicy, SafetyViolation, ValidationResult, ViolationSeverity
 
 
 @dataclass
@@ -31,13 +37,14 @@ class CompositeValidationResult:
         execution_order: Order in which policies executed
         metadata: Additional composition metadata
     """
+
     valid: bool
-    violations: List[SafetyViolation] = field(default_factory=list)
-    policy_results: Dict[str, ValidationResult] = field(default_factory=dict)
+    violations: list[SafetyViolation] = field(default_factory=list)
+    policy_results: dict[str, ValidationResult] = field(default_factory=dict)
     policies_evaluated: int = 0
     policies_skipped: int = 0
-    execution_order: List[str] = field(default_factory=list)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    execution_order: list[str] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def has_critical_violations(self) -> bool:
         """Check if any policy reported CRITICAL violations."""
@@ -47,15 +54,17 @@ class CompositeValidationResult:
         """Check if any violations should block execution (HIGH or CRITICAL)."""
         return any(v.severity >= ViolationSeverity.HIGH for v in self.violations)
 
-    def get_violations_by_severity(self, severity: ViolationSeverity) -> List[SafetyViolation]:
+    def get_violations_by_severity(
+        self, severity: ViolationSeverity
+    ) -> list[SafetyViolation]:
         """Get all violations of a specific severity."""
         return [v for v in self.violations if v.severity == severity]
 
-    def get_violations_by_policy(self, policy_name: str) -> List[SafetyViolation]:
+    def get_violations_by_policy(self, policy_name: str) -> list[SafetyViolation]:
         """Get all violations from a specific policy."""
         return [v for v in self.violations if v.policy_name == policy_name]
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for logging/serialization."""
         return {
             "valid": self.valid,
@@ -93,9 +102,9 @@ class PolicyComposer:
 
     def __init__(
         self,
-        policies: Optional[List[SafetyPolicy]] = None,
+        policies: list[SafetyPolicy] | None = None,
         fail_fast: bool = False,
-        enable_reporting: bool = True
+        enable_reporting: bool = True,
     ):
         """Initialize policy composer.
 
@@ -104,7 +113,7 @@ class PolicyComposer:
             fail_fast: If True, stop on first violation (default: False)
             enable_reporting: If True, report violations via policy.report_violation()
         """
-        self._policies: List[SafetyPolicy] = []
+        self._policies: list[SafetyPolicy] = []
         self.fail_fast = fail_fast
         self.enable_reporting = enable_reporting
 
@@ -146,7 +155,7 @@ class PolicyComposer:
         self._policies = [p for p in self._policies if p.name != policy_name]
         return len(self._policies) < original_count
 
-    def get_policy(self, policy_name: str) -> Optional[SafetyPolicy]:
+    def get_policy(self, policy_name: str) -> SafetyPolicy | None:
         """Get a policy by name.
 
         Args:
@@ -160,7 +169,7 @@ class PolicyComposer:
                 return policy
         return None
 
-    def list_policies(self) -> List[str]:
+    def list_policies(self) -> list[str]:
         """Get list of all policy names in execution order.
 
         Returns:
@@ -176,8 +185,8 @@ class PolicyComposer:
         self,
         policy: SafetyPolicy,
         result: ValidationResult,
-        all_violations: List[SafetyViolation],
-        policy_results: Dict[str, ValidationResult],
+        all_violations: list[SafetyViolation],
+        policy_results: dict[str, ValidationResult],
     ) -> None:
         """Process a successful policy validation result.
 
@@ -198,10 +207,10 @@ class PolicyComposer:
         self,
         policy: SafetyPolicy,
         error: Exception,
-        action: Dict[str, Any],
-        context: Dict[str, Any],
-        all_violations: List[SafetyViolation],
-        policy_results: Dict[str, ValidationResult],
+        action: dict[str, Any],
+        context: dict[str, Any],
+        all_violations: list[SafetyViolation],
+        policy_results: dict[str, ValidationResult],
     ) -> None:
         """Process a policy evaluation failure as a CRITICAL violation.
 
@@ -214,7 +223,7 @@ class PolicyComposer:
             action=str(action),
             context=context,
             remediation_hint="Check policy implementation for errors",
-            metadata={"exception": str(error), "exception_type": type(error).__name__}
+            metadata={"exception": str(error), "exception_type": type(error).__name__},
         )
         all_violations.append(violation)
 
@@ -222,7 +231,7 @@ class PolicyComposer:
             valid=False,
             violations=[violation],
             policy_name=policy.name,
-            metadata={"error": str(error)}
+            metadata={"error": str(error)},
         )
         policy_results[policy.name] = failed_result
 
@@ -231,11 +240,11 @@ class PolicyComposer:
 
     def _build_composite_result(
         self,
-        all_violations: List[SafetyViolation],
-        policy_results: Dict[str, ValidationResult],
+        all_violations: list[SafetyViolation],
+        policy_results: dict[str, ValidationResult],
         policies_evaluated: int,
         policies_skipped: int,
-        execution_order: List[str],
+        execution_order: list[str],
     ) -> CompositeValidationResult:
         """Build the final CompositeValidationResult.
 
@@ -250,14 +259,12 @@ class PolicyComposer:
             execution_order=execution_order,
             metadata={
                 "fail_fast": self.fail_fast,
-                "total_policies": len(self._policies)
-            }
+                "total_policies": len(self._policies),
+            },
         )
 
     def validate(
-        self,
-        action: Dict[str, Any],
-        context: Dict[str, Any]
+        self, action: dict[str, Any], context: dict[str, Any]
     ) -> CompositeValidationResult:
         """Validate action against all composed policies.
 
@@ -279,9 +286,9 @@ class PolicyComposer:
             >>> if result.has_blocking_violations():
             ...     print("Action blocked due to safety violations")
         """
-        all_violations: List[SafetyViolation] = []
-        policy_results: Dict[str, ValidationResult] = {}
-        execution_order: List[str] = []
+        all_violations: list[SafetyViolation] = []
+        policy_results: dict[str, ValidationResult] = {}
+        execution_order: list[str] = []
         policies_evaluated = 0
         policies_skipped = 0
 
@@ -295,19 +302,32 @@ class PolicyComposer:
             try:
                 result = policy.validate(action, context)
                 policies_evaluated += 1
-                self._handle_policy_result(policy, result, all_violations, policy_results)
-            except (AttributeError, TypeError, ValueError, KeyError, RuntimeError, CircuitBreakerError) as e:
+                self._handle_policy_result(
+                    policy, result, all_violations, policy_results
+                )
+            except (
+                AttributeError,
+                TypeError,
+                ValueError,
+                KeyError,
+                RuntimeError,
+                CircuitBreakerError,
+            ) as e:
                 policies_evaluated += 1
-                self._handle_policy_error(policy, e, action, context, all_violations, policy_results)
+                self._handle_policy_error(
+                    policy, e, action, context, all_violations, policy_results
+                )
 
         return self._build_composite_result(
-            all_violations, policy_results, policies_evaluated, policies_skipped, execution_order,
+            all_violations,
+            policy_results,
+            policies_evaluated,
+            policies_skipped,
+            execution_order,
         )
 
     async def validate_async(
-        self,
-        action: Dict[str, Any],
-        context: Dict[str, Any]
+        self, action: dict[str, Any], context: dict[str, Any]
     ) -> CompositeValidationResult:
         """Validate action against all policies (asynchronous).
 
@@ -324,9 +344,9 @@ class PolicyComposer:
             ...     context={"agent": "researcher"}
             ... )
         """
-        all_violations: List[SafetyViolation] = []
-        policy_results: Dict[str, ValidationResult] = {}
-        execution_order: List[str] = []
+        all_violations: list[SafetyViolation] = []
+        policy_results: dict[str, ValidationResult] = {}
+        execution_order: list[str] = []
         policies_evaluated = 0
         policies_skipped = 0
 
@@ -340,13 +360,28 @@ class PolicyComposer:
             try:
                 result = await policy.validate_async(action, context)
                 policies_evaluated += 1
-                self._handle_policy_result(policy, result, all_violations, policy_results)
-            except (AttributeError, TypeError, ValueError, KeyError, RuntimeError, CircuitBreakerError) as e:
+                self._handle_policy_result(
+                    policy, result, all_violations, policy_results
+                )
+            except (
+                AttributeError,
+                TypeError,
+                ValueError,
+                KeyError,
+                RuntimeError,
+                CircuitBreakerError,
+            ) as e:
                 policies_evaluated += 1
-                self._handle_policy_error(policy, e, action, context, all_violations, policy_results)
+                self._handle_policy_error(
+                    policy, e, action, context, all_violations, policy_results
+                )
 
         return self._build_composite_result(
-            all_violations, policy_results, policies_evaluated, policies_skipped, execution_order,
+            all_violations,
+            policy_results,
+            policies_evaluated,
+            policies_skipped,
+            execution_order,
         )
 
     def clear_policies(self) -> None:

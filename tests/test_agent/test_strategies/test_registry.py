@@ -31,7 +31,7 @@ class MockStrategy(CollaborationStrategy):
             votes={},
             conflicts=[],
             reasoning="mock",
-            metadata={}
+            metadata={},
         )
 
     def get_capabilities(self):
@@ -267,12 +267,7 @@ class TestConfigBasedRetrieval:
 
     def test_get_strategy_from_config_default(self):
         """Test getting strategy from config with defaults."""
-        config = {
-            "collaboration": {
-                "strategy": "debate",
-                "config": {}
-            }
-        }
+        config = {"collaboration": {"strategy": "debate", "config": {}}}
 
         strategy = get_strategy_from_config(config)
 
@@ -289,7 +284,7 @@ class TestConfigBasedRetrieval:
         config = {
             "collaboration": {
                 "strategy": "debate",
-                "config": {}  # Config passed to synthesize(), not __init__
+                "config": {},  # Config passed to synthesize(), not __init__
             }
         }
 
@@ -310,12 +305,7 @@ class TestConfigBasedRetrieval:
 
     def test_get_resolver_from_config_default(self):
         """Test getting resolver from config with defaults."""
-        config = {
-            "conflict_resolution": {
-                "strategy": "merit_weighted",
-                "config": {}
-            }
-        }
+        config = {"conflict_resolution": {"strategy": "merit_weighted", "config": {}}}
 
         resolver = get_resolver_from_config(config)
 
@@ -364,6 +354,7 @@ class TestDebateAliases:
         strategy = registry.get_strategy("debate_and_synthesize")
         assert strategy is not None
         from temper_ai.agent.strategies.debate import DebateAndSynthesize
+
         assert isinstance(strategy, DebateAndSynthesize)
 
     def test_llm_debate_and_synthesize_alias_registered(self):
@@ -372,6 +363,7 @@ class TestDebateAliases:
         strategy = registry.get_strategy("llm_debate_and_synthesize")
         assert strategy is not None
         from temper_ai.agent.strategies.debate import DebateAndSynthesize
+
         assert isinstance(strategy, DebateAndSynthesize)
 
     def test_aliases_are_default_strategies(self):

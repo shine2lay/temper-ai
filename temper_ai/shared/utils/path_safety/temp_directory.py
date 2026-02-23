@@ -8,8 +8,8 @@ replacing unsafe /tmp access. Features:
 - Path traversal prevention
 - Cleanup operations
 """
+
 from pathlib import Path
-from typing import Optional
 
 from temper_ai.shared.utils.constants import MAX_COMPONENT_LENGTH
 from temper_ai.shared.utils.path_safety.exceptions import PathSafetyError
@@ -25,7 +25,7 @@ class SecureTempDirectory:
         self,
         allowed_root: Path,
         enabled: bool = True,
-        max_component_length: int = MAX_COMPONENT_LENGTH
+        max_component_length: int = MAX_COMPONENT_LENGTH,
     ):
         """Initialize secure temp directory manager.
 
@@ -36,7 +36,7 @@ class SecureTempDirectory:
         """
         self.allowed_root = allowed_root
         self.max_component_length = max_component_length
-        self.temp_dir: Optional[Path] = None
+        self.temp_dir: Path | None = None
 
         if enabled:
             self._create_secure_temp_dir()
@@ -51,6 +51,7 @@ class SecureTempDirectory:
         except OSError as e:
             # If we can't create secure temp dir, disable it
             import logging
+
             logging.warning(
                 f"Could not create secure temp directory: {e}. "
                 "Temp directory disabled."
@@ -115,6 +116,7 @@ class SecureTempDirectory:
 
         if self.temp_dir.exists():
             import shutil
+
             try:
                 # Remove all contents
                 shutil.rmtree(self.temp_dir)
@@ -123,6 +125,7 @@ class SecureTempDirectory:
                 self.temp_dir.chmod(SECURE_TEMP_DIR_PERMISSIONS)
             except OSError as e:
                 import logging
+
                 logging.warning(f"Could not cleanup temp directory: {e}")
 
     def is_enabled(self) -> bool:

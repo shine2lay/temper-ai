@@ -1,7 +1,6 @@
 """Review workflow for goal proposals — approve, reject, defer lifecycle."""
 
 import logging
-from typing import List, Optional
 
 from temper_ai.goals._schemas import GoalReviewAction, GoalStatus
 from temper_ai.goals.models import GoalProposalRecord
@@ -31,7 +30,7 @@ class GoalReviewWorkflow:
     def __init__(
         self,
         store: GoalStore,
-        safety_policy: Optional[GoalSafetyPolicy] = None,
+        safety_policy: GoalSafetyPolicy | None = None,
     ) -> None:
         self._store = store
         self._safety_policy = safety_policy
@@ -60,7 +59,7 @@ class GoalReviewWorkflow:
         proposal_id: str,
         action: GoalReviewAction,
         reviewer: str,
-        reason: Optional[str] = None,
+        reason: str | None = None,
     ) -> bool:
         """Apply a review decision to a proposal."""
         proposal = self._store.get_proposal(proposal_id)
@@ -102,14 +101,10 @@ class GoalReviewWorkflow:
             )
         return ok
 
-    def list_pending_reviews(self) -> List[GoalProposalRecord]:
+    def list_pending_reviews(self) -> list[GoalProposalRecord]:
         """List proposals awaiting review (proposed or under_review)."""
-        proposed = self._store.list_proposals(
-            status=GoalStatus.PROPOSED.value
-        )
-        under_review = self._store.list_proposals(
-            status=GoalStatus.UNDER_REVIEW.value
-        )
+        proposed = self._store.list_proposals(status=GoalStatus.PROPOSED.value)
+        under_review = self._store.list_proposals(status=GoalStatus.UNDER_REVIEW.value)
         return proposed + under_review
 
     def get_acceptance_rate(self) -> float:

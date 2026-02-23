@@ -1,4 +1,5 @@
 """Tests for output extraction and two-compartment store format."""
+
 import pytest
 
 from temper_ai.workflow.context_schemas import StageOutputDeclaration
@@ -115,7 +116,6 @@ class TestTwoCompartmentFormat:
 
     def test_sequential_store_format(self):
         """Verify _store_stage_output produces two-compartment format."""
-        from unittest.mock import MagicMock
 
         from temper_ai.stage.executors.sequential import (
             SequentialStageExecutor,
@@ -134,7 +134,10 @@ class TestTwoCompartmentFormat:
         structured = {"decision": "APPROVE", "priority": "high"}
 
         SequentialStageExecutor._store_stage_output(
-            state, "test_stage", data, structured=structured,
+            state,
+            "test_stage",
+            data,
+            structured=structured,
         )
 
         stage_out = state["stage_outputs"]["test_stage"]
@@ -195,9 +198,12 @@ class TestTwoCompartmentFormat:
         structured = {"verdict": "pass"}
 
         update_state_with_results(
-            state, "test_stage", synth,
+            state,
+            "test_stage",
+            synth,
             {"a1": {"output": "data"}},
-            parallel_result, agg,
+            parallel_result,
+            agg,
             structured=structured,
         )
 

@@ -1,7 +1,8 @@
 """Tests for TuningOptimizer."""
 
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
 
 from temper_ai.optimization._schemas import EvaluationResult
 from temper_ai.optimization.optimizers.tuning import TuningOptimizer
@@ -16,9 +17,11 @@ class TestTuningOptimizer:
     def test_no_strategies_single_run(self):
         runner = MagicMock()
         runner.execute.return_value = {"result": "baseline"}
-        evaluator = self._make_evaluator([
-            EvaluationResult(passed=True, score=0.7),
-        ])
+        evaluator = self._make_evaluator(
+            [
+                EvaluationResult(passed=True, score=0.7),
+            ]
+        )
         optimizer = TuningOptimizer()
 
         result = optimizer.optimize(
@@ -33,10 +36,12 @@ class TestTuningOptimizer:
             {"result": "v1"},
             {"result": "v2"},
         ]
-        evaluator = self._make_evaluator([
-            EvaluationResult(passed=False, score=0.4),
-            EvaluationResult(passed=True, score=0.9),
-        ])
+        evaluator = self._make_evaluator(
+            [
+                EvaluationResult(passed=False, score=0.4),
+                EvaluationResult(passed=True, score=0.9),
+            ]
+        )
         optimizer = TuningOptimizer()
 
         result = optimizer.optimize(
@@ -66,9 +71,11 @@ class TestTuningOptimizer:
 
         runner = MagicMock()
         runner.execute.return_value = {"result": "tuned"}
-        evaluator = self._make_evaluator([
-            EvaluationResult(passed=True, score=0.8),
-        ])
+        evaluator = self._make_evaluator(
+            [
+                EvaluationResult(passed=True, score=0.8),
+            ]
+        )
         optimizer = TuningOptimizer(experiment_service=mock_service)
 
         result = optimizer.optimize(
@@ -101,9 +108,11 @@ class TestTuningOptimizer:
 
         runner = MagicMock()
         runner.execute.return_value = {"result": "v1"}
-        evaluator = self._make_evaluator([
-            EvaluationResult(passed=True, score=0.9),
-        ])
+        evaluator = self._make_evaluator(
+            [
+                EvaluationResult(passed=True, score=0.9),
+            ]
+        )
         optimizer = TuningOptimizer(experiment_service=mock_service)
 
         result = optimizer.optimize(
@@ -123,9 +132,11 @@ class TestTuningOptimizer:
     def test_missing_service_fallback(self):
         runner = MagicMock()
         runner.execute.return_value = {"result": "fallback"}
-        evaluator = self._make_evaluator([
-            EvaluationResult(passed=True, score=0.7),
-        ])
+        evaluator = self._make_evaluator(
+            [
+                EvaluationResult(passed=True, score=0.7),
+            ]
+        )
         optimizer = TuningOptimizer(experiment_service=None)
 
         result = optimizer.optimize(

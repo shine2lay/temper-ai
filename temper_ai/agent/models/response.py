@@ -3,10 +3,11 @@
 Defines AgentResponse (returned by agent execution) and ToolCallRecord
 (structured record of a single tool invocation).
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, TypedDict
+from typing import Any, TypedDict
 
 from temper_ai.agent.utils.constants import (
     BASE_CONFIDENCE,
@@ -32,8 +33,9 @@ class ToolCallRecord(TypedDict):
         success: Whether the tool call succeeded
         duration_seconds: Time taken for the tool call
     """
+
     tool_name: str
-    arguments: Dict[str, Any]
+    arguments: dict[str, Any]
     result: str
     success: bool
     duration_seconds: float
@@ -54,15 +56,16 @@ class AgentResponse:
         error: Error message if execution failed
         confidence: Confidence score (0.0 to 1.0), auto-calculated if not provided
     """
+
     output: str
-    reasoning: Optional[str] = None
-    tool_calls: List[ToolCallRecord] = field(default_factory=list)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    reasoning: str | None = None
+    tool_calls: list[ToolCallRecord] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
     tokens: int = 0
     estimated_cost_usd: float = 0.0
     latency_seconds: float = 0.0
-    error: Optional[str] = None
-    confidence: Optional[float] = None
+    error: str | None = None
+    confidence: float | None = None
 
     def __post_init__(self) -> None:
         """Calculate confidence if not explicitly provided."""
@@ -87,11 +90,11 @@ class AgentResponse:
         return max(0.0, min(BASE_CONFIDENCE, confidence))
 
     @staticmethod
-    def _tool_failure_penalty(tool_calls: List[Any]) -> float:
+    def _tool_failure_penalty(tool_calls: list[Any]) -> float:
         """Calculate penalty for tool call failures."""
         if not tool_calls:
             return 0.0
-        successful = sum(1 for tc in tool_calls if tc.get('success', False))
+        successful = sum(1 for tc in tool_calls if tc.get("success", False))
         total = len(tool_calls)
         if total == 0:
             return 0.0

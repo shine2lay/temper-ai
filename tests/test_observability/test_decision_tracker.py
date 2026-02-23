@@ -5,6 +5,8 @@ merit score integration, impact metrics tracking, tags handling,
 sanitization, and edge cases like missing fields.
 """
 
+from datetime import UTC
+
 import pytest
 from sqlmodel import select
 
@@ -19,6 +21,7 @@ def db():
     # Reset global database before each test
     import temper_ai.observability.database as db_module
     from temper_ai.observability.database import _db_lock
+
     with _db_lock:
         db_module._db_manager = None
 
@@ -39,7 +42,8 @@ def tracker():
 @pytest.fixture
 def tracker_with_sanitizer():
     """Create decision tracker with mock sanitizer."""
-    def mock_sanitize(data):
+
+    def mock_sanitize(data, _depth=0):
         """Mock sanitizer that removes 'secret' keys."""
         if not isinstance(data, dict):
             return data
@@ -58,7 +62,7 @@ class TestDecisionTracking:
                 session=session,
                 decision_type="experiment_selection",
                 decision_data={"experiment": "exp-1", "reason": "highest score"},
-                outcome="success"
+                outcome="success",
             )
 
             assert decision_id != ""
@@ -66,9 +70,7 @@ class TestDecisionTracking:
 
         # Verify record created
         with get_session() as session:
-            statement = select(DecisionOutcome).where(
-                DecisionOutcome.id == decision_id
-            )
+            statement = select(DecisionOutcome).where(DecisionOutcome.id == decision_id)
             decision = session.exec(statement).first()
 
             assert decision is not None
@@ -83,13 +85,11 @@ class TestDecisionTracking:
                 session=session,
                 decision_type="model_selection",
                 decision_data={"model": "model-a"},
-                outcome="failure"
+                outcome="failure",
             )
 
         with get_session() as session:
-            statement = select(DecisionOutcome).where(
-                DecisionOutcome.id == decision_id
-            )
+            statement = select(DecisionOutcome).where(DecisionOutcome.id == decision_id)
             decision = session.exec(statement).first()
             assert decision.outcome == "failure"
 
@@ -100,13 +100,11 @@ class TestDecisionTracking:
                 session=session,
                 decision_type="parameter_tuning",
                 decision_data={"param": "value"},
-                outcome="neutral"
+                outcome="neutral",
             )
 
         with get_session() as session:
-            statement = select(DecisionOutcome).where(
-                DecisionOutcome.id == decision_id
-            )
+            statement = select(DecisionOutcome).where(DecisionOutcome.id == decision_id)
             decision = session.exec(statement).first()
             assert decision.outcome == "neutral"
 
@@ -117,13 +115,11 @@ class TestDecisionTracking:
                 session=session,
                 decision_type="optimization",
                 decision_data={"strategy": "hybrid"},
-                outcome="mixed"
+                outcome="mixed",
             )
 
         with get_session() as session:
-            statement = select(DecisionOutcome).where(
-                DecisionOutcome.id == decision_id
-            )
+            statement = select(DecisionOutcome).where(DecisionOutcome.id == decision_id)
             decision = session.exec(statement).first()
             assert decision.outcome == "mixed"
 
@@ -142,14 +138,12 @@ class TestImpactMetrics:
                 impact_metrics={
                     "performance_improvement": 0.15,
                     "cost_reduction": 0.08,
-                    "confidence": 0.92
-                }
+                    "confidence": 0.92,
+                },
             )
 
         with get_session() as session:
-            statement = select(DecisionOutcome).where(
-                DecisionOutcome.id == decision_id
-            )
+            statement = select(DecisionOutcome).where(DecisionOutcome.id == decision_id)
             decision = session.exec(statement).first()
 
             assert decision.impact_metrics is not None
@@ -164,13 +158,11 @@ class TestImpactMetrics:
                 session=session,
                 decision_type="simple_decision",
                 decision_data={"action": "test"},
-                outcome="success"
+                outcome="success",
             )
 
         with get_session() as session:
-            statement = select(DecisionOutcome).where(
-                DecisionOutcome.id == decision_id
-            )
+            statement = select(DecisionOutcome).where(DecisionOutcome.id == decision_id)
             decision = session.exec(statement).first()
             assert decision.impact_metrics is None
 
@@ -186,13 +178,11 @@ class TestLearningFields:
                 decision_type="strategy_selection",
                 decision_data={"strategy": "aggressive"},
                 outcome="failure",
-                lessons_learned="Aggressive strategy led to overfitting"
+                lessons_learned="Aggressive strategy led to overfitting",
             )
 
         with get_session() as session:
-            statement = select(DecisionOutcome).where(
-                DecisionOutcome.id == decision_id
-            )
+            statement = select(DecisionOutcome).where(DecisionOutcome.id == decision_id)
             decision = session.exec(statement).first()
             assert "overfitting" in decision.lessons_learned
 
@@ -204,13 +194,11 @@ class TestLearningFields:
                 decision_type="optimization",
                 decision_data={"method": "gradient_descent"},
                 outcome="success",
-                should_repeat=True
+                should_repeat=True,
             )
 
         with get_session() as session:
-            statement = select(DecisionOutcome).where(
-                DecisionOutcome.id == decision_id
-            )
+            statement = select(DecisionOutcome).where(DecisionOutcome.id == decision_id)
             decision = session.exec(statement).first()
             assert decision.should_repeat is True
 
@@ -226,13 +214,11 @@ class TestTags:
                 decision_type="experiment_selection",
                 decision_data={"experiment": "exp-1"},
                 outcome="success",
-                tags=["machine_learning", "optimization", "production"]
+                tags=["machine_learning", "optimization", "production"],
             )
 
         with get_session() as session:
-            statement = select(DecisionOutcome).where(
-                DecisionOutcome.id == decision_id
-            )
+            statement = select(DecisionOutcome).where(DecisionOutcome.id == decision_id)
             decision = session.exec(statement).first()
             assert len(decision.tags) == 3
             assert "machine_learning" in decision.tags
@@ -244,13 +230,11 @@ class TestTags:
                 session=session,
                 decision_type="simple_decision",
                 decision_data={"action": "test"},
-                outcome="success"
+                outcome="success",
             )
 
         with get_session() as session:
-            statement = select(DecisionOutcome).where(
-                DecisionOutcome.id == decision_id
-            )
+            statement = select(DecisionOutcome).where(DecisionOutcome.id == decision_id)
             decision = session.exec(statement).first()
             assert decision.tags == []
 
@@ -269,13 +253,11 @@ class TestExecutionContext:
                 session=session,
                 decision_type="tool_selection",
                 decision_data={"tool": "calculator", "execution_context": "agent-123"},
-                outcome="success"
+                outcome="success",
             )
 
         with get_session() as session:
-            statement = select(DecisionOutcome).where(
-                DecisionOutcome.id == decision_id
-            )
+            statement = select(DecisionOutcome).where(DecisionOutcome.id == decision_id)
             decision = session.exec(statement).first()
             # Verify decision was tracked even without execution_id
             assert decision.decision_data["execution_context"] == "agent-123"
@@ -293,16 +275,14 @@ class TestExecutionContext:
                     "context": {
                         "agent": "agent-123",
                         "stage": "stage-456",
-                        "workflow": "workflow-789"
-                    }
+                        "workflow": "workflow-789",
+                    },
                 },
-                outcome="success"
+                outcome="success",
             )
 
         with get_session() as session:
-            statement = select(DecisionOutcome).where(
-                DecisionOutcome.id == decision_id
-            )
+            statement = select(DecisionOutcome).where(DecisionOutcome.id == decision_id)
             decision = session.exec(statement).first()
             assert decision.decision_data["context"]["agent"] == "agent-123"
             assert decision.decision_data["context"]["stage"] == "stage-456"
@@ -314,9 +294,9 @@ class TestValidationTracking:
 
     def test_track_with_validation_method(self, db, tracker):
         """Test tracking decision with validation method."""
-        from datetime import datetime, timezone
+        from datetime import datetime
 
-        validation_time = datetime.now(timezone.utc)
+        validation_time = datetime.now(UTC)
 
         with get_session() as session:
             decision_id = tracker.track(
@@ -326,13 +306,11 @@ class TestValidationTracking:
                 outcome="success",
                 validation_method="cross_validation",
                 validation_timestamp=validation_time,
-                validation_duration_seconds=5.2
+                validation_duration_seconds=5.2,
             )
 
         with get_session() as session:
-            statement = select(DecisionOutcome).where(
-                DecisionOutcome.id == decision_id
-            )
+            statement = select(DecisionOutcome).where(DecisionOutcome.id == decision_id)
             decision = session.exec(statement).first()
             assert decision.validation_method == "cross_validation"
             assert decision.validation_timestamp is not None
@@ -350,14 +328,14 @@ class TestMeritScoreIntegration:
                 decision_type="analysis",
                 decision_data={"agent_name": "researcher", "analysis": "completed"},
                 outcome="success",
-                tags=["analysis"]
+                tags=["analysis"],
             )
 
         # Verify merit score was updated
         with get_session() as session:
             statement = select(AgentMeritScore).where(
                 AgentMeritScore.agent_name == "researcher",
-                AgentMeritScore.domain == "analysis"
+                AgentMeritScore.domain == "analysis",
             )
             merit = session.exec(statement).first()
 
@@ -374,7 +352,7 @@ class TestMeritScoreIntegration:
                 decision_data={"agent_name": "predictor"},
                 outcome="success",
                 impact_metrics={"confidence": 0.95, "accuracy": 0.88},
-                tags=["prediction"]
+                tags=["prediction"],
             )
 
         with get_session() as session:
@@ -391,7 +369,7 @@ class TestMeritScoreIntegration:
                 session=session,
                 decision_type="system_decision",
                 decision_data={"system": "auto"},
-                outcome="success"
+                outcome="success",
             )
 
         # Verify no merit score created
@@ -408,13 +386,13 @@ class TestMeritScoreIntegration:
                 decision_type="analysis",
                 decision_data={"agent_name": "researcher"},
                 outcome="success",
-                tags=["code_review", "security", "testing"]
+                tags=["code_review", "security", "testing"],
             )
 
         with get_session() as session:
             statement = select(AgentMeritScore).where(
                 AgentMeritScore.agent_name == "researcher",
-                AgentMeritScore.domain == "code_review"
+                AgentMeritScore.domain == "code_review",
             )
             merit = session.exec(statement).first()
             assert merit is not None
@@ -426,13 +404,13 @@ class TestMeritScoreIntegration:
                 session=session,
                 decision_type="optimization",
                 decision_data={"agent_name": "optimizer"},
-                outcome="success"
+                outcome="success",
             )
 
         with get_session() as session:
             statement = select(AgentMeritScore).where(
                 AgentMeritScore.agent_name == "optimizer",
-                AgentMeritScore.domain == "optimization"
+                AgentMeritScore.domain == "optimization",
             )
             merit = session.exec(statement).first()
             assert merit is not None
@@ -450,15 +428,13 @@ class TestSanitization:
                 decision_data={
                     "endpoint": "/api/data",
                     "secret": "should_be_removed",
-                    "params": {"id": 123}
+                    "params": {"id": 123},
                 },
-                outcome="success"
+                outcome="success",
             )
 
         with get_session() as session:
-            statement = select(DecisionOutcome).where(
-                DecisionOutcome.id == decision_id
-            )
+            statement = select(DecisionOutcome).where(DecisionOutcome.id == decision_id)
             decision = session.exec(statement).first()
             assert "endpoint" in decision.decision_data
             assert "secret" not in decision.decision_data
@@ -472,16 +448,11 @@ class TestSanitization:
                 decision_type="analysis",
                 decision_data={"action": "analyze"},
                 outcome="success",
-                impact_metrics={
-                    "accuracy": 0.95,
-                    "secret": "should_be_removed"
-                }
+                impact_metrics={"accuracy": 0.95, "secret": "should_be_removed"},
             )
 
         with get_session() as session:
-            statement = select(DecisionOutcome).where(
-                DecisionOutcome.id == decision_id
-            )
+            statement = select(DecisionOutcome).where(DecisionOutcome.id == decision_id)
             decision = session.exec(statement).first()
             assert "accuracy" in decision.impact_metrics
             assert "secret" not in decision.impact_metrics
@@ -494,14 +465,12 @@ class TestSanitization:
                 decision_type="test",
                 decision_data=None,
                 outcome="success",
-                impact_metrics=None
+                impact_metrics=None,
             )
 
         # Should not crash
         with get_session() as session:
-            statement = select(DecisionOutcome).where(
-                DecisionOutcome.id == decision_id
-            )
+            statement = select(DecisionOutcome).where(DecisionOutcome.id == decision_id)
             decision = session.exec(statement).first()
             assert decision.decision_data == {}
             assert decision.impact_metrics is None
@@ -515,6 +484,7 @@ class TestErrorHandling:
         # Close the database to force error
         import temper_ai.observability.database as db_module
         from temper_ai.observability.database import _db_lock
+
         with _db_lock:
             db_module._db_manager = None
 
@@ -523,7 +493,7 @@ class TestErrorHandling:
             session=None,  # Invalid session
             decision_type="test",
             decision_data={"test": "data"},
-            outcome="success"
+            outcome="success",
         )
 
         assert decision_id == ""
@@ -543,9 +513,7 @@ class TestErrorHandling:
         assert decision_id != ""
 
         with get_session() as session:
-            statement = select(DecisionOutcome).where(
-                DecisionOutcome.id == decision_id
-            )
+            statement = select(DecisionOutcome).where(DecisionOutcome.id == decision_id)
             decision = session.exec(statement).first()
             assert decision is not None
             assert decision.outcome == "neutral"
@@ -565,14 +533,12 @@ class TestExtraMetadata:
                 extra_metadata={
                     "environment": "staging",
                     "version": "1.2.3",
-                    "user": "test_user"
-                }
+                    "user": "test_user",
+                },
             )
 
         with get_session() as session:
-            statement = select(DecisionOutcome).where(
-                DecisionOutcome.id == decision_id
-            )
+            statement = select(DecisionOutcome).where(DecisionOutcome.id == decision_id)
             decision = session.exec(statement).first()
             assert decision.extra_metadata["environment"] == "staging"
             assert decision.extra_metadata["version"] == "1.2.3"
@@ -591,7 +557,7 @@ class TestMultipleDecisions:
                     session=session,
                     decision_type="iteration",
                     decision_data={"iteration": i},
-                    outcome="success" if i % 2 == 0 else "failure"
+                    outcome="success" if i % 2 == 0 else "failure",
                 )
                 decision_ids.append(decision_id)
 
@@ -614,7 +580,7 @@ class TestMultipleDecisions:
                     session=session,
                     decision_type="test",
                     decision_data={"test": i},
-                    outcome="success"
+                    outcome="success",
                 )
                 decision_ids.add(decision_id)
 

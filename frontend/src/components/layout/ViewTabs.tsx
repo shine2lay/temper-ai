@@ -7,16 +7,29 @@ interface ViewTabsProps {
   dagContent: React.ReactNode;
   timelineContent: React.ReactNode;
   eventLogContent: React.ReactNode;
+  llmCallsContent: React.ReactNode;
   activeTab?: string;
   onTabChange?: (tab: string) => void;
+  stageCount?: number;
+  eventCount?: number;
+  llmCallCount?: number;
+}
+
+function CountBadge({ count }: { count?: number }) {
+  if (count == null || count === 0) return null;
+  return <span className="ml-1 text-[9px] font-mono opacity-60 tabular-nums">{count}</span>;
 }
 
 export function ViewTabs({
   dagContent,
   timelineContent,
   eventLogContent,
+  llmCallsContent,
   activeTab: controlledTab,
   onTabChange,
+  stageCount,
+  eventCount,
+  llmCallCount,
 }: ViewTabsProps) {
   const [internalTab, setInternalTab] = useState(() => {
     return localStorage.getItem(TAB_STORAGE_KEY) ?? 'dag';
@@ -40,13 +53,16 @@ export function ViewTabs({
     <Tabs value={activeTab} onValueChange={handleChange} className="flex-1 flex flex-col min-h-0">
       <TabsList className="mx-4 mt-2">
         <TabsTrigger value="dag">
-          DAG <span className="ml-1 text-[9px] opacity-40 hidden sm:inline">1</span>
+          DAG <CountBadge count={stageCount} /> <span className="ml-1 text-[10px] opacity-50 hidden sm:inline">1</span>
         </TabsTrigger>
         <TabsTrigger value="timeline">
-          Timeline <span className="ml-1 text-[9px] opacity-40 hidden sm:inline">2</span>
+          Timeline <span className="ml-1 text-[10px] opacity-50 hidden sm:inline">2</span>
         </TabsTrigger>
         <TabsTrigger value="eventlog">
-          Event Log <span className="ml-1 text-[9px] opacity-40 hidden sm:inline">3</span>
+          Event Log <CountBadge count={eventCount} /> <span className="ml-1 text-[10px] opacity-50 hidden sm:inline">3</span>
+        </TabsTrigger>
+        <TabsTrigger value="llmcalls">
+          LLM Calls <CountBadge count={llmCallCount} /> <span className="ml-1 text-[10px] opacity-50 hidden sm:inline">4</span>
         </TabsTrigger>
       </TabsList>
 
@@ -60,6 +76,10 @@ export function ViewTabs({
 
       <TabsContent value="eventlog" className="flex-1 min-h-0">
         {eventLogContent}
+      </TabsContent>
+
+      <TabsContent value="llmcalls" className="flex-1 min-h-0">
+        {llmCallsContent}
       </TabsContent>
     </Tabs>
   );

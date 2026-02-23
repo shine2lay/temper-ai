@@ -101,9 +101,7 @@ class TestSequentialTester:
         tester = SequentialTester(alpha=0.05, beta=0.20, mde=0.10)
 
         n = tester.calculate_required_sample_size(
-            baseline_mean=50.0,
-            baseline_std=10.0,
-            power=0.80
+            baseline_mean=50.0, baseline_std=10.0, power=0.80
         )
 
         # Should return reasonable sample size
@@ -116,9 +114,7 @@ class TestSequentialTester:
         tester = SequentialTester(alpha=0.05, beta=0.20, mde=0.10)
 
         n = tester.calculate_required_sample_size(
-            baseline_mean=50.0,
-            baseline_std=0.0,
-            power=0.80
+            baseline_mean=50.0, baseline_std=0.0, power=0.80
         )
 
         # Should return large number (effectively impossible)
@@ -129,15 +125,11 @@ class TestSequentialTester:
         tester = SequentialTester(alpha=0.05, beta=0.20, mde=0.10)
 
         n_low_power = tester.calculate_required_sample_size(
-            baseline_mean=50.0,
-            baseline_std=10.0,
-            power=0.70
+            baseline_mean=50.0, baseline_std=10.0, power=0.70
         )
 
         n_high_power = tester.calculate_required_sample_size(
-            baseline_mean=50.0,
-            baseline_std=10.0,
-            power=0.90
+            baseline_mean=50.0, baseline_std=10.0, power=0.90
         )
 
         assert n_high_power > n_low_power
@@ -173,7 +165,10 @@ class TestBayesianAnalyzer:
         # Probability that diff > 0 will be low
         assert 0 <= result["prob_treatment_better"] <= 1
         assert 0 <= result["prob_control_better"] <= 1
-        assert abs(result["prob_treatment_better"] + result["prob_control_better"] - 1.0) < 0.01
+        assert (
+            abs(result["prob_treatment_better"] + result["prob_control_better"] - 1.0)
+            < 0.01
+        )
 
     def test_analyze_with_no_difference(self):
         """Test Bayesian analysis with no difference."""
@@ -188,7 +183,10 @@ class TestBayesianAnalyzer:
         # Probabilities should sum to 1
         assert 0 <= result["prob_treatment_better"] <= 1
         assert 0 <= result["prob_control_better"] <= 1
-        assert abs(result["prob_treatment_better"] + result["prob_control_better"] - 1.0) < 0.01
+        assert (
+            abs(result["prob_treatment_better"] + result["prob_control_better"] - 1.0)
+            < 0.01
+        )
 
     def test_credible_interval(self):
         """Test credible interval calculation."""
@@ -238,11 +236,7 @@ class TestSampleSizeFunction:
     def test_calculate_sample_size_basic(self):
         """Test basic sample size calculation."""
         n = calculate_sample_size(
-            baseline_mean=50.0,
-            baseline_std=10.0,
-            mde=0.10,
-            alpha=0.05,
-            power=0.80
+            baseline_mean=50.0, baseline_std=10.0, mde=0.10, alpha=0.05, power=0.80
         )
 
         assert isinstance(n, int)
@@ -255,7 +249,7 @@ class TestSampleSizeFunction:
             baseline_std=10.0,
             mde=0.10,  # 10% effect
             alpha=0.05,
-            power=0.80
+            power=0.80,
         )
 
         n2 = calculate_sample_size(
@@ -263,7 +257,7 @@ class TestSampleSizeFunction:
             baseline_std=10.0,
             mde=0.05,  # 5% effect (harder to detect)
             alpha=0.05,
-            power=0.80
+            power=0.80,
         )
 
         # Smaller effect requires more samples

@@ -11,13 +11,7 @@ Autonomous mode enables your workflows to learn from their own execution and imp
 
 ## Quick Start
 
-### Option 1: CLI Flag
-
-```bash
-temper-ai run configs/workflows/my_workflow.yaml --autonomous --show-details
-```
-
-### Option 2: YAML Configuration
+### Enable via YAML Configuration
 
 ```yaml
 workflow:
@@ -28,6 +22,15 @@ workflow:
     goals_enabled: true
     portfolio_enabled: true
   # ... rest of workflow config
+```
+
+Then trigger the workflow via the HTTP API:
+
+```bash
+curl -X POST http://localhost:8000/api/runs \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"workflow_name": "my_workflow", "input": {}}'
 ```
 
 ## Configuration Reference
@@ -81,10 +84,10 @@ All auto-applied changes are logged to `.meta-autonomous/audit_log.jsonl` for fu
 
 ```bash
 # View audit trail of auto-applied changes
-temper-ai autonomy audit
+curl localhost:8420/api/rollbacks
 
-# Manually apply pending recommendations
-temper-ai autonomy apply-pending
+# Manually apply a pending recommendation (replace {id} with the rollback ID)
+curl -X POST localhost:8420/api/rollbacks/{id}/execute
 ```
 
 ## Memory Integration
@@ -102,12 +105,18 @@ Run A/B tests on workflow variants:
 
 ```bash
 # Create an experiment
-temper-ai experiment create --name "temperature_test" --description "Test temp impact" --variants variants.yaml
+curl -X POST localhost:8420/api/optimization/experiments \
+  -H "Content-Type: application/json" \
+  -d '{"name": "temperature_test", "description": "Test temp impact", "variants": [...]}'
 
-# Start and monitor
-temper-ai experiment start <experiment_id>
-temper-ai experiment results <experiment_id>
-temper-ai experiment stop <experiment_id>
+# Start an experiment
+curl -X POST localhost:8420/api/optimization/experiments/{id}/start
+
+# Get experiment results
+curl localhost:8420/api/optimization/experiments/{id}/results
+
+# Stop an experiment
+curl -X POST localhost:8420/api/optimization/experiments/{id}/stop
 ```
 
 ## Safety
@@ -115,4 +124,4 @@ temper-ai experiment stop <experiment_id>
 - All auto-applied changes go through `GoalSafetyPolicy` (rate limits, autonomy checks)
 - Maximum changes per run capped by `max_auto_apply_per_run`
 - Full audit trail in JSONL format
-- Emergency stop via `temper-ai autonomy emergency-stop --reason "..."` halts all autonomous operations
+- Emergency stop via `curl -X POST localhost:8420/api/runs/{id}/stop -d '{"reason": "..."}'` halts autonomous operations for a given run

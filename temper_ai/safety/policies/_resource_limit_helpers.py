@@ -3,23 +3,26 @@
 Extracted from ResourceLimitPolicy to keep the class below 500 lines.
 These are internal implementation details and should not be used directly.
 """
+
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional, Set
+from typing import Any
 
 import psutil
 
+from temper_ai.safety.constants import PERCENT_KEY
+from temper_ai.safety.interfaces import SafetyViolation, ViolationSeverity
 from temper_ai.shared.constants.durations import SLEEP_VERY_SHORT
 from temper_ai.shared.constants.limits import PERCENT_20
 from temper_ai.shared.constants.probabilities import FRACTION_QUARTER
 from temper_ai.shared.constants.sizes import BYTES_PER_KB
-from temper_ai.safety.constants import PERCENT_KEY
-from temper_ai.safety.interfaces import SafetyViolation, ViolationSeverity
 
 # Constants (duplicated from resource_limit_policy to avoid circular import)
 BYTES_PER_KB_FLOAT = float(BYTES_PER_KB)
-DISK_SPACE_SAFETY_MARGIN = 1.0 + FRACTION_QUARTER - 0.05  # 1.2  # noqa: Calculation constant
+DISK_SPACE_SAFETY_MARGIN = (
+    1.0 + FRACTION_QUARTER - 0.05
+)  # 1.2  # noqa: Calculation constant
 DISK_SPACE_SAFETY_MARGIN_PERCENT = PERCENT_20
 CPU_SAMPLE_INTERVAL_SECONDS = SLEEP_VERY_SHORT
 
@@ -31,13 +34,14 @@ class FileSizeCheckParams:
     Bundles the multiple parameters needed for file size validation,
     reducing function parameter count from 8 to 1.
     """
+
     operation: str
     file_path: str
-    context: Dict[str, Any]
+    context: dict[str, Any]
     max_file_size_read: int
     max_file_size_write: int
-    file_read_operations: Set[str]
-    file_write_operations: Set[str]
+    file_read_operations: set[str]
+    file_write_operations: set[str]
     policy_name: str
 
 
@@ -51,7 +55,7 @@ def format_bytes(size_bytes: int) -> str:
         Formatted string (e.g., "10.5 MB", "1.2 GB")
     """
     size: float = float(size_bytes)
-    for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+    for unit in ["B", "KB", "MB", "GB", "TB"]:
         if size < BYTES_PER_KB_FLOAT:
             return f"{size:.1f} {unit}"
         size /= BYTES_PER_KB_FLOAT
@@ -59,11 +63,7 @@ def format_bytes(size_bytes: int) -> str:
 
 
 def validate_size(
-    name: str,
-    value: Any,
-    min_value: int,
-    max_value: int,
-    default: int
+    name: str, value: Any, min_value: int, max_value: int, default: int
 ) -> int:
     """Validate size parameter (bytes).
 
@@ -81,9 +81,7 @@ def validate_size(
         ValueError: If value is invalid
     """
     if not isinstance(value, (int, float)):
-        raise ValueError(
-            f"{name} must be numeric, got {type(value).__name__}"
-        )
+        raise ValueError(f"{name} must be numeric, got {type(value).__name__}")
 
     int_value = int(value)
 
@@ -103,11 +101,7 @@ def validate_size(
 
 
 def validate_time(
-    name: str,
-    value: Any,
-    min_value: float,
-    max_value: float,
-    default: float
+    name: str, value: Any, min_value: float, max_value: float, default: float
 ) -> float:
     """Validate time parameter (seconds).
 
@@ -125,21 +119,15 @@ def validate_time(
         ValueError: If value is invalid
     """
     if not isinstance(value, (int, float)):
-        raise ValueError(
-            f"{name} must be numeric, got {type(value).__name__}"
-        )
+        raise ValueError(f"{name} must be numeric, got {type(value).__name__}")
 
     float_value = float(value)
 
     if float_value < min_value:
-        raise ValueError(
-            f"{name} must be >= {min_value} seconds, got {float_value}"
-        )
+        raise ValueError(f"{name} must be >= {min_value} seconds, got {float_value}")
 
     if float_value > max_value:
-        raise ValueError(
-            f"{name} must be <= {max_value} seconds, got {float_value}"
-        )
+        raise ValueError(f"{name} must be <= {max_value} seconds, got {float_value}")
 
     return float_value
 
@@ -158,16 +146,14 @@ def validate_bool(name: str, value: Any) -> bool:
         ValueError: If value is invalid
     """
     if not isinstance(value, bool):
-        raise ValueError(
-            f"{name} must be boolean, got {type(value).__name__}"
-        )
+        raise ValueError(f"{name} must be boolean, got {type(value).__name__}")
 
     return value
 
 
 def check_file_size(
     params: FileSizeCheckParams,
-) -> Optional[SafetyViolation]:
+) -> SafetyViolation | None:
     """Check if file size is within limits.
 
     Args:
@@ -202,23 +188,23 @@ def check_file_size(
                     "file_size": file_size,
                     "max_size": max_size,
                     "operation": operation_name,
-                    "exceeded_by": file_size - max_size
-                }
+                    "exceeded_by": file_size - max_size,
+                },
             )
 
         return None
 
-    except (OSError, IOError):
+    except OSError:
         return None
 
 
 def check_disk_space(
     file_path: str,
-    context: Dict[str, Any],
+    context: dict[str, Any],
     track_disk: bool,
     min_free_disk_space: int,
     policy_name: str,
-) -> Optional[SafetyViolation]:
+) -> SafetyViolation | None:
     """Check if sufficient disk space is available with safety margin.
 
     Args:
@@ -260,8 +246,8 @@ def check_disk_space(
                     "safety_margin_percent": DISK_SPACE_SAFETY_MARGIN_PERCENT,
                     "total_space": disk_usage.total,
                     "used_space": disk_usage.used,
-                    "disk_usage_percent": disk_usage.percent
-                }
+                    "disk_usage_percent": disk_usage.percent,
+                },
             )
 
         return None
@@ -271,11 +257,11 @@ def check_disk_space(
 
 
 def check_memory_usage(
-    context: Dict[str, Any],
+    context: dict[str, Any],
     track_memory: bool,
     max_memory_per_operation: int,
     policy_name: str,
-) -> Optional[SafetyViolation]:
+) -> SafetyViolation | None:
     """Check current memory usage.
 
     Args:
@@ -310,8 +296,8 @@ def check_memory_usage(
                     "max_memory": max_memory_per_operation,
                     "system_memory_total": system_memory.total,
                     "system_memory_available": system_memory.available,
-                    "system_memory_percent": system_memory.percent
-                }
+                    "system_memory_percent": system_memory.percent,
+                },
             )
 
         return None
@@ -320,13 +306,13 @@ def check_memory_usage(
         return None
 
 
-def get_current_usage() -> Dict[str, Any]:
+def get_current_usage() -> dict[str, Any]:
     """Get current system resource usage.
 
     Returns:
         Dictionary with current resource usage
     """
-    usage: Dict[str, Any] = {}
+    usage: dict[str, Any] = {}
 
     try:
         process = psutil.Process()
@@ -339,7 +325,7 @@ def get_current_usage() -> Dict[str, Any]:
             "system_total": system_memory.total,
             "system_available": system_memory.available,
             "system_used": system_memory.used,
-            PERCENT_KEY: system_memory.percent
+            PERCENT_KEY: system_memory.percent,
         }
     except (psutil.Error, OSError):
         usage["memory"] = None
@@ -350,17 +336,14 @@ def get_current_usage() -> Dict[str, Any]:
             "total": disk_usage.total,
             "used": disk_usage.used,
             "free": disk_usage.free,
-            PERCENT_KEY: disk_usage.percent
+            PERCENT_KEY: disk_usage.percent,
         }
     except (psutil.Error, OSError):
         usage["disk"] = None
 
     try:
         cpu_percent = psutil.cpu_percent(interval=CPU_SAMPLE_INTERVAL_SECONDS)
-        usage["cpu"] = {
-            PERCENT_KEY: cpu_percent,
-            "count": psutil.cpu_count()
-        }
+        usage["cpu"] = {PERCENT_KEY: cpu_percent, "count": psutil.cpu_count()}
     except (psutil.Error, OSError):
         usage["cpu"] = None
 

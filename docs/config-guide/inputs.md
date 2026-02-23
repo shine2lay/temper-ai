@@ -7,7 +7,9 @@ Input files provide data to workflows at runtime. They are simple YAML key-value
 ## Usage
 
 ```bash
-temper-ai run configs/workflows/simple_research.yaml --input examples/research_input.yaml
+curl -X POST http://localhost:8420/api/runs \
+  -H 'Content-Type: application/json' \
+  -d '{"workflow": "workflows/simple_research.yaml", "inputs_file": "examples/research_input.yaml"}'
 ```
 
 ## Examples
@@ -67,16 +69,6 @@ success_criteria: |
   - P99 latency: < 5ms overhead
   - Throughput: 1M+ requests/second
   - Availability: 99.99%
-```
-
-### ERC721 Smart Contract Input
-
-```yaml
-# examples/erc721_input.yaml
-contract_name: "SimpleNFT"
-token_name: "SimpleNFT"
-token_symbol: "SNFT"
-llm_model: "llama3:8b"
 ```
 
 ## Structure Rules

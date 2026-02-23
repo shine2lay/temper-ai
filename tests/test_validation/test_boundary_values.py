@@ -33,13 +33,16 @@ except ImportError:
 class TestAgentCountBoundaries:
     """Test agent count boundary validation."""
 
-    @pytest.mark.parametrize("agent_count,should_accept", [
-        (0, False),  # Below minimum
-        (1, True),   # Minimum
-        (3, True),   # Typical
-        (10, True),  # Maximum
-        (11, False), # Above maximum
-    ])
+    @pytest.mark.parametrize(
+        "agent_count,should_accept",
+        [
+            (0, False),  # Below minimum
+            (1, True),  # Minimum
+            (3, True),  # Typical
+            (10, True),  # Maximum
+            (11, False),  # Above maximum
+        ],
+    )
     def test_agent_count_boundaries(self, agent_count, should_accept):
         """Test agent count boundaries in consensus strategy."""
         if agent_count <= 0:
@@ -52,7 +55,7 @@ class TestAgentCountBoundaries:
                             decision=f"result_{i}",
                             reasoning="test reasoning",
                             confidence=0.8,
-                            metadata={}
+                            metadata={},
                         )
                         for i in range(agent_count)
                     ]
@@ -68,7 +71,7 @@ class TestAgentCountBoundaries:
                     decision=f"result_{i % 2}",  # Create some agreement
                     reasoning="test reasoning",
                     confidence=0.8,
-                    metadata={}
+                    metadata={},
                 )
                 for i in range(agent_count)
             ]
@@ -83,7 +86,7 @@ class TestAgentCountBoundaries:
                     decision=f"result_{i % 2}",
                     reasoning="test reasoning",
                     confidence=0.8,
-                    metadata={}
+                    metadata={},
                 )
                 for i in range(agent_count)
             ]
@@ -95,13 +98,16 @@ class TestAgentCountBoundaries:
 class TestConfidenceScoreBoundaries:
     """Test confidence score boundary validation."""
 
-    @pytest.mark.parametrize("confidence,should_accept", [
-        (-0.1, False),  # Below minimum
-        (0.0, True),    # Minimum
-        (0.5, True),    # Mid
-        (1.0, True),    # Maximum
-        (1.1, False),   # Above maximum
-    ])
+    @pytest.mark.parametrize(
+        "confidence,should_accept",
+        [
+            (-0.1, False),  # Below minimum
+            (0.0, True),  # Minimum
+            (0.5, True),  # Mid
+            (1.0, True),  # Maximum
+            (1.1, False),  # Above maximum
+        ],
+    )
     def test_confidence_score_boundaries(self, confidence, should_accept):
         """Test confidence score boundaries in AgentOutput."""
         if should_accept:
@@ -111,7 +117,7 @@ class TestConfidenceScoreBoundaries:
                 decision="test decision",
                 reasoning="test reasoning",
                 confidence=confidence,
-                metadata={}
+                metadata={},
             )
             assert output.confidence == confidence
         else:
@@ -122,17 +128,20 @@ class TestConfidenceScoreBoundaries:
                     decision="test decision",
                     reasoning="test reasoning",
                     confidence=confidence,
-                    metadata={}
+                    metadata={},
                 )
 
-    @pytest.mark.parametrize("confidence,should_accept", [
-        (-0.1, False),
-        (0.0, True),
-        (0.5, True),
-        (1.0, True),
-        (1.1, False),
-        (2.0, False),
-    ])
+    @pytest.mark.parametrize(
+        "confidence,should_accept",
+        [
+            (-0.1, False),
+            (0.0, True),
+            (0.5, True),
+            (1.0, True),
+            (1.1, False),
+            (2.0, False),
+        ],
+    )
     def test_resolution_result_confidence(self, confidence, should_accept):
         """Test confidence boundaries in ResolutionResult."""
         if should_accept:
@@ -142,7 +151,7 @@ class TestConfidenceScoreBoundaries:
                 reasoning="test reasoning",
                 success=True,
                 confidence=confidence,
-                metadata={}
+                metadata={},
             )
             assert result.confidence == confidence
         else:
@@ -153,20 +162,23 @@ class TestConfidenceScoreBoundaries:
                     reasoning="test reasoning",
                     success=True,
                     confidence=confidence,
-                    metadata={}
+                    metadata={},
                 )
 
 
 class TestTokenCountBoundaries:
     """Test token count boundary validation."""
 
-    @pytest.mark.parametrize("token_count,should_accept", [
-        (0, False),     # Zero
-        (1, True),      # Minimum
-        (500, True),    # Typical
-        (2048, True),   # At limit
-        (2049, False),  # Above limit (for some configs)
-    ])
+    @pytest.mark.parametrize(
+        "token_count,should_accept",
+        [
+            (0, False),  # Zero
+            (1, True),  # Minimum
+            (500, True),  # Typical
+            (2048, True),  # At limit
+            (2049, False),  # Above limit (for some configs)
+        ],
+    )
     def test_token_count_basic(self, token_count, should_accept):
         """Test basic token count validation."""
         # Token counts are typically validated at the LLM provider level
@@ -182,13 +194,16 @@ class TestTokenCountBoundaries:
 class TestDebateRoundBoundaries:
     """Test debate round boundary validation."""
 
-    @pytest.mark.parametrize("max_rounds,should_accept", [
-        (0, False),  # Zero
-        (1, True),   # Minimum
-        (3, True),   # Typical
-        (10, True),  # Maximum
-        (11, False), # Above maximum
-    ])
+    @pytest.mark.parametrize(
+        "max_rounds,should_accept",
+        [
+            (0, False),  # Zero
+            (1, True),  # Minimum
+            (3, True),  # Typical
+            (10, True),  # Maximum
+            (11, False),  # Above maximum
+        ],
+    )
     def test_debate_round_boundaries(self, max_rounds, should_accept):
         """Test debate round boundaries."""
         if should_accept:
@@ -203,14 +218,17 @@ class TestDebateRoundBoundaries:
 class TestTemperatureBoundaries:
     """Test temperature boundary validation."""
 
-    @pytest.mark.parametrize("temperature,should_accept", [
-        (-0.1, False),  # Below minimum
-        (0.0, True),    # Minimum
-        (0.7, True),    # Typical
-        (1.0, True),    # High
-        (2.0, True),    # Maximum
-        (2.1, False),   # Above maximum
-    ])
+    @pytest.mark.parametrize(
+        "temperature,should_accept",
+        [
+            (-0.1, False),  # Below minimum
+            (0.0, True),  # Minimum
+            (0.7, True),  # Typical
+            (1.0, True),  # High
+            (2.0, True),  # Maximum
+            (2.1, False),  # Above maximum
+        ],
+    )
     def test_temperature_boundaries(self, temperature, should_accept):
         """Test temperature boundaries."""
         if should_accept:
@@ -222,13 +240,16 @@ class TestTemperatureBoundaries:
 class TestFileSizeBoundaries:
     """Test file size boundary validation."""
 
-    @pytest.mark.parametrize("file_size,should_accept", [
-        (0, False),        # Zero
-        (1, True),         # Minimum
-        (1048576, True),   # 1 MB
-        (10485760, True),  # 10 MB (at limit)
-        (10485761, False), # Above limit
-    ])
+    @pytest.mark.parametrize(
+        "file_size,should_accept",
+        [
+            (0, False),  # Zero
+            (1, True),  # Minimum
+            (1048576, True),  # 1 MB
+            (10485760, True),  # 10 MB (at limit)
+            (10485761, False),  # Above limit
+        ],
+    )
     def test_file_size_boundaries(self, file_size, should_accept):
         """Test file size boundaries."""
         MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
@@ -242,13 +263,16 @@ class TestFileSizeBoundaries:
 class TestMaxTokensBoundaries:
     """Test max_tokens boundary validation."""
 
-    @pytest.mark.parametrize("max_tokens,should_accept", [
-        (0, False),    # Zero
-        (1, True),     # Minimum
-        (2048, True),  # Typical
-        (100000, True),  # Maximum
-        (100001, False), # Above maximum
-    ])
+    @pytest.mark.parametrize(
+        "max_tokens,should_accept",
+        [
+            (0, False),  # Zero
+            (1, True),  # Minimum
+            (2048, True),  # Typical
+            (100000, True),  # Maximum
+            (100001, False),  # Above maximum
+        ],
+    )
     def test_max_tokens_boundaries(self, max_tokens, should_accept):
         """Test max_tokens boundaries."""
         MAX_ALLOWED = 100000
@@ -262,13 +286,16 @@ class TestMaxTokensBoundaries:
 class TestTimeoutBoundaries:
     """Test timeout boundary validation."""
 
-    @pytest.mark.parametrize("timeout,should_accept", [
-        (0, False),   # Zero
-        (1, True),    # Minimum
-        (30, True),   # Typical
-        (600, True),  # Maximum (10 minutes)
-        (601, False), # Above maximum
-    ])
+    @pytest.mark.parametrize(
+        "timeout,should_accept",
+        [
+            (0, False),  # Zero
+            (1, True),  # Minimum
+            (30, True),  # Typical
+            (600, True),  # Maximum (10 minutes)
+            (601, False),  # Above maximum
+        ],
+    )
     def test_timeout_boundaries(self, timeout, should_accept):
         """Test timeout boundaries."""
         MAX_TIMEOUT = 600  # 10 minutes
@@ -282,14 +309,17 @@ class TestTimeoutBoundaries:
 class TestPriorityBoundaries:
     """Test priority boundary validation."""
 
-    @pytest.mark.parametrize("priority,should_accept", [
-        (-1, False), # Below minimum
-        (0, True),   # Minimum
-        (1, True),   # Low
-        (3, True),   # High
-        (5, True),   # Maximum
-        (6, False),  # Above maximum
-    ])
+    @pytest.mark.parametrize(
+        "priority,should_accept",
+        [
+            (-1, False),  # Below minimum
+            (0, True),  # Minimum
+            (1, True),  # Low
+            (3, True),  # High
+            (5, True),  # Maximum
+            (6, False),  # Above maximum
+        ],
+    )
     def test_priority_boundaries(self, priority, should_accept):
         """Test priority boundaries."""
         if should_accept:
@@ -301,13 +331,16 @@ class TestPriorityBoundaries:
 class TestRateLimitBoundaries:
     """Test rate limit boundary validation."""
 
-    @pytest.mark.parametrize("rate_limit,should_accept", [
-        (0, False),    # Zero
-        (1, True),     # Minimum
-        (10, True),    # Typical
-        (1000, True),  # Maximum
-        (1001, False), # Above maximum
-    ])
+    @pytest.mark.parametrize(
+        "rate_limit,should_accept",
+        [
+            (0, False),  # Zero
+            (1, True),  # Minimum
+            (10, True),  # Typical
+            (1000, True),  # Maximum
+            (1001, False),  # Above maximum
+        ],
+    )
     def test_rate_limit_boundaries(self, rate_limit, should_accept):
         """Test rate limit boundaries."""
         MAX_RATE = 1000
@@ -362,7 +395,7 @@ class TestEdgeCaseCombinations:
                 decision="result",
                 reasoning="test reasoning",
                 confidence=1.0,  # Maximum confidence
-                metadata={}
+                metadata={},
             )
         ]
         strategy = ConsensusStrategy()
@@ -377,7 +410,7 @@ class TestEdgeCaseCombinations:
                 decision=f"result_{i % 2}",
                 reasoning="test reasoning",
                 confidence=0.0,  # Minimum confidence
-                metadata={}
+                metadata={},
             )
             for i in range(10)
         ]
@@ -394,7 +427,7 @@ class TestEdgeCaseCombinations:
                 decision="test",
                 reasoning="test reasoning",
                 confidence=conf,
-                metadata={}
+                metadata={},
             )
             assert output.confidence == conf
 

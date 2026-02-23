@@ -24,11 +24,8 @@ Comprehensive guide to writing, running, and maintaining tests in the Temper AI.
 ### Run All Tests
 
 ```bash
-# Activate virtual environment
-source venv/bin/activate
-
 # Run all tests
-pytest
+uv run pytest
 
 # Run with verbose output
 pytest -v
@@ -184,13 +181,8 @@ class TestLLMCache:            # Test class for LLMCache
 Before running tests, ensure your environment is set up:
 
 ```bash
-# Activate virtual environment
-source venv/bin/activate  # Linux/macOS
-# or
-venv\Scripts\activate  # Windows
-
 # Install dev dependencies (if not already installed)
-pip install -e '.[dev]'
+uv sync --dev
 ```
 
 ### Basic Commands
@@ -238,10 +230,7 @@ xdg-open htmlcov/index.html  # Linux
 
 ```bash
 # Install dev dependencies (includes pytest-xdist)
-pip install -e '.[dev]'
-
-# Or install pytest-xdist separately
-pip install pytest-xdist
+uv sync --dev
 ```
 
 **Run tests in parallel:**
@@ -805,8 +794,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+          uv sync --dev
 
       - name: Run tests
         run: |
@@ -853,7 +841,7 @@ pytest --timeout=60 tests/
 **Solution:**
 ```bash
 # Install in development mode
-pip install -e .
+uv sync
 ```
 
 ### Issue: Fixture Not Found

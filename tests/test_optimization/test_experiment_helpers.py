@@ -1,6 +1,6 @@
 """Tests for experiment tracking helpers."""
 
-from unittest.mock import MagicMock, call
+from unittest.mock import MagicMock
 
 from temper_ai.optimization._experiment_helpers import (
     METRIC_OPTIMIZATION_SCORE,
@@ -128,9 +128,7 @@ class TestFinalizeExperiment:
 
         assert results["recommended_winner"] == "run-1"
         service.get_experiment_results.assert_called_once_with("exp-1")
-        service.stop_experiment.assert_called_once_with(
-            "exp-1", winner="run-1"
-        )
+        service.stop_experiment.assert_called_once_with("exp-1", winner="run-1")
 
     def test_no_winner(self):
         service = MagicMock()
@@ -140,7 +138,5 @@ class TestFinalizeExperiment:
 
         results = finalize_experiment(service, "exp-2")
 
-        service.stop_experiment.assert_called_once_with(
-            "exp-2", winner=None
-        )
+        service.stop_experiment.assert_called_once_with("exp-2", winner=None)
         assert results["confidence"] == 0.3

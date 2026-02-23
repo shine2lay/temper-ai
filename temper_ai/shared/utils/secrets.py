@@ -12,10 +12,11 @@ Supports:
 - HashiCorp Vault (${vault:path}) - future
 - In-memory obfuscation of credentials (prevents accidental logging)
 """
+
 import os
 import re
 import warnings
-from typing import Any, Optional, Tuple
+from typing import Any
 
 from cryptography.fernet import Fernet
 
@@ -24,14 +25,14 @@ from temper_ai.shared.utils.constants import ERROR_SECRET_PREFIX
 
 __all__ = [
     # Secret resolution
-    'SecretReference',
-    'resolve_secret',
-    'detect_secret_patterns',
+    "SecretReference",
+    "resolve_secret",
+    "detect_secret_patterns",
     # URL masking
-    'mask_url_password',
+    "mask_url_password",
     # Credential obfuscation
-    'ObfuscatedCredential',
-    'SecureCredential',  # Deprecated alias for ObfuscatedCredential
+    "ObfuscatedCredential",
+    "SecureCredential",  # Deprecated alias for ObfuscatedCredential
 ]
 
 
@@ -56,8 +57,8 @@ def mask_url_password(url: str) -> str:
     """
     # Match scheme://[user][:password]@host patterns
     return re.sub(
-        r'(://[^:@]*:)[^@]+(@)',
-        r'\1***\2',
+        r"(://[^:@]*:)[^@]+(@)",
+        r"\1***\2",
         url,
     )
 
@@ -84,9 +85,9 @@ class SecretReference:
 
     # Regex patterns for each provider
     PATTERNS = {
-        'env': re.compile(r'\$\{env:([A-Z_][A-Z0-9_]*)\}'),
-        'vault': re.compile(r'\$\{vault:([a-z0-9/_-]+)\}'),
-        'aws': re.compile(r'\$\{aws:([a-z0-9/_-]+)\}'),
+        "env": re.compile(r"\$\{env:([A-Z_][A-Z0-9_]*)\}"),
+        "vault": re.compile(r"\$\{vault:([a-z0-9/_-]+)\}"),
+        "aws": re.compile(r"\$\{aws:([a-z0-9/_-]+)\}"),
     }
 
     @classmethod
@@ -149,16 +150,16 @@ class SecretReference:
             ValueError: If secret not found
             NotImplementedError: If provider not yet implemented
         """
-        if provider == 'env':
+        if provider == "env":
             return cls._resolve_env(key)
-        elif provider == 'vault':
+        elif provider == "vault":
             raise NotImplementedError(
-                "HashiCorp Vault provider not yet implemented. "
+                "HashiCorp Vault provider is planned for v1.1. "
                 "Use ${env:VAR_NAME} for environment variables."
             )
-        elif provider == 'aws':
+        elif provider == "aws":
             raise NotImplementedError(
-                "AWS Secrets Manager provider not yet implemented. "
+                "AWS Secrets Manager provider is planned for v1.1. "
                 "Use ${env:VAR_NAME} for environment variables."
             )
         else:
@@ -214,7 +215,7 @@ class SecretReference:
             )
 
         # Check for null bytes (security risk)
-        if '\x00' in value:
+        if "\x00" in value:
             raise ValueError(f"{ERROR_SECRET_PREFIX}{name}' contains null bytes")
 
 
@@ -277,7 +278,7 @@ class ObfuscatedCredential:
         self._cipher = Fernet(self._key)
 
         # Encrypt and store
-        self._encrypted = self._cipher.encrypt(value.encode('utf-8'))
+        self._encrypted = self._cipher.encrypt(value.encode("utf-8"))
 
         # Track access for audit trail
         self._access_count = 0
@@ -290,7 +291,7 @@ class ObfuscatedCredential:
             Plaintext credential value
         """
         self._access_count += 1
-        return self._cipher.decrypt(self._encrypted).decode('utf-8')
+        return self._cipher.decrypt(self._encrypted).decode("utf-8")
 
     def __repr__(self) -> str:
         """
@@ -360,7 +361,7 @@ class SecureCredential(ObfuscatedCredential):
                 "OBFUSCATION (prevents accidental logging), not cryptographic security. "
                 "It does NOT protect against memory attacks or malicious code.",
                 DeprecationWarning,
-                stacklevel=2
+                stacklevel=2,
             )
             SecureCredential._warning_shown = True
 
@@ -402,29 +403,29 @@ def resolve_secret(value: Any) -> Any:
         return value
 
 
-def detect_secret_patterns(text: str) -> Tuple[bool, Optional[str]]:
+def detect_secret_patterns(text: str) -> tuple[bool, str | None]:
     """
     Detect if text contains patterns that look like secrets.
 
     Used to prevent accidental secret leakage in logs, configs, etc.
 
     **SECURITY:** Uses bounded quantifiers to prevent ReDoS (Regular Expression
-    Denial of Service) attacks. Input is limited to 10KB to prevent resource exhaustion.
+    Denial of Service) attacks. Input is limited to 100KB to prevent resource exhaustion.
 
     ReDoS Protection:
     - All patterns use bounded quantifiers ({min,max}) instead of unbounded (+, *)
-    - Input length limited to 10KB maximum
+    - Input length limited to 100KB maximum
     - Patterns complete in <10ms even with malicious input
     - Previous vulnerability: crafted input caused 30+ seconds CPU time
 
     Args:
-        text: Text to scan (max 10KB)
+        text: Text to scan (max 100KB)
 
     Returns:
         (is_secret, confidence_level) where confidence is "high", "medium", or "low"
 
     Raises:
-        ValueError: If input exceeds 10KB
+        ValueError: If input exceeds 100KB
 
     Example:
         >>> detect_secret_patterns("sk-proj-abc123def456")
@@ -452,9 +453,9 @@ def detect_secret_patterns(text: str) -> Tuple[bool, Optional[str]]:
     # Medium-confidence patterns (generic secret-like strings)
     # These are heuristic patterns not in the central registry
     medium_confidence_patterns = [
-        r'[a-f0-9]{32}',  # MD5-like hashes
-        r'[a-f0-9]{40}',  # SHA1-like hashes
-        r'[A-Za-z0-9+/]{40,100}={0,2}',  # Base64-encoded strings
+        r"[a-f0-9]{32}",  # MD5-like hashes
+        r"[a-f0-9]{40}",  # SHA1-like hashes
+        r"[A-Za-z0-9+/]{40,100}={0,2}",  # Base64-encoded strings
     ]
 
     for pattern in medium_confidence_patterns:

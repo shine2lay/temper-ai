@@ -9,14 +9,12 @@ import threading
 import uuid
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from sqlmodel import select
 
-from temper_ai.shared.constants.limits import THRESHOLD_LARGE_COUNT
-from temper_ai.storage.database import get_session
 from temper_ai.experimentation.constants import DEFAULT_CREDIBLE_LEVEL
 from temper_ai.experimentation.models import (
     AssignmentStrategyType,
@@ -29,7 +27,9 @@ from temper_ai.experimentation.validators import (
     validate_experiment_name,
     validate_variant_list,
 )
+from temper_ai.shared.constants.limits import THRESHOLD_LARGE_COUNT
 from temper_ai.shared.utils.logging import get_logger
+from temper_ai.storage.database import get_session
 
 logger = get_logger(__name__)
 
@@ -40,22 +40,22 @@ class ExperimentParams:
 
     name: str
     description: str
-    variants: List[Dict[str, Any]]
+    variants: list[dict[str, Any]]
     assignment_strategy: str = "random"
     primary_metric: str = "duration_seconds"
-    secondary_metrics: Optional[List[str]] = None
-    guardrail_metrics: Optional[List[Dict[str, Any]]] = None
+    secondary_metrics: list[str] | None = None
+    guardrail_metrics: list[dict[str, Any]] | None = None
     confidence_level: float = DEFAULT_CREDIBLE_LEVEL
     min_sample_size_per_variant: int = THRESHOLD_LARGE_COUNT
-    extra_kwargs: Dict[str, Any] = field(default_factory=dict)
+    extra_kwargs: dict[str, Any] = field(default_factory=dict)
 
 
 def _build_experiment_model(
     experiment_id: str,
     validated_name: str,
     params: ExperimentParams,
-    traffic_allocation: Dict[str, float],
-    kwargs: Dict[str, Any],
+    traffic_allocation: dict[str, float],
+    kwargs: dict[str, Any],
 ) -> Experiment:
     """Build an Experiment model from validated params."""
     return Experiment(
@@ -101,7 +101,7 @@ class ExperimentCRUD:
         """
         Add to cache with LRU eviction when max size exceeded.
 
-        Thread-safe: Must be called with _cache_lock held.
+        Thread-safe: acquires _cache_lock internally.
         """
         with self._cache_lock:
             self._experiment_cache[key] = value
@@ -132,8 +132,8 @@ class ExperimentCRUD:
                     "input_name": params.name[:100],
                     "input_length": len(params.name),
                     "user": params.extra_kwargs.get("created_by"),
-                    "error": str(e)
-                }
+                    "error": str(e),
+                },
             )
             raise
 
@@ -143,7 +143,9 @@ class ExperimentCRUD:
 
         return name
 
-    def _calculate_traffic_allocation(self, variants: List[Dict[str, Any]]) -> Dict[str, float]:
+    def _calculate_traffic_allocation(
+        self, variants: list[dict[str, Any]]
+    ) -> dict[str, float]:
         """Calculate traffic allocation for variants.
 
         Args:
@@ -156,8 +158,7 @@ class ExperimentCRUD:
             ValueError: If total traffic exceeds 1.0.
         """
         traffic_allocation = {
-            v["name"]: v.get("traffic", 1.0 / len(variants))
-            for v in variants
+            v["name"]: v.get("traffic", 1.0 / len(variants)) for v in variants
         }
 
         total_traffic = sum(traffic_allocation.values())
@@ -169,9 +170,9 @@ class ExperimentCRUD:
     def _create_variant_models(
         self,
         experiment_id: str,
-        variants: List[Dict[str, Any]],
-        traffic_allocation: Dict[str, float],
-    ) -> List[Variant]:
+        variants: list[dict[str, Any]],
+        traffic_allocation: dict[str, float],
+    ) -> list[Variant]:
         """Create variant models from configurations.
 
         Args:
@@ -203,9 +204,9 @@ class ExperimentCRUD:
     def _persist_experiment(
         self,
         experiment: Experiment,
-        variant_models: List[Variant],
+        variant_models: list[Variant],
         validated_name: str,
-        kwargs: Dict[str, Any],
+        kwargs: dict[str, Any],
     ) -> None:
         """Save experiment and variants to database.
 
@@ -232,8 +233,8 @@ class ExperimentCRUD:
                     "security_event": "DATABASE_CONSTRAINT_VIOLATION",
                     "experiment_name": validated_name,
                     "user": kwargs.get("created_by"),
-                    "error_type": type(e).__name__
-                }
+                    "error_type": type(e).__name__,
+                },
             )
             raise ValueError(
                 "Experiment creation failed. "
@@ -266,7 +267,11 @@ class ExperimentCRUD:
         # Create and persist
         experiment_id = str(uuid.uuid4())
         experiment = _build_experiment_model(
-            experiment_id, validated_name, params, traffic_allocation, params.extra_kwargs
+            experiment_id,
+            validated_name,
+            params,
+            traffic_allocation,
+            params.extra_kwargs,
         )
         variant_models = self._create_variant_models(
             experiment_id, validated_variants, traffic_allocation
@@ -279,10 +284,8 @@ class ExperimentCRUD:
         return experiment_id
 
     def get_experiment(
-        self,
-        experiment_id: str,
-        use_cache: bool = True
-    ) -> Optional[Experiment]:
+        self, experiment_id: str, use_cache: bool = True
+    ) -> Experiment | None:
         """
         Get experiment by ID with eager-loaded relationships.
 
@@ -323,9 +326,8 @@ class ExperimentCRUD:
             return experiment
 
     def list_experiments(
-        self,
-        status: Optional[ExperimentStatus] = None
-    ) -> List[Experiment]:
+        self, status: ExperimentStatus | None = None
+    ) -> list[Experiment]:
         """
         List experiments, optionally filtered by status.
 

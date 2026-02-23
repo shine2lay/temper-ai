@@ -4,11 +4,12 @@ Executes agents one after another in the order specified in the stage config.
 Each agent's output is accumulated and passed to subsequent agents, enabling
 agent-to-agent context sharing within a stage.
 """
+
 import logging
 import threading
 import uuid
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any
 
 from temper_ai.shared.constants.probabilities import PROB_VERY_HIGH
 from temper_ai.shared.constants.sizes import UUID_HEX_SHORT_LENGTH
@@ -22,20 +23,19 @@ logger = logging.getLogger(__name__)
 @dataclass
 class StageOutputData:
     """Bundles stage output parameters for _store_stage_output."""
+
     final_output: str
     synthesis_result: Any
-    agent_outputs: Dict[str, Any]
-    agent_statuses: Dict[str, Any]
-    agent_metrics: Dict[str, Any]
+    agent_outputs: dict[str, Any]
+    agent_statuses: dict[str, Any]
+    agent_metrics: dict[str, Any]
     agents: list
 
 
 from temper_ai.agent.utils.agent_factory import AgentFactory
-from temper_ai.shared.core.protocols import ConfigLoaderProtocol, DomainToolRegistryProtocol
-from temper_ai.stage.executors._sequential_helpers import (
-    AgentExecutionContext,
-    execute_agent,
-    run_all_agents,
+from temper_ai.shared.core.protocols import (
+    ConfigLoaderProtocol,
+    DomainToolRegistryProtocol,
 )
 from temper_ai.stage._config_accessors import (
     get_collaboration,
@@ -44,11 +44,16 @@ from temper_ai.stage._config_accessors import (
     get_stage_agents,
     stage_config_to_dict,
 )
+from temper_ai.stage.executors._sequential_helpers import (
+    AgentExecutionContext,
+    execute_agent,
+    run_all_agents,
+)
 from temper_ai.stage.executors.base import StageExecutor
 from temper_ai.stage.executors.state_keys import StateKeys
 
 
-def _concatenate_agent_outputs(agent_outputs: Dict[str, Any]) -> str:
+def _concatenate_agent_outputs(agent_outputs: dict[str, Any]) -> str:
     """Concatenate all non-empty agent outputs."""
     parts = [
         data.get(StateKeys.OUTPUT, "")
@@ -65,7 +70,7 @@ class SequentialStageExecutor(StageExecutor):
     including outputs from previous agents/stages.
     """
 
-    def __init__(self, tool_executor: Optional[Any] = None) -> None:
+    def __init__(self, tool_executor: Any | None = None) -> None:
         """Initialize sequential executor with an empty agent cache.
 
         Args:
@@ -75,7 +80,7 @@ class SequentialStageExecutor(StageExecutor):
         # Per-workflow agent cache: agent_name -> agent instance.
         # Avoids recreating agents for every stage invocation when the
         # same agent appears in multiple stages of the same workflow.
-        self._agent_cache: Dict[str, Any] = {}
+        self._agent_cache: dict[str, Any] = {}
         # H-13: Shared shutdown event for interruptible retry waits
         self.shutdown_event = threading.Event()
         self.tool_executor = tool_executor
@@ -88,8 +93,12 @@ class SequentialStageExecutor(StageExecutor):
         return get_stage_agents(stage_config), get_error_handling(stage_config)
 
     def _run_agents_tracked(
-        self, agents: list, stage_name: str, state: Dict[str, Any],
-        config_loader: ConfigLoaderProtocol, error_handling: Any,
+        self,
+        agents: list,
+        stage_name: str,
+        state: dict[str, Any],
+        config_loader: ConfigLoaderProtocol,
+        error_handling: Any,
         stage_config: Any = None,
     ) -> tuple:
         """Run all agents with optional tracker context."""
@@ -98,49 +107,74 @@ class SequentialStageExecutor(StageExecutor):
         if tracker:
             stage_config_dict = state.get("_stage_config_dict", {})
             from temper_ai.stage.executors._base_helpers import prepare_tracking_input
+
             tracking_input = prepare_tracking_input(
                 state.get(StateKeys.STAGE_OUTPUTS, {}),
             )
             with tracker.track_stage(
-                stage_name=stage_name, stage_config=stage_config_dict,
-                workflow_id=workflow_id, input_data=tracking_input,
+                stage_name=stage_name,
+                stage_config=stage_config_dict,
+                workflow_id=workflow_id,
+                input_data=tracking_input,
             ) as stage_id:
                 # Store stage_id for dialogue synthesis tracking
                 state[StateKeys.CURRENT_STAGE_ID] = stage_id
                 ctx = AgentExecutionContext(
-                    executor=self, stage_id=stage_id, stage_name=stage_name,
-                    workflow_id=workflow_id, state=state, tracker=tracker,
-                    config_loader=config_loader, agent_factory_cls=AgentFactory,
+                    executor=self,
+                    stage_id=stage_id,
+                    stage_name=stage_name,
+                    workflow_id=workflow_id,
+                    state=state,
+                    tracker=tracker,
+                    config_loader=config_loader,
+                    agent_factory_cls=AgentFactory,
                     context_provider=self.context_provider,
                     stage_config=stage_config,
                 )
                 return run_all_agents(
-                    ctx=ctx, agents=agents, error_handling=error_handling,
+                    ctx=ctx,
+                    agents=agents,
+                    error_handling=error_handling,
                 )
         stage_id = f"stage-{uuid.uuid4().hex[:UUID_HEX_SHORT_LENGTH]}"
         ctx = AgentExecutionContext(
-            executor=self, stage_id=stage_id, stage_name=stage_name,
-            workflow_id=workflow_id, state=state, tracker=None,
-            config_loader=config_loader, agent_factory_cls=AgentFactory,
+            executor=self,
+            stage_id=stage_id,
+            stage_name=stage_name,
+            workflow_id=workflow_id,
+            state=state,
+            tracker=None,
+            config_loader=config_loader,
+            agent_factory_cls=AgentFactory,
             context_provider=self.context_provider,
             stage_config=stage_config,
         )
         return run_all_agents(
-            ctx=ctx, agents=agents, error_handling=error_handling,
+            ctx=ctx,
+            agents=agents,
+            error_handling=error_handling,
         )
 
     def _resolve_final_output(
-        self, agent_outputs: Dict[str, Any], stage_config: Any,
-        stage_name: str, state: Dict[str, Any],
-        config_loader: ConfigLoaderProtocol, agents: list,
+        self,
+        agent_outputs: dict[str, Any],
+        stage_config: Any,
+        stage_name: str,
+        state: dict[str, Any],
+        config_loader: ConfigLoaderProtocol,
+        agents: list,
     ) -> tuple[str, Any]:
         """Determine final output via synthesis or last agent fallback."""
         collaboration_config = get_collaboration(stage_config)
 
         if collaboration_config and len(agent_outputs) > 1:
             result = self._try_synthesis(
-                agent_outputs, stage_config, stage_name, state,
-                config_loader, agents,
+                agent_outputs,
+                stage_config,
+                stage_name,
+                state,
+                config_loader,
+                agents,
             )
             if result is not None:
                 return result
@@ -148,9 +182,13 @@ class SequentialStageExecutor(StageExecutor):
         return _concatenate_agent_outputs(agent_outputs), None
 
     def _try_synthesis(
-        self, agent_outputs: Dict[str, Any], stage_config: Any,
-        stage_name: str, state: Dict[str, Any],
-        config_loader: ConfigLoaderProtocol, agents: list,
+        self,
+        agent_outputs: dict[str, Any],
+        stage_config: Any,
+        stage_name: str,
+        state: dict[str, Any],
+        config_loader: ConfigLoaderProtocol,
+        agents: list,
     ) -> "tuple[str, Any] | None":
         """Attempt collaboration synthesis, returning None on failure."""
         try:
@@ -167,27 +205,36 @@ class SequentialStageExecutor(StageExecutor):
                 for name, data in agent_outputs.items()
             ]
             result = self._run_synthesis(
-                agent_output_list, stage_config, stage_name,
-                state=state, config_loader=config_loader, agents=agents,
+                agent_output_list,
+                stage_config,
+                stage_name,
+                state=state,
+                config_loader=config_loader,
+                agents=agents,
             )
             logger.info(
                 "Sequential stage %s used collaboration synthesis: "
-                "%s (confidence=%.2f)", stage_name, result.method, result.confidence,
+                "%s (confidence=%.2f)",
+                stage_name,
+                result.method,
+                result.confidence,
             )
             return result.decision, result
         except (RuntimeError, ConfigValidationError, ValueError, KeyError) as e:
             logger.warning(
                 "Collaboration synthesis failed for sequential stage %s: %s. "
-                "Falling back to last agent output.", stage_name, e,
+                "Falling back to last agent output.",
+                stage_name,
+                e,
             )
             return None
 
     @staticmethod
     def _store_stage_output(
-        state: Dict[str, Any],
+        state: dict[str, Any],
         stage_name: str,
         data: StageOutputData,
-        structured: Optional[Dict[str, Any]] = None,
+        structured: dict[str, Any] | None = None,
     ) -> None:
         """Build and store stage output in two-compartment format.
 
@@ -209,7 +256,7 @@ class SequentialStageExecutor(StageExecutor):
             state[StateKeys.STAGE_OUTPUTS] = {}
 
         # Build the raw dict (full execution data)
-        raw_dict: Dict[str, Any] = {
+        raw_dict: dict[str, Any] = {
             StateKeys.OUTPUT: data.final_output,
             StateKeys.AGENT_OUTPUTS: data.agent_outputs,
             StateKeys.AGENT_STATUSES: data.agent_statuses,
@@ -224,8 +271,10 @@ class SequentialStageExecutor(StageExecutor):
             }
 
         failed_count = sum(
-            1 for s in data.agent_statuses.values()
-            if (isinstance(s, dict) and s.get(StateKeys.STATUS) == "failed") or s == "failed"
+            1
+            for s in data.agent_statuses.values()
+            if (isinstance(s, dict) and s.get(StateKeys.STATUS) == "failed")
+            or s == "failed"
         )
         total_count = len(data.agents)
         if failed_count == total_count and total_count > 0:
@@ -236,7 +285,7 @@ class SequentialStageExecutor(StageExecutor):
             raw_dict[StateKeys.STAGE_STATUS] = "completed"
 
         # Two-compartment format with top-level compat aliases
-        stage_entry: Dict[str, Any] = {
+        stage_entry: dict[str, Any] = {
             "structured": structured or {},
             "raw": dict(raw_dict),
             **raw_dict,  # Top-level compat for condition expressions
@@ -254,15 +303,19 @@ class SequentialStageExecutor(StageExecutor):
         self,
         stage_name: str,
         stage_config: Any,
-        state: Dict[str, Any],
+        state: dict[str, Any],
         config_loader: ConfigLoaderProtocol,
-        tool_registry: Optional[DomainToolRegistryProtocol] = None,
-    ) -> Dict[str, Any]:
+        tool_registry: DomainToolRegistryProtocol | None = None,
+    ) -> dict[str, Any]:
         """Execute stage with sequential agent execution. Returns updated state."""
         convergence_cfg = self._get_convergence_config(stage_config)
         if convergence_cfg and convergence_cfg.enabled:
             return self._execute_with_convergence(
-                stage_name, stage_config, state, config_loader, convergence_cfg,
+                stage_name,
+                stage_config,
+                state,
+                config_loader,
+                convergence_cfg,
             )
         return self._execute_once(stage_name, stage_config, state, config_loader)
 
@@ -270,9 +323,9 @@ class SequentialStageExecutor(StageExecutor):
         self,
         stage_name: str,
         stage_config: Any,
-        state: Dict[str, Any],
+        state: dict[str, Any],
         config_loader: ConfigLoaderProtocol,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Run all agents once and store the stage output. Returns updated state."""
         tracker = state.get(StateKeys.TRACKER)
 
@@ -280,13 +333,22 @@ class SequentialStageExecutor(StageExecutor):
 
         state["_stage_config_dict"] = stage_config_to_dict(stage_config)
         agent_outputs, agent_statuses, agent_metrics = self._run_agents_tracked(
-            agents, stage_name, state, config_loader, error_handling,
+            agents,
+            stage_name,
+            state,
+            config_loader,
+            error_handling,
             stage_config=stage_config,
         )
         state.pop("_stage_config_dict", None)
 
         final_output, synthesis_result = self._resolve_final_output(
-            agent_outputs, stage_config, stage_name, state, config_loader, agents,
+            agent_outputs,
+            stage_config,
+            stage_name,
+            state,
+            config_loader,
+            agents,
         )
 
         output_data = StageOutputData(
@@ -298,8 +360,18 @@ class SequentialStageExecutor(StageExecutor):
             agents=agents,
         )
         structured = self._extract_structured_fields(
-            stage_config, final_output, stage_name,
+            stage_config,
+            final_output,
+            stage_name,
         )
+        # Merge script agent ::output directives into structured data
+        # (script agents emit ::output key=value which are ground-truth)
+        for agent_data in agent_outputs.values():
+            script_outputs = agent_data.get("script_outputs")
+            if script_outputs:
+                for key, val in script_outputs.items():
+                    if val and not structured.get(key):
+                        structured[key] = val
         self._store_stage_output(state, stage_name, output_data, structured=structured)
 
         self._persist_stage_output(state, stage_name, tracker)
@@ -308,7 +380,9 @@ class SequentialStageExecutor(StageExecutor):
 
     @staticmethod
     def _persist_stage_output(
-        state: Dict[str, Any], stage_name: str, tracker: Any,
+        state: dict[str, Any],
+        stage_name: str,
+        tracker: Any,
     ) -> None:
         """Persist stage output to DB for dashboard visibility."""
         from temper_ai.shared.core.protocols import TrackerProtocol
@@ -331,32 +405,36 @@ class SequentialStageExecutor(StageExecutor):
         self,
         stage_name: str,
         stage_config: Any,
-        state: Dict[str, Any],
+        state: dict[str, Any],
         config_loader: ConfigLoaderProtocol,
         convergence_cfg: Any,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Re-execute the stage until outputs converge or max iterations."""
         from temper_ai.stage.convergence import StageConvergenceDetector
 
         detector = StageConvergenceDetector(convergence_cfg)
-        previous_output: Optional[str] = None
+        previous_output: str | None = None
 
         for iteration in range(convergence_cfg.max_iterations):
             state = self._execute_once(
-                stage_name, stage_config, state, config_loader,
+                stage_name,
+                stage_config,
+                state,
+                config_loader,
             )
             current_output = (
-                state
-                .get(StateKeys.STAGE_OUTPUTS, {})
+                state.get(StateKeys.STAGE_OUTPUTS, {})
                 .get(stage_name, {})
                 .get(StateKeys.OUTPUT, "")
             )
             if previous_output is not None and detector.has_converged(
-                previous_output, current_output,
+                previous_output,
+                current_output,
             ):
                 logger.info(
                     "Stage %s converged after %d iterations",
-                    stage_name, iteration + 1,
+                    stage_name,
+                    iteration + 1,
                 )
                 break
             previous_output = current_output
@@ -378,8 +456,8 @@ class SequentialStageExecutor(StageExecutor):
         self,
         ctx: AgentExecutionContext,
         agent_ref: Any,
-        prior_agent_outputs: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        prior_agent_outputs: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Execute a single agent and return structured result.
 
         Args:

@@ -34,7 +34,9 @@ postgresql:
   enabled: true
   auth:
     username: temper_ai
-    password: changeme
+    # REQUIRED: Override before deployment with --set postgresql.auth.password=<secret>
+    # Using the default value in production is a security risk.
+    password: ""
     database: temper_ai
 
 worker:

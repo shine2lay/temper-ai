@@ -2,12 +2,11 @@
 
 import uuid
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
-from typing import Dict, List
+from datetime import UTC, datetime, timedelta
 
 from sqlmodel import select
 
-from temper_ai.learning.miners.base import BaseMiner, DEFAULT_LOOKBACK_HOURS
+from temper_ai.learning.miners.base import DEFAULT_LOOKBACK_HOURS, BaseMiner
 from temper_ai.learning.models import PATTERN_MODEL_EFFECTIVENESS, LearnedPattern
 from temper_ai.storage.database import get_session
 from temper_ai.storage.database.models import LLMCall
@@ -27,10 +26,12 @@ class ModelEffectivenessMiner(BaseMiner):
         """Return pattern type identifier."""
         return PATTERN_MODEL_EFFECTIVENESS
 
-    def mine(self, lookback_hours: int = DEFAULT_LOOKBACK_HOURS) -> List[LearnedPattern]:
+    def mine(
+        self, lookback_hours: int = DEFAULT_LOOKBACK_HOURS
+    ) -> list[LearnedPattern]:
         """Mine LLM call data for model effectiveness patterns."""
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=lookback_hours)
-        patterns: List[LearnedPattern] = []
+        cutoff = datetime.now(UTC) - timedelta(hours=lookback_hours)
+        patterns: list[LearnedPattern] = []
 
         with get_session() as session:
             stmt = select(LLMCall).where(LLMCall.start_time >= cutoff)
@@ -48,9 +49,9 @@ class ModelEffectivenessMiner(BaseMiner):
         return patterns
 
 
-def _aggregate_model_stats(calls: list) -> Dict[str, dict]:
+def _aggregate_model_stats(calls: list) -> dict[str, dict]:
     """Group LLM calls by model and compute error/cost stats."""
-    stats: Dict[str, dict] = defaultdict(
+    stats: dict[str, dict] = defaultdict(
         lambda: {"total": 0, "errors": 0, "total_cost": 0.0, "total_tokens": 0}
     )
     for call in calls:
@@ -65,33 +66,44 @@ def _aggregate_model_stats(calls: list) -> Dict[str, dict]:
     return dict(stats)
 
 
-def _check_model(model: str, stats: dict) -> List[LearnedPattern]:
+def _check_model(model: str, stats: dict) -> list[LearnedPattern]:
     """Check a model's stats for patterns."""
-    patterns: List[LearnedPattern] = []
+    patterns: list[LearnedPattern] = []
     error_rate = stats["errors"] / stats["total"]
 
     if error_rate > HIGH_ERROR_RATE:
-        patterns.append(LearnedPattern(
-            id=uuid.uuid4().hex,
-            pattern_type=PATTERN_MODEL_EFFECTIVENESS,
-            title=f"High error rate: {model}",
-            description=f"Model '{model}' has {error_rate:.0%} error rate over {stats['total']} calls",
-            evidence={"error_rate": error_rate, "total_calls": stats["total"], "errors": stats["errors"]},
-            confidence=HIGH_CONFIDENCE,
-            impact_score=error_rate,
-            recommendation=f"Consider switching from '{model}' to a more reliable model",
-        ))
+        patterns.append(
+            LearnedPattern(
+                id=uuid.uuid4().hex,
+                pattern_type=PATTERN_MODEL_EFFECTIVENESS,
+                title=f"High error rate: {model}",
+                description=f"Model '{model}' has {error_rate:.0%} error rate over {stats['total']} calls",
+                evidence={
+                    "error_rate": error_rate,
+                    "total_calls": stats["total"],
+                    "errors": stats["errors"],
+                },
+                confidence=HIGH_CONFIDENCE,
+                impact_score=error_rate,
+                recommendation=f"Consider switching from '{model}' to a more reliable model",
+            )
+        )
 
     if stats["total_tokens"] > 0 and stats["total_cost"] > 0:
         cost_per_token = stats["total_cost"] / stats["total_tokens"]
-        patterns.append(LearnedPattern(
-            id=uuid.uuid4().hex,
-            pattern_type=PATTERN_MODEL_EFFECTIVENESS,
-            title=f"Cost profile: {model}",
-            description=f"Model '{model}': ${stats['total_cost']:.4f} over {stats['total_tokens']} tokens",
-            evidence={"cost_per_token": cost_per_token, "total_cost": stats["total_cost"]},
-            confidence=MEDIUM_CONFIDENCE,
-            impact_score=COST_PROFILE_IMPACT,
-        ))
+        patterns.append(
+            LearnedPattern(
+                id=uuid.uuid4().hex,
+                pattern_type=PATTERN_MODEL_EFFECTIVENESS,
+                title=f"Cost profile: {model}",
+                description=f"Model '{model}': ${stats['total_cost']:.4f} over {stats['total_tokens']} tokens",
+                evidence={
+                    "cost_per_token": cost_per_token,
+                    "total_cost": stats["total_cost"],
+                },
+                confidence=MEDIUM_CONFIDENCE,
+                impact_score=COST_PROFILE_IMPACT,
+            )
+        )
 
     return patterns

@@ -2,6 +2,7 @@
 
 Tests the high-level API for manual rollback operations with safety checks.
 """
+
 import os
 import tempfile
 from datetime import UTC, datetime, timedelta
@@ -28,7 +29,7 @@ class TestRollbackAPI:
     @pytest.fixture
     def temp_file(self):
         """Create temporary file for testing."""
-        with tempfile.NamedTemporaryFile(mode='w', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
             f.write("original content")
             temp_path = f.name
 
@@ -42,11 +43,11 @@ class TestRollbackAPI:
         # Create test snapshots
         snap1 = rollback_manager.create_snapshot(
             action={"tool": "write_file", "path": "/tmp/test1.txt"},
-            context={"workflow_id": "wf-1", "agent_id": "agent-1"}
+            context={"workflow_id": "wf-1", "agent_id": "agent-1"},
         )
         snap2 = rollback_manager.create_snapshot(
             action={"tool": "write_file", "path": "/tmp/test2.txt"},
-            context={"workflow_id": "wf-2", "agent_id": "agent-2"}
+            context={"workflow_id": "wf-2", "agent_id": "agent-2"},
         )
 
         snapshots = api.list_snapshots()
@@ -58,12 +59,10 @@ class TestRollbackAPI:
     def test_list_snapshots_filter_by_workflow(self, api, rollback_manager):
         """Test filtering snapshots by workflow_id."""
         snap1 = rollback_manager.create_snapshot(
-            action={"tool": "write_file"},
-            context={"workflow_id": "wf-1"}
+            action={"tool": "write_file"}, context={"workflow_id": "wf-1"}
         )
         snap2 = rollback_manager.create_snapshot(
-            action={"tool": "write_file"},
-            context={"workflow_id": "wf-2"}
+            action={"tool": "write_file"}, context={"workflow_id": "wf-2"}
         )
 
         snapshots = api.list_snapshots(workflow_id="wf-1")
@@ -74,12 +73,10 @@ class TestRollbackAPI:
     def test_list_snapshots_filter_by_agent(self, api, rollback_manager):
         """Test filtering snapshots by agent_id."""
         snap1 = rollback_manager.create_snapshot(
-            action={"tool": "write_file"},
-            context={"agent_id": "agent-1"}
+            action={"tool": "write_file"}, context={"agent_id": "agent-1"}
         )
         snap2 = rollback_manager.create_snapshot(
-            action={"tool": "write_file"},
-            context={"agent_id": "agent-2"}
+            action={"tool": "write_file"}, context={"agent_id": "agent-2"}
         )
 
         snapshots = api.list_snapshots(agent_id="agent-1")
@@ -91,16 +88,14 @@ class TestRollbackAPI:
         """Test filtering snapshots by creation time."""
         # Create snapshot in the past
         snap1 = rollback_manager.create_snapshot(
-            action={"tool": "write_file"},
-            context={}
+            action={"tool": "write_file"}, context={}
         )
         # Manually adjust creation time
         snap1.created_at = datetime.now(UTC) - timedelta(hours=48)
 
         # Create recent snapshot
         snap2 = rollback_manager.create_snapshot(
-            action={"tool": "write_file"},
-            context={}
+            action={"tool": "write_file"}, context={}
         )
 
         # Filter for last 24 hours
@@ -114,7 +109,7 @@ class TestRollbackAPI:
         """Test getting detailed snapshot information."""
         snapshot = rollback_manager.create_snapshot(
             action={"tool": "write_file", "path": temp_file},
-            context={"workflow_id": "wf-1"}
+            context={"workflow_id": "wf-1"},
         )
 
         details = api.get_snapshot_details(snapshot.id)
@@ -134,8 +129,7 @@ class TestRollbackAPI:
     def test_validate_rollback_safety_success(self, api, rollback_manager, temp_file):
         """Test safety validation for valid snapshot."""
         snapshot = rollback_manager.create_snapshot(
-            action={"tool": "write_file", "path": temp_file},
-            context={}
+            action={"tool": "write_file", "path": temp_file}, context={}
         )
 
         is_safe, warnings = api.validate_rollback_safety(snapshot.id)
@@ -150,18 +144,20 @@ class TestRollbackAPI:
         assert not is_safe
         assert "Snapshot not found" in warnings
 
-    def test_validate_rollback_safety_file_modified(self, api, rollback_manager, temp_file):
+    def test_validate_rollback_safety_file_modified(
+        self, api, rollback_manager, temp_file
+    ):
         """Test safety validation detects file modifications."""
         # Create snapshot
         snapshot = rollback_manager.create_snapshot(
-            action={"tool": "write_file", "path": temp_file},
-            context={}
+            action={"tool": "write_file", "path": temp_file}, context={}
         )
 
         # Modify file after snapshot
         import time
+
         time.sleep(0.1)  # Ensure timestamp difference
-        with open(temp_file, 'w') as f:
+        with open(temp_file, "w") as f:
             f.write("modified content")
 
         is_safe, warnings = api.validate_rollback_safety(snapshot.id)
@@ -173,20 +169,19 @@ class TestRollbackAPI:
     def test_execute_manual_rollback_dry_run(self, api, rollback_manager, temp_file):
         """Test dry run rollback (no actual changes)."""
         # Modify file
-        with open(temp_file, 'w') as f:
+        with open(temp_file, "w") as f:
             f.write("modified content")
 
         # Create snapshot after modification
         snapshot = rollback_manager.create_snapshot(
-            action={"tool": "write_file", "path": temp_file},
-            context={}
+            action={"tool": "write_file", "path": temp_file}, context={}
         )
 
         result = api.execute_manual_rollback(
             snapshot_id=snapshot.id,
             operator="test-user",
             reason="Testing dry run",
-            dry_run=True
+            dry_run=True,
         )
 
         assert result.success
@@ -194,26 +189,23 @@ class TestRollbackAPI:
         assert result.metadata["operator"] == "test-user"
 
         # File should remain unchanged
-        with open(temp_file, 'r') as f:
+        with open(temp_file) as f:
             assert f.read() == "modified content"
 
     def test_execute_manual_rollback_success(self, api, rollback_manager, temp_file):
         """Test successful manual rollback."""
         # Create snapshot with original content
         snapshot = rollback_manager.create_snapshot(
-            action={"tool": "write_file", "path": temp_file},
-            context={}
+            action={"tool": "write_file", "path": temp_file}, context={}
         )
 
         # Modify file
-        with open(temp_file, 'w') as f:
+        with open(temp_file, "w") as f:
             f.write("modified content")
 
         # Execute rollback
         result = api.execute_manual_rollback(
-            snapshot_id=snapshot.id,
-            operator="test-user",
-            reason="Manual recovery test"
+            snapshot_id=snapshot.id, operator="test-user", reason="Manual recovery test"
         )
 
         assert result.success
@@ -222,29 +214,26 @@ class TestRollbackAPI:
         assert result.metadata["reason"] == "Manual recovery test"
 
         # File should be restored
-        with open(temp_file, 'r') as f:
+        with open(temp_file) as f:
             assert f.read() == "original content"
 
     def test_execute_manual_rollback_not_found(self, api):
         """Test rollback with non-existent snapshot."""
         with pytest.raises(ValueError, match="Snapshot not found"):
             api.execute_manual_rollback(
-                snapshot_id="non-existent-id",
-                operator="test-user",
-                reason="Test"
+                snapshot_id="non-existent-id", operator="test-user", reason="Test"
             )
 
     def test_execute_manual_rollback_force(self, api, rollback_manager, temp_file):
         """Test force rollback bypasses safety checks."""
         # Create expired snapshot
         snapshot = rollback_manager.create_snapshot(
-            action={"tool": "write_file", "path": temp_file},
-            context={}
+            action={"tool": "write_file", "path": temp_file}, context={}
         )
         snapshot.expires_at = datetime.now(UTC) - timedelta(hours=1)
 
         # Modify file
-        with open(temp_file, 'w') as f:
+        with open(temp_file, "w") as f:
             f.write("modified content")
 
         # Rollback with force should succeed despite expiration
@@ -252,27 +241,24 @@ class TestRollbackAPI:
             snapshot_id=snapshot.id,
             operator="test-user",
             reason="Force rollback test",
-            force=True
+            force=True,
         )
 
         assert result.success
 
         # File should be restored
-        with open(temp_file, 'r') as f:
+        with open(temp_file) as f:
             assert f.read() == "original content"
 
     def test_get_rollback_history(self, api, rollback_manager, temp_file):
         """Test retrieving rollback history."""
         snapshot = rollback_manager.create_snapshot(
-            action={"tool": "write_file", "path": temp_file},
-            context={}
+            action={"tool": "write_file", "path": temp_file}, context={}
         )
 
         # Execute rollback
         api.execute_manual_rollback(
-            snapshot_id=snapshot.id,
-            operator="test-user",
-            reason="Test"
+            snapshot_id=snapshot.id, operator="test-user", reason="Test"
         )
 
         history = api.get_rollback_history()
@@ -281,16 +267,16 @@ class TestRollbackAPI:
         assert history[0].snapshot_id == snapshot.id
         assert history[0].metadata["operator"] == "test-user"
 
-    def test_get_rollback_history_filter_by_snapshot(self, api, rollback_manager, temp_file):
+    def test_get_rollback_history_filter_by_snapshot(
+        self, api, rollback_manager, temp_file
+    ):
         """Test filtering history by snapshot ID."""
         # Create two snapshots
         snap1 = rollback_manager.create_snapshot(
-            action={"tool": "write_file", "path": temp_file},
-            context={}
+            action={"tool": "write_file", "path": temp_file}, context={}
         )
         snap2 = rollback_manager.create_snapshot(
-            action={"tool": "write_file", "path": temp_file},
-            context={}
+            action={"tool": "write_file", "path": temp_file}, context={}
         )
 
         # Execute rollbacks

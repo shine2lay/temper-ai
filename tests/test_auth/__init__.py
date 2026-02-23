@@ -6,7 +6,6 @@ def test_auth_module_imports():
     from temper_ai.auth import (
         InMemorySessionStore,
         OAuthRouteHandlers,
-        RedisSessionStore,
         Session,
         SessionStoreProtocol,
         User,
@@ -17,7 +16,6 @@ def test_auth_module_imports():
     assert User is not None
     assert SessionStoreProtocol is not None
     assert InMemorySessionStore is not None
-    assert RedisSessionStore is not None
     assert OAuthRouteHandlers is not None
 
 
@@ -30,7 +28,6 @@ def test_auth_module_all_exports():
         "Session",
         "SessionStoreProtocol",
         "InMemorySessionStore",
-        "RedisSessionStore",
         "OAuthRouteHandlers",
     ]
 
@@ -53,19 +50,18 @@ def test_auth_session_reexport():
     """Test that session stores are correctly re-exported from auth module."""
     from temper_ai.auth import (
         InMemorySessionStore,
-        RedisSessionStore,
         SessionStoreProtocol,
     )
     from temper_ai.auth.session import (
         InMemorySessionStore as OrigInMemory,
-        RedisSessionStore as OrigRedis,
+    )
+    from temper_ai.auth.session import (
         SessionStoreProtocol as OrigProtocol,
     )
 
     # Verify re-exports point to the same classes
     assert SessionStoreProtocol is OrigProtocol
     assert InMemorySessionStore is OrigInMemory
-    assert RedisSessionStore is OrigRedis
 
 
 def test_auth_routes_reexport():
@@ -127,7 +123,6 @@ def test_auth_star_import():
         "Session",
         "SessionStoreProtocol",
         "InMemorySessionStore",
-        "RedisSessionStore",
         "OAuthRouteHandlers",
     ]
 

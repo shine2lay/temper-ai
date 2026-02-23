@@ -1,4 +1,5 @@
 """Tests for checkpoint/resume functionality."""
+
 import json
 import tempfile
 from datetime import UTC, datetime
@@ -6,13 +7,13 @@ from pathlib import Path
 
 import pytest
 
+from temper_ai.stage.executors.state_keys import StateKeys
 from temper_ai.workflow.checkpoint import (
     CheckpointManager,
     CheckpointMetadata,
     FileCheckpointStorage,
 )
 from temper_ai.workflow.domain_state import WorkflowDomainState
-from temper_ai.stage.executors.state_keys import StateKeys
 
 
 class TestCheckpointMetadata:
@@ -122,7 +123,9 @@ class TestFileCheckpointStorage:
         assert loaded_state.topic == "Market Analysis"
         assert loaded_state.has_stage_output("research")
         assert loaded_state.has_stage_output("analysis")
-        assert loaded_state.get_stage_output("research") == {"findings": ["trend1", "trend2"]}
+        assert loaded_state.get_stage_output("research") == {
+            "findings": ["trend1", "trend2"]
+        }
 
     def test_load_nonexistent_checkpoint(self, storage):
         """Test loading checkpoint that doesn't exist."""
@@ -191,7 +194,7 @@ class TestFileCheckpointStorage:
         assert len(checkpoint_files) >= 1
         checkpoint_path = checkpoint_files[0]
 
-        with open(checkpoint_path, 'r') as f:
+        with open(checkpoint_path) as f:
             checkpoint_data = json.load(f)
 
         # Verify it's valid JSON with expected fields

@@ -12,11 +12,16 @@ Span hierarchy::
       │   │   ├── llm:{provider}/{model}
       │   │   └── tool:{name}
 """
+
 import logging
 import time
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, AsyncIterator, Callable, Dict, List, Optional, Tuple
+from typing import (
+    TYPE_CHECKING,
+    Any,
+)
 
 from temper_ai.observability.backend import (
     AgentOutputData,
@@ -76,9 +81,9 @@ _EVENT_COST_SUMMARY = "cost_summary"
 
 
 # Span lifecycle constants
-SPAN_TTL_SECONDS = 3600      # 1 hour
-MAX_ACTIVE_SPANS = 10000     # Maximum concurrent spans
-CLEANUP_THRESHOLD = 100      # Run cleanup when span count exceeds this
+SPAN_TTL_SECONDS = 3600  # 1 hour
+MAX_ACTIVE_SPANS = 10000  # Maximum concurrent spans
+CLEANUP_THRESHOLD = 100  # Run cleanup when span count exceeds this
 
 
 def _otel_safe_value(value: Any) -> Any:
@@ -92,7 +97,7 @@ def _add_event(
     backend: Any,
     entity_id: str,
     event_name: str,
-    attributes: Optional[Dict[str, Any]] = None,
+    attributes: dict[str, Any] | None = None,
 ) -> None:
     """Add a log event to an active span (fire-and-forget)."""
     entry = backend._active_spans.get(entity_id)
@@ -100,7 +105,7 @@ def _add_event(
         return
     span, _, _ = entry
     try:
-        clean: Dict[str, Any] = {}
+        clean: dict[str, Any] = {}
         if attributes:
             for k, v in attributes.items():
                 if v is not None:
@@ -113,47 +118,63 @@ def _add_event(
 def _init_metrics(backend: Any, meter: Any) -> None:
     """Create all OTEL counters and histograms on the backend."""
     backend._workflow_counter = meter.create_counter(
-        _METRIC_WORKFLOW_COUNT, description="Workflow executions",
+        _METRIC_WORKFLOW_COUNT,
+        description="Workflow executions",
     )
     backend._llm_call_counter = meter.create_counter(
-        _METRIC_LLM_CALL_COUNT, description="LLM calls",
+        _METRIC_LLM_CALL_COUNT,
+        description="LLM calls",
     )
     backend._tool_call_counter = meter.create_counter(
-        _METRIC_TOOL_CALL_COUNT, description="Tool calls",
+        _METRIC_TOOL_CALL_COUNT,
+        description="Tool calls",
     )
     backend._llm_latency_histogram = meter.create_histogram(
-        _METRIC_LLM_LATENCY, unit="ms", description="LLM call latency",
+        _METRIC_LLM_LATENCY,
+        unit="ms",
+        description="LLM call latency",
     )
     backend._cost_counter = meter.create_counter(
-        _METRIC_COST_TOTAL, unit="usd", description="Accumulated cost",
+        _METRIC_COST_TOTAL,
+        unit="usd",
+        description="Accumulated cost",
     )
     backend._tokens_counter = meter.create_counter(
-        _METRIC_TOKENS_TOTAL, description="Accumulated tokens",
+        _METRIC_TOKENS_TOTAL,
+        description="Accumulated tokens",
     )
     backend._llm_iteration_counter = meter.create_counter(
-        _METRIC_LLM_ITERATION, description="LLM loop iterations",
+        _METRIC_LLM_ITERATION,
+        description="LLM loop iterations",
     )
     backend._cache_hit_counter = meter.create_counter(
-        _METRIC_CACHE_HIT, description="Cache hits",
+        _METRIC_CACHE_HIT,
+        description="Cache hits",
     )
     backend._cache_miss_counter = meter.create_counter(
-        _METRIC_CACHE_MISS, description="Cache misses",
+        _METRIC_CACHE_MISS,
+        description="Cache misses",
     )
     backend._retry_counter = meter.create_counter(
-        _METRIC_RETRY_COUNT, description="Agent retry attempts",
+        _METRIC_RETRY_COUNT,
+        description="Agent retry attempts",
     )
     backend._cb_state_change_counter = meter.create_counter(
-        _METRIC_CB_STATE_CHANGE, description="Circuit breaker state changes",
+        _METRIC_CB_STATE_CHANGE,
+        description="Circuit breaker state changes",
     )
     backend._dialogue_convergence_histogram = meter.create_histogram(
         _METRIC_DIALOGUE_CONVERGENCE,
         description="Dialogue convergence speed per round",
     )
     backend._stage_cost_counter = meter.create_counter(
-        _METRIC_STAGE_COST, unit="usd", description="Per-stage cost",
+        _METRIC_STAGE_COST,
+        unit="usd",
+        description="Per-stage cost",
     )
     backend._failover_counter = meter.create_counter(
-        _METRIC_FAILOVER_COUNT, description="Provider failover events",
+        _METRIC_FAILOVER_COUNT,
+        description="Provider failover events",
     )
 
 
@@ -161,8 +182,8 @@ def _start_span(
     backend: Any,
     entity_id: str,
     span_name: str,
-    attributes: Dict[str, Any],
-    parent_id: Optional[str] = None,
+    attributes: dict[str, Any],
+    parent_id: str | None = None,
 ) -> None:
     """Start a span and register it in the backend's active spans."""
     from opentelemetry import context as otel_context
@@ -186,7 +207,7 @@ def _end_span(
     backend: Any,
     entity_id: str,
     status: str,
-    error_message: Optional[str] = None,
+    error_message: str | None = None,
 ) -> None:
     """End and deregister a span from the backend."""
     entry = backend._active_spans.pop(entity_id, None)
@@ -235,23 +256,27 @@ class _OTelAsyncMixin:
         self,
         workflow_id: str,
         workflow_name: str,
-        workflow_config: Dict[str, Any],
+        workflow_config: dict[str, Any],
         start_time: datetime,
-        data: Optional[WorkflowStartData] = None,
+        data: WorkflowStartData | None = None,
     ) -> None:
         """Async override: delegate to sync (in-memory, no I/O)."""
-        self.track_workflow_start(workflow_id, workflow_name, workflow_config, start_time, data)
+        self.track_workflow_start(
+            workflow_id, workflow_name, workflow_config, start_time, data
+        )
 
     async def atrack_workflow_end(
         self,
         workflow_id: str,
         end_time: datetime,
         status: str,
-        error_message: Optional[str] = None,
-        error_stack_trace: Optional[str] = None,
+        error_message: str | None = None,
+        error_stack_trace: str | None = None,
     ) -> None:
         """Async override: delegate to sync (in-memory, no I/O)."""
-        self.track_workflow_end(workflow_id, end_time, status, error_message, error_stack_trace)
+        self.track_workflow_end(
+            workflow_id, end_time, status, error_message, error_stack_trace
+        )
 
     async def aupdate_workflow_metrics(
         self,
@@ -262,41 +287,50 @@ class _OTelAsyncMixin:
         total_cost_usd: float,
     ) -> None:
         """Async override: delegate to sync (in-memory, no I/O)."""
-        self.update_workflow_metrics(workflow_id, total_llm_calls, total_tool_calls, total_tokens, total_cost_usd)
+        self.update_workflow_metrics(
+            workflow_id, total_llm_calls, total_tool_calls, total_tokens, total_cost_usd
+        )
 
     async def atrack_stage_start(
         self,
         stage_id: str,
         workflow_id: str,
         stage_name: str,
-        stage_config: Dict[str, Any],
+        stage_config: dict[str, Any],
         start_time: datetime,
-        input_data: Optional[Dict[str, Any]] = None,
+        input_data: dict[str, Any] | None = None,
     ) -> None:
         """Async override: delegate to sync (in-memory, no I/O)."""
-        self.track_stage_start(stage_id, workflow_id, stage_name, stage_config, start_time, input_data)
+        self.track_stage_start(
+            stage_id, workflow_id, stage_name, stage_config, start_time, input_data
+        )
 
     async def atrack_stage_end(
         self,
         stage_id: str,
         end_time: datetime,
         status: str,
-        error_message: Optional[str] = None,
+        error_message: str | None = None,
         num_agents_executed: int = 0,
         num_agents_succeeded: int = 0,
         num_agents_failed: int = 0,
     ) -> None:
         """Async override: delegate to sync (in-memory, no I/O)."""
         self.track_stage_end(
-            stage_id, end_time, status, error_message,
-            num_agents_executed, num_agents_succeeded, num_agents_failed,
+            stage_id,
+            end_time,
+            status,
+            error_message,
+            num_agents_executed,
+            num_agents_succeeded,
+            num_agents_failed,
         )
 
     async def aset_stage_output(
         self,
         stage_id: str,
-        output_data: Dict[str, Any],
-        output_lineage: Optional[Dict[str, Any]] = None,
+        output_data: dict[str, Any],
+        output_lineage: dict[str, Any] | None = None,
     ) -> None:
         """Async override: delegate to sync (in-memory, no I/O)."""
         self.set_stage_output(stage_id, output_data, output_lineage)
@@ -306,19 +340,21 @@ class _OTelAsyncMixin:
         agent_id: str,
         stage_id: str,
         agent_name: str,
-        agent_config: Dict[str, Any],
+        agent_config: dict[str, Any],
         start_time: datetime,
-        input_data: Optional[Dict[str, Any]] = None,
+        input_data: dict[str, Any] | None = None,
     ) -> None:
         """Async override: delegate to sync (in-memory, no I/O)."""
-        self.track_agent_start(agent_id, stage_id, agent_name, agent_config, start_time, input_data)
+        self.track_agent_start(
+            agent_id, stage_id, agent_name, agent_config, start_time, input_data
+        )
 
     async def atrack_agent_end(
         self,
         agent_id: str,
         end_time: datetime,
         status: str,
-        error_message: Optional[str] = None,
+        error_message: str | None = None,
     ) -> None:
         """Async override: delegate to sync (in-memory, no I/O)."""
         self.track_agent_end(agent_id, end_time, status, error_message)
@@ -326,8 +362,8 @@ class _OTelAsyncMixin:
     async def aset_agent_output(
         self,
         agent_id: str,
-        output_data: Dict[str, Any],
-        metrics: Optional[AgentOutputData] = None,
+        output_data: dict[str, Any],
+        metrics: AgentOutputData | None = None,
     ) -> None:
         """Async override: delegate to sync (in-memory, no I/O)."""
         self.set_agent_output(agent_id, output_data, metrics)
@@ -360,20 +396,24 @@ class _OTelAsyncMixin:
         violation_severity: str,
         violation_message: str,
         policy_name: str,
-        data: Optional[SafetyViolationData] = None,
+        data: SafetyViolationData | None = None,
     ) -> None:
         """Async override: delegate to sync (in-memory, no I/O)."""
-        self.track_safety_violation(violation_severity, violation_message, policy_name, data)
+        self.track_safety_violation(
+            violation_severity, violation_message, policy_name, data
+        )
 
     async def atrack_collaboration_event(
         self,
         stage_id: str,
         event_type: str,
-        agents_involved: List[str],
-        data: Optional[CollaborationEventData] = None,
+        agents_involved: list[str],
+        data: CollaborationEventData | None = None,
     ) -> str:
         """Async override: delegate to sync (in-memory, no I/O)."""
-        return self.track_collaboration_event(stage_id, event_type, agents_involved, data)
+        return self.track_collaboration_event(
+            stage_id, event_type, agents_involved, data
+        )
 
     @asynccontextmanager
     async def aget_session_context(self) -> AsyncIterator[Any]:
@@ -420,7 +460,7 @@ class OTelBackend(_OTelAsyncMixin, ObservabilityBackend):
         _init_metrics(self, meter)
 
         # Active span registry: entity_id → (Span, Context, created_at_monotonic)
-        self._active_spans: Dict[str, Tuple[Any, Any, float]] = {}
+        self._active_spans: dict[str, tuple[Any, Any, float]] = {}
 
     # ========== Workflow Tracking ==========
 
@@ -428,15 +468,15 @@ class OTelBackend(_OTelAsyncMixin, ObservabilityBackend):
         self,
         workflow_id: str,
         workflow_name: str,
-        workflow_config: Dict[str, Any],
+        workflow_config: dict[str, Any],
         start_time: datetime,
-        data: Optional[WorkflowStartData] = None,
+        data: WorkflowStartData | None = None,
         **kwargs: Any,
     ) -> None:
         """Record workflow execution start as an OTEL span."""
         if data is None and kwargs:
             data = WorkflowStartData(**kwargs)
-        attrs: Dict[str, Any] = {
+        attrs: dict[str, Any] = {
             _ATTR_WORKFLOW_ID: workflow_id,
             _ATTR_WORKFLOW_NAME: workflow_name,
         }
@@ -452,7 +492,7 @@ class OTelBackend(_OTelAsyncMixin, ObservabilityBackend):
         self._workflow_counter.add(1, {_ATTR_WORKFLOW_NAME: workflow_name})
         wf_inner = workflow_config.get("workflow", workflow_config)
         stage_count = len(wf_inner.get("stages", []))
-        event_attrs: Dict[str, Any] = {"stages": stage_count}
+        event_attrs: dict[str, Any] = {"stages": stage_count}
         if data:
             if data.environment:
                 event_attrs["environment"] = data.environment
@@ -467,11 +507,11 @@ class OTelBackend(_OTelAsyncMixin, ObservabilityBackend):
         workflow_id: str,
         end_time: datetime,
         status: str,
-        error_message: Optional[str] = None,
-        error_stack_trace: Optional[str] = None,
+        error_message: str | None = None,
+        error_stack_trace: str | None = None,
     ) -> None:
         """Record workflow execution completion and end the span."""
-        event_attrs: Dict[str, Any] = {"status": status}
+        event_attrs: dict[str, Any] = {"status": status}
         if error_message:
             event_attrs["error"] = error_message[:256]  # noqa
         _add_event(self, workflow_id, f"workflow.{status}", event_attrs)
@@ -491,12 +531,17 @@ class OTelBackend(_OTelAsyncMixin, ObservabilityBackend):
             span, _, _ = entry
             span.set_attribute("temper_ai.workflow.total_tokens", total_tokens)
             span.set_attribute("temper_ai.workflow.total_cost_usd", total_cost_usd)
-        _add_event(self, workflow_id, "workflow.metrics", {
-            "llm_calls": total_llm_calls,
-            "tool_calls": total_tool_calls,
-            "tokens": total_tokens,
-            "cost_usd": total_cost_usd,
-        })
+        _add_event(
+            self,
+            workflow_id,
+            "workflow.metrics",
+            {
+                "llm_calls": total_llm_calls,
+                "tool_calls": total_tool_calls,
+                "tokens": total_tokens,
+                "cost_usd": total_cost_usd,
+            },
+        )
 
     # ========== Stage Tracking ==========
 
@@ -505,22 +550,31 @@ class OTelBackend(_OTelAsyncMixin, ObservabilityBackend):
         stage_id: str,
         workflow_id: str,
         stage_name: str,
-        stage_config: Dict[str, Any],
+        stage_config: dict[str, Any],
         start_time: datetime,
-        input_data: Optional[Dict[str, Any]] = None,
+        input_data: dict[str, Any] | None = None,
     ) -> None:
         """Record stage execution start as a child span of the workflow."""
-        _start_span(self,
-            stage_id, f"stage:{stage_name}",
-            {_ATTR_STAGE_ID: stage_id, _ATTR_STAGE_NAME: stage_name,
-             _ATTR_WORKFLOW_ID: workflow_id},
+        _start_span(
+            self,
+            stage_id,
+            f"stage:{stage_name}",
+            {
+                _ATTR_STAGE_ID: stage_id,
+                _ATTR_STAGE_NAME: stage_name,
+                _ATTR_WORKFLOW_ID: workflow_id,
+            },
             parent_id=workflow_id,
         )
         inner = stage_config.get("stage", stage_config)
         agents = inner.get("agents", [])
         execution = inner.get("execution", {})
-        mode = execution.get("agent_mode", "sequential") if isinstance(execution, dict) else "sequential"
-        event_attrs: Dict[str, Any] = {
+        mode = (
+            execution.get("agent_mode", "sequential")
+            if isinstance(execution, dict)
+            else "sequential"
+        )
+        event_attrs: dict[str, Any] = {
             "agent_count": len(agents),
             "execution_mode": mode,
         }
@@ -533,7 +587,7 @@ class OTelBackend(_OTelAsyncMixin, ObservabilityBackend):
         stage_id: str,
         end_time: datetime,
         status: str,
-        error_message: Optional[str] = None,
+        error_message: str | None = None,
         num_agents_executed: int = 0,
         num_agents_succeeded: int = 0,
         num_agents_failed: int = 0,
@@ -545,7 +599,7 @@ class OTelBackend(_OTelAsyncMixin, ObservabilityBackend):
             span.set_attribute("temper_ai.stage.agents_executed", num_agents_executed)
             span.set_attribute("temper_ai.stage.agents_succeeded", num_agents_succeeded)
             span.set_attribute("temper_ai.stage.agents_failed", num_agents_failed)
-        event_attrs: Dict[str, Any] = {
+        event_attrs: dict[str, Any] = {
             "agents_executed": num_agents_executed,
             "agents_succeeded": num_agents_succeeded,
             "agents_failed": num_agents_failed,
@@ -556,8 +610,10 @@ class OTelBackend(_OTelAsyncMixin, ObservabilityBackend):
         _end_span(self, stage_id, status, error_message)
 
     def set_stage_output(
-        self, stage_id: str, output_data: Dict[str, Any],
-        output_lineage: Optional[Dict[str, Any]] = None,
+        self,
+        stage_id: str,
+        output_data: dict[str, Any],
+        output_lineage: dict[str, Any] | None = None,
     ) -> None:
         """Set stage output (no-op; stage output too large for OTEL spans)."""
         pass  # Stage output is potentially large — skip in OTEL
@@ -569,20 +625,25 @@ class OTelBackend(_OTelAsyncMixin, ObservabilityBackend):
         agent_id: str,
         stage_id: str,
         agent_name: str,
-        agent_config: Dict[str, Any],
+        agent_config: dict[str, Any],
         start_time: datetime,
-        input_data: Optional[Dict[str, Any]] = None,
+        input_data: dict[str, Any] | None = None,
     ) -> None:
         """Record agent execution start as a child span of the stage."""
-        _start_span(self,
-            agent_id, f"agent:{agent_name}",
-            {_ATTR_AGENT_ID: agent_id, _ATTR_AGENT_NAME: agent_name,
-             _ATTR_STAGE_ID: stage_id},
+        _start_span(
+            self,
+            agent_id,
+            f"agent:{agent_name}",
+            {
+                _ATTR_AGENT_ID: agent_id,
+                _ATTR_AGENT_NAME: agent_name,
+                _ATTR_STAGE_ID: stage_id,
+            },
             parent_id=stage_id,
         )
         inner = agent_config.get("agent", agent_config)
         inference = inner.get("inference", {})
-        event_attrs: Dict[str, Any] = {}
+        event_attrs: dict[str, Any] = {}
         if inference.get("model"):
             event_attrs["model"] = inference["model"]
         if inference.get("provider"):
@@ -596,10 +657,10 @@ class OTelBackend(_OTelAsyncMixin, ObservabilityBackend):
         agent_id: str,
         end_time: datetime,
         status: str,
-        error_message: Optional[str] = None,
+        error_message: str | None = None,
     ) -> None:
         """Record agent execution completion and end the span."""
-        event_attrs: Dict[str, Any] = {"status": status}
+        event_attrs: dict[str, Any] = {"status": status}
         if error_message:
             event_attrs["error"] = error_message[:256]  # noqa
         _add_event(self, agent_id, f"agent.{status}", event_attrs)
@@ -608,8 +669,8 @@ class OTelBackend(_OTelAsyncMixin, ObservabilityBackend):
     def set_agent_output(
         self,
         agent_id: str,
-        output_data: Optional[Dict[str, Any]] = None,
-        metrics: Optional[AgentOutputData] = None,
+        output_data: dict[str, Any] | None = None,
+        metrics: AgentOutputData | None = None,
         **kwargs: Any,
     ) -> None:
         """Set agent output metrics as span attributes and events."""
@@ -619,10 +680,14 @@ class OTelBackend(_OTelAsyncMixin, ObservabilityBackend):
             if metrics.total_tokens is not None:
                 span.set_attribute("temper_ai.agent.total_tokens", metrics.total_tokens)
             if metrics.estimated_cost_usd is not None:
-                span.set_attribute("temper_ai.agent.cost_usd", metrics.estimated_cost_usd)
+                span.set_attribute(
+                    "temper_ai.agent.cost_usd", metrics.estimated_cost_usd
+                )
             if metrics.confidence_score is not None:
-                span.set_attribute("temper_ai.agent.confidence", metrics.confidence_score)
-            event_attrs: Dict[str, Any] = {}
+                span.set_attribute(
+                    "temper_ai.agent.confidence", metrics.confidence_score
+                )
+            event_attrs: dict[str, Any] = {}
             if metrics.total_tokens is not None:
                 event_attrs["tokens"] = metrics.total_tokens
             if metrics.estimated_cost_usd is not None:
@@ -641,8 +706,8 @@ class OTelBackend(_OTelAsyncMixin, ObservabilityBackend):
         agent_id: str,
         provider: str,
         model: str,
-        start_time: Optional[datetime] = None,
-        data: Optional[LLMCallData] = None,
+        start_time: datetime | None = None,
+        data: LLMCallData | None = None,
         **kwargs: Any,
     ) -> None:
         """Record an LLM call as a leaf span with token and cost metrics."""
@@ -651,7 +716,7 @@ class OTelBackend(_OTelAsyncMixin, ObservabilityBackend):
         if data is None:
             return
         span_name = f"llm:{provider}/{model}"
-        attrs: Dict[str, Any] = {
+        attrs: dict[str, Any] = {
             _ATTR_AGENT_ID: agent_id,
             _ATTR_PROVIDER: provider,
             _ATTR_MODEL: model,
@@ -673,8 +738,8 @@ class OTelBackend(_OTelAsyncMixin, ObservabilityBackend):
             attrs["temper_ai.llm.prompt.template_source"] = data.prompt_template_source
 
         # Leaf span — start and immediately end
-        _start_span(self,llm_call_id, span_name, attrs, parent_id=agent_id)
-        _end_span(self,llm_call_id, data.status, data.error_message)
+        _start_span(self, llm_call_id, span_name, attrs, parent_id=agent_id)
+        _end_span(self, llm_call_id, data.status, data.error_message)
 
         # Metrics
         self._llm_call_counter.add(1, {_ATTR_PROVIDER: provider, _ATTR_MODEL: model})
@@ -698,8 +763,8 @@ class OTelBackend(_OTelAsyncMixin, ObservabilityBackend):
         tool_execution_id: str,
         agent_id: str,
         tool_name: str,
-        start_time: Optional[datetime] = None,
-        data: Optional[ToolCallData] = None,
+        start_time: datetime | None = None,
+        data: ToolCallData | None = None,
         **kwargs: Any,
     ) -> None:
         """Record a tool call as a leaf span with duration metrics."""
@@ -707,15 +772,17 @@ class OTelBackend(_OTelAsyncMixin, ObservabilityBackend):
             data = ToolCallData(**kwargs)
         if data is None:
             return
-        attrs: Dict[str, Any] = {
+        attrs: dict[str, Any] = {
             _ATTR_AGENT_ID: agent_id,
             _ATTR_TOOL_NAME: tool_name,
             _ATTR_DURATION_S: data.duration_seconds,
             _ATTR_STATUS: data.status,
         }
         # Leaf span
-        _start_span(self,tool_execution_id, f"tool:{tool_name}", attrs, parent_id=agent_id)
-        _end_span(self,tool_execution_id, data.status, data.error_message)
+        _start_span(
+            self, tool_execution_id, f"tool:{tool_name}", attrs, parent_id=agent_id
+        )
+        _end_span(self, tool_execution_id, data.status, data.error_message)
 
         self._tool_call_counter.add(1, {_ATTR_TOOL_NAME: tool_name})
 
@@ -730,7 +797,8 @@ class OTelBackend(_OTelAsyncMixin, ObservabilityBackend):
     ) -> None:
         """Record an LLM loop iteration metric."""
         self._llm_iteration_counter.add(
-            1, {_ATTR_AGENT_NAME: agent_name, "temper_ai.iteration": iteration_number},
+            1,
+            {_ATTR_AGENT_NAME: agent_name, "temper_ai.iteration": iteration_number},
         )
         if tokens > 0:
             self._tokens_counter.add(tokens, {_ATTR_AGENT_NAME: agent_name})
@@ -749,7 +817,7 @@ class OTelBackend(_OTelAsyncMixin, ObservabilityBackend):
         violation_severity: str,
         violation_message: str,
         policy_name: str,
-        data: Optional[SafetyViolationData] = None,
+        data: SafetyViolationData | None = None,
         **kwargs: Any,
     ) -> None:
         """Record a safety violation as a span event on the relevant entity."""
@@ -757,22 +825,27 @@ class OTelBackend(_OTelAsyncMixin, ObservabilityBackend):
         if data:
             entity_id = data.agent_id or data.stage_id or data.workflow_id
         if entity_id:
-            _add_event(self, entity_id, "safety.violation", {
-                "severity": violation_severity,
-                "policy": policy_name,
-                "message": violation_message[:256],  # noqa
-            })
+            _add_event(
+                self,
+                entity_id,
+                "safety.violation",
+                {
+                    "severity": violation_severity,
+                    "policy": policy_name,
+                    "message": violation_message[:256],  # noqa
+                },
+            )
 
     def track_collaboration_event(
         self,
         stage_id: str,
         event_type: str,
-        agents_involved: Optional[List[str]] = None,
-        data: Optional[CollaborationEventData] = None,
+        agents_involved: list[str] | None = None,
+        data: CollaborationEventData | None = None,
         **kwargs: Any,
     ) -> str:
         """Record a collaboration event as a span event with metrics."""
-        event_attrs: Dict[str, Any] = {
+        event_attrs: dict[str, Any] = {
             "agents": ", ".join(agents_involved or []),
         }
         if data:
@@ -798,11 +871,11 @@ class OTelBackend(_OTelAsyncMixin, ObservabilityBackend):
 
     def cleanup_old_records(
         self, retention_days: int, dry_run: bool = False
-    ) -> Dict[str, int]:
+    ) -> dict[str, int]:
         """Return empty dict (OTEL manages retention via exporters)."""
         return {}  # OTEL has its own retention via exporters
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Return backend statistics including active span count."""
         return {
             "backend_type": "otel",
@@ -817,7 +890,8 @@ def _cleanup_stale_spans(backend: Any, ttl: float, max_spans: int) -> int:
 
     # Phase 1: TTL eviction
     expired = [
-        eid for eid, (_, _, created) in backend._active_spans.items()
+        eid
+        for eid, (_, _, created) in backend._active_spans.items()
         if now - created > ttl
     ]
     for eid in expired:
@@ -835,7 +909,8 @@ def _cleanup_stale_spans(backend: Any, ttl: float, max_spans: int) -> int:
     # Phase 2: Capacity eviction (oldest first)
     if len(backend._active_spans) > max_spans:
         sorted_spans = sorted(
-            backend._active_spans.items(), key=lambda x: x[1][2],
+            backend._active_spans.items(),
+            key=lambda x: x[1][2],
         )
         excess = len(backend._active_spans) - max_spans
         for eid, (span, _, _) in sorted_spans[:excess]:
@@ -844,7 +919,8 @@ def _cleanup_stale_spans(backend: Any, ttl: float, max_spans: int) -> int:
                 from opentelemetry.trace import StatusCode
 
                 span.set_status(
-                    StatusCode.ERROR, description="Span capacity exceeded",
+                    StatusCode.ERROR,
+                    description="Span capacity exceeded",
                 )
                 span.end()
             except Exception:  # noqa: BLE001
@@ -859,7 +935,7 @@ def _cleanup_stale_spans(backend: Any, ttl: float, max_spans: int) -> int:
 def _record_event_metrics(
     backend: Any,
     event_type: str,
-    event_data: Dict[str, Any],
+    event_data: dict[str, Any],
 ) -> None:
     """Record OTEL metrics for collaboration events (module-level)."""
     if event_type == _RESILIENCE_RETRY:
@@ -869,20 +945,26 @@ def _record_event_metrics(
         breaker = event_data.get("breaker_name", "unknown")
         new_state = event_data.get("new_state", "unknown")
         backend._cb_state_change_counter.add(
-            1, {"temper_ai.breaker.name": breaker, "temper_ai.breaker.state": new_state},
+            1,
+            {"temper_ai.breaker.name": breaker, "temper_ai.breaker.state": new_state},
         )
     elif event_type == _EVENT_DIALOGUE_METRICS:
         speed = event_data.get("convergence_speed")
         if speed is not None:
             stage = event_data.get("stage_name", "unknown")
             backend._dialogue_convergence_histogram.record(
-                speed, {_ATTR_STAGE_NAME: stage},
+                speed,
+                {_ATTR_STAGE_NAME: stage},
             )
     elif event_type == _RESILIENCE_FAILOVER:
         from_provider = event_data.get("from_provider", "unknown")
         to_provider = event_data.get("to_provider", "unknown")
         backend._failover_counter.add(
-            1, {"temper_ai.failover.from": from_provider, "temper_ai.failover.to": to_provider},
+            1,
+            {
+                "temper_ai.failover.from": from_provider,
+                "temper_ai.failover.to": to_provider,
+            },
         )
     elif event_type == _EVENT_COST_SUMMARY:
         cost = event_data.get("total_cost_usd", 0.0)

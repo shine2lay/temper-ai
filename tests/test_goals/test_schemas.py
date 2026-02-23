@@ -1,19 +1,16 @@
 """Tests for goal proposal schemas."""
 
-import pytest
-from pydantic import ValidationError
-
 from temper_ai.goals._schemas import (
     EffortLevel,
     GoalEvidence,
     GoalProposal,
     GoalReview,
     GoalReviewAction,
+    GoalRiskLevel,
     GoalStatus,
     GoalType,
     ImpactEstimate,
     RiskAssessment,
-    GoalRiskLevel,
 )
 
 

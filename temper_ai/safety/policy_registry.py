@@ -12,8 +12,10 @@ Example:
     >>> registry.register_policy(RateLimitPolicy())  # Global
     >>> policies = registry.get_policies_for_action("file_write")
 """
+
+import builtins
 import threading
-from typing import Any, Dict, List, Optional, Set
+from typing import Any
 
 from temper_ai.safety.interfaces import SafetyPolicy
 
@@ -48,18 +50,16 @@ class PolicyRegistry:
         self._lock = threading.Lock()
 
         # action_type -> List[SafetyPolicy]
-        self._policies: Dict[str, List[SafetyPolicy]] = {}
+        self._policies: dict[str, list[SafetyPolicy]] = {}
 
         # Global policies (apply to all actions)
-        self._global_policies: List[SafetyPolicy] = []
+        self._global_policies: list[SafetyPolicy] = []
 
         # Policy name -> action_types (for tracking)
-        self._policy_mappings: Dict[str, Set[str]] = {}
+        self._policy_mappings: dict[str, set[str]] = {}
 
     def register_policy(
-        self,
-        policy: SafetyPolicy,
-        action_types: Optional[List[str]] = None
+        self, policy: SafetyPolicy, action_types: list[str] | None = None
     ) -> None:
         """Register policy for specific action types or globally.
 
@@ -99,11 +99,13 @@ class PolicyRegistry:
 
                     self._policies[action_type].append(policy)
                     # Sort by priority (highest first)
-                    self._policies[action_type].sort(key=lambda p: p.priority, reverse=True)
+                    self._policies[action_type].sort(
+                        key=lambda p: p.priority, reverse=True
+                    )
 
                 self._policy_mappings[policy.name] = action_types_set
 
-    def list_policies(self) -> List[str]:
+    def list_policies(self) -> list[str]:
         """Get names of all registered policies.
 
         Returns:
@@ -111,7 +113,7 @@ class PolicyRegistry:
         """
         return sorted(self._policy_mappings.keys())
 
-    def list(self) -> List[str]:
+    def list(self) -> list[str]:
         """Get names of all registered policies (Registry Protocol method).
 
         Returns:
@@ -119,7 +121,7 @@ class PolicyRegistry:
         """
         return self.list_policies()
 
-    def list_all(self) -> List[str]:
+    def list_all(self) -> builtins.list[str]:
         """DEPRECATED: Use list() instead.
 
         Get names of all registered policies (backward compatibility).
@@ -132,14 +134,11 @@ class PolicyRegistry:
     def _remove_global_policy(self, policy_name: str) -> None:
         """Remove a global policy by name."""
         self._global_policies = [
-            p for p in self._global_policies
-            if p.name != policy_name
+            p for p in self._global_policies if p.name != policy_name
         ]
 
     def _remove_action_specific_policy(
-        self,
-        policy_name: str,
-        action_types: Set[str]
+        self, policy_name: str, action_types: set[str]
     ) -> None:
         """Remove an action-specific policy by name."""
         for action_type in action_types:
@@ -147,8 +146,7 @@ class PolicyRegistry:
                 continue
 
             self._policies[action_type] = [
-                p for p in self._policies[action_type]
-                if p.name != policy_name
+                p for p in self._policies[action_type] if p.name != policy_name
             ]
 
             # Remove empty action type entries
@@ -183,7 +181,7 @@ class PolicyRegistry:
             del self._policy_mappings[policy_name]
             return True
 
-    def get_policies_for_action(self, action_type: str) -> List[SafetyPolicy]:
+    def get_policies_for_action(self, action_type: str) -> builtins.list[SafetyPolicy]:
         """Get all policies applicable to an action type.
 
         Returns both global policies and action-specific policies,
@@ -214,7 +212,7 @@ class PolicyRegistry:
 
             return policies
 
-    def get_policy(self, policy_name: str) -> Optional[SafetyPolicy]:
+    def get_policy(self, policy_name: str) -> SafetyPolicy | None:
         """Get policy instance by name.
 
         Args:
@@ -239,7 +237,7 @@ class PolicyRegistry:
 
         return None
 
-    def get(self, name: str) -> Optional[SafetyPolicy]:
+    def get(self, name: str) -> SafetyPolicy | None:
         """Get policy instance by name (Registry Protocol method).
 
         This is an alias for get_policy() to satisfy the Registry Protocol.
@@ -267,7 +265,7 @@ class PolicyRegistry:
         """
         return policy_name in self._policy_mappings
 
-    def get_action_types(self) -> List[str]:
+    def get_action_types(self) -> builtins.list[str]:
         """Get all action types with registered policies.
 
         Returns:
@@ -280,9 +278,8 @@ class PolicyRegistry:
         return list(self._policies.keys())
 
     def get_policies_for_action_by_priority(
-        self,
-        action_type: str
-    ) -> Dict[int, List[SafetyPolicy]]:
+        self, action_type: str
+    ) -> dict[int, builtins.list[SafetyPolicy]]:
         """Get policies grouped by priority level.
 
         Useful for understanding policy execution order and identifying
@@ -300,7 +297,7 @@ class PolicyRegistry:
             ...     print(f"Priority {priority}: {[p.name for p in policies]}")
         """
         policies = self.get_policies_for_action(action_type)
-        grouped: Dict[int, List[SafetyPolicy]] = {}
+        grouped: dict[int, list[SafetyPolicy]] = {}
 
         for policy in policies:
             priority = policy.priority
@@ -344,7 +341,7 @@ class PolicyRegistry:
         """
         return self.policy_count()
 
-    def get_statistics(self) -> Dict[str, Any]:
+    def get_statistics(self) -> dict[str, Any]:
         """Get registry statistics.
 
         Returns:
@@ -361,7 +358,7 @@ class PolicyRegistry:
             "policies_by_action_type": {
                 action_type: len(policies)
                 for action_type, policies in self._policies.items()
-            }
+            },
         }
 
     def __repr__(self) -> str:

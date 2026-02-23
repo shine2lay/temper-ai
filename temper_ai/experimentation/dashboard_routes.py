@@ -1,6 +1,6 @@
 """FastAPI routes for experimentation dashboard."""
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
@@ -19,15 +19,16 @@ def create_experimentation_router(service: ExperimentDataService) -> APIRouter:
 
 
 def _register_query_routes(
-    router: APIRouter, service: ExperimentDataService,
+    router: APIRouter,
+    service: ExperimentDataService,
 ) -> None:
     """Register read-only query endpoints."""
 
     @router.get("")
     def list_experiments(
-        status: Optional[str] = None,
+        status: str | None = None,
         limit: int = 50,  # noqa: scanner: skip-magic
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """List experiments with optional status filter."""
         try:
             return service.list_experiments(status=status, limit=limit)
@@ -35,17 +36,15 @@ def _register_query_routes(
             raise HTTPException(status_code=HTTP_400, detail=str(exc))
 
     @router.get("/{experiment_id}")
-    def get_experiment(experiment_id: str) -> Dict[str, Any]:
+    def get_experiment(experiment_id: str) -> dict[str, Any]:
         """Get a single experiment."""
         result = service.get_experiment(experiment_id)
         if result is None:
-            raise HTTPException(
-                status_code=HTTP_404, detail="Experiment not found"
-            )
+            raise HTTPException(status_code=HTTP_404, detail="Experiment not found")
         return result
 
     @router.get("/{experiment_id}/results")
-    def get_results(experiment_id: str) -> Dict[str, Any]:
+    def get_results(experiment_id: str) -> dict[str, Any]:
         """Get analysis results for an experiment."""
         result = service.get_results(experiment_id)
         if result is None:
@@ -57,12 +56,13 @@ def _register_query_routes(
 
 
 def _register_action_routes(
-    router: APIRouter, service: ExperimentDataService,
+    router: APIRouter,
+    service: ExperimentDataService,
 ) -> None:
     """Register mutation endpoints."""
 
     @router.post("")
-    def create_experiment(body: Dict[str, Any]) -> Dict[str, Any]:
+    def create_experiment(body: dict[str, Any]) -> dict[str, Any]:
         """Create a new experiment."""
         try:
             name = body.get("name", "")
@@ -82,7 +82,7 @@ def _register_action_routes(
             raise HTTPException(status_code=HTTP_400, detail=str(exc))
 
     @router.post("/{experiment_id}/start")
-    def start_experiment(experiment_id: str) -> Dict[str, Any]:
+    def start_experiment(experiment_id: str) -> dict[str, Any]:
         """Start an experiment."""
         try:
             service._service.start_experiment(experiment_id)
@@ -91,7 +91,7 @@ def _register_action_routes(
             raise HTTPException(status_code=HTTP_400, detail=str(exc))
 
     @router.post("/{experiment_id}/stop")
-    def stop_experiment(experiment_id: str) -> Dict[str, Any]:
+    def stop_experiment(experiment_id: str) -> dict[str, Any]:
         """Stop an experiment."""
         try:
             service._service.stop_experiment(experiment_id)

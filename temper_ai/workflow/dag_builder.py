@@ -10,10 +10,11 @@ Example:
     >>> dag.terminals   # stages with no successors
     >>> dag.topo_order  # valid execution order
 """
+
 import logging
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, cast
 
 logger = logging.getLogger(__name__)
 
@@ -30,14 +31,14 @@ class StageDAG:
         topo_order: topologically sorted stage names
     """
 
-    predecessors: Dict[str, List[str]] = field(default_factory=dict)
-    successors: Dict[str, List[str]] = field(default_factory=dict)
-    roots: List[str] = field(default_factory=list)
-    terminals: List[str] = field(default_factory=list)
-    topo_order: List[str] = field(default_factory=list)
+    predecessors: dict[str, list[str]] = field(default_factory=dict)
+    successors: dict[str, list[str]] = field(default_factory=dict)
+    roots: list[str] = field(default_factory=list)
+    terminals: list[str] = field(default_factory=list)
+    topo_order: list[str] = field(default_factory=list)
 
 
-def has_dag_dependencies(stage_refs: List[Any]) -> bool:
+def has_dag_dependencies(stage_refs: list[Any]) -> bool:
     """Return True if any stage declares ``depends_on``.
 
     Used as a backward-compatibility gate: when no stage uses ``depends_on``,
@@ -57,8 +58,8 @@ def has_dag_dependencies(stage_refs: List[Any]) -> bool:
 
 
 def build_stage_dag(
-    stage_names: List[str],
-    stage_refs: List[Any],
+    stage_names: list[str],
+    stage_refs: list[Any],
 ) -> StageDAG:
     """Build a StageDAG from stage names and their references.
 
@@ -75,8 +76,8 @@ def build_stage_dag(
     ref_lookup = _build_ref_lookup(stage_refs)
     name_set = set(stage_names)
 
-    predecessors: Dict[str, List[str]] = {name: [] for name in stage_names}
-    successors: Dict[str, List[str]] = {name: [] for name in stage_names}
+    predecessors: dict[str, list[str]] = {name: [] for name in stage_names}
+    successors: dict[str, list[str]] = {name: [] for name in stage_names}
 
     _populate_edges(stage_names, ref_lookup, name_set, predecessors, successors)
 
@@ -98,11 +99,11 @@ def build_stage_dag(
 
 
 def _populate_edges(
-    stage_names: List[str],
-    ref_lookup: Dict[str, Any],
+    stage_names: list[str],
+    ref_lookup: dict[str, Any],
     name_set: set,
-    predecessors: Dict[str, List[str]],
-    successors: Dict[str, List[str]],
+    predecessors: dict[str, list[str]],
+    successors: dict[str, list[str]],
 ) -> None:
     """Fill predecessors and successors dicts from depends_on declarations.
 
@@ -121,17 +122,15 @@ def _populate_edges(
         deps = _get_depends_on(ref) if ref else []
         for dep in deps:
             if dep not in name_set:
-                raise ValueError(
-                    f"Stage '{name}' depends_on unknown stage '{dep}'"
-                )
+                raise ValueError(f"Stage '{name}' depends_on unknown stage '{dep}'")
             predecessors[name].append(dep)
             successors[dep].append(name)
 
 
 def _kahn_bfs(
-    in_degree: Dict[str, int],
-    predecessors: Dict[str, List[str]],
-    stage_names: List[str],
+    in_degree: dict[str, int],
+    predecessors: dict[str, list[str]],
+    stage_names: list[str],
 ) -> int:
     """Run Kahn's BFS and return the number of visited nodes."""
     queue: deque[str] = deque(n for n in stage_names if in_degree[n] == 0)
@@ -150,9 +149,9 @@ def _kahn_bfs(
 
 
 def _detect_cycle(
-    predecessors: Dict[str, List[str]],
-    stage_names: List[str],
-) -> Optional[List[str]]:
+    predecessors: dict[str, list[str]],
+    stage_names: list[str],
+) -> list[str] | None:
     """Detect a cycle using Kahn's algorithm.
 
     Returns:
@@ -168,9 +167,9 @@ def _detect_cycle(
 
 
 def _topological_sort(
-    predecessors: Dict[str, List[str]],
-    stage_names: List[str],
-) -> List[str]:
+    predecessors: dict[str, list[str]],
+    stage_names: list[str],
+) -> list[str]:
     """Kahn's algorithm topological sort preserving declaration order for ties.
 
     Args:
@@ -189,7 +188,7 @@ def _topological_sort(
             key=lambda n: order_index[n],
         )
     )
-    result: List[str] = []
+    result: list[str] = []
 
     while queue:
         node = queue.popleft()
@@ -207,7 +206,7 @@ def _topological_sort(
     return result
 
 
-def _build_ref_lookup(stage_refs: List[Any]) -> Dict[str, Any]:
+def _build_ref_lookup(stage_refs: list[Any]) -> dict[str, Any]:
     """Build name -> reference lookup from stage references.
 
     Args:
@@ -216,7 +215,7 @@ def _build_ref_lookup(stage_refs: List[Any]) -> Dict[str, Any]:
     Returns:
         Dict mapping stage name to its reference
     """
-    lookup: Dict[str, Any] = {}
+    lookup: dict[str, Any] = {}
     for ref in stage_refs:
         if isinstance(ref, str):
             continue
@@ -226,7 +225,7 @@ def _build_ref_lookup(stage_refs: List[Any]) -> Dict[str, Any]:
     return lookup
 
 
-def compute_depths(dag: StageDAG) -> Dict[str, int]:
+def compute_depths(dag: StageDAG) -> dict[str, int]:
     """Compute the depth (longest path from any root) for each stage.
 
     Used to detect asymmetric fan-in where LangGraph's Pregel model
@@ -238,7 +237,7 @@ def compute_depths(dag: StageDAG) -> Dict[str, int]:
     Returns:
         Dict mapping stage name to its depth (0 for roots)
     """
-    depths: Dict[str, int] = {}
+    depths: dict[str, int] = {}
     for stage in dag.topo_order:
         preds = dag.predecessors.get(stage, [])
         if not preds:
@@ -248,7 +247,7 @@ def compute_depths(dag: StageDAG) -> Dict[str, int]:
     return depths
 
 
-def _get_depends_on(ref: Any) -> List[str]:
+def _get_depends_on(ref: Any) -> list[str]:
     """Extract depends_on list from a stage reference.
 
     Args:
@@ -260,5 +259,5 @@ def _get_depends_on(ref: Any) -> List[str]:
     if ref is None or isinstance(ref, str):
         return []
     if isinstance(ref, dict):
-        return cast(List[str], ref.get("depends_on", []))
+        return cast(list[str], ref.get("depends_on", []))
     return getattr(ref, "depends_on", [])

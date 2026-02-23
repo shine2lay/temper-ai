@@ -72,7 +72,9 @@ class TestCriteriaEvaluator:
         config = EvaluatorConfig(
             type="criteria",
             checks=[
-                CheckConfig(name="slow", method="programmatic", command="sleep 100"),  # noqa
+                CheckConfig(
+                    name="slow", method="programmatic", command="sleep 100"
+                ),  # noqa
             ],
         )
         evaluator = CriteriaEvaluator(config=config)

@@ -13,7 +13,8 @@ states. These tests establish the foundation for future state management:
 Future enhancement: Add explicit agent states (idle, executing, tool_call,
 waiting, completed, failed, retry) for better observability and control.
 """
-from typing import Any, Dict, Optional
+
+from typing import Any
 from unittest.mock import patch
 
 from temper_ai.agent.base_agent import AgentResponse, BaseAgent, ExecutionContext
@@ -27,20 +28,15 @@ def create_mock_config(name: str = "test_agent", **kwargs) -> AgentConfig:
             "name": name,
             "description": "Test agent",
             "version": "1.0",
-            "inference": {
-                "provider": "openai",
-                "model": "gpt-4"
-            },
-            "prompt": {
-                "template": "test template"
-            },
+            "inference": {"provider": "openai", "model": "gpt-4"},
+            "prompt": {"template": "test template"},
             "tools": [],  # Required field
             "error_handling": {  # Required field
                 "retry_strategy": "ExponentialBackoff",
                 "max_retries": 3,
                 "fallback": "GracefulDegradation",
-                "escalate_to_human_after": 3
-            }
+                "escalate_to_human_after": 3,
+            },
         }
     }
 
@@ -57,24 +53,20 @@ class MockAgent(BaseAgent):
 
     def _run(
         self,
-        input_data: Dict[str, Any],
-        context: Optional[ExecutionContext] = None,
+        input_data: dict[str, Any],
+        context: ExecutionContext | None = None,
         start_time: float = 0.0,
     ) -> AgentResponse:
         """Execute agent logic."""
         return AgentResponse(
             output="mock result",
             reasoning="mock reasoning",
-            metadata={"input": input_data}
+            metadata={"input": input_data},
         )
 
-    def get_capabilities(self) -> Dict[str, Any]:
+    def get_capabilities(self) -> dict[str, Any]:
         """Get agent capabilities."""
-        return {
-            "name": self.name,
-            "version": self.version,
-            "tools": []
-        }
+        return {"name": self.name, "version": self.version, "tools": []}
 
 
 def _make_mock_agent(config):
@@ -99,8 +91,7 @@ class TestAgentInitialization:
     def test_agent_with_tools(self):
         """Test agent initialization with tools."""
         config = create_mock_config(
-            name="test_agent",
-            tools=[{"name": "search"}, {"name": "calculator"}]
+            name="test_agent", tools=[{"name": "search"}, {"name": "calculator"}]
         )
 
         agent = _make_mock_agent(config)
@@ -137,15 +128,9 @@ class TestAgentExecutionFlow:
         config = create_mock_config(name="test_agent")
         agent = _make_mock_agent(config)
 
-        input_data = {
-            "query": "follow-up",
-            "previous_output": "initial result"
-        }
+        input_data = {"query": "follow-up", "previous_output": "initial result"}
 
-        context = ExecutionContext(
-            workflow_id="wf-001",
-            stage_id="stage1"
-        )
+        context = ExecutionContext(workflow_id="wf-001", stage_id="stage1")
 
         result = agent.execute(input_data, context)
 
@@ -233,8 +218,8 @@ class TestAgentToolCalls:
             name="tool_agent",
             tools=[
                 {"name": "search", "description": "Search the web"},
-                {"name": "calculator", "description": "Calculate"}
-            ]
+                {"name": "calculator", "description": "Calculate"},
+            ],
         )
 
         agent = _make_mock_agent(config)
@@ -243,17 +228,11 @@ class TestAgentToolCalls:
 
     def test_agent_tool_execution_simulation(self):
         """Test agent with tool config completes and preserves input."""
-        config = create_mock_config(
-            name="tool_agent",
-            tools=[{"name": "search"}]
-        )
+        config = create_mock_config(name="tool_agent", tools=[{"name": "search"}])
 
         agent = _make_mock_agent(config)
 
-        input_data = {
-            "query": "search for Python",
-            "use_tools": True
-        }
+        input_data = {"query": "search for Python", "use_tools": True}
 
         result = agent.execute(input_data)
 
@@ -300,14 +279,8 @@ class TestAgentEdgeCases:
 
         complex_input = {
             "query": "test",
-            "context": {
-                "previous": ["item1", "item2"],
-                "metadata": {"key": "value"}
-            },
-            "options": {
-                "temperature": 0.7,
-                "max_tokens": 1000
-            }
+            "context": {"previous": ["item1", "item2"], "metadata": {"key": "value"}},
+            "options": {"temperature": 0.7, "max_tokens": 1000},
         }
 
         result = agent.execute(complex_input)
@@ -334,7 +307,7 @@ class TestAgentEdgeCases:
 
         large_input = {
             "query": "process data",
-            "data": ["item" * 100 for _ in range(1000)]
+            "data": ["item" * 100 for _ in range(1000)],
         }
 
         result = agent.execute(large_input)

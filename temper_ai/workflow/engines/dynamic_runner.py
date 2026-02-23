@@ -6,9 +6,11 @@ No LangGraph dependency.
 Used for parallel agent execution within a single stage (same role as
 LangGraphParallelRunner in the LangGraph engine).
 """
+
 import logging
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Any, Callable, Dict, Optional
+from typing import Any
 
 from temper_ai.stage.executors.base import ParallelRunner
 
@@ -18,7 +20,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_MAX_WORKERS = 8
 
 
-def _merge_dicts(left: Dict[str, Any], right: Dict[str, Any]) -> Dict[str, Any]:
+def _merge_dicts(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:
     """Recursively merge two dicts; right wins on conflict for non-dict values.
 
     Matches LangGraph's Annotated[Dict, _merge_dicts] reducer semantics:
@@ -53,12 +55,12 @@ class ThreadPoolParallelRunner(ParallelRunner):
 
     def run_parallel(
         self,
-        nodes: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]],
-        initial_state: Dict[str, Any],
+        nodes: dict[str, Callable[[dict[str, Any]], dict[str, Any]]],
+        initial_state: dict[str, Any],
         *,
-        init_node: Optional[Callable[[Dict[str, Any]], Dict[str, Any]]] = None,
-        collect_node: Optional[Callable[[Dict[str, Any]], Dict[str, Any]]] = None,
-    ) -> Dict[str, Any]:
+        init_node: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
+        collect_node: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
         """Execute nodes in parallel and return collected results.
 
         Args:
@@ -94,9 +96,9 @@ class ThreadPoolParallelRunner(ParallelRunner):
 
     def _run_nodes_parallel(
         self,
-        nodes: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]],
-        state: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        nodes: dict[str, Callable[[dict[str, Any]], dict[str, Any]]],
+        state: dict[str, Any],
+    ) -> dict[str, Any]:
         """Execute nodes in parallel using ThreadPoolExecutor.
 
         Each node receives a copy of the current state.
@@ -107,8 +109,7 @@ class ThreadPoolParallelRunner(ParallelRunner):
 
         with ThreadPoolExecutor(max_workers=effective_workers) as executor:
             future_to_name = {
-                executor.submit(fn, dict(state)): name
-                for name, fn in nodes.items()
+                executor.submit(fn, dict(state)): name for name, fn in nodes.items()
             }
 
             for future in as_completed(future_to_name):
@@ -119,5 +120,6 @@ class ThreadPoolParallelRunner(ParallelRunner):
                         merged = _merge_dicts(merged, result)
                 except Exception:
                     logger.exception("Parallel node '%s' failed", name)
+                    merged.setdefault("_failed_nodes", []).append(name)
 
         return merged

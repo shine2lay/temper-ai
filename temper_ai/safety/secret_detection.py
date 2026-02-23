@@ -4,7 +4,7 @@ Detects secrets (API keys, passwords, tokens) in code, configurations, and data
 to prevent accidental exposure. Uses pattern matching and entropy analysis.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from temper_ai.safety._secret_detection_helpers import (
     validate_enabled_patterns,
@@ -23,7 +23,11 @@ from temper_ai.safety.constants import (
     SECRET_DETECTION_SESSION_KEY_SIZE,
 )
 from temper_ai.safety.entropy_analyzer import EntropyAnalyzer
-from temper_ai.safety.interfaces import SafetyViolation, ValidationResult, ViolationSeverity
+from temper_ai.safety.interfaces import (
+    SafetyViolation,
+    ValidationResult,
+    ViolationSeverity,
+)
 from temper_ai.safety.pattern_matcher import PatternMatcher
 from temper_ai.safety.redaction_utils import create_redacted_preview, hash_secret
 from temper_ai.safety.test_secret_filter import TestSecretFilter
@@ -55,9 +59,10 @@ class SecretDetectionPolicy(BaseSafetyPolicy, ValidationMixin):
     from temper_ai.shared.utils.secret_patterns import (
         SECRET_PATTERNS as _SECRET_PATTERNS,
     )
+
     SECRET_PATTERNS = {**_SECRET_PATTERNS, **_GENERIC_SECRET_PATTERNS}
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: dict[str, Any] | None = None):
         """Initialize secret detection policy.
 
         Args:
@@ -69,7 +74,9 @@ class SecretDetectionPolicy(BaseSafetyPolicy, ValidationMixin):
         super().__init__(config or {})
 
         # Validate and store patterns (delegated to helper)
-        self.enabled_patterns = validate_enabled_patterns(self.config, self.SECRET_PATTERNS)
+        self.enabled_patterns = validate_enabled_patterns(
+            self.config, self.SECRET_PATTERNS
+        )
 
         # Validate and store entropy thresholds (inlined)
         self.entropy_threshold = self._validate_float_range(
@@ -79,7 +86,9 @@ class SecretDetectionPolicy(BaseSafetyPolicy, ValidationMixin):
             max_value=MAX_SHANNON_ENTROPY,
         )
         self.entropy_threshold_generic = self._validate_float_range(
-            self.config.get(ENTROPY_THRESHOLD_GENERIC_KEY, DEFAULT_ENTROPY_THRESHOLD_GENERIC),
+            self.config.get(
+                ENTROPY_THRESHOLD_GENERIC_KEY, DEFAULT_ENTROPY_THRESHOLD_GENERIC
+            ),
             "entropy_threshold_generic",
             min_value=MIN_ENTROPY_VALUE,
             max_value=MAX_SHANNON_ENTROPY,
@@ -145,7 +154,7 @@ class SecretDetectionPolicy(BaseSafetyPolicy, ValidationMixin):
         """Create HMAC-SHA256 hash of secret for deduplication."""
         return hash_secret(text, self._session_key)
 
-    def get_detection_summary(self) -> Dict[str, Any]:
+    def get_detection_summary(self) -> dict[str, Any]:
         """Get summary of detection configuration and capabilities."""
         generic_names = set(self._GENERIC_SECRET_PATTERNS.keys())
         specific_patterns = [
@@ -168,7 +177,7 @@ class SecretDetectionPolicy(BaseSafetyPolicy, ValidationMixin):
             "test_secret_patterns": len(TestSecretFilter.TEST_SECRET_PATTERNS),
         }
 
-    def _sanitize_context(self, context: Dict[str, Any]) -> Dict[str, Any]:
+    def _sanitize_context(self, context: dict[str, Any]) -> dict[str, Any]:
         """Sanitize execution context to prevent re-exposure of detected secrets."""
         from temper_ai.shared.utils.config_helpers import sanitize_config_for_display
 
@@ -176,8 +185,8 @@ class SecretDetectionPolicy(BaseSafetyPolicy, ValidationMixin):
 
     def _validate_impl(
         self,
-        action: Dict[str, Any],
-        context: Dict[str, Any],
+        action: dict[str, Any],
+        context: dict[str, Any],
     ) -> ValidationResult:
         """Detect secrets in action content.
 
@@ -198,16 +207,14 @@ class SecretDetectionPolicy(BaseSafetyPolicy, ValidationMixin):
 
         violations = self._scan_for_secrets(content, file_path, context)
 
-        valid = not any(
-            v.severity >= ViolationSeverity.HIGH for v in violations
-        )
+        valid = not any(v.severity >= ViolationSeverity.HIGH for v in violations)
         return ValidationResult(
             valid=valid,
             violations=violations,
             policy_name=self.name,
         )
 
-    def _extract_content(self, action: Dict[str, Any]) -> tuple[str, str]:
+    def _extract_content(self, action: dict[str, Any]) -> tuple[str, str]:
         """Extract content to scan from action. Returns (content, file_path)."""
         file_path = action.get("file_path", "")
         content = ""
@@ -223,10 +230,10 @@ class SecretDetectionPolicy(BaseSafetyPolicy, ValidationMixin):
         self,
         content: str,
         file_path: str,
-        context: Dict[str, Any],
-    ) -> List[SafetyViolation]:
+        context: dict[str, Any],
+    ) -> list[SafetyViolation]:
         """Scan content for secret patterns."""
-        violations: List[SafetyViolation] = []
+        violations: list[SafetyViolation] = []
 
         for pattern_match in self.pattern_matcher.find_matches(content):
             if self._is_test_secret(pattern_match.secret_value):
@@ -251,7 +258,7 @@ class SecretDetectionPolicy(BaseSafetyPolicy, ValidationMixin):
         pattern_match: Any,
         entropy: float,
         file_path: str,
-        context: Dict[str, Any],
+        context: dict[str, Any],
     ) -> SafetyViolation:
         """Create a SafetyViolation for a detected secret."""
         severity = self._determine_severity(pattern_match.pattern_name, entropy)
@@ -277,11 +284,18 @@ class SecretDetectionPolicy(BaseSafetyPolicy, ValidationMixin):
             },
         )
 
-    def _determine_severity(self, pattern_name: str, entropy: float) -> ViolationSeverity:
+    def _determine_severity(
+        self, pattern_name: str, entropy: float
+    ) -> ViolationSeverity:
         """Determine violation severity based on pattern and entropy."""
         if pattern_name in ("private_key", "aws_secret_key"):
             return ViolationSeverity.CRITICAL
-        elif pattern_name in ("aws_access_key", "github_token", "generic_api_key", "stripe_key"):
+        elif pattern_name in (
+            "aws_access_key",
+            "github_token",
+            "generic_api_key",
+            "stripe_key",
+        ):
             return ViolationSeverity.HIGH
         elif entropy > self.entropy_threshold:
             return ViolationSeverity.HIGH

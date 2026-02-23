@@ -9,23 +9,18 @@ from unittest.mock import Mock, patch
 import pytest
 
 from temper_ai.workflow.execution_engine import ExecutionMode
-from temper_ai.workflow.langgraph_engine import LangGraphCompiledWorkflow, LangGraphExecutionEngine
+from temper_ai.workflow.langgraph_engine import (
+    LangGraphCompiledWorkflow,
+    LangGraphExecutionEngine,
+)
 
 # Sample workflow configs for testing
-SIMPLE_WORKFLOW_CONFIG = {
-    "workflow": {
-        "stages": ["research", "synthesis"]
-    }
-}
+SIMPLE_WORKFLOW_CONFIG = {"workflow": {"stages": ["research", "synthesis"]}}
 
 COMPLEX_WORKFLOW_CONFIG = {
     "workflow": {
         "name": "complex_workflow",
-        "stages": [
-            {"name": "stage1"},
-            {"name": "stage2"},
-            {"name": "stage3"}
-        ]
+        "stages": [{"name": "stage1"}, {"name": "stage2"}, {"name": "stage3"}],
     }
 }
 
@@ -39,8 +34,7 @@ class TestLangGraphCompiledWorkflow:
         workflow_config = SIMPLE_WORKFLOW_CONFIG
 
         compiled = LangGraphCompiledWorkflow(
-            graph=mock_graph,
-            workflow_config=workflow_config
+            graph=mock_graph, workflow_config=workflow_config
         )
 
         assert compiled.graph == mock_graph
@@ -54,9 +48,7 @@ class TestLangGraphCompiledWorkflow:
         workflow_config = SIMPLE_WORKFLOW_CONFIG
 
         compiled = LangGraphCompiledWorkflow(
-            graph=mock_graph,
-            workflow_config=workflow_config,
-            tracker=mock_tracker
+            graph=mock_graph, workflow_config=workflow_config, tracker=mock_tracker
         )
 
         assert compiled.tracker == mock_tracker
@@ -67,8 +59,7 @@ class TestLangGraphCompiledWorkflow:
         mock_graph.invoke = Mock(return_value={"result": "success"})
 
         compiled = LangGraphCompiledWorkflow(
-            graph=mock_graph,
-            workflow_config=SIMPLE_WORKFLOW_CONFIG
+            graph=mock_graph, workflow_config=SIMPLE_WORKFLOW_CONFIG
         )
 
         result = compiled.invoke({"input": "test"})
@@ -87,7 +78,7 @@ class TestLangGraphCompiledWorkflow:
         compiled = LangGraphCompiledWorkflow(
             graph=mock_graph,
             workflow_config=SIMPLE_WORKFLOW_CONFIG,
-            tracker=mock_tracker
+            tracker=mock_tracker,
         )
 
         result = compiled.invoke({"input": "test"})
@@ -108,8 +99,7 @@ class TestLangGraphCompiledWorkflow:
         mock_graph.ainvoke = async_invoke
 
         compiled = LangGraphCompiledWorkflow(
-            graph=mock_graph,
-            workflow_config=SIMPLE_WORKFLOW_CONFIG
+            graph=mock_graph, workflow_config=SIMPLE_WORKFLOW_CONFIG
         )
 
         result = await compiled.ainvoke({"input": "test"})
@@ -120,8 +110,7 @@ class TestLangGraphCompiledWorkflow:
         """Test _extract_stage_names with list of strings."""
         mock_graph = Mock()
         compiled = LangGraphCompiledWorkflow(
-            graph=mock_graph,
-            workflow_config=SIMPLE_WORKFLOW_CONFIG
+            graph=mock_graph, workflow_config=SIMPLE_WORKFLOW_CONFIG
         )
 
         stages = ["stage1", "stage2", "stage3"]
@@ -133,14 +122,13 @@ class TestLangGraphCompiledWorkflow:
         """Test _extract_stage_names with list of dictionaries."""
         mock_graph = Mock()
         compiled = LangGraphCompiledWorkflow(
-            graph=mock_graph,
-            workflow_config=SIMPLE_WORKFLOW_CONFIG
+            graph=mock_graph, workflow_config=SIMPLE_WORKFLOW_CONFIG
         )
 
         stages = [
             {"name": "stage1"},
             {"stage_name": "stage2"},  # Alternative key
-            {"name": "stage3", "other_field": "value"}
+            {"name": "stage3", "other_field": "value"},
         ]
         result = compiled._extract_stage_names(stages)
 
@@ -150,18 +138,17 @@ class TestLangGraphCompiledWorkflow:
         """Test _extract_stage_names with objects/models."""
         mock_graph = Mock()
         compiled = LangGraphCompiledWorkflow(
-            graph=mock_graph,
-            workflow_config=SIMPLE_WORKFLOW_CONFIG
+            graph=mock_graph, workflow_config=SIMPLE_WORKFLOW_CONFIG
         )
 
         # Create proper mock stage objects with spec to control attributes
-        stage1 = Mock(spec=['name'])
+        stage1 = Mock(spec=["name"])
         stage1.name = "stage1"
 
-        stage2 = Mock(spec=['stage_name'])
+        stage2 = Mock(spec=["stage_name"])
         stage2.stage_name = "stage2"  # Alternative attribute
 
-        stage3 = Mock(spec=['name'])
+        stage3 = Mock(spec=["name"])
         stage3.name = "stage3"
 
         stages = [stage1, stage2, stage3]
@@ -173,19 +160,14 @@ class TestLangGraphCompiledWorkflow:
         """Test _extract_stage_names with mixed input formats."""
         mock_graph = Mock()
         compiled = LangGraphCompiledWorkflow(
-            graph=mock_graph,
-            workflow_config=SIMPLE_WORKFLOW_CONFIG
+            graph=mock_graph, workflow_config=SIMPLE_WORKFLOW_CONFIG
         )
 
         # Mock stage object
         stage_obj = Mock()
         stage_obj.name = "stage3"
 
-        stages = [
-            "stage1",                          # String
-            {"name": "stage2"},                # Dict
-            stage_obj                          # Object
-        ]
+        stages = ["stage1", {"name": "stage2"}, stage_obj]  # String  # Dict  # Object
         result = compiled._extract_stage_names(stages)
 
         assert result == ["stage1", "stage2", "stage3"]
@@ -194,8 +176,7 @@ class TestLangGraphCompiledWorkflow:
         """Test _extract_stage_names with empty list."""
         mock_graph = Mock()
         compiled = LangGraphCompiledWorkflow(
-            graph=mock_graph,
-            workflow_config=SIMPLE_WORKFLOW_CONFIG
+            graph=mock_graph, workflow_config=SIMPLE_WORKFLOW_CONFIG
         )
 
         stages = []
@@ -208,8 +189,7 @@ class TestLangGraphCompiledWorkflow:
         mock_graph = Mock()
 
         compiled = LangGraphCompiledWorkflow(
-            graph=mock_graph,
-            workflow_config=SIMPLE_WORKFLOW_CONFIG
+            graph=mock_graph, workflow_config=SIMPLE_WORKFLOW_CONFIG
         )
 
         metadata = compiled.get_metadata()
@@ -224,8 +204,7 @@ class TestLangGraphCompiledWorkflow:
         mock_graph = Mock()
 
         compiled = LangGraphCompiledWorkflow(
-            graph=mock_graph,
-            workflow_config=COMPLEX_WORKFLOW_CONFIG
+            graph=mock_graph, workflow_config=COMPLEX_WORKFLOW_CONFIG
         )
 
         metadata = compiled.get_metadata()
@@ -238,8 +217,7 @@ class TestLangGraphCompiledWorkflow:
         mock_graph = Mock()
 
         compiled = LangGraphCompiledWorkflow(
-            graph=mock_graph,
-            workflow_config=SIMPLE_WORKFLOW_CONFIG
+            graph=mock_graph, workflow_config=SIMPLE_WORKFLOW_CONFIG
         )
 
         mermaid = compiled.visualize()
@@ -259,8 +237,7 @@ class TestLangGraphCompiledWorkflow:
         mock_graph = Mock()
 
         compiled = LangGraphCompiledWorkflow(
-            graph=mock_graph,
-            workflow_config=COMPLEX_WORKFLOW_CONFIG
+            graph=mock_graph, workflow_config=COMPLEX_WORKFLOW_CONFIG
         )
 
         mermaid = compiled.visualize()
@@ -290,14 +267,13 @@ class TestLangGraphExecutionEngine:
         mock_loader = Mock()
 
         engine = LangGraphExecutionEngine(
-            tool_registry=mock_registry,
-            config_loader=mock_loader
+            tool_registry=mock_registry, config_loader=mock_loader
         )
 
         assert engine.tool_registry == mock_registry
         assert engine.config_loader == mock_loader
 
-    @patch('temper_ai.workflow.engines.langgraph_engine.LangGraphCompiler')
+    @patch("temper_ai.workflow.engines.langgraph_engine.LangGraphCompiler")
     def test_compile(self, mock_compiler_class):
         """Test workflow compilation."""
         # Setup mock
@@ -324,9 +300,7 @@ class TestLangGraphExecutionEngine:
         mock_compiled.invoke = Mock(return_value={"result": "success"})
 
         result = engine.execute(
-            mock_compiled,
-            {"input": "test"},
-            mode=ExecutionMode.SYNC
+            mock_compiled, {"input": "test"}, mode=ExecutionMode.SYNC
         )
 
         assert result == {"result": "success"}
@@ -346,9 +320,7 @@ class TestLangGraphExecutionEngine:
 
         # Execute in ASYNC mode (which wraps ainvoke with asyncio.run)
         result = engine.execute(
-            mock_compiled,
-            {"input": "test"},
-            mode=ExecutionMode.ASYNC
+            mock_compiled, {"input": "test"}, mode=ExecutionMode.ASYNC
         )
 
         assert result == {"result": "async_success"}
@@ -360,11 +332,7 @@ class TestLangGraphExecutionEngine:
         mock_compiled = Mock(spec=LangGraphCompiledWorkflow)
 
         with pytest.raises(NotImplementedError, match="STREAM mode not yet supported"):
-            engine.execute(
-                mock_compiled,
-                {"input": "test"},
-                mode=ExecutionMode.STREAM
-            )
+            engine.execute(mock_compiled, {"input": "test"}, mode=ExecutionMode.STREAM)
 
     def test_execute_wrong_workflow_type(self):
         """Test execute with wrong CompiledWorkflow type raises TypeError."""
@@ -433,35 +401,39 @@ class TestIntegration:
         loader = Mock()
 
         # Mock stage config
-        loader.load_stage = Mock(return_value={
-            "stage": {
-                "agents": ["research_agent"]
-            }
-        })
-
-        # Mock agent config (must match AgentConfig schema structure)
-        loader.load_agent = Mock(return_value={
-            "agent": {
-                "name": "research_agent",
-                "description": "Test agent",
-                "type": "standard",
-                "prompt": {
-                    "inline": "Test prompt template"
-                },
-                "inference": {
-                    "provider": "anthropic",
-                    "model": "claude-3-5-sonnet-20241022",
-                    "temperature": 0.7,
-                    "max_tokens": 1000
-                },
-                "tools": [],
-                "error_handling": {
-                    "retry_strategy": "ExponentialBackoff",
-                    "max_retries": 3,
-                    "fallback": "GracefulDegradation"
+        loader.load_stage = Mock(
+            return_value={
+                "stage": {
+                    "name": "test_stage",
+                    "description": "Test stage",
+                    "agents": ["research_agent"],
                 }
             }
-        })
+        )
+
+        # Mock agent config (must match AgentConfig schema structure)
+        loader.load_agent = Mock(
+            return_value={
+                "agent": {
+                    "name": "research_agent",
+                    "description": "Test agent",
+                    "type": "standard",
+                    "prompt": {"inline": "Test prompt template"},
+                    "inference": {
+                        "provider": "anthropic",
+                        "model": "claude-3-5-sonnet-20241022",
+                        "temperature": 0.7,
+                        "max_tokens": 1000,
+                    },
+                    "tools": [],
+                    "error_handling": {
+                        "retry_strategy": "ExponentialBackoff",
+                        "max_retries": 3,
+                        "fallback": "GracefulDegradation",
+                    },
+                }
+            }
+        )
 
         return loader
 
@@ -470,34 +442,42 @@ class TestIntegration:
         """Create mock tool registry."""
         return Mock()
 
-    def test_compile_and_execute_integration(self, mock_config_loader, mock_tool_registry):
+    def test_compile_and_execute_integration(
+        self, mock_config_loader, mock_tool_registry
+    ):
         """Test full compile and execute workflow (mocked)."""
         # This test verifies the adapter works end-to-end
         # In practice, this would be tested with real configs in integration tests
 
         engine = LangGraphExecutionEngine(
-            tool_registry=mock_tool_registry,
-            config_loader=mock_config_loader
+            tool_registry=mock_tool_registry, config_loader=mock_config_loader
         )
 
-        workflow_config = {
-            "workflow": {
-                "stages": ["test_stage"]
-            }
-        }
+        workflow_config = {"workflow": {"stages": ["test_stage"]}}
 
         # Compile
-        with patch('temper_ai.stage.executors.sequential.AgentFactory.create') as mock_create, \
-             patch('temper_ai.stage.executors.parallel.AgentFactory.create') as mock_create_p:
+        with (
+            patch(
+                "temper_ai.stage.executors.sequential.AgentFactory.create"
+            ) as mock_create,
+            patch(
+                "temper_ai.stage.executors.parallel.AgentFactory.create"
+            ) as mock_create_p,
+        ):
             # Mock agent execution
             mock_agent = Mock()
-            mock_agent.execute = Mock(return_value=Mock(
-                output="test output",
-                reasoning="test reasoning",
-                tokens=100,
-                estimated_cost_usd=0.001,
-                tool_calls=[]
-            ))
+            mock_agent.execute = Mock(
+                return_value=Mock(
+                    output="test output",
+                    reasoning="test reasoning",
+                    tokens=100,
+                    estimated_cost_usd=0.001,
+                    tool_calls=[],
+                    script_outputs={},
+                    confidence_score=None,
+                    metadata={},
+                )
+            )
             mock_create.return_value = mock_agent
             mock_create_p.return_value = mock_agent
 
@@ -509,9 +489,7 @@ class TestIntegration:
 
             # Execute
             result = engine.execute(
-                compiled,
-                {"input": "test input"},
-                mode=ExecutionMode.SYNC
+                compiled, {"input": "test input"}, mode=ExecutionMode.SYNC
             )
 
             # Verify result has expected structure
@@ -524,14 +502,13 @@ class TestIntegration:
         workflow_config = {
             "workflow": {
                 "name": "test_workflow",
-                "stages": [
-                    {"name": "stage1"},
-                    {"name": "stage2"}
-                ]
+                "stages": [{"name": "stage1"}, {"name": "stage2"}],
             }
         }
 
-        with patch('temper_ai.workflow.langgraph_compiler.LangGraphCompiler.compile') as mock_compile:
+        with patch(
+            "temper_ai.workflow.langgraph_compiler.LangGraphCompiler.compile"
+        ) as mock_compile:
             mock_graph = Mock()
             mock_compile.return_value = mock_graph
 

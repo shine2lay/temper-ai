@@ -6,7 +6,7 @@
 
 ## Overview
 
-This document provides a comprehensive audit trail specification for data sanitization within the meta-autonomous-framework. It documents what gets sanitized, when sanitization occurs, how to correlate sanitized logs with original requests, and retention policies for sanitization metadata.
+This document provides a comprehensive audit trail specification for data sanitization within Temper AI. It documents what gets sanitized, when sanitization occurs, how to correlate sanitized logs with original requests, and retention policies for sanitization metadata.
 
 ## What Gets Sanitized
 

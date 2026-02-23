@@ -3,9 +3,11 @@
 Wraps compiled StateGraph and provides execution interface with observability.
 Supports checkpoint/resume capability for fault tolerance and long-running workflows.
 """
+
 import dataclasses
 import logging
-from typing import Any, Dict, Iterator, Optional, cast
+from collections.abc import Iterator
+from typing import Any, cast
 
 from langgraph.graph import StateGraph
 
@@ -19,10 +21,10 @@ logger = logging.getLogger(__name__)
 def _save_checkpoint_on_interval(
     checkpoint_manager: Any,
     final_state: Any,
-    tracker: Optional[Any],
+    tracker: Any | None,
     stage_count: int,
     stage_name: str,
-    workflow_id: str
+    workflow_id: str,
 ) -> None:
     """Save checkpoint and track event."""
     import dataclasses
@@ -38,17 +40,19 @@ def _save_checkpoint_on_interval(
     if tracker:
         logger.info(
             "Checkpoint saved for workflow %s at stage '%s' (count: %d)",
-            workflow_id, stage_name, stage_count,
+            workflow_id,
+            stage_name,
+            stage_count,
         )
 
 
 def _save_checkpoint_on_error(
     checkpoint_manager: Any,
     final_state: Any,
-    tracker: Optional[Any],
+    tracker: Any | None,
     workflow_id: str,
     error: Exception,
-    stage_count: int
+    stage_count: int,
 ) -> None:
     """Save checkpoint on error and log."""
     import dataclasses
@@ -65,14 +69,16 @@ def _save_checkpoint_on_error(
         if tracker:
             logger.info(
                 "Checkpoint saved on error for workflow %s (stage_count: %d, error: %s)",
-                workflow_id, stage_count, error,
+                workflow_id,
+                stage_count,
+                error,
             )
     except Exception as checkpoint_error:
         logger.error(
             "Failed to save checkpoint for workflow %s: %s",
             workflow_id,
             checkpoint_error,
-            exc_info=True
+            exc_info=True,
         )
 
 
@@ -90,9 +96,9 @@ class CompiledGraphRunner:
     def __init__(
         self,
         graph: StateGraph[Any],
-        tracker: Optional[Any] = None,
-        checkpoint_manager: Optional[CheckpointManager] = None,
-        enable_checkpoints: bool = False
+        tracker: Any | None = None,
+        checkpoint_manager: CheckpointManager | None = None,
+        enable_checkpoints: bool = False,
     ) -> None:
         """Initialize executor.
 
@@ -114,10 +120,8 @@ class CompiledGraphRunner:
             self.checkpoint_manager = CheckpointManager()
 
     def execute(
-        self,
-        input_data: Dict[str, Any],
-        workflow_id: Optional[str] = None
-    ) -> Dict[str, Any]:
+        self, input_data: dict[str, Any], workflow_id: str | None = None
+    ) -> dict[str, Any]:
         """Execute workflow with given input.
 
         Synchronously executes the compiled workflow graph with the provided
@@ -140,21 +144,17 @@ class CompiledGraphRunner:
         """
         # Prepare initial state using state manager
         state = initialize_state(
-            input_data=input_data,
-            workflow_id=workflow_id,
-            tracker=self.tracker
+            input_data=input_data, workflow_id=workflow_id, tracker=self.tracker
         )
 
         # Execute graph
         result = self.graph.invoke(state)  # type: ignore[attr-defined]
 
-        return cast(Dict[str, Any], result)
+        return cast(dict[str, Any], result)
 
     async def execute_async(
-        self,
-        input_data: Dict[str, Any],
-        workflow_id: Optional[str] = None
-    ) -> Dict[str, Any]:
+        self, input_data: dict[str, Any], workflow_id: str | None = None
+    ) -> dict[str, Any]:
         """Execute workflow asynchronously.
 
         Asynchronously executes the compiled workflow graph. Useful for
@@ -175,20 +175,16 @@ class CompiledGraphRunner:
         """
         # Prepare initial state using state manager
         state = initialize_state(
-            input_data=input_data,
-            workflow_id=workflow_id,
-            tracker=self.tracker
+            input_data=input_data, workflow_id=workflow_id, tracker=self.tracker
         )
 
         # Execute graph asynchronously
         result = await self.graph.ainvoke(state)  # type: ignore[attr-defined]
 
-        return cast(Dict[str, Any], result)
+        return cast(dict[str, Any], result)
 
     def stream(
-        self,
-        input_data: Dict[str, Any],
-        workflow_id: Optional[str] = None
+        self, input_data: dict[str, Any], workflow_id: str | None = None
     ) -> Iterator[Any]:
         """Stream workflow execution for real-time updates.
 
@@ -208,9 +204,7 @@ class CompiledGraphRunner:
         """
         # Prepare initial state
         state = initialize_state(
-            input_data=input_data,
-            workflow_id=workflow_id,
-            tracker=self.tracker
+            input_data=input_data, workflow_id=workflow_id, tracker=self.tracker
         )
 
         # Stream execution
@@ -219,10 +213,10 @@ class CompiledGraphRunner:
 
     def execute_with_checkpoints(
         self,
-        input_data: Dict[str, Any],
-        workflow_id: Optional[str] = None,
-        checkpoint_interval: int = 1
-    ) -> Dict[str, Any]:
+        input_data: dict[str, Any],
+        workflow_id: str | None = None,
+        checkpoint_interval: int = 1,
+    ) -> dict[str, Any]:
         """Execute workflow with automatic checkpointing.
 
         Saves checkpoints at regular intervals during execution. If execution
@@ -245,13 +239,13 @@ class CompiledGraphRunner:
             ... )
         """
         if self.checkpoint_manager is None:
-            raise RuntimeError("Checkpoint manager not configured. Set enable_checkpoints=True or provide checkpoint_manager")
+            raise RuntimeError(
+                "Checkpoint manager not configured. Set enable_checkpoints=True or provide checkpoint_manager"
+            )
 
         # Prepare initial state
         state = initialize_state(
-            input_data=input_data,
-            workflow_id=workflow_id,
-            tracker=self.tracker
+            input_data=input_data, workflow_id=workflow_id, tracker=self.tracker
         )
 
         # Execute with streaming checkpoints
@@ -272,9 +266,12 @@ class CompiledGraphRunner:
                     # Checkpoint after checkpoint_interval stages
                     if stage_count % checkpoint_interval == 0:
                         _save_checkpoint_on_interval(
-                            self.checkpoint_manager, final_state, self.tracker,
-                            stage_count, stage_name,
-                            final_state.get("workflow_id", "unknown")
+                            self.checkpoint_manager,
+                            final_state,
+                            self.tracker,
+                            stage_count,
+                            stage_name,
+                            final_state.get("workflow_id", "unknown"),
                         )
 
             # Ensure we have a final state
@@ -283,18 +280,20 @@ class CompiledGraphRunner:
 
             # Save final checkpoint
             domain_state = self._extract_domain_state(final_state)
-            self.checkpoint_manager.save_checkpoint(
-                domain_state
-            )
+            self.checkpoint_manager.save_checkpoint(domain_state)
 
-            return cast(Dict[str, Any], final_state)
+            return cast(dict[str, Any], final_state)
 
         except Exception as e:
             # On error, save checkpoint at failure point if we have state
             if final_state is not None:
                 _save_checkpoint_on_error(
-                    self.checkpoint_manager, final_state, self.tracker,
-                    final_state.get("workflow_id", "unknown"), e, stage_count
+                    self.checkpoint_manager,
+                    final_state,
+                    self.tracker,
+                    final_state.get("workflow_id", "unknown"),
+                    e,
+                    stage_count,
                 )
 
             # Re-raise original error
@@ -303,8 +302,8 @@ class CompiledGraphRunner:
     def _load_and_prepare_checkpoint(
         self,
         workflow_id: str,
-        input_data: Optional[Dict[str, Any]] = None,
-    ) -> tuple[Any, Dict[str, Any]]:
+        input_data: dict[str, Any] | None = None,
+    ) -> tuple[Any, dict[str, Any]]:
         """Load checkpoint, merge input, and return (domain_state, state_dict)."""
         if self.checkpoint_manager is None:
             raise ValueError("checkpoint_manager required for checkpoint loading")
@@ -313,7 +312,8 @@ class CompiledGraphRunner:
         if self.tracker:
             logger.info(
                 "Checkpoint resumed for workflow %s (stage: %s, completed: %s)",
-                workflow_id, domain_state.current_stage,
+                workflow_id,
+                domain_state.current_stage,
                 list(domain_state.stage_outputs.keys()),
             )
 
@@ -330,10 +330,10 @@ class CompiledGraphRunner:
 
     def _stream_with_checkpoints(
         self,
-        state_dict: Dict[str, Any],
+        state_dict: dict[str, Any],
         workflow_id: str,
         state_holder: list,
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Stream graph execution, saving checkpoints after each stage.
 
         Updates state_holder[0] with the latest state for error recovery.
@@ -347,14 +347,12 @@ class CompiledGraphRunner:
                 state_holder[0] = chunk[stage_name]
                 domain_state_updated = self._extract_domain_state(state_holder[0])
                 self.checkpoint_manager.save_checkpoint(domain_state_updated)
-        result: Optional[Dict[str, Any]] = state_holder[0]
+        result: dict[str, Any] | None = state_holder[0]
         return result
 
     def resume_from_checkpoint(
-        self,
-        workflow_id: str,
-        input_data: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
+        self, workflow_id: str, input_data: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         """Resume workflow execution from checkpoint.
 
         Loads workflow state from checkpoint and continues execution
@@ -379,11 +377,15 @@ class CompiledGraphRunner:
         if self.checkpoint_manager is None:
             raise RuntimeError("Checkpoint manager not configured")
 
-        domain_state, state_dict = self._load_and_prepare_checkpoint(workflow_id, input_data)
+        domain_state, state_dict = self._load_and_prepare_checkpoint(
+            workflow_id, input_data
+        )
 
         state_holder: list = [None]
         try:
-            final_state = self._stream_with_checkpoints(state_dict, workflow_id, state_holder)
+            final_state = self._stream_with_checkpoints(
+                state_dict, workflow_id, state_holder
+            )
 
             if final_state is None:
                 if self.tracker:
@@ -404,11 +406,11 @@ class CompiledGraphRunner:
                         "Failed to save checkpoint for workflow %s: %s",
                         workflow_id,
                         checkpoint_error,
-                        exc_info=True
+                        exc_info=True,
                     )
             raise
 
-    def _extract_domain_state(self, state_dict: Dict[str, Any]) -> WorkflowDomainState:
+    def _extract_domain_state(self, state_dict: dict[str, Any]) -> WorkflowDomainState:
         """Extract domain state from workflow state dict.
 
         Filters out infrastructure components and creates WorkflowDomainState.
@@ -422,21 +424,18 @@ class CompiledGraphRunner:
         # Filter to domain fields only (derived from WorkflowDomainState dataclass)
         domain_fields = {f.name for f in dataclasses.fields(WorkflowDomainState)}
 
-        domain_dict = {
-            k: v for k, v in state_dict.items()
-            if k in domain_fields
-        }
+        domain_dict = {k: v for k, v in state_dict.items() if k in domain_fields}
 
         return WorkflowDomainState.from_dict(domain_dict)
 
     def execute_with_optimization(
         self,
-        input_data: Dict[str, Any],
+        input_data: dict[str, Any],
         optimization_config: Any,
-        workflow_id: Optional[str] = None,
-        llm: Optional[Any] = None,
-        experiment_service: Optional[Any] = None,
-    ) -> Dict[str, Any]:
+        workflow_id: str | None = None,
+        llm: Any | None = None,
+        experiment_service: Any | None = None,
+    ) -> dict[str, Any]:
         """Execute with optimization pipeline.
 
         Falls through to execute() if optimization is disabled or

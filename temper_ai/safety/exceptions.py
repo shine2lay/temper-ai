@@ -19,13 +19,16 @@ All exceptions support:
 - Clear error messages with remediation hints
 - Integration with SafetyViolation data models
 """
-from typing import Any, Dict, Optional
+
+from typing import Any
 
 from temper_ai.safety.interfaces import SafetyViolation, ViolationSeverity
 from temper_ai.shared.utils.exceptions import FrameworkException
 
 
-class SafetyViolationException(FrameworkException):  # noqa: N818 — public API, many subclasses
+class SafetyViolationException(
+    FrameworkException
+):  # noqa: N818 — public API, many subclasses
     """Base exception for all safety policy violations.
 
     This exception wraps a SafetyViolation data model and provides
@@ -59,9 +62,9 @@ class SafetyViolationException(FrameworkException):  # noqa: N818 — public API
         severity: ViolationSeverity,
         message: str,
         action: str,
-        context: Dict[str, Any],
-        remediation_hint: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None
+        context: dict[str, Any],
+        remediation_hint: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ):
         """Initialize safety violation exception.
 
@@ -82,7 +85,7 @@ class SafetyViolationException(FrameworkException):  # noqa: N818 — public API
             action=action,
             context=context,
             remediation_hint=remediation_hint,
-            metadata=metadata or {}
+            metadata=metadata or {},
         )
         self.policy_name = policy_name
         self.severity = severity
@@ -108,7 +111,7 @@ class SafetyViolationException(FrameworkException):  # noqa: N818 — public API
             f"message={self.message!r})"
         )
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert exception to dictionary for logging/serialization.
 
         Returns:
@@ -139,8 +142,13 @@ class SafetyViolationException(FrameworkException):  # noqa: N818 — public API
         # SECURITY: Sanitize context defensively in case violation was created
         # with unsanitized data. This provides defense-in-depth protection.
         from temper_ai.safety.service_mixin import _sanitize_violation_context
+
         sanitized_context = _sanitize_violation_context(violation.context)
-        sanitized_metadata = _sanitize_violation_context(violation.metadata) if violation.metadata else None
+        sanitized_metadata = (
+            _sanitize_violation_context(violation.metadata)
+            if violation.metadata
+            else None
+        )
 
         return cls(
             policy_name=violation.policy_name,
@@ -149,7 +157,7 @@ class SafetyViolationException(FrameworkException):  # noqa: N818 — public API
             action=violation.action,
             context=sanitized_context or {},
             remediation_hint=violation.remediation_hint,
-            metadata=sanitized_metadata
+            metadata=sanitized_metadata,
         )
 
 
@@ -175,9 +183,9 @@ class BlastRadiusViolation(SafetyViolationException):
         policy_name: str,
         message: str,
         action: str,
-        context: Dict[str, Any],
-        remediation_hint: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None
+        context: dict[str, Any],
+        remediation_hint: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ):
         """Initialize blast radius violation.
 
@@ -196,7 +204,7 @@ class BlastRadiusViolation(SafetyViolationException):
             action=action,
             context=context,
             remediation_hint=remediation_hint or "Reduce the scope of changes",
-            metadata=metadata
+            metadata=metadata,
         )
 
 
@@ -223,9 +231,9 @@ class ActionPolicyViolation(SafetyViolationException):
         policy_name: str,
         message: str,
         action: str,
-        context: Dict[str, Any],
-        remediation_hint: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None
+        context: dict[str, Any],
+        remediation_hint: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ):
         """Initialize action policy violation.
 
@@ -244,7 +252,7 @@ class ActionPolicyViolation(SafetyViolationException):
             action=action,
             context=context,
             remediation_hint=remediation_hint or "Review action policy constraints",
-            metadata=metadata
+            metadata=metadata,
         )
 
 
@@ -270,9 +278,9 @@ class RateLimitViolation(SafetyViolationException):
         policy_name: str,
         message: str,
         action: str,
-        context: Dict[str, Any],
-        remediation_hint: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None
+        context: dict[str, Any],
+        remediation_hint: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ):
         """Initialize rate limit violation.
 
@@ -290,8 +298,9 @@ class RateLimitViolation(SafetyViolationException):
             message=message,
             action=action,
             context=context,
-            remediation_hint=remediation_hint or "Reduce request rate or wait for cooldown",
-            metadata=metadata
+            remediation_hint=remediation_hint
+            or "Reduce request rate or wait for cooldown",
+            metadata=metadata,
         )
 
 
@@ -317,9 +326,9 @@ class ResourceLimitViolation(SafetyViolationException):
         policy_name: str,
         message: str,
         action: str,
-        context: Dict[str, Any],
-        remediation_hint: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None
+        context: dict[str, Any],
+        remediation_hint: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ):
         """Initialize resource limit violation.
 
@@ -338,7 +347,7 @@ class ResourceLimitViolation(SafetyViolationException):
             action=action,
             context=context,
             remediation_hint=remediation_hint or "Reduce resource consumption",
-            metadata=metadata
+            metadata=metadata,
         )
 
 
@@ -365,9 +374,9 @@ class ForbiddenOperationViolation(SafetyViolationException):
         policy_name: str,
         message: str,
         action: str,
-        context: Dict[str, Any],
-        remediation_hint: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None
+        context: dict[str, Any],
+        remediation_hint: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ):
         """Initialize forbidden operation violation.
 
@@ -386,7 +395,7 @@ class ForbiddenOperationViolation(SafetyViolationException):
             action=action,
             context=context,
             remediation_hint=remediation_hint or "Remove forbidden operation",
-            metadata=metadata
+            metadata=metadata,
         )
 
 
@@ -400,8 +409,8 @@ class EmergencyStopViolation(SafetyViolationException):
         self,
         message: str = "Emergency stop is active — all actions blocked",
         action: str = "",
-        context: Optional[Dict[str, Any]] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        context: dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
     ):
         super().__init__(
             policy_name="EmergencyStop",
@@ -409,7 +418,7 @@ class EmergencyStopViolation(SafetyViolationException):
             message=message,
             action=action,
             context=context or {},
-            remediation_hint="Deactivate emergency stop via CLI: temper-ai autonomy resume",
+            remediation_hint="Deactivate emergency stop via API: POST /api/runs/{id}/resume",
             metadata=metadata,
         )
 
@@ -436,9 +445,9 @@ class AccessDeniedViolation(SafetyViolationException):
         policy_name: str,
         message: str,
         action: str,
-        context: Dict[str, Any],
-        remediation_hint: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None
+        context: dict[str, Any],
+        remediation_hint: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ):
         """Initialize access denied violation.
 
@@ -456,6 +465,7 @@ class AccessDeniedViolation(SafetyViolationException):
             message=message,
             action=action,
             context=context,
-            remediation_hint=remediation_hint or "Ensure access path is within allowed scope",
-            metadata=metadata
+            remediation_hint=remediation_hint
+            or "Ensure access path is within allowed scope",
+            metadata=metadata,
         )

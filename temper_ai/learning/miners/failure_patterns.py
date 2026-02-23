@@ -1,12 +1,11 @@
 """Miner for recurring failure patterns."""
 
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Dict, List
+from datetime import UTC, datetime, timedelta
 
 from sqlmodel import select
 
-from temper_ai.learning.miners.base import BaseMiner, DEFAULT_LOOKBACK_HOURS
+from temper_ai.learning.miners.base import DEFAULT_LOOKBACK_HOURS, BaseMiner
 from temper_ai.learning.models import PATTERN_FAILURE, LearnedPattern
 from temper_ai.storage.database import get_session
 from temper_ai.storage.database.models import ErrorFingerprint
@@ -24,15 +23,15 @@ class FailurePatternMiner(BaseMiner):
         """Return pattern type identifier."""
         return PATTERN_FAILURE
 
-    def mine(self, lookback_hours: int = DEFAULT_LOOKBACK_HOURS) -> List[LearnedPattern]:
+    def mine(
+        self, lookback_hours: int = DEFAULT_LOOKBACK_HOURS
+    ) -> list[LearnedPattern]:
         """Mine error fingerprints for recurring failure patterns."""
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=lookback_hours)
-        patterns: List[LearnedPattern] = []
+        cutoff = datetime.now(UTC) - timedelta(hours=lookback_hours)
+        patterns: list[LearnedPattern] = []
 
         with get_session() as session:
-            stmt = select(ErrorFingerprint).where(
-                ErrorFingerprint.last_seen >= cutoff
-            )
+            stmt = select(ErrorFingerprint).where(ErrorFingerprint.last_seen >= cutoff)
             fingerprints = list(session.exec(stmt).all())
 
         for fp in fingerprints:
@@ -45,7 +44,11 @@ class FailurePatternMiner(BaseMiner):
 
 def _fingerprint_to_pattern(fp: ErrorFingerprint) -> LearnedPattern:
     """Convert an error fingerprint to a learned pattern."""
-    confidence = HIGH_CONFIDENCE if fp.occurrence_count >= MIN_OCCURRENCES * 2 else MEDIUM_CONFIDENCE
+    confidence = (
+        HIGH_CONFIDENCE
+        if fp.occurrence_count >= MIN_OCCURRENCES * 2
+        else MEDIUM_CONFIDENCE
+    )
     impact = min(fp.occurrence_count / 10, 1.0)  # noqa
 
     return LearnedPattern(
@@ -69,7 +72,7 @@ def _fingerprint_to_pattern(fp: ErrorFingerprint) -> LearnedPattern:
 
 def _suggest_fix(fp: ErrorFingerprint) -> str:
     """Suggest a fix based on error classification."""
-    suggestions: Dict[str, str] = {
+    suggestions: dict[str, str] = {
         "transient": f"Add retry logic or increase timeout for '{fp.error_type}'",
         "permanent": f"Fix root cause of '{fp.error_type}' — check config or code",
         "safety": f"Review safety policy triggering '{fp.error_type}'",

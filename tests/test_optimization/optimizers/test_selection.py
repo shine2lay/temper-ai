@@ -1,7 +1,8 @@
 """Tests for SelectionOptimizer."""
 
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
 
 from temper_ai.optimization._schemas import EvaluationResult
 from temper_ai.optimization.optimizers.selection import SelectionOptimizer
@@ -20,11 +21,13 @@ class TestSelectionOptimizer:
             {"result": "v2"},
             {"result": "v3"},
         ]
-        evaluator = self._make_evaluator([
-            EvaluationResult(passed=False, score=0.3),
-            EvaluationResult(passed=False, score=0.8),
-            EvaluationResult(passed=False, score=0.5),
-        ])
+        evaluator = self._make_evaluator(
+            [
+                EvaluationResult(passed=False, score=0.3),
+                EvaluationResult(passed=False, score=0.8),
+                EvaluationResult(passed=False, score=0.5),
+            ]
+        )
         optimizer = SelectionOptimizer()
 
         result = optimizer.optimize(
@@ -41,10 +44,12 @@ class TestSelectionOptimizer:
             {"result": "v1"},
             {"result": "v2"},
         ]
-        evaluator = self._make_evaluator([
-            EvaluationResult(passed=False, score=0.3),
-            EvaluationResult(passed=True, score=0.9),
-        ])
+        evaluator = self._make_evaluator(
+            [
+                EvaluationResult(passed=False, score=0.3),
+                EvaluationResult(passed=True, score=0.9),
+            ]
+        )
         optimizer = SelectionOptimizer()
 
         result = optimizer.optimize(
@@ -57,10 +62,12 @@ class TestSelectionOptimizer:
     def test_all_equal(self):
         runner = MagicMock()
         runner.execute.return_value = {"result": "same"}
-        evaluator = self._make_evaluator([
-            EvaluationResult(passed=False, score=0.5),
-            EvaluationResult(passed=False, score=0.5),
-        ])
+        evaluator = self._make_evaluator(
+            [
+                EvaluationResult(passed=False, score=0.5),
+                EvaluationResult(passed=False, score=0.5),
+            ]
+        )
         optimizer = SelectionOptimizer()
 
         result = optimizer.optimize(
@@ -72,14 +79,14 @@ class TestSelectionOptimizer:
     def test_single_run(self):
         runner = MagicMock()
         runner.execute.return_value = {"result": "only"}
-        evaluator = self._make_evaluator([
-            EvaluationResult(passed=True, score=0.7),
-        ])
+        evaluator = self._make_evaluator(
+            [
+                EvaluationResult(passed=True, score=0.7),
+            ]
+        )
         optimizer = SelectionOptimizer()
 
-        result = optimizer.optimize(
-            runner, {"input": "data"}, evaluator, {"runs": 1}
-        )
+        result = optimizer.optimize(runner, {"input": "data"}, evaluator, {"runs": 1})
 
         assert result.output == {"result": "only"}
         assert runner.execute.call_count == 1
@@ -97,10 +104,12 @@ class TestSelectionOptimizer:
             {"result": "v1"},
             {"result": "v2"},
         ]
-        evaluator = self._make_evaluator([
-            EvaluationResult(passed=False, score=0.5),
-            EvaluationResult(passed=True, score=0.9),
-        ])
+        evaluator = self._make_evaluator(
+            [
+                EvaluationResult(passed=False, score=0.5),
+                EvaluationResult(passed=True, score=0.9),
+            ]
+        )
         optimizer = SelectionOptimizer(experiment_service=mock_service)
 
         result = optimizer.optimize(
@@ -120,14 +129,14 @@ class TestSelectionOptimizer:
     def test_without_service_no_experiment_fields(self):
         runner = MagicMock()
         runner.execute.return_value = {"result": "ok"}
-        evaluator = self._make_evaluator([
-            EvaluationResult(passed=True, score=0.9),
-        ])
+        evaluator = self._make_evaluator(
+            [
+                EvaluationResult(passed=True, score=0.9),
+            ]
+        )
         optimizer = SelectionOptimizer()
 
-        result = optimizer.optimize(
-            runner, {"input": "data"}, evaluator, {"runs": 1}
-        )
+        result = optimizer.optimize(runner, {"input": "data"}, evaluator, {"runs": 1})
 
         assert result.experiment_id is None
         assert result.experiment_results is None

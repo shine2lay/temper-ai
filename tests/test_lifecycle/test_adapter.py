@@ -9,10 +9,7 @@ import pytest
 from temper_ai.lifecycle._schemas import (
     AdaptationAction,
     AdaptationRule,
-    LifecycleProfile,
     ProjectCharacteristics,
-    ProjectSize,
-    RiskLevel,
 )
 from temper_ai.lifecycle.adapter import (
     LifecycleAdapter,
@@ -27,8 +24,8 @@ from temper_ai.lifecycle.classifier import ProjectClassifier
 from temper_ai.lifecycle.profiles import ProfileRegistry
 from temper_ai.lifecycle.store import LifecycleStore
 
-
 # ── Fixtures ─────────────────────────────────────────────────────────
+
 
 @pytest.fixture
 def store():
@@ -83,12 +80,15 @@ def adapter(config_dir, store):
 
 # ── Rule Application Tests ──────────────────────────────────────────
 
+
 class TestApplySkip:
     def test_skip_existing_stage(self):
         stages = [{"name": "a"}, {"name": "b"}, {"name": "c"}]
         rule = AdaptationRule(
-            name="r", action=AdaptationAction.SKIP,
-            stage_name="b", condition="{{ true }}",
+            name="r",
+            action=AdaptationAction.SKIP,
+            stage_name="b",
+            condition="{{ true }}",
         )
         result = _apply_skip(stages, rule)
         assert len(result) == 2
@@ -97,8 +97,10 @@ class TestApplySkip:
     def test_skip_nonexistent_stage(self):
         stages = [{"name": "a"}, {"name": "b"}]
         rule = AdaptationRule(
-            name="r", action=AdaptationAction.SKIP,
-            stage_name="z", condition="{{ true }}",
+            name="r",
+            action=AdaptationAction.SKIP,
+            stage_name="z",
+            condition="{{ true }}",
         )
         result = _apply_skip(stages, rule)
         assert len(result) == 2  # No change
@@ -108,9 +110,12 @@ class TestApplyAdd:
     def test_add_after(self):
         stages = [{"name": "a"}, {"name": "b"}]
         rule = AdaptationRule(
-            name="r", action=AdaptationAction.ADD,
-            stage_name="c", condition="{{ true }}",
-            stage_ref="ref.yaml", insert_after="a",
+            name="r",
+            action=AdaptationAction.ADD,
+            stage_name="c",
+            condition="{{ true }}",
+            stage_ref="ref.yaml",
+            insert_after="a",
         )
         result = _apply_add(stages, rule)
         assert len(result) == 3
@@ -119,9 +124,12 @@ class TestApplyAdd:
     def test_add_before(self):
         stages = [{"name": "a"}, {"name": "b"}]
         rule = AdaptationRule(
-            name="r", action=AdaptationAction.ADD,
-            stage_name="c", condition="{{ true }}",
-            stage_ref="ref.yaml", insert_before="b",
+            name="r",
+            action=AdaptationAction.ADD,
+            stage_name="c",
+            condition="{{ true }}",
+            stage_ref="ref.yaml",
+            insert_before="b",
         )
         result = _apply_add(stages, rule)
         assert len(result) == 3
@@ -130,8 +138,10 @@ class TestApplyAdd:
     def test_add_existing_stage_skips(self):
         stages = [{"name": "a"}, {"name": "b"}]
         rule = AdaptationRule(
-            name="r", action=AdaptationAction.ADD,
-            stage_name="a", condition="{{ true }}",
+            name="r",
+            action=AdaptationAction.ADD,
+            stage_name="a",
+            condition="{{ true }}",
         )
         result = _apply_add(stages, rule)
         assert len(result) == 2  # No duplicate
@@ -139,8 +149,10 @@ class TestApplyAdd:
     def test_add_appends_when_no_position(self):
         stages = [{"name": "a"}]
         rule = AdaptationRule(
-            name="r", action=AdaptationAction.ADD,
-            stage_name="b", condition="{{ true }}",
+            name="r",
+            action=AdaptationAction.ADD,
+            stage_name="b",
+            condition="{{ true }}",
             stage_ref="ref.yaml",
         )
         result = _apply_add(stages, rule)
@@ -151,8 +163,10 @@ class TestApplyReorder:
     def test_move_after(self):
         stages = [{"name": "a"}, {"name": "b"}, {"name": "c"}]
         rule = AdaptationRule(
-            name="r", action=AdaptationAction.REORDER,
-            stage_name="a", condition="{{ true }}",
+            name="r",
+            action=AdaptationAction.REORDER,
+            stage_name="a",
+            condition="{{ true }}",
             move_after="b",
         )
         result = _apply_reorder(stages, rule)
@@ -162,8 +176,10 @@ class TestApplyReorder:
     def test_move_before(self):
         stages = [{"name": "a"}, {"name": "b"}, {"name": "c"}]
         rule = AdaptationRule(
-            name="r", action=AdaptationAction.REORDER,
-            stage_name="c", condition="{{ true }}",
+            name="r",
+            action=AdaptationAction.REORDER,
+            stage_name="c",
+            condition="{{ true }}",
             move_before="a",
         )
         result = _apply_reorder(stages, rule)
@@ -173,8 +189,10 @@ class TestApplyReorder:
     def test_reorder_nonexistent_stage(self):
         stages = [{"name": "a"}, {"name": "b"}]
         rule = AdaptationRule(
-            name="r", action=AdaptationAction.REORDER,
-            stage_name="z", condition="{{ true }}",
+            name="r",
+            action=AdaptationAction.REORDER,
+            stage_name="z",
+            condition="{{ true }}",
         )
         result = _apply_reorder(stages, rule)
         assert len(result) == 2  # No change
@@ -184,8 +202,10 @@ class TestApplyModify:
     def test_modify_stage(self):
         stages = [{"name": "a", "timeout": 60}]
         rule = AdaptationRule(
-            name="r", action=AdaptationAction.MODIFY,
-            stage_name="a", condition="{{ true }}",
+            name="r",
+            action=AdaptationAction.MODIFY,
+            stage_name="a",
+            condition="{{ true }}",
             modifications={"timeout": 120},
         )
         result = _apply_modify(stages, rule)
@@ -194,8 +214,10 @@ class TestApplyModify:
     def test_modify_nonexistent(self):
         stages = [{"name": "a"}]
         rule = AdaptationRule(
-            name="r", action=AdaptationAction.MODIFY,
-            stage_name="z", condition="{{ true }}",
+            name="r",
+            action=AdaptationAction.MODIFY,
+            stage_name="z",
+            condition="{{ true }}",
             modifications={"foo": "bar"},
         )
         result = _apply_modify(stages, rule)
@@ -205,16 +227,24 @@ class TestApplyModify:
 class TestEvaluateCondition:
     def test_true_condition(self):
         from jinja2.sandbox import ImmutableSandboxedEnvironment
+
         env = ImmutableSandboxedEnvironment()
-        assert _evaluate_condition(env, "{{ size == 'small' }}", {"size": "small"}) is True
+        assert (
+            _evaluate_condition(env, "{{ size == 'small' }}", {"size": "small"}) is True
+        )
 
     def test_false_condition(self):
         from jinja2.sandbox import ImmutableSandboxedEnvironment
+
         env = ImmutableSandboxedEnvironment()
-        assert _evaluate_condition(env, "{{ size == 'small' }}", {"size": "large"}) is False
+        assert (
+            _evaluate_condition(env, "{{ size == 'small' }}", {"size": "large"})
+            is False
+        )
 
     def test_invalid_condition(self):
         from jinja2.sandbox import ImmutableSandboxedEnvironment
+
         env = ImmutableSandboxedEnvironment()
         assert _evaluate_condition(env, "{{ undefined_func() }}", {}) is False
 
@@ -222,10 +252,14 @@ class TestEvaluateCondition:
 class TestApplyRules:
     def test_skip_rule_applied(self):
         stages = [{"name": "a"}, {"name": "b"}, {"name": "c"}]
-        rules = [AdaptationRule(
-            name="skip_b", action=AdaptationAction.SKIP,
-            stage_name="b", condition="{{ flag }}",
-        )]
+        rules = [
+            AdaptationRule(
+                name="skip_b",
+                action=AdaptationAction.SKIP,
+                stage_name="b",
+                condition="{{ flag }}",
+            )
+        ]
         chars = ProjectCharacteristics()
         result = _apply_rules(stages, rules, chars, {"flag": True})
         names = [s["name"] for s in result]
@@ -233,10 +267,14 @@ class TestApplyRules:
 
     def test_condition_false_skips_rule(self):
         stages = [{"name": "a"}, {"name": "b"}]
-        rules = [AdaptationRule(
-            name="skip_b", action=AdaptationAction.SKIP,
-            stage_name="b", condition="{{ flag }}",
-        )]
+        rules = [
+            AdaptationRule(
+                name="skip_b",
+                action=AdaptationAction.SKIP,
+                stage_name="b",
+                condition="{{ flag }}",
+            )
+        ]
         chars = ProjectCharacteristics()
         result = _apply_rules(stages, rules, chars, {"flag": False})
         assert len(result) == 2
@@ -245,12 +283,18 @@ class TestApplyRules:
         stages = [{"name": "a"}, {"name": "b"}, {"name": "c"}]
         rules = [
             AdaptationRule(
-                name="skip_a", action=AdaptationAction.SKIP,
-                stage_name="a", condition="{{ true }}", priority=1,
+                name="skip_a",
+                action=AdaptationAction.SKIP,
+                stage_name="a",
+                condition="{{ true }}",
+                priority=1,
             ),
             AdaptationRule(
-                name="skip_c", action=AdaptationAction.SKIP,
-                stage_name="c", condition="{{ true }}", priority=10,
+                name="skip_c",
+                action=AdaptationAction.SKIP,
+                stage_name="c",
+                condition="{{ true }}",
+                priority=10,
             ),
         ]
         chars = ProjectCharacteristics()
@@ -262,14 +306,14 @@ class TestApplyRules:
 
 # ── Adapter Integration Tests ───────────────────────────────────────
 
+
 class TestLifecycleAdapter:
     def test_no_adaptation_when_no_profile(self, store):
-        registry = ProfileRegistry(
-            config_dir=Path("/nonexistent"), store=store
-        )
+        registry = ProfileRegistry(config_dir=Path("/nonexistent"), store=store)
         classifier = ProjectClassifier()
         adapter = LifecycleAdapter(
-            profile_registry=registry, classifier=classifier,
+            profile_registry=registry,
+            classifier=classifier,
         )
         config = {"workflow": {"stages": [{"name": "a"}]}}
         result = adapter.adapt(config, {})
@@ -305,7 +349,7 @@ class TestLifecycleAdapter:
             "  - name: skip_all\n"
             "    action: skip\n"
             "    stage_name: only_stage\n"
-            "    condition: \"{{ true }}\"\n"
+            '    condition: "{{ true }}"\n'
             "enabled: true\n"
             "requires_approval: false\n"
         )
@@ -342,7 +386,7 @@ class TestLifecycleAdapter:
             "  - name: skip_design\n"
             "    action: skip\n"
             "    stage_name: design\n"
-            "    condition: \"{{ true }}\"\n"
+            '    condition: "{{ true }}"\n'
             "enabled: true\n"
             "requires_approval: true\n"
             "min_autonomy_level: 2\n"

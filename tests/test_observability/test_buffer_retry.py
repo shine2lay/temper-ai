@@ -1,5 +1,6 @@
 """Tests for buffer retry logic and dead-letter queue."""
-from datetime import datetime, timezone
+
+from datetime import UTC, datetime
 
 from temper_ai.observability.buffer import ObservabilityBuffer
 
@@ -12,6 +13,7 @@ class TestBufferRetryLogic:
         buffer = ObservabilityBuffer(max_retries=3, auto_flush=False)
 
         failure_count = 0
+
         def failing_flush(llm_calls, tool_calls, agent_metrics):
             nonlocal failure_count
             failure_count += 1
@@ -31,7 +33,7 @@ class TestBufferRetryLogic:
             completion_tokens=5,
             latency_ms=100,
             estimated_cost_usd=0.01,
-            start_time=datetime.now(timezone.utc)
+            start_time=datetime.now(UTC),
         )
 
         # Flush 1 - Fail (both llm_call and agent_metric go to retry queue)
@@ -68,7 +70,7 @@ class TestBufferRetryLogic:
             completion_tokens=5,
             latency_ms=100,
             estimated_cost_usd=0.01,
-            start_time=datetime.now(timezone.utc)
+            start_time=datetime.now(UTC),
         )
 
         # Try 4 times (initial + 3 retries = retry_count reaches 4, which is > max_retries)
@@ -107,7 +109,7 @@ class TestBufferRetryLogic:
             completion_tokens=5,
             latency_ms=100,
             estimated_cost_usd=0.01,
-            start_time=datetime.now(timezone.utc)
+            start_time=datetime.now(UTC),
         )
 
         buffer.flush()  # Fail - goes to retry queue
@@ -125,7 +127,7 @@ class TestBufferRetryLogic:
             completion_tokens=5,
             latency_ms=100,
             estimated_cost_usd=0.01,
-            start_time=datetime.now(timezone.utc)
+            start_time=datetime.now(UTC),
         )
 
         buffer.flush()  # Success
@@ -162,7 +164,7 @@ class TestBufferRetryLogic:
             completion_tokens=5,
             latency_ms=100,
             estimated_cost_usd=0.01,
-            start_time=datetime.now(timezone.utc)
+            start_time=datetime.now(UTC),
         )
 
         buffer.flush()  # Fail - metrics in retry queue
@@ -179,7 +181,7 @@ class TestBufferRetryLogic:
             completion_tokens=10,
             latency_ms=100,
             estimated_cost_usd=0.02,
-            start_time=datetime.now(timezone.utc)
+            start_time=datetime.now(UTC),
         )
 
         buffer.flush()  # Success - should have merged metrics
@@ -212,7 +214,7 @@ class TestBufferRetryLogic:
             completion_tokens=5,
             latency_ms=100,
             estimated_cost_usd=0.01,
-            start_time=datetime.now(timezone.utc)
+            start_time=datetime.now(UTC),
         )
 
         buffer.flush()  # Fail 1
@@ -243,7 +245,7 @@ class TestBufferRetryLogic:
             completion_tokens=5,
             latency_ms=100,
             estimated_cost_usd=0.01,
-            start_time=datetime.now(timezone.utc)
+            start_time=datetime.now(UTC),
         )
 
         buffer.flush()  # Fail - goes to retry queue
@@ -280,7 +282,7 @@ class TestBufferRetryLogic:
             completion_tokens=5,
             latency_ms=100,
             estimated_cost_usd=0.01,
-            start_time=datetime.now(timezone.utc)
+            start_time=datetime.now(UTC),
         )
 
         # Move to DLQ
@@ -324,7 +326,7 @@ class TestBufferRetryLogic:
             completion_tokens=5,
             latency_ms=100,
             estimated_cost_usd=0.01,
-            start_time=datetime.now(timezone.utc)
+            start_time=datetime.now(UTC),
         )
 
         buffer.buffer_tool_call(
@@ -333,8 +335,8 @@ class TestBufferRetryLogic:
             tool_name="calculator",
             input_params={"a": 1, "b": 2},
             output_data={"result": 3},
-            start_time=datetime.now(timezone.utc),
-            duration_seconds=0.5
+            start_time=datetime.now(UTC),
+            duration_seconds=0.5,
         )
 
         buffer.flush()  # Fail 1
@@ -366,7 +368,7 @@ class TestBufferRetryLogic:
             completion_tokens=5,
             latency_ms=100,
             estimated_cost_usd=0.01,
-            start_time=datetime.now(timezone.utc)
+            start_time=datetime.now(UTC),
         )
 
         # Exhaust retries

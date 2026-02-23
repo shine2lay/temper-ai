@@ -1,10 +1,11 @@
 """HTTP client for Temper AI Server API.
 
-Provides programmatic access to a running Temper AI server for the CLI
-commands ``temper-ai trigger``, ``temper-ai status``, and ``temper-ai logs``.
+Provides programmatic access to a running Temper AI server,
+used as a Python SDK for triggering runs, checking status, and streaming logs.
 """
+
 import logging
-from typing import Any, Dict, Optional
+from typing import Any
 
 import httpx
 
@@ -25,14 +26,14 @@ class MAFServerClient:
     def __init__(
         self,
         base_url: str = DEFAULT_SERVER_URL,
-        api_key: Optional[str] = None,
+        api_key: str | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
 
-    def _headers(self) -> Dict[str, str]:
+    def _headers(self) -> dict[str, str]:
         """Build request headers including API key if set."""
-        headers: Dict[str, str] = {"Content-Type": "application/json"}
+        headers: dict[str, str] = {"Content-Type": "application/json"}
         if self.api_key:
             headers["X-API-Key"] = self.api_key
         return headers
@@ -45,12 +46,12 @@ class MAFServerClient:
             timeout=httpx.Timeout(READ_TIMEOUT, connect=CONNECT_TIMEOUT),
         )
 
-    def health_check(self) -> Dict[str, Any]:
+    def health_check(self) -> dict[str, Any]:
         """Check server health."""
         with self._client() as client:
             resp = client.get("/api/health")
             resp.raise_for_status()
-            result: Dict[str, Any] = resp.json()
+            result: dict[str, Any] = resp.json()
             return result
 
     def is_server_running(self) -> bool:
@@ -70,10 +71,10 @@ class MAFServerClient:
     def trigger_run(
         self,
         workflow: str,
-        inputs: Optional[Dict[str, Any]] = None,
-        workspace: Optional[str] = None,
-        run_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        inputs: dict[str, Any] | None = None,
+        workspace: str | None = None,
+        run_id: str | None = None,
+    ) -> dict[str, Any]:
         """Trigger a workflow execution on the server.
 
         Args:
@@ -85,7 +86,7 @@ class MAFServerClient:
         Returns:
             Response dict with execution_id and status.
         """
-        body: Dict[str, Any] = {"workflow": workflow}
+        body: dict[str, Any] = {"workflow": workflow}
         if inputs:
             body["inputs"] = inputs
         if workspace:
@@ -96,37 +97,37 @@ class MAFServerClient:
         with self._client() as client:
             resp = client.post("/api/runs", json=body)
             resp.raise_for_status()
-            result: Dict[str, Any] = resp.json()
+            result: dict[str, Any] = resp.json()
             return result
 
-    def get_status(self, execution_id: str) -> Dict[str, Any]:
+    def get_status(self, execution_id: str) -> dict[str, Any]:
         """Get status of a specific run."""
         with self._client() as client:
             resp = client.get(f"/api/runs/{execution_id}")
             resp.raise_for_status()
-            result: Dict[str, Any] = resp.json()
+            result: dict[str, Any] = resp.json()
             return result
 
     def list_runs(
         self,
-        status: Optional[str] = None,
+        status: str | None = None,
         limit: int = DEFAULT_LIST_LIMIT,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """List recent runs."""
-        params: Dict[str, Any] = {"limit": limit}
+        params: dict[str, Any] = {"limit": limit}
         if status:
             params["status"] = status
 
         with self._client() as client:
             resp = client.get("/api/runs", params=params)
             resp.raise_for_status()
-            result: Dict[str, Any] = resp.json()
+            result: dict[str, Any] = resp.json()
             return result
 
-    def cancel_run(self, execution_id: str) -> Dict[str, Any]:
+    def cancel_run(self, execution_id: str) -> dict[str, Any]:
         """Cancel a running workflow."""
         with self._client() as client:
             resp = client.post(f"/api/runs/{execution_id}/cancel")
             resp.raise_for_status()
-            result: Dict[str, Any] = resp.json()
+            result: dict[str, Any] = resp.json()
             return result

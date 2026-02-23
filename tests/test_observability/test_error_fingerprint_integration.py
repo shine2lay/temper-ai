@@ -3,16 +3,14 @@
 Tests the record_error_fingerprint() upsert, get_top_errors() queries,
 and the _record_fingerprint_safe() tracker hook.
 """
-import pytest
-from unittest.mock import MagicMock, patch
 
+from unittest.mock import MagicMock
+
+from temper_ai.observability._tracker_helpers import _record_fingerprint_safe
 from temper_ai.observability.backend import ErrorFingerprintData
 from temper_ai.observability.error_fingerprinting import (
     ErrorClassification,
-    compute_error_fingerprint,
 )
-from temper_ai.observability._tracker_helpers import _record_fingerprint_safe
-
 
 # ============================================================================
 # _record_fingerprint_safe
@@ -27,7 +25,9 @@ class TestRecordFingerprintSafe:
         backend.record_error_fingerprint = MagicMock(return_value=True)
 
         error = ValueError("Test error message")
-        _record_fingerprint_safe(backend, error, workflow_id="wf-123", agent_name="test_agent")
+        _record_fingerprint_safe(
+            backend, error, workflow_id="wf-123", agent_name="test_agent"
+        )
 
         backend.record_error_fingerprint.assert_called_once()
         fp_data = backend.record_error_fingerprint.call_args[0][0]
@@ -52,13 +52,14 @@ class TestRecordFingerprintSafe:
         error = ValueError("Test error")
         # Should not raise despite missing method — hasattr check prevents call
         _record_fingerprint_safe(backend, error)
-        assert not hasattr(backend, 'record_error_fingerprint')
+        assert not hasattr(backend, "record_error_fingerprint")
 
     def test_passes_classification(self):
         backend = MagicMock()
         backend.record_error_fingerprint = MagicMock(return_value=True)
 
-        from temper_ai.shared.utils.exceptions import LLMError, ErrorCode
+        from temper_ai.shared.utils.exceptions import ErrorCode, LLMError
+
         error = LLMError("Timed out", error_code=ErrorCode.LLM_TIMEOUT)
         _record_fingerprint_safe(backend, error)
 
@@ -193,7 +194,10 @@ class TestBuildErrorResultFingerprint:
         result2 = _build_error_result("agent2", error2, 2.0)
 
         # Same error type and message → same fingerprint
-        assert result1["output_data"]["error_fingerprint"] == result2["output_data"]["error_fingerprint"]
+        assert (
+            result1["output_data"]["error_fingerprint"]
+            == result2["output_data"]["error_fingerprint"]
+        )
 
 
 # ============================================================================
@@ -206,14 +210,17 @@ class TestAlertingErrorTypes:
 
     def test_new_error_type_metric_exists(self):
         from temper_ai.observability.alerting import MetricType
+
         assert MetricType.NEW_ERROR_TYPE == "new_error_type"
 
     def test_error_spike_metric_exists(self):
         from temper_ai.observability.alerting import MetricType
+
         assert MetricType.ERROR_SPIKE == "error_spike"
 
     def test_default_rules_include_new_error_type(self):
         from temper_ai.observability.alerting import AlertManager
+
         manager = AlertManager()
         assert "new_error_type_detected" in manager.rules
         rule = manager.rules["new_error_type_detected"]
@@ -221,6 +228,7 @@ class TestAlertingErrorTypes:
 
     def test_default_rules_include_error_spike(self):
         from temper_ai.observability.alerting import AlertManager
+
         manager = AlertManager()
         assert "error_spike" in manager.rules
         rule = manager.rules["error_spike"]

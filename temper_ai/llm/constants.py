@@ -5,8 +5,15 @@ pricing, error messages, and pool sizing constants used by LLM providers
 and the LLM service layer.
 """
 
-from temper_ai.shared.constants.limits import DEFAULT_MAX_TOKENS as DEFAULT_MAX_TOKENS  # noqa: F401
-from temper_ai.shared.constants.limits import DEFAULT_TEMPERATURE as DEFAULT_TEMPERATURE  # noqa: F401
+from temper_ai.shared.constants.limits import (  # noqa: F401
+    DEFAULT_MAX_TOKENS,
+    DEFAULT_TEMPERATURE,
+)
+
+__all__ = [  # scanner: skip-unused
+    "DEFAULT_MAX_TOKENS",
+    "DEFAULT_TEMPERATURE",
+]
 
 # ============================================================================
 # HTTP Pool & Connection Limits

@@ -4,15 +4,16 @@ Observability buffer for batching database operations.
 Reduces N+1 query problem by batching LLM calls, tool calls, and metric updates.
 Performance improvement: Reduces queries significantly through batching.
 """
+
 import logging
 import threading
 import time
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any
 
-from temper_ai.shared.constants.durations import SECONDS_PER_5_MINUTES, TIMEOUT_VERY_SHORT
 from temper_ai.observability._buffer_helpers import (
     execute_flush,
     handle_flush_failure,
@@ -25,6 +26,10 @@ from temper_ai.observability.constants import (
     DEFAULT_BUFFER_SIZE,
     DEFAULT_DLQ_MAX_SIZE,
     MAX_RETRY_ATTEMPTS,
+)
+from temper_ai.shared.constants.durations import (
+    SECONDS_PER_5_MINUTES,
+    TIMEOUT_VERY_SHORT,
 )
 
 logger = logging.getLogger(__name__)
@@ -43,6 +48,7 @@ def _flush_loop(buffer: "ObservabilityBuffer") -> None:
 @dataclass
 class LLMCallBufferParams:
     """Parameters for buffering an LLM call."""
+
     llm_call_id: str
     agent_id: str
     provider: str
@@ -54,37 +60,37 @@ class LLMCallBufferParams:
     latency_ms: int
     estimated_cost_usd: float
     start_time: datetime
-    temperature: Optional[float] = None
-    max_tokens: Optional[int] = None
+    temperature: float | None = None
+    max_tokens: int | None = None
     status: str = "success"
-    error_message: Optional[str] = None
-    # Failover tracking (Gap 9)
-    failover_sequence: Optional[List[str]] = None
-    failover_from_provider: Optional[str] = None
-    # Prompt versioning (Gap 6)
-    prompt_template_hash: Optional[str] = None
-    prompt_template_source: Optional[str] = None
+    error_message: str | None = None
+    failover_sequence: list[str] | None = None
+    failover_from_provider: str | None = None
+    prompt_template_hash: str | None = None
+    prompt_template_source: str | None = None
 
 
 @dataclass
 class ToolCallBufferParams:
     """Parameters for buffering a tool call."""
+
     tool_execution_id: str
     agent_id: str
     tool_name: str
-    input_params: Dict[str, Any]
-    output_data: Dict[str, Any]
+    input_params: dict[str, Any]
+    output_data: dict[str, Any]
     start_time: datetime
     duration_seconds: float
     status: str = "success"
-    error_message: Optional[str] = None
-    safety_checks: Optional[List[str]] = None
+    error_message: str | None = None
+    safety_checks: list[str] | None = None
     approval_required: bool = False
 
 
 @dataclass
 class BufferedLLMCall:
     """Buffered LLM call awaiting batch insert."""
+
     llm_call_id: str
     agent_id: str
     provider: str
@@ -96,37 +102,37 @@ class BufferedLLMCall:
     latency_ms: int
     estimated_cost_usd: float
     start_time: datetime
-    temperature: Optional[float] = None
-    max_tokens: Optional[int] = None
+    temperature: float | None = None
+    max_tokens: int | None = None
     status: str = "success"
-    error_message: Optional[str] = None
-    # Failover tracking (Gap 9)
-    failover_sequence: Optional[List[str]] = None
-    failover_from_provider: Optional[str] = None
-    # Prompt versioning (Gap 6)
-    prompt_template_hash: Optional[str] = None
-    prompt_template_source: Optional[str] = None
+    error_message: str | None = None
+    failover_sequence: list[str] | None = None
+    failover_from_provider: str | None = None
+    prompt_template_hash: str | None = None
+    prompt_template_source: str | None = None
 
 
 @dataclass
 class BufferedToolCall:
     """Buffered tool call awaiting batch insert."""
+
     tool_execution_id: str
     agent_id: str
     tool_name: str
-    input_params: Dict[str, Any]
-    output_data: Dict[str, Any]
+    input_params: dict[str, Any]
+    output_data: dict[str, Any]
     start_time: datetime
     duration_seconds: float
     status: str = "success"
-    error_message: Optional[str] = None
-    safety_checks: Optional[List[str]] = None
+    error_message: str | None = None
+    safety_checks: list[str] | None = None
     approval_required: bool = False
 
 
 @dataclass
 class AgentMetricUpdate:
     """Agent metric update to be batched."""
+
     agent_id: str
     num_llm_calls: int = 0
     num_tool_calls: int = 0
@@ -143,21 +149,23 @@ class RetryableItem:
 
     Tracks retry attempts for failed flush operations to prevent infinite retry loops.
     """
-    item: Union[BufferedLLMCall, BufferedToolCall, AgentMetricUpdate]
+
+    item: BufferedLLMCall | BufferedToolCall | AgentMetricUpdate
     item_type: str  # "llm_call", "tool_call", "agent_metric"
     item_id: str  # Unique identifier for deduplication
     retry_count: int = 0
-    first_failed_at: Optional[datetime] = None
-    last_error: Optional[str] = None
+    first_failed_at: datetime | None = None
+    last_error: str | None = None
 
 
 @dataclass
 class BufferedLifecycleEvent:
     """Buffered lifecycle event (end events only)."""
+
     event_type: str  # "workflow_end", "stage_end", "agent_end"
     entity_id: str
     timestamp: datetime
-    data: Dict[str, Any]
+    data: dict[str, Any]
 
 
 @dataclass
@@ -167,7 +175,8 @@ class DeadLetterItem:
 
     Dead-letter queue captures items that failed persistently after exhausting retries.
     """
-    item: Union[BufferedLLMCall, BufferedToolCall, AgentMetricUpdate]
+
+    item: BufferedLLMCall | BufferedToolCall | AgentMetricUpdate
     item_type: str
     item_id: str
     retry_count: int
@@ -239,43 +248,67 @@ class ObservabilityBuffer:
         self._max_dlq_size = max_dlq_size
 
         # Buffered operations
-        self.llm_calls: List[BufferedLLMCall] = []
-        self.tool_calls: List[BufferedToolCall] = []
-        self.agent_metrics: Dict[str, AgentMetricUpdate] = defaultdict(lambda: AgentMetricUpdate(agent_id=""))
+        self.llm_calls: list[BufferedLLMCall] = []
+        self.tool_calls: list[BufferedToolCall] = []
+        self.agent_metrics: dict[str, AgentMetricUpdate] = defaultdict(
+            lambda: AgentMetricUpdate(agent_id="")
+        )
 
         # Retry tracking
-        self.retry_queue: List[RetryableItem] = []
+        self.retry_queue: list[RetryableItem] = []
         # Pending IDs with timestamps for stale-entry purge
-        self._pending_ids: Dict[str, float] = {}  # item_id -> timestamp
+        self._pending_ids: dict[str, float] = {}  # item_id -> timestamp
 
         # Dead-letter queue
-        self.dead_letter_queue: List[DeadLetterItem] = []
-        self._dlq_callback: Optional[Callable[[DeadLetterItem], None]] = None
+        self.dead_letter_queue: list[DeadLetterItem] = []
+        self._dlq_callback: Callable[[DeadLetterItem], None] | None = None
 
         # Thread synchronization
         self.lock = threading.Lock()
         self.last_flush_time = time.time()
 
         # Background flush thread
-        self._flush_thread: Optional[threading.Thread] = None
+        self._flush_thread: threading.Thread | None = None
         self._stop_flush_thread = threading.Event()
 
         # Lifecycle event buffer (end events only — start events write directly)
-        self.lifecycle_events: List[BufferedLifecycleEvent] = []
-        self._lifecycle_flush_callback: Optional[Callable[[List[BufferedLifecycleEvent]], None]] = None
+        self.lifecycle_events: list[BufferedLifecycleEvent] = []
+        self._lifecycle_flush_callback: (
+            Callable[[list[BufferedLifecycleEvent]], None] | None
+        ) = None
 
         # Flush callback (injected by backend)
-        self._flush_callback: Optional[Callable[[List[BufferedLLMCall], List[BufferedToolCall], Dict[str, AgentMetricUpdate]], None]] = None
+        self._flush_callback: (
+            Callable[
+                [
+                    list[BufferedLLMCall],
+                    list[BufferedToolCall],
+                    dict[str, AgentMetricUpdate],
+                ],
+                None,
+            ]
+            | None
+        ) = None
 
         if auto_flush:
             self._start_flush_thread()
 
-    def set_flush_callback(self, callback: Callable[[List[BufferedLLMCall], List[BufferedToolCall], Dict[str, AgentMetricUpdate]], None]) -> None:
+    def set_flush_callback(
+        self,
+        callback: Callable[
+            [
+                list[BufferedLLMCall],
+                list[BufferedToolCall],
+                dict[str, AgentMetricUpdate],
+            ],
+            None,
+        ],
+    ) -> None:
         """Set callback function to execute when buffer flushes."""
         self._flush_callback = callback
 
     def set_lifecycle_flush_callback(
-        self, callback: Callable[[List[BufferedLifecycleEvent]], None]
+        self, callback: Callable[[list[BufferedLifecycleEvent]], None]
     ) -> None:
         """Set callback for flushing lifecycle events."""
         self._lifecycle_flush_callback = callback
@@ -289,35 +322,53 @@ class ObservabilityBuffer:
                 deferred_flush = self._swap_and_prepare()
         if deferred_flush is not None:
             items_to_flush, flush_cb = deferred_flush
-            execute_flush(items_to_flush, flush_cb, self.lock,
-                          self._pending_ids, self.retry_queue,
-                          self._handle_flush_failure_impl, merge_agent_metrics)
+            execute_flush(
+                items_to_flush,
+                flush_cb,
+                self.lock,
+                self._pending_ids,
+                self.retry_queue,
+                self._handle_flush_failure_impl,
+                merge_agent_metrics,
+            )
 
     def buffer_llm_call(
-        self, params: Optional[LLMCallBufferParams] = None, **kwargs: Any
+        self, params: LLMCallBufferParams | None = None, **kwargs: Any
     ) -> None:
         """Buffer LLM call for batch insertion."""
         if params is None:
             params = LLMCallBufferParams(**kwargs)
         deferred_flush = None
         with self.lock:
-            self.llm_calls.append(BufferedLLMCall(
-                llm_call_id=params.llm_call_id, agent_id=params.agent_id,
-                provider=params.provider, model=params.model, prompt=params.prompt,
-                response=params.response, prompt_tokens=params.prompt_tokens,
-                completion_tokens=params.completion_tokens, latency_ms=params.latency_ms,
-                estimated_cost_usd=params.estimated_cost_usd, start_time=params.start_time,
-                temperature=params.temperature, max_tokens=params.max_tokens,
-                status=params.status, error_message=params.error_message,
-                failover_sequence=params.failover_sequence,
-                failover_from_provider=params.failover_from_provider,
-                prompt_template_hash=params.prompt_template_hash,
-                prompt_template_source=params.prompt_template_source,
-            ))
+            self.llm_calls.append(
+                BufferedLLMCall(
+                    llm_call_id=params.llm_call_id,
+                    agent_id=params.agent_id,
+                    provider=params.provider,
+                    model=params.model,
+                    prompt=params.prompt,
+                    response=params.response,
+                    prompt_tokens=params.prompt_tokens,
+                    completion_tokens=params.completion_tokens,
+                    latency_ms=params.latency_ms,
+                    estimated_cost_usd=params.estimated_cost_usd,
+                    start_time=params.start_time,
+                    temperature=params.temperature,
+                    max_tokens=params.max_tokens,
+                    status=params.status,
+                    error_message=params.error_message,
+                    failover_sequence=params.failover_sequence,
+                    failover_from_provider=params.failover_from_provider,
+                    prompt_template_hash=params.prompt_template_hash,
+                    prompt_template_source=params.prompt_template_source,
+                )
+            )
 
             # Update agent metrics
             if params.agent_id not in self.agent_metrics:
-                self.agent_metrics[params.agent_id] = AgentMetricUpdate(agent_id=params.agent_id)
+                self.agent_metrics[params.agent_id] = AgentMetricUpdate(
+                    agent_id=params.agent_id
+                )
             metrics = self.agent_metrics[params.agent_id]
             metrics.num_llm_calls += 1
             metrics.total_tokens += params.prompt_tokens + params.completion_tokens
@@ -330,29 +381,44 @@ class ObservabilityBuffer:
 
         if deferred_flush is not None:
             items_to_flush, flush_cb = deferred_flush
-            execute_flush(items_to_flush, flush_cb, self.lock,
-                          self._pending_ids, self.retry_queue,
-                          self._handle_flush_failure_impl, merge_agent_metrics)
+            execute_flush(
+                items_to_flush,
+                flush_cb,
+                self.lock,
+                self._pending_ids,
+                self.retry_queue,
+                self._handle_flush_failure_impl,
+                merge_agent_metrics,
+            )
 
     def buffer_tool_call(
-        self, params: Optional[ToolCallBufferParams] = None, **kwargs: Any
+        self, params: ToolCallBufferParams | None = None, **kwargs: Any
     ) -> None:
         """Buffer tool call for batch insertion."""
         if params is None:
             params = ToolCallBufferParams(**kwargs)
         deferred_flush = None
         with self.lock:
-            self.tool_calls.append(BufferedToolCall(
-                tool_execution_id=params.tool_execution_id, agent_id=params.agent_id,
-                tool_name=params.tool_name, input_params=params.input_params,
-                output_data=params.output_data, start_time=params.start_time,
-                duration_seconds=params.duration_seconds, status=params.status,
-                error_message=params.error_message, safety_checks=params.safety_checks,
-                approval_required=params.approval_required
-            ))
+            self.tool_calls.append(
+                BufferedToolCall(
+                    tool_execution_id=params.tool_execution_id,
+                    agent_id=params.agent_id,
+                    tool_name=params.tool_name,
+                    input_params=params.input_params,
+                    output_data=params.output_data,
+                    start_time=params.start_time,
+                    duration_seconds=params.duration_seconds,
+                    status=params.status,
+                    error_message=params.error_message,
+                    safety_checks=params.safety_checks,
+                    approval_required=params.approval_required,
+                )
+            )
 
             if params.agent_id not in self.agent_metrics:
-                self.agent_metrics[params.agent_id] = AgentMetricUpdate(agent_id=params.agent_id)
+                self.agent_metrics[params.agent_id] = AgentMetricUpdate(
+                    agent_id=params.agent_id
+                )
             self.agent_metrics[params.agent_id].num_tool_calls += 1
 
             if self._should_flush():
@@ -360,9 +426,15 @@ class ObservabilityBuffer:
 
         if deferred_flush is not None:
             items_to_flush, flush_cb = deferred_flush
-            execute_flush(items_to_flush, flush_cb, self.lock,
-                          self._pending_ids, self.retry_queue,
-                          self._handle_flush_failure_impl, merge_agent_metrics)
+            execute_flush(
+                items_to_flush,
+                flush_cb,
+                self.lock,
+                self._pending_ids,
+                self.retry_queue,
+                self._handle_flush_failure_impl,
+                merge_agent_metrics,
+            )
 
     def flush(self) -> None:
         """Flush all buffered operations to database."""
@@ -384,31 +456,47 @@ class ObservabilityBuffer:
         if swapped is None:
             return
         items_to_flush, flush_cb = swapped
-        execute_flush(items_to_flush, flush_cb, self.lock,
-                      self._pending_ids, self.retry_queue,
-                      self._handle_flush_failure_impl, merge_agent_metrics)
+        execute_flush(
+            items_to_flush,
+            flush_cb,
+            self.lock,
+            self._pending_ids,
+            self.retry_queue,
+            self._handle_flush_failure_impl,
+            merge_agent_metrics,
+        )
 
     def _should_flush(self) -> bool:
         """Check if buffer should be flushed (assumes lock is held)."""
-        total_items = (len(self.llm_calls) + len(self.tool_calls)
-                       + len(self.retry_queue) + len(self.lifecycle_events))
+        total_items = (
+            len(self.llm_calls)
+            + len(self.tool_calls)
+            + len(self.retry_queue)
+            + len(self.lifecycle_events)
+        )
         if total_items >= self.flush_size:
             return True
         if time.time() - self.last_flush_time >= self.flush_interval:
             return True
         return False
 
-    def _swap_and_prepare(self) -> Optional[tuple]:
+    def _swap_and_prepare(self) -> tuple | None:
         """Swap buffers and prepare flush batch (assumes lock is held)."""
         purge_stale_pending_ids(self._pending_ids, self._pending_id_timeout)
 
         if not self._flush_callback:
             logger.warning("No flush callback set, skipping flush")
             return None
-        if not self.llm_calls and not self.tool_calls and not self.agent_metrics and not self.retry_queue:
+        if (
+            not self.llm_calls
+            and not self.tool_calls
+            and not self.agent_metrics
+            and not self.retry_queue
+        ):
             return None
 
         from temper_ai.observability._buffer_helpers import FlushBatchParams
+
         items_to_flush = prepare_flush_batch(
             FlushBatchParams(
                 llm_calls=self.llm_calls,
@@ -430,25 +518,37 @@ class ObservabilityBuffer:
         self.last_flush_time = time.time()
         return items_to_flush, self._flush_callback
 
-    def _handle_flush_failure_impl(self, failed_items: List[RetryableItem], error: str) -> None:
+    def _handle_flush_failure_impl(
+        self, failed_items: list[RetryableItem], error: str
+    ) -> None:
         """Handle flush failure (called under lock by execute_flush)."""
         handle_flush_failure(
-            failed_items, error, self.max_retries,
-            self.retry_queue, self._pending_ids,
+            failed_items,
+            error,
+            self.max_retries,
+            self.retry_queue,
+            self._pending_ids,
             self._move_to_dlq_impl,
         )
 
     def _move_to_dlq_impl(self, item: RetryableItem, now: datetime) -> None:
         """Move failed item to dead-letter queue."""
         move_to_dlq(
-            item, now, self.enable_dlq, self.dead_letter_queue,
-            self._max_dlq_size, self._dlq_callback, DeadLetterItem,
+            item,
+            now,
+            self.enable_dlq,
+            self.dead_letter_queue,
+            self._max_dlq_size,
+            self._dlq_callback,
+            DeadLetterItem,
         )
 
     def _start_flush_thread(self) -> None:
         """Start background flush thread."""
         self._stop_flush_thread.clear()
-        self._flush_thread = threading.Thread(target=_flush_loop, args=(self,), daemon=True)
+        self._flush_thread = threading.Thread(
+            target=_flush_loop, args=(self,), daemon=True
+        )
         self._flush_thread.start()
 
     def stop(self) -> None:
@@ -469,10 +569,7 @@ class ObservabilityBuffer:
         # Final flush
         self.flush()
 
-    def set_dlq_callback(
-        self,
-        callback: Callable[[DeadLetterItem], None]
-    ) -> None:
+    def set_dlq_callback(self, callback: Callable[[DeadLetterItem], None]) -> None:
         """
         Set callback for dead-letter queue events.
 
@@ -484,7 +581,7 @@ class ObservabilityBuffer:
         """
         self._dlq_callback = callback
 
-    def get_dlq_items(self) -> List[DeadLetterItem]:
+    def get_dlq_items(self) -> list[DeadLetterItem]:
         """Get all items in dead-letter queue."""
         with self.lock:
             return self.dead_letter_queue.copy()
@@ -501,7 +598,7 @@ class ObservabilityBuffer:
             self.dead_letter_queue.clear()
             return count
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get buffer statistics including retry and DLQ metrics."""
         with self.lock:
             return {
@@ -509,8 +606,11 @@ class ObservabilityBuffer:
                 "tool_calls_buffered": len(self.tool_calls),
                 "agent_metrics_buffered": len(self.agent_metrics),
                 "lifecycle_events_buffered": len(self.lifecycle_events),
-                "total_buffered": (len(self.llm_calls) + len(self.tool_calls)
-                                   + len(self.lifecycle_events)),
+                "total_buffered": (
+                    len(self.llm_calls)
+                    + len(self.tool_calls)
+                    + len(self.lifecycle_events)
+                ),
                 "retry_queue_size": len(self.retry_queue),
                 "dlq_size": len(self.dead_letter_queue),
                 "pending_ids": len(self._pending_ids),
@@ -519,7 +619,7 @@ class ObservabilityBuffer:
                 "auto_flush": self.auto_flush,
                 "max_retries": self.max_retries,
                 "max_dlq_size": self._max_dlq_size,
-                "last_flush_time": self.last_flush_time
+                "last_flush_time": self.last_flush_time,
             }
 
     def __enter__(self) -> "ObservabilityBuffer":

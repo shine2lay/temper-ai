@@ -8,6 +8,7 @@ Provides centralized logging with:
 - Multiple output formats (console, file, JSON)
 - Log level configuration from environment
 """
+
 import functools
 import json
 import logging
@@ -15,9 +16,10 @@ import os
 import re
 import sys
 import unicodedata
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any
 from urllib.parse import unquote
 
 from temper_ai.shared.constants.limits import DEFAULT_MAX_ITEMS
@@ -26,23 +28,27 @@ from temper_ai.shared.constants.sizes import SIZE_10KB
 from temper_ai.shared.utils.constants import REDACTION_REPLACEMENT
 
 # ASCII control character boundaries
-ASCII_CONTROL_CHAR_MAX = 0x20  # Characters below this (0x00-0x1F) are control characters
+ASCII_CONTROL_CHAR_MAX = (
+    0x20  # Characters below this (0x00-0x1F) are control characters
+)
 ASCII_DELETE_CHAR = 0x7F  # DEL character (also a control character)
 
 # Import secret detection for redaction
-detect_secret_patterns: Optional[Callable[[str], Tuple[bool, Optional[str]]]] = None
+detect_secret_patterns: Callable[[str], tuple[bool, str | None]] | None = None
 SECRETS_AVAILABLE = False
 
 try:
     from temper_ai.shared.utils.secrets import detect_secret_patterns
+
     SECRETS_AVAILABLE = True
 except ImportError:
     pass
 
 
 # Precompiled patterns for performance (log injection prevention)
-_ANSI_ESCAPE = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
-_CONTROL_CHAR_PATTERN = re.compile(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]')
+_ANSI_ESCAPE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+_CONTROL_CHAR_PATTERN = re.compile(r"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]")
+
 
 # Sensitive data patterns for redaction
 # Note: Patterns should not match template references like ${env:VAR} or ${vault:...}
@@ -52,36 +58,53 @@ def _build_sensitive_patterns() -> list[tuple[re.Pattern[str], str]]:
 
     patterns = [
         # Key=value assignment patterns (log-specific, exclude template refs)
-        (re.compile(r'(password|passwd|pwd)[=:]\s*(?!\$\{)(\S+)', re.IGNORECASE), REDACTION_REPLACEMENT),
-        (re.compile(r'(api[_-]?key|apikey|token)[=:]\s*(?!\$\{)(\S+)', re.IGNORECASE), REDACTION_REPLACEMENT),
-        (re.compile(r'(secret|credential)[=:]\s*(?!\$\{)(\S+)', re.IGNORECASE), REDACTION_REPLACEMENT),
+        (
+            re.compile(r"(password|passwd|pwd)[=:]\s*(?!\$\{)(\S+)", re.IGNORECASE),
+            REDACTION_REPLACEMENT,
+        ),
+        (
+            re.compile(
+                r"(api[_-]?key|apikey|token)[=:]\s*(?!\$\{)(\S+)", re.IGNORECASE
+            ),
+            REDACTION_REPLACEMENT,
+        ),
+        (
+            re.compile(r"(secret|credential)[=:]\s*(?!\$\{)(\S+)", re.IGNORECASE),
+            REDACTION_REPLACEMENT,
+        ),
     ]
     # Add vendor-specific patterns from centralized registry
-    for name in ('openai_key', 'anthropic_key', 'aws_access_key',
-                 'github_token', 'google_api_key', 'stripe_key'):
+    for name in (
+        "openai_project_key",
+        "openai_key",
+        "anthropic_key",
+        "aws_access_key",
+        "github_token",
+        "google_api_key",
+        "stripe_key",
+    ):
         if name in SECRET_PATTERNS:
-            patterns.append(
-                (re.compile(SECRET_PATTERNS[name]), '***REDACTED***')
-            )
+            patterns.append((re.compile(SECRET_PATTERNS[name]), "***REDACTED***"))
     return patterns
+
 
 _SENSITIVE_PATTERNS = _build_sensitive_patterns()
 
 # Unicode line terminators to block
 _UNICODE_LINE_TERMINATORS = {
-    '\u2028',  # Line separator
-    '\u2029',  # Paragraph separator
-    '\u000B',  # Vertical tab
-    '\u000C',  # Form feed
-    '\u0085',  # Next line (NEL)
+    "\u2028",  # Line separator
+    "\u2029",  # Paragraph separator
+    "\u000b",  # Vertical tab
+    "\u000c",  # Form feed
+    "\u0085",  # Next line (NEL)
 }
 
 # Zero-width characters to remove (prevent obfuscation)
 _ZERO_WIDTH_CHARS = {
-    '\u200B',  # Zero-width space
-    '\u200C',  # Zero-width non-joiner
-    '\u200D',  # Zero-width joiner
-    '\uFEFF',  # Zero-width no-break space
+    "\u200b",  # Zero-width space
+    "\u200c",  # Zero-width non-joiner
+    "\u200d",  # Zero-width joiner
+    "\ufeff",  # Zero-width no-break space
 }
 
 
@@ -136,29 +159,29 @@ def _sanitize_control_characters(text: str) -> str:
     Security: Prevents log injection via control characters.
     """
     # Fast path: Handle CRLF as unit (prevents Windows line ending injection)
-    text = text.replace('\r\n', '\\r\\n')
-    text = text.replace('\n\r', '\\n\\r')
+    text = text.replace("\r\n", "\\r\\n")
+    text = text.replace("\n\r", "\\n\\r")
 
     # Escape remaining newlines and carriage returns
-    text = text.replace('\n', '\\n').replace('\r', '\\r')
+    text = text.replace("\n", "\\n").replace("\r", "\\r")
 
     # Escape tabs (prevent column confusion in structured logs)
-    text = text.replace('\t', '\\t')
+    text = text.replace("\t", "\\t")
 
     # Build sanitized string character by character
     sanitized_chars = []
     for char in text:
         if char in _UNICODE_LINE_TERMINATORS:
             # Escape Unicode line terminators
-            sanitized_chars.append(f'\\u{ord(char):04x}')
+            sanitized_chars.append(f"\\u{ord(char):04x}")
         elif ord(char) < ASCII_CONTROL_CHAR_MAX or ord(char) == ASCII_DELETE_CHAR:
             # Control characters (should be mostly handled above, but double-check)
-            sanitized_chars.append(f'\\x{ord(char):02x}')
+            sanitized_chars.append(f"\\x{ord(char):02x}")
         else:
             # Printable characters (ASCII and Unicode)
             sanitized_chars.append(char)
 
-    return ''.join(sanitized_chars)
+    return "".join(sanitized_chars)
 
 
 def _sanitize_for_logging(text: str, max_length: int = SIZE_10KB) -> str:
@@ -204,15 +227,15 @@ def _sanitize_for_logging(text: str, max_length: int = SIZE_10KB) -> str:
     # Normalizes е (Cyrillic) vs e (Latin) and other homographs
     # NOTE: NFKC is compatibility normalization - may change visual appearance
     # (e.g., ℌ→H, ①→1, ﬁ→fi) but prevents homograph attacks and standardizes forms
-    text = unicodedata.normalize('NFKC', text)
+    text = unicodedata.normalize("NFKC", text)
 
     # LAYER 4: Remove zero-width characters (prevents obfuscation)
     for zw_char in _ZERO_WIDTH_CHARS:
-        text = text.replace(zw_char, '')
+        text = text.replace(zw_char, "")
 
     # LAYER 5: Strip ANSI escape codes (prevents terminal manipulation)
     # Removes color codes and other terminal control sequences
-    text = _ANSI_ESCAPE.sub('', text)
+    text = _ANSI_ESCAPE.sub("", text)
 
     # LAYER 6-7: Control character escaping (whitelist approach)
     # Handles newlines, CR, tabs, Unicode line terminators
@@ -277,9 +300,19 @@ class SecretRedactingFormatter(logging.Formatter):
     """
 
     REDACTED_KEYS = [
-        'api_key', 'apikey', 'api-key', 'api_key_ref',
-        'password', 'passwd', 'pwd', 'secret', 'token',
-        'auth', 'credential', 'private_key', 'access_key'
+        "api_key",
+        "apikey",
+        "api-key",
+        "api_key_ref",
+        "password",
+        "passwd",
+        "pwd",
+        "secret",
+        "token",
+        "auth",
+        "credential",
+        "private_key",
+        "access_key",
     ]
 
     def format(self, record: logging.LogRecord) -> str:
@@ -292,29 +325,35 @@ class SecretRedactingFormatter(logging.Formatter):
 
         This ensures all logs are safe from injection and don't leak secrets.
         """
-        # Get original message
-        original_msg = record.getMessage()
+        # Save original msg template and args so we can restore after formatting
+        original_msg = record.msg
+        original_args = record.args
+
+        # Get formatted message (applies % args to msg template)
+        formatted_msg = record.getMessage()
 
         # LAYER 1: Sanitize for log injection prevention (FIRST)
-        sanitized_msg = _sanitize_for_logging(original_msg)
+        sanitized_msg = _sanitize_for_logging(formatted_msg)
 
         # LAYER 2: Redact secrets (AFTER sanitization)
         safe_msg = self._redact_secrets(sanitized_msg)
 
-        # Update record with safe message
+        # Set safe message and clear args (already formatted)
         record.msg = safe_msg
+        record.args = None
 
         # Redact secrets from extra fields
-        if hasattr(record, '__dict__'):
+        if hasattr(record, "__dict__"):
             for key in list(record.__dict__.keys()):
                 if any(pattern in key.lower() for pattern in self.REDACTED_KEYS):
-                    setattr(record, key, '***REDACTED***')
+                    setattr(record, key, "***REDACTED***")
 
         # Format the record
         formatted = super().format(record)
 
-        # Restore original message
+        # Restore original msg template and args for other handlers
         record.msg = original_msg
+        record.args = original_args
 
         return formatted
 
@@ -340,9 +379,9 @@ class SecretRedactingFormatter(logging.Formatter):
             return text  # type: ignore[unreachable]
 
         # Redact secret references (${env:VAR}, ${vault:...}, ${aws:...})
-        text = re.sub(r'\$\{env:([A-Z_]+)\}', r'${env:***REDACTED***}', text)
-        text = re.sub(r'\$\{vault:([^}]+)\}', r'${vault:***REDACTED***}', text)
-        text = re.sub(r'\$\{aws:([^}]+)\}', r'${aws:***REDACTED***}', text)
+        text = re.sub(r"\$\{env:([A-Z_]+)\}", r"${env:***REDACTED***}", text)
+        text = re.sub(r"\$\{vault:([^}]+)\}", r"${vault:***REDACTED***}", text)
+        text = re.sub(r"\$\{aws:([^}]+)\}", r"${aws:***REDACTED***}", text)
 
         # Apply precompiled sensitive patterns
         for pattern, replacement in _SENSITIVE_PATTERNS:
@@ -376,21 +415,47 @@ class StructuredFormatter(SecretRedactingFormatter):
     """
 
     # Attributes that belong to LogRecord itself or are promoted to top-level
-    _BUILTIN_ATTRS = frozenset({
-        'name', 'msg', 'args', 'created', 'filename', 'funcName',
-        'levelname', 'levelno', 'lineno', 'module', 'msecs',
-        'message', 'pathname', 'process', 'processName',
-        'relativeCreated', 'thread', 'threadName', 'exc_info',
-        'exc_text', 'stack_info',
-        # Context fields already promoted in format()
-        'workflow_id', 'stage_id', 'agent_id', 'session_id',
-        'trace_id', 'span_id',
-    })
+    _BUILTIN_ATTRS = frozenset(
+        {
+            "name",
+            "msg",
+            "args",
+            "created",
+            "filename",
+            "funcName",
+            "levelname",
+            "levelno",
+            "lineno",
+            "module",
+            "msecs",
+            "message",
+            "pathname",
+            "process",
+            "processName",
+            "relativeCreated",
+            "thread",
+            "threadName",
+            "exc_info",
+            "exc_text",
+            "stack_info",
+            # Context fields already promoted in format()
+            "workflow_id",
+            "stage_id",
+            "agent_id",
+            "session_id",
+            "trace_id",
+            "span_id",
+        }
+    )
 
     # Execution-context fields promoted to top-level JSON keys
     _CONTEXT_FIELDS = (
-        'workflow_id', 'stage_id', 'agent_id',
-        'session_id', 'trace_id', 'span_id',
+        "workflow_id",
+        "stage_id",
+        "agent_id",
+        "session_id",
+        "trace_id",
+        "span_id",
     )
 
     def _collect_extra_fields(self, record: logging.LogRecord) -> dict:
@@ -401,10 +466,10 @@ class StructuredFormatter(SecretRedactingFormatter):
         """
         extra_fields = {}
         for key, value in record.__dict__.items():
-            if key in self._BUILTIN_ATTRS or key.startswith('_'):
+            if key in self._BUILTIN_ATTRS or key.startswith("_"):
                 continue
             if any(pattern in key.lower() for pattern in self.REDACTED_KEYS):
-                extra_fields[key] = '***REDACTED***'
+                extra_fields[key] = "***REDACTED***"
             else:
                 extra_fields[key] = value
         return extra_fields
@@ -422,13 +487,13 @@ class StructuredFormatter(SecretRedactingFormatter):
 
         # Build structured log entry
         log_entry = {
-            'timestamp': datetime.now().astimezone().isoformat(),
-            'level': record.levelname,
-            'logger': record.name,
-            'message': safe_msg,
-            'module': record.module,
-            'function': record.funcName,
-            'line': record.lineno,
+            "timestamp": datetime.now().astimezone().isoformat(),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": safe_msg,
+            "module": record.module,
+            "function": record.funcName,
+            "line": record.lineno,
         }
 
         # Promote execution context fields to top-level JSON
@@ -440,11 +505,11 @@ class StructuredFormatter(SecretRedactingFormatter):
 
         # Add exception info if present
         if record.exc_info:
-            log_entry['exception'] = self.formatException(record.exc_info)
+            log_entry["exception"] = self.formatException(record.exc_info)
 
         extra_fields = self._collect_extra_fields(record)
         if extra_fields:
-            log_entry['extra'] = extra_fields
+            log_entry["extra"] = extra_fields
 
         return json.dumps(log_entry)
 
@@ -458,12 +523,12 @@ class ConsoleFormatter(SecretRedactingFormatter):
 
     # ANSI color codes
     COLORS = {
-        'DEBUG': '\033[36m',      # Cyan
-        'INFO': '\033[32m',       # Green
-        'WARNING': '\033[33m',    # Yellow
-        'ERROR': '\033[31m',      # Red
-        'CRITICAL': '\033[35m',   # Magenta
-        'RESET': '\033[0m'
+        "DEBUG": "\033[36m",  # Cyan
+        "INFO": "\033[32m",  # Green
+        "WARNING": "\033[33m",  # Yellow
+        "ERROR": "\033[31m",  # Red
+        "CRITICAL": "\033[35m",  # Magenta
+        "RESET": "\033[0m",
     }
 
     def __init__(self, use_colors: bool = True):
@@ -474,8 +539,7 @@ class ConsoleFormatter(SecretRedactingFormatter):
             use_colors: Whether to use ANSI color codes
         """
         super().__init__(
-            fmt='[%(levelname)s] %(name)s - %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
+            fmt="[%(levelname)s] %(name)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
         )
         self.use_colors = use_colors
 
@@ -485,7 +549,7 @@ class ConsoleFormatter(SecretRedactingFormatter):
 
         if self.use_colors and record.levelname in self.COLORS:
             color = self.COLORS[record.levelname]
-            reset = self.COLORS['RESET']
+            reset = self.COLORS["RESET"]
             return f"{color}{formatted}{reset}"
 
         return formatted
@@ -524,9 +588,8 @@ def _configure_rich_handler(
     """Create a Rich handler, falling back to console if Rich is unavailable."""
     try:
         from rich.logging import RichHandler
-        rich_handler = RichHandler(
-            show_path=False, show_time=True, markup=False
-        )
+
+        rich_handler = RichHandler(show_path=False, show_time=True, markup=False)
         rich_handler.setLevel(numeric_level)
         rich_handler.addFilter(context_filter)
         return rich_handler
@@ -551,10 +614,10 @@ def _configure_file_handler(
 
 
 def setup_logging(
-    level: Optional[str] = None,
-    format_type: Optional[str] = None,
-    log_file: Optional[str] = None,
-    use_colors: bool = True
+    level: str | None = None,
+    format_type: str | None = None,
+    log_file: str | None = None,
+    use_colors: bool = True,
 ) -> None:
     """Configure logging for the application.
 
@@ -569,9 +632,9 @@ def setup_logging(
     execution-context and OTEL fields are available on every ``LogRecord``.
     """
     if level is None:
-        level = os.environ.get('TEMPER_LOG_LEVEL', 'INFO').upper()
+        level = os.environ.get("TEMPER_LOG_LEVEL", "INFO").upper()
     if format_type is None:
-        format_type = os.environ.get('TEMPER_LOG_FORMAT', 'console').lower()
+        format_type = os.environ.get("TEMPER_LOG_FORMAT", "console").lower()
 
     numeric_level = getattr(logging, level, None)
     if not isinstance(numeric_level, int):
@@ -582,18 +645,20 @@ def setup_logging(
     root_logger.setLevel(numeric_level)
     root_logger.handlers.clear()
 
-    if format_type in ('console', 'both'):
+    if format_type in ("console", "both"):
         root_logger.addHandler(
-            _configure_console_handler(numeric_level, context_filter, use_colors))
-    if format_type in ('json', 'both'):
+            _configure_console_handler(numeric_level, context_filter, use_colors)
+        )
+    if format_type in ("json", "both"):
+        root_logger.addHandler(_configure_json_handler(numeric_level, context_filter))
+    if format_type == "rich":
         root_logger.addHandler(
-            _configure_json_handler(numeric_level, context_filter))
-    if format_type == 'rich':
-        root_logger.addHandler(
-            _configure_rich_handler(numeric_level, context_filter, use_colors))
+            _configure_rich_handler(numeric_level, context_filter, use_colors)
+        )
     if log_file:
         root_logger.addHandler(
-            _configure_file_handler(log_file, numeric_level, context_filter))
+            _configure_file_handler(log_file, numeric_level, context_filter)
+        )
 
     get_logger(__name__).debug(
         f"Logging configured: level={level}, format={format_type}, file={log_file}"
@@ -638,7 +703,7 @@ class LogContext:
         """
         self.logger = logger
         self.context_fields = context_fields
-        self.old_factory: Optional[Callable[..., logging.LogRecord]] = None
+        self.old_factory: Callable[..., logging.LogRecord] | None = None
 
     def __enter__(self) -> "LogContext":
         """Enter context and install log record factory."""
@@ -667,7 +732,9 @@ class LogContext:
             logging.setLogRecordFactory(self.old_factory)
 
 
-def log_function_call(logger: logging.Logger, level: int = logging.DEBUG) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+def log_function_call(
+    logger: logging.Logger, level: int = logging.DEBUG
+) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """
     Decorator to log function entry and exit.
 
@@ -682,10 +749,21 @@ def log_function_call(logger: logging.Logger, level: int = logging.DEBUG) -> Cal
         ...     return len(data)
     """
     # Parameter names that indicate sensitive values
-    _sensitive_names = frozenset({
-        "password", "passwd", "secret", "token", "api_key", "apikey",
-        "credentials", "auth", "authorization", "private_key", "encryption_key",
-    })
+    _sensitive_names = frozenset(
+        {
+            "password",
+            "passwd",
+            "secret",
+            "token",
+            "api_key",
+            "apikey",
+            "credentials",
+            "auth",
+            "authorization",
+            "private_key",
+            "encryption_key",
+        }
+    )
 
     def _redact_value(name: str, value: Any) -> Any:
         """Redact value if parameter name suggests it is sensitive."""
@@ -693,16 +771,20 @@ def log_function_call(logger: logging.Logger, level: int = logging.DEBUG) -> Cal
             return "***"
         return value
 
-    def _safe_kwargs(kwargs: Dict[str, Any]) -> Dict[str, Any]:
+    def _safe_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
         return {k: _redact_value(k, v) for k, v in kwargs.items()}
 
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         """Logging decorator."""
+
         @functools.wraps(func)
         def wrapper(*func_args: Any, **func_kwargs: Any) -> Any:
             """Logging wrapper."""
             safe_kw = _safe_kwargs(func_kwargs)
-            logger.log(level, f"Entering {func.__name__} with args={func_args}, kwargs={safe_kw}")
+            logger.log(
+                level,
+                f"Entering {func.__name__} with args={func_args}, kwargs={safe_kw}",
+            )
             try:
                 result = func(*func_args, **func_kwargs)
                 logger.log(level, f"Exiting {func.__name__}")
@@ -710,5 +792,7 @@ def log_function_call(logger: logging.Logger, level: int = logging.DEBUG) -> Cal
             except Exception as e:
                 logger.error(f"Exception in {func.__name__}: {e}", exc_info=True)
                 raise
+
         return wrapper
+
     return decorator

@@ -1,4 +1,5 @@
 """Tests for the JSONParserTool."""
+
 import json
 
 import pytest
@@ -80,7 +81,9 @@ def test_validate_invalid_json(tool):
 
 def test_validate_with_required_keys(tool):
     data = json.dumps({"name": "Alice"})
-    result = tool.execute(data=data, operation="validate", schema={"required": ["name", "age"]})
+    result = tool.execute(
+        data=data, operation="validate", schema={"required": ["name", "age"]}
+    )
     assert result.success is False
     assert "age" in result.error
 

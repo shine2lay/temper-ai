@@ -1,0 +1,257 @@
+# Continuous Integration Pipeline
+#
+# Runs on every pull request to main and on direct pushes to main.
+# Four-stage quality gate: lint + typecheck (parallel) -> test (matrix) -> quality
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel any in-progress run for the same PR or branch to avoid wasted runners.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TEMPER_LLM_PROVIDER: mock
+  TEMPER_LLM_BASE_URL: http://localhost:11434
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Stage 1a: Lint (ruff + black --check)
+  # ---------------------------------------------------------------------------
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+
+      - name: Cache uv dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: uv-lint-${{ hashFiles('uv.lock') }}
+          restore-keys: |
+            uv-lint-
+
+      - name: Install dev dependencies
+        run: uv sync --extra dev
+
+      - name: Run lint
+        run: make lint
+
+  # ---------------------------------------------------------------------------
+  # Stage 1b: Type check (mypy) — runs in parallel with lint
+  # ---------------------------------------------------------------------------
+  typecheck:
+    name: Type Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+
+      - name: Cache uv dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: uv-typecheck-${{ hashFiles('uv.lock') }}
+          restore-keys: |
+            uv-typecheck-
+
+      - name: Install dev dependencies
+        run: uv sync --extra dev
+
+      - name: Run type check
+        run: make type
+
+  # ---------------------------------------------------------------------------
+  # Stage 2: Tests — matrix over Python 3.11 and 3.12
+  # Requires lint + typecheck to pass first.
+  # ---------------------------------------------------------------------------
+  test:
+    name: Test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [lint, typecheck]
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.11', '3.12']
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+
+      - name: Cache uv dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: uv-test-${{ matrix.python-version }}-${{ hashFiles('uv.lock') }}
+          restore-keys: |
+            uv-test-${{ matrix.python-version }}-
+
+      - name: Install dev + dashboard dependencies
+        run: uv sync --extra dev --extra dashboard
+
+      - name: Run tests
+        run: make test
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-py${{ matrix.python-version }}
+          path: |
+            .pytest_cache/
+            htmlcov/
+          if-no-files-found: ignore
+
+  # ---------------------------------------------------------------------------
+  # Stage 2b: Frontend build — runs in parallel with tests
+  # ---------------------------------------------------------------------------
+  frontend:
+    name: Frontend Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [lint, typecheck]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: frontend
+
+      - name: Build
+        run: npm run build
+        working-directory: frontend
+
+  # ---------------------------------------------------------------------------
+  # Stage 3: Architecture quality gate
+  # Requires all test matrix legs to pass first.
+  # ---------------------------------------------------------------------------
+  quality:
+    name: Quality Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [test, frontend]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+
+      - name: Cache uv dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: uv-quality-${{ hashFiles('uv.lock') }}
+          restore-keys: |
+            uv-quality-
+
+      - name: Install dev dependencies
+        run: uv sync --extra dev
+
+      - name: Run quality scanner
+        run: make quality
+
+  # ---------------------------------------------------------------------------
+  # Stage 4: Performance baselines — informational only, never blocks the build.
+  # Requires tests to pass first (ensures the build is healthy before measuring).
+  # ---------------------------------------------------------------------------
+  benchmark:
+    name: Performance Baselines
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [test]
+    # continue-on-error keeps the job from blocking merge on regression
+    continue-on-error: true
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+
+      - name: Cache uv dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: uv-benchmark-${{ hashFiles('uv.lock') }}
+          restore-keys: |
+            uv-benchmark-
+
+      - name: Install dev + dashboard dependencies
+        run: uv sync --extra dev --extra dashboard
+
+      - name: Run performance baseline benchmarks
+        run: |
+          pytest tests/test_benchmarks/test_baseline_benchmarks.py \
+            --timeout=60 \
+            -v \
+            --benchmark-json=benchmark-results.json \
+            --benchmark-min-rounds=3 \
+            || true   # informational: never fail CI
+
+      - name: Upload benchmark results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results-py3.12
+          path: benchmark-results.json
+          if-no-files-found: ignore

@@ -4,8 +4,9 @@ Provides convenience methods for safety policy registration,
 validation, and violation handling. Moved from temper_ai.shared.core.service
 to maintain proper layer separation (core should not import safety).
 """
+
 import threading
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from temper_ai.safety import SafetyPolicy, ValidationResult
 from temper_ai.safety.constants import POLICIES_CHECKED_KEY
@@ -18,6 +19,7 @@ logger = get_logger(__name__)
 _sanitizer = None
 _sanitizer_lock = threading.Lock()
 
+
 def _get_sanitizer() -> Any:
     """Get or create DataSanitizer instance (lazy loading, thread-safe)."""
     global _sanitizer
@@ -25,6 +27,7 @@ def _get_sanitizer() -> Any:
         with _sanitizer_lock:
             if _sanitizer is None:
                 from temper_ai.observability.sanitization import DataSanitizer
+
                 _sanitizer = DataSanitizer()
     return _sanitizer
 
@@ -35,7 +38,9 @@ def reset_sanitizer() -> None:
     _sanitizer = None
 
 
-def _sanitize_violation_context(context: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+def _sanitize_violation_context(
+    context: dict[str, Any] | None,
+) -> dict[str, Any] | None:
     """
     Sanitize violation context to prevent sensitive data exposure in logs.
 
@@ -61,13 +66,13 @@ def _sanitize_violation_context(context: Optional[Dict[str, Any]]) -> Optional[D
         if not isinstance(data, dict):
             return data
 
-        result: Dict[str, Any] = {}
+        result: dict[str, Any] = {}
         for key, value in data.items():
             if isinstance(value, dict):
                 result[key] = sanitize_dict(value)
             elif isinstance(value, list):
                 # Sanitize list elements recursively
-                sanitized_list: List[Any] = []
+                sanitized_list: list[Any] = []
                 for v in value:
                     if isinstance(v, dict):
                         sanitized_list.append(sanitize_dict(v))
@@ -115,7 +120,7 @@ class SafetyServiceMixin:
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         """Initialize safety service mixin."""
         super().__init__(*args, **kwargs)
-        self._policies: List[SafetyPolicy] = []
+        self._policies: list[SafetyPolicy] = []
 
     def register_policy(self, policy: SafetyPolicy) -> None:
         """Register a safety policy with this service.
@@ -127,7 +132,7 @@ class SafetyServiceMixin:
         # Sort by priority (highest first)
         self._policies.sort(key=lambda p: p.priority, reverse=True)
 
-    def get_policies(self) -> List[SafetyPolicy]:
+    def get_policies(self) -> list[SafetyPolicy]:
         """Get list of registered policies.
 
         Returns:
@@ -136,9 +141,7 @@ class SafetyServiceMixin:
         return self._policies.copy()
 
     def validate_action(
-        self,
-        action: Dict[str, Any],
-        context: Dict[str, Any]
+        self, action: dict[str, Any], context: dict[str, Any]
     ) -> ValidationResult:
         """Validate action against all registered policies.
 
@@ -154,8 +157,8 @@ class SafetyServiceMixin:
         """
         from temper_ai.safety import SafetyViolation, ValidationResult
 
-        violations: List[SafetyViolation] = []
-        metadata: Dict[str, Any] = {POLICIES_CHECKED_KEY: []}
+        violations: list[SafetyViolation] = []
+        metadata: dict[str, Any] = {POLICIES_CHECKED_KEY: []}
 
         for policy in self._policies:
             result = policy.validate(action, context)
@@ -173,19 +176,18 @@ class SafetyServiceMixin:
                 break
 
         from temper_ai.safety import ViolationSeverity
+
         valid = not any(v.severity >= ViolationSeverity.HIGH for v in violations)
 
         return ValidationResult(
             valid=valid,
             violations=violations,
             metadata=metadata,
-            policy_name="service_aggregate"
+            policy_name="service_aggregate",
         )
 
     async def validate_action_async(
-        self,
-        action: Dict[str, Any],
-        context: Dict[str, Any]
+        self, action: dict[str, Any], context: dict[str, Any]
     ) -> ValidationResult:
         """Async validation against all registered policies.
 
@@ -196,10 +198,14 @@ class SafetyServiceMixin:
         Returns:
             ValidationResult
         """
-        from temper_ai.safety import SafetyViolation, ValidationResult, ViolationSeverity
+        from temper_ai.safety import (
+            SafetyViolation,
+            ValidationResult,
+            ViolationSeverity,
+        )
 
-        violations: List[SafetyViolation] = []
-        metadata: Dict[str, Any] = {POLICIES_CHECKED_KEY: []}
+        violations: list[SafetyViolation] = []
+        metadata: dict[str, Any] = {POLICIES_CHECKED_KEY: []}
 
         for policy in self._policies:
             result = await policy.validate_async(action, context)
@@ -220,7 +226,7 @@ class SafetyServiceMixin:
             valid=valid,
             violations=violations,
             metadata=metadata,
-            policy_name="service_aggregate"
+            policy_name="service_aggregate",
         )
 
     def _log_violation(self, violation: Any) -> None:
@@ -242,23 +248,27 @@ class SafetyServiceMixin:
 
         # SECURITY: Sanitize context and metadata before logging
         sanitized_context = _sanitize_violation_context(violation.context)
-        sanitized_metadata = _sanitize_violation_context(violation.metadata) if violation.metadata else None
+        sanitized_metadata = (
+            _sanitize_violation_context(violation.metadata)
+            if violation.metadata
+            else None
+        )
 
         log_level(
             f"Safety violation: {violation.message}",
             extra={
-                'severity': violation.severity.name,
-                'policy': violation.policy_name,
-                'context': sanitized_context,
-                'metadata': sanitized_metadata
-            }
+                "severity": violation.severity.name,
+                "policy": violation.policy_name,
+                "context": sanitized_context,
+                "metadata": sanitized_metadata,
+            },
         )
 
     def _track_violation(
         self,
         violation: Any,
-        tracker: Optional[Any],
-        sanitized_context: Optional[Dict[str, Any]]
+        tracker: Any | None,
+        sanitized_context: dict[str, Any] | None,
     ) -> None:
         """Track violation in observability system.
 
@@ -267,7 +277,7 @@ class SafetyServiceMixin:
             tracker: Optional ExecutionTracker
             sanitized_context: Sanitized context for tracking
         """
-        if not tracker or not hasattr(tracker, 'track_safety_violation'):
+        if not tracker or not hasattr(tracker, "track_safety_violation"):
             return
 
         try:
@@ -275,17 +285,16 @@ class SafetyServiceMixin:
                 violation_severity=violation.severity.name,
                 violation_message=violation.message,
                 policy_name=violation.policy_name,
-                service_name=getattr(self, 'name', 'unknown'),
-                context=sanitized_context
+                service_name=getattr(self, "name", "unknown"),
+                context=sanitized_context,
             )
         except Exception as e:
             # Don't fail violation handling if tracking fails
             logger.warning(
-                f"Failed to track safety violation in observability: {e}",
-                exc_info=True
+                f"Failed to track safety violation in observability: {e}", exc_info=True
             )
 
-    def _raise_for_blocking_violations(self, violations: List[Any]) -> None:
+    def _raise_for_blocking_violations(self, violations: list[Any]) -> None:
         """Raise exception for HIGH+ severity violations.
 
         Args:
@@ -311,9 +320,9 @@ class SafetyServiceMixin:
 
     def handle_violations(
         self,
-        violations: List[Any],
+        violations: list[Any],
         raise_exception: bool = True,
-        tracker: Optional[Any] = None
+        tracker: Any | None = None,
     ) -> None:
         """Handle safety violations with observability integration.
 

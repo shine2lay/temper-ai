@@ -23,13 +23,14 @@ Example:
     ...     reason="Manual recovery from failed deployment"
     ... )
 """
+
 import os
 from datetime import UTC, datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
+from temper_ai.safety.rollback import RollbackManager, RollbackResult, RollbackSnapshot
 from temper_ai.shared.constants.durations import SECONDS_PER_HOUR
 from temper_ai.shared.constants.limits import THRESHOLD_LARGE_COUNT
-from temper_ai.safety.rollback import RollbackManager, RollbackResult, RollbackSnapshot
 from temper_ai.shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -61,11 +62,11 @@ class RollbackAPI:
 
     def list_snapshots(
         self,
-        workflow_id: Optional[str] = None,
-        agent_id: Optional[str] = None,
-        since: Optional[datetime] = None,
-        limit: int = DEFAULT_SNAPSHOT_LIMIT
-    ) -> List[RollbackSnapshot]:
+        workflow_id: str | None = None,
+        agent_id: str | None = None,
+        since: datetime | None = None,
+        limit: int = DEFAULT_SNAPSHOT_LIMIT,
+    ) -> list[RollbackSnapshot]:
         """List available snapshots with filtering.
 
         Args:
@@ -82,16 +83,12 @@ class RollbackAPI:
         # Filter by workflow_id
         if workflow_id:
             snapshots = [
-                s for s in snapshots
-                if s.context.get("workflow_id") == workflow_id
+                s for s in snapshots if s.context.get("workflow_id") == workflow_id
             ]
 
         # Filter by agent_id
         if agent_id:
-            snapshots = [
-                s for s in snapshots
-                if s.context.get("agent_id") == agent_id
-            ]
+            snapshots = [s for s in snapshots if s.context.get("agent_id") == agent_id]
 
         # Filter by time
         if since:
@@ -101,7 +98,7 @@ class RollbackAPI:
         snapshots.sort(key=lambda s: s.created_at, reverse=True)
         return snapshots[:limit]
 
-    def get_snapshot_details(self, snapshot_id: str) -> Optional[Dict[str, Any]]:
+    def get_snapshot_details(self, snapshot_id: str) -> dict[str, Any] | None:
         """Get detailed snapshot information.
 
         Args:
@@ -119,17 +116,17 @@ class RollbackAPI:
             "action": snapshot.action,
             "context": snapshot.context,
             "created_at": snapshot.created_at.isoformat(),
-            "expires_at": snapshot.expires_at.isoformat() if snapshot.expires_at else None,
+            "expires_at": (
+                snapshot.expires_at.isoformat() if snapshot.expires_at else None
+            ),
             "file_count": len(snapshot.file_snapshots),
             "files": list(snapshot.file_snapshots.keys()),
             "state_keys": list(snapshot.state_snapshots.keys()),
-            "age_hours": (datetime.now(UTC) - snapshot.created_at).total_seconds() / SECONDS_PER_HOUR
+            "age_hours": (datetime.now(UTC) - snapshot.created_at).total_seconds()
+            / SECONDS_PER_HOUR,
         }
 
-    def validate_rollback_safety(
-        self,
-        snapshot_id: str
-    ) -> Tuple[bool, List[str]]:
+    def validate_rollback_safety(self, snapshot_id: str) -> tuple[bool, list[str]]:
         """Pre-flight safety checks before rollback.
 
         Checks for:
@@ -156,10 +153,7 @@ class RollbackAPI:
         # Check file conflicts (files modified since snapshot)
         for file_path in snapshot.file_snapshots.keys():
             if os.path.exists(file_path):
-                file_mtime = datetime.fromtimestamp(
-                    os.path.getmtime(file_path),
-                    tz=UTC
-                )
+                file_mtime = datetime.fromtimestamp(os.path.getmtime(file_path), tz=UTC)
                 if file_mtime > snapshot.created_at:
                     warnings.append(
                         f"File modified since snapshot: {file_path} "
@@ -168,7 +162,9 @@ class RollbackAPI:
 
         # Check age
         snapshot_warning_age_hours = 24
-        age_hours = (datetime.now(UTC) - snapshot.created_at).total_seconds() / SECONDS_PER_HOUR
+        age_hours = (
+            datetime.now(UTC) - snapshot.created_at
+        ).total_seconds() / SECONDS_PER_HOUR
         if age_hours > snapshot_warning_age_hours:
             warnings.append(f"Snapshot is {age_hours:.1f} hours old")
 
@@ -182,7 +178,7 @@ class RollbackAPI:
         operator: str,
         reason: str,
         dry_run: bool = False,
-        force: bool = False
+        force: bool = False,
     ) -> RollbackResult:
         """Execute manual rollback with safety validation.
 
@@ -208,30 +204,26 @@ class RollbackAPI:
         if not force:
             is_safe, warnings = self.validate_rollback_safety(snapshot_id)
             if not is_safe:
-                raise ValueError(
-                    f"Rollback safety check failed: {'; '.join(warnings)}"
-                )
+                raise ValueError(f"Rollback safety check failed: {'; '.join(warnings)}")
 
             # Log warnings even if safe
             if warnings:
-                logger.warning(
-                    f"Rollback warnings for {snapshot_id}: {warnings}"
-                )
+                logger.warning(f"Rollback warnings for {snapshot_id}: {warnings}")
 
         # Execute rollback (with dry_run support)
         if dry_run:
-            logger.info(f"Dry-run manual rollback {snapshot_id} by {operator}: {reason}")
+            logger.info(
+                f"Dry-run manual rollback {snapshot_id} by {operator}: {reason}"
+            )
         else:
-            logger.info(f"Executing manual rollback {snapshot_id} by {operator}: {reason}")
+            logger.info(
+                f"Executing manual rollback {snapshot_id} by {operator}: {reason}"
+            )
 
         result = self.manager.execute_rollback(snapshot_id, dry_run=dry_run)
 
         # Add operator/reason to metadata
-        result.metadata.update({
-            "operator": operator,
-            "reason": reason,
-            "manual": True
-        })
+        result.metadata.update({"operator": operator, "reason": reason, "manual": True})
 
         return result
 
@@ -239,10 +231,8 @@ class RollbackAPI:
     DEFAULT_HISTORY_LIMIT = THRESHOLD_LARGE_COUNT
 
     def get_rollback_history(
-        self,
-        snapshot_id: Optional[str] = None,
-        limit: int = DEFAULT_HISTORY_LIMIT
-    ) -> List[RollbackResult]:
+        self, snapshot_id: str | None = None, limit: int = DEFAULT_HISTORY_LIMIT
+    ) -> list[RollbackResult]:
         """Get rollback execution history.
 
         Args:

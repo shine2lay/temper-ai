@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -21,8 +21,8 @@ class CheckConfig(BaseModel):
 
     name: str
     method: Literal["programmatic", "llm"] = "programmatic"
-    command: Optional[str] = None
-    prompt: Optional[str] = None
+    command: str | None = None
+    prompt: str | None = None
     timeout: int = DEFAULT_TIMEOUT_SECONDS
 
 
@@ -30,30 +30,37 @@ class EvaluatorConfig(BaseModel):
     """Configuration for an evaluator instance."""
 
     type: Literal["criteria", "comparative", "scored", "human"] = "criteria"
-    checks: List[CheckConfig] = Field(default_factory=list)
-    prompt: Optional[str] = None
-    rubric: Optional[str] = None
-    model: Optional[str] = None
+    checks: list[CheckConfig] = Field(default_factory=list)
+    prompt: str | None = None
+    rubric: str | None = None
+    model: str | None = None
 
 
 class PipelineStepConfig(BaseModel):
     """A single step in the optimization pipeline."""
 
-    optimizer: Literal[
-        "refinement", "selection", "tuning", "prompt"
-    ] = "refinement"
+    optimizer: Literal["refinement", "selection", "tuning", "prompt"] = "refinement"
     evaluator: str
     max_iterations: int = DEFAULT_MAX_ITERATIONS
     runs: int = DEFAULT_RUNS
-    strategies: List[Dict[str, Any]] = Field(default_factory=list)
+    strategies: list[dict[str, Any]] = Field(default_factory=list)
+    reads: str | None = None  # evaluation_name this optimizer reads scores from
+    agents: list[str] = Field(default_factory=list)  # agents this step targets
 
 
 class OptimizationConfig(BaseModel):
     """Top-level optimization configuration."""
 
-    evaluators: Dict[str, EvaluatorConfig] = Field(default_factory=dict)
-    pipeline: List[PipelineStepConfig] = Field(default_factory=list)
+    evaluators: dict[str, EvaluatorConfig] = Field(default_factory=dict)
+    pipeline: list[PipelineStepConfig] = Field(default_factory=list)
     enabled: bool = True
+
+    # Per-agent evaluation definitions.
+    # Typed as Dict[str, Any] (not Dict[str, AgentEvaluationConfig]) to avoid
+    # circular import: _evaluation_schemas imports CheckConfig from this module.
+    # Pydantic validation happens in EvaluationMapping at dispatch-creation time.
+    evaluations: dict[str, Any] = Field(default_factory=dict)
+    agent_evaluations: dict[str, list[str]] = Field(default_factory=dict)
 
 
 @dataclasses.dataclass
@@ -62,7 +69,7 @@ class EvaluationResult:
 
     passed: bool
     score: float = MAX_SCORE
-    details: Dict[str, Any] = dataclasses.field(default_factory=dict)
+    details: dict[str, Any] = dataclasses.field(default_factory=dict)
 
     def __post_init__(self) -> None:
         self.score = max(MIN_SCORE, min(MAX_SCORE, self.score))
@@ -72,13 +79,13 @@ class EvaluationResult:
 class OptimizationResult:
     """Result of an optimization pipeline run."""
 
-    output: Dict[str, Any]
+    output: dict[str, Any]
     score: float = MAX_SCORE
     iterations: int = 0
     improved: bool = False
-    details: Dict[str, Any] = dataclasses.field(default_factory=dict)
-    experiment_id: Optional[str] = None
-    experiment_results: Optional[Dict[str, Any]] = None
+    details: dict[str, Any] = dataclasses.field(default_factory=dict)
+    experiment_id: str | None = None
+    experiment_results: dict[str, Any] | None = None
 
     def __post_init__(self) -> None:
         self.score = max(MIN_SCORE, min(MAX_SCORE, self.score))

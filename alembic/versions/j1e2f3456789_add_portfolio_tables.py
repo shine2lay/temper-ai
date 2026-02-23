@@ -5,17 +5,18 @@ Revises: h9c0d1234567
 Create Date: 2026-02-16 23:00:00.000000
 
 """
-from typing import Sequence, Union
 
-from alembic import op
+from collections.abc import Sequence
+
 import sqlalchemy as sa
 
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "j1e2f3456789"
-down_revision: Union[str, None] = "h9c0d1234567"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "h9c0d1234567"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -36,7 +37,9 @@ def upgrade() -> None:
         sa.Column("portfolio_id", sa.String(), nullable=False, index=True),
         sa.Column("product_type", sa.String(), nullable=False, index=True),
         sa.Column("workflow_id", sa.String(), nullable=False, index=True),
-        sa.Column("status", sa.String(), nullable=False, server_default="running", index=True),
+        sa.Column(
+            "status", sa.String(), nullable=False, server_default="running", index=True
+        ),
         sa.Column("cost_usd", sa.Float(), nullable=False, server_default="0.0"),
         sa.Column("duration_s", sa.Float(), nullable=False, server_default="0.0"),
         sa.Column("success", sa.Boolean(), nullable=False, server_default="0"),
@@ -82,7 +85,9 @@ def upgrade() -> None:
         sa.Column("id", sa.String(), primary_key=True),
         sa.Column("tech_a", sa.String(), nullable=False, index=True),
         sa.Column("tech_b", sa.String(), nullable=False, index=True),
-        sa.Column("compatibility_score", sa.Float(), nullable=False, server_default="0.0"),
+        sa.Column(
+            "compatibility_score", sa.Float(), nullable=False, server_default="0.0"
+        ),
         sa.Column("notes", sa.String(), nullable=False, server_default=""),
         sa.Column("created_at", sa.DateTime(), nullable=False),
     )

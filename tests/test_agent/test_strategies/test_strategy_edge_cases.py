@@ -27,21 +27,21 @@ class TestConsensusEdgeCases:
                 decision="Option A",
                 reasoning="Reason 1",
                 confidence=0.9,
-                metadata={}
+                metadata={},
             ),
             AgentOutput(
                 agent_name="agent_2",
                 decision="Option A",
                 reasoning="Reason 2",
                 confidence=0.85,
-                metadata={}
+                metadata={},
             ),
             AgentOutput(
                 agent_name="agent_3",
                 decision="Option A",
                 reasoning="Reason 3",
                 confidence=0.8,
-                metadata={}
+                metadata={},
             ),
         ]
 
@@ -60,14 +60,14 @@ class TestConsensusEdgeCases:
                 decision="Option A",
                 reasoning="Reason A",
                 confidence=0.9,
-                metadata={}
+                metadata={},
             ),
             AgentOutput(
                 agent_name="agent_2",
                 decision="Option B",
                 reasoning="Reason B",
                 confidence=0.7,
-                metadata={}
+                metadata={},
             ),
         ]
 
@@ -85,7 +85,7 @@ class TestConsensusEdgeCases:
                 decision="A" if i < 2 else "B",
                 reasoning=f"Reason {i}",
                 confidence=0.8,
-                metadata={}
+                metadata={},
             )
             for i in range(4)
         ]
@@ -104,21 +104,21 @@ class TestConsensusEdgeCases:
                 decision="Option A",
                 reasoning="Reason A",
                 confidence=0.8,
-                metadata={}
+                metadata={},
             ),
             AgentOutput(
                 agent_name="agent_2",
                 decision="Option B",
                 reasoning="Reason B",
                 confidence=0.8,
-                metadata={}
+                metadata={},
             ),
             AgentOutput(
                 agent_name="agent_3",
                 decision="Option C",
                 reasoning="Reason C",
                 confidence=0.8,
-                metadata={}
+                metadata={},
             ),
         ]
 
@@ -138,7 +138,7 @@ class TestConsensusEdgeCases:
                 decision="Solo Decision",
                 reasoning="I'm alone",
                 confidence=0.95,
-                metadata={}
+                metadata={},
             )
         ]
 
@@ -166,7 +166,7 @@ class TestConsensusEdgeCases:
                 decision="Uncertain",
                 reasoning=f"Not sure {i}",
                 confidence=0.2,
-                metadata={}
+                metadata={},
             )
             for i in range(3)
         ]
@@ -186,7 +186,7 @@ class TestConsensusEdgeCases:
                 decision="A",
                 reasoning="Reason",
                 confidence=0.8,
-                metadata={}
+                metadata={},
             )
         ]
 
@@ -204,21 +204,21 @@ class TestConsensusEdgeCases:
                 decision="A",
                 reasoning="Very sure",
                 confidence=0.95,
-                metadata={}
+                metadata={},
             ),
             AgentOutput(
                 agent_name="medium_confidence",
                 decision="A",
                 reasoning="Somewhat sure",
                 confidence=0.6,
-                metadata={}
+                metadata={},
             ),
             AgentOutput(
                 agent_name="low_confidence",
                 decision="B",
                 reasoning="Not sure",
                 confidence=0.3,
-                metadata={}
+                metadata={},
             ),
         ]
 
@@ -238,7 +238,7 @@ class TestMeritWeightedEdgeCases:
             agents=["agent_1", "agent_2"],
             decisions=["A", "B"],
             disagreement_score=0.8,
-            context={}
+            context={},
         )
 
         agent_outputs = [
@@ -255,7 +255,7 @@ class TestMeritWeightedEdgeCases:
             stage_name="test",
             workflow_name="test_wf",
             workflow_config={},
-            previous_resolutions=[]
+            previous_resolutions=[],
         )
 
         resolver = MeritWeightedResolver()
@@ -271,7 +271,7 @@ class TestMeritWeightedEdgeCases:
             agents=["agent_1", "agent_2"],
             decisions=["A", "B"],
             disagreement_score=0.7,
-            context={}
+            context={},
         )
 
         agent_outputs = [
@@ -288,7 +288,7 @@ class TestMeritWeightedEdgeCases:
             stage_name="test",
             workflow_name="test_wf",
             workflow_config={},
-            previous_resolutions=[]
+            previous_resolutions=[],
         )
 
         resolver = MeritWeightedResolver()
@@ -315,7 +315,7 @@ class TestMeritWeightedEdgeCases:
             agents=["novice", "expert"],
             decisions=["A", "B"],
             disagreement_score=0.9,
-            context={}
+            context={},
         )
 
         agent_outputs = [
@@ -332,14 +332,16 @@ class TestMeritWeightedEdgeCases:
             stage_name="test",
             workflow_name="test_wf",
             workflow_config={},
-            previous_resolutions=[]
+            previous_resolutions=[],
         )
 
         resolver = MeritWeightedResolver()
         resolution = resolver.resolve_with_context(conflict, context)
 
         # Expert (merit 0.99) should dominate over novice (merit 0.01)
-        assert resolution.decision == "B", "Expert with 0.99 merit should win over novice with 0.01"
+        assert (
+            resolution.decision == "B"
+        ), "Expert with 0.99 merit should win over novice with 0.01"
         assert "expert" in resolution.winning_agents
         assert resolution.confidence > 0.3
 
@@ -349,7 +351,7 @@ class TestMeritWeightedEdgeCases:
             agents=["agent_1", "agent_2"],
             decisions=["A", "B"],
             disagreement_score=0.5,
-            context={}
+            context={},
         )
 
         agent_outputs = [
@@ -366,7 +368,7 @@ class TestMeritWeightedEdgeCases:
             stage_name="test",
             workflow_name="test_wf",
             workflow_config={},
-            previous_resolutions=[]
+            previous_resolutions=[],
         )
 
         resolver = MeritWeightedResolver()
@@ -381,10 +383,7 @@ class TestMeritWeightedEdgeCases:
         decisions = ["A" if i < 7 else "B" for i in range(10)]
 
         conflict = Conflict(
-            agents=agents,
-            decisions=decisions,
-            disagreement_score=0.7,
-            context={}
+            agents=agents, decisions=decisions, disagreement_score=0.7, context={}
         )
 
         agent_outputs = [
@@ -396,7 +395,9 @@ class TestMeritWeightedEdgeCases:
         merits = {}
         for i in range(10):
             merit_value = 0.9 if i >= 7 else 0.5
-            merits[f"agent_{i}"] = AgentMerit(f"agent_{i}", merit_value, merit_value, merit_value, "general")
+            merits[f"agent_{i}"] = AgentMerit(
+                f"agent_{i}", merit_value, merit_value, merit_value, "general"
+            )
 
         context = ResolutionContext(
             agent_merits=merits,
@@ -404,7 +405,7 @@ class TestMeritWeightedEdgeCases:
             stage_name="test",
             workflow_name="test_wf",
             workflow_config={},
-            previous_resolutions=[]
+            previous_resolutions=[],
         )
 
         resolver = MeritWeightedResolver()
@@ -420,12 +421,7 @@ class TestMeritWeightedEdgeCases:
         """Test that empty conflict agents raises ValueError during creation."""
         # Conflict validates agents during __post_init__
         with pytest.raises(ValueError) as exc_info:
-            Conflict(
-                agents=[],
-                decisions=[],
-                disagreement_score=0.0,
-                context={}
-            )
+            Conflict(agents=[], decisions=[], disagreement_score=0.0, context={})
 
         # Verify error message mentions agents
         assert "agent" in str(exc_info.value).lower()
@@ -443,14 +439,14 @@ class TestStrategyRobustness:
                 decision="Valid",
                 reasoning="Good reason",
                 confidence=0.8,
-                metadata={}
+                metadata={},
             ),
             AgentOutput(
                 agent_name="agent_2",
                 decision="Valid",
                 reasoning="Also good",
                 confidence=0.7,
-                metadata={}
+                metadata={},
             ),
         ]
 
@@ -470,14 +466,14 @@ class TestStrategyRobustness:
                 decision=long_decision,
                 reasoning="Detailed reasoning",
                 confidence=0.8,
-                metadata={}
+                metadata={},
             ),
             AgentOutput(
                 agent_name="agent_2",
                 decision=long_decision,
                 reasoning="Also detailed",
                 confidence=0.8,
-                metadata={}
+                metadata={},
             ),
         ]
 
@@ -497,14 +493,14 @@ class TestStrategyRobustness:
                 decision=special_decision,
                 reasoning="Unicode test",
                 confidence=0.8,
-                metadata={}
+                metadata={},
             ),
             AgentOutput(
                 agent_name="agent_2",
                 decision=special_decision,
                 reasoning="Special chars",
                 confidence=0.8,
-                metadata={}
+                metadata={},
             ),
         ]
 
@@ -523,14 +519,14 @@ class TestStrategyRobustness:
                 decision="42",
                 reasoning="Numeric decision",
                 confidence=0.8,
-                metadata={}
+                metadata={},
             ),
             AgentOutput(
                 agent_name="agent_2",
                 decision="42",
                 reasoning="Same number",
                 confidence=0.8,
-                metadata={}
+                metadata={},
             ),
         ]
 
@@ -547,18 +543,14 @@ class TestStrategyRobustness:
                 decision="A",
                 reasoning="Reason",
                 confidence=0.8,
-                metadata={
-                    "nested": {"key": "value"},
-                    "list": [1, 2, 3],
-                    "count": 42
-                }
+                metadata={"nested": {"key": "value"}, "list": [1, 2, 3], "count": 42},
             ),
             AgentOutput(
                 agent_name="agent_2",
                 decision="A",
                 reasoning="Reason",
                 confidence=0.8,
-                metadata={"simple": "metadata"}
+                metadata={"simple": "metadata"},
             ),
         ]
 

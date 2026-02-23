@@ -1,4 +1,5 @@
 """Test fixtures for compiler tests."""
+
 from unittest.mock import Mock
 
 import pytest
@@ -28,7 +29,7 @@ def sample_domain_state():
         workflow_id="wf-test-123",
         stage_outputs={"stage1": "result1"},
         current_stage="stage1",
-        topic="Test Topic"
+        topic="Test Topic",
     )
 
 
@@ -37,8 +38,20 @@ def mock_streaming_graph():
     """Provide mock graph with streaming behavior."""
     mock_graph = Mock()
     stage_chunks = [
-        {"stage1": {"stage_outputs": {"stage1": "r1"}, "current_stage": "stage1", "workflow_id": "wf-test"}},
-        {"stage2": {"stage_outputs": {"stage1": "r1", "stage2": "r2"}, "current_stage": "stage2", "workflow_id": "wf-test"}},
+        {
+            "stage1": {
+                "stage_outputs": {"stage1": "r1"},
+                "current_stage": "stage1",
+                "workflow_id": "wf-test",
+            }
+        },
+        {
+            "stage2": {
+                "stage_outputs": {"stage1": "r1", "stage2": "r2"},
+                "current_stage": "stage2",
+                "workflow_id": "wf-test",
+            }
+        },
     ]
     mock_graph.stream = Mock(return_value=iter(stage_chunks))
 

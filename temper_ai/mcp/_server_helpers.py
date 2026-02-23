@@ -1,8 +1,9 @@
 """Helper functions for the MCP server."""
+
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 import yaml
 
@@ -11,12 +12,12 @@ logger = logging.getLogger(__name__)
 YAML_EXTENSIONS = (".yaml", ".yml")
 
 
-def scan_workflow_configs(config_root: str) -> List[Dict]:
+def scan_workflow_configs(config_root: str) -> list[dict]:
     """Scan config_root/workflows/ for workflow YAML files.
 
     Returns list of dicts with keys: name, description, path, stages (count).
     """
-    results: List[Dict[str, Any]] = []
+    results: list[dict[str, Any]] = []
     workflows_dir = Path(config_root) / "workflows"
     if not workflows_dir.exists():
         return results
@@ -29,23 +30,25 @@ def scan_workflow_configs(config_root: str) -> List[Dict]:
             if not config:
                 continue
             wf = config.get("workflow", {})
-            results.append({
-                "name": wf.get("name", path.stem),
-                "description": wf.get("description", ""),
-                "path": str(path),
-                "stages": len(wf.get("stages", [])),
-            })
+            results.append(
+                {
+                    "name": wf.get("name", path.stem),
+                    "description": wf.get("description", ""),
+                    "path": str(path),
+                    "stages": len(wf.get("stages", [])),
+                }
+            )
         except (OSError, yaml.YAMLError) as exc:
             logger.warning("Failed to scan %s: %s", path, exc)
     return results
 
 
-def scan_agent_configs(config_root: str) -> List[Dict]:
+def scan_agent_configs(config_root: str) -> list[dict]:
     """Scan config_root/agents/ for agent YAML files.
 
     Returns list of dicts with keys: name, description, type, path.
     """
-    results: List[Dict[str, Any]] = []
+    results: list[dict[str, Any]] = []
     agents_dir = Path(config_root) / "agents"
     if not agents_dir.exists():
         return results
@@ -58,12 +61,14 @@ def scan_agent_configs(config_root: str) -> List[Dict]:
             if not config:
                 continue
             agent = config.get("agent", {})
-            results.append({
-                "name": agent.get("name", path.stem),
-                "description": agent.get("description", ""),
-                "type": agent.get("type", "standard"),
-                "path": str(path),
-            })
+            results.append(
+                {
+                    "name": agent.get("name", path.stem),
+                    "description": agent.get("description", ""),
+                    "type": agent.get("type", "standard"),
+                    "path": str(path),
+                }
+            )
         except (OSError, yaml.YAMLError) as exc:
             logger.warning("Failed to scan %s: %s", path, exc)
     return results

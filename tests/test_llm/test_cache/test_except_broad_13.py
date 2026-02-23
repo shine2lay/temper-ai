@@ -165,6 +165,7 @@ class TestExceptionLogging:
     def test_get_error_logged(self, caplog):
         """Caught get() errors should be logged with key context."""
         import logging
+
         cache = self._make_cache()
         cache._backend.get = MagicMock(side_effect=OSError("connection reset"))
 
@@ -177,6 +178,7 @@ class TestExceptionLogging:
     def test_set_error_logged(self, caplog):
         """Caught set() errors should be logged with key context."""
         import logging
+
         cache = self._make_cache()
         cache._backend.set = MagicMock(side_effect=OSError("broken pipe"))
 
@@ -198,14 +200,16 @@ class TestNoExceptException:
 
         source = inspect.getsource(mod)
         # Count occurrences of 'except Exception' (not preceded by specific types)
-        lines = source.split('\n')
+        lines = source.split("\n")
         broad_catches = [
-            line.strip() for line in lines
-            if 'except Exception' in line and 'except Exception' == line.strip().rstrip(':').strip()
+            line.strip()
+            for line in lines
+            if "except Exception" in line
+            and "except Exception" == line.strip().rstrip(":").strip()
         ]
-        assert len(broad_catches) == 0, (
-            f"Found broad 'except Exception:' handlers: {broad_catches}"
-        )
+        assert (
+            len(broad_catches) == 0
+        ), f"Found broad 'except Exception:' handlers: {broad_catches}"
 
     def test_no_bare_except_in_source(self):
         """The llm_cache module should not contain bare 'except:'."""
@@ -214,11 +218,6 @@ class TestNoExceptException:
         import temper_ai.llm.cache.llm_cache as mod
 
         source = inspect.getsource(mod)
-        lines = source.split('\n')
-        bare_catches = [
-            line.strip() for line in lines
-            if line.strip() == 'except:'
-        ]
-        assert len(bare_catches) == 0, (
-            f"Found bare 'except:' handlers: {bare_catches}"
-        )
+        lines = source.split("\n")
+        bare_catches = [line.strip() for line in lines if line.strip() == "except:"]
+        assert len(bare_catches) == 0, f"Found bare 'except:' handlers: {bare_catches}"

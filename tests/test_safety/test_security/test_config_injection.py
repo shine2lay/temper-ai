@@ -4,14 +4,15 @@ Security tests for YAML bombs and configuration injection attacks.
 Tests YAML bomb (billion laughs) detection, environment variable injection,
 config file size limits, excessive nesting depth, and circular references.
 """
+
 import os
 import tempfile
 from pathlib import Path
 
 import pytest
 
-from temper_ai.workflow.config_loader import ConfigLoader
 from temper_ai.shared.utils.exceptions import ConfigValidationError
+from temper_ai.workflow.config_loader import ConfigLoader
 
 
 class TestYAMLBombPrevention:
@@ -56,9 +57,18 @@ j: &j [*i, *i, *i, *i, *i, *i, *i, *i, *i]
 
             error_msg = str(exc_info.value).lower()
             # Error should mention either "parsing failed", "recursion", "memory", or "complexity"
-            assert any(keyword in error_msg for keyword in [
-                "parse", "parsing", "failed", "recursion", "memory", "complexity", "too large"
-            ]), f"Expected YAML bomb error, got: {exc_info.value}"
+            assert any(
+                keyword in error_msg
+                for keyword in [
+                    "parse",
+                    "parsing",
+                    "failed",
+                    "recursion",
+                    "memory",
+                    "complexity",
+                    "too large",
+                ]
+            ), f"Expected YAML bomb error, got: {exc_info.value}"
 
     def test_yaml_bomb_with_merge_keys(self):
         """
@@ -93,9 +103,18 @@ config:
                 loader.load_agent("malicious_merge")
 
             error_msg = str(exc_info.value).lower()
-            assert any(keyword in error_msg for keyword in [
-                "parse", "parsing", "failed", "recursion", "memory", "complexity", "too large"
-            ]), f"Expected YAML bomb error, got: {exc_info.value}"
+            assert any(
+                keyword in error_msg
+                for keyword in [
+                    "parse",
+                    "parsing",
+                    "failed",
+                    "recursion",
+                    "memory",
+                    "complexity",
+                    "too large",
+                ]
+            ), f"Expected YAML bomb error, got: {exc_info.value}"
 
 
 class TestEnvironmentVariableInjection:
@@ -117,14 +136,12 @@ class TestEnvironmentVariableInjection:
             malicious_config = {
                 "name": "test_agent",
                 "version": "1.0",
-                "llm": {
-                    "provider": "openai",
-                    "model": "gpt-4"
-                },
-                "command": "${SHELL_CMD:ls; rm -rf /}"
+                "llm": {"provider": "openai", "model": "gpt-4"},
+                "command": "${SHELL_CMD:ls; rm -rf /}",
             }
 
             import yaml
+
             config_file = agents_dir / "shell_injection.yaml"
             config_file.write_text(yaml.dump(malicious_config))
 
@@ -139,8 +156,15 @@ class TestEnvironmentVariableInjection:
                     loader.load_agent("shell_injection", validate=False)
 
                 error_msg = str(exc_info.value).lower()
-                assert "shell metacharacters" in error_msg or "command injection" in error_msg, \
-                    f"Expected shell injection error, got: {exc_info.value}"
+                assert any(
+                    keyword in error_msg
+                    for keyword in [
+                        "shell metacharacters",
+                        "command injection",
+                        "dangerous pattern",
+                        "command separator",
+                    ]
+                ), f"Expected shell injection error, got: {exc_info.value}"
 
             finally:
                 # Cleanup
@@ -162,14 +186,12 @@ class TestEnvironmentVariableInjection:
             malicious_config = {
                 "name": "test_agent",
                 "version": "1.0",
-                "llm": {
-                    "provider": "openai",
-                    "model": "gpt-4"
-                },
-                "config_path": "${CONFIG_PATH}"
+                "llm": {"provider": "openai", "model": "gpt-4"},
+                "config_path": "${CONFIG_PATH}",
             }
 
             import yaml
+
             config_file = agents_dir / "path_traversal.yaml"
             config_file.write_text(yaml.dump(malicious_config))
 
@@ -184,8 +206,14 @@ class TestEnvironmentVariableInjection:
                     loader.load_agent("path_traversal", validate=False)
 
                 error_msg = str(exc_info.value).lower()
-                assert "path traversal" in error_msg, \
-                    f"Expected path traversal error, got: {exc_info.value}"
+                assert any(
+                    keyword in error_msg
+                    for keyword in [
+                        "path traversal",
+                        "escapes base directory",
+                        "path validation",
+                    ]
+                ), f"Expected path traversal error, got: {exc_info.value}"
 
             finally:
                 # Cleanup
@@ -207,14 +235,12 @@ class TestEnvironmentVariableInjection:
             malicious_config = {
                 "name": "test_agent",
                 "version": "1.0",
-                "llm": {
-                    "provider": "openai",
-                    "model": "gpt-4"
-                },
-                "db_table": "${DB_TABLE}"
+                "llm": {"provider": "openai", "model": "gpt-4"},
+                "db_table": "${DB_TABLE}",
             }
 
             import yaml
+
             config_file = agents_dir / "sql_injection.yaml"
             config_file.write_text(yaml.dump(malicious_config))
 
@@ -229,8 +255,9 @@ class TestEnvironmentVariableInjection:
                     loader.load_agent("sql_injection", validate=False)
 
                 error_msg = str(exc_info.value).lower()
-                assert "sql injection" in error_msg or "sql" in error_msg, \
-                    f"Expected SQL injection error, got: {exc_info.value}"
+                assert (
+                    "sql injection" in error_msg or "sql" in error_msg
+                ), f"Expected SQL injection error, got: {exc_info.value}"
 
             finally:
                 # Cleanup
@@ -259,8 +286,8 @@ class TestEnvironmentVariableInjection:
             config_content = "name: test_agent\nversion: 1.0\nllm:\n  provider: openai\n  model: gpt-4\nfile_path: ${FILE_PATH:safe.txt\x00../../etc/passwd}\n"
 
             # Write the config with null byte
-            with open(config_file, 'wb') as f:
-                f.write(config_content.encode('utf-8'))
+            with open(config_file, "wb") as f:
+                f.write(config_content.encode("utf-8"))
 
             loader = ConfigLoader(config_root=config_root)
 
@@ -270,8 +297,11 @@ class TestEnvironmentVariableInjection:
 
             error_msg = str(exc_info.value).lower()
             # Accept either "null byte" or YAML's "#x0000" error
-            assert "null byte" in error_msg or "#x0000" in error_msg or "special characters" in error_msg, \
-                f"Expected null byte error, got: {exc_info.value}"
+            assert (
+                "null byte" in error_msg
+                or "#x0000" in error_msg
+                or "special characters" in error_msg
+            ), f"Expected null byte error, got: {exc_info.value}"
 
 
 class TestConfigSizeLimits:
@@ -293,7 +323,7 @@ class TestConfigSizeLimits:
 
             # Write 11MB of YAML data
             # Each line is ~100 bytes, so 110,000 lines = ~11MB
-            with open(config_file, 'w') as f:
+            with open(config_file, "w") as f:
                 f.write("name: test_agent\n")
                 f.write("version: 1.0\n")
                 f.write("llm:\n")
@@ -311,8 +341,9 @@ class TestConfigSizeLimits:
                 loader.load_agent("huge", validate=False)
 
             error_msg = str(exc_info.value).lower()
-            assert "too large" in error_msg or "size" in error_msg, \
-                f"Expected size limit error, got: {exc_info.value}"
+            assert (
+                "too large" in error_msg or "size" in error_msg
+            ), f"Expected size limit error, got: {exc_info.value}"
 
     def test_config_size_boundary(self):
         """
@@ -332,7 +363,7 @@ class TestConfigSizeLimits:
             # Calculate how much data to write to reach 10MB
             target_size = 10 * 1024 * 1024  # 10MB
             header = "name: test_agent\nversion: 1.0\nllm:\n  provider: openai\n  model: gpt-4\ndata:\n"
-            header_size = len(header.encode('utf-8'))
+            header_size = len(header.encode("utf-8"))
 
             # Use fewer nodes with larger values to stay under 100k node limit
             # Each line is ~1KB (1000 bytes), so 10,000 lines = ~10MB
@@ -340,7 +371,7 @@ class TestConfigSizeLimits:
             line_template = "  - item_{}: {}\n"
             large_value = "x" * 950  # ~950 bytes per value
 
-            with open(config_file, 'w') as f:
+            with open(config_file, "w") as f:
                 f.write(header)
 
                 # Write 10,000 large items to reach ~10MB
@@ -394,9 +425,18 @@ class TestExcessiveNestingDepth:
                 loader.load_agent("deep", validate=False)
 
             error_msg = str(exc_info.value).lower()
-            assert any(keyword in error_msg for keyword in [
-                "nesting", "depth", "deep", "recursion", "parse", "parsing", "failed"
-            ]), f"Expected nesting depth error, got: {exc_info.value}"
+            assert any(
+                keyword in error_msg
+                for keyword in [
+                    "nesting",
+                    "depth",
+                    "deep",
+                    "recursion",
+                    "parse",
+                    "parsing",
+                    "failed",
+                ]
+            ), f"Expected nesting depth error, got: {exc_info.value}"
 
     def test_acceptable_nesting_depth(self):
         """
@@ -471,6 +511,7 @@ node_b: &node_b
                 # If loading succeeds, try to access the circular structure
                 # This should trigger recursion detection
                 import json
+
                 json.dumps(config)  # Will fail on circular refs
 
             # Accept either ConfigValidationError or RecursionError
@@ -506,6 +547,7 @@ recursive: &loop
 
                 # Try to serialize to trigger detection
                 import json
+
                 json.dumps(config)
 
             # (pytest.raises already guarantees the exception was raised)

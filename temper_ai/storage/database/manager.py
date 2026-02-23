@@ -4,9 +4,9 @@ import logging
 import os
 import threading
 import urllib.parse
+from collections.abc import Generator
 from contextlib import contextmanager
 from enum import Enum
-from typing import Generator, Optional
 
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
@@ -17,7 +17,7 @@ from temper_ai.storage.database.engine import create_app_engine, get_database_ur
 logger = logging.getLogger(__name__)
 
 
-def _mask_database_url(url: Optional[str]) -> str:
+def _mask_database_url(url: str | None) -> str:
     """Mask password in a database URL for safe logging.
 
     Replaces the password component with '****' so credentials
@@ -35,9 +35,7 @@ def _mask_database_url(url: Optional[str]) -> str:
         parsed = urllib.parse.urlparse(url)
         if parsed.password:
             # Replace password in netloc
-            masked_netloc = parsed.netloc.replace(
-                f":{parsed.password}@", ":****@"
-            )
+            masked_netloc = parsed.netloc.replace(f":{parsed.password}@", ":****@")
             return urllib.parse.urlunparse(parsed._replace(netloc=masked_netloc))
         return url
     except Exception:
@@ -55,6 +53,7 @@ class IsolationLevel(str, Enum):
 
     Reference: https://www.postgresql.org/docs/current/transaction-iso.html
     """
+
     READ_UNCOMMITTED = "READ UNCOMMITTED"
     READ_COMMITTED = "READ COMMITTED"
     REPEATABLE_READ = "REPEATABLE READ"
@@ -64,7 +63,7 @@ class IsolationLevel(str, Enum):
 class DatabaseManager:
     """Manages database connections and sessions."""
 
-    def __init__(self, database_url: Optional[str] = None):
+    def __init__(self, database_url: str | None = None):
         """Initialize database manager.
 
         Args:
@@ -90,8 +89,7 @@ class DatabaseManager:
 
     @contextmanager
     def session(
-        self,
-        isolation_level: Optional[IsolationLevel] = None
+        self, isolation_level: IsolationLevel | None = None
     ) -> Generator[Session, None, None]:
         """Context manager for database sessions with configurable isolation.
 
@@ -115,7 +113,7 @@ class DatabaseManager:
             except Exception as e:
                 logger.warning(
                     f"Failed to set isolation level {isolation_level.value}: {e}",
-                    extra={"database_url": _mask_database_url(self.database_url)}
+                    extra={"database_url": _mask_database_url(self.database_url)},
                 )
 
         try:
@@ -128,8 +126,10 @@ class DatabaseManager:
                 exc_info=True,
                 extra={
                     "database_url": _mask_database_url(self.database_url),
-                    "isolation_level": isolation_level.value if isolation_level else "default"
-                }
+                    "isolation_level": (
+                        isolation_level.value if isolation_level else "default"
+                    ),
+                },
             )
             raise
         finally:
@@ -137,11 +137,11 @@ class DatabaseManager:
 
 
 # Global instance (can be configured)
-_db_manager: Optional[DatabaseManager] = None
+_db_manager: DatabaseManager | None = None
 _db_lock = threading.Lock()
 
 
-def init_database(database_url: Optional[str] = None) -> DatabaseManager:
+def init_database(database_url: str | None = None) -> DatabaseManager:
     """Initialize global database manager (thread-safe).
 
     Args:
@@ -184,7 +184,9 @@ def init_database(database_url: Optional[str] = None) -> DatabaseManager:
                 "ALEMBIC_MANAGED is set -- skipping create_all_tables(). "
                 "Run 'alembic upgrade head' to apply schema."
             )
-        logger.info(f"Database initialized successfully: {_mask_database_url(database_url)}")
+        logger.info(
+            f"Database initialized successfully: {_mask_database_url(database_url)}"
+        )
         return _db_manager
 
 

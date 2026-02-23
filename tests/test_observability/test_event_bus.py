@@ -1,24 +1,24 @@
 """Tests for ObservabilityEventBus and tracker integration."""
+
 import threading
-import time
-from datetime import datetime, timezone
-from unittest.mock import MagicMock, Mock, patch
+from datetime import UTC, datetime
+from unittest.mock import Mock, patch
 
 import pytest
 
 from temper_ai.observability.constants import ObservabilityFields
 from temper_ai.observability.event_bus import ObservabilityEvent, ObservabilityEventBus
 
-
 # ============================================================
 # ObservabilityEvent dataclass tests
 # ============================================================
+
 
 class TestObservabilityEvent:
     """Tests for the ObservabilityEvent dataclass."""
 
     def test_create_event_with_required_fields(self):
-        ts = datetime.now(timezone.utc)
+        ts = datetime.now(UTC)
         event = ObservabilityEvent(
             event_type="workflow_start",
             timestamp=ts,
@@ -32,7 +32,7 @@ class TestObservabilityEvent:
         assert event.agent_id is None
 
     def test_create_event_with_all_fields(self):
-        ts = datetime.now(timezone.utc)
+        ts = datetime.now(UTC)
         event = ObservabilityEvent(
             event_type="llm_call",
             timestamp=ts,
@@ -50,13 +50,14 @@ class TestObservabilityEvent:
 # ObservabilityEventBus unit tests
 # ============================================================
 
+
 class TestObservabilityEventBus:
     """Unit tests for the event bus subscribe/unsubscribe/emit."""
 
     def _make_event(self, event_type: str = "test_event") -> ObservabilityEvent:
         return ObservabilityEvent(
             event_type=event_type,
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             data={"key": "value"},
         )
 
@@ -162,9 +163,11 @@ class TestObservabilityEventBus:
         num_threads = 10
         events_per_thread = 50
         for i in range(num_threads):
+
             def emit_events(thread_id=i):
                 for j in range(events_per_thread):
                     bus.emit(self._make_event(f"event_{thread_id}_{j}"))
+
             t = threading.Thread(target=emit_events)
             threads.append(t)
 
@@ -219,6 +222,7 @@ class TestObservabilityEventBus:
 # Integration tests: ExecutionTracker + EventBus
 # ============================================================
 
+
 class TestTrackerEventBusIntegration:
     """Test that ExecutionTracker emits events through the bus."""
 
@@ -255,13 +259,17 @@ class TestTrackerEventBusIntegration:
         assert "workflow_start" in types
         assert "workflow_end" in types
 
-        start_event = next(e for e in received_events if e.event_type == "workflow_start")
+        start_event = next(
+            e for e in received_events if e.event_type == "workflow_start"
+        )
         assert start_event.data["workflow_name"] == "test_wf"
 
         end_event = next(e for e in received_events if e.event_type == "workflow_end")
         assert end_event.data[ObservabilityFields.STATUS] == "completed"
 
-    def test_workflow_failure_emits_end_with_failed_status(self, tracker, received_events):
+    def test_workflow_failure_emits_end_with_failed_status(
+        self, tracker, received_events
+    ):
         with pytest.raises(ValueError, match="boom"):
             with tracker.track_workflow("test_wf", {}):
                 raise ValueError("boom")
@@ -300,11 +308,15 @@ class TestTrackerEventBusIntegration:
         assert end_event.data[ObservabilityFields.STATUS] == "completed"
 
     def test_set_agent_output_emits_event(self, tracker, received_events):
+        from temper_ai.observability.metric_aggregator import AgentOutputParams
+
         tracker.set_agent_output(
-            agent_id="ag-1",
-            output_data={"result": "ok"},
-            confidence_score=0.95,
-            total_tokens=100,
+            AgentOutputParams(
+                agent_id="ag-1",
+                output_data={"result": "ok"},
+                confidence_score=0.95,
+                total_tokens=100,
+            )
         )
         types = [e.event_type for e in received_events]
         assert "agent_output" in types
@@ -332,17 +344,23 @@ class TestTrackerEventBusIntegration:
         assert event.data["policy_name"] == "test_policy"
 
     def test_track_collaboration_event_emits_event(self, tracker, received_events):
+        from temper_ai.observability._tracker_helpers import CollaborationEventData
+
         # Need workflow + stage context for collaboration tracker
         with tracker.track_workflow("wf", {}) as wf_id:
             with tracker.track_stage("s1", {}, wf_id) as stage_id:
                 tracker.track_collaboration_event(
-                    event_type="vote",
-                    stage_id=stage_id,
-                    agents_involved=["agent1", "agent2"],
-                    outcome="consensus",
+                    CollaborationEventData(
+                        event_type="vote",
+                        stage_id=stage_id,
+                        agents_involved=["agent1", "agent2"],
+                        outcome="consensus",
+                    )
                 )
 
-        collab_events = [e for e in received_events if e.event_type == "collaboration_event"]
+        collab_events = [
+            e for e in received_events if e.event_type == "collaboration_event"
+        ]
         assert len(collab_events) == 1
         assert collab_events[0].data["outcome"] == "consensus"
 

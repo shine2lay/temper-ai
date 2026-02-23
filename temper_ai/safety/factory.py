@@ -3,19 +3,19 @@
 This module provides factory functions to create a fully-wired safety stack
 including ActionPolicyEngine, ApprovalWorkflow, RollbackManager, and ToolExecutor.
 """
+
 from __future__ import annotations
 
 import logging
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, Optional, Type
+from typing import TYPE_CHECKING, Any
 
 import yaml
 
-from temper_ai.shared.constants.durations import RATE_LIMIT_WINDOW_MINUTE
-from temper_ai.shared.constants.limits import THRESHOLD_VERY_LARGE_COUNT
 from temper_ai.safety.action_policy_engine import ActionPolicyEngine
 from temper_ai.safety.approval import ApprovalWorkflow, NoOpApprover
+from temper_ai.safety.autonomy.policy import AutonomyPolicy
 from temper_ai.safety.base import BaseSafetyPolicy
 from temper_ai.safety.blast_radius import BlastRadiusPolicy
 from temper_ai.safety.config_change_policy import ConfigChangePolicy
@@ -25,11 +25,13 @@ from temper_ai.safety.forbidden_operations import ForbiddenOperationsPolicy
 from temper_ai.safety.policies.rate_limit_policy import TokenBucketRateLimitPolicy
 from temper_ai.safety.policies.resource_limit_policy import ResourceLimitPolicy
 from temper_ai.safety.policy_registry import PolicyRegistry
+from temper_ai.safety.prompt_injection_policy import PromptInjectionPolicy
 from temper_ai.safety.rate_limiter import WindowRateLimitPolicy
 from temper_ai.safety.rollback import RollbackManager
 from temper_ai.safety.secret_detection import SecretDetectionPolicy
-from temper_ai.safety.autonomy.policy import AutonomyPolicy
 from temper_ai.safety.stub_policies import ApprovalWorkflowPolicy, CircuitBreakerPolicy
+from temper_ai.shared.constants.durations import RATE_LIMIT_WINDOW_MINUTE
+from temper_ai.shared.constants.limits import THRESHOLD_VERY_LARGE_COUNT
 
 if TYPE_CHECKING:
     from temper_ai.tools.executor import ToolExecutor
@@ -41,7 +43,7 @@ logger = logging.getLogger(__name__)
 # Fallback mapping from YAML config policy names to their implementation classes.
 # Each class accepts an optional config dict in its constructor.
 # Prefer using _resolve_policy_class() which checks _CUSTOM_POLICIES first.
-_BUILTIN_POLICIES: Dict[str, Type[BaseSafetyPolicy]] = {
+_BUILTIN_POLICIES: dict[str, type[BaseSafetyPolicy]] = {
     "secret_detection_policy": SecretDetectionPolicy,
     "file_access_policy": FileAccessPolicy,
     "forbidden_ops_policy": ForbiddenOperationsPolicy,
@@ -53,14 +55,15 @@ _BUILTIN_POLICIES: Dict[str, Type[BaseSafetyPolicy]] = {
     "approval_workflow_policy": ApprovalWorkflowPolicy,
     "circuit_breaker_policy": CircuitBreakerPolicy,
     "autonomy_policy": AutonomyPolicy,
+    "prompt_injection_policy": PromptInjectionPolicy,
 }
 
 # Custom policy class registrations (takes precedence over _BUILTIN_POLICIES).
 # Populated by register_policy_class().
-_CUSTOM_POLICIES: Dict[str, Type[BaseSafetyPolicy]] = {}
+_CUSTOM_POLICIES: dict[str, type[BaseSafetyPolicy]] = {}
 
 
-def register_policy_class(name: str, policy_cls: Type[BaseSafetyPolicy]) -> None:
+def register_policy_class(name: str, policy_cls: type[BaseSafetyPolicy]) -> None:
     """Register a custom policy class for use in safety config.
 
     Custom policy classes take precedence over built-in policies when
@@ -81,7 +84,7 @@ def register_policy_class(name: str, policy_cls: Type[BaseSafetyPolicy]) -> None
     logger.debug("Registered custom policy class: %s -> %s", name, policy_cls.__name__)
 
 
-def _resolve_policy_class(name: str) -> Optional[Type[BaseSafetyPolicy]]:
+def _resolve_policy_class(name: str) -> type[BaseSafetyPolicy] | None:
     """Resolve a policy config name to its implementation class.
 
     Checks custom registrations first, then falls back to built-in policies.
@@ -104,11 +107,13 @@ def _resolve_policy_class(name: str) -> Optional[Type[BaseSafetyPolicy]]:
 BUILTIN_POLICIES = _BUILTIN_POLICIES
 
 
-def load_safety_config(config_path: Optional[str] = None, environment: str = "development") -> Dict[str, Any]:
+def load_safety_config(
+    config_path: str | None = None, environment: str = "development"
+) -> dict[str, Any]:
     """Load safety configuration from YAML file.
 
     Args:
-        config_path: Path to action_policies.yaml (default: config/safety/action_policies.yaml)
+        config_path: Path to action_policies.yaml (default: configs/safety/action_policies.yaml)
         environment: Environment name (development/staging/production)
 
     Returns:
@@ -118,7 +123,7 @@ def load_safety_config(config_path: Optional[str] = None, environment: str = "de
     if config_path is None:
         # Default path relative to project root
         project_root = Path(__file__).parent.parent.parent
-        path_obj = project_root / "config" / "safety" / "action_policies.yaml"
+        path_obj = project_root / "configs" / "safety" / "action_policies.yaml"
     else:
         path_obj = Path(config_path)
 
@@ -126,7 +131,7 @@ def load_safety_config(config_path: Optional[str] = None, environment: str = "de
         logger.warning(f"Safety config not found at {path_obj}, using defaults")
         return _get_default_config()
 
-    with open(path_obj, 'r') as f:
+    with open(path_obj) as f:
         loaded_config = yaml.safe_load(f)
 
     if not isinstance(loaded_config, dict):
@@ -142,23 +147,23 @@ def load_safety_config(config_path: Optional[str] = None, environment: str = "de
     return dict(loaded_config)
 
 
-def _get_default_config() -> Dict[str, Any]:
+def _get_default_config() -> dict[str, Any]:
     """Get default safety configuration."""
     return {
-        'policy_engine': {
-            'cache_ttl': RATE_LIMIT_WINDOW_MINUTE,
-            'max_cache_size': THRESHOLD_VERY_LARGE_COUNT,
-            'enable_caching': True,
-            'short_circuit_critical': True,
-            'log_violations': True,
+        "policy_engine": {
+            "cache_ttl": RATE_LIMIT_WINDOW_MINUTE,
+            "max_cache_size": THRESHOLD_VERY_LARGE_COUNT,
+            "enable_caching": True,
+            "short_circuit_critical": True,
+            "log_violations": True,
         },
-        'policy_mappings': {},
-        'global_policies': [],
-        'policy_config': {},
+        "policy_mappings": {},
+        "global_policies": [],
+        "policy_config": {},
     }
 
 
-def _merge_configs(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+def _merge_configs(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
     """Deep merge override config into base config."""
     result = base.copy()
 
@@ -172,9 +177,9 @@ def _merge_configs(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, 
 
 
 def _build_policy_action_map(
-    policy_mappings: Dict[str, list],
+    policy_mappings: dict[str, list],
     global_policy_names: list,
-) -> Dict[str, set]:
+) -> dict[str, set]:
     """Collect unique policy names and their associated action types.
 
     Args:
@@ -184,7 +189,7 @@ def _build_policy_action_map(
     Returns:
         Dict mapping policy name to set of action types (empty set = global)
     """
-    policy_action_map: Dict[str, set] = {}
+    policy_action_map: dict[str, set] = {}
 
     for action_type, policy_names in policy_mappings.items():
         for pname in policy_names:
@@ -198,8 +203,8 @@ def _build_policy_action_map(
 
 def _instantiate_policy(
     pname: str,
-    policy_configs: Dict[str, Any],
-) -> Optional[BaseSafetyPolicy]:
+    policy_configs: dict[str, Any],
+) -> BaseSafetyPolicy | None:
     """Resolve and instantiate a single policy by name.
 
     Args:
@@ -255,7 +260,7 @@ def _register_policy(
         )
 
 
-def create_policy_registry(config: Dict[str, Any]) -> PolicyRegistry:
+def create_policy_registry(config: dict[str, Any]) -> PolicyRegistry:
     """Create and populate PolicyRegistry from config.
 
     Reads ``policy_mappings``, ``global_policies``, and ``policy_config``
@@ -272,18 +277,23 @@ def create_policy_registry(config: Dict[str, Any]) -> PolicyRegistry:
     registry = PolicyRegistry()
 
     global_policy_names: list = config.get("global_policies", [])
-    policy_configs: Dict[str, Any] = config.get("policy_config", {})
+    policy_configs: dict[str, Any] = config.get("policy_config", {})
     policy_action_map = _build_policy_action_map(
-        config.get("policy_mappings", {}), global_policy_names,
+        config.get("policy_mappings", {}),
+        global_policy_names,
     )
 
     for pname, action_types in policy_action_map.items():
         policy_instance = _instantiate_policy(pname, policy_configs)
         if policy_instance is None:
             continue
-        _register_policy(registry, pname, policy_instance, action_types, global_policy_names)
+        _register_policy(
+            registry, pname, policy_instance, action_types, global_policy_names
+        )
 
-    resolved_global = len([p for p in global_policy_names if _resolve_policy_class(p) is not None])
+    resolved_global = len(
+        [p for p in global_policy_names if _resolve_policy_class(p) is not None]
+    )
     logger.info(
         "Created PolicyRegistry with %d policies (%d global, %d action-specific)",
         registry.policy_count(),
@@ -295,8 +305,8 @@ def create_policy_registry(config: Dict[str, Any]) -> PolicyRegistry:
 
 def create_safety_stack(
     tool_registry: ToolRegistry,
-    config_path: Optional[str] = None,
-    environment: Optional[str] = None
+    config_path: str | None = None,
+    environment: str | None = None,
 ) -> ToolExecutor:
     """Create fully-wired safety stack with ToolExecutor.
 
@@ -309,7 +319,7 @@ def create_safety_stack(
 
     Args:
         tool_registry: ToolRegistry instance for tool execution
-        config_path: Path to action_policies.yaml (default: config/safety/action_policies.yaml)
+        config_path: Path to action_policies.yaml (default: configs/safety/action_policies.yaml)
         environment: Environment name (default: from SAFETY_ENV or "development")
 
     Returns:
@@ -336,7 +346,7 @@ def create_safety_stack(
     policy_registry = create_policy_registry(config)
 
     # Create ActionPolicyEngine
-    engine_config = config.get('policy_engine', {})
+    engine_config = config.get("policy_engine", {})
     policy_engine = ActionPolicyEngine(policy_registry, config=engine_config)
     logger.info(f"Created ActionPolicyEngine with config: {engine_config}")
 
@@ -374,12 +384,13 @@ def create_safety_stack(
     # Create ToolExecutor with all safety components (lazy import to avoid
     # module-level coupling between safety and tools packages)
     from temper_ai.tools.executor import ToolExecutor as _ToolExecutor
+
     tool_executor = _ToolExecutor(
         registry=tool_registry,
         policy_engine=policy_engine,
         approval_workflow=approval_workflow,
         rollback_manager=rollback_manager,
-        enable_auto_rollback=True
+        enable_auto_rollback=True,
     )
 
     logger.info("Created ToolExecutor with complete safety stack")

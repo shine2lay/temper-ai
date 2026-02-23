@@ -12,28 +12,31 @@ Three resolver implementations:
 - ``PassthroughResolver``: Legacy behavior — returns full state with
   ``workflow_inputs`` unwrapped to top level. Used when inputs are omitted.
 """
-import logging
-from typing import Any, Dict, List, Optional, Protocol, runtime_checkable
 
-from temper_ai.workflow.context_schemas import parse_stage_inputs
-from temper_ai.stage.executors.state_keys import StateKeys
+import logging
+from typing import Any, Protocol, runtime_checkable
+
 from temper_ai.shared.utils.config_helpers import get_nested_value
+from temper_ai.stage.executors.state_keys import StateKeys
+from temper_ai.workflow.context_schemas import parse_stage_inputs
 
 logger = logging.getLogger(__name__)
 
 # Infrastructure keys that are always copied into resolved context
-_INFRASTRUCTURE_KEYS: frozenset[str] = frozenset({
-    StateKeys.TRACKER,
-    StateKeys.TOOL_REGISTRY,
-    StateKeys.CONFIG_LOADER,
-    StateKeys.VISUALIZER,
-    StateKeys.SHOW_DETAILS,
-    StateKeys.DETAIL_CONSOLE,
-    StateKeys.TOOL_EXECUTOR,
-    StateKeys.STREAM_CALLBACK,
-    StateKeys.WORKFLOW_ID,
-    StateKeys.STAGE_OUTPUTS,
-})
+_INFRASTRUCTURE_KEYS: frozenset[str] = frozenset(
+    {
+        StateKeys.TRACKER,
+        StateKeys.TOOL_REGISTRY,
+        StateKeys.CONFIG_LOADER,
+        StateKeys.VISUALIZER,
+        StateKeys.SHOW_DETAILS,
+        StateKeys.DETAIL_CONSOLE,
+        StateKeys.TOOL_EXECUTOR,
+        StateKeys.STREAM_CALLBACK,
+        StateKeys.WORKFLOW_ID,
+        StateKeys.STAGE_OUTPUTS,
+    }
+)
 
 
 class ContextResolutionError(Exception):
@@ -54,8 +57,8 @@ class ContextProvider(Protocol):
     """Protocol for stage context resolution."""
 
     def resolve(
-        self, stage_config: Any, workflow_state: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, stage_config: Any, workflow_state: dict[str, Any]
+    ) -> dict[str, Any]:
         """Resolve stage inputs from workflow state.
 
         Args:
@@ -68,16 +71,14 @@ class ContextProvider(Protocol):
         ...
 
 
-def _add_infrastructure_keys(
-    resolved: Dict[str, Any], state: Dict[str, Any]
-) -> None:
+def _add_infrastructure_keys(resolved: dict[str, Any], state: dict[str, Any]) -> None:
     """Copy infrastructure keys from state into resolved context."""
     for key in _INFRASTRUCTURE_KEYS:
         if key in state:
             resolved[key] = state[key]
 
 
-def _get_stage_inputs_raw(stage_config: Any) -> Optional[Dict[str, Any]]:
+def _get_stage_inputs_raw(stage_config: Any) -> dict[str, Any] | None:
     """Extract raw inputs dict from stage config (handles dict and Pydantic)."""
     if isinstance(stage_config, dict):
         inner = stage_config.get("stage", stage_config)
@@ -119,17 +120,17 @@ class SourceResolver:
 
     def __init__(
         self,
-        fallback: Optional[Any] = None,
+        fallback: Any | None = None,
     ) -> None:
         self._passthrough = PassthroughResolver()
-        self._predecessor: Optional[PredecessorResolver] = (
+        self._predecessor: PredecessorResolver | None = (
             fallback if isinstance(fallback, PredecessorResolver) else None
         )
         self._fallback = fallback or self._passthrough
 
     def resolve(
-        self, stage_config: Any, workflow_state: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, stage_config: Any, workflow_state: dict[str, Any]
+    ) -> dict[str, Any]:
         """Resolve stage inputs from workflow state."""
         raw_inputs = _get_stage_inputs_raw(stage_config)
         parsed = parse_stage_inputs(raw_inputs)
@@ -138,7 +139,7 @@ class SourceResolver:
             return self._fallback.resolve(stage_config, workflow_state)
 
         stage_name = _get_stage_name(stage_config)
-        resolved: Dict[str, Any] = {}
+        resolved: dict[str, Any] = {}
         defaults_used: list[str] = []
 
         for input_name, decl in parsed.items():
@@ -161,7 +162,7 @@ class SourceResolver:
         return resolved
 
     def _resolve_source(
-        self, source: str, workflow_state: Dict[str, Any]
+        self, source: str, workflow_state: dict[str, Any]
     ) -> tuple[Any, bool]:
         """Resolve a single source reference.
 
@@ -180,7 +181,7 @@ class SourceResolver:
         return self._resolve_stage_source(stage_name, remainder, workflow_state)
 
     def _resolve_workflow_source(
-        self, field_path: list[str], workflow_state: Dict[str, Any]
+        self, field_path: list[str], workflow_state: dict[str, Any]
     ) -> tuple[Any, bool]:
         """Resolve workflow.<field> from workflow_inputs."""
         workflow_inputs = workflow_state.get(StateKeys.WORKFLOW_INPUTS, {})
@@ -200,14 +201,16 @@ class SourceResolver:
         return value, value is not None
 
     @staticmethod
-    def _get_compartment(stage_data: Dict[str, Any], key: str) -> Optional[Dict[str, Any]]:
+    def _get_compartment(stage_data: dict[str, Any], key: str) -> dict[str, Any] | None:
         """Return named compartment if it exists and is a dict, else None."""
         value = stage_data.get(key)
         return value if isinstance(value, dict) else None
 
     def _resolve_stage_source(
-        self, stage_name: str, remainder: list[str],
-        workflow_state: Dict[str, Any],
+        self,
+        stage_name: str,
+        remainder: list[str],
+        workflow_state: dict[str, Any],
     ) -> tuple[Any, bool]:
         """Resolve <stage>.<field> from stage_outputs."""
         stage_outputs = workflow_state.get(StateKeys.STAGE_OUTPUTS, {})
@@ -250,7 +253,7 @@ class PredecessorResolver:
     """
 
     def __init__(self) -> None:
-        self._dag: Optional[Any] = None  # StageDAG (set later)
+        self._dag: Any | None = None  # StageDAG (set later)
 
     def set_dag(self, dag: Any) -> None:
         """Set the stage DAG for predecessor lookup.
@@ -261,8 +264,8 @@ class PredecessorResolver:
         self._dag = dag
 
     def resolve(
-        self, stage_config: Any, workflow_state: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, stage_config: Any, workflow_state: dict[str, Any]
+    ) -> dict[str, Any]:
         """Resolve stage inputs from predecessors in the DAG.
 
         Args:
@@ -275,7 +278,7 @@ class PredecessorResolver:
         stage_name = _get_stage_name(stage_config)
         predecessors = self._get_predecessors(stage_name, workflow_state)
 
-        resolved: Dict[str, Any] = {}
+        resolved: dict[str, Any] = {}
 
         if not predecessors:
             # Root stage: use workflow_inputs
@@ -301,8 +304,8 @@ class PredecessorResolver:
     def _get_predecessors(
         self,
         stage_name: str,
-        workflow_state: Dict[str, Any],
-    ) -> List[str]:
+        workflow_state: dict[str, Any],
+    ) -> list[str]:
         """Get predecessor stage names for the given stage.
 
         Checks (in order):
@@ -313,14 +316,14 @@ class PredecessorResolver:
         # Dynamic convergence predecessors (set by fan-out convergence)
         convergence_preds = workflow_state.get("_convergence_predecessors", {})
         if stage_name in convergence_preds:
-            preds: List[str] = convergence_preds[stage_name]
+            preds: list[str] = convergence_preds[stage_name]
             return preds
 
         if self._dag is None:
             return []
 
         # DAG predecessors: stages that this stage depends on
-        predecessors: List[str] = []
+        predecessors: list[str] = []
         stage_outputs = workflow_state.get(StateKeys.STAGE_OUTPUTS, {})
         for pred in self._dag.predecessors.get(stage_name, []):
             # Exclude skipped predecessors (no output recorded)
@@ -338,18 +341,26 @@ class PassthroughResolver:
     """
 
     def resolve(
-        self, stage_config: Any, workflow_state: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, stage_config: Any, workflow_state: dict[str, Any]
+    ) -> dict[str, Any]:
         """Return full state with workflow_inputs unwrapped to top level."""
         # Reserved keys that must not be overwritten during unwrap
-        _reserved = frozenset({
-            StateKeys.STAGE_OUTPUTS, StateKeys.CURRENT_STAGE,
-            StateKeys.WORKFLOW_ID, StateKeys.TRACKER,
-            StateKeys.TOOL_REGISTRY, StateKeys.CONFIG_LOADER,
-            StateKeys.VISUALIZER, StateKeys.SHOW_DETAILS,
-            StateKeys.DETAIL_CONSOLE, StateKeys.WORKFLOW_INPUTS,
-            StateKeys.TOOL_EXECUTOR, StateKeys.STREAM_CALLBACK,
-        })
+        _reserved = frozenset(
+            {
+                StateKeys.STAGE_OUTPUTS,
+                StateKeys.CURRENT_STAGE,
+                StateKeys.WORKFLOW_ID,
+                StateKeys.TRACKER,
+                StateKeys.TOOL_REGISTRY,
+                StateKeys.CONFIG_LOADER,
+                StateKeys.VISUALIZER,
+                StateKeys.SHOW_DETAILS,
+                StateKeys.DETAIL_CONSOLE,
+                StateKeys.WORKFLOW_INPUTS,
+                StateKeys.TOOL_EXECUTOR,
+                StateKeys.STREAM_CALLBACK,
+            }
+        )
 
         result = dict(workflow_state)
 

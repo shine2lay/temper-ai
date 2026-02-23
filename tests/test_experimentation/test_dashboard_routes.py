@@ -102,29 +102,38 @@ class TestCreateExperiment:
 
     def test_create_success(self, client, mock_service):
         mock_service._service.create_experiment.return_value = "exp-new"
-        resp = client.post("/api/experiments", json={
-            "name": "new_experiment",
-            "description": "Test",
-            "variants": [
-                {"name": "control", "is_control": True, "traffic": 0.5},
-                {"name": "treatment", "traffic": 0.5},
-            ],
-        })
+        resp = client.post(
+            "/api/experiments",
+            json={
+                "name": "new_experiment",
+                "description": "Test",
+                "variants": [
+                    {"name": "control", "is_control": True, "traffic": 0.5},
+                    {"name": "treatment", "traffic": 0.5},
+                ],
+            },
+        )
         assert resp.status_code == 200
         assert resp.json()["id"] == "exp-new"
         assert resp.json()["status"] == "created"
 
     def test_create_missing_name(self, client, mock_service):
-        resp = client.post("/api/experiments", json={
-            "variants": [{"name": "control"}],
-        })
+        resp = client.post(
+            "/api/experiments",
+            json={
+                "variants": [{"name": "control"}],
+            },
+        )
         assert resp.status_code == 400
 
     def test_create_missing_variants(self, client, mock_service):
-        resp = client.post("/api/experiments", json={
-            "name": "test",
-            "description": "Test",
-        })
+        resp = client.post(
+            "/api/experiments",
+            json={
+                "name": "test",
+                "description": "Test",
+            },
+        )
         assert resp.status_code == 400
 
 

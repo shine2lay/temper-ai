@@ -1,9 +1,8 @@
 """Tests for persistent agent memory scope integration in StandardAgent (M9)."""
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 
 def _make_agent_config(
@@ -99,7 +98,9 @@ class TestPersistentMemoryScope:
 
 
 class TestInjectPersistentContext:
-    def _make_standard_agent_mock(self, persistent=False, agent_id=None, cross_pollination=None):
+    def _make_standard_agent_mock(
+        self, persistent=False, agent_id=None, cross_pollination=None
+    ):
         """Build a StandardAgent-like mock to test _inject_persistent_context."""
         from temper_ai.agent.standard_agent import StandardAgent
 
@@ -165,15 +166,26 @@ class TestInjectPersistentContext:
         cross_cfg.subscribe_to = ["agent-b"]
         cross_cfg.retrieval_k = 5
         cross_cfg.relevance_threshold = 0.7
-        agent = self._make_standard_agent_mock(persistent=True, cross_pollination=cross_cfg)
+        agent = self._make_standard_agent_mock(
+            persistent=True, cross_pollination=cross_cfg
+        )
         agent._memory_service = MagicMock()
 
-        with patch(
-            "temper_ai.memory.cross_pollination.retrieve_subscribed_knowledge",
-            return_value=[{"agent_name": "agent-b", "content": "insight", "relevance_score": 0.9}],
-        ), patch(
-            "temper_ai.memory.cross_pollination.format_cross_pollination_context",
-            return_value="[From agent-b]: insight",
+        with (
+            patch(
+                "temper_ai.memory.cross_pollination.retrieve_subscribed_knowledge",
+                return_value=[
+                    {
+                        "agent_name": "agent-b",
+                        "content": "insight",
+                        "relevance_score": 0.9,
+                    }
+                ],
+            ),
+            patch(
+                "temper_ai.memory.cross_pollination.format_cross_pollination_context",
+                return_value="[From agent-b]: insight",
+            ),
         ):
             result = agent._inject_persistent_context("my prompt", None)
             assert "[From agent-b]: insight" in result

@@ -1,4 +1,5 @@
 """Tests for plugin import helpers."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -86,34 +87,47 @@ class TestBuildAgentConfigDict:
 
     def test_custom_version(self) -> None:
         result = build_agent_config_dict(
-            name="test", description="d", agent_type="t",
-            plugin_config={}, version="2.0",
+            name="test",
+            description="d",
+            agent_type="t",
+            plugin_config={},
+            version="2.0",
         )
         assert result["agent"]["version"] == "2.0"
 
     def test_default_version(self) -> None:
         result = build_agent_config_dict(
-            name="test", description="d", agent_type="t",
+            name="test",
+            description="d",
+            agent_type="t",
             plugin_config={},
         )
         assert result["agent"]["version"] == "1.0"
 
     def test_description_preserved(self) -> None:
         result = build_agent_config_dict(
-            name="test", description="My agent description",
-            agent_type="crewai", plugin_config={},
+            name="test",
+            description="My agent description",
+            agent_type="crewai",
+            plugin_config={},
         )
         assert result["agent"]["description"] == "My agent description"
 
     def test_error_handling_has_retry(self) -> None:
         result = build_agent_config_dict(
-            name="test", description="d", agent_type="t", plugin_config={},
+            name="test",
+            description="d",
+            agent_type="t",
+            plugin_config={},
         )
         assert "max_retries" in result["agent"]["error_handling"]
 
     def test_name_is_sanitized(self) -> None:
         result = build_agent_config_dict(
-            name="My Agent!", description="d", agent_type="t", plugin_config={},
+            name="My Agent!",
+            description="d",
+            agent_type="t",
+            plugin_config={},
         )
         assert " " not in result["agent"]["name"]
         assert "!" not in result["agent"]["name"]
@@ -149,7 +163,9 @@ class TestWriteAgentYaml:
         assert written[0].name == "my_agent.yaml"
 
     def test_yaml_content_valid(self, tmp_path: Path) -> None:
-        configs = [{"agent": {"name": "test", "type": "crewai", "data": {"key": "val"}}}]
+        configs = [
+            {"agent": {"name": "test", "type": "crewai", "data": {"key": "val"}}}
+        ]
         written = write_agent_yaml(configs, tmp_path)
         data = yaml.safe_load(written[0].read_text())
         assert data["agent"]["data"]["key"] == "val"

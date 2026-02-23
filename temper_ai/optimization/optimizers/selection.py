@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any
 
 from temper_ai.optimization._schemas import OptimizationResult
 from temper_ai.optimization.engine_constants import DEFAULT_RUNS
@@ -15,17 +15,15 @@ logger = logging.getLogger(__name__)
 class SelectionOptimizer:
     """Optimizer that runs N executions and picks the best output."""
 
-    def __init__(
-        self, experiment_service: Optional[Any] = None
-    ) -> None:
+    def __init__(self, experiment_service: Any | None = None) -> None:
         self.experiment_service = experiment_service
 
     def optimize(
         self,
         runner: Any,
-        input_data: Dict[str, Any],
+        input_data: dict[str, Any],
         evaluator: EvaluatorProtocol,
-        config: Dict[str, Any],
+        config: dict[str, Any],
     ) -> OptimizationResult:
         """Execute N runs and select the output with the highest score."""
         if self.experiment_service:
@@ -35,14 +33,14 @@ class SelectionOptimizer:
     def _run_without_service(
         self,
         runner: Any,
-        input_data: Dict[str, Any],
+        input_data: dict[str, Any],
         evaluator: EvaluatorProtocol,
-        config: Dict[str, Any],
+        config: dict[str, Any],
     ) -> OptimizationResult:
         """Run selection without experiment tracking."""
         runs: int = config.get("runs", DEFAULT_RUNS)
 
-        best_output: Dict[str, Any] = {}
+        best_output: dict[str, Any] = {}
         best_score = -1.0
         scores = []
 
@@ -70,9 +68,9 @@ class SelectionOptimizer:
     def _run_with_service(
         self,
         runner: Any,
-        input_data: Dict[str, Any],
+        input_data: dict[str, Any],
         evaluator: EvaluatorProtocol,
-        config: Dict[str, Any],
+        config: dict[str, Any],
     ) -> OptimizationResult:
         """Run selection WITH experiment tracking."""
         from temper_ai.optimization._experiment_helpers import (
@@ -88,7 +86,7 @@ class SelectionOptimizer:
             self.experiment_service, evaluator_name, runs
         )
 
-        best_output: Dict[str, Any] = {}
+        best_output: dict[str, Any] = {}
         best_score = -1.0
         scores = []
 
@@ -110,9 +108,7 @@ class SelectionOptimizer:
                 logger.info("Selection: run %d passed, stopping early", i + 1)
                 break
 
-        experiment_results = finalize_experiment(
-            self.experiment_service, experiment_id
-        )
+        experiment_results = finalize_experiment(self.experiment_service, experiment_id)
 
         return OptimizationResult(
             output=best_output,

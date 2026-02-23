@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import threading
-from typing import Any, Dict, Type
+from typing import Any
 
 from temper_ai.memory.constants import (
     PROVIDER_IN_MEMORY,
@@ -30,7 +30,7 @@ class MemoryProviderRegistry:
     _lock = threading.RLock()
 
     def __init__(self) -> None:
-        self._providers: Dict[str, Type[Any]] = {}
+        self._providers: dict[str, type[Any]] = {}
         self._register_builtins()
 
     @classmethod
@@ -50,7 +50,7 @@ class MemoryProviderRegistry:
         self._providers[PROVIDER_MEM0] = _LAZY_SENTINEL
         self._providers[PROVIDER_KNOWLEDGE_GRAPH] = _LAZY_SENTINEL
 
-    def get_provider_class(self, name: str) -> Type[Any]:
+    def get_provider_class(self, name: str) -> type[Any]:
         """Get provider class by name. Lazily imports adapters as needed."""
         with self._lock:
             if name not in self._providers:
@@ -62,20 +62,25 @@ class MemoryProviderRegistry:
             return cls
 
     @staticmethod
-    def _lazy_import(name: str) -> Type[Any]:
+    def _lazy_import(name: str) -> type[Any]:
         """Lazily import a provider class by name."""
         if name == PROVIDER_PG:
             from temper_ai.memory.adapters.pg_adapter import PGAdapter
+
             return PGAdapter
         if name == PROVIDER_MEM0:
             from temper_ai.memory.adapters.mem0_adapter import Mem0Adapter
+
             return Mem0Adapter
         if name == PROVIDER_KNOWLEDGE_GRAPH:
-            from temper_ai.memory.adapters.knowledge_graph_adapter import KnowledgeGraphMemoryAdapter
+            from temper_ai.memory.adapters.knowledge_graph_adapter import (
+                KnowledgeGraphMemoryAdapter,
+            )
+
             return KnowledgeGraphMemoryAdapter
         raise KeyError(f"No lazy import for provider: {name}")
 
-    def register_provider(self, name: str, cls: Type[Any]) -> None:
+    def register_provider(self, name: str, cls: type[Any]) -> None:
         """Register a custom memory provider class."""
         with self._lock:
             self._providers[name] = cls

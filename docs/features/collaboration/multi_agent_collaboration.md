@@ -22,7 +22,7 @@
 
 ## Overview
 
-M3 introduces true multi-agent collaboration to the Meta Autonomous Framework. Multiple agents can now:
+M3 introduces true multi-agent collaboration to Temper AI. Multiple agents can now:
 - Execute tasks in parallel for 2-3x speedup
 - Synthesize outputs via collaboration strategies
 - Resolve conflicts through voting or debate

@@ -4,10 +4,13 @@ import { CollapsibleSection } from '@/components/shared/Collapsible';
 import { JsonViewer } from '@/components/shared/JsonViewer';
 import { MetricCell } from '@/components/shared/MetricCell';
 import { StatusBadge } from '@/components/shared/StatusBadge';
+import { ErrorDisplay } from '@/components/shared/ErrorDisplay';
+import { EmptyState } from '@/components/shared/EmptyState';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Download } from 'lucide-react';
-import { formatDuration, formatTimestamp, formatTokens, formatCost, formatBytes, categorizeError } from '@/lib/utils';
+import { formatDuration, formatTimestamp, formatTokens, formatCost, formatBytes } from '@/lib/utils';
+import { CostBreakdownSection } from './CostBreakdownSection';
 
 function downloadFile(content: string, filename: string, mime: string) {
   const blob = new Blob([content], { type: mime });
@@ -102,9 +105,7 @@ export function WorkflowDetailPanel() {
   }, [toolCalls]);
 
   if (!workflow) {
-    return (
-      <div className="p-4 text-sm text-temper-text-muted">No workflow data.</div>
-    );
+    return <EmptyState title="No workflow data" />;
   }
 
   const inputSize = workflow.input_data ? formatBytes(new Blob([JSON.stringify(workflow.input_data)]).size) : null;
@@ -119,7 +120,7 @@ export function WorkflowDetailPanel() {
         </h3>
         <StatusBadge status={workflow.status} />
         <div className="ml-auto flex items-center gap-1">
-          <Button variant="ghost" size="sm" onClick={handleExportJSON}>
+          <Button variant="ghost" size="sm" onClick={handleExportJSON} title="Export full workflow data as JSON">
             <Download className="mr-1.5 size-3.5" />
             JSON
           </Button>
@@ -145,18 +146,9 @@ export function WorkflowDetailPanel() {
       </div>
 
       {/* Error */}
-      {workflow.status === 'failed' && workflow.error_message && (() => {
-        const { type, retryable } = categorizeError(workflow.error_message);
-        return (
-          <div className="rounded-md bg-temper-bg-failed p-3 text-sm text-temper-failed">
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-red-950 border border-red-900/50">{type}</span>
-              {retryable && <span className="text-xs text-amber-400">Retryable</span>}
-            </div>
-            {workflow.error_message}
-          </div>
-        );
-      })()}
+      {workflow.status === 'failed' && workflow.error_message && (
+        <ErrorDisplay error={workflow.error_message} />
+      )}
 
       {/* Stage breakdown */}
       {stages.size > 0 && (
@@ -186,6 +178,11 @@ export function WorkflowDetailPanel() {
           </div>
         </>
       )}
+
+      {/* Cost & Token Breakdown */}
+      <CollapsibleSection title="Cost & Token Breakdown" defaultOpen>
+        <CostBreakdownSection />
+      </CollapsibleSection>
 
       {/* Tool Analytics */}
       {toolAnalytics.length > 0 && (

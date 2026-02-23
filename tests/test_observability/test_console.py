@@ -1,6 +1,7 @@
 """Tests for console visualization."""
+
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from io import StringIO
 
 import pytest
@@ -133,18 +134,22 @@ def test_minimal_mode_displays_workflow_and_stages(mock_workflow, capsys):
     output = console.file.getvalue()
 
     # Should contain workflow and stage names with status icons (icon appears after name)
-    assert re.search(r'Workflow:.*test_workflow.*[✓✗⏳⌛⏸?]', output), \
-        "Should display workflow name with status icon"
-    assert re.search(r'Stage:.*research_stage.*[✓✗⏳⌛⏸?]', output), \
-        "Should display stage name with status icon"
+    assert re.search(
+        r"Workflow:.*test_workflow.*[✓✗⏳⌛⏸?]", output
+    ), "Should display workflow name with status icon"
+    assert re.search(
+        r"Stage:.*research_stage.*[✓✗⏳⌛⏸?]", output
+    ), "Should display stage name with status icon"
 
     # Verify workflow is shown as completed (✓ icon)
-    assert re.search(r'test_workflow.*✓', output), \
-        "Workflow should show completed status (✓)"
+    assert re.search(
+        r"test_workflow.*✓", output
+    ), "Workflow should show completed status (✓)"
 
     # Verify stage is shown as completed (✓ icon)
-    assert re.search(r'research_stage.*✓', output), \
-        "Stage should show completed status (✓)"
+    assert re.search(
+        r"research_stage.*✓", output
+    ), "Stage should show completed status (✓)"
 
 
 def test_standard_mode_includes_agents(mock_workflow):
@@ -161,18 +166,23 @@ def test_standard_mode_includes_agents(mock_workflow):
     output = console.file.getvalue()
 
     # Should contain workflow, stage, and agent with status icons (icon after name)
-    assert re.search(r'Workflow:.*test_workflow.*[✓✗⏳⌛⏸?]', output), \
-        "Should display workflow name with status icon"
-    assert re.search(r'Stage:.*research_stage.*[✓✗⏳⌛⏸?]', output), \
-        "Should display stage name with status icon"
-    assert re.search(r'Agent:.*researcher_agent.*[✓✗⏳⌛⏸?]', output), \
-        "Should display agent name with status icon in standard mode"
+    assert re.search(
+        r"Workflow:.*test_workflow.*[✓✗⏳⌛⏸?]", output
+    ), "Should display workflow name with status icon"
+    assert re.search(
+        r"Stage:.*research_stage.*[✓✗⏳⌛⏸?]", output
+    ), "Should display stage name with status icon"
+    assert re.search(
+        r"Agent:.*researcher_agent.*[✓✗⏳⌛⏸?]", output
+    ), "Should display agent name with status icon in standard mode"
 
     # Verify hierarchical structure
-    assert output.index("test_workflow") < output.index("research_stage"), \
-        "Workflow should appear before stage in tree"
-    assert output.index("research_stage") < output.index("researcher_agent"), \
-        "Stage should appear before agent in tree"
+    assert output.index("test_workflow") < output.index(
+        "research_stage"
+    ), "Workflow should appear before stage in tree"
+    assert output.index("research_stage") < output.index(
+        "researcher_agent"
+    ), "Stage should appear before agent in tree"
 
 
 def test_verbose_mode_includes_llm_and_tools(mock_workflow):
@@ -189,31 +199,38 @@ def test_verbose_mode_includes_llm_and_tools(mock_workflow):
     output = console.file.getvalue()
 
     # Should contain all levels with status icons (icon after name)
-    assert re.search(r'Workflow:.*test_workflow.*[✓✗⏳⌛⏸?]', output), \
-        "Should display workflow with status icon"
-    assert re.search(r'Stage:.*research_stage.*[✓✗⏳⌛⏸?]', output), \
-        "Should display stage with status icon"
-    assert re.search(r'Agent:.*researcher_agent.*[✓✗⏳⌛⏸?]', output), \
-        "Should display agent with status icon"
+    assert re.search(
+        r"Workflow:.*test_workflow.*[✓✗⏳⌛⏸?]", output
+    ), "Should display workflow with status icon"
+    assert re.search(
+        r"Stage:.*research_stage.*[✓✗⏳⌛⏸?]", output
+    ), "Should display stage with status icon"
+    assert re.search(
+        r"Agent:.*researcher_agent.*[✓✗⏳⌛⏸?]", output
+    ), "Should display agent with status icon"
 
     # Verify LLM and tool details
-    assert re.search(r'LLM.*gpt-4.*\d+ms', output), \
-        "Should display LLM model with latency"
-    assert re.search(r'Tool.*web_scraper.*\d+\.\d+s', output), \
-        "Should display tool name with duration"
+    assert re.search(
+        r"LLM.*gpt-4.*\d+ms", output
+    ), "Should display LLM model with latency"
+    assert re.search(
+        r"Tool.*web_scraper.*\d+\.\d+s", output
+    ), "Should display tool name with duration"
 
     # Verify hierarchical ordering
     positions = {
-        'workflow': output.index("test_workflow"),
-        'stage': output.index("research_stage"),
-        'agent': output.index("researcher_agent"),
-        'llm': output.index("gpt-4"),
-        'tool': output.index("web_scraper")
+        "workflow": output.index("test_workflow"),
+        "stage": output.index("research_stage"),
+        "agent": output.index("researcher_agent"),
+        "llm": output.index("gpt-4"),
+        "tool": output.index("web_scraper"),
     }
-    assert positions['workflow'] < positions['stage'] < positions['agent'], \
-        "Workflow > Stage > Agent hierarchy should be maintained"
-    assert positions['agent'] < min(positions['llm'], positions['tool']), \
-        "LLM calls and tools should appear under agent"
+    assert (
+        positions["workflow"] < positions["stage"] < positions["agent"]
+    ), "Workflow > Stage > Agent hierarchy should be maintained"
+    assert positions["agent"] < min(
+        positions["llm"], positions["tool"]
+    ), "LLM calls and tools should appear under agent"
 
 
 def test_status_icons_display_correctly():
@@ -257,16 +274,15 @@ def test_summary_formatting(mock_workflow):
     summary = visualizer._format_summary(mock_workflow)
 
     # Should contain key metrics with specific formatting
-    assert re.search(r'Duration:\s+10\.5s', summary), \
-        "Should format duration as 10.5s"
-    assert re.search(r'Tokens:\s+1,500', summary), \
-        "Should format tokens with comma separator"
-    assert re.search(r'Cost:\s+\$0\.0450', summary), \
-        "Should format cost with $ and 4 decimals"
-    assert re.search(r'LLM calls:\s+3', summary), \
-        "Should show exact LLM call count"
-    assert re.search(r'Tool calls:\s+2', summary), \
-        "Should show exact tool call count"
+    assert re.search(r"Duration:\s+10\.5s", summary), "Should format duration as 10.5s"
+    assert re.search(
+        r"Tokens:\s+1,500", summary
+    ), "Should format tokens with comma separator"
+    assert re.search(
+        r"Cost:\s+\$0\.0450", summary
+    ), "Should format cost with $ and 4 decimals"
+    assert re.search(r"LLM calls:\s+3", summary), "Should show exact LLM call count"
+    assert re.search(r"Tool calls:\s+2", summary), "Should show exact tool call count"
 
 
 def test_summary_with_missing_metrics():
@@ -329,8 +345,11 @@ def test_synthesis_node_in_verbose_mode(mock_workflow):
     output_lower = output.lower()
 
     # Verbose mode should display synthesis or collaboration details
-    assert "synthesis" in output_lower or "collaboration" in output_lower or "vote" in output_lower, \
-        f"Verbose mode should show synthesis/collaboration info, got: {output[:300]}"
+    assert (
+        "synthesis" in output_lower
+        or "collaboration" in output_lower
+        or "vote" in output_lower
+    ), f"Verbose mode should show synthesis/collaboration info, got: {output[:300]}"
 
     # The mock_workflow has collaboration_rounds=2 and a vote event with confidence=0.85
     assert "2" in output, "Should display the collaboration rounds count"
@@ -349,7 +368,7 @@ def test_format_duration():
 
 def test_format_timestamp():
     """Test format_timestamp utility."""
-    dt = datetime(2024, 1, 15, 10, 30, 45, tzinfo=timezone.utc)
+    dt = datetime(2024, 1, 15, 10, 30, 45, tzinfo=UTC)
     result = format_timestamp(dt)
     assert "2024-01-15" in result
     assert "10:30:45" in result
@@ -425,21 +444,24 @@ def test_workflow_tree_structure(mock_workflow):
 
     # Tree should have content
     assert tree is not None
-    assert hasattr(tree, 'label'), "Tree should have a label attribute"
+    assert hasattr(tree, "label"), "Tree should have a label attribute"
 
     # Render tree to string and check content
     console.print(tree)
     output = console.file.getvalue()
 
     # Verify tree structure (icon appears after workflow name)
-    assert re.search(r'test_workflow.*[✓✗⏳⌛⏸?]', output), \
-        "Tree root should show workflow with status icon"
+    assert re.search(
+        r"test_workflow.*[✓✗⏳⌛⏸?]", output
+    ), "Tree root should show workflow with status icon"
     # Duration is shown as (10.5s) in parentheses
-    assert re.search(r'\(10\.5s\)', output), \
-        "Tree should include workflow duration in parentheses"
+    assert re.search(
+        r"\(10\.5s\)", output
+    ), "Tree should include workflow duration in parentheses"
     # Tokens shown as "1000 tokens" or "1,000 tokens"
-    assert "1000 tokens" in output or "1,000 tokens" in output, \
-        "Tree should include token count"
+    assert (
+        "1000 tokens" in output or "1,000 tokens" in output
+    ), "Tree should include token count"
 
 
 def test_live_display_returns_context_manager(mock_workflow):
@@ -455,6 +477,8 @@ def test_live_display_returns_context_manager(mock_workflow):
     live_display = visualizer.display_live(mock_workflow)
 
     # Should be a Live object (context manager)
-    assert isinstance(live_display, Live), f"Expected Live instance, got {type(live_display)}"
+    assert isinstance(
+        live_display, Live
+    ), f"Expected Live instance, got {type(live_display)}"
     assert hasattr(live_display, "__enter__")
     assert hasattr(live_display, "__exit__")

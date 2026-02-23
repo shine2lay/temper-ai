@@ -3,22 +3,21 @@
 Runs configurable checks (regex, function) against agent output and
 optionally injects failure feedback into the prompt for LLM retry.
 """
+
 from __future__ import annotations
 
 import importlib
 import logging
 import re
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from temper_ai.storage.schemas.agent_config import GuardrailCheck
 
 logger = logging.getLogger(__name__)
 
-_FEEDBACK_HEADER = (
-    "Your previous output failed the following guardrail checks:\n"
-)
+_FEEDBACK_HEADER = "Your previous output failed the following guardrail checks:\n"
 _FEEDBACK_FOOTER = "\nPlease revise your response to address the above issues."
 
 _SEVERITY_BLOCK = "block"
@@ -36,10 +35,10 @@ class GuardrailResult:
 
 def run_guardrail_checks(
     output_text: str,
-    checks: List[GuardrailCheck],
-) -> List[GuardrailResult]:
+    checks: list[GuardrailCheck],
+) -> list[GuardrailResult]:
     """Run all configured guardrail checks against the output."""
-    results: List[GuardrailResult] = []
+    results: list[GuardrailResult] = []
     for check in checks:
         if check.type == "regex":
             results.append(_run_regex_check(output_text, check))
@@ -120,7 +119,7 @@ def _run_regex_check(
         )
 
 
-def build_feedback_injection(failures: List[GuardrailResult]) -> str:
+def build_feedback_injection(failures: list[GuardrailResult]) -> str:
     """Build feedback string from failed guardrail checks."""
     lines = [_FEEDBACK_HEADER]
     for fail in failures:
@@ -132,9 +131,6 @@ def build_feedback_injection(failures: List[GuardrailResult]) -> str:
     return "\n".join(lines)
 
 
-def has_blocking_failures(results: List[GuardrailResult]) -> bool:
+def has_blocking_failures(results: list[GuardrailResult]) -> bool:
     """Return True if any result has severity='block' and did not pass."""
-    return any(
-        not r.passed and r.severity == _SEVERITY_BLOCK
-        for r in results
-    )
+    return any(not r.passed and r.severity == _SEVERITY_BLOCK for r in results)

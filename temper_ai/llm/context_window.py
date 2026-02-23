@@ -3,6 +3,7 @@
 Provides token counting and prompt trimming strategies to keep prompts
 within model context window limits.
 """
+
 from __future__ import annotations
 
 import logging
@@ -31,6 +32,7 @@ def count_tokens(text: str, method: str = "approximate") -> int:
     if method == "tiktoken":
         try:
             import tiktoken
+
             enc = tiktoken.get_encoding("cl100k_base")
             return len(enc.encode(text))
         except ImportError:
@@ -66,14 +68,14 @@ def trim_to_budget(
         return text
 
     if strategy == "sliding_window":
-        return _sliding_window(text, budget, token_counter)
+        return _sliding_window(text, budget)
     if strategy == "summarize":
-        return _summarize(text, budget, token_counter)
+        return _summarize(text, budget)
     # Default: truncate
-    return _truncate(text, budget, token_counter)
+    return _truncate(text, budget)
 
 
-def _truncate(text: str, target_tokens: int, token_counter: str) -> str:
+def _truncate(text: str, target_tokens: int) -> str:
     """Truncate text from the end, keeping the beginning."""
     target_chars = target_tokens * _CHARS_PER_TOKEN
     if len(text) <= target_chars:
@@ -83,18 +85,18 @@ def _truncate(text: str, target_tokens: int, token_counter: str) -> str:
     return trimmed + _TRUNCATED_MARKER
 
 
-def _sliding_window(text: str, target_tokens: int, token_counter: str) -> str:
+def _sliding_window(text: str, target_tokens: int) -> str:
     """Keep the most recent content (truncate from beginning)."""
     target_chars = target_tokens * _CHARS_PER_TOKEN
     if len(text) <= target_chars:
         return text
     marker = "[Earlier content omitted]\n\n"
     marker_budget = len(marker)
-    trimmed = text[-(target_chars - marker_budget):]
+    trimmed = text[-(target_chars - marker_budget) :]
     return marker + trimmed
 
 
-def _summarize(text: str, target_tokens: int, token_counter: str) -> str:
+def _summarize(text: str, target_tokens: int) -> str:
     """Placeholder: truncate with a summary marker.
 
     Full summarization would require an LLM call; for v1 this simply

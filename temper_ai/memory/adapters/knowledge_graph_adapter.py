@@ -8,7 +8,7 @@ MemoryEntry objects with ``memory_type="semantic"``.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from temper_ai.memory._schemas import MemoryEntry, MemoryScope
 from temper_ai.memory.constants import DEFAULT_RETRIEVAL_LIMIT
@@ -21,9 +21,9 @@ MEMORY_TYPE_SEMANTIC = "semantic"
 class KnowledgeGraphMemoryAdapter:
     """Read-only adapter exposing portfolio KG concepts as memories."""
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None) -> None:
+    def __init__(self, config: dict[str, Any] | None = None) -> None:
         config = config or {}
-        self._db_url: Optional[str] = config.get("database_url")
+        self._db_url: str | None = config.get("database_url")
         self._store: Any = None
         self._query: Any = None
 
@@ -46,7 +46,7 @@ class KnowledgeGraphMemoryAdapter:
         scope: MemoryScope,
         content: str,
         memory_type: str,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> str:
         """KG is read-only from memory perspective. Returns empty string."""
         return ""
@@ -57,15 +57,15 @@ class KnowledgeGraphMemoryAdapter:
         query: str,
         limit: int = DEFAULT_RETRIEVAL_LIMIT,
         threshold: float = 0.0,
-        memory_type: Optional[str] = None,
-    ) -> List[MemoryEntry]:
+        memory_type: str | None = None,
+    ) -> list[MemoryEntry]:
         """Search KG concepts by keyword substring match."""
         if memory_type and memory_type != MEMORY_TYPE_SEMANTIC:
             return []
         self._ensure_initialized()
         concepts = self._store.list_concepts()
         query_lower = query.lower()
-        results: List[MemoryEntry] = []
+        results: list[MemoryEntry] = []
         for concept in concepts:
             name_lower = concept.name.lower()
             if query_lower and query_lower not in name_lower:
@@ -81,8 +81,8 @@ class KnowledgeGraphMemoryAdapter:
     def get_all(
         self,
         scope: MemoryScope,
-        memory_type: Optional[str] = None,
-    ) -> List[MemoryEntry]:
+        memory_type: str | None = None,
+    ) -> list[MemoryEntry]:
         """Return all KG concepts as MemoryEntry objects."""
         if memory_type and memory_type != MEMORY_TYPE_SEMANTIC:
             return []
@@ -102,7 +102,8 @@ class KnowledgeGraphMemoryAdapter:
 
     @staticmethod
     def _concept_to_entry(
-        concept: Any, score: float = 0.0,
+        concept: Any,
+        score: float = 0.0,
     ) -> MemoryEntry:
         """Convert a KGConceptRecord to a MemoryEntry."""
         description = f"{concept.concept_type}: {concept.name}"

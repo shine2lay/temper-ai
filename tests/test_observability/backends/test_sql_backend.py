@@ -12,15 +12,14 @@ Tests cover:
 - Safety violations and collaboration events
 - Cleanup and maintenance
 """
+
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict
-from unittest.mock import Mock, patch
+from datetime import timedelta
 
 import pytest
-from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 
+from temper_ai.observability.backends.sql_backend import SQLObservabilityBackend
 from temper_ai.storage.database import (
     AgentExecution,
     LLMCall,
@@ -31,7 +30,6 @@ from temper_ai.storage.database import (
     init_database,
 )
 from temper_ai.storage.database.datetime_utils import utcnow
-from temper_ai.observability.backends.sql_backend import SQLObservabilityBackend
 
 
 @pytest.fixture
@@ -87,7 +85,7 @@ def test_track_workflow_start(sql_backend: SQLObservabilityBackend):
         trigger_type="manual",
         optimization_target="speed",
         environment="test",
-        tags=["test", "demo"]
+        tags=["test", "demo"],
     )
 
     with get_session() as session:
@@ -113,14 +111,12 @@ def test_track_workflow_end_success(sql_backend: SQLObservabilityBackend):
         workflow_id=workflow_id,
         workflow_name="test_workflow",
         workflow_config={"workflow": {"version": "1.0"}},
-        start_time=start_time
+        start_time=start_time,
     )
 
     end_time = start_time + timedelta(seconds=30)
     sql_backend.track_workflow_end(
-        workflow_id=workflow_id,
-        end_time=end_time,
-        status="completed"
+        workflow_id=workflow_id, end_time=end_time, status="completed"
     )
 
     with get_session() as session:
@@ -145,7 +141,7 @@ def test_track_workflow_end_with_error(sql_backend: SQLObservabilityBackend):
         workflow_id=workflow_id,
         workflow_name="test_workflow",
         workflow_config={"workflow": {"version": "1.0"}},
-        start_time=start_time
+        start_time=start_time,
     )
 
     end_time = start_time + timedelta(seconds=10)
@@ -154,7 +150,7 @@ def test_track_workflow_end_with_error(sql_backend: SQLObservabilityBackend):
         end_time=end_time,
         status="failed",
         error_message="Test error",
-        error_stack_trace="Traceback..."
+        error_stack_trace="Traceback...",
     )
 
     with get_session() as session:
@@ -176,7 +172,7 @@ def test_update_workflow_metrics(sql_backend: SQLObservabilityBackend):
         workflow_id=workflow_id,
         workflow_name="test_workflow",
         workflow_config={"workflow": {"version": "1.0"}},
-        start_time=utcnow()
+        start_time=utcnow(),
     )
 
     sql_backend.update_workflow_metrics(
@@ -184,7 +180,7 @@ def test_update_workflow_metrics(sql_backend: SQLObservabilityBackend):
         total_llm_calls=5,
         total_tool_calls=10,
         total_tokens=1000,
-        total_cost_usd=0.05
+        total_cost_usd=0.05,
     )
 
     with get_session() as session:
@@ -212,7 +208,7 @@ def test_track_stage_start(sql_backend: SQLObservabilityBackend):
         workflow_id=workflow_id,
         workflow_name="test_workflow",
         workflow_config={"workflow": {"version": "1.0"}},
-        start_time=utcnow()
+        start_time=utcnow(),
     )
 
     sql_backend.track_stage_start(
@@ -221,7 +217,7 @@ def test_track_stage_start(sql_backend: SQLObservabilityBackend):
         stage_name="analysis",
         stage_config={"stage": {"version": "1.0"}},
         start_time=utcnow(),
-        input_data={"query": "test"}
+        input_data={"query": "test"},
     )
 
     with get_session() as session:
@@ -246,7 +242,7 @@ def test_track_stage_end_with_metrics(sql_backend: SQLObservabilityBackend):
         workflow_id=workflow_id,
         workflow_name="test_workflow",
         workflow_config={"workflow": {"version": "1.0"}},
-        start_time=start_time
+        start_time=start_time,
     )
 
     sql_backend.track_stage_start(
@@ -254,7 +250,7 @@ def test_track_stage_end_with_metrics(sql_backend: SQLObservabilityBackend):
         workflow_id=workflow_id,
         stage_name="analysis",
         stage_config={"stage": {"version": "1.0"}},
-        start_time=start_time
+        start_time=start_time,
     )
 
     end_time = start_time + timedelta(seconds=20)
@@ -264,7 +260,7 @@ def test_track_stage_end_with_metrics(sql_backend: SQLObservabilityBackend):
         status="completed",
         num_agents_executed=3,
         num_agents_succeeded=2,
-        num_agents_failed=1
+        num_agents_failed=1,
     )
 
     with get_session() as session:
@@ -289,7 +285,7 @@ def test_set_stage_output(sql_backend: SQLObservabilityBackend):
         workflow_id=workflow_id,
         workflow_name="test_workflow",
         workflow_config={"workflow": {"version": "1.0"}},
-        start_time=utcnow()
+        start_time=utcnow(),
     )
 
     sql_backend.track_stage_start(
@@ -297,7 +293,7 @@ def test_set_stage_output(sql_backend: SQLObservabilityBackend):
         workflow_id=workflow_id,
         stage_name="analysis",
         stage_config={"stage": {"version": "1.0"}},
-        start_time=utcnow()
+        start_time=utcnow(),
     )
 
     output_data = {"result": "success", "score": 0.95}
@@ -325,7 +321,7 @@ def test_track_agent_start(sql_backend: SQLObservabilityBackend):
         workflow_id=workflow_id,
         workflow_name="test_workflow",
         workflow_config={"workflow": {"version": "1.0"}},
-        start_time=utcnow()
+        start_time=utcnow(),
     )
 
     sql_backend.track_stage_start(
@@ -333,7 +329,7 @@ def test_track_agent_start(sql_backend: SQLObservabilityBackend):
         workflow_id=workflow_id,
         stage_name="analysis",
         stage_config={"stage": {"version": "1.0"}},
-        start_time=utcnow()
+        start_time=utcnow(),
     )
 
     sql_backend.track_agent_start(
@@ -342,7 +338,7 @@ def test_track_agent_start(sql_backend: SQLObservabilityBackend):
         agent_name="researcher",
         agent_config={"agent": {"version": "1.0"}},
         start_time=utcnow(),
-        input_data={"task": "analyze"}
+        input_data={"task": "analyze"},
     )
 
     with get_session() as session:
@@ -368,7 +364,7 @@ def test_track_agent_end(sql_backend: SQLObservabilityBackend):
         workflow_id=workflow_id,
         workflow_name="test_workflow",
         workflow_config={"workflow": {"version": "1.0"}},
-        start_time=start_time
+        start_time=start_time,
     )
 
     sql_backend.track_stage_start(
@@ -376,7 +372,7 @@ def test_track_agent_end(sql_backend: SQLObservabilityBackend):
         workflow_id=workflow_id,
         stage_name="analysis",
         stage_config={"stage": {"version": "1.0"}},
-        start_time=start_time
+        start_time=start_time,
     )
 
     sql_backend.track_agent_start(
@@ -384,14 +380,12 @@ def test_track_agent_end(sql_backend: SQLObservabilityBackend):
         stage_id=stage_id,
         agent_name="researcher",
         agent_config={"agent": {"version": "1.0"}},
-        start_time=start_time
+        start_time=start_time,
     )
 
     end_time = start_time + timedelta(seconds=15)
     sql_backend.track_agent_end(
-        agent_id=agent_id,
-        end_time=end_time,
-        status="completed"
+        agent_id=agent_id, end_time=end_time, status="completed"
     )
 
     with get_session() as session:
@@ -414,7 +408,7 @@ def test_set_agent_output_full(sql_backend: SQLObservabilityBackend):
         workflow_id=workflow_id,
         workflow_name="test_workflow",
         workflow_config={"workflow": {"version": "1.0"}},
-        start_time=utcnow()
+        start_time=utcnow(),
     )
 
     sql_backend.track_stage_start(
@@ -422,7 +416,7 @@ def test_set_agent_output_full(sql_backend: SQLObservabilityBackend):
         workflow_id=workflow_id,
         stage_name="analysis",
         stage_config={"stage": {"version": "1.0"}},
-        start_time=utcnow()
+        start_time=utcnow(),
     )
 
     sql_backend.track_agent_start(
@@ -430,7 +424,7 @@ def test_set_agent_output_full(sql_backend: SQLObservabilityBackend):
         stage_id=stage_id,
         agent_name="researcher",
         agent_config={"agent": {"version": "1.0"}},
-        start_time=utcnow()
+        start_time=utcnow(),
     )
 
     sql_backend.set_agent_output(
@@ -443,7 +437,7 @@ def test_set_agent_output_full(sql_backend: SQLObservabilityBackend):
         completion_tokens=200,
         estimated_cost_usd=0.01,
         num_llm_calls=2,
-        num_tool_calls=3
+        num_tool_calls=3,
     )
 
     with get_session() as session:
@@ -478,7 +472,7 @@ def test_track_llm_call_direct(sql_backend: SQLObservabilityBackend):
         workflow_id=workflow_id,
         workflow_name="test_workflow",
         workflow_config={"workflow": {"version": "1.0"}},
-        start_time=utcnow()
+        start_time=utcnow(),
     )
 
     sql_backend.track_stage_start(
@@ -486,7 +480,7 @@ def test_track_llm_call_direct(sql_backend: SQLObservabilityBackend):
         workflow_id=workflow_id,
         stage_name="analysis",
         stage_config={"stage": {"version": "1.0"}},
-        start_time=utcnow()
+        start_time=utcnow(),
     )
 
     sql_backend.track_agent_start(
@@ -494,7 +488,7 @@ def test_track_llm_call_direct(sql_backend: SQLObservabilityBackend):
         stage_id=stage_id,
         agent_name="researcher",
         agent_config={"agent": {"version": "1.0"}},
-        start_time=utcnow()
+        start_time=utcnow(),
     )
 
     # Track LLM call
@@ -511,7 +505,7 @@ def test_track_llm_call_direct(sql_backend: SQLObservabilityBackend):
         estimated_cost_usd=0.001,
         start_time=utcnow(),
         temperature=0.7,
-        max_tokens=100
+        max_tokens=100,
     )
 
     with get_session() as session:
@@ -548,7 +542,7 @@ def test_track_llm_call_with_buffer(sql_backend_with_buffer: SQLObservabilityBac
         workflow_id=workflow_id,
         workflow_name="test_workflow",
         workflow_config={"workflow": {"version": "1.0"}},
-        start_time=utcnow()
+        start_time=utcnow(),
     )
 
     sql_backend_with_buffer.track_stage_start(
@@ -556,7 +550,7 @@ def test_track_llm_call_with_buffer(sql_backend_with_buffer: SQLObservabilityBac
         workflow_id=workflow_id,
         stage_name="analysis",
         stage_config={"stage": {"version": "1.0"}},
-        start_time=utcnow()
+        start_time=utcnow(),
     )
 
     sql_backend_with_buffer.track_agent_start(
@@ -564,7 +558,7 @@ def test_track_llm_call_with_buffer(sql_backend_with_buffer: SQLObservabilityBac
         stage_id=stage_id,
         agent_name="researcher",
         agent_config={"agent": {"version": "1.0"}},
-        start_time=utcnow()
+        start_time=utcnow(),
     )
 
     # Track multiple LLM calls
@@ -580,7 +574,7 @@ def test_track_llm_call_with_buffer(sql_backend_with_buffer: SQLObservabilityBac
             completion_tokens=20,
             latency_ms=500,
             estimated_cost_usd=0.001,
-            start_time=utcnow()
+            start_time=utcnow(),
         )
 
     # Flush buffer
@@ -607,7 +601,7 @@ def test_track_tool_call_direct(sql_backend: SQLObservabilityBackend):
         workflow_id=workflow_id,
         workflow_name="test_workflow",
         workflow_config={"workflow": {"version": "1.0"}},
-        start_time=utcnow()
+        start_time=utcnow(),
     )
 
     sql_backend.track_stage_start(
@@ -615,7 +609,7 @@ def test_track_tool_call_direct(sql_backend: SQLObservabilityBackend):
         workflow_id=workflow_id,
         stage_name="analysis",
         stage_config={"stage": {"version": "1.0"}},
-        start_time=utcnow()
+        start_time=utcnow(),
     )
 
     sql_backend.track_agent_start(
@@ -623,7 +617,7 @@ def test_track_tool_call_direct(sql_backend: SQLObservabilityBackend):
         stage_id=stage_id,
         agent_name="researcher",
         agent_config={"agent": {"version": "1.0"}},
-        start_time=utcnow()
+        start_time=utcnow(),
     )
 
     # Track tool call
@@ -637,7 +631,7 @@ def test_track_tool_call_direct(sql_backend: SQLObservabilityBackend):
         duration_seconds=2.5,
         status="success",
         safety_checks=["url_validation"],
-        approval_required=False
+        approval_required=False,
     )
 
     with get_session() as session:
@@ -671,7 +665,7 @@ def test_track_tool_call_with_error(sql_backend: SQLObservabilityBackend):
         workflow_id=workflow_id,
         workflow_name="test_workflow",
         workflow_config={"workflow": {"version": "1.0"}},
-        start_time=utcnow()
+        start_time=utcnow(),
     )
 
     sql_backend.track_stage_start(
@@ -679,7 +673,7 @@ def test_track_tool_call_with_error(sql_backend: SQLObservabilityBackend):
         workflow_id=workflow_id,
         stage_name="analysis",
         stage_config={"stage": {"version": "1.0"}},
-        start_time=utcnow()
+        start_time=utcnow(),
     )
 
     sql_backend.track_agent_start(
@@ -687,7 +681,7 @@ def test_track_tool_call_with_error(sql_backend: SQLObservabilityBackend):
         stage_id=stage_id,
         agent_name="researcher",
         agent_config={"agent": {"version": "1.0"}},
-        start_time=utcnow()
+        start_time=utcnow(),
     )
 
     # Track failed tool call - use 'error' status (not 'failed')
@@ -700,7 +694,7 @@ def test_track_tool_call_with_error(sql_backend: SQLObservabilityBackend):
         start_time=utcnow(),
         duration_seconds=1.0,
         status="error",
-        error_message="Connection timeout"
+        error_message="Connection timeout",
     )
 
     with get_session() as session:
@@ -727,7 +721,7 @@ def test_track_safety_violation(sql_backend: SQLObservabilityBackend):
         workflow_id=workflow_id,
         workflow_name="test_workflow",
         workflow_config={"workflow": {"version": "1.0"}},
-        start_time=utcnow()
+        start_time=utcnow(),
     )
 
     sql_backend.track_stage_start(
@@ -735,7 +729,7 @@ def test_track_safety_violation(sql_backend: SQLObservabilityBackend):
         workflow_id=workflow_id,
         stage_name="analysis",
         stage_config={"stage": {"version": "1.0"}},
-        start_time=utcnow()
+        start_time=utcnow(),
     )
 
     sql_backend.track_agent_start(
@@ -743,18 +737,22 @@ def test_track_safety_violation(sql_backend: SQLObservabilityBackend):
         stage_id=stage_id,
         agent_name="researcher",
         agent_config={"agent": {"version": "1.0"}},
-        start_time=utcnow()
+        start_time=utcnow(),
     )
 
     # Track violation
+    from temper_ai.observability.backend import SafetyViolationData
+
     sql_backend.track_safety_violation(
-        workflow_id=workflow_id,
-        stage_id=stage_id,
-        agent_id=agent_id,
         violation_severity="HIGH",
         violation_message="Unsafe action detected",
         policy_name="action_policy",
-        context={"action": "delete_all"}
+        data=SafetyViolationData(
+            workflow_id=workflow_id,
+            stage_id=stage_id,
+            agent_id=agent_id,
+            context={"action": "delete_all"},
+        ),
     )
 
     # Verify violation recorded in agent metadata
@@ -782,7 +780,7 @@ def test_track_collaboration_event(sql_backend: SQLObservabilityBackend):
         workflow_id=workflow_id,
         workflow_name="test_workflow",
         workflow_config={"workflow": {"version": "1.0"}},
-        start_time=utcnow()
+        start_time=utcnow(),
     )
 
     sql_backend.track_stage_start(
@@ -790,7 +788,7 @@ def test_track_collaboration_event(sql_backend: SQLObservabilityBackend):
         workflow_id=workflow_id,
         stage_name="analysis",
         stage_config={"stage": {"version": "1.0"}},
-        start_time=utcnow()
+        start_time=utcnow(),
     )
 
     # Track collaboration
@@ -800,7 +798,7 @@ def test_track_collaboration_event(sql_backend: SQLObservabilityBackend):
         agents_involved=[agent1_id, agent2_id],
         event_data={"votes": {"option_a": 2}},
         outcome="consensus",
-        confidence_score=0.95
+        confidence_score=0.95,
     )
 
     assert event_id is not None
@@ -821,7 +819,7 @@ def test_get_agent_execution(sql_backend: SQLObservabilityBackend):
         workflow_id=workflow_id,
         workflow_name="test_workflow",
         workflow_config={"workflow": {"version": "1.0"}},
-        start_time=utcnow()
+        start_time=utcnow(),
     )
 
     sql_backend.track_stage_start(
@@ -829,7 +827,7 @@ def test_get_agent_execution(sql_backend: SQLObservabilityBackend):
         workflow_id=workflow_id,
         stage_name="analysis",
         stage_config={"stage": {"version": "1.0"}},
-        start_time=utcnow()
+        start_time=utcnow(),
     )
 
     sql_backend.track_agent_start(
@@ -837,7 +835,7 @@ def test_get_agent_execution(sql_backend: SQLObservabilityBackend):
         stage_id=stage_id,
         agent_name="researcher",
         agent_config={"agent": {"version": "1.0"}},
-        start_time=utcnow()
+        start_time=utcnow(),
     )
 
     # Retrieve agent
@@ -855,7 +853,7 @@ def test_aggregate_workflow_metrics(sql_backend: SQLObservabilityBackend):
         workflow_id=workflow_id,
         workflow_name="test_workflow",
         workflow_config={"workflow": {"version": "1.0"}},
-        start_time=utcnow()
+        start_time=utcnow(),
     )
 
     # Add some metrics
@@ -864,7 +862,7 @@ def test_aggregate_workflow_metrics(sql_backend: SQLObservabilityBackend):
         total_llm_calls=10,
         total_tool_calls=5,
         total_tokens=2000,
-        total_cost_usd=0.10
+        total_cost_usd=0.10,
     )
 
     # Aggregate
@@ -886,7 +884,7 @@ def test_aggregate_stage_metrics(sql_backend: SQLObservabilityBackend):
         workflow_id=workflow_id,
         workflow_name="test_workflow",
         workflow_config={"workflow": {"version": "1.0"}},
-        start_time=utcnow()
+        start_time=utcnow(),
     )
 
     sql_backend.track_stage_start(
@@ -894,7 +892,7 @@ def test_aggregate_stage_metrics(sql_backend: SQLObservabilityBackend):
         workflow_id=workflow_id,
         stage_name="analysis",
         stage_config={"stage": {"version": "1.0"}},
-        start_time=utcnow()
+        start_time=utcnow(),
     )
 
     # Aggregate
@@ -916,7 +914,7 @@ def test_cleanup_old_records_dry_run(sql_backend: SQLObservabilityBackend):
         workflow_id=workflow_id,
         workflow_name="test_workflow",
         workflow_config={"workflow": {"version": "1.0"}},
-        start_time=utcnow()
+        start_time=utcnow(),
     )
 
     # Dry run should not delete
@@ -943,7 +941,7 @@ def test_cleanup_old_records_actual(sql_backend: SQLObservabilityBackend):
             workflow_name="old_workflow",
             workflow_config={"workflow": {"version": "1.0"}},
             start_time=old_time,
-            status="completed"
+            status="completed",
         )
         session.add(workflow)
         session.commit()
@@ -984,9 +982,7 @@ def test_track_workflow_end_nonexistent(sql_backend: SQLObservabilityBackend):
 
     # Should not raise error
     result = sql_backend.track_workflow_end(
-        workflow_id=workflow_id,
-        end_time=utcnow(),
-        status="completed"
+        workflow_id=workflow_id, end_time=utcnow(), status="completed"
     )
     assert result is None
 
@@ -999,14 +995,14 @@ def test_track_workflow_end_none_time_raises(sql_backend: SQLObservabilityBacken
         workflow_id=workflow_id,
         workflow_name="test_workflow",
         workflow_config={"workflow": {"version": "1.0"}},
-        start_time=utcnow()
+        start_time=utcnow(),
     )
 
     with pytest.raises(ValueError, match="end_time cannot be None"):
         sql_backend.track_workflow_end(
             workflow_id=workflow_id,
             end_time=None,  # type: ignore[arg-type]
-            status="completed"
+            status="completed",
         )
 
 
@@ -1028,7 +1024,7 @@ def test_full_workflow_lifecycle(sql_backend: SQLObservabilityBackend):
         workflow_id=workflow_id,
         workflow_name="full_test",
         workflow_config={"workflow": {"version": "1.0"}},
-        start_time=start_time
+        start_time=start_time,
     )
 
     # 2. Start stage
@@ -1037,7 +1033,7 @@ def test_full_workflow_lifecycle(sql_backend: SQLObservabilityBackend):
         workflow_id=workflow_id,
         stage_name="analysis",
         stage_config={"stage": {"version": "1.0"}},
-        start_time=start_time
+        start_time=start_time,
     )
 
     # 3. Start agent
@@ -1046,7 +1042,7 @@ def test_full_workflow_lifecycle(sql_backend: SQLObservabilityBackend):
         stage_id=stage_id,
         agent_name="researcher",
         agent_config={"agent": {"version": "1.0"}},
-        start_time=start_time
+        start_time=start_time,
     )
 
     # 4. Track LLM call
@@ -1061,7 +1057,7 @@ def test_full_workflow_lifecycle(sql_backend: SQLObservabilityBackend):
         completion_tokens=20,
         latency_ms=500,
         estimated_cost_usd=0.001,
-        start_time=start_time
+        start_time=start_time,
     )
 
     # 5. Track tool call
@@ -1072,28 +1068,28 @@ def test_full_workflow_lifecycle(sql_backend: SQLObservabilityBackend):
         input_params={"expr": "2+2"},
         output_data={"result": 4},
         start_time=start_time,
-        duration_seconds=0.1
+        duration_seconds=0.1,
     )
 
     # 6. End agent
     sql_backend.track_agent_end(
         agent_id=agent_id,
         end_time=start_time + timedelta(seconds=10),
-        status="completed"
+        status="completed",
     )
 
     # 7. End stage
     sql_backend.track_stage_end(
         stage_id=stage_id,
         end_time=start_time + timedelta(seconds=15),
-        status="completed"
+        status="completed",
     )
 
     # 8. End workflow
     sql_backend.track_workflow_end(
         workflow_id=workflow_id,
         end_time=start_time + timedelta(seconds=20),
-        status="completed"
+        status="completed",
     )
 
     # Verify everything was tracked

@@ -2,13 +2,11 @@
 
 from unittest.mock import MagicMock
 
-import pytest
-
-from temper_ai.optimization.dspy.prompt_adapter import DSPyPromptAdapter
 from temper_ai.optimization.dspy.constants import (
     EXAMPLES_HEADER,
     OPTIMIZATION_HEADER,
 )
+from temper_ai.optimization.dspy.prompt_adapter import DSPyPromptAdapter
 
 
 def _make_store(program_data=None):
@@ -33,12 +31,14 @@ class TestDSPyPromptAdapter:
         assert result == "Original prompt"
 
     def test_injects_instruction(self):
-        store = _make_store({
-            "program_data": {
-                "instruction": "Be thorough and precise.",
-                "demos": [],
+        store = _make_store(
+            {
+                "program_data": {
+                    "instruction": "Be thorough and precise.",
+                    "demos": [],
+                }
             }
-        })
+        )
         adapter = DSPyPromptAdapter(store=store)
         result = adapter.augment_prompt("agent", "Original prompt")
         assert "Original prompt" in result
@@ -46,15 +46,17 @@ class TestDSPyPromptAdapter:
         assert "Be thorough and precise." in result
 
     def test_injects_demos(self):
-        store = _make_store({
-            "program_data": {
-                "instruction": "",
-                "demos": [
-                    {"input": "AI safety", "output": "Analysis of AI safety"},
-                    {"input": "ML ops", "output": "Analysis of ML ops"},
-                ],
+        store = _make_store(
+            {
+                "program_data": {
+                    "instruction": "",
+                    "demos": [
+                        {"input": "AI safety", "output": "Analysis of AI safety"},
+                        {"input": "ML ops", "output": "Analysis of ML ops"},
+                    ],
+                }
             }
-        })
+        )
         adapter = DSPyPromptAdapter(store=store)
         result = adapter.augment_prompt("agent", "Original prompt")
         assert EXAMPLES_HEADER in result
@@ -64,9 +66,7 @@ class TestDSPyPromptAdapter:
 
     def test_limits_demos_to_max(self):
         demos = [{"input": f"in_{i}", "output": f"out_{i}"} for i in range(10)]
-        store = _make_store({
-            "program_data": {"instruction": "test", "demos": demos}
-        })
+        store = _make_store({"program_data": {"instruction": "test", "demos": demos}})
         adapter = DSPyPromptAdapter(store=store)
         result = adapter.augment_prompt("agent", "Prompt", max_demos=2)
         assert "Example 1" in result
@@ -74,12 +74,14 @@ class TestDSPyPromptAdapter:
         assert "Example 3" not in result
 
     def test_instruction_and_demos_together(self):
-        store = _make_store({
-            "program_data": {
-                "instruction": "Be concise.",
-                "demos": [{"input": "q1", "output": "a1"}],
+        store = _make_store(
+            {
+                "program_data": {
+                    "instruction": "Be concise.",
+                    "demos": [{"input": "q1", "output": "a1"}],
+                }
             }
-        })
+        )
         adapter = DSPyPromptAdapter(store=store)
         result = adapter.augment_prompt("agent", "Original")
         assert "Original" in result
@@ -87,9 +89,7 @@ class TestDSPyPromptAdapter:
         assert "Example 1" in result
 
     def test_separator_present(self):
-        store = _make_store({
-            "program_data": {"instruction": "test", "demos": []}
-        })
+        store = _make_store({"program_data": {"instruction": "test", "demos": []}})
         adapter = DSPyPromptAdapter(store=store)
         result = adapter.augment_prompt("agent", "Original")
         assert "---" in result
@@ -112,11 +112,13 @@ class TestDSPyPromptAdapter:
         store.load_latest.assert_called_once_with("my_agent")
 
     def test_augment_with_only_instruction_no_demos(self):
-        store = _make_store({
-            "program_data": {
-                "instruction": "Focus on key points",
+        store = _make_store(
+            {
+                "program_data": {
+                    "instruction": "Focus on key points",
+                }
             }
-        })
+        )
         adapter = DSPyPromptAdapter(store=store)
         result = adapter.augment_prompt("agent", "Base prompt")
         assert "Focus on key points" in result

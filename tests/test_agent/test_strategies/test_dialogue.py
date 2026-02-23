@@ -17,7 +17,11 @@ from unittest.mock import patch
 import pytest
 
 from temper_ai.agent.strategies.base import AgentOutput
-from temper_ai.agent.strategies.dialogue import DialogueHistory, DialogueOrchestrator, DialogueRound
+from temper_ai.agent.strategies.dialogue import (
+    DialogueHistory,
+    DialogueOrchestrator,
+    DialogueRound,
+)
 from temper_ai.agent.strategies.multi_round import (
     CommunicationHistory,
     CommunicationRound,
@@ -57,7 +61,7 @@ class TestDialogueOrchestratorShim:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
             s = DialogueOrchestrator()
-        assert isinstance(getattr(type(s), "requires_requery"), property)
+        assert isinstance(type(s).requires_requery, property)
 
 
 class TestDialogueOrchestratorInitialization:
@@ -480,25 +484,33 @@ class TestDialogueHistory:
     def test_early_stop_reasons(self):
         """Test different early stop reasons."""
         h_conv = DialogueHistory(
-            total_rounds=2, converged=True, convergence_round=1,
+            total_rounds=2,
+            converged=True,
+            convergence_round=1,
             early_stop_reason="convergence",
         )
         assert h_conv.early_stop_reason == "convergence"
 
         h_budget = DialogueHistory(
-            total_rounds=1, converged=False, early_stop_reason="budget",
+            total_rounds=1,
+            converged=False,
+            early_stop_reason="budget",
         )
         assert h_budget.early_stop_reason == "budget"
 
         h_max = DialogueHistory(
-            total_rounds=3, converged=False, early_stop_reason="max_rounds",
+            total_rounds=3,
+            converged=False,
+            early_stop_reason="max_rounds",
         )
         assert h_max.early_stop_reason == "max_rounds"
 
     def test_no_convergence(self):
         """Test history when dialogue doesn't converge."""
         h = DialogueHistory(
-            total_rounds=3, converged=False, convergence_round=0,
+            total_rounds=3,
+            converged=False,
+            convergence_round=0,
             early_stop_reason="max_rounds",
         )
         assert h.converged is False
@@ -511,7 +523,10 @@ class TestDialogueHistory:
         r1 = DialogueRound(round_number=0, agent_outputs=outputs)
         r2 = DialogueRound(round_number=1, agent_outputs=outputs, convergence_score=1.0)
         h = DialogueHistory(
-            rounds=[r1, r2], total_rounds=2, converged=True, convergence_round=1,
+            rounds=[r1, r2],
+            total_rounds=2,
+            converged=True,
+            convergence_round=1,
             total_cost_usd=2.0,
         )
         assert len(h.rounds) == 2
@@ -662,7 +677,6 @@ class TestDialogueOrchestratorConvergence:
 
     def test_embeddings_check_is_cached(self):
         """Test embeddings availability check is cached across convergence calls."""
-        from unittest.mock import patch
 
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
@@ -697,10 +711,34 @@ class TestDialogueOrchestratorContextCuration:
             warnings.simplefilter("ignore", DeprecationWarning)
             strategy = DialogueOrchestrator(context_strategy="full")
         history = [
-            {"agent": "a1", "round": 0, "output": "A", "reasoning": "r1", "confidence": 0.8},
-            {"agent": "a2", "round": 0, "output": "B", "reasoning": "r2", "confidence": 0.8},
-            {"agent": "a1", "round": 1, "output": "A", "reasoning": "r3", "confidence": 0.9},
-            {"agent": "a2", "round": 1, "output": "A", "reasoning": "r4", "confidence": 0.85},
+            {
+                "agent": "a1",
+                "round": 0,
+                "output": "A",
+                "reasoning": "r1",
+                "confidence": 0.8,
+            },
+            {
+                "agent": "a2",
+                "round": 0,
+                "output": "B",
+                "reasoning": "r2",
+                "confidence": 0.8,
+            },
+            {
+                "agent": "a1",
+                "round": 1,
+                "output": "A",
+                "reasoning": "r3",
+                "confidence": 0.9,
+            },
+            {
+                "agent": "a2",
+                "round": 1,
+                "output": "A",
+                "reasoning": "r4",
+                "confidence": 0.85,
+            },
         ]
         curated = strategy.curate_dialogue_history(history, current_round=2)
         assert len(curated) == 4
@@ -709,12 +747,38 @@ class TestDialogueOrchestratorContextCuration:
         """Test 'recent' strategy returns only recent rounds."""
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
-            strategy = DialogueOrchestrator(context_strategy="recent", context_window_size=1)
+            strategy = DialogueOrchestrator(
+                context_strategy="recent", context_window_size=1
+            )
         history = [
-            {"agent": "a1", "round": 0, "output": "A", "reasoning": "r1", "confidence": 0.8},
-            {"agent": "a2", "round": 0, "output": "B", "reasoning": "r2", "confidence": 0.8},
-            {"agent": "a1", "round": 2, "output": "A", "reasoning": "r5", "confidence": 0.95},
-            {"agent": "a2", "round": 2, "output": "A", "reasoning": "r6", "confidence": 0.90},
+            {
+                "agent": "a1",
+                "round": 0,
+                "output": "A",
+                "reasoning": "r1",
+                "confidence": 0.8,
+            },
+            {
+                "agent": "a2",
+                "round": 0,
+                "output": "B",
+                "reasoning": "r2",
+                "confidence": 0.8,
+            },
+            {
+                "agent": "a1",
+                "round": 2,
+                "output": "A",
+                "reasoning": "r5",
+                "confidence": 0.95,
+            },
+            {
+                "agent": "a2",
+                "round": 2,
+                "output": "A",
+                "reasoning": "r6",
+                "confidence": 0.90,
+            },
         ]
         curated = strategy.curate_dialogue_history(history, current_round=3)
         assert len(curated) == 2
@@ -724,11 +788,31 @@ class TestDialogueOrchestratorContextCuration:
         """Test 'recent' strategy with window size 2."""
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
-            strategy = DialogueOrchestrator(context_strategy="recent", context_window_size=2)
+            strategy = DialogueOrchestrator(
+                context_strategy="recent", context_window_size=2
+            )
         history = [
-            {"agent": "a1", "round": 0, "output": "A", "reasoning": "r1", "confidence": 0.8},
-            {"agent": "a1", "round": 1, "output": "A", "reasoning": "r2", "confidence": 0.9},
-            {"agent": "a1", "round": 2, "output": "A", "reasoning": "r3", "confidence": 0.95},
+            {
+                "agent": "a1",
+                "round": 0,
+                "output": "A",
+                "reasoning": "r1",
+                "confidence": 0.8,
+            },
+            {
+                "agent": "a1",
+                "round": 1,
+                "output": "A",
+                "reasoning": "r2",
+                "confidence": 0.9,
+            },
+            {
+                "agent": "a1",
+                "round": 2,
+                "output": "A",
+                "reasoning": "r3",
+                "confidence": 0.95,
+            },
         ]
         curated = strategy.curate_dialogue_history(history, current_round=3)
         assert len(curated) == 2
@@ -740,12 +824,38 @@ class TestDialogueOrchestratorContextCuration:
             warnings.simplefilter("ignore", DeprecationWarning)
             strategy = DialogueOrchestrator(context_strategy="relevant")
         history = [
-            {"agent": "a1", "round": 0, "output": "A", "reasoning": "initial", "confidence": 0.8},
-            {"agent": "a2", "round": 0, "output": "B", "reasoning": "a1 is wrong", "confidence": 0.8},
-            {"agent": "a3", "round": 0, "output": "C", "reasoning": "unrelated", "confidence": 0.8},
-            {"agent": "a1", "round": 1, "output": "A", "reasoning": "final", "confidence": 0.9},
+            {
+                "agent": "a1",
+                "round": 0,
+                "output": "A",
+                "reasoning": "initial",
+                "confidence": 0.8,
+            },
+            {
+                "agent": "a2",
+                "round": 0,
+                "output": "B",
+                "reasoning": "a1 is wrong",
+                "confidence": 0.8,
+            },
+            {
+                "agent": "a3",
+                "round": 0,
+                "output": "C",
+                "reasoning": "unrelated",
+                "confidence": 0.8,
+            },
+            {
+                "agent": "a1",
+                "round": 1,
+                "output": "A",
+                "reasoning": "final",
+                "confidence": 0.9,
+            },
         ]
-        curated = strategy.curate_dialogue_history(history, current_round=2, agent_name="a1")
+        curated = strategy.curate_dialogue_history(
+            history, current_round=2, agent_name="a1"
+        )
         assert len(curated) >= 2
         assert any(entry["agent"] == "a1" for entry in curated)
         assert any("a1" in entry["reasoning"].lower() for entry in curated)
@@ -754,12 +864,28 @@ class TestDialogueOrchestratorContextCuration:
         """Test 'relevant' strategy falls back to recent when no agent_name."""
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
-            strategy = DialogueOrchestrator(context_strategy="relevant", context_window_size=1)
+            strategy = DialogueOrchestrator(
+                context_strategy="relevant", context_window_size=1
+            )
         history = [
-            {"agent": "a1", "round": 0, "output": "A", "reasoning": "r1", "confidence": 0.8},
-            {"agent": "a1", "round": 1, "output": "A", "reasoning": "r2", "confidence": 0.9},
+            {
+                "agent": "a1",
+                "round": 0,
+                "output": "A",
+                "reasoning": "r1",
+                "confidence": 0.8,
+            },
+            {
+                "agent": "a1",
+                "round": 1,
+                "output": "A",
+                "reasoning": "r2",
+                "confidence": 0.9,
+            },
         ]
-        curated = strategy.curate_dialogue_history(history, current_round=2, agent_name=None)
+        curated = strategy.curate_dialogue_history(
+            history, current_round=2, agent_name=None
+        )
         assert len(curated) == 1
         assert curated[0]["round"] == 1
 
@@ -776,13 +902,33 @@ class TestDialogueOrchestratorContextCuration:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
             strategy_full = DialogueOrchestrator(context_strategy="full")
-            strategy_recent = DialogueOrchestrator(context_strategy="recent", context_window_size=1)
+            strategy_recent = DialogueOrchestrator(
+                context_strategy="recent", context_window_size=1
+            )
         history = []
         for round_num in range(5):
-            history.append({"agent": "a1", "round": round_num, "output": "A", "reasoning": "r", "confidence": 0.8})
-            history.append({"agent": "a2", "round": round_num, "output": "B", "reasoning": "r", "confidence": 0.8})
+            history.append(
+                {
+                    "agent": "a1",
+                    "round": round_num,
+                    "output": "A",
+                    "reasoning": "r",
+                    "confidence": 0.8,
+                }
+            )
+            history.append(
+                {
+                    "agent": "a2",
+                    "round": round_num,
+                    "output": "B",
+                    "reasoning": "r",
+                    "confidence": 0.8,
+                }
+            )
         curated_full = strategy_full.curate_dialogue_history(history, current_round=5)
-        curated_recent = strategy_recent.curate_dialogue_history(history, current_round=5)
+        curated_recent = strategy_recent.curate_dialogue_history(
+            history, current_round=5
+        )
         assert len(curated_full) == 10
         assert len(curated_recent) == 2
         assert len(curated_recent) < len(curated_full)
@@ -834,12 +980,16 @@ class TestDialogueOrchestratorIntegration:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
             strategy = DialogueOrchestrator(
-                max_rounds=3, convergence_threshold=0.85, cost_budget_usd=10.0,
+                max_rounds=3,
+                convergence_threshold=0.85,
+                cost_budget_usd=10.0,
             )
         outputs = [
             AgentOutput("architect", "Use microservices", "scalability", 0.85, {}),
             AgentOutput("security_engineer", "Use microservices", "reviewed", 0.80, {}),
-            AgentOutput("performance_engineer", "Use microservices", "addressed", 0.75, {}),
+            AgentOutput(
+                "performance_engineer", "Use microservices", "addressed", 0.75, {}
+            ),
         ]
         result = strategy.synthesize(outputs, {})
         assert result.decision == "Use microservices"
@@ -868,11 +1018,18 @@ class TestDialogueOrchestratorIntegration:
             AgentOutput("a1", "A", "still A", 0.80, {}),
             AgentOutput("a2", "A", "changed to A", 0.75, {}),
         ]
-        round1 = DialogueRound(round_number=0, agent_outputs=outputs_r1, convergence_score=0.0)
-        round2 = DialogueRound(round_number=1, agent_outputs=outputs_r2, convergence_score=1.0)
+        round1 = DialogueRound(
+            round_number=0, agent_outputs=outputs_r1, convergence_score=0.0
+        )
+        round2 = DialogueRound(
+            round_number=1, agent_outputs=outputs_r2, convergence_score=1.0
+        )
         history = DialogueHistory(
-            rounds=[round1, round2], total_rounds=2, converged=True,
-            convergence_round=1, total_cost_usd=2.0,
+            rounds=[round1, round2],
+            total_rounds=2,
+            converged=True,
+            convergence_round=1,
+            total_cost_usd=2.0,
         )
         assert len(history.rounds) == 2
         assert history.converged is True

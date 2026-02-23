@@ -3,6 +3,7 @@
 Verifies hook invocation order, error handling, response building,
 timeout checking, and setup extraction.
 """
+
 from __future__ import annotations
 
 import time
@@ -12,7 +13,6 @@ import pytest
 
 from temper_ai.agent.base_agent import AgentResponse, BaseAgent, ExecutionContext
 from temper_ai.storage.schemas.agent_config import AgentConfig
-
 
 # ============================================================================
 # Fixtures
@@ -205,9 +205,7 @@ class TestBuildResponse:
         """_build_error_response creates error AgentResponse."""
         agent = RecordingAgent(_make_config())
         start = time.time()
-        response = agent._build_error_response(
-            RuntimeError("oops"), start
-        )
+        response = agent._build_error_response(RuntimeError("oops"), start)
         assert response.error is not None
         assert "oops" in response.error
         assert response.output == ""

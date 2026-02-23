@@ -3,11 +3,12 @@
 Covers round metrics computation, confidence trajectory, convergence speed,
 stance change detection, quality gate violation details, and emit helpers.
 """
+
 from __future__ import annotations
 
 import logging
 from dataclasses import asdict
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 import pytest
 
@@ -21,7 +22,6 @@ from temper_ai.observability.dialogue_metrics import (
     emit_quality_gate_details,
     emit_round_metrics,
 )
-
 
 # ── RoundMetrics dataclass ──
 

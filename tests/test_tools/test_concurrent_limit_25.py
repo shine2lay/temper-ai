@@ -28,9 +28,7 @@ class SlowTestTool(BaseTool):
     def get_parameters_schema(self):
         return {
             "type": "object",
-            "properties": {
-                "delay": {"type": "number", "default": 0.2}
-            },
+            "properties": {"delay": {"type": "number", "default": 0.2}},
         }
 
     def execute(self, **kwargs) -> ToolResult:
@@ -72,6 +70,7 @@ class TestAtomicConcurrentSlot:
             assert executor.get_concurrent_execution_count() == 2
 
             from temper_ai.tools.executor import RateLimitError
+
             with pytest.raises(RateLimitError, match="Concurrent execution limit"):
                 executor._acquire_concurrent_slot()
 
@@ -115,12 +114,16 @@ class TestAtomicConcurrentSlot:
                 t.join(timeout=10)
 
             # Peak should never exceed the limit
-            assert peak_concurrent[0] <= max_concurrent, (
-                f"Peak concurrent {peak_concurrent[0]} exceeded limit {max_concurrent}"
-            )
+            assert (
+                peak_concurrent[0] <= max_concurrent
+            ), f"Peak concurrent {peak_concurrent[0]} exceeded limit {max_concurrent}"
 
             # Some should have been rejected
-            rejected = [r for r in results if not r.success and "concurrent" in (r.error or "").lower()]
+            rejected = [
+                r
+                for r in results
+                if not r.success and "concurrent" in (r.error or "").lower()
+            ]
             succeeded = [r for r in results if r.success]
             assert len(succeeded) > 0
         finally:
@@ -180,10 +183,15 @@ class TestAtomicConcurrentSlot:
         class FailingTool(BaseTool):
             def get_metadata(self):
                 return ToolMetadata(
-                    name="failing_tool", description="Fails", version="1.0", category="test"
+                    name="failing_tool",
+                    description="Fails",
+                    version="1.0",
+                    category="test",
                 )
+
             def get_parameters_schema(self):
                 return {"type": "object", "properties": {}}
+
             def execute(self, **kwargs):
                 raise RuntimeError("intentional failure")
 

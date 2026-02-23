@@ -114,16 +114,25 @@ class TestReview:
 class TestListPendingReviews:
     def test_includes_proposed_and_under_review(self, store):
         p1 = GoalProposalRecord(
-            id="gp-p1", goal_type="cost_reduction", title="P1",
-            description="T", status="proposed",
+            id="gp-p1",
+            goal_type="cost_reduction",
+            title="P1",
+            description="T",
+            status="proposed",
         )
         p2 = GoalProposalRecord(
-            id="gp-p2", goal_type="cost_reduction", title="P2",
-            description="T", status="under_review",
+            id="gp-p2",
+            goal_type="cost_reduction",
+            title="P2",
+            description="T",
+            status="under_review",
         )
         p3 = GoalProposalRecord(
-            id="gp-p3", goal_type="cost_reduction", title="P3",
-            description="T", status="approved",
+            id="gp-p3",
+            goal_type="cost_reduction",
+            title="P3",
+            description="T",
+            status="approved",
         )
         store.save_proposal(p1)
         store.save_proposal(p2)
@@ -143,14 +152,24 @@ class TestAcceptanceRate:
 
     def test_mixed_decisions(self, store):
         for i in range(3):
-            store.save_proposal(GoalProposalRecord(
-                id=f"gp-a{i}", goal_type="cost_reduction",
-                title=f"Approved {i}", description="T", status="approved",
-            ))
-        store.save_proposal(GoalProposalRecord(
-            id="gp-r1", goal_type="cost_reduction",
-            title="Rejected", description="T", status="rejected",
-        ))
+            store.save_proposal(
+                GoalProposalRecord(
+                    id=f"gp-a{i}",
+                    goal_type="cost_reduction",
+                    title=f"Approved {i}",
+                    description="T",
+                    status="approved",
+                )
+            )
+        store.save_proposal(
+            GoalProposalRecord(
+                id="gp-r1",
+                goal_type="cost_reduction",
+                title="Rejected",
+                description="T",
+                status="rejected",
+            )
+        )
         wf = GoalReviewWorkflow(store)
         rate = wf.get_acceptance_rate()
         assert rate == pytest.approx(0.75)

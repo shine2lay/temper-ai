@@ -18,13 +18,33 @@ This policy integrates with system resource monitoring to track:
 - CPU time consumed by operations
 - Available disk space
 """
+
 import os
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import psutil
 
-from temper_ai.shared.constants.durations import SECONDS_PER_HOUR, SLEEP_VERY_SHORT, TIMEOUT_MEDIUM
+from temper_ai.safety.base import BaseSafetyPolicy
+from temper_ai.safety.interfaces import SafetyViolation, ValidationResult
+from temper_ai.safety.policies._resource_limit_helpers import (
+    FileSizeCheckParams,
+    check_disk_space,
+    check_file_size,
+    check_memory_usage,
+    format_bytes,
+    validate_bool,
+    validate_size,
+    validate_time,
+)
+from temper_ai.safety.policies._resource_limit_helpers import (
+    get_current_usage as _get_current_usage_helper,
+)
+from temper_ai.shared.constants.durations import (
+    SECONDS_PER_HOUR,
+    SLEEP_VERY_SHORT,
+    TIMEOUT_MEDIUM,
+)
 from temper_ai.shared.constants.limits import (
     DEFAULT_MAX_WORKERS,
     MAX_WORKERS,
@@ -45,21 +65,6 @@ from temper_ai.shared.constants.sizes import (
     SIZE_10MB,
     SIZE_100MB,
 )
-from temper_ai.safety.base import BaseSafetyPolicy
-from temper_ai.safety.interfaces import SafetyViolation, ValidationResult
-from temper_ai.safety.policies._resource_limit_helpers import (
-    FileSizeCheckParams,
-    check_disk_space,
-    check_file_size,
-    check_memory_usage,
-    format_bytes,
-    validate_bool,
-    validate_size,
-    validate_time,
-)
-from temper_ai.safety.policies._resource_limit_helpers import (
-    get_current_usage as _get_current_usage_helper,
-)
 
 # File size validation limits
 MIN_FILE_SIZE = MIN_WORKERS  # Minimum file size in bytes (prevents negative/zero)
@@ -68,7 +73,9 @@ MAX_FILE_SIZE_WRITE = SIZE_1GB  # 1GB maximum for write operations
 
 # Memory validation limits
 MIN_MEMORY_SIZE = MIN_WORKERS  # Minimum memory size in bytes (prevents negative/zero)
-MAX_MEMORY_SIZE = 8 * BYTES_PER_GB  # 8GB maximum memory per operation  # noqa: Multiplier in constant expression
+MAX_MEMORY_SIZE = (
+    8 * BYTES_PER_GB
+)  # 8GB maximum memory per operation  # noqa: Multiplier in constant expression
 
 # Disk space limits
 MIN_FREE_DISK_SPACE = SIZE_1GB  # 1GB minimum free disk space required
@@ -79,12 +86,18 @@ MIN_WORKER_PROCESSES = MIN_WORKERS  # Minimum number of worker processes
 MAX_WORKER_PROCESSES = MAX_WORKERS  # Maximum number of worker processes
 
 # CPU time limits
-MIN_CPU_TIME = MIN_POSITIVE_VALUE  # 1ms minimum (prevents zero/negative, allows testing)
+MIN_CPU_TIME = (
+    MIN_POSITIVE_VALUE  # 1ms minimum (prevents zero/negative, allows testing)
+)
 MAX_CPU_TIME = float(SECONDS_PER_HOUR)  # 1 hour maximum CPU time
 
 # Disk space safety margin
-DISK_SPACE_SAFETY_MARGIN = 1.0 + FRACTION_QUARTER - PROB_MINIMAL  # 1.2 = 20% safety margin to prevent TOCTOU race conditions
-DISK_SPACE_SAFETY_MARGIN_PERCENT = PERCENT_20  # 20% safety margin percentage for metadata
+DISK_SPACE_SAFETY_MARGIN = (
+    1.0 + FRACTION_QUARTER - PROB_MINIMAL
+)  # 1.2 = 20% safety margin to prevent TOCTOU race conditions
+DISK_SPACE_SAFETY_MARGIN_PERCENT = (
+    PERCENT_20  # 20% safety margin percentage for metadata
+)
 
 # HTTP connection pool limits (8 CPU cores, 5 workers per core = 8 * 5 = 40 connections)
 DEFAULT_MAX_HTTP_CONNECTIONS = DEFAULT_MAX_WORKERS
@@ -134,18 +147,16 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
     # Default limits (conservative defaults for safety)
     DEFAULT_MAX_FILE_SIZE_READ = SIZE_100MB  # 100MB
     DEFAULT_MAX_FILE_SIZE_WRITE = SIZE_10MB  # 10MB
-    DEFAULT_MAX_MEMORY_PER_OPERATION = (MULTIPLIER_LARGE * 5) * BYTES_PER_MB  # 500MB  # noqa: Multiplier
+    DEFAULT_MAX_MEMORY_PER_OPERATION = (
+        MULTIPLIER_LARGE * 5
+    ) * BYTES_PER_MB  # 500MB  # noqa: Multiplier
     DEFAULT_MAX_CPU_TIME = float(TIMEOUT_MEDIUM)  # 30 seconds
     DEFAULT_MIN_FREE_DISK_SPACE = SIZE_1GB  # 1GB
 
     # Map action types to resource checks
-    FILE_READ_OPERATIONS = {
-        "file_read", "read", "read_file", "load", "open"
-    }
+    FILE_READ_OPERATIONS = {"file_read", "read", "read_file", "load", "open"}
 
-    FILE_WRITE_OPERATIONS = {
-        "file_write", "write", "write_file", "save", "create"
-    }
+    FILE_WRITE_OPERATIONS = {"file_write", "write", "write_file", "save", "create"}
 
     # Instance attributes set dynamically in __init__ via setattr
     max_file_size_read: int
@@ -156,7 +167,7 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
     track_cpu: bool
     track_disk: bool
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: dict[str, Any] | None = None):
         """Initialize resource limit policy.
 
         Args:
@@ -169,16 +180,39 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
 
         # Size limits (validated using helper)
         size_configs = [
-            ("max_file_size_read", MIN_FILE_SIZE, MAX_FILE_SIZE_READ, self.DEFAULT_MAX_FILE_SIZE_READ),
-            ("max_file_size_write", MIN_FILE_SIZE, MAX_FILE_SIZE_WRITE, self.DEFAULT_MAX_FILE_SIZE_WRITE),
-            ("max_memory_per_operation", MIN_MEMORY_SIZE, MAX_MEMORY_SIZE, self.DEFAULT_MAX_MEMORY_PER_OPERATION),
-            ("min_free_disk_space", MIN_MEMORY_SIZE, MAX_FREE_DISK_SPACE, self.DEFAULT_MIN_FREE_DISK_SPACE),
+            (
+                "max_file_size_read",
+                MIN_FILE_SIZE,
+                MAX_FILE_SIZE_READ,
+                self.DEFAULT_MAX_FILE_SIZE_READ,
+            ),
+            (
+                "max_file_size_write",
+                MIN_FILE_SIZE,
+                MAX_FILE_SIZE_WRITE,
+                self.DEFAULT_MAX_FILE_SIZE_WRITE,
+            ),
+            (
+                "max_memory_per_operation",
+                MIN_MEMORY_SIZE,
+                MAX_MEMORY_SIZE,
+                self.DEFAULT_MAX_MEMORY_PER_OPERATION,
+            ),
+            (
+                "min_free_disk_space",
+                MIN_MEMORY_SIZE,
+                MAX_FREE_DISK_SPACE,
+                self.DEFAULT_MIN_FREE_DISK_SPACE,
+            ),
         ]
 
         for name, min_val, max_val, default in size_configs:
             setattr(
-                self, name,
-                validate_size(name, self.config.get(name, default), min_val, max_val, default)
+                self,
+                name,
+                validate_size(
+                    name, self.config.get(name, default), min_val, max_val, default
+                ),
             )
 
         # Time limits
@@ -187,20 +221,21 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
             self.config.get("max_cpu_time", self.DEFAULT_MAX_CPU_TIME),
             min_value=MIN_CPU_TIME,
             max_value=MAX_CPU_TIME,
-            default=self.DEFAULT_MAX_CPU_TIME
+            default=self.DEFAULT_MAX_CPU_TIME,
         )
 
         # Tracking flags (validated using helper)
         tracking_flags = ["track_memory", "track_cpu", "track_disk"]
         for flag_name in tracking_flags:
             setattr(
-                self, flag_name,
-                validate_bool(flag_name, self.config.get(flag_name, True))
+                self,
+                flag_name,
+                validate_bool(flag_name, self.config.get(flag_name, True)),
             )
 
         # Operation tracking for memory/CPU monitoring
-        self._operation_start_times: Dict[str, float] = {}
-        self._operation_start_memory: Dict[str, int] = {}
+        self._operation_start_times: dict[str, float] = {}
+        self._operation_start_memory: dict[str, int] = {}
 
     @property
     def name(self) -> str:
@@ -224,10 +259,10 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
         self,
         operation: str,
         file_path: str,
-        context: Dict[str, Any],
-    ) -> List[SafetyViolation]:
+        context: dict[str, Any],
+    ) -> list[SafetyViolation]:
         """Check file size and disk space violations for file operations."""
-        violations: List[SafetyViolation] = []
+        violations: list[SafetyViolation] = []
         if os.path.exists(file_path):
             params = FileSizeCheckParams(
                 operation=operation,
@@ -237,7 +272,7 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
                 max_file_size_write=self.max_file_size_write,
                 file_read_operations=self.FILE_READ_OPERATIONS,
                 file_write_operations=self.FILE_WRITE_OPERATIONS,
-                policy_name=self.name
+                policy_name=self.name,
             )
             file_violation = check_file_size(params=params)
             if file_violation:
@@ -245,8 +280,11 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
 
         if operation in self.FILE_WRITE_OPERATIONS:
             disk_violation = check_disk_space(
-                file_path, context, self.track_disk,
-                self.min_free_disk_space, self.name,
+                file_path,
+                context,
+                self.track_disk,
+                self.min_free_disk_space,
+                self.name,
             )
             if disk_violation:
                 violations.append(disk_violation)
@@ -254,9 +292,7 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
         return violations
 
     def _validate_impl(
-        self,
-        action: Dict[str, Any],
-        context: Dict[str, Any]
+        self, action: dict[str, Any], context: dict[str, Any]
     ) -> ValidationResult:
         """Validate action against resource limits.
 
@@ -270,17 +306,21 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
         Returns:
             ValidationResult with violations if limits exceeded
         """
-        violations: List[SafetyViolation] = []
+        violations: list[SafetyViolation] = []
         operation = action.get("operation") or action.get("type", "unknown")
         file_path = action.get("path") or action.get("file_path")
 
         if file_path:
-            violations.extend(self._check_file_violations(operation, file_path, context))
+            violations.extend(
+                self._check_file_violations(operation, file_path, context)
+            )
 
         if self.track_memory:
             memory_violation = check_memory_usage(
-                context, self.track_memory,
-                self.max_memory_per_operation, self.name,
+                context,
+                self.track_memory,
+                self.max_memory_per_operation,
+                self.name,
             )
             if memory_violation:
                 violations.append(memory_violation)
@@ -295,11 +335,12 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
                 "file_path": file_path,
                 "limits_checked": {
                     "file_size": file_path is not None,
-                    "disk_space": operation in self.FILE_WRITE_OPERATIONS and file_path is not None,
-                    "memory": self.track_memory
-                }
+                    "disk_space": operation in self.FILE_WRITE_OPERATIONS
+                    and file_path is not None,
+                    "memory": self.track_memory,
+                },
             },
-            policy_name=self.name
+            policy_name=self.name,
         )
 
     def start_operation(self, operation_id: str) -> None:
@@ -314,14 +355,14 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
             except (psutil.Error, OSError):
                 pass
 
-    def end_operation(self, operation_id: str) -> Dict[str, Any]:
+    def end_operation(self, operation_id: str) -> dict[str, Any]:
         """Mark the end of an operation and check resource usage."""
-        stats: Dict[str, Any] = {
+        stats: dict[str, Any] = {
             "operation_id": operation_id,
             "cpu_time": None,
             "memory_delta": None,
             "cpu_exceeded": False,
-            "memory_exceeded": False
+            "memory_exceeded": False,
         }
 
         # Calculate CPU time
@@ -345,7 +386,7 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
 
         return stats
 
-    def get_current_usage(self) -> Dict[str, Any]:
+    def get_current_usage(self) -> dict[str, Any]:
         """Get current system resource usage."""
         return _get_current_usage_helper()
 

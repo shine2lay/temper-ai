@@ -13,11 +13,15 @@ future lifecycle state machine implementation, testing:
 Future enhancement: Add explicit lifecycle states (pending, running, completed,
 failed, timeout, cancelled) to WorkflowDomainState or ExecutionContext.
 """
+
 from unittest.mock import Mock
 
 import pytest
 
-from temper_ai.workflow.domain_state import WorkflowDomainState, create_initial_domain_state
+from temper_ai.workflow.domain_state import (
+    WorkflowDomainState,
+    create_initial_domain_state,
+)
 from temper_ai.workflow.execution_engine import WorkflowCancelledError
 from temper_ai.workflow.langgraph_engine import LangGraphCompiledWorkflow
 
@@ -27,10 +31,7 @@ class TestWorkflowStateInitialization:
 
     def test_create_initial_state(self):
         """Test creating initial workflow state."""
-        state = create_initial_domain_state(
-            workflow_id="wf-001",
-            input="Test input"
-        )
+        state = create_initial_domain_state(workflow_id="wf-001", input="Test input")
 
         assert state.workflow_id == "wf-001"
         assert state.input == "Test input"
@@ -47,9 +48,7 @@ class TestWorkflowStateInitialization:
     def test_state_fields_initialization(self):
         """Test all state fields are properly initialized."""
         state = WorkflowDomainState(
-            workflow_id="wf-003",
-            topic="AI Safety",
-            depth="comprehensive"
+            workflow_id="wf-003", topic="AI Safety", depth="comprehensive"
         )
 
         assert state.workflow_id == "wf-003"
@@ -122,8 +121,7 @@ class TestWorkflowStateCancellation:
         workflow_config = {"workflow": {"stages": []}}
 
         compiled = LangGraphCompiledWorkflow(
-            graph=mock_graph,
-            workflow_config=workflow_config
+            graph=mock_graph, workflow_config=workflow_config
         )
 
         assert not compiled.is_cancelled()
@@ -138,8 +136,7 @@ class TestWorkflowStateCancellation:
         workflow_config = {"workflow": {"stages": []}}
 
         compiled = LangGraphCompiledWorkflow(
-            graph=mock_graph,
-            workflow_config=workflow_config
+            graph=mock_graph, workflow_config=workflow_config
         )
 
         compiled.cancel()
@@ -154,8 +151,7 @@ class TestWorkflowStateCancellation:
         workflow_config = {"workflow": {"stages": []}}
 
         compiled = LangGraphCompiledWorkflow(
-            graph=mock_graph,
-            workflow_config=workflow_config
+            graph=mock_graph, workflow_config=workflow_config
         )
 
         compiled.cancel()
@@ -169,8 +165,7 @@ class TestWorkflowStateCancellation:
         workflow_config = {"workflow": {"stages": []}}
 
         compiled = LangGraphCompiledWorkflow(
-            graph=mock_graph,
-            workflow_config=workflow_config
+            graph=mock_graph, workflow_config=workflow_config
         )
 
         compiled.cancel()
@@ -209,10 +204,7 @@ class TestWorkflowStateConsistency:
 
     def test_state_copy_preserves_data(self):
         """Test copying state preserves all data."""
-        original = WorkflowDomainState(
-            workflow_id="wf-008",
-            topic="AI"
-        )
+        original = WorkflowDomainState(workflow_id="wf-008", topic="AI")
         original.set_stage_output("stage1", {"data": "value"})
 
         copy = original.copy()
@@ -224,10 +216,7 @@ class TestWorkflowStateConsistency:
 
     def test_state_to_dict_round_trip(self):
         """Test state can be serialized and deserialized."""
-        original = WorkflowDomainState(
-            workflow_id="wf-009",
-            input="test input"
-        )
+        original = WorkflowDomainState(workflow_id="wf-009", input="test input")
         original.set_stage_output("stage1", {"result": "success"})
 
         # Serialize (domain only — WorkflowDomainState has no internal fields)

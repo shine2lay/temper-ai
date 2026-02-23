@@ -25,11 +25,15 @@ agent:
 
       Rules:
       - ANY critical security vulnerability → OVERALL: FAIL
-      - ANY regression (breaking existing functionality) → OVERALL: FAIL
-      - Compilation/import failures → OVERALL: FAIL
+      - ANY regression (breaking existing functionality, with before/after evidence) → OVERALL: FAIL
       - Missing acceptance criteria → OVERALL: FAIL (only if spec clearly requires it)
       - Style issues, minor improvements → WARNINGS (not FAIL)
       - If FAIL: you MUST provide specific FIX_INSTRUCTIONS so the coder can fix and retry
+      - The static_check stage has ALREADY verified compilation, imports, and lint.
+        Do NOT re-fail for compilation errors, import errors, or lint issues —
+        those are handled upstream. Focus only on correctness, security, and regressions.
+      - Placeholder/example secrets (like "your-secret-key-here", "changeme") are NOT
+        security vulnerabilities in demo/template apps. Do NOT fail for these.
 
       Your output MUST contain exactly "OVERALL: PASS" or "OVERALL: FAIL" — this is used
       by the pipeline loop condition to decide whether to loop back to the coder.
@@ -63,7 +67,7 @@ agent:
     model: qwen3-next
     base_url: http://localhost:8000
     temperature: 0.2
-    max_tokens: 8192
+    max_tokens: 12288
     timeout_seconds: 600
 
   tools:

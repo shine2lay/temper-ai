@@ -3,10 +3,9 @@
 Extracted to keep the policy class below 500 lines.
 These are internal implementation details and should not be used directly.
 """
-from typing import Any, Dict, Optional
 
-from temper_ai.shared.constants.durations import SECONDS_PER_HOUR, SECONDS_PER_MINUTE
-from temper_ai.shared.constants.limits import SMALL_ITEM_LIMIT
+from typing import Any
+
 from temper_ai.safety.constants import (
     FILL_PERCENTAGE_KEY,
     FORMAT_ONE_DECIMAL,
@@ -16,6 +15,8 @@ from temper_ai.safety.constants import (
 )
 from temper_ai.safety.interfaces import SafetyViolation, ViolationSeverity
 from temper_ai.safety.token_bucket import TokenBucketManager
+from temper_ai.shared.constants.durations import SECONDS_PER_HOUR, SECONDS_PER_MINUTE
+from temper_ai.shared.constants.limits import SMALL_ITEM_LIMIT
 
 # Severity threshold constants
 RATE_LIMIT_CRITICAL_THRESHOLD_SECONDS = SECONDS_PER_HOUR
@@ -44,10 +45,10 @@ def check_limit(
     entity_id: str,
     limit_type: str,
     action_type: str,
-    context: Dict[str, Any],
+    context: dict[str, Any],
     scope: str,
     policy_name: str,
-) -> tuple[bool, Optional[SafetyViolation]]:
+) -> tuple[bool, SafetyViolation | None]:
     """Check rate limit for entity and limit type.
 
     Returns tuple of (is_limited, violation).

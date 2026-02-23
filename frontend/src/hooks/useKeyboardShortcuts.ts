@@ -1,20 +1,26 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useExecutionStore } from '@/store/executionStore';
 
 interface ShortcutActions {
   onSwitchTab?: (tab: string) => void;
+  onShowHelp?: () => void;
 }
 
 export function useKeyboardShortcuts(actions: ShortcutActions = {}) {
   const clearSelection = useExecutionStore((s) => s.clearSelection);
   const selection = useExecutionStore((s) => s.selection);
 
+  // Keep a stable ref so the effect doesn't re-register on every render
+  const actionsRef = useRef(actions);
+  actionsRef.current = actions;
+
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       // Don't capture when typing in inputs
       if (
         e.target instanceof HTMLInputElement ||
-        e.target instanceof HTMLTextAreaElement
+        e.target instanceof HTMLTextAreaElement ||
+        (e.target instanceof HTMLElement && e.target.isContentEditable)
       ) {
         return;
       }
@@ -27,21 +33,24 @@ export function useKeyboardShortcuts(actions: ShortcutActions = {}) {
           }
           break;
         case '1':
-          actions.onSwitchTab?.('dag');
+          actionsRef.current.onSwitchTab?.('dag');
           break;
         case '2':
-          actions.onSwitchTab?.('timeline');
+          actionsRef.current.onSwitchTab?.('timeline');
           break;
         case '3':
-          actions.onSwitchTab?.('eventlog');
+          actionsRef.current.onSwitchTab?.('eventlog');
+          break;
+        case '4':
+          actionsRef.current.onSwitchTab?.('llmcalls');
           break;
         case '?':
-          console.info('Keyboard shortcuts: Esc=close panel, 1=DAG, 2=Timeline, 3=EventLog');
+          actionsRef.current.onShowHelp?.();
           break;
       }
     }
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selection, clearSelection, actions]);
+  }, [selection, clearSelection]);
 }

@@ -12,8 +12,15 @@ Tests weighted voting based on agent merit scores:
 import pytest
 
 from temper_ai.agent.strategies.base import AgentOutput, Conflict
-from temper_ai.agent.strategies.conflict_resolution import AgentMerit, Resolution, ResolutionContext
-from temper_ai.agent.strategies.merit_weighted import HumanEscalationResolver, MeritWeightedResolver
+from temper_ai.agent.strategies.conflict_resolution import (
+    AgentMerit,
+    Resolution,
+    ResolutionContext,
+)
+from temper_ai.agent.strategies.merit_weighted import (
+    HumanEscalationResolver,
+    MeritWeightedResolver,
+)
 
 
 class TestMeritWeightedResolver:
@@ -37,7 +44,7 @@ class TestMeritWeightedResolver:
             stage_name="test",
             workflow_name="test",
             workflow_config={},
-            previous_resolutions=[]
+            previous_resolutions=[],
         )
 
         resolution = resolver.resolve_with_context(conflict, context)
@@ -64,7 +71,7 @@ class TestMeritWeightedResolver:
             stage_name="test",
             workflow_name="test",
             workflow_config={},
-            previous_resolutions=[]
+            previous_resolutions=[],
         )
 
         resolution = resolver.resolve_with_context(conflict, context)
@@ -75,7 +82,9 @@ class TestMeritWeightedResolver:
 
     def test_auto_resolve_threshold(self):
         """Test auto-resolve when confidence high."""
-        resolver = MeritWeightedResolver({"auto_resolve_threshold": 0.8})  # Lower threshold
+        resolver = MeritWeightedResolver(
+            {"auto_resolve_threshold": 0.8}
+        )  # Lower threshold
 
         # 3 high-merit agents agree (merit 0.9 * confidence 0.95 = 0.855 per agent)
         merit = AgentMerit("a", 0.95, 0.95, 0.95, "expert")
@@ -87,12 +96,12 @@ class TestMeritWeightedResolver:
 
         conflict = Conflict(list(outputs.keys()), ["Option A"], 0.0, {})
         context = ResolutionContext(
-            agent_merits={k: merit for k in outputs.keys()},
+            agent_merits=dict.fromkeys(outputs.keys(), merit),
             agent_outputs=outputs,
             stage_name="test",
             workflow_name="test",
             workflow_config={},
-            previous_resolutions=[]
+            previous_resolutions=[],
         )
 
         resolution = resolver.resolve_with_context(conflict, context)
@@ -107,24 +116,25 @@ class TestMeritWeightedResolver:
 
         # 3 agents, all disagree, low confidence
         merits = {
-            f"a{i}": AgentMerit(f"a{i}", 0.5, 0.5, 0.5, "novice")
-            for i in range(3)
+            f"a{i}": AgentMerit(f"a{i}", 0.5, 0.5, 0.5, "novice") for i in range(3)
         }
 
         outputs = {
             "a0": AgentOutput("a0", "Option A", "reason", 0.6, {}),
             "a1": AgentOutput("a1", "Option B", "reason", 0.6, {}),
-            "a2": AgentOutput("a2", "Option C", "reason", 0.6, {})
+            "a2": AgentOutput("a2", "Option C", "reason", 0.6, {}),
         }
 
-        conflict = Conflict(list(outputs.keys()), ["Option A", "Option B", "Option C"], 0.8, {})
+        conflict = Conflict(
+            list(outputs.keys()), ["Option A", "Option B", "Option C"], 0.8, {}
+        )
         context = ResolutionContext(
             agent_merits=merits,
             agent_outputs=outputs,
             stage_name="test",
             workflow_name="test",
             workflow_config={},
-            previous_resolutions=[]
+            previous_resolutions=[],
         )
 
         resolution = resolver.resolve_with_context(conflict, context)
@@ -149,7 +159,7 @@ class TestMeritWeightedResolver:
             stage_name="test",
             workflow_name="test",
             workflow_config={},
-            previous_resolutions=[]
+            previous_resolutions=[],
         )
 
         # Should handle gracefully (use default merit for agent b)
@@ -167,7 +177,7 @@ class TestMeritWeightedResolver:
             stage_name="test",
             workflow_name="test",
             workflow_config={},
-            previous_resolutions=[]
+            previous_resolutions=[],
         )
 
         # Should raise RuntimeError
@@ -199,7 +209,7 @@ class TestMeritWeightedResolver:
 
         outputs = [
             AgentOutput("a1", "yes", "r1", 0.9, {}),
-            AgentOutput("a2", "no", "r2", 0.8, {})
+            AgentOutput("a2", "no", "r2", 0.8, {}),
         ]
 
         conflict = Conflict(["a1", "a2"], ["yes", "no"], 1.0, {})
@@ -224,17 +234,19 @@ class TestMeritWeightedResolver:
         outputs = {
             "high": AgentOutput("high", "Option A", "reason", 0.9, {}),
             "med": AgentOutput("med", "Option B", "reason", 0.8, {}),
-            "low": AgentOutput("low", "Option C", "reason", 0.7, {})
+            "low": AgentOutput("low", "Option C", "reason", 0.7, {}),
         }
 
-        conflict = Conflict(list(outputs.keys()), ["Option A", "Option B", "Option C"], 0.7, {})
+        conflict = Conflict(
+            list(outputs.keys()), ["Option A", "Option B", "Option C"], 0.7, {}
+        )
         context = ResolutionContext(
             agent_merits={"high": merit_high, "med": merit_med, "low": merit_low},
             agent_outputs=outputs,
             stage_name="test",
             workflow_name="test",
             workflow_config={},
-            previous_resolutions=[]
+            previous_resolutions=[],
         )
 
         resolution = resolver.resolve_with_context(conflict, context)
@@ -249,7 +261,7 @@ class TestMeritWeightedResolver:
         custom_weights = {
             "domain_merit": 0.2,
             "overall_merit": 0.2,
-            "recent_performance": 0.6
+            "recent_performance": 0.6,
         }
         resolver = MeritWeightedResolver({"merit_weights": custom_weights})
 
@@ -260,7 +272,7 @@ class TestMeritWeightedResolver:
 
         outputs = {
             "recent": AgentOutput("recent", "Option A", "reason", 0.9, {}),
-            "domain": AgentOutput("domain", "Option B", "reason", 0.9, {})
+            "domain": AgentOutput("domain", "Option B", "reason", 0.9, {}),
         }
 
         conflict = Conflict(list(outputs.keys()), ["Option A", "Option B"], 0.5, {})
@@ -270,7 +282,7 @@ class TestMeritWeightedResolver:
             stage_name="test",
             workflow_name="test",
             workflow_config={},
-            previous_resolutions=[]
+            previous_resolutions=[],
         )
 
         resolution = resolver.resolve_with_context(conflict, context)
@@ -287,7 +299,7 @@ class TestMeritWeightedResolver:
 
         outputs = {
             "a": AgentOutput("a", "Option A", "reason", 0.9, {}),
-            "b": AgentOutput("b", "Option B", "reason", 0.8, {})
+            "b": AgentOutput("b", "Option B", "reason", 0.8, {}),
         }
 
         conflict = Conflict(list(outputs.keys()), ["Option A", "Option B"], 0.5, {})
@@ -297,7 +309,7 @@ class TestMeritWeightedResolver:
             stage_name="test",
             workflow_name="test",
             workflow_config={},
-            previous_resolutions=[]
+            previous_resolutions=[],
         )
 
         resolution = resolver.resolve_with_context(conflict, context)
@@ -315,17 +327,17 @@ class TestMeritWeightedResolver:
 
         outputs = {
             "a0": AgentOutput("a0", "Option A", "reason", 0.9, {}),
-            "a1": AgentOutput("a1", "Option A", "reason", 0.85, {})
+            "a1": AgentOutput("a1", "Option A", "reason", 0.85, {}),
         }
 
         conflict = Conflict(list(outputs.keys()), ["Option A"], 0.0, {})
         context = ResolutionContext(
-            agent_merits={k: merit for k in outputs.keys()},
+            agent_merits=dict.fromkeys(outputs.keys(), merit),
             agent_outputs=outputs,
             stage_name="test",
             workflow_name="test",
             workflow_config={},
-            previous_resolutions=[]
+            previous_resolutions=[],
         )
 
         resolution = resolver.resolve_with_context(conflict, context)
@@ -338,9 +350,7 @@ class TestMeritWeightedResolver:
         """Test that missing agent_merits raises ValueError."""
         resolver = MeritWeightedResolver()
 
-        outputs = {
-            "a": AgentOutput("a", "Option A", "reason", 0.9, {})
-        }
+        outputs = {"a": AgentOutput("a", "Option A", "reason", 0.9, {})}
 
         conflict = Conflict(["a"], ["Option A"], 0.0, {})
         context = ResolutionContext(
@@ -349,7 +359,7 @@ class TestMeritWeightedResolver:
             stage_name="test",
             workflow_name="test",
             workflow_config={},
-            previous_resolutions=[]
+            previous_resolutions=[],
         )
 
         with pytest.raises(ValueError, match="Context must have agent merits"):
@@ -380,7 +390,9 @@ class TestAgentMerit:
             AgentMerit("a", 0.8, -0.1, 0.8, "expert")
 
         # Out of range recent_performance
-        with pytest.raises(ValueError, match="recent_performance must be between 0 and 1"):
+        with pytest.raises(
+            ValueError, match="recent_performance must be between 0 and 1"
+        ):
             AgentMerit("a", 0.8, 0.8, 2.0, "expert")
 
     def test_calculate_weight_default(self):
@@ -400,7 +412,7 @@ class TestAgentMerit:
         custom_weights = {
             "domain_merit": 0.5,
             "overall_merit": 0.3,
-            "recent_performance": 0.2
+            "recent_performance": 0.2,
         }
 
         weight = merit.calculate_weight(custom_weights)
@@ -423,7 +435,7 @@ class TestResolutionContext:
             stage_name="research",
             workflow_name="mvp",
             workflow_config={"timeout": 30},
-            previous_resolutions=[]
+            previous_resolutions=[],
         )
 
         assert "a" in context.agent_merits
@@ -444,7 +456,7 @@ class TestResolution:
             confidence=0.88,
             method="merit_weighted_auto",
             winning_agents=["expert"],
-            metadata={"scores": {"A": 0.9}}
+            metadata={"scores": {"A": 0.9}},
         )
 
         assert resolution.decision == "Option A"
@@ -461,7 +473,7 @@ class TestResolution:
                 reasoning="reason",
                 confidence=1.5,
                 method="test",
-                winning_agents=[]
+                winning_agents=[],
             )
 
 
@@ -479,7 +491,7 @@ class TestHumanEscalationResolver:
             stage_name="test",
             workflow_name="test",
             workflow_config={},
-            previous_resolutions=[]
+            previous_resolutions=[],
         )
 
         with pytest.raises(RuntimeError) as exc_info:

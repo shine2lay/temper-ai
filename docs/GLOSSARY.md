@@ -366,5 +366,5 @@ The framework uses "policy" in the context of safety and governance.
 
 - [API Reference](./API_REFERENCE.md) - Complete API documentation
 - [Configuration Guide](./CONFIGURATION.md) - Configuration details
-- [Architecture Overview](./ROADMAP.md) - System architecture
+- [Architecture](./architecture/) - System architecture
 - [Contributing Guide](./CONTRIBUTING.md) - Contribution guidelines

@@ -1,7 +1,7 @@
 """Pydantic schemas for portfolio management."""
 
 from enum import Enum
-from typing import Any, Dict, List
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -28,8 +28,8 @@ class ProductDefinition(BaseModel):
     weight: float = DEFAULT_PRODUCT_WEIGHT
     max_concurrent: int = DEFAULT_MAX_CONCURRENT_PER_PRODUCT
     budget_limit_usd: float = 0.0  # 0 = unlimited
-    workflow_configs: List[str] = Field(default_factory=list)
-    tags: List[str] = Field(default_factory=list)
+    workflow_configs: list[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
 
 
 class PortfolioConfig(BaseModel):
@@ -37,7 +37,7 @@ class PortfolioConfig(BaseModel):
 
     name: str
     description: str = ""
-    products: List[ProductDefinition] = Field(default_factory=list)
+    products: list[ProductDefinition] = Field(default_factory=list)
     strategy: AllocationStrategy = AllocationStrategy.WEIGHTED
     total_budget_usd: float = 0.0  # 0 = unlimited
     max_total_concurrent: int = DEFAULT_MAX_TOTAL_CONCURRENT
@@ -60,8 +60,8 @@ class ComponentMatch(BaseModel):
     source_stage: str
     target_stage: str
     similarity: float = 0.0
-    shared_keys: List[str] = Field(default_factory=list)
-    differing_keys: List[str] = Field(default_factory=list)
+    shared_keys: list[str] = Field(default_factory=list)
+    differing_keys: list[str] = Field(default_factory=list)
 
 
 class ProductScorecard(BaseModel):
@@ -131,8 +131,8 @@ class PortfolioSummary(BaseModel):
     product_count: int = 0
     total_runs: int = 0
     strategy: str = ""
-    allocations: List[AllocationStatus] = Field(default_factory=list)
-    scorecards: List[ProductScorecard] = Field(default_factory=list)
-    recommendations: List[PortfolioRecommendation] = Field(default_factory=list)
-    shared_components: List[ComponentMatch] = Field(default_factory=list)
-    graph_stats: Dict[str, Any] = Field(default_factory=dict)
+    allocations: list[AllocationStatus] = Field(default_factory=list)
+    scorecards: list[ProductScorecard] = Field(default_factory=list)
+    recommendations: list[PortfolioRecommendation] = Field(default_factory=list)
+    shared_components: list[ComponentMatch] = Field(default_factory=list)
+    graph_stats: dict[str, Any] = Field(default_factory=dict)

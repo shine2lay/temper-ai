@@ -1,9 +1,11 @@
 """FastAPI application factory for the dashboard and server."""
+
 import logging
 import os
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, AsyncIterator
+from typing import Any
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -71,8 +73,10 @@ def _configure_cors(app: FastAPI, mode: str) -> None:
                 CORSMiddleware,
                 allow_origins=cors_origins,
                 allow_methods=["GET", "POST"],
-                allow_headers=["Content-Type"],
+                allow_headers=["Content-Type", "Authorization"],
             )
+        # If TEMPER_CORS_ORIGINS is unset, no CORSMiddleware is added.
+        # The browser's same-origin policy blocks cross-origin requests by default.
     else:
         # Dev mode: restrict to localhost only (blocks cross-origin from external sites)
         app.add_middleware(
@@ -81,6 +85,29 @@ def _configure_cors(app: FastAPI, mode: str) -> None:
             allow_methods=["*"],
             allow_headers=["*"],
         )
+
+
+class _SecurityHeadersMiddleware:
+    """ASGI middleware: adds security headers to all HTTP responses."""
+
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        async def send_with_headers(message: Any) -> None:
+            """Inject security headers into HTTP response start messages."""
+            if message["type"] == "http.response.start":
+                headers = MutableHeaders(scope=message)
+                headers.append("X-Content-Type-Options", "nosniff")
+                headers.append("X-Frame-Options", "DENY")
+                headers.append("Referrer-Policy", "strict-origin-when-cross-origin")
+            await send(message)
+
+        await self.app(scope, receive, send_with_headers)
 
 
 def _register_routes(
@@ -92,9 +119,12 @@ def _register_routes(
     auth_enabled: bool = False,
 ) -> None:
     """Register API routes and WebSocket endpoints."""
-    _register_core_routes(app, execution_service, data_service, config_root, auth_enabled=auth_enabled)
+    _register_core_routes(
+        app, execution_service, data_service, config_root, auth_enabled=auth_enabled
+    )
     _register_data_api_routes(app, data_service, auth_enabled=auth_enabled)
     _register_studio_routes(app, config_root, auth_enabled=auth_enabled)
+    _register_management_routes(app, config_root, auth_enabled=auth_enabled)
 
     _register_dashboard_extras(app, data_service, config_root)
 
@@ -113,7 +143,9 @@ def _register_core_routes(
     from temper_ai.interfaces.server.routes import create_server_router
 
     app.include_router(
-        create_server_router(execution_service, data_service, config_root, auth_enabled=auth_enabled),
+        create_server_router(
+            execution_service, data_service, config_root, auth_enabled=auth_enabled
+        ),
         prefix=_API_PREFIX,
     )
 
@@ -121,27 +153,93 @@ def _register_core_routes(
     app.add_api_websocket_route("/ws/{workflow_id}", ws_handler)
 
 
-def _register_data_api_routes(app: FastAPI, data_service: Any, auth_enabled: bool = False) -> None:
+def _register_data_api_routes(
+    app: FastAPI, data_service: Any, auth_enabled: bool = False
+) -> None:
     """Register data query routes (workflows, stages, agents, llm/tool calls).
 
     Available in ALL modes so the React frontend can fetch data.
     """
     from temper_ai.interfaces.dashboard.routes import create_router
 
-    app.include_router(create_router(data_service, auth_enabled=auth_enabled), prefix=_API_PREFIX)
+    app.include_router(
+        create_router(data_service, auth_enabled=auth_enabled), prefix=_API_PREFIX
+    )
 
 
-def _register_studio_routes(app: FastAPI, config_root: str, auth_enabled: bool = False) -> None:
+def _register_studio_routes(
+    app: FastAPI, config_root: str, auth_enabled: bool = False
+) -> None:
     """Register Studio config CRUD routes (all modes)."""
     from temper_ai.interfaces.dashboard.studio_routes import create_studio_router
     from temper_ai.interfaces.dashboard.studio_service import StudioService
 
     studio_service = StudioService(config_root=config_root, use_db=auth_enabled)
-    app.include_router(create_studio_router(studio_service, auth_enabled=auth_enabled), prefix="/api/studio")
+    app.include_router(
+        create_studio_router(studio_service, auth_enabled=auth_enabled),
+        prefix="/api/studio",
+    )
+
+
+def _register_management_routes(
+    app: FastAPI, config_root: str, auth_enabled: bool = False
+) -> None:
+    """Register management API routes (checkpoints, events, memory, etc.).
+
+    Uses lazy importlib to keep import fan-out minimal. Each route module
+    follows the ``create_*_router(auth_enabled)`` factory convention.
+    """
+    import importlib
+
+    _MANAGEMENT_ROUTES: list[tuple[str, str, str]] = [
+        (
+            "temper_ai.interfaces.server.checkpoint_routes",
+            "create_checkpoint_router",
+            "Checkpoint",
+        ),
+        ("temper_ai.interfaces.server.event_routes", "create_event_router", "Event"),
+        ("temper_ai.interfaces.server.memory_routes", "create_memory_router", "Memory"),
+        (
+            "temper_ai.interfaces.server.optimization_routes",
+            "create_optimization_router",
+            "Optimization",
+        ),
+        ("temper_ai.interfaces.server.plugin_routes", "create_plugin_router", "Plugin"),
+        (
+            "temper_ai.interfaces.server.rollback_routes",
+            "create_rollback_router",
+            "Rollback",
+        ),
+        (
+            "temper_ai.interfaces.server.template_routes",
+            "create_template_router",
+            "Template",
+        ),
+        (
+            "temper_ai.interfaces.server.visualize_routes",
+            "create_visualize_router",
+            "Visualize",
+        ),
+        (
+            "temper_ai.interfaces.server.scaffold_routes",
+            "create_scaffold_router",
+            "Scaffold",
+        ),
+        ("temper_ai.interfaces.server.chat_routes", "create_chat_router", "Chat"),
+    ]
+    for module_path, factory_name, label in _MANAGEMENT_ROUTES:
+        try:
+            mod = importlib.import_module(module_path)
+            factory = getattr(mod, factory_name)
+            app.include_router(factory(auth_enabled=auth_enabled))
+        except Exception:  # noqa: BLE001
+            logger.warning("%s routes not available", label)
 
 
 def _register_dashboard_extras(
-    app: FastAPI, data_service: Any, config_root: str,
+    app: FastAPI,
+    data_service: Any,
+    config_root: str,
 ) -> None:
     """Register dashboard-only routes (learning, goals, portfolio)."""
     _register_optional_routes(app, config_root)
@@ -185,12 +283,14 @@ def _register_auth_routes(app: FastAPI) -> None:
     """Register auth and config management routes (server mode only)."""
     try:
         from temper_ai.interfaces.server.auth_routes import create_auth_router
+
         app.include_router(create_auth_router())
     except ImportError:
         logger.warning("Auth routes not available")
 
     try:
         from temper_ai.interfaces.server.config_routes import create_config_router
+
         app.include_router(create_config_router())
     except ImportError:
         logger.warning("Config routes not available")
@@ -228,8 +328,10 @@ def _register_optional_routes(app: FastAPI, config_root: str) -> None:
             logger.warning("%s routes not available", label)
 
     try:
+        from temper_ai.experimentation.dashboard_routes import (
+            create_experimentation_router,
+        )
         from temper_ai.experimentation.dashboard_service import ExperimentDataService
-        from temper_ai.experimentation.dashboard_routes import create_experimentation_router
 
         exp_svc = ExperimentDataService()
         app.include_router(create_experimentation_router(exp_svc), prefix=_API_PREFIX)
@@ -238,6 +340,7 @@ def _register_optional_routes(app: FastAPI, config_root: str) -> None:
 
     try:
         from temper_ai.interfaces.server.agent_routes import router as agent_router
+
         app.include_router(agent_router)
     except Exception:  # noqa: BLE001
         logger.warning("Agent registry routes not available")
@@ -247,7 +350,11 @@ _SUBMOD_STORE = "store"
 _SUBMOD_SVC = "dashboard_service"
 
 _DOMAIN_REGISTRY = {
-    "temper_ai.learning": ("LearningStore", "LearningDataService", "create_learning_router"),
+    "temper_ai.learning": (
+        "LearningStore",
+        "LearningDataService",
+        "create_learning_router",
+    ),
     "temper_ai.goals": ("GoalStore", "GoalDataService", "create_goals_router"),
     "temper_ai.portfolio": ("PortfolioStore", None, "create_portfolio_router"),
 }
@@ -348,14 +455,19 @@ def create_app(
         Configured FastAPI application.
     """
     from temper_ai.interfaces.dashboard.data_service import DashboardDataService
-    from temper_ai.interfaces.dashboard.execution_service import WorkflowExecutionService
+    from temper_ai.interfaces.dashboard.execution_service import (
+        WorkflowExecutionService,
+    )
 
     title = "Temper AI Server" if mode == "server" else "Temper AI (Dev)"
     shutdown_mgr, run_store, _mining_job, _analysis_job = _init_server_components(mode)
 
     execution_service = WorkflowExecutionService(
-        backend=backend, event_bus=event_bus, config_root=config_root,
-        max_workers=max_workers, run_store=run_store,
+        backend=backend,
+        event_bus=event_bus,
+        config_root=config_root,
+        max_workers=max_workers,
+        run_store=run_store,
     )
 
     # Two-phase init: inject execution_service into event bus for cross-workflow triggers
@@ -386,10 +498,18 @@ def create_app(
         app.state.shutdown_manager = shutdown_mgr
 
     _configure_cors(app, mode)
+    app.add_middleware(_SecurityHeadersMiddleware)
     auth_enabled = mode == "server"
 
     data_service = DashboardDataService(backend=backend, event_bus=event_bus)
-    _register_routes(app, execution_service, data_service, config_root, mode, auth_enabled=auth_enabled)
+    _register_routes(
+        app,
+        execution_service,
+        data_service,
+        config_root,
+        mode,
+        auth_enabled=auth_enabled,
+    )
 
     if auth_enabled:
         _register_auth_routes(app)

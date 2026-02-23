@@ -7,16 +7,16 @@ writing to pluggable observability backends (SQL, Prometheus, S3, etc.).
 
 import logging
 import uuid
-from contextlib import asynccontextmanager as _asynccontextmanager, contextmanager
+from collections.abc import AsyncGenerator, Generator
+from contextlib import asynccontextmanager as _asynccontextmanager
+from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, AsyncGenerator, Dict, Generator, List, Optional
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from temper_ai.observability.metric_aggregator import AgentOutputParams
 
-from temper_ai.shared.core.context import ExecutionContext, current_execution_context
-from temper_ai.storage.database.datetime_utils import utcnow
 from temper_ai.observability._tracker_helpers import (
     AgentStartParams,
     DecisionTrackingData,
@@ -30,6 +30,9 @@ from temper_ai.observability._tracker_helpers import (
     build_extra_metadata as _build_extra_metadata,
 )
 from temper_ai.observability._tracker_helpers import (
+    build_stage_start_data as _build_stage_start_data,
+)
+from temper_ai.observability._tracker_helpers import (
     handle_agent_error as _handle_agent_error,
 )
 from temper_ai.observability._tracker_helpers import (
@@ -37,9 +40,6 @@ from temper_ai.observability._tracker_helpers import (
 )
 from temper_ai.observability._tracker_helpers import (
     handle_stage_error as _handle_stage_error,
-)
-from temper_ai.observability._tracker_helpers import (
-    build_stage_start_data as _build_stage_start_data,
 )
 from temper_ai.observability._tracker_helpers import (
     handle_stage_success as _handle_stage_success,
@@ -69,7 +69,9 @@ from temper_ai.observability.decision_tracker import DecisionTracker
 from temper_ai.observability.event_bus import ObservabilityEvent, ObservabilityEventBus
 from temper_ai.observability.metric_aggregator import MetricAggregator
 from temper_ai.observability.sanitization import DataSanitizer, SanitizationConfig
+from temper_ai.shared.core.context import ExecutionContext, current_execution_context
 from temper_ai.shared.utils.config_helpers import sanitize_config_for_display
+from temper_ai.storage.database.datetime_utils import utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -86,22 +88,22 @@ class WorkflowTrackingParams:
     """Parameters for tracking workflow execution."""
 
     workflow_name: str
-    workflow_config: Dict[str, Any]
-    trigger_type: Optional[str] = None
-    trigger_data: Optional[Dict[str, Any]] = None
-    optimization_target: Optional[str] = None
-    product_type: Optional[str] = None
-    environment: Optional[str] = "development"
-    tags: Optional[List[str]] = None
-    experiment_id: Optional[str] = None
-    variant_id: Optional[str] = None
-    assignment_strategy: Optional[str] = None
-    assignment_context: Optional[Dict[str, Any]] = None
-    custom_metrics: Optional[Dict[str, Any]] = None
-    cost_attribution_tags: Optional[Dict[str, str]] = None
+    workflow_config: dict[str, Any]
+    trigger_type: str | None = None
+    trigger_data: dict[str, Any] | None = None
+    optimization_target: str | None = None
+    product_type: str | None = None
+    environment: str | None = "development"
+    tags: list[str] | None = None
+    experiment_id: str | None = None
+    variant_id: str | None = None
+    assignment_strategy: str | None = None
+    assignment_context: dict[str, Any] | None = None
+    custom_metrics: dict[str, Any] | None = None
+    cost_attribution_tags: dict[str, str] | None = None
 
 
-# Helper functions for backward compatibility
+# Argument-resolution helpers (support both dataclass and kwargs calling conventions)
 def _resolve_workflow_params(
     workflow_name_or_params: Any = None, workflow_config: Any = None, **kwargs: Any
 ) -> WorkflowTrackingParams:
@@ -115,12 +117,18 @@ def _resolve_workflow_params(
         else kwargs.pop("workflow_name", "")
     )
     wf_config = (
-        workflow_config if workflow_config is not None else kwargs.pop("workflow_config", {})
+        workflow_config
+        if workflow_config is not None
+        else kwargs.pop("workflow_config", {})
     )
-    return WorkflowTrackingParams(workflow_name=wf_name, workflow_config=wf_config, **kwargs)
+    return WorkflowTrackingParams(
+        workflow_name=wf_name, workflow_config=wf_config, **kwargs
+    )
 
 
-def _resolve_llm_data(data_or_agent_id: Any = None, **kwargs: Any) -> LLMCallTrackingData:
+def _resolve_llm_data(
+    data_or_agent_id: Any = None, **kwargs: Any
+) -> LLMCallTrackingData:
     """Resolve LLM call tracking data from old or new calling conventions.
 
     Accepts either a LLMCallTrackingData directly, or keyword arguments
@@ -135,7 +143,9 @@ def _resolve_llm_data(data_or_agent_id: Any = None, **kwargs: Any) -> LLMCallTra
     return LLMCallTrackingData(**kwargs)
 
 
-def _resolve_tool_data(data_or_agent_id: Any = None, **kwargs: Any) -> ToolCallTrackingData:
+def _resolve_tool_data(
+    data_or_agent_id: Any = None, **kwargs: Any
+) -> ToolCallTrackingData:
     """Resolve tool call tracking data from old or new calling conventions.
 
     Accepts either a ToolCallTrackingData directly, or keyword arguments
@@ -154,7 +164,7 @@ def _record_perf_best_effort(
     perf_tracker: Any,
     operation: str,
     start_time: Any,
-    context: Dict[str, Any],
+    context: dict[str, Any],
 ) -> None:
     """Record performance metric. Best-effort: never raises."""
     try:
@@ -180,7 +190,10 @@ def _start_workflow_tracking(
         start_time=start_time,
         data=start_data,
     )
-    emit_fn(_EVENT_WORKFLOW_START, _workflow_start_event_data(workflow_id, params, start_time))
+    emit_fn(
+        _EVENT_WORKFLOW_START,
+        _workflow_start_event_data(workflow_id, params, start_time),
+    )
 
 
 async def _astart_workflow_tracking(
@@ -199,7 +212,10 @@ async def _astart_workflow_tracking(
         start_time=start_time,
         data=start_data,
     )
-    emit_fn(_EVENT_WORKFLOW_START, _workflow_start_event_data(workflow_id, params, start_time))
+    emit_fn(
+        _EVENT_WORKFLOW_START,
+        _workflow_start_event_data(workflow_id, params, start_time),
+    )
 
 
 def _prepare_workflow_start(params: WorkflowTrackingParams) -> tuple:
@@ -231,9 +247,9 @@ def _workflow_start_event_data(
     workflow_id: str,
     params: WorkflowTrackingParams,
     start_time: Any,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Build event data dict for workflow start emission."""
-    data: Dict[str, Any] = {
+    data: dict[str, Any] = {
         ObservabilityFields.WORKFLOW_ID: workflow_id,
         "workflow_name": params.workflow_name,
         ObservabilityFields.START_TIME: start_time.isoformat(),
@@ -280,7 +296,7 @@ class _TrackerAsyncMixin:
         backend: ObservabilityBackend
         alert_manager: Any
         sanitizer: Any
-        _event_bus: Optional[ObservabilityEventBus]
+        _event_bus: ObservabilityEventBus | None
         _sampling_strategy: Any
         _performance_tracker: Any
 
@@ -290,12 +306,12 @@ class _TrackerAsyncMixin:
             ...
 
         @property
-        def _session_stack(self) -> List[Any]: ...
+        def _session_stack(self) -> list[Any]: ...
 
-        def _emit_event(self, event_type: str, data: Dict[str, Any]) -> None: ...
+        def _emit_event(self, event_type: str, data: dict[str, Any]) -> None: ...
         def _collect_agent_metrics(self, agent_id: str) -> None: ...
         def _get_stack_trace(self) -> str: ...
-        def _sanitize_dict(self, data: Dict[str, Any]) -> Dict[str, Any]: ...
+        def _sanitize_dict(self, data: dict[str, Any]) -> dict[str, Any]: ...
 
     @_asynccontextmanager
     async def _aensure_session(self) -> AsyncGenerator[None, None]:
@@ -312,10 +328,15 @@ class _TrackerAsyncMixin:
 
     @_asynccontextmanager
     async def atrack_workflow(
-        self, workflow_name_or_params: Any = None, workflow_config: Any = None, **kwargs: Any
+        self,
+        workflow_name_or_params: Any = None,
+        workflow_config: Any = None,
+        **kwargs: Any,
     ) -> AsyncGenerator[str, None]:
         """Async version of track_workflow."""
-        params = _resolve_workflow_params(workflow_name_or_params, workflow_config, **kwargs)
+        params = _resolve_workflow_params(
+            workflow_name_or_params, workflow_config, **kwargs
+        )
         workflow_id = f"wf-{uuid.uuid4()}"
         self.context.workflow_id = workflow_id
         start_time = utcnow()
@@ -368,9 +389,9 @@ class _TrackerAsyncMixin:
     async def atrack_stage(
         self,
         stage_name: str,
-        stage_config: Dict[str, Any],
+        stage_config: dict[str, Any],
         workflow_id: str,
-        input_data: Optional[Dict[str, Any]] = None,
+        input_data: dict[str, Any] | None = None,
     ) -> AsyncGenerator[str, None]:
         """Async version of track_stage."""
         stage_id = str(uuid.uuid4())
@@ -390,8 +411,11 @@ class _TrackerAsyncMixin:
             self._emit_event(
                 _EVENT_STAGE_START,
                 _build_stage_start_data(
-                    stage_id, workflow_id, stage_name,
-                    sanitized_config, start_time,
+                    stage_id,
+                    workflow_id,
+                    stage_name,
+                    sanitized_config,
+                    start_time,
                 ),
             )
             try:
@@ -420,9 +444,9 @@ class _TrackerAsyncMixin:
     async def atrack_agent(
         self,
         agent_name: str,
-        agent_config: Dict[str, Any],
+        agent_config: dict[str, Any],
         stage_id: str,
-        input_data: Optional[Dict[str, Any]] = None,
+        input_data: dict[str, Any] | None = None,
     ) -> AsyncGenerator[str, None]:
         """Async version of track_agent."""
         self.context.agent_id = agent_id = str(uuid.uuid4())
@@ -494,7 +518,9 @@ class _TrackerAsyncMixin:
             event_bus=self._event_bus,
         )
 
-    async def atrack_tool_call(self, data_or_agent_id: Any = None, **kwargs: Any) -> str:
+    async def atrack_tool_call(
+        self, data_or_agent_id: Any = None, **kwargs: Any
+    ) -> str:
         """Async version of track_tool_call.
 
         Args:
@@ -525,16 +551,16 @@ class ExecutionTracker(_TrackerAsyncMixin, TrackerCollaborationMixin):
 
     def __init__(
         self,
-        backend: Optional[ObservabilityBackend] = None,
-        sanitization_config: Optional[SanitizationConfig] = None,
-        metric_registry: Optional[Any] = None,
-        alert_manager: Optional[Any] = None,
-        event_bus: Optional[ObservabilityEventBus] = None,
-        sampling_strategy: Optional[Any] = None,
+        backend: ObservabilityBackend | None = None,
+        sanitization_config: SanitizationConfig | None = None,
+        metric_registry: Any | None = None,
+        alert_manager: Any | None = None,
+        event_bus: ObservabilityEventBus | None = None,
+        sampling_strategy: Any | None = None,
     ):
         """Initialize execution tracker."""
         self._context_var = current_execution_context
-        self._session_stack_var: ContextVar[List[Any]] = ContextVar(
+        self._session_stack_var: ContextVar[list[Any]] = ContextVar(
             "session_stack", default=None  # type: ignore[arg-type]
         )
         self._sampling_strategy = sampling_strategy
@@ -568,7 +594,9 @@ class ExecutionTracker(_TrackerAsyncMixin, TrackerCollaborationMixin):
         )
 
         # Wrapper for CollaborationEventTracker's expected signature
-        def sanitize_dict_optional(data: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        def sanitize_dict_optional(
+            data: dict[str, Any] | None,
+        ) -> dict[str, Any] | None:
             """Wrapper that sanitizes dict or returns None if data is None."""
             if data is None:
                 return None
@@ -605,7 +633,7 @@ class ExecutionTracker(_TrackerAsyncMixin, TrackerCollaborationMixin):
         self._context_var.set(value)
 
     @property
-    def _session_stack(self) -> List[Any]:
+    def _session_stack(self) -> list[Any]:
         """Per-task/thread session stack (ContextVar-backed)."""
         stack = self._session_stack_var.get(None)
         if stack is None:
@@ -616,7 +644,7 @@ class ExecutionTracker(_TrackerAsyncMixin, TrackerCollaborationMixin):
     def _collect_agent_metrics(self, agent_id: str) -> None:
         self._metric_aggregator.collect_agent_metrics(agent_id)
 
-    def _emit_event(self, event_type: str, data: Dict[str, Any]) -> None:
+    def _emit_event(self, event_type: str, data: dict[str, Any]) -> None:
         """Emit an event if event bus is configured."""
         if self._event_bus is None:
             return
@@ -632,7 +660,10 @@ class ExecutionTracker(_TrackerAsyncMixin, TrackerCollaborationMixin):
 
     @contextmanager
     def track_workflow(
-        self, workflow_name_or_params: Any = None, workflow_config: Any = None, **kwargs: Any
+        self,
+        workflow_name_or_params: Any = None,
+        workflow_config: Any = None,
+        **kwargs: Any,
     ) -> Generator[str, None, None]:
         """Track workflow execution.
 
@@ -644,7 +675,9 @@ class ExecutionTracker(_TrackerAsyncMixin, TrackerCollaborationMixin):
         Yields:
             workflow_id: The generated workflow execution ID
         """
-        params = _resolve_workflow_params(workflow_name_or_params, workflow_config, **kwargs)
+        params = _resolve_workflow_params(
+            workflow_name_or_params, workflow_config, **kwargs
+        )
         workflow_id = f"wf-{uuid.uuid4()}"
         self.context.workflow_id = workflow_id
 
@@ -716,9 +749,9 @@ class ExecutionTracker(_TrackerAsyncMixin, TrackerCollaborationMixin):
     def track_stage(
         self,
         stage_name: str,
-        stage_config: Dict[str, Any],
+        stage_config: dict[str, Any],
         workflow_id: str,
-        input_data: Optional[Dict[str, Any]] = None,
+        input_data: dict[str, Any] | None = None,
     ) -> Generator[str, None, None]:
         """Track stage execution."""
         stage_id = str(uuid.uuid4())
@@ -738,8 +771,11 @@ class ExecutionTracker(_TrackerAsyncMixin, TrackerCollaborationMixin):
             self._emit_event(
                 _EVENT_STAGE_START,
                 _build_stage_start_data(
-                    stage_id, workflow_id, stage_name,
-                    sanitized_config, start_time,
+                    stage_id,
+                    workflow_id,
+                    stage_name,
+                    sanitized_config,
+                    start_time,
                 ),
             )
             try:
@@ -768,9 +804,9 @@ class ExecutionTracker(_TrackerAsyncMixin, TrackerCollaborationMixin):
     def track_agent(
         self,
         agent_name: str,
-        agent_config: Dict[str, Any],
+        agent_config: dict[str, Any],
         stage_id: str,
-        input_data: Optional[Dict[str, Any]] = None,
+        input_data: dict[str, Any] | None = None,
     ) -> Generator[str, None, None]:
         """Track agent execution."""
         self.context.agent_id = agent_id = str(uuid.uuid4())
@@ -862,7 +898,7 @@ class ExecutionTracker(_TrackerAsyncMixin, TrackerCollaborationMixin):
             event_bus=self._event_bus,
         )
 
-    def _sanitize_dict(self, data: Dict[str, Any], _depth: int = 0) -> Dict[str, Any]:
+    def _sanitize_dict(self, data: dict[str, Any], _depth: int = 0) -> dict[str, Any]:
         return sanitize_dict(self.sanitizer, data, _depth)
 
     def _get_stack_trace(self) -> str:
@@ -890,8 +926,8 @@ class ExecutionTracker(_TrackerAsyncMixin, TrackerCollaborationMixin):
     def set_stage_output(
         self,
         stage_id: str,
-        output_data: Dict[str, Any],
-        output_lineage: Optional[Dict[str, Any]] = None,
+        output_data: dict[str, Any],
+        output_lineage: dict[str, Any] | None = None,
     ) -> None:
         """Set stage output data."""
         self._metric_aggregator.set_stage_output(

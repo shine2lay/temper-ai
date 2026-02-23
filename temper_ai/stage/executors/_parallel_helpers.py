@@ -7,17 +7,22 @@ Contains:
 
 Quality gate logic lives in _parallel_quality_gates.py.
 """
+
 import logging
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Optional
+from typing import Any
 
 from temper_ai.shared.constants.limits import DEFAULT_MIN_ITEMS
-from temper_ai.stage.executors._parallel_observability import (
-    _emit_output_lineage,
-    _emit_parallel_cost_summary,
-    _emit_synthesis_event,
+from temper_ai.shared.constants.sizes import UUID_HEX_SHORT_LENGTH
+from temper_ai.shared.core.context import ExecutionContext
+from temper_ai.shared.utils.exceptions import (
+    ConfigNotFoundError,
+    ConfigValidationError,
+    LLMError,
+    ToolExecutionError,
 )
 from temper_ai.stage.executors._agent_execution import (
     config_to_tracking_dict,
@@ -29,30 +34,27 @@ from temper_ai.stage.executors._base_helpers import (
     build_agent_output_params,
     prepare_tracking_input,
 )
-from temper_ai.stage.executors.state_keys import StateKeys
-from temper_ai.shared.constants.sizes import UUID_HEX_SHORT_LENGTH
-from temper_ai.shared.core.context import ExecutionContext
-from temper_ai.shared.utils.exceptions import (
-    ConfigNotFoundError,
-    ConfigValidationError,
-    LLMError,
-    ToolExecutionError,
+from temper_ai.stage.executors._parallel_observability import (
+    _emit_output_lineage,
+    _emit_parallel_cost_summary,
+    _emit_synthesis_event,
 )
 
 # Re-export quality gate helpers for backward compatibility
 from temper_ai.stage.executors._parallel_quality_gates import (  # noqa: F401
-    QualityGateRetryParams,
     QualityGateFailureParams,
-    _extract_result_field,
+    QualityGateRetryParams,
     _check_inline_quality_gates,
-    validate_quality_gates,
-    _handle_quality_gate_escalate,
-    _handle_quality_gate_warn,
     _check_retry_timeout,
-    _reset_retry_counter_on_pass,
+    _extract_result_field,
+    _handle_quality_gate_escalate,
     _handle_quality_gate_retry,
+    _handle_quality_gate_warn,
+    _reset_retry_counter_on_pass,
     handle_quality_gate_failure,
+    validate_quality_gates,
 )
+from temper_ai.stage.executors.state_keys import StateKeys
 
 logger = logging.getLogger(__name__)
 
@@ -60,32 +62,34 @@ logger = logging.getLogger(__name__)
 @dataclass
 class AgentNodeParams:
     """Parameters for creating agent execution node (bundles 10 params into 1)."""
+
     agent_name: str
     agent_ref: Any
     stage_name: str
-    state: Dict[str, Any]
+    state: dict[str, Any]
     config_loader: Any
-    agent_cache: Dict[str, Any]
+    agent_cache: dict[str, Any]
     agent_factory_cls: Any = None
-    tracker: Optional[Any] = None
-    stage_id: Optional[str] = None
-    tool_executor: Optional[Any] = None
+    tracker: Any | None = None
+    stage_id: str | None = None
+    tool_executor: Any | None = None
 
 
 @dataclass
 class AgentRunParams:
     """Parameters for running agent with/without tracking (bundles 8 params into 1)."""
+
     agent: Any
-    input_data: Dict[str, Any]
+    input_data: dict[str, Any]
     context: Any
     agent_name: str
-    agent_config_dict_for_tracking: Dict[str, Any]
-    tracker: Optional[Any]
-    stage_id: Optional[str]
+    agent_config_dict_for_tracking: dict[str, Any]
+    tracker: Any | None
+    stage_id: str | None
     effective_stage_id: str
 
 
-def _prepare_agent_input(s: Dict[str, Any]) -> Dict[str, Any]:
+def _prepare_agent_input(s: dict[str, Any]) -> dict[str, Any]:
     """Prepare agent input data by unwrapping workflow_inputs and filtering reserved keys.
 
     If STAGE_INPUT contains a ``_context_resolved`` flag, the context was
@@ -99,47 +103,51 @@ def _prepare_agent_input(s: Dict[str, Any]) -> Dict[str, Any]:
         result.pop("_context_resolved", None)
         return result
 
-    wi = {k: v for k, v in input_data.get(StateKeys.WORKFLOW_INPUTS, {}).items()
-          if k not in StateKeys.RESERVED_UNWRAP_KEYS}
+    wi = {
+        k: v
+        for k, v in input_data.get(StateKeys.WORKFLOW_INPUTS, {}).items()
+        if k not in StateKeys.RESERVED_UNWRAP_KEYS
+    }
     return {**input_data, **wi}
 
 
 def _build_agent_success_result(
-    agent_name: str,
-    response: Any,
-    duration: float
-) -> Dict[str, Any]:
+    agent_name: str, response: Any, duration: float
+) -> dict[str, Any]:
     """Build success result dict from agent response."""
+    agent_data: dict[str, Any] = {
+        StateKeys.OUTPUT: response.output,
+        StateKeys.REASONING: response.reasoning,
+        StateKeys.CONFIDENCE: response.confidence,
+        StateKeys.TOKENS: response.tokens,
+        StateKeys.COST_USD: response.estimated_cost_usd,
+        StateKeys.TOOL_CALLS: response.tool_calls if response.tool_calls else [],
+    }
+    # Preserve script agent ::output directives for structured extraction
+    script_outputs = getattr(response, "metadata", {}).get("outputs")
+    if script_outputs:
+        agent_data["script_outputs"] = script_outputs
     return {
-        StateKeys.AGENT_OUTPUTS: {
-            agent_name: {
-                StateKeys.OUTPUT: response.output,
-                StateKeys.REASONING: response.reasoning,
-                StateKeys.CONFIDENCE: response.confidence,
-                StateKeys.TOKENS: response.tokens,
-                StateKeys.COST_USD: response.estimated_cost_usd,
-                StateKeys.TOOL_CALLS: response.tool_calls if response.tool_calls else [],
-            }
-        },
+        StateKeys.AGENT_OUTPUTS: {agent_name: agent_data},
         StateKeys.AGENT_STATUSES: {agent_name: "success"},
         StateKeys.AGENT_METRICS: {
             agent_name: {
                 StateKeys.TOKENS: response.tokens,
                 StateKeys.COST_USD: response.estimated_cost_usd,
                 StateKeys.DURATION_SECONDS: duration,
-                StateKeys.TOOL_CALLS: len(response.tool_calls) if response.tool_calls else 0,
-                StateKeys.RETRIES: 0
+                StateKeys.TOOL_CALLS: (
+                    len(response.tool_calls) if response.tool_calls else 0
+                ),
+                StateKeys.RETRIES: 0,
             }
         },
-        StateKeys.ERRORS: {}
+        StateKeys.ERRORS: {},
     }
 
 
 def _build_agent_error_result(
-    agent_name: str,
-    e: Exception,
-    duration: float
-) -> Dict[str, Any]:
+    agent_name: str, e: Exception, duration: float
+) -> dict[str, Any]:
     """Build error result dict from exception."""
     return {
         StateKeys.AGENT_OUTPUTS: {},
@@ -150,21 +158,21 @@ def _build_agent_error_result(
                 StateKeys.COST_USD: 0.0,
                 StateKeys.DURATION_SECONDS: duration,
                 StateKeys.TOOL_CALLS: 0,
-                StateKeys.RETRIES: 0
+                StateKeys.RETRIES: 0,
             }
         },
-        StateKeys.ERRORS: {agent_name: f"{type(e).__name__}: {str(e)}"}
+        StateKeys.ERRORS: {agent_name: f"{type(e).__name__}: {str(e)}"},
     }
 
 
 def _execute_agent_with_tracking(
     agent: Any,
-    input_data: Dict[str, Any],
+    input_data: dict[str, Any],
     context: Any,
     agent_name: str,
-    agent_config_dict: Dict[str, Any],
+    agent_config_dict: dict[str, Any],
     tracker: Any,
-    stage_id: str
+    stage_id: str,
 ) -> Any:
     """Execute agent with tracker context and set output tracking."""
     from temper_ai.shared.utils.config_helpers import sanitize_config_for_display
@@ -185,13 +193,15 @@ def _execute_agent_with_tracking(
         try:
             tracker.set_agent_output(build_agent_output_params(agent_id, response))
         except Exception:
-            logger.warning("Failed to set agent output tracking for %s", agent_name, exc_info=True)
+            logger.warning(
+                "Failed to set agent output tracking for %s", agent_name, exc_info=True
+            )
 
     return response
 
 
 def _create_agent_context(
-    state: Dict[str, Any],
+    state: dict[str, Any],
     stage_name: str,
     agent_name: str,
     effective_stage_id: str,
@@ -204,8 +214,8 @@ def _create_agent_context(
         metadata={
             "stage_name": stage_name,
             "agent_name": agent_name,
-            "execution_mode": "parallel"
-        }
+            "execution_mode": "parallel",
+        },
     )
 
 
@@ -213,73 +223,137 @@ def _run_agent(params: AgentRunParams) -> Any:
     """Execute agent with or without tracking."""
     if params.tracker and params.stage_id:
         return _execute_agent_with_tracking(
-            params.agent, params.input_data, params.context, params.agent_name,
-            params.agent_config_dict_for_tracking, params.tracker, params.effective_stage_id
+            params.agent,
+            params.input_data,
+            params.context,
+            params.agent_name,
+            params.agent_config_dict_for_tracking,
+            params.tracker,
+            params.effective_stage_id,
         )
     params.input_data.pop(StateKeys.TRACKER, None)
     return params.agent.execute(params.input_data, params.context)
 
 
-def create_agent_node(params: AgentNodeParams) -> Callable[[Dict[str, Any]], Dict[str, Any]]:
+def _dispatch_parallel_evaluation(
+    params: AgentNodeParams,
+    context: Any,
+    input_data: dict[str, Any],
+    response: Any,
+    agent_config_dict: dict[str, Any],
+    duration: float,
+) -> None:
+    """Dispatch async evaluation for a parallel agent (non-blocking)."""
+    dispatcher = params.state.get(StateKeys.EVALUATION_DISPATCHER)
+    if dispatcher is None:
+        return
+    dispatcher.dispatch(
+        agent_name=params.agent_name,
+        agent_execution_id=context.agent_id,
+        input_data=input_data,
+        output_data=response.output,
+        metrics={
+            StateKeys.TOKENS: response.tokens,
+            StateKeys.COST_USD: response.estimated_cost_usd,
+            StateKeys.DURATION_SECONDS: duration,
+        },
+        agent_context={
+            "prompt": response.metadata.get("_rendered_prompt", ""),
+            "reasoning": response.reasoning,
+            "tool_calls": response.tool_calls,
+            "confidence": response.confidence,
+            "model": agent_config_dict.get("agent", {})
+            .get("inference", {})
+            .get("model", ""),
+            "stage_name": params.stage_name,
+        },
+    )
+
+
+def _execute_parallel_agent(
+    params: AgentNodeParams, s: dict[str, Any]
+) -> dict[str, Any]:
+    """Core logic for executing a single parallel agent node."""
+    from temper_ai.llm.conversation import ConversationHistory, make_history_key
+
+    start_time = time.time()
+    agent_factory = resolve_agent_factory(params.agent_factory_cls)
+    agent, agent_config, agent_config_dict = load_or_cache_agent(
+        params.agent_name, params.config_loader, params.agent_cache, agent_factory
+    )
+    input_data = _prepare_agent_input(s)
+
+    if params.tool_executor is not None:
+        input_data["tool_executor"] = params.tool_executor
+
+    history_key = make_history_key(params.stage_name, params.agent_name)
+    histories = params.state.get(StateKeys.CONVERSATION_HISTORIES, {})
+    history_data = histories.get(history_key)
+    if history_data is not None:
+        input_data["_conversation_history"] = ConversationHistory.from_dict(
+            history_data
+        )
+
+    agent_config_dict_for_tracking = config_to_tracking_dict(
+        agent_config, agent_config_dict
+    )
+    effective_stage_id = (
+        params.stage_id
+        if params.stage_id
+        else f"stage-{uuid.uuid4().hex[:UUID_HEX_SHORT_LENGTH]}"
+    )
+    context = _create_agent_context(
+        params.state, params.stage_name, params.agent_name, effective_stage_id
+    )
+
+    run_params = AgentRunParams(
+        agent=agent,
+        input_data=input_data,
+        context=context,
+        agent_name=params.agent_name,
+        agent_config_dict_for_tracking=agent_config_dict_for_tracking,
+        tracker=params.tracker,
+        stage_id=params.stage_id,
+        effective_stage_id=effective_stage_id,
+    )
+    response = _run_agent(run_params)
+    _save_conversation_turn(params.state, history_key, input_data, response)
+
+    duration = time.time() - start_time
+    _dispatch_parallel_evaluation(
+        params, context, input_data, response, agent_config_dict, duration
+    )
+    return _build_agent_success_result(params.agent_name, response, duration)
+
+
+def create_agent_node(
+    params: AgentNodeParams,
+) -> Callable[[dict[str, Any]], dict[str, Any]]:
     """Create execution node for a single agent in parallel execution."""
-    def agent_node(s: Dict[str, Any]) -> Dict[str, Any]:
+
+    def agent_node(s: dict[str, Any]) -> dict[str, Any]:
         """Execute single agent and store result."""
-        from temper_ai.llm.conversation import ConversationHistory, make_history_key
-
-        start_time = time.time()
-
         try:
-            agent_factory = resolve_agent_factory(params.agent_factory_cls)
-            agent, agent_config, agent_config_dict = load_or_cache_agent(
-                params.agent_name, params.config_loader, params.agent_cache, agent_factory
+            return _execute_parallel_agent(params, s)
+        except (
+            ConfigNotFoundError,
+            ConfigValidationError,
+            ValueError,
+            TypeError,
+            KeyError,
+        ) as e:
+            logger.info(
+                f"Agent {params.agent_name} configuration/validation error: {e}"
             )
-            input_data = _prepare_agent_input(s)
-
-            # Wire tool_executor from params (not from state dict)
-            if params.tool_executor is not None:
-                input_data['tool_executor'] = params.tool_executor
-
-            # Load conversation history for this stage:agent pair
-            history_key = make_history_key(params.stage_name, params.agent_name)
-            histories = params.state.get(StateKeys.CONVERSATION_HISTORIES, {})
-            history_data = histories.get(history_key)
-            if history_data is not None:
-                input_data["_conversation_history"] = ConversationHistory.from_dict(history_data)
-
-            agent_config_dict_for_tracking = config_to_tracking_dict(agent_config, agent_config_dict)
-            effective_stage_id = params.stage_id if params.stage_id else f"stage-{uuid.uuid4().hex[:UUID_HEX_SHORT_LENGTH]}"
-            context = _create_agent_context(params.state, params.stage_name, params.agent_name, effective_stage_id)
-
-            run_params = AgentRunParams(
-                agent=agent, input_data=input_data, context=context,
-                agent_name=params.agent_name, agent_config_dict_for_tracking=agent_config_dict_for_tracking,
-                tracker=params.tracker, stage_id=params.stage_id, effective_stage_id=effective_stage_id
-            )
-            response = _run_agent(run_params)
-
-            # Save conversation turn on success
-            _save_conversation_turn(
-                params.state, history_key, input_data, response,
-            )
-
-            duration = time.time() - start_time
-            return _build_agent_success_result(params.agent_name, response, duration)
-
-        except (ConfigNotFoundError, ConfigValidationError, ValueError, TypeError, KeyError) as e:
-            logger.info(f"Agent {params.agent_name} configuration/validation error: {e}")
-            duration = time.time() - start_time
-            return _build_agent_error_result(params.agent_name, e, duration)
-
+            return _build_agent_error_result(params.agent_name, e, time.time())
         except (KeyboardInterrupt, SystemExit):
             raise
-
-        except (RuntimeError, ToolExecutionError, LLMError, ValueError, TypeError) as e:
+        except (RuntimeError, ToolExecutionError, LLMError) as e:
             logger.error(
                 f"Unexpected error in agent {params.agent_name}: {type(e).__name__}: {e}",
-                exc_info=True
+                exc_info=True,
             )
-            duration = time.time() - start_time
-            return _build_agent_error_result(params.agent_name, e, duration)
+            return _build_agent_error_result(params.agent_name, e, time.time())
 
     return agent_node
 
@@ -287,9 +361,10 @@ def create_agent_node(params: AgentNodeParams) -> Callable[[Dict[str, Any]], Dic
 def build_collect_outputs_node(
     agents: list,
     stage_config: Any,
-) -> Callable[[Dict[str, Any]], Dict[str, Any]]:
+) -> Callable[[dict[str, Any]], dict[str, Any]]:
     """Build the collection node function for parallel execution."""
-    def collect_outputs(s: Dict[str, Any]) -> Dict[str, Any]:
+
+    def collect_outputs(s: dict[str, Any]) -> dict[str, Any]:
         """Collect and validate agent outputs, calculate aggregate metrics."""
         stage_dict = stage_config if isinstance(stage_config, dict) else {}
         error_handling = stage_dict.get("error_handling", {})
@@ -297,8 +372,7 @@ def build_collect_outputs_node(
 
         agent_statuses = s.get(StateKeys.AGENT_STATUSES, {})
         successful = [
-            name for name, status in agent_statuses.items()
-            if status == "success"
+            name for name, status in agent_statuses.items() if status == "success"
         ]
 
         if len(successful) < min_successful:
@@ -320,13 +394,17 @@ def build_collect_outputs_node(
             if agent_statuses.get(agent_name) == "success":
                 total_tokens += metrics.get(StateKeys.TOKENS, 0)
                 total_cost += metrics.get(StateKeys.COST_USD, 0.0)
-                max_duration = max(max_duration, metrics.get(StateKeys.DURATION_SECONDS, 0.0))
+                max_duration = max(
+                    max_duration, metrics.get(StateKeys.DURATION_SECONDS, 0.0)
+                )
 
                 output = agent_outputs_dict.get(agent_name, {})
                 total_confidence += output.get(StateKeys.CONFIDENCE, 0.0)
                 num_successful += 1
 
-        avg_confidence = total_confidence / num_successful if num_successful > 0 else 0.0
+        avg_confidence = (
+            total_confidence / num_successful if num_successful > 0 else 0.0
+        )
 
         return {
             StateKeys.AGENT_OUTPUTS: {
@@ -337,7 +415,7 @@ def build_collect_outputs_node(
                     StateKeys.AVG_CONFIDENCE: avg_confidence,
                     StateKeys.NUM_AGENTS: len(agents),
                     StateKeys.NUM_SUCCESSFUL: num_successful,
-                    StateKeys.NUM_FAILED: len(agents) - num_successful
+                    StateKeys.NUM_FAILED: len(agents) - num_successful,
                 }
             }
         }
@@ -345,54 +423,79 @@ def build_collect_outputs_node(
     return collect_outputs
 
 
-def build_init_parallel_node(
-    state: Dict[str, Any],
-    context_provider: Optional[Any] = None,
-    stage_config: Optional[Any] = None,
-) -> Callable[[Dict[str, Any]], Dict[str, Any]]:
-    """Build the init node function for parallel execution.
+def _empty_parallel_state(stage_input: dict[str, Any]) -> dict[str, Any]:
+    """Return an empty parallel state dict with the given stage input."""
+    return {
+        StateKeys.AGENT_OUTPUTS: {},
+        StateKeys.AGENT_STATUSES: {},
+        StateKeys.AGENT_METRICS: {},
+        StateKeys.ERRORS: {},
+        StateKeys.STAGE_INPUT: stage_input,
+    }
 
-    When ``context_provider`` and ``stage_config`` are supplied and the
-    stage declares inputs with source refs, the resolved (focused) context
-    is placed in STAGE_INPUT instead of the full state.
-    """
-    # Dynamic inputs override normal resolution
+
+def _resolve_dynamic_parallel_input(state: dict[str, Any]) -> dict[str, Any] | None:
+    """Resolve dynamic inputs for parallel init, returning None if not present."""
     dynamic = state.get(StateKeys.DYNAMIC_INPUTS)
-    if dynamic is not None:
-        from temper_ai.workflow.context_provider import _INFRASTRUCTURE_KEYS
+    if dynamic is None:
+        return None
+    from temper_ai.workflow.context_provider import _INFRASTRUCTURE_KEYS
 
-        resolved_input_dyn: Dict[str, Any] = dict(dynamic)
-        resolved_input_dyn["_context_resolved"] = True
-        for key in _INFRASTRUCTURE_KEYS:
-            if key in state:
-                resolved_input_dyn[key] = state[key]
+    resolved: dict[str, Any] = dict(dynamic)
+    resolved["_context_resolved"] = True
+    for key in _INFRASTRUCTURE_KEYS:
+        if key in state:
+            resolved[key] = state[key]
+    return resolved
 
-        def init_parallel_dynamic(s: Dict[str, Any]) -> Dict[str, Any]:
-            """Initialize parallel stage state with resolved dynamic inputs."""
-            return {
-                StateKeys.AGENT_OUTPUTS: {},
-                StateKeys.AGENT_STATUSES: {},
-                StateKeys.AGENT_METRICS: {},
-                StateKeys.ERRORS: {},
-                StateKeys.STAGE_INPUT: resolved_input_dyn,
-            }
+
+def _resolve_context_parallel_input(
+    state: dict[str, Any],
+    context_provider: Any,
+    stage_config: Any,
+) -> dict[str, Any] | None:
+    """Attempt focused context resolution for parallel init."""
+    try:
+        resolved = context_provider.resolve(stage_config, state)
+        resolved["_context_resolved"] = True
+        if "_context_meta" in resolved:
+            state["_context_meta"] = resolved["_context_meta"]
+        return resolved
+    except Exception:  # noqa: BLE001
+        logger.warning(
+            "Context provider resolution failed for parallel stage, "
+            "falling back to full state. Named Jinja variables from "
+            "stage inputs may not be available.",
+            exc_info=True,
+        )
+        return None
+
+
+def build_init_parallel_node(
+    state: dict[str, Any],
+    context_provider: Any | None = None,
+    stage_config: Any | None = None,
+) -> Callable[[dict[str, Any]], dict[str, Any]]:
+    """Build the init node function for parallel execution."""
+    # Dynamic inputs override normal resolution
+    dynamic_input = _resolve_dynamic_parallel_input(state)
+    if dynamic_input is not None:
+
+        def init_parallel_dynamic(s: dict[str, Any]) -> dict[str, Any]:
+            """Initialize dynamic parallel execution state."""
+            return _empty_parallel_state(dynamic_input)
 
         return init_parallel_dynamic
 
     # Try resolving focused context upfront
-    resolved_input: Optional[Dict[str, Any]] = None
+    resolved_input: dict[str, Any] | None = None
     if context_provider is not None and stage_config is not None:
-        try:
-            resolved_input = context_provider.resolve(stage_config, state)
-            resolved_input["_context_resolved"] = True
-            # Propagate context metadata to state for stage output tracking
-            if "_context_meta" in resolved_input:
-                state["_context_meta"] = resolved_input["_context_meta"]
-        except Exception:  # noqa: BLE001 -- graceful fallback when context resolution fails
-            resolved_input = None
+        resolved_input = _resolve_context_parallel_input(
+            state, context_provider, stage_config
+        )
 
-    def init_parallel(s: Dict[str, Any]) -> Dict[str, Any]:
-        """Initialize parallel state with empty collections."""
+    def init_parallel(s: dict[str, Any]) -> dict[str, Any]:
+        """Initialize standard parallel execution state."""
         if resolved_input is not None:
             stage_input = resolved_input
         else:
@@ -400,19 +503,13 @@ def build_init_parallel_node(
                 **state,
                 StateKeys.STAGE_OUTPUTS: state.get(StateKeys.STAGE_OUTPUTS, {}),
             }
-        return {
-            StateKeys.AGENT_OUTPUTS: {},
-            StateKeys.AGENT_STATUSES: {},
-            StateKeys.AGENT_METRICS: {},
-            StateKeys.ERRORS: {},
-            StateKeys.STAGE_INPUT: stage_input,
-        }
+        return _empty_parallel_state(stage_input)
 
     return init_parallel
 
 
 def print_parallel_progress(
-    parallel_result: Dict[str, Any],
+    parallel_result: dict[str, Any],
     detail_console: Any,
 ) -> None:
     """Print progress for parallel agents after all complete."""
@@ -420,7 +517,7 @@ def print_parallel_progress(
     agent_metrics_dict = parallel_result.get(StateKeys.AGENT_METRICS, {})
     agent_names = list(agent_statuses.keys())
     for idx, aname in enumerate(agent_names):
-        is_last = (idx == len(agent_names) - 1)
+        is_last = idx == len(agent_names) - 1
         connector = "\u2514\u2500" if is_last else "\u251c\u2500"
         status = agent_statuses.get(aname, "unknown")
         m = agent_metrics_dict.get(aname, {})
@@ -437,7 +534,7 @@ def print_parallel_progress(
             )
 
 
-def _compute_stage_status(agent_statuses: Dict[str, Any]) -> str:
+def _compute_stage_status(agent_statuses: dict[str, Any]) -> str:
     """Compute stage status from agent results."""
     failed_count = sum(1 for s in agent_statuses.values() if s != "success")
     total_count = len(agent_statuses)
@@ -449,18 +546,18 @@ def _compute_stage_status(agent_statuses: Dict[str, Any]) -> str:
 
 
 def update_state_with_results(
-    state: Dict[str, Any],
+    state: dict[str, Any],
     stage_name: str,
     synthesis_result: Any,
-    agent_outputs_dict: Dict[str, Any],
-    parallel_result: Dict[str, Any],
-    aggregate_metrics: Dict[str, Any],
-    structured: Optional[Dict[str, Any]] = None,
+    agent_outputs_dict: dict[str, Any],
+    parallel_result: dict[str, Any],
+    aggregate_metrics: dict[str, Any],
+    structured: dict[str, Any] | None = None,
 ) -> None:
     """Update workflow state with parallel execution results in two-compartment format."""
     agent_statuses = parallel_result.get(StateKeys.AGENT_STATUSES, {})
     stage_status = _compute_stage_status(agent_statuses)
-    raw_dict: Dict[str, Any] = {
+    raw_dict: dict[str, Any] = {
         StateKeys.DECISION: synthesis_result.decision,
         StateKeys.OUTPUT: synthesis_result.decision,
         StateKeys.AGENT_OUTPUTS: agent_outputs_dict,
@@ -476,7 +573,7 @@ def update_state_with_results(
         },
     }
 
-    stage_entry: Dict[str, Any] = {
+    stage_entry: dict[str, Any] = {
         "structured": structured or {},
         "raw": dict(raw_dict),
         **raw_dict,
@@ -488,8 +585,14 @@ def update_state_with_results(
     state[StateKeys.CURRENT_STAGE] = stage_name
 
     _emit_synthesis_event(
-        state, stage_name, synthesis_result, agent_outputs_dict,
-        parallel_result, aggregate_metrics,
+        state,
+        stage_name,
+        synthesis_result,
+        agent_outputs_dict,
+        parallel_result,
+        aggregate_metrics,
     )
-    _emit_output_lineage(state, stage_name, agent_outputs_dict, parallel_result, synthesis_result)
+    _emit_output_lineage(
+        state, stage_name, agent_outputs_dict, parallel_result, synthesis_result
+    )
     _emit_parallel_cost_summary(state, stage_name, parallel_result)

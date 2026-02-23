@@ -1,7 +1,6 @@
 """Base class for goal analyzers."""
 
 from abc import ABC, abstractmethod
-from typing import List
 
 from temper_ai.goals._schemas import GoalProposal
 from temper_ai.goals.constants import DEFAULT_LOOKBACK_HOURS
@@ -13,7 +12,7 @@ class BaseAnalyzer(ABC):
     @abstractmethod
     def analyze(
         self, lookback_hours: int = DEFAULT_LOOKBACK_HOURS
-    ) -> List[GoalProposal]:
+    ) -> list[GoalProposal]:
         """Analyze execution history and return goal proposals."""
 
     @property

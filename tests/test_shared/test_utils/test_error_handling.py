@@ -2,6 +2,7 @@
 
 Tests retry strategies, error handlers, and safe execution utilities.
 """
+
 import time
 from unittest.mock import Mock
 
@@ -10,8 +11,8 @@ import pytest
 from temper_ai.shared.utils.error_handling import (
     DEFAULT_BACKOFF_MULTIPLIER,
     DEFAULT_MAX_RETRIES,
-    ErrorHandler,
     MIN_BACKOFF_SECONDS,
+    ErrorHandler,
     RetryParams,
     RetryStrategy,
     create_error_result,
@@ -51,7 +52,7 @@ class TestRetryParams:
             max_delay=60.0,
             strategy=RetryStrategy.LINEAR_BACKOFF,
             backoff_multiplier=1.5,
-            retryable_exceptions=(ValueError, TypeError)
+            retryable_exceptions=(ValueError, TypeError),
         )
         assert params.max_retries == 5
         assert params.initial_delay == 2.0
@@ -83,7 +84,11 @@ class TestRetryParams:
 
     def test_calculate_delay_exponential(self):
         """Test delay calculation with EXPONENTIAL_BACKOFF strategy."""
-        params = RetryParams(initial_delay=1.0, strategy=RetryStrategy.EXPONENTIAL_BACKOFF, backoff_multiplier=2.0)
+        params = RetryParams(
+            initial_delay=1.0,
+            strategy=RetryStrategy.EXPONENTIAL_BACKOFF,
+            backoff_multiplier=2.0,
+        )
         assert params.calculate_delay(0) == 1.0
         assert params.calculate_delay(1) == 2.0
         assert params.calculate_delay(2) == 4.0
@@ -91,7 +96,9 @@ class TestRetryParams:
 
     def test_calculate_delay_capped(self):
         """Test that delay is capped at max_delay."""
-        params = RetryParams(initial_delay=1.0, max_delay=5.0, strategy=RetryStrategy.EXPONENTIAL_BACKOFF)
+        params = RetryParams(
+            initial_delay=1.0, max_delay=5.0, strategy=RetryStrategy.EXPONENTIAL_BACKOFF
+        )
         assert params.calculate_delay(0) == 1.0
         assert params.calculate_delay(1) == 2.0
         assert params.calculate_delay(2) == 4.0
@@ -116,7 +123,9 @@ class TestRetryWithBackoff:
 
     def test_success_after_retries(self):
         """Test successful function after retries."""
-        mock_func = Mock(side_effect=[ValueError("fail1"), ValueError("fail2"), "success"])
+        mock_func = Mock(
+            side_effect=[ValueError("fail1"), ValueError("fail2"), "success"]
+        )
 
         @retry_with_backoff(max_retries=3, initial_delay=0.01)
         def test_func():
@@ -143,7 +152,9 @@ class TestRetryWithBackoff:
         """Test retrying only specific exception types."""
         mock_func = Mock(side_effect=RuntimeError("not retryable"))
 
-        @retry_with_backoff(max_retries=3, initial_delay=0.01, retryable_exceptions=(ValueError,))
+        @retry_with_backoff(
+            max_retries=3, initial_delay=0.01, retryable_exceptions=(ValueError,)
+        )
         def test_func():
             return mock_func()
 
@@ -174,7 +185,11 @@ class TestRetryWithBackoff:
         """Test that exponential backoff delays increase."""
         mock_func = Mock(side_effect=[ValueError(), ValueError(), "success"])
 
-        @retry_with_backoff(max_retries=3, initial_delay=0.01, strategy=RetryStrategy.EXPONENTIAL_BACKOFF)
+        @retry_with_backoff(
+            max_retries=3,
+            initial_delay=0.01,
+            strategy=RetryStrategy.EXPONENTIAL_BACKOFF,
+        )
         def test_func():
             return mock_func()
 
@@ -198,18 +213,27 @@ class TestSafeExecute:
 
     def test_error_caught(self):
         """Test error is caught and returned."""
-        result, error = safe_execute(lambda: [][0])  # IndexError instead of ZeroDivisionError
+
+        def _raise_value_error():
+            raise ValueError("test")
+
+        result, error = safe_execute(_raise_value_error)
         assert result is None
-        assert isinstance(error, IndexError)
+        assert isinstance(error, ValueError)
 
     def test_default_value_on_error(self):
         """Test default value is returned on error."""
-        result, error = safe_execute(lambda: [][0], default="default")  # IndexError
+
+        def _raise_value_error():
+            raise ValueError("test")
+
+        result, error = safe_execute(_raise_value_error, default="default")
         assert result == "default"
-        assert isinstance(error, IndexError)
+        assert isinstance(error, ValueError)
 
     def test_with_args_kwargs(self):
         """Test execution with positional and keyword arguments."""
+
         def test_func(a, b, c=0):
             return a + b + c
 
@@ -219,9 +243,13 @@ class TestSafeExecute:
 
     def test_log_errors_false(self):
         """Test that errors are not logged when log_errors=False."""
-        result, error = safe_execute(lambda: [][0], log_errors=False)  # IndexError
+
+        def _raise_value_error():
+            raise ValueError("test")
+
+        result, error = safe_execute(_raise_value_error, log_errors=False)
         assert result is None
-        assert isinstance(error, IndexError)
+        assert isinstance(error, ValueError)
 
 
 class TestCreateErrorResult:
@@ -276,10 +304,7 @@ class TestErrorHandler:
     def test_custom_initialization(self):
         """Test ErrorHandler custom initialization."""
         handler = ErrorHandler(
-            max_retries=5,
-            retry_delay=2.0,
-            log_errors=False,
-            raise_on_failure=False
+            max_retries=5, retry_delay=2.0, log_errors=False, raise_on_failure=False
         )
         assert handler.max_retries == 5
         assert handler.retry_delay == 2.0

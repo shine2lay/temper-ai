@@ -1,21 +1,27 @@
 """Cost estimation for LLM calls.
 
 Delegates to the pricing manager for model-specific pricing from
-config/model_pricing.yaml.
+configs/model_pricing.yaml.
 """
+
 from typing import TYPE_CHECKING
 
-from temper_ai.llm.constants import DEFAULT_INPUT_TOKEN_RATIO, DEFAULT_OUTPUT_TOKEN_RATIO
+from temper_ai.llm.constants import (
+    DEFAULT_INPUT_TOKEN_RATIO,
+    DEFAULT_OUTPUT_TOKEN_RATIO,
+)
 from temper_ai.llm.pricing import get_pricing_manager
 
 if TYPE_CHECKING:
     from temper_ai.llm.providers.base import LLMResponse
 
 
-def estimate_cost(llm_response: "LLMResponse", fallback_model: str = "unknown") -> float:
+def estimate_cost(
+    llm_response: "LLMResponse", fallback_model: str = "unknown"
+) -> float:
     """Estimate cost of an LLM call using configured pricing.
 
-    Uses model-specific pricing from config/model_pricing.yaml.
+    Uses model-specific pricing from configs/model_pricing.yaml.
     Falls back to default pricing for unknown models.
 
     Args:

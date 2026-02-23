@@ -3,8 +3,9 @@
 OAuth 2.0 authorization code flow with PKCE support.
 See _service_helpers.py for extracted internal logic.
 """
+
 import logging
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 import httpx
 
@@ -69,18 +70,20 @@ HTTP_UNAUTHORIZED = 401  # Authentication failed / token expired
 class OAuthError(FrameworkException):
     """Base exception for OAuth errors."""
 
-    def __init__(self, message: str, provider: Optional[str] = None):
+    def __init__(self, message: str, provider: str | None = None):
         self.provider = provider
         super().__init__(message)
 
 
 class OAuthProviderError(OAuthError):
     """Raised when OAuth provider returns an error."""
+
     pass
 
 
 class OAuthStateError(OAuthError):
     """Raised when state validation fails (CSRF protection)."""
+
     pass
 
 
@@ -95,7 +98,7 @@ class OAuthService:
     - Provider abstraction
 
     Example:
-        >>> config = OAuthConfig.from_yaml_file(Path("config/oauth.yaml"))
+        >>> config = OAuthConfig.from_yaml_file(Path("configs/oauth.yaml"))
         >>> service = OAuthService(config)
         >>>
         >>> # Initiate OAuth flow
@@ -117,11 +120,11 @@ class OAuthService:
     def __init__(
         self,
         config: OAuthConfig,
-        token_store: Optional[SecureTokenStore] = None,
-        callback_validator: Optional[CallbackURLValidator] = None,
-        http_client: Optional[httpx.AsyncClient] = None,
-        state_store: Optional[StateStore] = None,
-        rate_limiter: Optional[OAuthRateLimiter] = None
+        token_store: SecureTokenStore | None = None,
+        callback_validator: CallbackURLValidator | None = None,
+        http_client: httpx.AsyncClient | None = None,
+        state_store: StateStore | None = None,
+        rate_limiter: OAuthRateLimiter | None = None,
     ):
         """Initialize OAuth service.
 
@@ -130,7 +133,7 @@ class OAuthService:
             token_store: Token storage (default: creates new SecureTokenStore)
             callback_validator: Callback URL validator (default: creates from config)
             http_client: HTTP client for API calls (default: creates new)
-            state_store: State storage (default: creates Redis or in-memory store)
+            state_store: State storage (default: creates in-memory store)
             rate_limiter: Rate limiter (default: creates new OAuthRateLimiter)
         """
         self.config = config
@@ -143,14 +146,14 @@ class OAuthService:
         # Initialize callback validator
         self.callback_validator = callback_validator or CallbackURLValidator(
             allowed_urls=config.allowed_callback_urls,
-            allow_localhost=config.allow_localhost
+            allow_localhost=config.allow_localhost,
         )
 
         # HTTP client for OAuth API calls
         self._http_client = http_client
         self._owns_http_client = http_client is None
 
-        # State storage (Redis-backed for production, falls back to in-memory)
+        # State storage (in-memory)
         self._state_store: StateStore = state_store or create_state_store()
 
         # Rate limiter (protects against abuse)
@@ -161,14 +164,18 @@ class OAuthService:
         if self._http_client is None:
             self._http_client = httpx.AsyncClient(
                 # H-18: Add pool timeout to prevent connection pool exhaustion
-                timeout=httpx.Timeout(float(TIMEOUT_MEDIUM), connect=float(TIMEOUT_SHORT), pool=float(TIMEOUT_NETWORK_CONNECT)),
+                timeout=httpx.Timeout(
+                    float(TIMEOUT_MEDIUM),
+                    connect=float(TIMEOUT_SHORT),
+                    pool=float(TIMEOUT_NETWORK_CONNECT),
+                ),
                 follow_redirects=False,
                 limits=httpx.Limits(
                     max_connections=VERY_LARGE_ITEM_LIMIT,
-                    max_keepalive_connections=MAX_KEEPALIVE_CONNECTIONS
+                    max_keepalive_connections=MAX_KEEPALIVE_CONNECTIONS,
                 ),
                 # Verify SSL certificates (enabled by default, but explicit for clarity)
-                verify=True
+                verify=True,
             )
         return self._http_client
 
@@ -178,7 +185,7 @@ class OAuthService:
             await self._http_client.aclose()
             self._http_client = None
 
-        # Close state store connection (e.g., Redis)
+        # Close state store connection
         if self._state_store:
             await self._state_store.close()
 
@@ -198,16 +205,23 @@ class OAuthService:
         self,
         provider: str,
         user_id: str,
-        extra_params: Optional[Dict[str, str]] = None,
-        ip_address: Optional[str] = None
-    ) -> Tuple[str, str]:
+        extra_params: dict[str, str] | None = None,
+        ip_address: str | None = None,
+    ) -> tuple[str, str]:
         """Generate OAuth authorization URL with CSRF and PKCE protection."""
         return await _build_authorization_url(
-            provider, user_id, self.config, self._state_store,
-            self._rate_limiter, extra_params, ip_address,
+            provider,
+            user_id,
+            self.config,
+            self._state_store,
+            self._rate_limiter,
+            extra_params,
+            ip_address,
         )
 
-    async def _validate_state(self, state: str, expected_provider: str) -> Dict[str, Any]:
+    async def _validate_state(
+        self, state: str, expected_provider: str
+    ) -> dict[str, Any]:
         """Validate state parameter (CSRF protection)."""
         return await _validate_state(state, expected_provider, self._state_store)
 
@@ -216,9 +230,9 @@ class OAuthService:
         provider: str,
         code: str,
         state: str,
-        redirect_uri: Optional[str] = None,
-        ip_address: Optional[str] = None
-    ) -> Dict[str, Any]:
+        redirect_uri: str | None = None,
+        ip_address: str | None = None,
+    ) -> dict[str, Any]:
         """Exchange authorization code for access/refresh tokens."""
         client = await self._get_http_client()
         params = TokenExchangeParams(
@@ -235,38 +249,43 @@ class OAuthService:
         )
         return await _exchange_code(params)
 
-    async def refresh_access_token(
-        self,
-        user_id: str,
-        provider: str
-    ) -> Dict[str, Any]:
+    async def refresh_access_token(self, user_id: str, provider: str) -> dict[str, Any]:
         """Refresh access token using refresh token."""
         client = await self._get_http_client()
         return await _refresh_token(
-            user_id, provider, self.config, self.token_store, client,
+            user_id,
+            provider,
+            self.config,
+            self.token_store,
+            client,
         )
 
     async def get_user_info(
-        self,
-        user_id: str,
-        provider: str,
-        auto_refresh: bool = True
-    ) -> Dict[str, Any]:
+        self, user_id: str, provider: str, auto_refresh: bool = True
+    ) -> dict[str, Any]:
         """Get user information from OAuth provider."""
         client = await self._get_http_client()
         return await _fetch_user_info(
-            user_id, provider, self.config, self.token_store,
-            client, self._rate_limiter, auto_refresh,
+            user_id,
+            provider,
+            self.config,
+            self.token_store,
+            client,
+            self._rate_limiter,
+            auto_refresh,
         )
 
     async def revoke_tokens(self, user_id: str) -> bool:
         """Revoke and delete user's OAuth tokens."""
         client = await self._get_http_client()
         return await _revoke_tokens(
-            user_id, self.config, self.token_store, client,
+            user_id,
+            self.config,
+            self.token_store,
+            client,
         )
 
-    async def _revoke_at_provider(self, provider: str, tokens: Dict[str, Any]) -> bool:
+    async def _revoke_at_provider(self, provider: str, tokens: dict[str, Any]) -> bool:
         """Revoke token at OAuth provider per RFC 7009."""
         client = await self._get_http_client()
         return await _revoke_at_provider(provider, tokens, self.config, client)

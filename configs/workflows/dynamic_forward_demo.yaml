@@ -1,7 +1,7 @@
 # Dynamic Forward Routing Demo — demonstrates _next_stage for branching
 #
 # Usage:
-#   maf run configs/workflows/dynamic_forward_demo.yaml --input examples/dynamic_forward_demo_input.yaml --show-details
+#   curl -X POST localhost:8420/api/runs -d '{"workflow": "configs/workflows/dynamic_forward_demo.yaml", "input_file": "examples/dynamic_forward_demo_input.yaml"}'
 #
 # Flow:
 #   1. classify stage → classifies question as CODE or DESIGN

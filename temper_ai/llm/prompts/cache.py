@@ -3,7 +3,8 @@ Template caching for PromptEngine.
 
 Provides LRU cache for compiled Jinja2 templates with statistics tracking.
 """
-from typing import Any, Dict
+
+from typing import Any
 
 from jinja2 import Template
 from jinja2.sandbox import ImmutableSandboxedEnvironment
@@ -25,12 +26,14 @@ class TemplateCacheManager:
         Args:
             cache_size: Maximum number of compiled templates to cache (default from cache constants)
         """
-        self._template_cache: Dict[str, Template] = {}
+        self._template_cache: dict[str, Template] = {}
         self._cache_size = cache_size
         self._cache_hits = 0
         self._cache_misses = 0
 
-    def get_or_compile(self, template_str: str, sandbox_env: ImmutableSandboxedEnvironment) -> Template:
+    def get_or_compile(
+        self, template_str: str, sandbox_env: ImmutableSandboxedEnvironment
+    ) -> Template:
         """
         Get cached template or compile and cache it.
 
@@ -49,7 +52,7 @@ class TemplateCacheManager:
             self._cache_misses += 1
             jinja_template = sandbox_env.from_string(template_str)
 
-            # Add to cache (LRU eviction if full)
+            # Add to cache (FIFO eviction if full)
             if len(self._template_cache) >= self._cache_size:
                 # Remove oldest entry (simple FIFO since dicts are ordered in Python 3.7+)
                 oldest_key = next(iter(self._template_cache))
@@ -62,7 +65,7 @@ class TemplateCacheManager:
 
         return jinja_template
 
-    def get_cache_stats(self) -> Dict[str, Any]:
+    def get_cache_stats(self) -> dict[str, Any]:
         """
         Get template cache statistics.
 
@@ -88,12 +91,12 @@ class TemplateCacheManager:
             "total_requests": total_requests,
             "cache_hit_rate": hit_rate,
             "cache_size": len(self._template_cache),
-            "cache_capacity": self._cache_size
+            "cache_capacity": self._cache_size,
         }
 
     def clear_cache(self) -> None:
         """
-        Clear the template cache.
+        Clear the template cache and reset hit/miss counters.
 
         Useful for testing or when template content needs to be invalidated.
 

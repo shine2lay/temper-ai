@@ -5,7 +5,7 @@ Tests the integration between the A/B testing framework and the
 observability system for metrics collection and reporting.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -21,6 +21,7 @@ def db():
     # Reset global database before each test
     import temper_ai.observability.database as db_module
     from temper_ai.observability.database import _db_lock
+
     with _db_lock:
         db_module._db_manager = None
 
@@ -42,7 +43,7 @@ def db_session(db):
 @pytest.fixture
 def sample_workflows(db):
     """Create sample workflow executions with experiment metadata."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     workflows = [
         # Control variant workflows
@@ -62,8 +63,8 @@ def sample_workflows(db):
                 "experiment_id": "exp-001",
                 "variant_id": "var-control",
                 "assignment_strategy": "hash",
-                "custom_metrics": {"quality_score": 85.0}
-            }
+                "custom_metrics": {"quality_score": 85.0},
+            },
         ),
         WorkflowExecution(
             id="wf-002",
@@ -81,8 +82,8 @@ def sample_workflows(db):
                 "experiment_id": "exp-001",
                 "variant_id": "var-control",
                 "assignment_strategy": "hash",
-                "custom_metrics": {"quality_score": 82.0}
-            }
+                "custom_metrics": {"quality_score": 82.0},
+            },
         ),
         # Treatment variant workflows
         WorkflowExecution(
@@ -101,8 +102,8 @@ def sample_workflows(db):
                 "experiment_id": "exp-001",
                 "variant_id": "var-treatment",
                 "assignment_strategy": "hash",
-                "custom_metrics": {"quality_score": 92.0}
-            }
+                "custom_metrics": {"quality_score": 92.0},
+            },
         ),
         WorkflowExecution(
             id="wf-004",
@@ -120,8 +121,8 @@ def sample_workflows(db):
                 "experiment_id": "exp-001",
                 "variant_id": "var-treatment",
                 "assignment_strategy": "hash",
-                "custom_metrics": {"quality_score": 95.0}
-            }
+                "custom_metrics": {"quality_score": 95.0},
+            },
         ),
         # Failed workflow
         WorkflowExecution(
@@ -141,7 +142,7 @@ def sample_workflows(db):
                 "experiment_id": "exp-001",
                 "variant_id": "var-treatment",
                 "assignment_strategy": "hash",
-            }
+            },
         ),
     ]
 
@@ -170,7 +171,9 @@ class TestMetricsCollector:
         assert len(control_assignments) == 2
 
         # Check treatment variant assignments (including failed one)
-        treatment_assignments = [a for a in assignments if a.variant_id == "var-treatment"]
+        treatment_assignments = [
+            a for a in assignments if a.variant_id == "var-treatment"
+        ]
         assert len(treatment_assignments) == 3
 
     def test_collect_assignments_with_status_filter(self, db_session, sample_workflows):
@@ -244,7 +247,7 @@ class TestMetricsCollector:
         assert treatment["count"] == 3
         assert treatment["successful"] == 2
         assert treatment["failed"] == 1
-        assert treatment["success_rate"] == pytest.approx(2/3, rel=0.01)
+        assert treatment["success_rate"] == pytest.approx(2 / 3, rel=0.01)
 
     def test_aggregate_metric_calculations(self, db_session, sample_workflows):
         """Test correctness of aggregate metric calculations."""
@@ -285,20 +288,31 @@ class TestMetricsCollector:
         collector = ExperimentMetricsCollector(session=db_session)
 
         # Query control variant
-        control_workflows = collector.query_workflows_by_variant("exp-001", "var-control")
+        control_workflows = collector.query_workflows_by_variant(
+            "exp-001", "var-control"
+        )
         assert len(control_workflows) == 2
-        assert all(w.extra_metadata["variant_id"] == "var-control" for w in control_workflows)
+        assert all(
+            w.extra_metadata["variant_id"] == "var-control" for w in control_workflows
+        )
 
         # Query treatment variant
-        treatment_workflows = collector.query_workflows_by_variant("exp-001", "var-treatment")
+        treatment_workflows = collector.query_workflows_by_variant(
+            "exp-001", "var-treatment"
+        )
         assert len(treatment_workflows) == 3
-        assert all(w.extra_metadata["variant_id"] == "var-treatment" for w in treatment_workflows)
+        assert all(
+            w.extra_metadata["variant_id"] == "var-treatment"
+            for w in treatment_workflows
+        )
 
     def test_query_workflows_with_limit(self, db_session, sample_workflows):
         """Test limit parameter in workflow queries."""
         collector = ExperimentMetricsCollector(session=db_session)
 
-        workflows = collector.query_workflows_by_variant("exp-001", "var-treatment", limit=2)
+        workflows = collector.query_workflows_by_variant(
+            "exp-001", "var-treatment", limit=2
+        )
         assert len(workflows) == 2
 
     def test_get_time_series_metrics(self, db_session, sample_workflows):
@@ -367,9 +381,9 @@ class TestMetricsCollectorEdgeCases:
             id="wf-bad",
             workflow_name="test",
             workflow_config_snapshot={},
-            start_time=datetime.now(timezone.utc),
+            start_time=datetime.now(UTC),
             status="running",
-            extra_metadata={"experiment_id": "exp-001"}  # Missing variant_id
+            extra_metadata={"experiment_id": "exp-001"},  # Missing variant_id
         )
         db_session.add(workflow)
         db_session.commit()
@@ -386,13 +400,10 @@ class TestMetricsCollectorEdgeCases:
             id="wf-no-metrics",
             workflow_name="test",
             workflow_config_snapshot={},
-            start_time=datetime.now(timezone.utc),
-            end_time=datetime.now(timezone.utc),
+            start_time=datetime.now(UTC),
+            end_time=datetime.now(UTC),
             status="completed",
-            extra_metadata={
-                "experiment_id": "exp-001",
-                "variant_id": "var-control"
-            }
+            extra_metadata={"experiment_id": "exp-001", "variant_id": "var-control"},
             # No duration, cost, tokens, etc.
         )
         db_session.add(workflow)

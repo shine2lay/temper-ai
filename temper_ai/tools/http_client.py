@@ -3,9 +3,10 @@ HTTP client tool for making outbound HTTP requests.
 
 Supports GET, POST, PUT, DELETE, PATCH, HEAD methods with SSRF protection.
 """
+
 import logging
 import urllib.parse
-from typing import Any, Dict, Optional
+from typing import Any
 
 import httpx
 
@@ -21,14 +22,14 @@ from temper_ai.tools.http_client_constants import (
 logger = logging.getLogger(__name__)
 
 
-def _validate_method(method: str) -> Optional[str]:
+def _validate_method(method: str) -> str | None:
     """Return error string if method is not allowed, else None."""
     if method.upper() not in HTTP_ALLOWED_METHODS:
         return f"Method '{method}' not allowed. Allowed: {sorted(HTTP_ALLOWED_METHODS)}"
     return None
 
 
-def _validate_url(url: str) -> Optional[str]:
+def _validate_url(url: str) -> str | None:
     """Return error string if URL is invalid or blocked (SSRF protection), else None."""
     if not url or not isinstance(url, str):
         return "url must be a non-empty string"
@@ -51,7 +52,7 @@ def _validate_url(url: str) -> Optional[str]:
     return None
 
 
-def _validate_headers(headers: Any) -> Optional[str]:
+def _validate_headers(headers: Any) -> str | None:
     """Return error string if headers are invalid, else None."""
     if headers is None:
         return None
@@ -85,35 +86,35 @@ class HTTPClientTool(BaseTool):
             modifies_state=True,
         )
 
-    def get_parameters_schema(self) -> Dict[str, Any]:
+    def get_parameters_schema(self) -> dict[str, Any]:
         """Return JSON schema for HTTP client parameters."""
         return {
             "type": "object",
             "properties": {
                 "url": {
                     "type": "string",
-                    "description": "Target URL (must start with http:// or https://)"
+                    "description": "Target URL (must start with http:// or https://)",
                 },
                 "method": {
                     "type": "string",
                     "description": "HTTP method (GET, POST, PUT, DELETE, PATCH, HEAD)",
-                    "default": "GET"
+                    "default": "GET",
                 },
                 "headers": {
                     "type": "object",
-                    "description": "Optional HTTP headers as key-value pairs"
+                    "description": "Optional HTTP headers as key-value pairs",
                 },
                 "body": {
                     "type": "object",
-                    "description": "Optional request body (sent as JSON)"
+                    "description": "Optional request body (sent as JSON)",
                 },
                 "timeout": {
                     "type": "integer",
                     "description": f"Request timeout in seconds (default: {HTTP_DEFAULT_TIMEOUT})",
-                    "default": HTTP_DEFAULT_TIMEOUT
+                    "default": HTTP_DEFAULT_TIMEOUT,
                 },
             },
-            "required": ["url"]
+            "required": ["url"],
         }
 
     def execute(self, **kwargs: Any) -> ToolResult:
@@ -148,10 +149,14 @@ class HTTPClientTool(BaseTool):
         if headers_error:
             return ToolResult(success=False, error=headers_error)
 
-        request_headers: Dict[str, str] = dict(headers) if isinstance(headers, dict) else {}
+        request_headers: dict[str, str] = (
+            dict(headers) if isinstance(headers, dict) else {}
+        )
 
         try:
-            with httpx.Client(timeout=httpx.Timeout(timeout=float(timeout), connect=10.0)) as client:
+            with httpx.Client(
+                timeout=httpx.Timeout(timeout=float(timeout), connect=10.0)
+            ) as client:
                 response = client.request(
                     method=method,
                     url=url,
@@ -175,7 +180,9 @@ class HTTPClientTool(BaseTool):
             )
 
         except httpx.TimeoutException:
-            return ToolResult(success=False, error=f"Request timed out after {timeout} seconds")
+            return ToolResult(
+                success=False, error=f"Request timed out after {timeout} seconds"
+            )
         except httpx.HTTPError as exc:
             return ToolResult(success=False, error=f"HTTP error: {exc}")
         except ValueError as exc:

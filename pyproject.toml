@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "temper-ai"
-version = "1.0.0a1"
+version = "1.0.0"
 description = "Temper AI agent framework with self-improvement and full observability"
 license = "Apache-2.0"
 requires-python = ">=3.11"
@@ -18,9 +18,9 @@ dependencies = [
     "langchain>=1.0,<2.0",
     "langgraph>=1.0,<2.0",
     "pyyaml>=6.0,<7.0",
-    "pydantic>=2.0,<3.0",
+    "pydantic[email]>=2.0,<3.0",
     "pydantic-settings>=2.0,<3.0",
-    "jinja2>=3.1,<4.0",
+    "jinja2>=3.1.6,<4.0",
     "sqlmodel>=0.0.14,<1.0",
     "sqlalchemy>=2.0,<3.0",
     "alembic>=1.13,<2.0",
@@ -28,7 +28,7 @@ dependencies = [
     "click>=8.0,<9.0",
     "rich>=13.0,<14.0",
     "httpx>=0.25,<1.0",
-    "requests>=2.31,<3.0",
+    "requests>=2.32.4,<3.0",
     "beautifulsoup4>=4.12,<5.0",
     "lxml>=4.9,<6.0",
     "python-dotenv>=1.0,<2.0",
@@ -104,12 +104,7 @@ exclude = [
     "migrations",
 ]
 
-# Use docstring-code-line-length instead of line-length
-# This is the correct key for ruff's docstring code line length
-# For regular line length, use line-length under [tool.ruff.format]
 [tool.ruff.format]
-line-length = 88
-
 docstring-code-line-length = 88
 
 [tool.ruff.lint]
@@ -119,3 +114,9 @@ ignore = ["E501"]
 [tool.ruff.per-file-ignores]
 "__init__.py" = ["F401"]
 "migrations/*" = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = false
+warn_unused_configs = true
+ignore_missing_imports = true

@@ -1,12 +1,13 @@
 """Tests for resuming from checkpoints."""
+
 from unittest.mock import Mock
 
 import pytest
 
+from temper_ai.stage.executors.state_keys import StateKeys
 from temper_ai.workflow.checkpoint import CheckpointManager
 from temper_ai.workflow.checkpoint_backends import CheckpointNotFoundError
 from temper_ai.workflow.domain_state import WorkflowDomainState
-from temper_ai.stage.executors.state_keys import StateKeys
 from temper_ai.workflow.workflow_executor import WorkflowExecutor
 
 
@@ -19,7 +20,7 @@ def test_resume_from_checkpoint_continues_execution(tmp_path):
         workflow_id="wf-resume-test",
         stage_outputs={"stage1": "result1", "stage2": "result2"},
         current_stage="stage2",
-        topic="Test Topic"
+        topic="Test Topic",
     )
     checkpoint_manager.save_checkpoint("wf-resume-test", initial_state)
 
@@ -27,14 +28,22 @@ def test_resume_from_checkpoint_continues_execution(tmp_path):
     mock_graph = Mock()
     # Only stage3 should execute (stage1, stage2 already done)
     remaining_chunks = [
-        {"stage3": {"stage_outputs": {"stage1": "result1", "stage2": "result2", "stage3": "result3"}, "current_stage": "stage3", "workflow_id": "wf-resume-test"}},
+        {
+            "stage3": {
+                "stage_outputs": {
+                    "stage1": "result1",
+                    "stage2": "result2",
+                    "stage3": "result3",
+                },
+                "current_stage": "stage3",
+                "workflow_id": "wf-resume-test",
+            }
+        },
     ]
     mock_graph.stream = Mock(return_value=iter(remaining_chunks))
 
     executor = WorkflowExecutor(
-        graph=mock_graph,
-        checkpoint_manager=checkpoint_manager,
-        enable_checkpoints=True
+        graph=mock_graph, checkpoint_manager=checkpoint_manager, enable_checkpoints=True
     )
 
     # Resume from checkpoint
@@ -53,9 +62,7 @@ def test_resume_nonexistent_checkpoint_raises_error(tmp_path):
     """Verify error when trying to resume non-existent checkpoint."""
     checkpoint_manager = CheckpointManager(storage_path=str(tmp_path))
     executor = WorkflowExecutor(
-        graph=Mock(),
-        checkpoint_manager=checkpoint_manager,
-        enable_checkpoints=True
+        graph=Mock(), checkpoint_manager=checkpoint_manager, enable_checkpoints=True
     )
 
     with pytest.raises(CheckpointNotFoundError, match="No checkpoints found"):
@@ -71,22 +78,32 @@ def test_resume_continues_checkpointing(tmp_path):
         workflow_id="wf-continue",
         stage_outputs={"stage1": "r1"},
         current_stage="stage1",
-        topic="Test"
+        topic="Test",
     )
     checkpoint_manager.save_checkpoint("wf-continue", initial_state)
 
     # Mock graph for remaining execution
     mock_graph = Mock()
     remaining_chunks = [
-        {"stage2": {"stage_outputs": {"stage1": "r1", "stage2": "r2"}, "current_stage": "stage2", "workflow_id": "wf-continue"}},
-        {"stage3": {"stage_outputs": {"stage1": "r1", "stage2": "r2", "stage3": "r3"}, "current_stage": "stage3", "workflow_id": "wf-continue"}},
+        {
+            "stage2": {
+                "stage_outputs": {"stage1": "r1", "stage2": "r2"},
+                "current_stage": "stage2",
+                "workflow_id": "wf-continue",
+            }
+        },
+        {
+            "stage3": {
+                "stage_outputs": {"stage1": "r1", "stage2": "r2", "stage3": "r3"},
+                "current_stage": "stage3",
+                "workflow_id": "wf-continue",
+            }
+        },
     ]
     mock_graph.stream = Mock(return_value=iter(remaining_chunks))
 
     executor = WorkflowExecutor(
-        graph=mock_graph,
-        checkpoint_manager=checkpoint_manager,
-        enable_checkpoints=True
+        graph=mock_graph, checkpoint_manager=checkpoint_manager, enable_checkpoints=True
     )
 
     # Resume and complete
@@ -108,28 +125,31 @@ def test_resume_with_additional_input(tmp_path):
         workflow_id="wf-merge",
         stage_outputs={"stage1": "r1"},
         current_stage="stage1",
-        topic="Original Topic"
+        topic="Original Topic",
     )
     checkpoint_manager.save_checkpoint("wf-merge", initial_state)
 
     # Mock graph
     mock_graph = Mock()
     remaining_chunks = [
-        {"stage2": {"stage_outputs": {"stage1": "r1", "stage2": "r2"}, "current_stage": "stage2", "workflow_id": "wf-merge", "topic": "Original Topic", "depth": 5}},
+        {
+            "stage2": {
+                "stage_outputs": {"stage1": "r1", "stage2": "r2"},
+                "current_stage": "stage2",
+                "workflow_id": "wf-merge",
+                "topic": "Original Topic",
+                "depth": 5,
+            }
+        },
     ]
     mock_graph.stream = Mock(return_value=iter(remaining_chunks))
 
     executor = WorkflowExecutor(
-        graph=mock_graph,
-        checkpoint_manager=checkpoint_manager,
-        enable_checkpoints=True
+        graph=mock_graph, checkpoint_manager=checkpoint_manager, enable_checkpoints=True
     )
 
     # Resume with additional input
-    result = executor.resume_from_checkpoint(
-        "wf-merge",
-        input_data={"depth": 5}
-    )
+    result = executor.resume_from_checkpoint("wf-merge", input_data={"depth": 5})
 
     # Verify new input was used (mock returns it in chunk)
     assert result.get("depth") == 5
@@ -144,7 +164,7 @@ def test_resume_already_complete_workflow(tmp_path):
         workflow_id="wf-complete",
         stage_outputs={"stage1": "r1", "stage2": "r2", "stage3": "r3"},
         current_stage="stage3",
-        topic="Test"
+        topic="Test",
     )
     checkpoint_manager.save_checkpoint("wf-complete", complete_state)
 
@@ -159,7 +179,7 @@ def test_resume_already_complete_workflow(tmp_path):
         graph=mock_graph,
         tracker=mock_tracker,
         checkpoint_manager=checkpoint_manager,
-        enable_checkpoints=True
+        enable_checkpoints=True,
     )
 
     # Resume should return checkpoint state
@@ -182,14 +202,20 @@ def test_resume_with_tracker(tmp_path):
         workflow_id="wf-tracked-resume",
         stage_outputs={"stage1": "r1"},
         current_stage="stage1",
-        topic="Test"
+        topic="Test",
     )
     checkpoint_manager.save_checkpoint("wf-tracked-resume", initial_state)
 
     # Mock graph
     mock_graph = Mock()
     remaining_chunks = [
-        {"stage2": {"stage_outputs": {"stage1": "r1", "stage2": "r2"}, "current_stage": "stage2", "workflow_id": "wf-tracked-resume"}},
+        {
+            "stage2": {
+                "stage_outputs": {"stage1": "r1", "stage2": "r2"},
+                "current_stage": "stage2",
+                "workflow_id": "wf-tracked-resume",
+            }
+        },
     ]
     mock_graph.stream = Mock(return_value=iter(remaining_chunks))
 
@@ -200,7 +226,7 @@ def test_resume_with_tracker(tmp_path):
         graph=mock_graph,
         tracker=mock_tracker,
         checkpoint_manager=checkpoint_manager,
-        enable_checkpoints=True
+        enable_checkpoints=True,
     )
 
     # Resume
@@ -220,7 +246,7 @@ def test_resume_error_saves_checkpoint(tmp_path):
         workflow_id="wf-resume-fail",
         stage_outputs={"stage1": "r1"},
         current_stage="stage1",
-        topic="Test"
+        topic="Test",
     )
     checkpoint_manager.save_checkpoint("wf-resume-fail", initial_state)
 
@@ -228,15 +254,19 @@ def test_resume_error_saves_checkpoint(tmp_path):
     mock_graph = Mock()
 
     def failing_stream(state):
-        yield {"stage2": {"stage_outputs": {"stage1": "r1", "stage2": "r2"}, "current_stage": "stage2", "workflow_id": "wf-resume-fail"}}
+        yield {
+            "stage2": {
+                "stage_outputs": {"stage1": "r1", "stage2": "r2"},
+                "current_stage": "stage2",
+                "workflow_id": "wf-resume-fail",
+            }
+        }
         raise RuntimeError("Stage 3 failed during resume")
 
     mock_graph.stream = Mock(side_effect=failing_stream)
 
     executor = WorkflowExecutor(
-        graph=mock_graph,
-        checkpoint_manager=checkpoint_manager,
-        enable_checkpoints=True
+        graph=mock_graph, checkpoint_manager=checkpoint_manager, enable_checkpoints=True
     )
 
     # Resume should fail
@@ -256,10 +286,7 @@ def test_resume_without_checkpoint_manager_raises_error():
     """Verify error when trying to resume without checkpoint manager."""
     mock_graph = Mock()
 
-    executor = WorkflowExecutor(
-        graph=mock_graph,
-        enable_checkpoints=False
-    )
+    executor = WorkflowExecutor(graph=mock_graph, enable_checkpoints=False)
 
     with pytest.raises(RuntimeError, match="Checkpoint manager not configured"):
         executor.resume_from_checkpoint("wf-no-manager")

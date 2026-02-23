@@ -1,5 +1,5 @@
 """Tests for routing function factories."""
-import pytest
+
 from langgraph.graph import END
 
 from temper_ai.workflow.condition_evaluator import ConditionEvaluator
@@ -38,7 +38,9 @@ class TestConditionalRouter:
     def test_executes_when_condition_true(self):
         ref = FakeStageRef("fix", condition="{{ should_fix }}")
         router = create_conditional_router(
-            ref, "next_stage", 1,
+            ref,
+            "next_stage",
+            1,
             [FakeStageRef("test"), ref],
             self.evaluator,
         )
@@ -48,7 +50,9 @@ class TestConditionalRouter:
     def test_skips_when_condition_false(self):
         ref = FakeStageRef("fix", condition="{{ should_fix }}")
         router = create_conditional_router(
-            ref, "next_stage", 1,
+            ref,
+            "next_stage",
+            1,
             [FakeStageRef("test"), ref],
             self.evaluator,
         )
@@ -58,7 +62,9 @@ class TestConditionalRouter:
     def test_skips_to_end_when_last_stage(self):
         ref = FakeStageRef("fix", condition="{{ should_fix }}")
         router = create_conditional_router(
-            ref, None, 1,
+            ref,
+            None,
+            1,
             [FakeStageRef("test"), ref],
             self.evaluator,
         )
@@ -68,7 +74,9 @@ class TestConditionalRouter:
     def test_skip_if_true_skips(self):
         ref = FakeStageRef("optional", skip_if="{{ skip }}")
         router = create_conditional_router(
-            ref, "next_stage", 0,
+            ref,
+            "next_stage",
+            0,
             [ref],
             self.evaluator,
         )
@@ -78,7 +86,9 @@ class TestConditionalRouter:
     def test_skip_if_false_executes(self):
         ref = FakeStageRef("optional", skip_if="{{ skip }}")
         router = create_conditional_router(
-            ref, "next_stage", 0,
+            ref,
+            "next_stage",
+            0,
             [ref],
             self.evaluator,
         )
@@ -90,7 +100,11 @@ class TestConditionalRouter:
         ref = FakeStageRef("fix", conditional=True)
         stages = [FakeStageRef("test"), ref]
         router = create_conditional_router(
-            ref, None, 1, stages, self.evaluator,
+            ref,
+            None,
+            1,
+            stages,
+            self.evaluator,
         )
         state = {"stage_outputs": {"test": {"stage_status": "failed"}}}
         result = router(state)
@@ -100,7 +114,11 @@ class TestConditionalRouter:
         ref = FakeStageRef("fix", conditional=True)
         stages = [FakeStageRef("test"), ref]
         router = create_conditional_router(
-            ref, None, 1, stages, self.evaluator,
+            ref,
+            None,
+            1,
+            stages,
+            self.evaluator,
         )
         state = {"stage_outputs": {"test": {"stage_status": "success"}}}
         result = router(state)

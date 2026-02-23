@@ -3,6 +3,7 @@ Path safety validation utilities.
 
 Public API for path safety validation.
 """
+
 from pathlib import Path
 from typing import Any, Union
 
@@ -13,7 +14,7 @@ from temper_ai.shared.utils.path_safety.validator import PathSafetyValidator
 _default_validator = PathSafetyValidator()
 
 
-def validate_path(path: Union[str, Path], **kwargs: Any) -> Path:
+def validate_path(path: str | Path, **kwargs: Any) -> Path:
     """
     Validate a path using the default validator.
 
@@ -43,7 +44,9 @@ def validate_read(path: Path) -> Path:
     return _default_validator.validate_read(path)
 
 
-def validate_write(path: Path, allow_overwrite: bool = True, allow_create_parents: bool = False) -> Path:
+def validate_write(
+    path: Path, allow_overwrite: bool = True, allow_create_parents: bool = False
+) -> Path:
     """
     Validate a path for writing using the default validator.
 
@@ -55,7 +58,9 @@ def validate_write(path: Path, allow_overwrite: bool = True, allow_create_parent
     Returns:
         Resolved absolute path
     """
-    return _default_validator.validate_write(path, allow_overwrite, allow_create_parents)
+    return _default_validator.validate_write(
+        path, allow_overwrite, allow_create_parents
+    )
 
 
 __all__ = [

@@ -3,9 +3,11 @@
 This backend implements the ObservabilityBackend interface but doesn't actually
 persist any data. Useful for demos and testing when you don't want database overhead.
 """
+
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime
-from typing import Any, AsyncIterator, Dict, List, Optional
+from typing import Any
 
 from temper_ai.observability.backend import (
     AgentOutputData,
@@ -29,9 +31,9 @@ class _NoOpAsyncMixin:
         self,
         workflow_id: str,
         workflow_name: str,
-        workflow_config: Dict[str, Any],
+        workflow_config: dict[str, Any],
         start_time: datetime,
-        data: Optional[WorkflowStartData] = None,
+        data: WorkflowStartData | None = None,
     ) -> None:
         """Async no-op: skip thread delegation overhead."""
         pass
@@ -41,8 +43,8 @@ class _NoOpAsyncMixin:
         workflow_id: str,
         end_time: datetime,
         status: str,
-        error_message: Optional[str] = None,
-        error_stack_trace: Optional[str] = None,
+        error_message: str | None = None,
+        error_stack_trace: str | None = None,
     ) -> None:
         """Async no-op: skip thread delegation overhead."""
         pass
@@ -52,9 +54,9 @@ class _NoOpAsyncMixin:
         stage_id: str,
         workflow_id: str,
         stage_name: str,
-        stage_config: Dict[str, Any],
+        stage_config: dict[str, Any],
         start_time: datetime,
-        input_data: Optional[Dict[str, Any]] = None,
+        input_data: dict[str, Any] | None = None,
     ) -> None:
         """Async no-op: skip thread delegation overhead."""
         pass
@@ -64,7 +66,7 @@ class _NoOpAsyncMixin:
         stage_id: str,
         end_time: datetime,
         status: str,
-        error_message: Optional[str] = None,
+        error_message: str | None = None,
         num_agents_executed: int = 0,
         num_agents_succeeded: int = 0,
         num_agents_failed: int = 0,
@@ -77,9 +79,9 @@ class _NoOpAsyncMixin:
         agent_id: str,
         stage_id: str,
         agent_name: str,
-        agent_config: Dict[str, Any],
+        agent_config: dict[str, Any],
         start_time: datetime,
-        input_data: Optional[Dict[str, Any]] = None,
+        input_data: dict[str, Any] | None = None,
     ) -> None:
         """Async no-op: skip thread delegation overhead."""
         pass
@@ -89,7 +91,7 @@ class _NoOpAsyncMixin:
         agent_id: str,
         end_time: datetime,
         status: str,
-        error_message: Optional[str] = None,
+        error_message: str | None = None,
     ) -> None:
         """Async no-op: skip thread delegation overhead."""
         pass
@@ -120,8 +122,8 @@ class _NoOpAsyncMixin:
     async def aset_agent_output(
         self,
         agent_id: str,
-        output_data: Dict[str, Any],
-        metrics: Optional[AgentOutputData] = None,
+        output_data: dict[str, Any],
+        metrics: AgentOutputData | None = None,
     ) -> None:
         """Async no-op: skip thread delegation overhead."""
         pass
@@ -129,8 +131,8 @@ class _NoOpAsyncMixin:
     async def aset_stage_output(
         self,
         stage_id: str,
-        output_data: Dict[str, Any],
-        output_lineage: Optional[Dict[str, Any]] = None,
+        output_data: dict[str, Any],
+        output_lineage: dict[str, Any] | None = None,
     ) -> None:
         """Async no-op: skip thread delegation overhead."""
         pass
@@ -150,8 +152,8 @@ class _NoOpAsyncMixin:
         self,
         stage_id: str,
         event_type: str,
-        agents_involved: List[str],
-        data: Optional[CollaborationEventData] = None,
+        agents_involved: list[str],
+        data: CollaborationEventData | None = None,
     ) -> str:
         """Async no-op: skip thread delegation overhead."""
         return ""
@@ -161,7 +163,7 @@ class _NoOpAsyncMixin:
         violation_severity: str,
         violation_message: str,
         policy_name: str,
-        data: Optional[SafetyViolationData] = None,
+        data: SafetyViolationData | None = None,
     ) -> None:
         """Async no-op: skip thread delegation overhead."""
         pass
@@ -181,9 +183,9 @@ class NoOpBackend(_NoOpAsyncMixin, ObservabilityBackend, ReadableBackendMixin):
         self,
         workflow_id: str,
         workflow_name: str,
-        workflow_config: Dict[str, Any],
+        workflow_config: dict[str, Any],
         start_time: datetime,
-        data: Optional[WorkflowStartData] = None,
+        data: WorkflowStartData | None = None,
         **kwargs: Any,
     ) -> None:
         """Track workflow start (no-op)."""
@@ -194,8 +196,8 @@ class NoOpBackend(_NoOpAsyncMixin, ObservabilityBackend, ReadableBackendMixin):
         workflow_id: str,
         end_time: datetime,
         status: str,
-        error_message: Optional[str] = None,
-        error_stack_trace: Optional[str] = None
+        error_message: str | None = None,
+        error_stack_trace: str | None = None,
     ) -> None:
         """Track workflow end (no-op)."""
         pass
@@ -206,7 +208,7 @@ class NoOpBackend(_NoOpAsyncMixin, ObservabilityBackend, ReadableBackendMixin):
         total_llm_calls: int,
         total_tool_calls: int,
         total_tokens: int,
-        total_cost_usd: float
+        total_cost_usd: float,
     ) -> None:
         """Update workflow metrics (no-op)."""
         pass
@@ -218,9 +220,9 @@ class NoOpBackend(_NoOpAsyncMixin, ObservabilityBackend, ReadableBackendMixin):
         stage_id: str,
         workflow_id: str,
         stage_name: str,
-        stage_config: Dict[str, Any],
+        stage_config: dict[str, Any],
         start_time: datetime,
-        input_data: Optional[Dict[str, Any]] = None
+        input_data: dict[str, Any] | None = None,
     ) -> None:
         """Track stage start (no-op)."""
         pass
@@ -230,10 +232,10 @@ class NoOpBackend(_NoOpAsyncMixin, ObservabilityBackend, ReadableBackendMixin):
         stage_id: str,
         end_time: datetime,
         status: str,
-        error_message: Optional[str] = None,
+        error_message: str | None = None,
         num_agents_executed: int = 0,
         num_agents_succeeded: int = 0,
-        num_agents_failed: int = 0
+        num_agents_failed: int = 0,
     ) -> None:
         """Track stage end (no-op)."""
         pass
@@ -241,8 +243,8 @@ class NoOpBackend(_NoOpAsyncMixin, ObservabilityBackend, ReadableBackendMixin):
     def set_stage_output(
         self,
         stage_id: str,
-        output_data: Dict[str, Any],
-        output_lineage: Optional[Dict[str, Any]] = None,
+        output_data: dict[str, Any],
+        output_lineage: dict[str, Any] | None = None,
     ) -> None:
         """Set stage output (no-op)."""
         pass
@@ -254,9 +256,9 @@ class NoOpBackend(_NoOpAsyncMixin, ObservabilityBackend, ReadableBackendMixin):
         agent_id: str,
         stage_id: str,
         agent_name: str,
-        agent_config: Dict[str, Any],
+        agent_config: dict[str, Any],
         start_time: datetime,
-        input_data: Optional[Dict[str, Any]] = None
+        input_data: dict[str, Any] | None = None,
     ) -> None:
         """Track agent start (no-op)."""
         pass
@@ -266,7 +268,7 @@ class NoOpBackend(_NoOpAsyncMixin, ObservabilityBackend, ReadableBackendMixin):
         agent_id: str,
         end_time: datetime,
         status: str,
-        error_message: Optional[str] = None
+        error_message: str | None = None,
     ) -> None:
         """Track agent end (no-op)."""
         pass
@@ -274,8 +276,8 @@ class NoOpBackend(_NoOpAsyncMixin, ObservabilityBackend, ReadableBackendMixin):
     def set_agent_output(
         self,
         agent_id: str,
-        output_data: Optional[Dict[str, Any]] = None,
-        metrics: Optional[AgentOutputData] = None,
+        output_data: dict[str, Any] | None = None,
+        metrics: AgentOutputData | None = None,
         **kwargs: Any,
     ) -> None:
         """Set agent output (no-op)."""
@@ -289,8 +291,8 @@ class NoOpBackend(_NoOpAsyncMixin, ObservabilityBackend, ReadableBackendMixin):
         agent_id: str,
         provider: str,
         model: str,
-        start_time: Optional[datetime] = None,
-        data: Optional[LLMCallData] = None,
+        start_time: datetime | None = None,
+        data: LLMCallData | None = None,
         **kwargs: Any,
     ) -> None:
         """Track LLM call (no-op)."""
@@ -303,8 +305,8 @@ class NoOpBackend(_NoOpAsyncMixin, ObservabilityBackend, ReadableBackendMixin):
         tool_execution_id: str,
         agent_id: str,
         tool_name: str,
-        start_time: Optional[datetime] = None,
-        data: Optional[ToolCallData] = None,
+        start_time: datetime | None = None,
+        data: ToolCallData | None = None,
         **kwargs: Any,
     ) -> None:
         """Track tool call (no-op)."""
@@ -317,7 +319,7 @@ class NoOpBackend(_NoOpAsyncMixin, ObservabilityBackend, ReadableBackendMixin):
         violation_severity: str,
         violation_message: str,
         policy_name: str,
-        data: Optional[SafetyViolationData] = None,
+        data: SafetyViolationData | None = None,
         **kwargs: Any,
     ) -> None:
         """Track safety violation (no-op)."""
@@ -327,8 +329,8 @@ class NoOpBackend(_NoOpAsyncMixin, ObservabilityBackend, ReadableBackendMixin):
         self,
         stage_id: str,
         event_type: str,
-        agents_involved: Optional[List[str]] = None,
-        data: Optional[CollaborationEventData] = None,
+        agents_involved: list[str] | None = None,
+        data: CollaborationEventData | None = None,
         **kwargs: Any,
     ) -> str:
         """Track collaboration event (no-op)."""
@@ -343,8 +345,8 @@ class NoOpBackend(_NoOpAsyncMixin, ObservabilityBackend, ReadableBackendMixin):
     def get_top_errors(
         self,
         limit: int = 10,
-        classification: Optional[str] = None,
-        since: Optional[Any] = None,
+        classification: str | None = None,
+        since: Any | None = None,
     ) -> list:
         """Get top errors (no-op)."""
         return []
@@ -359,13 +361,11 @@ class NoOpBackend(_NoOpAsyncMixin, ObservabilityBackend, ReadableBackendMixin):
     # ========== Maintenance Operations ==========
 
     def cleanup_old_records(
-        self,
-        retention_days: int,
-        dry_run: bool = False
-    ) -> Dict[str, int]:
+        self, retention_days: int, dry_run: bool = False
+    ) -> dict[str, int]:
         """Cleanup old records (no-op)."""
         return {}
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get backend stats."""
         return {"backend_type": "noop"}

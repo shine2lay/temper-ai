@@ -16,19 +16,20 @@ Example:
     >>> result.sanitized_text
     'Contact [EMAIL_REDACTED] with API key [GENERIC_API_KEY_REDACTED]'
 """
+
 import hashlib
 import hmac
 import logging
 import os
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 # Sanitization limit constants
-DEFAULT_MAX_PROMPT_LENGTH = 5000  # 5KB instead of 10KB
-DEFAULT_MAX_RESPONSE_LENGTH = 20000  # 20KB instead of 50KB
+DEFAULT_MAX_PROMPT_LENGTH = 5000  # 5000 chars (was 10000)
+DEFAULT_MAX_RESPONSE_LENGTH = 20000  # 20000 chars (was 50000)
 HMAC_KEY_SIZE_BYTES = 32  # 256 bits
 CONTENT_HASH_TRUNCATE_LENGTH = 16
 
@@ -53,26 +54,29 @@ class SanitizationConfig:
     redact_ssn: bool = True
     redact_phone_numbers: bool = True
     redact_credit_cards: bool = True
-    redact_ip_addresses: bool = True  # CHANGED: was False (prevents network topology exposure)
+    redact_ip_addresses: bool = (
+        True  # CHANGED: was False (prevents network topology exposure)
+    )
 
     # Length limiting - REDUCED for aggressive truncation
-    max_prompt_length: int = DEFAULT_MAX_PROMPT_LENGTH   # CHANGED: was 10000 (5KB instead of 10KB)
-    max_response_length: int = DEFAULT_MAX_RESPONSE_LENGTH  # CHANGED: was 50000 (20KB instead of 50KB)
+    max_prompt_length: int = DEFAULT_MAX_PROMPT_LENGTH  # CHANGED: was 10000
+    max_response_length: int = DEFAULT_MAX_RESPONSE_LENGTH  # CHANGED: was 50000
 
     # Hash generation
     include_hash: bool = True  # For debugging/correlation
 
     # Allowlist patterns (e.g., example.com emails for tests)
-    allowlist_patterns: List[str] = field(default_factory=list)
+    allowlist_patterns: list[str] = field(default_factory=list)
 
 
 @dataclass
 class SanitizationResult:
     """Result of text sanitization."""
+
     sanitized_text: str
     original_length: int
-    redactions: List[Dict[str, Any]]
-    content_hash: Optional[str]
+    redactions: list[dict[str, Any]]
+    content_hash: str | None
 
     @property
     def was_sanitized(self) -> bool:
@@ -84,14 +88,16 @@ class SanitizationResult:
         """Get total number of redactions."""
         return len(self.redactions)
 
-    def to_metadata(self) -> Dict[str, Any]:
+    def to_metadata(self) -> dict[str, Any]:
         """Convert to metadata for logging."""
         return {
             "original_length": self.original_length,
             "sanitized_length": len(self.sanitized_text),
             "num_redactions": len(self.redactions),
-            "redaction_types": list(set(r.get("type", "unknown") for r in self.redactions)),
-            "content_hash": self.content_hash
+            "redaction_types": list(
+                set(r.get("type", "unknown") for r in self.redactions)
+            ),
+            "content_hash": self.content_hash,
         }
 
 
@@ -121,10 +127,11 @@ class DataSanitizer:
     from temper_ai.shared.utils.secret_patterns import (
         SECRET_PATTERNS as _SECRET_PATTERNS,
     )
+
     PII_PATTERNS = _PII_PATTERNS
     SECRET_PATTERNS = {**_SECRET_PATTERNS, **_GENERIC_SECRET_PATTERNS}
 
-    def __init__(self, config: Optional[SanitizationConfig] = None):
+    def __init__(self, config: SanitizationConfig | None = None):
         """
         Initialize sanitizer with configuration.
 
@@ -135,8 +142,7 @@ class DataSanitizer:
 
         # Compile PII patterns for performance
         self.compiled_pii_patterns = {
-            name: re.compile(pattern)
-            for name, pattern in self.PII_PATTERNS.items()
+            name: re.compile(pattern) for name, pattern in self.PII_PATTERNS.items()
         }
 
         # Compile secret patterns for performance
@@ -155,7 +161,7 @@ class DataSanitizer:
 
         # SECURITY: Use HMAC key for content hashing to prevent rainbow table attacks
         # Generate or load from environment variable
-        hmac_key_hex = os.environ.get('OBSERVABILITY_HMAC_KEY')
+        hmac_key_hex = os.environ.get("OBSERVABILITY_HMAC_KEY")
         if hmac_key_hex:
             try:
                 self._hmac_key = bytes.fromhex(hmac_key_hex)
@@ -167,9 +173,7 @@ class DataSanitizer:
             self._hmac_key = os.urandom(HMAC_KEY_SIZE_BYTES)
 
     def sanitize_text(
-        self,
-        text: str,
-        context: Optional[str] = None
+        self, text: str, context: str | None = None
     ) -> SanitizationResult:
         """
         Sanitize text by detecting and redacting sensitive data.
@@ -192,14 +196,11 @@ class DataSanitizer:
         """
         if not text:
             return SanitizationResult(
-                sanitized_text="",
-                original_length=0,
-                redactions=[],
-                content_hash=None
+                sanitized_text="", original_length=0, redactions=[], content_hash=None
             )
 
         original_length = len(text)
-        redactions: List[Dict[str, Any]] = []
+        redactions: list[dict[str, Any]] = []
         sanitized = text
 
         # Step 1: Detect and redact secrets
@@ -215,39 +216,39 @@ class DataSanitizer:
         # Step 3: Apply length limits
         if context == "prompt" and len(sanitized) > self.config.max_prompt_length:
             sanitized = self._truncate_text(sanitized, self.config.max_prompt_length)
-            redactions.append({
-                "type": "truncation",
-                "original_length": original_length,
-                "truncated_to": self.config.max_prompt_length
-            })
+            redactions.append(
+                {
+                    "type": "truncation",
+                    "original_length": original_length,
+                    "truncated_to": self.config.max_prompt_length,
+                }
+            )
         elif context == "response" and len(sanitized) > self.config.max_response_length:
             sanitized = self._truncate_text(sanitized, self.config.max_response_length)
-            redactions.append({
-                "type": "truncation",
-                "original_length": original_length,
-                "truncated_to": self.config.max_response_length
-            })
+            redactions.append(
+                {
+                    "type": "truncation",
+                    "original_length": original_length,
+                    "truncated_to": self.config.max_response_length,
+                }
+            )
 
         # Step 4: Generate HMAC hash for correlation
         # SECURITY: Use HMAC instead of raw SHA256 to prevent rainbow table attacks
         # This allows correlation of sanitized content without enabling brute-force
         content_hash = None
         if self.config.include_hash:
-            h = hmac.new(
-                self._hmac_key,
-                text.encode('utf-8'),
-                hashlib.sha256
-            )
+            h = hmac.new(self._hmac_key, text.encode("utf-8"), hashlib.sha256)
             content_hash = h.hexdigest()[:CONTENT_HASH_TRUNCATE_LENGTH]
 
         return SanitizationResult(
             sanitized_text=sanitized,
             original_length=original_length,
             redactions=redactions,
-            content_hash=content_hash
+            content_hash=content_hash,
         )
 
-    def _redact_secrets(self, text: str) -> Tuple[str, List[Dict[str, Any]]]:
+    def _redact_secrets(self, text: str) -> tuple[str, list[dict[str, Any]]]:
         """
         Detect and redact secrets from text.
 
@@ -278,17 +279,19 @@ class DataSanitizer:
                     sanitized = sanitized[:start] + redaction_marker + sanitized[end:]
 
                     # Record redaction
-                    redactions.append({
-                        "type": "secret",
-                        "pattern": pattern_name,
-                        "position": start,
-                        "length": len(matched_text),
-                        "confidence": "high"
-                    })
+                    redactions.append(
+                        {
+                            "type": "secret",
+                            "pattern": pattern_name,
+                            "position": start,
+                            "length": len(matched_text),
+                            "confidence": "high",
+                        }
+                    )
 
         return sanitized, redactions
 
-    def _redact_pii(self, text: str) -> Tuple[str, List[Dict[str, Any]]]:
+    def _redact_pii(self, text: str) -> tuple[str, list[dict[str, Any]]]:
         """
         Detect and redact PII from text.
 
@@ -333,12 +336,14 @@ class DataSanitizer:
                 sanitized = sanitized[:start] + redaction_marker + sanitized[end:]
 
                 # Record redaction
-                redactions.append({
-                    "type": "pii",
-                    "pii_type": pii_type,
-                    "position": start,
-                    "length": len(matched_text)
-                })
+                redactions.append(
+                    {
+                        "type": "pii",
+                        "pii_type": pii_type,
+                        "position": start,
+                        "length": len(matched_text),
+                    }
+                )
 
         return sanitized, redactions
 
@@ -379,4 +384,4 @@ class DataSanitizer:
             return text
 
         suffix = f"...[TRUNCATED:{len(text)-max_length}_chars]"
-        return text[:max_length - len(suffix)] + suffix
+        return text[: max_length - len(suffix)] + suffix

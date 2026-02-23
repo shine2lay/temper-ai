@@ -3,12 +3,14 @@ Configuration helper utilities.
 
 Shared utilities for configuration parsing, merging, and validation.
 """
+
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple, cast
+from typing import Any, cast
 
 # Import secrets management for detection
-SecretReference: Optional[Any] = None
-detect_secret_patterns: Optional[Callable[[str], Tuple[bool, Optional[str]]]] = None
+SecretReference: Any | None = None
+detect_secret_patterns: Callable[[str], tuple[bool, str | None]] | None = None
 
 try:
     from temper_ai.shared.utils.secrets import SecretReference, detect_secret_patterns
@@ -17,7 +19,7 @@ except ImportError:
     pass
 
 
-def merge_configs(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+def merge_configs(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
     """
     Deep merge two configuration dictionaries.
 
@@ -48,10 +50,8 @@ def merge_configs(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, A
 
 
 def extract_required_fields(
-    config: Dict[str, Any],
-    fields: List[str],
-    config_name: str = "config"
-) -> Dict[str, Any]:
+    config: dict[str, Any], fields: list[str], config_name: str = "config"
+) -> dict[str, Any]:
     """
     Extract required fields from configuration.
 
@@ -82,11 +82,7 @@ def extract_required_fields(
     return result
 
 
-def get_nested_value(
-    config: Dict[str, Any],
-    path: str,
-    default: Any = None
-) -> Any:
+def get_nested_value(config: dict[str, Any], path: str, default: Any = None) -> Any:
     """
     Get value from nested dict using dot notation.
 
@@ -105,7 +101,7 @@ def get_nested_value(
         >>> get_nested_value(config, "agent.missing.field", "default")
         "default"
     """
-    keys = path.split('.')
+    keys = path.split(".")
     value = config
 
     for key in keys:
@@ -117,11 +113,7 @@ def get_nested_value(
     return value
 
 
-def set_nested_value(
-    config: Dict[str, Any],
-    path: str,
-    value: Any
-) -> None:
+def set_nested_value(config: dict[str, Any], path: str, value: Any) -> None:
     """
     Set value in nested dict using dot notation.
 
@@ -136,7 +128,7 @@ def set_nested_value(
         >>> config
         {"agent": {"inference": {"model": "gpt-4"}}}
     """
-    keys = path.split('.')
+    keys = path.split(".")
     current = config
 
     # Navigate/create nested dicts
@@ -150,9 +142,7 @@ def set_nested_value(
 
 
 def validate_config_structure(
-    config: Dict[str, Any],
-    required_keys: List[str],
-    config_name: str = "config"
+    config: dict[str, Any], required_keys: list[str], config_name: str = "config"
 ) -> None:
     """
     Validate that config has required top-level keys.
@@ -167,9 +157,7 @@ def validate_config_structure(
     """
     for key in required_keys:
         if key not in config:
-            raise ValueError(
-                f"Invalid {config_name}: missing required key '{key}'"
-            )
+            raise ValueError(f"Invalid {config_name}: missing required key '{key}'")
 
 
 def _redact_secret_reference(value: str) -> str:
@@ -184,7 +172,7 @@ def _redact_secret_reference(value: str) -> str:
         return "***REDACTED***"
 
 
-def _sanitize_dict(obj: Dict[str, Any], secret_patterns: List[str]) -> Dict[str, Any]:
+def _sanitize_dict(obj: dict[str, Any], secret_patterns: list[str]) -> dict[str, Any]:
     """Sanitize dictionary recursively."""
     result = {}
     for key, value in obj.items():
@@ -198,7 +186,11 @@ def _sanitize_dict(obj: Dict[str, Any], secret_patterns: List[str]) -> Dict[str,
         if isinstance(value, (dict, list)):
             # Recurse even if key looks like a secret
             result[key] = _sanitize_value(value, secret_patterns)
-        elif isinstance(value, str) and SecretReference is not None and SecretReference.is_reference(value):
+        elif (
+            isinstance(value, str)
+            and SecretReference is not None
+            and SecretReference.is_reference(value)
+        ):
             # Redact secret reference
             result[key] = _redact_secret_reference(value)
         else:
@@ -223,7 +215,7 @@ def _sanitize_string(obj: str) -> str:
     return obj
 
 
-def _sanitize_value(obj: Any, secret_patterns: List[str]) -> Any:
+def _sanitize_value(obj: Any, secret_patterns: list[str]) -> Any:
     """Recursively sanitize any value."""
     if isinstance(obj, dict):
         return _sanitize_dict(obj, secret_patterns)
@@ -236,9 +228,8 @@ def _sanitize_value(obj: Any, secret_patterns: List[str]) -> Any:
 
 
 def sanitize_config_for_display(
-    config: Dict[str, Any],
-    secret_keys: Optional[List[str]] = None
-) -> Dict[str, Any]:
+    config: dict[str, Any], secret_keys: list[str] | None = None
+) -> dict[str, Any]:
     """
     Sanitize configuration for safe display/logging.
 
@@ -271,13 +262,10 @@ def sanitize_config_for_display(
 
     secret_patterns = [p.lower() for p in SECRET_KEY_NAMES + secret_keys]
 
-    return cast(Dict[str, Any], _sanitize_value(config, secret_patterns))
+    return cast(dict[str, Any], _sanitize_value(config, secret_patterns))
 
 
-def resolve_config_path(
-    path: str,
-    config_root: Optional[Path] = None
-) -> Path:
+def resolve_config_path(path: str, config_root: Path | None = None) -> Path:
     """
     Resolve configuration file path with security validation.
 
@@ -298,7 +286,7 @@ def resolve_config_path(
     config_root_resolved = config_root.resolve()
 
     # Reject null bytes (path injection)
-    if '\x00' in path:
+    if "\x00" in path:
         raise ValueError("Config path contains null bytes")
 
     path_obj = Path(path)
@@ -312,9 +300,7 @@ def resolve_config_path(
 
     # Reject explicit traversal components
     if ".." in path_obj.parts:
-        raise ValueError(
-            f"Config path must not contain '..': {path}"
-        )
+        raise ValueError(f"Config path must not contain '..': {path}")
 
     # Resolve relative to config_root
     resolved = (config_root_resolved / path_obj).resolve()
@@ -323,9 +309,7 @@ def resolve_config_path(
     try:
         resolved.relative_to(config_root_resolved)
     except ValueError:
-        raise ValueError(
-            f"Config path escapes config_root: {path}"
-        )
+        raise ValueError(f"Config path escapes config_root: {path}")
 
     if not resolved.exists():
         raise FileNotFoundError(f"Config file not found: {resolved}")

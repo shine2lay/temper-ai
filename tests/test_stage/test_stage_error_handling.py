@@ -5,13 +5,14 @@ Tests that:
 - WorkflowStageError is raised when on_stage_failure='halt' and all agents fail
 - on_stage_failure='skip' allows workflow to continue
 """
+
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from temper_ai.shared.utils.exceptions import WorkflowStageError
 from temper_ai.stage.executors.state_keys import StateKeys
 from temper_ai.workflow.node_builder import NodeBuilder
-from temper_ai.shared.utils.exceptions import WorkflowStageError
 
 
 class TestStageStatusComputation:
@@ -77,12 +78,12 @@ class TestStageStatusComputation:
 
     def test_sequential_stage_status_failed_all_agents(self):
         """All agents fail → stage_status='failed'."""
+        from temper_ai.stage._schemas import StageErrorHandlingConfig
         from temper_ai.stage.executors._sequential_helpers import (
             AgentExecutionContext,
             run_all_agents,
         )
         from temper_ai.stage.executors.sequential import SequentialStageExecutor
-        from temper_ai.stage._schemas import StageErrorHandlingConfig
 
         executor = SequentialStageExecutor()
 
@@ -91,13 +92,24 @@ class TestStageStatusComputation:
             agent_name = executor._extract_agent_name(agent_ref)
             return {
                 "agent_name": agent_name,
-                "output_data": {"output": "", "error": "LLM timeout", "error_type": "llm_timeout"},
+                "output_data": {
+                    "output": "",
+                    "error": "LLM timeout",
+                    "error_type": "llm_timeout",
+                },
                 "status": "failed",
-                "metrics": {"tokens": 0, "cost_usd": 0.0, "duration_seconds": 1.0, "tool_calls": 0},
+                "metrics": {
+                    "tokens": 0,
+                    "cost_usd": 0.0,
+                    "duration_seconds": 1.0,
+                    "tool_calls": 0,
+                },
             }
 
         agents = [{"name": "agent1"}, {"name": "agent2"}]
-        error_handling = StageErrorHandlingConfig(on_agent_failure="continue_with_remaining")
+        error_handling = StageErrorHandlingConfig(
+            on_agent_failure="continue_with_remaining"
+        )
 
         ctx = AgentExecutionContext(
             executor=executor,
@@ -172,11 +184,7 @@ class TestNodeBuilderStageFailureCheck:
                 }
             }
         }
-        workflow_config = {
-            "workflow": {
-                "error_handling": {"on_stage_failure": "halt"}
-            }
-        }
+        workflow_config = {"workflow": {"error_handling": {"on_stage_failure": "halt"}}}
 
         with pytest.raises(WorkflowStageError) as exc_info:
             builder._check_stage_failure("analysis", result_dict, workflow_config)
@@ -215,11 +223,7 @@ class TestNodeBuilderStageFailureCheck:
                 }
             }
         }
-        workflow_config = {
-            "workflow": {
-                "error_handling": {"on_stage_failure": "skip"}
-            }
-        }
+        workflow_config = {"workflow": {"error_handling": {"on_stage_failure": "skip"}}}
 
         # Should not raise
         result = builder._check_stage_failure("analysis", result_dict, workflow_config)
@@ -237,11 +241,7 @@ class TestNodeBuilderStageFailureCheck:
                 }
             }
         }
-        workflow_config = {
-            "workflow": {
-                "error_handling": {"on_stage_failure": "halt"}
-            }
-        }
+        workflow_config = {"workflow": {"error_handling": {"on_stage_failure": "halt"}}}
 
         # Should not raise
         result = builder._check_stage_failure("analysis", result_dict, workflow_config)
@@ -262,11 +262,7 @@ class TestNodeBuilderStageFailureCheck:
                 }
             }
         }
-        workflow_config = {
-            "workflow": {
-                "error_handling": {"on_stage_failure": "halt"}
-            }
-        }
+        workflow_config = {"workflow": {"error_handling": {"on_stage_failure": "halt"}}}
 
         with pytest.raises(WorkflowStageError, match="degraded"):
             builder._check_stage_failure("analysis", result_dict, workflow_config)
@@ -283,11 +279,7 @@ class TestNodeBuilderStageFailureCheck:
                 }
             }
         }
-        workflow_config = {
-            "workflow": {
-                "error_handling": {"on_stage_failure": "skip"}
-            }
-        }
+        workflow_config = {"workflow": {"error_handling": {"on_stage_failure": "skip"}}}
 
         # Should not raise
         result = builder._check_stage_failure("analysis", result_dict, workflow_config)
@@ -301,5 +293,7 @@ class TestNodeBuilderStageFailureCheck:
         workflow_config = {"workflow": {"error_handling": {"on_stage_failure": "halt"}}}
 
         # Should not raise - no stage output to check
-        result = builder._check_stage_failure("nonexistent", result_dict, workflow_config)
+        result = builder._check_stage_failure(
+            "nonexistent", result_dict, workflow_config
+        )
         assert result is None

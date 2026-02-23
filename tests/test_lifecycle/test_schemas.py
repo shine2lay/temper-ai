@@ -7,14 +7,11 @@ from temper_ai.lifecycle._schemas import (
     AdaptationAction,
     AdaptationRecord,
     AdaptationRule,
-    DegradationReport,
     LifecycleConfig,
     LifecycleProfile,
     ProjectCharacteristics,
     ProjectSize,
     RiskLevel,
-    StageMetrics,
-    WorkflowMetrics,
 )
 
 

@@ -1,6 +1,4 @@
 """Tests for M9 schema fields on AgentConfigInner."""
-import pytest
-from pydantic import ValidationError
 
 from temper_ai.storage.schemas.agent_config import AgentConfig, AgentConfigInner
 

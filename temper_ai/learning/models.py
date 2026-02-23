@@ -1,7 +1,7 @@
 """SQLModel tables for continuous learning data."""
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from sqlalchemy import JSON, Column
 from sqlmodel import Field, SQLModel
@@ -43,14 +43,12 @@ class LearnedPattern(SQLModel, table=True):
     pattern_type: str = Field(index=True)
     title: str
     description: str
-    evidence: Dict[str, Any] = Field(sa_column=Column(JSON))
+    evidence: dict[str, Any] = Field(sa_column=Column(JSON))
     confidence: float
     impact_score: float
-    recommendation: Optional[str] = None
+    recommendation: str | None = None
     status: str = Field(default=STATUS_ACTIVE, index=True)
-    source_workflow_ids: List[str] = Field(
-        default_factory=list, sa_column=Column(JSON)
-    )
+    source_workflow_ids: list[str] = Field(default_factory=list, sa_column=Column(JSON))
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
 
@@ -62,15 +60,13 @@ class MiningRun(SQLModel, table=True):
 
     id: str = Field(primary_key=True)
     started_at: datetime = Field(default_factory=utcnow)
-    completed_at: Optional[datetime] = None
+    completed_at: datetime | None = None
     status: str = Field(default=STATUS_RUNNING)
     patterns_found: int = Field(default=0)
     patterns_new: int = Field(default=0)
     novelty_score: float = Field(default=0.0)
-    miner_stats: Dict[str, Any] = Field(
-        default_factory=dict, sa_column=Column(JSON)
-    )
-    error_message: Optional[str] = None
+    miner_stats: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    error_message: str | None = None
 
 
 class TuneRecommendation(SQLModel, table=True):

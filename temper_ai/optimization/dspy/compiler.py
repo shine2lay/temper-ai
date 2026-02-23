@@ -1,8 +1,9 @@
-"""DSPy compiler — wraps BootstrapFewShot and MIPROv2 optimizers."""
+"""DSPy compiler — wraps pluggable optimizers via registry dispatch."""
 
 import logging
 import uuid
-from typing import Any, Callable, List, Optional
+from collections.abc import Callable
+from typing import Any
 
 from temper_ai.optimization.dspy._schemas import (
     CompilationResult,
@@ -12,37 +13,11 @@ from temper_ai.optimization.dspy._schemas import (
 from temper_ai.optimization.dspy.constants import TRAIN_SPLIT_RATIO
 
 _UUID_SHORT_LENGTH = 8
-FUZZY_THRESHOLD = 0.5
+_GEPA_OPTIMIZER = "gepa"
+_GEPA_DEFAULT_METRIC = "gepa_feedback"
+_DEFAULT_METRIC_NAME = "exact_match"
 
 logger = logging.getLogger(__name__)
-
-
-def _exact_match_metric(
-    example: Any, prediction: Any, trace: Any = None,
-) -> bool:
-    """Return True if prediction output matches example output exactly."""
-    return getattr(prediction, "output", "") == getattr(example, "output", "")
-
-
-def _contains_metric(
-    example: Any, prediction: Any, trace: Any = None,
-) -> bool:
-    """Return True if expected output is a substring of predicted output."""
-    expected = str(getattr(example, "output", ""))
-    actual = str(getattr(prediction, "output", ""))
-    return expected in actual
-
-
-def _fuzzy_metric(
-    example: Any, prediction: Any, trace: Any = None,
-) -> bool:
-    """Return True if token overlap ratio >= threshold."""
-    expected = set(str(getattr(example, "output", "")).lower().split())
-    actual = set(str(getattr(prediction, "output", "")).lower().split())
-    if not expected:
-        return not actual
-    overlap = len(expected & actual) / len(expected | actual)
-    return overlap >= FUZZY_THRESHOLD
 
 
 class DSPyCompiler:
@@ -51,12 +26,12 @@ class DSPyCompiler:
     def compile(
         self,
         program: Any,
-        training_examples: List[TrainingExample],
+        training_examples: list[TrainingExample],
         config: PromptOptimizationConfig,
         provider: str = "openai",
         model: str = "gpt-4",
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
+        api_key: str | None = None,
+        base_url: str | None = None,
     ) -> CompilationResult:
         """Compile a DSPy program using the configured optimizer."""
         from temper_ai.optimization.dspy._helpers import (
@@ -71,10 +46,15 @@ class DSPyCompiler:
         configure_dspy_lm(provider, model, api_key, base_url)
         dspy_examples = examples_to_dspy(training_examples)
         trainset, valset = self._split_data(dspy_examples)
-        metric_fn = self._get_metric(config.training_metric)
+        metric_fn = self._resolve_metric(config)
 
         compiled = self._run_optimizer(
-            dspy, program, trainset, metric_fn, config,
+            dspy,
+            program,
+            trainset,
+            valset,
+            metric_fn,
+            config,
         )
 
         train_score = self._evaluate(compiled, trainset, metric_fn)
@@ -98,40 +78,39 @@ class DSPyCompiler:
         split_idx = max(1, int(len(examples) * TRAIN_SPLIT_RATIO))
         return examples[:split_idx], examples[split_idx:]
 
-    def _run_optimizer(self, dspy: Any, program: Any, trainset: list, metric_fn: Callable, config: PromptOptimizationConfig) -> Any:
-        """Run the configured optimizer."""
-        if config.optimizer == "mipro":
-            optimizer = dspy.MIPROv2(
-                metric=metric_fn, auto="light",
-            )
-            return optimizer.compile(
-                program, trainset=trainset,
-                num_threads=config.num_threads,
-            )
-
-        optimizer = dspy.BootstrapFewShot(
-            metric=metric_fn,
-            max_bootstrapped_demos=config.max_demos,
+    @staticmethod
+    def _run_optimizer(
+        dspy: Any,
+        program: Any,
+        trainset: list,
+        valset: list,
+        metric_fn: Callable,
+        config: PromptOptimizationConfig,
+    ) -> Any:
+        """Run the configured optimizer via the optimizer registry."""
+        from temper_ai.optimization.dspy.optimizers import (
+            get_optimizer,  # noqa: PLC0415
         )
-        return optimizer.compile(program, trainset=trainset)
+
+        runner = get_optimizer(config.optimizer)
+        return runner(dspy, program, trainset, metric_fn, config, valset=valset)
 
     @staticmethod
-    def _get_metric(metric_name: Optional[str]) -> Callable:
-        """Return the metric function for the given metric name.
+    def _resolve_metric(config: PromptOptimizationConfig) -> Callable:
+        """Resolve the metric function via the metric registry.
 
-        Supported metrics:
-            - "exact_match" (default): output must exactly match expected
-            - "contains": expected must be a substring of output
-            - "fuzzy": token overlap ratio >= 0.5
+        For GEPA optimizer, auto-selects gepa_feedback metric when the
+        configured metric is the default exact_match.
         """
-        if metric_name == "contains":
-            return _contains_metric
-        if metric_name == "fuzzy":
-            return _fuzzy_metric
-        return _exact_match_metric
+        from temper_ai.optimization.dspy.metrics import get_metric  # noqa: PLC0415
+
+        metric_name = config.training_metric
+        if config.optimizer == _GEPA_OPTIMIZER and metric_name == _DEFAULT_METRIC_NAME:
+            metric_name = _GEPA_DEFAULT_METRIC
+        return get_metric(metric_name, **(config.metric_params or {}))
 
     @staticmethod
-    def _evaluate(program: Any, dataset: list, metric_fn: Callable) -> Optional[float]:
+    def _evaluate(program: Any, dataset: list, metric_fn: Callable) -> float | None:
         """Evaluate compiled program on a dataset."""
         if not dataset:
             return None
@@ -154,7 +133,9 @@ class DSPyCompiler:
             for predictor in compiled.predictors():
                 if hasattr(predictor, "signature"):
                     sig_instructions = getattr(
-                        predictor.signature, "instructions", "",
+                        predictor.signature,
+                        "instructions",
+                        "",
                     )
                     if sig_instructions and not instruction:
                         instruction = str(sig_instructions)

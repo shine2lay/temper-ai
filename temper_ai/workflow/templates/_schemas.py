@@ -1,6 +1,6 @@
 """Template manifest and configuration schemas."""
 
-from typing import List, Literal
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -28,7 +28,7 @@ class TemplateQualityGates(BaseModel):
         "retry_stage"
     )
     max_retries: int = Field(default=DEFAULT_MAX_RETRIES, ge=0)
-    custom_checks: List[str] = Field(default_factory=list)
+    custom_checks: list[str] = Field(default_factory=list)
 
 
 class TemplateDefaultInference(BaseModel):
@@ -46,13 +46,13 @@ class TemplateManifest(BaseModel):
     name: str
     description: str
     version: str = "1.0"
-    required_inputs: List[str] = Field(default_factory=list)
-    optional_inputs: List[str] = Field(default_factory=list)
+    required_inputs: list[str] = Field(default_factory=list)
+    optional_inputs: list[str] = Field(default_factory=list)
     quality_gates: TemplateQualityGates = Field(
         default_factory=TemplateQualityGates,
     )
-    stages: List[str] = Field(default_factory=list)
-    tags: List[str] = Field(default_factory=list)
+    stages: list[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
     default_inference: TemplateDefaultInference = Field(
         default_factory=TemplateDefaultInference,
     )

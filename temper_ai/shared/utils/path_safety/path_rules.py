@@ -9,9 +9,9 @@ This module implements validation rules including:
 - Forbidden path checking
 - Boundary validation (within allowed_root)
 """
+
 import unicodedata
 from pathlib import Path
-from typing import List, Union
 
 from temper_ai.shared.utils.constants import MAX_COMPONENT_LENGTH, MAX_PATH_LENGTH
 from temper_ai.shared.utils.path_safety.exceptions import PathSafetyError
@@ -30,8 +30,8 @@ class PathValidationRules:
     def __init__(
         self,
         allowed_root: Path,
-        forbidden_paths: List[str],
-        forbidden_project_dirs: List[str]
+        forbidden_paths: list[str],
+        forbidden_project_dirs: list[str],
     ):
         """Initialize path validation rules.
 
@@ -44,7 +44,7 @@ class PathValidationRules:
         self.forbidden_paths = forbidden_paths
         self.forbidden_project_dirs = forbidden_project_dirs
 
-    def normalize_and_validate_basic(self, path: Union[str, Path]) -> Path:
+    def normalize_and_validate_basic(self, path: str | Path) -> Path:
         """Normalize path and perform basic validation.
 
         Checks:
@@ -66,14 +66,14 @@ class PathValidationRules:
         if isinstance(path, str):
             # Normalize unicode to NFC form (composed form)
             # This prevents attacks using different unicode representations
-            path_str = unicodedata.normalize('NFC', path)
+            path_str = unicodedata.normalize("NFC", path)
             path = Path(path_str)
         else:
-            path = Path(unicodedata.normalize('NFC', str(path)))
+            path = Path(unicodedata.normalize("NFC", str(path)))
 
         # Check for null bytes (path injection)
         path_str = str(path)
-        if '\x00' in path_str:
+        if "\x00" in path_str:
             raise PathSafetyError("Path contains null bytes")
 
         # Check path length limits

@@ -34,6 +34,12 @@ agent:
       - Only mark FAIL if you have CONCRETE EVIDENCE of a problem
       - Do NOT fail for style issues or minor improvements
       - If you cannot run a test, explain why and mark as UNTESTED (not FAIL)
+      - IMPORTANT: If the coder output claims a file was created, you MUST verify
+        by actually reading the file with `cat` before claiming it is missing.
+        The coder output may contain tool call XML that looks incomplete, but
+        the file may still have been written successfully. Always check the
+        filesystem — do not rely solely on the coder output text.
+      - Do NOT re-check compilation or imports — the static_check stage handles those.
 
       <answer>
       PERSPECTIVE: CORRECTNESS
@@ -64,7 +70,7 @@ agent:
     model: qwen3-next
     base_url: http://localhost:8000
     temperature: 0.2
-    max_tokens: 4096
+    max_tokens: 8192
     timeout_seconds: 600
 
   tools:

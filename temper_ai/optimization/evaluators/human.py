@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, Optional
+from typing import Any
 
 import click
 
 from temper_ai.optimization._schemas import EvaluationResult
-from temper_ai.optimization.engine_constants import FIRST_BETTER, MAX_SCORE, MIN_SCORE, SECOND_BETTER, TIE
+from temper_ai.optimization.engine_constants import (
+    FIRST_BETTER,
+    MAX_SCORE,
+    MIN_SCORE,
+    SECOND_BETTER,
+    TIE,
+)
 
 
 class HumanEvaluator:
@@ -19,8 +25,8 @@ class HumanEvaluator:
 
     def evaluate(
         self,
-        output: Dict[str, Any],
-        context: Optional[Dict[str, Any]] = None,
+        output: dict[str, Any],
+        context: dict[str, Any] | None = None,
     ) -> EvaluationResult:
         """Ask user to approve or reject the output."""
         click.echo("\n--- Output for review ---")
@@ -34,9 +40,9 @@ class HumanEvaluator:
 
     def compare(
         self,
-        output_a: Dict[str, Any],
-        output_b: Dict[str, Any],
-        context: Optional[Dict[str, Any]] = None,
+        output_a: dict[str, Any],
+        output_b: dict[str, Any],
+        context: dict[str, Any] | None = None,
     ) -> int:
         """Ask user which output is better."""
         click.echo("\n--- Output A ---")

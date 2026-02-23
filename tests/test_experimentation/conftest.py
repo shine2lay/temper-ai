@@ -79,7 +79,7 @@ def create_assignments(
     mean=100.0,
     std=10.0,
     metric_name="metric",
-    seed=None
+    seed=None,
 ):
     """Helper to create assignments with controlled distribution.
 
@@ -119,7 +119,7 @@ def create_assignments(
             assignment_strategy=AssignmentStrategyType.RANDOM,
             assigned_at=datetime.now(UTC),
             execution_status=ExecutionStatus.COMPLETED,
-            metrics={metric_name: metric_value}
+            metrics={metric_name: metric_value},
         )
         assignments.append(assignment)
 

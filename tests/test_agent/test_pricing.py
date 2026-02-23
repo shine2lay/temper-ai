@@ -1,4 +1,5 @@
 """Tests for LLM pricing management system."""
+
 from datetime import date
 from pathlib import Path
 
@@ -32,26 +33,26 @@ def config_path():
 def temp_pricing_file(tmp_path):
     """Create temporary pricing config file within project for testing."""
     # Create temp file in tests/fixtures directory (within project)
-    temp_file = Path('tests/fixtures/temp_test_pricing.yaml')
+    temp_file = Path("tests/fixtures/temp_test_pricing.yaml")
 
     config = {
-        'schema_version': '1.0',
-        'last_updated': '2026-02-01',
-        'models': {
-            'test-model': {
-                'input_price': 1.0,
-                'output_price': 2.0,
-                'effective_date': '2026-01-01'
+        "schema_version": "1.0",
+        "last_updated": "2026-02-01",
+        "models": {
+            "test-model": {
+                "input_price": 1.0,
+                "output_price": 2.0,
+                "effective_date": "2026-01-01",
             }
         },
-        'default': {
-            'input_price': 3.0,
-            'output_price': 15.0,
-            'effective_date': '2026-01-01'
-        }
+        "default": {
+            "input_price": 3.0,
+            "output_price": 15.0,
+            "effective_date": "2026-01-01",
+        },
     }
 
-    with open(temp_file, 'w') as f:
+    with open(temp_file, "w") as f:
         yaml.dump(config, f)
 
     yield str(temp_file)
@@ -66,9 +67,7 @@ class TestModelPricing:
     def test_valid_pricing(self):
         """Test creating valid pricing."""
         pricing = ModelPricing(
-            input_price=1.0,
-            output_price=2.0,
-            effective_date=date(2026, 1, 1)
+            input_price=1.0, output_price=2.0, effective_date=date(2026, 1, 1)
         )
 
         assert pricing.input_price == 1.0
@@ -79,17 +78,13 @@ class TestModelPricing:
         """Test that negative prices are rejected."""
         with pytest.raises(ValidationError, match="greater than or equal to 0"):
             ModelPricing(
-                input_price=-1.0,
-                output_price=2.0,
-                effective_date=date(2026, 1, 1)
+                input_price=-1.0, output_price=2.0, effective_date=date(2026, 1, 1)
             )
 
     def test_zero_price_allowed(self):
         """Test that zero prices are allowed (for local/free models)."""
         pricing = ModelPricing(
-            input_price=0.0,
-            output_price=0.0,
-            effective_date=date(2026, 1, 1)
+            input_price=0.0, output_price=0.0, effective_date=date(2026, 1, 1)
         )
         assert pricing.input_price == 0.0
         assert pricing.output_price == 0.0
@@ -100,7 +95,7 @@ class TestModelPricing:
             ModelPricing(
                 input_price=1500.0,  # > $1000 per 1M tokens
                 output_price=2.0,
-                effective_date=date(2026, 1, 1)
+                effective_date=date(2026, 1, 1),
             )
 
     def test_optional_fields(self):
@@ -110,7 +105,7 @@ class TestModelPricing:
             output_price=2.0,
             effective_date=date(2026, 1, 1),
             source_url="https://example.com/pricing",
-            notes="Test pricing"
+            notes="Test pricing",
         )
 
         assert pricing.source_url == "https://example.com/pricing"
@@ -131,9 +126,9 @@ class TestPricingManager:
         """Test loading pricing from config file."""
         manager = PricingManager(config_path)
 
-        assert 'test-model-1' in manager.pricing
-        assert 'test-model-2' in manager.pricing
-        assert '_default' in manager.pricing
+        assert "test-model-1" in manager.pricing
+        assert "test-model-2" in manager.pricing
+        assert "_default" in manager.pricing
 
     def test_get_cost_known_model(self, config_path):
         """Test cost calculation for known model."""
@@ -141,20 +136,16 @@ class TestPricingManager:
 
         # test-model-1: input=$1/1M, output=$2/1M
         # 1M input + 1M output = $1 + $2 = $3
-        cost = manager.get_cost('test-model-1', 1_000_000, 1_000_000)
+        cost = manager.get_cost("test-model-1", 1_000_000, 1_000_000)
 
         assert cost == 3.0
 
-    def test_get_cost_unknown_model_uses_default(
-        self,
-        config_path,
-        caplog
-    ):
+    def test_get_cost_unknown_model_uses_default(self, config_path, caplog):
         """Test that unknown models use default pricing."""
         manager = PricingManager(config_path)
 
         # Unknown model should use default: input=$3/1M, output=$15/1M
-        cost = manager.get_cost('unknown-model', 1_000_000, 1_000_000)
+        cost = manager.get_cost("unknown-model", 1_000_000, 1_000_000)
 
         assert cost == 18.0
         assert "not in pricing config" in caplog.text
@@ -165,7 +156,7 @@ class TestPricingManager:
 
         # test-model-2: input=$10/1M, output=$20/1M
         # 500K input + 250K output = $5 + $5 = $10
-        cost = manager.get_cost('test-model-2', 500_000, 250_000)
+        cost = manager.get_cost("test-model-2", 500_000, 250_000)
 
         assert cost == 10.0
 
@@ -174,43 +165,43 @@ class TestPricingManager:
         manager = PricingManager(temp_pricing_file)
 
         # Initial cost
-        initial_cost = manager.get_cost('test-model', 1_000_000, 1_000_000)
+        initial_cost = manager.get_cost("test-model", 1_000_000, 1_000_000)
         assert initial_cost == 3.0  # 1 + 2
 
         # Update config file
         new_config = {
-            'schema_version': '1.0',
-            'last_updated': '2026-02-01',
-            'models': {
-                'test-model': {
-                    'input_price': 10.0,
-                    'output_price': 20.0,
-                    'effective_date': '2026-01-01'
+            "schema_version": "1.0",
+            "last_updated": "2026-02-01",
+            "models": {
+                "test-model": {
+                    "input_price": 10.0,
+                    "output_price": 20.0,
+                    "effective_date": "2026-01-01",
                 }
             },
-            'default': {
-                'input_price': 3.0,
-                'output_price': 15.0,
-                'effective_date': '2026-01-01'
-            }
+            "default": {
+                "input_price": 3.0,
+                "output_price": 15.0,
+                "effective_date": "2026-01-01",
+            },
         }
 
-        with open(temp_pricing_file, 'w') as f:
+        with open(temp_pricing_file, "w") as f:
             yaml.dump(new_config, f)
 
         # Reload pricing
         manager.reload_pricing()
 
         # New cost should reflect updated pricing
-        updated_cost = manager.get_cost('test-model', 1_000_000, 1_000_000)
+        updated_cost = manager.get_cost("test-model", 1_000_000, 1_000_000)
         assert updated_cost == 30.0  # 10 + 20
 
     def test_missing_config_uses_fallback(self, caplog):
         """Test that missing config file uses hardcoded fallback."""
-        manager = PricingManager('nonexistent/pricing.yaml')
+        manager = PricingManager("nonexistent/pricing.yaml")
 
         # Should use hardcoded default
-        cost = manager.get_cost('any-model', 1_000_000, 1_000_000)
+        cost = manager.get_cost("any-model", 1_000_000, 1_000_000)
 
         assert cost == 18.0  # 3 + 15 (hardcoded default)
         assert "not found" in caplog.text
@@ -222,15 +213,15 @@ class TestPricingManager:
 
         models = manager.list_supported_models()
 
-        assert 'test-model-1' in models
-        assert 'test-model-2' in models
-        assert '_default' not in models  # Should exclude internal default
+        assert "test-model-1" in models
+        assert "test-model-2" in models
+        assert "_default" not in models  # Should exclude internal default
 
     def test_get_pricing_info(self, config_path):
         """Test getting pricing info for a model."""
         manager = PricingManager(config_path)
 
-        info = manager.get_pricing_info('test-model-1')
+        info = manager.get_pricing_info("test-model-1")
 
         assert info is not None
         assert info.input_price == 1.0
@@ -240,7 +231,7 @@ class TestPricingManager:
         """Test getting pricing info for unknown model."""
         manager = PricingManager(config_path)
 
-        info = manager.get_pricing_info('unknown-model')
+        info = manager.get_pricing_info("unknown-model")
 
         assert info is None
 
@@ -250,21 +241,21 @@ class TestPricingManager:
 
         health = manager.health_check()
 
-        assert health['status'] == 'healthy'
-        assert health['models_loaded'] == 2  # test-model-1, test-model-2
-        assert health['config_exists'] is True
-        assert health['using_fallback'] is False
+        assert health["status"] == "healthy"
+        assert health["models_loaded"] == 2  # test-model-1, test-model-2
+        assert health["config_exists"] is True
+        assert health["using_fallback"] is False
 
     def test_security_path_traversal_blocked(self):
         """Test that path traversal is blocked."""
         with pytest.raises(SecurityError, match="outside project"):
-            PricingManager('/etc/passwd')
+            PricingManager("/etc/passwd")
 
     def test_security_file_size_limit(self):
         """Test that oversized config files are rejected."""
         # Create a large file (> 1MB) within project
-        large_file = Path('tests/fixtures/large_pricing.yaml')
-        with open(large_file, 'w') as f:
+        large_file = Path("tests/fixtures/large_pricing.yaml")
+        with open(large_file, "w") as f:
             # Write > 1MB of data
             f.write("x" * (1024 * 1024 + 1))
 
@@ -278,26 +269,26 @@ class TestPricingManager:
 
     def test_unsupported_schema_version(self, tmp_path):
         """Test that unsupported schema versions are rejected."""
-        config_file = Path('tests/fixtures/unsupported_schema.yaml')
+        config_file = Path("tests/fixtures/unsupported_schema.yaml")
 
         config = {
-            'schema_version': '99.0',  # Unsupported version
-            'last_updated': '2026-02-01',
-            'models': {
-                'test-model': {
-                    'input_price': 1.0,
-                    'output_price': 2.0,
-                    'effective_date': '2026-01-01'
+            "schema_version": "99.0",  # Unsupported version
+            "last_updated": "2026-02-01",
+            "models": {
+                "test-model": {
+                    "input_price": 1.0,
+                    "output_price": 2.0,
+                    "effective_date": "2026-01-01",
                 }
             },
-            'default': {
-                'input_price': 3.0,
-                'output_price': 15.0,
-                'effective_date': '2026-01-01'
-            }
+            "default": {
+                "input_price": 3.0,
+                "output_price": 15.0,
+                "effective_date": "2026-01-01",
+            },
         }
 
-        with open(config_file, 'w') as f:
+        with open(config_file, "w") as f:
             yaml.dump(config, f)
 
         try:
@@ -305,7 +296,7 @@ class TestPricingManager:
             manager = PricingManager(str(config_file))
 
             # Should use hardcoded fallback
-            assert '_default' in manager.pricing
+            assert "_default" in manager.pricing
         finally:
             config_file.unlink(missing_ok=True)
 
@@ -314,16 +305,16 @@ class TestPricingManager:
         manager = PricingManager(config_path)
 
         with pytest.raises(ValueError, match="non-negative"):
-            manager.get_cost('test-model-1', -100, 100)
+            manager.get_cost("test-model-1", -100, 100)
 
         with pytest.raises(ValueError, match="non-negative"):
-            manager.get_cost('test-model-1', 100, -100)
+            manager.get_cost("test-model-1", 100, -100)
 
     def test_zero_tokens(self, config_path):
         """Test cost calculation with zero tokens."""
         manager = PricingManager(config_path)
 
-        cost = manager.get_cost('test-model-1', 0, 0)
+        cost = manager.get_cost("test-model-1", 0, 0)
 
         assert cost == 0.0
 
@@ -349,7 +340,7 @@ class TestGetPricingManager:
         manager = PricingManager()
 
         # Should use default path
-        assert 'config/model_pricing.yaml' in str(manager.config_path)
+        assert "config/model_pricing.yaml" in str(manager.config_path)
 
 
 class TestPricingIntegration:
@@ -368,7 +359,7 @@ class TestPricingIntegration:
         assert len(models) > 0
 
         # Should include common models
-        common_models = ['claude-3-opus', 'claude-3-sonnet', 'gpt-4']
+        common_models = ["claude-3-opus", "claude-3-sonnet", "gpt-4"]
         for model in common_models:
             if model in models:
                 # Verify pricing is reasonable
@@ -383,6 +374,6 @@ class TestPricingIntegration:
 
         # Claude 3 Opus: $15/1M input, $75/1M output
         # 1M input + 1M output should = $90
-        if 'claude-3-opus' in manager.list_supported_models():
-            cost = manager.get_cost('claude-3-opus', 1_000_000, 1_000_000)
+        if "claude-3-opus" in manager.list_supported_models():
+            cost = manager.get_cost("claude-3-opus", 1_000_000, 1_000_000)
             assert cost == 90.0

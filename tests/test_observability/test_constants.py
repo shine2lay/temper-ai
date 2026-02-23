@@ -1,5 +1,5 @@
 """Tests for src/observability/constants.py."""
-import pytest
+
 from temper_ai.observability import constants
 
 
@@ -28,7 +28,7 @@ class TestPerformanceConstants:
 
     def test_ms_per_second_conversion(self):
         """Test that MS_PER_SECOND is correct."""
-        assert hasattr(constants, 'MS_PER_SECOND')
+        assert hasattr(constants, "MS_PER_SECOND")
         assert constants.MS_PER_SECOND == 1000.0
 
 
@@ -43,11 +43,11 @@ class TestOperationThresholds:
     def test_all_operation_thresholds_present(self):
         """Test that all expected operation types have thresholds."""
         expected_operations = [
-            'llm_call',
-            'tool_execution',
-            'stage_execution',
-            'agent_execution',
-            'workflow_execution',
+            "llm_call",
+            "tool_execution",
+            "stage_execution",
+            "agent_execution",
+            "workflow_execution",
         ]
 
         for op in expected_operations:
@@ -64,16 +64,16 @@ class TestOperationThresholds:
         thresholds = constants.DEFAULT_THRESHOLDS_MS
 
         # LLM calls should be faster than tool executions
-        assert thresholds['llm_call'] >= thresholds['tool_execution']
+        assert thresholds["llm_call"] >= thresholds["tool_execution"]
 
         # Stages should take longer than individual operations
-        assert thresholds['stage_execution'] > thresholds['tool_execution']
+        assert thresholds["stage_execution"] > thresholds["tool_execution"]
 
         # Agents should take longer than stages
-        assert thresholds['agent_execution'] > thresholds['stage_execution']
+        assert thresholds["agent_execution"] > thresholds["stage_execution"]
 
         # Workflows should take longest
-        assert thresholds['workflow_execution'] > thresholds['agent_execution']
+        assert thresholds["workflow_execution"] > thresholds["agent_execution"]
 
 
 class TestBufferConstants:
@@ -115,13 +115,13 @@ class TestAlertingConstants:
 
     def test_error_rate_alert_threshold_defined(self):
         """Test that DEFAULT_ERROR_RATE_ALERT_THRESHOLD is defined."""
-        assert hasattr(constants, 'DEFAULT_ERROR_RATE_ALERT_THRESHOLD')
+        assert hasattr(constants, "DEFAULT_ERROR_RATE_ALERT_THRESHOLD")
         assert isinstance(constants.DEFAULT_ERROR_RATE_ALERT_THRESHOLD, float)
         assert 0 < constants.DEFAULT_ERROR_RATE_ALERT_THRESHOLD < 1
 
     def test_latency_alert_multiplier_defined(self):
         """Test that DEFAULT_LATENCY_ALERT_MULTIPLIER is defined."""
-        assert hasattr(constants, 'DEFAULT_LATENCY_ALERT_MULTIPLIER')
+        assert hasattr(constants, "DEFAULT_LATENCY_ALERT_MULTIPLIER")
         assert isinstance(constants.DEFAULT_LATENCY_ALERT_MULTIPLIER, float)
         assert constants.DEFAULT_LATENCY_ALERT_MULTIPLIER > 1
 
@@ -235,17 +235,17 @@ class TestConstantsIntegrity:
 
         # But modifying a copy shouldn't affect the original
         thresholds_copy = dict(constants.DEFAULT_THRESHOLDS_MS)
-        thresholds_copy['test'] = 999.0
-        assert 'test' not in constants.DEFAULT_THRESHOLDS_MS
+        thresholds_copy["test"] = 999.0
+        assert "test" not in constants.DEFAULT_THRESHOLDS_MS
 
     def test_constants_are_module_level(self):
         """Test that constants are defined at module level."""
         # All constants should be accessible directly from the module
         import temper_ai.observability.constants as const_module
 
-        assert hasattr(const_module, 'MAX_LATENCY_SAMPLES')
-        assert hasattr(const_module, 'DEFAULT_BUFFER_SIZE')
-        assert hasattr(const_module, 'DEFAULT_ALERT_COOLDOWN_SECONDS')
+        assert hasattr(const_module, "MAX_LATENCY_SAMPLES")
+        assert hasattr(const_module, "DEFAULT_BUFFER_SIZE")
+        assert hasattr(const_module, "DEFAULT_ALERT_COOLDOWN_SECONDS")
 
     def test_numeric_constants_are_reasonable(self):
         """Test that numeric constants have reasonable values."""

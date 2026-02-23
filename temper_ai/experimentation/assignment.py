@@ -11,10 +11,10 @@ Provides different strategies for assigning workflow executions to experiment va
 import hashlib
 import secrets
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-from temper_ai.shared.constants.limits import MAX_QUEUE_SIZE
 from temper_ai.experimentation.models import AssignmentStrategyType, Experiment, Variant
+from temper_ai.shared.constants.limits import MAX_QUEUE_SIZE
 
 # Hash normalization constants
 HASH_MODULO_DIVISOR = 100000  # Divisor for normalizing hash to [0, 1)
@@ -34,9 +34,9 @@ class AssignmentStrategy(ABC):
     def assign(
         self,
         experiment: Experiment,
-        variants: List[Variant],
+        variants: list[Variant],
         execution_id: str,
-        context: Optional[Dict[str, Any]] = None
+        context: dict[str, Any] | None = None,
     ) -> str:
         """
         Assign execution to a variant.
@@ -55,7 +55,7 @@ class AssignmentStrategy(ABC):
         """
         pass
 
-    def _validate_variants(self, variants: List[Variant]) -> None:
+    def _validate_variants(self, variants: list[Variant]) -> None:
         """
         Validate that variants have valid traffic allocation.
 
@@ -74,7 +74,7 @@ class AssignmentStrategy(ABC):
                 f"Invalid traffic allocation: sum={total_traffic:.2f}, must be in (0, 1.0]"
             )
 
-    def _get_control_variant(self, variants: List[Variant]) -> Optional[Variant]:
+    def _get_control_variant(self, variants: list[Variant]) -> Variant | None:
         """Get the control variant if one exists."""
         for variant in variants:
             if variant.is_control:
@@ -101,9 +101,9 @@ class RandomAssignment(AssignmentStrategy):
     def assign(
         self,
         experiment: Experiment,
-        variants: List[Variant],
+        variants: list[Variant],
         execution_id: str,
-        context: Optional[Dict[str, Any]] = None
+        context: dict[str, Any] | None = None,
     ) -> str:
         """
         Randomly assign execution to variant based on traffic weights.
@@ -140,7 +140,7 @@ class HashAssignment(AssignmentStrategy):
     The same execution_id (or context key) will always be assigned to the
     same variant, ensuring consistent user experience across sessions.
 
-    Uses MD5 hash for fast, uniformly distributed assignment.
+    Uses SHA-256 hash for secure, uniformly distributed assignment.
 
     Example:
         >>> strategy = HashAssignment()
@@ -157,9 +157,9 @@ class HashAssignment(AssignmentStrategy):
     def assign(
         self,
         experiment: Experiment,
-        variants: List[Variant],
+        variants: list[Variant],
         execution_id: str,
-        context: Optional[Dict[str, Any]] = None
+        context: dict[str, Any] | None = None,
     ) -> str:
         """
         Deterministically assign execution to variant using hash function.
@@ -185,13 +185,15 @@ class HashAssignment(AssignmentStrategy):
 
         # Compute hash using SHA-256 (FIPS 140-2 approved, collision-resistant)
         # Security: Replaced MD5 (broken, collision vulnerable) with SHA-256
-        hash_value = int(hashlib.sha256(hash_input.encode()).hexdigest(), 16)  # noqa: Hexadecimal base
+        hash_value = int(
+            hashlib.sha256(hash_input.encode()).hexdigest(), 16
+        )  # noqa: Hexadecimal base
 
         # Map hash to variant based on traffic allocation
         variant_id = self._hash_to_variant(hash_value, variants)
         return variant_id
 
-    def _hash_to_variant(self, hash_value: int, variants: List[Variant]) -> str:
+    def _hash_to_variant(self, hash_value: int, variants: list[Variant]) -> str:
         """
         Map hash value to variant based on traffic allocation.
 
@@ -243,9 +245,9 @@ class StratifiedAssignment(AssignmentStrategy):
     def assign(
         self,
         experiment: Experiment,
-        variants: List[Variant],
+        variants: list[Variant],
         execution_id: str,
-        context: Optional[Dict[str, Any]] = None
+        context: dict[str, Any] | None = None,
     ) -> str:
         """
         Stratified assignment (placeholder).
@@ -289,9 +291,9 @@ class BanditAssignment(AssignmentStrategy):
     def assign(
         self,
         experiment: Experiment,
-        variants: List[Variant],
+        variants: list[Variant],
         execution_id: str,
-        context: Optional[Dict[str, Any]] = None
+        context: dict[str, Any] | None = None,
     ) -> str:
         """
         Bandit-based assignment (placeholder).
@@ -332,7 +334,7 @@ class VariantAssigner:
 
     def __init__(self) -> None:
         """Initialize variant assigner with strategy registry."""
-        self._strategies: Dict[AssignmentStrategyType, AssignmentStrategy] = {
+        self._strategies: dict[AssignmentStrategyType, AssignmentStrategy] = {
             AssignmentStrategyType.RANDOM: RandomAssignment(),
             AssignmentStrategyType.HASH: HashAssignment(),
             AssignmentStrategyType.STRATIFIED: StratifiedAssignment(),
@@ -342,9 +344,9 @@ class VariantAssigner:
     def assign_variant(
         self,
         experiment: Experiment,
-        variants: List[Variant],
+        variants: list[Variant],
         execution_id: str,
-        context: Optional[Dict[str, Any]] = None
+        context: dict[str, Any] | None = None,
     ) -> str:
         """
         Assign variant using experiment's configured strategy.
@@ -370,9 +372,7 @@ class VariantAssigner:
         return strategy.assign(experiment, variants, execution_id, context)
 
     def register_strategy(
-        self,
-        strategy_type: AssignmentStrategyType,
-        strategy: AssignmentStrategy
+        self, strategy_type: AssignmentStrategyType, strategy: AssignmentStrategy
     ) -> None:
         """
         Register a custom assignment strategy.

@@ -8,6 +8,7 @@ Tests cover:
 - Log context management
 - Configuration from environment
 """
+
 import json
 import logging
 import os
@@ -39,7 +40,7 @@ class TestSecretRedaction:
             lineno=0,
             msg="API key: ${env:OPENAI_API_KEY}",
             args=(),
-            exc_info=None
+            exc_info=None,
         )
         formatted = formatter.format(record)
         assert "${env:OPENAI_API_KEY}" not in formatted
@@ -55,7 +56,7 @@ class TestSecretRedaction:
             lineno=0,
             msg="Secret: ${vault:secret/api-key}",
             args=(),
-            exc_info=None
+            exc_info=None,
         )
         formatted = formatter.format(record)
         assert "${vault:***REDACTED***}" in formatted
@@ -70,7 +71,7 @@ class TestSecretRedaction:
             lineno=0,
             msg="Using key: sk-proj-abc123def456ghi789jkl012mno345pqr678",
             args=(),
-            exc_info=None
+            exc_info=None,
         )
         formatted = formatter.format(record)
         assert "sk-proj-" not in formatted
@@ -86,7 +87,7 @@ class TestSecretRedaction:
             lineno=0,
             msg="AWS key: AKIAIOSFODNN7EXAMPLE",
             args=(),
-            exc_info=None
+            exc_info=None,
         )
         formatted = formatter.format(record)
         assert "AKIAIOSFODNN7EXAMPLE" not in formatted
@@ -102,7 +103,7 @@ class TestSecretRedaction:
             lineno=0,
             msg="Processing",
             args=(),
-            exc_info=None
+            exc_info=None,
         )
         record.api_key = "sk-secret123"
         record.password = "pass123"
@@ -110,7 +111,7 @@ class TestSecretRedaction:
 
         formatted = formatter.format(record)
         # api_key and password should be redacted
-        assert hasattr(record, 'api_key')  # Field still exists
+        assert hasattr(record, "api_key")  # Field still exists
         # user should not be redacted
         assert record.user == "john"
 
@@ -124,7 +125,7 @@ class TestSecretRedaction:
             lineno=0,
             msg="Processing user request for data",
             args=(),
-            exc_info=None
+            exc_info=None,
         )
         formatted = formatter.format(record)
         assert "Processing user request for data" in formatted
@@ -140,7 +141,7 @@ class TestSecretRedaction:
             lineno=0,
             msg="User input: Hello\nFAKE LOG ENTRY",
             args=(),
-            exc_info=None
+            exc_info=None,
         )
         formatted = formatter.format(record)
         # Newline should be escaped
@@ -157,7 +158,7 @@ class TestSecretRedaction:
             lineno=0,
             msg="User input: data\rINJECTED",
             args=(),
-            exc_info=None
+            exc_info=None,
         )
         formatted = formatter.format(record)
         # Carriage return should be escaped
@@ -174,7 +175,7 @@ class TestSecretRedaction:
             lineno=0,
             msg="User input: col1\tcol2\tinjected",
             args=(),
-            exc_info=None
+            exc_info=None,
         )
         formatted = formatter.format(record)
         # Tab should be escaped
@@ -190,12 +191,12 @@ class TestSecretRedaction:
             lineno=0,
             msg="User input: data\x00truncated",
             args=(),
-            exc_info=None
+            exc_info=None,
         )
         formatted = formatter.format(record)
         # Null byte should be escaped (preserves info for debugging)
         assert "\x00" not in formatted  # No literal null byte
-        assert "\\x00" in formatted     # Escaped version present
+        assert "\\x00" in formatted  # Escaped version present
         assert "data" in formatted
         assert "truncated" in formatted
 
@@ -209,7 +210,7 @@ class TestSecretRedaction:
             lineno=0,
             msg="User input: \x01\x02\x03dangerous\x07\x08",
             args=(),
-            exc_info=None
+            exc_info=None,
         )
         formatted = formatter.format(record)
         # Control characters should be removed
@@ -230,7 +231,7 @@ class TestSecretRedaction:
             lineno=0,
             msg=f"Processing user data: {malicious_input}",
             args=(),
-            exc_info=None
+            exc_info=None,
         )
         formatted = formatter.format(record)
         # Newlines should be escaped, preventing fake log entries
@@ -252,7 +253,7 @@ class TestStructuredFormatter:
             lineno=42,
             msg="Test message",
             args=(),
-            exc_info=None
+            exc_info=None,
         )
         record.funcName = "test_func"
         record.module = "test"
@@ -263,13 +264,13 @@ class TestStructuredFormatter:
         log_data = json.loads(formatted)
 
         # Check required fields
-        assert log_data['level'] == 'INFO'
-        assert log_data['logger'] == 'test.module'
-        assert log_data['message'] == 'Test message'
-        assert log_data['module'] == 'test'
-        assert log_data['function'] == 'test_func'
-        assert log_data['line'] == 42
-        assert 'timestamp' in log_data
+        assert log_data["level"] == "INFO"
+        assert log_data["logger"] == "test.module"
+        assert log_data["message"] == "Test message"
+        assert log_data["module"] == "test"
+        assert log_data["function"] == "test_func"
+        assert log_data["line"] == 42
+        assert "timestamp" in log_data
 
     def test_json_with_extra_fields(self):
         """Test that extra fields are included in JSON output."""
@@ -281,7 +282,7 @@ class TestStructuredFormatter:
             lineno=0,
             msg="Request processed",
             args=(),
-            exc_info=None
+            exc_info=None,
         )
         record.user_id = 123
         record.request_id = "abc-def"
@@ -291,9 +292,9 @@ class TestStructuredFormatter:
         formatted = formatter.format(record)
         log_data = json.loads(formatted)
 
-        assert 'extra' in log_data
-        assert log_data['extra']['user_id'] == 123
-        assert log_data['extra']['request_id'] == "abc-def"
+        assert "extra" in log_data
+        assert log_data["extra"]["user_id"] == 123
+        assert log_data["extra"]["request_id"] == "abc-def"
 
     def test_json_with_exception(self):
         """Test that exceptions are included in JSON output."""
@@ -303,6 +304,7 @@ class TestStructuredFormatter:
             raise ValueError("Test error")
         except ValueError:
             import sys
+
             exc_info = sys.exc_info()
 
             record = logging.LogRecord(
@@ -312,7 +314,7 @@ class TestStructuredFormatter:
                 lineno=0,
                 msg="Error occurred",
                 args=(),
-                exc_info=exc_info
+                exc_info=exc_info,
             )
             record.funcName = "test"
             record.module = "test"
@@ -320,9 +322,9 @@ class TestStructuredFormatter:
             formatted = formatter.format(record)
             log_data = json.loads(formatted)
 
-            assert 'exception' in log_data
-            assert "ValueError" in log_data['exception']
-            assert "Test error" in log_data['exception']
+            assert "exception" in log_data
+            assert "ValueError" in log_data["exception"]
+            assert "Test error" in log_data["exception"]
 
 
 class TestConsoleFormatter:
@@ -338,16 +340,16 @@ class TestConsoleFormatter:
             lineno=0,
             msg="Error message",
             args=(),
-            exc_info=None
+            exc_info=None,
         )
 
         formatted = formatter.format(record)
 
         # Should contain ANSI color codes
-        assert '\033[' in formatted  # ANSI escape code
-        assert 'ERROR' in formatted
-        assert 'test' in formatted
-        assert 'Error message' in formatted
+        assert "\033[" in formatted  # ANSI escape code
+        assert "ERROR" in formatted
+        assert "test" in formatted
+        assert "Error message" in formatted
 
     def test_console_format_without_colors(self):
         """Test that console output works without colors."""
@@ -359,16 +361,16 @@ class TestConsoleFormatter:
             lineno=0,
             msg="Info message",
             args=(),
-            exc_info=None
+            exc_info=None,
         )
 
         formatted = formatter.format(record)
 
         # Should NOT contain ANSI color codes
-        assert '\033[' not in formatted
-        assert 'INFO' in formatted
-        assert 'test' in formatted
-        assert 'Info message' in formatted
+        assert "\033[" not in formatted
+        assert "INFO" in formatted
+        assert "test" in formatted
+        assert "Info message" in formatted
 
 
 class TestLoggingSetup:
@@ -387,7 +389,7 @@ class TestLoggingSetup:
 
     def test_setup_with_env_level(self):
         """Test that setup_logging reads LOG_LEVEL from environment."""
-        with patch.dict(os.environ, {'LOG_LEVEL': 'DEBUG'}):
+        with patch.dict(os.environ, {"TEMPER_LOG_LEVEL": "DEBUG"}):
             setup_logging(format_type="console")
 
             root_logger = logging.getLogger()
@@ -408,7 +410,9 @@ class TestLoggingSetup:
         assert len(root_logger.handlers) > 0
 
         # Should have at least one StreamHandler
-        stream_handlers = [h for h in root_logger.handlers if isinstance(h, logging.StreamHandler)]
+        stream_handlers = [
+            h for h in root_logger.handlers if isinstance(h, logging.StreamHandler)
+        ]
         assert len(stream_handlers) > 0
 
     def test_setup_json_format(self):
@@ -436,33 +440,39 @@ class TestLogContext:
 
     def test_context_adds_fields(self, caplog):
         """Test that LogContext adds fields to log records."""
+        import logging
+
         logger = get_logger("test.context")
 
-        with LogContext(logger, user_id=123, request_id="abc"):
-            logger.info("Processing request")
+        with caplog.at_level(logging.INFO, logger="test.context"):
+            with LogContext(logger, user_id=123, request_id="abc"):
+                logger.info("Processing request")
 
         # Check that context fields were added
         assert len(caplog.records) == 1
         record = caplog.records[0]
-        assert hasattr(record, 'user_id')
+        assert hasattr(record, "user_id")
         assert record.user_id == 123
-        assert hasattr(record, 'request_id')
+        assert hasattr(record, "request_id")
         assert record.request_id == "abc"
 
     def test_context_restoration(self, caplog):
         """Test that context is properly restored after exiting."""
+        import logging
+
         logger = get_logger("test.restore")
 
-        with LogContext(logger, temp_field="temp"):
-            logger.info("Inside context")
+        with caplog.at_level(logging.INFO, logger="test.restore"):
+            with LogContext(logger, temp_field="temp"):
+                logger.info("Inside context")
 
-        logger.info("Outside context")
+            logger.info("Outside context")
 
         # First log should have temp_field
-        assert hasattr(caplog.records[0], 'temp_field')
+        assert hasattr(caplog.records[0], "temp_field")
 
         # Second log should NOT have temp_field
-        assert not hasattr(caplog.records[1], 'temp_field')
+        assert not hasattr(caplog.records[1], "temp_field")
 
 
 class TestLogFunctionDecorator:
@@ -476,7 +486,8 @@ class TestLogFunctionDecorator:
         def test_function(x, y):
             return x + y
 
-        result = test_function(2, 3)
+        with caplog.at_level(logging.INFO, logger="test.decorator"):
+            result = test_function(2, 3)
 
         assert result == 5
         assert len(caplog.records) >= 2
@@ -498,7 +509,7 @@ class TestLogFunctionDecorator:
             failing_function()
 
         # Should have error log
-        error_logs = [r for r in caplog.records if r.levelname == 'ERROR']
+        error_logs = [r for r in caplog.records if r.levelname == "ERROR"]
         assert len(error_logs) > 0
         assert "Exception in failing_function" in error_logs[0].message
 
@@ -568,8 +579,8 @@ class TestLogInjectionPrevention:
         sanitized = _sanitize_for_logging(malicious)
 
         # After decoding and sanitization, newline should be escaped
-        assert '\n' not in sanitized
-        assert '\\n' in sanitized or '\\x0a' in sanitized.lower()
+        assert "\n" not in sanitized
+        assert "\\n" in sanitized or "\\x0a" in sanitized.lower()
 
     def test_url_encoded_carriage_return_blocked(self):
         """Test that URL-encoded carriage returns (%0D) are blocked."""
@@ -578,8 +589,8 @@ class TestLogInjectionPrevention:
         malicious = "username=admin%0D[ERROR] Fake log"
         sanitized = _sanitize_for_logging(malicious)
 
-        assert '\r' not in sanitized
-        assert '\\r' in sanitized or '\\x0d' in sanitized.lower()
+        assert "\r" not in sanitized
+        assert "\\r" in sanitized or "\\x0d" in sanitized.lower()
 
     def test_double_url_encoded_newline_blocked(self):
         """Test that double URL-encoded newlines are blocked."""
@@ -589,9 +600,9 @@ class TestLogInjectionPrevention:
         malicious = "admin%250A[ERROR] Fake"
         sanitized = _sanitize_for_logging(malicious)
 
-        assert '\n' not in sanitized
+        assert "\n" not in sanitized
         # Should see escaped newline after decoding
-        assert '\\n' in sanitized or '\\x0a' in sanitized.lower()
+        assert "\\n" in sanitized or "\\x0a" in sanitized.lower()
 
     def test_triple_url_encoded_newline_blocked(self):
         """Test that deeply nested URL encoding is handled."""
@@ -603,7 +614,7 @@ class TestLogInjectionPrevention:
 
         # Should not crash or timeout, should be safe
         assert len(sanitized) > 0
-        assert '\n' not in sanitized
+        assert "\n" not in sanitized
 
     def test_unicode_line_separator_blocked(self):
         """Test that Unicode line separators (U+2028) are blocked."""
@@ -612,8 +623,8 @@ class TestLogInjectionPrevention:
         malicious = "admin\u2028[ERROR] Fake log"
         sanitized = _sanitize_for_logging(malicious)
 
-        assert '\u2028' not in sanitized
-        assert '\\u2028' in sanitized
+        assert "\u2028" not in sanitized
+        assert "\\u2028" in sanitized
 
     def test_unicode_paragraph_separator_blocked(self):
         """Test that Unicode paragraph separators (U+2029) are blocked."""
@@ -622,8 +633,8 @@ class TestLogInjectionPrevention:
         malicious = "admin\u2029[ERROR] Fake log"
         sanitized = _sanitize_for_logging(malicious)
 
-        assert '\u2029' not in sanitized
-        assert '\\u2029' in sanitized
+        assert "\u2029" not in sanitized
+        assert "\\u2029" in sanitized
 
     def test_unicode_next_line_blocked(self):
         """Test that Unicode NEL (U+0085) is blocked."""
@@ -632,31 +643,31 @@ class TestLogInjectionPrevention:
         malicious = "admin\u0085[ERROR] Fake log"
         sanitized = _sanitize_for_logging(malicious)
 
-        assert '\u0085' not in sanitized
+        assert "\u0085" not in sanitized
         # Should be escaped as hex
-        assert '\\x85' in sanitized or '\\u0085' in sanitized
+        assert "\\x85" in sanitized or "\\u0085" in sanitized
 
     def test_vertical_tab_blocked(self):
         """Test that vertical tab (U+000B) is blocked."""
         from temper_ai.shared.utils.logging import _sanitize_for_logging
 
-        malicious = "admin\u000B[ERROR] Fake log"
+        malicious = "admin\u000b[ERROR] Fake log"
         sanitized = _sanitize_for_logging(malicious)
 
-        assert '\u000B' not in sanitized
+        assert "\u000b" not in sanitized
         # May be escaped as either \x0b or \u000b
-        assert '\\x0b' in sanitized or '\\u000b' in sanitized
+        assert "\\x0b" in sanitized or "\\u000b" in sanitized
 
     def test_form_feed_blocked(self):
         """Test that form feed (U+000C) is blocked."""
         from temper_ai.shared.utils.logging import _sanitize_for_logging
 
-        malicious = "admin\u000C[ERROR] Fake log"
+        malicious = "admin\u000c[ERROR] Fake log"
         sanitized = _sanitize_for_logging(malicious)
 
-        assert '\u000C' not in sanitized
+        assert "\u000c" not in sanitized
         # May be escaped as either \x0c or \u000c
-        assert '\\x0c' in sanitized or '\\u000c' in sanitized
+        assert "\\x0c" in sanitized or "\\u000c" in sanitized
 
     def test_ansi_escape_sequences_stripped(self):
         """Test that ANSI escape codes are removed (terminal injection)."""
@@ -667,49 +678,49 @@ class TestLogInjectionPrevention:
         sanitized = _sanitize_for_logging(malicious)
 
         # ANSI escapes should be stripped
-        assert '\033' not in sanitized
-        assert '[0;30m' not in sanitized
+        assert "\033" not in sanitized
+        assert "[0;30m" not in sanitized
         # Text content should remain
-        assert 'admin' in sanitized
-        assert 'Hidden breach' in sanitized
+        assert "admin" in sanitized
+        assert "Hidden breach" in sanitized
 
     def test_zero_width_space_removed(self):
         """Test that zero-width spaces (U+200B) are removed."""
         from temper_ai.shared.utils.logging import _sanitize_for_logging
 
-        malicious = "admin\u200B\u200B[ERROR] Obfuscated"
+        malicious = "admin\u200b\u200b[ERROR] Obfuscated"
         sanitized = _sanitize_for_logging(malicious)
 
-        assert '\u200B' not in sanitized
-        assert 'admin' in sanitized
-        assert 'Obfuscated' in sanitized
+        assert "\u200b" not in sanitized
+        assert "admin" in sanitized
+        assert "Obfuscated" in sanitized
 
     def test_zero_width_non_joiner_removed(self):
         """Test that zero-width non-joiners (U+200C) are removed."""
         from temper_ai.shared.utils.logging import _sanitize_for_logging
 
-        malicious = "admin\u200C[ERROR] Hidden"
+        malicious = "admin\u200c[ERROR] Hidden"
         sanitized = _sanitize_for_logging(malicious)
 
-        assert '\u200C' not in sanitized
+        assert "\u200c" not in sanitized
 
     def test_zero_width_joiner_removed(self):
         """Test that zero-width joiners (U+200D) are removed."""
         from temper_ai.shared.utils.logging import _sanitize_for_logging
 
-        malicious = "admin\u200D[ERROR] Hidden"
+        malicious = "admin\u200d[ERROR] Hidden"
         sanitized = _sanitize_for_logging(malicious)
 
-        assert '\u200D' not in sanitized
+        assert "\u200d" not in sanitized
 
     def test_zero_width_no_break_space_removed(self):
         """Test that zero-width no-break spaces (U+FEFF) are removed."""
         from temper_ai.shared.utils.logging import _sanitize_for_logging
 
-        malicious = "admin\uFEFF[ERROR] Hidden"
+        malicious = "admin\ufeff[ERROR] Hidden"
         sanitized = _sanitize_for_logging(malicious)
 
-        assert '\uFEFF' not in sanitized
+        assert "\ufeff" not in sanitized
 
     def test_crlf_injection_blocked(self):
         """Test that Windows CRLF sequences are escaped."""
@@ -719,8 +730,8 @@ class TestLogInjectionPrevention:
         sanitized = _sanitize_for_logging(malicious)
 
         # CRLF should be escaped as unit
-        assert '\r\n' not in sanitized
-        assert '\\r\\n' in sanitized
+        assert "\r\n" not in sanitized
+        assert "\\r\\n" in sanitized
 
     def test_mixed_encoding_attack(self):
         """Test combination of URL encoding and control chars."""
@@ -729,10 +740,10 @@ class TestLogInjectionPrevention:
         malicious = "test%0A\r\nFAKE\x00NULL"
         sanitized = _sanitize_for_logging(malicious)
 
-        assert '\n' not in sanitized
-        assert '\r' not in sanitized
-        assert '\x00' not in sanitized
-        assert '\\n' in sanitized
+        assert "\n" not in sanitized
+        assert "\r" not in sanitized
+        assert "\x00" not in sanitized
+        assert "\\n" in sanitized
 
     def test_legitimate_logs_preserved(self):
         """Test that normal log messages work correctly."""
@@ -771,7 +782,7 @@ class TestLogInjectionPrevention:
 
         # Should be truncated
         assert len(sanitized) <= 10100  # max_length + truncation message
-        assert '[TRUNCATED]' in sanitized
+        assert "[TRUNCATED]" in sanitized
 
     def test_mixed_safe_and_unsafe_chars(self):
         """Test handling of mixed safe/unsafe characters."""
@@ -780,11 +791,11 @@ class TestLogInjectionPrevention:
         mixed = "Safe text\nUnsafe\rMore\x00Data"
         sanitized = _sanitize_for_logging(mixed)
 
-        assert 'Safe text' in sanitized
-        assert '\n' not in sanitized
-        assert '\r' not in sanitized
-        assert '\x00' not in sanitized
-        assert '\\n' in sanitized
+        assert "Safe text" in sanitized
+        assert "\n" not in sanitized
+        assert "\r" not in sanitized
+        assert "\x00" not in sanitized
+        assert "\\n" in sanitized
 
     def test_performance_on_large_input(self):
         """Test that large inputs don't cause DoS."""
@@ -813,7 +824,7 @@ class TestLogInjectionPrevention:
         sanitized = _sanitize_for_logging(text_with_cyrillic)
 
         # After NFKC normalization, the text should be sanitized consistently
-        assert 'admin' in sanitized
+        assert "admin" in sanitized
 
     def test_integration_no_multiline_in_real_logs(self, caplog):
         """Integration test: verify actual log output has no newlines from user input."""
@@ -828,8 +839,8 @@ class TestLogInjectionPrevention:
         # Verify no actual newlines in logged messages
         for record in caplog.records:
             # The message should have escaped newlines, not literal ones
-            assert '\n[ERROR]' not in record.message
-            assert '\\n' in record.message or record.message.count('\n') == 0
+            assert "\n[ERROR]" not in record.message
+            assert "\\n" in record.message or record.message.count("\n") == 0
 
     def test_integration_siem_parseable_output(self, caplog):
         """Integration test: verify logs are parseable by SIEM (one entry per line)."""
@@ -842,6 +853,6 @@ class TestLogInjectionPrevention:
         # Each log record should produce single-line output
         for record in caplog.records:
             formatted = SecretRedactingFormatter().format(record)
-            lines = formatted.split('\n')
+            lines = formatted.split("\n")
             # Should be one line (or minimal lines from wrapping, but no fake entries)
-            assert '[FAKE]' not in formatted or '\\n[FAKE]' in formatted
+            assert "[FAKE]" not in formatted or "\\n[FAKE]" in formatted

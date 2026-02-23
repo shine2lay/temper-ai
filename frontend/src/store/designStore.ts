@@ -4,118 +4,40 @@
  */
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
+import { defaultMeta } from './designDefaults';
+import { parseWorkflowMeta, parseWorkflowStages, serializeWorkflowConfig } from './designPersistence';
+import {
+  snapshotState,
+  pushSnapshot,
+  popUndo,
+  popRedo,
+} from './designHistory';
+import type {
+  DesignState,
+  ResolvedStageInfo,
+  ResolvedAgentSummary,
+  ValidationState,
+} from './designTypes';
+import type { DesignSnapshot } from './designHistory';
 
-export type AgentMode = 'sequential' | 'parallel' | 'adaptive';
-export type CollaborationStrategy = 'independent' | 'leader' | 'consensus' | 'debate' | 'round_robin';
+// Re-export types for backward compat
+export type {
+  AgentMode,
+  CollaborationStrategy,
+  DesignStage,
+  WorkflowOutput,
+  WorkflowMeta,
+  ValidationState,
+  ResolvedAgentSummary,
+  ResolvedStageInfo,
+  DesignState,
+} from './designTypes';
 
-export interface DesignStage {
-  name: string;
-  stage_ref: string | null;
-  depends_on: string[];
-  loops_back_to: string | null;
-  max_loops: number | null;
-  condition: string | null;
-  inputs: Record<string, { source: string }>;
-  /** Agent names — only used for inline stages (no stage_ref). */
-  agents: string[];
-  agent_mode: AgentMode;
-  collaboration_strategy: CollaborationStrategy;
-}
+export { defaultMeta, defaultDesignStage } from './designDefaults';
 
-export interface WorkflowOutput {
-  name: string;
-  description: string;
-  source: string;
-}
-
-export interface WorkflowMeta {
-  name: string;
-  description: string;
-  timeout_seconds: number;
-  max_cost_usd: number | null;
-  on_stage_failure: 'halt' | 'continue' | 'skip';
-  global_safety_mode: 'execute' | 'monitor' | 'audit';
-  required_inputs: string[];
-  optional_inputs: string[];
-  outputs: WorkflowOutput[];
-}
-
-export interface ValidationState {
-  status: 'idle' | 'validating' | 'valid' | 'invalid';
-  errors: string[];
-}
-
-/** Resolved agent info from stage configs (fetched at load time). */
-export interface ResolvedStageInfo {
-  agents: string[];
-  agentMode: string;
-  collaborationStrategy: string;
-}
-
-export interface DesignState {
-  configName: string | null;
-  isDirty: boolean;
-  meta: WorkflowMeta;
-  stages: DesignStage[];
-  selectedStageName: string | null;
-  selectedAgentName: string | null;
-  nodePositions: Record<string, { x: number; y: number }>;
-  validation: ValidationState;
-  /** Agent info resolved from stage_ref configs. Keyed by stage name. */
-  resolvedStageInfo: Record<string, ResolvedStageInfo>;
-
-  setMeta: (partial: Partial<WorkflowMeta>) => void;
-  addStage: (stage: DesignStage) => void;
-  updateStage: (name: string, partial: Partial<Omit<DesignStage, 'name'>>) => void;
-  renameStage: (oldName: string, newName: string) => void;
-  removeStage: (name: string) => void;
-  addDependency: (source: string, target: string) => void;
-  removeDependency: (source: string, target: string) => void;
-  setLoopBack: (source: string, target: string | null, maxLoops?: number | null) => void;
-  selectStage: (name: string | null) => void;
-  selectAgent: (name: string | null) => void;
-  setNodePosition: (name: string, x: number, y: number) => void;
-  setValidation: (validation: ValidationState) => void;
-  setResolvedStageInfo: (stageName: string, info: ResolvedStageInfo) => void;
-  markSaved: (name: string) => void;
-  loadFromConfig: (name: string, config: Record<string, unknown>) => void;
-  reset: () => void;
-  toWorkflowConfig: () => Record<string, unknown>;
-}
-
-const DEFAULT_TIMEOUT = 600;
-
-/** Normalize outputs from YAML — handles both string[] and object[] formats. */
-function normalizeOutputs(raw: unknown): WorkflowOutput[] {
-  if (!Array.isArray(raw)) return [];
-  return raw.map((item) => {
-    if (typeof item === 'string') {
-      return { name: item, description: '', source: '' };
-    }
-    if (typeof item === 'object' && item !== null) {
-      const obj = item as Record<string, unknown>;
-      return {
-        name: (obj.name as string) ?? '',
-        description: (obj.description as string) ?? '',
-        source: (obj.source as string) ?? '',
-      };
-    }
-    return { name: String(item), description: '', source: '' };
-  });
-}
-
-function defaultMeta(): WorkflowMeta {
-  return {
-    name: '',
-    description: '',
-    timeout_seconds: DEFAULT_TIMEOUT,
-    max_cost_usd: null,
-    on_stage_failure: 'halt',
-    global_safety_mode: 'execute',
-    required_inputs: [],
-    optional_inputs: [],
-    outputs: [],
-  };
+/** Capture the current snapshot from immer draft or plain state. */
+function captureSnapshot(state: DesignState): DesignSnapshot {
+  return snapshotState(state.meta, state.stages, state.nodePositions);
 }
 
 export const useDesignStore = create<DesignState>()(
@@ -129,9 +51,25 @@ export const useDesignStore = create<DesignState>()(
     nodePositions: {},
     validation: { status: 'idle', errors: [] },
     resolvedStageInfo: {},
+    resolvedAgentSummaries: {},
+
+    _historyPast: [],
+    _historyFuture: [],
+
+    canUndo: false,
+    canRedo: false,
 
     setMeta: (partial) =>
       set((state) => {
+        const snap = captureSnapshot(state as unknown as DesignState);
+        const result = pushSnapshot(
+          { past: state._historyPast, future: state._historyFuture },
+          snap,
+        );
+        state._historyPast = result.past;
+        state._historyFuture = result.future;
+        state.canUndo = result.past.length > 0;
+        state.canRedo = false;
         Object.assign(state.meta, partial);
         state.isDirty = true;
       }),
@@ -140,6 +78,15 @@ export const useDesignStore = create<DesignState>()(
       set((state) => {
         const exists = state.stages.some((s) => s.name === stage.name);
         if (exists) return;
+        const snap = captureSnapshot(state as unknown as DesignState);
+        const result = pushSnapshot(
+          { past: state._historyPast, future: state._historyFuture },
+          snap,
+        );
+        state._historyPast = result.past;
+        state._historyFuture = result.future;
+        state.canUndo = result.past.length > 0;
+        state.canRedo = false;
         state.stages.push(stage);
         state.isDirty = true;
       }),
@@ -148,6 +95,15 @@ export const useDesignStore = create<DesignState>()(
       set((state) => {
         const stage = state.stages.find((s) => s.name === name);
         if (!stage) return;
+        const snap = captureSnapshot(state as unknown as DesignState);
+        const result = pushSnapshot(
+          { past: state._historyPast, future: state._historyFuture },
+          snap,
+        );
+        state._historyPast = result.past;
+        state._historyFuture = result.future;
+        state.canUndo = result.past.length > 0;
+        state.canRedo = false;
         Object.assign(stage, partial);
         state.isDirty = true;
       }),
@@ -159,6 +115,15 @@ export const useDesignStore = create<DesignState>()(
         if (exists) return;
         const stage = state.stages.find((s) => s.name === oldName);
         if (!stage) return;
+        const snap = captureSnapshot(state as unknown as DesignState);
+        const result = pushSnapshot(
+          { past: state._historyPast, future: state._historyFuture },
+          snap,
+        );
+        state._historyPast = result.past;
+        state._historyFuture = result.future;
+        state.canUndo = result.past.length > 0;
+        state.canRedo = false;
         stage.name = newName;
         // Update references in other stages
         for (const s of state.stages) {
@@ -178,8 +143,16 @@ export const useDesignStore = create<DesignState>()(
 
     removeStage: (name) =>
       set((state) => {
+        const snap = captureSnapshot(state as unknown as DesignState);
+        const result = pushSnapshot(
+          { past: state._historyPast, future: state._historyFuture },
+          snap,
+        );
+        state._historyPast = result.past;
+        state._historyFuture = result.future;
+        state.canUndo = result.past.length > 0;
+        state.canRedo = false;
         state.stages = state.stages.filter((s) => s.name !== name);
-        // Clean up references
         for (const s of state.stages) {
           s.depends_on = s.depends_on.filter((d) => d !== name);
           if (s.loops_back_to === name) s.loops_back_to = null;
@@ -196,6 +169,15 @@ export const useDesignStore = create<DesignState>()(
         const targetStage = state.stages.find((s) => s.name === target);
         if (!targetStage) return;
         if (targetStage.depends_on.includes(source)) return;
+        const snap = captureSnapshot(state as unknown as DesignState);
+        const result = pushSnapshot(
+          { past: state._historyPast, future: state._historyFuture },
+          snap,
+        );
+        state._historyPast = result.past;
+        state._historyFuture = result.future;
+        state.canUndo = result.past.length > 0;
+        state.canRedo = false;
         targetStage.depends_on.push(source);
         state.isDirty = true;
       }),
@@ -204,6 +186,15 @@ export const useDesignStore = create<DesignState>()(
       set((state) => {
         const targetStage = state.stages.find((s) => s.name === target);
         if (!targetStage) return;
+        const snap = captureSnapshot(state as unknown as DesignState);
+        const result = pushSnapshot(
+          { past: state._historyPast, future: state._historyFuture },
+          snap,
+        );
+        state._historyPast = result.past;
+        state._historyFuture = result.future;
+        state.canUndo = result.past.length > 0;
+        state.canRedo = false;
         targetStage.depends_on = targetStage.depends_on.filter((d) => d !== source);
         state.isDirty = true;
       }),
@@ -212,6 +203,15 @@ export const useDesignStore = create<DesignState>()(
       set((state) => {
         const stage = state.stages.find((s) => s.name === source);
         if (!stage) return;
+        const snap = captureSnapshot(state as unknown as DesignState);
+        const result = pushSnapshot(
+          { past: state._historyPast, future: state._historyFuture },
+          snap,
+        );
+        state._historyPast = result.past;
+        state._historyFuture = result.future;
+        state.canUndo = result.past.length > 0;
+        state.canRedo = false;
         stage.loops_back_to = target;
         if (maxLoops !== undefined) stage.max_loops = maxLoops;
         state.isDirty = true;
@@ -233,14 +233,19 @@ export const useDesignStore = create<DesignState>()(
         state.nodePositions[name] = { x, y };
       }),
 
-    setValidation: (validation) =>
+    setValidation: (validation: ValidationState) =>
       set((state) => {
         state.validation = validation;
       }),
 
-    setResolvedStageInfo: (stageName, info) =>
+    setResolvedStageInfo: (stageName: string, info: ResolvedStageInfo) =>
       set((state) => {
         state.resolvedStageInfo[stageName] = info;
+      }),
+
+    setResolvedAgentSummary: (name: string, summary: ResolvedAgentSummary) =>
+      set((state) => {
+        state.resolvedAgentSummaries[name] = summary;
       }),
 
     markSaved: (name) =>
@@ -258,40 +263,14 @@ export const useDesignStore = create<DesignState>()(
         state.nodePositions = {};
         state.validation = { status: 'idle', errors: [] };
         state.resolvedStageInfo = {};
-
-        // Parse the workflow config
-        const wf = (config as { workflow?: Record<string, unknown> }).workflow ?? config;
-        const inner = wf as Record<string, unknown>;
-
-        state.meta = {
-          name: (inner.name as string) ?? name,
-          description: (inner.description as string) ?? '',
-          timeout_seconds: (inner.timeout_seconds as number) ?? DEFAULT_TIMEOUT,
-          max_cost_usd: (inner.max_cost_usd as number | null) ?? null,
-          on_stage_failure: (inner.on_stage_failure as WorkflowMeta['on_stage_failure']) ?? 'halt',
-          global_safety_mode: (inner.global_safety_mode as WorkflowMeta['global_safety_mode']) ?? 'execute',
-          required_inputs: (inner.required_inputs as string[]) ?? [],
-          optional_inputs: (inner.optional_inputs as string[]) ?? [],
-          outputs: normalizeOutputs(inner.outputs),
-        };
-
-        const rawStages = (inner.stages as Array<Record<string, unknown>>) ?? [];
-        state.stages = rawStages.map((rs) => {
-          const exec = rs.execution as Record<string, unknown> | undefined;
-          const collab = rs.collaboration as Record<string, unknown> | undefined;
-          return {
-            name: (rs.name as string) ?? '',
-            stage_ref: (rs.stage_ref as string | null) ?? (rs.stage as string | null) ?? null,
-            depends_on: (rs.depends_on as string[]) ?? [],
-            loops_back_to: (rs.loops_back_to as string | null) ?? null,
-            max_loops: (rs.max_loops as number | null) ?? null,
-            condition: (rs.condition as string | null) ?? null,
-            inputs: (rs.inputs as Record<string, { source: string }>) ?? {},
-            agents: (rs.agents as string[]) ?? [],
-            agent_mode: (exec?.agent_mode as AgentMode) ?? 'sequential',
-            collaboration_strategy: (collab?.strategy as CollaborationStrategy) ?? 'independent',
-          };
-        });
+        state.resolvedAgentSummaries = {};
+        state.meta = parseWorkflowMeta(name, config);
+        state.stages = parseWorkflowStages(config);
+        // Clear history on load — fresh baseline
+        state._historyPast = [];
+        state._historyFuture = [];
+        state.canUndo = false;
+        state.canRedo = false;
       }),
 
     reset: () =>
@@ -305,53 +284,52 @@ export const useDesignStore = create<DesignState>()(
         state.nodePositions = {};
         state.validation = { status: 'idle', errors: [] };
         state.resolvedStageInfo = {};
+        state.resolvedAgentSummaries = {};
+        state._historyPast = [];
+        state._historyFuture = [];
+        state.canUndo = false;
+        state.canRedo = false;
       }),
 
     toWorkflowConfig: () => {
       const { meta, stages } = get();
-      const stageConfigs = stages.map((s) => {
-        const entry: Record<string, unknown> = { name: s.name };
-        if (s.stage_ref) entry.stage_ref = s.stage_ref;
-        if (s.depends_on.length > 0) entry.depends_on = s.depends_on;
-        if (s.loops_back_to) entry.loops_back_to = s.loops_back_to;
-        if (s.max_loops != null) entry.max_loops = s.max_loops;
-        if (s.condition) entry.condition = s.condition;
-        if (Object.keys(s.inputs).length > 0) entry.inputs = s.inputs;
-        // Inline agent config (only when no stage_ref)
-        if (!s.stage_ref && s.agents.length > 0) {
-          entry.agents = s.agents;
-          if (s.agent_mode !== 'sequential') {
-            entry.execution = { agent_mode: s.agent_mode };
-          }
-          if (s.collaboration_strategy !== 'independent') {
-            entry.collaboration = { strategy: s.collaboration_strategy };
-          }
-        }
-        return entry;
-      });
-
-      const config: Record<string, unknown> = {
-        name: meta.name,
-        stages: stageConfigs,
-      };
-
-      if (meta.description) config.description = meta.description;
-      if (meta.timeout_seconds !== DEFAULT_TIMEOUT) config.timeout_seconds = meta.timeout_seconds;
-      if (meta.max_cost_usd != null) config.max_cost_usd = meta.max_cost_usd;
-      if (meta.on_stage_failure !== 'halt') config.on_stage_failure = meta.on_stage_failure;
-      if (meta.global_safety_mode !== 'execute') config.global_safety_mode = meta.global_safety_mode;
-      if (meta.required_inputs.length > 0) config.required_inputs = meta.required_inputs;
-      if (meta.optional_inputs.length > 0) config.optional_inputs = meta.optional_inputs;
-      if (meta.outputs.length > 0) {
-        config.outputs = meta.outputs.map((o) => {
-          const entry: Record<string, string> = { name: o.name };
-          if (o.description) entry.description = o.description;
-          if (o.source) entry.source = o.source;
-          return entry;
-        });
-      }
-
-      return { workflow: config };
+      return serializeWorkflowConfig(meta, stages);
     },
+
+    undo: () =>
+      set((state) => {
+        const current = captureSnapshot(state as unknown as DesignState);
+        const result = popUndo(
+          { past: state._historyPast, future: state._historyFuture },
+          current,
+        );
+        if (!result) return;
+        state.meta = result.snapshot.meta;
+        state.stages = result.snapshot.stages;
+        state.nodePositions = result.snapshot.nodePositions;
+        state._historyPast = result.history.past;
+        state._historyFuture = result.history.future;
+        state.canUndo = result.history.past.length > 0;
+        state.canRedo = result.history.future.length > 0;
+        state.isDirty = true;
+      }),
+
+    redo: () =>
+      set((state) => {
+        const current = captureSnapshot(state as unknown as DesignState);
+        const result = popRedo(
+          { past: state._historyPast, future: state._historyFuture },
+          current,
+        );
+        if (!result) return;
+        state.meta = result.snapshot.meta;
+        state.stages = result.snapshot.stages;
+        state.nodePositions = result.snapshot.nodePositions;
+        state._historyPast = result.history.past;
+        state._historyFuture = result.history.future;
+        state.canUndo = result.history.past.length > 0;
+        state.canRedo = result.history.future.length > 0;
+        state.isDirty = true;
+      }),
   })),
 );

@@ -3,11 +3,12 @@
 Queries a self-hosted SearXNG instance via its JSON API and returns
 structured search results using the shared SearchResponse model.
 """
+
 import ipaddress
 import logging
 import time
 import urllib.parse
-from typing import Any, Dict, List, Optional, Type
+from typing import Any
 
 import httpx
 from pydantic import BaseModel, Field, field_validator
@@ -43,7 +44,7 @@ class SearXNGSearchParams(BaseModel):
         le=MAX_SEARCH_RESULTS,
         description="Maximum number of results to return",
     )
-    categories: Optional[List[str]] = Field(
+    categories: list[str] | None = Field(
         default=None,
         description='SearXNG categories to search (e.g. ["general", "news"])',
     )
@@ -56,7 +57,7 @@ class SearXNGSearchParams(BaseModel):
 
     @field_validator("categories")
     @classmethod
-    def validate_categories(cls, v: Optional[List[str]]) -> Optional[List[str]]:
+    def validate_categories(cls, v: list[str] | None) -> list[str] | None:
         """Validate that categories list is not empty if provided."""
         if v is not None and len(v) == 0:
             raise ValueError("categories must not be an empty list")
@@ -82,8 +83,8 @@ class SearXNGSearch(BaseTool):
 
     def __init__(
         self,
-        base_url: Optional[str] = None,
-        config: Optional[Dict[str, Any]] = None,
+        base_url: str | None = None,
+        config: dict[str, Any] | None = None,
     ):
         """Initialize SearXNG search tool.
 
@@ -103,7 +104,7 @@ class SearXNGSearch(BaseTool):
             max_requests=SEARXNG_RATE_LIMIT,
             time_window=RATE_LIMIT_WINDOW_SECONDS,
         )
-        self._client: Optional[httpx.Client] = None
+        self._client: httpx.Client | None = None
 
     @classmethod
     def _validate_base_url(cls, url: str) -> None:
@@ -175,11 +176,11 @@ class SearXNGSearch(BaseTool):
             modifies_state=False,
         )
 
-    def get_parameters_model(self) -> Type[BaseModel]:
+    def get_parameters_model(self) -> type[BaseModel]:
         """Return Pydantic model for parameter validation."""
         return SearXNGSearchParams
 
-    def get_parameters_schema(self) -> Dict[str, Any]:
+    def get_parameters_schema(self) -> dict[str, Any]:
         """Return JSON schema for SearXNG search parameters."""
         return {
             "type": "object",
@@ -207,7 +208,7 @@ class SearXNGSearch(BaseTool):
             "required": ["query"],
         }
 
-    def _validate_query(self, query: Any) -> Optional[ToolResult]:
+    def _validate_query(self, query: Any) -> ToolResult | None:
         """Validate query input. Returns error or None."""
         if not query or not isinstance(query, str):
             return ToolResult(
@@ -216,7 +217,7 @@ class SearXNGSearch(BaseTool):
             )
         return None
 
-    def _check_rate_limit(self) -> Optional[ToolResult]:
+    def _check_rate_limit(self) -> ToolResult | None:
         """Check rate limit. Returns error or None."""
         if not self.rate_limiter.can_proceed():
             wait_time = self.rate_limiter.wait_time()
@@ -226,9 +227,11 @@ class SearXNGSearch(BaseTool):
             )
         return None
 
-    def _build_search_params(self, query: str, language: str, categories: Optional[List[str]]) -> Dict[str, str]:
+    def _build_search_params(
+        self, query: str, language: str, categories: list[str] | None
+    ) -> dict[str, str]:
         """Build query parameters for SearXNG API."""
-        params: Dict[str, str] = {
+        params: dict[str, str] = {
             "q": query,
             "format": "json",
             "language": language,
@@ -237,7 +240,9 @@ class SearXNGSearch(BaseTool):
             params["categories"] = ",".join(categories)
         return params
 
-    def _execute_search_request(self, params: Dict[str, str]) -> tuple[Optional[Any], Optional[ToolResult], float]:
+    def _execute_search_request(
+        self, params: dict[str, str]
+    ) -> tuple[Any | None, ToolResult | None, float]:
         """Execute search request. Returns (response, error, elapsed_ms)."""
         start_time = time.monotonic()
         try:
@@ -251,22 +256,36 @@ class SearXNGSearch(BaseTool):
             elapsed_ms = (time.monotonic() - start_time) * 1000
             return response, None, elapsed_ms
         except httpx.TimeoutException:
-            return None, ToolResult(
-                success=False,
-                error=f"Search request timed out after {DEFAULT_SEARCH_TIMEOUT} seconds",
-            ), 0
+            return (
+                None,
+                ToolResult(
+                    success=False,
+                    error=f"Search request timed out after {DEFAULT_SEARCH_TIMEOUT} seconds",
+                ),
+                0,
+            )
         except httpx.HTTPStatusError as e:
-            return None, ToolResult(
-                success=False,
-                error=f"SearXNG API error {e.response.status_code}: {e.response.reason_phrase}",
-            ), 0
+            return (
+                None,
+                ToolResult(
+                    success=False,
+                    error=f"SearXNG API error {e.response.status_code}: {e.response.reason_phrase}",
+                ),
+                0,
+            )
         except httpx.RequestError as e:
-            return None, ToolResult(
-                success=False,
-                error=f"Request error: {str(e)}",
-            ), 0
+            return (
+                None,
+                ToolResult(
+                    success=False,
+                    error=f"Request error: {str(e)}",
+                ),
+                0,
+            )
 
-    def _parse_results(self, response: Any, query: str, max_results: int, elapsed_ms: float) -> tuple[Optional[SearchResponse], Optional[ToolResult]]:
+    def _parse_results(
+        self, response: Any, query: str, max_results: int, elapsed_ms: float
+    ) -> tuple[SearchResponse | None, ToolResult | None]:
         """Parse response and build SearchResponse. Returns (response, error)."""
         try:
             data = response.json()
@@ -278,7 +297,7 @@ class SearXNGSearch(BaseTool):
 
         # Build SearchResponse
         raw_results = data.get("results", [])
-        items: List[SearchResultItem] = []
+        items: list[SearchResultItem] = []
         for entry in raw_results[:max_results]:
             items.append(
                 SearchResultItem(
@@ -339,7 +358,9 @@ class SearXNGSearch(BaseTool):
             return error_result
 
         # Parse response
-        search_response, error_result = self._parse_results(response, query, max_results, elapsed_ms)
+        search_response, error_result = self._parse_results(
+            response, query, max_results, elapsed_ms
+        )
         if error_result is not None:
             return error_result
         if search_response is None:

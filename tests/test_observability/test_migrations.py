@@ -5,6 +5,7 @@ Tests schema management and version tracking.
 Deprecated raw SQL migration functions (apply_migration, _validate_migration_sql)
 have been removed; use Alembic for schema evolution.
 """
+
 from unittest.mock import Mock, patch
 
 import pytest
@@ -34,6 +35,7 @@ def test_db():
 def mock_db_manager():
     """Create a mock database manager."""
     from unittest.mock import MagicMock
+
     mock = Mock(spec=DatabaseManager)
     mock_session = MagicMock()
     mock_context_manager = MagicMock()
@@ -50,14 +52,14 @@ class TestCreateSchema:
         """Test creating schema with explicit database URL."""
         db_url = "sqlite:///:memory:"
 
-        with patch('temper_ai.observability.migrations.DatabaseManager') as mock_cls:
+        with patch("temper_ai.observability.migrations.DatabaseManager") as mock_cls:
             create_schema(db_url)
             mock_cls.assert_called_once_with(db_url)
             mock_cls.return_value.create_all_tables.assert_called_once()
 
     def test_create_schema_without_url(self):
         """Test creating schema without URL uses existing database."""
-        with patch('temper_ai.observability.migrations.get_database') as mock_get_db:
+        with patch("temper_ai.observability.migrations.get_database") as mock_get_db:
             mock_db = Mock(spec=DatabaseManager)
             mock_get_db.return_value = mock_db
 
@@ -73,7 +75,9 @@ class TestCreateSchema:
 
         # Before creation, check initial table count
         with db.session() as session:
-            result = session.execute(text("SELECT name FROM sqlite_master WHERE type='table'"))
+            result = session.execute(
+                text("SELECT name FROM sqlite_master WHERE type='table'")
+            )
             initial_tables = {row[0] for row in result}
 
         # Create tables
@@ -81,7 +85,9 @@ class TestCreateSchema:
 
         # Verify new tables were created
         with db.session() as session:
-            result = session.execute(text("SELECT name FROM sqlite_master WHERE type='table'"))
+            result = session.execute(
+                text("SELECT name FROM sqlite_master WHERE type='table'")
+            )
             created_tables = {row[0] for row in result}
 
         new_tables = created_tables - initial_tables
@@ -95,14 +101,14 @@ class TestDropSchema:
         """Test dropping schema with explicit database URL."""
         db_url = "sqlite:///:memory:"
 
-        with patch('temper_ai.observability.migrations.DatabaseManager') as mock_cls:
+        with patch("temper_ai.observability.migrations.DatabaseManager") as mock_cls:
             drop_schema(db_url)
             mock_cls.assert_called_once_with(db_url)
             mock_cls.return_value.drop_all_tables.assert_called_once()
 
     def test_drop_schema_without_url(self):
         """Test dropping schema without URL uses existing database."""
-        with patch('temper_ai.observability.migrations.get_database') as mock_get_db:
+        with patch("temper_ai.observability.migrations.get_database") as mock_get_db:
             mock_db = Mock(spec=DatabaseManager)
             mock_get_db.return_value = mock_db
 
@@ -118,8 +124,10 @@ class TestResetSchema:
 
     def test_reset_schema_drops_and_creates(self):
         """Test that reset_schema drops then creates tables."""
-        with patch('temper_ai.observability.migrations.drop_schema') as mock_drop, \
-             patch('temper_ai.observability.migrations.create_schema') as mock_create:
+        with (
+            patch("temper_ai.observability.migrations.drop_schema") as mock_drop,
+            patch("temper_ai.observability.migrations.create_schema") as mock_create,
+        ):
 
             reset_schema("sqlite:///:memory:")
 
@@ -128,8 +136,10 @@ class TestResetSchema:
 
     def test_reset_schema_without_url(self):
         """Test reset_schema without URL."""
-        with patch('temper_ai.observability.migrations.drop_schema') as mock_drop, \
-             patch('temper_ai.observability.migrations.create_schema') as mock_create:
+        with (
+            patch("temper_ai.observability.migrations.drop_schema") as mock_drop,
+            patch("temper_ai.observability.migrations.create_schema") as mock_create,
+        ):
 
             reset_schema()
 
@@ -144,13 +154,17 @@ class TestCheckSchemaVersion:
         """Test checking schema version returns latest version."""
         # Create schema_version table
         with test_db.session() as session:
-            session.execute(text(
-                "CREATE TABLE IF NOT EXISTS schema_version "
-                "(version TEXT, applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
-            ))
             session.execute(
-                text("INSERT INTO schema_version (version, applied_at) VALUES (:version, CURRENT_TIMESTAMP)"),
-                {"version": "1.0.0"}
+                text(
+                    "CREATE TABLE IF NOT EXISTS schema_version "
+                    "(version TEXT, applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+                )
+            )
+            session.execute(
+                text(
+                    "INSERT INTO schema_version (version, applied_at) VALUES (:version, CURRENT_TIMESTAMP)"
+                ),
+                {"version": "1.0.0"},
             )
             session.commit()
 
@@ -161,10 +175,12 @@ class TestCheckSchemaVersion:
         """Test checking version when no versions exist."""
         # Create empty schema_version table
         with test_db.session() as session:
-            session.execute(text(
-                "CREATE TABLE IF NOT EXISTS schema_version "
-                "(version TEXT, applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
-            ))
+            session.execute(
+                text(
+                    "CREATE TABLE IF NOT EXISTS schema_version "
+                    "(version TEXT, applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+                )
+            )
             session.commit()
 
         version = check_schema_version(test_db)
@@ -180,21 +196,29 @@ class TestCheckSchemaVersion:
         """Test that check_version returns most recent version."""
         # Create schema_version table with multiple versions using explicit timestamps
         with test_db.session() as session:
-            session.execute(text(
-                "CREATE TABLE IF NOT EXISTS schema_version "
-                "(version TEXT, applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
-            ))
             session.execute(
-                text("INSERT INTO schema_version (version, applied_at) VALUES (:version, :ts)"),
-                {"version": "1.0.0", "ts": "2024-01-01 00:00:00"}
+                text(
+                    "CREATE TABLE IF NOT EXISTS schema_version "
+                    "(version TEXT, applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+                )
             )
             session.execute(
-                text("INSERT INTO schema_version (version, applied_at) VALUES (:version, :ts)"),
-                {"version": "1.1.0", "ts": "2024-01-02 00:00:00"}
+                text(
+                    "INSERT INTO schema_version (version, applied_at) VALUES (:version, :ts)"
+                ),
+                {"version": "1.0.0", "ts": "2024-01-01 00:00:00"},
             )
             session.execute(
-                text("INSERT INTO schema_version (version, applied_at) VALUES (:version, :ts)"),
-                {"version": "1.2.0", "ts": "2024-01-03 00:00:00"}
+                text(
+                    "INSERT INTO schema_version (version, applied_at) VALUES (:version, :ts)"
+                ),
+                {"version": "1.1.0", "ts": "2024-01-02 00:00:00"},
+            )
+            session.execute(
+                text(
+                    "INSERT INTO schema_version (version, applied_at) VALUES (:version, :ts)"
+                ),
+                {"version": "1.2.0", "ts": "2024-01-03 00:00:00"},
             )
             session.commit()
 
@@ -221,8 +245,9 @@ class TestDataPreservation:
 
     def test_reset_schema_destroys_data(self, test_db):
         """Test that reset_schema drops tables, destroying existing data."""
-        from temper_ai.storage.database.models import WorkflowExecution
         from sqlmodel import select
+
+        from temper_ai.storage.database.models import WorkflowExecution
 
         # Insert data into a model table
         with test_db.session() as session:
@@ -238,7 +263,9 @@ class TestDataPreservation:
         # Verify data exists
         with test_db.session() as session:
             result = session.exec(
-                select(WorkflowExecution).where(WorkflowExecution.id == "wf-destroy-test")
+                select(WorkflowExecution).where(
+                    WorkflowExecution.id == "wf-destroy-test"
+                )
             ).first()
             assert result is not None
 
@@ -249,7 +276,9 @@ class TestDataPreservation:
         # Data should be gone after reset
         with test_db.session() as session:
             result = session.exec(
-                select(WorkflowExecution).where(WorkflowExecution.id == "wf-destroy-test")
+                select(WorkflowExecution).where(
+                    WorkflowExecution.id == "wf-destroy-test"
+                )
             ).first()
             assert result is None, "Data should be destroyed after reset"
 
@@ -260,23 +289,26 @@ class TestDeprecatedFunctionsRemoved:
     def test_apply_migration_removed(self):
         """apply_migration should no longer exist."""
         import temper_ai.observability.migrations as mig
-        assert not hasattr(mig, "apply_migration"), (
-            "apply_migration was removed; use Alembic instead"
-        )
+
+        assert not hasattr(
+            mig, "apply_migration"
+        ), "apply_migration was removed; use Alembic instead"
 
     def test_validate_migration_sql_removed(self):
         """_validate_migration_sql should no longer exist."""
         import temper_ai.observability.migrations as mig
-        assert not hasattr(mig, "_validate_migration_sql"), (
-            "_validate_migration_sql was removed; use Alembic instead"
-        )
+
+        assert not hasattr(
+            mig, "_validate_migration_sql"
+        ), "_validate_migration_sql was removed; use Alembic instead"
 
     def test_normalize_sql_removed(self):
         """_normalize_sql should no longer exist."""
         import temper_ai.observability.migrations as mig
-        assert not hasattr(mig, "_normalize_sql"), (
-            "_normalize_sql was removed; use Alembic instead"
-        )
+
+        assert not hasattr(
+            mig, "_normalize_sql"
+        ), "_normalize_sql was removed; use Alembic instead"
 
     def test_migration_security_error_still_exists(self):
         """MigrationSecurityError should still be importable for backward compat."""

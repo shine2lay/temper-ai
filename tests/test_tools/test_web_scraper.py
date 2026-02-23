@@ -3,6 +3,7 @@ Unit tests for WebScraper tool.
 
 Tests web scraping with mocked HTTP responses.
 """
+
 import socket
 import time
 from unittest.mock import MagicMock, Mock, PropertyMock, patch
@@ -102,7 +103,7 @@ def mock_httpx_client():
     """Create a mock httpx.Client for testing."""
     mock_client = MagicMock()
     mock_client.is_closed = False
-    with patch.object(WebScraper, '_get_client', return_value=mock_client):
+    with patch.object(WebScraper, "_get_client", return_value=mock_client):
         yield mock_client
 
 
@@ -140,10 +141,7 @@ class TestBasicFetching:
         mock_response.headers = {}
         mock_httpx_client.get.return_value = mock_response
 
-        result = scraper.execute(
-            url="https://example.com",
-            timeout=60
-        )
+        result = scraper.execute(url="https://example.com", timeout=60)
 
         assert result.success is True
 
@@ -159,10 +157,7 @@ class TestBasicFetching:
         mock_response.headers = {}
         mock_httpx_client.get.return_value = mock_response
 
-        result = scraper.execute(
-            url="https://example.com",
-            user_agent="CustomBot/1.0"
-        )
+        result = scraper.execute(url="https://example.com", user_agent="CustomBot/1.0")
 
         assert result.success is True
 
@@ -198,10 +193,7 @@ class TestTextExtraction:
         mock_response.headers = {"content-type": "text/html"}
         mock_httpx_client.get.return_value = mock_response
 
-        result = scraper.execute(
-            url="https://example.com",
-            extract_text=True
-        )
+        result = scraper.execute(url="https://example.com", extract_text=True)
 
         assert result.success is True
         assert "Main Title" in result.result
@@ -252,10 +244,7 @@ class TestTextExtraction:
         mock_response.headers = {}
         mock_httpx_client.get.return_value = mock_response
 
-        result = scraper.execute(
-            url="https://example.com",
-            extract_text=False
-        )
+        result = scraper.execute(url="https://example.com", extract_text=False)
 
         assert result.success is True
         assert result.result == html
@@ -309,9 +298,7 @@ class TestErrorHandling:
         mock_response.reason_phrase = "Not Found"
         mock_httpx_client.get.return_value = mock_response
         mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
-            "Not Found",
-            request=Mock(),
-            response=mock_response
+            "Not Found", request=Mock(), response=mock_response
         )
 
         result = scraper.execute(url="https://example.com/nonexistent")
@@ -319,14 +306,14 @@ class TestErrorHandling:
         assert result.success is False
         assert "404" in result.error
 
-    @patch('temper_ai.tools.web_scraper.socket.getaddrinfo')
+    @patch("temper_ai.tools.web_scraper.socket.getaddrinfo")
     def test_timeout_error(self, mock_getaddrinfo, mock_httpx_client):
         """Test handling of timeout errors."""
         scraper = WebScraper()
 
         # Mock DNS to return public IP (pass SSRF check)
         mock_getaddrinfo.return_value = [
-            (socket.AF_INET, socket.SOCK_STREAM, 0, '', ('8.8.8.8', 80)),
+            (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("8.8.8.8", 80)),
         ]
 
         mock_httpx_client.get.side_effect = httpx.TimeoutException("Timeout")
@@ -336,14 +323,14 @@ class TestErrorHandling:
         assert result.success is False
         assert "timed out" in result.error.lower()
 
-    @patch('temper_ai.tools.web_scraper.socket.getaddrinfo')
+    @patch("temper_ai.tools.web_scraper.socket.getaddrinfo")
     def test_request_error(self, mock_getaddrinfo, mock_httpx_client):
         """Test handling of request errors."""
         scraper = WebScraper()
 
         # Mock DNS to return public IP (pass SSRF check)
         mock_getaddrinfo.return_value = [
-            (socket.AF_INET, socket.SOCK_STREAM, 0, '', ('8.8.8.8', 80)),
+            (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("8.8.8.8", 80)),
         ]
 
         mock_httpx_client.get.side_effect = httpx.RequestError("Connection failed")
@@ -633,7 +620,9 @@ class TestSSRFProtection:
         """Test that GCP metadata endpoint is blocked."""
         scraper = WebScraper()
 
-        result = scraper.execute(url="http://metadata.google.internal/computeMetadata/v1/")
+        result = scraper.execute(
+            url="http://metadata.google.internal/computeMetadata/v1/"
+        )
 
         assert result.success is False
         assert "forbidden" in result.error.lower()
@@ -647,14 +636,14 @@ class TestSSRFProtection:
         assert result.success is False
         assert "forbidden" in result.error.lower()
 
-    @patch('temper_ai.tools.web_scraper.socket.getaddrinfo')
+    @patch("temper_ai.tools.web_scraper.socket.getaddrinfo")
     def test_blocks_dns_rebinding_to_localhost(self, mock_getaddrinfo):
         """Test DNS rebinding protection - hostname resolves to localhost."""
         scraper = WebScraper()
 
         # Mock DNS resolution to return localhost IP
         mock_getaddrinfo.return_value = [
-            (socket.AF_INET, socket.SOCK_STREAM, 0, '', ('127.0.0.1', 80)),
+            (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("127.0.0.1", 80)),
         ]
 
         result = scraper.execute(url="http://evil.example.com")
@@ -662,14 +651,14 @@ class TestSSRFProtection:
         assert result.success is False
         assert "forbidden" in result.error.lower()
 
-    @patch('temper_ai.tools.web_scraper.socket.getaddrinfo')
+    @patch("temper_ai.tools.web_scraper.socket.getaddrinfo")
     def test_blocks_dns_rebinding_to_private_network(self, mock_getaddrinfo):
         """Test DNS rebinding protection - hostname resolves to private IP."""
         scraper = WebScraper()
 
         # Mock DNS resolution to return private IP
         mock_getaddrinfo.return_value = [
-            (socket.AF_INET, socket.SOCK_STREAM, 0, '', ('192.168.1.1', 80)),
+            (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("192.168.1.1", 80)),
         ]
 
         result = scraper.execute(url="http://attacker.example.com")
@@ -677,20 +666,20 @@ class TestSSRFProtection:
         assert result.success is False
         assert "forbidden" in result.error.lower()
 
-    @patch('temper_ai.tools.web_scraper.socket.getaddrinfo')
+    @patch("temper_ai.tools.web_scraper.socket.getaddrinfo")
     def test_allows_public_ip(self, mock_getaddrinfo):
         """Test that public IPs are allowed."""
         scraper = WebScraper()
 
         # Mock DNS resolution to return public IP
         mock_getaddrinfo.return_value = [
-            (socket.AF_INET, socket.SOCK_STREAM, 0, '', ('8.8.8.8', 80)),
+            (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("8.8.8.8", 80)),
         ]
 
         # Mock the httpx client to avoid actual network call
         mock_client = MagicMock()
         mock_client.is_closed = False
-        with patch.object(WebScraper, '_get_client', return_value=mock_client):
+        with patch.object(WebScraper, "_get_client", return_value=mock_client):
             mock_response = Mock()
             mock_response.status_code = 200
             mock_response.is_redirect = False
@@ -709,7 +698,9 @@ class TestSSRFProtection:
         scraper = WebScraper()
 
         # Use a hostname that definitely won't resolve
-        result = scraper.execute(url="http://this-domain-absolutely-does-not-exist-12345.invalid")
+        result = scraper.execute(
+            url="http://this-domain-absolutely-does-not-exist-12345.invalid"
+        )
 
         assert result.success is False
         assert "resolve" in result.error.lower() or "forbidden" in result.error.lower()
@@ -768,15 +759,15 @@ class TestSSRFProtection:
         assert result.success is False
         assert "forbidden" in result.error.lower()
 
-    @patch('temper_ai.tools.web_scraper.socket.getaddrinfo')
+    @patch("temper_ai.tools.web_scraper.socket.getaddrinfo")
     def test_blocks_if_any_resolved_ip_is_private(self, mock_getaddrinfo):
         """Test blocking when any resolved IP is in private range (round-robin DNS)."""
         scraper = WebScraper()
 
         # Simulate hostname resolving to both public and private IPs
         mock_getaddrinfo.return_value = [
-            (socket.AF_INET, socket.SOCK_STREAM, 0, '', ('8.8.8.8', 80)),
-            (socket.AF_INET, socket.SOCK_STREAM, 0, '', ('192.168.1.1', 80)),
+            (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("8.8.8.8", 80)),
+            (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("192.168.1.1", 80)),
         ]
 
         result = scraper.execute(url="http://mixed.example.com")
@@ -808,22 +799,22 @@ class TestSSRFProtection:
             assert result.success is False
             assert "forbidden" in result.error.lower()
 
-    @patch('temper_ai.tools.web_scraper.socket.getaddrinfo')
+    @patch("temper_ai.tools.web_scraper.socket.getaddrinfo")
     def test_allows_hostname_with_multiple_public_ips(self, mock_getaddrinfo):
         """Test allowing hostname that resolves to multiple public IPs."""
         scraper = WebScraper()
 
         # Simulate hostname resolving to multiple public IPs (e.g., CDN)
         mock_getaddrinfo.return_value = [
-            (socket.AF_INET, socket.SOCK_STREAM, 0, '', ('8.8.8.8', 80)),
-            (socket.AF_INET, socket.SOCK_STREAM, 0, '', ('1.1.1.1', 80)),
-            (socket.AF_INET6, socket.SOCK_STREAM, 0, '', ('2606:4700:4700::1111', 80)),
+            (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("8.8.8.8", 80)),
+            (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("1.1.1.1", 80)),
+            (socket.AF_INET6, socket.SOCK_STREAM, 0, "", ("2606:4700:4700::1111", 80)),
         ]
 
         # Mock the httpx client to avoid actual network call
         mock_client = MagicMock()
         mock_client.is_closed = False
-        with patch.object(WebScraper, '_get_client', return_value=mock_client):
+        with patch.object(WebScraper, "_get_client", return_value=mock_client):
             mock_response = Mock()
             mock_response.status_code = 200
             mock_response.is_redirect = False
@@ -841,14 +832,16 @@ class TestSSRFProtection:
 class TestSSRFRedirectProtection:
     """Test SSRF protection on HTTP redirects."""
 
-    @patch('temper_ai.tools.web_scraper.socket.getaddrinfo')
-    def test_blocks_redirect_to_metadata_service(self, mock_getaddrinfo, mock_httpx_client):
+    @patch("temper_ai.tools.web_scraper.socket.getaddrinfo")
+    def test_blocks_redirect_to_metadata_service(
+        self, mock_getaddrinfo, mock_httpx_client
+    ):
         """Redirect to cloud metadata endpoint is blocked."""
         scraper = WebScraper()
 
         # Initial URL resolves to public IP
         mock_getaddrinfo.return_value = [
-            (socket.AF_INET, socket.SOCK_STREAM, 0, '', ('8.8.8.8', 80)),
+            (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("8.8.8.8", 80)),
         ]
 
         # First request returns redirect to metadata service
@@ -865,13 +858,13 @@ class TestSSRFRedirectProtection:
         assert result.success is False
         assert "ssrf" in result.error.lower() or "unsafe" in result.error.lower()
 
-    @patch('temper_ai.tools.web_scraper.socket.getaddrinfo')
+    @patch("temper_ai.tools.web_scraper.socket.getaddrinfo")
     def test_blocks_redirect_to_localhost(self, mock_getaddrinfo, mock_httpx_client):
         """Redirect to localhost is blocked."""
         scraper = WebScraper()
 
         mock_getaddrinfo.return_value = [
-            (socket.AF_INET, socket.SOCK_STREAM, 0, '', ('8.8.8.8', 80)),
+            (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("8.8.8.8", 80)),
         ]
 
         redirect_response = Mock()
@@ -887,13 +880,15 @@ class TestSSRFRedirectProtection:
         assert result.success is False
         assert "ssrf" in result.error.lower() or "forbidden" in result.error.lower()
 
-    @patch('temper_ai.tools.web_scraper.socket.getaddrinfo')
-    def test_blocks_redirect_to_private_network(self, mock_getaddrinfo, mock_httpx_client):
+    @patch("temper_ai.tools.web_scraper.socket.getaddrinfo")
+    def test_blocks_redirect_to_private_network(
+        self, mock_getaddrinfo, mock_httpx_client
+    ):
         """Redirect to private IP is blocked."""
         scraper = WebScraper()
 
         mock_getaddrinfo.return_value = [
-            (socket.AF_INET, socket.SOCK_STREAM, 0, '', ('8.8.8.8', 80)),
+            (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("8.8.8.8", 80)),
         ]
 
         redirect_response = Mock()
@@ -909,13 +904,13 @@ class TestSSRFRedirectProtection:
         assert result.success is False
         assert "ssrf" in result.error.lower() or "forbidden" in result.error.lower()
 
-    @patch('temper_ai.tools.web_scraper.socket.getaddrinfo')
+    @patch("temper_ai.tools.web_scraper.socket.getaddrinfo")
     def test_allows_safe_redirect(self, mock_getaddrinfo, mock_httpx_client):
         """Redirect to another public URL is allowed."""
         scraper = WebScraper()
 
         mock_getaddrinfo.return_value = [
-            (socket.AF_INET, socket.SOCK_STREAM, 0, '', ('8.8.8.8', 80)),
+            (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("8.8.8.8", 80)),
         ]
 
         # First request redirects
@@ -939,13 +934,13 @@ class TestSSRFRedirectProtection:
 
         assert result.success is True
 
-    @patch('temper_ai.tools.web_scraper.socket.getaddrinfo')
+    @patch("temper_ai.tools.web_scraper.socket.getaddrinfo")
     def test_blocks_too_many_redirects(self, mock_getaddrinfo, mock_httpx_client):
         """Excessive redirects are blocked."""
         scraper = WebScraper()
 
         mock_getaddrinfo.return_value = [
-            (socket.AF_INET, socket.SOCK_STREAM, 0, '', ('8.8.8.8', 80)),
+            (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("8.8.8.8", 80)),
         ]
 
         # Create infinite redirect loop
@@ -966,14 +961,14 @@ class TestSSRFRedirectProtection:
 class TestContentTypeValidation:
     """Test Content-Type validation."""
 
-    @patch('temper_ai.tools.web_scraper.socket.getaddrinfo')
+    @patch("temper_ai.tools.web_scraper.socket.getaddrinfo")
     def test_rejects_pdf_content(self, mock_getaddrinfo, mock_httpx_client):
         """Test that PDF content is rejected."""
         scraper = WebScraper()
 
         # Mock DNS to return public IP
         mock_getaddrinfo.return_value = [
-            (socket.AF_INET, socket.SOCK_STREAM, 0, '', ('8.8.8.8', 80)),
+            (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("8.8.8.8", 80)),
         ]
 
         mock_response = Mock()
@@ -989,13 +984,13 @@ class TestContentTypeValidation:
         assert "unsupported content type" in result.error.lower()
         assert "application/pdf" in result.error.lower()
 
-    @patch('temper_ai.tools.web_scraper.socket.getaddrinfo')
+    @patch("temper_ai.tools.web_scraper.socket.getaddrinfo")
     def test_rejects_image_content(self, mock_getaddrinfo, mock_httpx_client):
         """Test that image content is rejected."""
         scraper = WebScraper()
 
         mock_getaddrinfo.return_value = [
-            (socket.AF_INET, socket.SOCK_STREAM, 0, '', ('8.8.8.8', 80)),
+            (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("8.8.8.8", 80)),
         ]
 
         mock_response = Mock()
@@ -1010,13 +1005,13 @@ class TestContentTypeValidation:
         assert result.success is False
         assert "unsupported content type" in result.error.lower()
 
-    @patch('temper_ai.tools.web_scraper.socket.getaddrinfo')
+    @patch("temper_ai.tools.web_scraper.socket.getaddrinfo")
     def test_rejects_video_content(self, mock_getaddrinfo, mock_httpx_client):
         """Test that video content is rejected."""
         scraper = WebScraper()
 
         mock_getaddrinfo.return_value = [
-            (socket.AF_INET, socket.SOCK_STREAM, 0, '', ('8.8.8.8', 80)),
+            (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("8.8.8.8", 80)),
         ]
 
         mock_response = Mock()
@@ -1031,13 +1026,13 @@ class TestContentTypeValidation:
         assert result.success is False
         assert "unsupported content type" in result.error.lower()
 
-    @patch('temper_ai.tools.web_scraper.socket.getaddrinfo')
+    @patch("temper_ai.tools.web_scraper.socket.getaddrinfo")
     def test_accepts_html_content(self, mock_getaddrinfo, mock_httpx_client):
         """Test that HTML content is accepted."""
         scraper = WebScraper()
 
         mock_getaddrinfo.return_value = [
-            (socket.AF_INET, socket.SOCK_STREAM, 0, '', ('8.8.8.8', 80)),
+            (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("8.8.8.8", 80)),
         ]
 
         mock_response = Mock()
@@ -1052,13 +1047,13 @@ class TestContentTypeValidation:
 
         assert result.success is True
 
-    @patch('temper_ai.tools.web_scraper.socket.getaddrinfo')
+    @patch("temper_ai.tools.web_scraper.socket.getaddrinfo")
     def test_accepts_html_with_charset(self, mock_getaddrinfo, mock_httpx_client):
         """Test that HTML with charset parameter is accepted."""
         scraper = WebScraper()
 
         mock_getaddrinfo.return_value = [
-            (socket.AF_INET, socket.SOCK_STREAM, 0, '', ('8.8.8.8', 80)),
+            (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("8.8.8.8", 80)),
         ]
 
         mock_response = Mock()
@@ -1073,13 +1068,13 @@ class TestContentTypeValidation:
 
         assert result.success is True
 
-    @patch('temper_ai.tools.web_scraper.socket.getaddrinfo')
+    @patch("temper_ai.tools.web_scraper.socket.getaddrinfo")
     def test_accepts_plain_text(self, mock_getaddrinfo, mock_httpx_client):
         """Test that plain text content is accepted."""
         scraper = WebScraper()
 
         mock_getaddrinfo.return_value = [
-            (socket.AF_INET, socket.SOCK_STREAM, 0, '', ('8.8.8.8', 80)),
+            (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("8.8.8.8", 80)),
         ]
 
         mock_response = Mock()
@@ -1094,13 +1089,13 @@ class TestContentTypeValidation:
 
         assert result.success is True
 
-    @patch('temper_ai.tools.web_scraper.socket.getaddrinfo')
+    @patch("temper_ai.tools.web_scraper.socket.getaddrinfo")
     def test_accepts_xml_content(self, mock_getaddrinfo, mock_httpx_client):
         """Test that XML content is accepted."""
         scraper = WebScraper()
 
         mock_getaddrinfo.return_value = [
-            (socket.AF_INET, socket.SOCK_STREAM, 0, '', ('8.8.8.8', 80)),
+            (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("8.8.8.8", 80)),
         ]
 
         mock_response = Mock()
@@ -1115,13 +1110,13 @@ class TestContentTypeValidation:
 
         assert result.success is True
 
-    @patch('temper_ai.tools.web_scraper.socket.getaddrinfo')
+    @patch("temper_ai.tools.web_scraper.socket.getaddrinfo")
     def test_rejects_binary_application(self, mock_getaddrinfo, mock_httpx_client):
         """Test that binary application content is rejected."""
         scraper = WebScraper()
 
         mock_getaddrinfo.return_value = [
-            (socket.AF_INET, socket.SOCK_STREAM, 0, '', ('8.8.8.8', 80)),
+            (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("8.8.8.8", 80)),
         ]
 
         mock_response = Mock()
@@ -1143,9 +1138,10 @@ class TestDNSCacheEdgeCases:
     def test_dns_cache_expiration(self):
         """Test that DNS cache entries expire after TTL."""
         from temper_ai.tools.web_scraper import DNSCache
+
         cache = DNSCache(ttl=1, max_size=10)
 
-        addr_info = [(socket.AF_INET, socket.SOCK_STREAM, 0, '', ('1.2.3.4', 80))]
+        addr_info = [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("1.2.3.4", 80))]
         cache.set("example.com", addr_info)
 
         # Immediately available
@@ -1154,6 +1150,7 @@ class TestDNSCacheEdgeCases:
 
         # Wait for expiration
         import time
+
         time.sleep(1.1)
 
         # Should be None after expiration
@@ -1163,11 +1160,12 @@ class TestDNSCacheEdgeCases:
     def test_dns_cache_max_size_lru(self):
         """Test that DNS cache enforces max size with LRU eviction."""
         from temper_ai.tools.web_scraper import DNSCache
+
         cache = DNSCache(ttl=60, max_size=2)
 
-        addr1 = [(socket.AF_INET, socket.SOCK_STREAM, 0, '', ('1.1.1.1', 80))]
-        addr2 = [(socket.AF_INET, socket.SOCK_STREAM, 0, '', ('2.2.2.2', 80))]
-        addr3 = [(socket.AF_INET, socket.SOCK_STREAM, 0, '', ('3.3.3.3', 80))]
+        addr1 = [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("1.1.1.1", 80))]
+        addr2 = [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("2.2.2.2", 80))]
+        addr3 = [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("3.3.3.3", 80))]
 
         cache.set("host1.com", addr1)
         cache.set("host2.com", addr2)
@@ -1187,9 +1185,10 @@ class TestDNSCacheEdgeCases:
     def test_dns_cache_clear(self):
         """Test clearing all cache entries."""
         from temper_ai.tools.web_scraper import DNSCache
+
         cache = DNSCache(ttl=60, max_size=10)
 
-        addr_info = [(socket.AF_INET, socket.SOCK_STREAM, 0, '', ('1.2.3.4', 80))]
+        addr_info = [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("1.2.3.4", 80))]
         cache.set("example.com", addr_info)
 
         assert cache.get("example.com") is not None
@@ -1205,6 +1204,7 @@ class TestURLValidationEdgeCases:
     def test_invalid_hostname_in_url(self):
         """Test URL with invalid hostname format."""
         from temper_ai.tools.web_scraper import validate_url_safety
+
         is_safe, error = validate_url_safety("http://")
         assert is_safe is False
         assert "missing hostname" in error.lower()
@@ -1212,6 +1212,7 @@ class TestURLValidationEdgeCases:
     def test_url_parse_type_error(self):
         """Test URL validation with None."""
         from temper_ai.tools.web_scraper import validate_url_safety
+
         is_safe, error = validate_url_safety(None)
         assert is_safe is False
         assert "invalid url" in error.lower()
@@ -1219,7 +1220,10 @@ class TestURLValidationEdgeCases:
     def test_dns_resolution_os_error(self):
         """Test DNS resolution OSError handling."""
         from temper_ai.tools.web_scraper import validate_url_safety
-        with patch('temper_ai.tools.web_scraper.resolve_hostname_with_timeout') as mock_resolve:
+
+        with patch(
+            "temper_ai.tools.web_scraper.resolve_hostname_with_timeout"
+        ) as mock_resolve:
             mock_resolve.side_effect = OSError("Network error")
             is_safe, error = validate_url_safety("http://example.com", use_cache=False)
             assert is_safe is False
@@ -1228,7 +1232,10 @@ class TestURLValidationEdgeCases:
     def test_dns_resolution_value_error(self):
         """Test DNS resolution ValueError handling."""
         from temper_ai.tools.web_scraper import validate_url_safety
-        with patch('temper_ai.tools.web_scraper.resolve_hostname_with_timeout') as mock_resolve:
+
+        with patch(
+            "temper_ai.tools.web_scraper.resolve_hostname_with_timeout"
+        ) as mock_resolve:
             mock_resolve.side_effect = ValueError("Invalid hostname")
             is_safe, error = validate_url_safety("http://example.com", use_cache=False)
             assert is_safe is False
@@ -1237,10 +1244,13 @@ class TestURLValidationEdgeCases:
     def test_invalid_ip_in_resolved_addresses(self):
         """Test handling of invalid IP in DNS response."""
         from temper_ai.tools.web_scraper import validate_url_safety
-        with patch('temper_ai.tools.web_scraper.resolve_hostname_with_timeout') as mock_resolve:
+
+        with patch(
+            "temper_ai.tools.web_scraper.resolve_hostname_with_timeout"
+        ) as mock_resolve:
             # Return malformed IP address
             mock_resolve.return_value = [
-                (socket.AF_INET, socket.SOCK_STREAM, 0, '', ('invalid_ip', 80))
+                (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("invalid_ip", 80))
             ]
             is_safe, error = validate_url_safety("http://example.com", use_cache=False)
             assert is_safe is False
@@ -1271,6 +1281,7 @@ class TestWebScraperClientManagement:
         scraper._get_client()
         # Should not raise during cleanup
         scraper.__del__()
+        assert scraper._client is None  # client cleaned up after __del__
 
     def test_del_with_os_error(self):
         """Test __del__ handles OSError gracefully."""
@@ -1278,20 +1289,21 @@ class TestWebScraperClientManagement:
         client = scraper._get_client()
 
         # Mock close to raise OSError — destructor should swallow it
-        with patch.object(client, 'close', side_effect=OSError("Mock error")):
+        with patch.object(client, "close", side_effect=OSError("Mock error")):
             scraper.__del__()
+        assert scraper._client is None  # client reference cleared despite OSError
 
 
 class TestWebScraperTextExtraction:
     """Test text extraction error handling."""
 
-    @patch('temper_ai.tools.web_scraper.socket.getaddrinfo')
+    @patch("temper_ai.tools.web_scraper.socket.getaddrinfo")
     def test_text_extraction_value_error(self, mock_getaddrinfo, mock_httpx_client):
         """Test text extraction ValueError handling."""
         scraper = WebScraper()
 
         mock_getaddrinfo.return_value = [
-            (socket.AF_INET, socket.SOCK_STREAM, 0, '', ('8.8.8.8', 80)),
+            (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("8.8.8.8", 80)),
         ]
 
         mock_response = Mock()
@@ -1308,13 +1320,13 @@ class TestWebScraperTextExtraction:
         assert result.success is False
         assert "content processing error" in result.error.lower()
 
-    @patch('temper_ai.tools.web_scraper.socket.getaddrinfo')
+    @patch("temper_ai.tools.web_scraper.socket.getaddrinfo")
     def test_extract_text_error_handling(self, mock_getaddrinfo, mock_httpx_client):
         """Test _extract_text internal error handling."""
         scraper = WebScraper()
 
         mock_getaddrinfo.return_value = [
-            (socket.AF_INET, socket.SOCK_STREAM, 0, '', ('8.8.8.8', 80)),
+            (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("8.8.8.8", 80)),
         ]
 
         mock_response = Mock()
@@ -1326,7 +1338,7 @@ class TestWebScraperTextExtraction:
         mock_httpx_client.get.return_value = mock_response
 
         # Mock BeautifulSoup to raise error
-        with patch('temper_ai.tools.web_scraper.BeautifulSoup') as mock_bs:
+        with patch("temper_ai.tools.web_scraper.BeautifulSoup") as mock_bs:
             mock_bs.side_effect = TypeError("Parse error")
 
             result = scraper.execute(url="http://example.com", extract_text=True)

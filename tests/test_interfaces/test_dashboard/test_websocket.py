@@ -1,16 +1,14 @@
 """Tests for dashboard WebSocket handler."""
-import asyncio
-import threading
-from datetime import datetime, timezone
+
+from datetime import UTC, datetime
 from unittest.mock import MagicMock
 
-import pytest
 from fastapi.testclient import TestClient
 
 from temper_ai.interfaces.dashboard.app import create_app
 from temper_ai.interfaces.dashboard.websocket import (
-    _workflow_fingerprint,
     TERMINAL_STATUSES,
+    _workflow_fingerprint,
 )
 from temper_ai.observability.constants import ObservabilityFields
 from temper_ai.observability.event_bus import ObservabilityEvent, ObservabilityEventBus
@@ -80,7 +78,7 @@ class TestWebSocketEventStreaming:
             # Emit an event on the bus for this workflow
             event = ObservabilityEvent(
                 event_type="stage_start",
-                timestamp=datetime.now(timezone.utc),
+                timestamp=datetime.now(UTC),
                 data={"stage_name": "research"},
                 workflow_id="wf-ws-1",
                 stage_id="st-1",
@@ -108,7 +106,7 @@ class TestWebSocketEventStreaming:
             # Emit event for a *different* workflow
             event = ObservabilityEvent(
                 event_type="stage_start",
-                timestamp=datetime.now(timezone.utc),
+                timestamp=datetime.now(UTC),
                 data={"stage_name": "other"},
                 workflow_id="wf-other",
             )
@@ -117,7 +115,7 @@ class TestWebSocketEventStreaming:
             # Now emit one for *our* workflow so we have something to read
             event2 = ObservabilityEvent(
                 event_type="agent_start",
-                timestamp=datetime.now(timezone.utc),
+                timestamp=datetime.now(UTC),
                 data={"agent_name": "writer"},
                 workflow_id="wf-ws-1",
             )
@@ -153,7 +151,11 @@ class TestWorkflowFingerprint:
 
     def test_status_change_changes_fingerprint(self):
         snap1 = {"status": "running", "stages": []}
-        snap2 = {"status": "completed", "end_time": "2026-02-17T00:00:00Z", "stages": []}
+        snap2 = {
+            "status": "completed",
+            "end_time": "2026-02-17T00:00:00Z",
+            "stages": [],
+        }
         assert _workflow_fingerprint(snap1) != _workflow_fingerprint(snap2)
 
     def test_new_stage_changes_fingerprint(self):

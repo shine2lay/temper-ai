@@ -9,7 +9,7 @@ Provides 4 endpoints:
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -23,10 +23,11 @@ def _resolve_db_url(db_url: str | None) -> str:
     if db_url:
         return db_url
     from temper_ai.storage.database.engine import get_database_url
+
     return get_database_url()
 
 
-def get_lifecycle_routes() -> List[Dict[str, Any]]:
+def get_lifecycle_routes() -> list[dict[str, Any]]:
     """Return route definitions for lifecycle dashboard endpoints."""
     return [
         {
@@ -55,7 +56,7 @@ def get_lifecycle_routes() -> List[Dict[str, Any]]:
 def handle_list_adaptations(
     db_url: str | None = None,
     limit: int = DEFAULT_LIMIT,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """List recent lifecycle adaptations."""
     try:
         from temper_ai.lifecycle.store import LifecycleStore
@@ -84,16 +85,14 @@ def handle_list_adaptations(
 def handle_list_profiles(
     db_url: str | None = None,
     config_dir: str = DEFAULT_LIFECYCLE_CONFIG_DIR,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """List all lifecycle profiles."""
     try:
         from temper_ai.lifecycle.profiles import ProfileRegistry
         from temper_ai.lifecycle.store import LifecycleStore
 
         store = LifecycleStore(database_url=_resolve_db_url(db_url))
-        registry = ProfileRegistry(
-            config_dir=Path(config_dir), store=store
-        )
+        registry = ProfileRegistry(config_dir=Path(config_dir), store=store)
         profiles = registry.list_profiles()
         return {
             "profiles": [
@@ -116,14 +115,14 @@ def handle_list_profiles(
 
 def handle_list_experiments(
     db_url: str | None = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """List lifecycle experiment results."""
     try:
         from temper_ai.lifecycle.store import LifecycleStore
 
         store = LifecycleStore(database_url=_resolve_db_url(db_url))
         adaptations = store.list_adaptations(limit=DEFAULT_LIMIT)
-        experiments: Dict[str, list] = {}
+        experiments: dict[str, list] = {}
         for a in adaptations:
             if a.experiment_id:
                 if a.experiment_id not in experiments:
@@ -143,7 +142,7 @@ def handle_list_experiments(
 
 def handle_metrics(
     db_url: str | None = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Get lifecycle adaptation metrics summary."""
     try:
         from temper_ai.lifecycle.store import LifecycleStore
@@ -152,11 +151,9 @@ def handle_metrics(
         adaptations = store.list_adaptations()
         profiles = store.list_profiles()
 
-        profile_usage: Dict[str, int] = {}
+        profile_usage: dict[str, int] = {}
         for a in adaptations:
-            profile_usage[a.profile_name] = (
-                profile_usage.get(a.profile_name, 0) + 1
-            )
+            profile_usage[a.profile_name] = profile_usage.get(a.profile_name, 0) + 1
 
         return {
             "total_adaptations": len(adaptations),

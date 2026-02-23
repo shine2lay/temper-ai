@@ -1,6 +1,6 @@
 """Helper functions extracted from SecretDetectionPolicy to reduce class size."""
 
-from typing import Any, Dict, List
+from typing import Any
 
 from temper_ai.safety.constants import (
     MAX_EXCLUDED_PATH_LENGTH,
@@ -9,9 +9,9 @@ from temper_ai.safety.constants import (
 
 
 def validate_enabled_patterns(
-    config: Dict[str, Any],
-    valid_patterns: Dict[str, Any],
-) -> List[str]:
+    config: dict[str, Any],
+    valid_patterns: dict[str, Any],
+) -> list[str]:
     """Validate and return enabled pattern names from config.
 
     Args:
@@ -34,10 +34,12 @@ def validate_enabled_patterns(
             )
 
     valid_names = set(valid_patterns.keys())
-    enabled_patterns: List[str] = []
+    enabled_patterns: list[str] = []
     for pattern in enabled_patterns_raw:
         if not isinstance(pattern, str):
-            raise ValueError(f"enabled_patterns items must be strings, got {type(pattern).__name__}")
+            raise ValueError(
+                f"enabled_patterns items must be strings, got {type(pattern).__name__}"
+            )
         if pattern not in valid_names:
             raise ValueError(
                 f"Unknown pattern '{pattern}'. Valid patterns: {', '.join(sorted(valid_names))}"
@@ -45,12 +47,14 @@ def validate_enabled_patterns(
         enabled_patterns.append(pattern)
 
     if not enabled_patterns:
-        raise ValueError("enabled_patterns cannot be empty. At least one pattern must be enabled.")
+        raise ValueError(
+            "enabled_patterns cannot be empty. At least one pattern must be enabled."
+        )
 
     return enabled_patterns
 
 
-def validate_excluded_paths(config: Dict[str, Any]) -> List[str]:
+def validate_excluded_paths(config: dict[str, Any]) -> list[str]:
     """Validate and return excluded paths from config.
 
     Args:
@@ -68,10 +72,12 @@ def validate_excluded_paths(config: Dict[str, Any]) -> List[str]:
             f"excluded_paths must be a list of strings, got {type(excluded_paths_raw).__name__}"
         )
 
-    excluded_paths: List[str] = []
+    excluded_paths: list[str] = []
     for path in excluded_paths_raw:
         if not isinstance(path, str):
-            raise ValueError(f"excluded_paths items must be strings, got {type(path).__name__}")
+            raise ValueError(
+                f"excluded_paths items must be strings, got {type(path).__name__}"
+            )
         if len(path) > MAX_EXCLUDED_PATH_LENGTH:
             raise ValueError(
                 f"excluded_paths items must be <= {MAX_EXCLUDED_PATH_LENGTH} characters, got {len(path)}"

@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useExecutionStore } from '@/store/executionStore';
+import { authFetch } from '@/lib/authFetch';
 import type { WorkflowExecution } from '@/types';
 
 /**
@@ -12,11 +13,17 @@ import type { WorkflowExecution } from '@/types';
 export function useInitialData(workflowId: string | undefined) {
   const hasData = useExecutionStore((s) => s.workflow !== null);
   const applySnapshot = useExecutionStore((s) => s.applySnapshot);
+  const reset = useExecutionStore((s) => s.reset);
+
+  // Reset store when navigating to a different workflow
+  useEffect(() => {
+    reset();
+  }, [workflowId, reset]);
 
   const query = useQuery<WorkflowExecution>({
     queryKey: ['workflow', workflowId],
     queryFn: () =>
-      fetch(`/api/workflows/${workflowId}`).then((r) => {
+      authFetch(`/api/workflows/${workflowId}`).then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json() as Promise<WorkflowExecution>;
       }),

@@ -9,11 +9,11 @@ Enforces file system access controls to prevent unauthorized access to:
 
 Supports both allowlist (explicit permissions) and denylist (explicit denials) modes.
 """
+
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any
 
-from temper_ai.shared.constants.limits import MAX_SHORT_STRING_LENGTH
 from temper_ai.safety._file_access_helpers import (
     extract_paths,
     has_forbidden_extension,
@@ -33,8 +33,13 @@ from temper_ai.safety.constants import (
     PATH_KEY,
     VIOLATION_KEY,
 )
-from temper_ai.safety.interfaces import SafetyViolation, ValidationResult, ViolationSeverity
+from temper_ai.safety.interfaces import (
+    SafetyViolation,
+    ValidationResult,
+    ViolationSeverity,
+)
 from temper_ai.safety.validation import ValidationMixin
+from temper_ai.shared.constants.limits import MAX_SHORT_STRING_LENGTH
 
 # File access violation types
 VIOLATION_PARENT_TRAVERSAL = "parent_traversal"
@@ -84,23 +89,42 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
 
     # System directories that should always be protected
     DEFAULT_FORBIDDEN_DIRS = {
-        "/etc", "/sys", "/proc", "/dev", "/boot",
-        "/root", "/.ssh", "/.aws", "/.gcp", "/.azure",
+        "/etc",
+        "/sys",
+        "/proc",
+        "/dev",
+        "/boot",
+        "/root",
+        "/.ssh",
+        "/.aws",
+        "/.gcp",
+        "/.azure",
     }
 
     # Files that should always be protected
     DEFAULT_FORBIDDEN_FILES = {
-        "/.env", "/.env.local", "/.env.production",
-        "/etc/passwd", "/etc/shadow", "/etc/sudoers",
-        "/.bashrc", "/.bash_profile", "/.zshrc",
+        "/.env",
+        "/.env.local",
+        "/.env.production",
+        "/etc/passwd",
+        "/etc/shadow",
+        "/etc/sudoers",
+        "/.bashrc",
+        "/.bash_profile",
+        "/.zshrc",
     }
 
     # File extensions that may indicate security risks
     DEFAULT_FORBIDDEN_EXTENSIONS = {
-        ".pem", ".key", ".p12", ".pfx", ".crt", ".cer",
+        ".pem",
+        ".key",
+        ".p12",
+        ".pfx",
+        ".crt",
+        ".cer",
     }
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: dict[str, Any] | None = None):
         """Initialize file access policy.
 
         Args:
@@ -126,7 +150,7 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
         # Mode detection
         self.mode = MODE_ALLOWLIST if self.allowed_paths else MODE_DENYLIST
 
-    def _init_path_list(self, config_key: str) -> List[str]:
+    def _init_path_list(self, config_key: str) -> list[str]:
         """Initialize and validate a path list from configuration.
 
         Args:
@@ -144,16 +168,22 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
                 f"{config_key} must be a list of strings, got {type(paths_raw).__name__}"
             )
 
-        paths: List[str] = []
+        paths: list[str] = []
         for path in paths_raw:
             if not isinstance(path, str):
-                raise ValueError(f"{config_key} items must be strings, got {type(path).__name__}")
+                raise ValueError(
+                    f"{config_key} items must be strings, got {type(path).__name__}"
+                )
             if len(path) > MAX_EXCLUDED_PATH_LENGTH:
-                raise ValueError(f"{config_key} items must be <= {MAX_EXCLUDED_PATH_LENGTH}{ERROR_CHARS_GOT}{len(path)}")
+                raise ValueError(
+                    f"{config_key} items must be <= {MAX_EXCLUDED_PATH_LENGTH}{ERROR_CHARS_GOT}{len(path)}"
+                )
             paths.append(path)
 
         if len(paths) > MAX_EXCLUDED_PATHS:
-            raise ValueError(f"{config_key} must have <= {MAX_EXCLUDED_PATHS}{ERROR_ITEMS_GOT}{len(paths)}")
+            raise ValueError(
+                f"{config_key} must have <= {MAX_EXCLUDED_PATHS}{ERROR_ITEMS_GOT}{len(paths)}"
+            )
 
         return paths
 
@@ -161,22 +191,22 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
         """Initialize boolean security settings."""
         self.allow_parent_traversal = self._validate_boolean(
             self.config.get("allow_parent_traversal", False),
-            "allow_parent_traversal", default=False
+            "allow_parent_traversal",
+            default=False,
         )
         self.allow_symlinks = self._validate_boolean(
-            self.config.get("allow_symlinks", False),
-            "allow_symlinks", default=False
+            self.config.get("allow_symlinks", False), "allow_symlinks", default=False
         )
         self.allow_absolute_paths = self._validate_boolean(
             self.config.get("allow_absolute_paths", True),
-            "allow_absolute_paths", default=True
+            "allow_absolute_paths",
+            default=True,
         )
         self.case_sensitive = self._validate_boolean(
-            self.config.get("case_sensitive", True),
-            "case_sensitive", default=True
+            self.config.get("case_sensitive", True), "case_sensitive", default=True
         )
 
-    def _init_forbidden_extensions(self) -> Set[str]:
+    def _init_forbidden_extensions(self) -> set[str]:
         """Initialize forbidden file extensions.
 
         Returns:
@@ -191,14 +221,18 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
                 f"forbidden_extensions must be a list of strings, got {type(forbidden_ext_raw).__name__}"
             )
 
-        forbidden_ext_validated: List[str] = []
+        forbidden_ext_validated: list[str] = []
         for ext in forbidden_ext_raw:
             if not isinstance(ext, str):
-                raise ValueError(f"forbidden_extensions items must be strings, got {type(ext).__name__}")
+                raise ValueError(
+                    f"forbidden_extensions items must be strings, got {type(ext).__name__}"
+                )
             if len(ext) > MAX_EXTENSION_LENGTH:
-                raise ValueError(f"forbidden_extensions items must be <= {MAX_EXTENSION_LENGTH}{ERROR_CHARS_GOT}{len(ext)}")
-            if not ext.startswith('.'):
-                ext = '.' + ext
+                raise ValueError(
+                    f"forbidden_extensions items must be <= {MAX_EXTENSION_LENGTH}{ERROR_CHARS_GOT}{len(ext)}"
+                )
+            if not ext.startswith("."):
+                ext = "." + ext
             forbidden_ext_validated.append(ext.lower())
 
         if len(forbidden_ext_validated) > MAX_FILENAME_ITEMS:
@@ -208,7 +242,7 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
 
         return set(forbidden_ext_validated) | self.DEFAULT_FORBIDDEN_EXTENSIONS
 
-    def _init_forbidden_directories(self) -> Set[str]:
+    def _init_forbidden_directories(self) -> set[str]:
         """Initialize forbidden directories.
 
         Returns:
@@ -223,7 +257,7 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
                 f"forbidden_directories must be a list of strings, got {type(forbidden_dirs_raw).__name__}"
             )
 
-        forbidden_dirs_validated: List[str] = []
+        forbidden_dirs_validated: list[str] = []
         for dir_path in forbidden_dirs_raw:
             if not isinstance(dir_path, str):
                 raise ValueError(
@@ -242,7 +276,7 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
 
         return set(forbidden_dirs_validated) | self.DEFAULT_FORBIDDEN_DIRS
 
-    def _init_forbidden_files(self) -> Set[str]:
+    def _init_forbidden_files(self) -> set[str]:
         """Initialize forbidden files.
 
         Returns:
@@ -257,12 +291,16 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
                 f"forbidden_files must be a list of strings, got {type(forbidden_files_raw).__name__}"
             )
 
-        forbidden_files_validated: List[str] = []
+        forbidden_files_validated: list[str] = []
         for file_name in forbidden_files_raw:
             if not isinstance(file_name, str):
-                raise ValueError(f"forbidden_files items must be strings, got {type(file_name).__name__}")
+                raise ValueError(
+                    f"forbidden_files items must be strings, got {type(file_name).__name__}"
+                )
             if len(file_name) > MAX_SHORT_STRING_LENGTH:
-                raise ValueError(f"forbidden_files items must be <= {MAX_SHORT_STRING_LENGTH}{ERROR_CHARS_GOT}{len(file_name)}")
+                raise ValueError(
+                    f"forbidden_files items must be <= {MAX_SHORT_STRING_LENGTH}{ERROR_CHARS_GOT}{len(file_name)}"
+                )
             forbidden_files_validated.append(file_name)
 
         if len(forbidden_files_validated) > MAX_EXCLUDED_PATHS:
@@ -288,9 +326,7 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
         return FILE_ACCESS_PRIORITY
 
     def _validate_impl(
-        self,
-        action: Dict[str, Any],
-        context: Dict[str, Any]
+        self, action: dict[str, Any], context: dict[str, Any]
     ) -> ValidationResult:
         """Validate file access action.
 
@@ -304,14 +340,16 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
         Returns:
             ValidationResult with violations if access denied
         """
-        violations: List[SafetyViolation] = []
+        violations: list[SafetyViolation] = []
         paths = extract_paths(action)
 
         for path in paths:
             normalized_path = self._normalize_path(path)
 
             # Check for security violations
-            violation = self._check_path_security(path, normalized_path, action, context)
+            violation = self._check_path_security(
+                path, normalized_path, action, context
+            )
             if violation:
                 violations.append(violation)
                 continue
@@ -324,18 +362,19 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
         valid = not any(v.severity >= ViolationSeverity.HIGH for v in violations)
 
         return ValidationResult(
-            valid=valid, violations=violations,
+            valid=valid,
+            violations=violations,
             metadata={"mode": self.mode, "paths_checked": len(paths)},
-            policy_name=self.name
+            policy_name=self.name,
         )
 
     def _check_path_security(
         self,
         path: str,
         normalized_path: str,
-        action: Dict[str, Any],
-        context: Dict[str, Any]
-    ) -> Optional[SafetyViolation]:
+        action: dict[str, Any],
+        context: dict[str, Any],
+    ) -> SafetyViolation | None:
         """Check path for security violations.
 
         Args:
@@ -350,52 +389,66 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
         # Check parent traversal
         if not self.allow_parent_traversal and self._has_parent_traversal(path):
             return SafetyViolation(
-                policy_name=self.name, severity=ViolationSeverity.CRITICAL,
+                policy_name=self.name,
+                severity=ViolationSeverity.CRITICAL,
                 message=f"Path traversal detected: {path}",
-                action=str(action), context=context,
+                action=str(action),
+                context=context,
                 remediation_hint="Remove parent directory references (../)",
-                metadata={PATH_KEY: path, VIOLATION_KEY:VIOLATION_PARENT_TRAVERSAL}
+                metadata={PATH_KEY: path, VIOLATION_KEY: VIOLATION_PARENT_TRAVERSAL},
             )
 
         # Check absolute paths
         if not self.allow_absolute_paths and os.path.isabs(path):
             return SafetyViolation(
-                policy_name=self.name, severity=ViolationSeverity.HIGH,
+                policy_name=self.name,
+                severity=ViolationSeverity.HIGH,
                 message=f"Absolute path not allowed: {path}",
-                action=str(action), context=context,
+                action=str(action),
+                context=context,
                 remediation_hint="Use relative paths only",
-                metadata={PATH_KEY: path, VIOLATION_KEY:VIOLATION_ABSOLUTE_PATH}
+                metadata={PATH_KEY: path, VIOLATION_KEY: VIOLATION_ABSOLUTE_PATH},
             )
 
         # Check forbidden file
         if self._is_forbidden_file(normalized_path):
             return SafetyViolation(
-                policy_name=self.name, severity=ViolationSeverity.CRITICAL,
+                policy_name=self.name,
+                severity=ViolationSeverity.CRITICAL,
                 message=f"Access to forbidden file: {path}",
-                action=str(action), context=context,
+                action=str(action),
+                context=context,
                 remediation_hint="This file contains sensitive data and cannot be accessed",
-                metadata={PATH_KEY: path, VIOLATION_KEY:VIOLATION_FORBIDDEN_FILE}
+                metadata={PATH_KEY: path, VIOLATION_KEY: VIOLATION_FORBIDDEN_FILE},
             )
 
         # Check forbidden directory
         if self._is_forbidden_directory(normalized_path):
             return SafetyViolation(
-                policy_name=self.name, severity=ViolationSeverity.CRITICAL,
+                policy_name=self.name,
+                severity=ViolationSeverity.CRITICAL,
                 message=f"Access to forbidden directory: {path}",
-                action=str(action), context=context,
+                action=str(action),
+                context=context,
                 remediation_hint="This directory is protected and cannot be accessed",
-                metadata={PATH_KEY: path, VIOLATION_KEY:VIOLATION_FORBIDDEN_DIRECTORY}
+                metadata={PATH_KEY: path, VIOLATION_KEY: VIOLATION_FORBIDDEN_DIRECTORY},
             )
 
         # Check forbidden extension
         if self._has_forbidden_extension(path):
             ext = Path(path).suffix
             return SafetyViolation(
-                policy_name=self.name, severity=ViolationSeverity.CRITICAL,
+                policy_name=self.name,
+                severity=ViolationSeverity.CRITICAL,
                 message=f"Access to file with forbidden extension: {ext}",
-                action=str(action), context=context,
+                action=str(action),
+                context=context,
                 remediation_hint=f"Files with {ext} extension are not allowed",
-                metadata={"path": path, "extension": ext, "violation": VIOLATION_FORBIDDEN_EXTENSION}
+                metadata={
+                    "path": path,
+                    "extension": ext,
+                    "violation": VIOLATION_FORBIDDEN_EXTENSION,
+                },
             )
 
         return None
@@ -404,9 +457,9 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
         self,
         path: str,
         normalized_path: str,
-        action: Dict[str, Any],
-        context: Dict[str, Any]
-    ) -> Optional[SafetyViolation]:
+        action: dict[str, Any],
+        context: dict[str, Any],
+    ) -> SafetyViolation | None:
         """Check path against allowlist/denylist.
 
         Args:
@@ -421,20 +474,27 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
         if self.mode == MODE_ALLOWLIST:
             if not self._is_allowed(normalized_path):
                 return SafetyViolation(
-                    policy_name=self.name, severity=ViolationSeverity.CRITICAL,
+                    policy_name=self.name,
+                    severity=ViolationSeverity.CRITICAL,
                     message=f"Path not in allowlist: {path}",
-                    action=str(action), context=context,
+                    action=str(action),
+                    context=context,
                     remediation_hint="Add path to allowed_paths or use an allowed directory",
-                    metadata={PATH_KEY: path, VIOLATION_KEY:VIOLATION_NOT_IN_ALLOWLIST}
+                    metadata={
+                        PATH_KEY: path,
+                        VIOLATION_KEY: VIOLATION_NOT_IN_ALLOWLIST,
+                    },
                 )
         else:
             if self._is_denied(normalized_path):
                 return SafetyViolation(
-                    policy_name=self.name, severity=ViolationSeverity.CRITICAL,
+                    policy_name=self.name,
+                    severity=ViolationSeverity.CRITICAL,
                     message=f"Path in denylist: {path}",
-                    action=str(action), context=context,
+                    action=str(action),
+                    context=context,
                     remediation_hint="Use a different path not in denied_paths",
-                    metadata={PATH_KEY: path, VIOLATION_KEY:VIOLATION_IN_DENYLIST}
+                    metadata={PATH_KEY: path, VIOLATION_KEY: VIOLATION_IN_DENYLIST},
                 )
         return None
 
@@ -452,7 +512,9 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
 
     def _is_forbidden_directory(self, path: str) -> bool:
         """Check if path is under a forbidden directory. Delegates to helper."""
-        return is_forbidden_directory(path, self.forbidden_directories, self.case_sensitive)
+        return is_forbidden_directory(
+            path, self.forbidden_directories, self.case_sensitive
+        )
 
     def _has_forbidden_extension(self, path: str) -> bool:
         """Check if path has a forbidden extension. Delegates to helper."""

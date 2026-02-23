@@ -2,6 +2,7 @@
 
 Tests enhanced exception classes with execution context and error codes.
 """
+
 import pytest
 
 from temper_ai.shared.core.context import ExecutionContext
@@ -172,14 +173,18 @@ class TestConfigurationError:
 
     def test_config_not_found_error(self):
         """Test ConfigNotFoundError."""
-        error = ConfigNotFoundError("Config missing", config_path="/path/to/config.yaml")
+        error = ConfigNotFoundError(
+            "Config missing", config_path="/path/to/config.yaml"
+        )
         assert error.error_code == ErrorCode.CONFIG_NOT_FOUND
         assert error.extra_data["config_path"] == "/path/to/config.yaml"
 
     def test_config_validation_error(self):
         """Test ConfigValidationError."""
         validation_errors = [{"field": "timeout", "error": "must be positive"}]
-        error = ConfigValidationError("Validation failed", validation_errors=validation_errors)
+        error = ConfigValidationError(
+            "Validation failed", validation_errors=validation_errors
+        )
         assert error.error_code == ErrorCode.CONFIG_VALIDATION_ERROR
         assert error.extra_data["validation_errors"] == validation_errors
 
@@ -333,7 +338,7 @@ class TestUtilityFunctions:
             original,
             "Wrapped error",
             error_code=ErrorCode.CONFIG_INVALID,
-            context=context
+            context=context,
         )
 
         assert isinstance(wrapped, BaseError)

@@ -8,8 +8,6 @@ Hierarchy (highest → lowest priority):
     CLI flags  >  env vars (TEMPER_*)  >  ~/.temper/config.yaml  >  defaults
 """
 
-from typing import Optional
-
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -33,13 +31,13 @@ class TemperSettings(BaseSettings):
     host: str = "127.0.0.1"
     port: int = 8420  # noqa  # scanner: skip-magic
     cors_origins: str = ""
-    api_key: Optional[str] = None
-    server_url: Optional[str] = None
+    api_key: str | None = None
+    server_url: str | None = None
 
     # -- Paths --
     config_root: str = "configs"
-    workspace: Optional[str] = None
-    db_path: Optional[str] = None
+    workspace: str | None = None
+    db_path: str | None = None
 
     # -- Workers --
     max_workers: int = 4  # noqa  # scanner: skip-magic
@@ -59,5 +57,5 @@ class TemperSettings(BaseSettings):
 
     # -- LLM (roadmap env vars) --
     llm_provider: str = "ollama"
-    openai_api_key: Optional[str] = None
-    secret_key: Optional[str] = None
+    openai_api_key: str | None = None
+    secret_key: str | None = None

@@ -3,13 +3,14 @@
 Shared across all tool executors in a workflow run. Thread-safe.
 Cache hits bypass rate limiting.
 """
+
 from __future__ import annotations
 
 import logging
 import threading
 import time
 from collections import deque
-from typing import Any, Dict
+from typing import Any
 
 from temper_ai.shared.utils.exceptions import RateLimitError
 from temper_ai.tools.workflow_rate_limiter_constants import (
@@ -93,7 +94,7 @@ class WorkflowRateLimiter:
             sleep_for = min(sleep_for, remaining)
             time.sleep(sleep_for)  # intentional: rate-limit wait
 
-    def get_usage(self) -> Dict[str, Any]:
+    def get_usage(self) -> dict[str, Any]:
         """Return current rate-limit usage snapshot."""
         with self._lock:
             self._cleanup_window()

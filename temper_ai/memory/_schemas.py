@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from temper_ai.memory.constants import DEFAULT_TENANT_ID, SCOPE_SEPARATOR
 
@@ -21,8 +21,8 @@ class MemoryScope:
     tenant_id: str = DEFAULT_TENANT_ID
     workflow_name: str = ""
     agent_name: str = ""
-    namespace: Optional[str] = None
-    agent_id: Optional[str] = None  # M9: persistent agent ID
+    namespace: str | None = None
+    agent_id: str | None = None  # M9: persistent agent ID
 
     @property
     def scope_key(self) -> str:
@@ -39,8 +39,8 @@ class MemoryEntry:
     content: str
     memory_type: str
     id: str = field(default_factory=lambda: uuid.uuid4().hex)
-    metadata: Dict[str, Any] = field(default_factory=dict)
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    metadata: dict[str, Any] = field(default_factory=dict)
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     relevance_score: float = 0.0
 
 
@@ -48,7 +48,7 @@ class MemoryEntry:
 class MemorySearchResult:
     """Result of a memory search operation."""
 
-    entries: List[MemoryEntry]
+    entries: list[MemoryEntry]
     query: str
     scope: MemoryScope
     search_time_ms: float = 0.0

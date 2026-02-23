@@ -1,10 +1,12 @@
 import { useMemo, useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { StatusBadge } from '@/components/shared/StatusBadge';
+import { EmptyState } from '@/components/shared/EmptyState';
 import { formatDuration, formatTimestamp, cn } from '@/lib/utils';
 import { useDebounce } from '@/hooks/useDebounce';
 import { SEARCH_DEBOUNCE_MS } from '@/lib/constants';
+import { authFetch } from '@/lib/authFetch';
 
 interface WorkflowSummary {
   id: string;
@@ -50,10 +52,11 @@ function sortWorkflows(workflows: WorkflowSummary[], sortBy: SortKey): WorkflowS
 }
 
 export function WorkflowList() {
+  const navigate = useNavigate();
   const { data: workflows, isLoading, error, dataUpdatedAt, refetch } = useQuery<WorkflowSummary[]>({
     queryKey: ['workflows'],
     queryFn: async () => {
-      const res = await fetch('/api/workflows');
+      const res = await authFetch('/api/workflows');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return res.json();
     },
@@ -69,6 +72,19 @@ export function WorkflowList() {
   const [statusFilter, setStatusFilter] = useState<string | null>(
     () => localStorage.getItem(STORAGE_KEY_FILTER),
   );
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  function toggleSelect(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else if (next.size < 3) {
+        next.add(id);
+      }
+      return next;
+    });
+  }
 
   const debouncedSearch = useDebounce(search, SEARCH_DEBOUNCE_MS);
 
@@ -137,6 +153,33 @@ export function WorkflowList() {
         </div>
 
         <div className="ml-auto flex items-center gap-2">
+          {selected.size >= 2 && (
+            <button
+              onClick={() => {
+                const ids = [...selected];
+                const params = new URLSearchParams({ a: ids[0], b: ids[1] });
+                if (ids[2]) params.set('c', ids[2]);
+                navigate(`/compare?${params}`);
+              }}
+              className="px-3 py-1 rounded-md text-xs font-medium bg-temper-accent text-white hover:opacity-90 transition-colors"
+            >
+              Compare ({selected.size})
+            </button>
+          )}
+          {selected.size > 0 && (
+            <button
+              onClick={() => setSelected(new Set())}
+              className="text-xs text-temper-text-muted hover:text-temper-text transition-colors"
+            >
+              Clear selection
+            </button>
+          )}
+          <Link
+            to="/studio"
+            className="px-3 py-1 rounded-md text-xs font-medium bg-temper-accent/20 text-temper-accent hover:bg-temper-accent/30 transition-colors"
+          >
+            + New Workflow
+          </Link>
           <span className="text-xs text-temper-text-muted">Sort:</span>
           {(['time', 'name', 'status'] as const).map((s) => (
             <button
@@ -169,31 +212,52 @@ export function WorkflowList() {
 
       <div className="flex-1 overflow-y-auto p-6">
         {isLoading && (
-          <p className="text-temper-text-muted text-sm">Loading workflows...</p>
+          <EmptyState title="Loading workflows..." />
         )}
 
         {error && (
-          <p className="text-temper-failed text-sm">
-            Failed to load workflows: {(error as Error).message}
-          </p>
+          <EmptyState
+            icon="!"
+            title="Failed to load workflows"
+            subtitle={(error as Error).message}
+          />
         )}
 
         {workflows && workflows.length === 0 && (
-          <p className="text-temper-text-muted text-sm">No workflows found.</p>
+          <EmptyState
+            icon="~"
+            title="No workflows found"
+            subtitle="Run a workflow to see it here, or create one in Studio."
+          />
         )}
 
         {workflows && workflows.length > 0 && sorted.length === 0 && (
-          <p className="text-temper-text-muted text-sm">No workflows match your filters.</p>
+          <EmptyState
+            icon="~"
+            title="No workflows match your filters"
+            subtitle="Try adjusting your search or status filter."
+          />
         )}
 
         {sorted.length > 0 && (
           <div className="flex flex-col gap-2">
             {sorted.map((wf) => (
-              <Link
+              <div
                 key={wf.id}
-                to={`/workflow/${wf.id}`}
-                className="flex items-center gap-4 rounded-lg bg-temper-panel px-4 py-3 border border-temper-border hover:bg-temper-surface transition-colors"
+                onClick={() => navigate(`/workflow/${wf.id}`)}
+                onKeyDown={(e) => { if (e.key === 'Enter') navigate(`/workflow/${wf.id}`); }}
+                role="link"
+                tabIndex={0}
+                className="flex items-center gap-4 rounded-lg bg-temper-panel px-4 py-3 border border-temper-border hover:bg-temper-surface transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-temper-accent/50"
               >
+                <input
+                  type="checkbox"
+                  checked={selected.has(wf.id)}
+                  onChange={() => toggleSelect(wf.id)}
+                  onClick={(e) => e.stopPropagation()}
+                  className="shrink-0 accent-temper-accent"
+                  aria-label={`Select ${wf.workflow_name} for comparison`}
+                />
                 <span className="text-sm font-medium text-temper-text flex-1 truncate">
                   {wf.workflow_name}
                 </span>
@@ -204,7 +268,14 @@ export function WorkflowList() {
                 <span className="text-xs font-mono text-temper-text-muted w-20 text-right">
                   {formatDuration(wf.duration_seconds)}
                 </span>
-              </Link>
+                <Link
+                  to={`/studio/${wf.workflow_name}`}
+                  onClick={(e) => e.stopPropagation()}
+                  className="text-[10px] px-2 py-0.5 rounded bg-temper-surface text-temper-text-muted hover:text-temper-accent hover:bg-temper-accent/10 transition-colors shrink-0"
+                >
+                  Studio
+                </Link>
+              </div>
             ))}
           </div>
         )}

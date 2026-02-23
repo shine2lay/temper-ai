@@ -2,7 +2,6 @@
 
 import logging
 from datetime import timedelta
-from typing import List, Optional
 
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, select
@@ -41,7 +40,7 @@ EFFORT_BY_CLASSIFICATION = {
 class ReliabilityAnalyzer(BaseAnalyzer):
     """Identifies recurring failure patterns and reliability issues."""
 
-    def __init__(self, engine: Optional[Engine] = None) -> None:
+    def __init__(self, engine: Engine | None = None) -> None:
         self._engine = engine
 
     @property
@@ -51,13 +50,13 @@ class ReliabilityAnalyzer(BaseAnalyzer):
 
     def analyze(
         self, lookback_hours: int = DEFAULT_LOOKBACK_HOURS
-    ) -> List[GoalProposal]:
+    ) -> list[GoalProposal]:
         """Analyze error fingerprints and agent failure rates."""
         if self._engine is None:
             return []
 
         fingerprints, agents = self._query_data(lookback_hours)
-        proposals: List[GoalProposal] = []
+        proposals: list[GoalProposal] = []
         proposals.extend(_proposals_from_errors(fingerprints))
         proposals.extend(_proposals_from_failure_rates(agents))
         return proposals
@@ -69,20 +68,24 @@ class ReliabilityAnalyzer(BaseAnalyzer):
 
         cutoff = utcnow() - timedelta(hours=lookback_hours)
         with Session(self._engine) as session:
-            fingerprints = list(session.exec(
-                select(ErrorFingerprint).where(
-                    ErrorFingerprint.last_seen >= cutoff,
-                    ErrorFingerprint.resolved == False,  # noqa: E712
-                    ErrorFingerprint.occurrence_count >= MIN_FAILURES_FOR_PROPOSAL,
-                )
-            ).all())
-            agents = list(session.exec(
-                select(AgentExecution).where(AgentExecution.start_time >= cutoff)
-            ).all())
+            fingerprints = list(
+                session.exec(
+                    select(ErrorFingerprint).where(
+                        ErrorFingerprint.last_seen >= cutoff,
+                        ErrorFingerprint.resolved == False,  # noqa: E712
+                        ErrorFingerprint.occurrence_count >= MIN_FAILURES_FOR_PROPOSAL,
+                    )
+                ).all()
+            )
+            agents = list(
+                session.exec(
+                    select(AgentExecution).where(AgentExecution.start_time >= cutoff)
+                ).all()
+            )
         return fingerprints, agents
 
 
-def _proposals_from_errors(fingerprints: list) -> List[GoalProposal]:
+def _proposals_from_errors(fingerprints: list) -> list[GoalProposal]:
     """Generate proposals for recurring error fingerprints."""
     return [
         GoalProposal(
@@ -93,14 +96,22 @@ def _proposals_from_errors(fingerprints: list) -> List[GoalProposal]:
                 f"{fp.occurrence_count} times (type: {fp.classification})."
             ),
             risk_assessment=RiskAssessment(
-                level=GoalRiskLevel.LOW, blast_radius=f"error:{fp.error_code}", reversible=True,
+                level=GoalRiskLevel.LOW,
+                blast_radius=f"error:{fp.error_code}",
+                reversible=True,
             ),
-            effort_estimate=EFFORT_BY_CLASSIFICATION.get(fp.classification, EffortLevel.MEDIUM),
-            expected_impacts=[ImpactEstimate(
-                metric_name="error_occurrences",
-                current_value=float(fp.occurrence_count), expected_value=0.0,
-                improvement_pct=PCT_MULTIPLIER, confidence=ERROR_FIX_CONFIDENCE,
-            )],
+            effort_estimate=EFFORT_BY_CLASSIFICATION.get(
+                fp.classification, EffortLevel.MEDIUM
+            ),
+            expected_impacts=[
+                ImpactEstimate(
+                    metric_name="error_occurrences",
+                    current_value=float(fp.occurrence_count),
+                    expected_value=0.0,
+                    improvement_pct=PCT_MULTIPLIER,
+                    confidence=ERROR_FIX_CONFIDENCE,
+                )
+            ],
             evidence=GoalEvidence(
                 workflow_ids=fp.recent_workflow_ids or [],
                 metrics={"occurrence_count": float(fp.occurrence_count)},
@@ -116,7 +127,7 @@ def _proposals_from_errors(fingerprints: list) -> List[GoalProposal]:
     ]
 
 
-def _proposals_from_failure_rates(agents: list) -> List[GoalProposal]:
+def _proposals_from_failure_rates(agents: list) -> list[GoalProposal]:
     """Generate proposals for agents with high failure rates."""
     if not agents:
         return []
@@ -128,40 +139,49 @@ def _proposals_from_failure_rates(agents: list) -> List[GoalProposal]:
         if a.status == "failed":
             stats["failed"] += 1
 
-    proposals: List[GoalProposal] = []
+    proposals: list[GoalProposal] = []
     for agent_name, stats in by_agent.items():
         if stats["total"] == 0:
             continue
         rate = stats["failed"] / stats["total"]
         if rate > HIGH_FAILURE_RATE:
             target = rate * HALF_FACTOR
-            proposals.append(GoalProposal(
-                goal_type=GoalType.RELIABILITY_IMPROVEMENT,
-                title=f"Reduce failure rate for: {agent_name}",
-                description=(
-                    f"Agent '{agent_name}' has a {rate * PCT_MULTIPLIER:.0f}% "
-                    f"failure rate ({stats['failed']}/{stats['total']} executions)."
-                ),
-                risk_assessment=RiskAssessment(
-                    level=GoalRiskLevel.LOW, blast_radius=f"agent:{agent_name}", reversible=True,
-                ),
-                effort_estimate=EffortLevel.MEDIUM,
-                expected_impacts=[ImpactEstimate(
-                    metric_name="failure_rate", current_value=rate, expected_value=target,
-                    improvement_pct=FAILURE_RATE_IMPROVEMENT_PCT, confidence=FAILURE_RATE_CONFIDENCE,
-                )],
-                evidence=GoalEvidence(
-                    metrics={
-                        "failure_rate": rate,
-                        "total_executions": float(stats["total"]),
-                        "failed_executions": float(stats["failed"]),
-                    },
-                    analysis_summary=f"High failure rate: {rate * PCT_MULTIPLIER:.0f}%",
-                ),
-                proposed_actions=[
-                    "Review agent error logs for patterns",
-                    "Add better error handling and retries",
-                    "Consider model or prompt adjustments",
-                ],
-            ))
+            proposals.append(
+                GoalProposal(
+                    goal_type=GoalType.RELIABILITY_IMPROVEMENT,
+                    title=f"Reduce failure rate for: {agent_name}",
+                    description=(
+                        f"Agent '{agent_name}' has a {rate * PCT_MULTIPLIER:.0f}% "
+                        f"failure rate ({stats['failed']}/{stats['total']} executions)."
+                    ),
+                    risk_assessment=RiskAssessment(
+                        level=GoalRiskLevel.LOW,
+                        blast_radius=f"agent:{agent_name}",
+                        reversible=True,
+                    ),
+                    effort_estimate=EffortLevel.MEDIUM,
+                    expected_impacts=[
+                        ImpactEstimate(
+                            metric_name="failure_rate",
+                            current_value=rate,
+                            expected_value=target,
+                            improvement_pct=FAILURE_RATE_IMPROVEMENT_PCT,
+                            confidence=FAILURE_RATE_CONFIDENCE,
+                        )
+                    ],
+                    evidence=GoalEvidence(
+                        metrics={
+                            "failure_rate": rate,
+                            "total_executions": float(stats["total"]),
+                            "failed_executions": float(stats["failed"]),
+                        },
+                        analysis_summary=f"High failure rate: {rate * PCT_MULTIPLIER:.0f}%",
+                    ),
+                    proposed_actions=[
+                        "Review agent error logs for patterns",
+                        "Add better error handling and retries",
+                        "Consider model or prompt adjustments",
+                    ],
+                )
+            )
     return proposals

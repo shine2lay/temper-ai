@@ -2,7 +2,7 @@
 
 import logging
 import uuid
-from typing import Any, List, Optional
+from typing import Any
 
 from sqlmodel import select
 
@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 class SubscriptionRegistry:
     """Manages persistent event subscriptions stored in the database."""
 
-    def __init__(self, session_factory: Optional[Any] = None) -> None:
+    def __init__(self, session_factory: Any | None = None) -> None:
         """Initialize the registry.
 
         Args:
@@ -22,12 +22,12 @@ class SubscriptionRegistry:
 
     def register(
         self,
-        agent_id: Optional[str],
+        agent_id: str | None,
         event_type: str,
-        handler_ref: Optional[str] = None,
-        workflow_to_trigger: Optional[str] = None,
-        source_workflow_filter: Optional[str] = None,
-        payload_filter: Optional[Any] = None,
+        handler_ref: str | None = None,
+        workflow_to_trigger: str | None = None,
+        source_workflow_filter: str | None = None,
+        payload_filter: Any | None = None,
     ) -> str:
         """Create and persist an event subscription.
 
@@ -93,8 +93,8 @@ class SubscriptionRegistry:
     def get_for_event(
         self,
         event_type: str,
-        source_workflow_id: Optional[str] = None,
-    ) -> List[Any]:
+        source_workflow_id: str | None = None,
+    ) -> list[Any]:
         """Get active subscriptions matching an event type and optional source.
 
         Args:
@@ -120,7 +120,7 @@ class SubscriptionRegistry:
                 )
             return session.exec(stmt).all()
 
-    def load_active(self) -> List[Any]:
+    def load_active(self) -> list[Any]:
         """Load all currently active subscriptions.
 
         Returns:
@@ -137,7 +137,7 @@ class SubscriptionRegistry:
             )
             return session.exec(stmt).all()
 
-    def get_by_id(self, subscription_id: str) -> Optional[Any]:
+    def get_by_id(self, subscription_id: str) -> Any | None:
         """Retrieve a subscription by its ID.
 
         Args:

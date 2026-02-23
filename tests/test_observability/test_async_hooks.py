@@ -1,4 +1,5 @@
 """Tests for async hooks (decorators and ExecutionHook)."""
+
 import pytest
 
 from temper_ai.observability.backends.noop_backend import NoOpBackend
@@ -8,8 +9,8 @@ from temper_ai.observability.hooks import (
     atrack_agent,
     atrack_stage,
     atrack_workflow,
-    set_tracker,
     reset_tracker,
+    set_tracker,
 )
 from temper_ai.observability.tracker import ExecutionTracker, WorkflowTrackingParams
 
@@ -129,12 +130,19 @@ class TestAsyncExecutionHook:
         wf_id = await hook.astart_workflow("test", {})
         s_id = await hook.astart_stage("s", {}, wf_id)
         a_id = await hook.astart_agent("a", {}, s_id)
-        result = await hook.alog_llm_call(LLMCallParams(
-            agent_id=a_id, provider="test", model="test-model",
-            prompt="hi", response="hello",
-            prompt_tokens=5, completion_tokens=10,
-            latency_ms=50, cost=0.001,
-        ))
+        result = await hook.alog_llm_call(
+            LLMCallParams(
+                agent_id=a_id,
+                provider="test",
+                model="test-model",
+                prompt="hi",
+                response="hello",
+                prompt_tokens=5,
+                completion_tokens=10,
+                latency_ms=50,
+                cost=0.001,
+            )
+        )
         assert result is not None
         await hook.aend_agent(a_id)
         await hook.aend_stage(s_id)
@@ -147,7 +155,11 @@ class TestAsyncExecutionHook:
         s_id = await hook.astart_stage("s", {}, wf_id)
         a_id = await hook.astart_agent("a", {}, s_id)
         result = await hook.alog_tool_call(
-            a_id, "bash", {"cmd": "ls"}, {"out": "files"}, 0.1,
+            a_id,
+            "bash",
+            {"cmd": "ls"},
+            {"out": "files"},
+            0.1,
         )
         assert result is not None
         await hook.aend_agent(a_id)

@@ -1,13 +1,14 @@
 """Integration tests for conditional stages and loops in StageCompiler."""
+
 from unittest.mock import Mock, patch
 
 import pytest
 
-from temper_ai.workflow.condition_evaluator import ConditionEvaluator
 from temper_ai.stage.executors.state_keys import StateKeys
-from temper_ai.workflow.node_builder import NodeBuilder
-from temper_ai.workflow._schemas import WorkflowStageReference
 from temper_ai.stage.stage_compiler import StageCompiler
+from temper_ai.workflow._schemas import WorkflowStageReference
+from temper_ai.workflow.condition_evaluator import ConditionEvaluator
+from temper_ai.workflow.node_builder import NodeBuilder
 
 
 class TestConditionalStageSkip:
@@ -34,6 +35,7 @@ class TestConditionalStageSkip:
                     "output": f"output_{stage_name}",
                 }
                 return state
+
             return node
 
         # Build workflow config with conditional fix stage
@@ -52,11 +54,13 @@ class TestConditionalStageSkip:
 
         with patch.object(node_builder, "create_stage_node", side_effect=make_node):
             graph = compiler.compile_stages(["test", "fix"], workflow_config)
-            result = graph.invoke({
-                "workflow_id": "wf-test-cond",
-                "current_stage": "",
-                "version": "1.0",
-            })
+            result = graph.invoke(
+                {
+                    "workflow_id": "wf-test-cond",
+                    "current_stage": "",
+                    "version": "1.0",
+                }
+            )
 
         # fix should be skipped because test succeeded
         assert execution_order == ["test"]
@@ -84,6 +88,7 @@ class TestConditionalStageSkip:
                 else:
                     state.stage_outputs[stage_name] = {"stage_status": "success"}
                 return state
+
             return node
 
         workflow_config = {
@@ -101,11 +106,13 @@ class TestConditionalStageSkip:
 
         with patch.object(node_builder, "create_stage_node", side_effect=make_node):
             graph = compiler.compile_stages(["test", "fix"], workflow_config)
-            result = graph.invoke({
-                "workflow_id": "wf-test-cond-fail",
-                "current_stage": "",
-                "version": "1.0",
-            })
+            result = graph.invoke(
+                {
+                    "workflow_id": "wf-test-cond-fail",
+                    "current_stage": "",
+                    "version": "1.0",
+                }
+            )
 
         # fix should execute because test failed
         assert execution_order == ["test", "fix"]
@@ -132,6 +139,7 @@ class TestSkipIfStage:
                     state.stage_outputs = {}
                 state.stage_outputs[stage_name] = {"stage_status": "success"}
                 return state
+
             return node
 
         workflow_config = {
@@ -152,11 +160,13 @@ class TestSkipIfStage:
             graph = compiler.compile_stages(
                 ["setup", "optional", "final"], workflow_config
             )
-            result = graph.invoke({
-                "workflow_id": "wf-skip-if",
-                "current_stage": "",
-                "version": "1.0",
-            })
+            result = graph.invoke(
+                {
+                    "workflow_id": "wf-skip-if",
+                    "current_stage": "",
+                    "version": "1.0",
+                }
+            )
 
         # optional skipped, final still runs
         assert execution_order == ["setup", "final"]
@@ -181,7 +191,10 @@ class TestLoopExecution:
                 call_counts[stage_name] = call_counts.get(stage_name, 0) + 1
                 if not hasattr(state, "stage_outputs") or state.stage_outputs is None:
                     state.stage_outputs = {}
-                if not hasattr(state, "stage_loop_counts") or state.stage_loop_counts is None:
+                if (
+                    not hasattr(state, "stage_loop_counts")
+                    or state.stage_loop_counts is None
+                ):
                     state.stage_loop_counts = {}
 
                 if stage_name == "test":
@@ -194,6 +207,7 @@ class TestLoopExecution:
                     # Fix always reports degraded (needs more fixing)
                     state.stage_outputs[stage_name] = {"stage_status": "degraded"}
                 return state
+
             return node
 
         workflow_config = {
@@ -213,11 +227,13 @@ class TestLoopExecution:
 
         with patch.object(node_builder, "create_stage_node", side_effect=make_node):
             graph = compiler.compile_stages(["test", "fix"], workflow_config)
-            result = graph.invoke({
-                "workflow_id": "wf-loop",
-                "current_stage": "",
-                "version": "1.0",
-            })
+            result = graph.invoke(
+                {
+                    "workflow_id": "wf-loop",
+                    "current_stage": "",
+                    "version": "1.0",
+                }
+            )
 
         # test runs 3x (initial + 2 loops), fix runs 2x (fails trigger loop)
         assert call_counts["test"] == 3
@@ -239,11 +255,15 @@ class TestLoopExecution:
                 call_counts[stage_name] = call_counts.get(stage_name, 0) + 1
                 if not hasattr(state, "stage_outputs") or state.stage_outputs is None:
                     state.stage_outputs = {}
-                if not hasattr(state, "stage_loop_counts") or state.stage_loop_counts is None:
+                if (
+                    not hasattr(state, "stage_loop_counts")
+                    or state.stage_loop_counts is None
+                ):
                     state.stage_loop_counts = {}
                 # Always fail — tests never pass
                 state.stage_outputs[stage_name] = {"stage_status": "failed"}
                 return state
+
             return node
 
         workflow_config = {
@@ -263,11 +283,13 @@ class TestLoopExecution:
 
         with patch.object(node_builder, "create_stage_node", side_effect=make_node):
             graph = compiler.compile_stages(["test", "fix"], workflow_config)
-            result = graph.invoke({
-                "workflow_id": "wf-max-loop",
-                "current_stage": "",
-                "version": "1.0",
-            })
+            result = graph.invoke(
+                {
+                    "workflow_id": "wf-max-loop",
+                    "current_stage": "",
+                    "version": "1.0",
+                }
+            )
 
         # test: 1 initial + 2 loops = 3, fix: 1 initial + 2 loops = 3
         # But max_loops=2 caps at 2 loop-backs from fix
@@ -337,6 +359,7 @@ class TestPureSequentialUnchanged:
                     state.stage_outputs = {}
                 state.stage_outputs[stage_name] = {"stage_status": "success"}
                 return state
+
             return node
 
         # No conditions at all — pure sequential
@@ -352,11 +375,13 @@ class TestPureSequentialUnchanged:
 
         with patch.object(node_builder, "create_stage_node", side_effect=make_node):
             graph = compiler.compile_stages(["a", "b", "c"], workflow_config)
-            result = graph.invoke({
-                "workflow_id": "wf-seq",
-                "current_stage": "",
-                "version": "1.0",
-            })
+            result = graph.invoke(
+                {
+                    "workflow_id": "wf-seq",
+                    "current_stage": "",
+                    "version": "1.0",
+                }
+            )
 
         assert execution_order == ["a", "b", "c"]
         assert result[StateKeys.STAGE_OUTPUTS]["c"]["stage_status"] == "success"

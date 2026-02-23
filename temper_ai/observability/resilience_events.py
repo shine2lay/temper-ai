@@ -3,11 +3,13 @@
 Provides structured dataclasses and emit helpers that route through the existing
 tracker.track_collaboration_event infrastructure using resilience_* event types.
 """
+
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -31,9 +33,9 @@ class RetryEventData:
     agent_name: str
     stage_name: str
     outcome: str  # success / failed / exhausted
-    error_type: Optional[str] = None
-    is_transient: Optional[bool] = None
-    backoff_delay_seconds: Optional[float] = None
+    error_type: str | None = None
+    is_transient: bool | None = None
+    backoff_delay_seconds: float | None = None
 
 
 @dataclass
@@ -44,10 +46,10 @@ class FallbackEventData:
     to_mode: str
     reason: str
     stage_name: str
-    disagreement_rate: Optional[float] = None
-    threshold: Optional[float] = None
-    agents: Optional[List[str]] = None
-    error_message: Optional[str] = None
+    disagreement_rate: float | None = None
+    threshold: float | None = None
+    agents: list[str] | None = None
+    error_message: str | None = None
 
 
 @dataclass
@@ -115,7 +117,7 @@ def emit_fallback_event(
 
 
 def emit_circuit_breaker_event(
-    callback: Optional[Callable[[CircuitBreakerEventData], None]],
+    callback: Callable[[CircuitBreakerEventData], None] | None,
     event_data: CircuitBreakerEventData,
 ) -> None:
     """Emit a circuit breaker state transition event.
@@ -153,7 +155,7 @@ def _emit_via_tracker(
     tracker: Any,
     stage_id: str,
     event_type: str,
-    event_dict: Dict[str, Any],
+    event_dict: dict[str, Any],
 ) -> None:
     """Route a resilience event through the tracker's collaboration event API.
 
@@ -181,5 +183,7 @@ def _emit_via_tracker(
         )
     except Exception:  # noqa: BLE001 — best-effort observability
         logger.debug(
-            "Failed to emit %s event via tracker", event_type, exc_info=True,
+            "Failed to emit %s event via tracker",
+            event_type,
+            exc_info=True,
         )

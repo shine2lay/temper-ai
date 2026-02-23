@@ -1,13 +1,8 @@
 """Tests for portfolio schemas."""
 
-import pytest
-
 from temper_ai.portfolio._schemas import (
-    AllocationStatus,
     AllocationStrategy,
     ComponentMatch,
-    KGConceptType,
-    KGRelation,
     OptimizationAction,
     PortfolioConfig,
     PortfolioRecommendation,

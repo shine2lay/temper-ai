@@ -3,7 +3,7 @@
 import logging
 import threading
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from temper_ai.events._bus_helpers import (
     convert_to_observability_event,
@@ -31,8 +31,8 @@ class TemperEventBus:
 
     def __init__(
         self,
-        observability_bus: Optional[Any] = None,
-        session_factory: Optional[Any] = None,
+        observability_bus: Any | None = None,
+        session_factory: Any | None = None,
         persist: bool = True,
     ) -> None:
         """Initialize the TemperEventBus.
@@ -52,9 +52,9 @@ class TemperEventBus:
         self._persist = persist
         self._registry = SubscriptionRegistry(session_factory=session_factory)
         self._trigger = CrossWorkflowTrigger()
-        self._wait_events: Dict[str, threading.Event] = {}
-        self._execution_service: Optional[Any] = None
-        self._wait_payloads: Dict[str, Optional[Dict[str, Any]]] = {}
+        self._wait_events: dict[str, threading.Event] = {}
+        self._execution_service: Any | None = None
+        self._wait_payloads: dict[str, dict[str, Any] | None] = {}
         self._wait_lock = threading.Lock()
 
     def set_execution_service(self, execution_service: Any) -> None:
@@ -93,10 +93,10 @@ class TemperEventBus:
     def emit(
         self,
         event_type: str,
-        payload: Optional[Dict[str, Any]] = None,
-        source_workflow_id: Optional[str] = None,
-        source_stage_name: Optional[str] = None,
-        agent_id: Optional[str] = None,
+        payload: dict[str, Any] | None = None,
+        source_workflow_id: str | None = None,
+        source_stage_name: str | None = None,
+        agent_id: str | None = None,
     ) -> None:
         """Emit an event, persisting and forwarding to subscribers.
 
@@ -112,21 +112,19 @@ class TemperEventBus:
                 event_type, payload, source_workflow_id, source_stage_name, agent_id
             )
         else:
-            self._forward_to_obs_bus(
-                event_type, payload, source_workflow_id, agent_id
-            )
+            self._forward_to_obs_bus(event_type, payload, source_workflow_id, agent_id)
             self._evaluate_subscriptions(event_type, payload, source_workflow_id)
 
         self._notify_waiters(event_type, payload, source_workflow_id)
 
     def subscribe_persistent(
         self,
-        agent_id: Optional[str],
+        agent_id: str | None,
         event_type: str,
-        handler_ref: Optional[str] = None,
-        workflow_to_trigger: Optional[str] = None,
-        source_workflow_filter: Optional[str] = None,
-        payload_filter: Optional[Dict[str, Any]] = None,
+        handler_ref: str | None = None,
+        workflow_to_trigger: str | None = None,
+        source_workflow_filter: str | None = None,
+        payload_filter: dict[str, Any] | None = None,
     ) -> str:
         """Register a persistent subscription stored in the database.
 
@@ -154,8 +152,8 @@ class TemperEventBus:
         self,
         event_type: str,
         timeout_seconds: int = DEFAULT_TRIGGER_TIMEOUT_SECONDS,
-        source_workflow_filter: Optional[str] = None,
-    ) -> Optional[Dict[str, Any]]:
+        source_workflow_filter: str | None = None,
+    ) -> dict[str, Any] | None:
         """Block until a matching event is emitted or timeout occurs.
 
         Args:
@@ -185,10 +183,10 @@ class TemperEventBus:
 
     def replay_events(
         self,
-        event_type: Optional[str] = None,
-        since: Optional[datetime] = None,
+        event_type: str | None = None,
+        since: datetime | None = None,
         limit: int = 100,
-    ) -> List[Any]:
+    ) -> list[Any]:
         """Query past events from the database.
 
         Args:
@@ -202,7 +200,7 @@ class TemperEventBus:
         if self._session_factory is None:
             return []
 
-        from sqlmodel import select
+        from sqlmodel import col, select
 
         from temper_ai.events.models import EventLog
 
@@ -212,7 +210,7 @@ class TemperEventBus:
                 stmt = stmt.where(EventLog.event_type == event_type)
             if since:
                 stmt = stmt.where(EventLog.timestamp >= since)
-            stmt = stmt.order_by(EventLog.timestamp.desc()).limit(limit)
+            stmt = stmt.order_by(col(EventLog.timestamp).desc()).limit(limit)
             return session.exec(stmt).all()
 
     # -- Private helpers --------------------------------------------------------
@@ -220,10 +218,10 @@ class TemperEventBus:
     def _persist_and_emit(
         self,
         event_type: str,
-        payload: Optional[Dict[str, Any]],
-        source_workflow_id: Optional[str],
-        source_stage_name: Optional[str],
-        agent_id: Optional[str],
+        payload: dict[str, Any] | None,
+        source_workflow_id: str | None,
+        source_stage_name: str | None,
+        agent_id: str | None,
     ) -> None:
         """Persist event to DB then forward to observability bus."""
         try:
@@ -249,9 +247,9 @@ class TemperEventBus:
     def _forward_to_obs_bus(
         self,
         event_type: str,
-        payload: Optional[Dict[str, Any]],
-        source_workflow_id: Optional[str],
-        agent_id: Optional[str],
+        payload: dict[str, Any] | None,
+        source_workflow_id: str | None,
+        agent_id: str | None,
     ) -> None:
         """Convert and forward event to ObservabilityEventBus."""
         obs_event = convert_to_observability_event(
@@ -265,8 +263,8 @@ class TemperEventBus:
     def _evaluate_subscriptions(
         self,
         event_type: str,
-        payload: Optional[Dict[str, Any]],
-        source_workflow_id: Optional[str],
+        payload: dict[str, Any] | None,
+        source_workflow_id: str | None,
     ) -> None:
         """Evaluate subscriptions for the non-persist emit path."""
         if self._session_factory is None:
@@ -282,10 +280,10 @@ class TemperEventBus:
 
     def _dispatch_subscriptions(
         self,
-        subs: List[Any],
+        subs: list[Any],
         event_type: str,
-        payload: Optional[Dict[str, Any]],
-        source_workflow_id: Optional[str],
+        payload: dict[str, Any] | None,
+        source_workflow_id: str | None,
     ) -> None:
         """Dispatch event to matching subscriptions (up to max)."""
         for sub in subs[:MAX_SUBSCRIPTION_HANDLERS]:
@@ -295,15 +293,17 @@ class TemperEventBus:
                     try:
                         handler(event_type, payload)
                     except Exception as exc:
-                        logger.warning("Subscription handler error (%s): %s", sub.id, exc)
+                        logger.warning(
+                            "Subscription handler error (%s): %s", sub.id, exc
+                        )
             if sub.workflow_to_trigger:
                 self._trigger.trigger(sub.workflow_to_trigger, inputs=payload or {})
 
     def _notify_waiters(
         self,
         event_type: str,
-        payload: Optional[Dict[str, Any]],
-        source_workflow_id: Optional[str],
+        payload: dict[str, Any] | None,
+        source_workflow_id: str | None,
     ) -> None:
         """Signal any threads blocked in wait_for_event."""
         with self._wait_lock:
@@ -317,7 +317,7 @@ class TemperEventBus:
                     self._wait_events[key].set()
 
     @staticmethod
-    def _build_wait_key(event_type: str, source_workflow_filter: Optional[str]) -> str:
+    def _build_wait_key(event_type: str, source_workflow_filter: str | None) -> str:
         """Build a unique key for the wait_for_event lookup."""
         return f"{event_type}::{source_workflow_filter or ''}"
 

@@ -7,24 +7,20 @@ Tests cover:
 - Multi-stage coordination
 - Database integration
 """
-import uuid
-from datetime import datetime, timezone
-from pathlib import Path
-import yaml
 
 import pytest
-
+import yaml
 
 # ============================================================================
 # Configuration Loading
 # ============================================================================
+
 
 class TestWorkflowConfiguration:
     """Test workflow configuration loading and validation."""
 
     def test_valid_config_loads(self, tmp_path):
         """Valid configuration should load successfully."""
-        import yaml
 
         # Create workflows directory
         workflows_dir = tmp_path / "workflows"
@@ -86,12 +82,13 @@ workflow:
 # Error Handling
 # ============================================================================
 
+
 class TestErrorHandling:
     """Test error handling across workflow components."""
 
     def test_database_error_handling(self):
         """Database errors should be caught and handled."""
-        from temper_ai.storage.database import init_database, get_session
+        from temper_ai.storage.database import init_database
 
         # Initialize with invalid URL should raise error
         with pytest.raises(Exception):
@@ -116,6 +113,7 @@ class TestErrorHandling:
 # ============================================================================
 # Multi-Stage Coordination
 # ============================================================================
+
 
 class TestMultiStageCoordination:
     """Test coordination between multiple workflow stages."""
@@ -145,10 +143,7 @@ class TestMultiStageCoordination:
 
         # Stage C (depends on A and B)
         execution_order.append("C")
-        result_c = {
-            "data": "from_c",
-            "sources": [result_a["data"], result_b["data"]]
-        }
+        result_c = {"data": "from_c", "sources": [result_a["data"], result_b["data"]]}
 
         assert execution_order == ["A", "B", "C"]
         assert result_c["sources"] == ["from_a", "from_b"]
@@ -178,6 +173,7 @@ class TestMultiStageCoordination:
 # Database Integration
 # ============================================================================
 
+
 class TestDatabaseIntegration:
     """Test database integration in workflows."""
 
@@ -190,12 +186,13 @@ class TestDatabaseIntegration:
 
         # Verify connection
         from temper_ai.storage.database import get_session
+
         with get_session() as session:
             assert session is not None
 
     def test_database_session_context(self):
         """Database sessions should work as context managers."""
-        from temper_ai.storage.database import init_database, get_session
+        from temper_ai.storage.database import get_session, init_database
 
         init_database("sqlite:///:memory:")
 
@@ -207,7 +204,7 @@ class TestDatabaseIntegration:
 
     def test_multiple_database_connections(self):
         """Multiple connections should work correctly."""
-        from temper_ai.storage.database import init_database, get_session
+        from temper_ai.storage.database import get_session, init_database
 
         init_database("sqlite:///:memory:")
 
@@ -225,17 +222,14 @@ class TestDatabaseIntegration:
 # Rollback and Recovery
 # ============================================================================
 
+
 class TestRollbackRecovery:
     """Test rollback and recovery mechanisms."""
 
     def test_state_snapshot_restore(self):
         """State should restore to snapshot on rollback."""
         # Snapshot initial state
-        initial_state = {
-            "counter": 0,
-            "data": {},
-            "flags": {"processed": False}
-        }
+        initial_state = {"counter": 0, "data": {}, "flags": {"processed": False}}
         snapshot = initial_state.copy()
 
         # Modify state
@@ -280,6 +274,7 @@ class TestRollbackRecovery:
 # Performance Characteristics
 # ============================================================================
 
+
 class TestPerformanceCharacteristics:
     """Test basic performance characteristics."""
 
@@ -307,6 +302,7 @@ class TestPerformanceCharacteristics:
 
     def test_memory_efficient_iteration(self):
         """Should process large datasets efficiently."""
+
         # Generator for memory efficiency
         def data_generator(count):
             for i in range(count):

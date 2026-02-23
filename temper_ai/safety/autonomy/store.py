@@ -1,7 +1,6 @@
 """Database persistence for progressive autonomy data."""
 
 import logging
-from typing import Optional
 
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, SQLModel, select
@@ -22,7 +21,7 @@ DEFAULT_LIST_LIMIT = 100
 class AutonomyStore:
     """Database persistence for autonomy data."""
 
-    def __init__(self, database_url: Optional[str] = None) -> None:
+    def __init__(self, database_url: str | None = None) -> None:
         self.database_url = database_url or get_database_url()
         self.engine: Engine = create_app_engine(self.database_url)
 
@@ -37,9 +36,7 @@ class AutonomyStore:
 
     # -- AutonomyState -------------------------------------------------
 
-    def get_state(
-        self, agent_name: str, domain: str
-    ) -> Optional[AutonomyState]:
+    def get_state(self, agent_name: str, domain: str) -> AutonomyState | None:
         """Get autonomy state for agent+domain, or None."""
         with Session(self.engine) as session:
             stmt = select(AutonomyState).where(
@@ -54,9 +51,7 @@ class AutonomyStore:
             session.merge(state)
             session.commit()
 
-    def list_states(
-        self, limit: int = DEFAULT_LIST_LIMIT
-    ) -> list[AutonomyState]:
+    def list_states(self, limit: int = DEFAULT_LIST_LIMIT) -> list[AutonomyState]:
         """List all autonomy states."""
         with Session(self.engine) as session:
             stmt = select(AutonomyState).limit(limit)
@@ -72,7 +67,7 @@ class AutonomyStore:
 
     def list_transitions(
         self,
-        agent_name: Optional[str] = None,
+        agent_name: str | None = None,
         limit: int = DEFAULT_LIST_LIMIT,
     ) -> list[AutonomyTransition]:
         """List transitions, optionally filtered by agent."""
@@ -81,15 +76,13 @@ class AutonomyStore:
                 AutonomyTransition.created_at.desc()  # type: ignore[attr-defined]
             )
             if agent_name is not None:
-                stmt = stmt.where(
-                    AutonomyTransition.agent_name == agent_name
-                )
+                stmt = stmt.where(AutonomyTransition.agent_name == agent_name)
             stmt = stmt.limit(limit)
             return list(session.exec(stmt).all())
 
     # -- BudgetRecord --------------------------------------------------
 
-    def get_budget(self, scope: str) -> Optional[BudgetRecord]:
+    def get_budget(self, scope: str) -> BudgetRecord | None:
         """Get active budget for scope."""
         with Session(self.engine) as session:
             stmt = select(BudgetRecord).where(

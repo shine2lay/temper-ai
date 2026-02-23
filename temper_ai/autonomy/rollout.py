@@ -3,7 +3,7 @@
 import logging
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from temper_ai.autonomy.constants import DEFAULT_ROLLOUT_PHASES
 
@@ -35,10 +35,10 @@ class RolloutRecord:
     id: str
     change_id: str
     config_path: str
-    phases: List[RolloutPhase] = field(default_factory=list)
+    phases: list[RolloutPhase] = field(default_factory=list)
     current_phase_index: int = 0
     status: str = STATUS_ROLLING_OUT  # rolling_out, completed, rolled_back
-    experiment_id: Optional[str] = None
+    experiment_id: str | None = None
 
 
 class RolloutManager:
@@ -55,9 +55,9 @@ class RolloutManager:
         self,
         change_id: str,
         config_path: str,
-        baseline_config: Dict[str, Any],
-        candidate_config: Dict[str, Any],
-        phases: Optional[List[int]] = None,
+        baseline_config: dict[str, Any],
+        candidate_config: dict[str, Any],
+        phases: list[int] | None = None,
     ) -> RolloutRecord:
         """Create a new rollout with backing experiment.
 
@@ -80,7 +80,9 @@ class RolloutManager:
         rollout_id = f"rollout-{uuid.uuid4().hex[:UUID_HEX_LEN]}"
 
         experiment_id = self._create_backing_experiment(
-            rollout_id, baseline_config, candidate_config,
+            rollout_id,
+            baseline_config,
+            candidate_config,
         )
 
         record = RolloutRecord(
@@ -99,17 +101,26 @@ class RolloutManager:
     def _create_backing_experiment(
         self,
         rollout_id: str,
-        baseline_config: Dict[str, Any],
-        candidate_config: Dict[str, Any],
-    ) -> Optional[str]:
+        baseline_config: dict[str, Any],
+        candidate_config: dict[str, Any],
+    ) -> str | None:
         """Create an experiment to back the rollout."""
         try:
-            result: Optional[str] = self._experiment_service.create_experiment(
+            result: str | None = self._experiment_service.create_experiment(
                 name=f"rollout-{rollout_id}",
                 description=f"Backing experiment for rollout {rollout_id}",
                 variants=[
-                    {"name": "baseline", "is_control": True, "traffic": DEFAULT_VARIANT_TRAFFIC, "config": baseline_config},
-                    {"name": "candidate", "traffic": DEFAULT_VARIANT_TRAFFIC, "config": candidate_config},
+                    {
+                        "name": "baseline",
+                        "is_control": True,
+                        "traffic": DEFAULT_VARIANT_TRAFFIC,
+                        "config": baseline_config,
+                    },
+                    {
+                        "name": "candidate",
+                        "traffic": DEFAULT_VARIANT_TRAFFIC,
+                        "config": candidate_config,
+                    },
                 ],
             )
             return result

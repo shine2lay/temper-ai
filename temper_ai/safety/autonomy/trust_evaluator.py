@@ -2,7 +2,7 @@
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from temper_ai.safety.autonomy.constants import (
     DE_ESCALATION_FAILURE_RATE,
@@ -20,9 +20,9 @@ class TrustEvaluation:
 
     eligible_for_escalation: bool = False
     needs_de_escalation: bool = False
-    recommended_level: Optional[AutonomyLevel] = None
-    evidence: Dict[str, Any] = field(default_factory=dict)
-    reasons: List[str] = field(default_factory=list)
+    recommended_level: AutonomyLevel | None = None
+    evidence: dict[str, Any] = field(default_factory=dict)
+    reasons: list[str] = field(default_factory=list)
 
 
 class TrustEvaluator:
@@ -72,7 +72,10 @@ class TrustEvaluator:
 
         # Check de-escalation first (safety priority)
         failure_rate = self._compute_failure_rate(merit)
-        if failure_rate >= self._de_escalation_rate and current_level > AutonomyLevel.SUPERVISED:
+        if (
+            failure_rate >= self._de_escalation_rate
+            and current_level > AutonomyLevel.SUPERVISED
+        ):
             result.needs_de_escalation = True
             new_level = AutonomyLevel(max(0, current_level - 1))
             result.recommended_level = new_level
@@ -100,12 +103,11 @@ class TrustEvaluator:
 
         return result
 
-    def _load_merit_score(
-        self, session: Any, agent_name: str, domain: str
-    ) -> Any:
+    def _load_merit_score(self, session: Any, agent_name: str, domain: str) -> Any:
         """Load AgentMeritScore from database."""
         try:
             from sqlmodel import select
+
             from temper_ai.storage.database.models import AgentMeritScore
 
             stmt = select(AgentMeritScore).where(
@@ -123,7 +125,7 @@ class TrustEvaluator:
             return 0.0
         return float(merit.failed_decisions / merit.total_decisions)
 
-    def _build_evidence(self, merit: Any) -> Dict[str, Any]:
+    def _build_evidence(self, merit: Any) -> dict[str, Any]:
         """Build evidence dict from merit score fields."""
         return {
             "total_decisions": merit.total_decisions,

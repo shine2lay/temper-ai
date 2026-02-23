@@ -4,12 +4,11 @@ Verifies that retry_agent_with_backoff emits structured retry events,
 and that the adaptive executor emits fallback events through the
 resilience_events module.
 """
+
 from __future__ import annotations
 
 import threading
-from unittest.mock import Mock, patch, MagicMock
-
-import pytest
+from unittest.mock import Mock, patch
 
 from temper_ai.observability.resilience_events import (
     EVENT_TYPE_FALLBACK,
@@ -18,12 +17,12 @@ from temper_ai.observability.resilience_events import (
     RETRY_OUTCOME_FAILED,
     RETRY_OUTCOME_SUCCESS,
 )
+from temper_ai.shared.utils.exceptions import ErrorCode
 from temper_ai.stage.executors._sequential_helpers import (
     AgentExecutionContext,
     retry_agent_with_backoff,
 )
 from temper_ai.stage.executors.state_keys import StateKeys
-from temper_ai.shared.utils.exceptions import ErrorCode
 
 
 def _make_ctx(tracker=None):
@@ -191,7 +190,9 @@ class TestAdaptiveFallbackEvents:
             tracker=tracker,
         )
 
-        _, should_switch, disagreement_rate, _ = _execute_parallel_with_switch_check(params)
+        _, should_switch, disagreement_rate, _ = _execute_parallel_with_switch_check(
+            params
+        )
 
         assert should_switch is True
         assert disagreement_rate == 0.5

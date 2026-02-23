@@ -4,6 +4,7 @@ Tests for secret sanitization in violation messages.
 Ensures that detected secrets are never exposed in logs, violation messages,
 or metadata. This is a CRITICAL security requirement.
 """
+
 from temper_ai.safety.secret_detection import SecretDetectionPolicy
 
 
@@ -28,7 +29,10 @@ class TestSecretSanitizationInViolations:
         assert "AKIAIOSFODNN7" not in violation_message
 
         # Should show pattern type and redacted preview
-        assert "aws_access_key" in violation_message.lower() or "AWS_ACCESS_KEY" in violation_message
+        assert (
+            "aws_access_key" in violation_message.lower()
+            or "AWS_ACCESS_KEY" in violation_message
+        )
 
     def test_api_key_not_in_violation_message(self):
         """Ensure API keys are not exposed in violation messages."""
@@ -44,7 +48,10 @@ class TestSecretSanitizationInViolations:
 
         # But message should NOT contain the actual key
         violation_message = result.violations[0].message
-        assert "sk_live_abc123def456ghi789jkl012mno345pqr678stu901vwx234yz" not in violation_message
+        assert (
+            "sk_live_abc123def456ghi789jkl012mno345pqr678stu901vwx234yz"
+            not in violation_message
+        )
         assert "sk_live_abc123" not in violation_message
 
     def test_github_token_not_in_violation_message(self):
@@ -136,7 +143,9 @@ class TestSecretSanitizationInViolations:
 
         # SECURITY: Should have violation_id (not secret_hash to prevent rainbow tables)
         assert "violation_id" in violation.metadata
-        assert len(violation.metadata["violation_id"]) == 16  # HMAC truncated to 16 chars (64 bits)
+        assert (
+            len(violation.metadata["violation_id"]) == 16
+        )  # HMAC truncated to 16 chars (64 bits)
         assert "secret_hash" not in violation.metadata  # Must NOT have secret_hash
 
         # HMAC-based violation_ids provide session-scoped deduplication
@@ -218,12 +227,16 @@ class TestSanitizationHelperMethods:
         policy = SecretDetectionPolicy({})
 
         # Test AWS key preview
-        preview = policy._create_redacted_preview("AKIAIOSFODNN7EXAMPLE", "aws_access_key")
+        preview = policy._create_redacted_preview(
+            "AKIAIOSFODNN7EXAMPLE", "aws_access_key"
+        )
         assert preview == "[AWS_ACCESS_KEY:20_chars]"
         assert "AKIA" not in preview
 
         # Test API key preview
-        preview = policy._create_redacted_preview("sk_live_abc123def456", "generic_api_key")
+        preview = policy._create_redacted_preview(
+            "sk_live_abc123def456", "generic_api_key"
+        )
         assert preview == "[GENERIC_API_KEY:20_chars]"
         assert "sk_live" not in preview
 
@@ -271,7 +284,9 @@ class TestBackwardCompatibility:
         for test_case in test_cases:
             result = policy.validate({"content": test_case}, {})
             # All should have violations (may not invalidate result if severity is MEDIUM)
-            assert len(result.violations) > 0, f"Failed to detect secret in: {test_case}"
+            assert (
+                len(result.violations) > 0
+            ), f"Failed to detect secret in: {test_case}"
 
     def test_entropy_calculation_unchanged(self):
         """Ensure entropy calculation still works."""
@@ -279,7 +294,9 @@ class TestBackwardCompatibility:
 
         # Test entropy calculation
         entropy1 = policy._calculate_entropy("aaaaaa")  # Very low entropy (repeated)
-        entropy2 = policy._calculate_entropy("aB3$xY9@kL2#mN5^pQ8&")  # High entropy (random mix)
+        entropy2 = policy._calculate_entropy(
+            "aB3$xY9@kL2#mN5^pQ8&"
+        )  # High entropy (random mix)
 
         assert entropy1 < entropy2
         assert entropy2 > 3.5  # Should have higher entropy
@@ -297,19 +314,19 @@ class TestBackwardCompatibility:
 
     def test_path_exclusion_unchanged(self):
         """Ensure path exclusion still works."""
-        policy = SecretDetectionPolicy({
-            "excluded_paths": [".git", "node_modules"]
-        })
+        policy = SecretDetectionPolicy({"excluded_paths": [".git", "node_modules"]})
 
         # Excluded paths should be skipped
-        result = policy.validate({
-            "content": "AKIAIOSFODNN7EXAMPLE",
-            "file_path": ".git/config"
-        }, {})
+        result = policy.validate(
+            {"content": "AKIAIOSFODNN7EXAMPLE", "file_path": ".git/config"}, {}
+        )
         assert result.valid
 
-        result = policy.validate({
-            "content": "AKIAIOSFODNN7EXAMPLE",
-            "file_path": "node_modules/package.json"
-        }, {})
+        result = policy.validate(
+            {
+                "content": "AKIAIOSFODNN7EXAMPLE",
+                "file_path": "node_modules/package.json",
+            },
+            {},
+        )
         assert result.valid

@@ -7,6 +7,7 @@ SECURITY: These tests verify:
 - Audit logging
 - OS keyring integration
 """
+
 import time
 
 import pytest
@@ -18,6 +19,7 @@ from temper_ai.auth.oauth.token_store import SecureTokenStore, SecurityError
 try:
     import keyring
     from keyring.errors import KeyringError
+
     KEYRING_AVAILABLE = True
 except ImportError:
     KEYRING_AVAILABLE = False
@@ -361,7 +363,7 @@ class TestSecureTokenStoreKeyring:
         try:
             keyring.delete_password(
                 SecureTokenStore.DEFAULT_KEYRING_SERVICE,
-                SecureTokenStore.DEFAULT_KEYRING_KEY_NAME
+                SecureTokenStore.DEFAULT_KEYRING_KEY_NAME,
             )
         except Exception:
             pass
@@ -372,7 +374,7 @@ class TestSecureTokenStoreKeyring:
         try:
             keyring.delete_password(
                 SecureTokenStore.DEFAULT_KEYRING_SERVICE,
-                SecureTokenStore.DEFAULT_KEYRING_KEY_NAME
+                SecureTokenStore.DEFAULT_KEYRING_KEY_NAME,
             )
         except Exception:
             pass
@@ -385,7 +387,7 @@ class TestSecureTokenStoreKeyring:
         # Verify key stored in keyring
         key = keyring.get_password(
             SecureTokenStore.DEFAULT_KEYRING_SERVICE,
-            SecureTokenStore.DEFAULT_KEYRING_KEY_NAME
+            SecureTokenStore.DEFAULT_KEYRING_KEY_NAME,
         )
         assert key is not None
         assert store.using_keyring is True
@@ -396,14 +398,14 @@ class TestSecureTokenStoreKeyring:
         store1 = SecureTokenStore(use_keyring=True)
         key1 = keyring.get_password(
             SecureTokenStore.DEFAULT_KEYRING_SERVICE,
-            SecureTokenStore.DEFAULT_KEYRING_KEY_NAME
+            SecureTokenStore.DEFAULT_KEYRING_KEY_NAME,
         )
 
         # Second initialization should reuse same key
         store2 = SecureTokenStore(use_keyring=True)
         key2 = keyring.get_password(
             SecureTokenStore.DEFAULT_KEYRING_SERVICE,
-            SecureTokenStore.DEFAULT_KEYRING_KEY_NAME
+            SecureTokenStore.DEFAULT_KEYRING_KEY_NAME,
         )
 
         assert key1 == key2
@@ -419,7 +421,7 @@ class TestSecureTokenStoreKeyring:
             store = SecureTokenStore(
                 use_keyring=True,
                 keyring_service=custom_service,
-                keyring_key_name=custom_key_name
+                keyring_key_name=custom_key_name,
             )
 
             # Verify key in custom location
@@ -495,7 +497,7 @@ class TestSecureTokenStoreKeyring:
         # Get old key
         old_key = keyring.get_password(
             SecureTokenStore.DEFAULT_KEYRING_SERVICE,
-            SecureTokenStore.DEFAULT_KEYRING_KEY_NAME
+            SecureTokenStore.DEFAULT_KEYRING_KEY_NAME,
         )
 
         # Rotate key
@@ -504,7 +506,7 @@ class TestSecureTokenStoreKeyring:
         # Get new key
         new_key = keyring.get_password(
             SecureTokenStore.DEFAULT_KEYRING_SERVICE,
-            SecureTokenStore.DEFAULT_KEYRING_KEY_NAME
+            SecureTokenStore.DEFAULT_KEYRING_KEY_NAME,
         )
 
         # Key should change
@@ -527,15 +529,11 @@ class TestSecureTokenStoreKeyring:
         """Keys for different services should be isolated."""
         try:
             store1 = SecureTokenStore(
-                use_keyring=True,
-                keyring_service="app1",
-                keyring_key_name="key1"
+                use_keyring=True, keyring_service="app1", keyring_key_name="key1"
             )
 
             store2 = SecureTokenStore(
-                use_keyring=True,
-                keyring_service="app2",
-                keyring_key_name="key2"
+                use_keyring=True, keyring_service="app2", keyring_key_name="key2"
             )
 
             # Store token in each
@@ -564,7 +562,7 @@ class TestSecureTokenStoreKeyring:
         # Should not create keyring entry
         keyring_key = keyring.get_password(
             SecureTokenStore.DEFAULT_KEYRING_SERVICE,
-            SecureTokenStore.DEFAULT_KEYRING_KEY_NAME
+            SecureTokenStore.DEFAULT_KEYRING_KEY_NAME,
         )
         # Either None or from previous test (we cleaned up in fixture)
         # The point is store didn't create it

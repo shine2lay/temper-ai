@@ -5,7 +5,7 @@ Implements methods for stopping experiments early when sufficient evidence
 is gathered, reducing experiment runtime while maintaining statistical rigor.
 """
 
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 import numpy as np
 from scipy import stats  # type: ignore[import-untyped]
@@ -41,7 +41,7 @@ class SequentialTester:
         self,
         alpha: float = DEFAULT_ALPHA,
         beta: float = DEFAULT_BETA,
-        mde: float = DEFAULT_MDE
+        mde: float = DEFAULT_MDE,
     ):
         """
         Initialize sequential tester.
@@ -60,10 +60,8 @@ class SequentialTester:
         self.log_likelihood_lower = np.log(beta / (1 - alpha))
 
     def test_sequential(
-        self,
-        control_values: List[float],
-        treatment_values: List[float]
-    ) -> Tuple[str, Dict[str, Any]]:
+        self, control_values: list[float], treatment_values: list[float]
+    ) -> tuple[str, dict[str, Any]]:
         """
         Perform sequential test to determine if we can stop early.
 
@@ -77,7 +75,10 @@ class SequentialTester:
             - "stop_winner": Sufficient evidence for winner
             - "stop_no_difference": Sufficient evidence of no difference
         """
-        if len(control_values) < SPRT_MIN_OBSERVATIONS or len(treatment_values) < SPRT_MIN_OBSERVATIONS:
+        if (
+            len(control_values) < SPRT_MIN_OBSERVATIONS
+            or len(treatment_values) < SPRT_MIN_OBSERVATIONS
+        ):
             return ("continue", {"reason": "Insufficient samples for sequential test"})
 
         # Calculate means and pooled variance
@@ -102,43 +103,56 @@ class SequentialTester:
         observed_effect = (treatment_mean - control_mean) / pooled_std
 
         # Expected effect under alternative hypothesis
-        expected_effect = self.mde * np.sign(treatment_mean - control_mean) if treatment_mean != control_mean else self.mde
+        expected_effect = (
+            self.mde * np.sign(treatment_mean - control_mean)
+            if treatment_mean != control_mean
+            else self.mde
+        )
 
         # ST-06: Corrected SPRT log-likelihood ratio for normal distributions.
         # LLR = (observed_effect * expected_effect - expected_effect^2 / 2) * n_eff
         # where n_eff = (n1 * n2) / (n1 + n2)
         n_eff = (n1 * n2) / (n1 + n2)
-        llr = (observed_effect * expected_effect - (expected_effect ** 2) / 2) * n_eff
+        llr = (observed_effect * expected_effect - (expected_effect**2) / 2) * n_eff
 
         # Decision based on SPRT boundaries
         if llr >= self.log_likelihood_upper:
-            return ("stop_winner", {
-                "llr": float(llr),
-                "boundary": float(self.log_likelihood_upper),
-                "observed_effect": float(observed_effect),
-                "samples": n1 + n2
-            })
+            return (
+                "stop_winner",
+                {
+                    "llr": float(llr),
+                    "boundary": float(self.log_likelihood_upper),
+                    "observed_effect": float(observed_effect),
+                    "samples": n1 + n2,
+                },
+            )
         elif llr <= self.log_likelihood_lower:
-            return ("stop_no_difference", {
-                "llr": float(llr),
-                "boundary": float(self.log_likelihood_lower),
-                "observed_effect": float(observed_effect),
-                "samples": n1 + n2
-            })
+            return (
+                "stop_no_difference",
+                {
+                    "llr": float(llr),
+                    "boundary": float(self.log_likelihood_lower),
+                    "observed_effect": float(observed_effect),
+                    "samples": n1 + n2,
+                },
+            )
         else:
-            return ("continue", {
-                "llr": float(llr),
-                "lower_boundary": float(self.log_likelihood_lower),
-                "upper_boundary": float(self.log_likelihood_upper),
-                "progress": float((llr - self.log_likelihood_lower) / (self.log_likelihood_upper - self.log_likelihood_lower)),
-                "samples": n1 + n2
-            })
+            return (
+                "continue",
+                {
+                    "llr": float(llr),
+                    "lower_boundary": float(self.log_likelihood_lower),
+                    "upper_boundary": float(self.log_likelihood_upper),
+                    "progress": float(
+                        (llr - self.log_likelihood_lower)
+                        / (self.log_likelihood_upper - self.log_likelihood_lower)
+                    ),
+                    "samples": n1 + n2,
+                },
+            )
 
     def calculate_required_sample_size(
-        self,
-        baseline_mean: float,
-        baseline_std: float,
-        power: float = DEFAULT_POWER
+        self, baseline_mean: float, baseline_std: float, power: float = DEFAULT_POWER
     ) -> int:
         """
         Calculate required sample size per variant.
@@ -156,7 +170,9 @@ class SequentialTester:
         z_beta = stats.norm.ppf(power)
 
         # Effect size in standard deviations
-        effect_size = self.mde * abs(baseline_mean) / baseline_std if baseline_std > 0 else 0
+        effect_size = (
+            self.mde * abs(baseline_mean) / baseline_std if baseline_std > 0 else 0
+        )
 
         if effect_size == 0:
             return MAX_SAMPLE_SIZE_FALLBACK  # Large number if effect size is zero
@@ -175,7 +191,11 @@ class BayesianAnalyzer:
     as an alternative to frequentist p-values.
     """
 
-    def __init__(self, prior_mean: float = DEFAULT_PRIOR_MEAN, prior_std: float = DEFAULT_PRIOR_STD):
+    def __init__(
+        self,
+        prior_mean: float = DEFAULT_PRIOR_MEAN,
+        prior_std: float = DEFAULT_PRIOR_STD,
+    ):
         """
         Initialize Bayesian analyzer.
 
@@ -188,10 +208,10 @@ class BayesianAnalyzer:
 
     def analyze_bayesian(
         self,
-        control_values: List[float],
-        treatment_values: List[float],
-        credible_level: float = DEFAULT_CREDIBLE_LEVEL
-    ) -> Dict[str, Any]:
+        control_values: list[float],
+        treatment_values: list[float],
+        credible_level: float = DEFAULT_CREDIBLE_LEVEL,
+    ) -> dict[str, Any]:
         """
         Perform Bayesian analysis on two variants.
 
@@ -214,7 +234,7 @@ class BayesianAnalyzer:
 
         # Observed difference
         diff_mean = treatment_mean - control_mean
-        diff_se = np.sqrt((control_std ** 2 / n1) + (treatment_std ** 2 / n2))
+        diff_se = np.sqrt((control_std**2 / n1) + (treatment_std**2 / n2))
 
         # Handle zero variance case
         if diff_se == 0 or np.isnan(diff_se):
@@ -225,14 +245,16 @@ class BayesianAnalyzer:
                 "credible_interval": [float(diff_mean), float(diff_mean)],
                 "prob_treatment_better": 1.0 if diff_mean > 0 else 0.0,
                 "prob_control_better": 0.0 if diff_mean > 0 else 1.0,
-                "expected_lift": float(diff_mean / abs(control_mean)) if control_mean != 0 else 0.0,
+                "expected_lift": (
+                    float(diff_mean / abs(control_mean)) if control_mean != 0 else 0.0
+                ),
             }
 
         # Posterior using normal-normal conjugate prior
         # Simplified: assuming known variance
-        posterior_precision = 1 / self.prior_std ** 2 + 1 / diff_se ** 2
+        posterior_precision = 1 / self.prior_std**2 + 1 / diff_se**2
         posterior_mean = (
-            self.prior_mean / self.prior_std ** 2 + diff_mean / diff_se ** 2
+            self.prior_mean / self.prior_std**2 + diff_mean / diff_se**2
         ) / posterior_precision
         posterior_std = np.sqrt(1 / posterior_precision)
 
@@ -242,7 +264,9 @@ class BayesianAnalyzer:
         ci_high = stats.norm.ppf(1 - alpha / 2, loc=posterior_mean, scale=posterior_std)
 
         # Probability that treatment is better
-        prob_treatment_better = 1 - stats.norm.cdf(0, loc=posterior_mean, scale=posterior_std)
+        prob_treatment_better = 1 - stats.norm.cdf(
+            0, loc=posterior_mean, scale=posterior_std
+        )
 
         return {
             "posterior_mean": float(posterior_mean),
@@ -250,7 +274,9 @@ class BayesianAnalyzer:
             "credible_interval": [float(ci_low), float(ci_high)],
             "prob_treatment_better": float(prob_treatment_better),
             "prob_control_better": float(1 - prob_treatment_better),
-            "expected_lift": float(diff_mean / abs(control_mean)) if control_mean != 0 else 0.0,
+            "expected_lift": (
+                float(diff_mean / abs(control_mean)) if control_mean != 0 else 0.0
+            ),
         }
 
 
@@ -259,7 +285,7 @@ def calculate_sample_size(
     baseline_std: float,
     mde: float,
     alpha: float = DEFAULT_ALPHA,
-    power: float = DEFAULT_POWER
+    power: float = DEFAULT_POWER,
 ) -> int:
     """
     Calculate required sample size for experiment.
@@ -274,5 +300,5 @@ def calculate_sample_size(
     Returns:
         Required sample size per variant
     """
-    tester = SequentialTester(alpha=alpha, beta=1-power, mde=mde)
+    tester = SequentialTester(alpha=alpha, beta=1 - power, mde=mde)
     return tester.calculate_required_sample_size(baseline_mean, baseline_std, power)

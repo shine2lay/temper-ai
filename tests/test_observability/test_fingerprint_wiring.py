@@ -7,17 +7,16 @@ Covers:
 - _alert_new_error_type resilience
 - Backward compatibility (no new params)
 """
-import pytest
-from unittest.mock import MagicMock, patch
 
-from temper_ai.observability.backend import ErrorFingerprintData
+from unittest.mock import MagicMock
+
 from temper_ai.observability._tracker_helpers import (
     _alert_new_error_type,
     _record_fingerprint_safe,
     handle_agent_error,
     handle_stage_error,
 )
-
+from temper_ai.observability.backend import ErrorFingerprintData
 
 # ============================================================================
 # _record_fingerprint_safe — return value
@@ -78,8 +77,12 @@ class TestHandleStageErrorAlerting:
         alert_mgr = MagicMock()
 
         handle_stage_error(
-            backend, emit, "stage-1", ValueError("boom"),
-            workflow_id="wf-1", alert_manager=alert_mgr,
+            backend,
+            emit,
+            "stage-1",
+            ValueError("boom"),
+            workflow_id="wf-1",
+            alert_manager=alert_mgr,
         )
 
         alert_mgr.check_metric.assert_called_once()
@@ -95,8 +98,12 @@ class TestHandleStageErrorAlerting:
         alert_mgr = MagicMock()
 
         handle_stage_error(
-            backend, emit, "stage-1", ValueError("seen"),
-            workflow_id="wf-1", alert_manager=alert_mgr,
+            backend,
+            emit,
+            "stage-1",
+            ValueError("seen"),
+            workflow_id="wf-1",
+            alert_manager=alert_mgr,
         )
 
         alert_mgr.check_metric.assert_not_called()
@@ -107,8 +114,12 @@ class TestHandleStageErrorAlerting:
 
         # Should not raise even though fingerprint is new
         handle_stage_error(
-            backend, emit, "stage-1", ValueError("boom"),
-            workflow_id="wf-1", alert_manager=None,
+            backend,
+            emit,
+            "stage-1",
+            ValueError("boom"),
+            workflow_id="wf-1",
+            alert_manager=None,
         )
 
         # Just ensure backend was still called
@@ -145,8 +156,13 @@ class TestHandleAgentErrorAlerting:
         alert_mgr = MagicMock()
 
         handle_agent_error(
-            backend, emit, "agent-1", ValueError("fail"),
-            workflow_id="wf-42", agent_name="researcher", alert_manager=alert_mgr,
+            backend,
+            emit,
+            "agent-1",
+            ValueError("fail"),
+            workflow_id="wf-42",
+            agent_name="researcher",
+            alert_manager=alert_mgr,
         )
 
         # Verify fingerprint got workflow_id and agent_name
@@ -167,7 +183,10 @@ class TestHandleAgentErrorAlerting:
         alert_mgr = MagicMock()
 
         handle_agent_error(
-            backend, emit, "agent-1", ValueError("seen"),
+            backend,
+            emit,
+            "agent-1",
+            ValueError("seen"),
             alert_manager=alert_mgr,
         )
 
@@ -199,8 +218,10 @@ class TestAlertNewErrorType:
 
         # Must not raise
         _alert_new_error_type(
-            alert_mgr, ValueError("boom"),
-            workflow_id="wf-1", stage_id="s-1",
+            alert_mgr,
+            ValueError("boom"),
+            workflow_id="wf-1",
+            stage_id="s-1",
         )
 
         alert_mgr.check_metric.assert_called_once()
@@ -209,8 +230,11 @@ class TestAlertNewErrorType:
         alert_mgr = MagicMock()
 
         _alert_new_error_type(
-            alert_mgr, TypeError("bad type"),
-            workflow_id="wf-99", stage_id="s-5", agent_name="coder",
+            alert_mgr,
+            TypeError("bad type"),
+            workflow_id="wf-99",
+            stage_id="s-5",
+            agent_name="coder",
         )
 
         ctx = alert_mgr.check_metric.call_args[1]["context"]

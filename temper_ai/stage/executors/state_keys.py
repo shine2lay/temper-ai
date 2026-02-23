@@ -104,16 +104,43 @@ class StateKeys:
     # Checkpoint resume: set of stage names already completed (R0.6)
     RESUMED_STAGES = "resumed_stages"
 
-    # Frozenset constants for filtering non-serializable and reserved keys
-    NON_SERIALIZABLE_KEYS: "frozenset[str]" = frozenset({
-        "tracker", "tool_registry", "config_loader", "visualizer",
-        "show_details", "detail_console", "tool_executor", "stream_callback",
-        "total_stages",
-    })
+    # Per-agent evaluation dispatcher (optimization)
+    EVALUATION_DISPATCHER = "evaluation_dispatcher"
 
-    RESERVED_UNWRAP_KEYS: "frozenset[str]" = frozenset({
-        "stage_outputs", "current_stage", "workflow_id", "tracker",
-        "tool_registry", "config_loader", "visualizer", "show_details",
-        "detail_console", "workflow_inputs", "tool_executor", "stream_callback",
-        "total_stages",
-    })
+    # Frozenset constants for filtering non-serializable and reserved keys.
+    # Canonical set — used by CLI, WorkflowRunner, and execution_service.
+    NON_SERIALIZABLE_KEYS: "frozenset[str]" = frozenset(
+        {
+            "tracker",
+            "tool_registry",
+            "config_loader",
+            "visualizer",
+            "show_details",
+            "detail_console",
+            "tool_executor",
+            "stream_callback",
+            "total_stages",
+            "evaluation_dispatcher",
+            "event_bus",
+            "workflow_rate_limiter",
+        }
+    )
+
+    RESERVED_UNWRAP_KEYS: "frozenset[str]" = frozenset(
+        {
+            "stage_outputs",
+            "current_stage",
+            "workflow_id",
+            "tracker",
+            "tool_registry",
+            "config_loader",
+            "visualizer",
+            "show_details",
+            "detail_console",
+            "workflow_inputs",
+            "tool_executor",
+            "stream_callback",
+            "total_stages",
+            "evaluation_dispatcher",
+        }
+    )

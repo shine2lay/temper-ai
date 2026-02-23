@@ -1,7 +1,5 @@
 """Integration tests for progressive autonomy lifecycle."""
 
-from unittest.mock import MagicMock
-
 import pytest
 
 from temper_ai.safety.autonomy.approval_router import ApprovalRouter
@@ -32,8 +30,11 @@ def store() -> AutonomyStore:
 
 def _violation(severity: ViolationSeverity) -> SafetyViolation:
     return SafetyViolation(
-        policy_name="test", severity=severity,
-        message="test", action="test", context={},
+        policy_name="test",
+        severity=severity,
+        message="test",
+        action="test",
+        context={},
     )
 
 
@@ -43,7 +44,8 @@ class TestFullLifecycle:
     def test_escalation_lifecycle(self, store: AutonomyStore) -> None:
         """Agent starts supervised, escalates, then de-escalates."""
         manager = AutonomyManager(
-            store=store, max_level=AutonomyLevel.STRATEGIC,
+            store=store,
+            max_level=AutonomyLevel.STRATEGIC,
         )
 
         # Start supervised
@@ -64,7 +66,9 @@ class TestFullLifecycle:
     def test_force_to_strategic(self, store: AutonomyStore) -> None:
         """Force level bypasses all guards."""
         manager = AutonomyManager(store=store)
-        t = manager.force_level("a", "d", AutonomyLevel.STRATEGIC, reason="admin override")
+        t = manager.force_level(
+            "a", "d", AutonomyLevel.STRATEGIC, reason="admin override"
+        )
         assert t.to_level == AutonomyLevel.STRATEGIC.value
         assert manager.get_level("a", "d") == AutonomyLevel.STRATEGIC
 
@@ -158,7 +162,9 @@ class TestShadowWithApprovalRouter:
 
         # At SUPERVISED, HIGH requires approval
         result = shadow.validate_shadow(
-            "a", "d", violations,
+            "a",
+            "d",
+            violations,
             current_requires_approval=True,
             proposed_level=AutonomyLevel.RISK_GATED,  # Still requires approval for HIGH
             approval_router=router,

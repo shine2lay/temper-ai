@@ -3,10 +3,8 @@
 import logging
 import threading
 import uuid
-from datetime import timedelta
-from typing import Optional
+from datetime import UTC, timedelta
 
-from temper_ai.storage.database.datetime_utils import utcnow
 from temper_ai.safety.autonomy.constants import (
     DE_ESCALATION_COOLDOWN_HOURS,
     ESCALATION_COOLDOWN_HOURS,
@@ -19,6 +17,7 @@ from temper_ai.safety.autonomy.models import AutonomyState, AutonomyTransition
 from temper_ai.safety.autonomy.schemas import AutonomyLevel
 from temper_ai.safety.autonomy.store import AutonomyStore
 from temper_ai.safety.autonomy.trust_evaluator import TrustEvaluator
+from temper_ai.storage.database.datetime_utils import utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +34,7 @@ class AutonomyManager:
     def __init__(
         self,
         store: AutonomyStore,
-        trust_evaluator: Optional[TrustEvaluator] = None,
+        trust_evaluator: TrustEvaluator | None = None,
         max_level: AutonomyLevel = AutonomyLevel.RISK_GATED,
     ) -> None:
         self._store = store
@@ -43,9 +42,7 @@ class AutonomyManager:
         self._max_level = max_level
         self._lock = threading.Lock()
 
-    def get_level(
-        self, agent_name: str, domain: str
-    ) -> AutonomyLevel:
+    def get_level(self, agent_name: str, domain: str) -> AutonomyLevel:
         """Get current autonomy level for agent+domain.
 
         Returns SUPERVISED if no state exists.
@@ -60,7 +57,7 @@ class AutonomyManager:
         session: object,
         agent_name: str,
         domain: str,
-    ) -> Optional[AutonomyTransition]:
+    ) -> AutonomyTransition | None:
         """Evaluate agent trust and transition if appropriate.
 
         Args:
@@ -77,7 +74,10 @@ class AutonomyManager:
                 session, agent_name, domain, current_level
             )
 
-            if evaluation.needs_de_escalation and evaluation.recommended_level is not None:
+            if (
+                evaluation.needs_de_escalation
+                and evaluation.recommended_level is not None
+            ):
                 return self._de_escalate(
                     agent_name,
                     domain,
@@ -86,7 +86,10 @@ class AutonomyManager:
                     merit_snapshot=evaluation.evidence,
                 )
 
-            if evaluation.eligible_for_escalation and evaluation.recommended_level is not None:
+            if (
+                evaluation.eligible_for_escalation
+                and evaluation.recommended_level is not None
+            ):
                 return self._escalate(
                     agent_name,
                     domain,
@@ -102,12 +105,14 @@ class AutonomyManager:
         agent_name: str,
         domain: str,
         reason: str = "manual",
-        target_level: Optional[AutonomyLevel] = None,
-    ) -> Optional[AutonomyTransition]:
+        target_level: AutonomyLevel | None = None,
+    ) -> AutonomyTransition | None:
         """Manually escalate an agent's autonomy level."""
         with self._lock:
             return self._escalate(
-                agent_name, domain, reason,
+                agent_name,
+                domain,
+                reason,
                 trigger=TRIGGER_MANUAL,
                 target_level=target_level,
             )
@@ -117,11 +122,14 @@ class AutonomyManager:
         agent_name: str,
         domain: str,
         reason: str = "manual",
-    ) -> Optional[AutonomyTransition]:
+    ) -> AutonomyTransition | None:
         """Manually de-escalate an agent's autonomy level."""
         with self._lock:
             return self._de_escalate(
-                agent_name, domain, reason, trigger=TRIGGER_MANUAL,
+                agent_name,
+                domain,
+                reason,
+                trigger=TRIGGER_MANUAL,
             )
 
     def force_level(
@@ -140,12 +148,19 @@ class AutonomyManager:
             self._store.save_state(state)
 
             transition = self._create_transition(
-                agent_name, domain, from_level, level.value,
-                reason, TRIGGER_EMERGENCY_STOP,
+                agent_name,
+                domain,
+                from_level,
+                level.value,
+                reason,
+                TRIGGER_EMERGENCY_STOP,
             )
             logger.info(
                 "Forced %s/%s to level %s: %s",
-                agent_name, domain, level.name, reason,
+                agent_name,
+                domain,
+                level.name,
+                reason,
             )
             return transition
 
@@ -155,9 +170,9 @@ class AutonomyManager:
         domain: str,
         reason: str,
         trigger: str,
-        merit_snapshot: Optional[dict] = None,
-        target_level: Optional[AutonomyLevel] = None,
-    ) -> Optional[AutonomyTransition]:
+        merit_snapshot: dict | None = None,
+        target_level: AutonomyLevel | None = None,
+    ) -> AutonomyTransition | None:
         """Internal escalation logic (must hold lock)."""
         state = self._get_or_create_state(agent_name, domain)
         current = AutonomyLevel(state.current_level)
@@ -176,7 +191,8 @@ class AutonomyManager:
         if new_level > self._max_level:
             logger.info(
                 "Escalation blocked: %s > max_level %s",
-                new_level.name, self._max_level.name,
+                new_level.name,
+                self._max_level.name,
             )
             return None
 
@@ -192,12 +208,21 @@ class AutonomyManager:
         self._store.save_state(state)
 
         transition = self._create_transition(
-            agent_name, domain, current.value, new_level.value,
-            reason, trigger, merit_snapshot,
+            agent_name,
+            domain,
+            current.value,
+            new_level.value,
+            reason,
+            trigger,
+            merit_snapshot,
         )
         logger.info(
             "Escalated %s/%s: %s -> %s (%s)",
-            agent_name, domain, current.name, new_level.name, reason,
+            agent_name,
+            domain,
+            current.name,
+            new_level.name,
+            reason,
         )
         return transition
 
@@ -207,8 +232,8 @@ class AutonomyManager:
         domain: str,
         reason: str,
         trigger: str,
-        merit_snapshot: Optional[dict] = None,
-    ) -> Optional[AutonomyTransition]:
+        merit_snapshot: dict | None = None,
+    ) -> AutonomyTransition | None:
         """Internal de-escalation logic (must hold lock)."""
         state = self._get_or_create_state(agent_name, domain)
         current = AutonomyLevel(state.current_level)
@@ -217,8 +242,12 @@ class AutonomyManager:
             return None
 
         # Guard: cooldown
-        if not self._cooldown_elapsed(state.last_de_escalation, DE_ESCALATION_COOLDOWN_HOURS):
-            logger.info("De-escalation cooldown not elapsed for %s/%s", agent_name, domain)
+        if not self._cooldown_elapsed(
+            state.last_de_escalation, DE_ESCALATION_COOLDOWN_HOURS
+        ):
+            logger.info(
+                "De-escalation cooldown not elapsed for %s/%s", agent_name, domain
+            )
             return None
 
         new_level = AutonomyLevel(max(0, current - 1))
@@ -228,18 +257,25 @@ class AutonomyManager:
         self._store.save_state(state)
 
         transition = self._create_transition(
-            agent_name, domain, current.value, new_level.value,
-            reason, trigger, merit_snapshot,
+            agent_name,
+            domain,
+            current.value,
+            new_level.value,
+            reason,
+            trigger,
+            merit_snapshot,
         )
         logger.info(
             "De-escalated %s/%s: %s -> %s (%s)",
-            agent_name, domain, current.name, new_level.name, reason,
+            agent_name,
+            domain,
+            current.name,
+            new_level.name,
+            reason,
         )
         return transition
 
-    def _get_or_create_state(
-        self, agent_name: str, domain: str
-    ) -> AutonomyState:
+    def _get_or_create_state(self, agent_name: str, domain: str) -> AutonomyState:
         """Get existing state or create new SUPERVISED state."""
         state = self._store.get_state(agent_name, domain)
         if state is None:
@@ -252,19 +288,18 @@ class AutonomyManager:
             self._store.save_state(state)
         return state
 
-    def _cooldown_elapsed(
-        self, last_event: Optional[object], hours: int
-    ) -> bool:
+    def _cooldown_elapsed(self, last_event: object | None, hours: int) -> bool:
         """Check if enough time has passed since the last event."""
         if last_event is None:
             return True
-        from datetime import datetime, timezone
+        from datetime import datetime
+
         if not isinstance(last_event, datetime):
             return True
         now = utcnow()
         # Handle timezone mismatch (SQLite stores naive datetimes)
         if last_event.tzinfo is None and now.tzinfo is not None:
-            last_event = last_event.replace(tzinfo=timezone.utc)
+            last_event = last_event.replace(tzinfo=UTC)
         return (now - last_event) >= timedelta(hours=hours)
 
     def _create_transition(
@@ -275,7 +310,7 @@ class AutonomyManager:
         to_level: int,
         reason: str,
         trigger: str,
-        merit_snapshot: Optional[dict] = None,
+        merit_snapshot: dict | None = None,
     ) -> AutonomyTransition:
         """Create and persist a transition record."""
         transition = AutonomyTransition(

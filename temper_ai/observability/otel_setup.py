@@ -7,7 +7,7 @@ not installed, every public function in this module is a safe no-op.
 Typical activation::
 
     export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
-    maf run configs/workflows/quick_decision_demo.yaml --input examples/demo_input.yaml
+    temper-ai serve --dev  # then POST /api/runs with workflow path
 
 Or explicitly::
 
@@ -15,6 +15,7 @@ Or explicitly::
     export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
     export OTEL_SERVICE_NAME=temper-ai
 """
+
 import logging
 import os
 from typing import Optional
@@ -93,7 +94,9 @@ def _init_metrics(service_name: str) -> None:
             )
             from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 
-            reader = PeriodicExportingMetricReader(OTLPMetricExporter(endpoint=endpoint))
+            reader = PeriodicExportingMetricReader(
+                OTLPMetricExporter(endpoint=endpoint)
+            )
             provider = MeterProvider(resource=resource, metric_readers=[reader])
             logger.info("OTEL metrics → %s", endpoint)
         except ImportError:
@@ -127,7 +130,9 @@ def _is_instrumentation_enabled(env_var: str, default_enabled: bool = False) -> 
 
 def _init_auto_instrumentation() -> None:
     """Optionally instrument httpx and SQLAlchemy."""
-    if _is_instrumentation_enabled(_ENV_TEMPER_OTEL_INSTRUMENT_HTTPX, default_enabled=True):
+    if _is_instrumentation_enabled(
+        _ENV_TEMPER_OTEL_INSTRUMENT_HTTPX, default_enabled=True
+    ):
         try:
             from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 
@@ -165,8 +170,7 @@ def init_otel() -> None:
         _init_auto_instrumentation()
     except ImportError:
         logger.warning(
-            "OpenTelemetry SDK not installed. "
-            "Install with: pip install -e '.[otel]'"
+            "OpenTelemetry SDK not installed. " "Install with: pip install -e '.[otel]'"
         )
     except Exception:  # noqa: BLE001 — OTEL init must never crash the app
         logger.warning("OTEL initialisation failed", exc_info=True)

@@ -1,4 +1,5 @@
 """Tests for Workflow Studio REST API routes."""
+
 import pytest
 import yaml
 from fastapi import FastAPI
@@ -6,7 +7,6 @@ from starlette.testclient import TestClient
 
 from temper_ai.interfaces.dashboard.studio_routes import create_studio_router
 from temper_ai.interfaces.dashboard.studio_service import StudioService
-
 
 # ---------------------------------------------------------------------------
 # Sample valid config data for each type
@@ -195,7 +195,9 @@ class TestCreateConfigEndpoint:
 
     def test_create_config_conflict(self, client):
         # test_agent already exists
-        resp = client.post("/api/studio/configs/agents/test_agent", json=VALID_AGENT_DATA)
+        resp = client.post(
+            "/api/studio/configs/agents/test_agent", json=VALID_AGENT_DATA
+        )
         assert resp.status_code == 409
 
 
@@ -228,7 +230,9 @@ class TestUpdateConfigEndpoint:
         assert data["agent"]["description"] == "Updated via API"
 
     def test_update_config_not_found(self, client):
-        resp = client.put("/api/studio/configs/agents/no_such_agent", json=VALID_AGENT_DATA)
+        resp = client.put(
+            "/api/studio/configs/agents/no_such_agent", json=VALID_AGENT_DATA
+        )
         assert resp.status_code == 404
 
 

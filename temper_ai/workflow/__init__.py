@@ -1,5 +1,5 @@
 """
-Configuration compiler and loader for Meta-Autonomous Framework.
+Configuration compiler and loader for Temper AI.
 
 This module handles loading, validating, and compiling YAML/JSON configurations
 into executable LangGraph workflows.
@@ -7,11 +7,11 @@ into executable LangGraph workflows.
 New in M3.2-05: Domain state and execution context separation for checkpoint/resume.
 New in M3.2-06: Checkpoint/resume capability for long-running workflows.
 """
+
 from temper_ai.workflow.checkpoint_backends import (
     CheckpointBackend,
     CheckpointNotFoundError,
     FileCheckpointBackend,
-    RedisCheckpointBackend,
 )
 from temper_ai.workflow.checkpoint_manager import (
     CheckpointLoadError,
@@ -67,7 +67,6 @@ __all__ = [
     "create_checkpoint_manager",
     "CheckpointBackend",
     "FileCheckpointBackend",
-    "RedisCheckpointBackend",
     "CheckpointNotFoundError",
     # Execution engine
     "EngineRegistry",

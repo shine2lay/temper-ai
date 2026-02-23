@@ -1,6 +1,6 @@
 """Health check models and functions for MAF Server."""
-from datetime import datetime, timezone
-from typing import Optional
+
+from datetime import UTC, datetime
 
 from pydantic import BaseModel
 
@@ -26,12 +26,12 @@ def check_health() -> HealthResponse:
     return HealthResponse(
         status="healthy",
         version="0.1.0",
-        timestamp=datetime.now(timezone.utc).isoformat(),
+        timestamp=datetime.now(UTC).isoformat(),
     )
 
 
 def check_readiness(
-    execution_service: Optional[object] = None,
+    execution_service: object | None = None,
     readiness_gate: bool = True,
 ) -> ReadinessResponse:
     """Check whether the server is ready to accept new work.

@@ -1,6 +1,6 @@
 """FastAPI routes for autonomy dashboard."""
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from fastapi import APIRouter
 from pydantic import BaseModel
@@ -12,25 +12,29 @@ HTTP_404 = 404
 
 class EmergencyStopRequest(BaseModel):
     """Request body for emergency stop activation."""
+
     reason: str
     triggered_by: str = "dashboard"
 
 
 class ResumeRequest(BaseModel):
     """Request body for emergency stop deactivation."""
+
     reason: str
 
 
 class EscalateRequest(BaseModel):
     """Request body for manual escalation."""
+
     agent_name: str
     domain: str = "general"
-    level: Optional[int] = None
+    level: int | None = None
     reason: str = "manual dashboard escalation"
 
 
 class DeescalateRequest(BaseModel):
     """Request body for manual de-escalation."""
+
     agent_name: str
     domain: str = "general"
     reason: str = "manual dashboard de-escalation"
@@ -48,24 +52,24 @@ def _register_get_routes(router: APIRouter, service: AutonomyDataService) -> Non
     """Register GET endpoints on the router."""
 
     @router.get("/status")
-    def get_status() -> Dict[str, Any]:
+    def get_status() -> dict[str, Any]:
         """Get autonomy status summary."""
         return service.get_status_summary()
 
     @router.get("/transitions")
     def get_transitions(
-        agent_name: Optional[str] = None, limit: int = 50  # scanner: skip-magic
-    ) -> List[Dict[str, Any]]:
+        agent_name: str | None = None, limit: int = 50  # scanner: skip-magic
+    ) -> list[dict[str, Any]]:
         """Get recent autonomy transitions."""
         return service.get_transitions(agent_name=agent_name, limit=limit)
 
     @router.get("/budget")
-    def get_budget() -> List[Dict[str, Any]]:
+    def get_budget() -> list[dict[str, Any]]:
         """Get budget overview."""
         return service.get_budget_overview()
 
     @router.get("/emergency")
-    def get_emergency() -> Dict[str, Any]:
+    def get_emergency() -> dict[str, Any]:
         """Get emergency stop status."""
         return service.get_emergency_status()
 
@@ -80,7 +84,7 @@ def _register_emergency_routes(router: APIRouter, service: AutonomyDataService) 
     """Register emergency stop POST routes."""
 
     @router.post("/emergency-stop")
-    def activate_emergency_stop(req: EmergencyStopRequest) -> Dict[str, Any]:
+    def activate_emergency_stop(req: EmergencyStopRequest) -> dict[str, Any]:
         """Activate emergency stop."""
         from temper_ai.safety.autonomy.emergency_stop import EmergencyStopController
 
@@ -89,7 +93,7 @@ def _register_emergency_routes(router: APIRouter, service: AutonomyDataService) 
         return {"id": event.id, "status": "activated", "reason": req.reason}
 
     @router.post("/resume")
-    def deactivate_emergency_stop(req: ResumeRequest) -> Dict[str, Any]:
+    def deactivate_emergency_stop(req: ResumeRequest) -> dict[str, Any]:
         """Deactivate emergency stop."""
         from temper_ai.safety.autonomy.emergency_stop import EmergencyStopController
 
@@ -98,25 +102,33 @@ def _register_emergency_routes(router: APIRouter, service: AutonomyDataService) 
         return {"status": "deactivated", "reason": req.reason}
 
 
-def _register_transition_routes(router: APIRouter, service: AutonomyDataService) -> None:
+def _register_transition_routes(
+    router: APIRouter, service: AutonomyDataService
+) -> None:
     """Register escalation/de-escalation POST routes."""
 
     @router.post("/escalate")
-    def escalate_agent(req: EscalateRequest) -> Dict[str, Any]:
+    def escalate_agent(req: EscalateRequest) -> dict[str, Any]:
         """Manually escalate an agent."""
         from temper_ai.safety.autonomy.manager import AutonomyManager
         from temper_ai.safety.autonomy.schemas import AutonomyLevel
 
         manager = AutonomyManager(
-            store=service.store, max_level=AutonomyLevel.STRATEGIC,
+            store=service.store,
+            max_level=AutonomyLevel.STRATEGIC,
         )
         target = AutonomyLevel(req.level) if req.level is not None else None
         transition = manager.escalate(
-            req.agent_name, req.domain,
-            reason=req.reason, target_level=target,
+            req.agent_name,
+            req.domain,
+            reason=req.reason,
+            target_level=target,
         )
         if transition is None:
-            return {"status": "no_change", "reason": "Cooldown, max level, or already at level"}
+            return {
+                "status": "no_change",
+                "reason": "Cooldown, max level, or already at level",
+            }
         return {
             "status": "escalated",
             "from_level": transition.from_level,
@@ -124,17 +136,21 @@ def _register_transition_routes(router: APIRouter, service: AutonomyDataService)
         }
 
     @router.post("/deescalate")
-    def deescalate_agent(req: DeescalateRequest) -> Dict[str, Any]:
+    def deescalate_agent(req: DeescalateRequest) -> dict[str, Any]:
         """Manually de-escalate an agent."""
         from temper_ai.safety.autonomy.manager import AutonomyManager
         from temper_ai.safety.autonomy.schemas import AutonomyLevel
 
         manager = AutonomyManager(
-            store=service.store, max_level=AutonomyLevel.STRATEGIC,
+            store=service.store,
+            max_level=AutonomyLevel.STRATEGIC,
         )
         transition = manager.de_escalate(req.agent_name, req.domain, reason=req.reason)
         if transition is None:
-            return {"status": "no_change", "reason": "Already at SUPERVISED or cooldown"}
+            return {
+                "status": "no_change",
+                "reason": "Already at SUPERVISED or cooldown",
+            }
         return {
             "status": "deescalated",
             "from_level": transition.from_level,

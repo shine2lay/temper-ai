@@ -1,0 +1,32 @@
+# Test workflow — runs only the work discovery stage
+workflow:
+  name: test_work_discovery
+  description: "Test: work discovery stage only"
+  version: "1.0"
+  engine: dynamic
+  product_type: api
+
+  stages:
+    - name: vcs_work_discovery
+      stage_ref: configs/stages/vcs_work_discovery.yaml
+      description: "Read VISION.md + analyze codebase to pick next work item"
+
+  inputs:
+    required:
+      - workspace_path
+    optional: []
+
+  outputs:
+    - name: discovery_output
+      description: "Work item discovered from VISION + codebase"
+      source: vcs_work_discovery.discovery_output
+
+  error_handling:
+    on_stage_failure: halt
+    max_stage_retries: 2
+    escalation_policy: GracefulDegradation
+    enable_rollback: true
+
+  execution:
+    timeout_seconds: 600
+    max_stages: 1

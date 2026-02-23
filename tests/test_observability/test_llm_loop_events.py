@@ -7,17 +7,18 @@ Covers:
 - Structured log output verification
 - Edge cases (None observer, failing callbacks)
 """
+
 from __future__ import annotations
 
 import logging
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
 from temper_ai.llm.llm_loop_events import (
+    _CACHE_KEY_PREFIX_LENGTH,
     CacheEventData,
     LLMIterationEventData,
-    _CACHE_KEY_PREFIX_LENGTH,
     emit_cache_event,
     emit_llm_iteration_event,
 )
@@ -89,7 +90,8 @@ class TestEmitLLMIterationEvent:
     def test_emits_to_observer(self) -> None:
         observer = MagicMock()
         event_data = LLMIterationEventData(
-            iteration_number=1, agent_name="test-agent",
+            iteration_number=1,
+            agent_name="test-agent",
         )
         emit_llm_iteration_event(observer, event_data)
         observer.track_llm_iteration.assert_called_once_with(event_data)
@@ -170,7 +172,10 @@ class TestEmitCacheEvent:
 
     def test_structured_log_output(self, caplog: pytest.LogCaptureFixture) -> None:
         event_data = CacheEventData(
-            event_type="hit", key_prefix="abc123", model="gpt-4", cache_size=10,
+            event_type="hit",
+            key_prefix="abc123",
+            model="gpt-4",
+            cache_size=10,
         )
         with caplog.at_level(logging.DEBUG, logger="temper_ai.llm.llm_loop_events"):
             emit_cache_event(None, event_data)
@@ -192,7 +197,10 @@ class TestCacheEventIntegration:
             received.append(event)
 
         event = CacheEventData(
-            event_type="write", key_prefix="sha256abc", model="llama3", cache_size=5,
+            event_type="write",
+            key_prefix="sha256abc",
+            model="llama3",
+            cache_size=5,
         )
         emit_cache_event(capture, event)
 

@@ -1,10 +1,11 @@
-"""Load and stress tests for meta-autonomous-framework.
+"""Load and stress tests for Temper AI.
 
 Tests system behavior under high load and resource constraints.
 Validates scalability, resource management, and graceful degradation.
 
 Run with: pytest tests/test_load/test_stress.py -v
 """
+
 import asyncio
 import gc
 import os
@@ -20,6 +21,7 @@ from temper_ai.tools.registry import ToolRegistry
 # ============================================================================
 # Fixtures
 # ============================================================================
+
 
 @pytest.fixture
 def stress_db():
@@ -41,11 +43,12 @@ def tool_registry():
 
         def get_metadata(self):
             from temper_ai.tools.base import ToolMetadata
+
             return ToolMetadata(
                 name="MockTool",
                 description="Mock tool for testing",
                 version="1.0",
-                category="test"
+                category="test",
             )
 
         def get_parameters_schema(self):
@@ -55,7 +58,7 @@ def tool_registry():
             return ToolResult(
                 success=True,
                 output={"result": "success"},
-                metadata={"execution_time": 0.001}
+                metadata={"execution_time": 0.001},
             )
 
     registry.register(MockTool())  # Register instance, not class
@@ -65,6 +68,7 @@ def tool_registry():
 # ============================================================================
 # Load Tests - Tool Registry
 # ============================================================================
+
 
 @pytest.mark.slow
 def test_1000_tool_executions(tool_registry):
@@ -104,17 +108,19 @@ async def test_concurrent_tool_execution():
 
     Validates proper concurrent access to tools.
     """
+
     class AsyncMockTool(BaseTool):
         name = "AsyncMockTool"
         description = "Async mock tool"
 
         def get_metadata(self):
             from temper_ai.tools.base import ToolMetadata
+
             return ToolMetadata(
                 name="AsyncMockTool",
                 description="Async mock tool",
                 version="1.0",
-                category="test"
+                category="test",
             )
 
         def get_parameters_schema(self):
@@ -127,9 +133,7 @@ async def test_concurrent_tool_execution():
         async def execute_async(self, **kwargs) -> ToolResult:
             await asyncio.sleep(0.001)  # Simulate async work
             return ToolResult(
-                success=True,
-                output={"result": "async_success"},
-                metadata={}
+                success=True, output={"result": "async_success"}, metadata={}
             )
 
     registry = ToolRegistry()
@@ -154,6 +158,7 @@ async def test_concurrent_tool_execution():
 # ============================================================================
 # Load Tests - Database Operations
 # ============================================================================
+
 
 @pytest.mark.asyncio
 @pytest.mark.slow
@@ -240,12 +245,16 @@ async def test_database_write_contention(stress_db):
 
     # All writers should complete
     successful = sum(1 for r in results if not isinstance(r, Exception))
-    assert successful == num_writers, f"Database contention issues: {successful}/{num_writers}"
+    assert (
+        successful == num_writers
+    ), f"Database contention issues: {successful}/{num_writers}"
 
     # Verify total writes
     total_writes = sum(len(r) for r in results if not isinstance(r, Exception))
     expected_writes = num_writers * writes_per_writer
-    assert total_writes == expected_writes, f"Lost writes: {total_writes}/{expected_writes}"
+    assert (
+        total_writes == expected_writes
+    ), f"Lost writes: {total_writes}/{expected_writes}"
 
 
 @pytest.mark.asyncio
@@ -288,6 +297,7 @@ async def test_database_read_write_mix(stress_db):
 # Stress Tests - Memory
 # ============================================================================
 
+
 @pytest.mark.slow
 def test_memory_pressure_tool_registry():
     """Test tool registry under memory pressure.
@@ -304,11 +314,9 @@ def test_memory_pressure_tool_registry():
 
         def get_metadata(self):
             from temper_ai.tools.base import ToolMetadata
+
             return ToolMetadata(
-                name="MockTool",
-                description="Mock tool",
-                version="1.0",
-                category="test"
+                name="MockTool", description="Mock tool", version="1.0", category="test"
             )
 
         def get_parameters_schema(self):
@@ -375,6 +383,7 @@ def test_memory_leak_detection_database():
 # Stress Tests - Resource Exhaustion
 # ============================================================================
 
+
 @pytest.mark.slow
 def test_file_descriptor_management(stress_db):
     """Test file descriptor management.
@@ -383,7 +392,9 @@ def test_file_descriptor_management(stress_db):
     """
     # Get baseline file descriptor count
     process = psutil.Process(os.getpid())
-    baseline_fds = process.num_fds() if hasattr(process, 'num_fds') else len(process.open_files())
+    baseline_fds = (
+        process.num_fds() if hasattr(process, "num_fds") else len(process.open_files())
+    )
 
     # Perform many operations
     for i in range(100):
@@ -391,7 +402,9 @@ def test_file_descriptor_management(stress_db):
             pass
 
     # Check file descriptor count
-    final_fds = process.num_fds() if hasattr(process, 'num_fds') else len(process.open_files())
+    final_fds = (
+        process.num_fds() if hasattr(process, "num_fds") else len(process.open_files())
+    )
     fd_growth = final_fds - baseline_fds
 
     # Should not leak file descriptors
@@ -401,6 +414,7 @@ def test_file_descriptor_management(stress_db):
 # ============================================================================
 # Performance Tests - Throughput
 # ============================================================================
+
 
 @pytest.mark.slow
 def test_tool_registry_throughput():
@@ -416,11 +430,9 @@ def test_tool_registry_throughput():
 
         def get_metadata(self):
             from temper_ai.tools.base import ToolMetadata
+
             return ToolMetadata(
-                name="FastTool",
-                description="Fast tool",
-                version="1.0",
-                category="test"
+                name="FastTool", description="Fast tool", version="1.0", category="test"
             )
 
         def get_parameters_schema(self):
@@ -455,6 +467,7 @@ async def test_async_throughput():
 
     Validates high concurrency handling.
     """
+
     async def fast_async_operation(op_id: int):
         await asyncio.sleep(0)
         return op_id
@@ -487,6 +500,7 @@ async def test_async_throughput():
 # Stress Tests - Error Handling
 # ============================================================================
 
+
 @pytest.mark.asyncio
 @pytest.mark.slow
 async def test_error_handling_under_load():
@@ -497,6 +511,7 @@ async def test_error_handling_under_load():
     - No cascading failures
     - System remains stable
     """
+
     async def failing_operation(op_id: int):
         if op_id % 2 == 0:
             raise Exception("Simulated failure")
@@ -523,6 +538,7 @@ async def test_error_handling_under_load():
 # Load Tests - Sustained Operations
 # ============================================================================
 
+
 @pytest.mark.asyncio
 @pytest.mark.slow
 async def test_sustained_load_1000_operations():
@@ -533,6 +549,7 @@ async def test_sustained_load_1000_operations():
     - No performance degradation
     - Consistent response times
     """
+
     async def operation(op_id: int):
         await asyncio.sleep(0.001)
         return op_id
@@ -570,7 +587,9 @@ async def test_sustained_load_1000_operations():
     # Allow some variance but ensure no major degradation
     # With async operations, later batches might even be faster due to warmup
     # So we just check they're in the same ballpark
-    assert last_batch_time < first_batch_time * 2, "Significant performance degradation detected"
+    assert (
+        last_batch_time < first_batch_time * 2
+    ), "Significant performance degradation detected"
 
 
 # ============================================================================

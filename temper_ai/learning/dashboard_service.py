@@ -1,6 +1,6 @@
 """Data service for learning dashboard page."""
 
-from typing import Any, Dict, List
+from typing import Any
 
 from temper_ai.learning.convergence import ConvergenceDetector
 from temper_ai.learning.store import LearningStore
@@ -16,12 +16,10 @@ class LearningDataService:
         self.store = store
         self._convergence = ConvergenceDetector(store)
 
-    def get_pattern_summary(self) -> Dict[str, Any]:
+    def get_pattern_summary(self) -> dict[str, Any]:
         """Get pattern counts by type and top patterns."""
-        patterns = self.store.list_patterns(
-            status=None, limit=DEFAULT_PATTERN_LIMIT
-        )
-        by_type: Dict[str, int] = {}
+        patterns = self.store.list_patterns(status=None, limit=DEFAULT_PATTERN_LIMIT)
+        by_type: dict[str, int] = {}
         for p in patterns:
             by_type[p.pattern_type] = by_type.get(p.pattern_type, 0) + 1
 
@@ -37,7 +35,7 @@ class LearningDataService:
         ]
         return {"counts_by_type": by_type, "total": len(patterns), "top_patterns": top}
 
-    def get_mining_history(self) -> List[Dict[str, Any]]:
+    def get_mining_history(self) -> list[dict[str, Any]]:
         """Get recent mining runs for display."""
         runs = self.store.list_mining_runs(limit=DEFAULT_RUN_LIMIT)
         return [
@@ -52,13 +50,13 @@ class LearningDataService:
             for r in runs
         ]
 
-    def get_convergence_data(self) -> Dict[str, Any]:
+    def get_convergence_data(self) -> dict[str, Any]:
         """Get convergence trend data for charting."""
         trend = self._convergence.get_trend()
         trend["converged"] = self._convergence.is_converged()
         return trend
 
-    def get_recommendations(self) -> List[Dict[str, Any]]:
+    def get_recommendations(self) -> list[dict[str, Any]]:
         """Get pending recommendations."""
         recs = self.store.list_recommendations(status="pending")
         return [

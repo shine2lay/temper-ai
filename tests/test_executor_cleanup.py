@@ -9,6 +9,7 @@ Tests cover:
 - Duplicate shutdown protection
 - Thread leak prevention
 """
+
 import gc
 import threading
 import time
@@ -34,7 +35,7 @@ class DummyTool(BaseTool):
             version="1.0",
             category="test",
             requires_network=False,
-            requires_credentials=False
+            requires_credentials=False,
         )
 
     def get_parameters_schema(self):

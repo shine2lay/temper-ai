@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import { Handle, Position } from '@xyflow/react';
 import type { NodeProps } from '@xyflow/react';
 import { useExecutionStore } from '@/store/executionStore';
 import { STATUS_COLORS, STATUS_BG_COLORS } from './constants';
-import { formatDuration, formatTokens, formatCost } from '@/lib/utils';
+import { formatDuration, formatTokens, formatCost, extractOutputPreview } from '@/lib/utils';
 import { AgentCard } from './AgentCard';
 import type { StageNodeData } from '@/hooks/useDagElements';
 
@@ -20,7 +20,7 @@ const STRATEGY_DESCRIPTIONS: Record<string, string> = {
  * Shows one iteration at a time with prev/next navigation when
  * the stage has been executed multiple times (loop-back).
  */
-export function StageNode({ data }: NodeProps) {
+export const StageNode = memo(function StageNode({ data }: NodeProps) {
   const {
     stage,
     iterations,
@@ -44,6 +44,10 @@ export function StageNode({ data }: NodeProps) {
   const currentStage = currentIter?.stage ?? stage;
 
   const stageName = stage.stage_name ?? stage.name ?? stage.id;
+  const latestAgentOutput = currentAgents[currentAgents.length - 1]?.output;
+  const outputPreview = (currentStage.status === 'completed' || currentStage.status === 'failed')
+    ? extractOutputPreview(currentStage.output_data, latestAgentOutput)
+    : '';
   const borderColor = STATUS_COLORS[currentStage.status] ?? STATUS_COLORS.pending;
   const bgColor = STATUS_BG_COLORS[currentStage.status] ?? STATUS_BG_COLORS.pending;
   const statusDotColor = STATUS_COLORS[currentStage.status] ?? STATUS_COLORS.pending;
@@ -52,7 +56,7 @@ export function StageNode({ data }: NodeProps) {
 
   return (
     <div
-      className="rounded-lg cursor-pointer"
+      className="rounded-lg cursor-pointer focus:outline-none focus:ring-2 focus:ring-temper-accent/50 focus:ring-offset-1 focus:ring-offset-temper-panel"
       style={{
         border: `2px solid ${borderColor}`,
         backgroundColor: bgColor,
@@ -103,6 +107,13 @@ export function StageNode({ data }: NodeProps) {
           </span>
         )}
 
+        {/* Cost badge */}
+        {(currentIter?.totalCost ?? 0) > 0 && (
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-950/30 text-emerald-400 shrink-0 font-mono">
+            {formatCost(currentIter?.totalCost ?? 0)}
+          </span>
+        )}
+
         {/* Expand into overlay button */}
         <button
           onClick={(e) => {
@@ -141,7 +152,7 @@ export function StageNode({ data }: NodeProps) {
               setIterIndex(Math.max(0, safeIndex - 1));
             }}
             disabled={safeIndex === 0}
-            className="text-[10px] w-4 h-4 flex items-center justify-center rounded bg-temper-surface text-temper-text-muted hover:text-temper-text disabled:opacity-30 disabled:cursor-default transition-colors"
+            className="text-[10px] w-4 h-4 flex items-center justify-center rounded bg-temper-surface text-temper-text-muted hover:text-temper-text disabled:opacity-50 disabled:cursor-default transition-colors"
             aria-label="Previous iteration"
           >
             &#x25C0;
@@ -181,7 +192,7 @@ export function StageNode({ data }: NodeProps) {
               setIterIndex(Math.min(iterationCount - 1, safeIndex + 1));
             }}
             disabled={safeIndex === iterationCount - 1}
-            className="text-[10px] w-4 h-4 flex items-center justify-center rounded bg-temper-surface text-temper-text-muted hover:text-temper-text disabled:opacity-30 disabled:cursor-default transition-colors"
+            className="text-[10px] w-4 h-4 flex items-center justify-center rounded bg-temper-surface text-temper-text-muted hover:text-temper-text disabled:opacity-50 disabled:cursor-default transition-colors"
             aria-label="Next iteration"
           >
             &#x25B6;
@@ -194,7 +205,12 @@ export function StageNode({ data }: NodeProps) {
 
       {/* Metrics row — show current iteration metrics */}
       <div className="px-3 pb-1 flex items-center gap-3 text-[10px] text-temper-text-muted">
-        <span>{currentAgents.length} agent{currentAgents.length !== 1 ? 's' : ''}</span>
+        <span className="flex items-center gap-1">
+          {currentAgents.filter((a) => a.status === 'completed' || a.status === 'failed').length}/{currentAgents.length} agent{currentAgents.length !== 1 ? 's' : ''}
+          {currentAgents.some((a) => a.status === 'running') && (
+            <span className="w-1.5 h-1.5 rounded-full bg-temper-accent animate-pulse shrink-0" />
+          )}
+        </span>
         <span>{formatTokens(currentIter?.totalTokens ?? 0)} tok</span>
         <span>{formatCost(currentIter?.totalCost ?? 0)}</span>
         <span>{formatDuration(currentIter?.durationSeconds ?? 0)}</span>
@@ -216,18 +232,23 @@ export function StageNode({ data }: NodeProps) {
         )}
       </div>
 
-      {/* Mini agent status dots (always visible — quick glance) */}
+      {/* Mini agent status dots (always visible — quick glance, clickable) */}
       {currentAgents.length > 0 && (
         <div className="px-3 pb-1.5 flex items-center gap-1 flex-wrap">
           {currentAgents.map((agent) => {
             const dotColor = STATUS_COLORS[agent.status] ?? STATUS_COLORS.pending;
             const name = agent.agent_name ?? agent.name ?? agent.id;
             return (
-              <span
+              <button
                 key={agent.id}
-                className="w-2 h-2 rounded-full shrink-0"
+                className="w-2 h-2 rounded-full shrink-0 hover:ring-2 hover:ring-white/30 transition-shadow"
                 style={{ backgroundColor: dotColor }}
                 title={`${name}: ${agent.status}`}
+                aria-label={`${name}: ${agent.status}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  select('agent', agent.id);
+                }}
               />
             );
           })}
@@ -243,8 +264,17 @@ export function StageNode({ data }: NodeProps) {
         </div>
       )}
       {collapsed && (
-        <div className="px-2 pb-2 text-[10px] text-temper-text-muted">
-          {currentAgents.length} agents
+        <div className="px-2 pb-2 flex items-center gap-3 text-[10px] text-temper-text-muted">
+          <span>{currentAgents.length} agents</span>
+          <span className="font-mono">{formatTokens(currentIter?.totalTokens ?? 0)} tok</span>
+          <span className="font-mono">{formatCost(currentIter?.totalCost ?? 0)}</span>
+        </div>
+      )}
+
+      {/* Output preview for completed/failed stages */}
+      {outputPreview && (
+        <div className="mx-2 mb-1.5 px-2 py-1 border-t border-temper-border/20 text-[10px] font-mono text-temper-text-dim line-clamp-2 whitespace-pre-wrap">
+          {outputPreview}
         </div>
       )}
 
@@ -276,6 +306,13 @@ export function StageNode({ data }: NodeProps) {
         id="top"
         className="!bg-temper-border !w-2 !h-2"
       />
+      {/* Loop target handle (bottom — loop-back in from below) */}
+      <Handle
+        type="target"
+        position={Position.Bottom}
+        id="bottom-target"
+        className="!bg-temper-border !w-2 !h-2"
+      />
     </div>
   );
-}
+});

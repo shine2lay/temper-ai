@@ -4,8 +4,9 @@ Verifies that stale spans are cleaned up to prevent memory leaks from
 abandoned spans, and that the 3-tuple (Span, Context, monotonic_time)
 format works correctly across all backend methods.
 """
+
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -25,7 +26,9 @@ def otel_backend():
     mock_span = MagicMock()
     mock_tracer.start_span.return_value = mock_span
 
-    with patch("temper_ai.observability.backends.otel_backend.otel_trace") as mock_trace:
+    with patch(
+        "temper_ai.observability.backends.otel_backend.otel_trace"
+    ) as mock_trace:
         mock_trace.set_span_in_context.return_value = MagicMock()
         from temper_ai.observability.backends.otel_backend import OTelBackend
 
@@ -35,11 +38,19 @@ def otel_backend():
 
         # Create mock metrics
         for attr in [
-            "_workflow_counter", "_llm_call_counter", "_tool_call_counter",
-            "_llm_latency_histogram", "_cost_counter", "_tokens_counter",
-            "_llm_iteration_counter", "_cache_hit_counter", "_cache_miss_counter",
-            "_retry_counter", "_cb_state_change_counter",
-            "_dialogue_convergence_histogram", "_stage_cost_counter",
+            "_workflow_counter",
+            "_llm_call_counter",
+            "_tool_call_counter",
+            "_llm_latency_histogram",
+            "_cost_counter",
+            "_tokens_counter",
+            "_llm_iteration_counter",
+            "_cache_hit_counter",
+            "_cache_miss_counter",
+            "_retry_counter",
+            "_cb_state_change_counter",
+            "_dialogue_convergence_histogram",
+            "_stage_cost_counter",
             "_failover_counter",
         ]:
             setattr(backend, attr, MagicMock())
@@ -47,7 +58,7 @@ def otel_backend():
         yield backend, mock_span
 
 
-NOW = datetime.now(timezone.utc)
+NOW = datetime.now(UTC)
 
 
 def _make_mock_span():
@@ -87,7 +98,9 @@ class TestCleanupStaleTTL:
         call_args = old_span.set_status.call_args
         # Verify the description contains "TTL exceeded" (may be positional or keyword)
         all_args_str = str(call_args)
-        assert "TTL exceeded" in all_args_str, f"Expected 'TTL exceeded' in set_status args: {all_args_str}"
+        assert (
+            "TTL exceeded" in all_args_str
+        ), f"Expected 'TTL exceeded' in set_status args: {all_args_str}"
 
     def test_ttl_eviction_sets_ttl_expired_attribute(self, otel_backend):
         backend, _ = otel_backend
@@ -97,14 +110,18 @@ class TestCleanupStaleTTL:
 
         _cleanup_stale_spans(backend, SPAN_TTL_SECONDS, MAX_ACTIVE_SPANS)
 
-        old_span.set_attribute.assert_called_once_with("maf.status", "ttl_expired")
+        old_span.set_attribute.assert_called_once_with(
+            "temper_ai.status", "ttl_expired"
+        )
 
     def test_multiple_expired_spans_cleaned(self, otel_backend):
         backend, _ = otel_backend
         old_time = time.monotonic() - SPAN_TTL_SECONDS - 1
         for i in range(5):
             backend._active_spans[f"old-{i}"] = (
-                _make_mock_span(), MagicMock(), old_time,
+                _make_mock_span(),
+                MagicMock(),
+                old_time,
             )
 
         cleaned = _cleanup_stale_spans(backend, SPAN_TTL_SECONDS, MAX_ACTIVE_SPANS)
@@ -134,7 +151,9 @@ class TestCleanupStaleTTL:
         fresh_time = time.monotonic()
         for i in range(10):
             backend._active_spans[f"fresh-{i}"] = (
-                _make_mock_span(), MagicMock(), fresh_time,
+                _make_mock_span(),
+                MagicMock(),
+                fresh_time,
             )
 
         cleaned = _cleanup_stale_spans(backend, SPAN_TTL_SECONDS, MAX_ACTIVE_SPANS)
@@ -154,7 +173,9 @@ class TestCleanupCapacity:
         # Create more than max_spans
         for i in range(8):
             backend._active_spans[f"span-{i}"] = (
-                _make_mock_span(), MagicMock(), base_time + i,
+                _make_mock_span(),
+                MagicMock(),
+                base_time + i,
             )
 
         cleaned = _cleanup_stale_spans(backend, SPAN_TTL_SECONDS, max_spans)
@@ -179,7 +200,9 @@ class TestCleanupCapacity:
             span = _make_mock_span()
             spans.append(span)
             backend._active_spans[f"span-{i}"] = (
-                span, MagicMock(), base_time + i,
+                span,
+                MagicMock(),
+                base_time + i,
             )
 
         _cleanup_stale_spans(backend, SPAN_TTL_SECONDS, max_spans)
@@ -195,7 +218,9 @@ class TestCleanupCapacity:
         backend, _ = otel_backend
         for i in range(5):
             backend._active_spans[f"span-{i}"] = (
-                _make_mock_span(), MagicMock(), time.monotonic(),
+                _make_mock_span(),
+                MagicMock(),
+                time.monotonic(),
             )
 
         cleaned = _cleanup_stale_spans(backend, SPAN_TTL_SECONDS, MAX_ACTIVE_SPANS)
@@ -215,14 +240,20 @@ class TestCleanupCombined:
 
         # 2 expired + 4 fresh (capacity 2 -> 2 fresh also evicted)
         backend._active_spans["expired-0"] = (
-            _make_mock_span(), MagicMock(), old_time,
+            _make_mock_span(),
+            MagicMock(),
+            old_time,
         )
         backend._active_spans["expired-1"] = (
-            _make_mock_span(), MagicMock(), old_time,
+            _make_mock_span(),
+            MagicMock(),
+            old_time,
         )
         for i in range(4):
             backend._active_spans[f"fresh-{i}"] = (
-                _make_mock_span(), MagicMock(), fresh_base + i,
+                _make_mock_span(),
+                MagicMock(),
+                fresh_base + i,
             )
 
         cleaned = _cleanup_stale_spans(backend, SPAN_TTL_SECONDS, max_spans)
@@ -275,7 +306,8 @@ class TestThreeTupleCompat:
         # Should not raise on 3-tuple unpack
         backend.update_workflow_metrics("wf-1", 5, 2, 1000, 0.05)
         mock_span.set_attribute.assert_any_call(
-            "maf.workflow.total_tokens", 1000,
+            "temper_ai.workflow.total_tokens",
+            1000,
         )
 
     def test_track_stage_end_three_tuple(self, otel_backend):
@@ -284,8 +316,11 @@ class TestThreeTupleCompat:
         backend.track_stage_start("s-1", "wf-1", "decision", {}, NOW)
         # Should not raise on 3-tuple unpack
         backend.track_stage_end(
-            "s-1", NOW, "completed",
-            num_agents_executed=3, num_agents_succeeded=2,
+            "s-1",
+            NOW,
+            "completed",
+            num_agents_executed=3,
+            num_agents_succeeded=2,
             num_agents_failed=1,
         )
         assert "s-1" not in backend._active_spans
@@ -299,13 +334,15 @@ class TestThreeTupleCompat:
         backend.track_agent_start("a-1", "s-1", "optimist", {}, NOW)
         # Should not raise on 3-tuple unpack
         backend.set_agent_output(
-            "a-1", {},
+            "a-1",
+            {},
             metrics=AgentOutputData(
-                total_tokens=500, estimated_cost_usd=0.01,
+                total_tokens=500,
+                estimated_cost_usd=0.01,
                 confidence_score=0.9,
             ),
         )
-        mock_span.set_attribute.assert_any_call("maf.agent.total_tokens", 500)
+        mock_span.set_attribute.assert_any_call("temper_ai.agent.total_tokens", 500)
 
 
 class TestAmortizedTrigger:
@@ -316,7 +353,9 @@ class TestAmortizedTrigger:
         # Pre-fill with CLEANUP_THRESHOLD spans
         for i in range(CLEANUP_THRESHOLD):
             backend._active_spans[f"pre-{i}"] = (
-                _make_mock_span(), MagicMock(), time.monotonic(),
+                _make_mock_span(),
+                MagicMock(),
+                time.monotonic(),
             )
 
         # Adding one more should trigger cleanup (>CLEANUP_THRESHOLD)
@@ -332,7 +371,9 @@ class TestAmortizedTrigger:
         # Fill with fewer than CLEANUP_THRESHOLD spans
         for i in range(CLEANUP_THRESHOLD - 2):
             backend._active_spans[f"pre-{i}"] = (
-                _make_mock_span(), MagicMock(), time.monotonic(),
+                _make_mock_span(),
+                MagicMock(),
+                time.monotonic(),
             )
 
         with patch(

@@ -2,6 +2,7 @@
 
 Tests configuration schema versioning and migrations.
 """
+
 import pytest
 
 from temper_ai.shared.utils.config_migrations import (
@@ -19,6 +20,7 @@ class TestMigrationStep:
 
     def test_valid_migration_step(self):
         """Test creating valid migration step."""
+
         def migrate_fn(config):
             config["new_field"] = "value"
             return config
@@ -27,7 +29,7 @@ class TestMigrationStep:
             from_version="1.0",
             to_version="1.1",
             description="Add new_field",
-            migrate_fn=migrate_fn
+            migrate_fn=migrate_fn,
         )
 
         assert step.from_version == "1.0"
@@ -42,7 +44,7 @@ class TestMigrationStep:
                 from_version="invalid",
                 to_version="1.1",
                 description="Test",
-                migrate_fn=lambda c: c
+                migrate_fn=lambda c: c,
             )
 
         with pytest.raises(ValueError, match="Invalid version format"):
@@ -50,7 +52,7 @@ class TestMigrationStep:
                 from_version="1.0",
                 to_version="not-a-version",
                 description="Test",
-                migrate_fn=lambda c: c
+                migrate_fn=lambda c: c,
             )
 
 
@@ -83,7 +85,7 @@ class TestConfigMigrationRegistry:
             from_version="1.0",
             to_version="1.1",
             description="Test migration",
-            migrate_fn=lambda c: c
+            migrate_fn=lambda c: c,
         )
         registry.add_migration(step)
 
@@ -325,8 +327,7 @@ class TestGlobalRegistries:
         """Test that default agent migration 1.0->1.1 is registered."""
         migrations = agent_migration_registry.list_migrations()
         agent_migrations_1_0 = [
-            m for m in migrations
-            if m.from_version == "1.0" and m.to_version == "1.1"
+            m for m in migrations if m.from_version == "1.0" and m.to_version == "1.1"
         ]
         assert len(agent_migrations_1_0) >= 1
 
@@ -334,7 +335,6 @@ class TestGlobalRegistries:
         """Test that default workflow migration 1.0->1.1 is registered."""
         migrations = workflow_migration_registry.list_migrations()
         workflow_migrations = [
-            m for m in migrations
-            if m.from_version == "1.0" and m.to_version == "1.1"
+            m for m in migrations if m.from_version == "1.0" and m.to_version == "1.1"
         ]
         assert len(workflow_migrations) >= 1

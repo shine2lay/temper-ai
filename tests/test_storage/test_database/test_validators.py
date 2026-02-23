@@ -2,6 +2,7 @@
 
 Tests database field validators for data integrity.
 """
+
 import pytest
 
 from temper_ai.storage.database.validators import (
@@ -24,13 +25,8 @@ class TestValidateJsonSize:
     def test_valid_with_nested_data(self):
         """Test validation with nested structures."""
         data = {
-            "config": {
-                "settings": {
-                    "timeout": 30,
-                    "retries": 3
-                }
-            },
-            "metadata": {"version": "1.0"}
+            "config": {"settings": {"timeout": 30, "retries": 3}},
+            "metadata": {"version": "1.0"},
         }
         # Should not raise
         result = validate_json_size(data)
@@ -62,9 +58,7 @@ class TestValidateJsonSize:
 
         with pytest.raises(JSONSizeError, match="workflow_config"):
             validate_json_size(
-                large_data,
-                max_bytes=1024 * 1024,
-                field_name="workflow_config"
+                large_data, max_bytes=1024 * 1024, field_name="workflow_config"
             )
 
     def test_not_json_serializable(self):
@@ -139,9 +133,7 @@ class TestValidateOptionalJsonSize:
 
         # Should not raise
         result = validate_optional_json_size(
-            data,
-            max_bytes=100,
-            field_name="custom_field"
+            data, max_bytes=100, field_name="custom_field"
         )
         assert result is None
 
@@ -184,7 +176,7 @@ class TestEdgeCases:
             "quote": '"quoted"',
             "backslash": "\\path\\to\\file",
             "newline": "line1\nline2",
-            "tab": "col1\tcol2"
+            "tab": "col1\tcol2",
         }
         # Should not raise
         result = validate_json_size(data)
@@ -192,23 +184,14 @@ class TestEdgeCases:
 
     def test_boolean_and_null_values(self):
         """Test with boolean and null values."""
-        data = {
-            "is_active": True,
-            "is_deleted": False,
-            "optional": None
-        }
+        data = {"is_active": True, "is_deleted": False, "optional": None}
         # Should not raise
         result = validate_json_size(data)
         assert result is None
 
     def test_numeric_values(self):
         """Test with various numeric types."""
-        data = {
-            "integer": 42,
-            "negative": -100,
-            "float": 3.14159,
-            "zero": 0
-        }
+        data = {"integer": 42, "negative": -100, "float": 3.14159, "zero": 0}
         # Should not raise
         result = validate_json_size(data)
         assert result is None

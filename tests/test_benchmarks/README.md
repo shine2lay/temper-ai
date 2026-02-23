@@ -1,6 +1,6 @@
 # Performance Benchmark Suite
 
-Comprehensive performance benchmarks for meta-autonomous-framework with 62 tests covering all critical execution paths, baseline storage, regression detection (>10%), and historical tracking.
+Comprehensive performance benchmarks for Temper AI with 62 tests covering all critical execution paths, baseline storage, regression detection (>10%), and historical tracking.
 
 ## Overview
 
@@ -426,7 +426,7 @@ pytest tests/test_benchmarks/test_performance_benchmarks.py -k "database" --benc
 
 ## Summary
 
-This benchmark suite provides comprehensive performance testing for the meta-autonomous-framework:
+This benchmark suite provides comprehensive performance testing for Temper AI:
 
 - **62 benchmarks** covering all critical paths
 - **8 categories**: Compiler, Database, LLM, Tools, Agents, Strategies, Safety, E2E

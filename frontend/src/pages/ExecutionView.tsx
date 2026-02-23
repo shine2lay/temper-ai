@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { ReactFlowProvider } from '@xyflow/react';
 import { toast } from 'sonner';
@@ -10,7 +10,9 @@ import { WorkflowHeader } from '@/components/layout/WorkflowHeader';
 import { WorkflowSummaryBar } from '@/components/layout/WorkflowSummaryBar';
 import { ViewTabs } from '@/components/layout/ViewTabs';
 import { EventLogPanel } from '@/components/layout/EventLogPanel';
+import { LLMCallsTable } from '@/components/layout/LLMCallsTable';
 import { ExecutionDAG } from '@/components/dag/ExecutionDAG';
+import { LiveStreamBar } from '@/components/dag/LiveStreamBar';
 import { TimelineChart } from '@/components/timeline/TimelineChart';
 import { DetailSheet } from '@/components/panels/DetailSheet';
 import { StageDetailOverlay } from '@/components/stage-detail';
@@ -40,14 +42,23 @@ function LoadingSkeleton() {
 export function ExecutionView() {
   const { workflowId } = useParams<{ workflowId: string }>();
   const workflow = useExecutionStore((s) => s.workflow);
+  const stages = useExecutionStore((s) => s.stages);
+  const eventLog = useExecutionStore((s) => s.eventLog);
+  const llmCalls = useExecutionStore((s) => s.llmCalls);
   const prevStatus = useRef(workflow?.status);
   const [activeTab, setActiveTab] = useState(() => {
     return localStorage.getItem('temper-active-tab') ?? 'dag';
   });
+  const [showShortcutHelp, setShowShortcutHelp] = useState(false);
+
+  const filteredEventCount = useMemo(
+    () => eventLog.filter((e) => e.event_type !== 'llm_stream_batch').length,
+    [eventLog],
+  );
 
   useWorkflowWebSocket(workflowId);
   useInitialData(workflowId);
-  useKeyboardShortcuts({ onSwitchTab: setActiveTab });
+  useKeyboardShortcuts({ onSwitchTab: setActiveTab, onShowHelp: () => setShowShortcutHelp(prev => !prev) });
 
   useEffect(() => {
     if (prevStatus.current === 'running' && workflow?.status === 'completed') {
@@ -71,12 +82,38 @@ export function ExecutionView() {
         <ViewTabs
           activeTab={activeTab}
           onTabChange={setActiveTab}
-          dagContent={<ErrorBoundary><ExecutionDAG /></ErrorBoundary>}
+          stageCount={stages.size}
+          eventCount={filteredEventCount}
+          llmCallCount={llmCalls.size}
+          dagContent={
+            <ErrorBoundary>
+              <div className="relative w-full h-full">
+                <ExecutionDAG />
+                <LiveStreamBar />
+              </div>
+            </ErrorBoundary>
+          }
           timelineContent={<ErrorBoundary><TimelineChart /></ErrorBoundary>}
           eventLogContent={<ErrorBoundary><EventLogPanel /></ErrorBoundary>}
+          llmCallsContent={<ErrorBoundary><LLMCallsTable /></ErrorBoundary>}
         />
         <DetailSheet />
         <StageDetailOverlay />
+        {showShortcutHelp && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowShortcutHelp(false)}>
+            <div className="bg-temper-panel border border-temper-border rounded-lg p-6 shadow-xl max-w-sm" onClick={e => e.stopPropagation()}>
+              <h2 className="text-lg font-semibold text-temper-text mb-4">Keyboard Shortcuts</h2>
+              <div className="space-y-2 text-sm text-temper-text-muted">
+                <div className="flex justify-between"><span>Close panel</span><kbd className="px-2 py-0.5 bg-temper-surface rounded text-xs">Esc</kbd></div>
+                <div className="flex justify-between"><span>DAG view</span><kbd className="px-2 py-0.5 bg-temper-surface rounded text-xs">1</kbd></div>
+                <div className="flex justify-between"><span>Timeline view</span><kbd className="px-2 py-0.5 bg-temper-surface rounded text-xs">2</kbd></div>
+                <div className="flex justify-between"><span>Event log</span><kbd className="px-2 py-0.5 bg-temper-surface rounded text-xs">3</kbd></div>
+                <div className="flex justify-between"><span>LLM calls</span><kbd className="px-2 py-0.5 bg-temper-surface rounded text-xs">4</kbd></div>
+                <div className="flex justify-between"><span>This help</span><kbd className="px-2 py-0.5 bg-temper-surface rounded text-xs">?</kbd></div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </ReactFlowProvider>
   );

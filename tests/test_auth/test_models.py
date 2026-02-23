@@ -7,10 +7,10 @@ Tests cover User and Session models including:
 - Timestamp handling and timezone awareness
 - Edge cases and security scenarios
 """
-import pytest
-from datetime import datetime, timedelta, timezone
 
-from temper_ai.auth.models import User, Session
+from datetime import UTC, datetime, timedelta
+
+from temper_ai.auth.models import Session, User
 
 
 class TestUser:
@@ -35,9 +35,9 @@ class TestUser:
 
     def test_user_creation_full(self):
         """Test creating user with all fields."""
-        created_at = datetime.now(timezone.utc)
-        updated_at = datetime.now(timezone.utc)
-        last_login = datetime.now(timezone.utc)
+        created_at = datetime.now(UTC)
+        updated_at = datetime.now(UTC)
+        last_login = datetime.now(UTC)
 
         user = User(
             user_id="user_456",
@@ -67,13 +67,13 @@ class TestUser:
 
     def test_user_default_timestamps(self):
         """Test that timestamps are auto-generated with timezone."""
-        before = datetime.now(timezone.utc)
+        before = datetime.now(UTC)
         user = User(
             user_id="user_789",
             email="time@example.com",
             name="Time User",
         )
-        after = datetime.now(timezone.utc)
+        after = datetime.now(UTC)
 
         # Timestamps should be within test execution window
         assert before <= user.created_at <= after
@@ -87,9 +87,9 @@ class TestUser:
 
     def test_user_to_dict(self):
         """Test converting user to dictionary."""
-        created_at = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
-        updated_at = datetime(2025, 1, 2, 12, 0, 0, tzinfo=timezone.utc)
-        last_login = datetime(2025, 1, 3, 12, 0, 0, tzinfo=timezone.utc)
+        created_at = datetime(2025, 1, 1, 12, 0, 0, tzinfo=UTC)
+        updated_at = datetime(2025, 1, 2, 12, 0, 0, tzinfo=UTC)
+        last_login = datetime(2025, 1, 3, 12, 0, 0, tzinfo=UTC)
 
         user = User(
             user_id="user_dict",
@@ -193,9 +193,9 @@ class TestUser:
             picture="https://example.com/roundtrip.jpg",
             oauth_provider="github",
             oauth_subject="github_roundtrip",
-            created_at=datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
-            updated_at=datetime(2025, 1, 2, 12, 0, 0, tzinfo=timezone.utc),
-            last_login=datetime(2025, 1, 3, 12, 0, 0, tzinfo=timezone.utc),
+            created_at=datetime(2025, 1, 1, 12, 0, 0, tzinfo=UTC),
+            updated_at=datetime(2025, 1, 2, 12, 0, 0, tzinfo=UTC),
+            last_login=datetime(2025, 1, 3, 12, 0, 0, tzinfo=UTC),
             is_active=False,
             email_verified=True,
         )
@@ -242,8 +242,8 @@ class TestSession:
 
     def test_session_creation_full(self):
         """Test creating session with all fields."""
-        authenticated_at = datetime.now(timezone.utc)
-        expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+        authenticated_at = datetime.now(UTC)
+        expires_at = datetime.now(UTC) + timedelta(hours=1)
 
         session = Session(
             session_id="sess_full",
@@ -271,14 +271,14 @@ class TestSession:
 
     def test_session_default_authenticated_at(self):
         """Test that authenticated_at is auto-generated with timezone."""
-        before = datetime.now(timezone.utc)
+        before = datetime.now(UTC)
         session = Session(
             session_id="sess_time",
             user_id="user_time",
             email="time@example.com",
             name="Time User",
         )
-        after = datetime.now(timezone.utc)
+        after = datetime.now(UTC)
 
         assert before <= session.authenticated_at <= after
         assert session.authenticated_at.tzinfo is not None
@@ -302,7 +302,7 @@ class TestSession:
             user_id="user_valid",
             email="valid@example.com",
             name="Valid User",
-            expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+            expires_at=datetime.now(UTC) + timedelta(hours=1),
         )
 
         assert session.is_expired() is False
@@ -314,7 +314,7 @@ class TestSession:
             user_id="user_expired",
             email="expired@example.com",
             name="Expired User",
-            expires_at=datetime.now(timezone.utc) - timedelta(hours=1),
+            expires_at=datetime.now(UTC) - timedelta(hours=1),
         )
 
         assert session.is_expired() is True
@@ -322,7 +322,7 @@ class TestSession:
     def test_session_is_expired_boundary(self):
         """Test is_expired boundary case (exactly at expiry)."""
         # Session expires in microseconds from now
-        expires_at = datetime.now(timezone.utc) + timedelta(microseconds=100)
+        expires_at = datetime.now(UTC) + timedelta(microseconds=100)
         session = Session(
             session_id="sess_boundary",
             user_id="user_boundary",
@@ -336,6 +336,7 @@ class TestSession:
 
         # Wait for expiry (small delay)
         import time
+
         time.sleep(0.001)
 
         # Should be expired now
@@ -343,8 +344,8 @@ class TestSession:
 
     def test_session_to_dict(self):
         """Test converting session to dictionary."""
-        authenticated_at = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
-        expires_at = datetime(2025, 1, 1, 13, 0, 0, tzinfo=timezone.utc)
+        authenticated_at = datetime(2025, 1, 1, 12, 0, 0, tzinfo=UTC)
+        expires_at = datetime(2025, 1, 1, 13, 0, 0, tzinfo=UTC)
 
         session = Session(
             session_id="sess_dict",
@@ -415,7 +416,9 @@ class TestSession:
         assert session.name == "From Dict User"
         assert session.picture == "https://example.com/from.jpg"
         assert session.provider == "github"
-        assert session.authenticated_at == datetime.fromisoformat(data["authenticated_at"])
+        assert session.authenticated_at == datetime.fromisoformat(
+            data["authenticated_at"]
+        )
         assert session.expires_at == datetime.fromisoformat(data["expires_at"])
         assert session.ip_address == "172.16.0.1"
         assert session.user_agent == "Safari/14"
@@ -451,8 +454,8 @@ class TestSession:
             name="Roundtrip User",
             picture="https://example.com/roundtrip.jpg",
             provider="github",
-            authenticated_at=datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
-            expires_at=datetime(2025, 1, 1, 13, 0, 0, tzinfo=timezone.utc),
+            authenticated_at=datetime(2025, 1, 1, 12, 0, 0, tzinfo=UTC),
+            expires_at=datetime(2025, 1, 1, 13, 0, 0, tzinfo=UTC),
             ip_address="203.0.113.1",
             user_agent="Edge/90",
         )
@@ -483,12 +486,14 @@ class TestSession:
             name="Security User",
             ip_address="192.168.1.100",
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-            expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+            expires_at=datetime.now(UTC) + timedelta(hours=1),
         )
 
         # Verify original metadata
         assert original_session.ip_address == "192.168.1.100"
-        assert original_session.user_agent == "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+        assert (
+            original_session.user_agent == "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+        )
 
         # Simulate different IP/user-agent (potential hijacking)
         suspicious_ip = "10.0.0.1"

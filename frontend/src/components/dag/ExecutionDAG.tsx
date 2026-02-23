@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, type KeyboardEvent } from 'react';
 import {
   ReactFlow,
   Controls,
@@ -14,9 +14,12 @@ import { useExecutionStore } from '@/store/executionStore';
 import { selectStageGroups, selectDagInfo } from '@/store/selectors';
 import { useDagElements } from '@/hooks/useDagElements';
 import { computeStagePositions } from '@/lib/dagLayout';
+import { DAG_FIT_PADDING } from '@/lib/constants';
 import { StageNode } from './StageNode';
+import { LoopBackEdge } from './LoopBackEdge';
 
 const nodeTypes = { stage: StageNode };
+const edgeTypes = { loopBack: LoopBackEdge };
 const RELAYOUT_DELAY_MS = 150;
 
 /**
@@ -33,10 +36,13 @@ export function ExecutionDAG() {
   const prevNodeCountRef = useRef(0);
   const expandedStages = useExecutionStore((s) => s.expandedStages);
   const stages = useExecutionStore((s) => s.stages);
+  const select = useExecutionStore((s) => s.select);
+  const clearSelection = useExecutionStore((s) => s.clearSelection);
   const relayoutTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const focusedNodeIndexRef = useRef<number>(-1);
 
   const onInit: OnInit = useCallback(() => {
-    setTimeout(() => fitView({ padding: 0.15 }), 50);
+    setTimeout(() => fitView({ padding: DAG_FIT_PADDING }), 50);
   }, [fitView]);
 
   // Push computed nodes/edges into React Flow's internal store
@@ -93,7 +99,7 @@ export function ExecutionDAG() {
 
     if (changed) {
       setNodes(updatedNodes);
-      setTimeout(() => fitView({ padding: 0.15, duration: 300 }), 50);
+      setTimeout(() => fitView({ padding: DAG_FIT_PADDING, duration: 300 }), 50);
     }
   }, [getNodes, stages, expandedStages, setNodes, fitView]);
 
@@ -114,7 +120,7 @@ export function ExecutionDAG() {
   useEffect(() => {
     if (computed.nodes.length > 0 && computed.nodes.length !== prevNodeCountRef.current) {
       prevNodeCountRef.current = computed.nodes.length;
-      const timer = setTimeout(() => fitView({ padding: 0.15, duration: 300 }), 100);
+      const timer = setTimeout(() => fitView({ padding: DAG_FIT_PADDING, duration: 300 }), 100);
       return () => clearTimeout(timer);
     }
   }, [computed.nodes.length, fitView]);
@@ -123,32 +129,76 @@ export function ExecutionDAG() {
   useEffect(() => {
     const timer = setTimeout(() => {
       relayoutFromMeasurements();
-      fitView({ padding: 0.15, duration: 300 });
+      fitView({ padding: DAG_FIT_PADDING, duration: 300 });
     }, RELAYOUT_DELAY_MS);
     return () => clearTimeout(timer);
   }, [expandedStages, fitView, relayoutFromMeasurements]);
 
+  /**
+   * Keyboard navigation for the DAG container.
+   * Tab/Shift+Tab: cycle focus through stage nodes.
+   * Enter: select the currently focused stage.
+   * Escape: clear selection.
+   */
+  const onContainerKeyDown = useCallback(
+    (e: KeyboardEvent<HTMLDivElement>) => {
+      const stageNodes = computed.nodes.filter((n) => n.type === 'stage');
+      if (stageNodes.length === 0) return;
+
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        const dir = e.shiftKey ? -1 : 1;
+        const next = (focusedNodeIndexRef.current + dir + stageNodes.length) % stageNodes.length;
+        focusedNodeIndexRef.current = next;
+        // Focus the DOM node for the stage
+        const nodeEl = document.querySelector<HTMLElement>(
+          `[data-id="${stageNodes[next].id}"] [role="button"]`,
+        );
+        nodeEl?.focus();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        clearSelection();
+        focusedNodeIndexRef.current = -1;
+      } else if (e.key === 'Enter' && focusedNodeIndexRef.current >= 0) {
+        const focused = stageNodes[focusedNodeIndexRef.current];
+        if (focused) {
+          e.preventDefault();
+          select('stage', focused.id);
+        }
+      }
+    },
+    [computed.nodes, select, clearSelection],
+  );
+
   return (
-    <ReactFlow
-      defaultNodes={[]}
-      defaultEdges={[]}
-      onNodesChange={onNodesChange}
-      nodeTypes={nodeTypes}
-      onInit={onInit}
-      fitView
-      minZoom={0.1}
-      maxZoom={2}
-      proOptions={{ hideAttribution: true }}
-      nodesDraggable
-      nodesConnectable={false}
+    // eslint-disable-next-line jsx-a11y/no-static-element-interactions
+    <div
+      className="w-full h-full"
+      onKeyDown={onContainerKeyDown}
+      aria-label="Workflow execution DAG. Use Tab to cycle through stages, Enter to select, Escape to deselect."
     >
-      <Background variant={BackgroundVariant.Dots} gap={24} size={1} />
-      <Controls position="bottom-left" />
-      <MiniMap
-        nodeColor="#1e2a4a"
-        maskColor="rgba(15, 23, 41, 0.7)"
-        position="bottom-right"
-      />
-    </ReactFlow>
+      <ReactFlow
+        defaultNodes={[]}
+        defaultEdges={[]}
+        onNodesChange={onNodesChange}
+        nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
+        onInit={onInit}
+        fitView
+        minZoom={0.1}
+        maxZoom={2}
+        proOptions={{ hideAttribution: true }}
+        nodesDraggable
+        nodesConnectable={false}
+      >
+        <Background variant={BackgroundVariant.Dots} gap={24} size={1} />
+        <Controls position="bottom-left" />
+        <MiniMap
+          nodeColor="#1e2a4a"
+          maskColor="rgba(15, 23, 41, 0.7)"
+          position="bottom-right"
+        />
+      </ReactFlow>
+    </div>
   );
 }

@@ -8,13 +8,10 @@ from temper_ai.portfolio.models import (
     KGConceptRecord,
     KGEdgeRecord,
     PortfolioRecord,
-    PortfolioSnapshotRecord,
     ProductRunRecord,
     SharedComponentRecord,
-    TechCompatibilityRecord,
 )
 from temper_ai.portfolio.store import PortfolioStore
-from temper_ai.storage.database.datetime_utils import utcnow
 
 MEMORY_DB = "sqlite:///:memory:"
 
@@ -57,21 +54,16 @@ class TestPortfolioCRUD:
         assert len(result) == 3
 
     def test_list_enabled_only(self, store):
-        store.save_portfolio(
-            PortfolioRecord(id="1", name="enabled", enabled=True)
-        )
-        store.save_portfolio(
-            PortfolioRecord(id="2", name="disabled", enabled=False)
-        )
+        store.save_portfolio(PortfolioRecord(id="1", name="enabled", enabled=True))
+        store.save_portfolio(PortfolioRecord(id="2", name="disabled", enabled=False))
         result = store.list_portfolios(enabled_only=True)
         assert len(result) == 1
         assert result[0].name == "enabled"
 
     def test_update_status(self, store):
-        store.save_portfolio(
-            PortfolioRecord(id="1", name="my-portfolio", enabled=True)
-        )
+        store.save_portfolio(PortfolioRecord(id="1", name="my-portfolio", enabled=True))
         from temper_ai.portfolio.store import update_portfolio_status
+
         updated = update_portfolio_status(store, "my-portfolio", enabled=False)
         assert updated is True
         record = store.get_portfolio("my-portfolio")
@@ -185,9 +177,7 @@ class TestSharedComponents:
 
 class TestKnowledgeGraph:
     def test_save_concept(self, store):
-        concept = KGConceptRecord(
-            id="c1", name="web_app", concept_type="product"
-        )
+        concept = KGConceptRecord(id="c1", name="web_app", concept_type="product")
         store.save_concept(concept)
         result = store.get_concept("web_app")
         assert result is not None
@@ -200,9 +190,7 @@ class TestKnowledgeGraph:
         store.save_concept(
             KGConceptRecord(id="c2", name="stage_a", concept_type="stage")
         )
-        edge = KGEdgeRecord(
-            id="e1", source_id="c1", target_id="c2", relation="uses"
-        )
+        edge = KGEdgeRecord(id="e1", source_id="c1", target_id="c2", relation="uses")
         store.save_edge(edge)
         edges = store.query_edges(source_id="c1")
         assert len(edges) == 1

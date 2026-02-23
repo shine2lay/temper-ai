@@ -3,12 +3,13 @@
 Tests parallel execution, init/collect nodes, error handling,
 and state merging behavior.
 """
-from typing import Any, Dict
-from unittest.mock import MagicMock
 
-import pytest
+from typing import Any
 
-from temper_ai.workflow.engines.native_runner import ThreadPoolParallelRunner, _merge_dicts
+from temper_ai.workflow.engines.native_runner import (
+    ThreadPoolParallelRunner,
+    _merge_dicts,
+)
 
 
 class TestMergeDicts:
@@ -41,7 +42,7 @@ class TestThreadPoolParallelRunner:
         """Test running a single node."""
         runner = ThreadPoolParallelRunner()
 
-        def node_a(state: Dict[str, Any]) -> Dict[str, Any]:
+        def node_a(state: dict[str, Any]) -> dict[str, Any]:
             return {"agent_outputs": {"a": "output_a"}}
 
         result = runner.run_parallel(
@@ -54,10 +55,10 @@ class TestThreadPoolParallelRunner:
         """Test running multiple nodes in parallel."""
         runner = ThreadPoolParallelRunner(max_workers=2)
 
-        def node_a(state: Dict[str, Any]) -> Dict[str, Any]:
+        def node_a(state: dict[str, Any]) -> dict[str, Any]:
             return {"agent_outputs": {"a": "output_a"}}
 
-        def node_b(state: Dict[str, Any]) -> Dict[str, Any]:
+        def node_b(state: dict[str, Any]) -> dict[str, Any]:
             return {"agent_outputs": {"b": "output_b"}}
 
         result = runner.run_parallel(
@@ -74,10 +75,10 @@ class TestThreadPoolParallelRunner:
         """Test init_node runs before parallel nodes."""
         runner = ThreadPoolParallelRunner()
 
-        def init(state: Dict[str, Any]) -> Dict[str, Any]:
+        def init(state: dict[str, Any]) -> dict[str, Any]:
             return {"initialized": True}
 
-        def node_a(state: Dict[str, Any]) -> Dict[str, Any]:
+        def node_a(state: dict[str, Any]) -> dict[str, Any]:
             # init_node result should be in state
             assert state.get("initialized") is True
             return {"result": "ok"}
@@ -94,10 +95,10 @@ class TestThreadPoolParallelRunner:
         """Test collect_node runs after parallel nodes."""
         runner = ThreadPoolParallelRunner()
 
-        def node_a(state: Dict[str, Any]) -> Dict[str, Any]:
+        def node_a(state: dict[str, Any]) -> dict[str, Any]:
             return {"agent_outputs": {"a": "output_a"}}
 
-        def collect(state: Dict[str, Any]) -> Dict[str, Any]:
+        def collect(state: dict[str, Any]) -> dict[str, Any]:
             return {"collected": True}
 
         result = runner.run_parallel(
@@ -124,10 +125,10 @@ class TestThreadPoolParallelRunner:
         """Test that node exceptions are logged but don't crash runner."""
         runner = ThreadPoolParallelRunner()
 
-        def failing_node(state: Dict[str, Any]) -> Dict[str, Any]:
+        def failing_node(state: dict[str, Any]) -> dict[str, Any]:
             raise ValueError("boom")
 
-        def good_node(state: Dict[str, Any]) -> Dict[str, Any]:
+        def good_node(state: dict[str, Any]) -> dict[str, Any]:
             return {"good": True}
 
         result = runner.run_parallel(
@@ -140,7 +141,7 @@ class TestThreadPoolParallelRunner:
         """Test nodes returning None are handled."""
         runner = ThreadPoolParallelRunner()
 
-        def none_node(state: Dict[str, Any]) -> Dict[str, Any]:
+        def none_node(state: dict[str, Any]) -> dict[str, Any]:
             return {}
 
         result = runner.run_parallel(
@@ -164,7 +165,7 @@ class TestThreadPoolParallelRunner:
         runner = ThreadPoolParallelRunner()
         mutations = []
 
-        def mutating_node(state: Dict[str, Any]) -> Dict[str, Any]:
+        def mutating_node(state: dict[str, Any]) -> dict[str, Any]:
             state["mutated"] = True
             mutations.append(True)
             return {"result": "done"}

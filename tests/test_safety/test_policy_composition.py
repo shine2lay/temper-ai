@@ -3,7 +3,12 @@
 import pytest
 
 from temper_ai.safety.composition import CompositeValidationResult, PolicyComposer
-from temper_ai.safety.interfaces import SafetyPolicy, SafetyViolation, ValidationResult, ViolationSeverity
+from temper_ai.safety.interfaces import (
+    SafetyPolicy,
+    SafetyViolation,
+    ValidationResult,
+    ViolationSeverity,
+)
 
 
 class MockPolicy(SafetyPolicy):
@@ -15,7 +20,7 @@ class MockPolicy(SafetyPolicy):
         version: str = "1.0.0",
         priority: int = 100,
         valid: bool = True,
-        violations: list = None
+        violations: list = None,
     ):
         self._name = name
         self._version = version
@@ -40,9 +45,7 @@ class MockPolicy(SafetyPolicy):
     def validate(self, action, context) -> ValidationResult:
         self.validate_called = True
         return ValidationResult(
-            valid=self._valid,
-            violations=self._violations,
-            policy_name=self._name
+            valid=self._valid, violations=self._violations, policy_name=self._name
         )
 
     async def validate_async(self, action, context) -> ValidationResult:
@@ -214,10 +217,7 @@ class TestValidation:
         composer.add_policy(MockPolicy("policy1", valid=True))
         composer.add_policy(MockPolicy("policy2", valid=True))
 
-        result = composer.validate(
-            action={"tool": "test"},
-            context={"agent": "test"}
-        )
+        result = composer.validate(action={"tool": "test"}, context={"agent": "test"})
 
         assert result.valid is True
         assert len(result.violations) == 0
@@ -231,7 +231,7 @@ class TestValidation:
             severity=ViolationSeverity.HIGH,
             message="Test violation",
             action="test",
-            context={}
+            context={},
         )
 
         composer = PolicyComposer()
@@ -252,14 +252,14 @@ class TestValidation:
             severity=ViolationSeverity.HIGH,
             message="Violation 1",
             action="test",
-            context={}
+            context={},
         )
         violation2 = SafetyViolation(
             policy_name="policy2",
             severity=ViolationSeverity.CRITICAL,
             message="Violation 2",
             action="test",
-            context={}
+            context={},
         )
 
         composer = PolicyComposer()
@@ -280,11 +280,15 @@ class TestValidation:
             severity=ViolationSeverity.HIGH,
             message="First violation",
             action="test",
-            context={}
+            context={},
         )
 
         composer = PolicyComposer(fail_fast=True)
-        composer.add_policy(MockPolicy("high_priority", priority=200, valid=False, violations=[violation]))
+        composer.add_policy(
+            MockPolicy(
+                "high_priority", priority=200, valid=False, violations=[violation]
+            )
+        )
         composer.add_policy(MockPolicy("low_priority", priority=100, valid=True))
 
         result = composer.validate({}, {})
@@ -292,7 +296,7 @@ class TestValidation:
         assert result.valid is False
         assert len(result.violations) == 1
         assert result.policies_evaluated == 1  # Only evaluated first policy
-        assert result.policies_skipped == 1    # Skipped second policy
+        assert result.policies_skipped == 1  # Skipped second policy
 
     def test_validate_no_policies(self):
         """Test validation with no policies (should pass)."""
@@ -319,6 +323,7 @@ class TestValidation:
 
     def test_policy_exception_creates_critical_violation(self):
         """Test that policy exceptions are caught and converted to violations."""
+
         class FailingPolicy(MockPolicy):
             def validate(self, action, context):
                 raise RuntimeError("Policy failed")
@@ -358,7 +363,7 @@ class TestAsyncValidation:
             severity=ViolationSeverity.HIGH,
             message="Async violation",
             action="test",
-            context={}
+            context={},
         )
 
         composer = PolicyComposer()
@@ -377,11 +382,13 @@ class TestAsyncValidation:
             severity=ViolationSeverity.HIGH,
             message="Stop here",
             action="test",
-            context={}
+            context={},
         )
 
         composer = PolicyComposer(fail_fast=True)
-        composer.add_policy(MockPolicy("policy1", priority=200, valid=False, violations=[violation]))
+        composer.add_policy(
+            MockPolicy("policy1", priority=200, valid=False, violations=[violation])
+        )
         composer.add_policy(MockPolicy("policy2", priority=100, valid=True))
 
         result = await composer.validate_async({}, {})
@@ -403,9 +410,9 @@ class TestCompositeValidationResult:
                     severity=ViolationSeverity.CRITICAL,
                     message="Critical",
                     action="test",
-                    context={}
+                    context={},
                 )
-            ]
+            ],
         )
 
         assert result.has_critical_violations() is True
@@ -420,9 +427,9 @@ class TestCompositeValidationResult:
                     severity=ViolationSeverity.HIGH,
                     message="High",
                     action="test",
-                    context={}
+                    context={},
                 )
-            ]
+            ],
         )
 
         assert result.has_blocking_violations() is True
@@ -435,15 +442,15 @@ class TestCompositeValidationResult:
                 severity=ViolationSeverity.CRITICAL,
                 message="Critical",
                 action="test",
-                context={}
+                context={},
             ),
             SafetyViolation(
                 policy_name="test",
                 severity=ViolationSeverity.MEDIUM,
                 message="Medium",
                 action="test",
-                context={}
-            )
+                context={},
+            ),
         ]
 
         result = CompositeValidationResult(valid=False, violations=violations)
@@ -460,15 +467,15 @@ class TestCompositeValidationResult:
                 severity=ViolationSeverity.HIGH,
                 message="From policy1",
                 action="test",
-                context={}
+                context={},
             ),
             SafetyViolation(
                 policy_name="policy2",
                 severity=ViolationSeverity.HIGH,
                 message="From policy2",
                 action="test",
-                context={}
-            )
+                context={},
+            ),
         ]
 
         result = CompositeValidationResult(valid=False, violations=violations)
@@ -484,7 +491,7 @@ class TestCompositeValidationResult:
             violations=[],
             policies_evaluated=3,
             policies_skipped=0,
-            execution_order=["policy1", "policy2", "policy3"]
+            execution_order=["policy1", "policy2", "policy3"],
         )
 
         result_dict = result.to_dict()

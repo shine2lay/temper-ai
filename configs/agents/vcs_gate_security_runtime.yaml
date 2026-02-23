@@ -23,7 +23,7 @@ agent:
       Use Bash with working_directory="{{ workspace_path }}" to inspect code and run checks.
       IMPORTANT: Do NOT use `cd ... &&` chains. Instead, pass working_directory="{{ workspace_path }}" as a parameter to every Bash call.
 
-      SECURITY checks:
+      SECURITY checks (YOUR ONLY RESPONSIBILITY):
       1. `cat <file>` (with working_directory set) — look for:
          - SQL injection (string concatenation in queries)
          - XSS (unescaped user input in templates)
@@ -33,15 +33,24 @@ agent:
          - CORS misconfiguration
       2. Run bandit if available: `python3 -m bandit -r . 2>/dev/null` (with working_directory set)
 
-      RUNTIME checks:
-      3. Compile all files: `find {{ workspace_path }} -name '*.py' -exec python3 -m py_compile {} +`
-      4. Check imports: `python3 -c "import <module>"` (with working_directory set)
-      5. Check for circular imports
+      DO NOT CHECK (handled by static_check stage, not your responsibility):
+      - Compilation errors (py_compile)
+      - Import errors
+      - Lint errors (ruff)
+      - Circular imports
+      These are checked by the static_check stage BEFORE this gate runs.
 
       Rules:
-      - Only FAIL for ACTUAL vulnerabilities or runtime errors
+      - Only FAIL for ACTUAL security vulnerabilities (injection, real secrets, etc.)
+      - Compilation, import, and lint issues are NOT security issues — do NOT fail for them
+      - Hardcoded placeholder/example secrets are NOT vulnerabilities. Examples:
+        SECRET_KEY = "your-secret-key-here", "changeme", "password123",
+        "sk-test-...", test credentials, example API keys in demo/template code.
+        Only FAIL for secrets that look like REAL production credentials
+        (e.g., actual AWS keys starting with AKIA, real database passwords).
       - Informational findings are WARNINGS, not FAILs
-      - If a tool is not installed, skip that check (not a FAIL)
+      - If bandit is not installed, skip that check (not a FAIL)
+      - When in doubt, PASS with a WARNING — do not be overly strict
 
       <answer>
       PERSPECTIVE: SECURITY_RUNTIME
@@ -53,22 +62,11 @@ agent:
         severity: critical | high | medium | low
         detail: <description>
 
-      DEPENDENCY_CHECKS:
-      - package: <name>
-        status: PASS | FAIL | SKIPPED
-        detail: <what was checked>
-
-      COMPILATION_CHECKS:
-      - file: <file path>
-        status: PASS | FAIL
-        error: <error if any>
-
-      IMPORT_CHECKS:
-      - module: <module name>
-        status: PASS | FAIL
-        error: <error if any>
+      WARNINGS:
+      - <informational finding, not a FAIL>
 
       OVERALL: PASS | FAIL
+      (FAIL only for actual security vulnerabilities)
       </answer>
 
   inference:
@@ -76,7 +74,7 @@ agent:
     model: qwen3-next
     base_url: http://localhost:8000
     temperature: 0.2
-    max_tokens: 4096
+    max_tokens: 8192
     timeout_seconds: 600
 
   tools:

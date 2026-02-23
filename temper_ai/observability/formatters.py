@@ -1,15 +1,18 @@
 """Formatting utilities for console visualization."""
-from datetime import datetime
-from typing import Optional
 
-from temper_ai.shared.constants.durations import MILLISECONDS_PER_SECOND, SECONDS_PER_MINUTE
+from datetime import datetime
+
+from temper_ai.shared.constants.durations import (
+    MILLISECONDS_PER_SECOND,
+    SECONDS_PER_MINUTE,
+)
 from temper_ai.shared.constants.sizes import BYTES_PER_KB
 
 # Text truncation default max length
 DEFAULT_TRUNCATE_MAX_LENGTH = 50
 
 
-def format_duration(seconds: Optional[float]) -> str:
+def format_duration(seconds: float | None) -> str:
     """Format duration in human-readable form.
 
     Args:
@@ -39,7 +42,7 @@ def format_duration(seconds: Optional[float]) -> str:
     return f"{minutes}m {secs}s"
 
 
-def format_timestamp(dt: Optional[datetime]) -> str:
+def format_timestamp(dt: datetime | None) -> str:
     """Format timestamp in ISO format.
 
     Args:
@@ -59,7 +62,7 @@ def format_timestamp(dt: Optional[datetime]) -> str:
     return dt.isoformat()
 
 
-def format_tokens(tokens: Optional[int]) -> str:
+def format_tokens(tokens: int | None) -> str:
     """Format token count with thousands separators.
 
     Args:
@@ -79,7 +82,7 @@ def format_tokens(tokens: Optional[int]) -> str:
     return f"{tokens:,} tokens"
 
 
-def format_cost(cost_usd: Optional[float]) -> str:
+def format_cost(cost_usd: float | None) -> str:
     """Format cost in USD.
 
     Args:
@@ -159,7 +162,7 @@ def status_to_icon(status: str) -> str:
     return icon_map.get(status, "?")
 
 
-def format_percentage(value: Optional[float]) -> str:
+def format_percentage(value: float | None) -> str:
     """Format float as percentage.
 
     Args:
@@ -179,7 +182,9 @@ def format_percentage(value: Optional[float]) -> str:
     return f"{value * 100:.1f}%"
 
 
-def truncate_text(text: str, max_length: int = DEFAULT_TRUNCATE_MAX_LENGTH, suffix: str = "...") -> str:
+def truncate_text(
+    text: str, max_length: int = DEFAULT_TRUNCATE_MAX_LENGTH, suffix: str = "..."
+) -> str:
     """Truncate text to maximum length.
 
     Args:
@@ -198,10 +203,10 @@ def truncate_text(text: str, max_length: int = DEFAULT_TRUNCATE_MAX_LENGTH, suff
     """
     if len(text) <= max_length:
         return text
-    return text[:max_length - len(suffix)] + suffix
+    return text[: max_length - len(suffix)] + suffix
 
 
-def format_bytes(bytes_count: Optional[int]) -> str:
+def format_bytes(bytes_count: int | None) -> str:
     """Format byte count in human-readable form.
 
     Args:

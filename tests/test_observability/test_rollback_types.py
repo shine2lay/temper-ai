@@ -1,8 +1,14 @@
 """Tests for src/observability/rollback_types.py."""
+
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from temper_ai.observability.rollback_types import RollbackResult, RollbackSnapshot, RollbackStatus
+
+from temper_ai.observability.rollback_types import (
+    RollbackResult,
+    RollbackSnapshot,
+    RollbackStatus,
+)
 
 
 class TestRollbackStatus:
@@ -19,6 +25,7 @@ class TestRollbackStatus:
     def test_rollback_status_is_enum(self):
         """Test that RollbackStatus is an enum."""
         from enum import Enum
+
         assert issubclass(RollbackStatus, Enum)
 
     def test_rollback_status_all_members(self):
@@ -76,7 +83,7 @@ class TestRollbackSnapshot:
             context=context,
             file_snapshots=file_snapshots,
             state_snapshots=state_snapshots,
-            metadata=metadata
+            metadata=metadata,
         )
 
         assert snapshot.action == action
@@ -120,7 +127,7 @@ class TestRollbackSnapshot:
             context=context,
             file_snapshots=file_snapshots,
             state_snapshots=state_snapshots,
-            metadata=metadata
+            metadata=metadata,
         )
 
         result = snapshot.to_dict()
@@ -165,7 +172,7 @@ class TestRollbackResult:
         result = RollbackResult(
             success=True,
             snapshot_id="test-snapshot-123",
-            status=RollbackStatus.COMPLETED
+            status=RollbackStatus.COMPLETED,
         )
 
         assert result.success is True
@@ -191,7 +198,7 @@ class TestRollbackResult:
             reverted_items=reverted,
             failed_items=failed,
             errors=errors,
-            metadata=metadata
+            metadata=metadata,
         )
 
         assert result.success is False
@@ -205,9 +212,7 @@ class TestRollbackResult:
     def test_rollback_result_completed_at_is_utc(self):
         """Test that completed_at uses UTC timezone."""
         result = RollbackResult(
-            success=True,
-            snapshot_id="test-123",
-            status=RollbackStatus.COMPLETED
+            success=True, snapshot_id="test-123", status=RollbackStatus.COMPLETED
         )
 
         assert result.completed_at.tzinfo == UTC
@@ -226,7 +231,7 @@ class TestRollbackResult:
             reverted_items=reverted,
             failed_items=failed,
             errors=errors,
-            metadata=metadata
+            metadata=metadata,
         )
 
         result_dict = result.to_dict()
@@ -244,9 +249,7 @@ class TestRollbackResult:
     def test_rollback_result_status_serialization(self):
         """Test that status enum is serialized as string."""
         result = RollbackResult(
-            success=True,
-            snapshot_id="test-123",
-            status=RollbackStatus.COMPLETED
+            success=True, snapshot_id="test-123", status=RollbackStatus.COMPLETED
         )
 
         result_dict = result.to_dict()
@@ -257,14 +260,10 @@ class TestRollbackResult:
     def test_rollback_result_mutable_defaults_not_shared(self):
         """Test that mutable default fields are not shared between instances."""
         result1 = RollbackResult(
-            success=True,
-            snapshot_id="test-1",
-            status=RollbackStatus.COMPLETED
+            success=True, snapshot_id="test-1", status=RollbackStatus.COMPLETED
         )
         result2 = RollbackResult(
-            success=True,
-            snapshot_id="test-2",
-            status=RollbackStatus.COMPLETED
+            success=True, snapshot_id="test-2", status=RollbackStatus.COMPLETED
         )
 
         # Modify result1's lists
@@ -283,27 +282,21 @@ class TestRollbackResult:
         """Test creating results with matching success and status."""
         # Success case
         success_result = RollbackResult(
-            success=True,
-            snapshot_id="test-123",
-            status=RollbackStatus.COMPLETED
+            success=True, snapshot_id="test-123", status=RollbackStatus.COMPLETED
         )
         assert success_result.success is True
         assert success_result.status == RollbackStatus.COMPLETED
 
         # Failure case
         failure_result = RollbackResult(
-            success=False,
-            snapshot_id="test-456",
-            status=RollbackStatus.FAILED
+            success=False, snapshot_id="test-456", status=RollbackStatus.FAILED
         )
         assert failure_result.success is False
         assert failure_result.status == RollbackStatus.FAILED
 
         # Partial case
         partial_result = RollbackResult(
-            success=False,
-            snapshot_id="test-789",
-            status=RollbackStatus.PARTIAL
+            success=False, snapshot_id="test-789", status=RollbackStatus.PARTIAL
         )
         assert partial_result.success is False
         assert partial_result.status == RollbackStatus.PARTIAL
@@ -318,7 +311,7 @@ class TestRollbackTypesIntegration:
         snapshot = RollbackSnapshot(
             action={"type": "file_write", "path": "/tmp/test.txt"},
             context={"workflow": "test"},
-            file_snapshots={"/tmp/test.txt": "original"}
+            file_snapshots={"/tmp/test.txt": "original"},
         )
 
         # Perform rollback and create result
@@ -326,7 +319,7 @@ class TestRollbackTypesIntegration:
             success=True,
             snapshot_id=snapshot.id,
             status=RollbackStatus.COMPLETED,
-            reverted_items=["/tmp/test.txt"]
+            reverted_items=["/tmp/test.txt"],
         )
 
         # Verify they are linked
@@ -338,7 +331,7 @@ class TestRollbackTypesIntegration:
         snapshot = RollbackSnapshot(
             action={"type": "test"},
             context={"key": "value"},
-            file_snapshots={"file": "content"}
+            file_snapshots={"file": "content"},
         )
 
         snapshot_dict = snapshot.to_dict()
@@ -355,7 +348,7 @@ class TestRollbackTypesIntegration:
             snapshot_id="test-123",
             status=RollbackStatus.COMPLETED,
             reverted_items=["file1", "file2"],
-            metadata={"duration": 123}
+            metadata={"duration": 123},
         )
 
         result_dict = result.to_dict()

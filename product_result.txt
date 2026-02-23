@@ -1,1 +1,0 @@
-The result of 150 * 49 is 7350.

@@ -4,15 +4,17 @@ Provides the concrete graph-building logic that uses LangGraph StateGraph
 for parallel node execution. This is the only file in the executors package
 that imports from langgraph.
 """
-from typing import Any, Callable, Dict, Optional
+
+from collections.abc import Callable
+from typing import Annotated, Any
 
 from langgraph.graph import END, START, StateGraph
-from typing_extensions import Annotated, TypedDict
+from typing_extensions import TypedDict
 
 from temper_ai.stage.executors.base import ParallelRunner
 
 
-def _merge_dicts(left: Dict[str, Any], right: Dict[str, Any]) -> Dict[str, Any]:
+def _merge_dicts(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:
     """Merge two dicts, right wins on conflict."""
     merged = left.copy()
     merged.update(right)
@@ -21,11 +23,12 @@ def _merge_dicts(left: Dict[str, Any], right: Dict[str, Any]) -> Dict[str, Any]:
 
 class _ParallelState(TypedDict, total=False):
     """Internal state schema for parallel subgraphs."""
-    agent_outputs: Annotated[Dict[str, Any], _merge_dicts]
-    agent_statuses: Annotated[Dict[str, str], _merge_dicts]
-    agent_metrics: Annotated[Dict[str, Any], _merge_dicts]
-    errors: Annotated[Dict[str, str], _merge_dicts]
-    stage_input: Dict[str, Any]
+
+    agent_outputs: Annotated[dict[str, Any], _merge_dicts]
+    agent_statuses: Annotated[dict[str, str], _merge_dicts]
+    agent_metrics: Annotated[dict[str, Any], _merge_dicts]
+    errors: Annotated[dict[str, str], _merge_dicts]
+    stage_input: dict[str, Any]
 
 
 class LangGraphParallelRunner(ParallelRunner):
@@ -33,12 +36,12 @@ class LangGraphParallelRunner(ParallelRunner):
 
     def run_parallel(
         self,
-        nodes: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]],
-        initial_state: Dict[str, Any],
+        nodes: dict[str, Callable[[dict[str, Any]], dict[str, Any]]],
+        initial_state: dict[str, Any],
         *,
-        init_node: Optional[Callable[[Dict[str, Any]], Dict[str, Any]]] = None,
-        collect_node: Optional[Callable[[Dict[str, Any]], Dict[str, Any]]] = None,
-    ) -> Dict[str, Any]:
+        init_node: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
+        collect_node: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
         """Execute parallel tasks using LangGraph."""
         graph: StateGraph[Any] = StateGraph(_ParallelState)
 

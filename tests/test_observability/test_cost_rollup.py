@@ -3,6 +3,7 @@
 Covers cost aggregation with mixed agent statuses, emit helpers,
 structured logging, and edge cases.
 """
+
 from __future__ import annotations
 
 import logging
@@ -18,7 +19,6 @@ from temper_ai.observability.cost_rollup import (
     compute_stage_cost_summary,
     emit_cost_summary,
 )
-
 
 # ── AgentCostEntry dataclass ──
 
@@ -124,19 +124,25 @@ class TestComputeStageCostSummary:
         assert summary.total_duration_seconds == pytest.approx(10.0)
 
     def test_with_agent_statuses_string(self):
-        metrics = {"agent-1": {"cost_usd": 0.01, "tokens": 100, "duration_seconds": 1.0}}
+        metrics = {
+            "agent-1": {"cost_usd": 0.01, "tokens": 100, "duration_seconds": 1.0}
+        }
         statuses = {"agent-1": "completed"}
         summary = compute_stage_cost_summary("s1", metrics, agent_statuses=statuses)
         assert summary.agents[0].status == "completed"
 
     def test_with_agent_statuses_dict(self):
-        metrics = {"agent-1": {"cost_usd": 0.01, "tokens": 100, "duration_seconds": 1.0}}
+        metrics = {
+            "agent-1": {"cost_usd": 0.01, "tokens": 100, "duration_seconds": 1.0}
+        }
         statuses = {"agent-1": {"status": "failed", "error": "timeout"}}
         summary = compute_stage_cost_summary("s1", metrics, agent_statuses=statuses)
         assert summary.agents[0].status == "failed"
 
     def test_without_statuses_defaults_unknown(self):
-        metrics = {"agent-1": {"cost_usd": 0.01, "tokens": 100, "duration_seconds": 1.0}}
+        metrics = {
+            "agent-1": {"cost_usd": 0.01, "tokens": 100, "duration_seconds": 1.0}
+        }
         summary = compute_stage_cost_summary("s1", metrics)
         assert summary.agents[0].status == "unknown"
 

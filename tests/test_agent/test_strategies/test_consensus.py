@@ -19,19 +19,19 @@ from temper_ai.agent.strategies.consensus import ConsensusStrategy
 REALISTIC_METADATA_RESEARCH = {
     "sources": 12,
     "confidence_factors": ["literature_review", "expert_consensus"],
-    "evidence_quality": "high"
+    "evidence_quality": "high",
 }
 
 REALISTIC_METADATA_ANALYSIS = {
     "sample_size": 5000,
     "statistical_significance": 0.01,
-    "method": "quantitative_analysis"
+    "method": "quantitative_analysis",
 }
 
 REALISTIC_METADATA_SYNTHESIS = {
     "supporting_evidence": "strong",
     "risk_level": "low",
-    "implementation_difficulty": "moderate"
+    "implementation_difficulty": "moderate",
 }
 
 
@@ -42,9 +42,15 @@ class TestConsensusStrategy:
         """Test unanimous decision (all agents agree)."""
         strategy = ConsensusStrategy()
         outputs = [
-            AgentOutput("agent1", "Option A", "reason1", 0.9, REALISTIC_METADATA_RESEARCH),
-            AgentOutput("agent2", "Option A", "reason2", 0.8, REALISTIC_METADATA_ANALYSIS),
-            AgentOutput("agent3", "Option A", "reason3", 0.85, REALISTIC_METADATA_SYNTHESIS)
+            AgentOutput(
+                "agent1", "Option A", "reason1", 0.9, REALISTIC_METADATA_RESEARCH
+            ),
+            AgentOutput(
+                "agent2", "Option A", "reason2", 0.8, REALISTIC_METADATA_ANALYSIS
+            ),
+            AgentOutput(
+                "agent3", "Option A", "reason3", 0.85, REALISTIC_METADATA_SYNTHESIS
+            ),
         ]
 
         result = strategy.synthesize(outputs, {})
@@ -65,9 +71,15 @@ class TestConsensusStrategy:
         """Test majority decision (2/3 agents agree)."""
         strategy = ConsensusStrategy()
         outputs = [
-            AgentOutput("agent1", "Option A", "reason1", 0.9, REALISTIC_METADATA_RESEARCH),
-            AgentOutput("agent2", "Option A", "reason2", 0.8, REALISTIC_METADATA_ANALYSIS),
-            AgentOutput("agent3", "Option B", "reason3", 0.7, REALISTIC_METADATA_SYNTHESIS)
+            AgentOutput(
+                "agent1", "Option A", "reason1", 0.9, REALISTIC_METADATA_RESEARCH
+            ),
+            AgentOutput(
+                "agent2", "Option A", "reason2", 0.8, REALISTIC_METADATA_ANALYSIS
+            ),
+            AgentOutput(
+                "agent3", "Option B", "reason3", 0.7, REALISTIC_METADATA_SYNTHESIS
+            ),
         ]
 
         result = strategy.synthesize(outputs, {})
@@ -87,8 +99,12 @@ class TestConsensusStrategy:
         """Test tie-breaking using confidence."""
         strategy = ConsensusStrategy()
         outputs = [
-            AgentOutput("agent1", "Option A", "reason1", 0.9, REALISTIC_METADATA_RESEARCH),
-            AgentOutput("agent2", "Option B", "reason2", 0.7, REALISTIC_METADATA_ANALYSIS)
+            AgentOutput(
+                "agent1", "Option A", "reason1", 0.9, REALISTIC_METADATA_RESEARCH
+            ),
+            AgentOutput(
+                "agent2", "Option B", "reason2", 0.7, REALISTIC_METADATA_ANALYSIS
+            ),
         ]
 
         result = strategy.synthesize(outputs, {"tie_breaker": "confidence"})
@@ -103,7 +119,7 @@ class TestConsensusStrategy:
         strategy = ConsensusStrategy()
         outputs = [
             AgentOutput("agent1", "Option B", "reason1", 0.7, {}),
-            AgentOutput("agent2", "Option A", "reason2", 0.9, {})
+            AgentOutput("agent2", "Option A", "reason2", 0.9, {}),
         ]
 
         result = strategy.synthesize(outputs, {"tie_breaker": "first"})
@@ -118,7 +134,7 @@ class TestConsensusStrategy:
         outputs = [
             AgentOutput("agent1", "Option A", "reason1", 0.8, {}),
             AgentOutput("agent2", "Option B", "reason2", 0.8, {}),
-            AgentOutput("agent3", "Option C", "reason3", 0.8, {})
+            AgentOutput("agent3", "Option C", "reason3", 0.8, {}),
         ]
 
         result = strategy.synthesize(outputs, {})
@@ -138,7 +154,7 @@ class TestConsensusStrategy:
             AgentOutput("agent1", "Option A", "reason1", 0.9, {}),
             AgentOutput("agent2", "Option A", "reason2", 0.8, {}),
             AgentOutput("agent3", "Option B", "reason3", 0.7, {}),
-            AgentOutput("agent4", "Option C", "reason4", 0.7, {})
+            AgentOutput("agent4", "Option C", "reason4", 0.7, {}),
         ]
 
         # 2/4 = 50% support, below 75% threshold
@@ -157,7 +173,7 @@ class TestConsensusStrategy:
             AgentOutput("agent1", "Option A", "reason1", 0.9, {}),
             AgentOutput("agent2", "Option A", "reason2", 0.8, {}),
             AgentOutput("agent3", "Option A", "reason3", 0.85, {}),
-            AgentOutput("agent4", "Option B", "reason4", 0.7, {})
+            AgentOutput("agent4", "Option B", "reason4", 0.7, {}),
         ]
 
         # 3/4 = 75% support, meets 75% threshold
@@ -200,7 +216,7 @@ class TestConsensusStrategy:
         strategy = ConsensusStrategy()
         outputs = [
             AgentOutput("agent1", "Option A", "reason1", 0.9, {}),
-            AgentOutput("agent2", "Option A", "reason2", 0.8, {})
+            AgentOutput("agent2", "Option A", "reason2", 0.8, {}),
         ]
 
         # Should not raise
@@ -228,10 +244,12 @@ class TestConsensusStrategy:
         strategy = ConsensusStrategy()
         outputs = [
             AgentOutput("agent1", "Option A", "reason1", 0.9, {}),
-            AgentOutput("agent2", "Option B", "reason2", 0.8, {})
+            AgentOutput("agent2", "Option B", "reason2", 0.8, {}),
         ]
 
-        with pytest.raises(ValueError, match="tie_breaker must be 'confidence' or 'first'"):
+        with pytest.raises(
+            ValueError, match="tie_breaker must be 'confidence' or 'first'"
+        ):
             strategy.synthesize(outputs, {"tie_breaker": "invalid"})
 
     def test_capabilities(self):
@@ -271,7 +289,7 @@ class TestConsensusStrategy:
         outputs = [
             AgentOutput("agent1", "Option A", "reason1", 0.9, {}),
             AgentOutput("agent2", "Option A", "reason2", 0.8, {}),
-            AgentOutput("agent3", "Option B", "reason3", 0.7, {})
+            AgentOutput("agent3", "Option B", "reason3", 0.7, {}),
         ]
 
         result = strategy.synthesize(outputs, {})
@@ -290,7 +308,7 @@ class TestConsensusStrategy:
             AgentOutput("agent1", "Option A", "reason1", 0.9, {}),
             AgentOutput("agent2", "Option A", "reason2", 0.8, {}),
             AgentOutput("agent3", "Option B", "reason3", 0.7, {}),
-            AgentOutput("agent4", "Option C", "reason4", 0.6, {})
+            AgentOutput("agent4", "Option C", "reason4", 0.6, {}),
         ]
 
         result = strategy.synthesize(outputs, {})
@@ -308,7 +326,7 @@ class TestConsensusStrategy:
         outputs = [
             AgentOutput("agent1", "Option A", "reason1", 0.9, {}),
             AgentOutput("agent2", "Option A", "reason2", 0.8, {}),
-            AgentOutput("agent3", "Option B", "reason3", 0.7, {})
+            AgentOutput("agent3", "Option B", "reason3", 0.7, {}),
         ]
 
         result = strategy.synthesize(outputs, {})
@@ -326,7 +344,7 @@ class TestConsensusStrategy:
         outputs = [
             AgentOutput("agent1", 1, "reason1", 0.9, {}),
             AgentOutput("agent2", 1, "reason2", 0.8, {}),
-            AgentOutput("agent3", 2, "reason3", 0.7, {})
+            AgentOutput("agent3", 2, "reason3", 0.7, {}),
         ]
 
         result = strategy.synthesize(outputs, {})
@@ -361,7 +379,7 @@ class TestConsensusTieBreaking:
         strategy = ConsensusStrategy()
         outputs = [
             AgentOutput("agent1", "A", "r1", 0.95, {}),
-            AgentOutput("agent2", "B", "r2", 0.6, {})
+            AgentOutput("agent2", "B", "r2", 0.6, {}),
         ]
 
         result = strategy.synthesize(outputs, {"tie_breaker": "confidence"})
@@ -373,12 +391,13 @@ class TestConsensusTieBreaking:
         outputs = [
             AgentOutput("agent1", "A", "r1", 0.9, {}),
             AgentOutput("agent2", "B", "r2", 0.95, {}),  # Highest
-            AgentOutput("agent3", "C", "r3", 0.7, {})
+            AgentOutput("agent3", "C", "r3", 0.7, {}),
         ]
 
         result = strategy.synthesize(outputs, {"tie_breaker": "confidence"})
         # B should win due to highest confidence
         assert result.decision == "B"
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])

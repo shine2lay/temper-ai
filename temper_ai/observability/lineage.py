@@ -5,12 +5,13 @@ during stage synthesis. Results are stored as output_lineage on StageExecution.
 
 Uses SHA-256 first-16-hex-chars pattern (same as error_fingerprinting.py).
 """
+
 from __future__ import annotations
 
 import hashlib
 import logging
 from dataclasses import asdict, dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -39,8 +40,8 @@ class StageOutputLineage:
     """Aggregated lineage for a stage execution."""
 
     stage_name: str
-    entries: List[OutputLineageEntry]
-    synthesis_method: Optional[str] = None
+    entries: list[OutputLineageEntry]
+    synthesis_method: str | None = None
 
 
 def _hash_output(output: Any) -> str:
@@ -52,8 +53,8 @@ def _hash_output(output: Any) -> str:
 def _classify_contribution(
     agent_name: str,
     agent_status: str,
-    successful_agents: List[str],
-    synthesis_method: Optional[str],
+    successful_agents: list[str],
+    synthesis_method: str | None,
 ) -> str:
     """Classify an agent's contribution type based on status and synthesis method."""
     if agent_status != "success":
@@ -70,9 +71,9 @@ def _classify_contribution(
 
 def compute_output_lineage(
     stage_name: str,
-    agent_outputs: Dict[str, Any],
-    agent_statuses: Dict[str, Any],
-    synthesis_method: Optional[str] = None,
+    agent_outputs: dict[str, Any],
+    agent_statuses: dict[str, Any],
+    synthesis_method: str | None = None,
 ) -> StageOutputLineage:
     """Compute lineage from agent outputs and statuses.
 
@@ -86,25 +87,29 @@ def compute_output_lineage(
         StageOutputLineage with per-agent attribution
     """
     successful_agents = [
-        name for name, status in agent_statuses.items()
-        if status == "success"
+        name for name, status in agent_statuses.items() if status == "success"
     ]
 
-    entries: List[OutputLineageEntry] = []
+    entries: list[OutputLineageEntry] = []
     for agent_name in sorted(agent_statuses.keys()):
         status = agent_statuses.get(agent_name, "unknown")
         output = agent_outputs.get(agent_name)
         output_hash = _hash_output(output)
 
         contribution = _classify_contribution(
-            agent_name, status, successful_agents, synthesis_method,
+            agent_name,
+            status,
+            successful_agents,
+            synthesis_method,
         )
-        entries.append(OutputLineageEntry(
-            agent_name=agent_name,
-            contribution_type=contribution,
-            output_hash=output_hash,
-            status=status,
-        ))
+        entries.append(
+            OutputLineageEntry(
+                agent_name=agent_name,
+                contribution_type=contribution,
+                output_hash=output_hash,
+                status=status,
+            )
+        )
 
     return StageOutputLineage(
         stage_name=stage_name,
@@ -113,6 +118,6 @@ def compute_output_lineage(
     )
 
 
-def lineage_to_dict(lineage: StageOutputLineage) -> Dict[str, Any]:
+def lineage_to_dict(lineage: StageOutputLineage) -> dict[str, Any]:
     """Serialize StageOutputLineage to a JSON-compatible dict."""
     return asdict(lineage)

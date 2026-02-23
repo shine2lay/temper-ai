@@ -5,17 +5,18 @@ Revises: b7e3f1a2c456
 Create Date: 2026-02-15 22:00:00.000000
 
 """
-from typing import Sequence, Union
 
-from alembic import op
+from collections.abc import Sequence
+
 import sqlalchemy as sa
 
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "c4d8e2f1a789"
-down_revision: Union[str, None] = "b7e3f1a2c456"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "b7e3f1a2c456"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -45,7 +46,9 @@ def upgrade() -> None:
     # WI-4: Prompt Versioning
     op.add_column(
         "llm_calls",
-        sa.Column("prompt_template_hash", sa.String(16), nullable=True),  # noqa: duplicate
+        sa.Column(
+            "prompt_template_hash", sa.String(16), nullable=True
+        ),  # noqa: duplicate
     )
     op.add_column(
         "llm_calls",

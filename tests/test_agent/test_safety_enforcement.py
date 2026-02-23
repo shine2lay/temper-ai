@@ -3,11 +3,12 @@
 Tests verify that SafetyConfig fields (mode, require_approval_for_tools,
 max_execution_time_seconds) are actually enforced during tool execution.
 """
-import time
+
 from unittest.mock import MagicMock, patch
 
-from temper_ai.llm.providers import LLMResponse
 from temper_ai.agent.standard_agent import StandardAgent
+from temper_ai.llm.providers import LLMResponse
+from temper_ai.llm.service import LLMService
 from temper_ai.storage.schemas.agent_config import (
     AgentConfig,
     AgentConfigInner,
@@ -16,8 +17,6 @@ from temper_ai.storage.schemas.agent_config import (
     PromptConfig,
     SafetyConfig,
 )
-from temper_ai.llm.service import LLMService
-from temper_ai.llm._tool_execution import check_safety_mode as _check_safety_mode
 from temper_ai.tools.base import ToolResult
 
 
@@ -49,7 +48,7 @@ def _make_config(safety: SafetyConfig = None) -> AgentConfig:
 
 def _make_agent(safety: SafetyConfig = None) -> StandardAgent:
     """Create a StandardAgent with mocked dependencies and custom safety."""
-    with patch('temper_ai.agent.base_agent.ToolRegistry'):
+    with patch("temper_ai.agent.base_agent.ToolRegistry"):
         agent = StandardAgent(_make_config(safety))
 
     # Build a mock tool with all methods LLMService needs for schema building
@@ -58,9 +57,7 @@ def _make_agent(safety: SafetyConfig = None) -> StandardAgent:
     mock_tool.description = "Execute commands"
     mock_tool.get_parameters_schema.return_value = {"type": "object", "properties": {}}
     mock_tool.get_result_schema.return_value = None
-    mock_tool.execute.return_value = ToolResult(
-        success=True, result="tool output"
-    )
+    mock_tool.execute.return_value = ToolResult(success=True, result="tool output")
     agent.tool_registry.get = lambda name: mock_tool if name == "bash" else None
     agent.tool_registry.get_all_tools = MagicMock(return_value={"bash": mock_tool})
 
@@ -89,7 +86,10 @@ def _make_llm_service_and_execute_single(
     mock_executor.execute.return_value = ToolResult(success=True, result="tool output")
 
     return execute_single_tool(
-        tool_call, mock_executor, None, safety,
+        tool_call,
+        mock_executor,
+        None,
+        safety,
     )
 
 
@@ -124,7 +124,9 @@ class TestRequireApprovalMode:
         mock_executor = MagicMock()
         execute_single_tool(
             {"name": "bash", "parameters": {"command": "rm -rf /"}},
-            mock_executor, None, SafetyConfig(mode="require_approval"),
+            mock_executor,
+            None,
+            SafetyConfig(mode="require_approval"),
         )
         mock_executor.execute.assert_not_called()
 
@@ -150,7 +152,9 @@ class TestDryRunMode:
         mock_executor = MagicMock()
         execute_single_tool(
             {"name": "bash", "parameters": {"command": "rm -rf /"}},
-            mock_executor, None, SafetyConfig(mode="dry_run"),
+            mock_executor,
+            None,
+            SafetyConfig(mode="dry_run"),
         )
         mock_executor.execute.assert_not_called()
 
@@ -191,8 +195,11 @@ class TestRequireApprovalForTools:
         mock_executor = MagicMock()
         result = execute_single_tool(
             {"name": "bash", "parameters": {}},
-            mock_executor, None,
-            SafetyConfig(mode="execute", require_approval_for_tools=["bash", "calculator"]),
+            mock_executor,
+            None,
+            SafetyConfig(
+                mode="execute", require_approval_for_tools=["bash", "calculator"]
+            ),
         )
         assert result["success"] is False
         mock_executor.execute.assert_not_called()
@@ -204,7 +211,8 @@ class TestRequireApprovalForTools:
         mock_executor = MagicMock()
         execute_single_tool(
             {"name": "bash", "parameters": {}},
-            mock_executor, None,
+            mock_executor,
+            None,
             SafetyConfig(mode="execute", require_approval_for_tools=["bash"]),
         )
         mock_executor.execute.assert_not_called()
@@ -236,10 +244,9 @@ class TestMaxExecutionTimeEnforcement:
 
     def test_execution_time_limit_triggers(self):
         """Execute loop stops when wall-clock time exceeds limit."""
-        agent = _make_agent(SafetyConfig(
-            max_execution_time_seconds=1,
-            max_tool_calls_per_execution=100
-        ))
+        agent = _make_agent(
+            SafetyConfig(max_execution_time_seconds=1, max_tool_calls_per_execution=100)
+        )
 
         # Mock LLM to always return tool calls (never completes)
         mock_response = LLMResponse(
@@ -262,15 +269,20 @@ class TestMaxExecutionTimeEnforcement:
             # After first iteration (~4 calls), time exceeds limit
             return base_time + (call_count[0] * 0.5)
 
-        with patch('temper_ai.agent.base_agent.time') as mock_base_time, \
-             patch('temper_ai.llm.service.time') as mock_service_time:
+        with (
+            patch("temper_ai.agent.base_agent.time") as mock_base_time,
+            patch("temper_ai.llm.service.time") as mock_service_time,
+        ):
             mock_base_time.time = mock_time
             mock_service_time.time = mock_time
 
             response = agent.execute({"query": "test"})
 
         assert response.error is not None
-        assert "time limit exceeded" in response.error.lower() or "execution time" in response.error.lower()
+        assert (
+            "time limit exceeded" in response.error.lower()
+            or "execution time" in response.error.lower()
+        )
 
     def test_execution_within_time_limit_completes(self):
         """Execute completes normally when within time limit."""
@@ -306,7 +318,8 @@ class TestSafetyModeCannotBeBypassed:
                 {"name": "bash", "parameters": {"command": "ls"}},
                 {"name": "bash", "parameters": {"command": "pwd"}},
             ],
-            MagicMock(), None,
+            MagicMock(),
+            None,
             SafetyConfig(mode="require_approval"),
         )
         assert all(r["success"] is False for r in results)
@@ -323,7 +336,8 @@ class TestSafetyModeCannotBeBypassed:
                 {"name": "bash", "parameters": {"command": "ls"}},
                 {"name": "bash", "parameters": {"command": "pwd"}},
             ],
-            MagicMock(), None,
+            MagicMock(),
+            None,
             SafetyConfig(mode="dry_run"),
         )
         assert all(r["success"] is True for r in results)
@@ -347,7 +361,10 @@ class TestSafetyModeCannotBeBypassed:
         mock_tool = MagicMock()
         mock_tool.name = "bash"
         mock_tool.description = "Execute commands"
-        mock_tool.get_parameters_schema.return_value = {"type": "object", "properties": {}}
+        mock_tool.get_parameters_schema.return_value = {
+            "type": "object",
+            "properties": {},
+        }
         mock_tool.get_result_schema.return_value = None
         agent.tool_registry.get_all_tools = MagicMock(return_value={"bash": mock_tool})
 

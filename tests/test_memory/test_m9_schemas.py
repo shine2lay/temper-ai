@@ -1,15 +1,16 @@
 """Tests for M9 memory schemas: CrossPollinationConfig and updated MemoryScope."""
+
 import pytest
 from pydantic import ValidationError
 
 from temper_ai.memory._m9_schemas import (
-    CrossPollinationConfig,
-    DEFAULT_RETRIEVAL_K_POLLINATION,
     DEFAULT_RELEVANCE_THRESHOLD_POLLINATION,
+    DEFAULT_RETRIEVAL_K_POLLINATION,
     MAX_PUBLISHED_ENTRIES,
+    CrossPollinationConfig,
 )
 from temper_ai.memory._schemas import MemoryScope
-from temper_ai.memory.constants import DEFAULT_TENANT_ID, SCOPE_SEPARATOR
+from temper_ai.memory.constants import SCOPE_SEPARATOR
 
 
 class TestCrossPollinationConfig:
@@ -105,9 +106,7 @@ class TestMemoryScopeM9:
         assert scope.scope_key == "t:ns:pid-001"
 
     def test_scope_key_separator_count(self):
-        scope = MemoryScope(
-            tenant_id="a", workflow_name="b", agent_id="c"
-        )
+        scope = MemoryScope(tenant_id="a", workflow_name="b", agent_id="c")
         parts = scope.scope_key.split(SCOPE_SEPARATOR)
         assert len(parts) == 3
 
@@ -118,6 +117,8 @@ class TestMemoryScopeM9:
 
     def test_backward_compat_no_agent_id(self):
         """Existing code without agent_id still works correctly."""
-        scope = MemoryScope(tenant_id="tenant1", workflow_name="wf1", agent_name="agent1")
+        scope = MemoryScope(
+            tenant_id="tenant1", workflow_name="wf1", agent_name="agent1"
+        )
         assert scope.scope_key == "tenant1:wf1:agent1"
         assert scope.agent_id is None

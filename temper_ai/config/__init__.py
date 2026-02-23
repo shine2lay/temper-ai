@@ -17,7 +17,7 @@ from temper_ai.config.settings import TemperSettings
 
 __all__ = ["TemperSettings", "get_settings", "load_settings", "reset_settings"]
 
-_settings: Optional[TemperSettings] = None
+_settings: TemperSettings | None = None
 
 
 def load_settings(**overrides: Any) -> TemperSettings:

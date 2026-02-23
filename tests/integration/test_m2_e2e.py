@@ -21,27 +21,26 @@ This file contains tests at multiple levels:
 1. Component-level tests (work now with completed components)
 2. Full workflow tests (require m2-05 + m2-06, marked as pending)
 """
+
 from importlib.util import find_spec
 from pathlib import Path
 
 import pytest
 from sqlmodel import select
 
-from temper_ai.agent.utils.agent_factory import AgentFactory
-
 # Agent components (should be ready after m2-04 + m2-04b)
 from temper_ai.agent.base_agent import AgentResponse, ExecutionContext
 from temper_ai.agent.standard_agent import StandardAgent
+from temper_ai.agent.utils.agent_factory import AgentFactory
 
 # Check for optional engine registry (m2.5-03)
-ENGINE_REGISTRY_READY = find_spec("temper_ai.workflow.engine_registry") is not None
+ENGINE_REGISTRY_READY = find_spec("temper_ai.workflow.engines") is not None
 
 # Check for observability hooks (m2-06)
 TRACKER_READY = find_spec("temper_ai.observability.tracker") is not None
 
 FULL_WORKFLOW_READY = ENGINE_REGISTRY_READY and TRACKER_READY
 
-from temper_ai.workflow.config_loader import ConfigLoader
 from temper_ai.observability.console import StreamingVisualizer, WorkflowVisualizer
 from temper_ai.observability.database import get_session, init_database
 from temper_ai.observability.models import (
@@ -53,6 +52,8 @@ from temper_ai.tools.calculator import Calculator
 from temper_ai.tools.file_writer import FileWriter
 from temper_ai.tools.registry import ToolRegistry
 from temper_ai.tools.web_scraper import WebScraper
+from temper_ai.workflow.config_loader import ConfigLoader
+from temper_ai.workflow.engine_registry import EngineRegistry
 
 
 @pytest.fixture
@@ -86,6 +87,7 @@ def tracker(db_fixture):
     """Create execution tracker (if available)."""
     if TRACKER_READY:
         from temper_ai.observability.tracker import ExecutionTracker
+
         return ExecutionTracker()
     return None
 
@@ -94,6 +96,7 @@ def tracker(db_fixture):
 def ollama_available():
     """Check if Ollama is available."""
     import httpx
+
     try:
         response = httpx.get("http://localhost:11434/api/tags", timeout=2.0)
         return response.status_code == 200
@@ -104,6 +107,7 @@ def ollama_available():
 # ============================================================================
 # COMPONENT-LEVEL TESTS (Work with completed M2 components)
 # ============================================================================
+
 
 def test_config_loading(config_loader):
     """
@@ -150,15 +154,16 @@ def test_agent_factory_creation(config_loader, tool_registry):
 
     Validates m2-04b agent factory implementation.
     """
+    from unittest.mock import patch
+
     from temper_ai.storage.schemas.agent_config import AgentConfig
 
     # Load agent config
     agent_config_dict = config_loader.load_agent("simple_researcher")
     agent_config = AgentConfig(**agent_config_dict)
 
-    # Create agent using factory
-    from unittest.mock import patch
-    with patch.object(ToolRegistry, 'auto_discover'):
+    # Create agent using factory, bypassing tool loading since we just test factory wiring
+    with patch("temper_ai.agent.base_agent.load_tools_from_config"):
         agent = AgentFactory.create(agent_config)
 
         assert isinstance(agent, StandardAgent)
@@ -177,29 +182,31 @@ def test_agent_execution_mocked(config_loader):
     """
     from unittest.mock import Mock, patch
 
-    from temper_ai.agent.llm_providers import LLMResponse
+    from temper_ai.llm.service import LLMRunResult
     from temper_ai.storage.schemas.agent_config import AgentConfig
 
     # Load agent config
     agent_config_dict = config_loader.load_agent("simple_researcher")
     agent_config = AgentConfig(**agent_config_dict)
 
-    # Create agent with mocked components
-    with patch('temper_ai.agent.base_agent.ToolRegistry') as mock_registry:
-        mock_registry.return_value.list_tools.return_value = []
-
+    # Create agent, bypassing tool loading since we test with mocked LLM
+    with patch("temper_ai.agent.base_agent.load_tools_from_config"):
         agent = StandardAgent(agent_config)
 
-        # Mock LLM response
-        mock_response = LLMResponse(
-            content="<answer>Python typing helps catch bugs early and improves code maintainability.</answer>",
-            model="llama3.2:3b",
-            provider="ollama",
-            total_tokens=50,
+        # Mock LLMService.run() which is what the agent actually calls
+        mock_result = LLMRunResult(
+            output="Python typing helps catch bugs early and improves code maintainability.",
+            reasoning=None,
+            tool_calls=[],
+            tokens=50,
+            cost=0.001,
+            iterations=1,
+            user_message="What are benefits of Python typing?",
+            assistant_message="Python typing helps catch bugs early and improves code maintainability.",
         )
 
-        agent.llm = Mock()
-        agent.llm.complete.return_value = mock_response
+        agent.llm_service = Mock()
+        agent.llm_service.run.return_value = mock_result
 
         # Execute agent
         response = agent.execute({"input": "What are benefits of Python typing?"})
@@ -228,18 +235,14 @@ def test_agent_execution_real_ollama(config_loader, ollama_available):
     agent_config_dict = config_loader.load_agent("simple_researcher")
     agent_config = AgentConfig(**agent_config_dict)
 
-    # Create agent
+    # Create agent, bypassing tool loading since we test LLM execution
     from unittest.mock import patch
-    with patch('temper_ai.agent.base_agent.ToolRegistry') as mock_registry:
-        mock_registry.return_value.list_tools.return_value = []
-        mock_registry.return_value.get.return_value = None
 
+    with patch("temper_ai.agent.base_agent.load_tools_from_config"):
         agent = StandardAgent(agent_config)
 
         # Execute with real Ollama
-        response = agent.execute({
-            "input": "In one sentence, what is Python?"
-        })
+        response = agent.execute({"input": "In one sentence, what is Python?"})
 
         # Verify response
         assert isinstance(response, AgentResponse)
@@ -339,7 +342,7 @@ def test_console_visualization(db_fixture):
         stage_execution_id="stage-viz-001",
         agent_name="test_agent",
         agent_config_snapshot={},
-        status="success",
+        status="completed",
         duration_seconds=4.5,
         total_tokens=100,
         estimated_cost_usd=0.002,
@@ -377,7 +380,9 @@ def test_console_visualization(db_fixture):
         visualizer.display_execution(workflow_exec)
 
         # Verify visualization produced output
-        assert len(visualizer.console.file.getvalue()) > 0, "Expected non-empty visualization output"
+        assert (
+            len(visualizer.console.file.getvalue()) > 0
+        ), "Expected non-empty visualization output"
 
     print("✅ CONSOLE VISUALIZATION TEST PASSED")
 
@@ -386,14 +391,14 @@ def test_console_visualization(db_fixture):
 # FULL WORKFLOW TESTS (Require m2-05 LangGraph + m2-06 Obs Hooks)
 # ============================================================================
 
-@pytest.mark.skipif(not FULL_WORKFLOW_READY, reason="Engine registry (m2.5-03) or observability hooks (m2-06) not ready")
+
+@pytest.mark.skipif(
+    not FULL_WORKFLOW_READY,
+    reason="Engine registry (m2.5-03) or observability hooks (m2-06) not ready",
+)
 @pytest.mark.integration
 def test_m2_full_workflow(
-    db_fixture,
-    config_loader,
-    tool_registry,
-    tracker,
-    ollama_available
+    db_fixture, config_loader, tool_registry, tracker, ollama_available
 ):
     """
     Test complete M2 workflow execution.
@@ -420,16 +425,18 @@ def test_m2_full_workflow(
         workflow_name="simple_research",
         workflow_config=workflow_config,
         trigger_type="test",
-        environment="test"
+        environment="test",
     ) as workflow_id:
 
         # Execute the compiled workflow
-        result = compiled.invoke({
-            "topic": "Benefits of Python typing",
-            "depth": "surface",
-            "tracker": tracker,
-            "workflow_id": workflow_id
-        })
+        result = compiled.invoke(
+            {
+                "topic": "Benefits of Python typing",
+                "depth": "surface",
+                "tracker": tracker,
+                "workflow_id": workflow_id,
+            }
+        )
 
         assert result is not None
         # Check that workflow completed and produced stage outputs
@@ -499,14 +506,13 @@ def test_m2_full_workflow(
         print(f"   Tool calls: {workflow_exec.total_tool_calls}")
 
 
-@pytest.mark.skipif(not FULL_WORKFLOW_READY, reason="Engine registry (m2.5-03) or observability hooks (m2-06) not ready")
+@pytest.mark.skipif(
+    not FULL_WORKFLOW_READY,
+    reason="Engine registry (m2.5-03) or observability hooks (m2-06) not ready",
+)
 @pytest.mark.integration
 def test_agent_with_calculator(
-    db_fixture,
-    config_loader,
-    tool_registry,
-    tracker,
-    ollama_available
+    db_fixture, config_loader, tool_registry, tracker, ollama_available
 ):
     """
     Test agent using Calculator tool.
@@ -516,65 +522,79 @@ def test_agent_with_calculator(
     if not ollama_available:
         pytest.skip("Ollama not running")
 
+    from temper_ai.tools.executor import ToolExecutor
+
     # Load agent config
     agent_config_dict = config_loader.load_agent("calculator_agent")
 
     # Parse into AgentConfig schema
     from temper_ai.storage.schemas.agent_config import AgentConfig
+
     agent_config = AgentConfig.model_validate(agent_config_dict)
 
     # Create agent
     agent = AgentFactory.create(agent_config)
 
+    # Create tool executor for the agent's tool registry
+    tool_exec = ToolExecutor(registry=tool_registry)
+
     # Execute with tool use prompt
     with tracker.track_workflow(
         "calculator_test",
         {"workflow": {"name": "calculator_test", "version": "1.0"}},
-        trigger_type="test"
+        trigger_type="test",
     ) as workflow_id:
 
         with tracker.track_stage(
-            "calculate",
-            {"stage": {"name": "calculate", "version": "1.0"}},
-            workflow_id
+            "calculate", {"stage": {"name": "calculate", "version": "1.0"}}, workflow_id
         ) as stage_id:
 
             with tracker.track_agent(
                 "calculator_agent",
                 agent_config_dict,
                 stage_id,
-                {"query": "Calculate: 2 + 2 * 3"}
+                {"query": "Calculate: 2 + 2 * 3"},
             ) as agent_id:
 
                 context = ExecutionContext(
-                    workflow_id=workflow_id,
-                    stage_id=stage_id,
-                    agent_id=agent_id
+                    workflow_id=workflow_id, stage_id=stage_id, agent_id=agent_id
                 )
 
                 response = agent.execute(
-                    input_data={"query": "Calculate: 2 + 2 * 3"},
-                    context=context
+                    input_data={
+                        "query": "Calculate: 2 + 2 * 3",
+                        "tool_executor": tool_exec,
+                    },
+                    context=context,
                 )
 
                 assert response.output is not None
                 assert len(response.tool_calls) > 0
 
                 # Verify Calculator tool was used
-                calculator_calls = [tc for tc in response.tool_calls if tc["name"] == "Calculator"]
-                assert len(calculator_calls) > 0, "Calculator tool should have been called"
+                calculator_calls = [
+                    tc for tc in response.tool_calls if tc["name"] == "Calculator"
+                ]
+                assert (
+                    len(calculator_calls) > 0
+                ), "Calculator tool should have been called"
 
                 # Verify the requested calculation was performed
                 # (LLM might make additional calculations, but should at least do the requested one)
                 requested_expr = "2 + 2 * 3"
                 found_requested = any(
-                    requested_expr in str(tc.get("parameters", {}).get("expression", ""))
+                    requested_expr
+                    in str(tc.get("parameters", {}).get("expression", ""))
                     for tc in calculator_calls
                 )
-                assert found_requested, f"Calculator should have been called with expression '{requested_expr}'"
+                assert (
+                    found_requested
+                ), f"Calculator should have been called with expression '{requested_expr}'"
 
                 # Verify at least one successful calculation
-                assert any(tc.get("success") for tc in calculator_calls), "At least one calculation should succeed"
+                assert any(
+                    tc.get("success") for tc in calculator_calls
+                ), "At least one calculation should succeed"
 
     # TODO: Tool execution tracking not implemented yet in StandardAgent
     # # Verify tool execution tracked
@@ -590,14 +610,13 @@ def test_agent_with_calculator(
     print("✅ CALCULATOR TOOL TEST PASSED")
 
 
-@pytest.mark.skipif(not FULL_WORKFLOW_READY, reason="Engine registry (m2.5-03) or observability hooks (m2-06) not ready")
+@pytest.mark.skipif(
+    not FULL_WORKFLOW_READY,
+    reason="Engine registry (m2.5-03) or observability hooks (m2-06) not ready",
+)
 @pytest.mark.integration
 def test_console_streaming(
-    db_fixture,
-    config_loader,
-    tool_registry,
-    tracker,
-    ollama_available
+    db_fixture, config_loader, tool_registry, tracker, ollama_available
 ):
     """
     Test console streaming visualization with full workflow.
@@ -618,9 +637,7 @@ def test_console_streaming(
 
     # Execute with streaming visualizer
     with tracker.track_workflow(
-        "simple_research",
-        workflow_config,
-        trigger_type="test"
+        "simple_research", workflow_config, trigger_type="test"
     ) as workflow_id:
 
         # Create visualizer with workflow_id
@@ -628,13 +645,15 @@ def test_console_streaming(
         visualizer.start()
 
         try:
-            result = compiled.invoke({
-                "topic": "Python async/await",
-                "depth": "surface",
-                "tracker": tracker,
-                "workflow_id": workflow_id,
-                "visualizer": visualizer
-            })
+            result = compiled.invoke(
+                {
+                    "topic": "Python async/await",
+                    "depth": "surface",
+                    "tracker": tracker,
+                    "workflow_id": workflow_id,
+                    "visualizer": visualizer,
+                }
+            )
 
             assert result is not None
 

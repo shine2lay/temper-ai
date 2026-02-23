@@ -9,18 +9,18 @@ Integrates A/B testing framework with observability system to:
 
 import logging
 from datetime import datetime
-from typing import Any, ContextManager, Dict, List, Optional, Tuple
+from typing import Any, ContextManager
 
 from sqlalchemy import and_, text
 from sqlmodel import Session, select
 
-from temper_ai.storage.database import get_session
-from temper_ai.storage.database.models import (
-    WorkflowExecution,
-)
 from temper_ai.experimentation.models import (
     ExecutionStatus,
     VariantAssignment,
+)
+from temper_ai.storage.database import get_session
+from temper_ai.storage.database.models import (
+    WorkflowExecution,
 )
 
 logger = logging.getLogger(__name__)
@@ -41,7 +41,7 @@ class ExperimentMetricsCollector:
         >>> metrics = collector.aggregate_metrics_by_variant("exp-001")
     """
 
-    def __init__(self, session: Optional[Session] = None):
+    def __init__(self, session: Session | None = None):
         """
         Initialize metrics collector.
 
@@ -52,10 +52,8 @@ class ExperimentMetricsCollector:
         self._session_provided = session is not None
 
     def collect_assignments(
-        self,
-        experiment_id: str,
-        status: Optional[str] = None
-    ) -> List[VariantAssignment]:
+        self, experiment_id: str, status: str | None = None
+    ) -> list[VariantAssignment]:
         """
         Collect variant assignments from workflow executions.
 
@@ -73,11 +71,15 @@ class ExperimentMetricsCollector:
             List of VariantAssignment objects with metrics populated
         """
         with self._get_session() as session:
-            # Use json_extract for database-side filtering (SQLite 3.9+)
+            # Use json_extract for database-side filtering
             # This avoids fetching all workflows and filtering in Python
-            query = select(WorkflowExecution).where(
-                text("json_extract(extra_metadata, '$.experiment_id') = :exp_id")
-            ).params(exp_id=experiment_id)
+            query = (
+                select(WorkflowExecution)
+                .where(
+                    text("json_extract(extra_metadata, '$.experiment_id') = :exp_id")
+                )
+                .params(exp_id=experiment_id)
+            )
 
             if status:
                 query = query.where(WorkflowExecution.status == status)
@@ -90,7 +92,9 @@ class ExperimentMetricsCollector:
                 variant_id = metadata.get("variant_id")
 
                 if not variant_id:
-                    logger.warning(f"Workflow {workflow.id} has experiment_id but no variant_id")
+                    logger.warning(
+                        f"Workflow {workflow.id} has experiment_id but no variant_id"
+                    )
                     continue
 
                 # Extract metrics from workflow execution
@@ -119,9 +123,8 @@ class ExperimentMetricsCollector:
             return assignments
 
     def _extract_metrics_from_workflow(
-        self,
-        workflow: WorkflowExecution
-    ) -> Dict[str, float]:
+        self, workflow: WorkflowExecution
+    ) -> dict[str, float]:
         """
         Extract metrics from workflow execution record.
 
@@ -172,10 +175,8 @@ class ExperimentMetricsCollector:
         return status_map.get(workflow_status, ExecutionStatus.PENDING)
 
     def aggregate_metrics_by_variant(
-        self,
-        experiment_id: str,
-        assignments: Optional[List[VariantAssignment]] = None
-    ) -> Dict[str, Dict[str, Any]]:
+        self, experiment_id: str, assignments: list[VariantAssignment] | None = None
+    ) -> dict[str, dict[str, Any]]:
         """
         Aggregate metrics grouped by variant.
 
@@ -201,7 +202,7 @@ class ExperimentMetricsCollector:
             assignments = self.collect_assignments(experiment_id)
 
         # Group by variant
-        variant_data: Dict[str, List[VariantAssignment]] = {}
+        variant_data: dict[str, list[VariantAssignment]] = {}
         for assignment in assignments:
             if assignment.variant_id not in variant_data:
                 variant_data[assignment.variant_id] = []
@@ -216,11 +217,13 @@ class ExperimentMetricsCollector:
 
     @staticmethod
     def _compute_metric_stats(
-        assignments: List[VariantAssignment], metric_name: str,
-    ) -> Dict[str, float]:
+        assignments: list[VariantAssignment],
+        metric_name: str,
+    ) -> dict[str, float]:
         """Compute avg/sum/min/max for a single metric across assignments."""
         values = [
-            a.metrics[metric_name] for a in assignments
+            a.metrics[metric_name]
+            for a in assignments
             if a.metrics and metric_name in a.metrics
         ]
         if not values:
@@ -233,20 +236,23 @@ class ExperimentMetricsCollector:
         }
 
     def _aggregate_assignments(
-        self,
-        assignments: List[VariantAssignment]
-    ) -> Dict[str, Any]:
+        self, assignments: list[VariantAssignment]
+    ) -> dict[str, Any]:
         """Aggregate metrics from list of assignments."""
         total = len(assignments)
-        successful = sum(1 for a in assignments if a.execution_status == ExecutionStatus.COMPLETED)
-        failed = sum(1 for a in assignments if a.execution_status == ExecutionStatus.FAILED)
+        successful = sum(
+            1 for a in assignments if a.execution_status == ExecutionStatus.COMPLETED
+        )
+        failed = sum(
+            1 for a in assignments if a.execution_status == ExecutionStatus.FAILED
+        )
 
         all_metric_names: set[str] = set()
         for assignment in assignments:
             if assignment.metrics:
                 all_metric_names.update(assignment.metrics.keys())
 
-        aggregated: Dict[str, Any] = {
+        aggregated: dict[str, Any] = {
             "count": total,
             "successful": successful,
             "failed": failed,
@@ -256,10 +262,7 @@ class ExperimentMetricsCollector:
             aggregated.update(self._compute_metric_stats(assignments, metric_name))
         return aggregated
 
-    def get_experiment_summary(
-        self,
-        experiment_id: str
-    ) -> Dict[str, Any]:
+    def get_experiment_summary(self, experiment_id: str) -> dict[str, Any]:
         """
         Generate comprehensive experiment summary.
 
@@ -271,12 +274,20 @@ class ExperimentMetricsCollector:
         """
         assignments = self.collect_assignments(experiment_id)
         # Pass pre-fetched assignments to avoid redundant DB query
-        variant_metrics = self.aggregate_metrics_by_variant(experiment_id, assignments=assignments)
+        variant_metrics = self.aggregate_metrics_by_variant(
+            experiment_id, assignments=assignments
+        )
 
         total_executions = len(assignments)
-        completed = sum(1 for a in assignments if a.execution_status == ExecutionStatus.COMPLETED)
-        failed = sum(1 for a in assignments if a.execution_status == ExecutionStatus.FAILED)
-        running = sum(1 for a in assignments if a.execution_status == ExecutionStatus.RUNNING)
+        completed = sum(
+            1 for a in assignments if a.execution_status == ExecutionStatus.COMPLETED
+        )
+        failed = sum(
+            1 for a in assignments if a.execution_status == ExecutionStatus.FAILED
+        )
+        running = sum(
+            1 for a in assignments if a.execution_status == ExecutionStatus.RUNNING
+        )
 
         return {
             "experiment_id": experiment_id,
@@ -284,18 +295,17 @@ class ExperimentMetricsCollector:
             "completed_executions": completed,
             "failed_executions": failed,
             "running_executions": running,
-            "completion_rate": completed / total_executions if total_executions > 0 else 0.0,
+            "completion_rate": (
+                completed / total_executions if total_executions > 0 else 0.0
+            ),
             "variant_count": len(variant_metrics),
             "variants": variant_metrics,
             "collected_at": datetime.now().isoformat(),
         }
 
     def query_workflows_by_variant(
-        self,
-        experiment_id: str,
-        variant_id: str,
-        limit: Optional[int] = None
-    ) -> List[WorkflowExecution]:
+        self, experiment_id: str, variant_id: str, limit: int | None = None
+    ) -> list[WorkflowExecution]:
         """
         Query workflow executions for specific variant.
 
@@ -308,13 +318,19 @@ class ExperimentMetricsCollector:
             List of WorkflowExecution records
         """
         with self._get_session() as session:
-            # Use json_extract for database-side filtering
-            query = select(WorkflowExecution).where(
-                and_(
-                    text("json_extract(extra_metadata, '$.experiment_id') = :exp_id"),
-                    text("json_extract(extra_metadata, '$.variant_id') = :var_id"),
+            # Use JSON extraction for database-side filtering
+            query = (
+                select(WorkflowExecution)
+                .where(
+                    and_(
+                        text(
+                            "json_extract(extra_metadata, '$.experiment_id') = :exp_id"
+                        ),
+                        text("json_extract(extra_metadata, '$.variant_id') = :var_id"),
+                    )
                 )
-            ).params(exp_id=experiment_id, var_id=variant_id)
+                .params(exp_id=experiment_id, var_id=variant_id)
+            )
 
             if limit:
                 query = query.limit(limit)
@@ -322,11 +338,8 @@ class ExperimentMetricsCollector:
             return list(session.exec(query).all())
 
     def get_time_series_metrics(
-        self,
-        experiment_id: str,
-        metric_name: str,
-        _interval: str = "hour"
-    ) -> Dict[str, List[Tuple[datetime, float]]]:
+        self, experiment_id: str, metric_name: str, _interval: str = "hour"
+    ) -> dict[str, list[tuple[datetime, float]]]:
         """
         Get time-series metrics for experiment.
 
@@ -341,7 +354,7 @@ class ExperimentMetricsCollector:
         assignments = self.collect_assignments(experiment_id, status="completed")
 
         # Group by variant
-        variant_data: Dict[str, List[VariantAssignment]] = {}
+        variant_data: dict[str, list[VariantAssignment]] = {}
         for assignment in assignments:
             if assignment.variant_id not in variant_data:
                 variant_data[assignment.variant_id] = []
@@ -353,7 +366,7 @@ class ExperimentMetricsCollector:
             # Sort by completion time
             sorted_assignments = sorted(
                 variant_assignments,
-                key=lambda a: a.execution_completed_at or datetime.min
+                key=lambda a: a.execution_completed_at or datetime.min,
             )
 
             # Extract (timestamp, metric_value) pairs
@@ -373,8 +386,11 @@ class ExperimentMetricsCollector:
         if self._session_provided:
             # Return a no-op context manager that yields the provided session
             from contextlib import nullcontext
+
             if self.session is None:
-                raise ValueError("Session must be provided when _session_provided is True")
+                raise ValueError(
+                    "Session must be provided when _session_provided is True"
+                )
             return nullcontext(self.session)
         else:
             # Return new session context manager

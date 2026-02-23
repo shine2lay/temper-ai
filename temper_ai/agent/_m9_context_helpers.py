@@ -3,10 +3,11 @@
 Free functions called by StandardAgent to inject persistent agent context
 into prompts. Follows the same pattern as _r0_pipeline_helpers.py.
 """
+
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -18,8 +19,11 @@ EXECUTION_MODE_SECTION = "\n\n## Execution Mode\n"
 GOALS_SECTION = "\n\n## Active Goals\n"
 CROSS_POLLINATION_SECTION = "\n\n## Insights from Other Agents\n"
 
+_DEFAULT_RELEVANCE_LIMIT = 5
+_DEFAULT_RELEVANCE_THRESHOLD = 0.7
 
-def detect_execution_mode(context: Dict[str, Any]) -> str:
+
+def detect_execution_mode(context: dict[str, Any]) -> str:
     """Detect whether agent is running in 'desk' (standalone) or 'project' (workflow) mode.
 
     Returns 'project' if workflow_id is present in context, else 'desk'.
@@ -32,13 +36,21 @@ def detect_execution_mode(context: Dict[str, Any]) -> str:
 def inject_execution_mode_context(template: str, mode: str) -> str:
     """Append execution mode section to prompt template."""
     if mode == PROJECT_MODE:
-        return template + EXECUTION_MODE_SECTION + (
-            "You are executing as part of a workflow pipeline. "
-            "Focus on your assigned stage objectives."
+        return (
+            template
+            + EXECUTION_MODE_SECTION
+            + (
+                "You are executing as part of a workflow pipeline. "
+                "Focus on your assigned stage objectives."
+            )
         )
-    return template + EXECUTION_MODE_SECTION + (
-        "You are in direct conversation mode. "
-        "Draw on your persistent memory and past experiences."
+    return (
+        template
+        + EXECUTION_MODE_SECTION
+        + (
+            "You are in direct conversation mode. "
+            "Draw on your persistent memory and past experiences."
+        )
     )
 
 
@@ -83,8 +95,10 @@ def inject_cross_pollination_context(
             subscribe_to=subscribe_to,
             query=query,
             memory_service=memory_service,
-            retrieval_k=getattr(config, "retrieval_k", 5),
-            relevance_threshold=getattr(config, "relevance_threshold", 0.7),
+            retrieval_k=getattr(config, "retrieval_k", _DEFAULT_RELEVANCE_LIMIT),
+            relevance_threshold=getattr(
+                config, "relevance_threshold", _DEFAULT_RELEVANCE_THRESHOLD
+            ),
         )
         formatted = format_cross_pollination_context(results, max_chars=max_chars)
         if formatted:
@@ -99,7 +113,7 @@ def sync_workflow_learnings_to_agent(
     agent_name: str,
     workflow_name: str,
     memory_service: Any,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Sync workflow learnings to a persistent agent's memory namespace.
 
     Called by the autonomy orchestrator post-workflow for each persistent agent.

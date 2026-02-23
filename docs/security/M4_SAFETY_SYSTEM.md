@@ -414,7 +414,7 @@ Policies use numeric priorities where **higher values execute first**:
 
 ### Policy-to-Action-Type Mappings
 
-**Location:** `config/safety/action_policies.yaml`
+**Location:** `configs/safety/action_policies.yaml`
 
 Maps policies to action types:
 
@@ -966,7 +966,7 @@ async def test_agent_executor_blocks_unsafe_action() -> None:
 
 **Solution:**
 - Verify policy registered: `registry.is_registered("policy_name")`
-- Check mappings: `config/safety/action_policies.yaml`
+- Check mappings: `configs/safety/action_policies.yaml`
 - Verify priority: `registry.get_policies_for_action("action_type")`
 
 ---
@@ -983,7 +983,7 @@ async def test_agent_executor_blocks_unsafe_action() -> None:
 - `temper_ai/safety/policy_registry.py` - Policy registration and lookup
 - `temper_ai/safety/composition.py` - Policy composition layer
 - `temper_ai/safety/forbidden_operations.py` - Forbidden operations policy
-- `config/safety/action_policies.yaml` - Policy configuration
+- `configs/safety/action_policies.yaml` - Policy configuration
 
 ### Tests
 - `tests/safety/test_action_policy_engine.py` - Engine tests (25 tests)

@@ -1,9 +1,11 @@
 """Tests for compiler utility functions."""
+
 from temper_ai.workflow.utils import extract_agent_name
 
 
 class MockAgent:
     """Mock agent class for testing."""
+
     def __init__(self, name=None, agent_name=None):
         if name is not None:
             self.name = name

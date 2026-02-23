@@ -1,4 +1,5 @@
 """Tests for database connection and session management."""
+
 import os
 from importlib.util import find_spec
 
@@ -38,7 +39,9 @@ def test_database_manager_sqlite():
         session.add(workflow)
         session.commit()
 
-        result = session.exec(select(WorkflowExecution).where(WorkflowExecution.id == "wf-001")).first()
+        result = session.exec(
+            select(WorkflowExecution).where(WorkflowExecution.id == "wf-001")
+        ).first()
         assert result is not None
         assert result.workflow_name == "test_workflow"
 
@@ -46,27 +49,32 @@ def test_database_manager_sqlite():
 def test_database_manager_default_url():
     """Test DatabaseManager uses default URL when none provided."""
     # Remove env var if set
-    old_url = os.environ.get("DATABASE_URL")
+    old_url = os.environ.get("TEMPER_DATABASE_URL")
     if old_url:
-        del os.environ["DATABASE_URL"]
+        del os.environ["TEMPER_DATABASE_URL"]
 
     manager = DatabaseManager()
-    assert "sqlite" in manager.database_url
+    # Default is PostgreSQL (production default)
+    assert "postgresql" in manager.database_url
 
     # Restore env var
     if old_url:
-        os.environ["DATABASE_URL"] = old_url
+        os.environ["TEMPER_DATABASE_URL"] = old_url
 
 
 def test_database_manager_env_var():
-    """Test DatabaseManager uses DATABASE_URL env var."""
-    os.environ["DATABASE_URL"] = "sqlite:///test.db"
+    """Test DatabaseManager uses TEMPER_DATABASE_URL env var."""
+    old_url = os.environ.get("TEMPER_DATABASE_URL")
+    os.environ["TEMPER_DATABASE_URL"] = "sqlite:///test.db"
 
     manager = DatabaseManager()
     assert manager.database_url == "sqlite:///test.db"
 
     # Clean up
-    del os.environ["DATABASE_URL"]
+    if old_url:
+        os.environ["TEMPER_DATABASE_URL"] = old_url
+    else:
+        del os.environ["TEMPER_DATABASE_URL"]
 
 
 def test_session_context_manager():
@@ -87,7 +95,9 @@ def test_session_context_manager():
 
     # Verify in new session
     with manager.session() as session:
-        result = session.exec(select(WorkflowExecution).where(WorkflowExecution.id == "wf-001")).first()
+        result = session.exec(
+            select(WorkflowExecution).where(WorkflowExecution.id == "wf-001")
+        ).first()
         assert result is not None
 
 
@@ -108,6 +118,7 @@ def test_session_rollback_on_error():
 
     # Try to create duplicate (should fail and rollback)
     from sqlalchemy.exc import IntegrityError as _IntegrityError
+
     with pytest.raises(_IntegrityError):
         with manager.session() as session:
             duplicate = WorkflowExecution(
@@ -121,7 +132,9 @@ def test_session_rollback_on_error():
 
     # Verify original still exists and wasn't modified
     with manager.session() as session:
-        result = session.exec(select(WorkflowExecution).where(WorkflowExecution.id == "wf-001")).first()
+        result = session.exec(
+            select(WorkflowExecution).where(WorkflowExecution.id == "wf-001")
+        ).first()
         assert result is not None
         assert result.workflow_name == "test_workflow"  # Not "duplicate"
 
@@ -130,6 +143,7 @@ def test_init_database():
     """Test init_database function."""
     # Reset global state (use actual module location after package extraction)
     import temper_ai.storage.database.manager as db_module
+
     db_module._db_manager = None
 
     manager = init_database("sqlite:///:memory:")
@@ -147,6 +161,7 @@ def test_get_database():
     """Test get_database function."""
     # Reset global state
     import temper_ai.observability.database as db_module
+
     db_module._db_manager = None
 
     # Should raise error if not initialized
@@ -167,6 +182,7 @@ def test_get_session_context():
     """Test get_session convenience function."""
     # Reset and initialize
     import temper_ai.observability.database as db_module
+
     db_module._db_manager = None
     init_database("sqlite:///:memory:")
 
@@ -182,7 +198,9 @@ def test_get_session_context():
 
     # Verify
     with get_session() as session:
-        result = session.exec(select(WorkflowExecution).where(WorkflowExecution.id == "wf-001")).first()
+        result = session.exec(
+            select(WorkflowExecution).where(WorkflowExecution.id == "wf-001")
+        ).first()
         assert result is not None
 
     # Clean up
@@ -265,6 +283,7 @@ def test_sqlite_engine_settings():
 
     # SQLite should use StaticPool
     from sqlalchemy.pool import StaticPool
+
     assert isinstance(manager.engine.pool, StaticPool)
 
 
@@ -321,8 +340,7 @@ class TestDatabaseFailureRecovery:
         # Note: SQLite with StaticPool should handle this, but test verifies behavior
         with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
             futures = [
-                executor.submit(attempt_database_operation, i)
-                for i in range(100)
+                executor.submit(attempt_database_operation, i) for i in range(100)
             ]
 
             # Wait for all to complete
@@ -330,13 +348,15 @@ class TestDatabaseFailureRecovery:
 
         # STRICT: All operations should complete (either success or controlled failure)
         total_operations = success_count["count"] + error_count["count"]
-        assert total_operations == 100, \
-            f"Some operations were lost! Only {total_operations}/100 completed"
+        assert (
+            total_operations == 100
+        ), f"Some operations were lost! Only {total_operations}/100 completed"
 
         # Most should succeed (SQLite StaticPool allows concurrent reads)
         # But some writes may fail with "database is locked" under high concurrency
-        assert success_count["count"] >= 50, \
-            f"Too many failures: {error_count['count']}/100 failed. Errors: {errors[:5]}"
+        assert (
+            success_count["count"] >= 50
+        ), f"Too many failures: {error_count['count']}/100 failed. Errors: {errors[:5]}"
 
         # Verify no data corruption - check that successful operations persisted
         # Note: SQLite may lose some transactions under high concurrency even if
@@ -347,8 +367,9 @@ class TestDatabaseFailureRecovery:
 
             # Allow for some discrepancy due to SQLite concurrent write limitations
             # At least 50% of "successful" operations should persist
-            assert persisted_count >= success_count["count"] * 0.5, \
-                f"Too much data loss! Expected ~{success_count['count']} records, found {persisted_count}"
+            assert (
+                persisted_count >= success_count["count"] * 0.5
+            ), f"Too much data loss! Expected ~{success_count['count']} records, found {persisted_count}"
 
     def test_database_connection_loss_during_operation(self):
         """Test handling of connection loss during database operation.
@@ -373,6 +394,7 @@ class TestDatabaseFailureRecovery:
         # We'll create an invalid workflow that violates database constraints
         # Expected to fail (integrity error acts as connection failure proxy)
         from sqlalchemy.exc import IntegrityError as _IntegrityError
+
         with pytest.raises(_IntegrityError):
             with manager.session() as session:
                 # Create a workflow with duplicate ID (will fail on commit)
@@ -399,7 +421,6 @@ class TestDatabaseFailureRecovery:
         CRITICAL: Verifies that transaction conflicts are detected and handled.
         """
         import concurrent.futures
-
 
         manager = DatabaseManager("sqlite:///:memory:")
         manager.create_all_tables()
@@ -433,9 +454,11 @@ class TestDatabaseFailureRecovery:
                     ).first()
 
                     # Modify it
-                    current_counter = workflow.workflow_config_snapshot.get("counter", 0)
+                    current_counter = workflow.workflow_config_snapshot.get(
+                        "counter", 0
+                    )
                     workflow.workflow_config_snapshot = {"counter": current_counter + 1}
-                    workflow.status = "updated"
+                    workflow.status = "completed"
 
                     # Try to commit (may conflict with other threads)
                     session.add(workflow)
@@ -449,10 +472,7 @@ class TestDatabaseFailureRecovery:
 
         # Execute 50 concurrent updates to the same record
         with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-            futures = [
-                executor.submit(attempt_update, i)
-                for i in range(50)
-            ]
+            futures = [executor.submit(attempt_update, i) for i in range(50)]
             concurrent.futures.wait(futures)
 
         # VERIFY: All attempts completed
@@ -468,12 +488,16 @@ class TestDatabaseFailureRecovery:
             ).first()
 
             assert workflow is not None
-            assert workflow.workflow_config_snapshot.get("counter", 0) >= 1, \
-                "At least one update should have succeeded"
+            assert (
+                workflow.workflow_config_snapshot.get("counter", 0) >= 1
+            ), "At least one update should have succeeded"
 
             # Counter should be <= number of successful updates
             # (some updates may have been lost due to race conditions)
-            assert workflow.workflow_config_snapshot["counter"] <= update_successes["count"]
+            assert (
+                workflow.workflow_config_snapshot["counter"]
+                <= update_successes["count"]
+            )
 
     def test_rollback_on_integrity_error(self):
         """Test that integrity errors trigger rollback and preserve data.
@@ -510,9 +534,7 @@ class TestDatabaseFailureRecovery:
         # Verify: Original workflow unchanged, no partial state
         with manager.session() as session:
             workflow = session.exec(
-                select(WorkflowExecution).where(
-                    WorkflowExecution.id == "wf-unique-001"
-                )
+                select(WorkflowExecution).where(WorkflowExecution.id == "wf-unique-001")
             ).first()
 
             assert workflow is not None
@@ -617,8 +639,9 @@ class TestDatabaseFailureRecovery:
         # Verify: NONE of the workflows should exist (full rollback)
         with manager.session() as session:
             all_workflows = session.exec(select(WorkflowExecution)).all()
-            assert len(all_workflows) == 0, \
-                "Partial transaction persisted! Should have rolled back all changes."
+            assert (
+                len(all_workflows) == 0
+            ), "Partial transaction persisted! Should have rolled back all changes."
 
     @pytest.mark.asyncio
     async def test_connection_recovery_after_failure(self):
@@ -646,7 +669,7 @@ class TestDatabaseFailureRecovery:
             return original_execute(*args, **kwargs)
 
         # First attempt should fail
-        with patch.object(manager.engine, 'connect', side_effect=failing_connect):
+        with patch.object(manager.engine, "connect", side_effect=failing_connect):
             with pytest.raises(OperationalError):
                 with manager.session() as session:
                     workflow = WorkflowExecution(
@@ -658,7 +681,7 @@ class TestDatabaseFailureRecovery:
                     session.add(workflow)
 
         # Second attempt should also fail
-        with patch.object(manager.engine, 'connect', side_effect=failing_connect):
+        with patch.object(manager.engine, "connect", side_effect=failing_connect):
             with pytest.raises(OperationalError):
                 with manager.session() as session:
                     workflow = WorkflowExecution(
@@ -745,7 +768,9 @@ class TestDatabaseFailureRecovery:
 
         CRITICAL: Verifies graceful handling when writes are not possible.
         """
-        pytest.skip("SQLite file permissions don't reliably prevent writes due to WAL/journal files")
+        pytest.skip(
+            "SQLite file permissions don't reliably prevent writes due to WAL/journal files"
+        )
 
         # Note: This test is skipped because SQLite's write behavior with file permissions
         # is inconsistent across platforms and depends on journal mode (WAL, DELETE, etc.).
@@ -835,7 +860,9 @@ class TestDatabaseFailureRecovery:
         # Verify: NONE of the 500 workflows should exist
         with manager.session() as session:
             count = len(session.exec(select(WorkflowExecution)).all())
-            assert count == 0, f"Transaction not fully rolled back! Found {count} records"
+            assert (
+                count == 0
+            ), f"Transaction not fully rolled back! Found {count} records"
 
     def test_database_constraint_violations(self):
         """Test various database constraint violations.
@@ -871,9 +898,7 @@ class TestDatabaseFailureRecovery:
         # Test 2: Verify original data intact
         with manager.session() as session:
             workflow = session.exec(
-                select(WorkflowExecution).where(
-                    WorkflowExecution.id == "wf-const-001"
-                )
+                select(WorkflowExecution).where(WorkflowExecution.id == "wf-const-001")
             ).first()
             assert workflow.workflow_name == "first"
 
@@ -901,7 +926,9 @@ class TestDatabaseFailureRecovery:
 
         with manager.session() as session:
             result = session.exec(
-                select(WorkflowExecution).where(WorkflowExecution.id == "wf-after-empty")
+                select(WorkflowExecution).where(
+                    WorkflowExecution.id == "wf-after-empty"
+                )
             ).first()
             assert result is not None
             assert result.workflow_name == "post_empty_tx"

@@ -75,8 +75,10 @@ class TestBudgetCheck:
         policy = AutonomyPolicy()
         budget = MagicMock()
         budget.check_budget.return_value = BudgetCheckResult(
-            allowed=False, remaining_usd=0.0,
-            status=STATUS_EXHAUSTED, message="Budget exhausted",
+            allowed=False,
+            remaining_usd=0.0,
+            status=STATUS_EXHAUSTED,
+            message="Budget exhausted",
         )
         policy.configure(budget_enforcer=budget)
 
@@ -89,7 +91,9 @@ class TestBudgetCheck:
         policy = AutonomyPolicy()
         budget = MagicMock()
         budget.check_budget.return_value = BudgetCheckResult(
-            allowed=True, remaining_usd=50.0, status=STATUS_ACTIVE,
+            allowed=True,
+            remaining_usd=50.0,
+            status=STATUS_ACTIVE,
         )
         policy.configure(budget_enforcer=budget)
 
@@ -107,7 +111,8 @@ class TestApprovalRouting:
         manager.get_level.return_value = AutonomyLevel.SUPERVISED
         router = MagicMock()
         router.route_action.return_value = ApprovalDecision(
-            requires_approval=True, required_approvers=1,
+            requires_approval=True,
+            required_approvers=1,
             reason="Approval needed",
         )
         policy.configure(manager=manager, approval_router=router)
@@ -124,7 +129,8 @@ class TestApprovalRouting:
         manager.get_level.return_value = AutonomyLevel.AUTONOMOUS
         router = MagicMock()
         router.route_action.return_value = ApprovalDecision(
-            requires_approval=False, reason="Auto-approved",
+            requires_approval=False,
+            reason="Auto-approved",
         )
         policy.configure(manager=manager, approval_router=router)
 

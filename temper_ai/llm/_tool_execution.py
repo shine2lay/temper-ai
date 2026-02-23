@@ -3,6 +3,7 @@
 Handles single/parallel tool execution, safety mode checks,
 thread pool management, and result building.
 """
+
 from __future__ import annotations
 
 import atexit
@@ -12,7 +13,8 @@ import os
 import sys
 import threading
 import time
-from typing import Any, Callable, Dict, List, Optional
+from collections.abc import Callable
+from typing import Any
 
 from temper_ai.llm.constants import ERROR_MSG_TOOL_PREFIX, FALLBACK_UNKNOWN_VALUE
 from temper_ai.llm.tool_keys import ToolKeys
@@ -30,10 +32,11 @@ _DEFAULT_CPU_COUNT_FALLBACK = 4
 
 _DEFAULT_POOL_SIZE = min(
     _POOL_SIZE_LIMIT,
-    (os.cpu_count() or _DEFAULT_CPU_COUNT_FALLBACK) * _CPU_MULTIPLIER_FOR_POOL + _MIN_POOL_SIZE_PER_CPU,
+    (os.cpu_count() or _DEFAULT_CPU_COUNT_FALLBACK) * _CPU_MULTIPLIER_FOR_POOL
+    + _MIN_POOL_SIZE_PER_CPU,
 )
 _TOOL_POOL_SIZE = int(os.environ.get("AGENT_TOOL_WORKERS", str(_DEFAULT_POOL_SIZE)))
-_tool_executor: Optional[concurrent.futures.ThreadPoolExecutor] = None
+_tool_executor: concurrent.futures.ThreadPoolExecutor | None = None
 _executor_lock = threading.Lock()
 
 # Minimum Python version supporting cancel_futures in ThreadPoolExecutor.shutdown()
@@ -71,26 +74,31 @@ atexit.register(_shutdown_tool_executor)
 # Validation and helpers
 # ---------------------------------------------------------------------------
 
-def validate_tool_calls_input(tool_calls: List[Dict[str, Any]]) -> None:
+
+def validate_tool_calls_input(tool_calls: list[dict[str, Any]]) -> None:
     """Validate that tool_calls is a list of dicts."""
     if not isinstance(tool_calls, list):
         raise TypeError(f"tool_calls must be a list, got {type(tool_calls).__name__}")
     for i, tool_call in enumerate(tool_calls):
         if not isinstance(tool_call, dict):
-            raise TypeError(f"tool_call at index {i} must be a dictionary, got {type(tool_call).__name__}")
+            raise TypeError(
+                f"tool_call at index {i} must be a dictionary, got {type(tool_call).__name__}"
+            )
 
 
 def check_safety_mode(
     safety_config: Any,
     tool_name: str,
-    tool_params: Dict[str, Any],
-) -> Optional[Dict[str, Any]]:
+    tool_params: dict[str, Any],
+) -> dict[str, Any] | None:
     """Check if safety mode blocks execution. Returns error dict or None."""
     if safety_config is None:
         return None
 
-    mode = getattr(safety_config, 'mode', 'execute')
-    require_approval_for_tools = getattr(safety_config, 'require_approval_for_tools', [])
+    mode = getattr(safety_config, "mode", "execute")
+    require_approval_for_tools = getattr(
+        safety_config, "require_approval_for_tools", []
+    )
 
     if mode == "require_approval":
         return {
@@ -124,11 +132,11 @@ def check_safety_mode(
 
 def build_tool_result(
     tool_name: str,
-    tool_params: Dict[str, Any],
+    tool_params: dict[str, Any],
     success: bool,
     result: Any = None,
-    error: Optional[str] = None,
-) -> Dict[str, Any]:
+    error: str | None = None,
+) -> dict[str, Any]:
     """Build standardized tool result dictionary."""
     return {
         ToolKeys.NAME: tool_name,
@@ -143,17 +151,20 @@ def build_tool_result(
 # Execution
 # ---------------------------------------------------------------------------
 
+
 def execute_tools(
-    tool_calls: List[Dict[str, Any]],
+    tool_calls: list[dict[str, Any]],
     tool_executor: Any,
     observer: Any,
     safety_config: Any,
     execute_single: Callable,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Execute a list of tool calls (serial or parallel)."""
     validate_tool_calls_input(tool_calls)
 
-    parallel_enabled = getattr(safety_config, "parallel_tool_calls", True) if safety_config else True
+    parallel_enabled = (
+        getattr(safety_config, "parallel_tool_calls", True) if safety_config else True
+    )
     use_parallel = len(tool_calls) > 1 and parallel_enabled
 
     if not use_parallel:
@@ -162,22 +173,28 @@ def execute_tools(
             for tc in tool_calls
         ]
 
-    return _execute_parallel(tool_calls, tool_executor, observer, safety_config, execute_single)
+    return _execute_parallel(
+        tool_calls, tool_executor, observer, safety_config, execute_single
+    )
 
 
 def _execute_parallel(
-    tool_calls: List[Dict[str, Any]],
+    tool_calls: list[dict[str, Any]],
     tool_executor: Any,
     observer: Any,
     safety_config: Any,
     execute_single: Callable,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Execute tool calls in parallel using thread pool."""
-    tool_results: List[Any] = [None] * len(tool_calls)
+    tool_results: list[Any] = [None] * len(tool_calls)
 
     future_to_index = {
         _get_tool_executor().submit(
-            execute_single, tc, tool_executor, observer, safety_config,
+            execute_single,
+            tc,
+            tool_executor,
+            observer,
+            safety_config,
         ): i
         for i, tc in enumerate(tool_calls)
     }
@@ -189,7 +206,9 @@ def _execute_parallel(
         except (ToolExecutionError, ToolNotFoundError, TimeoutError, RuntimeError) as e:
             logger.error("Tool execution failed in parallel mode: %s", e)
             tool_results[index] = {
-                ToolKeys.NAME: tool_calls[index].get(ToolKeys.NAME, FALLBACK_UNKNOWN_VALUE),
+                ToolKeys.NAME: tool_calls[index].get(
+                    ToolKeys.NAME, FALLBACK_UNKNOWN_VALUE
+                ),
                 ToolKeys.PARAMETERS: tool_calls[index].get(ToolKeys.PARAMETERS, {}),
                 ToolKeys.SUCCESS: False,
                 ToolKeys.RESULT: None,
@@ -200,14 +219,16 @@ def _execute_parallel(
 
 
 def execute_single_tool(
-    tool_call: Dict[str, Any],
+    tool_call: dict[str, Any],
     tool_executor: Any,
     observer: Any,
     safety_config: Any,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Execute a single tool call."""
     if not isinstance(tool_call, dict):
-        raise TypeError(f"tool_call must be a dictionary, got {type(tool_call).__name__}")
+        raise TypeError(
+            f"tool_call must be a dictionary, got {type(tool_call).__name__}"
+        )
     if ToolKeys.NAME not in tool_call:
         raise ValueError("tool_call must contain 'name' field")
 
@@ -215,9 +236,13 @@ def execute_single_tool(
     tool_params = tool_call.get(ToolKeys.PARAMETERS, tool_call.get("arguments", {}))
 
     if not isinstance(tool_name, str):
-        raise TypeError(f"tool_call 'name' must be a string, got {type(tool_name).__name__}")
+        raise TypeError(
+            f"tool_call 'name' must be a string, got {type(tool_name).__name__}"
+        )
     if not isinstance(tool_params, dict):
-        raise TypeError(f"tool_call 'parameters' must be a dictionary, got {type(tool_params).__name__}")
+        raise TypeError(
+            f"tool_call 'parameters' must be a dictionary, got {type(tool_params).__name__}"
+        )
 
     # Safety mode pre-checks
     safety_block = check_safety_mode(safety_config, tool_name, tool_params)
@@ -232,10 +257,14 @@ def execute_single_tool(
     logger.critical(
         "SECURITY: No tool_executor provided. "
         "%s%s' execution blocked to prevent safety bypass.",
-        ERROR_MSG_TOOL_PREFIX, tool_name,
+        ERROR_MSG_TOOL_PREFIX,
+        tool_name,
     )
     return build_tool_result(
-        tool_name, tool_params, False, None,
+        tool_name,
+        tool_params,
+        False,
+        None,
         f"{ERROR_MSG_TOOL_PREFIX}{tool_name}' execution blocked: no tool_executor configured. "
         f"The safety stack is required for tool execution.",
     )
@@ -243,21 +272,24 @@ def execute_single_tool(
 
 def execute_via_executor(
     tool_name: str,
-    tool_params: Dict[str, Any],
+    tool_params: dict[str, Any],
     tool_executor: Any,
     observer: Any,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Execute tool through the safety-integrated ToolExecutor."""
     tool_start_time = time.time()
     try:
         result = tool_executor.execute(tool_name, tool_params)
         duration_seconds = time.time() - tool_start_time
-        logger.info(
-            "Tool '%s' %s (%.1fs)",
-            tool_name,
-            "succeeded" if result.success else "failed",
-            duration_seconds,
-        )
+        if result.success:
+            logger.info("Tool '%s' succeeded (%.1fs)", tool_name, duration_seconds)
+        else:
+            logger.warning(
+                "Tool '%s' failed (%.1fs): %s",
+                tool_name,
+                duration_seconds,
+                result.error,
+            )
         if observer is not None:
             observer.track_tool_call(
                 tool_name=tool_name,
@@ -267,7 +299,9 @@ def execute_via_executor(
                 status="success" if result.success else "failed",
                 error_message=result.error if not result.success else None,
             )
-        return build_tool_result(tool_name, tool_params, result.success, result.result, result.error)
+        return build_tool_result(
+            tool_name, tool_params, result.success, result.result, result.error
+        )
     except (ToolExecutionError, ToolNotFoundError, TimeoutError, RuntimeError) as e:
         duration_seconds = time.time() - tool_start_time
         error_msg = f"Tool execution error: {str(e)}"

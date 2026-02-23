@@ -34,8 +34,10 @@ class TestAssignAndMerge:
         base_config = {"agent": {"temperature": 0.7, "model": "gpt-4"}}
         expected_merged = {"agent": {"temperature": 0.9, "model": "gpt-4"}}
 
-        with patch(_SERVICE_PATH, return_value=mock_service), \
-                patch(_CONFIG_MANAGER_PATH) as MockCM:
+        with (
+            patch(_SERVICE_PATH, return_value=mock_service),
+            patch(_CONFIG_MANAGER_PATH) as MockCM,
+        ):
             mock_cm = MagicMock()
             mock_cm.apply_overrides_safely.return_value = expected_merged
             MockCM.return_value = mock_cm
@@ -109,14 +111,18 @@ class TestAssignAndMerge:
         mock_experiment.variants = [mock_variant]
         mock_service.get_experiment.return_value = mock_experiment
 
-        with patch(_SERVICE_PATH, return_value=mock_service), \
-                patch(_CONFIG_MANAGER_PATH) as MockCM:
+        with (
+            patch(_SERVICE_PATH, return_value=mock_service),
+            patch(_CONFIG_MANAGER_PATH) as MockCM,
+        ):
             mock_cm = MagicMock()
             mock_cm.apply_overrides_safely.return_value = expected_merged
             MockCM.return_value = mock_cm
 
             merged, variant_id = assign_and_merge(
-                "exp1", "wf1", {"agent": {"temperature": 0.7, "model": "gpt-4"}},
+                "exp1",
+                "wf1",
+                {"agent": {"temperature": 0.7, "model": "gpt-4"}},
             )
 
         assert merged == expected_merged
@@ -174,7 +180,8 @@ class TestTrackExperimentCompletion:
         mock_service = MagicMock()
         with patch(_SERVICE_PATH, return_value=mock_service):
             track_experiment_completion(
-                "exp1", "wf1",
+                "exp1",
+                "wf1",
                 {"total_tokens": 500, "total_cost": 0.05},
                 duration_seconds=12.5,
             )
@@ -189,7 +196,8 @@ class TestTrackExperimentCompletion:
         mock_service = MagicMock()
         with patch(_SERVICE_PATH, return_value=mock_service):
             track_experiment_completion(
-                "exp1", "wf1",
+                "exp1",
+                "wf1",
                 {"total_cost": 0.123},
                 duration_seconds=5.0,
             )
@@ -201,7 +209,10 @@ class TestTrackExperimentCompletion:
         mock_service = MagicMock()
         with patch(_SERVICE_PATH, return_value=mock_service):
             track_experiment_completion(
-                "exp1", "wf1", {}, duration_seconds=3.0,
+                "exp1",
+                "wf1",
+                {},
+                duration_seconds=3.0,
             )
         call_kwargs = mock_service.track_execution_complete.call_args[1]
         assert call_kwargs["metrics"] == {"duration_seconds": 3.0}
@@ -212,7 +223,8 @@ class TestTrackExperimentCompletion:
         mock_service = MagicMock()
         with patch(_SERVICE_PATH, return_value=mock_service):
             track_experiment_completion(
-                "exp1", "wf1",
+                "exp1",
+                "wf1",
                 {},
                 duration_seconds=7.5,
             )

@@ -4,7 +4,8 @@ Replaces hasattr-based duck typing with isinstance-checkable protocols
 for collaboration strategies, synthesis coordinators, and quality gate
 validators used across stage executors.
 """
-from typing import Any, Dict, Optional, Protocol, runtime_checkable
+
+from typing import Any, Protocol, runtime_checkable
 
 
 @runtime_checkable
@@ -45,7 +46,7 @@ class LeaderCapableStrategy(Protocol):
 
     requires_leader_synthesis: bool
 
-    def get_leader_agent_name(self, config: Dict[str, Any]) -> Optional[str]:
+    def get_leader_agent_name(self, config: dict[str, Any]) -> str | None:
         """Get the leader agent name from collaboration config."""
         ...
 
@@ -62,15 +63,17 @@ class DialogueCapableStrategy(Protocol):
     max_rounds: int
     min_rounds: int
     convergence_threshold: float
-    cost_budget_usd: Optional[float]
+    cost_budget_usd: float | None
     mode: str
 
-    def synthesize(self, agent_outputs: list, config: Dict[str, Any]) -> Any:
+    def synthesize(self, agent_outputs: list, config: dict[str, Any]) -> Any:
         """Synthesize agent outputs."""
         ...
 
     def calculate_convergence(
-        self, current: list, previous: list,
+        self,
+        current: list,
+        previous: list,
     ) -> float:
         """Calculate convergence score between round outputs."""
         ...
@@ -90,15 +93,17 @@ class StanceCuratingStrategy(Protocol):
         ...
 
     def get_round_context(
-        self, round_num: int, agent_name: str,
-    ) -> Dict[str, Any]:
+        self,
+        round_num: int,
+        agent_name: str,
+    ) -> dict[str, Any]:
         """Get mode-specific context for a dialogue round."""
         ...
 
     def extract_stances(
         self,
         outputs: list,
-        llm_providers: Dict[str, Any],
-    ) -> Dict[str, str]:
+        llm_providers: dict[str, Any],
+    ) -> dict[str, str]:
         """Extract agent stances from outputs."""
         ...

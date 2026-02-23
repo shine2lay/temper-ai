@@ -1,7 +1,6 @@
 """Recommendation engine — converts patterns to actionable config changes."""
 
 import uuid
-from typing import List
 
 from temper_ai.learning.models import (
     PATTERN_AGENT_PERFORMANCE,
@@ -29,12 +28,12 @@ class RecommendationEngine:
 
     def generate_recommendations(
         self, min_confidence: float = DEFAULT_CONFIDENCE_THRESHOLD
-    ) -> List[TuneRecommendation]:
+    ) -> list[TuneRecommendation]:
         """Generate recommendations from active patterns above confidence threshold."""
         patterns = self.store.list_patterns(
             status=STATUS_ACTIVE, limit=DEFAULT_PATTERN_LIMIT
         )
-        recs: List[TuneRecommendation] = []
+        recs: list[TuneRecommendation] = []
         for p in patterns:
             if p.confidence < min_confidence:
                 continue
@@ -44,7 +43,7 @@ class RecommendationEngine:
         return recs
 
 
-def _pattern_to_recommendations(pattern: LearnedPattern) -> List[TuneRecommendation]:
+def _pattern_to_recommendations(pattern: LearnedPattern) -> list[TuneRecommendation]:
     """Map a pattern to zero or more config-change recommendations."""
     handlers = {
         PATTERN_MODEL_EFFECTIVENESS: _recommend_model_change,
@@ -59,76 +58,88 @@ def _pattern_to_recommendations(pattern: LearnedPattern) -> List[TuneRecommendat
     return handler(pattern)
 
 
-def _recommend_model_change(p: LearnedPattern) -> List[TuneRecommendation]:
+def _recommend_model_change(p: LearnedPattern) -> list[TuneRecommendation]:
     """Recommend model switch for model_effectiveness patterns."""
     if "High error" not in p.title:
         return []
-    model = p.evidence.get("model", p.title.split(": ")[-1] if ": " in p.title else "unknown")
-    return [TuneRecommendation(
-        id=uuid.uuid4().hex,
-        pattern_id=p.id,
-        config_path=_CONFIG_PATH_AGENTS,
-        field_path="agent.model",
-        current_value=model,
-        recommended_value="(alternative model)",
-        rationale=p.description,
-    )]
-
-
-def _recommend_agent_tuning(p: LearnedPattern) -> List[TuneRecommendation]:
-    """Recommend timeout/retry changes for agent performance patterns."""
-    if "Slow" in p.title:
-        return [TuneRecommendation(
+    model = p.evidence.get(
+        "model", p.title.split(": ")[-1] if ": " in p.title else "unknown"
+    )
+    return [
+        TuneRecommendation(
             id=uuid.uuid4().hex,
             pattern_id=p.id,
             config_path=_CONFIG_PATH_AGENTS,
-            field_path="agent.timeout",
-            current_value="600",
-            recommended_value="1200",
+            field_path="agent.model",
+            current_value=model,
+            recommended_value="(alternative model)",
             rationale=p.description,
-        )]
+        )
+    ]
+
+
+def _recommend_agent_tuning(p: LearnedPattern) -> list[TuneRecommendation]:
+    """Recommend timeout/retry changes for agent performance patterns."""
+    if "Slow" in p.title:
+        return [
+            TuneRecommendation(
+                id=uuid.uuid4().hex,
+                pattern_id=p.id,
+                config_path=_CONFIG_PATH_AGENTS,
+                field_path="agent.timeout",
+                current_value="600",
+                recommended_value="1200",
+                rationale=p.description,
+            )
+        ]
     return []
 
 
-def _recommend_cost_reduction(p: LearnedPattern) -> List[TuneRecommendation]:
+def _recommend_cost_reduction(p: LearnedPattern) -> list[TuneRecommendation]:
     """Recommend cost-saving changes."""
-    return [TuneRecommendation(
-        id=uuid.uuid4().hex,
-        pattern_id=p.id,
-        config_path=_CONFIG_PATH_AGENTS,
-        field_path="agent.max_tokens",
-        current_value="4096",
-        recommended_value="2048",
-        rationale=p.description,
-    )]
+    return [
+        TuneRecommendation(
+            id=uuid.uuid4().hex,
+            pattern_id=p.id,
+            config_path=_CONFIG_PATH_AGENTS,
+            field_path="agent.max_tokens",
+            current_value="4096",
+            recommended_value="2048",
+            rationale=p.description,
+        )
+    ]
 
 
-def _recommend_error_handling(p: LearnedPattern) -> List[TuneRecommendation]:
+def _recommend_error_handling(p: LearnedPattern) -> list[TuneRecommendation]:
     """Recommend error handling improvements."""
     classification = p.evidence.get("classification", "unknown")
     if classification == "transient":
-        return [TuneRecommendation(
-            id=uuid.uuid4().hex,
-            pattern_id=p.id,
-            config_path=_CONFIG_PATH_AGENTS,
-            field_path="agent.max_retries",
-            current_value="1",
-            recommended_value="3",
-            rationale=p.description,
-        )]
+        return [
+            TuneRecommendation(
+                id=uuid.uuid4().hex,
+                pattern_id=p.id,
+                config_path=_CONFIG_PATH_AGENTS,
+                field_path="agent.max_retries",
+                current_value="1",
+                recommended_value="3",
+                rationale=p.description,
+            )
+        ]
     return []
 
 
-def _recommend_debate_tuning(p: LearnedPattern) -> List[TuneRecommendation]:
+def _recommend_debate_tuning(p: LearnedPattern) -> list[TuneRecommendation]:
     """Recommend debate round reduction."""
     if "Unresolved" in p.title or "Slow consensus" in p.title:
-        return [TuneRecommendation(
-            id=uuid.uuid4().hex,
-            pattern_id=p.id,
-            config_path=_CONFIG_PATH_STAGES,
-            field_path="stage.max_debate_rounds",
-            current_value="5",
-            recommended_value="3",
-            rationale=p.description,
-        )]
+        return [
+            TuneRecommendation(
+                id=uuid.uuid4().hex,
+                pattern_id=p.id,
+                config_path=_CONFIG_PATH_STAGES,
+                field_path="stage.max_debate_rounds",
+                current_value="5",
+                recommended_value="3",
+                rationale=p.description,
+            )
+        ]
     return []

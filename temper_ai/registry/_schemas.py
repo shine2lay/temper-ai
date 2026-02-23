@@ -1,6 +1,7 @@
 """Pydantic schemas for the agent registry module."""
+
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -21,22 +22,22 @@ class AgentRegistryEntry(BaseModel):
     description: str = ""
     version: str = "1.0"
     agent_type: str = "standard"
-    config_path: Optional[str] = None
-    config_snapshot: Dict[str, Any] = Field(default_factory=dict)
+    config_path: str | None = None
+    config_snapshot: dict[str, Any] = Field(default_factory=dict)
     memory_namespace: str = ""
     status: str = STATUS_REGISTERED
     total_invocations: int = 0
     registered_at: datetime
-    last_active_at: Optional[datetime] = None
-    metadata_json: Optional[Dict[str, Any]] = None
+    last_active_at: datetime | None = None
+    metadata_json: dict[str, Any] | None = None
 
 
 class MessageRequest(BaseModel):
     """A message sent to a registered agent."""
 
     content: str
-    context: Optional[Dict[str, Any]] = None
-    max_tokens: Optional[int] = None
+    context: dict[str, Any] | None = None
+    max_tokens: int | None = None
 
 
 class MessageResponse(BaseModel):
@@ -45,4 +46,4 @@ class MessageResponse(BaseModel):
     content: str
     agent_name: str
     execution_id: str
-    tokens_used: Optional[int] = None
+    tokens_used: int | None = None

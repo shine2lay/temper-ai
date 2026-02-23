@@ -2,7 +2,6 @@
 
 Provides pluggable storage backends for saving and loading workflow checkpoints:
 - FileCheckpointBackend: JSON files on disk (default, no dependencies)
-- RedisCheckpointBackend: Redis storage (optional, for distributed systems)
 
 Design:
 - Abstract CheckpointBackend interface
@@ -22,6 +21,7 @@ Example:
     >>> # Load checkpoint
     >>> loaded_domain = backend.load_checkpoint("wf-123", checkpoint_id)
 """
+
 import hashlib
 import hmac
 import json
@@ -34,20 +34,17 @@ import time
 from abc import ABC, abstractmethod
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, cast
 
 logger = logging.getLogger(__name__)
 
+from temper_ai.shared.constants.limits import MAX_SHORT_STRING_LENGTH
+from temper_ai.shared.constants.sizes import TOKEN_BYTES_SESSION
+from temper_ai.shared.utils.exceptions import ConfigurationError, ErrorCode
 from temper_ai.workflow.constants import (
     LOG_PREFIX_CHECKPOINT,
-    LOG_PREFIX_CHECKPOINT_INDEX,
-    LOG_PREFIX_CHECKPOINT_LABEL,
 )
 from temper_ai.workflow.domain_state import WorkflowDomainState
-from temper_ai.shared.constants.durations import TIMEOUT_SHORT
-from temper_ai.shared.constants.limits import MAX_SHORT_STRING_LENGTH
-from temper_ai.shared.constants.sizes import TOKEN_BYTES_SESSION, UUID_HEX_MEDIUM_LENGTH
-from temper_ai.shared.utils.exceptions import ConfigurationError, ErrorCode
 
 # Checkpoint ID generation constants
 CHECKPOINT_ID_RANDOM_BYTES = 6  # Hex bytes for random suffix (48 bits entropy)
@@ -84,8 +81,8 @@ class CheckpointBackend(ABC):
         self,
         workflow_id: str,
         domain_state: WorkflowDomainState,
-        checkpoint_id: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None
+        checkpoint_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> str:
         """Save a workflow checkpoint.
 
@@ -105,9 +102,7 @@ class CheckpointBackend(ABC):
 
     @abstractmethod
     def load_checkpoint(
-        self,
-        workflow_id: str,
-        checkpoint_id: Optional[str] = None
+        self, workflow_id: str, checkpoint_id: str | None = None
     ) -> WorkflowDomainState:
         """Load a workflow checkpoint.
 
@@ -128,7 +123,7 @@ class CheckpointBackend(ABC):
         pass
 
     @abstractmethod
-    def list_checkpoints(self, workflow_id: str) -> List[Dict[str, Any]]:
+    def list_checkpoints(self, workflow_id: str) -> list[dict[str, Any]]:
         """List all checkpoints for a workflow.
 
         Args:
@@ -161,7 +156,7 @@ class CheckpointBackend(ABC):
         pass
 
     @abstractmethod
-    def get_latest_checkpoint(self, workflow_id: str) -> Optional[str]:
+    def get_latest_checkpoint(self, workflow_id: str) -> str | None:
         """Get the latest checkpoint ID for a workflow.
 
         Args:
@@ -181,9 +176,7 @@ class CheckpointNotFoundError(ConfigurationError):
 
     def __init__(self, message: str, **kwargs: Any) -> None:
         super().__init__(
-            message=message,
-            error_code=ErrorCode.CONFIG_NOT_FOUND,
-            **kwargs
+            message=message, error_code=ErrorCode.CONFIG_NOT_FOUND, **kwargs
         )
 
 
@@ -209,7 +202,9 @@ class FileCheckpointBackend(CheckpointBackend):
         >>> domain = backend.load_checkpoint("wf-123", checkpoint_id)
     """
 
-    def __init__(self, checkpoint_dir: str = "./checkpoints", hmac_key: Optional[str] = None):
+    def __init__(
+        self, checkpoint_dir: str = "./checkpoints", hmac_key: str | None = None
+    ):
         """Initialize file-based checkpoint backend.
 
         Args:
@@ -225,7 +220,9 @@ class FileCheckpointBackend(CheckpointBackend):
 
         # M-10: HMAC integrity verification for checkpoint files
         if hmac_key is not None:
-            self._hmac_key = hmac_key.encode() if isinstance(hmac_key, str) else hmac_key
+            self._hmac_key = (
+                hmac_key.encode() if isinstance(hmac_key, str) else hmac_key
+            )
         else:
             env_key = os.environ.get("CHECKPOINT_HMAC_KEY")
             # H-22: Require CHECKPOINT_HMAC_KEY in production
@@ -287,13 +284,17 @@ class FileCheckpointBackend(CheckpointBackend):
         """
         if not id_value or not isinstance(id_value, str):
             raise ValueError(f"{id_type} must be a non-empty string")
-        if '\x00' in id_value:
+        if "\x00" in id_value:
             raise ValueError(f"{id_type} contains null bytes")
         if len(id_value) > MAX_SHORT_STRING_LENGTH:
-            raise ValueError(f"{id_type} exceeds maximum length of {MAX_SHORT_STRING_LENGTH} characters")
-        sanitized = re.sub(r'[^A-Za-z0-9_-]', '_', id_value)
+            raise ValueError(
+                f"{id_type} exceeds maximum length of {MAX_SHORT_STRING_LENGTH} characters"
+            )
+        sanitized = re.sub(r"[^A-Za-z0-9_-]", "_", id_value)
         if not sanitized:
-            raise ValueError(f"{id_type} contains no valid characters after sanitization")
+            raise ValueError(
+                f"{id_type} contains no valid characters after sanitization"
+            )
         return sanitized
 
     def _verify_path_containment(self, resolved_path: Path) -> None:
@@ -332,7 +333,9 @@ class FileCheckpointBackend(CheckpointBackend):
         """
         timestamp = int(time.time() * 1000)  # Millisecond precision
         self._counter += 1
-        random_suffix = secrets.token_hex(CHECKPOINT_ID_RANDOM_BYTES)  # 12 hex chars (48 bits of entropy)
+        random_suffix = secrets.token_hex(
+            CHECKPOINT_ID_RANDOM_BYTES
+        )  # 12 hex chars (48 bits of entropy)
         return f"cp-{timestamp}-{self._counter}-{random_suffix}"
 
     def _get_checkpoint_path(self, workflow_id: str, checkpoint_id: str) -> Path:
@@ -348,8 +351,8 @@ class FileCheckpointBackend(CheckpointBackend):
         self,
         workflow_id: str,
         domain_state: WorkflowDomainState,
-        checkpoint_id: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None
+        checkpoint_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> str:
         """Save checkpoint to JSON file.
 
@@ -373,7 +376,7 @@ class FileCheckpointBackend(CheckpointBackend):
             "created_at": datetime.now(UTC).isoformat(),
             "stage": domain_state.current_stage,
             "domain_state": domain_state.to_dict(exclude_none=True),
-            "metadata": metadata or {}
+            "metadata": metadata or {},
         }
 
         # M-10: Compute HMAC over the serialized checkpoint data for integrity
@@ -391,12 +394,10 @@ class FileCheckpointBackend(CheckpointBackend):
         # files from concurrent writes or crashes mid-write.
         checkpoint_path = self._get_checkpoint_path(workflow_id, checkpoint_id)
         fd, tmp_path = tempfile.mkstemp(
-            dir=checkpoint_path.parent,
-            suffix='.tmp',
-            prefix='.cp-'
+            dir=checkpoint_path.parent, suffix=".tmp", prefix=".cp-"
         )
         try:
-            with os.fdopen(fd, 'w') as f:
+            with os.fdopen(fd, "w") as f:
                 json.dump(envelope, f, indent=2)
                 f.flush()
                 os.fsync(f.fileno())
@@ -412,9 +413,7 @@ class FileCheckpointBackend(CheckpointBackend):
         return checkpoint_id
 
     def load_checkpoint(
-        self,
-        workflow_id: str,
-        checkpoint_id: Optional[str] = None
+        self, workflow_id: str, checkpoint_id: str | None = None
     ) -> WorkflowDomainState:
         """Load checkpoint from JSON file.
 
@@ -443,7 +442,7 @@ class FileCheckpointBackend(CheckpointBackend):
                 f"{LOG_PREFIX_CHECKPOINT}{checkpoint_id} not found for workflow {workflow_id}"
             )
 
-        with open(checkpoint_path, 'r') as f:
+        with open(checkpoint_path) as f:
             raw = json.load(f)
 
         # M-10: HMAC integrity verification.
@@ -471,7 +470,7 @@ class FileCheckpointBackend(CheckpointBackend):
         # Restore domain state
         return WorkflowDomainState.from_dict(checkpoint_data["domain_state"])
 
-    def list_checkpoints(self, workflow_id: str) -> List[Dict[str, Any]]:
+    def list_checkpoints(self, workflow_id: str) -> list[dict[str, Any]]:
         """List all checkpoints for a workflow.
 
         Args:
@@ -484,16 +483,18 @@ class FileCheckpointBackend(CheckpointBackend):
         checkpoints = []
 
         for checkpoint_file in workflow_dir.glob("cp-*.json"):
-            with open(checkpoint_file, 'r') as f:
+            with open(checkpoint_file) as f:
                 raw = json.load(f)
                 # Handle both HMAC envelope and legacy formats
                 checkpoint_data = raw.get("data", raw) if "hmac" in raw else raw
-                checkpoints.append({
-                    "checkpoint_id": checkpoint_data["checkpoint_id"],
-                    "created_at": checkpoint_data["created_at"],
-                    "stage": checkpoint_data["stage"],
-                    "metadata": checkpoint_data.get("metadata", {})
-                })
+                checkpoints.append(
+                    {
+                        "checkpoint_id": checkpoint_data["checkpoint_id"],
+                        "created_at": checkpoint_data["created_at"],
+                        "stage": checkpoint_data["stage"],
+                        "metadata": checkpoint_data.get("metadata", {}),
+                    }
+                )
 
         # Sort by created_at descending (newest first)
         checkpoints.sort(key=lambda x: x["created_at"], reverse=True)
@@ -515,7 +516,7 @@ class FileCheckpointBackend(CheckpointBackend):
             return True
         return False
 
-    def get_latest_checkpoint(self, workflow_id: str) -> Optional[str]:
+    def get_latest_checkpoint(self, workflow_id: str) -> str | None:
         """Get the latest checkpoint ID for a workflow.
 
         CO-05: Uses file modification time to find the latest file, then
@@ -534,228 +535,8 @@ class FileCheckpointBackend(CheckpointBackend):
         # Use file modification time to find the latest checkpoint
         latest_file = max(checkpoint_files, key=lambda f: f.stat().st_mtime)
         # Read only the latest file to extract the canonical checkpoint_id
-        with open(latest_file, 'r') as f:
+        with open(latest_file) as f:
             raw = json.load(f)
         # Handle both HMAC envelope and legacy formats
         data = raw.get("data", raw) if "hmac" in raw else raw
         return cast(str, data["checkpoint_id"])
-
-
-class RedisCheckpointBackend(CheckpointBackend):
-    """Redis-based checkpoint storage (optional, for distributed systems).
-
-    Stores checkpoints in Redis with:
-    - Key pattern: checkpoint:{workflow_id}:{checkpoint_id}
-    - Metadata index: checkpoint_index:{workflow_id} (sorted set by timestamp)
-    - Automatic expiration support
-
-    Features:
-    - Fast distributed access
-    - Atomic operations
-    - Optional TTL for automatic cleanup
-    - Suitable for multi-worker deployments
-
-    Requirements:
-    - redis Python package
-    - Running Redis server
-
-    Example:
-        >>> backend = RedisCheckpointBackend(redis_url="redis://localhost:6379")
-        >>> checkpoint_id = backend.save_checkpoint("wf-123", domain)
-        >>> domain = backend.load_checkpoint("wf-123", checkpoint_id)
-    """
-
-    def __init__(
-        self,
-        redis_url: str = "redis://localhost:6379",
-        ttl: Optional[int] = None
-    ):
-        """Initialize Redis-based checkpoint backend.
-
-        Args:
-            redis_url: Redis connection URL
-            ttl: Optional time-to-live in seconds for checkpoints
-        """
-        try:
-            import redis
-        except ImportError:
-            raise ImportError(
-                "Redis backend requires 'redis' package. "
-                "Install with: pip install redis"
-            )
-
-        self.redis_client = redis.from_url(
-            redis_url,
-            decode_responses=True,
-            socket_connect_timeout=TIMEOUT_SHORT,
-            socket_timeout=TIMEOUT_SHORT,
-        )
-        self.ttl = ttl
-
-    @staticmethod
-    def _sanitize_id(value: str) -> str:
-        """Sanitize IDs for use in Redis keys (CO-04)."""
-        import re as _re
-        return _re.sub(r'[^a-zA-Z0-9_\-.]', '_', value)
-
-    def _generate_checkpoint_id(self) -> str:
-        """Generate a unique checkpoint ID (CO-07: uuid4 prevents collisions)."""
-        import uuid
-        return f"cp-{uuid.uuid4().hex[:UUID_HEX_MEDIUM_LENGTH]}"
-
-    def save_checkpoint(
-        self,
-        workflow_id: str,
-        domain_state: WorkflowDomainState,
-        checkpoint_id: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None
-    ) -> str:
-        """Save checkpoint to Redis. Returns checkpoint ID."""
-        if checkpoint_id is None:
-            checkpoint_id = self._generate_checkpoint_id()
-
-        # Build checkpoint data
-        checkpoint_data = {
-            "checkpoint_id": checkpoint_id,
-            "workflow_id": workflow_id,
-            "created_at": datetime.now(UTC).isoformat(),
-            "stage": domain_state.current_stage,
-            "domain_state": domain_state.to_dict(exclude_none=True),
-            "metadata": metadata or {}
-        }
-
-        # CO-04: Sanitize IDs for Redis key safety
-        safe_wf = self._sanitize_id(workflow_id)
-        safe_cp = self._sanitize_id(checkpoint_id)
-
-        # CO-08: Atomic save using pipeline (SET + ZADD)
-        key = f"{LOG_PREFIX_CHECKPOINT_LABEL}{safe_wf}:{safe_cp}"
-        index_key = f"{LOG_PREFIX_CHECKPOINT_INDEX}{safe_wf}"
-        timestamp = time.time()
-
-        pipe = self.redis_client.pipeline(transaction=True)
-        pipe.set(key, json.dumps(checkpoint_data), ex=self.ttl)
-        pipe.zadd(index_key, {checkpoint_id: timestamp})
-        # CO-09: Set TTL on the index sorted set so it doesn't leak memory.
-        # Use 2x the checkpoint TTL to ensure index outlives its entries.
-        if self.ttl is not None:
-            pipe.expire(index_key, self.ttl * 2)
-        pipe.execute()
-
-        return checkpoint_id
-
-    def load_checkpoint(
-        self,
-        workflow_id: str,
-        checkpoint_id: Optional[str] = None
-    ) -> WorkflowDomainState:
-        """Load checkpoint from Redis.
-
-        Args:
-            workflow_id: Unique workflow execution ID
-            checkpoint_id: Checkpoint ID to load (latest if not specified)
-
-        Returns:
-            Restored WorkflowDomainState
-
-        Raises:
-            CheckpointNotFoundError: If checkpoint doesn't exist
-        """
-        # Get checkpoint ID if not specified
-        if checkpoint_id is None:
-            checkpoint_id = self.get_latest_checkpoint(workflow_id)
-            if checkpoint_id is None:
-                raise CheckpointNotFoundError(
-                    f"No checkpoints found for workflow {workflow_id}"
-                )
-
-        # Load from Redis (CO-04: sanitize IDs)
-        safe_wf = self._sanitize_id(workflow_id)
-        safe_cp = self._sanitize_id(checkpoint_id)
-        key = f"{LOG_PREFIX_CHECKPOINT_LABEL}{safe_wf}:{safe_cp}"
-        data = self.redis_client.get(key)
-
-        if data is None:
-            raise CheckpointNotFoundError(
-                f"{LOG_PREFIX_CHECKPOINT}{checkpoint_id} not found for workflow {workflow_id}"
-            )
-
-        checkpoint_data = json.loads(data)
-        return WorkflowDomainState.from_dict(checkpoint_data["domain_state"])
-
-    def list_checkpoints(self, workflow_id: str) -> List[Dict[str, Any]]:
-        """List all checkpoints for a workflow from Redis.
-
-        Args:
-            workflow_id: Unique workflow execution ID
-
-        Returns:
-            List of checkpoint metadata dicts (sorted by created_at desc)
-        """
-        safe_wf = self._sanitize_id(workflow_id)
-        index_key = f"{LOG_PREFIX_CHECKPOINT_INDEX}{safe_wf}"
-        # Get all checkpoint IDs (sorted by score descending)
-        checkpoint_ids = self.redis_client.zrevrange(index_key, 0, -1)
-
-        # CO-06: Use pipeline to batch-fetch all checkpoint data in a single
-        # round-trip instead of N+1 individual GET calls.
-        if not checkpoint_ids:
-            return []
-
-        keys = [
-            f"{LOG_PREFIX_CHECKPOINT_LABEL}{safe_wf}:{self._sanitize_id(cp_id)}"
-            for cp_id in checkpoint_ids
-        ]
-        results = self.redis_client.mget(keys)
-
-        checkpoints = []
-        for data in results:
-            if data:
-                checkpoint_data = json.loads(data)
-                checkpoints.append({
-                    "checkpoint_id": checkpoint_data["checkpoint_id"],
-                    "created_at": checkpoint_data["created_at"],
-                    "stage": checkpoint_data["stage"],
-                    "metadata": checkpoint_data.get("metadata", {})
-                })
-
-        return checkpoints
-
-    def delete_checkpoint(self, workflow_id: str, checkpoint_id: str) -> bool:
-        """Delete a specific checkpoint from Redis.
-
-        Args:
-            workflow_id: Unique workflow execution ID
-            checkpoint_id: Checkpoint ID to delete
-
-        Returns:
-            True if deleted, False if not found
-        """
-        # CO-04: Sanitize IDs; CO-08: Atomic delete
-        safe_wf = self._sanitize_id(workflow_id)
-        safe_cp = self._sanitize_id(checkpoint_id)
-        key = f"{LOG_PREFIX_CHECKPOINT_LABEL}{safe_wf}:{safe_cp}"
-        index_key = f"{LOG_PREFIX_CHECKPOINT_INDEX}{safe_wf}"
-
-        pipe = self.redis_client.pipeline(transaction=True)
-        pipe.delete(key)
-        pipe.zrem(index_key, checkpoint_id)
-        results = pipe.execute()
-
-        return cast(bool, results[0] > 0)
-
-    def get_latest_checkpoint(self, workflow_id: str) -> Optional[str]:
-        """Get the latest checkpoint ID for a workflow from Redis.
-
-        Args:
-            workflow_id: Unique workflow execution ID
-
-        Returns:
-            Latest checkpoint ID, or None if no checkpoints exist
-        """
-        index_key = f"{LOG_PREFIX_CHECKPOINT_INDEX}{self._sanitize_id(workflow_id)}"
-        # Get the highest-scored item (most recent)
-        checkpoint_ids = self.redis_client.zrevrange(index_key, 0, 0)
-        if checkpoint_ids:
-            return str(checkpoint_ids[0])
-        return None

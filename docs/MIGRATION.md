@@ -26,7 +26,7 @@ Guide for migrating between versions of the Temper AI.
 ### Step 1: Update Dependencies
 
 ```bash
-pip install --upgrade meta-autonomous-framework
+pip install --upgrade temper-ai
 ```
 
 ### Step 2: Update Configs

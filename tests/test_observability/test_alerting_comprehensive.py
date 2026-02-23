@@ -1,7 +1,7 @@
 """Comprehensive additional tests for real-time alerting system."""
 
-from datetime import datetime, timedelta, timezone
-from unittest.mock import Mock, call, patch
+from datetime import UTC, datetime, timedelta
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -22,7 +22,9 @@ class TestAlertRuleValidation:
         """Test creating rules for all metric types."""
         for metric_type in MetricType:
             rule = AlertRule(
-                name=f"rule_{metric_type.value}", metric_type=metric_type, threshold=100.0
+                name=f"rule_{metric_type.value}",
+                metric_type=metric_type,
+                threshold=100.0,
             )
             assert rule.metric_type == metric_type
 
@@ -82,7 +84,10 @@ class TestAlertRuleValidation:
             "custom_field": {"nested": "value"},
         }
         rule = AlertRule(
-            name="test", metric_type=MetricType.COST_USD, threshold=10.0, metadata=metadata
+            name="test",
+            metric_type=MetricType.COST_USD,
+            threshold=10.0,
+            metadata=metadata,
         )
         assert rule.metadata == metadata
         assert rule.metadata["custom_field"]["nested"] == "value"
@@ -178,14 +183,20 @@ class TestAlertManagerAdvanced:
 
     def test_add_rule_overwrites_existing(self, clean_manager):
         """Test adding rule with existing name overwrites."""
-        rule1 = AlertRule(name="test_rule", metric_type=MetricType.COST_USD, threshold=10.0)
+        rule1 = AlertRule(
+            name="test_rule", metric_type=MetricType.COST_USD, threshold=10.0
+        )
         clean_manager.add_rule(rule1)
 
-        rule2 = AlertRule(name="test_rule", metric_type=MetricType.COST_USD, threshold=20.0)
+        rule2 = AlertRule(
+            name="test_rule", metric_type=MetricType.COST_USD, threshold=20.0
+        )
         clean_manager.add_rule(rule2)
 
         # Should have only one rule with updated threshold
-        assert len([r for r in clean_manager.rules.values() if r.name == "test_rule"]) == 1
+        assert (
+            len([r for r in clean_manager.rules.values() if r.name == "test_rule"]) == 1
+        )
         assert clean_manager.rules["test_rule"].threshold == 20.0
 
     def test_remove_nonexistent_rule(self, clean_manager):
@@ -217,7 +228,9 @@ class TestAlertManagerAdvanced:
 
     def test_check_metric_with_exact_threshold(self, clean_manager):
         """Test metric exactly at threshold does not trigger."""
-        rule = AlertRule(name="test", metric_type=MetricType.COST_USD, threshold=10.0, enabled=True)
+        rule = AlertRule(
+            name="test", metric_type=MetricType.COST_USD, threshold=10.0, enabled=True
+        )
         clean_manager.add_rule(rule)
 
         # Exactly at threshold - should NOT trigger
@@ -231,7 +244,10 @@ class TestAlertManagerAdvanced:
     def test_check_metric_wrong_type_for_rule(self, clean_manager):
         """Test metric of different type does not trigger rule."""
         rule = AlertRule(
-            name="cost_rule", metric_type=MetricType.COST_USD, threshold=10.0, enabled=True
+            name="cost_rule",
+            metric_type=MetricType.COST_USD,
+            threshold=10.0,
+            enabled=True,
         )
         clean_manager.add_rule(rule)
 
@@ -387,7 +403,9 @@ class TestAlertManagerAdvanced:
 
     def test_get_recent_alerts_time_filtering(self, clean_manager):
         """Test get_recent_alerts filters by time window."""
-        rule = AlertRule(name="test", metric_type=MetricType.COST_USD, threshold=10.0, enabled=True)
+        rule = AlertRule(
+            name="test", metric_type=MetricType.COST_USD, threshold=10.0, enabled=True
+        )
         clean_manager.add_rule(rule)
 
         # Create alert with old timestamp
@@ -397,7 +415,7 @@ class TestAlertManagerAdvanced:
             message="Old alert",
             metric_value=15.0,
             threshold=10.0,
-            timestamp=datetime.now(timezone.utc) - timedelta(hours=48),
+            timestamp=datetime.now(UTC) - timedelta(hours=48),
         )
         clean_manager.alert_history.append(old_alert)
 
@@ -446,7 +464,9 @@ class TestAlertManagerAdvanced:
         clean_manager.check_metric("latency_p99", 2000.0)
 
         # Filter by WARNING
-        warnings = clean_manager.get_recent_alerts(hours=24, severity=AlertSeverity.WARNING)
+        warnings = clean_manager.get_recent_alerts(
+            hours=24, severity=AlertSeverity.WARNING
+        )
         assert len(warnings) == 1
         assert all(a.severity == AlertSeverity.WARNING for a in warnings)
 
@@ -456,7 +476,9 @@ class TestAlertManagerAdvanced:
         assert all(a.severity == AlertSeverity.ERROR for a in errors)
 
         # Filter by CRITICAL
-        criticals = clean_manager.get_recent_alerts(hours=24, severity=AlertSeverity.CRITICAL)
+        criticals = clean_manager.get_recent_alerts(
+            hours=24, severity=AlertSeverity.CRITICAL
+        )
         assert len(criticals) == 1
         assert all(a.severity == AlertSeverity.CRITICAL for a in criticals)
 
@@ -524,7 +546,9 @@ class TestAlertManagerAdvanced:
 
     def test_metric_enum_validation(self, clean_manager):
         """Test only valid metric types trigger rules."""
-        rule = AlertRule(name="test", metric_type=MetricType.COST_USD, threshold=10.0, enabled=True)
+        rule = AlertRule(
+            name="test", metric_type=MetricType.COST_USD, threshold=10.0, enabled=True
+        )
         clean_manager.add_rule(rule)
 
         # Valid metric type

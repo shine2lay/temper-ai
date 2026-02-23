@@ -3,18 +3,19 @@
 Extracted from FileAccessPolicy to keep the class below 500 lines.
 These are internal implementation details and should not be used directly.
 """
+
 import os
 import pathlib
 import re
 import unicodedata
 import urllib.parse
 from pathlib import Path
-from typing import Any, Dict, List, Set
+from typing import Any
 
 from temper_ai.safety.constants import PATH_KEY, PATHS_KEY
 
 
-def extract_paths(action: Dict[str, Any]) -> List[str]:
+def extract_paths(action: dict[str, Any]) -> list[str]:
     """Extract file paths from action.
 
     Args:
@@ -68,7 +69,7 @@ def decode_url_fully(path: str, max_iterations: int = 10) -> str:
     for i in range(max_iterations):
         previous = decoded
         try:
-            decoded = urllib.parse.unquote(decoded, errors='strict')
+            decoded = urllib.parse.unquote(decoded, errors="strict")
         except (UnicodeDecodeError, ValueError):
             return path
 
@@ -96,38 +97,38 @@ def normalize_unicode(path: str) -> str:
         Normalized path with dangerous Unicode converted to ASCII
     """
     # Strip BOM (Byte Order Mark) if present at start
-    if path and path[0] == '\ufeff':
+    if path and path[0] == "\ufeff":
         path = path[1:]
 
     # Remove zero-width characters (often used in obfuscation)
     zero_width_chars = [
-        '\u200b',  # ZERO WIDTH SPACE
-        '\u200c',  # ZERO WIDTH NON-JOINER
-        '\u200d',  # ZERO WIDTH JOINER
-        '\ufeff',  # ZERO WIDTH NO-BREAK SPACE (BOM)
-        '\u2060',  # WORD JOINER
+        "\u200b",  # ZERO WIDTH SPACE
+        "\u200c",  # ZERO WIDTH NON-JOINER
+        "\u200d",  # ZERO WIDTH JOINER
+        "\ufeff",  # ZERO WIDTH NO-BREAK SPACE (BOM)
+        "\u2060",  # WORD JOINER
     ]
     for char in zero_width_chars:
-        path = path.replace(char, '')
+        path = path.replace(char, "")
 
     # CRITICAL: Manually replace dangerous Unicode lookalikes that NFKC doesn't normalize
     dangerous_lookalikes = {
-        '\u2215': '/',  # DIVISION SLASH -> SOLIDUS
-        '\u2044': '/',  # FRACTION SLASH -> SOLIDUS
-        '\u29f8': '/',  # BIG SOLIDUS -> SOLIDUS
-        '\u2024': '.',  # ONE DOT LEADER -> PERIOD
-        '\u2025': '..',  # TWO DOT LEADER -> TWO PERIODS
-        '\u2026': '...',  # HORIZONTAL ELLIPSIS -> THREE PERIODS
-        '\u00b7': '.',  # MIDDLE DOT -> PERIOD
-        '\u2027': '.',  # HYPHENATION POINT -> PERIOD
-        '\u0338': '',  # COMBINING LONG SOLIDUS OVERLAY -> remove
+        "\u2215": "/",  # DIVISION SLASH -> SOLIDUS
+        "\u2044": "/",  # FRACTION SLASH -> SOLIDUS
+        "\u29f8": "/",  # BIG SOLIDUS -> SOLIDUS
+        "\u2024": ".",  # ONE DOT LEADER -> PERIOD
+        "\u2025": "..",  # TWO DOT LEADER -> TWO PERIODS
+        "\u2026": "...",  # HORIZONTAL ELLIPSIS -> THREE PERIODS
+        "\u00b7": ".",  # MIDDLE DOT -> PERIOD
+        "\u2027": ".",  # HYPHENATION POINT -> PERIOD
+        "\u0338": "",  # COMBINING LONG SOLIDUS OVERLAY -> remove
     }
     for dangerous, safe in dangerous_lookalikes.items():
         path = path.replace(dangerous, safe)
 
     # Apply NFKC normalization
     try:
-        normalized = unicodedata.normalize('NFKC', path)
+        normalized = unicodedata.normalize("NFKC", path)
     except (UnicodeError, ValueError):
         return path
 
@@ -180,15 +181,17 @@ def has_parent_traversal(path: str) -> bool:
         True if path contains ../ path traversal
     """
     parts = pathlib.PurePosixPath(path).parts
-    if '..' in parts:
+    if ".." in parts:
         return True
     parts_win = pathlib.PureWindowsPath(path).parts
-    if '..' in parts_win:
+    if ".." in parts_win:
         return True
     return False
 
 
-def is_forbidden_file(path: str, forbidden_files: Set[str], case_sensitive: bool) -> bool:
+def is_forbidden_file(
+    path: str, forbidden_files: set[str], case_sensitive: bool
+) -> bool:
     """Check if path is a forbidden file.
 
     Args:
@@ -202,14 +205,18 @@ def is_forbidden_file(path: str, forbidden_files: Set[str], case_sensitive: bool
     path_lower = path.lower() if not case_sensitive else path
 
     for forbidden_file in forbidden_files:
-        forbidden_lower = forbidden_file.lower() if not case_sensitive else forbidden_file
+        forbidden_lower = (
+            forbidden_file.lower() if not case_sensitive else forbidden_file
+        )
         if path_lower == forbidden_lower or path_lower.endswith(forbidden_lower):
             return True
 
     return False
 
 
-def is_forbidden_directory(path: str, forbidden_directories: Set[str], case_sensitive: bool) -> bool:
+def is_forbidden_directory(
+    path: str, forbidden_directories: set[str], case_sensitive: bool
+) -> bool:
     """Check if path is under a forbidden directory.
 
     Args:
@@ -225,14 +232,15 @@ def is_forbidden_directory(path: str, forbidden_directories: Set[str], case_sens
     for forbidden_dir in forbidden_directories:
         forbidden_lower = forbidden_dir.lower() if not case_sensitive else forbidden_dir
         if path_lower.startswith(forbidden_lower):
-            if len(path_lower) == len(forbidden_lower) or \
-               path_lower[len(forbidden_lower):len(forbidden_lower)+1] in ('/', '\\'):
+            if len(path_lower) == len(forbidden_lower) or path_lower[
+                len(forbidden_lower) : len(forbidden_lower) + 1
+            ] in ("/", "\\"):
                 return True
 
     return False
 
 
-def has_forbidden_extension(path: str, forbidden_extensions: Set[str]) -> bool:
+def has_forbidden_extension(path: str, forbidden_extensions: set[str]) -> bool:
     """Check if path has a forbidden extension.
 
     Args:
@@ -270,23 +278,23 @@ def matches_pattern(path: str, pattern: str, case_sensitive: bool) -> bool:
     if path == pattern:
         return True
 
-    if pattern.endswith('/'):
+    if pattern.endswith("/"):
         return path.startswith(pattern)
 
-    regex_pattern = pattern.replace('**/', '__RECURSIVE__/')
-    regex_pattern = regex_pattern.replace('**', '__RECURSIVE_END__')
-    regex_pattern = regex_pattern.replace('*', '[^/]*')
-    regex_pattern = regex_pattern.replace('__RECURSIVE__/', '(?:.*/)?')
-    regex_pattern = regex_pattern.replace('__RECURSIVE_END__', '.*')
-    regex_pattern = '^' + regex_pattern + '$'
+    regex_pattern = pattern.replace("**/", "__RECURSIVE__/")
+    regex_pattern = regex_pattern.replace("**", "__RECURSIVE_END__")
+    regex_pattern = regex_pattern.replace("*", "[^/]*")
+    regex_pattern = regex_pattern.replace("__RECURSIVE__/", "(?:.*/)?")
+    regex_pattern = regex_pattern.replace("__RECURSIVE_END__", ".*")
+    regex_pattern = "^" + regex_pattern + "$"
 
     try:
         return bool(re.match(regex_pattern, path))
     except re.error:
-        return path.startswith(pattern.rstrip('*'))
+        return path.startswith(pattern.rstrip("*"))
 
 
-def is_allowed(path: str, allowed_paths: List[str], case_sensitive: bool) -> bool:
+def is_allowed(path: str, allowed_paths: list[str], case_sensitive: bool) -> bool:
     """Check if path matches allowlist.
 
     Args:
@@ -307,7 +315,7 @@ def is_allowed(path: str, allowed_paths: List[str], case_sensitive: bool) -> boo
     return False
 
 
-def is_denied(path: str, denied_paths: List[str], case_sensitive: bool) -> bool:
+def is_denied(path: str, denied_paths: list[str], case_sensitive: bool) -> bool:
     """Check if path matches denylist.
 
     Args:

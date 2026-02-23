@@ -4,6 +4,7 @@ Security tests for ReDoS vulnerability fix in secret detection (code-crit-14).
 Ensures that the base64 pattern does not cause catastrophic backtracking
 when processing malicious input designed to trigger exponential regex behavior.
 """
+
 import time
 
 import pytest
@@ -17,7 +18,9 @@ class TestReDoSPrevention:
     def test_normal_base64_still_detected(self):
         """Verify legitimate base64 strings are still detected."""
         # Valid base64 string (40+ chars)
-        base64_secret = "dGhpc2lzYXZlcnlsb25nYmFzZTY0ZW5jb2RlZHN0cmluZ3RoYXRsb29rc2xpa2Vhc2VjcmV0"
+        base64_secret = (
+            "dGhpc2lzYXZlcnlsb25nYmFzZTY0ZW5jb2RlZHN0cmluZ3RoYXRsb29rc2xpa2Vhc2VjcmV0"
+        )
 
         is_secret, confidence = detect_secret_patterns(base64_secret)
         assert is_secret is True
@@ -26,7 +29,9 @@ class TestReDoSPrevention:
     def test_base64_with_padding_detected(self):
         """Verify base64 strings with padding are detected."""
         # Base64 with single padding
-        base64_with_padding = "SGVsbG9Xb3JsZFRoaXNJc0FMb25nQmFzZTY0U3RyaW5nVGhhdE5lZWRzUGFkZGluZw=="
+        base64_with_padding = (
+            "SGVsbG9Xb3JsZFRoaXNJc0FMb25nQmFzZTY0U3RyaW5nVGhhdE5lZWRzUGFkZGluZw=="
+        )
 
         is_secret, confidence = detect_secret_patterns(base64_with_padding)
         assert is_secret is True
@@ -202,7 +207,9 @@ class TestPerformance:
         elapsed = time.time() - start
 
         # Should process 100 strings in < 1 second
-        assert elapsed < 1.0, f"Batch processing too slow: {elapsed:.3f}s for 100 strings"
+        assert (
+            elapsed < 1.0
+        ), f"Batch processing too slow: {elapsed:.3f}s for 100 strings"
 
     def test_worst_case_performance(self):
         """Verify worst-case scenario completes in reasonable time."""
@@ -264,18 +271,22 @@ class TestAdditionalReDoSPatterns:
 
 
 class TestInputValidation:
-    """Test input length validation (defense in depth)."""
+    """Test input length validation (defense in depth).
+
+    The limit was raised from 10KB to 100KB (SIZE_100KB = 102400) to support
+    multi-stage workflows with accumulated context while still preventing ReDoS.
+    """
 
     def test_oversized_input_rejected(self):
-        """Verify inputs over 10KB are rejected."""
-        huge_input = "A" * 11000  # 11KB
+        """Verify inputs over 100KB are rejected."""
+        huge_input = "A" * 103000  # Over 100KB (102400)
 
         with pytest.raises(ValueError, match="too long"):
             detect_secret_patterns(huge_input)
 
-    def test_exactly_10kb_accepted(self):
-        """Verify 10KB input is accepted."""
-        max_input = "A" * (10 * 1024)  # Exactly 10KB
+    def test_exactly_100kb_accepted(self):
+        """Verify 100KB input is accepted."""
+        max_input = "A" * (100 * 1024)  # Exactly 100KB (102400)
 
         # Should not raise ValueError
         is_secret, confidence = detect_secret_patterns(max_input)
@@ -284,13 +295,13 @@ class TestInputValidation:
 
     def test_input_validation_error_message(self):
         """Verify error message is clear and informative."""
-        huge_input = "A" * 15000
+        huge_input = "A" * 110000  # Over 100KB
 
         try:
             detect_secret_patterns(huge_input)
             assert False, "Should have raised ValueError"
         except ValueError as e:
             error_msg = str(e)
-            assert "15000" in error_msg  # Actual size
-            assert "10" in error_msg or "10240" in error_msg  # Max size
+            assert "110000" in error_msg  # Actual size
+            assert "102400" in error_msg  # Max size (SIZE_100KB)
             assert "ReDoS" in error_msg  # Explains why

@@ -3,13 +3,14 @@
 Renders a Jinja2 script template from agent config, executes via subprocess,
 parses ``::output key=value`` lines into structured metadata.
 """
+
 from __future__ import annotations
 
 import logging
 import re
 import subprocess  # noqa: S404 -- scripts from trusted YAML config
 import time
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from temper_ai.storage.schemas import AgentConfig
@@ -39,15 +40,15 @@ MAX_STDERR_CHARS = 200
 _OUTPUT_LINE_RE = re.compile(r"^::output\s+(\w+)=(.*)$")
 
 
-def _parse_script_outputs(stdout: str) -> Tuple[str, Dict[str, str]]:
+def _parse_script_outputs(stdout: str) -> tuple[str, dict[str, str]]:
     """Parse ``::output key=value`` directives from stdout.
 
     Returns (remaining_output, outputs_dict).
     Lines matching ``::output key=value`` are extracted into the dict;
     all other lines are preserved in remaining_output.
     """
-    outputs: Dict[str, str] = {}
-    remaining: List[str] = []
+    outputs: dict[str, str] = {}
+    remaining: list[str] = []
     for line in stdout.splitlines():
         match = _OUTPUT_LINE_RE.match(line)
         if match:
@@ -60,8 +61,8 @@ def _parse_script_outputs(stdout: str) -> Tuple[str, Dict[str, str]]:
 def _execute_script(
     rendered_script: str,
     timeout: int,
-    safe_env: Dict[str, str],
-) -> Tuple[int, str, str, Optional[str]]:
+    safe_env: dict[str, str],
+) -> tuple[int, str, str, str | None]:
     """Execute rendered script via subprocess.
 
     Returns (exit_code, stdout, stderr, error_message).
@@ -87,8 +88,8 @@ def _execute_script(
 def _build_error_message(
     exit_code: int,
     stderr: str,
-    exec_error: Optional[str],
-) -> Optional[str]:
+    exec_error: str | None,
+) -> str | None:
     """Build error message from script execution results."""
     if exit_code == 0:
         return None
@@ -135,9 +136,7 @@ class ScriptAgent(BaseAgent):
         if not self.config.agent.name:
             raise ValueError("Agent name is required")
         if not self.config.agent.script:
-            raise ValueError(
-                f"ScriptAgent '{self.name}' requires a 'script' field"
-            )
+            raise ValueError(f"ScriptAgent '{self.name}' requires a 'script' field")
         return True
 
     # ------------------------------------------------------------------
@@ -146,22 +145,22 @@ class ScriptAgent(BaseAgent):
 
     def _run(
         self,
-        input_data: Dict[str, Any],
-        context: Optional[ExecutionContext],
+        input_data: dict[str, Any],
+        context: ExecutionContext | None,
         start_time: float,
     ) -> AgentResponse:
         """Render script, execute via subprocess, parse outputs."""
         script = self.config.agent.script
         if not script:
-            raise ValueError(
-                f"ScriptAgent '{self.name}' has no script configured"
-            )
+            raise ValueError(f"ScriptAgent '{self.name}' has no script configured")
 
         rendered = _render_command(script, input_data)
         timeout = self.config.agent.timeout_seconds or DEFAULT_SCRIPT_TIMEOUT
 
         exit_code, stdout, stderr, exec_error = self._execute_and_emit(
-            rendered, timeout, start_time,
+            rendered,
+            timeout,
+            start_time,
         )
 
         remaining_output, outputs = _parse_script_outputs(stdout)
@@ -183,24 +182,33 @@ class ScriptAgent(BaseAgent):
         rendered: str,
         timeout: int,
         start_time: float,
-    ) -> Tuple[int, str, str, Optional[str]]:
+    ) -> tuple[int, str, str, str | None]:
         """Execute script and emit stream events."""
         tool_label = f"script:{self.name}"
 
-        _emit_stream_event(self, StreamEvent(
-            source=self.name,
-            event_type=TOOL_START,
-            metadata={"tool_name": tool_label},
-        ))
+        _emit_stream_event(
+            self,
+            StreamEvent(
+                source=self.name,
+                event_type=TOOL_START,
+                metadata={"tool_name": tool_label},
+            ),
+        )
 
         safe_env = _build_safe_env()
         exit_code, stdout, stderr, exec_error = _execute_script(
-            rendered, timeout, safe_env,
+            rendered,
+            timeout,
+            safe_env,
         )
 
         self._emit_result_events(
-            tool_label, stdout, stderr, exit_code,
-            exec_error, start_time,
+            tool_label,
+            stdout,
+            stderr,
+            exit_code,
+            exec_error,
+            start_time,
         )
 
         return exit_code, stdout, stderr, exec_error
@@ -211,34 +219,50 @@ class ScriptAgent(BaseAgent):
         stdout: str,
         stderr: str,
         exit_code: int,
-        exec_error: Optional[str],
+        exec_error: str | None,
         start_time: float,
     ) -> None:
         """Emit PROGRESS and TOOL_RESULT stream events."""
         if stdout:
-            _emit_stream_event(self, StreamEvent(
-                source=self.name, event_type=PROGRESS, content=stdout,
-            ))
+            _emit_stream_event(
+                self,
+                StreamEvent(
+                    source=self.name,
+                    event_type=PROGRESS,
+                    content=stdout,
+                ),
+            )
         if stderr:
-            _emit_stream_event(self, StreamEvent(
-                source=self.name, event_type=PROGRESS,
-                content=f"[stderr] {stderr}",
-            ))
+            _emit_stream_event(
+                self,
+                StreamEvent(
+                    source=self.name,
+                    event_type=PROGRESS,
+                    content=f"[stderr] {stderr}",
+                ),
+            )
 
         duration = round(time.time() - start_time, 2)
-        _emit_stream_event(self, StreamEvent(
-            source=self.name,
-            event_type=TOOL_RESULT,
-            metadata={
-                "tool_name": tool_label,
-                "success": exit_code == 0,
-                "duration_s": duration,
-                ToolResultFields.ERROR: exec_error,
-            },
-        ))
+        _emit_stream_event(
+            self,
+            StreamEvent(
+                source=self.name,
+                event_type=TOOL_RESULT,
+                metadata={
+                    "tool_name": tool_label,
+                    "success": exit_code == 0,
+                    "duration_s": duration,
+                    ToolResultFields.ERROR: exec_error,
+                },
+            ),
+        )
 
         self._track_observability(
-            tool_label, exit_code, stdout, duration, exec_error,
+            tool_label,
+            exit_code,
+            stdout,
+            duration,
+            exec_error,
         )
 
     def _track_observability(
@@ -247,7 +271,7 @@ class ScriptAgent(BaseAgent):
         exit_code: int,
         stdout: str,
         duration: float,
-        error: Optional[str],
+        error: str | None,
     ) -> None:
         """Track script execution via observability backend."""
         observer = getattr(self, "_observer", None)
@@ -269,8 +293,10 @@ class ScriptAgent(BaseAgent):
     # ------------------------------------------------------------------
 
     def _on_error(
-        self, error: Exception, start_time: float,
-    ) -> Optional[AgentResponse]:
+        self,
+        error: Exception,
+        start_time: float,
+    ) -> AgentResponse | None:
         """Handle errors that escape _run().
 
         Note: OSError and TimeoutError from subprocess execution are caught
@@ -287,7 +313,7 @@ class ScriptAgent(BaseAgent):
     # Capabilities
     # ------------------------------------------------------------------
 
-    def get_capabilities(self) -> Dict[str, Any]:
+    def get_capabilities(self) -> dict[str, Any]:
         """Get agent capabilities."""
         return {
             "name": self.name,

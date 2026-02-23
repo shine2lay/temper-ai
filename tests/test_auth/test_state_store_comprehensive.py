@@ -1,47 +1,30 @@
 """Comprehensive tests for OAuth state storage implementations."""
+
 import asyncio
-from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
 from temper_ai.auth.oauth.state_store import (
     InMemoryStateStore,
-    RedisStateStore,
     StateStore,
     create_state_store,
 )
-
-# Check if redis is available
-try:
-    import redis.asyncio
-    REDIS_AVAILABLE = True
-except ImportError:
-    REDIS_AVAILABLE = False
 
 
 class TestStateStoreInterface:
     """Tests for StateStore abstract base class."""
 
-    @pytest.mark.asyncio
-    async def test_abstract_methods_raise_not_implemented(self):
-        """Test abstract methods raise NotImplementedError."""
-        store = StateStore()
-
-        with pytest.raises(NotImplementedError):
-            await store.set_state("state", {})
-
-        with pytest.raises(NotImplementedError):
-            await store.get_state("state")
-
-        with pytest.raises(NotImplementedError):
-            await store.delete_state("state")
+    def test_abstract_methods_prevent_instantiation(self):
+        """Test that StateStore cannot be instantiated directly (ABC)."""
+        with pytest.raises(TypeError, match="abstract method"):
+            StateStore()
 
     @pytest.mark.asyncio
     async def test_close_method_exists(self):
-        """Test close method can be called."""
-        store = StateStore()
-        await store.close()  # Should not raise
+        """Test close method can be called on concrete subclass."""
+        store = InMemoryStateStore()
+        result = await store.close()  # Should not raise
+        assert result is None
 
 
 @pytest.mark.asyncio
@@ -66,7 +49,7 @@ class TestInMemoryStateStore:
         state_data = {
             "user_id": "user_123",
             "provider": "google",
-            "code_verifier": "verifier_abc"
+            "code_verifier": "verifier_abc",
         }
 
         await store.set_state("state_token_123", state_data, ttl_seconds=600)
@@ -182,7 +165,9 @@ class TestInMemoryStateStore:
 
         # Add 8 expired states (80% of 10)
         for i in range(8):
-            await store.set_state(f"expired_{i}", {"user_id": f"user_{i}"}, ttl_seconds=1)
+            await store.set_state(
+                f"expired_{i}", {"user_id": f"user_{i}"}, ttl_seconds=1
+            )
 
         await asyncio.sleep(1.5)
 
@@ -203,7 +188,9 @@ class TestInMemoryStateStore:
 
         # Fill store to capacity with long TTL
         for i in range(5):
-            await store.set_state(f"state_{i}", {"user_id": f"user_{i}"}, ttl_seconds=3600)
+            await store.set_state(
+                f"state_{i}", {"user_id": f"user_{i}"}, ttl_seconds=3600
+            )
 
         # Add one more (should trigger eviction of 20% = 1 entry)
         await store.set_state("state_5", {"user_id": "user_5"}, ttl_seconds=3600)
@@ -223,7 +210,7 @@ class TestInMemoryStateStore:
         results = await asyncio.gather(
             store.get_state("state_123"),
             store.get_state("state_123"),
-            store.get_state("state_123")
+            store.get_state("state_123"),
         )
 
         # Only one should get the state, others should get None
@@ -250,243 +237,18 @@ class TestInMemoryStateStore:
     async def test_close_method(self):
         """Test close method can be called."""
         store = InMemoryStateStore()
-        await store.close()  # Should not raise
-
-
-class TestRedisStateStore:
-    """Comprehensive tests for RedisStateStore."""
-
-    @pytest.fixture
-    @pytest.mark.asyncio
-    async def redis_store(self):
-        """Create Redis state store for testing."""
-        if not REDIS_AVAILABLE:
-            pytest.skip("redis package not installed")
-
-        try:
-            store = RedisStateStore(redis_url="redis://localhost:6379/15")
-            await store.connect()
-
-            # Clean test database
-            if store._redis:
-                await store._redis.flushdb()
-
-            yield store
-
-            # Cleanup
-            if store._redis:
-                await store._redis.flushdb()
-            await store.close()
-
-        except Exception as e:
-            pytest.skip(f"Redis not available: {e}")
-
-    async def test_initialization(self):
-        """Test RedisStateStore initialization."""
-        store = RedisStateStore(redis_url="redis://localhost:6379/0")
-        assert store.redis_url == "redis://localhost:6379/0"
-        assert store.key_prefix == "oauth:state:"
-        assert store._redis is None
-
-    async def test_initialization_custom_prefix(self):
-        """Test initialization with custom key prefix."""
-        store = RedisStateStore(key_prefix="custom:prefix:")
-        assert store.key_prefix == "custom:prefix:"
-
-    async def test_initialization_env_variable(self):
-        """Test initialization reads REDIS_URL from env."""
-        with patch.dict("os.environ", {"REDIS_URL": "redis://custom:6379/1"}):
-            store = RedisStateStore()
-            assert store.redis_url == "redis://custom:6379/1"
-
-    async def test_connect_success(self, redis_store):
-        """Test successful connection to Redis."""
-        assert redis_store._redis is not None
-
-    async def test_connect_failure_no_redis(self):
-        """Test connection failure when Redis unavailable."""
-        if not REDIS_AVAILABLE:
-            pytest.skip("redis package not installed")
-
-        store = RedisStateStore(redis_url="redis://nonexistent:9999/0")
-
-        with pytest.raises((OSError, ConnectionError, TimeoutError, AttributeError)):
-            await store.connect()
-
-    async def test_set_and_get_state(self, redis_store):
-        """Test basic set and get operations in Redis."""
-        state_data = {
-            "user_id": "user_123",
-            "provider": "google",
-            "code_verifier": "verifier_abc"
-        }
-
-        await redis_store.set_state("state_token_123", state_data, ttl_seconds=600)
-
-        retrieved = await redis_store.get_state("state_token_123")
-        assert retrieved is not None
-        assert retrieved["user_id"] == "user_123"
-        assert retrieved["provider"] == "google"
-
-    async def test_set_state_default_ttl(self, redis_store):
-        """Test set_state uses default TTL."""
-        await redis_store.set_state("state_123", {"user_id": "user_456"})
-
-        # Verify TTL is set
-        key = redis_store._make_key("state_123")
-        ttl = await redis_store._redis.ttl(key)
-        assert ttl > 0
-
-    async def test_get_state_atomic_delete(self, redis_store):
-        """Test get_state atomically deletes (one-time use)."""
-        state_data = {"user_id": "user_123"}
-        await redis_store.set_state("state_123", state_data)
-
-        # First get succeeds
-        first = await redis_store.get_state("state_123")
-        assert first is not None
-
-        # Second get fails (atomically deleted)
-        second = await redis_store.get_state("state_123")
-        assert second is None
-
-    async def test_get_state_expired_by_ttl(self, redis_store):
-        """Test Redis automatically expires state after TTL."""
-        state_data = {"user_id": "user_123"}
-        await redis_store.set_state("state_123", state_data, ttl_seconds=1)
-
-        # Wait for Redis to expire
-        await asyncio.sleep(1.5)
-
-        # Should be None (auto-expired by Redis)
-        retrieved = await redis_store.get_state("state_123")
-        assert retrieved is None
-
-    async def test_get_state_nonexistent(self, redis_store):
-        """Test getting nonexistent state returns None."""
-        retrieved = await redis_store.get_state("nonexistent")
-        assert retrieved is None
-
-    async def test_delete_state_success(self, redis_store):
-        """Test deleting existing state."""
-        await redis_store.set_state("state_123", {"user_id": "user_123"})
-
-        deleted = await redis_store.delete_state("state_123")
-        assert deleted is True
-
-        # State should not exist
-        retrieved = await redis_store.get_state("state_123")
-        assert retrieved is None
-
-    async def test_delete_state_nonexistent(self, redis_store):
-        """Test deleting nonexistent state returns False."""
-        deleted = await redis_store.delete_state("nonexistent")
-        assert deleted is False
-
-    async def test_cleanup_expired_is_noop(self, redis_store):
-        """Test cleanup_expired is no-op (Redis handles expiration)."""
-        cleaned = await redis_store.cleanup_expired()
-        assert cleaned == 0
-
-    async def test_persistence_across_reconnect(self, redis_store):
-        """Test state persists across connection close/reopen."""
-        state_data = {"user_id": "user_123", "provider": "google"}
-        await redis_store.set_state("state_persistent", state_data, ttl_seconds=600)
-
-        # Close connection
-        await redis_store.close()
-
-        # Reconnect
-        await redis_store.connect()
-
-        # State should still exist
-        retrieved = await redis_store.get_state("state_persistent")
-        assert retrieved is not None
-        assert retrieved["user_id"] == "user_123"
-
-    async def test_make_key_method(self):
-        """Test _make_key generates correct Redis key."""
-        store = RedisStateStore(key_prefix="oauth:state:")
-        key = store._make_key("state_123")
-        assert key == "oauth:state:state_123"
-
-    async def test_close_cleans_up_connection(self, redis_store):
-        """Test close method cleans up Redis connection."""
-        await redis_store.close()
-        assert redis_store._redis is None
-
-    async def test_concurrent_atomic_get(self, redis_store):
-        """Test concurrent gets are atomic (only one succeeds)."""
-        state_data = {"user_id": "user_123"}
-        await redis_store.set_state("state_concurrent", state_data)
-
-        # Attempt concurrent gets
-        results = await asyncio.gather(
-            redis_store.get_state("state_concurrent"),
-            redis_store.get_state("state_concurrent"),
-            redis_store.get_state("state_concurrent")
-        )
-
-        # Only one should succeed due to atomic Lua script
-        non_none_results = [r for r in results if r is not None]
-        assert len(non_none_results) == 1
-
-    async def test_set_state_without_connection_raises(self):
-        """Test set_state without connection raises error."""
-        if not REDIS_AVAILABLE:
-            pytest.skip("redis package not installed")
-
-        store = RedisStateStore()
-        # Don't connect
-
-        with pytest.raises(RuntimeError, match="Redis connection not available"):
-            await store.set_state("state_123", {})
-
-    async def test_get_state_json_decode_error_handling(self, redis_store):
-        """Test get_state handles JSON decode errors gracefully."""
-        # Manually insert invalid JSON
-        key = redis_store._make_key("invalid_json")
-        await redis_store._redis.set(key, "not valid json", ex=600)
-
-        # Should return None and log error
-        retrieved = await redis_store.get_state("invalid_json")
-        assert retrieved is None
+        result = await store.close()  # Should not raise
+        assert result is None
 
 
 class TestCreateStateStoreFactory:
     """Tests for create_state_store factory function."""
 
-    def test_creates_redis_store_when_available(self):
-        """Test factory creates Redis store when available."""
-        if not REDIS_AVAILABLE:
-            pytest.skip("redis package not installed")
+    def test_creates_inmemory_store(self):
+        """Test factory creates InMemoryStateStore."""
+        store = create_state_store()
 
-        with patch("temper_ai.auth.oauth.state_store.RedisStateStore") as mock_redis:
-            mock_instance = Mock()
-            mock_redis.return_value = mock_instance
-
-            store = create_state_store(redis_url="redis://localhost:6379/0")
-
-            mock_redis.assert_called_once_with(redis_url="redis://localhost:6379/0")
-            assert store == mock_instance
-
-    def test_falls_back_to_inmemory_on_import_error(self):
-        """Test factory falls back to InMemoryStateStore on import error."""
-        with patch("temper_ai.auth.oauth.state_store.RedisStateStore") as mock_redis:
-            mock_redis.side_effect = ImportError("redis not installed")
-
-            store = create_state_store()
-
-            assert isinstance(store, InMemoryStateStore)
-
-    def test_falls_back_to_inmemory_on_connection_error(self):
-        """Test factory falls back on connection errors."""
-        with patch("temper_ai.auth.oauth.state_store.RedisStateStore") as mock_redis:
-            mock_redis.side_effect = ConnectionError("Cannot connect")
-
-            store = create_state_store()
-
-            assert isinstance(store, InMemoryStateStore)
+        assert isinstance(store, InMemoryStateStore)
 
     def test_factory_returns_state_store_instance(self):
         """Test factory always returns StateStore instance."""
@@ -506,7 +268,7 @@ class TestStateStoreEdgeCases:
         large_data = {
             "user_id": "user_123",
             "large_field": "x" * 10000,  # 10KB string
-            "nested": {"a": "b" * 1000}
+            "nested": {"a": "b" * 1000},
         }
 
         await store.set_state("large_state", large_data)
@@ -535,11 +297,7 @@ class TestStateStoreEdgeCases:
         """Test Unicode characters in state data."""
         store = InMemoryStateStore()
 
-        state_data = {
-            "user_id": "用户123",
-            "provider": "google",
-            "emoji": "🔐🌍"
-        }
+        state_data = {"user_id": "用户123", "provider": "google", "emoji": "🔐🌍"}
 
         await store.set_state("unicode_state", state_data)
 

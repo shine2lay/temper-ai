@@ -6,16 +6,16 @@ This module handles platform-specific path characteristics including:
 - Forbidden system paths across platforms
 - Case-sensitive/insensitive filesystem detection
 """
+
 import os
 import sys
-from typing import List
 
 
 class PlatformPathDetector:
     """Detects platform-specific forbidden paths and path characteristics."""
 
     @staticmethod
-    def get_windows_system_paths() -> List[str]:
+    def get_windows_system_paths() -> list[str]:
         """Get Windows system paths dynamically using environment variables.
 
         This handles cases where Windows is installed on drives other than C:
@@ -24,30 +24,30 @@ class PlatformPathDetector:
         Returns:
             List of Windows system paths if on Windows, empty list otherwise
         """
-        if os.name != 'nt':  # Not Windows
+        if os.name != "nt":  # Not Windows
             return []
 
         paths = []
 
         # Get actual Windows directory (e.g., "C:\Windows", "D:\Windows", etc.)
-        system_root = os.environ.get('SystemRoot')
+        system_root = os.environ.get("SystemRoot")
         if system_root:
             paths.append(system_root)
 
         # Get Program Files directories
-        program_files = os.environ.get('ProgramFiles')
+        program_files = os.environ.get("ProgramFiles")
         if program_files:
             paths.append(program_files)
 
         # Get Program Files (x86) on 64-bit systems
-        program_files_x86 = os.environ.get('ProgramFiles(x86)')
+        program_files_x86 = os.environ.get("ProgramFiles(x86)")
         if program_files_x86:
             paths.append(program_files_x86)
 
         return paths
 
     @classmethod
-    def get_forbidden_paths(cls) -> List[str]:
+    def get_forbidden_paths(cls) -> list[str]:
         """Get comprehensive list of forbidden system paths.
 
         Returns:

@@ -1,7 +1,6 @@
 """Tests for cross-agent knowledge sharing (M9)."""
-from unittest.mock import MagicMock, patch
 
-import pytest
+from unittest.mock import MagicMock
 
 from temper_ai.memory._schemas import MemoryEntry, MemoryScope
 from temper_ai.memory.cross_pollination import (
@@ -112,9 +111,7 @@ class TestRetrieveSubscribedKnowledge:
     def test_aggregates_from_multiple_agents(self):
         svc = MagicMock()
         svc.search.return_value = [self._make_entry("fact", 0.9)]
-        results = retrieve_subscribed_knowledge(
-            ["agent_a", "agent_b"], "query", svc
-        )
+        results = retrieve_subscribed_knowledge(["agent_a", "agent_b"], "query", svc)
         assert len(results) == 2
         agent_names = {r["agent_name"] for r in results}
         assert agent_names == {"agent_a", "agent_b"}
@@ -138,7 +135,9 @@ class TestFormatCrossPollinationContext:
         assert result == ""
 
     def test_formats_single_result(self):
-        results = [{"agent_name": "agent_a", "content": "some fact", "relevance_score": 0.9}]
+        results = [
+            {"agent_name": "agent_a", "content": "some fact", "relevance_score": 0.9}
+        ]
         text = format_cross_pollination_context(results)
         assert "[From agent_a]: some fact" in text
 
@@ -152,7 +151,9 @@ class TestFormatCrossPollinationContext:
         assert "a2" in text
 
     def test_respects_max_chars(self):
-        results = [{"agent_name": "agent_a", "content": "x" * 100, "relevance_score": 0.9}]
+        results = [
+            {"agent_name": "agent_a", "content": "x" * 100, "relevance_score": 0.9}
+        ]
         text = format_cross_pollination_context(results, max_chars=10)
         assert len(text) == 0 or text == ""
 

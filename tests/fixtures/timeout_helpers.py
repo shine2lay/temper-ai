@@ -8,7 +8,7 @@ across system layers (Tool → Agent → Stage → Workflow).
 import asyncio
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any
 
 from temper_ai.agent.base_agent import AgentResponse
 from temper_ai.storage.schemas.agent_config import (
@@ -100,13 +100,9 @@ class SlowTool(BaseTool):
             modifies_state=False,
         )
 
-    def get_parameters_schema(self) -> Dict[str, Any]:
+    def get_parameters_schema(self) -> dict[str, Any]:
         """Return JSON schema for tool parameters."""
-        return {
-            "type": "object",
-            "properties": {},
-            "required": []
-        }
+        return {"type": "object", "properties": {}, "required": []}
 
     async def execute(self, **kwargs) -> ToolResult:
         """Execute by sleeping for configured duration."""
@@ -114,7 +110,7 @@ class SlowTool(BaseTool):
         return ToolResult(
             success=True,
             result=f"Slept for {self.sleep_seconds}s",
-            metadata={"sleep_duration": self.sleep_seconds}
+            metadata={"sleep_duration": self.sleep_seconds},
         )
 
 
@@ -125,7 +121,7 @@ class ResourceTrackingTool(BaseTool):
         self,
         tracker: ResourceTracker,
         sleep_seconds: float = 60.0,
-        name: str = "ResourceTrackingTool"
+        name: str = "ResourceTrackingTool",
     ):
         self.tracker = tracker
         self.sleep_seconds = sleep_seconds
@@ -147,13 +143,9 @@ class ResourceTrackingTool(BaseTool):
             modifies_state=False,
         )
 
-    def get_parameters_schema(self) -> Dict[str, Any]:
+    def get_parameters_schema(self) -> dict[str, Any]:
         """Return JSON schema for tool parameters."""
-        return {
-            "type": "object",
-            "properties": {},
-            "required": []
-        }
+        return {"type": "object", "properties": {}, "required": []}
 
     async def execute(self, **kwargs) -> ToolResult:
         """Execute with resource tracking."""
@@ -170,32 +162,26 @@ class ResourceTrackingTool(BaseTool):
 class TimeoutTrackingAgent:
     """Agent that tracks cleanup times for concurrency testing."""
 
-    def __init__(
-        self,
-        agent_id: str,
-        cleanup_times: list,
-        sleep_seconds: float = 60.0
-    ):
+    def __init__(self, agent_id: str, cleanup_times: list, sleep_seconds: float = 60.0):
         self.agent_id = agent_id
         self.cleanup_times = cleanup_times
         self.sleep_seconds = sleep_seconds
-        self.config = type('obj', (object,), {
-            'agent': type('obj', (object,), {
-                'timeout_seconds': None
-            })()
-        })()
+        self.config = type(
+            "obj",
+            (object,),
+            {"agent": type("obj", (object,), {"timeout_seconds": None})()},
+        )()
 
-    async def execute(self, input_data: Dict[str, Any]) -> AgentResponse:
+    async def execute(self, input_data: dict[str, Any]) -> AgentResponse:
         """Execute with cleanup tracking."""
         try:
             await asyncio.sleep(self.sleep_seconds)
             return AgentResponse(output="done", metadata={})
         finally:
             # Track cleanup time
-            self.cleanup_times.append({
-                "agent_id": self.agent_id,
-                "cleanup_time": time.time()
-            })
+            self.cleanup_times.append(
+                {"agent_id": self.agent_id, "cleanup_time": time.time()}
+            )
 
 
 class ResourceTrackingAgent:
@@ -204,19 +190,19 @@ class ResourceTrackingAgent:
     def __init__(
         self,
         tracker: ResourceTracker,
-        tool: Optional[BaseTool] = None,
-        sleep_seconds: float = 60.0
+        tool: BaseTool | None = None,
+        sleep_seconds: float = 60.0,
     ):
         self.tracker = tracker
         self.tool = tool
         self.sleep_seconds = sleep_seconds
-        self.config = type('obj', (object,), {
-            'agent': type('obj', (object,), {
-                'timeout_seconds': None
-            })()
-        })()
+        self.config = type(
+            "obj",
+            (object,),
+            {"agent": type("obj", (object,), {"timeout_seconds": None})()},
+        )()
 
-    async def execute(self, input_data: Dict[str, Any]) -> AgentResponse:
+    async def execute(self, input_data: dict[str, Any]) -> AgentResponse:
         """Execute with connection tracking."""
         # Open connection
         self.tracker.agent_connections_opened += 1
@@ -224,10 +210,7 @@ class ResourceTrackingAgent:
             if self.tool:
                 # Call tool (may timeout)
                 result = await self.tool.execute()
-                return AgentResponse(
-                    output=result.result,
-                    metadata=result.metadata
-                )
+                return AgentResponse(output=result.result, metadata=result.metadata)
             else:
                 await asyncio.sleep(self.sleep_seconds)
                 return AgentResponse(output="done", metadata={})
@@ -238,8 +221,8 @@ class ResourceTrackingAgent:
 
 def create_agent_config(
     name: str = "test_agent",
-    timeout_seconds: Optional[int] = None,
-    tools: Optional[list] = None
+    timeout_seconds: int | None = None,
+    tools: list | None = None,
 ) -> AgentConfig:
     """
     Create test agent configuration with optional timeout.
@@ -258,9 +241,7 @@ def create_agent_config(
             description=f"Test agent: {name}",
             version="1.0",
             type="standard",
-            prompt=PromptConfig(
-                inline="You are a test agent. {{input}}"
-            ),
+            prompt=PromptConfig(inline="You are a test agent. {{input}}"),
             inference=InferenceConfig(
                 provider="ollama",
                 model="llama2",
@@ -284,18 +265,18 @@ TIMEOUT_CONFIGS = {
         "tool": 2.0,
         "agent": 1.5,
         "stage": 1.0,
-        "workflow": 0.8  # Shortest - should win
+        "workflow": 0.8,  # Shortest - should win
     },
     "medium": {
         "tool": 50.0,
         "agent": 40.0,
         "stage": 30.0,
-        "workflow": 12.0  # Shortest - should win
+        "workflow": 12.0,  # Shortest - should win
     },
     "slow": {
         "tool": 120.0,
         "agent": 90.0,
         "stage": 60.0,
-        "workflow": 30.0  # Shortest - should win
-    }
+        "workflow": 30.0,  # Shortest - should win
+    },
 }

@@ -1,6 +1,6 @@
 """Tests for decay and max-episodes pruning."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from temper_ai.memory._schemas import MemoryEntry, MemoryScope
 from temper_ai.memory.adapters.in_memory import InMemoryAdapter
@@ -10,7 +10,7 @@ from temper_ai.memory.service import MemoryService, _apply_decay, _enforce_max_e
 
 def _make_entry(content: str, age_days: float = 0, score: float = 1.0) -> MemoryEntry:
     """Create a MemoryEntry with a specific age and score."""
-    created = datetime.now(timezone.utc) - timedelta(days=age_days)
+    created = datetime.now(UTC) - timedelta(days=age_days)
     return MemoryEntry(
         content=content,
         memory_type=MEMORY_TYPE_EPISODIC,
@@ -44,7 +44,7 @@ class TestDecayApplication:
     def test_decay_formula_correctness(self):
         entries = [_make_entry("test", age_days=5, score=0.8)]
         result = _apply_decay(entries, decay_factor=0.9)
-        expected = 0.8 * (0.9 ** 5)
+        expected = 0.8 * (0.9**5)
         assert abs(result[0].relevance_score - expected) < 0.001
 
 
@@ -68,12 +68,15 @@ class TestDecayWithThreshold:
         svc.store_episodic(scope, "very old memory")
         entries = svc.list_memories(scope)
         # Manually set created_at to 100 days ago
-        entries[0].created_at = datetime.now(timezone.utc) - timedelta(days=100)
+        entries[0].created_at = datetime.now(UTC) - timedelta(days=100)
 
         # With decay_factor=0.95 and threshold=0.5, a 100-day-old entry
         # with base score ~1.0 decays to 0.95^100 ≈ 0.006 → filtered out
         context = svc.retrieve_context(
-            scope, "very old", decay_factor=0.95, relevance_threshold=0.5,
+            scope,
+            "very old",
+            decay_factor=0.95,
+            relevance_threshold=0.5,
         )
         # The entry should be gone due to decay below threshold
         # Note: InMemoryAdapter's base search uses substring scoring which may
@@ -93,7 +96,7 @@ class TestMaxEpisodesPruning:
             entry = MemoryEntry(
                 content=f"entry-{i}",
                 memory_type=MEMORY_TYPE_EPISODIC,
-                created_at=datetime.now(timezone.utc) + timedelta(seconds=i),
+                created_at=datetime.now(UTC) + timedelta(seconds=i),
             )
             adapter.add(scope, entry.content, entry.memory_type)
 

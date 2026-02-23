@@ -5,17 +5,18 @@ Revises: f7a8b9012345
 Create Date: 2026-02-16 20:00:00.000000
 
 """
-from typing import Sequence, Union
 
-from alembic import op
+from collections.abc import Sequence
+
 import sqlalchemy as sa
 
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "g8b9c0123456"
-down_revision: Union[str, None] = "f7a8b9012345"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "f7a8b9012345"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -27,7 +28,9 @@ def upgrade() -> None:
         sa.Column("current_level", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("shadow_level", sa.Integer(), nullable=True),
         sa.Column("shadow_runs", sa.Integer(), nullable=False, server_default="0"),
-        sa.Column("shadow_agreements", sa.Integer(), nullable=False, server_default="0"),
+        sa.Column(
+            "shadow_agreements", sa.Integer(), nullable=False, server_default="0"
+        ),
         sa.Column("last_escalation", sa.DateTime(), nullable=True),
         sa.Column("last_de_escalation", sa.DateTime(), nullable=True),
         sa.Column("created_at", sa.DateTime(), nullable=False),

@@ -1,217 +1,210 @@
 # Temper AI
 
-**A self-improving, fully observable autonomous agent system that can run entire product companies.**
-
-## Vision
-
-This framework enables AI agents to autonomously execute complete product lifecycles -- from market research to deployment to iterative improvement -- with minimal human intervention. The system learns from outcomes, experiments with approaches, and continuously optimizes itself.
-
-See [VISION.md](./docs/VISION.md) for the complete vision.
-
-## Current Status: Milestone 8 COMPLETE
-
-**17 milestones complete (M1-M4, M5.1-M5.3, M6.1-M6.3, M7.1-M7.3, M8.1-M8.4).**
-
-The autonomous self-improving loop is now functional: workflows can learn from their own execution, propose improvements, and auto-apply feedback.
-
-## Architecture
-
-```
-temper_ai/
-  workflow/        # LangGraph compiler/engine, config_loader, DAG/node builders
-  stage/           # Stage compiler, executors (sequential, parallel, adaptive)
-  agent/           # StandardAgent, BaseAgent, LLM providers, strategies
-  llm/             # LLMService, cache, prompts, tool_keys
-  tools/           # Tool registry, bash executor
-  safety/          # Action policies, autonomy management, security
-  observability/   # Execution tracker, metrics, collaboration tracker
-  memory/          # Episodic, procedural, semantic memory with adapters
-  learning/        # Pattern mining, recommendations, auto-tuning
-  goals/           # Goal proposal, analysis, safety policy, review workflow
-  portfolio/       # Multi-product orchestration, optimization, knowledge graph
-  lifecycle/       # Self-modifying workflow adaptation
-  experimentation/ # A/B testing, statistical analysis
-  autonomy/        # Post-execution loop, feedback application, audit
-  storage/         # Database models, schemas
-  shared/          # Core utilities, constants, circuit breaker
-  interfaces/      # CLI (temper-ai), dashboard, HTTP server
-
-configs/
-  agents/          # Agent definitions (YAML)
-  stages/          # Stage definitions
-  workflows/       # Workflow lifecycle definitions
-  templates/       # Product type templates (web_app, api, data_pipeline, cli_tool)
-  lifecycle/       # Lifecycle adaptation profiles
-  portfolios/      # Portfolio configurations
-```
-
-## Key Features
-
-1. **Radical Modularity** - Every component is swappable and configurable via YAML
-2. **Full Observability** - Every decision traced and queryable (SQLite + OTEL)
-3. **Autonomous Self-Improvement** - Post-execution learning loop mines patterns, proposes goals, applies feedback
-4. **Progressive Autonomy** - 5-level trust system (Supervised to Strategic) with budget enforcement
-5. **Multi-Agent Collaboration** - Parallel execution with consensus, debate, and merit-weighted strategies
-6. **Multi-Layer Safety** - Composable policies, approval workflows, emergency stop, audit trail
-7. **Portfolio Management** - Multi-product orchestration with knowledge graph and scorecards
-8. **A/B Experimentation** - Statistical testing for workflow variants
-
-## Quick Start
-
-### Installation
-
-```bash
-python -m venv venv
-source venv/bin/activate
-pip install -e ".[dev]"
-```
-
-### Run a Workflow
-
-```bash
-# Simple workflow
-temper-ai run configs/workflows/quick_decision_demo.yaml --input examples/demo_input.yaml --show-details
-
-# With autonomous learning loop
-temper-ai run configs/workflows/quick_decision_demo.yaml --input examples/demo_input.yaml --autonomous --show-details
-```
-
-### Validate a Workflow
-
-```bash
-temper-ai validate configs/workflows/quick_decision_demo.yaml --check-refs
-```
-
-### List Resources
-
-```bash
-temper-ai list workflows
-temper-ai list agents
-temper-ai list stages
-```
-
-### Autonomous Mode
-
-Enable post-execution analysis via YAML or CLI flag:
-
-```yaml
-workflow:
-  name: my_workflow
-  autonomous_loop:
-    enabled: true
-    learning_enabled: true
-    goals_enabled: true
-    portfolio_enabled: true
-```
-
-Or: `temper-ai run workflow.yaml --autonomous`
-
-See [Autonomous Mode Guide](./docs/guides/autonomous_mode.md) for details.
-
-### Learning & Goals
-
-```bash
-temper-ai learning mine          # Mine patterns from execution history
-temper-ai learning patterns      # View discovered patterns
-temper-ai learning recommend     # Generate recommendations
-temper-ai goals propose          # Propose improvement goals
-temper-ai goals list             # List proposals
-```
-
-### Experimentation
-
-```bash
-temper-ai experiment list                    # List experiments
-temper-ai experiment create --name X ...     # Create experiment
-temper-ai experiment start <id>             # Start experiment
-temper-ai experiment results <id>           # View analysis
-```
-
-### Templates
-
-```bash
-temper-ai template list                     # List product types
-temper-ai template create --type api --name my-api  # Scaffold new project
-```
-
-### Dashboard (Dev Mode)
-
-```bash
-temper-ai serve --dev                       # Launch with no auth, permissive CORS (port 8420)
-```
-
-## Development
-
-### Running Tests
-
-```bash
-source venv/bin/activate
-
-# Run core tests (parallel)
-python -m pytest tests/test_workflow/ tests/test_stage/ tests/test_agent/ tests/test_safety/ -n auto
-
-# Run all tests
-python -m pytest tests/ -n auto --ignore=tests/property --ignore=tests/self_improvement --ignore=tests/benchmarks --ignore=tests/test_benchmarks
-
-# Quality check
-python3 scripts/architecture_scan.py
-```
-
-### Code Quality
-
-```bash
-black .           # Format
-ruff check .      # Lint
-mypy temper_ai/   # Type check
-```
-
-## Milestone History
-
-| Milestone | Description | Status |
-|-----------|-------------|--------|
-| M1 | Full observability infrastructure | Complete |
-| M2 | Basic agent execution with LangGraph | Complete |
-| M2.5 | Execution engine abstraction layer | Complete |
-| M3 | Multi-agent collaboration strategies | Complete |
-| M4 | Safety & governance system | Complete |
-| M5.1 | Self-improvement foundation | Complete |
-| M5.2 | Experimentation framework | Complete |
-| M5.3 | Continuous learning | Complete |
-| M6.1 | Progressive autonomy | Complete |
-| M6.2 | Memory system | Complete |
-| M6.3 | Multi-product templates | Complete |
-| M7.1 | Self-modifying lifecycle | Complete |
-| M7.2 | Strategic autonomy (goal proposals) | Complete |
-| M7.3 | Portfolio management | Complete |
-| M8.1 | Post-execution autonomous loop | Complete |
-| M8.2 | Feedback application | Complete |
-| M8.3 | Memory completion | Complete |
-| M8.4 | Experimentation CLI + dashboard | Complete |
-
-See [docs/milestones/](./docs/milestones/) for detailed retrospectives.
-
-## Technology Stack
-
-- **Execution Engine:** LangGraph (nested graphs for workflows and stages)
-- **Configuration:** YAML with Pydantic validation
-- **Database:** SQLModel + SQLAlchemy (SQLite dev, Postgres prod)
-- **Console UI:** Rich library
-- **Dashboard:** FastAPI + WebSocket
-- **LLM Providers:** Multi-provider support (Ollama, vLLM, OpenAI, Anthropic)
-- **Testing:** pytest + pytest-xdist (parallel)
-
-## Documentation
-
-- [Vision Document](./docs/VISION.md)
-- [Autonomous Mode Guide](./docs/guides/autonomous_mode.md)
-- [Feedback Loop Architecture](./docs/architecture/feedback_loop.md)
-- [Configuration Guide](./docs/CONFIGURATION.md)
-- [Milestone Retrospectives](./docs/milestones/)
-
-## License
-
-Apache License 2.0 - See LICENSE file for details
+A multi-agent workflow framework. Define agents and stages in YAML, and the framework orchestrates them with LLMs, tools, observability, and safety policies.
 
 ---
 
-**Built for the future of autonomous AI systems**
+## Quickstart
+
+### 1. Local dev (fastest)
+
+```bash
+git clone <repo> && cd temper-ai
+make setup          # installs uv deps, pre-commit, copies .env
+# Edit .env if needed — defaults to Ollama (install from ollama.com)
+make test           # verify installation
+
+uv run temper-ai serve --dev   # starts server at http://localhost:8420
+
+# Run a workflow via API
+curl -X POST http://localhost:8420/api/runs \
+  -H 'Content-Type: application/json' \
+  -d '{"workflow": "workflows/vcs_suggestion.yaml", "inputs": {"description": "Fix login bug"}}'
+```
+
+### 2. Docker Compose (full stack with Postgres)
+
+```bash
+cp .env.example .env    # add LLM API keys
+docker compose up -d    # starts postgres + server at localhost:8420
+```
+
+### 3. Kubernetes
+
+```bash
+helm install temper-ai ./helm/temper-ai \
+  --set postgresql.auth.password=<secret>
+```
+
+---
+
+## What it does
+
+- **YAML-defined workflows** — agents, stages, and their connections are plain YAML files; no code required to compose a pipeline
+- **LLM orchestration** — multi-provider support (Ollama, OpenAI, Anthropic, vLLM); provider is set per-agent in config
+- **Built-in tools** — Bash, HTTP, JSON, FileWriter, CodeExecutor, Git, WebScraper; tools are declared in agent configs
+- **Multi-agent strategies** — sequential, parallel, consensus, debate, and merit-weighted execution
+- **Safety policies** — composable action policies, approval workflows, emergency stop, audit trail
+- **Observability** — every LLM call and stage transition is traced; OTEL export optional
+- **DSPy optimization** — compile better prompts from execution history via `POST /api/optimization/compile`
+- **Plugin imports** — ingest agents from CrewAI, LangGraph, OpenAI Agents, and AutoGen via `POST /api/plugins/import`
+- **Dashboard** — React UI served at port 8420 (`temper-ai serve --dev`)
+
+---
+
+## Project structure
+
+```
+temper_ai/              # Python package (source root)
+  workflow/             # LangGraph compiler/engine, config loader, DAG/node builders
+  stage/                # Stage executors: sequential, parallel, adaptive
+  agent/                # Agent implementations, LLM providers, strategies
+  llm/                  # LLM service, cache, prompts
+  tools/                # Tool registry and built-in tools
+  safety/               # Action policies, security checks
+  observability/        # Execution tracker, metrics, OTEL export
+  interfaces/           # CLI (main.py), FastAPI dashboard, HTTP API server
+  optimization/         # DSPy prompt optimization
+  plugins/              # External agent adapters (CrewAI, LangGraph, AutoGen)
+  auth/                 # API key auth, tenant scoping, config sync
+  storage/              # Database models and schemas (SQLModel + SQLAlchemy)
+  registry/             # Persistent agent registry
+  events/               # Event bus and subscriptions
+  mcp/                  # Model Context Protocol client + server
+  lifecycle/            # Lifecycle adaptation and rollback
+  goals/                # Agent goal proposal and review
+  portfolio/            # Workflow portfolio optimization
+  memory/               # Agent memory and knowledge graph
+  learning/             # Workflow learning and auto-tuning
+  autonomy/             # Autonomous operation loop
+  experimentation/      # A/B experimentation framework
+
+configs/
+  agents/               # Agent YAML definitions
+  stages/               # Stage YAML definitions
+  workflows/            # Workflow YAML definitions
+
+tests/                  # pytest test suite
+frontend/               # React + Vite + Tailwind dashboard source
+helm/temper-ai/         # Helm chart for Kubernetes deployment
+docs/                   # Guides and architecture docs
+```
+
+---
+
+## Configuration
+
+Workflows, stages, and agents are defined in `configs/`. Runtime secrets (LLM API keys, database URL) go in `.env`:
+
+```
+OPENAI_API_KEY=...
+ANTHROPIC_API_KEY=...
+DATABASE_URL=postgresql://...   # defaults to SQLite for local dev
+```
+
+A minimal agent config looks like:
+
+```yaml
+agent:
+  name: researcher
+  model: ollama/llama3.2
+  system_prompt: "You are a research assistant."
+  tools:
+    - WebScraper
+    - Bash
+```
+
+See `configs/agents/` for working examples and `docs/CONFIGURATION.md` for the full schema reference.
+
+---
+
+## Development
+
+### Make targets
+
+| Target | Description |
+|--------|-------------|
+| `make setup` | Bootstrap: uv sync, pre-commit, copy `.env` |
+| `make test` | Core test suite (parallel, pytest-xdist) |
+| `make test-all` | Full test suite |
+| `make lint` | ruff + black check |
+| `make format` | Auto-fix formatting (black + ruff --fix) |
+| `make type` | mypy type checking |
+| `make check` | Full quality gate: lint + type + test + quality |
+| `make coverage` | Tests with coverage report |
+| `make security` | Bandit security scan |
+| `make help` | List all targets |
+
+### Running tests
+
+```bash
+make test                   # core modules, parallel
+make test-all               # everything
+```
+
+Tests run inside the uv-managed environment (pytest-xdist uses `-n auto`).
+
+### Frontend
+
+The dashboard frontend lives in `frontend/`. Built assets are committed to `temper_ai/interfaces/dashboard/react-dist/` so Python-only installs include the UI.
+
+To rebuild after frontend changes:
+
+```bash
+cd frontend
+npm install
+npm run build
+```
+
+### CLI and API
+
+The only CLI command is `temper-ai serve`. All workflow operations use the HTTP API:
+
+```bash
+temper-ai serve --dev                             # dashboard + API at localhost:8420
+temper-ai serve --dev --mcp                       # also start MCP stdio server
+
+# Key API endpoints
+curl localhost:8420/api/health                    # liveness check
+curl -X POST localhost:8420/api/runs -d '{"workflow":"workflows/research.yaml"}'
+curl -X POST localhost:8420/api/validate -d '{"workflow":"workflows/research.yaml"}'
+curl localhost:8420/api/workflows/available        # list workflow configs
+curl localhost:8420/api/checkpoints                # list checkpoints
+curl localhost:8420/api/events                     # list events
+curl -X POST localhost:8420/api/optimization/compile  # DSPy prompt optimization
+curl -X POST localhost:8420/api/visualize          # DAG visualization
+curl localhost:8420/api/plugins                    # list plugins
+curl localhost:8420/api/templates                   # list templates
+```
+
+---
+
+## Deployment
+
+Docker and Kubernetes targets are covered in the Helm chart (`helm/temper-ai/`) and `docker-compose.yml`.
+
+The Dockerfile has a single `server` build target. Docker Compose starts Postgres (pgvector) alongside the server. The Helm chart (`helm/temper-ai/`) supports the same topology for Kubernetes.
+
+---
+
+## Optional dependency groups
+
+Install only what you need:
+
+```bash
+pip install -e ".[dev]"            # development tools (pytest, black, ruff, mypy)
+pip install -e ".[dashboard]"      # FastAPI + uvicorn for the dashboard
+pip install -e ".[llm-providers]"  # OpenAI + Anthropic SDKs
+pip install -e ".[dspy]"           # DSPy prompt optimization
+pip install -e ".[mcp]"            # Model Context Protocol support
+pip install -e ".[otel]"           # OpenTelemetry export
+pip install -e ".[crewai]"         # CrewAI plugin adapter
+pip install -e ".[autogen]"        # AutoGen plugin adapter
+pip install -e ".[openai_agents]"  # OpenAI Agents plugin adapter
+```
+
+---
+
+## License
+
+Apache-2.0. See [LICENSE](./LICENSE) for details.

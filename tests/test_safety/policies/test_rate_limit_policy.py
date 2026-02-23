@@ -35,10 +35,10 @@ class TestRateLimitPolicyBasics:
                     "max_tokens": 5,
                     "refill_rate": 1.0,
                     "refill_period": 1.0,
-                    "burst_size": 2
+                    "burst_size": 2,
                 }
             },
-            "per_agent": False
+            "per_agent": False,
         }
         policy = RateLimitPolicy(config)
 
@@ -64,8 +64,7 @@ class TestPerAgentRateLimiting:
 
         # First commit should be allowed
         result = policy.validate(
-            action={"operation": "git_commit"},
-            context={"agent_id": "agent-123"}
+            action={"operation": "git_commit"}, context={"agent_id": "agent-123"}
         )
 
         assert result.valid
@@ -78,15 +77,13 @@ class TestPerAgentRateLimiting:
         # Consume all commit tokens (default: 10)
         for i in range(10):
             result = policy.validate(
-                action={"operation": "git_commit"},
-                context={"agent_id": "agent-123"}
+                action={"operation": "git_commit"}, context={"agent_id": "agent-123"}
             )
             assert result.valid
 
         # 11th commit should be rate limited
         result = policy.validate(
-            action={"operation": "git_commit"},
-            context={"agent_id": "agent-123"}
+            action={"operation": "git_commit"}, context={"agent_id": "agent-123"}
         )
 
         assert not result.valid
@@ -101,21 +98,18 @@ class TestPerAgentRateLimiting:
         # Agent 1 exhausts their commits
         for i in range(10):
             policy.validate(
-                action={"operation": "git_commit"},
-                context={"agent_id": "agent-1"}
+                action={"operation": "git_commit"}, context={"agent_id": "agent-1"}
             )
 
         # Agent 1 should be rate limited
         result1 = policy.validate(
-            action={"operation": "git_commit"},
-            context={"agent_id": "agent-1"}
+            action={"operation": "git_commit"}, context={"agent_id": "agent-1"}
         )
         assert not result1.valid
 
         # Agent 2 should still be able to commit
         result2 = policy.validate(
-            action={"operation": "git_commit"},
-            context={"agent_id": "agent-2"}
+            action={"operation": "git_commit"}, context={"agent_id": "agent-2"}
         )
         assert result2.valid
 
@@ -125,21 +119,18 @@ class TestPerAgentRateLimiting:
 
         # First 2 deploys should be allowed (default: 2)
         result1 = policy.validate(
-            action={"operation": "deploy"},
-            context={"agent_id": "agent-123"}
+            action={"operation": "deploy"}, context={"agent_id": "agent-123"}
         )
         assert result1.valid
 
         result2 = policy.validate(
-            action={"operation": "deploy"},
-            context={"agent_id": "agent-123"}
+            action={"operation": "deploy"}, context={"agent_id": "agent-123"}
         )
         assert result2.valid
 
         # 3rd deploy should be rate limited
         result3 = policy.validate(
-            action={"operation": "deploy"},
-            context={"agent_id": "agent-123"}
+            action={"operation": "deploy"}, context={"agent_id": "agent-123"}
         )
         assert not result3.valid
 
@@ -150,15 +141,13 @@ class TestPerAgentRateLimiting:
         # Should allow multiple tool calls (default: 100)
         for i in range(100):
             result = policy.validate(
-                action={"operation": "tool_call"},
-                context={"agent_id": "agent-123"}
+                action={"operation": "tool_call"}, context={"agent_id": "agent-123"}
             )
             assert result.valid
 
         # 101st should be rate limited
         result = policy.validate(
-            action={"operation": "tool_call"},
-            context={"agent_id": "agent-123"}
+            action={"operation": "tool_call"}, context={"agent_id": "agent-123"}
         )
         assert not result.valid
 
@@ -178,21 +167,21 @@ class TestGlobalRateLimiting:
             agent_id = f"agent-{agent_num}"
             for i in range(100):
                 result = policy.validate(
-                    action={"operation": "tool_call"},
-                    context={"agent_id": agent_id}
+                    action={"operation": "tool_call"}, context={"agent_id": agent_id}
                 )
                 # Should pass per-agent limit (100 each)
                 assert result.valid, f"Failed at agent {agent_num}, call {i}"
 
         # Next call from any agent should hit global limit
         result = policy.validate(
-            action={"operation": "tool_call"},
-            context={"agent_id": "agent-10"}
+            action={"operation": "tool_call"}, context={"agent_id": "agent-10"}
         )
 
         # Should have violation from global limit
         assert not result.valid
-        global_violations = [v for v in result.violations if v.metadata.get("scope") == "global"]
+        global_violations = [
+            v for v in result.violations if v.metadata.get("scope") == "global"
+        ]
         assert len(global_violations) >= 1
 
 
@@ -204,8 +193,7 @@ class TestActionTypeMapping:
         policy = RateLimitPolicy()
 
         result = policy.validate(
-            action={"operation": "git_commit"},
-            context={"agent_id": "agent-123"}
+            action={"operation": "git_commit"}, context={"agent_id": "agent-123"}
         )
 
         assert result.valid
@@ -216,8 +204,7 @@ class TestActionTypeMapping:
         policy = RateLimitPolicy()
 
         result = policy.validate(
-            action={"operation": "commit"},
-            context={"agent_id": "agent-123"}
+            action={"operation": "commit"}, context={"agent_id": "agent-123"}
         )
 
         assert result.metadata["limit_type"] == "commit"
@@ -227,8 +214,7 @@ class TestActionTypeMapping:
         policy = RateLimitPolicy()
 
         result = policy.validate(
-            action={"operation": "tool_execution"},
-            context={"agent_id": "agent-123"}
+            action={"operation": "tool_execution"}, context={"agent_id": "agent-123"}
         )
 
         assert result.metadata["limit_type"] == "tool_call"
@@ -238,8 +224,7 @@ class TestActionTypeMapping:
         policy = RateLimitPolicy()
 
         result = policy.validate(
-            action={"operation": "unknown_op"},
-            context={"agent_id": "agent-123"}
+            action={"operation": "unknown_op"}, context={"agent_id": "agent-123"}
         )
 
         assert result.valid
@@ -250,8 +235,7 @@ class TestActionTypeMapping:
         policy = RateLimitPolicy()
 
         result = policy.validate(
-            action={"type": "git_commit"},
-            context={"agent_id": "agent-123"}
+            action={"type": "git_commit"}, context={"agent_id": "agent-123"}
         )
 
         assert result.valid
@@ -268,14 +252,12 @@ class TestViolationHandling:
         # Exhaust limit
         for i in range(2):
             policy.validate(
-                action={"operation": "deploy"},
-                context={"agent_id": "agent-123"}
+                action={"operation": "deploy"}, context={"agent_id": "agent-123"}
             )
 
         # Get violation
         result = policy.validate(
-            action={"operation": "deploy"},
-            context={"agent_id": "agent-123"}
+            action={"operation": "deploy"}, context={"agent_id": "agent-123"}
         )
 
         assert not result.valid
@@ -289,14 +271,12 @@ class TestViolationHandling:
         # Exhaust limit
         for i in range(2):
             policy.validate(
-                action={"operation": "deploy"},
-                context={"agent_id": "agent-123"}
+                action={"operation": "deploy"}, context={"agent_id": "agent-123"}
             )
 
         # Get violation
         result = policy.validate(
-            action={"operation": "deploy"},
-            context={"agent_id": "agent-123"}
+            action={"operation": "deploy"}, context={"agent_id": "agent-123"}
         )
 
         assert result.violations[0].remediation_hint is not None
@@ -311,13 +291,11 @@ class TestViolationHandling:
         # Exhaust limit
         for i in range(2):
             policy.validate(
-                action={"operation": "deploy"},
-                context={"agent_id": "agent-123"}
+                action={"operation": "deploy"}, context={"agent_id": "agent-123"}
             )
 
         result = policy.validate(
-            action={"operation": "deploy"},
-            context={"agent_id": "agent-123"}
+            action={"operation": "deploy"}, context={"agent_id": "agent-123"}
         )
 
         assert result.violations[0].severity >= ViolationSeverity.MEDIUM
@@ -329,13 +307,11 @@ class TestViolationHandling:
         # Exhaust limit
         for i in range(2):
             policy.validate(
-                action={"operation": "deploy"},
-                context={"agent_id": "agent-123"}
+                action={"operation": "deploy"}, context={"agent_id": "agent-123"}
             )
 
         result = policy.validate(
-            action={"operation": "deploy"},
-            context={"agent_id": "agent-123"}
+            action={"operation": "deploy"}, context={"agent_id": "agent-123"}
         )
 
         assert "retry_after" in result.metadata
@@ -351,8 +327,7 @@ class TestStatusReporting:
 
         # Use some limits
         policy.validate(
-            action={"operation": "git_commit"},
-            context={"agent_id": "agent-123"}
+            action={"operation": "git_commit"}, context={"agent_id": "agent-123"}
         )
 
         status = policy.get_status("agent-123")
@@ -366,8 +341,12 @@ class TestStatusReporting:
         policy = RateLimitPolicy()
 
         # Trigger creation of some buckets
-        policy.validate(action={"operation": "git_commit"}, context={"agent_id": "agent-123"})
-        policy.validate(action={"operation": "deploy"}, context={"agent_id": "agent-123"})
+        policy.validate(
+            action={"operation": "git_commit"}, context={"agent_id": "agent-123"}
+        )
+        policy.validate(
+            action={"operation": "deploy"}, context={"agent_id": "agent-123"}
+        )
 
         status = policy.get_status("agent-123")
 
@@ -381,14 +360,15 @@ class TestStatusReporting:
         # Use some commits
         for i in range(3):
             policy.validate(
-                action={"operation": "git_commit"},
-                context={"agent_id": "agent-123"}
+                action={"operation": "git_commit"}, context={"agent_id": "agent-123"}
             )
 
         status = policy.get_status("agent-123")
 
         # Should have 7 tokens left (10 - 3)
-        assert status["limits"]["commit"]["current_tokens"] == pytest.approx(7.0, abs=0.1)
+        assert status["limits"]["commit"]["current_tokens"] == pytest.approx(
+            7.0, abs=0.1
+        )
 
 
 class TestResetLimits:
@@ -401,8 +381,7 @@ class TestResetLimits:
         # Use commits
         for i in range(5):
             policy.validate(
-                action={"operation": "git_commit"},
-                context={"agent_id": "agent-123"}
+                action={"operation": "git_commit"}, context={"agent_id": "agent-123"}
             )
 
         # Reset commit limit for agent-123
@@ -418,8 +397,12 @@ class TestResetLimits:
 
         # Use various limits
         for i in range(5):
-            policy.validate(action={"operation": "git_commit"}, context={"agent_id": "agent-123"})
-        policy.validate(action={"operation": "deploy"}, context={"agent_id": "agent-123"})
+            policy.validate(
+                action={"operation": "git_commit"}, context={"agent_id": "agent-123"}
+            )
+        policy.validate(
+            action={"operation": "deploy"}, context={"agent_id": "agent-123"}
+        )
 
         # Reset all for agent-123
         policy.reset_limits("agent-123")
@@ -435,8 +418,12 @@ class TestResetLimits:
 
         # Use limits for multiple agents
         for i in range(5):
-            policy.validate(action={"operation": "git_commit"}, context={"agent_id": "agent-1"})
-            policy.validate(action={"operation": "git_commit"}, context={"agent_id": "agent-2"})
+            policy.validate(
+                action={"operation": "git_commit"}, context={"agent_id": "agent-1"}
+            )
+            policy.validate(
+                action={"operation": "git_commit"}, context={"agent_id": "agent-2"}
+            )
 
         # Reset all
         policy.reset_limits()
@@ -459,7 +446,7 @@ class TestCustomConfiguration:
                     "max_tokens": 5,
                     "refill_rate": 1.0,
                     "refill_period": 1.0,
-                    "burst_size": 1
+                    "burst_size": 1,
                 }
             }
         }
@@ -468,15 +455,13 @@ class TestCustomConfiguration:
         # Should allow 5 commits
         for i in range(5):
             result = policy.validate(
-                action={"operation": "git_commit"},
-                context={"agent_id": "agent-123"}
+                action={"operation": "git_commit"}, context={"agent_id": "agent-123"}
             )
             assert result.valid
 
         # 6th should be rate limited
         result = policy.validate(
-            action={"operation": "git_commit"},
-            context={"agent_id": "agent-123"}
+            action={"operation": "git_commit"}, context={"agent_id": "agent-123"}
         )
         assert not result.valid
 
@@ -487,7 +472,7 @@ class TestCustomConfiguration:
                 "total_tool_calls": {
                     "max_tokens": 50,
                     "refill_rate": 1.0,
-                    "refill_period": 1.0
+                    "refill_period": 1.0,
                 }
             }
         }
@@ -497,36 +482,31 @@ class TestCustomConfiguration:
         for i in range(50):
             result = policy.validate(
                 action={"operation": "tool_call"},
-                context={"agent_id": f"agent-{i % 5}"}  # 5 agents
+                context={"agent_id": f"agent-{i % 5}"},  # 5 agents
             )
             assert result.valid
 
         # 51st should hit global limit
         result = policy.validate(
-            action={"operation": "tool_call"},
-            context={"agent_id": "agent-0"}
+            action={"operation": "tool_call"}, context={"agent_id": "agent-0"}
         )
         assert not result.valid
 
     def test_disable_per_agent_limits(self):
         """Test disabling per-agent tracking."""
-        config = {
-            "per_agent": False
-        }
+        config = {"per_agent": False}
         policy = RateLimitPolicy(config)
 
         # All agents should share the same limits
         # Use commits from agent-1
         for i in range(10):
             policy.validate(
-                action={"operation": "git_commit"},
-                context={"agent_id": "agent-1"}
+                action={"operation": "git_commit"}, context={"agent_id": "agent-1"}
             )
 
         # Agent-2 should also be rate limited (shared limit)
         result = policy.validate(
-            action={"operation": "git_commit"},
-            context={"agent_id": "agent-2"}
+            action={"operation": "git_commit"}, context={"agent_id": "agent-2"}
         )
 
         # With per_agent=False, both agents share the "global" entity
@@ -541,10 +521,18 @@ class TestIntegration:
         policy = RateLimitPolicy()
 
         # Use various operations
-        policy.validate(action={"operation": "git_commit"}, context={"agent_id": "agent-123"})
-        policy.validate(action={"operation": "deploy"}, context={"agent_id": "agent-123"})
-        policy.validate(action={"operation": "tool_call"}, context={"agent_id": "agent-123"})
-        policy.validate(action={"operation": "llm_call"}, context={"agent_id": "agent-123"})
+        policy.validate(
+            action={"operation": "git_commit"}, context={"agent_id": "agent-123"}
+        )
+        policy.validate(
+            action={"operation": "deploy"}, context={"agent_id": "agent-123"}
+        )
+        policy.validate(
+            action={"operation": "tool_call"}, context={"agent_id": "agent-123"}
+        )
+        policy.validate(
+            action={"operation": "llm_call"}, context={"agent_id": "agent-123"}
+        )
 
         # All should be tracked separately
         status = policy.get_status("agent-123")
@@ -555,19 +543,18 @@ class TestIntegration:
 
     def test_cooldown_multiplier(self):
         """Test cooldown multiplier configuration."""
-        config = {
-            "cooldown_multiplier": 2.0
-        }
+        config = {"cooldown_multiplier": 2.0}
         policy = RateLimitPolicy(config)
 
         # Exhaust limit
         for i in range(2):
-            policy.validate(action={"operation": "deploy"}, context={"agent_id": "agent-123"})
+            policy.validate(
+                action={"operation": "deploy"}, context={"agent_id": "agent-123"}
+            )
 
         # Get violation
         result = policy.validate(
-            action={"operation": "deploy"},
-            context={"agent_id": "agent-123"}
+            action={"operation": "deploy"}, context={"agent_id": "agent-123"}
         )
 
         # retry_after should be doubled

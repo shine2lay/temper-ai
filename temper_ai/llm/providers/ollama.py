@@ -1,8 +1,10 @@
 """Ollama LLM provider (local models) with streaming support."""
+
 import json
 import logging
 import time
-from typing import Any, Callable, Coroutine, Dict, Optional, Tuple, cast
+from collections.abc import Callable, Coroutine
+from typing import Any, cast
 
 import httpx
 
@@ -34,7 +36,7 @@ class OllamaLLM(BaseLLM):
     Supports streaming for real-time token visibility.
     """
 
-    _make_streaming_call_impl: Callable[..., Tuple[Optional[str], Optional[LLMResponse]]]
+    _make_streaming_call_impl: Callable[..., tuple[str | None, LLMResponse | None]]
     _execute_streaming_impl: Callable[..., LLMResponse]
     _execute_streaming_async_impl: Callable[..., Coroutine[Any, Any, LLMResponse]]
 
@@ -47,17 +49,17 @@ class OllamaLLM(BaseLLM):
             return "/api/chat"
         return "/api/generate"
 
-    def _get_headers(self) -> Dict[str, str]:
+    def _get_headers(self) -> dict[str, str]:
         return {
             "Content-Type": "application/json",
         }
 
-    def _build_request(self, prompt: str, **kwargs: Any) -> Dict[str, Any]:
+    def _build_request(self, prompt: str, **kwargs: Any) -> dict[str, Any]:
         tools = kwargs.get("tools")
         stream = kwargs.get("stream", False)
         messages = kwargs.get("messages")
         # Ollama sampling options shared by both /api/chat and /api/generate
-        options: Dict[str, Any] = {
+        options: dict[str, Any] = {
             "temperature": kwargs.get("temperature", self.temperature),
             "top_p": kwargs.get("top_p", self.top_p),
             "num_predict": kwargs.get("max_tokens", self.max_tokens),
@@ -94,7 +96,7 @@ class OllamaLLM(BaseLLM):
                 "stream": stream,
             }
 
-    def _parse_response(self, response: Dict[str, Any], latency_ms: int) -> LLMResponse:
+    def _parse_response(self, response: dict[str, Any], latency_ms: int) -> LLMResponse:
         if self._use_chat_api:
             message = response.get("message", {})
             content = message.get("content", "")
@@ -102,6 +104,7 @@ class OllamaLLM(BaseLLM):
 
             if tool_calls:
                 import json as _json
+
                 tc_parts = []
                 for tc in tool_calls:
                     func = tc.get("function", {})
@@ -137,7 +140,10 @@ class OllamaLLM(BaseLLM):
                 provider=LLMProvider.OLLAMA,
                 prompt_tokens=response.get("prompt_eval_count"),
                 completion_tokens=response.get("eval_count"),
-                total_tokens=(response.get("prompt_eval_count", 0) + response.get("eval_count", 0)) or None,
+                total_tokens=(
+                    response.get("prompt_eval_count", 0) + response.get("eval_count", 0)
+                )
+                or None,
                 latency_ms=latency_ms,
                 finish_reason="stop" if response.get("done") else None,
                 raw_response=response,
@@ -150,8 +156,8 @@ class OllamaLLM(BaseLLM):
     def stream(
         self,
         prompt: str,
-        context: Optional[ExecutionContext] = None,
-        on_chunk: Optional[StreamCallback] = None,
+        context: ExecutionContext | None = None,
+        on_chunk: StreamCallback | None = None,
         **kwargs: Any,
     ) -> LLMResponse:
         """Synchronous streaming completion.
@@ -163,7 +169,9 @@ class OllamaLLM(BaseLLM):
             return self.complete(prompt, context, **kwargs)
 
         # Use base class template method for rate limiting and cache check
-        cache_key, cached = self._make_streaming_call_impl(prompt, context, on_chunk, **kwargs)
+        cache_key, cached = self._make_streaming_call_impl(
+            prompt, context, on_chunk, **kwargs
+        )
         if cached is not None:
             return cached
 
@@ -175,19 +183,23 @@ class OllamaLLM(BaseLLM):
             endpoint = f"{self.base_url}{self._get_endpoint()}"
 
             client = self._get_client()
-            request = client.build_request("POST", endpoint, json=request_data, headers=headers)
+            request = client.build_request(
+                "POST", endpoint, json=request_data, headers=headers
+            )
 
             response = client.send(request, stream=True)
             # Use base class template method for error handling and caching
-            return self._execute_streaming_impl(start_time, response, on_chunk, cache_key)
+            return self._execute_streaming_impl(
+                start_time, response, on_chunk, cache_key
+            )
 
         return self._circuit_breaker.call(_make_streaming_call)
 
     async def astream(
         self,
         prompt: str,
-        context: Optional[ExecutionContext] = None,
-        on_chunk: Optional[StreamCallback] = None,
+        context: ExecutionContext | None = None,
+        on_chunk: StreamCallback | None = None,
         **kwargs: Any,
     ) -> LLMResponse:
         """Async streaming completion."""
@@ -195,7 +207,9 @@ class OllamaLLM(BaseLLM):
             return await self.acomplete(prompt, context, **kwargs)
 
         # Use base class template method for rate limiting and cache check
-        cache_key, cached = self._make_streaming_call_impl(prompt, context, on_chunk, **kwargs)
+        cache_key, cached = self._make_streaming_call_impl(
+            prompt, context, on_chunk, **kwargs
+        )
         if cached is not None:
             return cached
 
@@ -207,13 +221,19 @@ class OllamaLLM(BaseLLM):
             endpoint = f"{self.base_url}{self._get_endpoint()}"
 
             client = await self._get_async_client_safe()
-            request = client.build_request("POST", endpoint, json=request_data, headers=headers)
+            request = client.build_request(
+                "POST", endpoint, json=request_data, headers=headers
+            )
 
             response = await client.send(request, stream=True)
             # Use base class template method for error handling and caching
-            return await self._execute_streaming_async_impl(start_time, response, on_chunk, cache_key)
+            return await self._execute_streaming_async_impl(
+                start_time, response, on_chunk, cache_key
+            )
 
-        result: LLMResponse = await self._circuit_breaker.async_call(_make_async_streaming_call)
+        result: LLMResponse = await self._circuit_breaker.async_call(
+            _make_async_streaming_call
+        )
         return result
 
     def _consume_stream(
@@ -224,9 +244,9 @@ class OllamaLLM(BaseLLM):
         """Consume NDJSON streaming response synchronously."""
         content_parts: list[str] = []
         thinking_parts: list[str] = []
-        prompt_tokens: Optional[int] = None
-        completion_tokens: Optional[int] = None
-        finish_reason: Optional[str] = None
+        prompt_tokens: int | None = None
+        completion_tokens: int | None = None
+        finish_reason: str | None = None
 
         for line in response.iter_lines():
             if not line.strip():
@@ -240,8 +260,12 @@ class OllamaLLM(BaseLLM):
 
             if chunk_content:
                 process_chunk_content(
-                    chunk_content, chunk_type, content_parts, thinking_parts,
-                    on_chunk, self.model
+                    chunk_content,
+                    chunk_type,
+                    content_parts,
+                    thinking_parts,
+                    on_chunk,
+                    self.model,
                 )
 
             if done:
@@ -249,15 +273,25 @@ class OllamaLLM(BaseLLM):
                 completion_tokens = data.get("eval_count")
                 finish_reason = "stop" if data.get("done") else None
                 emit_final_chunk(
-                    on_chunk, self.model, prompt_tokens,
-                    completion_tokens, finish_reason
+                    on_chunk,
+                    self.model,
+                    prompt_tokens,
+                    completion_tokens,
+                    finish_reason,
                 )
                 break
 
-        return cast(LLMResponse, build_stream_result(
-            content_parts, self.model, LLMProvider.OLLAMA,
-            prompt_tokens, completion_tokens, finish_reason
-        ))
+        return cast(
+            LLMResponse,
+            build_stream_result(
+                content_parts,
+                self.model,
+                LLMProvider.OLLAMA,
+                prompt_tokens,
+                completion_tokens,
+                finish_reason,
+            ),
+        )
 
     async def _aconsume_stream(
         self,
@@ -267,9 +301,9 @@ class OllamaLLM(BaseLLM):
         """Consume NDJSON streaming response asynchronously."""
         content_parts: list[str] = []
         thinking_parts: list[str] = []
-        prompt_tokens: Optional[int] = None
-        completion_tokens: Optional[int] = None
-        finish_reason: Optional[str] = None
+        prompt_tokens: int | None = None
+        completion_tokens: int | None = None
+        finish_reason: str | None = None
 
         async for line in response.aiter_lines():
             if not line.strip():
@@ -283,8 +317,12 @@ class OllamaLLM(BaseLLM):
 
             if chunk_content:
                 process_chunk_content(
-                    chunk_content, chunk_type, content_parts, thinking_parts,
-                    on_chunk, self.model
+                    chunk_content,
+                    chunk_type,
+                    content_parts,
+                    thinking_parts,
+                    on_chunk,
+                    self.model,
                 )
 
             if done:
@@ -292,17 +330,27 @@ class OllamaLLM(BaseLLM):
                 completion_tokens = data.get("eval_count")
                 finish_reason = "stop" if data.get("done") else None
                 emit_final_chunk(
-                    on_chunk, self.model, prompt_tokens,
-                    completion_tokens, finish_reason
+                    on_chunk,
+                    self.model,
+                    prompt_tokens,
+                    completion_tokens,
+                    finish_reason,
                 )
                 break
 
-        return cast(LLMResponse, build_stream_result(
-            content_parts, self.model, LLMProvider.OLLAMA,
-            prompt_tokens, completion_tokens, finish_reason
-        ))
+        return cast(
+            LLMResponse,
+            build_stream_result(
+                content_parts,
+                self.model,
+                LLMProvider.OLLAMA,
+                prompt_tokens,
+                completion_tokens,
+                finish_reason,
+            ),
+        )
 
-    def _extract_chunk_fields(self, data: Dict[str, Any]) -> tuple[str, str, bool]:
+    def _extract_chunk_fields(self, data: dict[str, Any]) -> tuple[str, str, bool]:
         """Extract content, chunk_type, and done flag from an NDJSON chunk.
 
         Returns (content, chunk_type, done).

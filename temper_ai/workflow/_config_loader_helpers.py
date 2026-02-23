@@ -8,25 +8,27 @@ Contains:
 - Template variable substitution
 - Schema validation
 """
+
 import json
 import logging
 import os
 import re
 from pathlib import Path
-from typing import Any, Dict, Match, Optional, cast
+from re import Match
+from typing import Any, cast
 
 import yaml
 from pydantic import ValidationError
 
-from temper_ai.workflow.env_var_validator import EnvVarValidator
+from temper_ai.shared.utils.exceptions import ConfigNotFoundError, ConfigValidationError
+from temper_ai.shared.utils.secrets import SecretReference, resolve_secret
 from temper_ai.stage._schemas import StageConfig
 from temper_ai.storage.schemas.agent_config import AgentConfig
 from temper_ai.tools._schemas import ToolConfig
 from temper_ai.workflow._schemas import WorkflowConfig
 from temper_ai.workflow._triggers import CronTrigger, EventTrigger, ThresholdTrigger
+from temper_ai.workflow.env_var_validator import EnvVarValidator
 from temper_ai.workflow.security_limits import CONFIG_SECURITY
-from temper_ai.shared.utils.exceptions import ConfigNotFoundError, ConfigValidationError
-from temper_ai.shared.utils.secrets import SecretReference, resolve_secret
 
 logger = logging.getLogger(__name__)
 
@@ -36,23 +38,23 @@ MAX_YAML_NESTING_DEPTH = CONFIG_SECURITY.MAX_YAML_NESTING_DEPTH
 MAX_YAML_NODES = CONFIG_SECURITY.MAX_YAML_NODES
 
 
-def load_config_file(directory: Path, name: str) -> Dict[str, Any]:
+def load_config_file(directory: Path, name: str) -> dict[str, Any]:
     """Load a configuration file (YAML or JSON).
 
     Tries both .yaml, .yml, and .json extensions.
     """
-    for ext in ['.yaml', '.yml', '.json']:
+    for ext in [".yaml", ".yml", ".json"]:
         file_path = directory / f"{name}{ext}"
         if file_path.exists():
             return load_and_validate_config_file(file_path)
 
     raise ConfigNotFoundError(
         message=f"Config file not found: {name} in {directory}\nTried extensions: .yaml, .yml, .json",
-        config_path=str(directory / name)
+        config_path=str(directory / name),
     )
 
 
-def load_and_validate_config_file(file_path: Path) -> Dict[str, Any]:
+def load_and_validate_config_file(file_path: Path) -> dict[str, Any]:
     """Load and validate a YAML or JSON configuration file with security protections.
 
     Args:
@@ -71,32 +73,28 @@ def load_and_validate_config_file(file_path: Path) -> Dict[str, Any]:
         )
 
     try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            if file_path.suffix == '.json':
+        with open(file_path, encoding="utf-8") as f:
+            if file_path.suffix == ".json":
                 config = json.load(f)
             else:
                 config = yaml.safe_load(f)
 
         validate_config_structure(config, file_path)
 
-        return cast(Dict[str, Any], config)
+        return cast(dict[str, Any], config)
 
     except yaml.YAMLError as e:
-        raise ConfigValidationError(
-            f"YAML parsing failed for {file_path}: {e}"
-        )
+        raise ConfigValidationError(f"YAML parsing failed for {file_path}: {e}")
     except json.JSONDecodeError as e:
-        raise ConfigValidationError(
-            f"JSON parsing failed for {file_path}: {e}"
-        )
+        raise ConfigValidationError(f"JSON parsing failed for {file_path}: {e}")
     except Exception as e:
-        raise ConfigValidationError(
-            f"Failed to parse config file {file_path}: {e}"
-        )
+        raise ConfigValidationError(f"Failed to parse config file {file_path}: {e}")
 
 
 def _check_config_limits(
-    file_path: Path, current_depth: int, node_count: list[int],
+    file_path: Path,
+    current_depth: int,
+    node_count: list[int],
 ) -> None:
     """Raise if config exceeds depth or node count limits."""
     if current_depth > MAX_YAML_NESTING_DEPTH:
@@ -116,8 +114,8 @@ def validate_config_structure(
     config: Any,
     file_path: Path,
     current_depth: int = 0,
-    visited: Optional[set[int]] = None,
-    node_count: Optional[list[int]] = None,
+    visited: set[int] | None = None,
+    node_count: list[int] | None = None,
 ) -> None:
     """Validate config structure for security (depth, node count, circular refs)."""
     if visited is None:
@@ -169,7 +167,7 @@ def substitute_env_var_string(value: str) -> str:
     if SecretReference.is_reference(value):
         return value
 
-    pattern = r'\$\{([A-Za-z_][A-Za-z0-9_]*)(?::([^}]*))?\}'
+    pattern = r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::([^}]*))?\}"
 
     def replacer(match: Match[str]) -> str:
         """Replace config placeholders with environment variables."""
@@ -195,9 +193,7 @@ def validate_env_var_value(var_name: str, value: str) -> None:
     """Validate environment variable value for security issues using context-aware validation."""
     validator = EnvVarValidator()
     is_valid, error_message = validator.validate(
-        var_name=var_name,
-        value=value,
-        max_length=MAX_ENV_VAR_SIZE
+        var_name=var_name, value=value, max_length=MAX_ENV_VAR_SIZE
     )
 
     if not is_valid:
@@ -212,15 +208,15 @@ def resolve_secrets(config: Any) -> Any:
         raise ConfigValidationError(f"Secret resolution failed: {e}")
 
 
-def substitute_template_vars(template: str, variables: Dict[str, str]) -> str:
+def substitute_template_vars(template: str, variables: dict[str, str]) -> str:
     """Substitute variables in a prompt template.
 
     Replaces {{var_name}} with variables['var_name']
     """
-    pattern = r'\{\{([A-Za-z_][A-Za-z0-9_]*)\}\}'
+    pattern = r"\{\{([A-Za-z_][A-Za-z0-9_]*)\}\}"
 
     def replacer(match: Match[str]) -> str:
-        """Replace config placeholders with environment variables."""
+        """Replace config placeholders with template variables."""
         var_name = match.group(1)
         if var_name not in variables:
             raise ConfigValidationError(
@@ -231,7 +227,7 @@ def substitute_template_vars(template: str, variables: Dict[str, str]) -> str:
     return re.sub(pattern, replacer, template)
 
 
-def validate_config(config_type: str, config: Dict[str, Any]) -> None:
+def validate_config(config_type: str, config: dict[str, Any]) -> None:
     """Validate configuration against Pydantic schemas.
 
     Args:
@@ -258,13 +254,9 @@ def validate_config(config_type: str, config: Dict[str, Any]) -> None:
             elif trigger_type == "ThresholdTrigger":
                 ThresholdTrigger(**config)
             else:
-                raise ConfigValidationError(
-                    f"Unknown trigger type: {trigger_type}"
-                )
+                raise ConfigValidationError(f"Unknown trigger type: {trigger_type}")
         elif config_type in schema_map:
             schema_map[config_type](**config)
 
     except ValidationError as e:
-        raise ConfigValidationError(
-            f"Config validation failed for {config_type}: {e}"
-        )
+        raise ConfigValidationError(f"Config validation failed for {config_type}: {e}")

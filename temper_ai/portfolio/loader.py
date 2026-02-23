@@ -2,7 +2,6 @@
 
 import logging
 from pathlib import Path
-from typing import Optional
 
 import yaml
 
@@ -15,7 +14,7 @@ logger = logging.getLogger(__name__)
 class PortfolioLoader:
     """Load portfolio definitions from YAML configs."""
 
-    def __init__(self, config_dir: Optional[str] = None) -> None:
+    def __init__(self, config_dir: str | None = None) -> None:
         self.config_dir = Path(config_dir or DEFAULT_PORTFOLIO_CONFIG_DIR)
 
     def load(self, name: str) -> PortfolioConfig:
@@ -36,9 +35,7 @@ class PortfolioLoader:
         """List available portfolio config names."""
         if not self.config_dir.exists():
             return []
-        return sorted(
-            p.stem for p in self.config_dir.glob("*.yaml")
-        )
+        return sorted(p.stem for p in self.config_dir.glob("*.yaml"))
 
     def load_from_path(self, path: str) -> PortfolioConfig:
         """Load a portfolio config from an explicit file path.
@@ -61,6 +58,4 @@ class PortfolioLoader:
         try:
             return PortfolioConfig(**raw)
         except Exception as exc:
-            raise ValueError(
-                f"Invalid portfolio config {path}: {exc}"
-            ) from exc
+            raise ValueError(f"Invalid portfolio config {path}: {exc}") from exc

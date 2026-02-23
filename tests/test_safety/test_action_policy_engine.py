@@ -9,9 +9,10 @@ Tests cover:
 - Metrics tracking
 - Error handling
 """
+
 import asyncio
 import json
-from typing import Any, Dict
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, Mock
 
 import pytest
@@ -22,12 +23,18 @@ from temper_ai.safety.action_policy_engine import (
     EnforcementResult,
     PolicyExecutionContext,
 )
-from temper_ai.safety.interfaces import SafetyPolicy, SafetyViolation, ValidationResult, ViolationSeverity
+from temper_ai.safety.interfaces import (
+    SafetyPolicy,
+    SafetyViolation,
+    ValidationResult,
+    ViolationSeverity,
+)
 from temper_ai.safety.policy_registry import PolicyRegistry
 
 # ============================================================================
 # Mock Policies for Testing
 # ============================================================================
+
 
 class MockPolicy(SafetyPolicy):
     """Mock policy for testing."""
@@ -37,7 +44,7 @@ class MockPolicy(SafetyPolicy):
         name: str,
         priority: int = 100,
         violations: list = None,
-        delay_ms: float = 0
+        delay_ms: float = 0,
     ):
         self._name = name
         self._priority = priority
@@ -58,7 +65,9 @@ class MockPolicy(SafetyPolicy):
     def priority(self) -> int:
         return self._priority
 
-    def validate(self, action: Dict[str, Any], context: Dict[str, Any]) -> ValidationResult:
+    def validate(
+        self, action: dict[str, Any], context: dict[str, Any]
+    ) -> ValidationResult:
         self.validate_called = True
         violations = [
             SafetyViolation(
@@ -66,17 +75,17 @@ class MockPolicy(SafetyPolicy):
                 severity=v["severity"],
                 message=v["message"],
                 action=str(action),
-                context=context
+                context=context,
             )
             for v in self._violations
         ]
         return ValidationResult(
-            valid=len(violations) == 0,
-            violations=violations,
-            policy_name=self.name
+            valid=len(violations) == 0, violations=violations, policy_name=self.name
         )
 
-    async def validate_async(self, action: Dict[str, Any], context: Dict[str, Any]) -> ValidationResult:
+    async def validate_async(
+        self, action: dict[str, Any], context: dict[str, Any]
+    ) -> ValidationResult:
         self.validate_async_called = True
 
         # Simulate async delay if specified
@@ -89,6 +98,7 @@ class MockPolicy(SafetyPolicy):
 # ============================================================================
 # Test Fixtures
 # ============================================================================
+
 
 @pytest.fixture
 def registry():
@@ -110,13 +120,14 @@ def context():
         workflow_id="wf-456",
         stage_id="research",
         action_type="file_write",
-        action_data={"path": "/tmp/file.txt"}
+        action_data={"path": "/tmp/file.txt"},
     )
 
 
 # ============================================================================
 # Test Basic Validation
 # ============================================================================
+
 
 class TestBasicValidation:
     """Test basic action validation."""
@@ -125,40 +136,39 @@ class TestBasicValidation:
     async def test_no_policies_denies_action_by_default(self, engine, context):
         """Test that action is denied when no policies registered (fail-closed)."""
         result = await engine.validate_action(
-            action={"command": "test"},
-            context=context
+            action={"command": "test"}, context=context
         )
 
         assert result.allowed is False
         assert len(result.violations) == 0
         assert len(result.policies_executed) == 0
-        assert result.metadata['reason'] == 'no_policies_registered'
-        assert result.metadata['mode'] == 'fail_closed'
+        assert result.metadata["reason"] == "no_policies_registered"
+        assert result.metadata["mode"] == "fail_closed"
 
     @pytest.mark.asyncio
     async def test_no_policies_allows_action_when_fail_open(self, registry, context):
         """Test that action is allowed with fail_open=True when no policies registered."""
-        fail_open_engine = ActionPolicyEngine(registry, config={'fail_open': True})
+        fail_open_engine = ActionPolicyEngine(registry, config={"fail_open": True})
         result = await fail_open_engine.validate_action(
-            action={"command": "test"},
-            context=context
+            action={"command": "test"}, context=context
         )
 
         assert result.allowed is True
         assert len(result.violations) == 0
         assert len(result.policies_executed) == 0
-        assert result.metadata['reason'] == 'no_policies_registered'
-        assert result.metadata['mode'] == 'fail_open'
+        assert result.metadata["reason"] == "no_policies_registered"
+        assert result.metadata["mode"] == "fail_open"
 
     @pytest.mark.asyncio
-    async def test_policy_with_no_violations_allows_action(self, registry, engine, context):
+    async def test_policy_with_no_violations_allows_action(
+        self, registry, engine, context
+    ):
         """Test that action is allowed when policy has no violations."""
         policy = MockPolicy("test_policy")
         registry.register_policy(policy, action_types=["file_write"])
 
         result = await engine.validate_action(
-            action={"command": "test"},
-            context=context
+            action={"command": "test"}, context=context
         )
 
         assert result.allowed is True
@@ -166,16 +176,23 @@ class TestBasicValidation:
         assert "test_policy" in result.policies_executed
 
     @pytest.mark.asyncio
-    async def test_policy_with_critical_violation_blocks_action(self, registry, engine, context):
+    async def test_policy_with_critical_violation_blocks_action(
+        self, registry, engine, context
+    ):
         """Test that CRITICAL violation blocks action."""
-        policy = MockPolicy("test_policy", violations=[
-            {"severity": ViolationSeverity.CRITICAL, "message": "Critical violation"}
-        ])
+        policy = MockPolicy(
+            "test_policy",
+            violations=[
+                {
+                    "severity": ViolationSeverity.CRITICAL,
+                    "message": "Critical violation",
+                }
+            ],
+        )
         registry.register_policy(policy, action_types=["file_write"])
 
         result = await engine.validate_action(
-            action={"command": "test"},
-            context=context
+            action={"command": "test"}, context=context
         )
 
         assert result.allowed is False
@@ -185,32 +202,40 @@ class TestBasicValidation:
         assert result.has_blocking_violations()
 
     @pytest.mark.asyncio
-    async def test_policy_with_high_violation_blocks_action(self, registry, engine, context):
+    async def test_policy_with_high_violation_blocks_action(
+        self, registry, engine, context
+    ):
         """Test that HIGH violation blocks action."""
-        policy = MockPolicy("test_policy", violations=[
-            {"severity": ViolationSeverity.HIGH, "message": "High violation"}
-        ])
+        policy = MockPolicy(
+            "test_policy",
+            violations=[
+                {"severity": ViolationSeverity.HIGH, "message": "High violation"}
+            ],
+        )
         registry.register_policy(policy, action_types=["file_write"])
 
         result = await engine.validate_action(
-            action={"command": "test"},
-            context=context
+            action={"command": "test"}, context=context
         )
 
         assert result.allowed is False
         assert result.has_blocking_violations()
 
     @pytest.mark.asyncio
-    async def test_policy_with_medium_violation_allows_action(self, registry, engine, context):
+    async def test_policy_with_medium_violation_allows_action(
+        self, registry, engine, context
+    ):
         """Test that MEDIUM violation does not block action."""
-        policy = MockPolicy("test_policy", violations=[
-            {"severity": ViolationSeverity.MEDIUM, "message": "Medium violation"}
-        ])
+        policy = MockPolicy(
+            "test_policy",
+            violations=[
+                {"severity": ViolationSeverity.MEDIUM, "message": "Medium violation"}
+            ],
+        )
         registry.register_policy(policy, action_types=["file_write"])
 
         result = await engine.validate_action(
-            action={"command": "test"},
-            context=context
+            action={"command": "test"}, context=context
         )
 
         assert result.allowed is True  # Medium doesn't block
@@ -221,6 +246,7 @@ class TestBasicValidation:
 # ============================================================================
 # Test Multiple Policies
 # ============================================================================
+
 
 class TestMultiplePolicies:
     """Test execution of multiple policies."""
@@ -237,8 +263,7 @@ class TestMultiplePolicies:
         registry.register_policy(policy3, action_types=["file_write"])
 
         result = await engine.validate_action(
-            action={"command": "test"},
-            context=context
+            action={"command": "test"}, context=context
         )
 
         assert len(result.policies_executed) == 3
@@ -258,44 +283,52 @@ class TestMultiplePolicies:
         registry.register_policy(medium, action_types=["file_write"])
 
         result = await engine.validate_action(
-            action={"command": "test"},
-            context=context
+            action={"command": "test"}, context=context
         )
 
         # Should execute in order: high, medium, low
         assert result.policies_executed == ["high", "medium", "low"]
 
     @pytest.mark.asyncio
-    async def test_violations_aggregated_from_all_policies(self, registry, engine, context):
+    async def test_violations_aggregated_from_all_policies(
+        self, registry, engine, context
+    ):
         """Test that violations from all policies are aggregated."""
-        policy1 = MockPolicy("policy1", violations=[
-            {"severity": ViolationSeverity.MEDIUM, "message": "Violation 1"}
-        ])
-        policy2 = MockPolicy("policy2", violations=[
-            {"severity": ViolationSeverity.HIGH, "message": "Violation 2"}
-        ])
-        policy3 = MockPolicy("policy3", violations=[
-            {"severity": ViolationSeverity.MEDIUM, "message": "Violation 3"}
-        ])
+        policy1 = MockPolicy(
+            "policy1",
+            violations=[
+                {"severity": ViolationSeverity.MEDIUM, "message": "Violation 1"}
+            ],
+        )
+        policy2 = MockPolicy(
+            "policy2",
+            violations=[{"severity": ViolationSeverity.HIGH, "message": "Violation 2"}],
+        )
+        policy3 = MockPolicy(
+            "policy3",
+            violations=[
+                {"severity": ViolationSeverity.MEDIUM, "message": "Violation 3"}
+            ],
+        )
 
         registry.register_policy(policy1, action_types=["file_write"])
         registry.register_policy(policy2, action_types=["file_write"])
         registry.register_policy(policy3, action_types=["file_write"])
 
         result = await engine.validate_action(
-            action={"command": "test"},
-            context=context
+            action={"command": "test"}, context=context
         )
 
         assert len(result.violations) == 3
-        assert result.metadata['total_violations'] == 3
-        assert result.metadata['high_violations'] == 1
-        assert result.metadata['medium_violations'] == 2
+        assert result.metadata["total_violations"] == 3
+        assert result.metadata["high_violations"] == 1
+        assert result.metadata["medium_violations"] == 2
 
 
 # ============================================================================
 # Test Short-Circuit Behavior
 # ============================================================================
+
 
 class TestShortCircuit:
     """Test short-circuit on CRITICAL violations."""
@@ -304,9 +337,13 @@ class TestShortCircuit:
     async def test_short_circuit_on_critical(self, registry, context):
         """Test that execution stops after CRITICAL violation."""
         policy1 = MockPolicy("policy1", priority=200)  # No violation
-        policy2 = MockPolicy("policy2", priority=150, violations=[
-            {"severity": ViolationSeverity.CRITICAL, "message": "Critical"}
-        ])
+        policy2 = MockPolicy(
+            "policy2",
+            priority=150,
+            violations=[
+                {"severity": ViolationSeverity.CRITICAL, "message": "Critical"}
+            ],
+        )
         policy3 = MockPolicy("policy3", priority=100)  # Should not execute
 
         registry.register_policy(policy1, action_types=["file_write"])
@@ -316,8 +353,7 @@ class TestShortCircuit:
         engine = ActionPolicyEngine(registry, config={"short_circuit_critical": True})
 
         result = await engine.validate_action(
-            action={"command": "test"},
-            context=context
+            action={"command": "test"}, context=context
         )
 
         # Only policy1 and policy2 should execute
@@ -325,15 +361,19 @@ class TestShortCircuit:
         assert "policy1" in result.policies_executed
         assert "policy2" in result.policies_executed
         assert "policy3" not in result.policies_executed
-        assert result.metadata['short_circuited'] is True
+        assert result.metadata["short_circuited"] is True
 
     @pytest.mark.asyncio
     async def test_no_short_circuit_when_disabled(self, registry, context):
         """Test that all policies execute when short-circuit disabled."""
         policy1 = MockPolicy("policy1", priority=200)
-        policy2 = MockPolicy("policy2", priority=150, violations=[
-            {"severity": ViolationSeverity.CRITICAL, "message": "Critical"}
-        ])
+        policy2 = MockPolicy(
+            "policy2",
+            priority=150,
+            violations=[
+                {"severity": ViolationSeverity.CRITICAL, "message": "Critical"}
+            ],
+        )
         policy3 = MockPolicy("policy3", priority=100)
 
         registry.register_policy(policy1, action_types=["file_write"])
@@ -343,8 +383,7 @@ class TestShortCircuit:
         engine = ActionPolicyEngine(registry, config={"short_circuit_critical": False})
 
         result = await engine.validate_action(
-            action={"command": "test"},
-            context=context
+            action={"command": "test"}, context=context
         )
 
         # All policies should execute
@@ -355,6 +394,7 @@ class TestShortCircuit:
 # ============================================================================
 # Test Caching
 # ============================================================================
+
 
 class TestCaching:
     """Test policy result caching."""
@@ -369,25 +409,23 @@ class TestCaching:
 
         # First validation - cache miss
         result1 = await engine.validate_action(
-            action={"command": "test"},
-            context=context
+            action={"command": "test"}, context=context
         )
 
         # Second validation - cache hit
         result2 = await engine.validate_action(
-            action={"command": "test"},
-            context=context
+            action={"command": "test"}, context=context
         )
 
         # Both should have same result
         assert result1.allowed == result2.allowed
 
         # Second should be cache hit
-        assert result2.metadata['cache_hits'] > 0
+        assert result2.metadata["cache_hits"] > 0
 
         # Metrics should show cache hit
         metrics = engine.get_metrics()
-        assert metrics['cache_hits'] > 0
+        assert metrics["cache_hits"] > 0
 
     @pytest.mark.asyncio
     async def test_cache_disabled(self, registry, context):
@@ -399,14 +437,11 @@ class TestCaching:
 
         # Multiple validations
         for _ in range(3):
-            await engine.validate_action(
-                action={"command": "test"},
-                context=context
-            )
+            await engine.validate_action(action={"command": "test"}, context=context)
 
         # No cache hits
         metrics = engine.get_metrics()
-        assert metrics['cache_hits'] == 0
+        assert metrics["cache_hits"] == 0
 
     @pytest.mark.asyncio
     async def test_cache_expiration(self, registry, context):
@@ -415,29 +450,24 @@ class TestCaching:
         policy = MockPolicy("test_policy")
         registry.register_policy(policy, action_types=["file_write"])
 
-        engine = ActionPolicyEngine(registry, config={
-            "enable_caching": True,
-            "cache_ttl": 0.1  # 100ms TTL
-        })
+        engine = ActionPolicyEngine(
+            registry, config={"enable_caching": True, "cache_ttl": 0.1}  # 100ms TTL
+        )
 
         # First validation
-        await engine.validate_action(
-            action={"command": "test"},
-            context=context
-        )
+        await engine.validate_action(action={"command": "test"}, context=context)
 
         # Wait for expiration
         await asyncio.sleep(0.2)
 
         # Second validation - cache miss due to expiration
         result = await engine.validate_action(
-            action={"command": "test"},
-            context=context
+            action={"command": "test"}, context=context
         )
 
         # Should be cache miss (expired)
         metrics = engine.get_metrics()
-        assert metrics['cache_misses'] >= 2  # Both validations are misses
+        assert metrics["cache_misses"] >= 2  # Both validations are misses
 
     @pytest.mark.asyncio
     async def test_clear_cache(self, registry, context):
@@ -448,28 +478,28 @@ class TestCaching:
         engine = ActionPolicyEngine(registry, config={"enable_caching": True})
 
         # Validate to populate cache
-        await engine.validate_action(
-            action={"command": "test"},
-            context=context
-        )
+        await engine.validate_action(action={"command": "test"}, context=context)
 
-        assert engine.get_metrics()['cache_size'] > 0
+        assert engine.get_metrics()["cache_size"] > 0
 
         # Clear cache
         engine.clear_cache()
 
-        assert engine.get_metrics()['cache_size'] == 0
+        assert engine.get_metrics()["cache_size"] == 0
 
 
 # ============================================================================
 # Test Error Handling
 # ============================================================================
 
+
 class TestErrorHandling:
     """Test error handling in policy execution."""
 
     @pytest.mark.asyncio
-    async def test_policy_exception_treated_as_critical_violation(self, registry, context):
+    async def test_policy_exception_treated_as_critical_violation(
+        self, registry, context
+    ):
         """Test that policy exceptions are treated as CRITICAL violations."""
         # Mock policy that raises exception
         policy = Mock(spec=SafetyPolicy)
@@ -483,8 +513,7 @@ class TestErrorHandling:
         engine = ActionPolicyEngine(registry, config={})
 
         result = await engine.validate_action(
-            action={"command": "test"},
-            context=context
+            action={"command": "test"}, context=context
         )
 
         # Should have CRITICAL violation from exception
@@ -510,8 +539,7 @@ class TestErrorHandling:
         engine = ActionPolicyEngine(registry, config={"short_circuit_critical": False})
 
         result = await engine.validate_action(
-            action={"command": "test"},
-            context=context
+            action={"command": "test"}, context=context
         )
 
         # Both policies should have executed
@@ -524,6 +552,7 @@ class TestErrorHandling:
 # Test Metrics
 # ============================================================================
 
+
 class TestMetrics:
     """Test engine metrics tracking."""
 
@@ -533,31 +562,26 @@ class TestMetrics:
         policy = MockPolicy("test_policy")
         registry.register_policy(policy, action_types=["file_write"])
 
-        initial_count = engine.get_metrics()['validations_performed']
+        initial_count = engine.get_metrics()["validations_performed"]
 
-        await engine.validate_action(
-            action={"command": "test"},
-            context=context
-        )
+        await engine.validate_action(action={"command": "test"}, context=context)
 
-        assert engine.get_metrics()['validations_performed'] == initial_count + 1
+        assert engine.get_metrics()["validations_performed"] == initial_count + 1
 
     @pytest.mark.asyncio
     async def test_violation_count_tracked(self, registry, engine, context):
         """Test that violation count is tracked."""
-        policy = MockPolicy("test_policy", violations=[
-            {"severity": ViolationSeverity.HIGH, "message": "Violation"}
-        ])
+        policy = MockPolicy(
+            "test_policy",
+            violations=[{"severity": ViolationSeverity.HIGH, "message": "Violation"}],
+        )
         registry.register_policy(policy, action_types=["file_write"])
 
-        initial_count = engine.get_metrics()['violations_logged']
+        initial_count = engine.get_metrics()["violations_logged"]
 
-        await engine.validate_action(
-            action={"command": "test"},
-            context=context
-        )
+        await engine.validate_action(action={"command": "test"}, context=context)
 
-        assert engine.get_metrics()['violations_logged'] == initial_count + 1
+        assert engine.get_metrics()["violations_logged"] == initial_count + 1
 
     @pytest.mark.asyncio
     async def test_cache_hit_rate_calculated(self, registry, context):
@@ -568,20 +592,14 @@ class TestMetrics:
         engine = ActionPolicyEngine(registry, config={"enable_caching": True})
 
         # First validation - miss
-        await engine.validate_action(
-            action={"command": "test"},
-            context=context
-        )
+        await engine.validate_action(action={"command": "test"}, context=context)
 
         # Second validation - hit
-        await engine.validate_action(
-            action={"command": "test"},
-            context=context
-        )
+        await engine.validate_action(action={"command": "test"}, context=context)
 
         metrics = engine.get_metrics()
-        assert metrics['cache_hit_rate'] > 0.0
-        assert metrics['cache_hit_rate'] <= 1.0
+        assert metrics["cache_hit_rate"] > 0.0
+        assert metrics["cache_hit_rate"] <= 1.0
 
     @pytest.mark.asyncio
     async def test_reset_metrics(self, registry, engine, context):
@@ -589,21 +607,19 @@ class TestMetrics:
         policy = MockPolicy("test_policy")
         registry.register_policy(policy, action_types=["file_write"])
 
-        await engine.validate_action(
-            action={"command": "test"},
-            context=context
-        )
+        await engine.validate_action(action={"command": "test"}, context=context)
 
-        assert engine.get_metrics()['validations_performed'] > 0
+        assert engine.get_metrics()["validations_performed"] > 0
 
         engine.reset_metrics()
 
-        assert engine.get_metrics()['validations_performed'] == 0
+        assert engine.get_metrics()["validations_performed"] == 0
 
 
 # ============================================================================
 # Test Result Helper Methods
 # ============================================================================
+
 
 class TestEnforcementResultHelpers:
     """Test EnforcementResult helper methods."""
@@ -616,7 +632,7 @@ class TestEnforcementResultHelpers:
                 severity=ViolationSeverity.CRITICAL,
                 message="Critical",
                 action="test",
-                context={}
+                context={},
             )
         ]
 
@@ -625,7 +641,7 @@ class TestEnforcementResultHelpers:
             violations=violations,
             policies_executed=["test"],
             execution_time_ms=10.0,
-            metadata={}
+            metadata={},
         )
 
         assert result.has_critical_violations() is True
@@ -638,7 +654,7 @@ class TestEnforcementResultHelpers:
                 severity=ViolationSeverity.HIGH,
                 message="High",
                 action="test",
-                context={}
+                context={},
             )
         ]
 
@@ -647,7 +663,7 @@ class TestEnforcementResultHelpers:
             violations=violations,
             policies_executed=["test"],
             execution_time_ms=10.0,
-            metadata={}
+            metadata={},
         )
 
         assert result.has_blocking_violations() is True
@@ -660,21 +676,21 @@ class TestEnforcementResultHelpers:
                 severity=ViolationSeverity.CRITICAL,
                 message="Critical",
                 action="test",
-                context={}
+                context={},
             ),
             SafetyViolation(
                 policy_name="p2",
                 severity=ViolationSeverity.MEDIUM,
                 message="Medium",
                 action="test",
-                context={}
+                context={},
             ),
             SafetyViolation(
                 policy_name="p3",
                 severity=ViolationSeverity.CRITICAL,
                 message="Critical2",
                 action="test",
-                context={}
+                context={},
             ),
         ]
 
@@ -683,7 +699,7 @@ class TestEnforcementResultHelpers:
             violations=violations,
             policies_executed=["p1", "p2", "p3"],
             execution_time_ms=10.0,
-            metadata={}
+            metadata={},
         )
 
         critical = result.get_violations_by_severity(ViolationSeverity.CRITICAL)
@@ -696,6 +712,7 @@ class TestEnforcementResultHelpers:
 # ============================================================================
 # Test Async Performance
 # ============================================================================
+
 
 class TestAsyncPerformance:
     """Test async execution performance."""
@@ -715,12 +732,10 @@ class TestAsyncPerformance:
         engine = ActionPolicyEngine(registry, config={})
 
         import time
+
         start = time.time()
 
-        await engine.validate_action(
-            action={"command": "test"},
-            context=context
-        )
+        await engine.validate_action(action={"command": "test"}, context=context)
 
         elapsed = (time.time() - start) * 1000  # ms
 
@@ -733,6 +748,7 @@ class TestAsyncPerformance:
 # ============================================================================
 # Test String Representation
 # ============================================================================
+
 
 class TestStringRepresentation:
     """Test string representation."""
@@ -751,7 +767,9 @@ class TestCacheKeySecurityFixes:
 
     def test_canonical_json_sorts_nested_dicts(self):
         """Test that canonical JSON sorts nested dictionary keys."""
-        engine = ActionPolicyEngine(policy_registry=MagicMock(spec=PolicyRegistry), config={})
+        engine = ActionPolicyEngine(
+            policy_registry=MagicMock(spec=PolicyRegistry), config={}
+        )
 
         # Different key orders, same logical data
         obj1 = {"b": {"d": 1, "c": 2}, "a": 3}
@@ -767,7 +785,9 @@ class TestCacheKeySecurityFixes:
 
     def test_canonical_json_handles_lists(self):
         """Test that canonical JSON preserves list order."""
-        engine = ActionPolicyEngine(policy_registry=MagicMock(spec=PolicyRegistry), config={})
+        engine = ActionPolicyEngine(
+            policy_registry=MagicMock(spec=PolicyRegistry), config={}
+        )
 
         obj1 = {"items": [3, 1, 2]}
         obj2 = {"items": [3, 1, 2]}
@@ -786,7 +806,9 @@ class TestCacheKeySecurityFixes:
 
     def test_canonical_json_sorts_sets(self):
         """Test that canonical JSON sorts sets for determinism."""
-        engine = ActionPolicyEngine(policy_registry=MagicMock(spec=PolicyRegistry), config={})
+        engine = ActionPolicyEngine(
+            policy_registry=MagicMock(spec=PolicyRegistry), config={}
+        )
 
         # Sets are unordered in Python, but should serialize deterministically
         obj1 = {"tags": {3, 1, 2}}
@@ -802,22 +824,12 @@ class TestCacheKeySecurityFixes:
 
     def test_canonical_json_deeply_nested_structures(self):
         """Test canonical JSON with deeply nested structures."""
-        engine = ActionPolicyEngine(policy_registry=MagicMock(spec=PolicyRegistry), config={})
+        engine = ActionPolicyEngine(
+            policy_registry=MagicMock(spec=PolicyRegistry), config={}
+        )
 
-        obj1 = {
-            "level1": {
-                "level2": {
-                    "level3": {"c": 3, "b": 2, "a": 1}
-                }
-            }
-        }
-        obj2 = {
-            "level1": {
-                "level2": {
-                    "level3": {"a": 1, "b": 2, "c": 3}
-                }
-            }
-        }
+        obj1 = {"level1": {"level2": {"level3": {"c": 3, "b": 2, "a": 1}}}}
+        obj2 = {"level1": {"level2": {"level3": {"a": 1, "b": 2, "c": 3}}}}
 
         json1 = canonical_json(obj1)
         json2 = canonical_json(obj2)
@@ -826,7 +838,9 @@ class TestCacheKeySecurityFixes:
 
     def test_canonical_json_mixed_types(self):
         """Test canonical JSON with mixed data types."""
-        engine = ActionPolicyEngine(policy_registry=MagicMock(spec=PolicyRegistry), config={})
+        engine = ActionPolicyEngine(
+            policy_registry=MagicMock(spec=PolicyRegistry), config={}
+        )
 
         obj = {
             "string": "hello",
@@ -835,7 +849,7 @@ class TestCacheKeySecurityFixes:
             "bool": True,
             "null": None,
             "list": [1, 2, 3],
-            "nested": {"key": "value"}
+            "nested": {"key": "value"},
         }
 
         json_str = canonical_json(obj)
@@ -862,17 +876,17 @@ class TestCacheKeySecurityFixes:
             action_type="test_action",
             action_data={},
             workflow_id="workflow1",
-            stage_id="stage1"
+            stage_id="stage1",
         )
 
         # Two actions with same logical content but different key order
         action1 = {
             "tool": "write_file",
-            "params": {"path": "/tmp/file.txt", "mode": "w"}
+            "params": {"path": "/tmp/file.txt", "mode": "w"},
         }
         action2 = {
             "tool": "write_file",
-            "params": {"mode": "w", "path": "/tmp/file.txt"}  # Different order
+            "params": {"mode": "w", "path": "/tmp/file.txt"},  # Different order
         }
 
         # Intentional private access: unit test for cache key generation logic
@@ -896,7 +910,7 @@ class TestCacheKeySecurityFixes:
             action_type="test_action",
             action_data={},
             workflow_id="workflow1",
-            stage_id="stage1"
+            stage_id="stage1",
         )
 
         action1 = {"tool": "write_file", "path": "/tmp/file1.txt"}
@@ -923,16 +937,16 @@ class TestCacheKeySecurityFixes:
             action_type="test_action",
             action_data={},
             workflow_id="workflow1",
-            stage_id="stage1"
+            stage_id="stage1",
         )
 
         action1 = {
             "tool": "api_call",
-            "params": {"endpoint": "/api/users", "data": {"role": "admin"}}
+            "params": {"endpoint": "/api/users", "data": {"role": "admin"}},
         }
         action2 = {
             "tool": "api_call",
-            "params": {"endpoint": "/api/users", "data": {"role": "user"}}
+            "params": {"endpoint": "/api/users", "data": {"role": "user"}},
         }
 
         # Intentional private access: unit test for cache key generation logic
@@ -958,14 +972,14 @@ class TestCacheKeySecurityFixes:
             action_type="test_action",
             action_data={},
             workflow_id="workflow1",
-            stage_id="stage1"
+            stage_id="stage1",
         )
         context2 = PolicyExecutionContext(
             agent_id="agent1",
             action_type="test_action",
             action_data={},
             workflow_id="workflow2",  # Different workflow
-            stage_id="stage2"  # Different stage
+            stage_id="stage2",  # Different stage
         )
 
         # Intentional private access: unit test for cache key generation logic
@@ -997,7 +1011,7 @@ class TestCacheKeySecurityFixes:
             action_type="test_action",
             action_data={},
             workflow_id="workflow1",
-            stage_id="stage1"
+            stage_id="stage1",
         )
 
         action = {"tool": "test"}
@@ -1011,7 +1025,9 @@ class TestCacheKeySecurityFixes:
 
     def test_canonical_json_handles_empty_structures(self):
         """Test canonical JSON with empty structures."""
-        engine = ActionPolicyEngine(policy_registry=MagicMock(spec=PolicyRegistry), config={})
+        engine = ActionPolicyEngine(
+            policy_registry=MagicMock(spec=PolicyRegistry), config={}
+        )
 
         empty_dict = {}
         empty_list = []
@@ -1019,12 +1035,14 @@ class TestCacheKeySecurityFixes:
         json_dict = canonical_json(empty_dict)
         json_list = canonical_json(empty_list)
 
-        assert json_dict == '{}'
-        assert json_list == '[]'
+        assert json_dict == "{}"
+        assert json_list == "[]"
 
     def test_canonical_json_deterministic_for_complex_action(self):
         """Test canonical JSON is deterministic for complex real-world action."""
-        engine = ActionPolicyEngine(policy_registry=MagicMock(spec=PolicyRegistry), config={})
+        engine = ActionPolicyEngine(
+            policy_registry=MagicMock(spec=PolicyRegistry), config={}
+        )
 
         # Simulate complex action with nested structures
         action = {
@@ -1032,13 +1050,10 @@ class TestCacheKeySecurityFixes:
             "params": {
                 "stages": [
                     {"name": "stage1", "config": {"timeout": 30}},
-                    {"name": "stage2", "config": {"retry": 3}}
+                    {"name": "stage2", "config": {"retry": 3}},
                 ],
-                "metadata": {
-                    "tags": ["production", "critical"],
-                    "owner": "team-a"
-                }
-            }
+                "metadata": {"tags": ["production", "critical"], "owner": "team-a"},
+            },
         }
 
         # Generate key multiple times

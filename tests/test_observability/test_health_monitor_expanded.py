@@ -1,8 +1,6 @@
 """Tests for expanded health monitor: DB and backend health checks."""
 
-from unittest.mock import MagicMock, call
-
-import pytest
+from unittest.mock import MagicMock
 
 from temper_ai.observability.health_monitor import (
     ObservabilityHealthMonitor,

@@ -2,9 +2,12 @@
 
 import logging
 import uuid
-from typing import Dict, Optional
 
-from temper_ai.portfolio._schemas import AllocationStatus, PortfolioConfig, ProductDefinition
+from temper_ai.portfolio._schemas import (
+    AllocationStatus,
+    PortfolioConfig,
+    ProductDefinition,
+)
 from temper_ai.portfolio._tracking import track_portfolio_event
 from temper_ai.portfolio.models import ProductRunRecord
 from temper_ai.portfolio.store import PortfolioStore
@@ -20,14 +23,15 @@ class ResourceScheduler:
         self.store = store
 
     def next_product(
-        self, portfolio: PortfolioConfig,
-    ) -> Optional[str]:
+        self,
+        portfolio: PortfolioConfig,
+    ) -> str | None:
         """Select next product to execute using WFQ scheduling.
 
         Filters products under concurrency and budget caps, then picks the
         product with the lowest virtual_time (completed_runs / weight).
         """
-        best_product: Optional[str] = None
+        best_product: str | None = None
         best_vtime = float("inf")
 
         for product in portfolio.products:
@@ -58,7 +62,9 @@ class ResourceScheduler:
         return best_product
 
     def can_execute(
-        self, portfolio: PortfolioConfig, product_type: str,
+        self,
+        portfolio: PortfolioConfig,
+        product_type: str,
     ) -> bool:
         """Check concurrency and budget gates for a product."""
         product = _find_product(portfolio, product_type)
@@ -106,8 +112,11 @@ class ResourceScheduler:
         )
         track_portfolio_event(
             "scheduler_product_start",
-            {"product_type": product_type, "workflow_id": workflow_id,
-             "portfolio_id": portfolio_id},
+            {
+                "product_type": product_type,
+                "workflow_id": workflow_id,
+                "portfolio_id": portfolio_id,
+            },
             "started",
             tags=["portfolio", "scheduler"],
         )
@@ -121,7 +130,8 @@ class ResourceScheduler:
     ) -> None:
         """Record the completion of a product workflow execution."""
         runs = self.store.list_product_runs(
-            product_type=product_type, status="running",
+            product_type=product_type,
+            status="running",
         )
         record = None
         for run in runs:
@@ -144,7 +154,9 @@ class ResourceScheduler:
         record.completed_at = now
         if record.started_at is not None:
             record.duration_s = safe_duration_seconds(
-                record.started_at, now, context="product_run",
+                record.started_at,
+                now,
+                context="product_run",
             )
 
         self.store.save_product_run(record)
@@ -168,10 +180,11 @@ class ResourceScheduler:
         )
 
     def get_allocation_status(
-        self, portfolio: PortfolioConfig,
-    ) -> Dict[str, AllocationStatus]:
+        self,
+        portfolio: PortfolioConfig,
+    ) -> dict[str, AllocationStatus]:
         """Get current allocation status for every product."""
-        result: Dict[str, AllocationStatus] = {}
+        result: dict[str, AllocationStatus] = {}
 
         for product in portfolio.products:
             active = self.store.count_product_runs(product.name, status="running")
@@ -202,7 +215,7 @@ class ResourceScheduler:
         return result
 
 
-def _find_product(portfolio: PortfolioConfig, name: str) -> Optional[ProductDefinition]:
+def _find_product(portfolio: PortfolioConfig, name: str) -> ProductDefinition | None:
     """Find a ProductDefinition by name within a portfolio."""
     for product in portfolio.products:
         if product.name == name:

@@ -38,16 +38,18 @@ examples/         # Input files for workflows
 ## Quick Start
 
 ```bash
-# Run a workflow
-temper-ai run configs/workflows/simple_research.yaml \
-  --input examples/research_input.yaml \
-  --show-details
+# Start the server
+temper-ai serve --dev
 
-# Validate config without running
-temper-ai validate configs/workflows/quick_decision_demo.yaml
+# Run a workflow via the API
+curl -X POST http://localhost:8420/api/runs \
+  -H 'Content-Type: application/json' \
+  -d '{"workflow": "workflows/simple_research.yaml", "inputs": {"query": "Research GraphQL vs REST"}}'
 
-# List available configs
-temper-ai list workflows
-temper-ai list agents
-temper-ai list stages
+# Validate config
+curl -X POST http://localhost:8420/api/validate \
+  -d '{"workflow": "workflows/quick_decision_demo.yaml"}'
+
+# List available workflows
+curl http://localhost:8420/api/workflows/available
 ```

@@ -2,7 +2,8 @@
 
 Provides different execution strategies for workflow stages.
 """
-from typing import Callable
+
+from collections.abc import Callable
 
 from temper_ai.agent.base_agent import BaseAgent
 from temper_ai.stage.executors.adaptive import AdaptiveStageExecutor

@@ -6,12 +6,14 @@ PLUGIN_TYPE_LANGGRAPH = "langgraph"
 PLUGIN_TYPE_OPENAI_AGENTS = "openai_agents"
 PLUGIN_TYPE_AUTOGEN = "autogen"
 
-ALL_PLUGIN_TYPES = frozenset({
-    PLUGIN_TYPE_CREWAI,
-    PLUGIN_TYPE_LANGGRAPH,
-    PLUGIN_TYPE_OPENAI_AGENTS,
-    PLUGIN_TYPE_AUTOGEN,
-})
+ALL_PLUGIN_TYPES = frozenset(
+    {
+        PLUGIN_TYPE_CREWAI,
+        PLUGIN_TYPE_LANGGRAPH,
+        PLUGIN_TYPE_OPENAI_AGENTS,
+        PLUGIN_TYPE_AUTOGEN,
+    }
+)
 
 # Timeout for external framework execution (seconds)
 PLUGIN_DEFAULT_TIMEOUT = 600

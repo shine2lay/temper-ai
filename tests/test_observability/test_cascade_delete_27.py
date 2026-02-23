@@ -5,7 +5,7 @@ parent execution records, so that cleanup_old_records leaves no orphaned rows
 in DecisionOutcome, RollbackSnapshotDB, or RollbackEvent tables.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -28,6 +28,7 @@ def setup_db():
     """Initialize a fresh in-memory database for each test."""
     import temper_ai.observability.database as db_module
     from temper_ai.observability.database import _db_lock
+
     with _db_lock:
         db_module._db_manager = None
 
@@ -38,7 +39,7 @@ def setup_db():
 
 def _make_workflow(wf_id: str, old: bool = False) -> WorkflowExecution:
     """Create a WorkflowExecution, optionally backdated."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     start = now - timedelta(days=90) if old else now
     return WorkflowExecution(
         id=wf_id,
@@ -83,6 +84,7 @@ class TestDecisionOutcomeCascade:
 
         # Delete workflow via raw SQL (same as cleanup_old_records)
         from sqlalchemy import delete
+
         with get_session() as session:
             session.exec(delete(WorkflowExecution).where(WorkflowExecution.id == wf_id))
             session.commit()
@@ -108,7 +110,7 @@ class TestDecisionOutcomeCascade:
                 workflow_execution_id=wf_id,
                 stage_name="test-stage",
                 stage_config_snapshot={},
-                start_time=datetime.now(timezone.utc),
+                start_time=datetime.now(UTC),
                 status="completed",
             )
             session.add(stage)
@@ -119,7 +121,7 @@ class TestDecisionOutcomeCascade:
                 stage_execution_id=stage_id,
                 agent_name="test-agent",
                 agent_config_snapshot={},
-                start_time=datetime.now(timezone.utc),
+                start_time=datetime.now(UTC),
                 status="completed",
             )
             session.add(agent)
@@ -137,6 +139,7 @@ class TestDecisionOutcomeCascade:
 
         # Delete workflow (cascades: workflow → stage → agent → decision_outcome)
         from sqlalchemy import delete
+
         with get_session() as session:
             session.exec(delete(WorkflowExecution).where(WorkflowExecution.id == wf_id))
             session.commit()
@@ -173,13 +176,15 @@ class TestRollbackSnapshotCascade:
             assert session.query(RollbackSnapshotDB).count() == 1
 
         from sqlalchemy import delete
+
         with get_session() as session:
             session.exec(delete(WorkflowExecution).where(WorkflowExecution.id == wf_id))
             session.commit()
 
         with get_session() as session:
-            assert session.query(RollbackSnapshotDB).count() == 0, \
-                "RollbackSnapshotDB should be cascade-deleted with workflow"
+            assert (
+                session.query(RollbackSnapshotDB).count() == 0
+            ), "RollbackSnapshotDB should be cascade-deleted with workflow"
 
 
 class TestRollbackEventCascade:
@@ -222,14 +227,16 @@ class TestRollbackEventCascade:
             assert session.query(RollbackEvent).count() == 1
 
         from sqlalchemy import delete
+
         with get_session() as session:
             session.exec(delete(WorkflowExecution).where(WorkflowExecution.id == wf_id))
             session.commit()
 
         with get_session() as session:
             assert session.query(RollbackSnapshotDB).count() == 0
-            assert session.query(RollbackEvent).count() == 0, \
-                "RollbackEvent should be cascade-deleted via snapshot → workflow chain"
+            assert (
+                session.query(RollbackEvent).count() == 0
+            ), "RollbackEvent should be cascade-deleted via snapshot → workflow chain"
 
 
 class TestFullHierarchyCascade:
@@ -245,49 +252,86 @@ class TestFullHierarchyCascade:
         do_id = f"do-{uuid4().hex[:8]}"
         snap_id = f"snap-{uuid4().hex[:8]}"
         evt_id = f"evt-{uuid4().hex[:8]}"
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         with get_session() as session:
             session.add(_make_workflow(wf_id))
             session.flush()
 
-            session.add(StageExecution(
-                id=stage_id, workflow_execution_id=wf_id,
-                stage_name="s1", stage_config_snapshot={},
-                start_time=now, status="completed",
-            ))
+            session.add(
+                StageExecution(
+                    id=stage_id,
+                    workflow_execution_id=wf_id,
+                    stage_name="s1",
+                    stage_config_snapshot={},
+                    start_time=now,
+                    status="completed",
+                )
+            )
             session.flush()
 
-            session.add(AgentExecution(
-                id=agent_id, stage_execution_id=stage_id,
-                agent_name="a1", agent_config_snapshot={},
-                start_time=now, status="completed",
-            ))
+            session.add(
+                AgentExecution(
+                    id=agent_id,
+                    stage_execution_id=stage_id,
+                    agent_name="a1",
+                    agent_config_snapshot={},
+                    start_time=now,
+                    status="completed",
+                )
+            )
             session.flush()
 
-            session.add(LLMCall(
-                id=llm_id, agent_execution_id=agent_id,
-                model="test-model", provider="test",
-                start_time=now, status="completed",
-            ))
-            session.add(ToolExecution(
-                id=tool_id, agent_execution_id=agent_id,
-                tool_name="test-tool", start_time=now, status="completed",
-            ))
-            session.add(DecisionOutcome(
-                id=do_id, workflow_execution_id=wf_id,
-                decision_type="test", decision_data={}, outcome="success",
-            ))
-            session.add(RollbackSnapshotDB(
-                id=snap_id, workflow_execution_id=wf_id,
-                action={}, context={}, file_snapshots={}, state_snapshots={},
-            ))
+            session.add(
+                LLMCall(
+                    id=llm_id,
+                    agent_execution_id=agent_id,
+                    model="test-model",
+                    provider="test",
+                    start_time=now,
+                    status="success",
+                )
+            )
+            session.add(
+                ToolExecution(
+                    id=tool_id,
+                    agent_execution_id=agent_id,
+                    tool_name="test-tool",
+                    start_time=now,
+                    status="success",
+                )
+            )
+            session.add(
+                DecisionOutcome(
+                    id=do_id,
+                    workflow_execution_id=wf_id,
+                    decision_type="test",
+                    decision_data={},
+                    outcome="success",
+                )
+            )
+            session.add(
+                RollbackSnapshotDB(
+                    id=snap_id,
+                    workflow_execution_id=wf_id,
+                    action={},
+                    context={},
+                    file_snapshots={},
+                    state_snapshots={},
+                )
+            )
             session.flush()
-            session.add(RollbackEvent(
-                id=evt_id, snapshot_id=snap_id,
-                status="completed", trigger="auto",
-                reverted_items=[], failed_items=[], errors=[],
-            ))
+            session.add(
+                RollbackEvent(
+                    id=evt_id,
+                    snapshot_id=snap_id,
+                    status="completed",
+                    trigger="auto",
+                    reverted_items=[],
+                    failed_items=[],
+                    errors=[],
+                )
+            )
             session.commit()
 
         # Verify all records exist
@@ -303,6 +347,7 @@ class TestFullHierarchyCascade:
 
         # Delete workflow
         from sqlalchemy import delete
+
         with get_session() as session:
             session.exec(delete(WorkflowExecution).where(WorkflowExecution.id == wf_id))
             session.commit()

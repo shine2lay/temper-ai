@@ -1,8 +1,9 @@
 """MCPManager — manages connections to multiple MCP servers."""
+
 import concurrent.futures
 import logging
 import weakref
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from temper_ai.mcp._client_helpers import create_event_loop_thread, stop_event_loop
 from temper_ai.mcp._schemas import MCPServerConfig
@@ -26,7 +27,7 @@ class MCPManager:
             registry.register(tools)
     """
 
-    def __init__(self, configs: List[MCPServerConfig]) -> None:
+    def __init__(self, configs: list[MCPServerConfig]) -> None:
         """Initialise the manager.
 
         Args:
@@ -41,9 +42,9 @@ class MCPManager:
             )
 
         self._configs = configs
-        self._sessions: Dict[str, Any] = {}
-        self._context_managers: Dict[str, Any] = {}
-        self._tools: List[MCPToolWrapper] = []
+        self._sessions: dict[str, Any] = {}
+        self._context_managers: dict[str, Any] = {}
+        self._tools: list[MCPToolWrapper] = []
 
         self._loop, self._thread = create_event_loop_thread()
 
@@ -54,7 +55,7 @@ class MCPManager:
     # Public API
     # ------------------------------------------------------------------
 
-    def connect_all(self) -> List[MCPToolWrapper]:
+    def connect_all(self) -> list[MCPToolWrapper]:
         """Connect to all configured MCP servers and return wrapped tools.
 
         Servers that fail to connect are skipped with a warning so the
@@ -63,8 +64,8 @@ class MCPManager:
         Returns:
             All MCPToolWrapper instances across every successfully connected server.
         """
-        all_tools: List[MCPToolWrapper] = []
-        seen_namespaces: Dict[str, str] = {}  # namespace -> server name
+        all_tools: list[MCPToolWrapper] = []
+        seen_namespaces: dict[str, str] = {}  # namespace -> server name
 
         for config in self._configs:
             try:
@@ -147,9 +148,9 @@ class MCPManager:
 
     def __exit__(
         self,
-        _exc_type: Optional[type],
-        _exc_val: Optional[BaseException],
-        _exc_tb: Optional[Any],
+        _exc_type: type | None,
+        _exc_val: BaseException | None,
+        _exc_tb: Any | None,
     ) -> None:
         self.disconnect_all()
 
@@ -188,9 +189,8 @@ class MCPManager:
 
     async def _connect_stdio(self, config: MCPServerConfig) -> Any:
         """Connect via stdio transport."""
-        from mcp import ClientSession
+        from mcp import ClientSession, StdioServerParameters
         from mcp.client.stdio import stdio_client
-        from mcp import StdioServerParameters
 
         params = StdioServerParameters(
             command=config.command,
@@ -211,9 +211,11 @@ class MCPManager:
 
         try:
             from mcp.client.streamable_http import streamablehttp_client
+
             ctx = streamablehttp_client(config.url)
         except ImportError:
             from mcp.client.sse import sse_client
+
             ctx = sse_client(config.url)
 
         read, write = await ctx.__aenter__()
@@ -223,7 +225,7 @@ class MCPManager:
         self._context_managers[config.name] = (ctx, session)
         return session
 
-    def _list_server_tools(self, config: MCPServerConfig, session: Any) -> List[Any]:
+    def _list_server_tools(self, config: MCPServerConfig, session: Any) -> list[Any]:
         """Return the list of tools advertised by the connected server."""
         future: concurrent.futures.Future[Any] = concurrent.futures.Future()
 

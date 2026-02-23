@@ -15,12 +15,12 @@ import traceback
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Literal
 
+from temper_ai.observability.constants import ObservabilityFields
 from temper_ai.shared.constants.durations import MILLISECONDS_PER_SECOND
 from temper_ai.shared.constants.limits import THRESHOLD_MEDIUM_COUNT
 from temper_ai.storage.database.datetime_utils import utcnow
-from temper_ai.observability.constants import ObservabilityFields
 
 logger = logging.getLogger(__name__)
 
@@ -61,16 +61,14 @@ class LLMCallTrackingData:
     completion_tokens: int
     latency_ms: int
     estimated_cost_usd: float
-    temperature: Optional[float] = None
-    max_tokens: Optional[int] = None
+    temperature: float | None = None
+    max_tokens: int | None = None
     status: str = "success"
-    error_message: Optional[str] = None
-    # Failover tracking (Gap 9)
-    failover_sequence: Optional[List[str]] = None
-    failover_from_provider: Optional[str] = None
-    # Prompt versioning (Gap 6)
-    prompt_template_hash: Optional[str] = None
-    prompt_template_source: Optional[str] = None
+    error_message: str | None = None
+    failover_sequence: list[str] | None = None
+    failover_from_provider: str | None = None
+    prompt_template_hash: str | None = None
+    prompt_template_source: str | None = None
 
 
 @dataclass
@@ -79,12 +77,12 @@ class ToolCallTrackingData:
 
     agent_id: str
     tool_name: str
-    input_params: Dict[str, Any]
-    output_data: Dict[str, Any]
+    input_params: dict[str, Any]
+    output_data: dict[str, Any]
     duration_seconds: float
     status: str = "success"
-    error_message: Optional[str] = None
-    safety_checks: Optional[List[str]] = None
+    error_message: str | None = None
+    safety_checks: list[str] | None = None
     approval_required: bool = False
 
 
@@ -93,19 +91,19 @@ class DecisionTrackingData:
     """Bundle parameters for decision outcome tracking."""
 
     decision_type: str
-    decision_data: Dict[str, Any]
+    decision_data: dict[str, Any]
     outcome: str
-    impact_metrics: Optional[Dict[str, Any]] = None
-    lessons_learned: Optional[str] = None
-    should_repeat: Optional[bool] = None
-    tags: Optional[List[str]] = None
-    agent_execution_id: Optional[str] = None
-    stage_execution_id: Optional[str] = None
-    workflow_execution_id: Optional[str] = None
-    validation_method: Optional[str] = None
-    validation_timestamp: Optional[datetime] = None
-    validation_duration_seconds: Optional[float] = None
-    extra_metadata: Optional[Dict[str, Any]] = None
+    impact_metrics: dict[str, Any] | None = None
+    lessons_learned: str | None = None
+    should_repeat: bool | None = None
+    tags: list[str] | None = None
+    agent_execution_id: str | None = None
+    stage_execution_id: str | None = None
+    workflow_execution_id: str | None = None
+    validation_method: str | None = None
+    validation_timestamp: datetime | None = None
+    validation_duration_seconds: float | None = None
+    extra_metadata: dict[str, Any] | None = None
 
 
 @dataclass
@@ -116,11 +114,11 @@ class StreamChunkData:
     content: str
     chunk_type: str = "content"
     done: bool = False
-    model: Optional[str] = None
-    prompt_tokens: Optional[int] = None
-    completion_tokens: Optional[int] = None
-    workflow_id: Optional[str] = None
-    stage_id: Optional[str] = None
+    model: str | None = None
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    workflow_id: str | None = None
+    stage_id: str | None = None
 
 
 @dataclass
@@ -128,26 +126,26 @@ class CollaborationEventData:
     """Bundle parameters for collaboration event tracking."""
 
     event_type: str
-    stage_id: Optional[str] = None
-    agents_involved: Optional[List[str]] = None
-    event_data: Optional[Dict[str, Any]] = None
-    round_number: Optional[int] = None
-    resolution_strategy: Optional[str] = None
-    outcome: Optional[str] = None
-    confidence_score: Optional[float] = None
-    extra_metadata: Optional[Dict[str, Any]] = None
-    stage_name: Optional[str] = None
-    agents: Optional[List[str]] = None
-    decision: Optional[str] = None
-    confidence: Optional[float] = None
-    metadata: Optional[Dict[str, Any]] = None
+    stage_id: str | None = None
+    agents_involved: list[str] | None = None
+    event_data: dict[str, Any] | None = None
+    round_number: int | None = None
+    resolution_strategy: str | None = None
+    outcome: str | None = None
+    confidence_score: float | None = None
+    extra_metadata: dict[str, Any] | None = None
+    stage_name: str | None = None
+    agents: list[str] | None = None
+    decision: str | None = None
+    confidence: float | None = None
+    metadata: dict[str, Any] | None = None
 
 
 def sanitize_dict(
     sanitizer: Any,
-    data: Dict[str, Any],
+    data: dict[str, Any],
     _depth: int = 0,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Recursively sanitize dictionary values to remove secrets.
 
     SECURITY: Prevents credential exposure in tool parameters/outputs.
@@ -170,7 +168,7 @@ def sanitize_dict(
     if _depth > THRESHOLD_MEDIUM_COUNT:
         return {"__truncated__": "max depth exceeded"}
 
-    sanitized: Dict[str, Any] = {}
+    sanitized: dict[str, Any] = {}
     for key, value in data.items():
         try:
             # Sanitize key as well (keys might contain secrets)
@@ -181,12 +179,14 @@ def sanitize_dict(
             if isinstance(value, dict):
                 sanitized[safe_key] = sanitize_dict(sanitizer, value, _depth + 1)
             elif isinstance(value, list):
-                sanitized_list: List[Any] = [
+                sanitized_list: list[Any] = [
                     (
                         sanitize_dict(sanitizer, item, _depth + 1)
                         if isinstance(item, dict)
                         else (
-                            sanitizer.sanitize_text(str(item), context=_CTX_CONFIG).sanitized_text
+                            sanitizer.sanitize_text(
+                                str(item), context=_CTX_CONFIG
+                            ).sanitized_text
                             if isinstance(item, str)
                             else item
                         )
@@ -229,18 +229,24 @@ def get_stack_trace(sanitizer: Any) -> str:
 def _validate_llm_metrics(data: LLMCallTrackingData) -> None:
     """Validate LLM metric parameters are non-negative."""
     if data.prompt_tokens < 0:
-        raise ValueError(f"prompt_tokens must be non-negative, got {data.prompt_tokens}")
+        raise ValueError(
+            f"prompt_tokens must be non-negative, got {data.prompt_tokens}"
+        )
     if data.completion_tokens < 0:
-        raise ValueError(f"completion_tokens must be non-negative, got {data.completion_tokens}")
+        raise ValueError(
+            f"completion_tokens must be non-negative, got {data.completion_tokens}"
+        )
     if data.latency_ms < 0:
         raise ValueError(f"latency_ms must be non-negative, got {data.latency_ms}")
     if data.estimated_cost_usd < 0:
-        raise ValueError(f"estimated_cost_usd must be non-negative, got {data.estimated_cost_usd}")
+        raise ValueError(
+            f"estimated_cost_usd must be non-negative, got {data.estimated_cost_usd}"
+        )
 
 
 def _sanitize_llm_content(
     sanitizer: Any, data: LLMCallTrackingData
-) -> tuple[Any, Any, Optional[str]]:
+) -> tuple[Any, Any, str | None]:
     """Sanitize prompt, response, and error message.
 
     Returns:
@@ -257,7 +263,9 @@ def _sanitize_llm_content(
     return prompt_result, response_result, safe_error_message
 
 
-def _log_sanitization_activity(llm_call_id: str, prompt_result: Any, response_result: Any) -> None:
+def _log_sanitization_activity(
+    llm_call_id: str, prompt_result: Any, response_result: Any
+) -> None:
     """Log sanitization activity if redactions were made."""
     if prompt_result.was_sanitized or response_result.was_sanitized:
         logger.info(
@@ -283,7 +291,7 @@ def _emit_llm_call_event(
     data: LLMCallTrackingData,
     prompt_result: Any,
     response_result: Any,
-    safe_error_message: Optional[str],
+    safe_error_message: str | None,
 ) -> None:
     """Emit LLM call event for real-time consumers."""
     if event_bus is None:
@@ -316,7 +324,9 @@ def _emit_llm_call_event(
     )
 
 
-def _check_llm_alerts(alert_manager: Any, llm_call_id: str, data: LLMCallTrackingData) -> None:
+def _check_llm_alerts(
+    alert_manager: Any, llm_call_id: str, data: LLMCallTrackingData
+) -> None:
     """Check latency and cost alerts for LLM call."""
     if not alert_manager:
         return
@@ -373,7 +383,9 @@ def track_llm_call(
     llm_call_id = str(uuid.uuid4())
     start_time = utcnow()
 
-    prompt_result, response_result, safe_error_message = _sanitize_llm_content(sanitizer, data)
+    prompt_result, response_result, safe_error_message = _sanitize_llm_content(
+        sanitizer, data
+    )
 
     _log_sanitization_activity(llm_call_id, prompt_result, response_result)
 
@@ -405,7 +417,13 @@ def track_llm_call(
     )
 
     _emit_llm_call_event(
-        event_bus, llm_call_id, start_time, data, prompt_result, response_result, safe_error_message
+        event_bus,
+        llm_call_id,
+        start_time,
+        data,
+        prompt_result,
+        response_result,
+        safe_error_message,
     )
 
     _check_llm_alerts(alert_manager, llm_call_id, data)
@@ -420,8 +438,8 @@ def _emit_tool_call_event(
     tool_execution_id: str,
     start_time: datetime,
     data: ToolCallTrackingData,
-    sanitized_input: Dict[str, Any],
-    sanitized_output: Dict[str, Any],
+    sanitized_input: dict[str, Any],
+    sanitized_output: dict[str, Any],
 ) -> None:
     """Emit tool call event for real-time consumers."""
     if event_bus is None:
@@ -513,7 +531,12 @@ def track_tool_call(
     )
 
     _emit_tool_call_event(
-        event_bus, tool_execution_id, start_time, data, sanitized_input, sanitized_output
+        event_bus,
+        tool_execution_id,
+        start_time,
+        data,
+        sanitized_input,
+        sanitized_output,
     )
 
     _check_tool_duration_alert(alert_manager, tool_execution_id, data)
@@ -523,7 +546,9 @@ def track_tool_call(
     return tool_execution_id
 
 
-def _fill_execution_ids(data: DecisionTrackingData, context: Any) -> DecisionTrackingData:
+def _fill_execution_ids(
+    data: DecisionTrackingData, context: Any
+) -> DecisionTrackingData:
     """Fill in execution IDs from context if not provided."""
     if not data.workflow_execution_id:
         data.workflow_execution_id = context.workflow_id
@@ -538,7 +563,7 @@ def track_decision_outcome(
     decision_tracker: Any,
     backend: Any,
     context: Any,
-    session_stack: List[Any],
+    session_stack: list[Any],
     data: DecisionTrackingData,
 ) -> str:
     """Track decision outcome for self-improvement learning loop.
@@ -588,11 +613,11 @@ def track_decision_outcome(
 def update_agent_merit_score(
     decision_tracker: Any,
     backend: Any,
-    session_stack: List[Any],
+    session_stack: list[Any],
     agent_name: str,
     domain: str,
     decision_outcome: str,
-    confidence: Optional[float] = None,
+    confidence: float | None = None,
 ) -> None:
     """Update agent merit score based on decision outcome.
 
@@ -657,7 +682,9 @@ def aggregate_workflow_metrics_on_success(
                 backend.update_workflow_metrics(
                     workflow_id=workflow_id,
                     total_llm_calls=metrics.get(ObservabilityFields.TOTAL_LLM_CALLS, 0),
-                    total_tool_calls=metrics.get(ObservabilityFields.TOTAL_TOOL_CALLS, 0),
+                    total_tool_calls=metrics.get(
+                        ObservabilityFields.TOTAL_TOOL_CALLS, 0
+                    ),
                     total_tokens=metrics.get(ObservabilityFields.TOTAL_TOKENS, 0),
                     total_cost_usd=total_cost,
                 )
@@ -675,14 +702,14 @@ def aggregate_workflow_metrics_on_success(
 
 
 def build_extra_metadata(
-    experiment_id: Optional[str],
-    variant_id: Optional[str],
-    assignment_strategy: Optional[str],
-    assignment_context: Optional[Dict[str, Any]],
-    custom_metrics: Optional[Dict[str, Any]],
-) -> Optional[Dict[str, Any]]:
+    experiment_id: str | None,
+    variant_id: str | None,
+    assignment_strategy: str | None,
+    assignment_context: dict[str, Any] | None,
+    custom_metrics: dict[str, Any] | None,
+) -> dict[str, Any] | None:
     """Build extra metadata dict from optional experiment tracking params."""
-    extra_metadata: Dict[str, Any] = {}
+    extra_metadata: dict[str, Any] = {}
     if experiment_id:
         extra_metadata["experiment_id"] = experiment_id
     if variant_id:
@@ -811,8 +838,8 @@ def handle_workflow_success(
 def _record_fingerprint_safe(
     backend: Any,
     error: Exception,
-    workflow_id: Optional[str] = None,
-    agent_name: Optional[str] = None,
+    workflow_id: str | None = None,
+    agent_name: str | None = None,
 ) -> bool:
     """Compute and record error fingerprint. Best-effort, never raises.
 
@@ -820,9 +847,10 @@ def _record_fingerprint_safe(
         True if this is a new (previously unseen) fingerprint, False otherwise.
     """
     try:
-        from temper_ai.observability.error_fingerprinting import compute_error_fingerprint
-
         from temper_ai.observability.backend import ErrorFingerprintData
+        from temper_ai.observability.error_fingerprinting import (
+            compute_error_fingerprint,
+        )
 
         result = compute_error_fingerprint(error)
         if hasattr(backend, "record_error_fingerprint"):
@@ -846,13 +874,13 @@ def _record_fingerprint_safe(
 def _alert_new_error_type(
     alert_manager: Any,
     error: Exception,
-    workflow_id: Optional[str] = None,
-    stage_id: Optional[str] = None,
-    agent_name: Optional[str] = None,
+    workflow_id: str | None = None,
+    stage_id: str | None = None,
+    agent_name: str | None = None,
 ) -> None:
     """Fire alert for newly-seen error type. Best-effort, never raises."""
     try:
-        context: Dict[str, Any] = {"error_type": type(error).__name__}
+        context: dict[str, Any] = {"error_type": type(error).__name__}
         if workflow_id:
             context[ObservabilityFields.WORKFLOW_ID] = workflow_id
         if stage_id:
@@ -900,11 +928,11 @@ def build_stage_start_data(
     stage_id: str,
     workflow_id: str,
     stage_name: str,
-    sanitized_config: Optional[Dict[str, Any]],
+    sanitized_config: dict[str, Any] | None,
     start_time: datetime,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Build the event data dict for a stage_start event."""
-    data: Dict[str, Any] = {
+    data: dict[str, Any] = {
         ObservabilityFields.STAGE_ID: stage_id,
         ObservabilityFields.WORKFLOW_ID: workflow_id,
         "stage_name": stage_name,
@@ -966,7 +994,7 @@ def handle_stage_error(
     emit_event_fn: Any,
     stage_id: str,
     error: Exception,
-    workflow_id: Optional[str] = None,
+    workflow_id: str | None = None,
     alert_manager: Any = None,
 ) -> None:
     """Handle stage execution error."""
@@ -979,7 +1007,9 @@ def handle_stage_error(
     )
     is_new = _record_fingerprint_safe(backend, error, workflow_id=workflow_id)
     if is_new and alert_manager:
-        _alert_new_error_type(alert_manager, error, workflow_id=workflow_id, stage_id=stage_id)
+        _alert_new_error_type(
+            alert_manager, error, workflow_id=workflow_id, stage_id=stage_id
+        )
     emit_event_fn(
         "stage_end",
         {
@@ -1020,8 +1050,8 @@ def handle_agent_error(
     emit_event_fn: Any,
     agent_id: str,
     error: Exception,
-    workflow_id: Optional[str] = None,
-    agent_name: Optional[str] = None,
+    workflow_id: str | None = None,
+    agent_name: str | None = None,
     alert_manager: Any = None,
 ) -> None:
     """Handle agent execution error."""
@@ -1036,7 +1066,9 @@ def handle_agent_error(
         backend, error, workflow_id=workflow_id, agent_name=agent_name
     )
     if is_new and alert_manager:
-        _alert_new_error_type(alert_manager, error, workflow_id=workflow_id, agent_name=agent_name)
+        _alert_new_error_type(
+            alert_manager, error, workflow_id=workflow_id, agent_name=agent_name
+        )
     emit_event_fn(
         "agent_end",
         {
@@ -1102,7 +1134,7 @@ class TrackerCollaborationMixin:
     _emit_event: Any
 
     @property
-    def _session_stack(self) -> List[Any]:
+    def _session_stack(self) -> list[Any]:
         """Session stack for current workflow context (overridden in subclass)."""
         return []
 
@@ -1111,8 +1143,8 @@ class TrackerCollaborationMixin:
         violation_severity: Literal["INFO", "LOW", "MEDIUM", "HIGH", "CRITICAL"],
         violation_message: str,
         policy_name: str,
-        service_name: Optional[str] = None,
-        context: Optional[Dict[str, Any]] = None,
+        service_name: str | None = None,
+        context: dict[str, Any] | None = None,
     ) -> None:
         """Track safety violation."""
         self._collaboration_tracker.track_safety_violation(
@@ -1144,7 +1176,9 @@ class TrackerCollaborationMixin:
         Returns:
             Event ID string
         """
-        from temper_ai.observability.collaboration_tracker import CollaborationEventParams
+        from temper_ai.observability.collaboration_tracker import (
+            CollaborationEventParams,
+        )
 
         params = CollaborationEventParams(
             event_type=data.event_type,
@@ -1175,7 +1209,7 @@ class TrackerCollaborationMixin:
         agent_name: str,
         domain: str,
         decision_outcome: str,
-        confidence: Optional[float] = None,
+        confidence: float | None = None,
     ) -> None:
         """Update agent merit score based on decision outcome."""
         update_agent_merit_score(

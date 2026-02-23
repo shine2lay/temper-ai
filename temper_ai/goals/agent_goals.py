@@ -1,6 +1,7 @@
 """Per-agent goal service for persistent agents (M9)."""
+
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -30,14 +31,14 @@ class AgentGoalService:
 
     def get_active_goals_for_agent(
         self, agent_id: str, limit: int = DEFAULT_GOAL_LIMIT
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Get active goals for a specific persistent agent.
 
         Returns list of goal dicts with id, title, description, status, priority.
         Filters by agent_id using source_product_type field as agent identifier.
         """
         store = self._get_store()
-        all_goals: List[Any] = []
+        all_goals: list[Any] = []
         for status in ACTIVE_STATUSES:
             records = store.list_proposals(status=status)
             for rec in records:
@@ -57,9 +58,7 @@ class AgentGoalService:
             for g in all_goals[:limit]
         ]
 
-    def propose_agent_goal(
-        self, agent_id: str, goal_data: Dict[str, Any]
-    ) -> str:
+    def propose_agent_goal(self, agent_id: str, goal_data: dict[str, Any]) -> str:
         """Create a goal proposal linked to a persistent agent.
 
         Returns the proposal ID.
@@ -85,9 +84,7 @@ class AgentGoalService:
         store.save_proposal(record)
         return proposal_id
 
-    def format_goals_context(
-        self, agent_id: str, max_chars: int = 1000
-    ) -> str:
+    def format_goals_context(self, agent_id: str, max_chars: int = 1000) -> str:
         """Format active goals as context string for prompt injection."""
         goals = self.get_active_goals_for_agent(agent_id)
         if not goals:

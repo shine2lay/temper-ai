@@ -72,6 +72,7 @@ MAX_RESOLUTION_ATTEMPTS = 5
 # ============================================================================
 
 STRATEGY_NAME_CONSENSUS = "consensus"
+STRATEGY_NAME_CONCATENATE = "concatenate"
 STRATEGY_NAME_DIALOGUE = "dialogue"
 STRATEGY_NAME_DEBATE = "debate"
 STRATEGY_NAME_MERIT_WEIGHTED = "merit_weighted"

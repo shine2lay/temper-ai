@@ -12,22 +12,23 @@ This module contains 8 benchmarks covering agent execution paths:
 
 Run with: pytest tests/test_benchmarks/test_performance_agents.py --benchmark-only
 """
+
 import os
 from unittest.mock import Mock, patch
 
 import psutil
 import pytest
-
-from temper_ai.agent.utils.agent_factory import AgentFactory
 from temper_ai.agent.llm_providers import LLMResponse
-from temper_ai.agent.standard_agent import StandardAgent
-from temper_ai.tools.base import BaseTool, ToolResult
 
+from temper_ai.agent.standard_agent import StandardAgent
+from temper_ai.agent.utils.agent_factory import AgentFactory
+from temper_ai.tools.base import BaseTool, ToolResult
 from tests.test_benchmarks.conftest import check_budget
 
 # ============================================================================
 # CATEGORY 5: Agent Execution (8 benchmarks)
 # ============================================================================
+
 
 @pytest.mark.benchmark(group="agents")
 def test_agent_execution_overhead(minimal_agent_config, mock_llm_fast, benchmark):
@@ -36,7 +37,7 @@ def test_agent_execution_overhead(minimal_agent_config, mock_llm_fast, benchmark
     Target: <100ms
     Measures: Agent framework overhead
     """
-    with patch('temper_ai.agent.base_agent.ToolRegistry') as mock_registry:
+    with patch("temper_ai.agent.base_agent.ToolRegistry") as mock_registry:
         mock_registry.return_value.list_tools.return_value = []
 
         agent = StandardAgent(minimal_agent_config)
@@ -45,7 +46,8 @@ def test_agent_execution_overhead(minimal_agent_config, mock_llm_fast, benchmark
         result = benchmark(agent.execute, {"input": "test"})
 
         assert result is not None
-        check_budget("agent_execution", benchmark.stats['mean'])
+        check_budget("agent_execution", benchmark.stats["mean"])
+
 
 @pytest.mark.benchmark(group="agents")
 def test_agent_with_tools(minimal_agent_config, mock_llm_fast, benchmark):
@@ -54,12 +56,10 @@ def test_agent_with_tools(minimal_agent_config, mock_llm_fast, benchmark):
     Target: <150ms
     Measures: Agent + tool integration overhead
     """
-    with patch('temper_ai.agent.base_agent.ToolRegistry') as mock_registry:
+    with patch("temper_ai.agent.base_agent.ToolRegistry") as mock_registry:
         mock_tool_instance = Mock(spec=BaseTool)
         mock_tool_instance.execute.return_value = ToolResult(
-            success=True,
-            result="4",
-            error=None
+            success=True, result="4", error=None
         )
 
         mock_registry.return_value.list_tools.return_value = ["calculator"]
@@ -73,12 +73,13 @@ def test_agent_with_tools(minimal_agent_config, mock_llm_fast, benchmark):
             content='<tool_call>{"name": "calculator", "args": {"expression": "2+2"}}</tool_call>',
             model="mock",
             provider="mock",
-            total_tokens=10
+            total_tokens=10,
         )
 
         result = benchmark(agent.execute, {"input": "calculate 2+2"})
         assert result is not None
-        check_budget("agent_with_tools", benchmark.stats['mean'])
+        check_budget("agent_with_tools", benchmark.stats["mean"])
+
 
 @pytest.mark.benchmark(group="agents")
 def test_agent_prompt_rendering(minimal_agent_config, benchmark):
@@ -87,19 +88,21 @@ def test_agent_prompt_rendering(minimal_agent_config, benchmark):
     Target: <20ms
     Measures: Jinja2 template rendering overhead
     """
-    with patch('temper_ai.agent.base_agent.ToolRegistry') as mock_registry:
+    with patch("temper_ai.agent.base_agent.ToolRegistry") as mock_registry:
         mock_registry.return_value.list_tools.return_value = []
 
         agent = StandardAgent(minimal_agent_config)
 
         def render_prompt():
             from temper_ai.llm.prompts.engine import PromptEngine
+
             engine = PromptEngine(minimal_agent_config.agent.prompt)
             return engine.render({"input": "test query"})
 
         result = benchmark(render_prompt)
         assert result is not None
         assert "test query" in result
+
 
 @pytest.mark.benchmark(group="agents")
 def test_agent_error_handling(minimal_agent_config, benchmark):
@@ -108,7 +111,7 @@ def test_agent_error_handling(minimal_agent_config, benchmark):
     Target: <50ms
     Measures: Error recovery overhead
     """
-    with patch('temper_ai.agent.base_agent.ToolRegistry') as mock_registry:
+    with patch("temper_ai.agent.base_agent.ToolRegistry") as mock_registry:
         mock_registry.return_value.list_tools.return_value = []
 
         agent = StandardAgent(minimal_agent_config)
@@ -126,6 +129,7 @@ def test_agent_error_handling(minimal_agent_config, benchmark):
         benchmark(execute_with_error)
         assert True  # Benchmark completed without crashing
 
+
 @pytest.mark.benchmark(group="agents")
 def test_agent_factory_creation(minimal_agent_config, benchmark):
     """Benchmark agent factory creation.
@@ -133,13 +137,15 @@ def test_agent_factory_creation(minimal_agent_config, benchmark):
     Target: <50ms
     Measures: Factory pattern overhead
     """
+
     def create_via_factory():
         factory = AgentFactory()
-        with patch.object(factory, 'tool_registry'):
+        with patch.object(factory, "tool_registry"):
             return factory.create_agent(minimal_agent_config)
 
     result = benchmark(create_via_factory)
     assert result is not None
+
 
 @pytest.mark.benchmark(group="agents")
 @pytest.mark.memory
@@ -149,7 +155,7 @@ def test_agent_memory_usage_100_executions(minimal_agent_config, mock_llm_fast):
     Target: <200MB growth
     Measures: Memory leak detection
     """
-    with patch('temper_ai.agent.base_agent.ToolRegistry') as mock_registry:
+    with patch("temper_ai.agent.base_agent.ToolRegistry") as mock_registry:
         mock_registry.return_value.list_tools.return_value = []
 
         agent = StandardAgent(minimal_agent_config)
@@ -166,16 +172,21 @@ def test_agent_memory_usage_100_executions(minimal_agent_config, mock_llm_fast):
         growth_mb = mem_after - mem_before
 
         print(f"Memory growth for 100 executions: {growth_mb:.1f}MB")
-        assert growth_mb < 200, f"Memory growth {growth_mb:.1f}MB exceeds 200MB threshold"
+        assert (
+            growth_mb < 200
+        ), f"Memory growth {growth_mb:.1f}MB exceeds 200MB threshold"
+
 
 @pytest.mark.benchmark(group="agents")
-def test_agent_concurrent_execution_3_agents(minimal_agent_config, mock_llm_fast, benchmark):
+def test_agent_concurrent_execution_3_agents(
+    minimal_agent_config, mock_llm_fast, benchmark
+):
     """Benchmark concurrent execution of 3 agents.
 
     Target: <300ms
     Measures: Multi-agent concurrency
     """
-    with patch('temper_ai.agent.base_agent.ToolRegistry') as mock_registry:
+    with patch("temper_ai.agent.base_agent.ToolRegistry") as mock_registry:
         mock_registry.return_value.list_tools.return_value = []
 
         agents = [StandardAgent(minimal_agent_config) for _ in range(3)]
@@ -197,14 +208,17 @@ def test_agent_concurrent_execution_3_agents(minimal_agent_config, mock_llm_fast
         results = benchmark(execute_concurrent)
         assert len(results) == 3
 
+
 @pytest.mark.benchmark(group="agents")
-def test_agent_concurrent_execution_10_agents(minimal_agent_config, mock_llm_fast, benchmark):
+def test_agent_concurrent_execution_10_agents(
+    minimal_agent_config, mock_llm_fast, benchmark
+):
     """Benchmark concurrent execution of 10 agents.
 
     Target: <500ms
     Measures: Multi-agent scalability
     """
-    with patch('temper_ai.agent.base_agent.ToolRegistry') as mock_registry:
+    with patch("temper_ai.agent.base_agent.ToolRegistry") as mock_registry:
         mock_registry.return_value.list_tools.return_value = []
 
         agents = [StandardAgent(minimal_agent_config) for _ in range(10)]

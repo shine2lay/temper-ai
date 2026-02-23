@@ -3,6 +3,7 @@
 This module provides common helper functions used across multiple compiler components
 to reduce code duplication and improve maintainability.
 """
+
 from typing import Any
 
 
@@ -40,4 +41,8 @@ def extract_agent_name(agent_ref: Any) -> str:
         return agent_ref.get("name") or agent_ref.get("agent_name") or str(agent_ref)
     else:
         # Pydantic model or object with attributes
-        return getattr(agent_ref, 'name', None) or getattr(agent_ref, 'agent_name', None) or str(agent_ref)
+        return (
+            getattr(agent_ref, "name", None)
+            or getattr(agent_ref, "agent_name", None)
+            or str(agent_ref)
+        )

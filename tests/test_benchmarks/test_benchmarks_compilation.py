@@ -23,12 +23,13 @@ from temper_ai.workflow.langgraph_compiler import LangGraphCompiler
 # Benchmark Tests: Compilation and Execution
 # ============================================================================
 
+
 def test_workflow_compilation_time(simple_workflow_config, benchmark):
     """Benchmark workflow compilation time.
 
     Target: <1s for simple workflows
     """
-    with patch('temper_ai.workflow.langgraph_compiler.ConfigLoader'):
+    with patch("temper_ai.workflow.langgraph_compiler.ConfigLoader"):
         # Setup
         compiler = LangGraphCompiler()
 
@@ -44,11 +45,13 @@ def test_workflow_compilation_time(simple_workflow_config, benchmark):
 
         # Verify
         assert result is not None
-        assert hasattr(result, 'invoke')
+        assert hasattr(result, "invoke")
 
         # Log performance expectation
-        if benchmark.stats['mean'] > 1.0:
-            pytest.fail(f"Compilation took {benchmark.stats['mean']:.3f}s, target is <1s")
+        if benchmark.stats["mean"] > 1.0:
+            pytest.fail(
+                f"Compilation took {benchmark.stats['mean']:.3f}s, target is <1s"
+            )
 
 
 def test_agent_execution_overhead(mock_llm_provider, minimal_agent_config, benchmark):
@@ -56,7 +59,7 @@ def test_agent_execution_overhead(mock_llm_provider, minimal_agent_config, bench
 
     Target: <100ms overhead (agent logic only, not LLM call)
     """
-    with patch('temper_ai.agent.base_agent.ToolRegistry') as mock_tool_registry:
+    with patch("temper_ai.agent.base_agent.ToolRegistry") as mock_tool_registry:
         # Setup mock registry
         mock_tool_registry.return_value.list_tools.return_value = []
 
@@ -65,6 +68,7 @@ def test_agent_execution_overhead(mock_llm_provider, minimal_agent_config, bench
 
         # Mock LLM response
         from temper_ai.agent.llm_providers import LLMResponse
+
         mock_llm_response = LLMResponse(
             content="<answer>4</answer>",
             model="mock-model",
@@ -84,8 +88,10 @@ def test_agent_execution_overhead(mock_llm_provider, minimal_agent_config, bench
         assert result is not None
 
         # Log performance expectation (overhead should be <100ms)
-        if benchmark.stats['mean'] > 0.1:
-            print(f"Warning: Agent overhead {benchmark.stats['mean']:.3f}s exceeds 100ms target")
+        if benchmark.stats["mean"] > 0.1:
+            print(
+                f"Warning: Agent overhead {benchmark.stats['mean']:.3f}s exceeds 100ms target"
+            )
 
 
 def test_llm_call_latency(benchmark, mock_llm_provider):
@@ -93,6 +99,7 @@ def test_llm_call_latency(benchmark, mock_llm_provider):
 
     Tracks provider latency for monitoring and comparison.
     """
+
     # Simulate realistic LLM latency (50-200ms for mocked calls)
     def llm_call_with_latency():
         time.sleep(0.05)  # 50ms simulated latency
@@ -115,6 +122,7 @@ def test_tool_execution_overhead(benchmark):
 
     Target: <50ms overhead (tool registry lookup + execution)
     """
+
     # Create a simple mock tool for benchmarking
     def mock_tool_function(a: int, b: int) -> dict:
         """Simple addition function."""
@@ -130,8 +138,10 @@ def test_tool_execution_overhead(benchmark):
     assert result == {"result": 5}
 
     # Log performance expectation
-    if benchmark.stats['mean'] > 0.05:
-        print(f"Warning: Tool overhead {benchmark.stats['mean']:.3f}s exceeds 50ms target")
+    if benchmark.stats["mean"] > 0.05:
+        print(
+            f"Warning: Tool overhead {benchmark.stats['mean']:.3f}s exceeds 50ms target"
+        )
 
 
 def test_large_workflow_compilation(complex_workflow_config, benchmark):
@@ -139,7 +149,7 @@ def test_large_workflow_compilation(complex_workflow_config, benchmark):
 
     Tests scalability of workflow compilation.
     """
-    with patch('temper_ai.workflow.langgraph_compiler.ConfigLoader'):
+    with patch("temper_ai.workflow.langgraph_compiler.ConfigLoader"):
         # Setup
         compiler = LangGraphCompiler()
 
@@ -155,7 +165,7 @@ def test_large_workflow_compilation(complex_workflow_config, benchmark):
 
         # Verify
         assert result is not None
-        assert hasattr(result, 'invoke')
+        assert hasattr(result, "invoke")
 
         # Log performance (no strict target, just monitoring scaling)
         print(f"50-stage workflow compilation: {benchmark.stats['mean']:.3f}s")
@@ -166,7 +176,7 @@ def test_concurrent_workflow_throughput(simple_workflow_config, benchmark):
 
     Tests parallel workflow handling.
     """
-    with patch('temper_ai.workflow.langgraph_compiler.ConfigLoader'):
+    with patch("temper_ai.workflow.langgraph_compiler.ConfigLoader"):
         # Setup
         mock_loader_instance = Mock()
         mock_stage_config = Mock()
@@ -191,7 +201,7 @@ def test_concurrent_workflow_throughput(simple_workflow_config, benchmark):
         assert all(r is not None for r in results)
 
         # Log throughput
-        workflows_per_second = 10 / benchmark.stats['mean']
+        workflows_per_second = 10 / benchmark.stats["mean"]
         print(f"Concurrent throughput: {workflows_per_second:.2f} workflows/second")
 
 
@@ -200,7 +210,7 @@ def test_memory_usage_under_load(mock_llm_provider, minimal_agent_config, benchm
 
     Detects memory leaks by running operations multiple times.
     """
-    with patch('temper_ai.agent.base_agent.ToolRegistry') as mock_tool_registry:
+    with patch("temper_ai.agent.base_agent.ToolRegistry") as mock_tool_registry:
         # Setup mock registry
         mock_tool_registry.return_value.list_tools.return_value = []
 
@@ -209,6 +219,7 @@ def test_memory_usage_under_load(mock_llm_provider, minimal_agent_config, benchm
 
         # Mock LLM response
         from temper_ai.agent.llm_providers import LLMResponse
+
         mock_llm_response = LLMResponse(
             content="<answer>test response</answer>",
             model="mock-model",

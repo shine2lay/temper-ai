@@ -1,11 +1,8 @@
 """Tests for AgentGoalService (M9)."""
-from unittest.mock import MagicMock, patch
 
-import pytest
+from unittest.mock import MagicMock
 
 from temper_ai.goals.agent_goals import (
-    ACTIVE_STATUSES,
-    DEFAULT_GOAL_LIMIT,
     AgentGoalService,
 )
 
@@ -43,20 +40,26 @@ class TestGetActiveGoalsForAgent:
     def _make_service_with_mock_store(self, records_by_status=None):
         records_by_status = records_by_status or {}
         store = MagicMock()
-        store.list_proposals.side_effect = lambda status: records_by_status.get(status, [])
+        store.list_proposals.side_effect = lambda status: records_by_status.get(
+            status, []
+        )
         svc = AgentGoalService(goal_store=store)
         return svc, store
 
     def test_returns_goals_for_matching_agent(self):
         rec = _make_record("g1", "Goal 1", "Desc 1", "approved", 0.9, "agent_a")
-        svc, _ = self._make_service_with_mock_store({"approved": [rec], "in_progress": []})
+        svc, _ = self._make_service_with_mock_store(
+            {"approved": [rec], "in_progress": []}
+        )
         goals = svc.get_active_goals_for_agent("agent_a")
         assert len(goals) == 1
         assert goals[0]["title"] == "Goal 1"
 
     def test_excludes_goals_for_other_agents(self):
         rec = _make_record("g1", "Goal 1", "Desc", "approved", 0.9, "agent_b")
-        svc, _ = self._make_service_with_mock_store({"approved": [rec], "in_progress": []})
+        svc, _ = self._make_service_with_mock_store(
+            {"approved": [rec], "in_progress": []}
+        )
         goals = svc.get_active_goals_for_agent("agent_a")
         assert goals == []
 
@@ -75,13 +78,17 @@ class TestGetActiveGoalsForAgent:
             _make_record(f"g{i}", f"Goal {i}", "Desc", "approved", float(i), "agent_a")
             for i in range(10)
         ]
-        svc, _ = self._make_service_with_mock_store({"approved": records, "in_progress": []})
+        svc, _ = self._make_service_with_mock_store(
+            {"approved": records, "in_progress": []}
+        )
         goals = svc.get_active_goals_for_agent("agent_a", limit=3)
         assert len(goals) == 3
 
     def test_goal_dict_has_required_keys(self):
         rec = _make_record("g1", "T", "D", "approved", 0.5, "agent_a")
-        svc, _ = self._make_service_with_mock_store({"approved": [rec], "in_progress": []})
+        svc, _ = self._make_service_with_mock_store(
+            {"approved": [rec], "in_progress": []}
+        )
         goals = svc.get_active_goals_for_agent("agent_a")
         assert "id" in goals[0]
         assert "title" in goals[0]
@@ -132,14 +139,30 @@ class TestFormatGoalsContext:
         assert result == ""
 
     def test_with_goals_contains_header(self):
-        goals = [{"id": "g1", "title": "T1", "description": "D1", "status": "approved", "priority": 0.9}]
+        goals = [
+            {
+                "id": "g1",
+                "title": "T1",
+                "description": "D1",
+                "status": "approved",
+                "priority": 0.9,
+            }
+        ]
         svc = self._make_service_with_goals(goals)
         result = svc.format_goals_context("agent_a")
         assert "Active Goals:" in result
         assert "T1" in result
 
     def test_respects_max_chars(self):
-        goals = [{"id": "g1", "title": "T", "description": "D" * 500, "status": "approved", "priority": 0.9}]
+        goals = [
+            {
+                "id": "g1",
+                "title": "T",
+                "description": "D" * 500,
+                "status": "approved",
+                "priority": 0.9,
+            }
+        ]
         svc = self._make_service_with_goals(goals)
         result = svc.format_goals_context("agent_a", max_chars=20)
         assert len(result) <= 20

@@ -10,7 +10,6 @@ Tests cover:
 7. URL normalization
 8. Production vs development mode
 """
-import pytest
 
 from temper_ai.auth.oauth.callback_validator import CallbackURLValidator
 
@@ -63,8 +62,7 @@ class TestURLSchemeValidation:
     def test_https_scheme_allowed(self):
         """Test HTTPS scheme is allowed."""
         validator = CallbackURLValidator(
-            ["https://app.example.com/callback"],
-            allow_localhost=False
+            ["https://app.example.com/callback"], allow_localhost=False
         )
 
         is_valid, error = validator.validate("https://app.example.com/callback")
@@ -75,8 +73,7 @@ class TestURLSchemeValidation:
     def test_http_scheme_allowed_in_dev(self):
         """Test HTTP scheme is allowed in development (localhost)."""
         validator = CallbackURLValidator(
-            ["http://localhost:8000/callback"],
-            allow_localhost=True
+            ["http://localhost:8000/callback"], allow_localhost=True
         )
 
         is_valid, error = validator.validate("http://localhost:8000/callback")
@@ -87,8 +84,7 @@ class TestURLSchemeValidation:
     def test_http_scheme_rejected_in_prod_non_localhost(self):
         """Test HTTP scheme rejected in production for non-localhost."""
         validator = CallbackURLValidator(
-            ["http://app.example.com/callback"],
-            allow_localhost=False
+            ["http://app.example.com/callback"], allow_localhost=False
         )
 
         is_valid, error = validator.validate("http://app.example.com/callback")
@@ -99,8 +95,7 @@ class TestURLSchemeValidation:
     def test_javascript_scheme_rejected(self):
         """Test javascript: scheme is rejected (XSS prevention)."""
         validator = CallbackURLValidator(
-            ["javascript:alert('xss')"],
-            allow_localhost=True
+            ["javascript:alert('xss')"], allow_localhost=True
         )
 
         is_valid, error = validator.validate("javascript:alert('xss')")
@@ -110,10 +105,7 @@ class TestURLSchemeValidation:
 
     def test_file_scheme_rejected(self):
         """Test file: scheme is rejected."""
-        validator = CallbackURLValidator(
-            ["file:///etc/passwd"],
-            allow_localhost=True
-        )
+        validator = CallbackURLValidator(["file:///etc/passwd"], allow_localhost=True)
 
         is_valid, error = validator.validate("file:///etc/passwd")
 
@@ -123,11 +115,12 @@ class TestURLSchemeValidation:
     def test_data_scheme_rejected(self):
         """Test data: scheme is rejected."""
         validator = CallbackURLValidator(
-            ["data:text/html,<script>alert('xss')</script>"],
-            allow_localhost=True
+            ["data:text/html,<script>alert('xss')</script>"], allow_localhost=True
         )
 
-        is_valid, error = validator.validate("data:text/html,<script>alert('xss')</script>")
+        is_valid, error = validator.validate(
+            "data:text/html,<script>alert('xss')</script>"
+        )
 
         assert is_valid is False
         assert "Invalid URL scheme" in error
@@ -135,8 +128,7 @@ class TestURLSchemeValidation:
     def test_ftp_scheme_rejected(self):
         """Test ftp: scheme is rejected."""
         validator = CallbackURLValidator(
-            ["ftp://example.com/file"],
-            allow_localhost=True
+            ["ftp://example.com/file"], allow_localhost=True
         )
 
         is_valid, error = validator.validate("ftp://example.com/file")
@@ -151,8 +143,7 @@ class TestHostnameValidation:
     def test_valid_hostname_accepted(self):
         """Test valid hostname is accepted."""
         validator = CallbackURLValidator(
-            ["https://app.example.com/callback"],
-            allow_localhost=False
+            ["https://app.example.com/callback"], allow_localhost=False
         )
 
         is_valid, error = validator.validate("https://app.example.com/callback")
@@ -162,10 +153,7 @@ class TestHostnameValidation:
 
     def test_empty_hostname_rejected(self):
         """Test empty hostname is rejected."""
-        validator = CallbackURLValidator(
-            ["https:///callback"],
-            allow_localhost=True
-        )
+        validator = CallbackURLValidator(["https:///callback"], allow_localhost=True)
 
         is_valid, error = validator.validate("https:///callback")
 
@@ -176,8 +164,7 @@ class TestHostnameValidation:
         """Test hostname longer than 253 chars is rejected (RFC 1035)."""
         long_hostname = "a" * 254
         validator = CallbackURLValidator(
-            [f"https://{long_hostname}.com/callback"],
-            allow_localhost=False
+            [f"https://{long_hostname}.com/callback"], allow_localhost=False
         )
 
         is_valid, error = validator.validate(f"https://{long_hostname}.com/callback")
@@ -188,8 +175,7 @@ class TestHostnameValidation:
     def test_ipv4_hostname_accepted(self):
         """Test IPv4 address as hostname is accepted."""
         validator = CallbackURLValidator(
-            ["https://192.168.1.100/callback"],
-            allow_localhost=False
+            ["https://192.168.1.100/callback"], allow_localhost=False
         )
 
         is_valid, error = validator.validate("https://192.168.1.100/callback")
@@ -200,8 +186,7 @@ class TestHostnameValidation:
     def test_ipv6_hostname_accepted(self):
         """Test IPv6 address as hostname is accepted."""
         validator = CallbackURLValidator(
-            ["https://[2001:db8::1]/callback"],
-            allow_localhost=False
+            ["https://[2001:db8::1]/callback"], allow_localhost=False
         )
 
         is_valid, error = validator.validate("https://[2001:db8::1]/callback")
@@ -216,8 +201,7 @@ class TestLocalhostValidation:
     def test_localhost_allowed_in_dev(self):
         """Test localhost allowed in development mode."""
         validator = CallbackURLValidator(
-            ["http://localhost:8000/callback"],
-            allow_localhost=True
+            ["http://localhost:8000/callback"], allow_localhost=True
         )
 
         is_valid, error = validator.validate("http://localhost:8000/callback")
@@ -229,7 +213,7 @@ class TestLocalhostValidation:
         """Test localhost rejected in production mode."""
         validator = CallbackURLValidator(
             ["https://localhost:8000/callback"],  # Use HTTPS to pass HTTPS check first
-            allow_localhost=False
+            allow_localhost=False,
         )
 
         is_valid, error = validator.validate("https://localhost:8000/callback")
@@ -240,11 +224,12 @@ class TestLocalhostValidation:
     def test_localhost_localdomain_detected(self):
         """Test localhost.localdomain is detected as localhost."""
         validator = CallbackURLValidator(
-            ["https://localhost.localdomain:8000/callback"],
-            allow_localhost=False
+            ["https://localhost.localdomain:8000/callback"], allow_localhost=False
         )
 
-        is_valid, error = validator.validate("https://localhost.localdomain:8000/callback")
+        is_valid, error = validator.validate(
+            "https://localhost.localdomain:8000/callback"
+        )
 
         assert is_valid is False
         assert "Localhost URLs not allowed" in error
@@ -252,8 +237,7 @@ class TestLocalhostValidation:
     def test_ipv4_loopback_127_0_0_1_detected(self):
         """Test 127.0.0.1 is detected as loopback."""
         validator = CallbackURLValidator(
-            ["https://127.0.0.1:8000/callback"],
-            allow_localhost=False
+            ["https://127.0.0.1:8000/callback"], allow_localhost=False
         )
 
         is_valid, error = validator.validate("https://127.0.0.1:8000/callback")
@@ -264,8 +248,7 @@ class TestLocalhostValidation:
     def test_ipv4_loopback_127_x_x_x_detected(self):
         """Test all 127.x.x.x addresses detected as loopback."""
         validator = CallbackURLValidator(
-            ["https://127.0.0.2:8000/callback"],
-            allow_localhost=False
+            ["https://127.0.0.2:8000/callback"], allow_localhost=False
         )
 
         is_valid, error = validator.validate("https://127.0.0.2:8000/callback")
@@ -276,8 +259,7 @@ class TestLocalhostValidation:
     def test_ipv6_loopback_detected(self):
         """Test ::1 (IPv6 loopback) is detected."""
         validator = CallbackURLValidator(
-            ["https://[::1]:8000/callback"],
-            allow_localhost=False
+            ["https://[::1]:8000/callback"], allow_localhost=False
         )
 
         is_valid, error = validator.validate("https://[::1]:8000/callback")
@@ -288,8 +270,7 @@ class TestLocalhostValidation:
     def test_ipv6_loopback_full_form_detected(self):
         """Test full IPv6 loopback form is detected."""
         validator = CallbackURLValidator(
-            ["https://[0:0:0:0:0:0:0:1]:8000/callback"],
-            allow_localhost=False
+            ["https://[0:0:0:0:0:0:0:1]:8000/callback"], allow_localhost=False
         )
 
         is_valid, error = validator.validate("https://[0:0:0:0:0:0:0:1]:8000/callback")
@@ -304,11 +285,12 @@ class TestQueryParameterAndFragmentValidation:
     def test_query_parameters_rejected(self):
         """Test URLs with query parameters are rejected."""
         validator = CallbackURLValidator(
-            ["https://app.example.com/callback"],
-            allow_localhost=False
+            ["https://app.example.com/callback"], allow_localhost=False
         )
 
-        is_valid, error = validator.validate("https://app.example.com/callback?param=value")
+        is_valid, error = validator.validate(
+            "https://app.example.com/callback?param=value"
+        )
 
         assert is_valid is False
         assert "query parameters" in error
@@ -316,11 +298,12 @@ class TestQueryParameterAndFragmentValidation:
     def test_fragment_rejected(self):
         """Test URLs with fragments are rejected."""
         validator = CallbackURLValidator(
-            ["https://app.example.com/callback"],
-            allow_localhost=False
+            ["https://app.example.com/callback"], allow_localhost=False
         )
 
-        is_valid, error = validator.validate("https://app.example.com/callback#fragment")
+        is_valid, error = validator.validate(
+            "https://app.example.com/callback#fragment"
+        )
 
         assert is_valid is False
         assert "fragments" in error
@@ -328,11 +311,12 @@ class TestQueryParameterAndFragmentValidation:
     def test_query_and_fragment_rejected(self):
         """Test URLs with both query and fragment are rejected."""
         validator = CallbackURLValidator(
-            ["https://app.example.com/callback"],
-            allow_localhost=False
+            ["https://app.example.com/callback"], allow_localhost=False
         )
 
-        is_valid, error = validator.validate("https://app.example.com/callback?param=value#fragment")
+        is_valid, error = validator.validate(
+            "https://app.example.com/callback?param=value#fragment"
+        )
 
         assert is_valid is False
         # Should reject due to query parameters first
@@ -345,8 +329,7 @@ class TestWhitelistValidation:
     def test_exact_match_succeeds(self):
         """Test exact URL match succeeds."""
         validator = CallbackURLValidator(
-            ["https://app.example.com/auth/callback"],
-            allow_localhost=False
+            ["https://app.example.com/auth/callback"], allow_localhost=False
         )
 
         is_valid, error = validator.validate("https://app.example.com/auth/callback")
@@ -357,8 +340,7 @@ class TestWhitelistValidation:
     def test_url_not_in_whitelist_rejected(self):
         """Test URL not in whitelist is rejected (open redirect prevention)."""
         validator = CallbackURLValidator(
-            ["https://app.example.com/callback"],
-            allow_localhost=False
+            ["https://app.example.com/callback"], allow_localhost=False
         )
 
         is_valid, error = validator.validate("https://evil.com/steal-tokens")
@@ -369,8 +351,7 @@ class TestWhitelistValidation:
     def test_subdomain_mismatch_rejected(self):
         """Test subdomain mismatch is rejected (prevent subdomain takeover)."""
         validator = CallbackURLValidator(
-            ["https://app.example.com/callback"],
-            allow_localhost=False
+            ["https://app.example.com/callback"], allow_localhost=False
         )
 
         is_valid, error = validator.validate("https://malicious.example.com/callback")
@@ -381,8 +362,7 @@ class TestWhitelistValidation:
     def test_path_mismatch_rejected(self):
         """Test path mismatch is rejected."""
         validator = CallbackURLValidator(
-            ["https://app.example.com/auth/callback"],
-            allow_localhost=False
+            ["https://app.example.com/auth/callback"], allow_localhost=False
         )
 
         is_valid, error = validator.validate("https://app.example.com/different/path")
@@ -393,8 +373,7 @@ class TestWhitelistValidation:
     def test_port_mismatch_rejected(self):
         """Test port mismatch is rejected."""
         validator = CallbackURLValidator(
-            ["https://app.example.com:8443/callback"],
-            allow_localhost=False
+            ["https://app.example.com:8443/callback"], allow_localhost=False
         )
 
         is_valid, error = validator.validate("https://app.example.com:9000/callback")
@@ -408,9 +387,9 @@ class TestWhitelistValidation:
             [
                 "https://app.example.com/callback",
                 "https://staging.example.com/callback",
-                "http://localhost:8000/callback"
+                "http://localhost:8000/callback",
             ],
-            allow_localhost=True
+            allow_localhost=True,
         )
 
         assert validator.validate("https://app.example.com/callback")[0] is True
@@ -425,8 +404,7 @@ class TestURLNormalization:
     def test_case_insensitive_scheme(self):
         """Test scheme comparison is case-insensitive."""
         validator = CallbackURLValidator(
-            ["https://app.example.com/callback"],
-            allow_localhost=False
+            ["https://app.example.com/callback"], allow_localhost=False
         )
 
         is_valid, error = validator.validate("HTTPS://app.example.com/callback")
@@ -437,8 +415,7 @@ class TestURLNormalization:
     def test_case_insensitive_hostname(self):
         """Test hostname comparison is case-insensitive."""
         validator = CallbackURLValidator(
-            ["https://app.example.com/callback"],
-            allow_localhost=False
+            ["https://app.example.com/callback"], allow_localhost=False
         )
 
         is_valid, error = validator.validate("https://APP.EXAMPLE.COM/callback")
@@ -449,8 +426,7 @@ class TestURLNormalization:
     def test_case_sensitive_path(self):
         """Test path comparison is case-sensitive (per RFC 3986)."""
         validator = CallbackURLValidator(
-            ["https://app.example.com/auth/callback"],
-            allow_localhost=False
+            ["https://app.example.com/auth/callback"], allow_localhost=False
         )
 
         is_valid, error = validator.validate("https://app.example.com/AUTH/CALLBACK")
@@ -461,8 +437,7 @@ class TestURLNormalization:
     def test_trailing_slash_normalized(self):
         """Test trailing slash is normalized (removed) in URL comparison."""
         validator = CallbackURLValidator(
-            ["https://app.example.com/callback"],
-            allow_localhost=False
+            ["https://app.example.com/callback"], allow_localhost=False
         )
 
         # Trailing slash is normalized away by _normalize_url
@@ -475,8 +450,7 @@ class TestURLNormalization:
     def test_normalization_removes_trailing_slash(self):
         """Test URL normalization removes trailing slash from input."""
         validator = CallbackURLValidator(
-            ["https://app.example.com/callback"],
-            allow_localhost=False
+            ["https://app.example.com/callback"], allow_localhost=False
         )
 
         # Manually test normalization
@@ -493,7 +467,7 @@ class TestValidatorHelperMethods:
         urls = [
             "https://c.example.com/callback",
             "https://a.example.com/callback",
-            "https://b.example.com/callback"
+            "https://b.example.com/callback",
         ]
         validator = CallbackURLValidator(urls, allow_localhost=False)
 
@@ -504,8 +478,7 @@ class TestValidatorHelperMethods:
     def test_add_allowed_url(self):
         """Test add_allowed_url adds URL to whitelist."""
         validator = CallbackURLValidator(
-            ["https://app.example.com/callback"],
-            allow_localhost=False
+            ["https://app.example.com/callback"], allow_localhost=False
         )
 
         validator.add_allowed_url("https://new.example.com/callback")
@@ -525,8 +498,7 @@ class TestValidatorHelperMethods:
     def test_remove_allowed_url(self):
         """Test remove_allowed_url removes URL from whitelist."""
         validator = CallbackURLValidator(
-            ["https://app.example.com/callback"],
-            allow_localhost=False
+            ["https://app.example.com/callback"], allow_localhost=False
         )
 
         removed = validator.remove_allowed_url("https://app.example.com/callback")
@@ -569,8 +541,7 @@ class TestEdgeCases:
     def test_url_without_scheme_rejected(self):
         """Test URL without scheme is rejected."""
         validator = CallbackURLValidator(
-            ["app.example.com/callback"],
-            allow_localhost=False
+            ["app.example.com/callback"], allow_localhost=False
         )
 
         is_valid, error = validator.validate("app.example.com/callback")

@@ -2,8 +2,15 @@
 
 import pytest
 
-from temper_ai.safety.autonomy.budget_enforcer import BudgetEnforcer, BudgetCheckResult, BudgetStatus
-from temper_ai.safety.autonomy.constants import STATUS_ACTIVE, STATUS_EXHAUSTED, STATUS_WARNING
+from temper_ai.safety.autonomy.budget_enforcer import (
+    BudgetEnforcer,
+    BudgetStatus,
+)
+from temper_ai.safety.autonomy.constants import (
+    STATUS_ACTIVE,
+    STATUS_EXHAUSTED,
+    STATUS_WARNING,
+)
 from temper_ai.safety.autonomy.store import AutonomyStore
 
 

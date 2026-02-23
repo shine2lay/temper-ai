@@ -14,25 +14,25 @@ Example:
     ...     operator="agent-123"
     ... )
 """
+
 from datetime import UTC, datetime
-from typing import Optional
 from uuid import uuid4
 
-from temper_ai.shared.constants.limits import VERY_LARGE_ITEM_LIMIT
-from temper_ai.storage.database import DatabaseManager, get_database
-from temper_ai.storage.database.models import RollbackEvent, RollbackSnapshotDB
 from temper_ai.observability.rollback_types import RollbackResult
 from temper_ai.observability.rollback_types import RollbackSnapshot as SnapshotData
+from temper_ai.shared.constants.limits import VERY_LARGE_ITEM_LIMIT
 from temper_ai.shared.utils.logging import get_logger
+from temper_ai.storage.database import DatabaseManager, get_database
+from temper_ai.storage.database.models import RollbackEvent, RollbackSnapshotDB
 
 logger = get_logger(__name__)
 
 
 def log_rollback_snapshot(
     snapshot: SnapshotData,
-    workflow_execution_id: Optional[str] = None,
-    checkpoint_id: Optional[str] = None,
-    db_manager: Optional[DatabaseManager] = None
+    workflow_execution_id: str | None = None,
+    checkpoint_id: str | None = None,
+    db_manager: DatabaseManager | None = None,
 ) -> None:
     """Log rollback snapshot to database.
 
@@ -50,14 +50,15 @@ def log_rollback_snapshot(
     try:
         snapshot_db = RollbackSnapshotDB(
             id=snapshot.id,
-            workflow_execution_id=workflow_execution_id or snapshot.context.get("workflow_id"),
+            workflow_execution_id=workflow_execution_id
+            or snapshot.context.get("workflow_id"),
             checkpoint_id=checkpoint_id,
             action=snapshot.action,
             context=snapshot.context,
             file_snapshots=snapshot.file_snapshots,
             state_snapshots=snapshot.state_snapshots,
             created_at=snapshot.created_at,
-            expires_at=snapshot.expires_at
+            expires_at=snapshot.expires_at,
         )
 
         with db_manager.session() as session:
@@ -73,9 +74,9 @@ def log_rollback_snapshot(
 def log_rollback_event(
     result: RollbackResult,
     trigger: str,
-    operator: Optional[str] = None,
-    reason: Optional[str] = None,
-    db_manager: Optional[DatabaseManager] = None
+    operator: str | None = None,
+    reason: str | None = None,
+    db_manager: DatabaseManager | None = None,
 ) -> None:
     """Log rollback execution to database.
 
@@ -103,7 +104,7 @@ def log_rollback_event(
             errors=result.errors,
             executed_at=result.completed_at or datetime.now(UTC),
             reason=reason or result.metadata.get("reason"),
-            rollback_metadata=result.metadata
+            rollback_metadata=result.metadata,
         )
 
         with db_manager.session() as session:
@@ -119,10 +120,10 @@ def log_rollback_event(
 
 
 def get_rollback_events(
-    snapshot_id: Optional[str] = None,
-    trigger: Optional[str] = None,
+    snapshot_id: str | None = None,
+    trigger: str | None = None,
     limit: int = VERY_LARGE_ITEM_LIMIT,
-    db_manager: Optional[DatabaseManager] = None
+    db_manager: DatabaseManager | None = None,
 ) -> list[RollbackEvent]:
     """Query rollback events from database.
 
@@ -160,9 +161,9 @@ def get_rollback_events(
 
 
 def get_rollback_snapshots(
-    workflow_execution_id: Optional[str] = None,
+    workflow_execution_id: str | None = None,
     limit: int = VERY_LARGE_ITEM_LIMIT,
-    db_manager: Optional[DatabaseManager] = None
+    db_manager: DatabaseManager | None = None,
 ) -> list[RollbackSnapshotDB]:
     """Query rollback snapshots from database.
 

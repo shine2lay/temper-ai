@@ -48,8 +48,8 @@ The primary agent implementation for executing tasks with LLM support.
 from temper_ai.agents import StandardAgent
 from temper_ai.compiler.schemas import AgentConfigInner
 
-agent = StandardAgent(config: AgentConfigInner)
-response = agent.execute(input_data: Dict[str, Any]) -> AgentResponse
+agent = StandardAgent(config=AgentConfigInner(...))
+response = agent.execute(input_data={"key": "value"})  # -> AgentResponse
 ```
 
 **Methods:**
@@ -100,7 +100,7 @@ Factory for creating agents from configuration.
 from temper_ai.agents import AgentFactory
 
 factory = AgentFactory()
-agent = factory.create_agent(config: AgentConfigInner)
+agent = factory.create_agent(config=AgentConfigInner(...))
 ```
 
 **Methods:**
@@ -132,7 +132,7 @@ llm = OllamaLLM(
     max_tokens=2048
 )
 
-response = llm.generate(prompt: str, **kwargs) -> LLMResponse
+response = llm.generate(prompt="Your prompt here")  # -> LLMResponse
 ```
 
 **Configuration:**
@@ -679,7 +679,7 @@ Compiles workflow configurations into executable LangGraph graphs.
 from temper_ai.compiler.langgraph_compiler import LangGraphCompiler
 
 compiler = LangGraphCompiler()
-graph = compiler.compile(workflow_config: WorkflowConfig)
+graph = compiler.compile(workflow_config=WorkflowConfig(...))
 
 # Execute workflow
 result = graph.invoke({"query": "...", "context": {}})

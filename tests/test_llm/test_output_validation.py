@@ -1,14 +1,12 @@
 """Tests for structured output validation (R0.1)."""
-import json
 
-import pytest
+import json
 
 from temper_ai.llm.output_validation import (
     build_retry_prompt_with_error,
     build_schema_enforcement_prompt,
     validate_output_against_schema,
 )
-
 
 SIMPLE_SCHEMA = {
     "type": "object",
@@ -51,6 +49,7 @@ class TestValidateOutputAgainstSchema:
         # This depends on jsonschema being installed
         try:
             import jsonschema  # noqa: F401
+
             assert valid is False
             assert "Schema validation failed" in error
         except ImportError:
@@ -76,6 +75,7 @@ class TestValidateOutputAgainstSchema:
         valid, error = validate_output_against_schema(output, ENUM_SCHEMA)
         try:
             import jsonschema  # noqa: F401
+
             assert valid is False
             assert error is not None
         except ImportError:
@@ -92,6 +92,7 @@ class TestValidateOutputAgainstSchema:
         valid, error = validate_output_against_schema(output, SIMPLE_SCHEMA)
         try:
             import jsonschema  # noqa: F401
+
             assert valid is False
         except ImportError:
             assert valid is True
@@ -120,27 +121,39 @@ class TestBuildRetryPromptWithError:
     def test_includes_error(self):
         """Should include the error message."""
         result = build_retry_prompt_with_error(
-            "Do X", '{"bad"}', "Invalid JSON", SIMPLE_SCHEMA,
+            "Do X",
+            '{"bad"}',
+            "Invalid JSON",
+            SIMPLE_SCHEMA,
         )
         assert "Invalid JSON" in result
 
     def test_includes_schema(self):
         """Should include the schema."""
         result = build_retry_prompt_with_error(
-            "Do X", '{"bad"}', "error", SIMPLE_SCHEMA,
+            "Do X",
+            '{"bad"}',
+            "error",
+            SIMPLE_SCHEMA,
         )
         assert '"name"' in result
 
     def test_includes_original_prompt(self):
         """Should include the original task prompt."""
         result = build_retry_prompt_with_error(
-            "Original task here", '{"bad"}', "error", SIMPLE_SCHEMA,
+            "Original task here",
+            '{"bad"}',
+            "error",
+            SIMPLE_SCHEMA,
         )
         assert "Original task here" in result
 
     def test_format_is_readable(self):
         """Should produce a readable prompt."""
         result = build_retry_prompt_with_error(
-            "Do X", "bad output", "Parse error", SIMPLE_SCHEMA,
+            "Do X",
+            "bad output",
+            "Parse error",
+            SIMPLE_SCHEMA,
         )
         assert "previous output was invalid" in result

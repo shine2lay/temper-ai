@@ -4,7 +4,6 @@ import json
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import List
 
 from pydantic import BaseModel, Field
 
@@ -56,21 +55,21 @@ class AuditLogger:
             entry.source_id,
         )
 
-    def get_entries(self, limit: int = DEFAULT_ENTRY_LIMIT) -> List[AuditEntry]:
+    def get_entries(self, limit: int = DEFAULT_ENTRY_LIMIT) -> list[AuditEntry]:
         """Return the most recent *limit* entries (newest first)."""
         entries = self._read_all()
         entries.reverse()
         return entries[:limit]
 
-    def get_entries_by_source(self, source_id: str) -> List[AuditEntry]:
+    def get_entries_by_source(self, source_id: str) -> list[AuditEntry]:
         """Return all entries associated with a given source ID."""
         return [e for e in self._read_all() if e.source_id == source_id]
 
-    def _read_all(self) -> List[AuditEntry]:
+    def _read_all(self) -> list[AuditEntry]:
         """Read every entry from the JSONL file."""
         if not self._path.exists():
             return []
-        entries: List[AuditEntry] = []
+        entries: list[AuditEntry] = []
         with open(self._path, encoding="utf-8") as fh:
             for line_number, raw in enumerate(fh, start=1):
                 stripped = raw.strip()

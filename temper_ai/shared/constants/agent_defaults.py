@@ -9,7 +9,9 @@ them here avoids the infrastructure→business layer violation.
 MAX_TOOL_CALLS_PER_EXECUTION = 20
 MAX_EXECUTION_TIME_SECONDS = 300  # 5 minutes
 MAX_PROMPT_LENGTH = 32_000  # Maximum prompt length in characters
-DEFAULT_MAX_DIALOGUE_CONTEXT_CHARS = 8000  # Max chars for auto-injected dialogue context
+DEFAULT_MAX_DIALOGUE_CONTEXT_CHARS = (
+    8000  # Max chars for auto-injected dialogue context
+)
 
 # Pre-Command Execution
 PRE_COMMAND_DEFAULT_TIMEOUT = 60

@@ -1,28 +1,22 @@
 """End-to-end workflow validation tests.
 
 Comprehensive E2E tests covering:
-- Full workflow execution (CLI → agents → observability → results)
+- Full workflow execution (CLI -> agents -> observability -> results)
 - Multi-stage workflows
 - Error recovery end-to-end
 - Rollback integration
 """
-import asyncio
-from datetime import datetime, timezone
-from pathlib import Path
-from unittest.mock import Mock, AsyncMock, patch, MagicMock
-import tempfile
+
 import uuid
-import yaml
+from datetime import UTC, datetime
 
 import pytest
-
-from tests.fixtures.database_fixtures import db_session
-from tests.fixtures.mock_helpers import mock_llm
-
+import yaml
 
 # ============================================================================
 # Full Workflow Execution
 # ============================================================================
+
 
 class TestFullWorkflowExecution:
     """Test complete workflow execution from CLI to results."""
@@ -40,26 +34,26 @@ class TestFullWorkflowExecution:
                         "name": "extraction",
                         "agent": "extractor_agent",
                         "inputs": {"data": "test input"},
-                        "outputs": ["extracted_data"]
+                        "outputs": ["extracted_data"],
                     },
                     {
                         "name": "processing",
                         "agent": "processor_agent",
                         "inputs": {"data": "{{stages.extraction.extracted_data}}"},
-                        "outputs": ["processed_data"]
+                        "outputs": ["processed_data"],
                     },
                     {
                         "name": "validation",
                         "agent": "validator_agent",
                         "inputs": {"data": "{{stages.processing.processed_data}}"},
-                        "outputs": ["validation_result"]
-                    }
-                ]
+                        "outputs": ["validation_result"],
+                    },
+                ],
             }
         }
 
         config_path = tmp_path / "workflow.yaml"
-        with open(config_path, 'w') as f:
+        with open(config_path, "w") as f:
             yaml.dump(config, f)
 
         return config_path
@@ -67,6 +61,7 @@ class TestFullWorkflowExecution:
     @pytest.fixture
     def mock_agent_execution(self):
         """Mock agent execution for E2E testing."""
+
         def execute_agent(agent_name, inputs):
             # Simulate different agent behaviors
             if agent_name == "extractor_agent":
@@ -81,10 +76,9 @@ class TestFullWorkflowExecution:
 
     def test_full_workflow_cli_to_results(self, workflow_config, mock_agent_execution):
         """Complete workflow should execute from CLI to final results."""
-        from temper_ai.workflow.config_loader import ConfigLoader
-        from temper_ai.stage.executors.sequential import SequentialExecutor
-        from temper_ai.observability.tracker import ExecutionTracker
         from temper_ai.observability.database import init_database
+        from temper_ai.observability.tracker import ExecutionTracker
+        from temper_ai.workflow.config_loader import ConfigLoader
 
         # Initialize observability
         init_database("sqlite:///:memory:")
@@ -99,19 +93,17 @@ class TestFullWorkflowExecution:
             # Execute stages
             results = {}
             for stage in workflow_config_dict["workflow"]["stages"]:
-                with tracker.track_agent(stage["agent"], "1.0") as agent_id:
-                    # Simulate agent execution
-                    stage_result = mock_agent_execution(stage["agent"], stage["inputs"])
-                    results[stage["name"]] = stage_result
-
-                    tracker.track_event(
-                        event_type="stage_completed",
-                        details={
-                            "stage": stage["name"],
-                            "agent": stage["agent"],
-                            "result": stage_result
-                        }
-                    )
+                with tracker.track_stage(
+                    stage["name"], {"agent": stage["agent"]}, wf_id
+                ) as stage_id:
+                    with tracker.track_agent(
+                        stage["agent"], {"version": "1.0"}, stage_id
+                    ) as agent_id:
+                        # Simulate agent execution
+                        stage_result = mock_agent_execution(
+                            stage["agent"], stage["inputs"]
+                        )
+                        results[stage["name"]] = stage_result
 
         # Verify complete execution
         assert wf_id is not None
@@ -122,9 +114,8 @@ class TestFullWorkflowExecution:
 
     def test_workflow_with_observability_integration(self, workflow_config):
         """Workflow execution should be fully tracked in observability."""
+        from temper_ai.observability.database import init_database
         from temper_ai.observability.tracker import ExecutionTracker
-        from temper_ai.observability.database import init_database, get_session
-        from temper_ai.observability.models import WorkflowRun
 
         init_database("sqlite:///:memory:")
         tracker = ExecutionTracker()
@@ -132,41 +123,24 @@ class TestFullWorkflowExecution:
         workflow_config_dict = yaml.safe_load(workflow_config.read_text())
 
         with tracker.track_workflow("observable_workflow") as wf_id:
-            # Track workflow metadata
-            tracker.track_event(
-                event_type="workflow_started",
-                details={
-                    "name": workflow_config_dict["workflow"]["name"],
-                    "version": workflow_config_dict["workflow"]["version"],
-                    "stages": len(workflow_config_dict["workflow"]["stages"])
-                }
-            )
-
             # Execute stages with tracking
             for idx, stage in enumerate(workflow_config_dict["workflow"]["stages"]):
-                with tracker.track_agent(stage["agent"], "1.0") as agent_id:
-                    tracker.track_event(
-                        event_type="stage_progress",
-                        details={
-                            "stage_index": idx,
-                            "stage_name": stage["name"],
-                            "total_stages": len(workflow_config_dict["workflow"]["stages"])
-                        }
-                    )
-
-            tracker.track_event(
-                event_type="workflow_completed",
-                details={"status": "success"}
-            )
+                with tracker.track_stage(
+                    stage["name"], {"agent": stage["agent"]}, wf_id
+                ) as stage_id:
+                    with tracker.track_agent(
+                        stage["agent"], {"version": "1.0"}, stage_id
+                    ) as agent_id:
+                        pass  # Stage execution tracked by context manager
 
         # Verify tracking
         assert wf_id is not None
 
     def test_workflow_context_propagation(self, workflow_config):
         """Context should propagate through entire workflow."""
-        from temper_ai.shared.core.context import ExecutionContext
-        from temper_ai.observability.tracker import ExecutionTracker
         from temper_ai.observability.database import init_database
+        from temper_ai.observability.tracker import ExecutionTracker
+        from temper_ai.shared.core.context import ExecutionContext
 
         init_database("sqlite:///:memory:")
         tracker = ExecutionTracker()
@@ -176,24 +150,24 @@ class TestFullWorkflowExecution:
         # Initialize context
         context = ExecutionContext(
             workflow_id=str(uuid.uuid4()),
-            metadata={"user": "test_user", "environment": "test"}
+            metadata={"user": "test_user", "environment": "test"},
         )
 
         with tracker.track_workflow("context_propagation") as wf_id:
             # Context should be available in all stages
             for stage in workflow_config_dict["workflow"]["stages"]:
-                with tracker.track_agent(stage["agent"], "1.0") as agent_id:
-                    # Verify context is accessible
-                    current_context = {
-                        "workflow_id": wf_id,
-                        "agent_id": agent_id,
-                        "stage": stage["name"]
-                    }
-
-                    tracker.track_event(
-                        event_type="context_verified",
-                        details=current_context
-                    )
+                with tracker.track_stage(
+                    stage["name"], {"agent": stage["agent"]}, wf_id
+                ) as stage_id:
+                    with tracker.track_agent(
+                        stage["agent"], {"version": "1.0"}, stage_id
+                    ) as agent_id:
+                        # Verify context is accessible
+                        current_context = {
+                            "workflow_id": wf_id,
+                            "agent_id": agent_id,
+                            "stage": stage["name"],
+                        }
 
         assert wf_id is not None
 
@@ -202,46 +176,42 @@ class TestFullWorkflowExecution:
 # Multi-Stage Workflows
 # ============================================================================
 
+
 class TestMultiStageWorkflows:
     """Test complex multi-stage workflow scenarios."""
 
     def test_parallel_stage_execution(self):
         """Parallel stages should execute concurrently."""
-        from temper_ai.stage.executors.parallel import ParallelExecutor
-        from temper_ai.observability.tracker import ExecutionTracker
         from temper_ai.observability.database import init_database
+        from temper_ai.observability.tracker import ExecutionTracker
 
         init_database("sqlite:///:memory:")
         tracker = ExecutionTracker()
 
         # Define parallel stages
         stages = [
-            {"name": f"parallel_stage_{i}", "agent": f"agent_{i}"}
-            for i in range(5)
+            {"name": f"parallel_stage_{i}", "agent": f"agent_{i}"} for i in range(5)
         ]
 
         with tracker.track_workflow("parallel_execution") as wf_id:
-            start_time = datetime.now(timezone.utc)
+            start_time = datetime.now(UTC)
 
             # Simulate parallel execution
             results = {}
             for stage in stages:
-                with tracker.track_agent(stage["agent"], "1.0") as agent_id:
-                    results[stage["name"]] = {
-                        "status": "completed",
-                        "agent_id": agent_id
-                    }
+                with tracker.track_stage(
+                    stage["name"], {"agent": stage["agent"]}, wf_id
+                ) as stage_id:
+                    with tracker.track_agent(
+                        stage["agent"], {"version": "1.0"}, stage_id
+                    ) as agent_id:
+                        results[stage["name"]] = {
+                            "status": "completed",
+                            "agent_id": agent_id,
+                        }
 
-            end_time = datetime.now(timezone.utc)
+            end_time = datetime.now(UTC)
             execution_time = (end_time - start_time).total_seconds()
-
-            tracker.track_event(
-                event_type="parallel_execution_completed",
-                details={
-                    "stages": len(stages),
-                    "execution_time_seconds": execution_time
-                }
-            )
 
         # Verify all stages completed
         assert len(results) == len(stages)
@@ -249,44 +219,45 @@ class TestMultiStageWorkflows:
 
     def test_conditional_stage_execution(self):
         """Stages should execute conditionally based on previous results."""
-        from temper_ai.observability.tracker import ExecutionTracker
         from temper_ai.observability.database import init_database
+        from temper_ai.observability.tracker import ExecutionTracker
 
         init_database("sqlite:///:memory:")
         tracker = ExecutionTracker()
 
         with tracker.track_workflow("conditional_workflow") as wf_id:
             # Stage 1: Initial check
-            with tracker.track_agent("check_agent", "1.0") as check_id:
-                check_result = {"requires_processing": True, "data_valid": True}
+            with tracker.track_stage("check", {}, wf_id) as stage_id:
+                with tracker.track_agent(
+                    "check_agent", {"version": "1.0"}, stage_id
+                ) as check_id:
+                    check_result = {"requires_processing": True, "data_valid": True}
 
             # Stage 2: Conditional processing
             if check_result["requires_processing"]:
-                with tracker.track_agent("process_agent", "1.0") as process_id:
-                    process_result = {"status": "processed"}
-                    tracker.track_event(
-                        event_type="conditional_stage_executed",
-                        details={"stage": "processing", "reason": "data_requires_processing"}
-                    )
+                with tracker.track_stage("process", {}, wf_id) as stage_id:
+                    with tracker.track_agent(
+                        "process_agent", {"version": "1.0"}, stage_id
+                    ) as process_id:
+                        process_result = {"status": "processed"}
             else:
                 process_result = {"status": "skipped"}
 
             # Stage 3: Conditional validation
             if check_result["data_valid"]:
-                with tracker.track_agent("validate_agent", "1.0") as validate_id:
-                    validation_result = {"valid": True}
-                    tracker.track_event(
-                        event_type="conditional_stage_executed",
-                        details={"stage": "validation", "reason": "data_is_valid"}
-                    )
+                with tracker.track_stage("validate", {}, wf_id) as stage_id:
+                    with tracker.track_agent(
+                        "validate_agent", {"version": "1.0"}, stage_id
+                    ) as validate_id:
+                        validation_result = {"valid": True}
 
         assert process_result["status"] == "processed"
         assert validation_result["valid"] is True
 
     def test_stage_dependency_resolution(self):
         """Stages with dependencies should execute in correct order."""
-        from temper_ai.observability.tracker import ExecutionTracker
         from temper_ai.observability.database import init_database
+        from temper_ai.observability.tracker import ExecutionTracker
 
         init_database("sqlite:///:memory:")
         tracker = ExecutionTracker()
@@ -298,27 +269,31 @@ class TestMultiStageWorkflows:
 
         with tracker.track_workflow("dependency_workflow") as wf_id:
             # Stage A
-            with tracker.track_agent("agent_a", "1.0") as agent_a_id:
-                execution_order.append("A")
-                result_a = {"data": "from_a"}
+            with tracker.track_stage("stage_a", {}, wf_id) as stage_id:
+                with tracker.track_agent(
+                    "agent_a", {"version": "1.0"}, stage_id
+                ) as agent_a_id:
+                    execution_order.append("A")
+                    result_a = {"data": "from_a"}
 
             # Stage B (depends on A)
-            with tracker.track_agent("agent_b", "1.0") as agent_b_id:
-                execution_order.append("B")
-                result_b = {"data": "from_b", "source": result_a["data"]}
+            with tracker.track_stage("stage_b", {}, wf_id) as stage_id:
+                with tracker.track_agent(
+                    "agent_b", {"version": "1.0"}, stage_id
+                ) as agent_b_id:
+                    execution_order.append("B")
+                    result_b = {"data": "from_b", "source": result_a["data"]}
 
             # Stage C (depends on A and B)
-            with tracker.track_agent("agent_c", "1.0") as agent_c_id:
-                execution_order.append("C")
-                result_c = {
-                    "data": "from_c",
-                    "sources": [result_a["data"], result_b["data"]]
-                }
-
-            tracker.track_event(
-                event_type="dependency_order_verified",
-                details={"execution_order": execution_order}
-            )
+            with tracker.track_stage("stage_c", {}, wf_id) as stage_id:
+                with tracker.track_agent(
+                    "agent_c", {"version": "1.0"}, stage_id
+                ) as agent_c_id:
+                    execution_order.append("C")
+                    result_c = {
+                        "data": "from_c",
+                        "sources": [result_a["data"], result_b["data"]],
+                    }
 
         # Verify execution order
         assert execution_order == ["A", "B", "C"]
@@ -328,52 +303,56 @@ class TestMultiStageWorkflows:
 # Error Recovery End-to-End
 # ============================================================================
 
+
 class TestErrorRecoveryE2E:
     """Test error recovery across entire workflow."""
 
     def test_stage_failure_recovery(self):
         """Failed stage should trigger recovery mechanism."""
-        from temper_ai.observability.tracker import ExecutionTracker
         from temper_ai.observability.database import init_database
+        from temper_ai.observability.tracker import ExecutionTracker
 
         init_database("sqlite:///:memory:")
         tracker = ExecutionTracker()
 
         with tracker.track_workflow("error_recovery") as wf_id:
             # Stage 1: Success
-            with tracker.track_agent("agent_1", "1.0") as agent_1_id:
-                result_1 = {"status": "success"}
+            with tracker.track_stage("stage_1", {}, wf_id) as stage_id:
+                with tracker.track_agent(
+                    "agent_1", {"version": "1.0"}, stage_id
+                ) as agent_1_id:
+                    result_1 = {"status": "completed"}
 
             # Stage 2: Failure
             try:
-                with tracker.track_agent("agent_2", "1.0") as agent_2_id:
-                    raise ValueError("Stage 2 failed")
-            except ValueError as e:
-                tracker.track_event(
-                    event_type="stage_failed",
-                    details={"stage": "agent_2", "error": str(e)}
-                )
-
+                with tracker.track_stage("stage_2", {}, wf_id) as stage_id:
+                    with tracker.track_agent(
+                        "agent_2", {"version": "1.0"}, stage_id
+                    ) as agent_2_id:
+                        raise ValueError("Stage 2 failed")
+            except ValueError:
                 # Recovery: Retry with fallback
-                with tracker.track_agent("fallback_agent_2", "1.0") as fallback_id:
-                    result_2 = {"status": "recovered", "fallback": True}
-                    tracker.track_event(
-                        event_type="recovery_successful",
-                        details={"original_agent": "agent_2", "fallback_agent": "fallback_agent_2"}
-                    )
+                with tracker.track_stage("stage_2_fallback", {}, wf_id) as stage_id:
+                    with tracker.track_agent(
+                        "fallback_agent_2", {"version": "1.0"}, stage_id
+                    ) as fallback_id:
+                        result_2 = {"status": "recovered", "fallback": True}
 
             # Stage 3: Continue after recovery
-            with tracker.track_agent("agent_3", "1.0") as agent_3_id:
-                result_3 = {"status": "success", "previous": result_2}
+            with tracker.track_stage("stage_3", {}, wf_id) as stage_id:
+                with tracker.track_agent(
+                    "agent_3", {"version": "1.0"}, stage_id
+                ) as agent_3_id:
+                    result_3 = {"status": "completed", "previous": result_2}
 
-        assert result_1["status"] == "success"
+        assert result_1["status"] == "completed"
         assert result_2["status"] == "recovered"
-        assert result_3["status"] == "success"
+        assert result_3["status"] == "completed"
 
     def test_workflow_retry_on_failure(self):
         """Entire workflow should retry on critical failure."""
-        from temper_ai.observability.tracker import ExecutionTracker
         from temper_ai.observability.database import init_database
+        from temper_ai.observability.tracker import ExecutionTracker
 
         init_database("sqlite:///:memory:")
         tracker = ExecutionTracker()
@@ -386,35 +365,25 @@ class TestErrorRecoveryE2E:
             attempt += 1
 
             try:
-                with tracker.track_workflow(f"retry_workflow_attempt_{attempt}") as wf_id:
-                    tracker.track_event(
-                        event_type="workflow_attempt",
-                        details={"attempt": attempt, "max_retries": max_retries}
-                    )
-
+                with tracker.track_workflow(
+                    f"retry_workflow_attempt_{attempt}"
+                ) as wf_id:
                     # Simulate failure on first 2 attempts
                     if attempt < 3:
                         raise RuntimeError(f"Workflow failed on attempt {attempt}")
 
                     success = True
-                    tracker.track_event(
-                        event_type="workflow_succeeded",
-                        details={"attempt": attempt}
-                    )
 
-            except RuntimeError as e:
-                tracker.track_event(
-                    event_type="workflow_retry",
-                    details={"attempt": attempt, "error": str(e)}
-                )
+            except RuntimeError:
+                pass  # Retry on next iteration
 
         assert success is True
         assert attempt == 3
 
     def test_partial_rollback_on_error(self):
         """Error should trigger partial rollback of completed stages."""
-        from temper_ai.observability.tracker import ExecutionTracker
         from temper_ai.observability.database import init_database
+        from temper_ai.observability.tracker import ExecutionTracker
 
         init_database("sqlite:///:memory:")
         tracker = ExecutionTracker()
@@ -424,31 +393,31 @@ class TestErrorRecoveryE2E:
 
         with tracker.track_workflow("partial_rollback") as wf_id:
             # Stage 1: Success
-            with tracker.track_agent("agent_1", "1.0") as agent_1_id:
-                completed_stages.append("stage_1")
-                result_1 = {"file": "temp1.txt", "created": True}
+            with tracker.track_stage("stage_1", {}, wf_id) as stage_id:
+                with tracker.track_agent(
+                    "agent_1", {"version": "1.0"}, stage_id
+                ) as agent_1_id:
+                    completed_stages.append("stage_1")
+                    result_1 = {"file": "temp1.txt", "created": True}
 
             # Stage 2: Success
-            with tracker.track_agent("agent_2", "1.0") as agent_2_id:
-                completed_stages.append("stage_2")
-                result_2 = {"file": "temp2.txt", "created": True}
+            with tracker.track_stage("stage_2", {}, wf_id) as stage_id:
+                with tracker.track_agent(
+                    "agent_2", {"version": "1.0"}, stage_id
+                ) as agent_2_id:
+                    completed_stages.append("stage_2")
+                    result_2 = {"file": "temp2.txt", "created": True}
 
             # Stage 3: Failure
             try:
-                with tracker.track_agent("agent_3", "1.0") as agent_3_id:
-                    raise IOError("Stage 3 failed - disk full")
-            except IOError as e:
-                tracker.track_event(
-                    event_type="stage_failure",
-                    details={"stage": "stage_3", "error": str(e)}
-                )
-
+                with tracker.track_stage("stage_3", {}, wf_id) as stage_id:
+                    with tracker.track_agent(
+                        "agent_3", {"version": "1.0"}, stage_id
+                    ) as agent_3_id:
+                        raise OSError("Stage 3 failed - disk full")
+            except OSError:
                 # Rollback completed stages in reverse order
                 for stage in reversed(completed_stages):
-                    tracker.track_event(
-                        event_type="stage_rollback",
-                        details={"stage": stage}
-                    )
                     rolled_back.append(stage)
 
         assert completed_stages == ["stage_1", "stage_2"]
@@ -459,12 +428,13 @@ class TestErrorRecoveryE2E:
 # Rollback Integration
 # ============================================================================
 
+
 class TestRollbackIntegration:
     """Test rollback mechanisms across workflow."""
 
     def test_transaction_rollback(self):
         """Database transactions should rollback on error."""
-        from temper_ai.observability.database import init_database, get_session
+        from temper_ai.observability.database import init_database
         from temper_ai.observability.tracker import ExecutionTracker
 
         init_database("sqlite:///:memory:")
@@ -473,48 +443,38 @@ class TestRollbackIntegration:
         with tracker.track_workflow("transaction_rollback") as wf_id:
             try:
                 # Simulate transactional operations
-                tracker.track_event(
-                    event_type="operation_1",
-                    details={"data": "value1"}
-                )
+                with tracker.track_stage("op_1", {}, wf_id) as stage_id:
+                    with tracker.track_agent(
+                        "op_agent_1", {"version": "1.0"}, stage_id
+                    ) as op1_id:
+                        pass  # Operation 1
 
-                tracker.track_event(
-                    event_type="operation_2",
-                    details={"data": "value2"}
-                )
+                with tracker.track_stage("op_2", {}, wf_id) as stage_id:
+                    with tracker.track_agent(
+                        "op_agent_2", {"version": "1.0"}, stage_id
+                    ) as op2_id:
+                        pass  # Operation 2
 
                 # Simulate error
                 raise ValueError("Transaction failed")
 
             except ValueError:
-                tracker.track_event(
-                    event_type="transaction_rolled_back",
-                    details={"reason": "error_occurred"}
-                )
+                pass  # Transaction rolled back
 
         # Verify workflow was tracked despite rollback
         assert wf_id is not None
 
     def test_state_restoration_on_rollback(self):
         """System state should restore to previous checkpoint on rollback."""
-        from temper_ai.observability.tracker import ExecutionTracker
         from temper_ai.observability.database import init_database
+        from temper_ai.observability.tracker import ExecutionTracker
 
         init_database("sqlite:///:memory:")
         tracker = ExecutionTracker()
 
         with tracker.track_workflow("state_restoration") as wf_id:
             # Checkpoint initial state
-            initial_state = {
-                "counter": 0,
-                "data": {},
-                "flags": {"processed": False}
-            }
-
-            tracker.track_event(
-                event_type="checkpoint_created",
-                details={"state": initial_state.copy()}
-            )
+            initial_state = {"counter": 0, "data": {}, "flags": {"processed": False}}
 
             # Modify state
             current_state = initial_state.copy()
@@ -522,18 +482,8 @@ class TestRollbackIntegration:
             current_state["data"] = {"key": "value"}
             current_state["flags"]["processed"] = True
 
-            # Simulate error and rollback
-            tracker.track_event(
-                event_type="state_modified",
-                details={"state": current_state}
-            )
-
             # Rollback to checkpoint
             restored_state = initial_state.copy()
-            tracker.track_event(
-                event_type="state_restored",
-                details={"state": restored_state}
-            )
 
         # Verify state restoration
         assert restored_state == initial_state
@@ -541,8 +491,8 @@ class TestRollbackIntegration:
 
     def test_cascading_rollback(self):
         """Rollback should cascade through dependent stages."""
-        from temper_ai.observability.tracker import ExecutionTracker
         from temper_ai.observability.database import init_database
+        from temper_ai.observability.tracker import ExecutionTracker
 
         init_database("sqlite:///:memory:")
         tracker = ExecutionTracker()
@@ -555,8 +505,11 @@ class TestRollbackIntegration:
             stage_results = {}
 
             for stage in stages:
-                with tracker.track_agent(f"agent_{stage}", "1.0") as agent_id:
-                    stage_results[stage] = {"completed": True}
+                with tracker.track_stage(f"stage_{stage}", {}, wf_id) as stage_id:
+                    with tracker.track_agent(
+                        f"agent_{stage}", {"version": "1.0"}, stage_id
+                    ) as agent_id:
+                        stage_results[stage] = {"completed": True}
 
             # Failure in D triggers cascade
             try:
@@ -565,10 +518,6 @@ class TestRollbackIntegration:
                 # Rollback in reverse dependency order
                 for stage in reversed(stages):
                     rollback_order.append(stage)
-                    tracker.track_event(
-                        event_type="cascading_rollback",
-                        details={"stage": stage}
-                    )
 
         assert rollback_order == ["D", "C", "B", "A"]
 
@@ -577,47 +526,40 @@ class TestRollbackIntegration:
 # Performance and Load Testing
 # ============================================================================
 
+
 class TestWorkflowPerformance:
     """Test workflow performance characteristics."""
 
     def test_high_volume_event_tracking(self):
-        """System should handle high volume of events."""
-        from temper_ai.observability.tracker import ExecutionTracker
+        """System should handle high volume of agent trackings."""
         from temper_ai.observability.database import init_database
+        from temper_ai.observability.tracker import ExecutionTracker
 
         init_database("sqlite:///:memory:")
         tracker = ExecutionTracker()
 
-        event_count = 1000
+        agent_count = 100
 
         with tracker.track_workflow("high_volume_tracking") as wf_id:
-            start_time = datetime.now(timezone.utc)
+            start_time = datetime.now(UTC)
 
-            for i in range(event_count):
-                tracker.track_event(
-                    event_type="high_volume_event",
-                    details={"index": i, "data": f"event_{i}"}
-                )
+            for i in range(agent_count):
+                with tracker.track_stage(f"stage_{i}", {}, wf_id) as stage_id:
+                    with tracker.track_agent(
+                        f"agent_{i}", {"version": "1.0"}, stage_id
+                    ) as agent_id:
+                        pass  # Simulate agent execution
 
-            end_time = datetime.now(timezone.utc)
+            end_time = datetime.now(UTC)
             duration = (end_time - start_time).total_seconds()
 
-            tracker.track_event(
-                event_type="performance_metrics",
-                details={
-                    "event_count": event_count,
-                    "duration_seconds": duration,
-                    "events_per_second": event_count / duration if duration > 0 else 0
-                }
-            )
-
         # Should complete in reasonable time
-        assert duration < 10.0  # Less than 10 seconds for 1000 events
+        assert duration < 10.0  # Less than 10 seconds for 100 agent trackings
 
     def test_concurrent_workflow_execution(self):
         """Multiple workflows should execute concurrently."""
-        from temper_ai.observability.tracker import ExecutionTracker
         from temper_ai.observability.database import init_database
+        from temper_ai.observability.tracker import ExecutionTracker
 
         init_database("sqlite:///:memory:")
 
@@ -625,18 +567,19 @@ class TestWorkflowPerformance:
         trackers = [ExecutionTracker() for _ in range(workflow_count)]
         workflow_ids = []
 
-        start_time = datetime.now(timezone.utc)
+        start_time = datetime.now(UTC)
 
         for i, tracker in enumerate(trackers):
             with tracker.track_workflow(f"concurrent_workflow_{i}") as wf_id:
                 workflow_ids.append(wf_id)
 
-                tracker.track_event(
-                    event_type="workflow_executed",
-                    details={"index": i}
-                )
+                with tracker.track_stage(f"stage_{i}", {}, wf_id) as stage_id:
+                    with tracker.track_agent(
+                        f"agent_{i}", {"version": "1.0"}, stage_id
+                    ) as agent_id:
+                        pass  # Simulate workflow execution
 
-        end_time = datetime.now(timezone.utc)
+        end_time = datetime.now(UTC)
         duration = (end_time - start_time).total_seconds()
 
         # Verify all workflows completed

@@ -15,7 +15,6 @@ def test_oauth_module_imports():
         OAuthService,
         OAuthStateError,
         RateLimitExceeded,
-        RedisStateStore,
         SecureTokenStore,
         StateStore,
         create_state_store,
@@ -35,7 +34,6 @@ def test_oauth_module_imports():
     assert OAuthProviderError is not None
     assert RateLimitExceeded is not None
     assert StateStore is not None
-    assert RedisStateStore is not None
     assert InMemoryStateStore is not None
     assert create_state_store is not None
     assert OAuthRateLimiter is not None
@@ -58,7 +56,6 @@ def test_oauth_module_all_exports():
         "OAuthProviderError",
         "RateLimitExceeded",
         "StateStore",
-        "RedisStateStore",
         "InMemoryStateStore",
         "create_state_store",
         "OAuthRateLimiter",
@@ -88,8 +85,14 @@ def test_oauth_config_reexport():
     )
     from temper_ai.auth.oauth.config import (
         OAuthConfig as OrigConfig,
+    )
+    from temper_ai.auth.oauth.config import (
         OAuthConfigurationError as OrigError,
+    )
+    from temper_ai.auth.oauth.config import (
         OAuthProviderConfig as OrigProviderConfig,
+    )
+    from temper_ai.auth.oauth.config import (
         get_provider_endpoints as orig_endpoints,
     )
 
@@ -104,6 +107,8 @@ def test_oauth_rate_limiter_reexport():
     from temper_ai.auth.oauth import OAuthRateLimiter, RateLimitExceeded
     from temper_ai.auth.oauth.rate_limiter import (
         OAuthRateLimiter as OrigLimiter,
+    )
+    from temper_ai.auth.oauth.rate_limiter import (
         RateLimitExceeded as OrigException,
     )
 
@@ -121,8 +126,14 @@ def test_oauth_service_reexport():
     )
     from temper_ai.auth.oauth.service import (
         OAuthError as OrigError,
+    )
+    from temper_ai.auth.oauth.service import (
         OAuthProviderError as OrigProviderError,
+    )
+    from temper_ai.auth.oauth.service import (
         OAuthService as OrigService,
+    )
+    from temper_ai.auth.oauth.service import (
         OAuthStateError as OrigStateError,
     )
 
@@ -136,19 +147,20 @@ def test_oauth_state_store_reexport():
     """Test that state store components are correctly re-exported."""
     from temper_ai.auth.oauth import (
         InMemoryStateStore,
-        RedisStateStore,
         StateStore,
         create_state_store,
     )
     from temper_ai.auth.oauth.state_store import (
         InMemoryStateStore as OrigInMemory,
-        RedisStateStore as OrigRedis,
+    )
+    from temper_ai.auth.oauth.state_store import (
         StateStore as OrigStore,
+    )
+    from temper_ai.auth.oauth.state_store import (
         create_state_store as orig_create,
     )
 
     assert StateStore is OrigStore
-    assert RedisStateStore is OrigRedis
     assert InMemoryStateStore is OrigInMemory
     assert create_state_store is orig_create
 
@@ -220,7 +232,6 @@ def test_oauth_star_import():
         "OAuthProviderError",
         "RateLimitExceeded",
         "StateStore",
-        "RedisStateStore",
         "InMemoryStateStore",
         "create_state_store",
         "OAuthRateLimiter",

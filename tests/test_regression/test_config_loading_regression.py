@@ -10,6 +10,7 @@ Each test documents:
 - How it was fixed
 - What systems were affected
 """
+
 from temper_ai.storage.schemas.agent_config import (
     AgentConfig,
     AgentConfigInner,

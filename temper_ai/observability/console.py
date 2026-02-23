@@ -1,9 +1,10 @@
 """Console visualization for workflow execution using Rich."""
+
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from threading import Event, Thread
-from typing import Any, Optional
+from typing import Any
 
 from rich import box
 from rich.console import Console
@@ -30,7 +31,7 @@ class WorkflowVisualizer:
         """
         self.console = Console()
         self.verbosity = verbosity
-        self.start_time = datetime.now(timezone.utc)
+        self.start_time = datetime.now(UTC)
 
     def display_execution(self, workflow_execution: Any) -> None:
         """Display complete workflow execution tree.
@@ -57,33 +58,24 @@ class WorkflowVisualizer:
             title=f"[bold]Workflow Execution: {workflow_execution.workflow_name}[/]",
             subtitle=self._format_summary(workflow_execution),
             border_style="blue",
-            box=box.ROUNDED
+            box=box.ROUNDED,
         )
 
         self.console.print(panel)
 
     def display_live(self, workflow_execution: Any) -> Live:
-        """Display workflow execution with live updates.
+        """Display a one-shot snapshot of workflow execution.
 
-        Use this for streaming real-time progress during execution.
+        For real-time streaming, use StreamingVisualizer instead.
 
         Args:
             workflow_execution: WorkflowExecution being monitored
-
-        Example:
-            >>> visualizer = WorkflowVisualizer(verbosity="verbose")
-            >>> with visualizer.display_live(workflow) as live_display:
-            ...     # Workflow executes here
-            ...     # Display updates automatically
-            ...     pass
         """
         with Live(
             self._create_workflow_tree(workflow_execution),
             refresh_per_second=LIVE_DISPLAY_REFRESH_PER_SECOND,
-            console=self.console
+            console=self.console,
         ) as live:
-            # Update loop would go here (for real-time updates)
-            # This is a placeholder for Milestone 2 real-time streaming
             return live
 
     def _create_workflow_tree(self, workflow_exec: Any) -> Tree:
@@ -216,7 +208,11 @@ class WorkflowVisualizer:
             if self.verbosity == "verbose":
                 for event in stage.collaboration_events:
                     if event.event_type == "vote" and event.event_data:
-                        agent_name = event.agents_involved[0] if event.agents_involved else "unknown"
+                        agent_name = (
+                            event.agents_involved[0]
+                            if event.agents_involved
+                            else "unknown"
+                        )
                         decision = event.outcome or "N/A"
                         confidence = event.confidence_score or 0.0
                         synthesis_node.add(
@@ -244,7 +240,7 @@ class WorkflowVisualizer:
         }
         return icons.get(status, "[dim]?[/]")
 
-    def _format_duration(self, seconds: Optional[float]) -> str:
+    def _format_duration(self, seconds: float | None) -> str:
         """Format duration in human-readable form.
 
         Args:
@@ -275,7 +271,9 @@ class WorkflowVisualizer:
         parts = []
 
         if workflow_exec.duration_seconds:
-            parts.append(f"Duration: {self._format_duration(workflow_exec.duration_seconds)}")
+            parts.append(
+                f"Duration: {self._format_duration(workflow_exec.duration_seconds)}"
+            )
 
         if workflow_exec.total_tokens:
             parts.append(f"Tokens: {workflow_exec.total_tokens:,}")
@@ -321,8 +319,12 @@ class StreamingVisualizer(WorkflowVisualizer):
     metrics in real-time.
     """
 
-    def __init__(self, workflow_id: str, verbosity: str = "standard",
-                 poll_interval: float = STREAMING_POLL_INTERVAL_SECONDS):
+    def __init__(
+        self,
+        workflow_id: str,
+        verbosity: str = "standard",
+        poll_interval: float = STREAMING_POLL_INTERVAL_SECONDS,
+    ):
         """Initialize streaming visualizer.
 
         Args:
@@ -334,8 +336,8 @@ class StreamingVisualizer(WorkflowVisualizer):
         self.workflow_id = workflow_id
         self.poll_interval = poll_interval
         self.stop_event = Event()
-        self.update_thread: Optional[Thread] = None
-        self.live: Optional[Live] = None
+        self.update_thread: Thread | None = None
+        self.live: Live | None = None
 
     def start(self) -> None:
         """Start streaming updates.
@@ -356,7 +358,9 @@ class StreamingVisualizer(WorkflowVisualizer):
 
         with get_session() as session:
             workflow = session.exec(
-                select(WorkflowExecution).where(WorkflowExecution.id == self.workflow_id)
+                select(WorkflowExecution).where(
+                    WorkflowExecution.id == self.workflow_id
+                )
             ).first()
 
             if not workflow:
@@ -373,13 +377,13 @@ class StreamingVisualizer(WorkflowVisualizer):
             title=f"[bold]Workflow Execution: {workflow_name}[/]",
             subtitle="Starting...",
             border_style="blue",
-            box=box.ROUNDED
+            box=box.ROUNDED,
         )
 
         self.live = Live(
             initial_panel,
             refresh_per_second=LIVE_DISPLAY_REFRESH_PER_SECOND,
-            console=self.console
+            console=self.console,
         )
         self.live.start()
 
@@ -429,7 +433,7 @@ class StreamingVisualizer(WorkflowVisualizer):
                         title=f"[bold]Workflow Execution: {workflow.workflow_name}[/]",
                         subtitle=self._format_summary(workflow),
                         border_style=self._get_border_color(workflow.status),
-                        box=box.ROUNDED
+                        box=box.ROUNDED,
                     )
 
                     # Update display
@@ -439,7 +443,9 @@ class StreamingVisualizer(WorkflowVisualizer):
                     # Stop if workflow completed/failed
                     if workflow.status in ["completed", "failed", "timeout", "halted"]:
                         # Wait a bit to show final state
-                        time.sleep(FINAL_STATE_DISPLAY_DURATION_SECONDS)  # Intentional blocking: brief pause to display final workflow state in UI thread
+                        time.sleep(
+                            FINAL_STATE_DISPLAY_DURATION_SECONDS
+                        )  # Intentional blocking: brief pause to display final workflow state in UI thread
                         break
 
             except Exception as e:
@@ -447,7 +453,9 @@ class StreamingVisualizer(WorkflowVisualizer):
                 logger.debug(f"Error in _update_loop polling: {e}")
 
             # Wait before next poll
-            time.sleep(self.poll_interval)  # Intentional blocking: polling interval for UI update thread
+            time.sleep(
+                self.poll_interval
+            )  # Intentional blocking: polling interval for UI update thread
 
     def _get_border_color(self, status: str) -> str:
         """Get border color based on workflow status.

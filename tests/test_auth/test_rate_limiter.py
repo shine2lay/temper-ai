@@ -1,4 +1,5 @@
 """Tests for OAuth rate limiting."""
+
 import time
 
 import pytest
@@ -19,7 +20,9 @@ class TestSlidingWindowRateLimiter:
 
         # 10 requests should all succeed
         for i in range(10):
-            limiter.check_limit("test", "identifier_1", max_requests=10, window_seconds=60)
+            limiter.check_limit(
+                "test", "identifier_1", max_requests=10, window_seconds=60
+            )
 
         # All requests succeeded without raising exception
         assert limiter is not None
@@ -30,11 +33,15 @@ class TestSlidingWindowRateLimiter:
 
         # First 5 requests succeed
         for i in range(5):
-            limiter.check_limit("test", "identifier_1", max_requests=5, window_seconds=60)
+            limiter.check_limit(
+                "test", "identifier_1", max_requests=5, window_seconds=60
+            )
 
         # 6th request should fail
         with pytest.raises(RateLimitExceeded) as exc_info:
-            limiter.check_limit("test", "identifier_1", max_requests=5, window_seconds=60)
+            limiter.check_limit(
+                "test", "identifier_1", max_requests=5, window_seconds=60
+            )
 
         error = exc_info.value
         # Validate retry_after is present and reasonable
@@ -47,11 +54,15 @@ class TestSlidingWindowRateLimiter:
 
         # Make 3 requests
         for i in range(3):
-            limiter.check_limit("test", "identifier_1", max_requests=3, window_seconds=2)
+            limiter.check_limit(
+                "test", "identifier_1", max_requests=3, window_seconds=2
+            )
 
         # Should be at limit
         with pytest.raises(RateLimitExceeded):
-            limiter.check_limit("test", "identifier_1", max_requests=3, window_seconds=2)
+            limiter.check_limit(
+                "test", "identifier_1", max_requests=3, window_seconds=2
+            )
 
         # Wait for window to expire
         time.sleep(3)
@@ -65,15 +76,21 @@ class TestSlidingWindowRateLimiter:
 
         # Fill limit for identifier_1
         for i in range(5):
-            limiter.check_limit("test", "identifier_1", max_requests=5, window_seconds=60)
+            limiter.check_limit(
+                "test", "identifier_1", max_requests=5, window_seconds=60
+            )
 
         # identifier_1 should be at limit
         with pytest.raises(RateLimitExceeded):
-            limiter.check_limit("test", "identifier_1", max_requests=5, window_seconds=60)
+            limiter.check_limit(
+                "test", "identifier_1", max_requests=5, window_seconds=60
+            )
 
         # identifier_2 should still be able to make requests
         for i in range(5):
-            limiter.check_limit("test", "identifier_2", max_requests=5, window_seconds=60)
+            limiter.check_limit(
+                "test", "identifier_2", max_requests=5, window_seconds=60
+            )
 
     def test_different_limit_types_independent(self):
         """Different limit types should be independent."""
@@ -81,15 +98,21 @@ class TestSlidingWindowRateLimiter:
 
         # Fill limit for type_a
         for i in range(5):
-            limiter.check_limit("type_a", "identifier_1", max_requests=5, window_seconds=60)
+            limiter.check_limit(
+                "type_a", "identifier_1", max_requests=5, window_seconds=60
+            )
 
         # type_a should be at limit
         with pytest.raises(RateLimitExceeded):
-            limiter.check_limit("type_a", "identifier_1", max_requests=5, window_seconds=60)
+            limiter.check_limit(
+                "type_a", "identifier_1", max_requests=5, window_seconds=60
+            )
 
         # type_b should still be available
         for i in range(5):
-            limiter.check_limit("type_b", "identifier_1", max_requests=5, window_seconds=60)
+            limiter.check_limit(
+                "type_b", "identifier_1", max_requests=5, window_seconds=60
+            )
 
     def test_get_remaining(self):
         """Should accurately report remaining requests."""
@@ -170,7 +193,10 @@ class TestOAuthRateLimiter:
         limiter = OAuthRateLimiter()
 
         # Mock lower global limit for testing
-        limiter.limits["oauth_init_global"] = (20, 60)  # 20 per minute instead of 1000/hour
+        limiter.limits["oauth_init_global"] = (
+            20,
+            60,
+        )  # 20 per minute instead of 1000/hour
 
         # Make 20 requests from different IPs and users
         for i in range(20):
@@ -243,8 +269,9 @@ class TestOAuthRateLimiter:
         assert error.retry_after <= 60  # Should be within window
 
         # SECURITY: Verify error message doesn't leak sensitive information
-        assert sensitive_ip not in error_msg, \
-            f"Error message leaks IP address: {error_msg}"
+        assert (
+            sensitive_ip not in error_msg
+        ), f"Error message leaks IP address: {error_msg}"
 
         # Verify error message doesn't leak exact counts (prevents enumeration)
         assert not any(
@@ -283,12 +310,13 @@ class TestOAuthRateLimiter:
             t.join()
 
         # SECURITY: Validate TOCTOU protection - exactly 10 should succeed
-        assert results["success"] == 10, \
-            f"TOCTOU vulnerability: {results['success']} requests succeeded (should be exactly 10)"
-        assert results["failed"] == 5, \
-            f"Expected 5 failures, got {results['failed']}"
+        assert (
+            results["success"] == 10
+        ), f"TOCTOU vulnerability: {results['success']} requests succeeded (should be exactly 10)"
+        assert results["failed"] == 5, f"Expected 5 failures, got {results['failed']}"
 
         # Validate all failures have proper error details
         for request_id, error in errors:
-            assert error.retry_after > 0, \
-                f"Request {request_id} should have valid retry_after value"
+            assert (
+                error.retry_after > 0
+            ), f"Request {request_id} should have valid retry_after value"

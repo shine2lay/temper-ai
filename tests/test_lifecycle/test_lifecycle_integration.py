@@ -1,18 +1,8 @@
 """Integration tests for lifecycle module."""
 
-from pathlib import Path
-
 import pytest
 
-from temper_ai.lifecycle._schemas import (
-    AdaptationAction,
-    AdaptationRule,
-    LifecycleProfile,
-    ProjectCharacteristics,
-    ProjectSize,
-    RiskLevel,
-)
-from temper_ai.lifecycle.adapter import LifecycleAdapter, _apply_rules
+from temper_ai.lifecycle.adapter import LifecycleAdapter
 from temper_ai.lifecycle.classifier import ProjectClassifier
 from temper_ai.lifecycle.profiles import ProfileRegistry
 from temper_ai.lifecycle.store import LifecycleStore
@@ -81,7 +71,9 @@ class TestEndToEnd:
         assert "implement" in names
         assert "test" in names
 
-    def test_large_critical_project_unchanged(self, tmp_path, store, full_workflow_config):
+    def test_large_critical_project_unchanged(
+        self, tmp_path, store, full_workflow_config
+    ):
         """Large critical project should NOT have stages skipped by lean profile."""
         profile_file = tmp_path / "lean.yaml"
         profile_file.write_text(

@@ -2,8 +2,7 @@ import os
 import sys
 from logging.config import fileConfig
 
-from sqlalchemy import engine_from_config
-from sqlalchemy import pool
+from sqlalchemy import engine_from_config, pool
 
 from alembic import context
 
@@ -21,23 +20,24 @@ if config.config_file_name is not None:
 
 # Import all SQLModel models so metadata is populated
 from sqlmodel import SQLModel
-import temper_ai.observability.models  # noqa: F401
+
 import temper_ai.experimentation.models  # noqa: F401
+import temper_ai.goals.models  # noqa: F401
 import temper_ai.interfaces.server.models  # noqa: F401
 import temper_ai.learning.models  # noqa: F401
 import temper_ai.lifecycle.models  # noqa: F401
-import temper_ai.goals.models  # noqa: F401
+import temper_ai.memory.adapters.pg_adapter  # noqa: F401
+import temper_ai.observability.models  # noqa: F401
 import temper_ai.portfolio.models  # noqa: F401
 import temper_ai.safety.autonomy.models  # noqa: F401
-import temper_ai.memory.adapters.pg_adapter  # noqa: F401
-
-# M9 models
-from temper_ai.storage.database.models_registry import AgentRegistryDB  # noqa: F401
-from temper_ai.events.models import EventLog, EventSubscription  # noqa: F401
+import temper_ai.storage.database.models_evaluation  # noqa: F401
 
 # M10 models
 import temper_ai.storage.database.models_tenancy  # noqa: F401
-import temper_ai.storage.database.models_evaluation  # noqa: F401
+from temper_ai.events.models import EventLog, EventSubscription  # noqa: F401
+
+# M9 models
+from temper_ai.storage.database.models_registry import AgentRegistryDB  # noqa: F401
 
 target_metadata = SQLModel.metadata
 
@@ -87,9 +87,7 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        context.configure(
-            connection=connection, target_metadata=target_metadata
-        )
+        context.configure(connection=connection, target_metadata=target_metadata)
 
         with context.begin_transaction():
             context.run_migrations()

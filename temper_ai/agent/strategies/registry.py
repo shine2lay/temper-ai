@@ -14,11 +14,12 @@ reset_for_testing() in test fixtures.
 import logging
 import threading
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Set, Type
+from typing import Any, Optional
 
 from temper_ai.agent.strategies.base import CollaborationStrategy
 from temper_ai.agent.strategies.conflict_resolution import ConflictResolutionStrategy
 from temper_ai.agent.strategies.constants import (
+    STRATEGY_NAME_CONCATENATE,
     STRATEGY_NAME_CONSENSUS,
     STRATEGY_NAME_MERIT_WEIGHTED,
 )
@@ -37,11 +38,12 @@ class StrategyMetadata:
         capabilities: Strategy capabilities dict
         config_schema: Expected configuration schema
     """
+
     name: str
     class_name: str
     description: str
-    capabilities: Dict[str, bool]
-    config_schema: Dict[str, Any]
+    capabilities: dict[str, bool]
+    config_schema: dict[str, Any]
 
 
 @dataclass
@@ -55,11 +57,12 @@ class ResolverMetadata:
         capabilities: Resolver capabilities dict
         config_schema: Expected configuration schema
     """
+
     name: str
     class_name: str
     description: str
-    capabilities: Dict[str, bool]
-    config_schema: Dict[str, Any]
+    capabilities: dict[str, bool]
+    config_schema: dict[str, Any]
 
 
 class StrategyRegistry:
@@ -84,13 +87,13 @@ class StrategyRegistry:
 
     # Singleton instance and state
     _instance: Optional["StrategyRegistry"] = None
-    _strategies: Dict[str, Type[CollaborationStrategy]] = {}
-    _resolvers: Dict[str, Type[ConflictResolutionStrategy]] = {}
+    _strategies: dict[str, type[CollaborationStrategy]] = {}
+    _resolvers: dict[str, type[ConflictResolutionStrategy]] = {}
     _initialized: bool = False
 
     # Track default registrations for reset() functionality
-    _default_strategies: Set[str] = set()
-    _default_resolvers: Set[str] = set()
+    _default_strategies: set[str] = set()
+    _default_resolvers: set[str] = set()
 
     def __new__(cls) -> "StrategyRegistry":
         """Thread-safe singleton pattern."""
@@ -108,7 +111,9 @@ class StrategyRegistry:
                     self._initialize_defaults()
                     StrategyRegistry._initialized = True
 
-    def _register_strategy(self, names: List[str], module_path: str, class_name: str) -> None:
+    def _register_strategy(
+        self, names: list[str], module_path: str, class_name: str
+    ) -> None:
         """Register a strategy with one or more names.
 
         Args:
@@ -123,11 +128,13 @@ class StrategyRegistry:
                 self._strategies[name] = strategy_class
                 self._default_strategies.add(name)
         except ImportError as exc:
-            logger.warning("Could not import %s from %s: %s", class_name, module_path, exc)
+            logger.warning(
+                "Could not import %s from %s: %s", class_name, module_path, exc
+            )
         except AttributeError as exc:
             logger.warning("Could not find %s in %s: %s", class_name, module_path, exc)
 
-    def _register_resolvers(self, resolvers: Dict[str, tuple]) -> None:
+    def _register_resolvers(self, resolvers: dict[str, tuple]) -> None:
         """Register multiple resolvers from module definitions.
 
         Args:
@@ -140,7 +147,9 @@ class StrategyRegistry:
                 self._resolvers[name] = resolver_class
                 self._default_resolvers.add(name)
             except (ImportError, AttributeError) as exc:
-                logger.warning("Could not import %s from %s: %s", class_name, module_path, exc)
+                logger.warning(
+                    "Could not import %s from %s: %s", class_name, module_path, exc
+                )
 
     def _initialize_defaults(self) -> None:
         """Register default strategies and resolvers.
@@ -153,29 +162,63 @@ class StrategyRegistry:
 
         # Register strategies (data-driven)
         strategies = [
-            ([STRATEGY_NAME_CONSENSUS], "temper_ai.agent.strategies.consensus", "ConsensusStrategy"),
-            (["debate", "debate_and_synthesize", "llm_debate_and_synthesize"],
-             "temper_ai.agent.strategies.debate", "DebateAndSynthesize"),
-            (["dialogue"], "temper_ai.agent.strategies.dialogue", "DialogueOrchestrator"),
-            (["multi_round"], "temper_ai.agent.strategies.multi_round", "MultiRoundStrategy"),
-            (["leader"], "temper_ai.agent.strategies.leader", "LeaderCollaborationStrategy"),
+            (
+                [STRATEGY_NAME_CONSENSUS],
+                "temper_ai.agent.strategies.consensus",
+                "ConsensusStrategy",
+            ),
+            (
+                [STRATEGY_NAME_CONCATENATE],
+                "temper_ai.agent.strategies.concatenate",
+                "ConcatenateStrategy",
+            ),
+            (
+                ["debate", "debate_and_synthesize", "llm_debate_and_synthesize"],
+                "temper_ai.agent.strategies.debate",
+                "DebateAndSynthesize",
+            ),
+            (
+                ["dialogue"],
+                "temper_ai.agent.strategies.dialogue",
+                "DialogueOrchestrator",
+            ),
+            (
+                ["multi_round"],
+                "temper_ai.agent.strategies.multi_round",
+                "MultiRoundStrategy",
+            ),
+            (
+                ["leader"],
+                "temper_ai.agent.strategies.leader",
+                "LeaderCollaborationStrategy",
+            ),
         ]
         for names, module_path, class_name in strategies:
             self._register_strategy(names, module_path, class_name)
 
         # Register resolvers (data-driven)
         resolvers = {
-            STRATEGY_NAME_MERIT_WEIGHTED: ("temper_ai.agent.strategies.merit_weighted", "MeritWeightedResolver"),
-            "highest_confidence": ("temper_ai.agent.strategies.conflict_resolution", "HighestConfidenceResolver"),
-            "random_tiebreaker": ("temper_ai.agent.strategies.conflict_resolution", "RandomTiebreakerResolver"),
-            "human_escalation": ("temper_ai.agent.strategies.merit_weighted", "HumanEscalationResolver"),
+            STRATEGY_NAME_MERIT_WEIGHTED: (
+                "temper_ai.agent.strategies.merit_weighted",
+                "MeritWeightedResolver",
+            ),
+            "highest_confidence": (
+                "temper_ai.agent.strategies.conflict_resolution",
+                "HighestConfidenceResolver",
+            ),
+            "random_tiebreaker": (
+                "temper_ai.agent.strategies.conflict_resolution",
+                "RandomTiebreakerResolver",
+            ),
+            "human_escalation": (
+                "temper_ai.agent.strategies.merit_weighted",
+                "HumanEscalationResolver",
+            ),
         }
         self._register_resolvers(resolvers)
 
     def register_strategy(
-        self,
-        name: str,
-        strategy_class: Type[CollaborationStrategy]
+        self, name: str, strategy_class: type[CollaborationStrategy]
     ) -> None:
         """Register a collaboration strategy (thread-safe).
 
@@ -203,11 +246,7 @@ class StrategyRegistry:
 
             self._strategies[name] = strategy_class
 
-    def get_strategy(
-        self,
-        name: str,
-        **config: Any
-    ) -> CollaborationStrategy:
+    def get_strategy(self, name: str, **config: Any) -> CollaborationStrategy:
         """Get strategy instance by name (thread-safe read).
 
         Args:
@@ -229,8 +268,7 @@ class StrategyRegistry:
             if name not in self._strategies:
                 available = ", ".join(self.list_strategy_names())
                 raise ValueError(
-                    f"Unknown strategy '{name}'. "
-                    f"Available strategies: {available}"
+                    f"Unknown strategy '{name}'. " f"Available strategies: {available}"
                 )
             strategy_class = self._strategies[name]
 
@@ -240,11 +278,10 @@ class StrategyRegistry:
         except TypeError as e:
             # Strategy doesn't accept these config params
             raise ValueError(
-                f"Strategy '{name}' doesn't accept config: {config}. "
-                f"Error: {e}"
+                f"Strategy '{name}' doesn't accept config: {config}. " f"Error: {e}"
             )
 
-    def list_strategy_names(self) -> List[str]:
+    def list_strategy_names(self) -> list[str]:
         """List all registered strategy names (thread-safe).
 
         Returns:
@@ -253,7 +290,7 @@ class StrategyRegistry:
         with self._lock:
             return list(self._strategies.keys())
 
-    def list_strategies(self) -> List[StrategyMetadata]:
+    def list_strategies(self) -> list[StrategyMetadata]:
         """List all registered strategies with metadata.
 
         Returns:
@@ -271,33 +308,36 @@ class StrategyRegistry:
                 capabilities = instance.get_capabilities()
                 meta = instance.get_metadata()
 
-                metadata_list.append(StrategyMetadata(
-                    name=name,
-                    class_name=strategy_class.__name__,
-                    description=meta.get("description", ""),
-                    capabilities=capabilities,
-                    config_schema=meta.get("config_schema", {})
-                ))
+                metadata_list.append(
+                    StrategyMetadata(
+                        name=name,
+                        class_name=strategy_class.__name__,
+                        description=meta.get("description", ""),
+                        capabilities=capabilities,
+                        config_schema=meta.get("config_schema", {}),
+                    )
+                )
             except Exception as exc:
                 logger.warning(
                     "Failed to instantiate strategy %r for metadata: %s",
-                    name, exc,
+                    name,
+                    exc,
                 )
                 # Skip strategies that can't be instantiated without config
-                metadata_list.append(StrategyMetadata(
-                    name=name,
-                    class_name=strategy_class.__name__,
-                    description="",
-                    capabilities={},
-                    config_schema={}
-                ))
+                metadata_list.append(
+                    StrategyMetadata(
+                        name=name,
+                        class_name=strategy_class.__name__,
+                        description="",
+                        capabilities={},
+                        config_schema={},
+                    )
+                )
 
         return metadata_list
 
     def register_resolver(
-        self,
-        name: str,
-        resolver_class: Type[ConflictResolutionStrategy]
+        self, name: str, resolver_class: type[ConflictResolutionStrategy]
     ) -> None:
         """Register a conflict resolver (thread-safe).
 
@@ -325,11 +365,7 @@ class StrategyRegistry:
 
             self._resolvers[name] = resolver_class
 
-    def get_resolver(
-        self,
-        name: str,
-        **config: Any
-    ) -> ConflictResolutionStrategy:
+    def get_resolver(self, name: str, **config: Any) -> ConflictResolutionStrategy:
         """Get resolver instance by name (thread-safe read).
 
         Args:
@@ -346,8 +382,7 @@ class StrategyRegistry:
             if name not in self._resolvers:
                 available = ", ".join(self.list_resolver_names())
                 raise ValueError(
-                    f"Unknown resolver '{name}'. "
-                    f"Available resolvers: {available}"
+                    f"Unknown resolver '{name}'. " f"Available resolvers: {available}"
                 )
             resolver_class = self._resolvers[name]
 
@@ -355,11 +390,10 @@ class StrategyRegistry:
             return resolver_class(**config) if config else resolver_class()
         except TypeError as e:
             raise ValueError(
-                f"Resolver '{name}' doesn't accept config: {config}. "
-                f"Error: {e}"
+                f"Resolver '{name}' doesn't accept config: {config}. " f"Error: {e}"
             )
 
-    def list_resolver_names(self) -> List[str]:
+    def list_resolver_names(self) -> list[str]:
         """List all registered resolver names (thread-safe).
 
         Returns:
@@ -368,7 +402,7 @@ class StrategyRegistry:
         with self._lock:
             return list(self._resolvers.keys())
 
-    def list_resolvers(self) -> List[ResolverMetadata]:
+    def list_resolvers(self) -> list[ResolverMetadata]:
         """List all registered resolvers with metadata.
 
         Returns:
@@ -385,25 +419,30 @@ class StrategyRegistry:
                 capabilities = instance.get_capabilities()
                 meta = instance.get_metadata()
 
-                metadata_list.append(ResolverMetadata(
-                    name=name,
-                    class_name=resolver_class.__name__,
-                    description=meta.get("description", ""),
-                    capabilities=capabilities,
-                    config_schema=meta.get("config_schema", {})
-                ))
+                metadata_list.append(
+                    ResolverMetadata(
+                        name=name,
+                        class_name=resolver_class.__name__,
+                        description=meta.get("description", ""),
+                        capabilities=capabilities,
+                        config_schema=meta.get("config_schema", {}),
+                    )
+                )
             except Exception as exc:
                 logger.warning(
                     "Failed to instantiate resolver %r for metadata: %s",
-                    name, exc,
+                    name,
+                    exc,
                 )
-                metadata_list.append(ResolverMetadata(
-                    name=name,
-                    class_name=resolver_class.__name__,
-                    description="",
-                    capabilities={},
-                    config_schema={}
-                ))
+                metadata_list.append(
+                    ResolverMetadata(
+                        name=name,
+                        class_name=resolver_class.__name__,
+                        description="",
+                        capabilities={},
+                        config_schema={},
+                    )
+                )
 
         return metadata_list
 
@@ -537,9 +576,9 @@ class StrategyRegistry:
 
 # Convenience functions for getting from stage config
 
+
 def get_strategy_from_config(
-    stage_config: Dict[str, Any],
-    registry: Optional[StrategyRegistry] = None
+    stage_config: dict[str, Any], registry: StrategyRegistry | None = None
 ) -> CollaborationStrategy:
     """Get collaboration strategy from stage configuration.
 
@@ -591,8 +630,7 @@ def get_strategy_from_config(
 
 
 def get_resolver_from_config(
-    stage_config: Dict[str, Any],
-    registry: Optional[StrategyRegistry] = None
+    stage_config: dict[str, Any], registry: StrategyRegistry | None = None
 ) -> ConflictResolutionStrategy:
     """Get conflict resolver from stage configuration.
 

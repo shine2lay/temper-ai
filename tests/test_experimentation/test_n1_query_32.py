@@ -6,7 +6,7 @@ get_experiment_summary avoids the double-query by passing pre-fetched
 assignments to aggregate_metrics_by_variant.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
 import pytest
@@ -21,6 +21,7 @@ def db():
     """Initialize in-memory database for testing."""
     import temper_ai.observability.database as db_module
     from temper_ai.observability.database import _db_lock
+
     with _db_lock:
         db_module._db_manager = None
 
@@ -40,7 +41,7 @@ def db_session(db):
 
 def _create_workflow(wf_id, experiment_id=None, variant_id=None, status="completed"):
     """Helper to create a WorkflowExecution with experiment metadata."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     metadata = {}
     if experiment_id:
         metadata["experiment_id"] = experiment_id
@@ -71,11 +72,15 @@ class TestDatabaseSideFiltering:
         with get_session() as session:
             # Create 10 workflows for target experiment
             for i in range(10):
-                session.add(_create_workflow(f"wf-target-{i}", "exp-target", f"var-{i % 2}"))
+                session.add(
+                    _create_workflow(f"wf-target-{i}", "exp-target", f"var-{i % 2}")
+                )
 
             # Create 100 workflows for OTHER experiments
             for i in range(100):
-                session.add(_create_workflow(f"wf-other-{i}", "exp-other", f"var-other-{i % 3}"))
+                session.add(
+                    _create_workflow(f"wf-other-{i}", "exp-other", f"var-other-{i % 3}")
+                )
 
             # Create 50 workflows with NO experiment metadata
             for i in range(50):
@@ -136,7 +141,9 @@ class TestDoubleQueryElimination:
 
         collector = ExperimentMetricsCollector()
 
-        with patch.object(collector, 'collect_assignments', wraps=collector.collect_assignments) as mock_collect:
+        with patch.object(
+            collector, "collect_assignments", wraps=collector.collect_assignments
+        ) as mock_collect:
             summary = collector.get_experiment_summary("exp-1")
 
             # Should be called exactly once (not twice)
@@ -157,8 +164,10 @@ class TestDoubleQueryElimination:
         assignments = collector.collect_assignments("exp-1")
 
         # Pass pre-fetched assignments — should not query DB again
-        with patch.object(collector, 'collect_assignments') as mock_collect:
-            metrics = collector.aggregate_metrics_by_variant("exp-1", assignments=assignments)
+        with patch.object(collector, "collect_assignments") as mock_collect:
+            metrics = collector.aggregate_metrics_by_variant(
+                "exp-1", assignments=assignments
+            )
 
             # Should NOT be called since assignments were provided
             mock_collect.assert_not_called()
@@ -175,8 +184,12 @@ class TestResultConsistency:
     def test_status_filter_works(self, db):
         """Status filter should still work with json_extract filtering."""
         with get_session() as session:
-            session.add(_create_workflow("wf-ok-1", "exp-1", "var-1", status="completed"))
-            session.add(_create_workflow("wf-ok-2", "exp-1", "var-1", status="completed"))
+            session.add(
+                _create_workflow("wf-ok-1", "exp-1", "var-1", status="completed")
+            )
+            session.add(
+                _create_workflow("wf-ok-2", "exp-1", "var-1", status="completed")
+            )
             session.add(_create_workflow("wf-fail", "exp-1", "var-1", status="failed"))
             session.commit()
 

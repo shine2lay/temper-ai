@@ -17,6 +17,12 @@ def _clean_singleton(monkeypatch):
     for key in list(os.environ):
         if key.startswith("TEMPER_"):
             monkeypatch.delenv(key, raising=False)
+    # Prevent pydantic-settings from reading .env file during tests
+    monkeypatch.setattr(
+        TemperSettings,
+        "model_config",
+        {**TemperSettings.model_config, "env_file": None},
+    )
     yield
     reset_settings()
 

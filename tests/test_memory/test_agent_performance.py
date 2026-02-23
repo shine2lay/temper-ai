@@ -1,5 +1,4 @@
 """Tests for AgentPerformanceTracker (M9)."""
-import pytest
 
 from temper_ai.memory.agent_performance import (
     AgentPerformanceTracker,
@@ -59,8 +58,12 @@ class TestAgentPerformanceTracker:
 
     def test_get_summary_computes_totals(self):
         tracker = AgentPerformanceTracker()
-        tracker.record_execution("agent_a", ExecutionMetrics(duration_seconds=2.0, tokens_used=100))
-        tracker.record_execution("agent_a", ExecutionMetrics(duration_seconds=4.0, tokens_used=200))
+        tracker.record_execution(
+            "agent_a", ExecutionMetrics(duration_seconds=2.0, tokens_used=100)
+        )
+        tracker.record_execution(
+            "agent_a", ExecutionMetrics(duration_seconds=4.0, tokens_used=200)
+        )
         summary = tracker.get_summary("agent_a")
         assert summary.total_executions == 2
         assert summary.avg_duration_seconds == 3.0
@@ -90,14 +93,18 @@ class TestAgentPerformanceTracker:
 
     def test_format_context_with_records(self):
         tracker = AgentPerformanceTracker()
-        tracker.record_execution("agent_a", ExecutionMetrics(duration_seconds=2.0, tokens_used=100))
+        tracker.record_execution(
+            "agent_a", ExecutionMetrics(duration_seconds=2.0, tokens_used=100)
+        )
         result = tracker.format_context("agent_a")
         assert "1 runs" in result
         assert "100% success rate" in result
 
     def test_format_context_respects_max_chars(self):
         tracker = AgentPerformanceTracker()
-        tracker.record_execution("agent_a", ExecutionMetrics(duration_seconds=2.0, tokens_used=100))
+        tracker.record_execution(
+            "agent_a", ExecutionMetrics(duration_seconds=2.0, tokens_used=100)
+        )
         result = tracker.format_context("agent_a", max_chars=5)
         assert len(result) <= 5
 

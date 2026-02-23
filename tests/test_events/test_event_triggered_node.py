@@ -1,16 +1,18 @@
 """Tests for create_event_triggered_node in node_builder (M9.2)."""
-from typing import Any, Dict, Optional
-from unittest.mock import MagicMock, patch
 
-import pytest
+from typing import Any
+from unittest.mock import MagicMock
 
-from temper_ai.workflow.node_builder import STAGE_TIMEOUT_STATUS, create_event_triggered_node
+from temper_ai.workflow.node_builder import (
+    STAGE_TIMEOUT_STATUS,
+    create_event_triggered_node,
+)
 
 
 def _make_trigger_config(
     event_type: str = "data.ready",
     timeout_seconds: int = 30,
-    source_workflow: Optional[str] = None,
+    source_workflow: str | None = None,
 ) -> Any:
     from temper_ai.events._schemas import StageTriggerConfig
 
@@ -21,7 +23,7 @@ def _make_trigger_config(
     )
 
 
-def _make_inner_node(return_value: Optional[Dict[str, Any]] = None) -> MagicMock:
+def _make_inner_node(return_value: dict[str, Any] | None = None) -> MagicMock:
     inner = MagicMock()
     inner.return_value = return_value or {"stage_outputs": {}, "current_stage": "s1"}
     return inner
@@ -45,7 +47,9 @@ class TestCreateEventTriggeredNode:
         inner = _make_inner_node()
         event_bus = MagicMock()
         event_bus.wait_for_event.return_value = {"key": "value"}
-        cfg = _make_trigger_config(event_type="my.event", timeout_seconds=60, source_workflow="wf-a")
+        cfg = _make_trigger_config(
+            event_type="my.event", timeout_seconds=60, source_workflow="wf-a"
+        )
 
         node = create_event_triggered_node("s1", inner, event_bus, cfg)
         node({})
@@ -70,7 +74,9 @@ class TestCreateEventTriggeredNode:
         assert called_state["trigger_event"] == payload
 
     def test_calls_inner_function_after_event(self):
-        inner = _make_inner_node({"stage_outputs": {"s1": {"out": 1}}, "current_stage": "s1"})
+        inner = _make_inner_node(
+            {"stage_outputs": {"s1": {"out": 1}}, "current_stage": "s1"}
+        )
         event_bus = MagicMock()
         event_bus.wait_for_event.return_value = {"k": "v"}
         cfg = _make_trigger_config()

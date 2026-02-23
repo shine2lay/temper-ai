@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { useExecutionStore } from '@/store/executionStore';
+import { getApiKey, authFetch } from '@/lib/authFetch';
 import type { WSMessage } from '@/types';
 import {
   WS_INITIAL_DELAY_MS,
@@ -8,9 +9,31 @@ import {
 } from '@/lib/constants';
 
 /**
+ * Fetch a short-lived WebSocket ticket from the server.
+ * Returns the ticket string, or null if no API key is configured
+ * or the request fails.
+ */
+async function fetchWsTicket(): Promise<string | null> {
+  const apiKey = getApiKey();
+  if (!apiKey) return null;
+  try {
+    const res = await authFetch('/api/auth/ws-ticket', { method: 'POST' });
+    if (!res.ok) return null;
+    const data = await res.json() as { ticket?: string };
+    return data.ticket ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * WebSocket hook that connects to the workflow event stream.
  * Handles snapshot/event/heartbeat messages and reconnects with
  * exponential backoff on disconnection.
+ *
+ * Uses short-lived tickets (/api/auth/ws-ticket) instead of sending
+ * API keys directly in the WebSocket query string to prevent key
+ * leakage into server logs, browser history, and proxy logs.
  */
 export function useWorkflowWebSocket(workflowId: string | undefined): void {
   const socketRef = useRef<WebSocket | null>(null);
@@ -22,11 +45,13 @@ export function useWorkflowWebSocket(workflowId: string | undefined): void {
   const applyEvent = useExecutionStore((s) => s.applyEvent);
   const setWSStatus = useExecutionStore((s) => s.setWSStatus);
 
-  const connect = useCallback(() => {
+  const connect = useCallback(async () => {
     if (unmountedRef.current || !workflowId) return;
 
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const url = `${protocol}//${location.host}/ws/${workflowId}`;
+    let url = `${protocol}//${location.host}/ws/${workflowId}`;
+    const ticket = await fetchWsTicket();
+    if (ticket) url += `?ticket=${encodeURIComponent(ticket)}`;
     const ws = new WebSocket(url);
     socketRef.current = ws;
 
@@ -36,7 +61,12 @@ export function useWorkflowWebSocket(workflowId: string | undefined): void {
     };
 
     ws.onmessage = (event) => {
-      const msg = JSON.parse(event.data) as WSMessage;
+      let msg: WSMessage;
+      try {
+        msg = JSON.parse(event.data) as WSMessage;
+      } catch {
+        return; // silently ignore malformed messages
+      }
 
       switch (msg.type) {
         case 'snapshot':

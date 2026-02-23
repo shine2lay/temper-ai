@@ -1,4 +1,5 @@
 """Shared database fixtures for testing."""
+
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -27,6 +28,7 @@ def clean_db_session(db_session):
 def db_with_experiments(db_session):
     """Session with sample experiments preloaded."""
     from tests.test_experimentation.conftest import create_experiment
+
     exp1 = create_experiment(name="test_exp_1")
     exp2 = create_experiment(name="test_exp_2")
     db_session.add_all([exp1, exp2])

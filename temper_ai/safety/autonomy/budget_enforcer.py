@@ -4,11 +4,10 @@ import logging
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 import yaml
 
-from temper_ai.storage.database.datetime_utils import utcnow
 from temper_ai.safety.autonomy.constants import (
     BUDGET_WARNING_THRESHOLD,
     DEFAULT_BUDGET_USD,
@@ -18,6 +17,7 @@ from temper_ai.safety.autonomy.constants import (
 )
 from temper_ai.safety.autonomy.models import BudgetRecord
 from temper_ai.safety.autonomy.store import AutonomyStore
+from temper_ai.storage.database.datetime_utils import utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +60,7 @@ class BudgetEnforcer:
     def __init__(
         self,
         store: AutonomyStore,
-        pricing_path: Optional[str] = None,
+        pricing_path: str | None = None,
         default_budget: float = DEFAULT_BUDGET_USD,
     ) -> None:
         self._store = store
@@ -98,8 +98,12 @@ class BudgetEnforcer:
                 message=f"Estimated cost ${estimated_cost:.4f} exceeds remaining ${remaining:.4f}",
             )
 
-        utilization = budget.spent_usd / budget.budget_usd if budget.budget_usd > 0 else 0.0
-        status = STATUS_WARNING if utilization >= BUDGET_WARNING_THRESHOLD else STATUS_ACTIVE
+        utilization = (
+            budget.spent_usd / budget.budget_usd if budget.budget_usd > 0 else 0.0
+        )
+        status = (
+            STATUS_WARNING if utilization >= BUDGET_WARNING_THRESHOLD else STATUS_ACTIVE
+        )
 
         return BudgetCheckResult(
             allowed=True,
@@ -120,7 +124,9 @@ class BudgetEnforcer:
         budget.updated_at = utcnow()
 
         # Update status
-        utilization = budget.spent_usd / budget.budget_usd if budget.budget_usd > 0 else 0.0
+        utilization = (
+            budget.spent_usd / budget.budget_usd if budget.budget_usd > 0 else 0.0
+        )
         if budget.spent_usd >= budget.budget_usd:
             budget.status = STATUS_EXHAUSTED
         elif utilization >= BUDGET_WARNING_THRESHOLD:
@@ -131,12 +137,13 @@ class BudgetEnforcer:
         self._store.save_budget(budget)
         logger.debug(
             "Recorded spend $%.4f for scope '%s' (total: $%.4f / $%.4f)",
-            cost_usd, scope, budget.spent_usd, budget.budget_usd,
+            cost_usd,
+            scope,
+            budget.spent_usd,
+            budget.budget_usd,
         )
 
-    def estimate_action_cost(
-        self, model: str, estimated_tokens: int
-    ) -> float:
+    def estimate_action_cost(self, model: str, estimated_tokens: int) -> float:
         """Estimate cost for an LLM action using model pricing.
 
         Args:
@@ -165,7 +172,9 @@ class BudgetEnforcer:
         """
         budget = self._get_or_create_budget(scope)
         remaining = max(0.0, budget.budget_usd - budget.spent_usd)
-        utilization = budget.spent_usd / budget.budget_usd if budget.budget_usd > 0 else 0.0
+        utilization = (
+            budget.spent_usd / budget.budget_usd if budget.budget_usd > 0 else 0.0
+        )
 
         return BudgetStatus(
             scope=scope,
@@ -190,10 +199,14 @@ class BudgetEnforcer:
             self._store.save_budget(budget)
         return budget
 
-    def _load_pricing(self, pricing_path: Optional[str]) -> Dict[str, Any]:
+    def _load_pricing(self, pricing_path: str | None) -> dict[str, Any]:
         """Load model pricing from YAML."""
         if pricing_path is None:
-            default_path = Path(__file__).parent.parent.parent.parent / "config" / "model_pricing.yaml"
+            default_path = (
+                Path(__file__).parent.parent.parent.parent
+                / "config"
+                / "model_pricing.yaml"
+            )
             if default_path.exists():
                 pricing_path = str(default_path)
             else:

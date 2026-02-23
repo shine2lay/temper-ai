@@ -2,34 +2,6 @@
 
 Documentation for execution tracking, visualization, and analytics (M1).
 
-## Features
-
-### [Gantt Visualization](./GANTT_VISUALIZATION.md)
-**Purpose:** Timeline visualization for workflow execution analysis
-
-**Topics Covered:**
-- Gantt chart generation from execution traces
-- Timeline visualization of stages and agents
-- Parallel execution visualization
-- Performance bottleneck identification
-- Export formats (PNG, HTML, interactive)
-
-**Key Capabilities:**
-- **Hierarchical View**: Workflow → Stages → Agents → LLM/Tool calls
-- **Timing Analysis**: Start/end times, duration, overlaps
-- **Performance Insights**: Identify slow stages, parallelization opportunities
-- **Interactive Exploration**: Hover for details, zoom, filter
-- **Export Options**: Save charts for reporting
-
-**Use Cases:**
-- Debugging slow workflows
-- Identifying parallelization opportunities
-- Performance reporting and dashboards
-- Understanding execution flow
-- Capacity planning
-
----
-
 ## Architecture
 
 ### Observability Stack
@@ -112,18 +84,6 @@ observability:
     auto_cleanup: true
 ```
 
-### Gantt Configuration
-```yaml
-observability:
-  gantt:
-    enabled: true
-    output_dir: "reports/gantt"
-    format: png  # png|html|both
-    max_depth: 3  # workflow|stage|agent|llm_tool
-    show_labels: true
-    color_by: agent_type  # status|agent_type|duration
-```
-
 ---
 
 ## Usage
@@ -157,20 +117,6 @@ Output:
 └─ 🏃 Stage: synthesize (15.1s)
    └─ 🤖 Agent: synthesizer (15.1s)
       └─ 🧠 LLM Call: llama3.2:3b (15.0s, 1k tokens, $0.03)
-```
-
-### Gantt Chart Generation
-```python
-from temper_ai.observability.visualization import generate_gantt
-
-with get_session() as session:
-    workflow = session.get(WorkflowExecution, workflow_id)
-    generate_gantt(
-        workflow,
-        output_path="reports/workflow_timeline.png",
-        show_agents=True,
-        show_llm_calls=True
-    )
 ```
 
 ### Querying Execution Data
@@ -352,7 +298,6 @@ See observability tests:
 - `tests/test_observability/test_tracker.py` - Tracker unit tests
 - `tests/test_observability/test_database.py` - Database tests
 - `tests/test_observability/test_console.py` - Console visualization tests
-- `tests/test_observability/test_gantt.py` - Gantt chart generation tests
 
 ---
 
@@ -360,5 +305,3 @@ See observability tests:
 
 - [Collaboration Features](../collaboration/) - Multi-agent collaboration
 - [Execution Features](../execution/) - Workflow execution
-- [Data Models](../../interfaces/models/observability_models.md) - Database schema
-- [Milestone 1 Report](../../milestones/milestone1_completion.md) - M1 completion

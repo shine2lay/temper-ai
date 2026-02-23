@@ -99,7 +99,7 @@ class TestStatisticalAnalyzer:
                 workflow_execution_id=f"wf-{i}",
                 assignment_strategy=AssignmentStrategyType.RANDOM,
                 execution_status=ExecutionStatus.COMPLETED,
-                metrics={"duration_seconds": 50.0 + i}
+                metrics={"duration_seconds": 50.0 + i},
             )
             assignments.append(assignment)
 
@@ -125,7 +125,7 @@ class TestStatisticalAnalyzer:
                 workflow_execution_id=f"wf-control-{i}",
                 assignment_strategy=AssignmentStrategyType.RANDOM,
                 execution_status=ExecutionStatus.COMPLETED,
-                metrics={"duration_seconds": 50.0 + np.random.normal(0, 3)}
+                metrics={"duration_seconds": 50.0 + np.random.normal(0, 3)},
             )
             assignments.append(assignment)
 
@@ -138,7 +138,7 @@ class TestStatisticalAnalyzer:
                 workflow_execution_id=f"wf-a-{i}",
                 assignment_strategy=AssignmentStrategyType.RANDOM,
                 execution_status=ExecutionStatus.COMPLETED,
-                metrics={"duration_seconds": 30.0 + np.random.normal(0, 3)}
+                metrics={"duration_seconds": 30.0 + np.random.normal(0, 3)},
             )
             assignments.append(assignment)
 
@@ -167,7 +167,7 @@ class TestStatisticalAnalyzer:
                 workflow_execution_id=f"wf-{i}",
                 assignment_strategy=AssignmentStrategyType.RANDOM,
                 execution_status=ExecutionStatus.COMPLETED,
-                metrics={"duration_seconds": 50.0 + np.random.normal(0, 5)}
+                metrics={"duration_seconds": 50.0 + np.random.normal(0, 5)},
             )
             assignments.append(assignment)
 
@@ -195,8 +195,8 @@ class TestStatisticalAnalyzer:
                 execution_status=ExecutionStatus.COMPLETED,
                 metrics={
                     "duration_seconds": 50.0,
-                    "error_rate": 0.02  # Within guardrail (< 0.05)
-                }
+                    "error_rate": 0.02,  # Within guardrail (< 0.05)
+                },
             )
             assignments.append(assignment)
 
@@ -211,8 +211,8 @@ class TestStatisticalAnalyzer:
                 execution_status=ExecutionStatus.COMPLETED,
                 metrics={
                     "duration_seconds": 30.0,  # Better performance
-                    "error_rate": 0.10  # Violates guardrail (> 0.05)
-                }
+                    "error_rate": 0.10,  # Violates guardrail (> 0.05)
+                },
             )
             assignments.append(assignment)
 
@@ -240,15 +240,14 @@ class TestVariantMetrics:
                 workflow_execution_id=f"wf-{i}",
                 assignment_strategy=AssignmentStrategyType.RANDOM,
                 execution_status=ExecutionStatus.COMPLETED,
-                metrics={"duration_seconds": float(value)}
+                metrics={"duration_seconds": float(value)},
             )
             for i, value in enumerate([10, 20, 30, 40, 50])
         ]
 
         variant_assignments = {"var-control": assignments}
         metrics = analyzer._calculate_variant_metrics(
-            variant_assignments,
-            "duration_seconds"
+            variant_assignments, "duration_seconds"
         )
 
         control_metrics = metrics["var-control"]
@@ -272,15 +271,14 @@ class TestVariantMetrics:
                 workflow_execution_id=f"wf-{i}",
                 assignment_strategy=AssignmentStrategyType.RANDOM,
                 execution_status=ExecutionStatus.COMPLETED,
-                metrics={"duration_seconds": float(i + 1)}
+                metrics={"duration_seconds": float(i + 1)},
             )
             for i in range(100)
         ]
 
         variant_assignments = {"var-control": assignments}
         metrics = analyzer._calculate_variant_metrics(
-            variant_assignments,
-            "duration_seconds"
+            variant_assignments, "duration_seconds"
         )
 
         control_metrics = metrics["var-control"]
@@ -333,9 +331,7 @@ class TestHypothesisTesting:
         treatment_values = [40.0] * 30
 
         ci_low, ci_high = analyzer._confidence_interval(
-            control_values,
-            treatment_values,
-            0.95
+            control_values, treatment_values, 0.95
         )
 
         # Difference should be 10 (50-40)
@@ -354,7 +350,7 @@ class TestGuardrailChecks:
 
         variant_metrics = {
             "var-control": {"error_rate": 0.02},
-            "var-a": {"error_rate": 0.03}
+            "var-a": {"error_rate": 0.03},
         }
         guardrail_metrics = [{"metric": "error_rate", "max_value": 0.05}]
 
@@ -368,7 +364,7 @@ class TestGuardrailChecks:
 
         variant_metrics = {
             "var-control": {"error_rate": 0.02},
-            "var-a": {"error_rate": 0.10}  # Exceeds threshold
+            "var-a": {"error_rate": 0.10},  # Exceeds threshold
         }
         guardrail_metrics = [{"metric": "error_rate", "max_value": 0.05}]
 
@@ -386,11 +382,11 @@ class TestGuardrailChecks:
 
         variant_metrics = {
             "var-control": {"error_rate": 0.02, "cost_usd": 0.10},
-            "var-a": {"error_rate": 0.10, "cost_usd": 0.15}
+            "var-a": {"error_rate": 0.10, "cost_usd": 0.15},
         }
         guardrail_metrics = [
             {"metric": "error_rate", "max_value": 0.05},
-            {"metric": "cost_usd", "max_value": 0.12}
+            {"metric": "cost_usd", "max_value": 0.12},
         ]
 
         violations = analyzer._check_guardrails(variant_metrics, guardrail_metrics)
@@ -413,7 +409,7 @@ class TestRecommendationGeneration:
             "control_vs_variant_a": {
                 "statistically_significant": True,
                 "improvement": 0.5,
-                "p_value": 0.001
+                "p_value": 0.001,
             }
         }
         guardrail_violations = [
@@ -421,9 +417,7 @@ class TestRecommendationGeneration:
         ]
 
         recommendation, winner, confidence = analyzer._generate_recommendation(
-            statistical_tests,
-            guardrail_violations,
-            0.95
+            statistical_tests, guardrail_violations, 0.95
         )
 
         # Guardrail violation should override statistical winner
@@ -439,15 +433,13 @@ class TestRecommendationGeneration:
             "control_vs_variant_a": {
                 "statistically_significant": True,
                 "improvement": 0.3,
-                "p_value": 0.01
+                "p_value": 0.01,
             }
         }
         guardrail_violations = []
 
         recommendation, winner, confidence = analyzer._generate_recommendation(
-            statistical_tests,
-            guardrail_violations,
-            0.95
+            statistical_tests, guardrail_violations, 0.95
         )
 
         assert recommendation == RecommendationType.STOP_WINNER
@@ -462,15 +454,13 @@ class TestRecommendationGeneration:
             "control_vs_variant_a": {
                 "statistically_significant": False,
                 "improvement": 0.02,
-                "p_value": 0.50
+                "p_value": 0.50,
             }
         }
         guardrail_violations = []
 
         recommendation, winner, confidence = analyzer._generate_recommendation(
-            statistical_tests,
-            guardrail_violations,
-            0.95
+            statistical_tests, guardrail_violations, 0.95
         )
 
         assert recommendation == RecommendationType.STOP_NO_DIFFERENCE
@@ -492,7 +482,7 @@ class TestEdgeCases:
                 workflow_execution_id="wf-pending",
                 assignment_strategy=AssignmentStrategyType.RANDOM,
                 execution_status=ExecutionStatus.PENDING,  # Should be ignored
-                metrics={"duration_seconds": 50.0}
+                metrics={"duration_seconds": 50.0},
             ),
             VariantAssignment(
                 id="asn-running",
@@ -501,7 +491,7 @@ class TestEdgeCases:
                 workflow_execution_id="wf-running",
                 assignment_strategy=AssignmentStrategyType.RANDOM,
                 execution_status=ExecutionStatus.RUNNING,  # Should be ignored
-                metrics={"duration_seconds": 50.0}
+                metrics={"duration_seconds": 50.0},
             ),
         ]
 
@@ -522,7 +512,7 @@ class TestEdgeCases:
                 workflow_execution_id="wf-1",
                 assignment_strategy=AssignmentStrategyType.RANDOM,
                 execution_status=ExecutionStatus.COMPLETED,
-                metrics=None  # Missing metrics
+                metrics=None,  # Missing metrics
             ),
         ]
 

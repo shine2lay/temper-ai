@@ -1,18 +1,16 @@
 """Tests for MCPManager — connection lifecycle, namespace collisions, limits."""
-import asyncio
-import threading
-from typing import List
-from unittest.mock import AsyncMock, MagicMock, patch, call
+
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from temper_ai.mcp._schemas import MCPServerConfig
 from temper_ai.mcp.constants import MCP_MAX_SERVERS
 
-
 # ---------------------------------------------------------------------------
 # Fixtures & helpers
 # ---------------------------------------------------------------------------
+
 
 def _stdio_config(name="gh", namespace=None, command="npx"):
     return MCPServerConfig(
@@ -36,7 +34,7 @@ def _make_tool_info(name="create_pr"):
     return ti
 
 
-def _make_list_result(tools: List[MagicMock]):
+def _make_list_result(tools: list[MagicMock]):
     lr = MagicMock()
     lr.tools = tools
     return lr
@@ -66,13 +64,16 @@ def _patch_manager_connect(session, tools):
 # Tests
 # ---------------------------------------------------------------------------
 
+
 class TestMCPManagerInit:
     def test_max_servers_limit_raises(self):
         from temper_ai.mcp.manager import MCPManager
 
         configs = [_stdio_config(name=f"s{i}") for i in range(MCP_MAX_SERVERS + 1)]
-        with patch("temper_ai.mcp.manager.create_event_loop_thread",
-                   return_value=(MagicMock(), MagicMock())):
+        with patch(
+            "temper_ai.mcp.manager.create_event_loop_thread",
+            return_value=(MagicMock(), MagicMock()),
+        ):
             with pytest.raises(ValueError, match="Too many MCP servers"):
                 MCPManager(configs)
 
@@ -81,8 +82,10 @@ class TestMCPManagerInit:
 
         mock_loop = MagicMock()
         mock_thread = MagicMock()
-        with patch("temper_ai.mcp.manager.create_event_loop_thread",
-                   return_value=(mock_loop, mock_thread)):
+        with patch(
+            "temper_ai.mcp.manager.create_event_loop_thread",
+            return_value=(mock_loop, mock_thread),
+        ):
             mgr = MCPManager([_stdio_config()])
             assert mgr._loop is mock_loop
             assert mgr._thread is mock_thread
@@ -95,12 +98,13 @@ class TestConnectAll:
     def _build_manager(self, configs):
         from temper_ai.mcp.manager import MCPManager
 
-        with patch("temper_ai.mcp.manager.create_event_loop_thread",
-                   return_value=(MagicMock(), MagicMock())):
+        with patch(
+            "temper_ai.mcp.manager.create_event_loop_thread",
+            return_value=(MagicMock(), MagicMock()),
+        ):
             return MCPManager(configs)
 
     def test_connect_all_creates_wrappers(self):
-        from temper_ai.mcp.manager import MCPManager
 
         cfg = _stdio_config(name="gh", namespace="gh")
         session = MagicMock()
@@ -167,8 +171,10 @@ class TestDisconnectAll:
         mock_loop = MagicMock()
         mock_thread = MagicMock()
 
-        with patch("temper_ai.mcp.manager.create_event_loop_thread",
-                   return_value=(mock_loop, mock_thread)):
+        with patch(
+            "temper_ai.mcp.manager.create_event_loop_thread",
+            return_value=(mock_loop, mock_thread),
+        ):
             mgr = MCPManager([_stdio_config()])
 
         with patch("temper_ai.mcp.manager.stop_event_loop") as mock_stop:
@@ -183,8 +189,10 @@ class TestContextManager:
         mock_loop = MagicMock()
         mock_thread = MagicMock()
 
-        with patch("temper_ai.mcp.manager.create_event_loop_thread",
-                   return_value=(mock_loop, mock_thread)):
+        with patch(
+            "temper_ai.mcp.manager.create_event_loop_thread",
+            return_value=(mock_loop, mock_thread),
+        ):
             mgr = MCPManager([_stdio_config()])
 
         with patch.object(mgr, "disconnect_all") as mock_disconnect:
@@ -198,8 +206,10 @@ class TestContextManager:
         mock_loop = MagicMock()
         mock_thread = MagicMock()
 
-        with patch("temper_ai.mcp.manager.create_event_loop_thread",
-                   return_value=(mock_loop, mock_thread)):
+        with patch(
+            "temper_ai.mcp.manager.create_event_loop_thread",
+            return_value=(mock_loop, mock_thread),
+        ):
             mgr = MCPManager([_stdio_config()])
 
         with patch.object(mgr, "disconnect_all") as mock_disconnect:

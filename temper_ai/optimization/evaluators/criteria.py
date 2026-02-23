@@ -6,9 +6,13 @@ import json
 import logging
 import shlex
 import subprocess
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-from temper_ai.optimization._schemas import CheckConfig, EvaluationResult, EvaluatorConfig
+from temper_ai.optimization._schemas import (
+    CheckConfig,
+    EvaluationResult,
+    EvaluatorConfig,
+)
 from temper_ai.optimization.engine_constants import (
     CHECK_METHOD_LLM,
     CHECK_METHOD_PROGRAMMATIC,
@@ -27,21 +31,21 @@ class CriteriaEvaluator:
     def __init__(
         self,
         config: EvaluatorConfig,
-        llm: Optional[Any] = None,
+        llm: Any | None = None,
     ) -> None:
-        self.checks: List[CheckConfig] = config.checks
+        self.checks: list[CheckConfig] = config.checks
         self.llm = llm
 
     def evaluate(
         self,
-        output: Dict[str, Any],
-        context: Optional[Dict[str, Any]] = None,
+        output: dict[str, Any],
+        context: dict[str, Any] | None = None,
     ) -> EvaluationResult:
         """Run all checks and return aggregated result."""
         if not self.checks:
             return EvaluationResult(passed=True, score=MAX_SCORE)
 
-        results: Dict[str, Any] = {}
+        results: dict[str, Any] = {}
         passed_count = 0
 
         for check in self.checks:
@@ -69,9 +73,9 @@ class CriteriaEvaluator:
 
     def compare(
         self,
-        output_a: Dict[str, Any],
-        output_b: Dict[str, Any],
-        context: Optional[Dict[str, Any]] = None,
+        output_a: dict[str, Any],
+        output_b: dict[str, Any],
+        context: dict[str, Any] | None = None,
     ) -> int:
         """Compare by score: more checks passed wins."""
         result_a = self.evaluate(output_a, context)
@@ -82,9 +86,7 @@ class CriteriaEvaluator:
             return 1
         return TIE
 
-    def _run_programmatic(
-        self, check: CheckConfig, output: Dict[str, Any]
-    ) -> bool:
+    def _run_programmatic(self, check: CheckConfig, output: dict[str, Any]) -> bool:
         """Run a programmatic check via subprocess."""
         if not check.command:
             return False
@@ -102,9 +104,7 @@ class CriteriaEvaluator:
             logger.warning("Programmatic check %s failed: %s", check.name, exc)
             return False
 
-    def _run_llm_check(
-        self, check: CheckConfig, output: Dict[str, Any]
-    ) -> bool:
+    def _run_llm_check(self, check: CheckConfig, output: dict[str, Any]) -> bool:
         """Run an LLM-based yes/no check."""
         if not self.llm or not check.prompt:
             return False

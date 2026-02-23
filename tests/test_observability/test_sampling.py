@@ -1,4 +1,5 @@
 """Tests for observability sampling strategies."""
+
 import pytest
 
 from temper_ai.observability.sampling import (
@@ -12,10 +13,10 @@ from temper_ai.observability.sampling import (
     SamplingStrategy,
 )
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture()
 def default_context() -> SamplingContext:
@@ -31,6 +32,7 @@ def default_context() -> SamplingContext:
 # ---------------------------------------------------------------------------
 # SamplingContext defaults
 # ---------------------------------------------------------------------------
+
 
 class TestSamplingContext:
     def test_defaults(self) -> None:
@@ -57,6 +59,7 @@ class TestSamplingContext:
 # SamplingDecision
 # ---------------------------------------------------------------------------
 
+
 class TestSamplingDecision:
     def test_fields(self) -> None:
         d = SamplingDecision(sampled=True, reason="test", strategy_name="s")
@@ -68,6 +71,7 @@ class TestSamplingDecision:
 # ---------------------------------------------------------------------------
 # AlwaysSample
 # ---------------------------------------------------------------------------
+
 
 class TestAlwaysSample:
     def test_always_returns_true(self, default_context: SamplingContext) -> None:
@@ -84,6 +88,7 @@ class TestAlwaysSample:
 # NeverSample
 # ---------------------------------------------------------------------------
 
+
 class TestNeverSample:
     def test_always_returns_false(self, default_context: SamplingContext) -> None:
         strategy = NeverSample()
@@ -98,6 +103,7 @@ class TestNeverSample:
 # ---------------------------------------------------------------------------
 # RateSample
 # ---------------------------------------------------------------------------
+
 
 class TestRateSample:
     def test_rate_1_always_samples(self, default_context: SamplingContext) -> None:
@@ -135,6 +141,7 @@ class TestRateSample:
 # ---------------------------------------------------------------------------
 # RuleBasedSample
 # ---------------------------------------------------------------------------
+
 
 class TestRuleBasedSample:
     def test_name_pattern_matches(self) -> None:
@@ -215,6 +222,7 @@ class TestRuleBasedSample:
 # CompositeSampler
 # ---------------------------------------------------------------------------
 
+
 class TestCompositeSampler:
     def test_or_logic_one_yes(self, default_context: SamplingContext) -> None:
         strategies = [NeverSample(), AlwaysSample()]
@@ -244,6 +252,7 @@ class TestCompositeSampler:
 # ---------------------------------------------------------------------------
 # Protocol compliance
 # ---------------------------------------------------------------------------
+
 
 class TestProtocolCompliance:
     def test_always_sample_is_strategy(self) -> None:

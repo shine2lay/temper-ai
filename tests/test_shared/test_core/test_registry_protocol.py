@@ -3,14 +3,15 @@
 This test module validates that ToolRegistry and PolicyRegistry
 satisfy the Registry Protocol interface.
 """
+
 import pytest
 
-from temper_ai.shared.core.protocols import Registry, ToolRegistryProtocol as DomainToolRegistryProtocol
-from temper_ai.tools.registry import ToolRegistry
-from temper_ai.tools.base import BaseTool, ToolMetadata, ToolResult
-from temper_ai.shared.utils.exceptions import ToolRegistryError
-from temper_ai.safety.policy_registry import PolicyRegistry
 from temper_ai.safety.interfaces import ValidationResult
+from temper_ai.safety.policy_registry import PolicyRegistry
+from temper_ai.shared.core.protocols import DomainToolRegistryProtocol, Registry
+from temper_ai.shared.utils.exceptions import ToolRegistryError
+from temper_ai.tools.base import BaseTool, ToolMetadata, ToolResult
+from temper_ai.tools.registry import ToolRegistry
 
 
 class MockTool(BaseTool):
@@ -49,7 +50,9 @@ class MockPolicy:
     def validate(self, action_type: str, action_data: dict) -> ValidationResult:
         return ValidationResult(allowed=True)
 
-    async def validate_async(self, action_type: str, action_data: dict) -> ValidationResult:
+    async def validate_async(
+        self, action_type: str, action_data: dict
+    ) -> ValidationResult:
         return ValidationResult(allowed=True)
 
 
@@ -356,6 +359,9 @@ class TestRegistryProtocolTypeChecking:
 
             def get(self, name: str):
                 return None if name != "exists" else "item"
+
+            def list(self):
+                return ["item1", "item2"]
 
             def list_all(self):
                 return ["item1", "item2"]

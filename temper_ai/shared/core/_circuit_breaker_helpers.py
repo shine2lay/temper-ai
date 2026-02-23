@@ -2,12 +2,13 @@
 
 These are internal implementation details - use CircuitBreaker's public API.
 """
+
 import json
 import logging
 import time
 from dataclasses import asdict
 from datetime import UTC, datetime
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +16,7 @@ logger = logging.getLogger(__name__)
 HTTP_STATUS_SERVER_ERROR_MIN = 500
 HTTP_STATUS_TOO_MANY_REQUESTS = 429
 
-# Cache exception class imports at module level (P-17)
+# Cache httpx import at module level to avoid repeated import overhead
 try:
     import httpx as _httpx
 except ImportError:
@@ -62,18 +63,23 @@ def should_count_failure(error: Exception) -> bool:
         return True
     if _LLMRateLimitError is not None and isinstance(error, _LLMRateLimitError):
         return True
-    if _LLMAuthenticationError is not None and isinstance(error, _LLMAuthenticationError):
+    if _LLMAuthenticationError is not None and isinstance(
+        error, _LLMAuthenticationError
+    ):
         return False
     if _LLMError is not None and isinstance(error, _LLMError):
         return True
     if isinstance(error, _httpx.HTTPStatusError):
         status = error.response.status_code
-        return status >= HTTP_STATUS_SERVER_ERROR_MIN or status == HTTP_STATUS_TOO_MANY_REQUESTS
+        return (
+            status >= HTTP_STATUS_SERVER_ERROR_MIN
+            or status == HTTP_STATUS_TOO_MANY_REQUESTS
+        )
 
     return False
 
 
-def should_attempt_reset(last_failure_time: Optional[float], timeout: int) -> bool:
+def should_attempt_reset(last_failure_time: float | None, timeout: int) -> bool:
     """Check if enough time has passed to try half-open.
 
     Args:
@@ -89,7 +95,7 @@ def should_attempt_reset(last_failure_time: Optional[float], timeout: int) -> bo
     return elapsed >= timeout
 
 
-def time_until_retry(last_failure_time: Optional[float], timeout: int) -> float:
+def time_until_retry(last_failure_time: float | None, timeout: int) -> float:
     """Seconds until circuit will try half-open.
 
     Args:
@@ -117,9 +123,15 @@ def get_state_key(name: str) -> str:
     return f"circuit_breaker:{name}:state"
 
 
-def save_state(storage: Any, name: str, state: Any, failure_count: int,
-               success_count: int, last_failure_time: Optional[float],
-               config: Any) -> None:
+def save_state(
+    storage: Any,
+    name: str,
+    state: Any,
+    failure_count: int,
+    success_count: int,
+    last_failure_time: float | None,
+    config: Any,
+) -> None:
     """Save circuit breaker state to storage.
 
     Args:
@@ -196,8 +208,8 @@ def load_state(storage: Any, name: str) -> dict:
 
 
 def fire_callbacks(
-    transition_info: Optional[tuple],
-    breaker: Optional[Any] = None,
+    transition_info: tuple | None,
+    breaker: Any | None = None,
 ) -> None:
     """Execute state change callbacks outside the lock.
 
@@ -214,9 +226,7 @@ def fire_callbacks(
         try:
             callback(old_state, new_state)
         except Exception as e:
-            logger.warning(
-                "Circuit breaker state change callback failed: %s", e
-            )
+            logger.warning("Circuit breaker state change callback failed: %s", e)
 
     # Fire observability callbacks
     _fire_observability_callbacks(breaker, old_state, new_state)
@@ -247,7 +257,7 @@ def _log_state_transition(breaker: Any, old_state: Any, new_state: Any) -> None:
 
 
 def _fire_observability_callbacks(
-    breaker: Optional[Any],
+    breaker: Any | None,
     old_state: Any,
     new_state: Any,
 ) -> None:
@@ -281,7 +291,7 @@ def _fire_observability_callbacks(
         emit_circuit_breaker_event(callback=cb, event_data=event_data)
 
 
-def on_call_success(breaker: Any, reserved_state: Optional[Any] = None) -> None:
+def on_call_success(breaker: Any, reserved_state: Any | None = None) -> None:
     """Handle successful call() execution.
 
     Args:
@@ -308,9 +318,13 @@ def on_call_success(breaker: Any, reserved_state: Optional[Any] = None) -> None:
 
             if breaker.storage:
                 save_state(
-                    breaker.storage, breaker.name, breaker._state,
-                    breaker.failure_count, breaker.success_count,
-                    breaker.last_failure_time, breaker.config,
+                    breaker.storage,
+                    breaker.name,
+                    breaker._state,
+                    breaker.failure_count,
+                    breaker.success_count,
+                    breaker.last_failure_time,
+                    breaker.config,
                 )
     finally:
         if reserved_state == CircuitState.HALF_OPEN:
@@ -321,7 +335,7 @@ def on_call_success(breaker: Any, reserved_state: Optional[Any] = None) -> None:
         _fire_observability_callbacks(breaker, old_state, new_state)
 
 
-def _should_open_on_failure(breaker: Any, reserved_state: Optional[Any]) -> bool:
+def _should_open_on_failure(breaker: Any, reserved_state: Any | None) -> bool:
     """Determine whether a failure should trip the breaker to OPEN.
 
     Args:
@@ -335,14 +349,19 @@ def _should_open_on_failure(breaker: Any, reserved_state: Optional[Any]) -> bool
 
     if breaker._state == CircuitState.HALF_OPEN:
         return True
-    if reserved_state == CircuitState.HALF_OPEN and breaker._state != CircuitState.HALF_OPEN:
+    if (
+        reserved_state == CircuitState.HALF_OPEN
+        and breaker._state != CircuitState.HALF_OPEN
+    ):
         return True
     if breaker.failure_count >= breaker.config.failure_threshold:
         return True
     return False
 
 
-def on_call_failure(breaker: Any, error: Exception, reserved_state: Optional[Any] = None) -> None:
+def on_call_failure(
+    breaker: Any, error: Exception, reserved_state: Any | None = None
+) -> None:
     """Handle failed call() execution.
 
     Args:
@@ -379,9 +398,13 @@ def on_call_failure(breaker: Any, error: Exception, reserved_state: Optional[Any
 
             if breaker.storage:
                 save_state(
-                    breaker.storage, breaker.name, breaker._state,
-                    breaker.failure_count, breaker.success_count,
-                    breaker.last_failure_time, breaker.config,
+                    breaker.storage,
+                    breaker.name,
+                    breaker._state,
+                    breaker.failure_count,
+                    breaker.success_count,
+                    breaker.last_failure_time,
+                    breaker.config,
                 )
     finally:
         if reserved_state == CircuitState.HALF_OPEN:
@@ -392,7 +415,7 @@ def on_call_failure(breaker: Any, error: Exception, reserved_state: Optional[Any
         _fire_observability_callbacks(breaker, old_state, new_state)
 
 
-def reserve_execution(breaker: Any) -> Optional[Any]:
+def reserve_execution(breaker: Any) -> Any | None:
     """Atomically check if execution is allowed and reserve permission.
 
     For HALF_OPEN, enforces single concurrent test execution via semaphore.
@@ -412,9 +435,13 @@ def reserve_execution(breaker: Any) -> Optional[Any]:
                 breaker.success_count = 0
                 if breaker.storage:
                     save_state(
-                        breaker.storage, breaker.name, breaker._state,
-                        breaker.failure_count, breaker.success_count,
-                        breaker.last_failure_time, breaker.config,
+                        breaker.storage,
+                        breaker.name,
+                        breaker._state,
+                        breaker.failure_count,
+                        breaker.success_count,
+                        breaker.last_failure_time,
+                        breaker.config,
                     )
             else:
                 return None

@@ -1,6 +1,8 @@
 import { useSearchParams, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import { authFetch } from '@/lib/authFetch';
 import { StatusBadge } from '@/components/shared/StatusBadge';
+import { EmptyState } from '@/components/shared/EmptyState';
 import { formatDuration, formatTokens, formatCost, cn } from '@/lib/utils';
 import type { WorkflowExecution, StageExecution } from '@/types';
 
@@ -135,32 +137,35 @@ export function ComparisonView() {
 
   const queryA = useQuery<WorkflowExecution>({
     queryKey: ['workflow', idA],
-    queryFn: async () => (await fetch(`/api/workflows/${idA}`)).json(),
+    queryFn: async () => (await authFetch(`/api/workflows/${idA}`)).json(),
     enabled: !!idA,
   });
 
   const queryB = useQuery<WorkflowExecution>({
     queryKey: ['workflow', idB],
-    queryFn: async () => (await fetch(`/api/workflows/${idB}`)).json(),
+    queryFn: async () => (await authFetch(`/api/workflows/${idB}`)).json(),
     enabled: !!idB,
   });
 
   const queryC = useQuery<WorkflowExecution>({
     queryKey: ['workflow', idC],
-    queryFn: async () => (await fetch(`/api/workflows/${idC}`)).json(),
+    queryFn: async () => (await authFetch(`/api/workflows/${idC}`)).json(),
     enabled: !!idC,
   });
 
   if (!idA || !idB) {
     return (
-      <div className="flex flex-col items-center justify-center h-full bg-temper-bg text-temper-text gap-4">
-        <h1 className="text-xl font-semibold">Compare Workflows</h1>
-        <p className="text-sm text-temper-text-muted">
-          Use URL params: /app/compare?a=ID_1&amp;b=ID_2 (optional: &amp;c=ID_3)
-        </p>
-        <Link to="/" className="text-temper-accent hover:underline text-sm">
-          Back to workflows
-        </Link>
+      <div className="flex flex-col h-full bg-temper-bg">
+        <EmptyState
+          icon="~"
+          title="No workflows selected"
+          subtitle="Select 2–3 workflows from the list to compare them side by side."
+        />
+        <div className="flex justify-center pb-8">
+          <Link to="/" className="text-temper-accent hover:underline text-sm">
+            Back to workflows
+          </Link>
+        </div>
       </div>
     );
   }

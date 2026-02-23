@@ -7,10 +7,8 @@ Covers features added in the observability hardening milestone:
 - Halt callback registration and invocation
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, Mock, patch
-
-import pytest
 
 from temper_ai.observability.alerting import (
     Alert,
@@ -20,7 +18,10 @@ from temper_ai.observability.alerting import (
     AlertSeverity,
     MetricType,
 )
-from temper_ai.observability.constants import DEFAULT_ALERT_COOLDOWN_SECONDS, MAX_ALERT_HISTORY
+from temper_ai.observability.constants import (
+    DEFAULT_ALERT_COOLDOWN_SECONDS,
+    MAX_ALERT_HISTORY,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -80,7 +81,7 @@ class TestAlertCooldown:
         assert len(mgr.alert_history) == 1
 
         # Manually expire the cooldown
-        past = datetime.now(timezone.utc) - timedelta(seconds=DEFAULT_ALERT_COOLDOWN_SECONDS + 1)
+        past = datetime.now(UTC) - timedelta(seconds=DEFAULT_ALERT_COOLDOWN_SECONDS + 1)
         mgr._last_alert_times["test_rule"] = past
 
         second = mgr.check_metric("cost_usd", 20.0)
@@ -107,7 +108,7 @@ class TestAlertCooldown:
         assert len(alerts) == 0
 
         # Expire only rule_a
-        past = datetime.now(timezone.utc) - timedelta(seconds=DEFAULT_ALERT_COOLDOWN_SECONDS + 1)
+        past = datetime.now(UTC) - timedelta(seconds=DEFAULT_ALERT_COOLDOWN_SECONDS + 1)
         mgr._last_alert_times["rule_a"] = past
 
         alerts = mgr.check_metric("cost_usd", 15.0)
@@ -191,7 +192,10 @@ class TestAlertPersistence:
             threshold=0.5,
         )
 
-        with patch("temper_ai.storage.database.get_session", side_effect=RuntimeError("db down")):
+        with patch(
+            "temper_ai.storage.database.get_session",
+            side_effect=RuntimeError("db down"),
+        ):
             # Must not raise — best-effort persistence
             mgr._persist_alert(alert)
 
@@ -226,7 +230,10 @@ class TestAlertPersistence:
 
     def test_get_persisted_alerts_handles_error(self):
         """get_persisted_alerts returns empty list on error."""
-        with patch("temper_ai.storage.database.get_session", side_effect=RuntimeError("db down")):
+        with patch(
+            "temper_ai.storage.database.get_session",
+            side_effect=RuntimeError("db down"),
+        ):
             results = AlertManager.get_persisted_alerts()
 
         assert results == []

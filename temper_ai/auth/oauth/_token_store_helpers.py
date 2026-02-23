@@ -2,11 +2,11 @@
 
 These are internal implementation details - use SecureTokenStore's public API.
 """
+
 import json
 import logging
 import os
-from datetime import datetime, timedelta, timezone
-from typing import Dict, Optional
+from datetime import UTC, datetime, timedelta
 
 from cryptography.fernet import Fernet, InvalidToken
 
@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 try:
     import keyring  # type: ignore[import-not-found]
     from keyring.errors import KeyringError  # type: ignore[import-not-found]
+
     KEYRING_AVAILABLE = True
 except ImportError:
     KEYRING_AVAILABLE = False
@@ -45,11 +46,10 @@ def get_or_create_keyring_key(
     """
     if not KEYRING_AVAILABLE:
         raise ImportError(
-            "Keyring library not installed. "
-            "Install with: pip install keyring"
+            "Keyring library not installed. " "Install with: pip install keyring"
         )
 
-    key: Optional[str] = keyring.get_password(keyring_service, keyring_key_name)
+    key: str | None = keyring.get_password(keyring_service, keyring_key_name)
 
     if key is None:
         logger.info(
@@ -65,7 +65,7 @@ def get_or_create_keyring_key(
 
 def _try_keyring_acquisition(
     keyring_service: str, keyring_key_name: str, require_keyring: bool
-) -> Optional[str]:
+) -> str | None:
     """Try to acquire key from OS keyring.
 
     Args:
@@ -81,7 +81,9 @@ def _try_keyring_acquisition(
     """
     try:
         key = get_or_create_keyring_key(keyring_service, keyring_key_name)
-        logger.info(f"Using OS keyring for key storage: {keyring_service}/{keyring_key_name}")
+        logger.info(
+            f"Using OS keyring for key storage: {keyring_service}/{keyring_key_name}"
+        )
         return key
     except KeyringError as e:
         if require_keyring:
@@ -117,7 +119,7 @@ def _try_keyring_acquisition(
     return None
 
 
-def _try_env_acquisition() -> Optional[str]:
+def _try_env_acquisition() -> str | None:
     """Try to acquire key from environment variable.
 
     Returns:
@@ -132,10 +134,7 @@ def _try_env_acquisition() -> Optional[str]:
         "For production, use OS keyring (install 'keyring' package)."
     )
     env_name = (
-        os.getenv("ENVIRONMENT")
-        or os.getenv("ENV")
-        or os.getenv("APP_ENV")
-        or ""
+        os.getenv("ENVIRONMENT") or os.getenv("ENV") or os.getenv("APP_ENV") or ""
     ).lower()
     if env_name in ("production", "prod"):
         logger.warning(
@@ -151,7 +150,7 @@ def _try_env_acquisition() -> Optional[str]:
 
 
 def acquire_encryption_key(
-    encryption_key: Optional[str],
+    encryption_key: str | None,
     use_keyring: bool,
     keyring_service: str,
     keyring_key_name: str,
@@ -170,7 +169,9 @@ def acquire_encryption_key(
         return encryption_key, False
 
     if use_keyring:
-        key = _try_keyring_acquisition(keyring_service, keyring_key_name, require_keyring)
+        key = _try_keyring_acquisition(
+            keyring_service, keyring_key_name, require_keyring
+        )
         if key is not None:
             return key, True
 
@@ -189,7 +190,7 @@ def acquire_encryption_key(
     )
 
 
-def _decrypt_and_parse_token(encrypted: bytes, old_cipher: Fernet) -> Optional[dict]:
+def _decrypt_and_parse_token(encrypted: bytes, old_cipher: Fernet) -> dict | None:
     """Decrypt and parse token data.
 
     Args:
@@ -201,15 +202,13 @@ def _decrypt_and_parse_token(encrypted: bytes, old_cipher: Fernet) -> Optional[d
     """
     try:
         decrypted = old_cipher.decrypt(encrypted)
-        result: Optional[dict] = json.loads(decrypted.decode())
+        result: dict | None = json.loads(decrypted.decode())
         return result
     except (InvalidToken, json.JSONDecodeError):
         return None
 
 
-def _re_encrypt_single_token(
-    token_data: dict, new_cipher: Fernet
-) -> Optional[bytes]:
+def _re_encrypt_single_token(token_data: dict, new_cipher: Fernet) -> bytes | None:
     """Re-encrypt a single token with new cipher.
 
     Args:
@@ -223,30 +222,30 @@ def _re_encrypt_single_token(
         # Handle tokens with expiration
         if token_data.get(FIELD_EXPIRES_AT):
             expires_at = datetime.fromisoformat(token_data[FIELD_EXPIRES_AT])
-            expires_in = int((expires_at - datetime.now(timezone.utc)).total_seconds())
+            expires_in = int((expires_at - datetime.now(UTC)).total_seconds())
             if expires_in <= 0:
                 return None  # Skip expired tokens
 
             clean_token = {
-                k: v for k, v in token_data.items()
+                k: v
+                for k, v in token_data.items()
                 if k not in [FIELD_STORED_AT, FIELD_EXPIRES_AT]
             }
             token_with_metadata = {
                 **clean_token,
-                FIELD_STORED_AT: datetime.now(timezone.utc).isoformat(),
+                FIELD_STORED_AT: datetime.now(UTC).isoformat(),
                 FIELD_EXPIRES_AT: (
-                    datetime.now(timezone.utc) + timedelta(seconds=expires_in)
+                    datetime.now(UTC) + timedelta(seconds=expires_in)
                 ).isoformat(),
             }
         else:
             # Handle tokens without expiration
             clean_token = {
-                k: v for k, v in token_data.items()
-                if k not in [FIELD_STORED_AT]
+                k: v for k, v in token_data.items() if k not in [FIELD_STORED_AT]
             }
             token_with_metadata = {
                 **clean_token,
-                FIELD_STORED_AT: datetime.now(timezone.utc).isoformat(),
+                FIELD_STORED_AT: datetime.now(UTC).isoformat(),
             }
 
         token_json = json.dumps(token_with_metadata)
@@ -257,10 +256,10 @@ def _re_encrypt_single_token(
 
 
 def re_encrypt_tokens(
-    tokens: Dict[str, bytes],
+    tokens: dict[str, bytes],
     old_cipher: Fernet,
     new_cipher: Fernet,
-) -> Dict[str, bytes]:
+) -> dict[str, bytes]:
     """Re-encrypt all tokens with a new cipher."""
     re_encrypted = {}
 

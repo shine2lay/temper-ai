@@ -18,8 +18,9 @@ stage:
       source: workflow.workspace_path
       required: true
     suggestion_text:
-      source: workflow.suggestion_text
-      required: true
+      source: vcs_work_discovery.output
+      required: false
+      default: ""
 
   outputs:
     worktree_path:

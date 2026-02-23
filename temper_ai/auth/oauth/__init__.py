@@ -6,8 +6,9 @@ defense-in-depth security measures including:
 - PKCE (Proof Key for Code Exchange)
 - Secure token storage with encryption
 - Rate limiting
-- Redis-backed state storage for production
+- In-memory state storage
 """
+
 from .callback_validator import CallbackURLValidator
 from .config import (
     OAuthConfig,
@@ -17,7 +18,7 @@ from .config import (
 )
 from .rate_limiter import OAuthRateLimiter, RateLimitExceeded
 from .service import OAuthError, OAuthProviderError, OAuthService, OAuthStateError
-from .state_store import InMemoryStateStore, RedisStateStore, StateStore, create_state_store
+from .state_store import InMemoryStateStore, StateStore, create_state_store
 from .token_store import SecureTokenStore
 
 __all__ = [
@@ -36,7 +37,6 @@ __all__ = [
     "RateLimitExceeded",
     # State storage
     "StateStore",
-    "RedisStateStore",
     "InMemoryStateStore",
     "create_state_store",
     # Rate limiting

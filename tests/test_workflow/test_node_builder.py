@@ -2,14 +2,15 @@
 
 Verifies node creation, configuration loading, and executor delegation.
 """
+
 from unittest.mock import Mock
 
 import pytest
 
+from temper_ai.tools.registry import ToolRegistry
 from temper_ai.workflow.config_loader import ConfigLoader
 from temper_ai.workflow.domain_state import WorkflowDomainState
 from temper_ai.workflow.node_builder import NodeBuilder
-from temper_ai.tools.registry import ToolRegistry
 
 
 class TestNodeBuilderInitialization:
@@ -19,11 +20,7 @@ class TestNodeBuilderInitialization:
         """Test initialization with all dependencies."""
         config_loader = Mock(spec=ConfigLoader)
         tool_registry = Mock(spec=ToolRegistry)
-        executors = {
-            'sequential': Mock(),
-            'parallel': Mock(),
-            'adaptive': Mock()
-        }
+        executors = {"sequential": Mock(), "parallel": Mock(), "adaptive": Mock()}
 
         builder = NodeBuilder(config_loader, tool_registry, executors)
 
@@ -132,25 +129,19 @@ class TestGetAgentMode:
 
     def test_get_mode_sequential_dict(self):
         """Test detecting sequential mode from dict."""
-        stage_config = {
-            "execution": {"agent_mode": "sequential"}
-        }
+        stage_config = {"execution": {"agent_mode": "sequential"}}
         mode = self.builder.get_agent_mode(stage_config)
         assert mode == "sequential"
 
     def test_get_mode_parallel_dict(self):
         """Test detecting parallel mode from dict."""
-        stage_config = {
-            "execution": {"agent_mode": "parallel"}
-        }
+        stage_config = {"execution": {"agent_mode": "parallel"}}
         mode = self.builder.get_agent_mode(stage_config)
         assert mode == "parallel"
 
     def test_get_mode_adaptive_dict(self):
         """Test detecting adaptive mode from dict."""
-        stage_config = {
-            "execution": {"agent_mode": "adaptive"}
-        }
+        stage_config = {"execution": {"agent_mode": "adaptive"}}
         mode = self.builder.get_agent_mode(stage_config)
         assert mode == "adaptive"
 
@@ -189,7 +180,7 @@ class TestCreateStageNode:
         config_loader = Mock(spec=ConfigLoader)
         config_loader.load_stage.return_value = {
             "agents": ["agent1"],
-            "execution": {"agent_mode": "sequential"}
+            "execution": {"agent_mode": "sequential"},
         }
 
         executor = Mock()
@@ -198,7 +189,7 @@ class TestCreateStageNode:
         builder = NodeBuilder(
             config_loader=config_loader,
             tool_registry=Mock(spec=ToolRegistry),
-            executors={'sequential': executor}
+            executors={"sequential": executor},
         )
 
         node = builder.create_stage_node("research", {})
@@ -208,10 +199,7 @@ class TestCreateStageNode:
     def test_stage_node_loads_config(self):
         """Test that stage node loads configuration."""
         config_loader = Mock(spec=ConfigLoader)
-        stage_config = {
-            "agents": ["agent1"],
-            "execution": {"agent_mode": "sequential"}
-        }
+        stage_config = {"agents": ["agent1"], "execution": {"agent_mode": "sequential"}}
         config_loader.load_stage.return_value = stage_config
 
         executor = Mock()
@@ -220,7 +208,7 @@ class TestCreateStageNode:
         builder = NodeBuilder(
             config_loader=config_loader,
             tool_registry=Mock(spec=ToolRegistry),
-            executors={'sequential': executor}
+            executors={"sequential": executor},
         )
 
         node = builder.create_stage_node("research", {})
@@ -232,23 +220,23 @@ class TestCreateStageNode:
     def test_stage_node_delegates_to_executor(self):
         """Test that stage node delegates to correct executor."""
         config_loader = Mock(spec=ConfigLoader)
-        stage_config = {
-            "agents": ["agent1"],
-            "execution": {"agent_mode": "parallel"}
-        }
+        stage_config = {"agents": ["agent1"], "execution": {"agent_mode": "parallel"}}
         config_loader.load_stage.return_value = stage_config
 
         sequential_executor = Mock()
         parallel_executor = Mock()
-        parallel_executor.execute_stage.return_value = {"stage_outputs": {}, "current_stage": ""}
+        parallel_executor.execute_stage.return_value = {
+            "stage_outputs": {},
+            "current_stage": "",
+        }
 
         builder = NodeBuilder(
             config_loader=config_loader,
             tool_registry=Mock(spec=ToolRegistry),
             executors={
-                'sequential': sequential_executor,
-                'parallel': parallel_executor
-            }
+                "sequential": sequential_executor,
+                "parallel": parallel_executor,
+            },
         )
 
         node = builder.create_stage_node("research", {})
@@ -263,10 +251,7 @@ class TestCreateStageNode:
         """Test that stage node passes correct arguments to executor."""
         config_loader = Mock(spec=ConfigLoader)
         tool_registry = Mock(spec=ToolRegistry)
-        stage_config = {
-            "agents": ["agent1"],
-            "execution": {"agent_mode": "sequential"}
-        }
+        stage_config = {"agents": ["agent1"], "execution": {"agent_mode": "sequential"}}
         config_loader.load_stage.return_value = stage_config
 
         executor = Mock()
@@ -275,7 +260,7 @@ class TestCreateStageNode:
         builder = NodeBuilder(
             config_loader=config_loader,
             tool_registry=tool_registry,
-            executors={'sequential': executor}
+            executors={"sequential": executor},
         )
 
         node = builder.create_stage_node("research", {})
@@ -284,13 +269,13 @@ class TestCreateStageNode:
 
         # Verify executor.execute_stage was called with correct args
         call_args = executor.execute_stage.call_args
-        assert call_args[1]['stage_name'] == "research"
-        assert call_args[1]['stage_config'] == stage_config
+        assert call_args[1]["stage_name"] == "research"
+        assert call_args[1]["stage_config"] == stage_config
         # State is converted to dict via to_typed_dict() before passing to executor
-        assert isinstance(call_args[1]['state'], dict)
-        assert call_args[1]['state']['workflow_id'] == "wf-123"
-        assert call_args[1]['config_loader'] is config_loader
-        assert call_args[1]['tool_registry'] is tool_registry
+        assert isinstance(call_args[1]["state"], dict)
+        assert call_args[1]["state"]["workflow_id"] == "wf-123"
+        assert call_args[1]["config_loader"] is config_loader
+        assert call_args[1]["tool_registry"] is tool_registry
 
     def test_stage_node_handles_config_load_error(self):
         """Test that stage node raises error if config cannot be loaded."""
@@ -300,7 +285,7 @@ class TestCreateStageNode:
         builder = NodeBuilder(
             config_loader=config_loader,
             tool_registry=Mock(spec=ToolRegistry),
-            executors={'sequential': Mock()}
+            executors={"sequential": Mock()},
         )
 
         node = builder.create_stage_node("missing_stage", {})

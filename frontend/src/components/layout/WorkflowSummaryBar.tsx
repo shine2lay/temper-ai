@@ -1,6 +1,18 @@
 import { useMemo } from 'react';
 import { useExecutionStore } from '@/store/executionStore';
+import { selectStageGroups } from '@/store/selectors';
 import { formatTokens, formatCost, formatDuration } from '@/lib/utils';
+
+const PIPELINE_COLORS: Record<string, string> = {
+  completed: '#22c55e',
+  running: '#3b82f6',
+  failed: '#ef4444',
+  pending: '#6b7280',
+};
+
+function pipelineColor(status: string): string {
+  return PIPELINE_COLORS[status] ?? PIPELINE_COLORS.pending;
+}
 
 /**
  * Horizontal stats bar showing aggregate workflow metrics.
@@ -45,6 +57,16 @@ export function WorkflowSummaryBar() {
     return costs.sort((a, b) => b.cost - a.cost);
   }, [stages]);
 
+  const pipeline = useMemo(() => {
+    const stageGroups = selectStageGroups(stages);
+    const result: Array<{ name: string; status: string }> = [];
+    for (const [name, executions] of stageGroups) {
+      const latest = executions[executions.length - 1];
+      result.push({ name, status: latest.status });
+    }
+    return result;
+  }, [stages]);
+
   if (!workflow) return null;
 
   const stagesFailed = counts.failedStages > 0 ? ` (${counts.failedStages} failed)` : '';
@@ -71,7 +93,7 @@ export function WorkflowSummaryBar() {
   ];
 
   return (
-    <div className="flex items-center gap-6 bg-temper-panel/50 px-4 py-2 border-b border-temper-border shrink-0">
+    <div className="flex items-center gap-4 flex-wrap bg-temper-panel/50 px-4 py-2 border-b border-temper-border shrink-0">
       {stats.map((s) => (
         <div key={s.label} className="flex items-center gap-1.5 text-xs">
           <span className="text-temper-text-muted">{s.label}</span>
@@ -96,6 +118,20 @@ export function WorkflowSummaryBar() {
           </div>
         );
       })()}
+      {pipeline.length > 0 && (
+        <div className="flex items-center gap-0.5 ml-2 border-l border-temper-border/30 pl-3" title="Stage pipeline">
+          {pipeline.map((s, i) => (
+            <div key={s.name} className="flex items-center">
+              {i > 0 && <div className="w-2 h-px bg-temper-border/40" />}
+              <div
+                className="w-1.5 h-1.5 rounded-full shrink-0"
+                style={{ backgroundColor: pipelineColor(s.status) }}
+                title={`${s.name}: ${s.status}`}
+              />
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

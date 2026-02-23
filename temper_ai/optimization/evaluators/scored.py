@@ -5,10 +5,15 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Any, Dict, Optional
+from typing import Any
 
 from temper_ai.optimization._schemas import EvaluationResult, EvaluatorConfig
-from temper_ai.optimization.engine_constants import FIRST_BETTER, MAX_SCORE, MIN_SCORE, TIE
+from temper_ai.optimization.engine_constants import (
+    FIRST_BETTER,
+    MAX_SCORE,
+    MIN_SCORE,
+    TIE,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +27,7 @@ class ScoredEvaluator:
     def __init__(
         self,
         config: EvaluatorConfig,
-        llm: Optional[Any] = None,
+        llm: Any | None = None,
     ) -> None:
         self.rubric = config.rubric or "Rate the quality of this output."
         self.prompt_template = config.prompt
@@ -30,8 +35,8 @@ class ScoredEvaluator:
 
     def evaluate(
         self,
-        output: Dict[str, Any],
-        context: Optional[Dict[str, Any]] = None,
+        output: dict[str, Any],
+        context: dict[str, Any] | None = None,
     ) -> EvaluationResult:
         """Score output via LLM on 0-1 scale."""
         if not self.llm:
@@ -55,9 +60,9 @@ class ScoredEvaluator:
 
     def compare(
         self,
-        output_a: Dict[str, Any],
-        output_b: Dict[str, Any],
-        context: Optional[Dict[str, Any]] = None,
+        output_a: dict[str, Any],
+        output_b: dict[str, Any],
+        context: dict[str, Any] | None = None,
     ) -> int:
         """Compare by score: higher score wins."""
         result_a = self.evaluate(output_a, context)

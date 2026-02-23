@@ -4,12 +4,12 @@ Tests prompt_template_hash and prompt_template_source fields in the
 observability pipeline: LLMCallData, LLMCallTrackingData, buffer params,
 and backward compatibility.
 """
-import pytest
-from datetime import datetime, timezone
 
-from temper_ai.observability.backend import LLMCallData
+from datetime import UTC, datetime
+
 from temper_ai.observability._tracker_helpers import LLMCallTrackingData
-from temper_ai.observability.buffer import LLMCallBufferParams, BufferedLLMCall
+from temper_ai.observability.backend import LLMCallData
+from temper_ai.observability.buffer import BufferedLLMCall, LLMCallBufferParams
 
 
 class TestLLMCallDataPromptFields:
@@ -98,7 +98,7 @@ class TestBufferPromptFields:
             completion_tokens=5,
             latency_ms=100,
             estimated_cost_usd=0.01,
-            start_time=datetime.now(timezone.utc),
+            start_time=datetime.now(UTC),
         )
         assert params.prompt_template_hash is None
         assert params.prompt_template_source is None
@@ -116,7 +116,7 @@ class TestBufferPromptFields:
             completion_tokens=5,
             latency_ms=100,
             estimated_cost_usd=0.01,
-            start_time=datetime.now(timezone.utc),
+            start_time=datetime.now(UTC),
         )
         assert call.prompt_template_hash is None
         assert call.prompt_template_source is None
@@ -134,7 +134,7 @@ class TestBufferPromptFields:
             completion_tokens=5,
             latency_ms=100,
             estimated_cost_usd=0.01,
-            start_time=datetime.now(timezone.utc),
+            start_time=datetime.now(UTC),
             prompt_template_hash="abc123",
             prompt_template_source="inline",
         )

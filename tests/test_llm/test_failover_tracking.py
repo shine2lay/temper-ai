@@ -3,10 +3,12 @@
 Tests that FailoverProvider populates failover_sequence on failover
 and produces empty sequence on first-try success.
 """
-import pytest
+
 from unittest.mock import MagicMock
 
-from temper_ai.llm.failover import FailoverConfig, FailoverProvider
+import pytest
+
+from temper_ai.llm.failover import FailoverProvider
 from temper_ai.llm.providers import LLMError, LLMResponse
 
 

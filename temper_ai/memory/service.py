@@ -5,11 +5,10 @@ from __future__ import annotations
 import logging
 import math
 import time
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from temper_ai.memory._schemas import MemoryEntry, MemoryScope, MemorySearchResult
-from temper_ai.memory.protocols import MemoryStoreProtocol
 from temper_ai.memory.constants import (
     DEFAULT_RETRIEVAL_LIMIT,
     DEFAULT_TENANT_ID,
@@ -21,6 +20,7 @@ from temper_ai.memory.constants import (
     SECONDS_PER_DAY,
 )
 from temper_ai.memory.formatter import format_memory_context
+from temper_ai.memory.protocols import MemoryStoreProtocol
 from temper_ai.memory.registry import MemoryProviderRegistry
 
 logger = logging.getLogger(__name__)
@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 MS_PER_SECOND = 1000
 
 
-def _apply_decay(entries: List[MemoryEntry], decay_factor: float) -> List[MemoryEntry]:
+def _apply_decay(entries: list[MemoryEntry], decay_factor: float) -> list[MemoryEntry]:
     """Apply exponential time-decay to entry relevance scores.
 
     Each entry's score is multiplied by ``decay_factor ^ age_days``.
@@ -36,7 +36,7 @@ def _apply_decay(entries: List[MemoryEntry], decay_factor: float) -> List[Memory
     """
     if decay_factor >= 1.0:
         return entries
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     for entry in entries:
         age_seconds = max((now - entry.created_at).total_seconds(), 0)
         age_days = age_seconds / SECONDS_PER_DAY
@@ -45,7 +45,9 @@ def _apply_decay(entries: List[MemoryEntry], decay_factor: float) -> List[Memory
 
 
 def _enforce_max_episodes(
-    adapter: MemoryStoreProtocol, scope: MemoryScope, max_episodes: int,
+    adapter: MemoryStoreProtocol,
+    scope: MemoryScope,
+    max_episodes: int,
 ) -> None:
     """Delete oldest entries when count exceeds *max_episodes*."""
     entries = adapter.get_all(scope)
@@ -68,7 +70,7 @@ class MemoryService:
     def __init__(
         self,
         provider_name: str = "in_memory",
-        provider_config: Optional[Dict[str, Any]] = None,
+        provider_config: dict[str, Any] | None = None,
     ) -> None:
         cls = MemoryProviderRegistry.get_instance().get_provider_class(provider_name)
         adapter = cls(config=provider_config) if provider_config else cls()
@@ -79,7 +81,7 @@ class MemoryService:
         tenant_id: str = DEFAULT_TENANT_ID,
         workflow_name: str = "",
         agent_name: str = "",
-        namespace: Optional[str] = None,
+        namespace: str | None = None,
     ) -> MemoryScope:
         """Build a MemoryScope from components."""
         return MemoryScope(
@@ -139,7 +141,7 @@ class MemoryService:
         self,
         scope: MemoryScope,
         content: str,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
         max_episodes: int = 0,
     ) -> str:
         """Store an episodic memory. Returns the memory ID.
@@ -155,7 +157,7 @@ class MemoryService:
         self,
         scope: MemoryScope,
         content: str,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
         max_episodes: int = 0,
     ) -> str:
         """Store a procedural memory. Returns the memory ID.
@@ -171,14 +173,16 @@ class MemoryService:
         self,
         scope: MemoryScope,
         content: str,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
         max_episodes: int = 0,
     ) -> str:
         """Store a cross-session memory. Returns the memory ID.
 
         When *max_episodes* > 0, oldest entries exceeding the limit are pruned.
         """
-        memory_id = self._adapter.add(scope, content, MEMORY_TYPE_CROSS_SESSION, metadata)
+        memory_id = self._adapter.add(
+            scope, content, MEMORY_TYPE_CROSS_SESSION, metadata
+        )
         if max_episodes > 0:
             _enforce_max_episodes(self._adapter, scope, max_episodes)
         return memory_id
@@ -196,7 +200,9 @@ class MemoryService:
         Returns formatted markdown string, or empty string if none found.
         """
         entries = self._adapter.search(
-            scope=scope, query=query, limit=retrieval_k,
+            scope=scope,
+            query=query,
+            limit=retrieval_k,
             threshold=relevance_threshold,
             memory_type=MEMORY_TYPE_PROCEDURAL,
         )
@@ -211,12 +217,15 @@ class MemoryService:
         query: str,
         limit: int = DEFAULT_RETRIEVAL_LIMIT,
         threshold: float = 0.0,
-        memory_type: Optional[str] = None,
-    ) -> List[MemoryEntry]:
+        memory_type: str | None = None,
+    ) -> list[MemoryEntry]:
         """Search memories by query within a scope."""
         return self._adapter.search(
-            scope=scope, query=query, limit=limit,
-            threshold=threshold, memory_type=memory_type,
+            scope=scope,
+            query=query,
+            limit=limit,
+            threshold=threshold,
+            memory_type=memory_type,
         )
 
     def clear_memories(self, scope: MemoryScope) -> int:
@@ -226,8 +235,8 @@ class MemoryService:
     def list_memories(
         self,
         scope: MemoryScope,
-        memory_type: Optional[str] = None,
-    ) -> List[MemoryEntry]:
+        memory_type: str | None = None,
+    ) -> list[MemoryEntry]:
         """List all memories for a scope, optionally filtered by type."""
         return self._adapter.get_all(scope, memory_type=memory_type)
 
@@ -253,17 +262,21 @@ class MemoryService:
     ) -> str:
         """Search both private and shared scopes, deduplicate, and format."""
         private = self._adapter.search(
-            scope=scope, query=query,
-            limit=retrieval_k, threshold=relevance_threshold,
+            scope=scope,
+            query=query,
+            limit=retrieval_k,
+            threshold=relevance_threshold,
         )
         shared = self._adapter.search(
-            scope=shared_scope, query=query,
-            limit=retrieval_k, threshold=relevance_threshold,
+            scope=shared_scope,
+            query=query,
+            limit=retrieval_k,
+            threshold=relevance_threshold,
         )
 
         # Deduplicate by content
         seen_content: set = set()
-        merged: List[MemoryEntry] = []
+        merged: list[MemoryEntry] = []
         for entry in private + shared:
             if entry.content not in seen_content:
                 seen_content.add(entry.content)

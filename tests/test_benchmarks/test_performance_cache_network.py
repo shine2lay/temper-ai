@@ -13,6 +13,7 @@ Compare with regression detection:
     pytest tests/test_benchmarks/test_performance_cache_network.py --benchmark-only \
         --benchmark-compare=cache-network --benchmark-compare-fail=mean:10%
 """
+
 import hashlib
 import json
 import threading
@@ -20,13 +21,14 @@ import time
 from contextlib import contextmanager
 from functools import lru_cache
 from threading import Lock
-from typing import Any, Dict, List
+from typing import Any
 
 import pytest
 
 # ============================================================================
 # CATEGORY 9: Cache Performance (6 benchmarks)
 # ============================================================================
+
 
 @pytest.mark.benchmark(group="cache")
 def test_cache_llm_response_hit_rate(benchmark):
@@ -57,6 +59,7 @@ def test_cache_llm_response_hit_rate(benchmark):
     result = benchmark(benchmark_cache_hits)
     assert len(result) == 100
 
+
 @pytest.mark.benchmark(group="cache")
 def test_cache_redis_vs_inmemory_latency(benchmark):
     """Benchmark Redis vs in-memory cache latency.
@@ -84,6 +87,7 @@ def test_cache_redis_vs_inmemory_latency(benchmark):
     result = benchmark(benchmark_inmemory)
     assert True  # Benchmark completed successfully
 
+
 @pytest.mark.benchmark(group="cache")
 def test_cache_eviction_lru_performance(benchmark):
     """Benchmark LRU cache eviction under memory pressure.
@@ -108,6 +112,7 @@ def test_cache_eviction_lru_performance(benchmark):
 
     result = benchmark(trigger_evictions)
     assert True  # Benchmark completed successfully
+
 
 @pytest.mark.benchmark(group="cache")
 def test_cache_concurrent_access_contention(benchmark):
@@ -135,7 +140,9 @@ def test_cache_concurrent_access_contention(benchmark):
     def concurrent_access():
         threads = []
         for i in range(10):
-            thread = threading.Thread(target=lambda: [thread_safe_get(f"key_{i}") for i in range(100)])
+            thread = threading.Thread(
+                target=lambda: [thread_safe_get(f"key_{i}") for i in range(100)]
+            )
             threads.append(thread)
             thread.start()
 
@@ -144,6 +151,7 @@ def test_cache_concurrent_access_contention(benchmark):
 
     result = benchmark(concurrent_access)
     assert True  # Benchmark completed successfully
+
 
 @pytest.mark.benchmark(group="cache")
 def test_cache_serialization_overhead(benchmark):
@@ -157,7 +165,7 @@ def test_cache_serialization_overhead(benchmark):
     large_object = {
         "data": "x" * 10000,
         "metadata": {"key": "value" * 100},
-        "nested": [{"item": i} for i in range(100)]
+        "nested": [{"item": i} for i in range(100)],
     }
 
     def serialize_and_hash():
@@ -168,6 +176,7 @@ def test_cache_serialization_overhead(benchmark):
 
     result = benchmark(serialize_and_hash)
     assert len(result) == 32  # MD5 hash length
+
 
 @pytest.mark.benchmark(group="cache")
 def test_cache_invalidation_propagation(benchmark):
@@ -195,9 +204,11 @@ def test_cache_invalidation_propagation(benchmark):
     result = benchmark(invalidate_cache_layers)
     assert True  # Benchmark completed successfully
 
+
 # ============================================================================
 # CATEGORY 10: Network I/O Performance (4 benchmarks)
 # ============================================================================
+
 
 @pytest.mark.benchmark(group="network")
 def test_network_http_connection_pooling(benchmark):
@@ -212,7 +223,7 @@ def test_network_http_connection_pooling(benchmark):
         def __init__(self):
             self.pool = {}
 
-        def get(self, url: str) -> Dict[str, Any]:
+        def get(self, url: str) -> dict[str, Any]:
             # Simulate connection reuse
             if url not in self.pool:
                 time.sleep(0.01)  # Initial connection overhead
@@ -232,6 +243,7 @@ def test_network_http_connection_pooling(benchmark):
     result = benchmark(benchmark_pooled_requests)
     assert len(result) == 100
 
+
 @pytest.mark.benchmark(group="network")
 def test_network_request_batching(benchmark):
     """Benchmark request batching vs sequential requests.
@@ -239,8 +251,9 @@ def test_network_request_batching(benchmark):
     Target: 5-10x speedup with batching
     Measures: Batching effectiveness
     """
+
     # Simulate batch request API
-    def batch_request(items: List[str]) -> List[Dict[str, Any]]:
+    def batch_request(items: list[str]) -> list[dict[str, Any]]:
         # Single network call for all items
         time.sleep(0.05)  # 50ms for batch
         return [{"item": item, "result": f"processed_{item}"} for item in items]
@@ -251,13 +264,14 @@ def test_network_request_batching(benchmark):
         # Process in batches of 10
         results = []
         for i in range(0, len(items), 10):
-            batch = items[i:i+10]
+            batch = items[i : i + 10]
             batch_results = batch_request(batch)
             results.extend(batch_results)
         return results
 
     result = benchmark(benchmark_batched)
     assert len(result) == 100
+
 
 @pytest.mark.benchmark(group="network")
 def test_network_timeout_handling(benchmark):
@@ -286,6 +300,7 @@ def test_network_timeout_handling(benchmark):
     result = benchmark(operation_with_timeout)
     assert result == "success"
 
+
 @pytest.mark.benchmark(group="network")
 def test_network_retry_backoff_overhead(benchmark):
     """Benchmark exponential backoff retry overhead.
@@ -293,13 +308,14 @@ def test_network_retry_backoff_overhead(benchmark):
     Target: <50ms for 3 retry attempts
     Measures: Retry strategy efficiency
     """
+
     def retry_with_backoff(operation, max_retries: int = 3):
         for attempt in range(max_retries):
             try:
                 return operation()
             except Exception:
                 if attempt < max_retries - 1:
-                    backoff = 2 ** attempt * 0.01  # 10ms, 20ms, 40ms
+                    backoff = 2**attempt * 0.01  # 10ms, 20ms, 40ms
                     time.sleep(backoff)
                 else:
                     raise

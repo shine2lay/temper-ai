@@ -1,9 +1,10 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useExecutionStore } from '@/store/executionStore';
-import { STATUS_COLORS } from './constants';
-import { cn, formatDuration, formatTokens } from '@/lib/utils';
+import { STATUS_COLORS, confidenceBadgeClass } from './constants';
+import { cn, formatDuration, formatTokens, formatCost } from '@/lib/utils';
 import { CollapsibleSection } from '@/components/shared/Collapsible';
 import { JsonViewer } from '@/components/shared/JsonViewer';
+import { OutputDisplay } from '@/components/shared/OutputDisplay';
 
 interface ExpandedAgentCardProps {
   agentId: string;
@@ -18,6 +19,8 @@ export function ExpandedAgentCard({ agentId }: ExpandedAgentCardProps) {
   const streaming = useExecutionStore((s) => s.streamingContent.get(agentId));
   const select = useExecutionStore((s) => s.select);
   const toolCalls = useExecutionStore((s) => s.toolCalls);
+
+  const [reasonExpanded, setReasonExpanded] = useState(false);
 
   const hasApprovalRequired = useMemo(() => {
     for (const [, tc] of toolCalls) {
@@ -42,7 +45,7 @@ export function ExpandedAgentCard({ agentId }: ExpandedAgentCardProps) {
 
   return (
     <div
-      className="bg-temper-panel rounded px-3 py-2 cursor-pointer hover:bg-temper-panel-light transition-colors"
+      className="bg-temper-panel rounded px-3 py-2 cursor-pointer hover:bg-temper-panel-light transition-colors focus:outline-none focus:ring-2 focus:ring-temper-accent/50 focus:ring-offset-1 focus:ring-offset-temper-panel"
       style={{ borderLeft: `4px solid ${borderColor}` }}
       onClick={(e) => {
         e.stopPropagation();
@@ -65,12 +68,7 @@ export function ExpandedAgentCard({ agentId }: ExpandedAgentCardProps) {
           </span>
         )}
         {agent.confidence_score != null && (
-          <span className={cn(
-            'text-[10px] px-1.5 py-0.5 rounded shrink-0 font-mono',
-            agent.confidence_score >= 0.8 ? 'bg-emerald-950/50 text-emerald-400' :
-            agent.confidence_score >= 0.5 ? 'bg-amber-950/50 text-amber-400' :
-            'bg-red-950/50 text-red-400'
-          )}>
+          <span className={cn('text-[10px] px-1.5 py-0.5 rounded shrink-0 font-mono', confidenceBadgeClass(agent.confidence_score))}>
             {(agent.confidence_score * 100).toFixed(0)}%
           </span>
         )}
@@ -88,7 +86,7 @@ export function ExpandedAgentCard({ agentId }: ExpandedAgentCardProps) {
       {totalTokens > 0 && (
         <div
           className="h-1.5 w-full rounded-full bg-temper-surface mb-1 overflow-hidden flex"
-          title={`Prompt: ${promptTokens} tokens | Completion: ${completionTokens} tokens | Total: ${totalTokens}`}
+          title={`Prompt: ${formatTokens(promptTokens)} | Completion: ${formatTokens(completionTokens)} | Total: ${formatTokens(totalTokens)}`}
         >
           <div
             className="h-full bg-temper-token-prompt"
@@ -105,6 +103,9 @@ export function ExpandedAgentCard({ agentId }: ExpandedAgentCardProps) {
       <div className="flex items-center gap-3 text-[10px] text-temper-text-muted mb-1">
         <span>{formatDuration(agent.duration_seconds)}</span>
         <span>{formatTokens(totalTokens)} tok</span>
+        {agent.estimated_cost_usd > 0 && (
+          <span className="text-emerald-400">{formatCost(agent.estimated_cost_usd)}</span>
+        )}
         {agent.total_llm_calls > 0 && <span>{agent.total_llm_calls} llm</span>}
         {agent.total_tool_calls > 0 && <span>{agent.total_tool_calls} tool</span>}
       </div>
@@ -128,18 +129,29 @@ export function ExpandedAgentCard({ agentId }: ExpandedAgentCardProps) {
       {/* Output Data */}
       {hasOutputData && (
         <CollapsibleSection title="Output Data" defaultOpen>
-          <div className="max-h-72 overflow-y-auto">
-            <JsonViewer data={agent.output_data} />
-          </div>
+          <OutputDisplay data={agent.output_data!} />
         </CollapsibleSection>
       )}
 
       {/* Reasoning */}
       {agent.reasoning && (
         <CollapsibleSection title="Reasoning">
-          <div className="max-h-72 overflow-y-auto text-xs text-temper-text-dim font-mono whitespace-pre-wrap p-2 rounded bg-temper-surface">
+          <div
+            className={cn(
+              'overflow-y-auto text-xs text-temper-text-dim font-mono whitespace-pre-wrap p-2 rounded bg-temper-surface',
+              !reasonExpanded && 'max-h-32',
+            )}
+          >
             {agent.reasoning}
           </div>
+          {agent.reasoning.length > 300 && (
+            <button
+              className="text-[10px] text-temper-text-muted hover:text-temper-text mt-1"
+              onClick={(e) => { e.stopPropagation(); setReasonExpanded(!reasonExpanded); }}
+            >
+              {reasonExpanded ? 'Show less' : 'Show more'}
+            </button>
+          )}
         </CollapsibleSection>
       )}
     </div>

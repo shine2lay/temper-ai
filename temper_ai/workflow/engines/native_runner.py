@@ -2,10 +2,11 @@
 
 Old name preserved for backward compatibility.
 """
+
 from temper_ai.workflow.engines.dynamic_runner import (  # noqa: F401
+    DEFAULT_MAX_WORKERS,
     ThreadPoolParallelRunner,
     _merge_dicts,
-    DEFAULT_MAX_WORKERS,
 )
 
 __all__ = [

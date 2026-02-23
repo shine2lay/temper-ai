@@ -4,7 +4,8 @@ Template variable validation for PromptEngine.
 Provides type safety and size validation for template variables to prevent
 Server-Side Template Injection (SSTI) attacks.
 """
-from typing import Any, Dict
+
+from typing import Any
 
 from temper_ai.shared.constants.limits import MULTIPLIER_MEDIUM, MULTIPLIER_SMALL
 
@@ -18,9 +19,7 @@ class PromptRenderError(AgentError):
 
     def __init__(self, message: str, **kwargs: Any) -> None:
         super().__init__(
-            message=message,
-            error_code=ErrorCode.AGENT_EXECUTION_ERROR,
-            **kwargs
+            message=message, error_code=ErrorCode.AGENT_EXECUTION_ERROR, **kwargs
         )
 
 
@@ -45,8 +44,7 @@ def _is_safe_template_value(value: Any) -> bool:
         return all(_is_safe_template_value(v) for v in value)
     if isinstance(value, dict):
         return all(
-            isinstance(k, str) and _is_safe_template_value(v)
-            for k, v in value.items()
+            isinstance(k, str) and _is_safe_template_value(v) for k, v in value.items()
         )
     return False
 
@@ -62,9 +60,11 @@ class TemplateVariableValidator:
     # Allowed types for template variables (defense against SSTI via dangerous objects)
     ALLOWED_TYPES = (str, int, float, bool, list, dict, tuple, type(None))
     # Maximum size per variable in bytes (100KB)
-    MAX_VAR_SIZE = SIZE_100MB // MULTIPLIER_MEDIUM // MULTIPLIER_MEDIUM  # 100KB = 100MB / 10 / 10
+    MAX_VAR_SIZE = (
+        SIZE_100MB // MULTIPLIER_MEDIUM // MULTIPLIER_MEDIUM
+    )  # 100KB = 100MB / 10 / 10
 
-    def validate_variables(self, variables: Dict[str, Any]) -> None:
+    def validate_variables(self, variables: dict[str, Any]) -> None:
         """
         Validate template variables for type safety and size limits.
 
@@ -92,7 +92,7 @@ class TemplateVariableValidator:
 
         # Check size for string values
         if isinstance(value, str):
-            size = len(value.encode('utf-8', errors='replace'))
+            size = len(value.encode("utf-8", errors="replace"))
             if size > self.MAX_VAR_SIZE:
                 raise PromptRenderError(
                     f"{ERROR_MSG_VARIABLE_PREFIX}{key}' exceeds size limit: {size} > {self.MAX_VAR_SIZE}"

@@ -1,7 +1,6 @@
 """Tests for BackgroundAnalysisJob."""
 
-import asyncio
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import MagicMock
 
 import pytest
 

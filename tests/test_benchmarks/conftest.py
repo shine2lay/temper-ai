@@ -7,7 +7,15 @@ from unittest.mock import MagicMock, Mock
 
 import pytest
 
-from temper_ai.agent.llm_providers import BaseLLM, LLMResponse
+try:
+    from temper_ai.agent.llm_providers import BaseLLM, LLMResponse
+
+    from temper_ai.observability.database import DatabaseManager
+except ImportError:
+    BaseLLM = None  # type: ignore[assignment,misc]
+    LLMResponse = None  # type: ignore[assignment,misc]
+    DatabaseManager = None  # type: ignore[assignment,misc]
+
 from temper_ai.storage.schemas.agent_config import (
     AgentConfig,
     AgentConfigInner,
@@ -15,7 +23,6 @@ from temper_ai.storage.schemas.agent_config import (
     InferenceConfig,
     PromptConfig,
 )
-from temper_ai.observability.database import DatabaseManager
 
 # ============================================================================
 # Test Configuration Constants
@@ -47,20 +54,16 @@ PERFORMANCE_BUDGETS = {
     "compiler_medium": {"target": 3.0, "alert": 2.7, "fail": 4.5},
     "compiler_large": {"target": 5.0, "alert": 4.5, "fail": 7.0},
     "compiler_complex": {"target": 15.0, "alert": 13.5, "fail": 20.0},
-
     # Agent budgets
     "agent_execution": {"target": 0.1, "alert": 0.09, "fail": 0.15},
     "agent_with_tools": {"target": 0.15, "alert": 0.135, "fail": 0.2},
-
     # Database budgets
     "database_simple_query": {"target": 0.01, "alert": 0.009, "fail": 0.02},
     "database_complex_query": {"target": 0.05, "alert": 0.045, "fail": 0.1},
     "database_write": {"target": 0.02, "alert": 0.018, "fail": 0.04},
-
     # Tool budgets
     "tool_execution": {"target": 0.05, "alert": 0.045, "fail": 0.1},
     "tool_registry_lookup": {"target": 0.005, "alert": 0.0045, "fail": 0.01},
-
     # Memory budgets (MB)
     "memory_agent_creation": {"target": 50, "alert": 65, "fail": 75},
     "memory_workflow_compilation": {"target": 100, "alert": 130, "fail": 150},
@@ -77,12 +80,14 @@ def check_budget(test_name: str, result_seconds: float) -> None:
         pytest.fail(f"BUDGET EXCEEDED: {result_seconds:.3f}s > {budget['fail']}s")
     elif result_seconds > budget["alert"]:
         import warnings
+
         warnings.warn(f"APPROACHING BUDGET: {result_seconds:.3f}s > {budget['alert']}s")
 
 
 # ============================================================================
 # Shared Fixtures
 # ============================================================================
+
 
 @pytest.fixture
 def simple_workflow_config():
@@ -92,7 +97,7 @@ def simple_workflow_config():
             "name": "simple_workflow",
             "description": "Simple benchmark workflow",
             "version": "1.0",
-            "stages": [{"name": "stage1"}]
+            "stages": [{"name": "stage1"}],
         }
     }
 
@@ -105,7 +110,7 @@ def medium_workflow_config():
             "name": "medium_workflow",
             "description": "Medium 10-stage workflow",
             "version": "1.0",
-            "stages": [{"name": f"stage{i}"} for i in range(10)]
+            "stages": [{"name": f"stage{i}"} for i in range(10)],
         }
     }
 
@@ -118,7 +123,7 @@ def large_workflow_config():
             "name": "large_workflow",
             "description": "Large 50-stage workflow",
             "version": "1.0",
-            "stages": [{"name": f"stage{i}"} for i in range(50)]
+            "stages": [{"name": f"stage{i}"} for i in range(50)],
         }
     }
 
@@ -132,7 +137,7 @@ def complex_workflow_config():
             "name": "complex_workflow",
             "description": "Complex 100-stage workflow",
             "version": "1.0",
-            "stages": stages
+            "stages": stages,
         }
     }
 
@@ -143,7 +148,7 @@ def mock_llm_provider():
     provider = MagicMock()
     provider.generate.return_value = {
         "content": "Test response",
-        "usage": {"total_tokens": 100}
+        "usage": {"total_tokens": 100},
     }
     return provider
 
@@ -223,6 +228,7 @@ def mock_llm_fast():
 @pytest.fixture
 def mock_llm_realistic():
     """Mock LLM with 100ms latency for realistic benchmarks."""
+
     def slow_complete(*args, **kwargs):
         time.sleep(0.1)
         return LLMResponse(
@@ -240,6 +246,7 @@ def mock_llm_realistic():
 @pytest.fixture
 def mock_async_llm():
     """Shared mock async LLM provider for performance testing."""
+
     class MockAsyncLLM:
         def __init__(self, latency: float = TEST_LLM_LATENCY):
             self.latency = latency
@@ -251,7 +258,7 @@ def mock_async_llm():
                 content="Mock response",
                 model="mock-model",
                 provider="mock",
-                total_tokens=10
+                total_tokens=10,
             )
 
     return MockAsyncLLM()

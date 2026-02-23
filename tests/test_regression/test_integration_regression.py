@@ -3,12 +3,13 @@ Regression tests for integration bugs.
 
 Tests for bugs that appear in end-to-end scenarios and component interactions.
 """
+
 from unittest.mock import patch
 
 import pytest
 
-from temper_ai.agent.utils.agent_factory import AgentFactory
 from temper_ai.agent.standard_agent import StandardAgent
+from temper_ai.agent.utils.agent_factory import AgentFactory
 from temper_ai.storage.schemas.agent_config import (
     AgentConfig,
     AgentConfigInner,
@@ -71,7 +72,7 @@ class TestConfigAgentIntegration:
         Severity: HIGH (incorrect agent behavior)
         Fixed: AgentFactory now properly maps all config fields
         """
-        with patch('temper_ai.agent.base_agent.ToolRegistry'):
+        with patch("temper_ai.agent.base_agent.ToolRegistry"):
             agent = AgentFactory.create(minimal_agent_config)
 
             # Verify all config fields mapped correctly
@@ -97,11 +98,11 @@ class TestToolExecutorIntegration:
         registry.register(Calculator())
 
         from temper_ai.tools.executor import ToolExecutor
+
         executor = ToolExecutor(registry)
 
         result = executor.execute(
-            tool_name="Calculator",
-            params={"expression": "2 + 2"}
+            tool_name="Calculator", params={"expression": "2 + 2"}
         )
 
         # Should include metadata
@@ -125,10 +126,10 @@ class TestAgentFactory:
         Fixed: AgentFactory defaults to "standard" if type missing
         """
         # Remove type field if present
-        if hasattr(minimal_agent_config.agent, 'type'):
-            delattr(minimal_agent_config.agent, 'type')
+        if hasattr(minimal_agent_config.agent, "type"):
+            delattr(minimal_agent_config.agent, "type")
 
-        with patch('temper_ai.agent.base_agent.ToolRegistry'):
+        with patch("temper_ai.agent.base_agent.ToolRegistry"):
             agent = AgentFactory.create(minimal_agent_config)
 
             # Should default to StandardAgent
@@ -152,12 +153,12 @@ class TestErrorHandlingIntegration:
         registry.register(Calculator())
 
         from temper_ai.tools.executor import ToolExecutor
+
         executor = ToolExecutor(registry)
 
         # Execute with invalid params
         result = executor.execute(
-            tool_name="Calculator",
-            params={"expression": ""}  # Empty expression
+            tool_name="Calculator", params={"expression": ""}  # Empty expression
         )
 
         # Error should be in result
@@ -190,8 +191,7 @@ class TestConcurrency:
 
         def execute_calc():
             return executor.execute(
-                tool_name="Calculator",
-                params={"expression": "2 + 2"}
+                tool_name="Calculator", params={"expression": "2 + 2"}
             )
 
         # Execute concurrently

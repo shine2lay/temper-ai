@@ -11,10 +11,11 @@ Future M6 work:
 - Batch uploads for efficiency
 - Support AWS S3, MinIO, or S3-compatible storage
 """
+
 import logging
 from contextlib import contextmanager
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from temper_ai.observability.backend import ObservabilityBackend, ReadableBackendMixin
 from temper_ai.observability.constants import LOG_SEPARATOR_STATUS
@@ -52,9 +53,9 @@ class S3ObservabilityBackend(ObservabilityBackend, ReadableBackendMixin):
 
     def __init__(
         self,
-        bucket_name: Optional[str] = None,
+        bucket_name: str | None = None,
         prefix: str = "observability",
-        region: str = "us-east-1"
+        region: str = "us-east-1",
     ) -> None:
         """
         Initialize S3 backend.
@@ -80,7 +81,9 @@ class S3ObservabilityBackend(ObservabilityBackend, ReadableBackendMixin):
 
     def track_workflow_end(self, workflow_id: str, end_time: datetime, status: str, **kwargs: Any) -> None:  # type: ignore[override]
         """Track workflow end (stub - logs only)."""
-        logger.debug(f"[S3 STUB] Workflow end: {workflow_id}{LOG_SEPARATOR_STATUS}{status}")
+        logger.debug(
+            f"[S3 STUB] Workflow end: {workflow_id}{LOG_SEPARATOR_STATUS}{status}"
+        )
 
     def update_workflow_metrics(self, workflow_id: str, **kwargs: Any) -> None:  # type: ignore[override]
         """Update workflow metrics (stub - logs only)."""
@@ -95,8 +98,10 @@ class S3ObservabilityBackend(ObservabilityBackend, ReadableBackendMixin):
         logger.debug(f"[S3 STUB] Stage end: {stage_id}{LOG_SEPARATOR_STATUS}{status}")
 
     def set_stage_output(
-        self, stage_id: str, output_data: Dict[str, Any],
-        output_lineage: Optional[Dict[str, Any]] = None,
+        self,
+        stage_id: str,
+        output_data: dict[str, Any],
+        output_lineage: dict[str, Any] | None = None,
     ) -> None:
         """Set stage output (stub - logs only)."""
         logger.debug(f"[S3 STUB] Stage output: {stage_id}")
@@ -114,31 +119,19 @@ class S3ObservabilityBackend(ObservabilityBackend, ReadableBackendMixin):
         logger.debug(f"[S3 STUB] Agent output: {agent_id}")
 
     def track_llm_call(  # type: ignore[override]
-        self,
-        llm_call_id: str,
-        agent_id: str,
-        provider: str,
-        model: str,
-        **kwargs: Any
+        self, llm_call_id: str, agent_id: str, provider: str, model: str, **kwargs: Any
     ) -> None:
         """Track LLM call (stub - logs only)."""
         logger.debug(f"[S3 STUB] LLM call: {provider}/{model} ({llm_call_id})")
 
     def track_tool_call(  # type: ignore[override]
-        self,
-        tool_execution_id: str,
-        agent_id: str,
-        tool_name: str,
-        **kwargs: Any
+        self, tool_execution_id: str, agent_id: str, tool_name: str, **kwargs: Any
     ) -> None:
         """Track tool call (stub - logs only)."""
         logger.debug(f"[S3 STUB] Tool call: {tool_name} ({tool_execution_id})")
 
     def track_safety_violation(  # type: ignore[override]
-        self,
-        violation_severity: str,
-        policy_name: str,
-        **kwargs: Any
+        self, violation_severity: str, policy_name: str, **kwargs: Any
     ) -> None:
         """Track safety violation (stub - logs only)."""
         logger.warning(
@@ -146,11 +139,7 @@ class S3ObservabilityBackend(ObservabilityBackend, ReadableBackendMixin):
         )
 
     def track_collaboration_event(  # type: ignore[override]
-        self,
-        stage_id: str,
-        event_type: str,
-        agents_involved: List[str],
-        **kwargs: Any
+        self, stage_id: str, event_type: str, agents_involved: list[str], **kwargs: Any
     ) -> str:
         """Track collaboration event (stub - logs only)."""
         logger.debug(
@@ -165,7 +154,9 @@ class S3ObservabilityBackend(ObservabilityBackend, ReadableBackendMixin):
         """No-op context manager for S3 (stateless)."""
         yield None
 
-    def cleanup_old_records(self, retention_days: int, dry_run: bool = False) -> Dict[str, int]:
+    def cleanup_old_records(
+        self, retention_days: int, dry_run: bool = False
+    ) -> dict[str, int]:
         """No cleanup needed for S3 (use lifecycle policies)."""
         logger.debug(
             f"[S3 STUB] Cleanup requested (retention={retention_days} days) - "
@@ -173,7 +164,7 @@ class S3ObservabilityBackend(ObservabilityBackend, ReadableBackendMixin):
         )
         return {}
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get S3 backend stats."""
         return {
             "backend_type": "s3",
@@ -181,5 +172,5 @@ class S3ObservabilityBackend(ObservabilityBackend, ReadableBackendMixin):
             "bucket_name": self.bucket_name,
             "prefix": self.prefix,
             "region": self.region,
-            "note": "M6 implementation pending"
+            "note": "M6 implementation pending",
         }

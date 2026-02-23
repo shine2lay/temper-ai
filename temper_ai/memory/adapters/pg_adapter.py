@@ -10,8 +10,9 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Sequence
+from collections.abc import Sequence
+from datetime import UTC, datetime
+from typing import Any
 
 from sqlalchemy import Column, DateTime, Float, Index, String, Text, text
 from sqlalchemy.engine import Engine
@@ -56,7 +57,9 @@ class MemoryRecord(SQLModel, table=True):
     memory_type: str = Field(sa_column=Column(String, nullable=False))
     metadata_json: str = Field(default="{}", sa_column=Column(Text, default="{}"))
     relevance_score: float = Field(default=0.0, sa_column=Column(Float, default=0.0))
-    created_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), nullable=False)
+    )
 
 
 # -- Adapter ------------------------------------------------------------------
@@ -72,7 +75,7 @@ class PGAdapter:
     tsvector/tsquery are PostgreSQL-specific and not modelled in SQLModel.
     """
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None) -> None:
+    def __init__(self, config: dict[str, Any] | None = None) -> None:
         config = config or {}
         self._use_fts: bool = config.get("use_fts", False)
         self._engine: Engine = self._build_engine(config)
@@ -83,9 +86,12 @@ class PGAdapter:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _build_engine(config: Dict[str, Any]) -> Engine:
+    def _build_engine(config: dict[str, Any]) -> Engine:
         """Create the SQLAlchemy engine via the centralized factory."""
-        from temper_ai.storage.database.engine import create_app_engine, get_database_url
+        from temper_ai.storage.database.engine import (
+            create_app_engine,
+            get_database_url,
+        )
 
         database_url = config.get("database_url") or get_database_url()
         return create_app_engine(database_url=database_url)
@@ -103,12 +109,10 @@ class PGAdapter:
         Idempotent — safe to call on every startup.
         """
         add_column_sql = text(
-            "ALTER TABLE memory_records "
-            "ADD COLUMN IF NOT EXISTS tsv tsvector"
+            "ALTER TABLE memory_records " "ADD COLUMN IF NOT EXISTS tsv tsvector"
         )
         create_index_sql = text(
-            "CREATE INDEX IF NOT EXISTS idx_mr_tsv "
-            "ON memory_records USING gin(tsv)"
+            "CREATE INDEX IF NOT EXISTS idx_mr_tsv " "ON memory_records USING gin(tsv)"
         )
         with self._engine.connect() as conn:
             conn.execute(add_column_sql)
@@ -124,11 +128,11 @@ class PGAdapter:
         scope: MemoryScope,
         content: str,
         memory_type: str,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> str:
         """Store a memory and return its ID."""
         entry_id = uuid.uuid4().hex
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         meta_json = json.dumps(metadata or {})
 
         record = MemoryRecord(
@@ -153,8 +157,8 @@ class PGAdapter:
         query: str,
         limit: int = DEFAULT_RETRIEVAL_LIMIT,
         threshold: float = 0.0,
-        memory_type: Optional[str] = None,
-    ) -> List[MemoryEntry]:
+        memory_type: str | None = None,
+    ) -> list[MemoryEntry]:
         """Search memories within a scope.
 
         Uses PostgreSQL full-text search when ``use_fts`` is enabled and
@@ -162,14 +166,18 @@ class PGAdapter:
         """
         with Session(self._engine) as session:
             if self._use_fts and query:
-                return self._fts_search(session, scope, query, limit, threshold, memory_type)
-            return self._ilike_search(session, scope, query, limit, threshold, memory_type)
+                return self._fts_search(
+                    session, scope, query, limit, threshold, memory_type
+                )
+            return self._ilike_search(
+                session, scope, query, limit, threshold, memory_type
+            )
 
     def get_all(
         self,
         scope: MemoryScope,
-        memory_type: Optional[str] = None,
-    ) -> List[MemoryEntry]:
+        memory_type: str | None = None,
+    ) -> list[MemoryEntry]:
         """Return all memories for a scope, optionally filtered by type."""
         with Session(self._engine) as session:
             stmt = text(self._build_get_all_sql(memory_type))
@@ -184,7 +192,9 @@ class PGAdapter:
                 "DELETE FROM memory_records "
                 "WHERE id = :id AND scope_key = :scope_key"
             )
-            result = session.execute(stmt, {"id": memory_id, "scope_key": scope.scope_key})
+            result = session.execute(
+                stmt, {"id": memory_id, "scope_key": scope.scope_key}
+            )
             session.commit()
             return bool(getattr(result, "rowcount", 0) > 0)
 
@@ -207,7 +217,9 @@ class PGAdapter:
             "UPDATE memory_records SET tsv = to_tsvector(:config, :content) "
             "WHERE id = :id"
         )
-        session.execute(stmt, {"config": FTS_CONFIG, "content": content, "id": entry_id})
+        session.execute(
+            stmt, {"config": FTS_CONFIG, "content": content, "id": entry_id}
+        )
 
     def _fts_search(
         self,
@@ -216,8 +228,8 @@ class PGAdapter:
         query: str,
         limit: int,
         threshold: float,
-        memory_type: Optional[str],
-    ) -> List[MemoryEntry]:
+        memory_type: str | None,
+    ) -> list[MemoryEntry]:
         """Full-text search via PostgreSQL to_tsvector / to_tsquery."""
         safe_query = self._sanitize_tsquery(query)
         sql, params = self._build_fts_sql(scope, safe_query, limit, memory_type)
@@ -229,8 +241,8 @@ class PGAdapter:
         scope: MemoryScope,
         safe_query: str,
         limit: int,
-        memory_type: Optional[str],
-    ) -> tuple[str, Dict[str, Any]]:
+        memory_type: str | None,
+    ) -> tuple[str, dict[str, Any]]:
         """Build the FTS SQL and parameter dict."""
         sql = (
             "SELECT *, ts_rank(tsv, to_tsquery(:config, :query)) AS rank "
@@ -238,7 +250,7 @@ class PGAdapter:
             "WHERE scope_key = :scope_key "
             "AND tsv @@ to_tsquery(:config, :query)"
         )
-        params: Dict[str, Any] = {
+        params: dict[str, Any] = {
             "config": FTS_CONFIG,
             "query": safe_query,
             "scope_key": scope.scope_key,
@@ -254,9 +266,9 @@ class PGAdapter:
     def _rows_to_entries_with_rank(
         rows: Sequence[Any],
         threshold: float,
-    ) -> List[MemoryEntry]:
+    ) -> list[MemoryEntry]:
         """Convert ranked FTS result rows into MemoryEntry list."""
-        entries: List[MemoryEntry] = []
+        entries: list[MemoryEntry] = []
         for row in rows:
             rank_val = row.rank if row.rank else 0.0
             score = rank_val / (rank_val + RANK_DAMPING_TERM)
@@ -266,19 +278,16 @@ class PGAdapter:
 
     @staticmethod
     def _sanitize_tsquery(query: str) -> str:
-        """Escape a user query for safe use with plainto_tsquery-style input.
+        """Sanitize a user query for safe use with ``to_tsquery``.
 
         Wraps each whitespace-delimited token in single quotes and joins
         with ``&`` so that ``to_tsquery`` treats them as AND-ed lexemes.
-        Falls back to the raw query wrapped in quotes when empty after split.
+        Falls back to the raw query when empty after split.
         """
         tokens = query.split()
         if not tokens:
             return query
-        escaped = [
-            "'" + token.replace("'", "''") + "'"
-            for token in tokens
-        ]
+        escaped = ["'" + token.replace("'", "''") + "'" for token in tokens]
         return " & ".join(escaped)
 
     # ------------------------------------------------------------------
@@ -292,8 +301,8 @@ class PGAdapter:
         query: str,
         limit: int,
         threshold: float,
-        memory_type: Optional[str],
-    ) -> List[MemoryEntry]:
+        memory_type: str | None,
+    ) -> list[MemoryEntry]:
         """Substring search via ILIKE with client-side relevance scoring."""
         sql, params = self._build_ilike_sql(scope, query, memory_type)
         rows = session.execute(text(sql), params).fetchall()
@@ -303,11 +312,11 @@ class PGAdapter:
     def _build_ilike_sql(
         scope: MemoryScope,
         query: str,
-        memory_type: Optional[str],
-    ) -> tuple[str, Dict[str, Any]]:
+        memory_type: str | None,
+    ) -> tuple[str, dict[str, Any]]:
         """Build the ILIKE SQL and parameter dict."""
         sql = "SELECT * FROM memory_records WHERE scope_key = :scope_key"
-        params: Dict[str, Any] = {"scope_key": scope.scope_key}
+        params: dict[str, Any] = {"scope_key": scope.scope_key}
         if memory_type:
             sql += _WHERE_MEMORY_TYPE
             params["memory_type"] = memory_type
@@ -324,10 +333,10 @@ class PGAdapter:
         query: str,
         limit: int,
         threshold: float,
-    ) -> List[MemoryEntry]:
+    ) -> list[MemoryEntry]:
         """Apply relevance scoring and limit to ILIKE results."""
         query_len = len(query) if query else 0
-        entries: List[MemoryEntry] = []
+        entries: list[MemoryEntry] = []
         for row in rows:
             content_len = max(len(row.content), 1)
             score = query_len / content_len if query_len else 0.0
@@ -342,7 +351,7 @@ class PGAdapter:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _build_get_all_sql(memory_type: Optional[str]) -> str:
+    def _build_get_all_sql(memory_type: str | None) -> str:
         """Build SQL for get_all query."""
         sql = "SELECT * FROM memory_records WHERE scope_key = :scope_key"
         if memory_type:
@@ -353,14 +362,13 @@ class PGAdapter:
     @staticmethod
     def _build_get_all_params(
         scope: MemoryScope,
-        memory_type: Optional[str],
-    ) -> Dict[str, Any]:
+        memory_type: str | None,
+    ) -> dict[str, Any]:
         """Build parameter dict for get_all query."""
-        params: Dict[str, Any] = {"scope_key": scope.scope_key}
+        params: dict[str, Any] = {"scope_key": scope.scope_key}
         if memory_type:
             params["memory_type"] = memory_type
         return params
-
 
 
 # -- Module-level helpers --------------------------------------------------
@@ -385,8 +393,7 @@ def _row_to_memory_entry(row: Any, score: float) -> MemoryEntry:
 def _escape_ilike(value: str) -> str:
     """Escape special ILIKE pattern characters."""
     return (
-        value
-        .replace(LIKE_ESCAPE_CHAR, LIKE_ESCAPE_CHAR + LIKE_ESCAPE_CHAR)
+        value.replace(LIKE_ESCAPE_CHAR, LIKE_ESCAPE_CHAR + LIKE_ESCAPE_CHAR)
         .replace("%", LIKE_ESCAPE_CHAR + "%")
         .replace("_", LIKE_ESCAPE_CHAR + "_")
     )

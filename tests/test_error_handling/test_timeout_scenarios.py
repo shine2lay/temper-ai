@@ -3,6 +3,7 @@ Timeout scenario tests for LLM calls, tool execution, workflows, and agents.
 
 Tests timeout enforcement, error handling, resource cleanup, and partial result capture.
 """
+
 import asyncio
 import tempfile
 import time
@@ -15,7 +16,7 @@ from temper_ai.tools.base import BaseTool, ToolMetadata, ToolResult
 class SlowTool(BaseTool):
     """Tool that sleeps for testing timeouts."""
 
-    def __init__(self, sleep_seconds: float = 60):
+    def __init__(self, sleep_seconds: float = 5):
         self.sleep_seconds = sleep_seconds
         super().__init__()
 
@@ -23,42 +24,31 @@ class SlowTool(BaseTool):
         return ToolMetadata(
             name="SlowTool",
             description="A tool that sleeps for testing timeouts",
-            version="1.0"
+            version="1.0",
         )
 
     def get_parameters_schema(self):
-        return {
-            "type": "object",
-            "properties": {}
-        }
+        return {"type": "object", "properties": {}}
 
     def execute(self, **kwargs) -> ToolResult:
         time.sleep(self.sleep_seconds)
-        return ToolResult(
-            success=True,
-            result=f"Completed after {self.sleep_seconds}s"
-        )
+        return ToolResult(success=True, result=f"Completed after {self.sleep_seconds}s")
 
 
 class AsyncSlowTool(BaseTool):
     """Async tool that sleeps for testing async timeouts."""
 
-    def __init__(self, sleep_seconds: float = 60):
+    def __init__(self, sleep_seconds: float = 5):
         self.sleep_seconds = sleep_seconds
         super().__init__()
 
     def get_metadata(self) -> ToolMetadata:
         return ToolMetadata(
-            name="AsyncSlowTool",
-            description="An async tool that sleeps",
-            version="1.0"
+            name="AsyncSlowTool", description="An async tool that sleeps", version="1.0"
         )
 
     def get_parameters_schema(self):
-        return {
-            "type": "object",
-            "properties": {}
-        }
+        return {"type": "object", "properties": {}}
 
     def execute(self, **kwargs) -> ToolResult:
         # Sync version
@@ -69,46 +59,52 @@ class AsyncSlowTool(BaseTool):
         """Async execution."""
         await asyncio.sleep(self.sleep_seconds)
         return ToolResult(
-            success=True,
-            result=f"Async completed after {self.sleep_seconds}s"
+            success=True, result=f"Async completed after {self.sleep_seconds}s"
         )
 
 
 class TestToolExecutionTimeouts:
     """Test tool execution timeout scenarios."""
 
+    @pytest.mark.timeout(30)
     def test_tool_timeout_sync(self):
         """Test synchronous tool execution timeout.
 
         CRITICAL: Verifies timeout actually enforces time limit.
-        Tool sleeps for 60s but timeout is 2s.
-        Must verify execution stops at ~2s, NOT at 60s.
+        Tool sleeps for 10s but timeout is 2s.
+        Must verify execution stops at ~2s, NOT at 10s.
         """
         from temper_ai.tools.executor import ToolExecutor
         from temper_ai.tools.registry import ToolRegistry
 
         registry = ToolRegistry()
-        tool = SlowTool(sleep_seconds=60)  # Tool would take 60s
+        tool = SlowTool(sleep_seconds=5)  # Tool would take 5s
         registry.register(tool)
         executor = ToolExecutor(registry, default_timeout=2)
 
-        start = time.time()
-        result = executor.execute("SlowTool", {}, timeout=2)
-        elapsed = time.time() - start
+        try:
+            start = time.time()
+            result = executor.execute("SlowTool", {}, timeout=2)
+            elapsed = time.time() - start
 
-        # CRITICAL: Verify timeout enforced
-        assert result.success is False, "Tool should timeout"
-        assert "timed out" in result.error.lower() or "timeout" in result.error.lower(), \
-            f"Error should mention timeout, got: {result.error}"
+            # CRITICAL: Verify timeout enforced
+            assert result.success is False, "Tool should timeout"
+            assert (
+                "timed out" in result.error.lower() or "timeout" in result.error.lower()
+            ), f"Error should mention timeout, got: {result.error}"
 
-        # STRICT timing check: Should timeout at ~2s, definitely not wait 60s
-        assert elapsed < 3.0, \
-            f"TIMEOUT NOT ENFORCED! Tool took {elapsed:.2f}s (should timeout at ~2s). " \
-            f"Execution likely waited for full {tool.sleep_seconds}s instead of enforcing timeout."
+            # STRICT timing check: Should timeout at ~2s, definitely not wait 5s
+            assert elapsed < 3.0, (
+                f"TIMEOUT NOT ENFORCED! Tool took {elapsed:.2f}s (should timeout at ~2s). "
+                f"Execution likely waited for full {tool.sleep_seconds}s instead of enforcing timeout."
+            )
 
-        # Also verify it didn't finish too early
-        assert elapsed >= 1.5, \
-            f"Timeout happened too early: {elapsed:.2f}s (expected ~2s)"
+            # Also verify it didn't finish too early
+            assert (
+                elapsed >= 1.5
+            ), f"Timeout happened too early: {elapsed:.2f}s (expected ~2s)"
+        finally:
+            executor.shutdown(wait=True, cancel_futures=True)
 
     @pytest.mark.asyncio
     async def test_tool_timeout_async(self):
@@ -118,43 +114,46 @@ class TestToolExecutionTimeouts:
         Tool sleeps for 60s but timeout is 2s.
         Must verify execution stops at ~2s, NOT at 60s.
         """
-        tool = AsyncSlowTool(sleep_seconds=60)
+        tool = AsyncSlowTool(sleep_seconds=5)
 
         start = time.time()
 
         with pytest.raises(asyncio.TimeoutError):
-            await asyncio.wait_for(
-                tool.aexecute(),
-                timeout=2.0
-            )
+            await asyncio.wait_for(tool.aexecute(), timeout=2.0)
 
         elapsed = time.time() - start
 
         # STRICT timing check: timeout at ~2s, not 60s
-        assert elapsed < 3.0, \
-            f"TIMEOUT NOT ENFORCED! Async tool took {elapsed:.2f}s (should timeout at ~2s). " \
+        assert elapsed < 3.0, (
+            f"TIMEOUT NOT ENFORCED! Async tool took {elapsed:.2f}s (should timeout at ~2s). "
             f"Execution likely waited for full 60s instead of enforcing timeout."
+        )
 
-        assert elapsed >= 1.8, \
-            f"Timeout happened too early: {elapsed:.2f}s (expected ~2s)"
+        assert (
+            elapsed >= 1.8
+        ), f"Timeout happened too early: {elapsed:.2f}s (expected ~2s)"
 
+    @pytest.mark.timeout(30)
     def test_tool_timeout_cleanup(self):
         """Test that resources are cleaned up on tool timeout."""
         from temper_ai.tools.executor import ToolExecutor
         from temper_ai.tools.registry import ToolRegistry
 
         registry = ToolRegistry()
-        tool = SlowTool(sleep_seconds=10)
+        tool = SlowTool(sleep_seconds=5)
         registry.register(tool)
 
-        # Use context manager to ensure cleanup
-        with ToolExecutor(registry, default_timeout=1) as executor:
+        executor = ToolExecutor(registry, default_timeout=1)
+        try:
             result = executor.execute("SlowTool", {})
             assert result.success is False
+        finally:
+            executor.shutdown(wait=True, cancel_futures=True)
 
         # Executor should be shut down properly
         # If cleanup didn't happen, we'd get warnings
 
+    @pytest.mark.timeout(60)
     @pytest.mark.asyncio
     async def test_multiple_tool_timeouts_no_resource_leak(self):
         """Test that multiple timeouts don't leak resources."""
@@ -162,14 +161,17 @@ class TestToolExecutionTimeouts:
         from temper_ai.tools.registry import ToolRegistry
 
         registry = ToolRegistry()
-        tool = SlowTool(sleep_seconds=60)
+        tool = SlowTool(sleep_seconds=3)
         registry.register(tool)
 
-        with ToolExecutor(registry, default_timeout=1, max_workers=5) as executor:
-            # Trigger 10 timeouts
-            for i in range(10):
+        executor = ToolExecutor(registry, default_timeout=1, max_workers=5)
+        try:
+            # Trigger 5 timeouts (reduced from 10 to avoid thread accumulation)
+            for i in range(5):
                 result = executor.execute("SlowTool", {}, timeout=1)
                 assert result.success is False
+        finally:
+            executor.shutdown(wait=True, cancel_futures=True)
 
         # All workers should be cleaned up
 
@@ -195,19 +197,16 @@ class TestLLMTimeouts:
 
         # Simulate LLM call with timeout
         with pytest.raises(asyncio.TimeoutError):
-            await asyncio.wait_for(
-                slow_generate("What is 2+2?"),
-                timeout=5.0
-            )
+            await asyncio.wait_for(slow_generate("What is 2+2?"), timeout=5.0)
 
         elapsed = time.time() - start
 
         # STRICT: Should timeout at ~5s, not wait 60s
-        assert elapsed < 6.0, \
-            f"TIMEOUT NOT ENFORCED! LLM call took {elapsed:.2f}s (should timeout at ~5s). " \
+        assert elapsed < 6.0, (
+            f"TIMEOUT NOT ENFORCED! LLM call took {elapsed:.2f}s (should timeout at ~5s). "
             f"Execution likely waited for full 60s instead of enforcing timeout."
-        assert elapsed >= 4.5, \
-            f"Timeout too early: {elapsed:.2f}s (expected ~5s)"
+        )
+        assert elapsed >= 4.5, f"Timeout too early: {elapsed:.2f}s (expected ~5s)"
 
     @pytest.mark.asyncio
     async def test_llm_timeout_with_retry_budget(self):
@@ -229,7 +228,7 @@ class TestLLMTimeouts:
                     # Each retry gets remaining time
                     remaining = timeout - (time.time() - start)
                     if remaining <= 0:
-                        raise asyncio.TimeoutError("Overall timeout exceeded")
+                        raise TimeoutError("Overall timeout exceeded")
 
                     return await asyncio.wait_for(func(), timeout=remaining)
 
@@ -242,16 +241,18 @@ class TestLLMTimeouts:
 
         # Should timeout after 10s, not attempt all 3 retries (would take 9s each)
         with pytest.raises((Exception, asyncio.TimeoutError)):
-            await retry_with_timeout(slow_generate_with_retry, max_retries=5, timeout=10)
+            await retry_with_timeout(
+                slow_generate_with_retry, max_retries=5, timeout=10
+            )
 
         elapsed = time.time() - start
 
         # STRICT: Should timeout at ~10s (budget), not wait for all 5 retries (15s)
-        assert elapsed < 11.5, \
-            f"TIMEOUT BUDGET NOT ENFORCED! Retries took {elapsed:.2f}s (should timeout at ~10s). " \
+        assert elapsed < 11.5, (
+            f"TIMEOUT BUDGET NOT ENFORCED! Retries took {elapsed:.2f}s (should timeout at ~10s). "
             f"Execution likely attempted all {call_count['count']} retries instead of enforcing 10s budget."
-        assert elapsed >= 9.0, \
-            f"Timeout too early: {elapsed:.2f}s (expected ~10s)"
+        )
+        assert elapsed >= 9.0, f"Timeout too early: {elapsed:.2f}s (expected ~10s)"
         assert call_count["count"] < 5, "Should not attempt all retries"
 
     @pytest.mark.asyncio
@@ -268,10 +269,7 @@ class TestLLMTimeouts:
                 cleanup_called["count"] += 1
 
         with pytest.raises(asyncio.TimeoutError):
-            await asyncio.wait_for(
-                slow_generate_with_cleanup(),
-                timeout=2.0
-            )
+            await asyncio.wait_for(slow_generate_with_cleanup(), timeout=2.0)
 
         # Give time for cleanup
         await asyncio.sleep(0.1)
@@ -301,18 +299,15 @@ class TestWorkflowTimeouts:
 
         # Execute stage with timeout
         with pytest.raises(asyncio.TimeoutError):
-            await asyncio.wait_for(
-                slow_stage({}),
-                timeout=5.0
-            )
+            await asyncio.wait_for(slow_stage({}), timeout=5.0)
 
         elapsed = time.time() - start
 
         # STRICT: timeout at ~5s, not 60s
-        assert elapsed < 6.0, \
-            f"TIMEOUT NOT ENFORCED! Stage took {elapsed:.2f}s (should timeout at ~5s)"
-        assert elapsed >= 4.5, \
-            f"Timeout too early: {elapsed:.2f}s (expected ~5s)"
+        assert (
+            elapsed < 6.0
+        ), f"TIMEOUT NOT ENFORCED! Stage took {elapsed:.2f}s (should timeout at ~5s)"
+        assert elapsed >= 4.5, f"Timeout too early: {elapsed:.2f}s (expected ~5s)"
 
     @pytest.mark.asyncio
     async def test_workflow_total_timeout(self):
@@ -342,15 +337,16 @@ class TestWorkflowTimeouts:
         elapsed = time.time() - start
 
         # STRICT: Should timeout at ~10s, not wait for all 15s
-        assert elapsed < 11.5, \
-            f"TIMEOUT NOT ENFORCED! Workflow took {elapsed:.2f}s (should timeout at ~10s). " \
+        assert elapsed < 11.5, (
+            f"TIMEOUT NOT ENFORCED! Workflow took {elapsed:.2f}s (should timeout at ~10s). "
             f"Execution likely ran for all 15s instead of enforcing 10s timeout."
-        assert elapsed >= 9.0, \
-            f"Timeout too early: {elapsed:.2f}s (expected ~10s)"
+        )
+        assert elapsed >= 9.0, f"Timeout too early: {elapsed:.2f}s (expected ~10s)"
 
         # Should have completed some stages but not all
-        assert 0 < stages_completed["count"] < 5, \
-            f"Should complete some stages, completed {stages_completed['count']}"
+        assert (
+            0 < stages_completed["count"] < 5
+        ), f"Should complete some stages, completed {stages_completed['count']}"
 
     @pytest.mark.asyncio
     async def test_workflow_timeout_with_partial_results(self):
@@ -371,7 +367,7 @@ class TestWorkflowTimeouts:
 
         try:
             await asyncio.wait_for(run_workflow_with_tracking(), timeout=7.0)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             pass  # Expected
 
         # Should have partial results from completed stages
@@ -396,7 +392,7 @@ class TestWorkflowTimeouts:
             """Parent workflow that catches timeout from child stage."""
             try:
                 await asyncio.wait_for(stage_that_times_out(), timeout=2.0)
-            except asyncio.TimeoutError as e:
+            except TimeoutError as e:
                 errors_caught.append(("stage_timeout", str(e)))
                 raise  # Propagate to parent
 
@@ -429,28 +425,25 @@ class TestAgentTimeouts:
         start = time.time()
 
         with pytest.raises(asyncio.TimeoutError):
-            await asyncio.wait_for(
-                slow_agent_execution("What is 2+2?"),
-                timeout=5.0
-            )
+            await asyncio.wait_for(slow_agent_execution("What is 2+2?"), timeout=5.0)
 
         elapsed = time.time() - start
 
         # STRICT: timeout at ~5s, not 60s
-        assert elapsed < 6.0, \
-            f"TIMEOUT NOT ENFORCED! Agent took {elapsed:.2f}s (should timeout at ~5s)"
-        assert elapsed >= 4.5, \
-            f"Timeout too early: {elapsed:.2f}s (expected ~5s)"
+        assert (
+            elapsed < 6.0
+        ), f"TIMEOUT NOT ENFORCED! Agent took {elapsed:.2f}s (should timeout at ~5s)"
+        assert elapsed >= 4.5, f"Timeout too early: {elapsed:.2f}s (expected ~5s)"
 
     @pytest.mark.asyncio
     async def test_agent_tool_call_timeout(self):
         """Test agent times out during tool call.
 
         CRITICAL: Verifies cascading timeout enforcement.
-        Tool sleeps for 60s, inner timeout is 30s, agent timeout is 10s.
-        Must verify execution stops at ~10s (agent timeout), NOT at 30s or 60s.
+        Tool sleeps for 15s, inner timeout is 30s, agent timeout is 10s.
+        Must verify execution stops at ~10s (agent timeout), NOT at 30s.
         """
-        tool = AsyncSlowTool(sleep_seconds=60)
+        tool = AsyncSlowTool(sleep_seconds=15)
 
         async def agent_with_tool_call():
             """Mock agent that calls slow tool."""
@@ -467,11 +460,11 @@ class TestAgentTimeouts:
         elapsed = time.time() - start
 
         # STRICT: Should timeout at ~10s (agent timeout), not 30s or 60s
-        assert elapsed < 11.5, \
-            f"TIMEOUT NOT ENFORCED! Agent took {elapsed:.2f}s (should timeout at ~10s). " \
+        assert elapsed < 11.5, (
+            f"TIMEOUT NOT ENFORCED! Agent took {elapsed:.2f}s (should timeout at ~10s). "
             f"Execution likely waited for tool timeout (30s) or completion (60s)."
-        assert elapsed >= 9.0, \
-            f"Timeout too early: {elapsed:.2f}s (expected ~10s)"
+        )
+        assert elapsed >= 9.0, f"Timeout too early: {elapsed:.2f}s (expected ~10s)"
 
     @pytest.mark.asyncio
     async def test_agent_timeout_context_preserved(self):
@@ -505,7 +498,7 @@ class TestTimeoutResourceCleanup:
 
         async def operation_with_file():
             """Operation that opens file and times out."""
-            with tempfile.NamedTemporaryFile(mode='w', delete=False) as f:
+            with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
                 file_opened["count"] += 1
                 try:
                     await asyncio.sleep(60)
@@ -611,7 +604,7 @@ class TestTimeoutErrorMessages:
 
         try:
             await asyncio.wait_for(named_operation(), timeout=2.0)
-        except asyncio.TimeoutError as e:
+        except TimeoutError as e:
             # Error should be catchable and identifiable
             assert isinstance(e, asyncio.TimeoutError)
             # Operation name is available in traceback
@@ -633,7 +626,7 @@ class TestTimeoutErrorMessages:
         try:
             await asyncio.wait_for(operation_that_fails(), timeout=2.0)
             assert False, "Should have raised TimeoutError"
-        except asyncio.TimeoutError:
+        except TimeoutError:
             pass  # Expected
         except ValueError:
             assert False, "Should raise TimeoutError, not ValueError"

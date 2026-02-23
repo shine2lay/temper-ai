@@ -2,7 +2,7 @@
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 import yaml
 
@@ -25,21 +25,15 @@ class AutoTuneEngine:
         self.store = store
         self.config_root = Path(config_root)
 
-    def preview_changes(self, rec_ids: List[str]) -> List[Dict[str, Any]]:
+    def preview_changes(self, rec_ids: list[str]) -> list[dict[str, Any]]:
         """Show what would change without modifying files."""
-        return [
-            self._build_change_info(rec_id, dry_run=True)
-            for rec_id in rec_ids
-        ]
+        return [self._build_change_info(rec_id, dry_run=True) for rec_id in rec_ids]
 
-    def apply_recommendations(self, rec_ids: List[str]) -> List[Dict[str, Any]]:
+    def apply_recommendations(self, rec_ids: list[str]) -> list[dict[str, Any]]:
         """Apply approved recommendations to YAML config files."""
-        return [
-            self._build_change_info(rec_id, dry_run=False)
-            for rec_id in rec_ids
-        ]
+        return [self._build_change_info(rec_id, dry_run=False) for rec_id in rec_ids]
 
-    def _build_change_info(self, rec_id: str, dry_run: bool) -> Dict[str, Any]:
+    def _build_change_info(self, rec_id: str, dry_run: bool) -> dict[str, Any]:
         """Build change info dict; optionally apply the change."""
         recs = self.store.list_recommendations(status="pending")
         rec = next((r for r in recs if r.id == rec_id), None)
@@ -48,9 +42,13 @@ class AutoTuneEngine:
 
         config_path = self.config_root / rec.config_path
         if not config_path.exists():
-            return {"id": rec_id, "status": "config_not_found", "path": str(config_path)}
+            return {
+                "id": rec_id,
+                "status": "config_not_found",
+                "path": str(config_path),
+            }
 
-        info: Dict[str, Any] = {
+        info: dict[str, Any] = {
             "id": rec_id,
             "config_path": str(config_path),
             "field_path": rec.field_path,
@@ -90,7 +88,9 @@ def _apply_yaml_change(path: Path, field_path: str, new_value: str) -> bool:
         with open(path, "w") as f:
             yaml.safe_dump(data, f, default_flow_style=False)
 
-        logger.info("Applied config change: %s -> %s in %s", field_path, new_value, path)
+        logger.info(
+            "Applied config change: %s -> %s in %s", field_path, new_value, path
+        )
         return True
     except (OSError, yaml.YAMLError) as exc:
         logger.warning("Failed to apply change to %s: %s", path, exc)

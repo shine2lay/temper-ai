@@ -1,8 +1,8 @@
 """Tests for HTTP API routes in temper_ai.interfaces.server.agent_routes."""
-from datetime import datetime, timezone
+
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
-import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -22,7 +22,7 @@ def _make_entry(**kwargs) -> AgentRegistryEntry:
         status="registered",
         memory_namespace="agent__test-agent",
         total_invocations=0,
-        registered_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        registered_at=datetime(2026, 1, 1, tzinfo=UTC),
         last_active_at=None,
     )
     defaults.update(kwargs)

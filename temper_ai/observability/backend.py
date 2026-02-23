@@ -4,23 +4,20 @@ Abstract backend interface for observability system.
 Defines the contract that all observability backends must implement,
 enabling pluggable storage backends (SQL, Prometheus, S3, etc.).
 """
+
 from __future__ import annotations
 
 import asyncio
 from abc import ABC, abstractmethod
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from typing import (
     TYPE_CHECKING,
     Any,
-    AsyncIterator,
-    Callable,
     ContextManager,
-    Dict,
-    List,
     Literal,
-    Optional,
 )
 
 DEFAULT_LIST_LIMIT = 50
@@ -32,96 +29,101 @@ DEFAULT_LIST_LIMIT = 50
 @dataclass
 class WorkflowStartData:
     """Bundled optional parameters for track_workflow_start."""
-    trigger_type: Optional[str] = None
-    trigger_data: Optional[Dict[str, Any]] = None
-    optimization_target: Optional[str] = None
-    product_type: Optional[str] = None
-    environment: Optional[str] = None
-    tags: Optional[List[str]] = None
-    extra_metadata: Optional[Dict[str, Any]] = None
-    cost_attribution_tags: Optional[Dict[str, str]] = None
+
+    trigger_type: str | None = None
+    trigger_data: dict[str, Any] | None = None
+    optimization_target: str | None = None
+    product_type: str | None = None
+    environment: str | None = None
+    tags: list[str] | None = None
+    extra_metadata: dict[str, Any] | None = None
+    cost_attribution_tags: dict[str, str] | None = None
 
 
 @dataclass
 class AgentOutputData:
     """Bundled optional metrics for set_agent_output."""
-    reasoning: Optional[str] = None
-    confidence_score: Optional[float] = None
-    total_tokens: Optional[int] = None
-    prompt_tokens: Optional[int] = None
-    completion_tokens: Optional[int] = None
-    estimated_cost_usd: Optional[float] = None
-    num_llm_calls: Optional[int] = None
-    num_tool_calls: Optional[int] = None
+
+    reasoning: str | None = None
+    confidence_score: float | None = None
+    total_tokens: int | None = None
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    estimated_cost_usd: float | None = None
+    num_llm_calls: int | None = None
+    num_tool_calls: int | None = None
 
 
 @dataclass
 class LLMCallData:
     """Bundled LLM call parameters."""
+
     prompt: str
     response: str
     prompt_tokens: int
     completion_tokens: int
     latency_ms: int
     estimated_cost_usd: float
-    temperature: Optional[float] = None
-    max_tokens: Optional[int] = None
+    temperature: float | None = None
+    max_tokens: int | None = None
     status: Literal["success", "failed"] = "success"
-    error_message: Optional[str] = None
-    # Failover tracking (Gap 9)
-    failover_sequence: Optional[List[str]] = None
-    failover_from_provider: Optional[str] = None
-    # Prompt versioning (Gap 6)
-    prompt_template_hash: Optional[str] = None
-    prompt_template_source: Optional[str] = None
+    error_message: str | None = None
+    failover_sequence: list[str] | None = None
+    failover_from_provider: str | None = None
+    prompt_template_hash: str | None = None
+    prompt_template_source: str | None = None
 
 
 @dataclass
 class ToolCallData:
     """Bundled tool call parameters."""
-    input_params: Dict[str, Any]
-    output_data: Dict[str, Any]
+
+    input_params: dict[str, Any]
+    output_data: dict[str, Any]
     duration_seconds: float
     status: Literal["success", "failed"] = "success"
-    error_message: Optional[str] = None
-    safety_checks: Optional[List[str]] = None
+    error_message: str | None = None
+    safety_checks: list[str] | None = None
     approval_required: bool = False
 
 
 @dataclass
 class SafetyViolationData:
     """Bundled safety violation parameters."""
-    workflow_id: Optional[str] = None
-    stage_id: Optional[str] = None
-    agent_id: Optional[str] = None
-    service_name: Optional[str] = None
-    context: Optional[Dict[str, Any]] = None
-    timestamp: Optional[datetime] = None
+
+    workflow_id: str | None = None
+    stage_id: str | None = None
+    agent_id: str | None = None
+    service_name: str | None = None
+    context: dict[str, Any] | None = None
+    timestamp: datetime | None = None
 
 
 @dataclass
 class CollaborationEventData:
     """Bundled collaboration event parameters."""
-    event_data: Optional[Dict[str, Any]] = None
-    round_number: Optional[int] = None
-    resolution_strategy: Optional[str] = None
-    outcome: Optional[str] = None
-    confidence_score: Optional[float] = None
-    extra_metadata: Optional[Dict[str, Any]] = None
-    timestamp: Optional[datetime] = None
+
+    event_data: dict[str, Any] | None = None
+    round_number: int | None = None
+    resolution_strategy: str | None = None
+    outcome: str | None = None
+    confidence_score: float | None = None
+    extra_metadata: dict[str, Any] | None = None
+    timestamp: datetime | None = None
 
 
 @dataclass(frozen=True)
 class ErrorFingerprintData:
     """Data for recording an error fingerprint."""
+
     fingerprint: str
     error_type: str
     error_code: str
     classification: str
     normalized_message: str
     sample_message: str
-    workflow_id: Optional[str] = None
-    agent_name: Optional[str] = None
+    workflow_id: str | None = None
+    agent_name: str | None = None
 
 
 class ReadableBackendMixin:
@@ -131,27 +133,32 @@ class ReadableBackendMixin:
     that support persistent storage (e.g., SQL).
     """
 
-    def get_workflow(self, workflow_id: str) -> Optional[Dict[str, Any]]:
+    def get_workflow(self, workflow_id: str) -> dict[str, Any] | None:
         """Get workflow execution data by ID, or None if not found."""
         return None
 
-    def list_workflows(self, limit: int = DEFAULT_LIST_LIMIT, offset: int = 0, status: Optional[str] = None) -> List[Dict[str, Any]]:
+    def list_workflows(
+        self,
+        limit: int = DEFAULT_LIST_LIMIT,
+        offset: int = 0,
+        status: str | None = None,
+    ) -> list[dict[str, Any]]:
         """List workflow executions with optional filtering."""
         return []
 
-    def get_stage(self, stage_id: str) -> Optional[Dict[str, Any]]:
+    def get_stage(self, stage_id: str) -> dict[str, Any] | None:
         """Get stage execution data by ID, or None if not found."""
         return None
 
-    def get_agent(self, agent_id: str) -> Optional[Dict[str, Any]]:
+    def get_agent(self, agent_id: str) -> dict[str, Any] | None:
         """Get agent execution data by ID, or None if not found."""
         return None
 
-    def get_llm_call(self, llm_call_id: str) -> Optional[Dict[str, Any]]:
+    def get_llm_call(self, llm_call_id: str) -> dict[str, Any] | None:
         """Get LLM call data by ID, or None if not found."""
         return None
 
-    def get_tool_call(self, tool_call_id: str) -> Optional[Dict[str, Any]]:
+    def get_tool_call(self, tool_call_id: str) -> dict[str, Any] | None:
         """Get tool call data by ID, or None if not found."""
         return None
 
@@ -182,143 +189,233 @@ class _AsyncBackendDefaults:
         get_session_context: Callable[..., ContextManager[Any]]
 
     async def atrack_workflow_start(
-        self, workflow_id: str, workflow_name: str,
-        workflow_config: Dict[str, Any], start_time: datetime,
-        data: Optional[WorkflowStartData] = None,
+        self,
+        workflow_id: str,
+        workflow_name: str,
+        workflow_config: dict[str, Any],
+        start_time: datetime,
+        data: WorkflowStartData | None = None,
     ) -> None:
         """Async version of track_workflow_start."""
         await asyncio.to_thread(
-            self.track_workflow_start, workflow_id, workflow_name,
-            workflow_config, start_time, data,
+            self.track_workflow_start,
+            workflow_id,
+            workflow_name,
+            workflow_config,
+            start_time,
+            data,
         )
 
     async def atrack_workflow_end(
-        self, workflow_id: str, end_time: datetime, status: str,
-        error_message: Optional[str] = None,
-        error_stack_trace: Optional[str] = None,
+        self,
+        workflow_id: str,
+        end_time: datetime,
+        status: str,
+        error_message: str | None = None,
+        error_stack_trace: str | None = None,
     ) -> None:
         """Async version of track_workflow_end."""
         await asyncio.to_thread(
-            self.track_workflow_end, workflow_id, end_time, status,
-            error_message, error_stack_trace,
+            self.track_workflow_end,
+            workflow_id,
+            end_time,
+            status,
+            error_message,
+            error_stack_trace,
         )
 
     async def aupdate_workflow_metrics(
-        self, workflow_id: str, total_llm_calls: int,
-        total_tool_calls: int, total_tokens: int,
+        self,
+        workflow_id: str,
+        total_llm_calls: int,
+        total_tool_calls: int,
+        total_tokens: int,
         total_cost_usd: float,
     ) -> None:
         """Async version of update_workflow_metrics."""
         await asyncio.to_thread(
-            self.update_workflow_metrics, workflow_id,
-            total_llm_calls, total_tool_calls, total_tokens,
+            self.update_workflow_metrics,
+            workflow_id,
+            total_llm_calls,
+            total_tool_calls,
+            total_tokens,
             total_cost_usd,
         )
 
     async def atrack_stage_start(
-        self, stage_id: str, workflow_id: str, stage_name: str,
-        stage_config: Dict[str, Any], start_time: datetime,
-        input_data: Optional[Dict[str, Any]] = None,
+        self,
+        stage_id: str,
+        workflow_id: str,
+        stage_name: str,
+        stage_config: dict[str, Any],
+        start_time: datetime,
+        input_data: dict[str, Any] | None = None,
     ) -> None:
         """Async version of track_stage_start."""
         await asyncio.to_thread(
-            self.track_stage_start, stage_id, workflow_id,
-            stage_name, stage_config, start_time, input_data,
+            self.track_stage_start,
+            stage_id,
+            workflow_id,
+            stage_name,
+            stage_config,
+            start_time,
+            input_data,
         )
 
     async def atrack_stage_end(
-        self, stage_id: str, end_time: datetime, status: str,
-        error_message: Optional[str] = None,
-        num_agents_executed: int = 0, num_agents_succeeded: int = 0,
+        self,
+        stage_id: str,
+        end_time: datetime,
+        status: str,
+        error_message: str | None = None,
+        num_agents_executed: int = 0,
+        num_agents_succeeded: int = 0,
         num_agents_failed: int = 0,
     ) -> None:
         """Async version of track_stage_end."""
         await asyncio.to_thread(
-            self.track_stage_end, stage_id, end_time, status,
-            error_message, num_agents_executed, num_agents_succeeded,
+            self.track_stage_end,
+            stage_id,
+            end_time,
+            status,
+            error_message,
+            num_agents_executed,
+            num_agents_succeeded,
             num_agents_failed,
         )
 
     async def aset_stage_output(
-        self, stage_id: str, output_data: Dict[str, Any],
-        output_lineage: Optional[Dict[str, Any]] = None,
+        self,
+        stage_id: str,
+        output_data: dict[str, Any],
+        output_lineage: dict[str, Any] | None = None,
     ) -> None:
         """Async version of set_stage_output."""
         await asyncio.to_thread(
-            self.set_stage_output, stage_id, output_data,
+            self.set_stage_output,
+            stage_id,
+            output_data,
             output_lineage,
         )
 
     async def atrack_agent_start(
-        self, agent_id: str, stage_id: str, agent_name: str,
-        agent_config: Dict[str, Any], start_time: datetime,
-        input_data: Optional[Dict[str, Any]] = None,
+        self,
+        agent_id: str,
+        stage_id: str,
+        agent_name: str,
+        agent_config: dict[str, Any],
+        start_time: datetime,
+        input_data: dict[str, Any] | None = None,
     ) -> None:
         """Async version of track_agent_start."""
         await asyncio.to_thread(
-            self.track_agent_start, agent_id, stage_id,
-            agent_name, agent_config, start_time, input_data,
+            self.track_agent_start,
+            agent_id,
+            stage_id,
+            agent_name,
+            agent_config,
+            start_time,
+            input_data,
         )
 
     async def atrack_agent_end(
-        self, agent_id: str, end_time: datetime, status: str,
-        error_message: Optional[str] = None,
+        self,
+        agent_id: str,
+        end_time: datetime,
+        status: str,
+        error_message: str | None = None,
     ) -> None:
         """Async version of track_agent_end."""
         await asyncio.to_thread(
-            self.track_agent_end, agent_id, end_time, status,
+            self.track_agent_end,
+            agent_id,
+            end_time,
+            status,
             error_message,
         )
 
     async def aset_agent_output(
-        self, agent_id: str, output_data: Dict[str, Any],
-        metrics: Optional[AgentOutputData] = None,
+        self,
+        agent_id: str,
+        output_data: dict[str, Any],
+        metrics: AgentOutputData | None = None,
     ) -> None:
         """Async version of set_agent_output."""
         await asyncio.to_thread(
-            self.set_agent_output, agent_id, output_data, metrics,
+            self.set_agent_output,
+            agent_id,
+            output_data,
+            metrics,
         )
 
     async def atrack_llm_call(
-        self, llm_call_id: str, agent_id: str, provider: str,
-        model: str, start_time: datetime, data: LLMCallData,
+        self,
+        llm_call_id: str,
+        agent_id: str,
+        provider: str,
+        model: str,
+        start_time: datetime,
+        data: LLMCallData,
     ) -> None:
         """Async version of track_llm_call."""
         await asyncio.to_thread(
-            self.track_llm_call, llm_call_id, agent_id,
-            provider, model, start_time, data,
+            self.track_llm_call,
+            llm_call_id,
+            agent_id,
+            provider,
+            model,
+            start_time,
+            data,
         )
 
     async def atrack_tool_call(
-        self, tool_execution_id: str, agent_id: str,
-        tool_name: str, start_time: datetime, data: ToolCallData,
+        self,
+        tool_execution_id: str,
+        agent_id: str,
+        tool_name: str,
+        start_time: datetime,
+        data: ToolCallData,
     ) -> None:
         """Async version of track_tool_call."""
         await asyncio.to_thread(
-            self.track_tool_call, tool_execution_id, agent_id,
-            tool_name, start_time, data,
+            self.track_tool_call,
+            tool_execution_id,
+            agent_id,
+            tool_name,
+            start_time,
+            data,
         )
 
     async def atrack_safety_violation(
-        self, violation_severity: str, violation_message: str,
+        self,
+        violation_severity: str,
+        violation_message: str,
         policy_name: str,
-        data: Optional[SafetyViolationData] = None,
+        data: SafetyViolationData | None = None,
     ) -> None:
         """Async version of track_safety_violation."""
         await asyncio.to_thread(
-            self.track_safety_violation, violation_severity,
-            violation_message, policy_name, data,
+            self.track_safety_violation,
+            violation_severity,
+            violation_message,
+            policy_name,
+            data,
         )
 
     async def atrack_collaboration_event(
-        self, stage_id: str, event_type: str,
-        agents_involved: List[str],
-        data: Optional[CollaborationEventData] = None,
+        self,
+        stage_id: str,
+        event_type: str,
+        agents_involved: list[str],
+        data: CollaborationEventData | None = None,
     ) -> str:
         """Async version of track_collaboration_event."""
         return await asyncio.to_thread(
-            self.track_collaboration_event, stage_id, event_type,
-            agents_involved, data,
+            self.track_collaboration_event,
+            stage_id,
+            event_type,
+            agents_involved,
+            data,
         )
 
     @asynccontextmanager
@@ -330,7 +427,10 @@ class _AsyncBackendDefaults:
             yield session
         except Exception as exc:
             await asyncio.to_thread(
-                cm.__exit__, type(exc), exc, exc.__traceback__,
+                cm.__exit__,
+                type(exc),
+                exc,
+                exc.__traceback__,
             )
             raise
         else:
@@ -367,9 +467,9 @@ class ObservabilityBackend(_AsyncBackendDefaults, ABC):
         self,
         workflow_id: str,
         workflow_name: str,
-        workflow_config: Dict[str, Any],
+        workflow_config: dict[str, Any],
         start_time: datetime,
-        data: Optional[WorkflowStartData] = None,
+        data: WorkflowStartData | None = None,
         **kwargs: Any,
     ) -> None:
         """
@@ -390,8 +490,8 @@ class ObservabilityBackend(_AsyncBackendDefaults, ABC):
         workflow_id: str,
         end_time: datetime,
         status: Literal["completed", "failed", "halted", "timeout"],
-        error_message: Optional[str] = None,
-        error_stack_trace: Optional[str] = None
+        error_message: str | None = None,
+        error_stack_trace: str | None = None,
     ) -> None:
         """
         Record workflow execution completion.
@@ -412,7 +512,7 @@ class ObservabilityBackend(_AsyncBackendDefaults, ABC):
         total_llm_calls: int,
         total_tool_calls: int,
         total_tokens: int,
-        total_cost_usd: float
+        total_cost_usd: float,
     ) -> None:
         """
         Update workflow aggregated metrics.
@@ -434,9 +534,9 @@ class ObservabilityBackend(_AsyncBackendDefaults, ABC):
         stage_id: str,
         workflow_id: str,
         stage_name: str,
-        stage_config: Dict[str, Any],
+        stage_config: dict[str, Any],
         start_time: datetime,
-        input_data: Optional[Dict[str, Any]] = None
+        input_data: dict[str, Any] | None = None,
     ) -> None:
         """
         Record stage execution start.
@@ -457,10 +557,10 @@ class ObservabilityBackend(_AsyncBackendDefaults, ABC):
         stage_id: str,
         end_time: datetime,
         status: Literal["completed", "failed"],
-        error_message: Optional[str] = None,
+        error_message: str | None = None,
         num_agents_executed: int = 0,
         num_agents_succeeded: int = 0,
-        num_agents_failed: int = 0
+        num_agents_failed: int = 0,
     ) -> None:
         """
         Record stage execution completion.
@@ -480,8 +580,8 @@ class ObservabilityBackend(_AsyncBackendDefaults, ABC):
     def set_stage_output(
         self,
         stage_id: str,
-        output_data: Dict[str, Any],
-        output_lineage: Optional[Dict[str, Any]] = None,
+        output_data: dict[str, Any],
+        output_lineage: dict[str, Any] | None = None,
     ) -> None:
         """
         Set stage output data.
@@ -501,9 +601,9 @@ class ObservabilityBackend(_AsyncBackendDefaults, ABC):
         agent_id: str,
         stage_id: str,
         agent_name: str,
-        agent_config: Dict[str, Any],
+        agent_config: dict[str, Any],
         start_time: datetime,
-        input_data: Optional[Dict[str, Any]] = None
+        input_data: dict[str, Any] | None = None,
     ) -> None:
         """
         Record agent execution start.
@@ -524,7 +624,7 @@ class ObservabilityBackend(_AsyncBackendDefaults, ABC):
         agent_id: str,
         end_time: datetime,
         status: Literal["completed", "failed"],
-        error_message: Optional[str] = None
+        error_message: str | None = None,
     ) -> None:
         """
         Record agent execution completion.
@@ -541,8 +641,8 @@ class ObservabilityBackend(_AsyncBackendDefaults, ABC):
     def set_agent_output(
         self,
         agent_id: str,
-        output_data: Optional[Dict[str, Any]] = None,
-        metrics: Optional[AgentOutputData] = None,
+        output_data: dict[str, Any] | None = None,
+        metrics: AgentOutputData | None = None,
         **kwargs: Any,
     ) -> None:
         """
@@ -564,8 +664,8 @@ class ObservabilityBackend(_AsyncBackendDefaults, ABC):
         agent_id: str,
         provider: str,
         model: str,
-        start_time: Optional[datetime] = None,
-        data: Optional[LLMCallData] = None,
+        start_time: datetime | None = None,
+        data: LLMCallData | None = None,
         **kwargs: Any,
     ) -> None:
         """
@@ -589,8 +689,8 @@ class ObservabilityBackend(_AsyncBackendDefaults, ABC):
         tool_execution_id: str,
         agent_id: str,
         tool_name: str,
-        start_time: Optional[datetime] = None,
-        data: Optional[ToolCallData] = None,
+        start_time: datetime | None = None,
+        data: ToolCallData | None = None,
         **kwargs: Any,
     ) -> None:
         """
@@ -613,7 +713,7 @@ class ObservabilityBackend(_AsyncBackendDefaults, ABC):
         violation_severity: str,
         violation_message: str,
         policy_name: str,
-        data: Optional[SafetyViolationData] = None,
+        data: SafetyViolationData | None = None,
         **kwargs: Any,
     ) -> None:
         """
@@ -632,8 +732,8 @@ class ObservabilityBackend(_AsyncBackendDefaults, ABC):
         self,
         stage_id: str,
         event_type: str,
-        agents_involved: Optional[List[str]] = None,
-        data: Optional[CollaborationEventData] = None,
+        agents_involved: list[str] | None = None,
+        data: CollaborationEventData | None = None,
         **kwargs: Any,
     ) -> str:
         """
@@ -671,9 +771,9 @@ class ObservabilityBackend(_AsyncBackendDefaults, ABC):
     def get_top_errors(
         self,
         limit: int = 10,
-        classification: Optional[str] = None,
-        since: Optional[datetime] = None,
-    ) -> List[Dict[str, Any]]:
+        classification: str | None = None,
+        since: datetime | None = None,
+    ) -> list[dict[str, Any]]:
         """Get top errors by occurrence count.
 
         Args:
@@ -712,10 +812,8 @@ class ObservabilityBackend(_AsyncBackendDefaults, ABC):
 
     @abstractmethod
     def cleanup_old_records(
-        self,
-        retention_days: int,
-        dry_run: bool = False
-    ) -> Dict[str, int]:
+        self, retention_days: int, dry_run: bool = False
+    ) -> dict[str, int]:
         """
         Clean up old observability records based on retention policy.
 
@@ -730,7 +828,7 @@ class ObservabilityBackend(_AsyncBackendDefaults, ABC):
         pass
 
     @abstractmethod
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """
         Get backend statistics and health information.
 

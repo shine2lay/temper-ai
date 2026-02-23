@@ -7,6 +7,7 @@ Tests cover:
 - Frozen dataclass immutability
 - Security limit rationale and protections
 """
+
 import pytest
 
 from temper_ai.workflow.security_limits import CONFIG_SECURITY, ConfigSecurityLimits
@@ -97,9 +98,13 @@ class TestSecurityLimitRationale:
     def test_config_size_prevents_memory_exhaustion(self):
         """Test that MAX_CONFIG_SIZE is large enough for legitimate use but protects against attacks."""
         # 10MB should allow large multi-agent workflows
-        assert CONFIG_SECURITY.MAX_CONFIG_SIZE >= 1 * 1024 * 1024  # At least 1MB for legitimate configs
+        assert (
+            CONFIG_SECURITY.MAX_CONFIG_SIZE >= 1 * 1024 * 1024
+        )  # At least 1MB for legitimate configs
         # But not so large that it allows easy memory exhaustion
-        assert CONFIG_SECURITY.MAX_CONFIG_SIZE <= 100 * 1024 * 1024  # Not more than 100MB
+        assert (
+            CONFIG_SECURITY.MAX_CONFIG_SIZE <= 100 * 1024 * 1024
+        )  # Not more than 100MB
 
     def test_env_var_size_allows_large_tokens(self):
         """Test that MAX_ENV_VAR_SIZE allows large JWTs/keys but prevents DoS."""
@@ -155,7 +160,10 @@ class TestSecurityLimitUsage:
 
     def test_can_import_class(self):
         """Test that ConfigSecurityLimits class can be imported."""
-        from temper_ai.workflow.security_limits import ConfigSecurityLimits as ImportedClass
+        from temper_ai.workflow.security_limits import (
+            ConfigSecurityLimits as ImportedClass,
+        )
+
         assert ImportedClass is ConfigSecurityLimits
 
     def test_typical_config_size_check(self):

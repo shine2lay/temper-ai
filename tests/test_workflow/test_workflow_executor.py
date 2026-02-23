@@ -1,13 +1,14 @@
 """Tests for WorkflowExecutor class."""
+
 from unittest.mock import Mock, patch
 
 import pytest
 from langgraph.graph import StateGraph
 
-from temper_ai.workflow.domain_state import WorkflowDomainState
-from temper_ai.stage.executors.state_keys import StateKeys
-from temper_ai.workflow.workflow_executor import WorkflowExecutor
 from temper_ai.observability.tracker import ExecutionTracker
+from temper_ai.stage.executors.state_keys import StateKeys
+from temper_ai.workflow.domain_state import WorkflowDomainState
+from temper_ai.workflow.workflow_executor import WorkflowExecutor
 
 
 class TestWorkflowExecutorInitialization:
@@ -32,17 +33,18 @@ class TestWorkflowExecutorInitialization:
         assert executor.tracker is mock_tracker
 
 
-
 class TestExecute:
     """Test synchronous execute method."""
 
     def test_execute_basic(self):
         """Test basic execution."""
         mock_graph = Mock()
-        mock_graph.invoke = Mock(return_value={
-            "workflow_id": "wf-123",
-            "stage_outputs": {"research": "output"}
-        })
+        mock_graph.invoke = Mock(
+            return_value={
+                "workflow_id": "wf-123",
+                "stage_outputs": {"research": "output"},
+            }
+        )
 
         executor = WorkflowExecutor(mock_graph)
         result = executor.execute({"input": "data"})
@@ -60,10 +62,7 @@ class TestExecute:
         mock_graph.invoke = Mock(return_value={"workflow_id": "custom-123"})
 
         executor = WorkflowExecutor(mock_graph)
-        result = executor.execute(
-            input_data={"topic": "AI"},
-            workflow_id="custom-123"
-        )
+        result = executor.execute(input_data={"topic": "AI"}, workflow_id="custom-123")
 
         # Verify state manager received workflow_id
         call_args = mock_graph.invoke.call_args[0][0]
@@ -75,8 +74,10 @@ class TestExecute:
         mock_graph.invoke = Mock(return_value={})
 
         executor = WorkflowExecutor(mock_graph)
-        with patch('temper_ai.workflow.workflow_executor.initialize_state',
-                   return_value=WorkflowDomainState(workflow_id="wf-456")) as mock_init:
+        with patch(
+            "temper_ai.workflow.workflow_executor.initialize_state",
+            return_value=WorkflowDomainState(workflow_id="wf-456"),
+        ) as mock_init:
             executor.execute({"input": "data"})
             mock_init.assert_called_once()
 
@@ -88,8 +89,10 @@ class TestExecute:
         mock_tracker = Mock(spec=ExecutionTracker)
 
         executor = WorkflowExecutor(mock_graph, tracker=mock_tracker)
-        with patch('temper_ai.workflow.workflow_executor.initialize_state',
-                   return_value=WorkflowDomainState()) as mock_init:
+        with patch(
+            "temper_ai.workflow.workflow_executor.initialize_state",
+            return_value=WorkflowDomainState(),
+        ) as mock_init:
             executor.execute({"input": "data"})
             call_kwargs = mock_init.call_args[1]
             assert call_kwargs["tracker"] is mock_tracker
@@ -104,10 +107,12 @@ class TestExecuteAsync:
         from unittest.mock import AsyncMock
 
         mock_graph = Mock()
-        mock_graph.ainvoke = AsyncMock(return_value={
-            "workflow_id": "wf-async-123",
-            "stage_outputs": {"research": "output"}
-        })
+        mock_graph.ainvoke = AsyncMock(
+            return_value={
+                "workflow_id": "wf-async-123",
+                "stage_outputs": {"research": "output"},
+            }
+        )
 
         executor = WorkflowExecutor(mock_graph)
         result = await executor.execute_async({"input": "data"})
@@ -129,8 +134,7 @@ class TestExecuteAsync:
 
         executor = WorkflowExecutor(mock_graph)
         result = await executor.execute_async(
-            input_data={"topic": "quantum"},
-            workflow_id="custom-async"
+            input_data={"topic": "quantum"}, workflow_id="custom-async"
         )
 
         # Verify state was initialized with workflow_id
@@ -146,8 +150,10 @@ class TestExecuteAsync:
         mock_graph.ainvoke = AsyncMock(return_value={})
 
         executor = WorkflowExecutor(mock_graph)
-        with patch('temper_ai.workflow.workflow_executor.initialize_state',
-                   return_value=WorkflowDomainState(workflow_id="wf-async-789")) as mock_init:
+        with patch(
+            "temper_ai.workflow.workflow_executor.initialize_state",
+            return_value=WorkflowDomainState(workflow_id="wf-async-789"),
+        ) as mock_init:
             await executor.execute_async({"input": "data"})
             mock_init.assert_called_once()
 
@@ -163,7 +169,10 @@ class TestStream:
         chunks = [
             {"current_stage": "research", "stage_outputs": {}},
             {"current_stage": "analysis", "stage_outputs": {"research": "output1"}},
-            {"current_stage": "synthesis", "stage_outputs": {"research": "output1", "analysis": "output2"}},
+            {
+                "current_stage": "synthesis",
+                "stage_outputs": {"research": "output1", "analysis": "output2"},
+            },
         ]
         mock_graph.stream = Mock(return_value=iter(chunks))
 
@@ -182,8 +191,10 @@ class TestStream:
         mock_graph.stream = Mock(return_value=iter([]))
 
         executor = WorkflowExecutor(mock_graph)
-        with patch('temper_ai.workflow.workflow_executor.initialize_state',
-                   return_value=WorkflowDomainState(workflow_id="wf-stream-123")) as mock_init:
+        with patch(
+            "temper_ai.workflow.workflow_executor.initialize_state",
+            return_value=WorkflowDomainState(workflow_id="wf-stream-123"),
+        ) as mock_init:
             list(executor.stream({"input": "data"}))
             mock_init.assert_called_once()
 
@@ -216,7 +227,7 @@ class TestCheckpointSupport:
             executor = WorkflowExecutor(
                 mock_graph,
                 checkpoint_manager=checkpoint_manager,
-                enable_checkpoints=True
+                enable_checkpoints=True,
             )
 
             assert executor.checkpoint_manager is checkpoint_manager
@@ -240,11 +251,13 @@ class TestCheckpointSupport:
         mock_graph = Mock()
         # Mock stream to return chunks (updated to use streaming)
         stage_chunks = [
-            {"stage1": {
-                "workflow_id": "wf-checkpoint-test",
-                "stage_outputs": {"stage1": "output1"},
-                "current_stage": "stage1",
-            }}
+            {
+                "stage1": {
+                    "workflow_id": "wf-checkpoint-test",
+                    "stage_outputs": {"stage1": "output1"},
+                    "current_stage": "stage1",
+                }
+            }
         ]
         mock_graph.stream = Mock(return_value=iter(stage_chunks))
 
@@ -253,7 +266,7 @@ class TestCheckpointSupport:
             executor = WorkflowExecutor(
                 mock_graph,
                 checkpoint_manager=checkpoint_manager,
-                enable_checkpoints=True
+                enable_checkpoints=True,
             )
 
             result = executor.execute_with_checkpoints({"input": "test"})
@@ -296,21 +309,22 @@ class TestCheckpointSupport:
             mock_graph = Mock()
             # Mock stream to return remaining chunks (updated to use streaming)
             remaining_chunks = [
-                {"stage2": {
-                    "workflow_id": "wf-resume-test",
-                    "stage_outputs": {
-                        "stage1": "output1",
-                        "stage2": "output2"  # New stage completed
-                    },
-                    "current_stage": "stage2",
-                    "input": "test input",
-                }}
+                {
+                    "stage2": {
+                        "workflow_id": "wf-resume-test",
+                        "stage_outputs": {
+                            "stage1": "output1",
+                            "stage2": "output2",  # New stage completed
+                        },
+                        "current_stage": "stage2",
+                        "input": "test input",
+                    }
+                }
             ]
             mock_graph.stream = Mock(return_value=iter(remaining_chunks))
 
             executor = WorkflowExecutor(
-                mock_graph,
-                checkpoint_manager=checkpoint_manager
+                mock_graph, checkpoint_manager=checkpoint_manager
             )
 
             result = executor.resume_from_checkpoint("wf-resume-test")
@@ -337,7 +351,10 @@ class TestCheckpointSupport:
         """Test that resume raises error if checkpoint not found."""
         import tempfile
 
-        from temper_ai.workflow.checkpoint_backends import CheckpointNotFoundError, FileCheckpointBackend
+        from temper_ai.workflow.checkpoint_backends import (
+            CheckpointNotFoundError,
+            FileCheckpointBackend,
+        )
         from temper_ai.workflow.checkpoint_manager import CheckpointManager
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -346,8 +363,7 @@ class TestCheckpointSupport:
             mock_graph = Mock()
 
             executor = WorkflowExecutor(
-                mock_graph,
-                checkpoint_manager=checkpoint_manager
+                mock_graph, checkpoint_manager=checkpoint_manager
             )
 
             with pytest.raises(CheckpointNotFoundError):
@@ -389,7 +405,7 @@ class TestCheckpointSupport:
             executor = WorkflowExecutor(
                 mock_graph,
                 checkpoint_manager=checkpoint_manager,
-                enable_checkpoints=True
+                enable_checkpoints=True,
             )
             executor.execute_with_checkpoints({"input": "test"})
 

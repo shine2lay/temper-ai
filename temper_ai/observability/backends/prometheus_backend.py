@@ -10,10 +10,11 @@ Future M6 work:
 - Add counters, gauges, histograms for workflow/stage/agent metrics
 - Support labels for workflow_name, stage_name, agent_name, status
 """
+
 import logging
 from contextlib import contextmanager
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from temper_ai.observability.backend import ObservabilityBackend, ReadableBackendMixin
 from temper_ai.observability.constants import LOG_SEPARATOR_STATUS
@@ -40,7 +41,7 @@ class PrometheusObservabilityBackend(ObservabilityBackend, ReadableBackendMixin)
         agent_tool_calls_total{tool_name="web_scraper"} 120
     """
 
-    def __init__(self, push_gateway_url: Optional[str] = None) -> None:
+    def __init__(self, push_gateway_url: str | None = None) -> None:
         """
         Initialize Prometheus backend.
 
@@ -57,11 +58,15 @@ class PrometheusObservabilityBackend(ObservabilityBackend, ReadableBackendMixin)
 
     def track_workflow_start(self, workflow_id: str, workflow_name: str, **kwargs: Any) -> None:  # type: ignore[override]
         """Track workflow start (stub - logs only)."""
-        logger.debug(f"[Prometheus STUB] Workflow start: {workflow_name} ({workflow_id})")
+        logger.debug(
+            f"[Prometheus STUB] Workflow start: {workflow_name} ({workflow_id})"
+        )
 
     def track_workflow_end(self, workflow_id: str, end_time: datetime, status: str, **kwargs: Any) -> None:  # type: ignore[override]
         """Track workflow end (stub - logs only)."""
-        logger.debug(f"[Prometheus STUB] Workflow end: {workflow_id}{LOG_SEPARATOR_STATUS}{status}")
+        logger.debug(
+            f"[Prometheus STUB] Workflow end: {workflow_id}{LOG_SEPARATOR_STATUS}{status}"
+        )
 
     def update_workflow_metrics(self, workflow_id: str, **kwargs: Any) -> None:  # type: ignore[override]
         """Update workflow metrics (stub - logs only)."""
@@ -73,11 +78,15 @@ class PrometheusObservabilityBackend(ObservabilityBackend, ReadableBackendMixin)
 
     def track_stage_end(self, stage_id: str, end_time: datetime, status: str, **kwargs: Any) -> None:  # type: ignore[override]
         """Track stage end (stub - logs only)."""
-        logger.debug(f"[Prometheus STUB] Stage end: {stage_id}{LOG_SEPARATOR_STATUS}{status}")
+        logger.debug(
+            f"[Prometheus STUB] Stage end: {stage_id}{LOG_SEPARATOR_STATUS}{status}"
+        )
 
     def set_stage_output(
-        self, stage_id: str, output_data: Dict[str, Any],
-        output_lineage: Optional[Dict[str, Any]] = None,
+        self,
+        stage_id: str,
+        output_data: dict[str, Any],
+        output_lineage: dict[str, Any] | None = None,
     ) -> None:
         """Set stage output (stub - logs only)."""
         logger.debug(f"[Prometheus STUB] Stage output: {stage_id}")
@@ -88,7 +97,9 @@ class PrometheusObservabilityBackend(ObservabilityBackend, ReadableBackendMixin)
 
     def track_agent_end(self, agent_id: str, end_time: datetime, status: str, **kwargs: Any) -> None:  # type: ignore[override]
         """Track agent end (stub - logs only)."""
-        logger.debug(f"[Prometheus STUB] Agent end: {agent_id}{LOG_SEPARATOR_STATUS}{status}")
+        logger.debug(
+            f"[Prometheus STUB] Agent end: {agent_id}{LOG_SEPARATOR_STATUS}{status}"
+        )
 
     def set_agent_output(self, agent_id: str, **kwargs: Any) -> None:  # type: ignore[override]
         """Set agent output (stub - logs only)."""
@@ -100,11 +111,17 @@ class PrometheusObservabilityBackend(ObservabilityBackend, ReadableBackendMixin)
         agent_id: str,
         provider: str,
         model: str,
-        prompt_tokens: int,
-        completion_tokens: int,
-        **kwargs: Any
+        start_time: datetime | None = None,
+        data: Any | None = None,
+        **kwargs: Any,
     ) -> None:
         """Track LLM call (stub - logs only)."""
+        prompt_tokens = getattr(data, "prompt_tokens", 0) or kwargs.get(
+            "prompt_tokens", 0
+        )
+        completion_tokens = getattr(data, "completion_tokens", 0) or kwargs.get(
+            "completion_tokens", 0
+        )
         logger.debug(
             f"[Prometheus STUB] LLM call: {provider}/{model} "
             f"tokens={prompt_tokens + completion_tokens}"
@@ -115,11 +132,15 @@ class PrometheusObservabilityBackend(ObservabilityBackend, ReadableBackendMixin)
         tool_execution_id: str,
         agent_id: str,
         tool_name: str,
-        duration_seconds: float,
-        status: str = "success",
-        **kwargs: Any
+        start_time: datetime | None = None,
+        data: Any | None = None,
+        **kwargs: Any,
     ) -> None:
         """Track tool call (stub - logs only)."""
+        duration_seconds = getattr(data, "duration_seconds", 0) or kwargs.get(
+            "duration_seconds", 0
+        )
+        status = getattr(data, "status", "success") or kwargs.get("status", "success")
         logger.debug(
             f"[Prometheus STUB] Tool call: {tool_name} "
             f"duration={duration_seconds}s status={status}"
@@ -128,8 +149,10 @@ class PrometheusObservabilityBackend(ObservabilityBackend, ReadableBackendMixin)
     def track_safety_violation(  # type: ignore[override]
         self,
         violation_severity: str,
+        violation_message: str,
         policy_name: str,
-        **kwargs: Any
+        data: Any | None = None,
+        **kwargs: Any,
     ) -> None:
         """Track safety violation (stub - logs only)."""
         logger.warning(
@@ -138,11 +161,7 @@ class PrometheusObservabilityBackend(ObservabilityBackend, ReadableBackendMixin)
         )
 
     def track_collaboration_event(  # type: ignore[override]
-        self,
-        stage_id: str,
-        event_type: str,
-        agents_involved: List[str],
-        **kwargs: Any
+        self, stage_id: str, event_type: str, agents_involved: list[str], **kwargs: Any
     ) -> str:
         """Track collaboration event (stub - logs only)."""
         logger.debug(
@@ -157,16 +176,20 @@ class PrometheusObservabilityBackend(ObservabilityBackend, ReadableBackendMixin)
         """No-op context manager for Prometheus (stateless)."""
         yield None
 
-    def cleanup_old_records(self, retention_days: int, dry_run: bool = False) -> Dict[str, int]:
+    def cleanup_old_records(
+        self, retention_days: int, dry_run: bool = False
+    ) -> dict[str, int]:
         """No cleanup needed for Prometheus (retention handled by Prometheus config)."""
-        logger.debug(f"[Prometheus STUB] Cleanup requested (retention={retention_days} days)")
+        logger.debug(
+            f"[Prometheus STUB] Cleanup requested (retention={retention_days} days)"
+        )
         return {}
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get Prometheus backend stats."""
         return {
             "backend_type": "prometheus",
             "status": "stub",
             "push_gateway_url": self.push_gateway_url,
-            "note": "M6 implementation pending"
+            "note": "M6 implementation pending",
         }

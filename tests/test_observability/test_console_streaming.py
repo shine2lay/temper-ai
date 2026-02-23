@@ -1,4 +1,5 @@
 """Tests for streaming console visualization."""
+
 import time
 from io import StringIO
 
@@ -6,8 +7,8 @@ import pytest
 from rich.console import Console
 
 from temper_ai.observability.console import StreamingVisualizer
-from temper_ai.observability.database import DatabaseManager
-from temper_ai.observability.models import (
+from temper_ai.storage.database import init_database
+from temper_ai.storage.database.models import (
     AgentExecution,
     StageExecution,
     WorkflowExecution,
@@ -17,20 +18,25 @@ from temper_ai.observability.models import (
 @pytest.fixture
 def db_manager():
     """Create test database manager."""
-    manager = DatabaseManager("sqlite:///:memory:")
-    manager.create_all_tables()
+    import temper_ai.storage.database.manager as db_module
+    from temper_ai.storage.database.manager import _db_lock
+
+    # Clean up any existing instance
+    with _db_lock:
+        db_module._db_manager = None
+
+    manager = init_database("sqlite:///:memory:")
     yield manager
-    manager.drop_all_tables()
+
+    # Clean up
+    with _db_lock:
+        db_module._db_manager = None
 
 
 @pytest.fixture
 def sample_workflow(db_manager):
     """Create a sample workflow in database."""
-    import temper_ai.observability.database as db_module
-    from temper_ai.observability.database import get_session
-
-    # Set db_manager as the global database
-    db_module._db_manager = db_manager
+    from temper_ai.storage.database import get_session
 
     workflow = WorkflowExecution(
         id="wf-stream-001",
@@ -71,9 +77,6 @@ def sample_workflow(db_manager):
     # Return just the ID since objects get detached
     yield "wf-stream-001"
 
-    # Cleanup
-    db_module._db_manager = None
-
 
 def test_streaming_visualizer_initialization():
     """Test StreamingVisualizer initialization."""
@@ -90,7 +93,7 @@ def test_streaming_visualizer_start_stop(db_manager, sample_workflow):
     visualizer = StreamingVisualizer(
         sample_workflow,  # sample_workflow is now just the ID string
         verbosity="minimal",
-        poll_interval=0.1
+        poll_interval=0.1,
     )
 
     # Mock console to avoid terminal output
@@ -120,7 +123,7 @@ def test_streaming_visualizer_updates_display(db_manager, sample_workflow):
     visualizer = StreamingVisualizer(
         sample_workflow,  # sample_workflow is now just the ID string
         verbosity="standard",
-        poll_interval=0.1
+        poll_interval=0.1,
     )
 
     # Mock console
@@ -132,7 +135,9 @@ def test_streaming_visualizer_updates_display(db_manager, sample_workflow):
 
     # Update workflow status in database
     with db_manager.session() as session:
-        workflow = session.get(WorkflowExecution, sample_workflow)  # sample_workflow is the ID
+        workflow = session.get(
+            WorkflowExecution, sample_workflow
+        )  # sample_workflow is the ID
         workflow.status = "completed"
         workflow.duration_seconds = 10.5
         session.commit()
@@ -154,7 +159,7 @@ def test_streaming_visualizer_context_manager(db_manager, sample_workflow):
     with StreamingVisualizer(
         sample_workflow,  # sample_workflow is now just the ID string
         verbosity="minimal",
-        poll_interval=0.1
+        poll_interval=0.1,
     ) as visualizer:
         # Mock console
         visualizer.console = Console(file=console_output, force_terminal=False)
@@ -172,15 +177,8 @@ def test_streaming_visualizer_context_manager(db_manager, sample_workflow):
 
 def test_streaming_visualizer_handles_missing_workflow(db_manager):
     """Test streaming visualizer handles non-existent workflow gracefully."""
-    import temper_ai.observability.database as db_module
-
-    # Set db_manager as the global database
-    db_module._db_manager = db_manager
-
     visualizer = StreamingVisualizer(
-        "nonexistent-workflow",
-        verbosity="standard",
-        poll_interval=0.1
+        "nonexistent-workflow", verbosity="standard", poll_interval=0.1
     )
 
     # Mock console
@@ -194,12 +192,10 @@ def test_streaming_visualizer_handles_missing_workflow(db_manager):
     output = console_output.getvalue()
     if visualizer.live is not None:
         # If live display started, output should report the missing workflow
-        assert "not found" in output.lower(), \
-            f"Started visualizer should report missing workflow. Got: {output[:200]}"
+        assert (
+            "not found" in output.lower()
+        ), f"Started visualizer should report missing workflow. Got: {output[:200]}"
     # If live is None, visualizer correctly didn't start for missing workflow
-
-    # Cleanup
-    db_module._db_manager = None
 
 
 def test_get_border_color():
@@ -219,7 +215,7 @@ def test_streaming_stops_on_workflow_completion(db_manager, sample_workflow):
     visualizer = StreamingVisualizer(
         sample_workflow,  # sample_workflow is now just the ID string
         verbosity="standard",
-        poll_interval=0.1
+        poll_interval=0.1,
     )
 
     # Mock console
@@ -231,7 +227,9 @@ def test_streaming_stops_on_workflow_completion(db_manager, sample_workflow):
 
     # Mark workflow as completed
     with db_manager.session() as session:
-        workflow = session.get(WorkflowExecution, sample_workflow)  # sample_workflow is the ID
+        workflow = session.get(
+            WorkflowExecution, sample_workflow
+        )  # sample_workflow is the ID
         workflow.status = "completed"
         workflow.duration_seconds = 5.0
         session.commit()
@@ -251,7 +249,7 @@ def test_streaming_stops_on_workflow_failure(db_manager, sample_workflow):
     visualizer = StreamingVisualizer(
         sample_workflow,  # sample_workflow is now just the ID string
         verbosity="standard",
-        poll_interval=0.1
+        poll_interval=0.1,
     )
 
     # Mock console
@@ -263,7 +261,9 @@ def test_streaming_stops_on_workflow_failure(db_manager, sample_workflow):
 
     # Mark workflow as failed
     with db_manager.session() as session:
-        workflow = session.get(WorkflowExecution, sample_workflow)  # sample_workflow is the ID
+        workflow = session.get(
+            WorkflowExecution, sample_workflow
+        )  # sample_workflow is the ID
         workflow.status = "failed"
         workflow.error_message = "Test failure"
         session.commit()
@@ -284,7 +284,7 @@ def test_streaming_poll_interval_respected(db_manager, sample_workflow):
     visualizer = StreamingVisualizer(
         sample_workflow,  # sample_workflow is the ID string
         verbosity="minimal",
-        poll_interval=0.5
+        poll_interval=0.5,
     )
 
     # Mock console
@@ -297,7 +297,9 @@ def test_streaming_poll_interval_respected(db_manager, sample_workflow):
 
     # Update workflow
     with db_manager.session() as session:
-        workflow = session.get(WorkflowExecution, sample_workflow)  # sample_workflow is the ID
+        workflow = session.get(
+            WorkflowExecution, sample_workflow
+        )  # sample_workflow is the ID
         workflow.total_tokens = 1000
         session.commit()
 
@@ -316,7 +318,7 @@ def test_double_stop_is_safe(db_manager, sample_workflow):
     visualizer = StreamingVisualizer(
         sample_workflow,  # sample_workflow is now just the ID string
         verbosity="minimal",
-        poll_interval=0.1
+        poll_interval=0.1,
     )
 
     # Mock console
@@ -341,6 +343,6 @@ def test_streaming_visualizer_inherits_from_workflow_visualizer():
     visualizer = StreamingVisualizer("wf-001")
 
     assert isinstance(visualizer, WorkflowVisualizer)
-    assert hasattr(visualizer, '_create_workflow_tree')
-    assert hasattr(visualizer, '_format_summary')
-    assert hasattr(visualizer, '_status_icon')
+    assert hasattr(visualizer, "_create_workflow_tree")
+    assert hasattr(visualizer, "_format_summary")
+    assert hasattr(visualizer, "_status_icon")

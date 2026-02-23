@@ -1,9 +1,9 @@
 """Tests for AutoGen adapter."""
+
 from __future__ import annotations
 
 import sys
 from contextlib import contextmanager
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -17,10 +17,10 @@ from temper_ai.plugins.adapters.autogen_adapter import (
 )
 from temper_ai.plugins.constants import PLUGIN_TYPE_AUTOGEN
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 @contextmanager
 def _mock_autogen_modules():
@@ -57,17 +57,21 @@ def _make_autogen_config(**overrides):
     config.agent.description = overrides.get("description", "AutoGen test agent")
     config.agent.version = overrides.get("version", "1.0")
     config.agent.type = PLUGIN_TYPE_AUTOGEN
-    config.agent.plugin_config = overrides.get("plugin_config", {
-        "framework": PLUGIN_TYPE_AUTOGEN,
-        "agent_class": DEFAULT_AGENT_CLASS,
-        "model_client_config": {"model": DEFAULT_MODEL_NAME},
-    })
+    config.agent.plugin_config = overrides.get(
+        "plugin_config",
+        {
+            "framework": PLUGIN_TYPE_AUTOGEN,
+            "agent_class": DEFAULT_AGENT_CLASS,
+            "model_client_config": {"model": DEFAULT_MODEL_NAME},
+        },
+    )
     return config
 
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture()
 def autogen_config():
@@ -77,6 +81,7 @@ def autogen_config():
 # ---------------------------------------------------------------------------
 # Class variable tests
 # ---------------------------------------------------------------------------
+
 
 class TestAutoGenAgentClassVars:
     def test_framework_name(self):
@@ -92,6 +97,7 @@ class TestAutoGenAgentClassVars:
 # ---------------------------------------------------------------------------
 # Instantiation
 # ---------------------------------------------------------------------------
+
 
 class TestAutoGenAgentInit:
     def test_basic_instantiation(self, autogen_config):
@@ -109,6 +115,7 @@ class TestAutoGenAgentInit:
 # ---------------------------------------------------------------------------
 # _initialize_external_agent
 # ---------------------------------------------------------------------------
+
 
 class TestAutoGenInitializeExternal:
     def test_creates_assistant_agent(self, autogen_config):
@@ -129,11 +136,13 @@ class TestAutoGenInitializeExternal:
             assert kwargs.get("system_message") == "AutoGen test agent"
 
     def test_warns_on_unsupported_agent_class(self, autogen_config, caplog):
-        cfg = _make_autogen_config(plugin_config={
-            "framework": PLUGIN_TYPE_AUTOGEN,
-            "agent_class": "CustomAgent",
-            "model_client_config": {"model": DEFAULT_MODEL_NAME},
-        })
+        cfg = _make_autogen_config(
+            plugin_config={
+                "framework": PLUGIN_TYPE_AUTOGEN,
+                "agent_class": "CustomAgent",
+                "model_client_config": {"model": DEFAULT_MODEL_NAME},
+            }
+        )
         with _mock_autogen_modules():
             agent = AutoGenAgent(cfg)
             with caplog.at_level("WARNING"):
@@ -146,11 +155,13 @@ class TestAutoGenInitializeExternal:
             agent._initialize_external_agent()
 
     def test_default_model_used_when_not_specified(self):
-        cfg = _make_autogen_config(plugin_config={
-            "framework": PLUGIN_TYPE_AUTOGEN,
-            "agent_class": DEFAULT_AGENT_CLASS,
-            "model_client_config": {},
-        })
+        cfg = _make_autogen_config(
+            plugin_config={
+                "framework": PLUGIN_TYPE_AUTOGEN,
+                "agent_class": DEFAULT_AGENT_CLASS,
+                "model_client_config": {},
+            }
+        )
         with _mock_autogen_modules() as (_, _, mock_ext, _):
             agent = AutoGenAgent(cfg)
             agent._initialize_external_agent()
@@ -162,6 +173,7 @@ class TestAutoGenInitializeExternal:
 # ---------------------------------------------------------------------------
 # _execute_external / _run_autogen
 # ---------------------------------------------------------------------------
+
 
 class TestAutoGenExecuteExternal:
     def test_execute_returns_chat_message_content(self, autogen_config):
@@ -218,6 +230,7 @@ class TestAutoGenExecuteExternal:
 # _run (BaseAgent wrapper → AgentResponse)
 # ---------------------------------------------------------------------------
 
+
 class TestAutoGenRun:
     def test_run_returns_agent_response(self, autogen_config):
         with _mock_autogen_modules() as (_, mock_messages, _, mock_core):
@@ -264,6 +277,7 @@ class TestAutoGenRun:
 # ---------------------------------------------------------------------------
 # translate_config
 # ---------------------------------------------------------------------------
+
 
 class TestAutoGenTranslateConfig:
     def test_single_agent_config(self, tmp_path):

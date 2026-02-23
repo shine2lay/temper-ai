@@ -25,12 +25,16 @@ def _make_variants(n=2, equal_traffic=True):
     traffic = 1.0 / n if equal_traffic else None
     variants = []
     for i in range(n):
-        variants.append(Variant(
-            id=f"variant-{i}",
-            name=f"Variant {i}",
-            config={"model": f"model-{i}"},
-            allocated_traffic=traffic if equal_traffic else (0.5 if i == 0 else 0.5 / (n - 1)),
-        ))
+        variants.append(
+            Variant(
+                id=f"variant-{i}",
+                name=f"Variant {i}",
+                config={"model": f"model-{i}"},
+                allocated_traffic=(
+                    traffic if equal_traffic else (0.5 if i == 0 else 0.5 / (n - 1))
+                ),
+            )
+        )
     return variants
 
 
@@ -57,8 +61,9 @@ class TestCryptographicPRNG:
     def test_no_standard_random_import(self):
         """The module should not use the standard random module."""
         import temper_ai.experimentation.assignment as mod
+
         # 'random' should not be in the module's namespace
-        assert not hasattr(mod, 'random')
+        assert not hasattr(mod, "random")
 
     def test_uniform_distribution(self):
         """10,000 assignments should produce roughly uniform distribution."""
@@ -73,9 +78,9 @@ class TestCryptographicPRNG:
 
         # Each variant should get roughly 3333 assignments (±500)
         for vid in ["variant-0", "variant-1", "variant-2"]:
-            assert 2500 < counts[vid] < 4500, (
-                f"Variant {vid} got {counts[vid]} assignments, expected ~3333"
-            )
+            assert (
+                2500 < counts[vid] < 4500
+            ), f"Variant {vid} got {counts[vid]} assignments, expected ~3333"
 
     def test_thread_safety(self):
         """Concurrent assignment calls should not raise exceptions."""

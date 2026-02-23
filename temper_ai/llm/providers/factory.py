@@ -1,6 +1,7 @@
 """Factory functions for creating LLM provider instances."""
+
 import warnings
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import TYPE_CHECKING, Any
 
 from temper_ai.llm.constants import ERROR_MSG_VALID_PROVIDERS_SUFFIX
 from temper_ai.llm.providers.anthropic_provider import AnthropicLLM
@@ -107,7 +108,7 @@ def create_llm_from_config(inference_config: "InferenceConfig") -> BaseLLM:
     provider_class = _PROVIDER_CLASSES[provider_enum]
     base_url = inference_config.base_url or _DEFAULT_BASE_URLS.get(provider_enum, "")
 
-    common_params: Dict[str, Any] = {
+    common_params: dict[str, Any] = {
         "model": inference_config.model,
         "base_url": base_url,
         "temperature": inference_config.temperature,
@@ -123,9 +124,12 @@ def create_llm_from_config(inference_config: "InferenceConfig") -> BaseLLM:
         if inference_config.api_key_ref:
             # Secret resolution from environment variable matching the ref name
             import os
+
             api_key = os.getenv(inference_config.api_key_ref)
             if not api_key:
-                raise ValueError(f"API key reference '{inference_config.api_key_ref}' not found in environment")
+                raise ValueError(
+                    f"API key reference '{inference_config.api_key_ref}' not found in environment"
+                )
             common_params["api_key"] = api_key
         elif inference_config.api_key:
             # Fallback to deprecated direct api_key
@@ -141,7 +145,7 @@ def create_llm_client(
     provider: str,
     model: str,
     base_url: str,
-    api_key: Optional[str] = None,
+    api_key: str | None = None,
     **kwargs: Any,
 ) -> BaseLLM:
     """Factory function to create LLM client based on provider.

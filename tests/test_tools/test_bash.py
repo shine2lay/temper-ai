@@ -9,13 +9,19 @@ Tests:
 - Successful execution (stdout/stderr capture)
 - Exit code reporting
 """
+
 import os
 import subprocess
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from temper_ai.tools.bash import DANGEROUS_CHARS, DEFAULT_ALLOWED_COMMANDS, MAX_TIMEOUT_SECONDS, Bash
+from temper_ai.tools.bash import (
+    DANGEROUS_CHARS,
+    DEFAULT_ALLOWED_COMMANDS,
+    MAX_TIMEOUT_SECONDS,
+    Bash,
+)
 from temper_ai.tools.field_names import ToolResultFields
 
 
@@ -100,7 +106,10 @@ class TestAllowlistEnforcement:
         assert result.success is False
         assert result.error is not None
         # Could fail on allowlist or injection prevention
-        assert "not in the allowed list" in result.error or "forbidden character" in result.error.lower()
+        assert (
+            "not in the allowed list" in result.error
+            or "forbidden character" in result.error.lower()
+        )
 
     def test_blocked_command_sudo(self, bash_tool):
         result = bash_tool.execute(command="sudo ls")
@@ -115,15 +124,27 @@ class TestAllowlistEnforcement:
 
     def test_allowed_commands_set(self):
         """Verify the default allowed set contains expected commands."""
-        expected = {"npm", "npx", "node", "hardhat", "ls", "cat", "find", "mkdir", "pwd"}
+        expected = {
+            "npm",
+            "npx",
+            "node",
+            "hardhat",
+            "ls",
+            "cat",
+            "find",
+            "mkdir",
+            "pwd",
+        }
         assert DEFAULT_ALLOWED_COMMANDS == expected
 
     def test_custom_allowlist(self, workspace):
         """Test that custom allowlist works."""
-        tool = Bash(config={
-            "workspace_root": str(workspace),
-            "allowed_commands": ["echo", "pwd"],
-        })
+        tool = Bash(
+            config={
+                "workspace_root": str(workspace),
+                "allowed_commands": ["echo", "pwd"],
+            }
+        )
         # pwd should work
         result = tool.execute(command="pwd", working_directory=str(workspace))
         assert result.success is True
@@ -139,7 +160,9 @@ class TestAllowlistEnforcement:
             working_directory=str(workspace),
         )
         assert result.success is False
-        assert "bare name" in result.error.lower() or "not a path" in result.error.lower()
+        assert (
+            "bare name" in result.error.lower() or "not a path" in result.error.lower()
+        )
 
     def test_command_path_bypass_attempt(self, bash_tool, workspace):
         """Even allowed commands with paths should be rejected."""
@@ -148,7 +171,9 @@ class TestAllowlistEnforcement:
             working_directory=str(workspace),
         )
         assert result.success is False
-        assert "bare name" in result.error.lower() or "not a path" in result.error.lower()
+        assert (
+            "bare name" in result.error.lower() or "not a path" in result.error.lower()
+        )
 
 
 class TestSandboxEnforcement:
@@ -181,10 +206,14 @@ class TestSandboxEnforcement:
         assert "outside the sandbox" in result.error
 
     def test_home_directory_rejected(self, bash_tool):
-        result = bash_tool.execute(command="pwd", working_directory=os.path.expanduser("~"))
+        result = bash_tool.execute(
+            command="pwd", working_directory=os.path.expanduser("~")
+        )
         assert result.success is False
         assert result.error is not None
-        assert "outside the sandbox" in result.error or "resolves outside" in result.error
+        assert (
+            "outside the sandbox" in result.error or "resolves outside" in result.error
+        )
 
     def test_default_to_workspace_root(self, bash_tool, workspace):
         """When no working_directory is specified, use workspace root."""
@@ -217,17 +246,23 @@ class TestInjectionPrevention:
         assert "forbidden character" in result.error.lower()
 
     def test_semicolon_injection(self, bash_tool, workspace):
-        result = bash_tool.execute(command="ls; rm -rf /", working_directory=str(workspace))
+        result = bash_tool.execute(
+            command="ls; rm -rf /", working_directory=str(workspace)
+        )
         assert result.success is False
         assert "forbidden character" in result.error.lower()
 
     def test_pipe_injection(self, bash_tool, workspace):
-        result = bash_tool.execute(command="ls | cat /etc/passwd", working_directory=str(workspace))
+        result = bash_tool.execute(
+            command="ls | cat /etc/passwd", working_directory=str(workspace)
+        )
         assert result.success is False
         assert "forbidden character" in result.error.lower()
 
     def test_ampersand_injection(self, bash_tool, workspace):
-        result = bash_tool.execute(command="ls & rm -rf /", working_directory=str(workspace))
+        result = bash_tool.execute(
+            command="ls & rm -rf /", working_directory=str(workspace)
+        )
         assert result.success is False
         assert "forbidden character" in result.error.lower()
 
@@ -237,17 +272,23 @@ class TestInjectionPrevention:
         assert "forbidden character" in result.error.lower()
 
     def test_backtick_injection(self, bash_tool, workspace):
-        result = bash_tool.execute(command="ls `whoami`", working_directory=str(workspace))
+        result = bash_tool.execute(
+            command="ls `whoami`", working_directory=str(workspace)
+        )
         assert result.success is False
         assert "forbidden character" in result.error.lower()
 
     def test_redirect_injection(self, bash_tool, workspace):
-        result = bash_tool.execute(command="ls > /etc/passwd", working_directory=str(workspace))
+        result = bash_tool.execute(
+            command="ls > /etc/passwd", working_directory=str(workspace)
+        )
         assert result.success is False
         assert "forbidden character" in result.error.lower()
 
     def test_newline_injection(self, bash_tool, workspace):
-        result = bash_tool.execute(command="ls\nrm -rf /", working_directory=str(workspace))
+        result = bash_tool.execute(
+            command="ls\nrm -rf /", working_directory=str(workspace)
+        )
         assert result.success is False
         assert "forbidden character" in result.error.lower()
 
@@ -259,18 +300,22 @@ class TestTimeoutHandling:
         assert bash_tool.default_timeout == 120
 
     def test_custom_timeout(self, workspace):
-        tool = Bash(config={
-            "workspace_root": str(workspace),
-            "default_timeout": 60,
-        })
+        tool = Bash(
+            config={
+                "workspace_root": str(workspace),
+                "default_timeout": 60,
+            }
+        )
         assert tool.default_timeout == 60
 
     def test_max_timeout_cap(self, workspace):
         """Timeout should be capped at MAX_TIMEOUT_SECONDS."""
-        tool = Bash(config={
-            "workspace_root": str(workspace),
-            "default_timeout": 9999,
-        })
+        tool = Bash(
+            config={
+                "workspace_root": str(workspace),
+                "default_timeout": 9999,
+            }
+        )
         assert tool.default_timeout == MAX_TIMEOUT_SECONDS
 
     def test_timeout_parameter(self, bash_tool, workspace):
@@ -605,10 +650,12 @@ class TestShellModeCommandChaining:
     @pytest.fixture
     def shell_tool(self, workspace):
         """Create a Bash tool with shell_mode enabled."""
-        return Bash(config={
-            "workspace_root": str(workspace),
-            "shell_mode": True,
-        })
+        return Bash(
+            config={
+                "workspace_root": str(workspace),
+                "shell_mode": True,
+            }
+        )
 
     # --- Allowed commands still work ---
 
@@ -802,6 +849,7 @@ class TestShellCommandParsing:
     def test_single_quoted_pipe_not_split(self):
         """Pipe inside single quotes should not split command."""
         from temper_ai.tools.bash import _split_shell_commands
+
         result = _split_shell_commands("echo 'hello|world'")
         assert len(result) == 1
         assert "hello|world" in result[0]
@@ -809,6 +857,7 @@ class TestShellCommandParsing:
     def test_double_quoted_pipe_not_split(self):
         """Pipe inside double quotes should not split command."""
         from temper_ai.tools.bash import _split_shell_commands
+
         result = _split_shell_commands('echo "hello|world"')
         assert len(result) == 1
         assert "hello|world" in result[0]
@@ -816,6 +865,7 @@ class TestShellCommandParsing:
     def test_escaped_pipe_not_split(self):
         """Escaped pipe should not split command."""
         from temper_ai.tools.bash import _split_shell_commands
+
         result = _split_shell_commands("echo hello\\|world")
         assert len(result) == 1
         assert "|" in result[0]
@@ -823,6 +873,7 @@ class TestShellCommandParsing:
     def test_single_quote_toggle(self):
         """Single quotes toggle in/out correctly."""
         from temper_ai.tools.bash import _split_shell_commands
+
         result = _split_shell_commands("echo 'test' | cat")
         assert len(result) == 2
         assert "'test'" in result[0]
@@ -830,6 +881,7 @@ class TestShellCommandParsing:
     def test_double_quote_toggle(self):
         """Double quotes toggle in/out correctly."""
         from temper_ai.tools.bash import _split_shell_commands
+
         result = _split_shell_commands('echo "test" | cat')
         assert len(result) == 2
         assert '"test"' in result[0]
@@ -837,6 +889,7 @@ class TestShellCommandParsing:
     def test_escape_in_double_quotes(self):
         """Backslash escape works in double quotes."""
         from temper_ai.tools.bash import _split_shell_commands
+
         result = _split_shell_commands('echo "hello\\"world"')
         assert len(result) == 1
         assert '\\"' in result[0]
@@ -844,6 +897,7 @@ class TestShellCommandParsing:
     def test_no_escape_in_single_quotes(self):
         """Backslash has no special meaning in single quotes."""
         from temper_ai.tools.bash import _split_shell_commands
+
         result = _split_shell_commands("echo 'hello\\nworld'")
         assert len(result) == 1
         assert "\\n" in result[0]
@@ -851,6 +905,7 @@ class TestShellCommandParsing:
     def test_and_operator_split(self):
         """&& operator splits commands correctly."""
         from temper_ai.tools.bash import _split_shell_commands
+
         result = _split_shell_commands("ls && pwd")
         assert len(result) == 2
         assert "ls" in result[0]
@@ -859,6 +914,7 @@ class TestShellCommandParsing:
     def test_or_operator_split(self):
         """|| operator splits commands correctly."""
         from temper_ai.tools.bash import _split_shell_commands
+
         result = _split_shell_commands("ls || pwd")
         assert len(result) == 2
         assert "ls" in result[0]
@@ -867,6 +923,7 @@ class TestShellCommandParsing:
     def test_semicolon_split(self):
         """Semicolon splits commands correctly."""
         from temper_ai.tools.bash import _split_shell_commands
+
         result = _split_shell_commands("ls ; pwd")
         assert len(result) == 2
         assert "ls" in result[0]
@@ -875,6 +932,7 @@ class TestShellCommandParsing:
     def test_nested_quotes(self):
         """Single quotes inside double quotes preserved."""
         from temper_ai.tools.bash import _split_shell_commands
+
         result = _split_shell_commands("""echo "it's working" """)
         assert len(result) == 1
         assert "it's" in result[0]

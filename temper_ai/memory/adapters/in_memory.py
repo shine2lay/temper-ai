@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import threading
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from temper_ai.memory._schemas import MemoryEntry, MemoryScope
 from temper_ai.memory.constants import DEFAULT_RETRIEVAL_LIMIT
@@ -16,8 +16,8 @@ class InMemoryAdapter:
     Suitable for testing and as a fallback when Mem0 is unavailable.
     """
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None) -> None:
-        self._store: Dict[str, List[MemoryEntry]] = {}
+    def __init__(self, config: dict[str, Any] | None = None) -> None:
+        self._store: dict[str, list[MemoryEntry]] = {}
         self._lock = threading.RLock()
 
     def add(
@@ -25,7 +25,7 @@ class InMemoryAdapter:
         scope: MemoryScope,
         content: str,
         memory_type: str,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> str:
         """Store a memory entry and return its ID."""
         entry = MemoryEntry(
@@ -43,14 +43,14 @@ class InMemoryAdapter:
         query: str,
         limit: int = DEFAULT_RETRIEVAL_LIMIT,
         threshold: float = 0.0,
-        memory_type: Optional[str] = None,
-    ) -> List[MemoryEntry]:
+        memory_type: str | None = None,
+    ) -> list[MemoryEntry]:
         """Search memories by substring match within a scope."""
         query_lower = query.lower()
         with self._lock:
             entries = list(self._store.get(scope.scope_key, []))
 
-        results: List[MemoryEntry] = []
+        results: list[MemoryEntry] = []
         for entry in entries:
             if memory_type and entry.memory_type != memory_type:
                 continue
@@ -68,8 +68,8 @@ class InMemoryAdapter:
     def get_all(
         self,
         scope: MemoryScope,
-        memory_type: Optional[str] = None,
-    ) -> List[MemoryEntry]:
+        memory_type: str | None = None,
+    ) -> list[MemoryEntry]:
         """Return all memories for a scope, optionally filtered by type."""
         with self._lock:
             entries = list(self._store.get(scope.scope_key, []))

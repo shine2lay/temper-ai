@@ -10,8 +10,7 @@ Covers:
 - Enum types
 """
 
-import pytest
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 
 from temper_ai.experimentation.models import (
     AssignmentStrategyType,
@@ -427,7 +426,12 @@ class TestExperimentResult:
                 }
             },
             guardrail_violations=[
-                {"variant": "variant_a", "metric": "error_rate", "value": 0.08, "threshold": 0.05}
+                {
+                    "variant": "variant_a",
+                    "metric": "error_rate",
+                    "value": 0.08,
+                    "threshold": 0.05,
+                }
             ],
             recommendation=RecommendationType.STOP_WINNER,
             recommended_winner="variant_a",
@@ -546,8 +550,18 @@ class TestExperimentResult:
     def test_result_guardrail_violations_structure(self):
         """Test guardrail violations structure."""
         violations = [
-            {"variant": "variant_a", "metric": "error_rate", "value": 0.08, "threshold": 0.05},
-            {"variant": "variant_b", "metric": "latency_p99", "value": 1500, "threshold": 1000},
+            {
+                "variant": "variant_a",
+                "metric": "error_rate",
+                "value": 0.08,
+                "threshold": 0.05,
+            },
+            {
+                "variant": "variant_b",
+                "metric": "latency_p99",
+                "value": 1500,
+                "threshold": 1000,
+            },
         ]
 
         result = ExperimentResult(
@@ -613,9 +627,19 @@ class TestExperimentResult:
             sample_size=100,
             variant_metrics={},
             statistical_tests={},
-            guardrail_violations=[{"variant": "variant_a", "metric": "error_rate", "value": 0.1, "threshold": 0.05}],
+            guardrail_violations=[
+                {
+                    "variant": "variant_a",
+                    "metric": "error_rate",
+                    "value": 0.1,
+                    "threshold": 0.05,
+                }
+            ],
             recommendation=RecommendationType.STOP_GUARDRAIL_VIOLATION,
             confidence=1.0,
         )
-        assert result_violation.recommendation == RecommendationType.STOP_GUARDRAIL_VIOLATION
+        assert (
+            result_violation.recommendation
+            == RecommendationType.STOP_GUARDRAIL_VIOLATION
+        )
         assert len(result_violation.guardrail_violations) == 1

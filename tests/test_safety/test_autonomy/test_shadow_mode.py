@@ -12,8 +12,11 @@ from temper_ai.safety.interfaces import SafetyViolation, ViolationSeverity
 def _violation(severity: ViolationSeverity) -> SafetyViolation:
     """Create a test violation."""
     return SafetyViolation(
-        policy_name="test", severity=severity,
-        message="test", action="test", context={},
+        policy_name="test",
+        severity=severity,
+        message="test",
+        action="test",
+        context={},
     )
 
 
@@ -29,7 +32,9 @@ class TestValidateShadow:
         router.route_action.return_value = ApprovalDecision(requires_approval=True)
 
         result = shadow.validate_shadow(
-            "agent-a", "domain", [_violation(ViolationSeverity.HIGH)],
+            "agent-a",
+            "domain",
+            [_violation(ViolationSeverity.HIGH)],
             current_requires_approval=True,
             proposed_level=AutonomyLevel.RISK_GATED,
             approval_router=router,
@@ -48,7 +53,9 @@ class TestValidateShadow:
         router.route_action.return_value = ApprovalDecision(requires_approval=False)
 
         result = shadow.validate_shadow(
-            "agent-a", "domain", [_violation(ViolationSeverity.HIGH)],
+            "agent-a",
+            "domain",
+            [_violation(ViolationSeverity.HIGH)],
             current_requires_approval=True,
             proposed_level=AutonomyLevel.AUTONOMOUS,
             approval_router=router,
@@ -67,14 +74,22 @@ class TestValidateShadow:
         # First run: agree
         router.route_action.return_value = ApprovalDecision(requires_approval=True)
         shadow.validate_shadow(
-            "a", "d", [], current_requires_approval=True,
-            proposed_level=AutonomyLevel.SPOT_CHECKED, approval_router=router,
+            "a",
+            "d",
+            [],
+            current_requires_approval=True,
+            proposed_level=AutonomyLevel.SPOT_CHECKED,
+            approval_router=router,
         )
         # Second run: disagree
         router.route_action.return_value = ApprovalDecision(requires_approval=False)
         result = shadow.validate_shadow(
-            "a", "d", [], current_requires_approval=True,
-            proposed_level=AutonomyLevel.SPOT_CHECKED, approval_router=router,
+            "a",
+            "d",
+            [],
+            current_requires_approval=True,
+            proposed_level=AutonomyLevel.SPOT_CHECKED,
+            approval_router=router,
         )
         assert result.shadow_runs == 2
         assert result.shadow_agreements == 1
@@ -96,9 +111,13 @@ class TestCheckPromotionReady:
         shadow = ShadowMode(store=store)
 
         from temper_ai.safety.autonomy.models import AutonomyState
+
         state = AutonomyState(
-            id="as-test", agent_name="a", domain="d",
-            shadow_runs=10, shadow_agreements=10,
+            id="as-test",
+            agent_name="a",
+            domain="d",
+            shadow_runs=10,
+            shadow_agreements=10,
         )
         store.save_state(state)
         assert not shadow.check_promotion_ready("a", "d")
@@ -109,9 +128,13 @@ class TestCheckPromotionReady:
         shadow = ShadowMode(store=store)
 
         from temper_ai.safety.autonomy.models import AutonomyState
+
         state = AutonomyState(
-            id="as-test", agent_name="a", domain="d",
-            shadow_runs=50, shadow_agreements=49,
+            id="as-test",
+            agent_name="a",
+            domain="d",
+            shadow_runs=50,
+            shadow_agreements=49,
         )
         store.save_state(state)
         assert shadow.check_promotion_ready("a", "d")
@@ -122,9 +145,13 @@ class TestCheckPromotionReady:
         shadow = ShadowMode(store=store)
 
         from temper_ai.safety.autonomy.models import AutonomyState
+
         state = AutonomyState(
-            id="as-test", agent_name="a", domain="d",
-            shadow_runs=50, shadow_agreements=45,
+            id="as-test",
+            agent_name="a",
+            domain="d",
+            shadow_runs=50,
+            shadow_agreements=45,
         )
         store.save_state(state)
         assert not shadow.check_promotion_ready("a", "d")
@@ -139,9 +166,14 @@ class TestResetShadow:
         shadow = ShadowMode(store=store)
 
         from temper_ai.safety.autonomy.models import AutonomyState
+
         state = AutonomyState(
-            id="as-test", agent_name="a", domain="d",
-            shadow_runs=25, shadow_agreements=24, shadow_level=2,
+            id="as-test",
+            agent_name="a",
+            domain="d",
+            shadow_runs=25,
+            shadow_agreements=24,
+            shadow_level=2,
         )
         store.save_state(state)
 

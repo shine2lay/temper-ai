@@ -26,14 +26,20 @@ Example:
     ... except CircuitBreakerOpen:
     ...     print("Circuit breaker is open - too many failures")
 """
+
 import importlib
 import threading
 import warnings
+from collections.abc import Generator
 from contextlib import contextmanager
-from typing import Any, Dict, Generator, List, Optional
+from typing import Any
 
 from temper_ai.shared.constants.durations import TIMEOUT_LONG
-from temper_ai.shared.constants.limits import MAX_SHORT_STRING_LENGTH, MULTIPLIER_SMALL, THRESHOLD_SMALL_COUNT
+from temper_ai.shared.constants.limits import (
+    MAX_SHORT_STRING_LENGTH,
+    MULTIPLIER_SMALL,
+    THRESHOLD_SMALL_COUNT,
+)
 
 # Re-export map for deprecated names from temper_ai.shared.core.circuit_breaker
 _SHIM_EXPORTS = {
@@ -43,7 +49,10 @@ _SHIM_EXPORTS = {
     "CircuitState": "temper_ai.shared.core.circuit_breaker",
     # Backward-compatible aliases
     "CircuitBreakerState": ("temper_ai.shared.core.circuit_breaker", "CircuitState"),
-    "CircuitBreakerOpen": ("temper_ai.shared.core.circuit_breaker", "CircuitBreakerError"),
+    "CircuitBreakerOpen": (
+        "temper_ai.shared.core.circuit_breaker",
+        "CircuitBreakerError",
+    ),
 }
 
 # Eagerly import for use by local classes (SafetyGate, CircuitBreakerManager)
@@ -74,6 +83,7 @@ def __getattr__(name: str) -> Any:
 
 class SafetyGateBlocked(Exception):  # noqa: N818 — public API name
     """Exception raised when safety gate blocks execution."""
+
     pass
 
 
@@ -104,9 +114,9 @@ class SafetyGate:
     def __init__(
         self,
         name: str,
-        circuit_breaker: Optional[_CircuitBreaker] = None,
-        policy_composer: Optional[Any] = None,
-        require_approval: bool = False
+        circuit_breaker: _CircuitBreaker | None = None,
+        policy_composer: Any | None = None,
+        require_approval: bool = False,
     ):
         """Initialize safety gate.
 
@@ -122,12 +132,10 @@ class SafetyGate:
         self.require_approval = require_approval
 
         self._blocked = False
-        self._blocked_reason: Optional[str] = None
+        self._blocked_reason: str | None = None
 
     def can_pass(
-        self,
-        action: Dict[str, Any],
-        context: Optional[Dict[str, Any]] = None
+        self, action: dict[str, Any], context: dict[str, Any] | None = None
     ) -> bool:
         """Check if action can pass through gate.
 
@@ -152,10 +160,8 @@ class SafetyGate:
         return True
 
     def validate(
-        self,
-        action: Dict[str, Any],
-        context: Optional[Dict[str, Any]] = None
-    ) -> tuple[bool, List[str]]:
+        self, action: dict[str, Any], context: dict[str, Any] | None = None
+    ) -> tuple[bool, list[str]]:
         """Validate action and return detailed reasons if blocked.
 
         Args:
@@ -201,9 +207,7 @@ class SafetyGate:
 
     @contextmanager
     def __call__(
-        self,
-        action: Dict[str, Any],
-        context: Optional[Dict[str, Any]] = None
+        self, action: dict[str, Any], context: dict[str, Any] | None = None
     ) -> Generator[None, None, None]:
         """Context manager for safety gate protection.
 
@@ -227,7 +231,8 @@ class SafetyGate:
         status = "blocked" if self._blocked else "open"
         breaker_state = (
             f", breaker={self.circuit_breaker.state.value}"
-            if self.circuit_breaker else ""
+            if self.circuit_breaker
+            else ""
         )
         return f"SafetyGate(name='{self.name}', status={status}{breaker_state})"
 
@@ -244,8 +249,8 @@ class CircuitBreakerManager:
     """
 
     def __init__(self) -> None:
-        self._breakers: Dict[str, _CircuitBreaker] = {}
-        self._gates: Dict[str, SafetyGate] = {}
+        self._breakers: dict[str, _CircuitBreaker] = {}
+        self._gates: dict[str, SafetyGate] = {}
         self._lock = threading.Lock()
 
     def create_breaker(
@@ -253,7 +258,7 @@ class CircuitBreakerManager:
         name: str,
         failure_threshold: int = THRESHOLD_SMALL_COUNT,
         timeout_seconds: int = TIMEOUT_LONG,
-        success_threshold: int = MULTIPLIER_SMALL
+        success_threshold: int = MULTIPLIER_SMALL,
     ) -> _CircuitBreaker:
         """Create and register a circuit breaker.
 
@@ -272,7 +277,9 @@ class CircuitBreakerManager:
         if not isinstance(name, str):
             raise ValueError(f"name must be a string, got {type(name).__name__}")
         if not name or len(name) > MAX_SHORT_STRING_LENGTH:
-            raise ValueError(f"name must be 1-{MAX_SHORT_STRING_LENGTH} characters, got {len(name)}")
+            raise ValueError(
+                f"name must be 1-{MAX_SHORT_STRING_LENGTH} characters, got {len(name)}"
+            )
 
         with self._lock:
             if name in self._breakers:
@@ -282,13 +289,13 @@ class CircuitBreakerManager:
                 name=name,
                 failure_threshold=failure_threshold,
                 timeout_seconds=timeout_seconds,
-                success_threshold=success_threshold
+                success_threshold=success_threshold,
             )
 
             self._breakers[name] = breaker
             return breaker
 
-    def get_breaker(self, name: str) -> Optional[_CircuitBreaker]:
+    def get_breaker(self, name: str) -> _CircuitBreaker | None:
         """Get circuit breaker by name."""
         return self._breakers.get(name)
 
@@ -300,15 +307,15 @@ class CircuitBreakerManager:
                 return True
             return False
 
-    def list_breakers(self) -> List[str]:
+    def list_breakers(self) -> list[str]:
         """Get list of all breaker names."""
         return list(self._breakers.keys())
 
     def create_gate(
         self,
         name: str,
-        breaker_name: Optional[str] = None,
-        policy_composer: Optional[Any] = None
+        breaker_name: str | None = None,
+        policy_composer: Any | None = None,
     ) -> SafetyGate:
         """Create and register a safety gate."""
         with self._lock:
@@ -318,15 +325,13 @@ class CircuitBreakerManager:
             breaker = self._breakers.get(breaker_name) if breaker_name else None
 
             gate = SafetyGate(
-                name=name,
-                circuit_breaker=breaker,
-                policy_composer=policy_composer
+                name=name, circuit_breaker=breaker, policy_composer=policy_composer
             )
 
             self._gates[name] = gate
             return gate
 
-    def get_gate(self, name: str) -> Optional[SafetyGate]:
+    def get_gate(self, name: str) -> SafetyGate | None:
         """Get safety gate by name."""
         return self._gates.get(name)
 
@@ -338,11 +343,11 @@ class CircuitBreakerManager:
                 return True
             return False
 
-    def list_gates(self) -> List[str]:
+    def list_gates(self) -> list[str]:
         """Get list of all gate names."""
         return list(self._gates.keys())
 
-    def get_all_metrics(self) -> Dict[str, Dict[str, Any]]:
+    def get_all_metrics(self) -> dict[str, dict[str, Any]]:
         """Get metrics for all circuit breakers."""
         return {
             name: breaker.get_metrics().to_dict()

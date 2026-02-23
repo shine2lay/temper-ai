@@ -1,7 +1,6 @@
 """Comprehensive tests for visualize_trace module (227 lines)."""
+
 import json
-from datetime import datetime, timezone
-from io import StringIO
 from unittest.mock import Mock, patch
 
 import pytest
@@ -16,6 +15,7 @@ from temper_ai.observability.visualize_trace import (
 # Skip tests if plotly not available
 try:
     import plotly.graph_objects as go
+
     PLOTLY_AVAILABLE = True
 except ImportError:
     PLOTLY_AVAILABLE = False
@@ -35,7 +35,7 @@ def sample_trace():
         "metadata": {
             "total_tokens": 1500,
             "total_cost_usd": 0.0123,
-            "environment": "test"
+            "environment": "test",
         },
         "children": [
             {
@@ -60,7 +60,7 @@ def sample_trace():
                             "total_tokens": 500,
                             "estimated_cost_usd": 0.005,
                             "num_llm_calls": 2,
-                            "num_tool_calls": 1
+                            "num_tool_calls": 1,
                         },
                         "children": [
                             {
@@ -75,9 +75,9 @@ def sample_trace():
                                     "model": "gpt-4",
                                     "total_tokens": 300,
                                     "prompt_tokens": 200,
-                                    "completion_tokens": 100
+                                    "completion_tokens": 100,
                                 },
-                                "children": []
+                                "children": [],
                             },
                             {
                                 "id": "tool-001",
@@ -89,13 +89,13 @@ def sample_trace():
                                 "status": "completed",
                                 "metadata": {
                                     "tool_name": "read_file",
-                                    "tool_version": "1.0"
+                                    "tool_version": "1.0",
                                 },
-                                "children": []
-                            }
-                        ]
+                                "children": [],
+                            },
+                        ],
                     }
-                ]
+                ],
             },
             {
                 "id": "stage-002",
@@ -106,9 +106,9 @@ def sample_trace():
                 "duration": 15.0,
                 "status": "completed",
                 "metadata": {},
-                "children": []
-            }
-        ]
+                "children": [],
+            },
+        ],
     }
 
 
@@ -124,7 +124,7 @@ def minimal_trace():
         "duration": 1.0,
         "status": "completed",
         "metadata": {},
-        "children": []
+        "children": [],
     }
 
 
@@ -153,8 +153,7 @@ class TestFlattenTraceWithTree:
         # Check for tree characters
         display_names = [item["display_name"] for item in flat]
         has_tree_chars = any(
-            "├─" in name or "└─" in name or "▼" in name
-            for name in display_names
+            "├─" in name or "└─" in name or "▼" in name for name in display_names
         )
         assert has_tree_chars
 
@@ -164,10 +163,7 @@ class TestFlattenTraceWithTree:
 
         # Should use simple indentation
         display_names = [item["display_name"] for item in flat]
-        has_tree_chars = any(
-            "├─" in name or "└─" in name
-            for name in display_names
-        )
+        has_tree_chars = any("├─" in name or "└─" in name for name in display_names)
         assert not has_tree_chars
 
     def test_timing_calculations(self, sample_trace):
@@ -271,10 +267,7 @@ class TestCreateHierarchicalGantt:
         """Test saving chart to HTML file."""
         output_file = tmp_path / "test_chart.html"
 
-        fig = create_hierarchical_gantt(
-            minimal_trace,
-            output_file=str(output_file)
-        )
+        fig = create_hierarchical_gantt(minimal_trace, output_file=str(output_file))
 
         assert output_file.exists()
         assert output_file.stat().st_size > 0
@@ -287,8 +280,10 @@ class TestCreateHierarchicalGantt:
 
     def test_missing_plotly_raises_error(self, minimal_trace):
         """Test error when plotly not available."""
-        with patch.dict('sys.modules', {'plotly.graph_objects': None}):
-            with patch('temper_ai.observability.visualize_trace.PLOTLY_AVAILABLE', False):
+        with patch.dict("sys.modules", {"plotly.graph_objects": None}):
+            with patch(
+                "temper_ai.observability.visualize_trace.PLOTLY_AVAILABLE", False
+            ):
                 with pytest.raises(ImportError, match="Plotly required"):
                     create_hierarchical_gantt(minimal_trace)
 
@@ -317,7 +312,7 @@ class TestPrintConsoleGantt:
 
         captured = capsys.readouterr()
         # Timeline uses █ for active and ░ for idle
-        assert ("█" in captured.out or "░" in captured.out)
+        assert "█" in captured.out or "░" in captured.out
 
     def test_duration_formatting(self, sample_trace, capsys):
         """Test durations are formatted."""
@@ -330,7 +325,7 @@ class TestPrintConsoleGantt:
     def test_colored_output(self, sample_trace):
         """Test output uses Rich colors."""
         # Rich Console is imported locally in print_console_gantt, patch it at import location
-        with patch('rich.console.Console') as MockConsole:
+        with patch("rich.console.Console") as MockConsole:
             mock_console = Mock()
             MockConsole.return_value = mock_console
 
@@ -341,7 +336,7 @@ class TestPrintConsoleGantt:
 
     def test_fallback_without_rich(self, minimal_trace, capsys):
         """Test fallback to simple text without Rich."""
-        with patch.dict('sys.modules', {'rich.console': None, 'rich.tree': None}):
+        with patch.dict("sys.modules", {"rich.console": None, "rich.tree": None}):
             print_console_gantt(minimal_trace)
 
             captured = capsys.readouterr()
@@ -357,9 +352,7 @@ class TestVisualizeTrace:
         output_file = tmp_path / "test.html"
 
         fig = visualize_trace(
-            minimal_trace,
-            output_file=str(output_file),
-            auto_open=False
+            minimal_trace, output_file=str(output_file), auto_open=False
         )
 
         assert isinstance(fig, go.Figure)
@@ -369,6 +362,7 @@ class TestVisualizeTrace:
     def test_default_output_filename(self, minimal_trace, tmp_path):
         """Test default output filename generation."""
         import os
+
         original_cwd = os.getcwd()
         try:
             os.chdir(tmp_path)
@@ -385,12 +379,8 @@ class TestVisualizeTrace:
         """Test auto-opening browser."""
         output_file = tmp_path / "test.html"
 
-        with patch('webbrowser.open') as mock_open:
-            visualize_trace(
-                minimal_trace,
-                output_file=str(output_file),
-                auto_open=True
-            )
+        with patch("webbrowser.open") as mock_open:
+            visualize_trace(minimal_trace, output_file=str(output_file), auto_open=True)
 
             mock_open.assert_called_once()
 
@@ -399,12 +389,10 @@ class TestVisualizeTrace:
         """Test handling browser open errors."""
         output_file = tmp_path / "test.html"
 
-        with patch('webbrowser.open', side_effect=OSError("No browser")):
+        with patch("webbrowser.open", side_effect=OSError("No browser")):
             # Should not crash
             result = visualize_trace(
-                minimal_trace,
-                output_file=str(output_file),
-                auto_open=True
+                minimal_trace, output_file=str(output_file), auto_open=True
             )
             # visualize_trace should complete without raising, even if browser fails
             assert isinstance(result, go.Figure)
@@ -421,7 +409,9 @@ class TestMainCLI:
         with open(trace_file, "w") as f:
             json.dump(minimal_trace, f)
 
-        with patch('sys.argv', ['visualize_trace', '--file', str(trace_file), '--no-open']):
+        with patch(
+            "sys.argv", ["visualize_trace", "--file", str(trace_file), "--no-open"]
+        ):
             from temper_ai.observability.visualize_trace import main
 
             if PLOTLY_AVAILABLE:
@@ -430,7 +420,7 @@ class TestMainCLI:
 
     def test_cli_no_args_no_workflow(self):
         """Test CLI without arguments and no workflows."""
-        with patch('sys.argv', ['visualize_trace', '--latest']):
+        with patch("sys.argv", ["visualize_trace", "--latest"]):
             # Create mock for session chain
             mock_exec_result = Mock()
             mock_exec_result.first.return_value = None
@@ -440,7 +430,9 @@ class TestMainCLI:
             mock_session_ctx.__enter__ = Mock(return_value=mock_session_obj)
             mock_session_ctx.__exit__ = Mock(return_value=None)
 
-            with patch('temper_ai.storage.database.get_session', return_value=mock_session_ctx):
+            with patch(
+                "temper_ai.storage.database.get_session", return_value=mock_session_ctx
+            ):
                 from temper_ai.observability.visualize_trace import main
 
                 result = main()
@@ -461,7 +453,7 @@ class TestEdgeCases:
             "duration": 0.0,
             "status": "running",
             "metadata": {},
-            "children": []
+            "children": [],
         }
 
         flat = _flatten_trace_with_tree(trace, show_tree_lines=True)
@@ -480,7 +472,7 @@ class TestEdgeCases:
             "duration": 0.0,
             "status": "completed",
             "metadata": {},
-            "children": []
+            "children": [],
         }
 
         flat = _flatten_trace_with_tree(trace, show_tree_lines=True)
@@ -489,6 +481,7 @@ class TestEdgeCases:
 
     def test_deeply_nested_trace(self):
         """Test deeply nested trace structure."""
+
         def create_nested_trace(depth, current=0):
             """Create nested trace."""
             return {
@@ -500,7 +493,9 @@ class TestEdgeCases:
                 "duration": 1.0,
                 "status": "completed",
                 "metadata": {},
-                "children": [create_nested_trace(depth, current + 1)] if current < depth else []
+                "children": (
+                    [create_nested_trace(depth, current + 1)] if current < depth else []
+                ),
             }
 
         deep_trace = create_nested_trace(10)
@@ -520,7 +515,7 @@ class TestEdgeCases:
             "duration": 1.0,
             "status": "completed",
             "metadata": {},  # Empty metadata
-            "children": []
+            "children": [],
         }
 
         flat = _flatten_trace_with_tree(trace, show_tree_lines=True)
@@ -549,7 +544,7 @@ class TestEdgeCases:
                     "duration": 5.0,
                     "status": "completed",
                     "metadata": {},
-                    "children": []
+                    "children": [],
                 },
                 {
                     "id": "child2",
@@ -560,9 +555,9 @@ class TestEdgeCases:
                     "duration": 5.0,
                     "status": "completed",
                     "metadata": {},
-                    "children": []
-                }
-            ]
+                    "children": [],
+                },
+            ],
         }
 
         flat = _flatten_trace_with_tree(trace, show_tree_lines=True)

@@ -1,9 +1,8 @@
 """Tests for M9 persistent agent context helpers."""
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from temper_ai.agent._m9_context_helpers import (
     CROSS_POLLINATION_SECTION,
@@ -69,7 +68,9 @@ class TestInjectProjectGoalContext:
         result = inject_project_goal_context("Base", "agent-1", goal_service)
         assert GOALS_SECTION in result
         assert "Active Goals:" in result
-        goal_service.format_goals_context.assert_called_once_with("agent-1", max_chars=1000)
+        goal_service.format_goals_context.assert_called_once_with(
+            "agent-1", max_chars=1000
+        )
 
     def test_returns_original_when_no_goals(self):
         goal_service = MagicMock()
@@ -87,11 +88,15 @@ class TestInjectProjectGoalContext:
         goal_service = MagicMock()
         goal_service.format_goals_context.return_value = "Goals"
         inject_project_goal_context("Base", "agent-1", goal_service, max_chars=500)
-        goal_service.format_goals_context.assert_called_once_with("agent-1", max_chars=500)
+        goal_service.format_goals_context.assert_called_once_with(
+            "agent-1", max_chars=500
+        )
 
 
 class TestInjectCrossPollinationContext:
-    def _make_config(self, enabled=True, subscribe_to=None, retrieval_k=5, relevance_threshold=0.7):
+    def _make_config(
+        self, enabled=True, subscribe_to=None, retrieval_k=5, relevance_threshold=0.7
+    ):
         cfg = MagicMock()
         cfg.enabled = enabled
         cfg.subscribe_to = subscribe_to or ["agent-b"]
@@ -116,15 +121,22 @@ class TestInjectCrossPollinationContext:
     def test_injects_cross_pollination_when_results_present(self):
         cfg = self._make_config()
         memory_svc = MagicMock()
-        mock_results = [{"agent_name": "agent-b", "content": "insight", "relevance_score": 0.9}]
-        with patch(
-            "temper_ai.memory.cross_pollination.retrieve_subscribed_knowledge",
-            return_value=mock_results,
-        ) as mock_retrieve, patch(
-            "temper_ai.memory.cross_pollination.format_cross_pollination_context",
-            return_value="[From agent-b]: insight",
-        ) as mock_format:
-            result = inject_cross_pollination_context("Base", cfg, memory_svc, "my query")
+        mock_results = [
+            {"agent_name": "agent-b", "content": "insight", "relevance_score": 0.9}
+        ]
+        with (
+            patch(
+                "temper_ai.memory.cross_pollination.retrieve_subscribed_knowledge",
+                return_value=mock_results,
+            ) as mock_retrieve,
+            patch(
+                "temper_ai.memory.cross_pollination.format_cross_pollination_context",
+                return_value="[From agent-b]: insight",
+            ) as mock_format,
+        ):
+            result = inject_cross_pollination_context(
+                "Base", cfg, memory_svc, "my query"
+            )
             assert CROSS_POLLINATION_SECTION in result
             assert "[From agent-b]: insight" in result
             mock_retrieve.assert_called_once()
@@ -133,12 +145,15 @@ class TestInjectCrossPollinationContext:
     def test_returns_original_when_no_relevant_results(self):
         cfg = self._make_config()
         memory_svc = MagicMock()
-        with patch(
-            "temper_ai.memory.cross_pollination.retrieve_subscribed_knowledge",
-            return_value=[],
-        ), patch(
-            "temper_ai.memory.cross_pollination.format_cross_pollination_context",
-            return_value="",
+        with (
+            patch(
+                "temper_ai.memory.cross_pollination.retrieve_subscribed_knowledge",
+                return_value=[],
+            ),
+            patch(
+                "temper_ai.memory.cross_pollination.format_cross_pollination_context",
+                return_value="",
+            ),
         ):
             result = inject_cross_pollination_context("Base", cfg, memory_svc, "query")
             assert result == "Base"

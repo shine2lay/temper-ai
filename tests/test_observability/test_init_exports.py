@@ -1,4 +1,5 @@
 """Tests for src/observability/__init__.py exports and lazy loading."""
+
 import pytest
 
 
@@ -17,11 +18,20 @@ class TestObservabilityInitExports:
 
         # Models should be classes
         for model_name in [
-            'WorkflowExecution', 'StageExecution', 'AgentExecution',
-            'LLMCall', 'ToolExecution', 'CollaborationEvent',
-            'AgentMeritScore', 'DecisionOutcome', 'SystemMetric', 'SchemaVersion',
+            "WorkflowExecution",
+            "StageExecution",
+            "AgentExecution",
+            "LLMCall",
+            "ToolExecution",
+            "CollaborationEvent",
+            "AgentMeritScore",
+            "DecisionOutcome",
+            "SystemMetric",
+            "SchemaVersion",
         ]:
-            assert isinstance(getattr(obs, model_name), type), f"{model_name} should be a class"
+            assert isinstance(
+                getattr(obs, model_name), type
+            ), f"{model_name} should be a class"
 
         # Tracker should be a class
         assert isinstance(obs.ExecutionTracker, type)
@@ -71,12 +81,12 @@ class TestObservabilityInitExports:
         """Test that formatters are lazily loaded."""
         import temper_ai.observability as obs
 
-        assert hasattr(obs, 'format_duration')
-        assert hasattr(obs, 'format_timestamp')
-        assert hasattr(obs, 'format_tokens')
-        assert hasattr(obs, 'format_cost')
-        assert hasattr(obs, 'status_to_color')
-        assert hasattr(obs, 'status_to_icon')
+        assert hasattr(obs, "format_duration")
+        assert hasattr(obs, "format_timestamp")
+        assert hasattr(obs, "format_tokens")
+        assert hasattr(obs, "format_cost")
+        assert hasattr(obs, "status_to_color")
+        assert hasattr(obs, "status_to_icon")
 
         formatter = obs.format_duration
         assert callable(formatter)
@@ -85,9 +95,9 @@ class TestObservabilityInitExports:
         """Test that migration utilities are lazily loaded."""
         import temper_ai.observability as obs
 
-        assert hasattr(obs, 'create_schema')
-        assert hasattr(obs, 'drop_schema')
-        assert hasattr(obs, 'reset_schema')
+        assert hasattr(obs, "create_schema")
+        assert hasattr(obs, "drop_schema")
+        assert hasattr(obs, "reset_schema")
 
         create_fn = obs.create_schema
         assert callable(create_fn)
@@ -96,24 +106,24 @@ class TestObservabilityInitExports:
         """Test that __all__ contains all expected exports."""
         import temper_ai.observability as obs
 
-        assert hasattr(obs, '__all__')
+        assert hasattr(obs, "__all__")
         all_exports = obs.__all__
 
         # Check key exports are in __all__
         expected = [
-            'ObservabilityBackend',
-            'SQLObservabilityBackend',
-            'PrometheusObservabilityBackend',
-            'S3ObservabilityBackend',
-            'ObservabilityBuffer',
-            'WorkflowExecution',
-            'ExecutionTracker',
-            'ExecutionContext',
-            'get_tracker',
-            'DatabaseManager',
-            'create_schema',
-            'WorkflowVisualizer',
-            'format_duration',
+            "ObservabilityBackend",
+            "SQLObservabilityBackend",
+            "PrometheusObservabilityBackend",
+            "S3ObservabilityBackend",
+            "ObservabilityBuffer",
+            "WorkflowExecution",
+            "ExecutionTracker",
+            "ExecutionContext",
+            "get_tracker",
+            "DatabaseManager",
+            "create_schema",
+            "WorkflowVisualizer",
+            "format_duration",
         ]
 
         for name in expected:
@@ -146,9 +156,9 @@ class TestObservabilityInitExports:
         import temper_ai.observability as obs
 
         # These should be in globals(), not require __getattr__
-        assert 'ObservabilityBackend' in dir(obs)
-        assert 'ExecutionTracker' in dir(obs)
-        assert 'ExecutionContext' in dir(obs)
+        assert "ObservabilityBackend" in dir(obs)
+        assert "ExecutionTracker" in dir(obs)
+        assert "ExecutionContext" in dir(obs)
 
 
 class TestBackendsInitExports:
@@ -158,18 +168,18 @@ class TestBackendsInitExports:
         """Test that backends __init__ exports all backend implementations."""
         from temper_ai.observability import backends
 
-        assert hasattr(backends, 'SQLObservabilityBackend')
-        assert hasattr(backends, 'PrometheusObservabilityBackend')
-        assert hasattr(backends, 'S3ObservabilityBackend')
+        assert hasattr(backends, "SQLObservabilityBackend")
+        assert hasattr(backends, "PrometheusObservabilityBackend")
+        assert hasattr(backends, "S3ObservabilityBackend")
 
     def test_backends_all_defined(self):
         """Test that __all__ is correctly defined."""
         from temper_ai.observability import backends
 
-        assert hasattr(backends, '__all__')
-        assert 'SQLObservabilityBackend' in backends.__all__
-        assert 'PrometheusObservabilityBackend' in backends.__all__
-        assert 'S3ObservabilityBackend' in backends.__all__
+        assert hasattr(backends, "__all__")
+        assert "SQLObservabilityBackend" in backends.__all__
+        assert "PrometheusObservabilityBackend" in backends.__all__
+        assert "S3ObservabilityBackend" in backends.__all__
 
     def test_backends_imports_work(self):
         """Test that imports from backends work correctly."""
@@ -191,20 +201,23 @@ class TestAggregationInitExports:
         """Test that aggregation __init__ exports the public API."""
         from temper_ai.observability import aggregation
 
-        assert hasattr(aggregation, 'AggregationOrchestrator')
-        assert hasattr(aggregation, 'AggregationPeriod')
+        assert hasattr(aggregation, "AggregationOrchestrator")
+        assert hasattr(aggregation, "AggregationPeriod")
 
     def test_aggregation_all_defined(self):
         """Test that __all__ is correctly defined."""
         from temper_ai.observability import aggregation
 
-        assert hasattr(aggregation, '__all__')
-        assert 'AggregationOrchestrator' in aggregation.__all__
-        assert 'AggregationPeriod' in aggregation.__all__
+        assert hasattr(aggregation, "__all__")
+        assert "AggregationOrchestrator" in aggregation.__all__
+        assert "AggregationPeriod" in aggregation.__all__
 
     def test_aggregation_imports_work(self):
         """Test that imports from aggregation work correctly."""
-        from temper_ai.observability.aggregation import AggregationOrchestrator, AggregationPeriod
+        from temper_ai.observability.aggregation import (
+            AggregationOrchestrator,
+            AggregationPeriod,
+        )
 
         assert AggregationOrchestrator is not None
         assert AggregationPeriod is not None

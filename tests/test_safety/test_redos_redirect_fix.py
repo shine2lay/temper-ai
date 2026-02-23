@@ -6,6 +6,7 @@ This test suite verifies:
 3. Excluded contexts (comments, test, if, while, pipes) work correctly
 4. Performance is acceptable even with large inputs
 """
+
 import time
 
 import pytest
@@ -25,10 +26,7 @@ class TestReDoSFix:
         attack_vector = "echo " + "a" * 10000 + " >"
 
         start_time = time.time()
-        result = policy.validate(
-            action={"command": attack_vector},
-            context={}
-        )
+        result = policy.validate(action={"command": attack_vector}, context={})
         elapsed = time.time() - start_time
 
         # Should complete in less than 100ms
@@ -44,10 +42,7 @@ class TestReDoSFix:
         attack_vector = "echo " + ("test " * 1000) + ">"
 
         start_time = time.time()
-        result = policy.validate(
-            action={"command": attack_vector},
-            context={}
-        )
+        result = policy.validate(action={"command": attack_vector}, context={})
         elapsed = time.time() - start_time
 
         assert elapsed < 0.1, f"Pattern took {elapsed:.3f}s"
@@ -61,10 +56,7 @@ class TestReDoSFix:
         attack_vector = "x" * 100000 + " > "
 
         start_time = time.time()
-        result = policy.validate(
-            action={"command": attack_vector},
-            context={}
-        )
+        result = policy.validate(action={"command": attack_vector}, context={})
         elapsed = time.time() - start_time
 
         assert elapsed < 0.1, f"Pattern took {elapsed:.3f}s"
@@ -77,10 +69,7 @@ class TestReDoSFix:
         attack_vector = ("a" * 5000) + (" " * 5000) + ">"
 
         start_time = time.time()
-        result = policy.validate(
-            action={"command": attack_vector},
-            context={}
-        )
+        result = policy.validate(action={"command": attack_vector}, context={})
         elapsed = time.time() - start_time
 
         assert elapsed < 0.1, f"Pattern took {elapsed:.3f}s"
@@ -94,8 +83,7 @@ class TestRedirectDetection:
         policy = ForbiddenOperationsPolicy()
 
         result = policy.validate(
-            action={"command": 'echo "hello" > file.txt'},
-            context={}
+            action={"command": 'echo "hello" > file.txt'}, context={}
         )
 
         assert result.valid is False
@@ -106,8 +94,7 @@ class TestRedirectDetection:
         policy = ForbiddenOperationsPolicy()
 
         result = policy.validate(
-            action={"command": 'python script.py --verbose > output.json'},
-            context={}
+            action={"command": "python script.py --verbose > output.json"}, context={}
         )
 
         assert result.valid is False
@@ -116,12 +103,22 @@ class TestRedirectDetection:
         """Test redirect detection with various file extensions."""
         policy = ForbiddenOperationsPolicy()
 
-        extensions = ['txt', 'json', 'yaml', 'yml', 'py', 'js', 'ts', 'md', 'csv', 'log']
+        extensions = [
+            "txt",
+            "json",
+            "yaml",
+            "yml",
+            "py",
+            "js",
+            "ts",
+            "md",
+            "csv",
+            "log",
+        ]
 
         for ext in extensions:
             result = policy.validate(
-                action={"command": f'command > file.{ext}'},
-                context={}
+                action={"command": f"command > file.{ext}"}, context={}
             )
             assert result.valid is False, f"Failed to detect .{ext} redirect"
 
@@ -130,8 +127,7 @@ class TestRedirectDetection:
         policy = ForbiddenOperationsPolicy()
 
         result = policy.validate(
-            action={"command": 'ls -la /tmp > listing.log'},
-            context={}
+            action={"command": "ls -la /tmp > listing.log"}, context={}
         )
 
         assert result.valid is False
@@ -141,8 +137,7 @@ class TestRedirectDetection:
         policy = ForbiddenOperationsPolicy()
 
         result = policy.validate(
-            action={"command": './script.sh > results.csv'},
-            context={}
+            action={"command": "./script.sh > results.csv"}, context={}
         )
 
         assert result.valid is False
@@ -156,14 +151,12 @@ class TestContextExclusions:
         policy = ForbiddenOperationsPolicy()
 
         result = policy.validate(
-            action={"command": '# This is a comment > file.txt'},
-            context={}
+            action={"command": "# This is a comment > file.txt"}, context={}
         )
 
         # Should NOT detect redirect in comment
         redirect_violations = [
-            v for v in result.violations
-            if "redirect" in v.message.lower()
+            v for v in result.violations if "redirect" in v.message.lower()
         ]
         assert len(redirect_violations) == 0
 
@@ -171,14 +164,10 @@ class TestContextExclusions:
         """Test that test commands are excluded."""
         policy = ForbiddenOperationsPolicy()
 
-        result = policy.validate(
-            action={"command": 'test -f > file.txt'},
-            context={}
-        )
+        result = policy.validate(action={"command": "test -f > file.txt"}, context={})
 
         redirect_violations = [
-            v for v in result.violations
-            if "redirect" in v.message.lower()
+            v for v in result.violations if "redirect" in v.message.lower()
         ]
         assert len(redirect_violations) == 0
 
@@ -187,13 +176,11 @@ class TestContextExclusions:
         policy = ForbiddenOperationsPolicy()
 
         result = policy.validate(
-            action={"command": 'if [ -f file ] > output.log'},
-            context={}
+            action={"command": "if [ -f file ] > output.log"}, context={}
         )
 
         redirect_violations = [
-            v for v in result.violations
-            if "redirect" in v.message.lower()
+            v for v in result.violations if "redirect" in v.message.lower()
         ]
         assert len(redirect_violations) == 0
 
@@ -202,13 +189,11 @@ class TestContextExclusions:
         policy = ForbiddenOperationsPolicy()
 
         result = policy.validate(
-            action={"command": 'while read line > data.txt'},
-            context={}
+            action={"command": "while read line > data.txt"}, context={}
         )
 
         redirect_violations = [
-            v for v in result.violations
-            if "redirect" in v.message.lower()
+            v for v in result.violations if "redirect" in v.message.lower()
         ]
         assert len(redirect_violations) == 0
 
@@ -217,14 +202,14 @@ class TestContextExclusions:
         policy = ForbiddenOperationsPolicy()
 
         result = policy.validate(
-            action={"command": 'cat file.txt | grep pattern > output.log'},
-            context={}
+            action={"command": "cat file.txt | grep pattern > output.log"}, context={}
         )
 
         # Note: This may trigger OTHER patterns (pipe_injection, etc.)
         # but should NOT trigger redirect_output pattern
         redirect_violations = [
-            v for v in result.violations
+            v
+            for v in result.violations
             if v.metadata.get("pattern_name") == "file_write_redirect_output"
         ]
         assert len(redirect_violations) == 0
@@ -234,13 +219,11 @@ class TestContextExclusions:
         policy = ForbiddenOperationsPolicy()
 
         result = policy.validate(
-            action={"command": '   # indented comment > file.txt'},
-            context={}
+            action={"command": "   # indented comment > file.txt"}, context={}
         )
 
         redirect_violations = [
-            v for v in result.violations
-            if "redirect" in v.message.lower()
+            v for v in result.violations if "redirect" in v.message.lower()
         ]
         assert len(redirect_violations) == 0
 
@@ -255,10 +238,7 @@ class TestMultilineCommands:
         command = """echo "first line"
 command > output.txt"""
 
-        result = policy.validate(
-            action={"command": command},
-            context={}
-        )
+        result = policy.validate(action={"command": command}, context={})
 
         assert result.valid is False
 
@@ -269,10 +249,7 @@ command > output.txt"""
         command = """# This is a comment
 command > output.txt"""
 
-        result = policy.validate(
-            action={"command": command},
-            context={}
-        )
+        result = policy.validate(action={"command": command}, context={})
 
         # Second line should be detected
         assert result.valid is False
@@ -287,10 +264,7 @@ echo "data" > output.txt
 cat input.txt
 """
 
-        result = policy.validate(
-            action={"command": command},
-            context={}
-        )
+        result = policy.validate(action={"command": command}, context={})
 
         # Should detect the echo redirect
         assert result.valid is False
@@ -357,14 +331,12 @@ class TestEdgeCases:
         policy = ForbiddenOperationsPolicy()
 
         result = policy.validate(
-            action={"command": 'echo "data" > outputfile'},
-            context={}
+            action={"command": 'echo "data" > outputfile'}, context={}
         )
 
         # Should not match (no extension in pattern)
         redirect_violations = [
-            v for v in result.violations
-            if "redirect" in v.message.lower()
+            v for v in result.violations if "redirect" in v.message.lower()
         ]
         assert len(redirect_violations) == 0
 
@@ -373,8 +345,7 @@ class TestEdgeCases:
         policy = ForbiddenOperationsPolicy()
 
         result = policy.validate(
-            action={"command": 'command > /tmp/output/file.txt'},
-            context={}
+            action={"command": "command > /tmp/output/file.txt"}, context={}
         )
 
         assert result.valid is False
@@ -384,8 +355,7 @@ class TestEdgeCases:
         policy = ForbiddenOperationsPolicy()
 
         result = policy.validate(
-            action={"command": 'echo data > "output file.txt"'},
-            context={}
+            action={"command": 'echo data > "output file.txt"'}, context={}
         )
 
         # May or may not match depending on \S+ handling quotes
@@ -397,8 +367,7 @@ class TestEdgeCases:
         policy = ForbiddenOperationsPolicy()
 
         result = policy.validate(
-            action={"command": 'command > file1.txt 2> file2.log'},
-            context={}
+            action={"command": "command > file1.txt 2> file2.log"}, context={}
         )
 
         # Should detect at least one redirect
@@ -408,10 +377,7 @@ class TestEdgeCases:
         """Test stderr redirect."""
         policy = ForbiddenOperationsPolicy()
 
-        result = policy.validate(
-            action={"command": 'command 2> error.log'},
-            context={}
-        )
+        result = policy.validate(action={"command": "command 2> error.log"}, context={})
 
         assert result.valid is False
 
@@ -420,8 +386,7 @@ class TestEdgeCases:
         policy = ForbiddenOperationsPolicy()
 
         result = policy.validate(
-            action={"command": 'echo data >> file.txt'},
-            context={}
+            action={"command": "echo data >> file.txt"}, context={}
         )
 
         # Should be caught by echo_append pattern
@@ -439,22 +404,22 @@ class TestEdgeCases:
 
         # Exactly 200 chars between echo and > (should be detected)
         # Format: 'echo ' (5) + padding (195) + ' > file.txt' = 200 chars before '>'
-        padding = 'x' * 195
+        padding = "x" * 195
         result = policy.validate(
-            action={"command": f'echo {padding} > file.txt'},
-            context={}
+            action={"command": f"echo {padding} > file.txt"}, context={}
         )
         assert result.valid is False, "Should detect at 200 char boundary"
 
         # Over 200 chars - echo_redirect pattern won't match due to {0,200} bound,
         # BUT redirect_output pattern may still catch it (defense in depth)
-        padding = 'x' * 201
+        padding = "x" * 201
         result = policy.validate(
-            action={"command": f'echo {padding} > file.txt'},
-            context={}
+            action={"command": f"echo {padding} > file.txt"}, context={}
         )
         # Multiple patterns provide coverage even when individual patterns have bounds
-        assert result.valid is False, "Should still be detected by redirect_output pattern"
+        assert (
+            result.valid is False
+        ), "Should still be detected by redirect_output pattern"
 
 
 class TestBackwardCompatibility:
@@ -465,23 +430,18 @@ class TestBackwardCompatibility:
         policy = ForbiddenOperationsPolicy()
 
         # Test cat redirect
-        result = policy.validate(
-            action={"command": 'cat > file.txt'},
-            context={}
-        )
+        result = policy.validate(action={"command": "cat > file.txt"}, context={})
         assert result.valid is False
 
         # Test echo redirect
         result = policy.validate(
-            action={"command": 'echo "data" > file.txt'},
-            context={}
+            action={"command": 'echo "data" > file.txt'}, context={}
         )
         assert result.valid is False
 
         # Test sed -i
         result = policy.validate(
-            action={"command": 'sed -i "s/old/new/" file.txt'},
-            context={}
+            action={"command": 'sed -i "s/old/new/" file.txt'}, context={}
         )
         assert result.valid is False
 
@@ -489,10 +449,7 @@ class TestBackwardCompatibility:
         """Test that dangerous command patterns still work."""
         policy = ForbiddenOperationsPolicy()
 
-        result = policy.validate(
-            action={"command": 'rm -rf /tmp/data'},
-            context={}
-        )
+        result = policy.validate(action={"command": "rm -rf /tmp/data"}, context={})
         assert result.valid is False
 
     def test_configuration_options_still_work(self):
@@ -501,8 +458,7 @@ class TestBackwardCompatibility:
         policy = ForbiddenOperationsPolicy({"check_file_writes": False})
 
         result = policy.validate(
-            action={"command": 'echo "data" > file.txt'},
-            context={}
+            action={"command": 'echo "data" > file.txt'}, context={}
         )
 
         # Should not detect (file writes disabled)

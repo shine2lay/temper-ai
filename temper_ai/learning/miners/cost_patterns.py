@@ -2,12 +2,11 @@
 
 import uuid
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
-from typing import Dict, List
+from datetime import UTC, datetime, timedelta
 
 from sqlmodel import select
 
-from temper_ai.learning.miners.base import BaseMiner, DEFAULT_LOOKBACK_HOURS
+from temper_ai.learning.miners.base import DEFAULT_LOOKBACK_HOURS, BaseMiner
 from temper_ai.learning.models import PATTERN_COST, LearnedPattern
 from temper_ai.storage.database import get_session
 from temper_ai.storage.database.models import LLMCall
@@ -28,10 +27,12 @@ class CostPatternMiner(BaseMiner):
         """Return pattern type identifier."""
         return PATTERN_COST
 
-    def mine(self, lookback_hours: int = DEFAULT_LOOKBACK_HOURS) -> List[LearnedPattern]:
+    def mine(
+        self, lookback_hours: int = DEFAULT_LOOKBACK_HOURS
+    ) -> list[LearnedPattern]:
         """Mine LLM call data for cost optimization patterns."""
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=lookback_hours)
-        patterns: List[LearnedPattern] = []
+        cutoff = datetime.now(UTC) - timedelta(hours=lookback_hours)
+        patterns: list[LearnedPattern] = []
 
         with get_session() as session:
             stmt = select(LLMCall).where(LLMCall.start_time >= cutoff)
@@ -53,9 +54,9 @@ class CostPatternMiner(BaseMiner):
         return patterns
 
 
-def _aggregate_by_agent(calls: list) -> Dict[str, dict]:
+def _aggregate_by_agent(calls: list) -> dict[str, dict]:
     """Aggregate cost and token data by agent execution ID."""
-    agent_costs: Dict[str, dict] = defaultdict(
+    agent_costs: dict[str, dict] = defaultdict(
         lambda: {"cost": 0.0, "tokens": 0, "calls": 0}
     )
     for call in calls:

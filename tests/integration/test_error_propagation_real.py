@@ -16,12 +16,13 @@ Focus areas:
 This file implements 150+ LOC of error propagation tests based on the
 qa-engineer specialist's test strategy.
 """
+
 import uuid
 
+from temper_ai.shared.core.context import ExecutionContext
 from temper_ai.shared.utils.exceptions import (
     AgentError,
     ErrorCode,
-    ExecutionContext,
     ToolError,
     ToolExecutionError,
     WorkflowError,
@@ -41,18 +42,15 @@ class TestToolToAgentErrorPropagation:
         tool_error = ToolExecutionError(
             message="Division by zero in Calculator tool",
             tool_name="Calculator",
-            cause=ZeroDivisionError("division by zero")
+            cause=ZeroDivisionError("division by zero"),
         )
 
         # Simulate agent wrapping the tool error
         agent_error = AgentError(
             message="Agent failed to execute tool",
-            context=ExecutionContext(
-                agent_id="agent-123",
-                tool_name="Calculator"
-            ),
+            context=ExecutionContext(agent_id="agent-123", tool_name="Calculator"),
             error_code=ErrorCode.AGENT_EXECUTION_ERROR,
-            cause=tool_error
+            cause=tool_error,
         )
 
         # Verify error chain: AgentError -> ToolExecutionError -> ZeroDivisionError
@@ -66,7 +64,7 @@ class TestToolToAgentErrorPropagation:
 
         # IMPORTANT: Also verify Python's standard __cause__ if set
         # (The system may use .cause for backward compat and __cause__ for Python compatibility)
-        if hasattr(agent_error, '__cause__') and agent_error.__cause__ is not None:
+        if hasattr(agent_error, "__cause__") and agent_error.__cause__ is not None:
             assert agent_error.__cause__ is agent_error.cause
 
         # Verify underlying cause
@@ -85,18 +83,15 @@ class TestToolToAgentErrorPropagation:
             message="Tool execution timed out after 30s",
             context=ExecutionContext(tool_name="SlowAPI"),
             error_code=ErrorCode.TOOL_TIMEOUT,
-            cause=TimeoutError("Operation timed out")
+            cause=TimeoutError("Operation timed out"),
         )
 
         # Simulate agent wrapping timeout
         agent_timeout = AgentError(
             message="Agent execution timed out",
-            context=ExecutionContext(
-                agent_id="agent-456",
-                tool_name="SlowAPI"
-            ),
+            context=ExecutionContext(agent_id="agent-456", tool_name="SlowAPI"),
             error_code=ErrorCode.AGENT_TIMEOUT,
-            cause=tool_timeout
+            cause=tool_timeout,
         )
 
         # Verify timeout propagated correctly
@@ -119,20 +114,20 @@ class TestToolToAgentErrorPropagation:
             tool_name="DataFetcher",
             context=ExecutionContext(
                 metadata={"url": "https://api.example.com", "method": "GET"}
-            )
+            ),
         )
 
         # Create agent error that wraps tool error
         agent_context = ExecutionContext(
             agent_id="agent-789",
             tool_name="DataFetcher",
-            metadata={"query": "fetch user data"}
+            metadata={"query": "fetch user data"},
         )
         agent_error = AgentError(
             message="Agent failed during tool execution",
             context=agent_context,
             error_code=ErrorCode.AGENT_EXECUTION_ERROR,
-            cause=tool_error
+            cause=tool_error,
         )
 
         # Verify tool context preserved
@@ -162,7 +157,7 @@ class TestAgentToWorkflowErrorPropagation:
             message="Agent failed to process API response",
             context=ExecutionContext(agent_id="agent-abc", tool_name="APIClient"),
             error_code=ErrorCode.AGENT_EXECUTION_ERROR,
-            cause=tool_error
+            cause=tool_error,
         )
 
         workflow_error = WorkflowError(
@@ -171,16 +166,15 @@ class TestAgentToWorkflowErrorPropagation:
                 workflow_id="wf-123",
                 stage_id="process_data",
                 agent_id="agent-abc",
-                tool_name="APIClient"
+                tool_name="APIClient",
             ),
             error_code=ErrorCode.WORKFLOW_STAGE_ERROR,
-            cause=agent_error
+            cause=agent_error,
         )
 
         # Verify full chain
         assert_error_chain(
-            workflow_error,
-            [WorkflowError, AgentError, ToolExecutionError]
+            workflow_error, [WorkflowError, AgentError, ToolExecutionError]
         )
 
         # Verify all context preserved
@@ -202,12 +196,10 @@ class TestAgentToWorkflowErrorPropagation:
         workflow_error = WorkflowError(
             message="Workflow failed due to LLM rate limit",
             context=ExecutionContext(
-                workflow_id="wf-456",
-                stage_id="generate_response",
-                agent_id="agent-llm"
+                workflow_id="wf-456", stage_id="generate_response", agent_id="agent-llm"
             ),
             error_code=ErrorCode.WORKFLOW_EXECUTION_ERROR,
-            cause=llm_error
+            cause=llm_error,
         )
 
         # Verify LLM error accessible from workflow
@@ -225,16 +217,14 @@ class TestFullStackErrorPropagation:
         root_cause = ValueError("Invalid input format")
 
         tool_error = ToolExecutionError(
-            message="Tool validation failed",
-            tool_name="Validator",
-            cause=root_cause
+            message="Tool validation failed", tool_name="Validator", cause=root_cause
         )
 
         agent_error = AgentError(
             message="Agent validation error",
             context=ExecutionContext(agent_id="agent-validator", tool_name="Validator"),
             error_code=ErrorCode.AGENT_EXECUTION_ERROR,
-            cause=tool_error
+            cause=tool_error,
         )
 
         workflow_error = WorkflowError(
@@ -243,10 +233,10 @@ class TestFullStackErrorPropagation:
                 workflow_id="wf-validation",
                 stage_id="validate_input",
                 agent_id="agent-validator",
-                tool_name="Validator"
+                tool_name="Validator",
             ),
             error_code=ErrorCode.WORKFLOW_STAGE_ERROR,
-            cause=agent_error
+            cause=agent_error,
         )
 
         # Verify complete chain is traversable
@@ -275,7 +265,7 @@ class TestFullStackErrorPropagation:
             message="Agent transform failed",
             context=ExecutionContext(agent_id=agent_id, tool_name=tool_name),
             error_code=ErrorCode.AGENT_EXECUTION_ERROR,
-            cause=tool_error
+            cause=tool_error,
         )
 
         workflow_error = WorkflowError(
@@ -284,28 +274,28 @@ class TestFullStackErrorPropagation:
                 workflow_id=wf_id,
                 stage_id=stage_id,
                 agent_id=agent_id,
-                tool_name=tool_name
+                tool_name=tool_name,
             ),
             error_code=ErrorCode.WORKFLOW_STAGE_ERROR,
-            cause=agent_error
+            cause=agent_error,
         )
 
         # Verify complete context chain
-        assert_context_preserved(workflow_error, {
-            "workflow_id": wf_id,
-            "stage_id": stage_id,
-            "agent_id": agent_id,
-            "tool_name": tool_name
-        })
+        assert_context_preserved(
+            workflow_error,
+            {
+                "workflow_id": wf_id,
+                "stage_id": stage_id,
+                "agent_id": agent_id,
+                "tool_name": tool_name,
+            },
+        )
 
-        assert_context_preserved(agent_error, {
-            "agent_id": agent_id,
-            "tool_name": tool_name
-        })
+        assert_context_preserved(
+            agent_error, {"agent_id": agent_id, "tool_name": tool_name}
+        )
 
-        assert_context_preserved(tool_error, {
-            "tool_name": tool_name
-        })
+        assert_context_preserved(tool_error, {"tool_name": tool_name})
 
         # Verify all IDs appear in error string
         error_str = str(workflow_error)
@@ -341,7 +331,7 @@ class TestErrorSecretSanitization:
             message="Database connection failed",
             context=ExecutionContext(tool_name="DBClient"),
             error_code=ErrorCode.TOOL_EXECUTION_ERROR,
-            cause=root_cause
+            cause=root_cause,
         )
 
         # Verify password sanitized
@@ -401,7 +391,7 @@ class TestErrorEdgeCases:
         error = ToolError(
             message="Standalone error",
             error_code=ErrorCode.TOOL_EXECUTION_ERROR,
-            context=ExecutionContext(tool_name="Test")
+            context=ExecutionContext(tool_name="Test"),
         )
 
         assert error.cause is None
@@ -417,7 +407,7 @@ class TestErrorEdgeCases:
             current_error = ToolError(
                 message=f"Level {i}",
                 error_code=ErrorCode.TOOL_EXECUTION_ERROR,
-                cause=current_error
+                cause=current_error,
             )
 
         # Verify we can traverse entire chain
@@ -426,7 +416,7 @@ class TestErrorEdgeCases:
         while err is not None:
             depth += 1
             # Check both __cause__ and .cause
-            err = getattr(err, '__cause__', None) or getattr(err, 'cause', None)
+            err = getattr(err, "__cause__", None) or getattr(err, "cause", None)
 
         assert depth == 11  # 10 ToolErrors + 1 ValueError
 
@@ -435,7 +425,7 @@ class TestErrorEdgeCases:
         tool_error = ToolError(
             message="API 请求失败 with émojis 🔥💥",
             error_code=ErrorCode.TOOL_EXECUTION_ERROR,
-            context=ExecutionContext(tool_name="UnicodeAPI")
+            context=ExecutionContext(tool_name="UnicodeAPI"),
         )
 
         # Should handle unicode without crashes
@@ -457,14 +447,14 @@ class TestErrorMetadata:
         extra_data = {
             "request_id": "req-123",
             "retry_count": 3,
-            "endpoint": "/api/users"
+            "endpoint": "/api/users",
         }
 
         tool_error = ToolError(
             message="API request failed",
             context=ExecutionContext(tool_name="APIClient"),
             error_code=ErrorCode.TOOL_EXECUTION_ERROR,
-            extra_data=extra_data
+            extra_data=extra_data,
         )
 
         # Verify extra_data accessible
@@ -482,10 +472,10 @@ class TestErrorMetadata:
                 workflow_id=workflow_id,
                 stage_id="stage-1",
                 agent_id="agent-1",
-                tool_name="Tool1"
+                tool_name="Tool1",
             ),
             error_code=ErrorCode.WORKFLOW_EXECUTION_ERROR,
-            extra_data={"attempt": 1}
+            extra_data={"attempt": 1},
         )
 
         # Serialize to dict

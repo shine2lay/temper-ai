@@ -1,17 +1,15 @@
 """Integration tests — MCP tools alongside native tools in ToolRegistry."""
+
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from temper_ai.mcp._schemas import MCPServerConfig
-from temper_ai.tools.base import ToolResult
-from temper_ai.tools.base import ParameterValidationResult
+from temper_ai.tools.base import ParameterValidationResult, ToolResult
 from temper_ai.tools.registry import ToolRegistry
-
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_tool_info(name="do_thing", description="Does a thing"):
     ti = MagicMock()
@@ -40,6 +38,7 @@ def _make_mcp_wrapper(name="gh", tool_name="create_pr"):
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 class TestMCPToolsInRegistry:
     def test_mcp_tools_register_alongside_native_tools(self):
@@ -88,8 +87,14 @@ class TestMCPToolsInRegistry:
             event_loop=loop,
         )
 
-        with patch.object(wrapper, "validate_params", return_value=ParameterValidationResult(valid=True)):
-            with patch.object(wrapper, "execute", side_effect=RuntimeError("mcp exploded")):
+        with patch.object(
+            wrapper,
+            "validate_params",
+            return_value=ParameterValidationResult(valid=True),
+        ):
+            with patch.object(
+                wrapper, "execute", side_effect=RuntimeError("mcp exploded")
+            ):
                 result = wrapper.safe_execute()
 
         assert isinstance(result, ToolResult)

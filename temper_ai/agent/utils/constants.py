@@ -10,8 +10,6 @@ Cross-layer constants (used by storage schemas) are canonical in
 ``temper_ai.shared.constants`` and re-exported here for backward compatibility.
 """
 
-from temper_ai.shared.constants.limits import DEFAULT_MAX_TOKENS as DEFAULT_MAX_TOKENS  # noqa: F401
-from temper_ai.shared.constants.limits import DEFAULT_TEMPERATURE as DEFAULT_TEMPERATURE  # noqa: F401
 from temper_ai.shared.constants.agent_defaults import (  # noqa: F401
     DEFAULT_MAX_DIALOGUE_CONTEXT_CHARS,
     MAX_EXECUTION_TIME_SECONDS,
@@ -20,6 +18,21 @@ from temper_ai.shared.constants.agent_defaults import (  # noqa: F401
     PRE_COMMAND_DEFAULT_TIMEOUT,
     PRE_COMMAND_MAX_TIMEOUT,
 )
+from temper_ai.shared.constants.limits import (  # noqa: F401
+    DEFAULT_MAX_TOKENS,
+    DEFAULT_TEMPERATURE,
+)
+
+__all__ = [  # scanner: skip-unused
+    "DEFAULT_MAX_TOKENS",
+    "DEFAULT_TEMPERATURE",
+    "DEFAULT_MAX_DIALOGUE_CONTEXT_CHARS",
+    "MAX_EXECUTION_TIME_SECONDS",
+    "MAX_PROMPT_LENGTH",
+    "MAX_TOOL_CALLS_PER_EXECUTION",
+    "PRE_COMMAND_DEFAULT_TIMEOUT",
+    "PRE_COMMAND_MAX_TIMEOUT",
+]
 
 # ============================================================================
 # Confidence Scoring

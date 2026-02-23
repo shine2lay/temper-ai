@@ -7,7 +7,8 @@ config section but perform no validation (always allow).
 When a real implementation is needed, replace the stub with a full policy
 class and remove the corresponding entry from this file.
 """
-from typing import Any, Dict
+
+from typing import Any
 
 from temper_ai.safety.base import BaseSafetyPolicy
 from temper_ai.safety.interfaces import ValidationResult
@@ -32,7 +33,7 @@ class ApprovalWorkflowPolicy(BaseSafetyPolicy):
         return "0.1.0"
 
     def _validate_impl(
-        self, action: Dict[str, Any], context: Dict[str, Any]
+        self, action: dict[str, Any], context: dict[str, Any]
     ) -> ValidationResult:
         # Approval logic is delegated to ApprovalWorkflow component
         return ValidationResult(
@@ -59,7 +60,7 @@ class CircuitBreakerPolicy(BaseSafetyPolicy):
         return "0.1.0"
 
     def _validate_impl(
-        self, action: Dict[str, Any], context: Dict[str, Any]
+        self, action: dict[str, Any], context: dict[str, Any]
     ) -> ValidationResult:
         # Circuit breaker logic is in LLM provider layer
         return ValidationResult(

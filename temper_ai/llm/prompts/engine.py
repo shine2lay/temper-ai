@@ -3,19 +3,20 @@
 Provides sandboxed template rendering with variable substitution,
 conditional blocks, and template compilation caching.
 """
+
 import hashlib
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any
 
 from jinja2 import FileSystemLoader, TemplateNotFound
 from jinja2.sandbox import ImmutableSandboxedEnvironment
 
+from temper_ai.llm.cache.constants import DEFAULT_CACHE_SIZE
 from temper_ai.llm.prompts.cache import TemplateCacheManager
 from temper_ai.llm.prompts.validation import (
     PromptRenderError,
     TemplateVariableValidator,
 )
-from temper_ai.llm.cache.constants import DEFAULT_CACHE_SIZE
 
 # Hash length for prompt template versioning — matches error_fingerprinting.py
 _TEMPLATE_HASH_LENGTH = 16  # noqa — scanner: skip-magic
@@ -27,7 +28,9 @@ def _compute_template_hash(template_text: str) -> str:
     The hash is computed on the raw template before variable substitution,
     so the same template always produces the same hash regardless of variables.
     """
-    return hashlib.sha256(template_text.encode("utf-8")).hexdigest()[:_TEMPLATE_HASH_LENGTH]
+    return hashlib.sha256(template_text.encode("utf-8")).hexdigest()[
+        :_TEMPLATE_HASH_LENGTH
+    ]
 
 
 class PromptEngine:
@@ -47,7 +50,11 @@ class PromptEngine:
         'Hello World!'
     """
 
-    def __init__(self, templates_dir: Optional[Union[str, Path]] = None, cache_size: int = DEFAULT_CACHE_SIZE):
+    def __init__(
+        self,
+        templates_dir: str | Path | None = None,
+        cache_size: int = DEFAULT_CACHE_SIZE,
+    ):
         """
         Initialize prompt engine.
 
@@ -79,14 +86,12 @@ class PromptEngine:
         # Shared immutable sandboxed environment for inline templates
         # ImmutableSandboxedEnvironment prevents attribute modification on objects
         self._sandbox_env = ImmutableSandboxedEnvironment(
-            autoescape=False,
-            trim_blocks=True,
-            lstrip_blocks=True
+            autoescape=False, trim_blocks=True, lstrip_blocks=True
         )
 
         # Set up Jinja2 immutable sandboxed environment if templates_dir exists
         # ImmutableSandboxedEnvironment prevents template injection attacks
-        self.jinja_env: Optional[ImmutableSandboxedEnvironment]
+        self.jinja_env: ImmutableSandboxedEnvironment | None
         if self.templates_dir and self.templates_dir.exists():
             self.jinja_env = ImmutableSandboxedEnvironment(
                 loader=FileSystemLoader(str(self.templates_dir)),
@@ -97,7 +102,7 @@ class PromptEngine:
         else:
             self.jinja_env = None
 
-    def render(self, template: str, variables: Optional[Dict[str, Any]] = None) -> str:
+    def render(self, template: str, variables: dict[str, Any] | None = None) -> str:
         """
         Render a template string with variables.
 
@@ -139,9 +144,7 @@ class PromptEngine:
             raise PromptRenderError(f"Failed to render template: {e}") from e
 
     def render_file(
-        self,
-        template_path: str,
-        variables: Optional[Dict[str, Any]] = None
+        self, template_path: str, variables: dict[str, Any] | None = None
     ) -> str:
         """
         Render a template from a file.
@@ -187,8 +190,8 @@ class PromptEngine:
     def render_with_metadata(
         self,
         template: str,
-        variables: Optional[Dict[str, Any]] = None,
-    ) -> Tuple[str, str, str]:
+        variables: dict[str, Any] | None = None,
+    ) -> tuple[str, str, str]:
         """Render a template string and return metadata for prompt versioning.
 
         Args:
@@ -208,8 +211,8 @@ class PromptEngine:
     def render_file_with_metadata(
         self,
         template_path: str,
-        variables: Optional[Dict[str, Any]] = None,
-    ) -> Tuple[str, str, str]:
+        variables: dict[str, Any] | None = None,
+    ) -> tuple[str, str, str]:
         """Render a template from a file and return metadata for prompt versioning.
 
         Args:
@@ -229,7 +232,8 @@ class PromptEngine:
             )
         try:
             raw_source, _, _ = self.jinja_env.loader.get_source(  # type: ignore[union-attr]
-                self.jinja_env, template_path,
+                self.jinja_env,
+                template_path,
             )
         except TemplateNotFound:
             raise PromptRenderError(
@@ -240,7 +244,7 @@ class PromptEngine:
         template_hash = _compute_template_hash(raw_source)
         return rendered, template_hash, template_path
 
-    def get_cache_stats(self) -> Dict[str, Any]:
+    def get_cache_stats(self) -> dict[str, Any]:
         """
         Get template cache statistics.
 

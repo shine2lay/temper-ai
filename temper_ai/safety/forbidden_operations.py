@@ -4,11 +4,9 @@ Detects and blocks forbidden bash operations, dangerous commands,
 command injection, and security-sensitive operations.
 See _forbidden_ops_helpers.py for extracted logic.
 """
-import re
-from typing import Any, Dict, List, Optional, Set
 
-from temper_ai.shared.constants.limits import PERCENT_100
-from temper_ai.shared.constants.probabilities import PROB_VERY_LOW
+import re
+from typing import Any
 
 # Helper functions and pattern data extracted to reduce class size
 from temper_ai.safety._forbidden_ops_helpers import (
@@ -43,6 +41,8 @@ from temper_ai.safety.constants import (
 )
 from temper_ai.safety.interfaces import SafetyViolation, ValidationResult
 from temper_ai.safety.validation import ValidationMixin
+from temper_ai.shared.constants.limits import PERCENT_100
+from temper_ai.shared.constants.probabilities import PROB_VERY_LOW
 
 # Forbidden operations policy priority
 FORBIDDEN_OPS_PRIORITY = 200
@@ -59,7 +59,7 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy, ValidationMixin):
     See _forbidden_ops_helpers.py for extracted internal logic.
     """
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: dict[str, Any] | None = None):
         """Initialize forbidden operations policy.
 
         Args:
@@ -84,7 +84,9 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy, ValidationMixin):
         self._init_boolean_flags()
 
         # Validate and store custom patterns
-        self.custom_forbidden_patterns = self._validate_custom_patterns(custom_patterns_raw)
+        self.custom_forbidden_patterns = self._validate_custom_patterns(
+            custom_patterns_raw
+        )
 
         # Validate and store whitelist commands
         self.whitelist_commands = self._validate_whitelist_commands()
@@ -97,34 +99,32 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy, ValidationMixin):
         self.check_file_writes = self._validate_boolean(
             self.config.get("check_file_writes", True),
             "check_file_writes",
-            default=True
+            default=True,
         )
 
         self.check_dangerous_commands = self._validate_boolean(
             self.config.get("check_dangerous_commands", True),
             "check_dangerous_commands",
-            default=True
+            default=True,
         )
 
         self.check_injection_patterns = self._validate_boolean(
             self.config.get("check_injection_patterns", True),
             "check_injection_patterns",
-            default=True
+            default=True,
         )
 
         self.check_security_sensitive = self._validate_boolean(
             self.config.get("check_security_sensitive", True),
             "check_security_sensitive",
-            default=True
+            default=True,
         )
 
         self.allow_read_only = self._validate_boolean(
-            self.config.get("allow_read_only", True),
-            "allow_read_only",
-            default=True
+            self.config.get("allow_read_only", True), "allow_read_only", default=True
         )
 
-    def _validate_custom_patterns(self, custom_patterns_raw: Any) -> Dict[str, str]:
+    def _validate_custom_patterns(self, custom_patterns_raw: Any) -> dict[str, str]:
         """Validate custom forbidden patterns configuration.
 
         Args:
@@ -141,7 +141,7 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy, ValidationMixin):
                 f"custom_forbidden_patterns must be a dict, got {type(custom_patterns_raw).__name__}"
             )
 
-        custom_patterns: Dict[str, str] = {}
+        custom_patterns: dict[str, str] = {}
         for name, pattern in custom_patterns_raw.items():
             if not isinstance(name, str):
                 raise ValueError(
@@ -162,11 +162,13 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy, ValidationMixin):
                     pattern,
                     f"{CUSTOM_FORBIDDEN_PATTERNS_PREFIX}{name}']",
                     max_length=MAX_EXCLUDED_PATH_LENGTH,
-                    test_timeout=PROB_VERY_LOW
+                    test_timeout=PROB_VERY_LOW,
                 )
                 custom_patterns[name] = pattern
             except ValueError as e:
-                raise ValueError(f"Invalid regex in {CUSTOM_FORBIDDEN_PATTERNS_PREFIX}{name}']: {e}")
+                raise ValueError(
+                    f"Invalid regex in {CUSTOM_FORBIDDEN_PATTERNS_PREFIX}{name}']: {e}"
+                )
 
         if len(custom_patterns) > MAX_CUSTOM_PATTERNS:
             raise ValueError(
@@ -175,7 +177,7 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy, ValidationMixin):
 
         return custom_patterns
 
-    def _validate_whitelist_commands(self) -> Set[str]:
+    def _validate_whitelist_commands(self) -> set[str]:
         """Validate whitelist commands configuration.
 
         Returns:
@@ -190,7 +192,7 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy, ValidationMixin):
                 f"whitelist_commands must be a list of strings, got {type(whitelist_raw).__name__}"
             )
 
-        whitelist_validated: List[str] = []
+        whitelist_validated: list[str] = []
         for cmd in whitelist_raw:
             if not isinstance(cmd, str):
                 raise ValueError(
@@ -209,9 +211,10 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy, ValidationMixin):
 
         return set(whitelist_validated)
 
-    def _compile_all_patterns(self) -> Dict[str, Dict[str, Any]]:
+    def _compile_all_patterns(self) -> dict[str, dict[str, Any]]:
         """Compile all regex patterns based on configuration."""
         from temper_ai.safety._forbidden_ops_pattern_config import PatternConfig
+
         config = PatternConfig(
             check_file_writes=self.check_file_writes,
             check_dangerous_commands=self.check_dangerous_commands,
@@ -240,7 +243,7 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy, ValidationMixin):
         """Return policy priority (P0 - critical security)."""
         return FORBIDDEN_OPS_PRIORITY  # P0 priority
 
-    def _extract_command(self, action: Dict[str, Any]) -> Optional[str]:
+    def _extract_command(self, action: dict[str, Any]) -> str | None:
         """Extract command string from action."""
         return _extract_command(action)
 
@@ -253,9 +256,7 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy, ValidationMixin):
         return _validate_redirect_context(command, match)
 
     def validate(
-        self,
-        action: Dict[str, Any],
-        context: Dict[str, Any]
+        self, action: dict[str, Any], context: dict[str, Any]
     ) -> ValidationResult:
         """Validate action for forbidden operations.
 
@@ -271,11 +272,7 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy, ValidationMixin):
 
         # Guard: No command to check
         if not command:
-            return ValidationResult(
-                valid=True,
-                violations=[],
-                policy_name=self.name
-            )
+            return ValidationResult(valid=True, violations=[], policy_name=self.name)
 
         # Guard: Check whitelist
         if self._is_whitelisted(command):
@@ -283,7 +280,7 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy, ValidationMixin):
                 valid=True,
                 violations=[],
                 policy_name=self.name,
-                metadata={"whitelisted": True}
+                metadata={"whitelisted": True},
             )
 
         # Check all patterns for violations
@@ -296,15 +293,13 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy, ValidationMixin):
             policy_name=self.name,
             metadata={
                 "patterns_checked": len(self.compiled_patterns),
-                "violations_found": len(violations)
-            }
+                "violations_found": len(violations),
+            },
         )
 
     def _check_all_patterns(
-        self,
-        command: str,
-        context: Dict[str, Any]
-    ) -> List[SafetyViolation]:
+        self, command: str, context: dict[str, Any]
+    ) -> list[SafetyViolation]:
         """Check command against all compiled patterns.
 
         Args:
@@ -326,10 +321,10 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy, ValidationMixin):
     def _check_single_pattern(
         self,
         command: str,
-        context: Dict[str, Any],
+        context: dict[str, Any],
         pattern_name: str,
-        pattern_info: Dict[str, Any]
-    ) -> Optional[SafetyViolation]:
+        pattern_info: dict[str, Any],
+    ) -> SafetyViolation | None:
         """Check command against a single pattern.
 
         Args:
@@ -363,15 +358,15 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy, ValidationMixin):
                 "pattern_name": pattern_name,
                 "category": pattern_info[CATEGORY_KEY],
                 "matched_text": match.group(0),
-                "match_position": match.start()
-            }
+                "match_position": match.start(),
+            },
         )
 
     def _get_remediation_hint(self, category: str) -> str:
         """Get remediation hint based on violation category."""
         return _get_remediation_hint(category)
 
-    def get_pattern_categories(self) -> Set[str]:
+    def get_pattern_categories(self) -> set[str]:
         """Get all pattern categories currently enabled.
 
         Returns:
@@ -379,7 +374,7 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy, ValidationMixin):
         """
         return {info[CATEGORY_KEY] for info in self.compiled_patterns.values()}
 
-    def get_patterns_by_category(self, category: str) -> List[str]:
+    def get_patterns_by_category(self, category: str) -> list[str]:
         """Get all pattern names for a specific category.
 
         Args:
@@ -389,7 +384,8 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy, ValidationMixin):
             List of pattern names in that category
         """
         return [
-            name for name, info in self.compiled_patterns.items()
+            name
+            for name, info in self.compiled_patterns.items()
             if info[CATEGORY_KEY] == category
         ]
 

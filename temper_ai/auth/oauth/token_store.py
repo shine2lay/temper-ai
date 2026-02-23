@@ -26,12 +26,13 @@ References:
 - Cryptography lib: https://cryptography.io/en/latest/fernet/
 - Keyring lib: https://github.com/jaraco/keyring
 """
+
 import json
 import logging
 import threading
 from collections import deque
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from cryptography.fernet import Fernet, InvalidToken
 
@@ -39,6 +40,7 @@ from cryptography.fernet import Fernet, InvalidToken
 try:
     import keyring  # type: ignore[import-not-found]
     from keyring.errors import KeyringError  # type: ignore[import-not-found]
+
     KEYRING_AVAILABLE = True
 except ImportError:
     KEYRING_AVAILABLE = False
@@ -50,13 +52,16 @@ from temper_ai.auth.constants import (
     FIELD_TIMESTAMP,
     FIELD_USER_ID,
 )
-from temper_ai.auth.oauth._token_store_helpers import acquire_encryption_key, re_encrypt_tokens
+from temper_ai.auth.oauth._token_store_helpers import (
+    acquire_encryption_key,
+    re_encrypt_tokens,
+)
 from temper_ai.shared.constants.limits import THRESHOLD_MASSIVE_COUNT
 
 logger = logging.getLogger(__name__)
 
 
-# Consolidated: canonical definition in src/utils/exceptions.py
+# Consolidated: canonical definition in temper_ai/shared/utils/exceptions.py
 from temper_ai.shared.utils.exceptions import SecurityError  # noqa: F401
 
 
@@ -98,18 +103,18 @@ class SecureTokenStore:
         >>> store = SecureTokenStore(require_keyring=True)
     """
 
-    DEFAULT_KEYRING_SERVICE = "meta-autonomous-framework"
+    DEFAULT_KEYRING_SERVICE = "temper-ai"
     DEFAULT_KEYRING_KEY_NAME = "oauth_token_encryption_key"
     MAX_ACCESS_LOG_SIZE = THRESHOLD_MASSIVE_COUNT  # 10000
 
     def __init__(
         self,
-        encryption_key: Optional[str] = None,
+        encryption_key: str | None = None,
         use_keyring: bool = True,  # Try keyring by default
-        keyring_service: Optional[str] = None,
-        keyring_key_name: Optional[str] = None,
+        keyring_service: str | None = None,
+        keyring_key_name: str | None = None,
         require_keyring: bool = False,  # Fail if keyring not available
-        max_access_log_size: Optional[int] = None,
+        max_access_log_size: int | None = None,
     ):
         """Initialize token store with secure key management.
 
@@ -120,7 +125,7 @@ class SecureTokenStore:
         Args:
             encryption_key: Explicit Fernet key (bypasses keyring/env, testing only)
             use_keyring: Try to use OS keyring for key storage (default: True)
-            keyring_service: Keyring service name (default: "meta-autonomous-framework")
+            keyring_service: Keyring service name (default: "temper-ai")
             keyring_key_name: Keyring key identifier (default: "oauth_token_encryption_key")
             require_keyring: Fail if keyring not available (compliance mode)
 
@@ -153,7 +158,7 @@ class SecureTokenStore:
 
         # In-memory storage (use database in production)
         # Key: user_id, Value: encrypted token bytes
-        self._tokens: Dict[str, bytes] = {}
+        self._tokens: dict[str, bytes] = {}
 
         # Audit log (bounded deque to prevent unbounded memory growth)
         self._access_log: deque = deque(maxlen=max_access_log_size)
@@ -163,10 +168,7 @@ class SecureTokenStore:
         self._lock = threading.RLock()
 
     def store_token(
-        self,
-        user_id: str,
-        token_data: Dict[str, Any],
-        expires_in: Optional[int] = None
+        self, user_id: str, token_data: dict[str, Any], expires_in: int | None = None
     ) -> None:
         """Store encrypted token.
 
@@ -187,12 +189,12 @@ class SecureTokenStore:
             # Add metadata
             token_with_metadata = {
                 **token_data,
-                "stored_at": datetime.now(timezone.utc).isoformat(),
+                "stored_at": datetime.now(UTC).isoformat(),
                 FIELD_EXPIRES_AT: (
-                    datetime.now(timezone.utc) + timedelta(seconds=expires_in)
-                ).isoformat()
-                if expires_in
-                else None,
+                    (datetime.now(UTC) + timedelta(seconds=expires_in)).isoformat()
+                    if expires_in
+                    else None
+                ),
             }
 
             # Serialize and encrypt
@@ -203,14 +205,16 @@ class SecureTokenStore:
             self._tokens[user_id] = encrypted
 
             # Audit log
-            self._access_log.append({
-                FIELD_ACTION: "store",
-                FIELD_USER_ID: user_id,
-                FIELD_TIMESTAMP: datetime.now(timezone.utc).isoformat(),
-                "expires_in": expires_in,
-            })
+            self._access_log.append(
+                {
+                    FIELD_ACTION: "store",
+                    FIELD_USER_ID: user_id,
+                    FIELD_TIMESTAMP: datetime.now(UTC).isoformat(),
+                    "expires_in": expires_in,
+                }
+            )
 
-    def retrieve_token(self, user_id: str) -> Optional[Dict[str, Any]]:
+    def retrieve_token(self, user_id: str) -> dict[str, Any] | None:
         """Retrieve and decrypt token.
 
         Args:
@@ -229,7 +233,7 @@ class SecureTokenStore:
             # Decrypt
             try:
                 decrypted = self.cipher.decrypt(encrypted)
-                token_data: Dict[str, Any] = json.loads(decrypted.decode())
+                token_data: dict[str, Any] = json.loads(decrypted.decode())
             except (InvalidToken, json.JSONDecodeError):
                 # Decryption failed (corrupted data, wrong key, or tampered)
                 # SECURITY: Delete corrupted token (lock is reentrant, safe to call)
@@ -240,7 +244,7 @@ class SecureTokenStore:
             if token_data.get(FIELD_EXPIRES_AT):
                 try:
                     expires_at = datetime.fromisoformat(token_data[FIELD_EXPIRES_AT])
-                    if datetime.now(timezone.utc) > expires_at:
+                    if datetime.now(UTC) > expires_at:
                         # Token expired - delete it
                         self.delete_token(user_id)
                         return None
@@ -250,11 +254,13 @@ class SecureTokenStore:
                     return None
 
             # Audit log
-            self._access_log.append({
-                FIELD_ACTION: "retrieve",
-                FIELD_USER_ID: user_id,
-                FIELD_TIMESTAMP: datetime.now(timezone.utc).isoformat(),
-            })
+            self._access_log.append(
+                {
+                    FIELD_ACTION: "retrieve",
+                    FIELD_USER_ID: user_id,
+                    FIELD_TIMESTAMP: datetime.now(UTC).isoformat(),
+                }
+            )
 
             return token_data
 
@@ -272,11 +278,13 @@ class SecureTokenStore:
                 del self._tokens[user_id]
 
                 # Audit log
-                self._access_log.append({
-                    "action": "delete",
-                    "user_id": user_id,
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                })
+                self._access_log.append(
+                    {
+                        "action": "delete",
+                        "user_id": user_id,
+                        "timestamp": datetime.now(UTC).isoformat(),
+                    }
+                )
                 return True
 
             return False
@@ -299,7 +307,9 @@ class SecureTokenStore:
 
             # Update cipher with new key
             try:
-                new_key_bytes = new_key.encode() if isinstance(new_key, str) else new_key
+                new_key_bytes = (
+                    new_key.encode() if isinstance(new_key, str) else new_key
+                )
                 new_cipher = Fernet(new_key_bytes)
             except (ValueError, TypeError) as e:
                 raise ValueError(f"Invalid new encryption key: {e}") from e
@@ -309,11 +319,13 @@ class SecureTokenStore:
             self.cipher = new_cipher
 
             # Audit log
-            self._access_log.append({
-                "action": "rotate_key",
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "tokens_re_encrypted": len(self._tokens),
-            })
+            self._access_log.append(
+                {
+                    "action": "rotate_key",
+                    "timestamp": datetime.now(UTC).isoformat(),
+                    "tokens_re_encrypted": len(self._tokens),
+                }
+            )
 
     def rotate_key_from_keyring(self) -> None:
         """Rotate encryption key using new key from keyring.
@@ -349,7 +361,7 @@ class SecureTokenStore:
             f"with new key from keyring"
         )
 
-    def get_audit_log(self) -> List[Dict[str, Any]]:
+    def get_audit_log(self) -> list[dict[str, Any]]:
         """Get audit log of token access.
 
         Returns:
@@ -372,10 +384,12 @@ class SecureTokenStore:
             self._tokens.clear()
 
             # Audit log
-            self._access_log.append({
-                "action": "clear_all",
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "tokens_deleted": count,
-            })
+            self._access_log.append(
+                {
+                    "action": "clear_all",
+                    "timestamp": datetime.now(UTC).isoformat(),
+                    "tokens_deleted": count,
+                }
+            )
 
             return count

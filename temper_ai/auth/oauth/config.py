@@ -3,21 +3,26 @@
 Handles OAuth provider configuration with secure credential management
 and validation. Supports ${env:VAR} reference resolution.
 """
+
 import os
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from temper_ai.shared.constants.durations import DEFAULT_TOKEN_TTL_SECONDS, SECONDS_PER_DAY, SECONDS_PER_MINUTE
+from temper_ai.shared.constants.durations import (
+    DEFAULT_TOKEN_TTL_SECONDS,
+    SECONDS_PER_DAY,
+    SECONDS_PER_MINUTE,
+)
 
 
 class OAuthConfigurationError(Exception):
     """Raised when OAuth configuration is invalid."""
 
-    def __init__(self, message: str, config_path: Optional[str] = None):
+    def __init__(self, message: str, config_path: str | None = None):
         self.config_path = config_path
         super().__init__(message)
 
@@ -36,71 +41,65 @@ class OAuthProviderConfig(BaseModel):
     """
 
     provider: str = Field(
-        ...,
-        description="Provider name (google, github, microsoft, etc.)"
+        ..., description="Provider name (google, github, microsoft, etc.)"
     )
 
     client_id: str = Field(
-        ...,
-        description="OAuth client ID (supports ${env:VAR} references)"
+        ..., description="OAuth client ID (supports ${env:VAR} references)"
     )
 
     client_secret: str = Field(
-        ...,
-        description="OAuth client secret (supports ${env:VAR} references)"
+        ..., description="OAuth client secret (supports ${env:VAR} references)"
     )
 
     redirect_uri: str = Field(
-        ...,
-        description="OAuth callback URL (must be whitelisted)"
+        ..., description="OAuth callback URL (must be whitelisted)"
     )
 
-    scopes: List[str] = Field(
-        default_factory=list,
-        description="OAuth scopes to request"
+    scopes: list[str] = Field(
+        default_factory=list, description="OAuth scopes to request"
     )
 
-    authorization_endpoint: Optional[str] = Field(
+    authorization_endpoint: str | None = Field(
         default=None,
-        description="Custom authorization endpoint (optional, uses provider default)"
+        description="Custom authorization endpoint (optional, uses provider default)",
     )
 
-    token_endpoint: Optional[str] = Field(
+    token_endpoint: str | None = Field(
         default=None,
-        description="Custom token endpoint (optional, uses provider default)"
+        description="Custom token endpoint (optional, uses provider default)",
     )
 
-    revocation_endpoint: Optional[str] = Field(
+    revocation_endpoint: str | None = Field(
         default=None,
-        description="Token revocation endpoint per RFC 7009 (optional, uses provider default)"
+        description="Token revocation endpoint per RFC 7009 (optional, uses provider default)",
     )
 
     # Additional provider-specific configuration
-    extra_params: Dict[str, Any] = Field(
-        default_factory=dict,
-        description="Additional provider-specific parameters"
+    extra_params: dict[str, Any] = Field(
+        default_factory=dict, description="Additional provider-specific parameters"
     )
 
-    @field_validator('provider')
+    @field_validator("provider")
     @classmethod
     def validate_provider(cls, v: str) -> str:
         """Validate provider name."""
-        allowed = {'google', 'github', 'microsoft', 'gitlab'}
+        allowed = {"google", "github", "microsoft", "gitlab"}
         if v not in allowed:
             raise ValueError(
                 f"Unsupported provider '{v}'. Allowed: {', '.join(allowed)}"
             )
         return v
 
-    @field_validator('scopes')
+    @field_validator("scopes")
     @classmethod
-    def validate_scopes(cls, v: List[str]) -> List[str]:
+    def validate_scopes(cls, v: list[str]) -> list[str]:
         """Validate scopes are non-empty."""
         if not v:
             raise ValueError("At least one scope is required")
         return v
 
-    def resolve_env_references(self) -> 'OAuthProviderConfig':
+    def resolve_env_references(self) -> "OAuthProviderConfig":
         """Resolve ${env:VAR} references in configuration.
 
         Returns:
@@ -109,13 +108,14 @@ class OAuthProviderConfig(BaseModel):
         Raises:
             OAuthConfigurationError: If environment variable not found
         """
+
         def resolve_value(value: str) -> str:
             """Resolve ${env:VAR} pattern in a string."""
             if not isinstance(value, str):
                 return value  # type: ignore
 
             # Match ${env:VARIABLE_NAME}
-            pattern = r'\$\{env:([A-Z_][A-Z0-9_]*)\}'
+            pattern = r"\$\{env:([A-Z_][A-Z0-9_]*)\}"
 
             def replacer(match: "re.Match[str]") -> str:
                 """Replace OAuth config placeholders with environment variables."""
@@ -124,7 +124,7 @@ class OAuthProviderConfig(BaseModel):
                 if env_value is None:
                     raise OAuthConfigurationError(
                         f"Environment variable '{var_name}' not found for OAuth config",
-                        config_path=f"oauth.{self.provider}.{var_name}"
+                        config_path=f"oauth.{self.provider}.{var_name}",
                     )
                 return env_value
 
@@ -132,18 +132,20 @@ class OAuthProviderConfig(BaseModel):
 
         # Create new config with resolved values
         resolved_data = self.model_dump()
-        resolved_data['client_id'] = resolve_value(self.client_id)
-        resolved_data['client_secret'] = resolve_value(self.client_secret)
-        resolved_data['redirect_uri'] = resolve_value(self.redirect_uri)
+        resolved_data["client_id"] = resolve_value(self.client_id)
+        resolved_data["client_secret"] = resolve_value(self.client_secret)
+        resolved_data["redirect_uri"] = resolve_value(self.redirect_uri)
 
         if self.authorization_endpoint:
-            resolved_data['authorization_endpoint'] = resolve_value(
+            resolved_data["authorization_endpoint"] = resolve_value(
                 self.authorization_endpoint
             )
         if self.token_endpoint:
-            resolved_data['token_endpoint'] = resolve_value(self.token_endpoint)
+            resolved_data["token_endpoint"] = resolve_value(self.token_endpoint)
         if self.revocation_endpoint:
-            resolved_data['revocation_endpoint'] = resolve_value(self.revocation_endpoint)
+            resolved_data["revocation_endpoint"] = resolve_value(
+                self.revocation_endpoint
+            )
 
         return OAuthProviderConfig(**resolved_data)
 
@@ -172,50 +174,46 @@ class OAuthConfig(BaseModel):
         ... )
     """
 
-    providers: List[OAuthProviderConfig] = Field(
-        ...,
-        description="List of OAuth provider configurations"
+    providers: list[OAuthProviderConfig] = Field(
+        ..., description="List of OAuth provider configurations"
     )
 
-    allowed_callback_urls: List[str] = Field(
-        ...,
-        description="Whitelist of allowed OAuth callback URLs"
+    allowed_callback_urls: list[str] = Field(
+        ..., description="Whitelist of allowed OAuth callback URLs"
     )
 
     token_encryption_key: str = Field(
-        ...,
-        description="Encryption key for token storage (supports ${env:VAR})"
+        ..., description="Encryption key for token storage (supports ${env:VAR})"
     )
 
     state_secret_key: str = Field(
         ...,
-        description="Secret key for CSRF state token generation (supports ${env:VAR})"
+        description="Secret key for CSRF state token generation (supports ${env:VAR})",
     )
 
     token_expiry_seconds: int = Field(
         default=DEFAULT_TOKEN_TTL_SECONDS,
         description="Default token expiry in seconds",
         ge=SECONDS_PER_MINUTE,  # Minimum 1 minute
-        le=SECONDS_PER_DAY  # Maximum 24 hours
+        le=SECONDS_PER_DAY,  # Maximum 24 hours
     )
 
     allow_localhost: bool = Field(
         # SEC-13: Default to False in production (when ENVIRONMENT is unset or "production").
         # Only allow localhost when ENVIRONMENT is explicitly set to a dev value.
-        default_factory=lambda: os.environ.get("ENVIRONMENT", "production") not in (
-            "production", ""
-        ),
-        description="Allow localhost callback URLs (defaults to False in production)"
+        default_factory=lambda: os.environ.get("ENVIRONMENT", "production")
+        not in ("production", ""),
+        description="Allow localhost callback URLs (defaults to False in production)",
     )
 
-    @model_validator(mode='after')
-    def validate_callback_urls_match_providers(self) -> 'OAuthConfig':
+    @model_validator(mode="after")
+    def validate_callback_urls_match_providers(self) -> "OAuthConfig":
         """Validate that all provider redirect URIs are in allowed list."""
         allowed_set = set(self.allowed_callback_urls)
 
         for provider in self.providers:
             # Skip ${env:VAR} references (will be validated after resolution)
-            if '${env:' in provider.redirect_uri:
+            if "${env:" in provider.redirect_uri:
                 continue
 
             if provider.redirect_uri not in allowed_set:
@@ -226,7 +224,7 @@ class OAuthConfig(BaseModel):
 
         return self
 
-    def get_provider_config(self, provider: str) -> Optional[OAuthProviderConfig]:
+    def get_provider_config(self, provider: str) -> OAuthProviderConfig | None:
         """Get configuration for a specific provider.
 
         Args:
@@ -240,7 +238,7 @@ class OAuthConfig(BaseModel):
                 return config
         return None
 
-    def resolve_env_references(self) -> 'OAuthConfig':
+    def resolve_env_references(self) -> "OAuthConfig":
         """Resolve all ${env:VAR} references in configuration.
 
         Returns:
@@ -249,12 +247,13 @@ class OAuthConfig(BaseModel):
         Raises:
             OAuthConfigurationError: If environment variable not found
         """
+
         def resolve_value(value: str) -> str:
             """Resolve ${env:VAR} pattern."""
             if not isinstance(value, str):
                 return value  # type: ignore
 
-            pattern = r'\$\{env:([A-Z_][A-Z0-9_]*)\}'
+            pattern = r"\$\{env:([A-Z_][A-Z0-9_]*)\}"
 
             def replacer(match: "re.Match[str]") -> str:
                 """Replace OAuth config placeholders with environment variables."""
@@ -263,7 +262,7 @@ class OAuthConfig(BaseModel):
                 if env_value is None:
                     raise OAuthConfigurationError(
                         f"Environment variable '{var_name}' not found",
-                        config_path=f"oauth.{var_name}"
+                        config_path=f"oauth.{var_name}",
                     )
                 return env_value
 
@@ -276,17 +275,17 @@ class OAuthConfig(BaseModel):
 
         # Resolve other fields
         resolved_data = self.model_dump()
-        resolved_data['providers'] = [p.model_dump() for p in resolved_providers]
-        resolved_data['token_encryption_key'] = resolve_value(self.token_encryption_key)
-        resolved_data['state_secret_key'] = resolve_value(self.state_secret_key)
-        resolved_data['allowed_callback_urls'] = [
+        resolved_data["providers"] = [p.model_dump() for p in resolved_providers]
+        resolved_data["token_encryption_key"] = resolve_value(self.token_encryption_key)
+        resolved_data["state_secret_key"] = resolve_value(self.state_secret_key)
+        resolved_data["allowed_callback_urls"] = [
             resolve_value(url) for url in self.allowed_callback_urls
         ]
 
         return OAuthConfig(**resolved_data)
 
     @classmethod
-    def from_yaml_file(cls, config_path: Path) -> 'OAuthConfig':
+    def from_yaml_file(cls, config_path: Path) -> "OAuthConfig":
         """Load OAuth config from YAML file.
 
         Args:
@@ -303,7 +302,7 @@ class OAuthConfig(BaseModel):
             raise FileNotFoundError(f"OAuth config file not found: {config_path}")
 
         try:
-            with open(config_path, 'r') as f:
+            with open(config_path) as f:
                 data = yaml.safe_load(f)
 
             # Create and validate config
@@ -312,15 +311,13 @@ class OAuthConfig(BaseModel):
             # Resolve environment variable references
             return config.resolve_env_references()
 
-        except (OSError, IOError) as e:
+        except OSError as e:
             raise OAuthConfigurationError(
-                f"Failed to read OAuth config file: {e}",
-                config_path=str(config_path)
+                f"Failed to read OAuth config file: {e}", config_path=str(config_path)
             ) from e
         except (yaml.YAMLError, ValueError, TypeError, KeyError) as e:
             raise OAuthConfigurationError(
-                f"Invalid OAuth config format: {e}",
-                config_path=str(config_path)
+                f"Invalid OAuth config format: {e}", config_path=str(config_path)
             ) from e
 
 
@@ -332,28 +329,28 @@ ENDPOINT_USERINFO = "userinfo_endpoint"
 
 # Provider defaults (used when custom endpoints not specified)
 PROVIDER_DEFAULTS = {
-    'google': {
-        ENDPOINT_AUTHORIZATION: 'https://accounts.google.com/o/oauth2/v2/auth',
-        ENDPOINT_TOKEN: 'https://oauth2.googleapis.com/token',
-        ENDPOINT_REVOCATION: 'https://oauth2.googleapis.com/revoke',
-        ENDPOINT_USERINFO: 'https://www.googleapis.com/oauth2/v2/userinfo',
+    "google": {
+        ENDPOINT_AUTHORIZATION: "https://accounts.google.com/o/oauth2/v2/auth",
+        ENDPOINT_TOKEN: "https://oauth2.googleapis.com/token",
+        ENDPOINT_REVOCATION: "https://oauth2.googleapis.com/revoke",
+        ENDPOINT_USERINFO: "https://www.googleapis.com/oauth2/v2/userinfo",
     },
-    'github': {
-        ENDPOINT_AUTHORIZATION: 'https://github.com/login/oauth/authorize',
-        ENDPOINT_TOKEN: 'https://github.com/login/oauth/access_token',
+    "github": {
+        ENDPOINT_AUTHORIZATION: "https://github.com/login/oauth/authorize",
+        ENDPOINT_TOKEN: "https://github.com/login/oauth/access_token",
         # GitHub does not support RFC 7009 token revocation via API
-        ENDPOINT_USERINFO: 'https://api.github.com/user',
+        ENDPOINT_USERINFO: "https://api.github.com/user",
     },
-    'microsoft': {
-        ENDPOINT_AUTHORIZATION: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
-        ENDPOINT_TOKEN: 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
-        ENDPOINT_REVOCATION: 'https://login.microsoftonline.com/common/oauth2/v2.0/logout',
-        ENDPOINT_USERINFO: 'https://graph.microsoft.com/v1.0/me',
+    "microsoft": {
+        ENDPOINT_AUTHORIZATION: "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
+        ENDPOINT_TOKEN: "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+        ENDPOINT_REVOCATION: "https://login.microsoftonline.com/common/oauth2/v2.0/logout",
+        ENDPOINT_USERINFO: "https://graph.microsoft.com/v1.0/me",
     },
 }
 
 
-def get_provider_endpoints(config: OAuthProviderConfig) -> Dict[str, Optional[str]]:
+def get_provider_endpoints(config: OAuthProviderConfig) -> dict[str, str | None]:
     """Get OAuth endpoints for a provider (with fallback to defaults).
 
     Args:
@@ -367,16 +364,20 @@ def get_provider_endpoints(config: OAuthProviderConfig) -> Dict[str, Optional[st
     """
     defaults = PROVIDER_DEFAULTS.get(config.provider, {})
 
-    auth_endpoint = config.authorization_endpoint or defaults.get(ENDPOINT_AUTHORIZATION)
+    auth_endpoint = config.authorization_endpoint or defaults.get(
+        ENDPOINT_AUTHORIZATION
+    )
     token_endpoint = config.token_endpoint or defaults.get(ENDPOINT_TOKEN)
-    revocation_endpoint = config.revocation_endpoint or defaults.get(ENDPOINT_REVOCATION)
+    revocation_endpoint = config.revocation_endpoint or defaults.get(
+        ENDPOINT_REVOCATION
+    )
     userinfo_endpoint = defaults.get(ENDPOINT_USERINFO)
 
     if not auth_endpoint or not token_endpoint:
         raise OAuthConfigurationError(
             f"Provider '{config.provider}' requires custom endpoints "
             f"(authorization_endpoint and token_endpoint)",
-            config_path=f"oauth.providers.{config.provider}"
+            config_path=f"oauth.providers.{config.provider}",
         )
 
     return {

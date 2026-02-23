@@ -1,14 +1,12 @@
 """Tests for temper_ai.registry.store using in-memory SQLite."""
+
+from collections.abc import Generator
 from contextlib import contextmanager
-from datetime import timezone
-from datetime import datetime
-from typing import Generator
+from datetime import UTC, datetime
 
 import pytest
 from sqlmodel import Session, SQLModel
 
-from temper_ai.storage.database.engine import create_test_engine
-from temper_ai.storage.database.models_registry import AgentRegistryDB  # noqa: F401 — registers table
 from temper_ai.registry._schemas import AgentRegistryEntry
 from temper_ai.registry.constants import (
     STATUS_ACTIVE,
@@ -16,13 +14,17 @@ from temper_ai.registry.constants import (
     STATUS_REGISTERED,
 )
 from temper_ai.registry.store import AgentRegistryStore
+from temper_ai.storage.database.engine import create_test_engine
+from temper_ai.storage.database.models_registry import (
+    AgentRegistryDB,  # noqa: F401 — registers table
+)
 
 
 def _make_entry(name: str = "test-agent", **kwargs) -> AgentRegistryEntry:
     defaults = dict(
         id=f"id-{name}",
         name=name,
-        registered_at=datetime.now(timezone.utc),
+        registered_at=datetime.now(UTC),
         config_snapshot={"name": name},
     )
     defaults.update(kwargs)
@@ -148,7 +150,8 @@ class TestAgentRegistryStoreUpdateLastActive:
 
     def test_missing_agent_no_error(self):
         store = _make_store()
-        store.update_last_active("ghost-agent")  # Should not raise
+        result = store.update_last_active("ghost-agent")  # Should not raise
+        assert result is None
 
 
 class TestAgentRegistryStoreUpdateStatus:
@@ -167,4 +170,5 @@ class TestAgentRegistryStoreUpdateStatus:
 
     def test_missing_agent_no_error(self):
         store = _make_store()
-        store.update_status("ghost-agent", STATUS_ACTIVE)  # Should not raise
+        result = store.update_status("ghost-agent", STATUS_ACTIVE)  # Should not raise
+        assert result is None

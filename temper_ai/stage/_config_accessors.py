@@ -9,7 +9,8 @@ Each accessor handles three formats:
 2. Nested dict: {"stage": {"agents": [...]}}
 3. Flat dict: {"agents": [...]}
 """
-from typing import Any, Dict
+
+from typing import Any
 
 from temper_ai.shared.utils.config_helpers import get_nested_value
 
@@ -23,13 +24,13 @@ def get_stage_agents(stage_config: Any) -> list:
     Returns:
         List of agent references
     """
-    if hasattr(stage_config, 'stage'):
+    if hasattr(stage_config, "stage"):
         return list(stage_config.stage.agents)
     if isinstance(stage_config, dict):
-        agents = get_nested_value(stage_config, 'stage.agents')
+        agents = get_nested_value(stage_config, "stage.agents")
         if agents is not None:
             return list(agents)
-        return list(stage_config.get('agents', []))
+        return list(stage_config.get("agents", []))
     return []
 
 
@@ -44,20 +45,23 @@ def get_error_handling(stage_config: Any) -> Any:
     """
     from temper_ai.stage._schemas import StageErrorHandlingConfig
 
-    if hasattr(stage_config, 'stage'):
-        if hasattr(stage_config.stage, 'error_handling') and stage_config.stage.error_handling:
+    if hasattr(stage_config, "stage"):
+        if (
+            hasattr(stage_config.stage, "error_handling")
+            and stage_config.stage.error_handling
+        ):
             return stage_config.stage.error_handling
         return StageErrorHandlingConfig(on_agent_failure="halt_stage")
 
     if isinstance(stage_config, dict):
-        error_dict = get_nested_value(stage_config, 'stage.error_handling')
+        error_dict = get_nested_value(stage_config, "stage.error_handling")
         if error_dict:
             return StageErrorHandlingConfig(**error_dict)
 
     return StageErrorHandlingConfig(on_agent_failure="halt_stage")
 
 
-def get_execution_config(stage_config: Any) -> Dict[str, Any]:
+def get_execution_config(stage_config: Any) -> dict[str, Any]:
     """Extract execution config from stage config.
 
     Args:
@@ -66,15 +70,17 @@ def get_execution_config(stage_config: Any) -> Dict[str, Any]:
     Returns:
         Execution config dict (timeout_seconds, agent_mode, etc.)
     """
-    if hasattr(stage_config, 'stage') and hasattr(stage_config.stage, 'execution'):
+    if hasattr(stage_config, "stage") and hasattr(stage_config.stage, "execution"):
         exec_cfg = stage_config.stage.execution
-        if hasattr(exec_cfg, 'model_dump'):
-            result: Dict[str, Any] = exec_cfg.model_dump()
+        if hasattr(exec_cfg, "model_dump"):
+            result: dict[str, Any] = exec_cfg.model_dump()
             return result
         return {}
 
     if isinstance(stage_config, dict):
-        result2: Dict[str, Any] = get_nested_value(stage_config, 'stage.execution') or {}
+        result2: dict[str, Any] = (
+            get_nested_value(stage_config, "stage.execution") or {}
+        )
         return result2
 
     return {}
@@ -89,14 +95,14 @@ def get_collaboration(stage_config: Any) -> Any:
     Returns:
         CollaborationConfig or dict or None
     """
-    if hasattr(stage_config, 'stage') and hasattr(stage_config.stage, 'collaboration'):
+    if hasattr(stage_config, "stage") and hasattr(stage_config.stage, "collaboration"):
         return stage_config.stage.collaboration
     if isinstance(stage_config, dict):
-        return get_nested_value(stage_config, 'stage.collaboration')
+        return get_nested_value(stage_config, "stage.collaboration")
     return None
 
 
-def get_collaboration_inner_config(stage_config: Any) -> Dict[str, Any]:
+def get_collaboration_inner_config(stage_config: Any) -> dict[str, Any]:
     """Extract the inner .config subfield from collaboration config.
 
     Handles nested "stage.collaboration.config" and flat
@@ -125,14 +131,14 @@ def get_convergence(stage_config: Any) -> Any:
     Returns:
         ConvergenceConfig or dict or None
     """
-    if hasattr(stage_config, 'stage') and hasattr(stage_config.stage, 'convergence'):
+    if hasattr(stage_config, "stage") and hasattr(stage_config.stage, "convergence"):
         return stage_config.stage.convergence
     if isinstance(stage_config, dict):
-        return get_nested_value(stage_config, 'stage.convergence')
+        return get_nested_value(stage_config, "stage.convergence")
     return None
 
 
-def get_quality_gates(stage_config: Any) -> Dict[str, Any]:
+def get_quality_gates(stage_config: Any) -> dict[str, Any]:
     """Extract quality gates config from stage config.
 
     Args:
@@ -141,15 +147,15 @@ def get_quality_gates(stage_config: Any) -> Dict[str, Any]:
     Returns:
         Quality gates config dict (enabled, min_confidence, etc.)
     """
-    if hasattr(stage_config, 'quality_gates') and stage_config.quality_gates:
+    if hasattr(stage_config, "quality_gates") and stage_config.quality_gates:
         qg = stage_config.quality_gates
-        if hasattr(qg, 'model_dump'):
-            result: Dict[str, Any] = qg.model_dump()
+        if hasattr(qg, "model_dump"):
+            result: dict[str, Any] = qg.model_dump()
             return result
         return {}
 
     stage_dict = stage_config if isinstance(stage_config, dict) else {}
-    result2: Dict[str, Any] = stage_dict.get("quality_gates", {})
+    result2: dict[str, Any] = stage_dict.get("quality_gates", {})
     return result2
 
 
@@ -164,17 +170,19 @@ def get_wall_clock_timeout(stage_config: Any) -> float:
     """
     from temper_ai.shared.constants.durations import SECONDS_PER_30_MINUTES
 
-    if hasattr(stage_config, 'stage') and hasattr(stage_config.stage, 'execution'):
+    if hasattr(stage_config, "stage") and hasattr(stage_config.stage, "execution"):
         return float(
-            getattr(stage_config.stage.execution, 'timeout_seconds', SECONDS_PER_30_MINUTES)
+            getattr(
+                stage_config.stage.execution, "timeout_seconds", SECONDS_PER_30_MINUTES
+            )
         )
     if isinstance(stage_config, dict):
-        exec_cfg = get_nested_value(stage_config, 'stage.execution') or {}
-        return float(exec_cfg.get('timeout_seconds', SECONDS_PER_30_MINUTES))
+        exec_cfg = get_nested_value(stage_config, "stage.execution") or {}
+        return float(exec_cfg.get("timeout_seconds", SECONDS_PER_30_MINUTES))
     return float(SECONDS_PER_30_MINUTES)
 
 
-def stage_config_to_dict(stage_config: Any) -> Dict[str, Any]:
+def stage_config_to_dict(stage_config: Any) -> dict[str, Any]:
     """Convert stage config to dict (model_dump or pass-through).
 
     Args:
@@ -183,8 +191,8 @@ def stage_config_to_dict(stage_config: Any) -> Dict[str, Any]:
     Returns:
         Dict representation
     """
-    if hasattr(stage_config, 'model_dump'):
-        result: Dict[str, Any] = stage_config.model_dump()
+    if hasattr(stage_config, "model_dump"):
+        result: dict[str, Any] = stage_config.model_dump()
         return result
     if isinstance(stage_config, dict):
         return stage_config

@@ -9,16 +9,23 @@ Tests cover:
 - Exception handling
 - CompositeValidationResult helper methods
 """
-from typing import Any, Dict
+
+from typing import Any
 
 import pytest
 
 from temper_ai.safety.composition import CompositeValidationResult, PolicyComposer
-from temper_ai.safety.interfaces import SafetyPolicy, SafetyViolation, ValidationResult, ViolationSeverity
+from temper_ai.safety.interfaces import (
+    SafetyPolicy,
+    SafetyViolation,
+    ValidationResult,
+    ViolationSeverity,
+)
 
 # ============================================================================
 # Mock Policies for Testing
 # ============================================================================
+
 
 class MockPolicy(SafetyPolicy):
     """Mock policy for testing with configurable behavior."""
@@ -28,7 +35,7 @@ class MockPolicy(SafetyPolicy):
         name: str,
         priority: int = 100,
         violations: list = None,
-        raise_exception: bool = False
+        raise_exception: bool = False,
     ):
         self._name = name
         self._priority = priority
@@ -50,7 +57,9 @@ class MockPolicy(SafetyPolicy):
     def priority(self) -> int:
         return self._priority
 
-    def validate(self, action: Dict[str, Any], context: Dict[str, Any]) -> ValidationResult:
+    def validate(
+        self, action: dict[str, Any], context: dict[str, Any]
+    ) -> ValidationResult:
         """Mock validation - returns configured violations."""
         self.validate_called = True
 
@@ -63,18 +72,18 @@ class MockPolicy(SafetyPolicy):
                 severity=v["severity"],
                 message=v["message"],
                 action=str(action),
-                context=context
+                context=context,
             )
             for v in self._violations
         ]
 
         return ValidationResult(
-            valid=len(violations) == 0,
-            violations=violations,
-            policy_name=self.name
+            valid=len(violations) == 0, violations=violations, policy_name=self.name
         )
 
-    async def validate_async(self, action: Dict[str, Any], context: Dict[str, Any]) -> ValidationResult:
+    async def validate_async(
+        self, action: dict[str, Any], context: dict[str, Any]
+    ) -> ValidationResult:
         """Async validation."""
         self.validate_async_called = True
         return self.validate(action, context)
@@ -87,6 +96,7 @@ class MockPolicy(SafetyPolicy):
 # ============================================================================
 # Test PolicyComposer Initialization
 # ============================================================================
+
 
 class TestPolicyComposerInitialization:
     """Test PolicyComposer initialization."""
@@ -126,6 +136,7 @@ class TestPolicyComposerInitialization:
 # ============================================================================
 # Test Policy Management
 # ============================================================================
+
 
 class TestPolicyManagement:
     """Test adding, removing, and managing policies."""
@@ -203,6 +214,7 @@ class TestPolicyManagement:
 # Test Policy Priority Ordering
 # ============================================================================
 
+
 class TestPolicyOrdering:
     """Test policies execute in priority order."""
 
@@ -229,10 +241,7 @@ class TestPolicyOrdering:
         composer.add_policy(policy_low)
         composer.add_policy(policy_high)
 
-        result = composer.validate(
-            action={"tool": "test"},
-            context={}
-        )
+        result = composer.validate(action={"tool": "test"}, context={})
 
         # Verify execution order
         assert result.execution_order == ["high", "low"]
@@ -241,6 +250,7 @@ class TestPolicyOrdering:
 # ============================================================================
 # Test Sequential Validation (Fail-Safe Mode)
 # ============================================================================
+
 
 class TestSequentialValidation:
     """Test sequential execution of all policies (fail-safe mode)."""
@@ -257,10 +267,7 @@ class TestSequentialValidation:
         composer.add_policy(policy2)
         composer.add_policy(policy3)
 
-        result = composer.validate(
-            action={"tool": "test"},
-            context={}
-        )
+        result = composer.validate(action={"tool": "test"}, context={})
 
         assert result.policies_evaluated == 3
         assert result.policies_skipped == 0
@@ -273,22 +280,25 @@ class TestSequentialValidation:
         composer = PolicyComposer(fail_fast=False)
 
         # Policy 1: HIGH violation
-        policy1 = MockPolicy("policy1", violations=[
-            {"severity": ViolationSeverity.HIGH, "message": "High violation"}
-        ])
+        policy1 = MockPolicy(
+            "policy1",
+            violations=[
+                {"severity": ViolationSeverity.HIGH, "message": "High violation"}
+            ],
+        )
 
         # Policy 2: MEDIUM violation
-        policy2 = MockPolicy("policy2", violations=[
-            {"severity": ViolationSeverity.MEDIUM, "message": "Medium violation"}
-        ])
+        policy2 = MockPolicy(
+            "policy2",
+            violations=[
+                {"severity": ViolationSeverity.MEDIUM, "message": "Medium violation"}
+            ],
+        )
 
         composer.add_policy(policy1)
         composer.add_policy(policy2)
 
-        result = composer.validate(
-            action={"tool": "test"},
-            context={}
-        )
+        result = composer.validate(action={"tool": "test"}, context={})
 
         assert result.valid is False
         assert len(result.violations) == 2
@@ -303,10 +313,7 @@ class TestSequentialValidation:
         composer.add_policy(MockPolicy("policy1"))
         composer.add_policy(MockPolicy("policy2"))
 
-        result = composer.validate(
-            action={"tool": "test"},
-            context={}
-        )
+        result = composer.validate(action={"tool": "test"}, context={})
 
         assert result.valid is True
         assert len(result.violations) == 0
@@ -316,6 +323,7 @@ class TestSequentialValidation:
 # Test Fail-Fast Mode
 # ============================================================================
 
+
 class TestFailFastMode:
     """Test fail-fast mode with short-circuit evaluation."""
 
@@ -324,9 +332,12 @@ class TestFailFastMode:
         composer = PolicyComposer(fail_fast=True)
 
         # First policy has violation
-        policy1 = MockPolicy("policy1", violations=[
-            {"severity": ViolationSeverity.HIGH, "message": "First violation"}
-        ])
+        policy1 = MockPolicy(
+            "policy1",
+            violations=[
+                {"severity": ViolationSeverity.HIGH, "message": "First violation"}
+            ],
+        )
         policy2 = MockPolicy("policy2")
         policy3 = MockPolicy("policy3")
 
@@ -334,10 +345,7 @@ class TestFailFastMode:
         composer.add_policy(policy2)
         composer.add_policy(policy3)
 
-        result = composer.validate(
-            action={"tool": "test"},
-            context={}
-        )
+        result = composer.validate(action={"tool": "test"}, context={})
 
         # Only first policy should execute
         assert policy1.validate_called is True
@@ -357,10 +365,7 @@ class TestFailFastMode:
         composer.add_policy(policy1)
         composer.add_policy(policy2)
 
-        result = composer.validate(
-            action={"tool": "test"},
-            context={}
-        )
+        result = composer.validate(action={"tool": "test"}, context={})
 
         # All policies should execute when no violations
         assert result.policies_evaluated == 2
@@ -372,6 +377,7 @@ class TestFailFastMode:
 # Test Violation Reporting
 # ============================================================================
 
+
 class TestViolationReporting:
     """Test violation reporting to policies."""
 
@@ -379,16 +385,16 @@ class TestViolationReporting:
         """Test violations are reported to policy when reporting enabled."""
         composer = PolicyComposer(enable_reporting=True)
 
-        policy = MockPolicy("test_policy", violations=[
-            {"severity": ViolationSeverity.HIGH, "message": "Test violation"}
-        ])
+        policy = MockPolicy(
+            "test_policy",
+            violations=[
+                {"severity": ViolationSeverity.HIGH, "message": "Test violation"}
+            ],
+        )
 
         composer.add_policy(policy)
 
-        result = composer.validate(
-            action={"tool": "test"},
-            context={}
-        )
+        result = composer.validate(action={"tool": "test"}, context={})
 
         # Violation should be reported to policy
         assert len(policy.reported_violations) == 1
@@ -398,16 +404,16 @@ class TestViolationReporting:
         """Test violations not reported when reporting disabled."""
         composer = PolicyComposer(enable_reporting=False)
 
-        policy = MockPolicy("test_policy", violations=[
-            {"severity": ViolationSeverity.HIGH, "message": "Test violation"}
-        ])
+        policy = MockPolicy(
+            "test_policy",
+            violations=[
+                {"severity": ViolationSeverity.HIGH, "message": "Test violation"}
+            ],
+        )
 
         composer.add_policy(policy)
 
-        result = composer.validate(
-            action={"tool": "test"},
-            context={}
-        )
+        result = composer.validate(action={"tool": "test"}, context={})
 
         # No violations should be reported
         assert len(policy.reported_violations) == 0
@@ -416,6 +422,7 @@ class TestViolationReporting:
 # ============================================================================
 # Test Exception Handling
 # ============================================================================
+
 
 class TestExceptionHandling:
     """Test handling of exceptions during policy evaluation."""
@@ -427,10 +434,7 @@ class TestExceptionHandling:
         policy = MockPolicy("failing_policy", raise_exception=True)
         composer.add_policy(policy)
 
-        result = composer.validate(
-            action={"tool": "test"},
-            context={}
-        )
+        result = composer.validate(action={"tool": "test"}, context={})
 
         assert result.valid is False
         assert len(result.violations) == 1
@@ -445,10 +449,7 @@ class TestExceptionHandling:
         policy = MockPolicy("failing_policy", raise_exception=True)
         composer.add_policy(policy)
 
-        result = composer.validate(
-            action={"tool": "test"},
-            context={}
-        )
+        result = composer.validate(action={"tool": "test"}, context={})
 
         violation = result.violations[0]
         assert "exception" in violation.metadata
@@ -462,10 +463,7 @@ class TestExceptionHandling:
         policy = MockPolicy("failing_policy", raise_exception=True)
         composer.add_policy(policy)
 
-        result = composer.validate(
-            action={"tool": "test"},
-            context={}
-        )
+        result = composer.validate(action={"tool": "test"}, context={})
 
         # Exception violation should be reported
         assert len(policy.reported_violations) == 1
@@ -481,10 +479,7 @@ class TestExceptionHandling:
         composer.add_policy(policy1)
         composer.add_policy(policy2)
 
-        result = composer.validate(
-            action={"tool": "test"},
-            context={}
-        )
+        result = composer.validate(action={"tool": "test"}, context={})
 
         # Both policies should execute
         assert result.policies_evaluated == 2
@@ -494,6 +489,7 @@ class TestExceptionHandling:
 # ============================================================================
 # Test Async Validation
 # ============================================================================
+
 
 class TestAsyncValidation:
     """Test asynchronous validation."""
@@ -506,10 +502,7 @@ class TestAsyncValidation:
         policy = MockPolicy("async_policy")
         composer.add_policy(policy)
 
-        result = await composer.validate_async(
-            action={"tool": "test"},
-            context={}
-        )
+        result = await composer.validate_async(action={"tool": "test"}, context={})
 
         assert policy.validate_async_called is True
         assert result.valid is True
@@ -519,20 +512,21 @@ class TestAsyncValidation:
         """Test async validation aggregates violations."""
         composer = PolicyComposer()
 
-        policy1 = MockPolicy("policy1", violations=[
-            {"severity": ViolationSeverity.HIGH, "message": "Violation 1"}
-        ])
-        policy2 = MockPolicy("policy2", violations=[
-            {"severity": ViolationSeverity.MEDIUM, "message": "Violation 2"}
-        ])
+        policy1 = MockPolicy(
+            "policy1",
+            violations=[{"severity": ViolationSeverity.HIGH, "message": "Violation 1"}],
+        )
+        policy2 = MockPolicy(
+            "policy2",
+            violations=[
+                {"severity": ViolationSeverity.MEDIUM, "message": "Violation 2"}
+            ],
+        )
 
         composer.add_policy(policy1)
         composer.add_policy(policy2)
 
-        result = await composer.validate_async(
-            action={"tool": "test"},
-            context={}
-        )
+        result = await composer.validate_async(action={"tool": "test"}, context={})
 
         assert result.valid is False
         assert len(result.violations) == 2
@@ -542,18 +536,18 @@ class TestAsyncValidation:
         """Test async validation respects fail-fast mode."""
         composer = PolicyComposer(fail_fast=True)
 
-        policy1 = MockPolicy("policy1", violations=[
-            {"severity": ViolationSeverity.HIGH, "message": "First violation"}
-        ])
+        policy1 = MockPolicy(
+            "policy1",
+            violations=[
+                {"severity": ViolationSeverity.HIGH, "message": "First violation"}
+            ],
+        )
         policy2 = MockPolicy("policy2")
 
         composer.add_policy(policy1)
         composer.add_policy(policy2)
 
-        result = await composer.validate_async(
-            action={"tool": "test"},
-            context={}
-        )
+        result = await composer.validate_async(action={"tool": "test"}, context={})
 
         # Should stop after first policy
         assert result.policies_evaluated == 1
@@ -563,6 +557,7 @@ class TestAsyncValidation:
 # ============================================================================
 # Test CompositeValidationResult
 # ============================================================================
+
 
 class TestCompositeValidationResult:
     """Test CompositeValidationResult helper methods."""
@@ -575,7 +570,7 @@ class TestCompositeValidationResult:
                 severity=ViolationSeverity.CRITICAL,
                 message="Critical",
                 action="test",
-                context={}
+                context={},
             )
         ]
 
@@ -591,7 +586,7 @@ class TestCompositeValidationResult:
                 severity=ViolationSeverity.HIGH,
                 message="High",
                 action="test",
-                context={}
+                context={},
             )
         ]
 
@@ -607,7 +602,7 @@ class TestCompositeValidationResult:
                 severity=ViolationSeverity.CRITICAL,
                 message="Critical",
                 action="test",
-                context={}
+                context={},
             )
         ]
 
@@ -623,21 +618,21 @@ class TestCompositeValidationResult:
                 severity=ViolationSeverity.CRITICAL,
                 message="Critical",
                 action="test",
-                context={}
+                context={},
             ),
             SafetyViolation(
                 policy_name="p2",
                 severity=ViolationSeverity.MEDIUM,
                 message="Medium",
                 action="test",
-                context={}
+                context={},
             ),
             SafetyViolation(
                 policy_name="p3",
                 severity=ViolationSeverity.CRITICAL,
                 message="Critical 2",
                 action="test",
-                context={}
+                context={},
             ),
         ]
 
@@ -657,21 +652,21 @@ class TestCompositeValidationResult:
                 severity=ViolationSeverity.HIGH,
                 message="V1",
                 action="test",
-                context={}
+                context={},
             ),
             SafetyViolation(
                 policy_name="policy2",
                 severity=ViolationSeverity.MEDIUM,
                 message="V2",
                 action="test",
-                context={}
+                context={},
             ),
             SafetyViolation(
                 policy_name="policy1",
                 severity=ViolationSeverity.LOW,
                 message="V3",
                 action="test",
-                context={}
+                context={},
             ),
         ]
 
@@ -691,7 +686,7 @@ class TestCompositeValidationResult:
                 severity=ViolationSeverity.HIGH,
                 message="Test violation",
                 action="test_action",
-                context={}
+                context={},
             )
         ]
 
@@ -701,7 +696,7 @@ class TestCompositeValidationResult:
             policies_evaluated=2,
             policies_skipped=1,
             execution_order=["policy1", "policy2"],
-            metadata={"test": "value"}
+            metadata={"test": "value"},
         )
 
         result_dict = result.to_dict()
@@ -720,6 +715,7 @@ class TestCompositeValidationResult:
 # Test Integration Scenarios
 # ============================================================================
 
+
 class TestIntegration:
     """Test realistic composition scenarios."""
 
@@ -729,17 +725,14 @@ class TestIntegration:
 
         p2_policy = MockPolicy("optimization", priority=50)  # P2
         p1_policy = MockPolicy("validation", priority=100)  # P1
-        p0_policy = MockPolicy("security", priority=200)    # P0
+        p0_policy = MockPolicy("security", priority=200)  # P0
 
         # Add in random order
         composer.add_policy(p1_policy)
         composer.add_policy(p2_policy)
         composer.add_policy(p0_policy)
 
-        result = composer.validate(
-            action={"tool": "test"},
-            context={}
-        )
+        result = composer.validate(action={"tool": "test"}, context={})
 
         # Should execute in priority order: P0, P1, P2
         assert result.execution_order == ["security", "validation", "optimization"]
@@ -749,9 +742,16 @@ class TestIntegration:
         composer = PolicyComposer(fail_fast=True, enable_reporting=True)
 
         # Security policy detects CRITICAL violation
-        security_policy = MockPolicy("security", priority=200, violations=[
-            {"severity": ViolationSeverity.CRITICAL, "message": "Security breach detected"}
-        ])
+        security_policy = MockPolicy(
+            "security",
+            priority=200,
+            violations=[
+                {
+                    "severity": ViolationSeverity.CRITICAL,
+                    "message": "Security breach detected",
+                }
+            ],
+        )
 
         # Other policies won't run (fail-fast)
         rate_limit_policy = MockPolicy("rate_limit", priority=150)
@@ -762,8 +762,7 @@ class TestIntegration:
         composer.add_policy(validation_policy)
 
         result = composer.validate(
-            action={"tool": "dangerous_operation"},
-            context={"agent": "untrusted"}
+            action={"tool": "dangerous_operation"}, context={"agent": "untrusted"}
         )
 
         # Should fail fast on critical violation
@@ -781,6 +780,7 @@ class TestIntegration:
 # Test Edge Cases
 # ============================================================================
 
+
 class TestEdgeCases:
     """Test edge cases and boundary conditions."""
 
@@ -788,10 +788,7 @@ class TestEdgeCases:
         """Test validation with no policies succeeds."""
         composer = PolicyComposer()
 
-        result = composer.validate(
-            action={"tool": "test"},
-            context={}
-        )
+        result = composer.validate(action={"tool": "test"}, context={})
 
         assert result.valid is True
         assert len(result.violations) == 0

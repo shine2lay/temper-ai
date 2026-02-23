@@ -3,6 +3,7 @@ Unit tests for Calculator tool.
 
 Tests safe mathematical expression evaluation.
 """
+
 import pytest
 
 from temper_ai.tools.calculator import Calculator
@@ -293,7 +294,10 @@ class TestErrorHandling:
         result = calc.execute(expression="'hello' + 'world'")
 
         assert result.success is False
-        assert "unsupported" in result.error.lower() or "not allowed" in result.error.lower()
+        assert (
+            "unsupported" in result.error.lower()
+            or "not allowed" in result.error.lower()
+        )
 
     def test_variable_assignment(self):
         """Test that variable assignment is not allowed."""

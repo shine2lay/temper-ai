@@ -2,6 +2,7 @@
 
 These are internal implementation details and should not be imported directly.
 """
+
 from __future__ import annotations
 
 import concurrent.futures
@@ -9,16 +10,16 @@ import logging
 import threading
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
+from typing import TYPE_CHECKING, Any
 
 from temper_ai.shared.constants.durations import (
     POLL_INTERVAL_FAST,
     SECONDS_PER_HOUR,
     TIMEOUT_VERY_SHORT,
 )
+from temper_ai.shared.utils.exceptions import RateLimitError
 from temper_ai.tools.base import BaseTool, ToolResult
 from temper_ai.tools.constants import CONTEXT_KEY_AGENT_ID, ROLLBACK_TRIGGER_AUTO
-from temper_ai.shared.utils.exceptions import RateLimitError
 
 if TYPE_CHECKING:
     from temper_ai.tools.executor import ToolExecutor
@@ -56,6 +57,7 @@ def _log_rollback_event(**kwargs: Any) -> None:
     """Lazy-import and call log_rollback_event (M-06)."""
     try:
         from temper_ai.observability.rollback_logger import log_rollback_event
+
         log_rollback_event(**kwargs)
     except ImportError:
         logger.debug("Observability not available; skipping rollback event logging")
@@ -67,10 +69,14 @@ def _log_rollback_event(**kwargs: Any) -> None:
 # Concurrency and rate-limit helpers
 # ---------------------------------------------------------------------------
 
+
 def acquire_concurrent_slot(executor: ToolExecutor) -> bool:
     """Atomically check and acquire a concurrent execution slot."""
     with executor._concurrent_lock:
-        if executor.max_concurrent is not None and executor._concurrent_count >= executor.max_concurrent:
+        if (
+            executor.max_concurrent is not None
+            and executor._concurrent_count >= executor.max_concurrent
+        ):
             raise RateLimitError(
                 f"Concurrent execution limit reached: {executor._concurrent_count}/{executor.max_concurrent}"
             )
@@ -113,13 +119,13 @@ def get_concurrent_execution_count(executor: ToolExecutor) -> int:
         return executor._concurrent_count
 
 
-def get_rate_limit_usage(executor: ToolExecutor) -> Dict[str, Any]:
+def get_rate_limit_usage(executor: ToolExecutor) -> dict[str, Any]:
     """Get current rate limit usage."""
     if executor.rate_limit is None:
         return {
             "rate_limit": None,
             "current_usage": 0,
-            "window_seconds": executor.rate_window
+            "window_seconds": executor.rate_window,
         }
 
     with executor._rate_limit_lock:
@@ -133,7 +139,7 @@ def get_rate_limit_usage(executor: ToolExecutor) -> Dict[str, Any]:
             "rate_limit": executor.rate_limit,
             "current_usage": len(executor._execution_times),
             "window_seconds": executor.rate_window,
-            "available": executor.rate_limit - len(executor._execution_times)
+            "available": executor.rate_limit - len(executor._execution_times),
         }
 
 
@@ -141,19 +147,27 @@ def get_rate_limit_usage(executor: ToolExecutor) -> Dict[str, Any]:
 # Tool execution helpers
 # ---------------------------------------------------------------------------
 
-def execute_tool_internal(tool: BaseTool, params: Dict[str, Any]) -> ToolResult:
+
+def execute_tool_internal(tool: BaseTool, params: dict[str, Any]) -> ToolResult:
     """Internal method to execute tool."""
     try:
         return tool.execute(**params)
-    except (RuntimeError, TypeError, ValueError, OSError, KeyError, AttributeError) as e:
+    except (
+        RuntimeError,
+        TypeError,
+        ValueError,
+        OSError,
+        KeyError,
+        AttributeError,
+    ) as e:
         return ToolResult(
-            success=False,
-            result=None,
-            error=f"Unhandled exception in tool: {str(e)}"
+            success=False, result=None, error=f"Unhandled exception in tool: {str(e)}"
         )
 
 
-def should_snapshot(executor: ToolExecutor, tool_name: str, params: Dict[str, Any]) -> bool:
+def should_snapshot(
+    executor: ToolExecutor, tool_name: str, params: dict[str, Any]
+) -> bool:
     """Determine if snapshot should be created for this tool."""
     tool = executor.registry.get(tool_name)
     if not tool:
@@ -166,6 +180,7 @@ def should_snapshot(executor: ToolExecutor, tool_name: str, params: Dict[str, An
 # ---------------------------------------------------------------------------
 # Approval workflow helpers
 # ---------------------------------------------------------------------------
+
 
 def wait_for_approval(
     executor: ToolExecutor,
@@ -220,7 +235,7 @@ def handle_approval_rejection(executor: ToolExecutor, request: Any) -> None:
                 result=rollback_result,
                 trigger="approval_rejection",
                 operator=request.metadata.get("operator"),
-                reason=f"Approval rejected: {request.decision_reason or 'No reason provided'}"
+                reason=f"Approval rejected: {request.decision_reason or 'No reason provided'}",
             )
         except (TypeError, ValueError, OSError, AttributeError) as e:
             logger.error(f"Auto-rollback on approval rejection failed: {e}")
@@ -230,7 +245,14 @@ def handle_approval_rejection(executor: ToolExecutor, request: Any) -> None:
 # Rollback helpers
 # ---------------------------------------------------------------------------
 
-def handle_auto_rollback(executor: ToolExecutor, snapshot: Any, tool_name: str, result: ToolResult, context: Dict[str, Any]) -> None:
+
+def handle_auto_rollback(
+    executor: ToolExecutor,
+    snapshot: Any,
+    tool_name: str,
+    result: ToolResult,
+    context: dict[str, Any],
+) -> None:
     """Handle auto-rollback on tool failure."""
     try:
         rollback_result = executor.rollback_manager.execute_rollback(snapshot.id)  # type: ignore[union-attr]
@@ -246,14 +268,19 @@ def handle_auto_rollback(executor: ToolExecutor, snapshot: Any, tool_name: str, 
         _log_rollback_event(
             result=rollback_result,
             trigger=ROLLBACK_TRIGGER_AUTO,
-            operator=context.get(CONTEXT_KEY_AGENT_ID)
+            operator=context.get(CONTEXT_KEY_AGENT_ID),
         )
     except (TypeError, ValueError, OSError, AttributeError) as e:
         logger.error(f"Auto-rollback failed: {e}")
         result.metadata["rollback_error"] = str(e)
 
 
-def handle_timeout_rollback(executor: ToolExecutor, snapshot: Any, context: Dict[str, Any], reason: str = "Tool execution timeout") -> None:
+def handle_timeout_rollback(
+    executor: ToolExecutor,
+    snapshot: Any,
+    context: dict[str, Any],
+    reason: str = "Tool execution timeout",
+) -> None:
     """Handle auto-rollback on timeout."""
     try:
         rollback_result = executor.rollback_manager.execute_rollback(snapshot.id)  # type: ignore[union-attr]
@@ -263,26 +290,32 @@ def handle_timeout_rollback(executor: ToolExecutor, snapshot: Any, context: Dict
             result=rollback_result,
             trigger="auto",
             operator=context.get("agent_id"),
-            reason=reason
+            reason=reason,
         )
     except (TypeError, ValueError, OSError, AttributeError) as e:
         logger.error(f"Auto-rollback on timeout failed: {e}")
 
 
-def handle_exception_rollback(executor: ToolExecutor, snapshot: Any, tool_name: str, error: Exception, context: Dict[str, Any]) -> None:
+def handle_exception_rollback(
+    executor: ToolExecutor,
+    snapshot: Any,
+    tool_name: str,
+    error: Exception,
+    context: dict[str, Any],
+) -> None:
     """Handle auto-rollback on exception."""
     try:
         rollback_result = executor.rollback_manager.execute_rollback(snapshot.id)  # type: ignore[union-attr]
         logger.error(
             f"Auto-rollback on exception for tool '{tool_name}': {error}",
-            extra={"rollback_result": rollback_result.to_dict()}
+            extra={"rollback_result": rollback_result.to_dict()},
         )
 
         _log_rollback_event(
             result=rollback_result,
             trigger="auto",
             operator=context.get("agent_id"),
-            reason=f"Tool execution exception: {str(error)}"
+            reason=f"Tool execution exception: {str(error)}",
         )
     except (TypeError, ValueError, OSError, AttributeError) as rollback_error:
         logger.error(f"Auto-rollback on exception failed: {rollback_error}")
@@ -292,15 +325,16 @@ def handle_exception_rollback(executor: ToolExecutor, snapshot: Any, tool_name: 
 # Batch execution
 # ---------------------------------------------------------------------------
 
+
 def execute_batch(
     executor: ToolExecutor,
-    executions: list[tuple[str, Dict[str, Any]]],
-    timeout: Optional[int] = None,
-    overall_timeout: Optional[int] = None,
+    executions: list[tuple[str, dict[str, Any]]],
+    timeout: int | None = None,
+    overall_timeout: int | None = None,
 ) -> list[ToolResult]:
     """Execute multiple tools in parallel."""
-    results: list[Optional[ToolResult]] = [None] * len(executions)
-    futures: Dict[Any, int] = {}
+    results: list[ToolResult | None] = [None] * len(executions)
+    futures: dict[Any, int] = {}
 
     for idx, (tool_name, params) in enumerate(executions):
         future = executor._executor.submit(executor.execute, tool_name, params, timeout)
@@ -311,11 +345,17 @@ def execute_batch(
             idx = futures[future]
             try:
                 results[idx] = future.result()
-            except (RuntimeError, TypeError, ValueError, OSError, TimeoutError, KeyError, AttributeError) as e:
+            except (
+                RuntimeError,
+                TypeError,
+                ValueError,
+                OSError,
+                TimeoutError,
+                KeyError,
+                AttributeError,
+            ) as e:
                 results[idx] = ToolResult(
-                    success=False,
-                    result=None,
-                    error=f"Execution failed: {str(e)}"
+                    success=False, result=None, error=f"Execution failed: {str(e)}"
                 )
     except concurrent.futures.TimeoutError:
         for future, idx in futures.items():
@@ -324,7 +364,7 @@ def execute_batch(
                 results[idx] = ToolResult(
                     success=False,
                     result=None,
-                    error=f"Batch overall timeout ({overall_timeout}s) exceeded"
+                    error=f"Batch overall timeout ({overall_timeout}s) exceeded",
                 )
 
     # All results should be non-None at this point
@@ -335,7 +375,10 @@ def execute_batch(
 # Validation and info
 # ---------------------------------------------------------------------------
 
-def validate_tool_call(executor: ToolExecutor, tool_name: str, params: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
+
+def validate_tool_call(
+    executor: ToolExecutor, tool_name: str, params: dict[str, Any]
+) -> tuple[bool, str | None]:
     """Validate a tool call without executing it."""
     tool = executor.registry.get(tool_name)
     if not tool:
@@ -351,7 +394,7 @@ def validate_tool_call(executor: ToolExecutor, tool_name: str, params: Dict[str,
     return True, None
 
 
-def get_tool_info(executor: ToolExecutor, tool_name: str) -> Optional[Dict[str, Any]]:
+def get_tool_info(executor: ToolExecutor, tool_name: str) -> dict[str, Any] | None:
     """Get information about a tool."""
     tool = executor.registry.get(tool_name)
     if not tool:
@@ -378,8 +421,8 @@ _WORKSPACE_PATH_KEYS = ("path", "file_path", "directory", "filename", "output_pa
 def validate_and_get_tool(
     executor: ToolExecutor,
     tool_name: str,
-    params: Dict[str, Any],
-) -> Tuple[Optional[BaseTool], Optional[ToolResult]]:
+    params: dict[str, Any],
+) -> tuple[BaseTool | None, ToolResult | None]:
     """Validate workspace paths and tool params. Returns (tool, None) or (None, error)."""
     if executor.workspace_root is not None:
         for key in _WORKSPACE_PATH_KEYS:
@@ -391,26 +434,37 @@ def validate_and_get_tool(
 
     tool = executor.registry.get(tool_name)
     if not tool:
-        return None, ToolResult(success=False, result=None, error=f"Tool not found: {tool_name}")
+        return None, ToolResult(
+            success=False, result=None, error=f"Tool not found: {tool_name}"
+        )
 
     try:
         validation = tool.validate_params(params)
         if not validation.valid:
-            return None, ToolResult(success=False, result=None, error=f"Invalid parameters for tool '{tool_name}'")
+            return None, ToolResult(
+                success=False,
+                result=None,
+                error=f"Invalid parameters for tool '{tool_name}'",
+            )
     except (TypeError, ValueError, KeyError, AttributeError) as e:
-        return None, ToolResult(success=False, result=None, error=f"Parameter validation failed: {str(e)}")
+        return None, ToolResult(
+            success=False, result=None, error=f"Parameter validation failed: {str(e)}"
+        )
 
     return tool, None
 
 
 def _build_policy_context(
-    tool_name: str, params: Dict[str, Any], context: Dict[str, Any],
+    tool_name: str,
+    params: dict[str, Any],
+    context: dict[str, Any],
 ) -> Any:
     """Build a PolicyExecutionContext from tool execution context."""
     from temper_ai.safety.action_policy_engine import PolicyExecutionContext
 
     metadata = {
-        k: context[k] for k in ("autonomy_config", "autonomy_level")
+        k: context[k]
+        for k in ("autonomy_config", "autonomy_level")
         if context.get(k) is not None
     }
     return PolicyExecutionContext(
@@ -426,9 +480,9 @@ def _build_policy_context(
 def validate_policy(
     executor: ToolExecutor,
     tool_name: str,
-    params: Dict[str, Any],
-    context: Dict[str, Any],
-) -> Optional[ToolResult]:
+    params: dict[str, Any],
+    context: dict[str, Any],
+) -> ToolResult | None:
     """Run policy validation. Returns ToolResult on error/block, None if allowed."""
     if not executor.policy_engine:
         return None
@@ -436,33 +490,47 @@ def validate_policy(
     try:
         action = {"tool": tool_name, "params": params}
         ctx = _build_policy_context(tool_name, params, context)
-        enforcement = executor.policy_engine.validate_action_sync(action=action, context=ctx)
+        enforcement = executor.policy_engine.validate_action_sync(
+            action=action, context=ctx
+        )
 
         if not enforcement.allowed:
             return ToolResult(
-                success=False, result=None,
+                success=False,
+                result=None,
                 error=f"Action blocked by policy: {enforcement.violations[0].message}",
-                metadata={"violations": [v.to_dict() for v in enforcement.violations]}
+                metadata={"violations": [v.to_dict() for v in enforcement.violations]},
             )
 
         if enforcement.has_blocking_violations() and executor.approval_workflow:
             approval_request = executor.approval_workflow.request_approval(
-                action=action, reason="HIGH/CRITICAL policy violations detected",
-                context=context, violations=enforcement.violations,
-                metadata={"enforcement_result": enforcement.metadata}
+                action=action,
+                reason="HIGH/CRITICAL policy violations detected",
+                context=context,
+                violations=enforcement.violations,
+                metadata={"enforcement_result": enforcement.metadata},
             )
             if not wait_for_approval(executor, approval_request.id):
                 return ToolResult(
-                    success=False, result=None,
+                    success=False,
+                    result=None,
                     error="Action requires approval but was not approved",
-                    metadata={"approval_request_id": approval_request.id}
+                    metadata={"approval_request_id": approval_request.id},
                 )
-    except (TypeError, ValueError, KeyError, AttributeError, ImportError, RuntimeError) as e:
+    except (
+        TypeError,
+        ValueError,
+        KeyError,
+        AttributeError,
+        ImportError,
+        RuntimeError,
+    ) as e:
         logger.error(f"Policy validation error (fail-closed): {e}")
         return ToolResult(
-            success=False, result=None,
+            success=False,
+            result=None,
             error=f"Policy validation failed: {e}",
-            metadata={"policy_error": str(e)}
+            metadata={"policy_error": str(e)},
         )
 
     return None
@@ -471,22 +539,28 @@ def validate_policy(
 def create_snapshot(
     executor: ToolExecutor,
     tool_name: str,
-    params: Dict[str, Any],
-    context: Dict[str, Any],
+    params: dict[str, Any],
+    context: dict[str, Any],
 ) -> Any:
     """Create a rollback snapshot if applicable. Returns snapshot or None."""
-    if not executor.rollback_manager or not should_snapshot(executor, tool_name, params):
+    if not executor.rollback_manager or not should_snapshot(
+        executor, tool_name, params
+    ):
         return None
 
     try:
         snapshot = executor.rollback_manager.create_snapshot(
             action={"tool": tool_name, "params": params},
-            context=context, strategy_name="file"
+            context=context,
+            strategy_name="file",
         )
         logger.debug(f"Created snapshot {snapshot.id} for tool {tool_name}")
         try:
             from temper_ai.observability.rollback_logger import log_rollback_snapshot
-            log_rollback_snapshot(snapshot, workflow_execution_id=context.get("workflow_id"))
+
+            log_rollback_snapshot(
+                snapshot, workflow_execution_id=context.get("workflow_id")
+            )
         except Exception as e:
             logger.warning(f"Failed to persist rollback snapshot to DB: {e}")
         return snapshot
@@ -504,19 +578,21 @@ def _is_tool_cacheable(tool: BaseTool) -> bool:
 
 
 def check_tool_cache(
-    executor: ToolExecutor, tool: BaseTool, params: Dict[str, Any],
-) -> Optional[ToolResult]:
+    executor: ToolExecutor,
+    tool: BaseTool,
+    params: dict[str, Any],
+) -> ToolResult | None:
     """Check cache for a previous result. Returns cached ToolResult or None."""
     if executor._tool_cache is None or not _is_tool_cacheable(tool):
         return None
-    cached: Optional[ToolResult] = executor._tool_cache.get(tool.name, params)
+    cached: ToolResult | None = executor._tool_cache.get(tool.name, params)
     return cached
 
 
 def store_tool_cache(
     executor: ToolExecutor,
     tool: BaseTool,
-    params: Dict[str, Any],
+    params: dict[str, Any],
     result: ToolResult,
 ) -> None:
     """Store a successful result in cache if tool is cacheable."""
@@ -537,11 +613,11 @@ def check_workflow_rate_limit(executor: ToolExecutor) -> None:
 def execute_with_timeout(
     executor: ToolExecutor,
     tool: BaseTool,
-    params: Dict[str, Any],
+    params: dict[str, Any],
     timeout: int,
     snapshot: Any,
     tool_name: str,
-    context: Dict[str, Any],
+    context: dict[str, Any],
 ) -> ToolResult:
     """Execute tool in thread pool with timeout and rollback handling."""
     # Cache check (R0.3) — before acquiring any slot
@@ -583,8 +659,9 @@ def execute_with_timeout(
             if snapshot and executor.enable_auto_rollback and executor.rollback_manager:
                 handle_timeout_rollback(executor, snapshot, context)
             return ToolResult(
-                success=False, result=None,
-                error=f"Tool execution timed out after {timeout} seconds"
+                success=False,
+                result=None,
+                error=f"Tool execution timed out after {timeout} seconds",
             )
 
     finally:

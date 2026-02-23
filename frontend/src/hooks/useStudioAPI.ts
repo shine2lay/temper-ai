@@ -2,6 +2,7 @@
  * TanStack Query hooks for the Studio CRUD API and run trigger.
  */
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { authFetch } from '@/lib/authFetch';
 
 interface StudioConfigSummary {
   name: string;
@@ -29,7 +30,7 @@ const STUDIO_BASE = '/api/studio';
 const RUNS_BASE = '/api/runs';
 
 async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, init);
+  const res = await authFetch(url, init);
   if (!res.ok) {
     const body = await res.text().catch(() => '');
     throw new Error(body || `HTTP ${res.status}`);

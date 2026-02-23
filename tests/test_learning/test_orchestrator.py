@@ -1,6 +1,6 @@
 """Tests for MiningOrchestrator."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -9,7 +9,11 @@ from temper_ai.learning.models import (
     STATUS_COMPLETED,
     LearnedPattern,
 )
-from temper_ai.learning.orchestrator import MiningOrchestrator, _calc_novelty, _pattern_key
+from temper_ai.learning.orchestrator import (
+    MiningOrchestrator,
+    _calc_novelty,
+    _pattern_key,
+)
 from temper_ai.learning.store import LearningStore
 
 MEMORY_DB = "sqlite:///:memory:"
@@ -79,7 +83,9 @@ class TestOrchestrator:
         mock_miner.pattern_type = PATTERN_AGENT_PERFORMANCE
         mock_miner.mine.return_value = [_make_pattern("New pattern")]
 
-        orch = MiningOrchestrator(store=store, miners=[mock_miner], memory_service=mock_memory)
+        orch = MiningOrchestrator(
+            store=store, miners=[mock_miner], memory_service=mock_memory
+        )
         orch.run_mining()
 
         mock_memory.store.assert_called_once()

@@ -8,7 +8,7 @@ during prompt injection.
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from temper_ai.memory.constants import MEMORY_TYPE_PROCEDURAL
 
@@ -26,7 +26,7 @@ class LearningToMemoryBridge:
     def __init__(
         self,
         learning_store: Any,
-        memory_service: Optional[Any] = None,
+        memory_service: Any | None = None,
     ) -> None:
         self._learning_store = learning_store
         self._memory_service = memory_service
@@ -40,7 +40,8 @@ class LearningToMemoryBridge:
         return self._memory_service
 
     def sync_patterns_to_memory(
-        self, min_confidence: float = DEFAULT_MIN_CONFIDENCE,
+        self,
+        min_confidence: float = DEFAULT_MIN_CONFIDENCE,
     ) -> int:
         """Sync active learned patterns to procedural memory.
 
@@ -87,9 +88,7 @@ class LearningToMemoryBridge:
         scope = svc.build_scope(namespace=GOALS_NAMESPACE)
         existing = svc.list_memories(scope, memory_type=MEMORY_TYPE_PROCEDURAL)
         synced_ids = {
-            e.metadata.get("goal_id")
-            for e in existing
-            if e.metadata.get("goal_id")
+            e.metadata.get("goal_id") for e in existing if e.metadata.get("goal_id")
         }
 
         proposals = goal_store.list_proposals(status=APPROVED_STATUS)

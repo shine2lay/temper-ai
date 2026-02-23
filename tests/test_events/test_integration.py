@@ -1,10 +1,8 @@
 """End-to-end integration tests for the TemperEventBus event flow."""
 
-import threading
-import uuid
+from collections.abc import Generator
 from contextlib import contextmanager
-from datetime import datetime, timezone
-from typing import Any, Dict, Generator, List, Optional
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -12,13 +10,13 @@ from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from temper_ai.events.constants import (
-    EVENT_WORKFLOW_COMPLETED,
     EVENT_STAGE_COMPLETED,
+    EVENT_WORKFLOW_COMPLETED,
 )
 from temper_ai.events.event_bus import TemperEventBus
-from temper_ai.events.models import EventLog, EventSubscription  # noqa: F401 — table registration
-from temper_ai.storage.database.models_registry import AgentRegistryDB  # noqa: F401 — table registration
-
+from temper_ai.events.models import (
+    EventLog,
+)  # noqa: F401 — table registration
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -41,6 +39,7 @@ def engine():
 @pytest.fixture()
 def session_factory(engine):
     """Session factory compatible with TemperEventBus."""
+
     @contextmanager
     def _factory() -> Generator[Session, None, None]:
         with Session(engine, expire_on_commit=False) as session:
@@ -78,7 +77,7 @@ def bus_no_db(mock_obs_bus):
 # ---------------------------------------------------------------------------
 
 
-def _query_event_log(session_factory, event_type: Optional[str] = None) -> List[EventLog]:
+def _query_event_log(session_factory, event_type: str | None = None) -> list[EventLog]:
     """Query event_log rows from in-memory DB."""
     with session_factory() as session:
         stmt = select(EventLog)
@@ -119,9 +118,9 @@ class TestSubscriptionMatching:
     """Subscriptions are evaluated when an event is emitted."""
 
     def test_matching_subscription_triggers_callback(self, bus) -> None:
-        received: List[Any] = []
+        received: list[Any] = []
 
-        def _handler(event_type: str, payload: Optional[Dict[str, Any]]) -> None:
+        def _handler(event_type: str, payload: dict[str, Any] | None) -> None:
             received.append((event_type, payload))
 
         # resolve_handler is imported at module level in event_bus, patch there
@@ -140,9 +139,9 @@ class TestSubscriptionMatching:
         assert received[0][1] == {"val": 42}
 
     def test_non_matching_event_type_does_not_trigger(self, bus) -> None:
-        received: List[Any] = []
+        received: list[Any] = []
 
-        def _handler(event_type: str, payload: Optional[Dict[str, Any]]) -> None:
+        def _handler(event_type: str, payload: dict[str, Any] | None) -> None:
             received.append(event_type)
 
         with patch(
@@ -163,9 +162,9 @@ class TestPersistentSubscribeAndEmit:
     """subscribe_persistent followed by matching emit fires the callback."""
 
     def test_subscribe_then_emit_fires(self, bus) -> None:
-        fired: List[str] = []
+        fired: list[str] = []
 
-        def _handler(event_type: str, payload: Optional[Dict[str, Any]]) -> None:
+        def _handler(event_type: str, payload: dict[str, Any] | None) -> None:
             fired.append(event_type)
 
         # Patch where event_bus imports resolve_handler
@@ -184,9 +183,9 @@ class TestPersistentSubscribeAndEmit:
         assert "order.created" in fired
 
     def test_non_matching_subscribe_does_not_fire(self, bus) -> None:
-        fired: List[str] = []
+        fired: list[str] = []
 
-        def _handler(event_type: str, payload: Optional[Dict[str, Any]]) -> None:
+        def _handler(event_type: str, payload: dict[str, Any] | None) -> None:
             fired.append(event_type)
 
         with patch(
@@ -207,8 +206,12 @@ class TestReplayEvents:
     """replay_events returns persisted events from DB."""
 
     def test_replay_returns_persisted_events(self, bus, session_factory) -> None:
-        bus.emit(EVENT_WORKFLOW_COMPLETED, payload={"run": 1}, source_workflow_id="wf-r")
-        bus.emit(EVENT_WORKFLOW_COMPLETED, payload={"run": 2}, source_workflow_id="wf-r")
+        bus.emit(
+            EVENT_WORKFLOW_COMPLETED, payload={"run": 1}, source_workflow_id="wf-r"
+        )
+        bus.emit(
+            EVENT_WORKFLOW_COMPLETED, payload={"run": 2}, source_workflow_id="wf-r"
+        )
 
         replayed = bus.replay_events(event_type=EVENT_WORKFLOW_COMPLETED)
         assert len(replayed) == 2

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Dict, List
+from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, HTTPException
 
@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 HTTP_404 = 404
 
 
-def _load_config(name: str) -> "PortfolioConfig":
+def _load_config(name: str) -> PortfolioConfig:
     """Load a portfolio config by name, raising HTTP 404 on failure."""
     from temper_ai.portfolio.loader import PortfolioLoader
 
@@ -38,7 +38,7 @@ def _register_data_routes(router: APIRouter, store: PortfolioStore) -> None:
     """Register list/status endpoints."""
 
     @router.get("/list")
-    def list_portfolios() -> List[Dict[str, Any]]:
+    def list_portfolios() -> list[dict[str, Any]]:
         """List all portfolios in the store."""
         records = store.list_portfolios()
         return [
@@ -52,7 +52,7 @@ def _register_data_routes(router: APIRouter, store: PortfolioStore) -> None:
         ]
 
     @router.get("/{name}/status")
-    def get_status(name: str) -> Dict[str, Any]:
+    def get_status(name: str) -> dict[str, Any]:
         """Get portfolio status with allocation details."""
         from temper_ai.portfolio.scheduler import ResourceScheduler
 
@@ -73,7 +73,7 @@ def _register_data_routes(router: APIRouter, store: PortfolioStore) -> None:
         }
 
     @router.get("/knowledge/stats")
-    def knowledge_stats() -> Dict[str, Any]:
+    def knowledge_stats() -> dict[str, Any]:
         """Get knowledge graph statistics."""
         from temper_ai.portfolio.knowledge_graph import KnowledgeQuery
 
@@ -85,7 +85,7 @@ def _register_analysis_routes(router: APIRouter, store: PortfolioStore) -> None:
     """Register scorecards/recommendations/components endpoints."""
 
     @router.get("/{name}/scorecards")
-    def get_scorecards(name: str) -> List[Dict[str, Any]]:
+    def get_scorecards(name: str) -> list[dict[str, Any]]:
         """Get product scorecards for a portfolio."""
         from temper_ai.portfolio.optimizer import PortfolioOptimizer
 
@@ -95,7 +95,7 @@ def _register_analysis_routes(router: APIRouter, store: PortfolioStore) -> None:
         return [c.model_dump() for c in cards]
 
     @router.get("/{name}/recommendations")
-    def get_recommendations(name: str) -> List[Dict[str, Any]]:
+    def get_recommendations(name: str) -> list[dict[str, Any]]:
         """Get invest/sunset recommendations."""
         from temper_ai.portfolio.optimizer import PortfolioOptimizer
 
@@ -115,7 +115,7 @@ def _register_analysis_routes(router: APIRouter, store: PortfolioStore) -> None:
         ]
 
     @router.get("/{name}/components")
-    def get_components(name: str) -> List[Dict[str, Any]]:
+    def get_components(name: str) -> list[dict[str, Any]]:
         """Get shared component analysis."""
         from temper_ai.portfolio.component_analyzer import ComponentAnalyzer
 

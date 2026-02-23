@@ -20,7 +20,10 @@ from temper_ai.experimentation.models import (
     Variant,
     VariantAssignment,
 )
-from temper_ai.experimentation.sequential_testing import BayesianAnalyzer, SequentialTester
+from temper_ai.experimentation.sequential_testing import (
+    BayesianAnalyzer,
+    SequentialTester,
+)
 
 
 class TestSequentialTesting:
@@ -79,7 +82,9 @@ class TestSequentialTesting:
             # Add 10 more samples per variant
             np.random.seed(batch)
             control_batch = list(0.15 + np.random.normal(0, 0.05, 10))  # 15% conversion
-            treatment_batch = list(0.25 + np.random.normal(0, 0.05, 10))  # 25% conversion (67% lift)
+            treatment_batch = list(
+                0.25 + np.random.normal(0, 0.05, 10)
+            )  # 25% conversion (67% lift)
 
             control_values.extend(control_batch)
             treatment_values.extend(treatment_batch)
@@ -126,7 +131,9 @@ class TestBayesianAnalysis:
 
         # Bayesian analysis
         bayes = BayesianAnalyzer(prior_mean=0.0, prior_std=1.0)
-        result = bayes.analyze_bayesian(control_values, treatment_values, credible_level=0.95)
+        result = bayes.analyze_bayesian(
+            control_values, treatment_values, credible_level=0.95
+        )
 
         # Verify Bayesian results
         assert "posterior_mean" in result
@@ -168,7 +175,7 @@ class TestGuardrailProtection:
             primary_metric="revenue_usd",
             guardrail_metrics=[
                 {"metric": "error_rate", "max_value": 0.05},
-                {"metric": "latency_p99", "max_value": 1000}
+                {"metric": "latency_p99", "max_value": 1000},
             ],
             confidence_level=0.95,
             min_sample_size_per_variant=50,
@@ -237,10 +244,14 @@ class TestGuardrailProtection:
         assert len(result["guardrail_violations"]) > 0
 
         # Find the error_rate violation
-        error_violations = [v for v in result["guardrail_violations"] if v["metric"] == "error_rate"]
+        error_violations = [
+            v for v in result["guardrail_violations"] if v["metric"] == "error_rate"
+        ]
         assert len(error_violations) == 1
         assert error_violations[0]["variant"] == "var-a"
-        assert abs(error_violations[0]["value"] - 0.10) < 0.01  # Float comparison with tolerance
+        assert (
+            abs(error_violations[0]["value"] - 0.10) < 0.01
+        )  # Float comparison with tolerance
         assert error_violations[0]["threshold"] == 0.05
 
 
@@ -291,10 +302,7 @@ class TestAssignmentAndAnalysisPerformance:
         start = time.time()
         for i in range(10000):
             variant_id = assigner.assign_variant(
-                experiment,
-                variants,
-                f"workflow-{i}",
-                context={"hash_key": f"user-{i}"}
+                experiment, variants, f"workflow-{i}", context={"hash_key": f"user-{i}"}
             )
         elapsed = time.time() - start
 

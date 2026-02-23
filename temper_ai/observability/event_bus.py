@@ -1,11 +1,13 @@
 """Thread-safe event bus for real-time observability events."""
+
 import asyncio
 import logging
 import threading
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Callable, Dict, Optional, Set
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -23,10 +25,10 @@ class ObservabilityEvent:
     # agent_output, stage_output, collaboration_event,
     # safety_violation, llm_stream_chunk
     timestamp: datetime
-    data: Dict[str, Any]
-    workflow_id: Optional[str] = None
-    stage_id: Optional[str] = None
-    agent_id: Optional[str] = None
+    data: dict[str, Any]
+    workflow_id: str | None = None
+    stage_id: str | None = None
+    agent_id: str | None = None
 
 
 class ObservabilityEventBus:
@@ -38,13 +40,13 @@ class ObservabilityEventBus:
     """
 
     def __init__(self) -> None:
-        self._subscribers: Dict[str, tuple] = {}  # id -> (callback, event_types_filter)
+        self._subscribers: dict[str, tuple] = {}  # id -> (callback, event_types_filter)
         self._lock = threading.Lock()
 
     def subscribe(
         self,
         callback: Callable[[ObservabilityEvent], None],
-        event_types: Optional[Set[str]] = None,
+        event_types: set[str] | None = None,
     ) -> str:
         """Subscribe to events. Returns subscription_id.
 
@@ -100,18 +102,18 @@ class AsyncObservabilityEventBus:
         maxsize: int = DEFAULT_ASYNC_QUEUE_SIZE,
         subscriber_timeout: float = DEFAULT_SUBSCRIBER_TIMEOUT_SECONDS,
     ) -> None:
-        self._queue: asyncio.Queue[Optional[ObservabilityEvent]] = asyncio.Queue(
+        self._queue: asyncio.Queue[ObservabilityEvent | None] = asyncio.Queue(
             maxsize=maxsize,
         )
         self._subscriber_timeout = subscriber_timeout
-        self._subscribers: Dict[str, tuple] = {}
-        self._drain_task: Optional[asyncio.Task[None]] = None
+        self._subscribers: dict[str, tuple] = {}
+        self._drain_task: asyncio.Task[None] | None = None
         self._started = False
 
     def subscribe(
         self,
         callback: Callable[[ObservabilityEvent], Any],
-        event_types: Optional[Set[str]] = None,
+        event_types: set[str] | None = None,
     ) -> str:
         """Subscribe to events. Returns subscription_id."""
         sub_id = str(uuid.uuid4())
@@ -154,7 +156,7 @@ class AsyncObservabilityEventBus:
                         result,
                         timeout=self._subscriber_timeout,
                     )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 logger.warning(
                     "Async subscriber timed out for event: %s",
                     event.event_type,

@@ -72,6 +72,7 @@ class TestVariableTypeValidation:
 
     def test_blocks_module(self):
         import os
+
         engine = PromptEngine()
         with pytest.raises(PromptRenderError, match="disallowed type.*module"):
             engine.render("{{m}}", {"m": os})
@@ -200,7 +201,9 @@ class TestSSTIPayloads:
     def test_os_popen_via_mro_blocked(self):
         """Accessing os.popen through MRO should be blocked."""
         engine = PromptEngine()
-        payload = "{{''.__class__.__mro__[2].__subclasses__()[40]('/etc/passwd').read()}}"
+        payload = (
+            "{{''.__class__.__mro__[2].__subclasses__()[40]('/etc/passwd').read()}}"
+        )
         with pytest.raises(PromptRenderError):
             engine.render(payload, {})
 

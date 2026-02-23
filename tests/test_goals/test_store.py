@@ -23,7 +23,9 @@ def sample_proposal():
         status="proposed",
         risk_assessment={"level": "low"},
         effort_estimate="small",
-        expected_impacts=[{"metric_name": "cost", "current_value": 10, "expected_value": 5}],
+        expected_impacts=[
+            {"metric_name": "cost", "current_value": 10, "expected_value": 5}
+        ],
         evidence={"analysis_summary": "High cost detected"},
         priority_score=0.75,
     )
@@ -61,12 +63,18 @@ class TestProposalCRUD:
 
     def test_list_filter_by_product_type(self, store):
         p1 = GoalProposalRecord(
-            id="gp-prod1", goal_type="cost_reduction", title="T1",
-            description="D1", source_product_type="api",
+            id="gp-prod1",
+            goal_type="cost_reduction",
+            title="T1",
+            description="D1",
+            source_product_type="api",
         )
         p2 = GoalProposalRecord(
-            id="gp-prod2", goal_type="cost_reduction", title="T2",
-            description="D2", source_product_type="web_app",
+            id="gp-prod2",
+            goal_type="cost_reduction",
+            title="T2",
+            description="D2",
+            source_product_type="web_app",
         )
         store.save_proposal(p1)
         store.save_proposal(p2)
@@ -91,8 +99,10 @@ class TestProposalCRUD:
     def test_count_by_status(self, store, sample_proposal):
         store.save_proposal(sample_proposal)
         p2 = GoalProposalRecord(
-            id="gp-test002", goal_type="reliability_improvement",
-            title="Fix errors", description="Reduce failures",
+            id="gp-test002",
+            goal_type="reliability_improvement",
+            title="Fix errors",
+            description="Reduce failures",
             status="approved",
         )
         store.save_proposal(p2)
@@ -107,12 +117,18 @@ class TestProposalCRUD:
 
     def test_list_ordered_by_priority(self, store):
         p1 = GoalProposalRecord(
-            id="gp-low", goal_type="cost_reduction", title="Low",
-            description="D", priority_score=0.3,
+            id="gp-low",
+            goal_type="cost_reduction",
+            title="Low",
+            description="D",
+            priority_score=0.3,
         )
         p2 = GoalProposalRecord(
-            id="gp-high", goal_type="cost_reduction", title="High",
-            description="D", priority_score=0.9,
+            id="gp-high",
+            goal_type="cost_reduction",
+            title="High",
+            description="D",
+            priority_score=0.9,
         )
         store.save_proposal(p1)
         store.save_proposal(p2)

@@ -3,6 +3,7 @@
 Identifies strings that are obviously test/demo values to reduce
 false positives from documentation, examples, and test code.
 """
+
 import re
 
 
@@ -35,14 +36,14 @@ class TestSecretFilter:
         "mock",
         "stub",
         "fixture",
-        "your-",     # Matches "your-api-key-here", "your-secret-here"
-        "your_",     # Matches "your_api_key_here"
-        "-here",     # Matches "api-key-here", "secret-here"
-        "_here",     # Matches "api_key_here"
+        "your-",  # Matches "your-api-key-here", "your-secret-here"
+        "your_",  # Matches "your_api_key_here"
+        "-here",  # Matches "api-key-here", "secret-here"
+        "_here",  # Matches "api_key_here"
         "todo",
         "fixme",
-        "-from-",    # Matches "key-from-provider"
-        "_from_",    # Matches "key_from_config"
+        "-from-",  # Matches "key-from-provider"
+        "_from_",  # Matches "key_from_config"
         # Development indicators
         "dev",
         "local",
@@ -57,13 +58,7 @@ class TestSecretFilter:
     ]
 
     # Pattern indicators (exact match only)
-    TEST_SECRET_PATTERNS = [
-        "xxxxxxxx",
-        "aaaaaaaa",
-        "11111111",
-        "abcdefgh",
-        "12345678"
-    ]
+    TEST_SECRET_PATTERNS = ["xxxxxxxx", "aaaaaaaa", "11111111", "abcdefgh", "12345678"]
 
     def __init__(self, allow_test_secrets: bool = True):
         """Initialize filter.
@@ -106,7 +101,7 @@ class TestSecretFilter:
         # Using word boundaries prevents false positives like "testing" matching "test"
         # in production secrets (e.g., "sk_live_testing_real_key")
         for keyword in self.TEST_SECRET_KEYWORDS:
-            if re.search(rf'\b{re.escape(keyword)}\b', text_lower):
+            if re.search(rf"\b{re.escape(keyword)}\b", text_lower):
                 return True
 
         # Check pattern indicators (exact match only)
@@ -115,7 +110,7 @@ class TestSecretFilter:
 
         # Filter out function calls and method invocations
         # These are not literal secrets (e.g., "get_secret()", "retrieve_api_key_from_config()")
-        if '(' in text and ')' in text:
+        if "(" in text and ")" in text:
             return True
 
         return False

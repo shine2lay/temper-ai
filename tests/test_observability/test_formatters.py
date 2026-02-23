@@ -1,7 +1,6 @@
 """Comprehensive tests for observability formatters module."""
-from datetime import datetime, timezone
 
-import pytest
+from datetime import UTC, datetime
 
 from temper_ai.observability.formatters import (
     format_bytes,
@@ -62,13 +61,13 @@ class TestFormatTimestamp:
 
     def test_format_utc_timestamp(self):
         """Test formatting UTC timestamp."""
-        dt = datetime(2024, 1, 15, 10, 30, 45, tzinfo=timezone.utc)
+        dt = datetime(2024, 1, 15, 10, 30, 45, tzinfo=UTC)
         result = format_timestamp(dt)
         assert result == "2024-01-15T10:30:45+00:00"
 
     def test_format_with_microseconds(self):
         """Test formatting preserves microseconds."""
-        dt = datetime(2024, 1, 15, 10, 30, 45, 123456, tzinfo=timezone.utc)
+        dt = datetime(2024, 1, 15, 10, 30, 45, 123456, tzinfo=UTC)
         result = format_timestamp(dt)
         assert "2024-01-15T10:30:45" in result
 

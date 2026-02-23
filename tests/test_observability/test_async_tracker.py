@@ -1,4 +1,5 @@
 """Tests for async tracker context managers and ContextVar isolation."""
+
 import asyncio
 
 import pytest
@@ -93,7 +94,8 @@ class TestContextVarIsolation:
 
         async def run_workflow(name):
             params = WorkflowTrackingParams(
-                workflow_name=name, workflow_config={},
+                workflow_name=name,
+                workflow_config={},
             )
             async with tracker.atrack_workflow(params) as wf_id:
                 await asyncio.sleep(0.01)  # intentional: simulate async work
@@ -114,11 +116,17 @@ class TestAsyncLLMAndToolCalls:
     @pytest.mark.asyncio
     async def test_atrack_llm_call(self, tracker):
         from temper_ai.observability._tracker_helpers import LLMCallTrackingData
+
         data = LLMCallTrackingData(
-            agent_id="agent-1", provider="test", model="test-model",
-            prompt="hello", response="world",
-            prompt_tokens=10, completion_tokens=20,
-            latency_ms=100, estimated_cost_usd=0.01,
+            agent_id="agent-1",
+            provider="test",
+            model="test-model",
+            prompt="hello",
+            response="world",
+            prompt_tokens=10,
+            completion_tokens=20,
+            latency_ms=100,
+            estimated_cost_usd=0.01,
         )
         result = await tracker.atrack_llm_call(data)
         assert result is not None
@@ -126,10 +134,14 @@ class TestAsyncLLMAndToolCalls:
     @pytest.mark.asyncio
     async def test_atrack_tool_call(self, tracker):
         from temper_ai.observability._tracker_helpers import ToolCallTrackingData
+
         data = ToolCallTrackingData(
-            agent_id="agent-1", tool_name="bash",
-            input_params={"cmd": "ls"}, output_data={"stdout": "file.txt"},
-            duration_seconds=0.5, status="success",
+            agent_id="agent-1",
+            tool_name="bash",
+            input_params={"cmd": "ls"},
+            output_data={"stdout": "file.txt"},
+            duration_seconds=0.5,
+            status="success",
         )
         result = await tracker.atrack_tool_call(data)
         assert result is not None

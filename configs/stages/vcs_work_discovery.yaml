@@ -1,0 +1,40 @@
+# VCS Work Discovery Stage
+# Purpose: Analyze VISION + codebase to determine next piece of work
+# Replaces vcs_triage as the first stage in the pipeline
+
+stage:
+  name: vcs_work_discovery
+  description: "Read product vision and analyze codebase to discover the next work item"
+  version: "1.0"
+
+  agents:
+    - vcs_work_discoverer
+
+  execution:
+    agent_mode: sequential
+    timeout_seconds: 600
+
+  inputs:
+    workspace_path:
+      source: workflow.workspace_path
+      required: true
+
+  outputs:
+    discovery_output:
+      type: string
+      description: "Work item description and context"
+
+  error_handling:
+    on_agent_failure: halt_stage
+    retry_failed_agents: true
+    max_agent_retries: 2
+
+  safety:
+    mode: execute
+    risk_level: low
+    require_approval: false
+
+  tags:
+    - vcs
+    - discovery
+    - vision

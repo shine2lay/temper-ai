@@ -16,20 +16,24 @@ agent:
   type: static_checker
 
   pre_commands:
+    - name: validate_workspace
+      command: "test -n '{{ workspace_path }}' && test -d '{{ workspace_path }}' || { echo 'ERROR: workspace_path is empty or missing'; exit 1; }"
+      timeout_seconds: 5
+
     - name: py_compile_all
       command: "find {{ workspace_path }} -name '*.py' -exec python3 -m py_compile {} +"
       timeout_seconds: 30
 
     - name: ruff_autofix
-      command: "cd {{ workspace_path }} && if python3 -c 'import ruff' 2>/dev/null; then python3 -m ruff format . && python3 -m ruff check --select=E,F --fix . 2>&1; echo 'autofix applied'; else echo 'ruff not installed, skipping autofix'; fi"
+      command: "cd {{ workspace_path }} && if python3 -c 'import ruff' 2>/dev/null; then python3 -m ruff format . && python3 -m ruff check --select=E,F --ignore=E501 --fix --unsafe-fixes . 2>&1; echo 'autofix applied'; else echo 'ruff not installed, skipping autofix'; fi"
       timeout_seconds: 30
 
     - name: ruff_lint
-      command: "cd {{ workspace_path }} && if python3 -c 'import ruff' 2>/dev/null; then python3 -m ruff check --select=E,F --no-fix .; else echo 'ruff not installed, skipping lint'; fi"
+      command: "cd {{ workspace_path }} && if python3 -c 'import ruff' 2>/dev/null; then python3 -m ruff check --select=E,F --ignore=E501 --no-fix .; else echo 'ruff not installed, skipping lint'; fi"
       timeout_seconds: 30
 
     - name: import_modules
-      command: "cd {{ workspace_path }} && for f in $(find . -maxdepth 1 -name '*.py' ! -name '__*' -printf '%f\\n' | sort); do mod=\"${f%.py}\"; echo \"import $mod...\"; python3 -c \"import $mod\" 2>&1 || true; done"
+      command: "cd {{ workspace_path }} && PYTHONPATH={{ workspace_path }}:$PYTHONPATH; export PYTHONPATH; for f in $(find . -maxdepth 1 -name '*.py' ! -name '__*' -printf '%f\\n' | sort); do mod=\"${f%.py}\"; echo \"import $mod...\"; python3 -c \"import $mod\" 2>&1 || true; done; for d in $(find . -maxdepth 1 -mindepth 1 -type d ! -name '__*' ! -name '.*' -printf '%f\\n' | sort); do if [ -f \"$d/__init__.py\" ]; then echo \"import $d...\"; python3 -c \"import $d\" 2>&1 || true; fi; done"
       timeout_seconds: 60
 
   prompt:

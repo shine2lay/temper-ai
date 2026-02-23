@@ -2,7 +2,6 @@
 
 import logging
 import uuid
-from typing import List, Optional
 
 from temper_ai.goals.analyzers.base import BaseAnalyzer
 from temper_ai.goals.constants import DEFAULT_LOOKBACK_HOURS
@@ -22,8 +21,8 @@ class AnalysisOrchestrator:
     def __init__(
         self,
         store: GoalStore,
-        analyzers: Optional[List[BaseAnalyzer]] = None,
-        learning_store: Optional[object] = None,
+        analyzers: list[BaseAnalyzer] | None = None,
+        learning_store: object | None = None,
     ) -> None:
         self._store = store
         self._proposer = GoalProposer(
@@ -32,9 +31,7 @@ class AnalysisOrchestrator:
             analyzers=analyzers or [],
         )
 
-    def run_analysis(
-        self, lookback_hours: int = DEFAULT_LOOKBACK_HOURS
-    ) -> AnalysisRun:
+    def run_analysis(self, lookback_hours: int = DEFAULT_LOOKBACK_HOURS) -> AnalysisRun:
         """Execute a full analysis cycle and record results."""
         run = AnalysisRun(
             id=f"ar-{uuid.uuid4().hex[:UUID_HEX_LEN]}",
@@ -43,9 +40,7 @@ class AnalysisOrchestrator:
         )
 
         try:
-            proposals = self._proposer.generate_proposals(
-                lookback_hours=lookback_hours
-            )
+            proposals = self._proposer.generate_proposals(lookback_hours=lookback_hours)
             run.proposals_generated = len(proposals)
             run.status = "completed"
             run.analyzer_stats = {

@@ -37,7 +37,7 @@ from abc import ABC, abstractmethod
 from collections import Counter
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from temper_ai.shared.constants.probabilities import PROB_LOW_MEDIUM
 
@@ -55,6 +55,7 @@ class SynthesisMethod(Enum):
         DEBATE_EXTRACT: Extract decision from multi-round debate
         HIERARCHICAL: Lead agent with advisor review
     """
+
     CONSENSUS = "consensus"
     WEIGHTED_MERGE = "weighted_merge"
     BEST_OF = "best_of"
@@ -86,11 +87,12 @@ class AgentOutput:
         ...     metadata={"tokens": 1500, "duration_seconds": 3.2}
         ... )
     """
+
     agent_name: str
     decision: Any
     reasoning: str
     confidence: float
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         """Validate confidence score is in valid range."""
@@ -123,10 +125,11 @@ class Conflict:
         ...     context={"num_rounds": 3, "resolved": False}
         ... )
     """
-    agents: List[str]
-    decisions: List[Any]
+
+    agents: list[str]
+    decisions: list[Any]
     disagreement_score: float
-    context: Dict[str, Any] = field(default_factory=dict)
+    context: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         """Validate conflict data."""
@@ -168,13 +171,14 @@ class SynthesisResult:
         ...     metadata={"num_rounds": 1, "participation": 4}
         ... )
     """
+
     decision: Any
     confidence: float
     method: str
-    votes: Dict[str, int]
-    conflicts: List[Conflict]
+    votes: dict[str, int]
+    conflicts: list[Conflict]
     reasoning: str
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         """Validate confidence score is in valid range."""
@@ -214,9 +218,7 @@ class CollaborationStrategy(ABC):
 
     @abstractmethod
     def synthesize(
-        self,
-        agent_outputs: List[AgentOutput],
-        config: Dict[str, Any]
+        self, agent_outputs: list[AgentOutput], config: dict[str, Any]
     ) -> SynthesisResult:
         """Synthesize multiple agent outputs into unified decision.
 
@@ -247,7 +249,7 @@ class CollaborationStrategy(ABC):
         pass
 
     @abstractmethod
-    def get_capabilities(self) -> Dict[str, bool]:
+    def get_capabilities(self) -> dict[str, bool]:
         """Get strategy capabilities for feature detection.
 
         Returns a dictionary of boolean flags indicating which features
@@ -272,7 +274,7 @@ class CollaborationStrategy(ABC):
         """
         pass
 
-    def get_metadata(self) -> Dict[str, Any]:
+    def get_metadata(self) -> dict[str, Any]:
         """Get strategy metadata for introspection.
 
         Returns basic information about the strategy including name,
@@ -294,7 +296,7 @@ class CollaborationStrategy(ABC):
             "name": self.__class__.__name__,
             "version": "1.0",
             "description": self.__doc__ or "",
-            "config_schema": {}
+            "config_schema": {},
         }
 
     @property
@@ -337,7 +339,7 @@ class CollaborationStrategy(ABC):
         """
         return False
 
-    def validate_inputs(self, agent_outputs: List[AgentOutput]) -> None:
+    def validate_inputs(self, agent_outputs: list[AgentOutput]) -> None:
         """Validate agent outputs before synthesis.
 
         Performs common validation checks on agent outputs to ensure
@@ -363,15 +365,14 @@ class CollaborationStrategy(ABC):
         agent_names = [o.agent_name for o in agent_outputs]
         if len(agent_names) != len(set(agent_names)):
             from collections import Counter
+
             counts = Counter(agent_names)
             duplicates = {name: count for name, count in counts.items() if count > 1}
             raise ValueError(f"Duplicate agent names detected: {duplicates}")
 
     def detect_conflicts(
-        self,
-        agent_outputs: List[AgentOutput],
-        threshold: float = PROB_LOW_MEDIUM
-    ) -> List[Conflict]:
+        self, agent_outputs: list[AgentOutput], threshold: float = PROB_LOW_MEDIUM
+    ) -> list[Conflict]:
         """Detect conflicts between agent decisions.
 
         Analyzes agent outputs to identify disagreements. A conflict is
@@ -395,7 +396,7 @@ class CollaborationStrategy(ABC):
         conflicts = []
 
         # Group outputs by decision (use actual decision values, not strings)
-        decision_groups: Dict[Any, List[AgentOutput]] = {}
+        decision_groups: dict[Any, list[AgentOutput]] = {}
         for output in agent_outputs:
             # ST-05: Decisions may be unhashable types (dict, list). Use the
             # decision directly when hashable; fall back to its JSON repr for
@@ -418,18 +419,22 @@ class CollaborationStrategy(ABC):
 
             # Only report if above threshold
             if disagreement_score >= threshold:
-                conflicts.append(Conflict(
-                    agents=[o.agent_name for o in agent_outputs],
-                    decisions=list(decision_groups.keys()),
-                    disagreement_score=round(disagreement_score, 4),  # Explicit rounding for consistency  # noqa: Standard precision
-                    context={
-                        "num_decisions": len(decision_groups),
-                        "largest_group_size": largest_group,
-                        "decision_distribution": {
-                            str(k): len(v) for k, v in decision_groups.items()
-                        }
-                    }
-                ))
+                conflicts.append(
+                    Conflict(
+                        agents=[o.agent_name for o in agent_outputs],
+                        decisions=list(decision_groups.keys()),
+                        disagreement_score=round(
+                            disagreement_score, 4
+                        ),  # Explicit rounding for consistency  # noqa: Standard precision
+                        context={
+                            "num_decisions": len(decision_groups),
+                            "largest_group_size": largest_group,
+                            "decision_distribution": {
+                                str(k): len(v) for k, v in decision_groups.items()
+                            },
+                        },
+                    )
+                )
 
         # Sort by severity (highest first)
         conflicts.sort(key=lambda c: c.disagreement_score, reverse=True)
@@ -439,9 +444,9 @@ class CollaborationStrategy(ABC):
 
 # Utility functions for common synthesis operations
 
+
 def calculate_consensus_confidence(
-    agent_outputs: List[AgentOutput],
-    decision: Any
+    agent_outputs: list[AgentOutput], decision: Any
 ) -> float:
     """Calculate confidence based on consensus strength.
 
@@ -483,7 +488,7 @@ def calculate_consensus_confidence(
     return consensus_strength * avg_confidence
 
 
-def extract_majority_decision(agent_outputs: List[AgentOutput]) -> Optional[Any]:
+def extract_majority_decision(agent_outputs: list[AgentOutput]) -> Any | None:
     """Extract majority decision from agent outputs.
 
     Finds the decision that was chosen by the most agents. Returns None
@@ -528,9 +533,7 @@ def extract_majority_decision(agent_outputs: List[AgentOutput]) -> Optional[Any]
     return most_common[0][0]
 
 
-def calculate_vote_distribution(
-    agent_outputs: List[AgentOutput]
-) -> Dict[Any, int]:
+def calculate_vote_distribution(agent_outputs: list[AgentOutput]) -> dict[Any, int]:
     """Calculate vote distribution across all decisions.
 
     Note: Returns decision values in their original types (not converted to strings).

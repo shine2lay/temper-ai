@@ -7,10 +7,11 @@ Contains:
 
 Extracted from _parallel_helpers.py to reduce file size.
 """
+
 import logging
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, cast
+from typing import Any, cast
 
 from temper_ai.shared.constants.execution import ERROR_MSG_QUALITY_GATE_FAILED
 from temper_ai.shared.constants.limits import SMALL_ITEM_LIMIT
@@ -27,9 +28,10 @@ logger = logging.getLogger(__name__)
 @dataclass
 class QualityGateRetryParams:
     """Parameters for quality gate retry handling (bundles 8 params into 1)."""
-    quality_gates_config: Dict[str, Any]
+
+    quality_gates_config: dict[str, Any]
     stage_name: str
-    state: Dict[str, Any]
+    state: dict[str, Any]
     tracker: Any
     synthesis_result: Any
     violations: list
@@ -40,12 +42,13 @@ class QualityGateRetryParams:
 @dataclass
 class QualityGateFailureParams:
     """Parameters for quality gate failure handling (bundles 8 params into 1)."""
+
     passed: bool
     violations: list
     synthesis_result: Any
     stage_config: Any
     stage_name: str
-    state: Dict[str, Any]
+    state: dict[str, Any]
     wall_clock_start: float
     wall_clock_timeout: float
 
@@ -55,14 +58,17 @@ def _extract_result_field(synthesis_result: Any, field: str) -> list:
     if hasattr(synthesis_result, "metadata"):
         result: list = synthesis_result.metadata.get(field, [])
         return result
-    if hasattr(synthesis_result, "decision") and isinstance(synthesis_result.decision, dict):
+    if hasattr(synthesis_result, "decision") and isinstance(
+        synthesis_result.decision, dict
+    ):
         result_from_decision: list = synthesis_result.decision.get(field, [])
         return result_from_decision
     return []
 
 
 def _check_inline_quality_gates(
-    quality_gates_config: Dict[str, Any], synthesis_result: Any,
+    quality_gates_config: dict[str, Any],
+    synthesis_result: Any,
 ) -> list[str]:
     """Run inline quality gate checks and return violations."""
     violations: list[str] = []
@@ -90,11 +96,11 @@ def _check_inline_quality_gates(
 
 
 def validate_quality_gates(
-    quality_gate_validator: Optional[Any],
+    quality_gate_validator: Any | None,
     synthesis_result: Any,
     stage_config: Any,
     stage_name: str,
-    state: Dict[str, Any],
+    state: dict[str, Any],
 ) -> tuple[bool, list[str]]:
     """Validate synthesis result against quality gates."""
     if quality_gate_validator:
@@ -118,7 +124,11 @@ def validate_quality_gates(
 
     if not passed:
         _emit_quality_gate_violation_details(
-            state, stage_name, violations, synthesis_result, quality_gates_config,
+            state,
+            stage_name,
+            violations,
+            synthesis_result,
+            quality_gates_config,
         )
 
     return passed, violations
@@ -132,9 +142,7 @@ def _handle_quality_gate_escalate(stage_name: str, violations: list) -> None:
 
 
 def _handle_quality_gate_warn(
-    stage_name: str,
-    violations: list,
-    synthesis_result: Any
+    stage_name: str, violations: list, synthesis_result: Any
 ) -> None:
     """Handle proceed_with_warning policy for quality gate failure."""
     logger.warning(
@@ -150,7 +158,7 @@ def _check_retry_timeout(
     wall_clock_start: float,
     wall_clock_timeout: float,
     retry_count: int,
-    violations: list
+    violations: list,
 ) -> None:
     """Check if wall-clock timeout exceeded during retry."""
     elapsed = time.monotonic() - wall_clock_start
@@ -164,10 +172,14 @@ def _check_retry_timeout(
 
 
 def _reset_retry_counter_on_pass(
-    passed: bool, state: Dict[str, Any], stage_name: str
+    passed: bool, state: dict[str, Any], stage_name: str
 ) -> None:
     """Reset retry counter if quality gates passed after retries."""
-    if passed and StateKeys.STAGE_RETRY_COUNTS in state and stage_name in state[StateKeys.STAGE_RETRY_COUNTS]:
+    if (
+        passed
+        and StateKeys.STAGE_RETRY_COUNTS in state
+        and stage_name in state[StateKeys.STAGE_RETRY_COUNTS]
+    ):
         retry_count = state[StateKeys.STAGE_RETRY_COUNTS][stage_name]
         del state[StateKeys.STAGE_RETRY_COUNTS][stage_name]
         logger.info(
@@ -200,13 +212,21 @@ def _handle_quality_gate_retry(params: QualityGateRetryParams) -> str:
     params.state[StateKeys.STAGE_RETRY_COUNTS][params.stage_name] = retry_count + 1
 
     _track_quality_gate_event(
-        params.tracker, "quality_gate_retry", params.stage_name,
-        params.synthesis_result, params.violations, params.quality_gates_config, retry_count
+        params.tracker,
+        "quality_gate_retry",
+        params.stage_name,
+        params.synthesis_result,
+        params.violations,
+        params.quality_gates_config,
+        retry_count,
     )
 
     _check_retry_timeout(
-        params.stage_name, params.wall_clock_start, params.wall_clock_timeout,
-        retry_count, params.violations
+        params.stage_name,
+        params.wall_clock_start,
+        params.wall_clock_timeout,
+        retry_count,
+        params.violations,
     )
 
     elapsed = time.monotonic() - params.wall_clock_start
@@ -220,7 +240,7 @@ def _handle_quality_gate_retry(params: QualityGateRetryParams) -> str:
     return "continue"
 
 
-def handle_quality_gate_failure(params: QualityGateFailureParams) -> Optional[str]:
+def handle_quality_gate_failure(params: QualityGateFailureParams) -> str | None:
     """Handle quality gate failures: escalate, warn, or prepare for retry.
 
     Returns:
@@ -238,12 +258,19 @@ def handle_quality_gate_failure(params: QualityGateFailureParams) -> Optional[st
     quality_gates_config = stage_dict.get("quality_gates", {})
     on_failure = quality_gates_config.get("on_failure", "retry_stage")
 
-    retry_count = params.state.get(StateKeys.STAGE_RETRY_COUNTS, {}).get(params.stage_name, 0)
+    retry_count = params.state.get(StateKeys.STAGE_RETRY_COUNTS, {}).get(
+        params.stage_name, 0
+    )
 
     tracker = params.state.get(StateKeys.TRACKER)
     _track_quality_gate_event(
-        tracker, "quality_gate_failure", params.stage_name,
-        params.synthesis_result, params.violations, quality_gates_config, retry_count
+        tracker,
+        "quality_gate_failure",
+        params.stage_name,
+        params.synthesis_result,
+        params.violations,
+        quality_gates_config,
+        retry_count,
     )
 
     if on_failure == "escalate":
@@ -251,15 +278,21 @@ def handle_quality_gate_failure(params: QualityGateFailureParams) -> Optional[st
         return None
 
     if on_failure == "proceed_with_warning":
-        _handle_quality_gate_warn(params.stage_name, params.violations, params.synthesis_result)
+        _handle_quality_gate_warn(
+            params.stage_name, params.violations, params.synthesis_result
+        )
         return None
 
     if on_failure == "retry_stage":
         retry_params = QualityGateRetryParams(
-            quality_gates_config=quality_gates_config, stage_name=params.stage_name,
-            state=params.state, tracker=tracker, synthesis_result=params.synthesis_result,
-            violations=params.violations, wall_clock_start=params.wall_clock_start,
-            wall_clock_timeout=params.wall_clock_timeout
+            quality_gates_config=quality_gates_config,
+            stage_name=params.stage_name,
+            state=params.state,
+            tracker=tracker,
+            synthesis_result=params.synthesis_result,
+            violations=params.violations,
+            wall_clock_start=params.wall_clock_start,
+            wall_clock_timeout=params.wall_clock_timeout,
         )
         return _handle_quality_gate_retry(retry_params)
 

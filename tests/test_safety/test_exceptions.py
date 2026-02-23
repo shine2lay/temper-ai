@@ -32,7 +32,7 @@ class TestSafetyViolationException:
             severity=ViolationSeverity.HIGH,
             message="Test violation",
             action="test_action",
-            context={"agent": "test_agent"}
+            context={"agent": "test_agent"},
         )
 
         assert exc.policy_name == "TestPolicy"
@@ -51,18 +51,14 @@ class TestSafetyViolationException:
             message="Rate limit exceeded",
             action="api_call",
             context={"agent": "researcher"},
-            remediation_hint="Wait 60 seconds before retrying"
+            remediation_hint="Wait 60 seconds before retrying",
         )
 
         assert exc.remediation_hint == "Wait 60 seconds before retrying"
 
     def test_exception_with_metadata(self):
         """Test exception with custom metadata."""
-        metadata = {
-            "limit": 100,
-            "current": 150,
-            "retry_after": 60
-        }
+        metadata = {"limit": 100, "current": 150, "retry_after": 60}
 
         exc = SafetyViolationException(
             policy_name="RateLimit",
@@ -70,7 +66,7 @@ class TestSafetyViolationException:
             message="Exceeded limit",
             action="api_call",
             context={},
-            metadata=metadata
+            metadata=metadata,
         )
 
         assert exc.metadata == metadata
@@ -82,7 +78,7 @@ class TestSafetyViolationException:
             severity=ViolationSeverity.CRITICAL,
             message="Critical violation",
             action="dangerous_action",
-            context={}
+            context={},
         )
 
         str_repr = str(exc)
@@ -98,7 +94,7 @@ class TestSafetyViolationException:
             message="Test violation",
             action="test",
             context={},
-            remediation_hint="Fix by doing X"
+            remediation_hint="Fix by doing X",
         )
 
         str_repr = str(exc)
@@ -111,7 +107,7 @@ class TestSafetyViolationException:
             severity=ViolationSeverity.MEDIUM,
             message="Test message",
             action="test",
-            context={}
+            context={},
         )
 
         repr_str = repr(exc)
@@ -129,7 +125,7 @@ class TestSafetyViolationException:
             action="test_action",
             context={"agent": "test", "stage": "research"},
             remediation_hint="Fix it",
-            metadata={"key": "value"}
+            metadata={"key": "value"},
         )
 
         data = exc.to_dict()
@@ -153,7 +149,7 @@ class TestSafetyViolationException:
             action="original_action",
             context={"test": "data"},
             remediation_hint="Original hint",
-            metadata={"original": "metadata"}
+            metadata={"original": "metadata"},
         )
 
         exc = SafetyViolationException.from_violation(violation)
@@ -173,7 +169,7 @@ class TestSafetyViolationException:
             severity=ViolationSeverity.HIGH,
             message="Test",
             action="test",
-            context={}
+            context={},
         )
 
         assert isinstance(exc.violation, SafetyViolation)
@@ -188,7 +184,7 @@ class TestSafetyViolationException:
                 severity=ViolationSeverity.HIGH,
                 message="Test violation",
                 action="test",
-                context={}
+                context={},
             )
 
         assert exc_info.value.policy_name == "TestPolicy"
@@ -205,7 +201,7 @@ class TestBlastRadiusViolation:
             message="Too many files modified",
             action="bulk_edit",
             context={"agent": "coder"},
-            metadata={"files": 50, "limit": 10}
+            metadata={"files": 50, "limit": 10},
         )
 
         assert exc.policy_name == "BlastRadiusPolicy"
@@ -220,7 +216,7 @@ class TestBlastRadiusViolation:
             policy_name="BlastRadiusPolicy",
             message="Exceeds limits",
             action="bulk_change",
-            context={}
+            context={},
         )
 
         assert exc.remediation_hint == "Reduce the scope of changes"
@@ -232,7 +228,7 @@ class TestBlastRadiusViolation:
             message="Too large",
             action="commit",
             context={},
-            remediation_hint="Split into 3 smaller commits"
+            remediation_hint="Split into 3 smaller commits",
         )
 
         assert exc.remediation_hint == "Split into 3 smaller commits"
@@ -240,10 +236,7 @@ class TestBlastRadiusViolation:
     def test_inheritance(self):
         """Test that BlastRadiusViolation inherits from base."""
         exc = BlastRadiusViolation(
-            policy_name="Test",
-            message="Test",
-            action="test",
-            context={}
+            policy_name="Test", message="Test", action="test", context={}
         )
 
         assert isinstance(exc, SafetyViolationException)
@@ -260,7 +253,7 @@ class TestActionPolicyViolation:
             message="Forbidden tool",
             action="execute_shell('rm -rf /')",
             context={"agent": "untrusted"},
-            metadata={"tool": "execute_shell", "reason": "destructive"}
+            metadata={"tool": "execute_shell", "reason": "destructive"},
         )
 
         assert exc.policy_name == "ActionPolicy"
@@ -271,10 +264,7 @@ class TestActionPolicyViolation:
     def test_critical_severity(self):
         """Test action policy violations are CRITICAL."""
         exc = ActionPolicyViolation(
-            policy_name="ActionPolicy",
-            message="Test",
-            action="test",
-            context={}
+            policy_name="ActionPolicy", message="Test", action="test", context={}
         )
 
         assert exc.severity == ViolationSeverity.CRITICAL
@@ -282,10 +272,7 @@ class TestActionPolicyViolation:
     def test_default_remediation(self):
         """Test default remediation hint."""
         exc = ActionPolicyViolation(
-            policy_name="ActionPolicy",
-            message="Test",
-            action="test",
-            context={}
+            policy_name="ActionPolicy", message="Test", action="test", context={}
         )
 
         assert exc.remediation_hint == "Review action policy constraints"
@@ -305,8 +292,8 @@ class TestRateLimitViolation:
                 "current_rate": 100,
                 "limit": 50,
                 "window": "1h",
-                "retry_after": 30
-            }
+                "retry_after": 30,
+            },
         )
 
         assert exc.policy_name == "RateLimiter"
@@ -318,10 +305,7 @@ class TestRateLimitViolation:
     def test_medium_severity(self):
         """Test rate limit violations are MEDIUM severity."""
         exc = RateLimitViolation(
-            policy_name="RateLimiter",
-            message="Test",
-            action="test",
-            context={}
+            policy_name="RateLimiter", message="Test", action="test", context={}
         )
 
         assert exc.severity == ViolationSeverity.MEDIUM
@@ -329,10 +313,7 @@ class TestRateLimitViolation:
     def test_default_remediation(self):
         """Test default remediation hint."""
         exc = RateLimitViolation(
-            policy_name="RateLimiter",
-            message="Test",
-            action="test",
-            context={}
+            policy_name="RateLimiter", message="Test", action="test", context={}
         )
 
         assert "Reduce request rate" in exc.remediation_hint
@@ -352,8 +333,8 @@ class TestResourceLimitViolation:
                 "resource": "memory",
                 "current": 950,
                 "requested": 100,
-                "limit": 1024
-            }
+                "limit": 1024,
+            },
         )
 
         assert exc.policy_name == "ResourceLimiter"
@@ -364,10 +345,7 @@ class TestResourceLimitViolation:
     def test_high_severity(self):
         """Test resource violations are HIGH severity."""
         exc = ResourceLimitViolation(
-            policy_name="ResourceLimiter",
-            message="Test",
-            action="test",
-            context={}
+            policy_name="ResourceLimiter", message="Test", action="test", context={}
         )
 
         assert exc.severity == ViolationSeverity.HIGH
@@ -383,7 +361,7 @@ class TestForbiddenOperationViolation:
             message="Secret access forbidden",
             action="os.getenv('API_KEY')",
             context={"agent": "untrusted"},
-            metadata={"operation": "secret_access", "pattern": "API_KEY"}
+            metadata={"operation": "secret_access", "pattern": "API_KEY"},
         )
 
         assert exc.policy_name == "ForbiddenOps"
@@ -393,10 +371,7 @@ class TestForbiddenOperationViolation:
     def test_critical_severity(self):
         """Test forbidden operations are CRITICAL."""
         exc = ForbiddenOperationViolation(
-            policy_name="ForbiddenOps",
-            message="Test",
-            action="test",
-            context={}
+            policy_name="ForbiddenOps", message="Test", action="test", context={}
         )
 
         assert exc.severity == ViolationSeverity.CRITICAL
@@ -412,10 +387,7 @@ class TestAccessDeniedViolation:
             message="Access to /etc/passwd denied",
             action="read_file(/etc/passwd)",
             context={"agent": "researcher"},
-            metadata={
-                "path": "/etc/passwd",
-                "allowed_paths": ["/project/*"]
-            }
+            metadata={"path": "/etc/passwd", "allowed_paths": ["/project/*"]},
         )
 
         assert exc.policy_name == "FileAccessPolicy"
@@ -426,10 +398,7 @@ class TestAccessDeniedViolation:
     def test_critical_severity(self):
         """Test access denied is CRITICAL."""
         exc = AccessDeniedViolation(
-            policy_name="FileAccessPolicy",
-            message="Test",
-            action="test",
-            context={}
+            policy_name="FileAccessPolicy", message="Test", action="test", context={}
         )
 
         assert exc.severity == ViolationSeverity.CRITICAL
@@ -445,49 +414,31 @@ class TestExceptionHierarchy:
             severity=ViolationSeverity.HIGH,
             message="Test",
             action="test",
-            context={}
+            context={},
         )
 
         blast_exc = BlastRadiusViolation(
-            policy_name="Test",
-            message="Test",
-            action="test",
-            context={}
+            policy_name="Test", message="Test", action="test", context={}
         )
 
         action_exc = ActionPolicyViolation(
-            policy_name="Test",
-            message="Test",
-            action="test",
-            context={}
+            policy_name="Test", message="Test", action="test", context={}
         )
 
         rate_exc = RateLimitViolation(
-            policy_name="Test",
-            message="Test",
-            action="test",
-            context={}
+            policy_name="Test", message="Test", action="test", context={}
         )
 
         resource_exc = ResourceLimitViolation(
-            policy_name="Test",
-            message="Test",
-            action="test",
-            context={}
+            policy_name="Test", message="Test", action="test", context={}
         )
 
         forbidden_exc = ForbiddenOperationViolation(
-            policy_name="Test",
-            message="Test",
-            action="test",
-            context={}
+            policy_name="Test", message="Test", action="test", context={}
         )
 
         access_exc = AccessDeniedViolation(
-            policy_name="Test",
-            message="Test",
-            action="test",
-            context={}
+            policy_name="Test", message="Test", action="test", context={}
         )
 
         # All should be instances of SafetyViolationException
@@ -502,20 +453,14 @@ class TestExceptionHierarchy:
         """Test catching specific exception types."""
         with pytest.raises(BlastRadiusViolation):
             raise BlastRadiusViolation(
-                policy_name="Test",
-                message="Test",
-                action="test",
-                context={}
+                policy_name="Test", message="Test", action="test", context={}
             )
 
     def test_catch_base_exception(self):
         """Test catching via base exception class."""
         with pytest.raises(SafetyViolationException):
             raise ActionPolicyViolation(
-                policy_name="Test",
-                message="Test",
-                action="test",
-                context={}
+                policy_name="Test", message="Test", action="test", context={}
             )
 
 
@@ -531,7 +476,7 @@ class TestExceptionSerialization:
             action="test_action",
             context={"agent": "test", "key": "value"},
             remediation_hint="Fix it",
-            metadata={"meta": "data"}
+            metadata={"meta": "data"},
         )
 
         data = exc.to_dict()
@@ -544,7 +489,7 @@ class TestExceptionSerialization:
             action=data["action"],
             context=data["context"],
             remediation_hint=data["remediation_hint"],
-            metadata=data["metadata"]
+            metadata=data["metadata"],
         )
 
         assert exc2.policy_name == exc.policy_name
@@ -562,7 +507,7 @@ class TestExceptionSerialization:
             message="Test",
             action="test",
             context={"key": "value"},
-            metadata={"num": 123, "str": "text"}
+            metadata={"num": 123, "str": "text"},
         )
 
         data = exc.to_dict()
@@ -585,7 +530,7 @@ class TestExceptionMessages:
             message="Attempted to modify 50 files (limit: 10)",
             action="bulk_commit",
             context={},
-            remediation_hint="Split changes into 5 separate commits"
+            remediation_hint="Split changes into 5 separate commits",
         )
 
         assert "50 files" in exc.message
@@ -599,7 +544,7 @@ class TestExceptionMessages:
             message="Rate limit exceeded",
             action="api_call",
             context={},
-            remediation_hint="Wait 60 seconds before retrying"
+            remediation_hint="Wait 60 seconds before retrying",
         )
 
         # Should include specific time

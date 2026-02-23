@@ -1,10 +1,10 @@
 """Tests for the HTTPClientTool."""
+
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from temper_ai.tools.http_client import HTTPClientTool
-from temper_ai.tools.http_client_constants import HTTP_DEFAULT_TIMEOUT
 
 
 @pytest.fixture

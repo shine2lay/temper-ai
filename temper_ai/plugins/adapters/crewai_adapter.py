@@ -1,12 +1,17 @@
 """CrewAI agent adapter for Temper AI plugin system."""
+
 from __future__ import annotations
 
+import importlib.util
 import logging
 from pathlib import Path
-from typing import Any, ClassVar, Dict, List
+from typing import Any, ClassVar
 
 from temper_ai.plugins.base import ExternalAgentPlugin
-from temper_ai.plugins.constants import PLUGIN_DEFAULT_TIMEOUT, PLUGIN_TYPE_CREWAI  # noqa: F401
+from temper_ai.plugins.constants import (  # noqa: F401
+    PLUGIN_DEFAULT_TIMEOUT,
+    PLUGIN_TYPE_CREWAI,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +28,19 @@ class CrewAIAgent(ExternalAgentPlugin):
     AGENT_TYPE: ClassVar[str] = PLUGIN_TYPE_CREWAI
     REQUIRED_PACKAGE: ClassVar[str] = "crewai"
 
+    async def health_check(self) -> dict[str, Any]:
+        """Check if crewai package is importable and return its version."""
+        spec = importlib.util.find_spec("crewai")
+        if spec is None:
+            return {"status": "unavailable", "framework": self.FRAMEWORK_NAME}
+        try:
+            import crewai
+
+            version = getattr(crewai, "__version__", "unknown")
+        except ImportError:
+            version = "unknown"
+        return {"status": "ok", "framework": self.FRAMEWORK_NAME, "version": version}
+
     def _initialize_external_agent(self) -> None:
         """Create the underlying CrewAI Agent from plugin config."""
         import crewai  # lazy import — crewai is optional
@@ -36,7 +54,7 @@ class CrewAIAgent(ExternalAgentPlugin):
             verbose=pc.get("verbose", CREWAI_DEFAULT_VERBOSE),
         )
 
-    def _execute_external(self, input_data: Dict[str, Any]) -> str:
+    def _execute_external(self, input_data: dict[str, Any]) -> str:
         """Execute CrewAI agent via Crew.kickoff()."""
         import crewai  # lazy import — crewai is optional
 
@@ -56,7 +74,7 @@ class CrewAIAgent(ExternalAgentPlugin):
         return str(result)
 
     @classmethod
-    def translate_config(cls, source_path: Path) -> List[Dict[str, Any]]:
+    def translate_config(cls, source_path: Path) -> list[dict[str, Any]]:
         """Translate CrewAI YAML config to Temper AI config dicts."""
         from temper_ai.plugins._import_helpers import (
             build_agent_config_dict,
@@ -64,7 +82,7 @@ class CrewAIAgent(ExternalAgentPlugin):
         )
 
         data = load_yaml_safe(source_path)
-        configs: List[Dict[str, Any]] = []
+        configs: list[dict[str, Any]] = []
 
         agents = data.get("agents", [data] if "role" in data else [])
         for agent_data in agents:
@@ -73,7 +91,9 @@ class CrewAIAgent(ExternalAgentPlugin):
                 "role": agent_data.get("role", "agent"),
                 "goal": agent_data.get("goal", ""),
                 "backstory": agent_data.get("backstory", ""),
-                "allow_delegation": agent_data.get("allow_delegation", CREWAI_DEFAULT_DELEGATION),
+                "allow_delegation": agent_data.get(
+                    "allow_delegation", CREWAI_DEFAULT_DELEGATION
+                ),
                 "verbose": agent_data.get("verbose", CREWAI_DEFAULT_VERBOSE),
             }
             config = build_agent_config_dict(

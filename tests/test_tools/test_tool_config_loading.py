@@ -2,6 +2,7 @@
 
 Tests loading tools from YAML/JSON configuration files into the ToolRegistry.
 """
+
 import tempfile
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -9,13 +10,14 @@ from unittest.mock import Mock, patch
 import pytest
 import yaml
 
-from temper_ai.workflow.config_loader import ConfigLoader
 from temper_ai.tools.base import BaseTool, ToolMetadata, ToolResult
 from temper_ai.tools.registry import ToolRegistry, ToolRegistryError
+from temper_ai.workflow.config_loader import ConfigLoader
 
 # ============================================================================
 # Test Tools
 # ============================================================================
+
 
 class MockTestTool(BaseTool):
     """Mock test tool for configuration loading tests.
@@ -28,22 +30,17 @@ class MockTestTool(BaseTool):
             name="TestTool",
             description="Test tool for testing",
             version="1.0",
-            category="test"
+            category="test",
         )
 
     def get_parameters_schema(self):
-        return {
-            "type": "object",
-            "properties": {
-                "input": {"type": "string"}
-            }
-        }
+        return {"type": "object", "properties": {"input": {"type": "string"}}}
 
     def execute(self, **kwargs) -> ToolResult:
         return ToolResult(
             success=True,
             result={"result": "test output"},  # Use 'result' not 'output'
-            metadata={}
+            metadata={},
         )
 
 
@@ -57,7 +54,7 @@ def create_tool_class(tool_num: int):
                 name=f"TestTool{tool_num}",
                 description=f"Test tool {tool_num}",
                 version="1.0",
-                category="test"
+                category="test",
             )
 
         def get_parameters_schema(self):
@@ -72,6 +69,7 @@ def create_tool_class(tool_num: int):
 # ============================================================================
 # Fixtures
 # ============================================================================
+
 
 @pytest.fixture
 def config_root():
@@ -99,13 +97,13 @@ def tool_config(config_root):
             "version": "1.0",
             "implementation": {
                 "module": "tests.test_tools.test_tool_config_loading",
-                "class": "MockTestTool"
-            }
+                "class": "MockTestTool",
+            },
         }
     }
 
     config_file = tools_dir / "test_tool.yaml"
-    with open(config_file, 'w') as f:
+    with open(config_file, "w") as f:
         yaml.dump(config, f)
 
     return config_file
@@ -120,13 +118,13 @@ def invalid_tool_config(config_root):
         "tool": {
             "name": "InvalidTool",
             "description": "Invalid tool config",
-            "version": "1.0"
+            "version": "1.0",
             # Missing implementation
         }
     }
 
     config_file = tools_dir / "invalid_tool.yaml"
-    with open(config_file, 'w') as f:
+    with open(config_file, "w") as f:
         yaml.dump(config, f)
 
     return config_file
@@ -141,6 +139,7 @@ def config_loader(config_root):
 # ============================================================================
 # Tests for load_from_config
 # ============================================================================
+
 
 def test_load_from_config_success(tool_config, config_loader):
     """Test successfully loading tool from configuration."""
@@ -164,7 +163,9 @@ def test_load_from_config_creates_config_loader(tool_config, config_root):
     registry = ToolRegistry()
 
     # Patch ConfigLoader at import location
-    with patch('temper_ai.workflow.config_loader.ConfigLoader') as mock_config_loader_class:
+    with patch(
+        "temper_ai.workflow.config_loader.ConfigLoader"
+    ) as mock_config_loader_class:
         mock_loader = Mock()
         mock_config_loader_class.return_value = mock_loader
 
@@ -176,8 +177,8 @@ def test_load_from_config_creates_config_loader(tool_config, config_root):
                 "version": "1.0",
                 "implementation": {
                     "module": "tests.test_tools.test_tool_config_loading",
-                    "class": "MockTestTool"
-                }
+                    "class": "MockTestTool",
+                },
             }
         }
 
@@ -218,13 +219,13 @@ def test_load_from_config_missing_name(config_root, config_loader):
             "description": "Tool without name",
             "implementation": {
                 "module": "tests.test_tools.test_tool_config_loading",
-                "class": "TestTool"
-            }
+                "class": "TestTool",
+            },
         }
     }
 
     config_file = tools_dir / "no_name.yaml"
-    with open(config_file, 'w') as f:
+    with open(config_file, "w") as f:
         yaml.dump(config, f)
 
     registry = ToolRegistry()
@@ -253,12 +254,12 @@ def test_load_from_config_string_class_path(config_root, config_loader):
             "name": "TestTool",
             "description": "Test tool",
             "version": "1.0",
-            "implementation": "tests.test_tools.test_tool_config_loading.MockTestTool"
+            "implementation": "tests.test_tools.test_tool_config_loading.MockTestTool",
         }
     }
 
     config_file = tools_dir / "string_path.yaml"
-    with open(config_file, 'w') as f:
+    with open(config_file, "w") as f:
         yaml.dump(config, f)
 
     registry = ToolRegistry()
@@ -282,13 +283,13 @@ def test_load_from_config_invalid_module(config_root, config_loader):
             "version": "1.0",
             "implementation": {
                 "module": "nonexistent.module.path",
-                "class": "TestTool"
-            }
+                "class": "TestTool",
+            },
         }
     }
 
     config_file = tools_dir / "bad_module.yaml"
-    with open(config_file, 'w') as f:
+    with open(config_file, "w") as f:
         yaml.dump(config, f)
 
     registry = ToolRegistry()
@@ -310,13 +311,13 @@ def test_load_from_config_missing_class(config_root, config_loader):
             "version": "1.0",
             "implementation": {
                 "module": "tests.test_tools.test_tool_config_loading",
-                "class": "NonExistentClass"
-            }
+                "class": "NonExistentClass",
+            },
         }
     }
 
     config_file = tools_dir / "bad_class.yaml"
-    with open(config_file, 'w') as f:
+    with open(config_file, "w") as f:
         yaml.dump(config, f)
 
     registry = ToolRegistry()
@@ -336,15 +337,12 @@ def test_load_from_config_not_base_tool_subclass(config_root, config_loader):
             "name": "NotATool",
             "description": "Not a BaseTool subclass",
             "version": "1.0",
-            "implementation": {
-                "module": "pathlib",
-                "class": "Path"  # Not a BaseTool
-            }
+            "implementation": {"module": "pathlib", "class": "Path"},  # Not a BaseTool
         }
     }
 
     config_file = tools_dir / "not_tool.yaml"
-    with open(config_file, 'w') as f:
+    with open(config_file, "w") as f:
         yaml.dump(config, f)
 
     registry = ToolRegistry()
@@ -357,6 +355,7 @@ def test_load_from_config_not_base_tool_subclass(config_root, config_loader):
 # ============================================================================
 # Tests for load_all_from_configs
 # ============================================================================
+
 
 def test_load_all_from_configs_success(config_root, config_loader, tmp_path):
     """Test loading all tools from configurations."""
@@ -371,7 +370,7 @@ from temper_ai.tools.base import BaseTool, ToolResult, ToolMetadata
 '''
 
     for i in range(3):
-        tool_module_content += f'''
+        tool_module_content += f"""
 class DynamicTestTool{i}(BaseTool):
     def get_metadata(self):
         return ToolMetadata(
@@ -387,7 +386,7 @@ class DynamicTestTool{i}(BaseTool):
     def execute(self, **kwargs):
         return ToolResult(success=True, result={{"tool": {i}}}, metadata={{}})
 
-'''
+"""
 
     # Write to temp file
     temp_module = tmp_path / "dynamic_tools.py"
@@ -395,6 +394,7 @@ class DynamicTestTool{i}(BaseTool):
 
     # Add tmp_path to sys.path
     import sys
+
     sys.path.insert(0, str(tmp_path))
 
     try:
@@ -407,13 +407,13 @@ class DynamicTestTool{i}(BaseTool):
                     "version": "1.0",
                     "implementation": {
                         "module": "dynamic_tools",
-                        "class": f"DynamicTestTool{i}"
-                    }
+                        "class": f"DynamicTestTool{i}",
+                    },
                 }
             }
 
             config_file = tools_dir / f"tool{i}.yaml"
-            with open(config_file, 'w') as f:
+            with open(config_file, "w") as f:
                 yaml.dump(config, f)
 
         registry = ToolRegistry()
@@ -437,7 +437,9 @@ def test_load_all_from_configs_creates_loader():
     registry = ToolRegistry()
 
     # Patch ConfigLoader at import location
-    with patch('temper_ai.workflow.config_loader.ConfigLoader') as mock_config_loader_class:
+    with patch(
+        "temper_ai.workflow.config_loader.ConfigLoader"
+    ) as mock_config_loader_class:
         mock_loader = Mock()
         mock_config_loader_class.return_value = mock_loader
         mock_loader.list_configs.return_value = []
@@ -466,23 +468,18 @@ def test_load_all_from_configs_skips_invalid(config_root, config_loader):
             "version": "1.0",
             "implementation": {
                 "module": "tests.test_tools.test_tool_config_loading",
-                "class": "MockTestTool"
-            }
+                "class": "MockTestTool",
+            },
         }
     }
 
-    with open(tools_dir / "valid.yaml", 'w') as f:
+    with open(tools_dir / "valid.yaml", "w") as f:
         yaml.dump(valid_config, f)
 
     # Create invalid config (missing implementation)
-    invalid_config = {
-        "tool": {
-            "name": "InvalidTool",
-            "description": "Invalid tool"
-        }
-    }
+    invalid_config = {"tool": {"name": "InvalidTool", "description": "Invalid tool"}}
 
-    with open(tools_dir / "invalid.yaml", 'w') as f:
+    with open(tools_dir / "invalid.yaml", "w") as f:
         yaml.dump(invalid_config, f)
 
     registry = ToolRegistry()
@@ -512,6 +509,7 @@ def test_load_all_from_configs_empty_directory(config_root, config_loader):
 # ============================================================================
 # Integration Tests
 # ============================================================================
+
 
 def test_load_calculator_from_real_config():
     """Integration test: Load real Calculator tool from config.

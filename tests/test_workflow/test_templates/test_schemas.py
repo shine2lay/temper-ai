@@ -100,8 +100,12 @@ class TestTemplateManifest:
 
     def test_all_valid_product_types(self):
         valid_types = [
-            "web_app", "mobile_app", "api",
-            "data_product", "data_pipeline", "cli_tool",
+            "web_app",
+            "mobile_app",
+            "api",
+            "data_product",
+            "data_pipeline",
+            "cli_tool",
         ]
         for pt in valid_types:
             m = TemplateManifest(

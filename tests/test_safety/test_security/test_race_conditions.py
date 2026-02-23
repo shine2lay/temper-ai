@@ -4,6 +4,7 @@ Race condition and concurrency security tests.
 Tests for race conditions in shared state, concurrent workflow execution,
 and multi-agent data integrity.
 """
+
 import asyncio
 import tempfile
 import threading
@@ -40,8 +41,9 @@ class TestRaceConditions:
 
         # Without locking, counter will be < 1000 (race condition)
         # This is the EXPECTED FAILURE demonstrating the problem
-        assert state["counter"] < 1000, \
-            f"Race condition should occur! Got {state['counter']}, expected <1000"
+        assert (
+            state["counter"] < 1000
+        ), f"Race condition should occur! Got {state['counter']}, expected <1000"
 
     @pytest.mark.asyncio
     async def test_shared_state_race_condition_protected(self):
@@ -66,8 +68,9 @@ class TestRaceConditions:
         await asyncio.gather(*tasks)
 
         # With locking, counter should be exactly 1000
-        assert state["counter"] == 1000, \
-            f"Locking should prevent race condition! Got {state['counter']}"
+        assert (
+            state["counter"] == 1000
+        ), f"Locking should prevent race condition! Got {state['counter']}"
 
     @pytest.mark.asyncio
     async def test_agent_deadlock_detection(self):
@@ -98,10 +101,7 @@ class TestRaceConditions:
 
         # Should timeout rather than deadlock forever
         with pytest.raises(asyncio.TimeoutError):
-            await asyncio.wait_for(
-                asyncio.gather(agent_1(), agent_2()),
-                timeout=2.0
-            )
+            await asyncio.wait_for(asyncio.gather(agent_1(), agent_2()), timeout=2.0)
 
     @pytest.mark.asyncio
     async def test_file_write_race_condition(self):
@@ -134,12 +134,13 @@ class TestRaceConditions:
 
             # Count total lines written
             content = file_path.read_text()
-            lines = [line for line in content.split('\n') if line.strip()]
+            lines = [line for line in content.split("\n") if line.strip()]
 
             # Should have 50 lines (5 agents × 10 lines), but likely less due to race
             # This demonstrates the problem - lines are lost
-            assert len(lines) < 50, \
-                f"Race condition should cause lost writes! Got {len(lines)} lines, expected <50"
+            assert (
+                len(lines) < 50
+            ), f"Race condition should cause lost writes! Got {len(lines)} lines, expected <50"
 
     @pytest.mark.asyncio
     async def test_counter_increment_with_threading_lock(self):
@@ -166,8 +167,9 @@ class TestRaceConditions:
                 future.result()
 
         # With threading lock, should be exactly 1000
-        assert state["counter"] == 1000, \
-            f"Threading lock should prevent race! Got {state['counter']}"
+        assert (
+            state["counter"] == 1000
+        ), f"Threading lock should prevent race! Got {state['counter']}"
 
 
 class TestAsyncExceptionSafety:
@@ -206,8 +208,9 @@ class TestAsyncExceptionSafety:
         assert len(exceptions) == 5, f"Expected 5 exceptions, got {len(exceptions)}"
 
         # Verify all 10 cleanup calls happened
-        assert cleanup_called["count"] == 10, \
-            f"Cleanup should run for all tasks! Got {cleanup_called['count']}"
+        assert (
+            cleanup_called["count"] == 10
+        ), f"Cleanup should run for all tasks! Got {cleanup_called['count']}"
 
     @pytest.mark.asyncio
     async def test_async_resource_cleanup_on_cancellation(self):
@@ -303,8 +306,7 @@ class TestMemoryLeaks:
         batch_size = 100
         for batch_start in range(0, 1000, batch_size):
             tasks = [
-                mini_workflow(i)
-                for i in range(batch_start, batch_start + batch_size)
+                mini_workflow(i) for i in range(batch_start, batch_start + batch_size)
             ]
             await asyncio.gather(*tasks)
 
@@ -320,8 +322,9 @@ class TestMemoryLeaks:
         # Allow 10% growth for interpreter overhead
         max_allowed = baseline_objects * 1.1
 
-        assert final_objects < max_allowed, \
-            f"Memory leak detected! Objects grew from {baseline_objects} to {final_objects}"
+        assert (
+            final_objects < max_allowed
+        ), f"Memory leak detected! Objects grew from {baseline_objects} to {final_objects}"
 
     @pytest.mark.asyncio
     async def test_no_task_leak_in_concurrent_execution(self):
@@ -340,8 +343,9 @@ class TestMemoryLeaks:
         final_tasks = len(asyncio.all_tasks())
 
         # Should not accumulate tasks (allow current test task)
-        assert final_tasks <= initial_tasks + 1, \
-            f"Task leak detected! Tasks grew from {initial_tasks} to {final_tasks}"
+        assert (
+            final_tasks <= initial_tasks + 1
+        ), f"Task leak detected! Tasks grew from {initial_tasks} to {final_tasks}"
 
     @pytest.mark.asyncio
     async def test_no_lock_leak_in_concurrent_access(self):
@@ -368,8 +372,9 @@ class TestMemoryLeaks:
             await access_with_exception()
 
         # Verify both accessed (lock wasn't leaked)
-        assert access_count["count"] == 2, \
-            f"Lock leak prevented second access! Only {access_count['count']} accesses"
+        assert (
+            access_count["count"] == 2
+        ), f"Lock leak prevented second access! Only {access_count['count']} accesses"
 
 
 class TestDataIntegrity:
@@ -396,12 +401,10 @@ class TestDataIntegrity:
         await asyncio.gather(*tasks)
 
         # Should have 1000 items (append is thread-safe)
-        assert len(shared_list) == 1000, \
-            f"Expected 1000 items, got {len(shared_list)}"
+        assert len(shared_list) == 1000, f"Expected 1000 items, got {len(shared_list)}"
 
         # All items should be unique
-        assert len(set(shared_list)) == 1000, \
-            "Duplicate items detected!"
+        assert len(set(shared_list)) == 1000, "Duplicate items detected!"
 
     @pytest.mark.asyncio
     async def test_dict_update_race_condition(self):
@@ -425,5 +428,6 @@ class TestDataIntegrity:
         await asyncio.gather(*tasks)
 
         # With locking, should be exactly 100
-        assert shared_dict["counter"] == 100, \
-            f"Expected 100, got {shared_dict['counter']}"
+        assert (
+            shared_dict["counter"] == 100
+        ), f"Expected 100, got {shared_dict['counter']}"

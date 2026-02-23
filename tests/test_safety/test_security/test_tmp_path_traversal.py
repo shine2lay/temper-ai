@@ -7,6 +7,7 @@ Ensures that /tmp access is blocked and dedicated temp directory prevents:
 - Path traversal outside allowed_root
 - TOCTOU vulnerabilities
 """
+
 from pathlib import Path
 
 import pytest
@@ -174,8 +175,7 @@ class TestDedicatedTempDirectory:
     def test_temp_directory_can_be_disabled(self, tmp_path):
         """Verify temp directory can be disabled."""
         validator = PathSafetyValidator(
-            allowed_root=tmp_path,
-            enable_temp_directory=False
+            allowed_root=tmp_path, enable_temp_directory=False
         )
 
         assert validator.temp_dir is None
@@ -223,8 +223,7 @@ class TestDedicatedTempDirectory:
     def test_get_temp_path_when_disabled_raises_error(self, tmp_path):
         """Verify get_temp_path raises error when temp dir is disabled."""
         validator = PathSafetyValidator(
-            allowed_root=tmp_path,
-            enable_temp_directory=False
+            allowed_root=tmp_path, enable_temp_directory=False
         )
 
         with pytest.raises(PathSafetyError, match="disabled"):
@@ -270,8 +269,7 @@ class TestDedicatedTempDirectory:
     def test_cleanup_when_disabled_raises_error(self, tmp_path):
         """Verify cleanup raises error when temp dir is disabled."""
         validator = PathSafetyValidator(
-            allowed_root=tmp_path,
-            enable_temp_directory=False
+            allowed_root=tmp_path, enable_temp_directory=False
         )
 
         with pytest.raises(PathSafetyError, match="disabled"):
@@ -459,5 +457,7 @@ class TestBackwardCompatibility:
         validator = PathSafetyValidator(allowed_root=tmp_path)
 
         # Should still block /etc (caught by "outside allowed root" or "Forbidden path")
-        with pytest.raises(PathSafetyError, match="outside allowed root|Forbidden path"):
+        with pytest.raises(
+            PathSafetyError, match="outside allowed root|Forbidden path"
+        ):
             validator.validate_path("/etc/passwd")

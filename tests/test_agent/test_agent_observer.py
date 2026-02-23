@@ -6,8 +6,8 @@ Tests cover:
 - track_llm_call (success, no-op when inactive, exception handling)
 - track_tool_call (success, no-op when inactive, exception handling)
 """
-from unittest.mock import MagicMock
 
+from unittest.mock import MagicMock
 
 from temper_ai.agent.utils.agent_observer import AgentObserver
 
@@ -79,10 +79,14 @@ class TestTrackLLMCall:
         observer = AgentObserver(tracker, ctx)
 
         observer.track_llm_call(
-            provider="ollama", model="qwen3",
-            prompt="test", response="ok",
-            prompt_tokens=10, completion_tokens=5,
-            latency_ms=100, estimated_cost_usd=0.001,
+            provider="ollama",
+            model="qwen3",
+            prompt="test",
+            response="ok",
+            prompt_tokens=10,
+            completion_tokens=5,
+            latency_ms=100,
+            estimated_cost_usd=0.001,
         )
         tracker.track_llm_call.assert_called_once()
         data = tracker.track_llm_call.call_args[0][0]

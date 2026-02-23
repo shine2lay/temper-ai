@@ -10,10 +10,19 @@ Key capabilities (captures runtime edge routing, negotiation, dynamic parallelis
 - Supports agent-to-agent negotiation via structured markers in output
 - Dynamic edge routing (_next_stage signals) for runtime-determined flow
 """
+
 import asyncio
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
+from temper_ai.safety.factory import create_safety_stack
+from temper_ai.stage.executors import (
+    AdaptiveStageExecutor,
+    ParallelStageExecutor,
+    SequentialStageExecutor,
+)
+from temper_ai.tools.executor import ToolExecutor
+from temper_ai.tools.registry import ToolRegistry
 from temper_ai.workflow.condition_evaluator import ConditionEvaluator
 from temper_ai.workflow.config_loader import ConfigLoader
 from temper_ai.workflow.engines.workflow_executor import WorkflowExecutor
@@ -23,16 +32,8 @@ from temper_ai.workflow.execution_engine import (
     ExecutionMode,
     WorkflowCancelledError,
 )
-from temper_ai.stage.executors import (
-    AdaptiveStageExecutor,
-    ParallelStageExecutor,
-    SequentialStageExecutor,
-)
 from temper_ai.workflow.node_builder import NodeBuilder
 from temper_ai.workflow.state_manager import initialize_state
-from temper_ai.safety.factory import create_safety_stack
-from temper_ai.tools.executor import ToolExecutor
-from temper_ai.tools.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -47,15 +48,15 @@ class DynamicCompiledWorkflow(CompiledWorkflow):
     def __init__(
         self,
         workflow_executor: WorkflowExecutor,
-        workflow_config: Dict[str, Any],
-        stage_refs: List[Any],
+        workflow_config: dict[str, Any],
+        stage_refs: list[Any],
     ) -> None:
         self.workflow_executor = workflow_executor
         self.workflow_config = workflow_config
         self.stage_refs = stage_refs
         self._cancelled = False
 
-    def invoke(self, state: Dict[str, Any]) -> Dict[str, Any]:
+    def invoke(self, state: dict[str, Any]) -> dict[str, Any]:
         """Execute workflow synchronously.
 
         Args:
@@ -75,10 +76,12 @@ class DynamicCompiledWorkflow(CompiledWorkflow):
         state.setdefault("current_stage", "")
 
         return self.workflow_executor.run(
-            self.stage_refs, self.workflow_config, state,
+            self.stage_refs,
+            self.workflow_config,
+            state,
         )
 
-    async def ainvoke(self, state: Dict[str, Any]) -> Dict[str, Any]:
+    async def ainvoke(self, state: dict[str, Any]) -> dict[str, Any]:
         """Execute workflow asynchronously (runs sync in thread).
 
         Args:
@@ -95,10 +98,12 @@ class DynamicCompiledWorkflow(CompiledWorkflow):
 
         return await asyncio.to_thread(
             self.workflow_executor.run,
-            self.stage_refs, self.workflow_config, state,
+            self.stage_refs,
+            self.workflow_config,
+            state,
         )
 
-    def get_metadata(self) -> Dict[str, Any]:
+    def get_metadata(self) -> dict[str, Any]:
         """Get workflow metadata."""
         workflow = self.workflow_config.get("workflow", self.workflow_config)
         stages = workflow.get("stages", [])
@@ -140,7 +145,7 @@ class DynamicCompiledWorkflow(CompiledWorkflow):
         return self._cancelled
 
     @staticmethod
-    def _extract_stage_names(stages: List[Any]) -> List[str]:
+    def _extract_stage_names(stages: list[Any]) -> list[str]:
         """Extract stage names from various stage formats."""
         names = []
         for stage in stages:
@@ -183,11 +188,11 @@ class DynamicExecutionEngine(ExecutionEngine):
 
     def __init__(
         self,
-        tool_registry: Optional[ToolRegistry] = None,
-        config_loader: Optional[ConfigLoader] = None,
-        tool_executor: Optional[ToolExecutor] = None,
-        safety_config_path: Optional[str] = None,
-        safety_environment: Optional[str] = None,
+        tool_registry: ToolRegistry | None = None,
+        config_loader: ConfigLoader | None = None,
+        tool_executor: ToolExecutor | None = None,
+        safety_config_path: str | None = None,
+        safety_environment: str | None = None,
     ) -> None:
         self.tool_registry = tool_registry or ToolRegistry()
         self.config_loader = config_loader or ConfigLoader()
@@ -206,6 +211,7 @@ class DynamicExecutionEngine(ExecutionEngine):
     def _initialize_components(self) -> None:
         """Initialize the component hierarchy."""
         from temper_ai.workflow.engines.dynamic_runner import ThreadPoolParallelRunner
+
         runner = ThreadPoolParallelRunner()
 
         self.executors = {
@@ -222,6 +228,7 @@ class DynamicExecutionEngine(ExecutionEngine):
         }
 
         from temper_ai.workflow.context_provider import SourceResolver
+
         self.context_provider = SourceResolver()
         self._predecessor_injection = False
 
@@ -242,7 +249,10 @@ class DynamicExecutionEngine(ExecutionEngine):
         SourceResolver. Stages without explicit inputs will receive
         outputs from DAG predecessors only (not full state).
         """
-        from temper_ai.workflow.context_provider import PredecessorResolver, SourceResolver
+        from temper_ai.workflow.context_provider import (
+            PredecessorResolver,
+            SourceResolver,
+        )
 
         predecessor_resolver = PredecessorResolver()
         self.context_provider = SourceResolver(fallback=predecessor_resolver)
@@ -252,7 +262,7 @@ class DynamicExecutionEngine(ExecutionEngine):
         for executor in self.executors.values():
             executor.context_provider = self.context_provider
 
-    def compile(self, workflow_config: Dict[str, Any]) -> CompiledWorkflow:
+    def compile(self, workflow_config: dict[str, Any]) -> CompiledWorkflow:
         """Compile workflow configuration into dynamic executable form.
 
         Args:
@@ -280,6 +290,7 @@ class DynamicExecutionEngine(ExecutionEngine):
 
         # Set up output extractor
         from temper_ai.workflow.output_extractor import get_extractor
+
         extractor = get_extractor(workflow_config)
         for executor in self.executors.values():
             executor.output_extractor = extractor
@@ -303,9 +314,9 @@ class DynamicExecutionEngine(ExecutionEngine):
     def execute(
         self,
         compiled_workflow: CompiledWorkflow,
-        input_data: Dict[str, Any],
+        input_data: dict[str, Any],
         mode: ExecutionMode = ExecutionMode.SYNC,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Execute compiled workflow.
 
         Args:
@@ -349,9 +360,9 @@ class DynamicExecutionEngine(ExecutionEngine):
     async def async_execute(
         self,
         compiled_workflow: CompiledWorkflow,
-        input_data: Dict[str, Any],
+        input_data: dict[str, Any],
         mode: ExecutionMode = ExecutionMode.ASYNC,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Execute compiled workflow asynchronously.
 
         Args:
@@ -375,7 +386,8 @@ class DynamicExecutionEngine(ExecutionEngine):
 
         if mode == ExecutionMode.SYNC:
             return await asyncio.to_thread(
-                compiled_workflow.invoke, state,  # type: ignore[arg-type]
+                compiled_workflow.invoke,
+                state,  # type: ignore[arg-type]
             )
 
         return await compiled_workflow.ainvoke(state)  # type: ignore[arg-type]
@@ -405,19 +417,23 @@ class DynamicExecutionEngine(ExecutionEngine):
 
     def _validate_all_configs(
         self,
-        stages: List[Any],
-        workflow_config: Dict[str, Any],
+        stages: list[Any],
+        workflow_config: dict[str, Any],
     ) -> None:
         """Validate all stage and agent configs against schemas."""
         errors: list[str] = []
         for stage_ref in stages:
             stage_name = self.node_builder.extract_stage_name(stage_ref)
             stage_config = self._validate_stage_config(
-                stage_name, workflow_config, errors,
+                stage_name,
+                workflow_config,
+                errors,
             )
             if stage_config is not None:
                 self._validate_agent_configs_for_stage(
-                    stage_config, stage_name, errors,
+                    stage_config,
+                    stage_name,
+                    errors,
                 )
 
         if errors:
@@ -431,18 +447,19 @@ class DynamicExecutionEngine(ExecutionEngine):
     def _validate_stage_config(
         self,
         stage_name: str,
-        workflow_config: Dict[str, Any],
+        workflow_config: dict[str, Any],
         errors: list,
     ) -> Any:
         """Load and validate a single stage config. Returns config or None."""
         from pydantic import ValidationError
 
-        from temper_ai.workflow.constants import ERROR_MSG_STAGE_PREFIX
         from temper_ai.stage._schemas import StageConfig
+        from temper_ai.workflow.constants import ERROR_MSG_STAGE_PREFIX
 
         try:
             stage_config = self.node_builder._load_stage_config(
-                stage_name, workflow_config,
+                stage_name,
+                workflow_config,
             )
         except (FileNotFoundError, ValueError, KeyError) as e:
             errors.append(
@@ -457,7 +474,9 @@ class DynamicExecutionEngine(ExecutionEngine):
             except ValidationError as e:
                 logger.warning(
                     "%s%s': Config schema warnings - %s",
-                    ERROR_MSG_STAGE_PREFIX, stage_name, e,
+                    ERROR_MSG_STAGE_PREFIX,
+                    stage_name,
+                    e,
                 )
 
         return stage_config
@@ -471,9 +490,11 @@ class DynamicExecutionEngine(ExecutionEngine):
         """Validate agent configs within a stage."""
         from pydantic import ValidationError
 
-        from temper_ai.workflow.constants import ERROR_MSG_AGENT_PREFIX
-        from temper_ai.workflow.engines.langgraph_compiler import _extract_agents_from_stage
         from temper_ai.storage.schemas.agent_config import AgentConfig
+        from temper_ai.workflow.constants import ERROR_MSG_AGENT_PREFIX
+        from temper_ai.workflow.engines.langgraph_compiler import (
+            _extract_agents_from_stage,
+        )
 
         agents = _extract_agents_from_stage(stage_config)
         for agent_ref in agents:
@@ -493,5 +514,8 @@ class DynamicExecutionEngine(ExecutionEngine):
                 except ValidationError as e:
                     logger.warning(
                         "%s%s' in stage '%s': Config schema warnings - %s",
-                        ERROR_MSG_AGENT_PREFIX, agent_name, stage_name, e,
+                        ERROR_MSG_AGENT_PREFIX,
+                        agent_name,
+                        stage_name,
+                        e,
                     )

@@ -9,7 +9,7 @@ by MultiRoundStrategy.
 
 import logging
 import warnings
-from typing import Any, Optional
+from typing import Any
 
 from temper_ai.agent.strategies.multi_round import (
     CommunicationHistory,
@@ -41,10 +41,15 @@ class DialogueOrchestrator(MultiRoundStrategy):
     def warm_up(cls) -> bool:
         """Preload the SentenceTransformer model for semantic convergence."""
         try:
-            from sentence_transformers import SentenceTransformer  # type: ignore[import-not-found]
+            from sentence_transformers import (
+                SentenceTransformer,  # type: ignore[import-not-found]
+            )
+
             if not cls._embedding_model_loaded:
-                logger.info("Loading sentence-transformers model (paraphrase-MiniLM-L6-v2)...")
-                cls._embedding_model = SentenceTransformer('paraphrase-MiniLM-L6-v2')
+                logger.info(
+                    "Loading sentence-transformers model (paraphrase-MiniLM-L6-v2)..."
+                )
+                cls._embedding_model = SentenceTransformer("paraphrase-MiniLM-L6-v2")
                 cls._embedding_model_loaded = True
             return True
         except ImportError:
@@ -59,16 +64,16 @@ class DialogueOrchestrator(MultiRoundStrategy):
 
     def __init__(  # noqa: params — legacy compat, delegates to MultiRoundConfig
         self,
-        config: Optional[MultiRoundConfig] = None,
+        config: MultiRoundConfig | None = None,
         max_rounds: int = DEFAULT_MAX_ROUNDS,
         convergence_threshold: float = DEFAULT_CONVERGENCE_THRESHOLD,
-        cost_budget_usd: Optional[float] = None,
+        cost_budget_usd: float | None = None,
         min_rounds: int = 1,
         use_semantic_convergence: bool = True,
         context_strategy: str = "full",
         context_window_size: int = 2,
         use_merit_weighting: bool = False,
-        merit_domain: Optional[str] = None,
+        merit_domain: str | None = None,
         **kwargs: Any,
     ) -> None:
         warnings.warn(

@@ -25,15 +25,15 @@ def config_loader(temp_config_dir):
 class TestEnvironmentVariableInjection:
     """Test security against environment variable injection attacks."""
 
-    @pytest.mark.skip(reason="Python os.environ rejects null bytes before our code can validate them")
+    @pytest.mark.skip(
+        reason="Python os.environ rejects null bytes before our code can validate them"
+    )
     def test_env_var_with_null_byte(self, config_loader, monkeypatch):
         """Test that null bytes in env vars are rejected."""
         # Set env var with null byte
         monkeypatch.setenv("MALICIOUS_VAR", "value\x00injection")
 
-        config = {
-            "api_key": "${MALICIOUS_VAR}"
-        }
+        config = {"api_key": "${MALICIOUS_VAR}"}
 
         with pytest.raises(ConfigValidationError, match="null bytes"):
             config_loader._substitute_env_vars(config)
@@ -43,11 +43,11 @@ class TestEnvironmentVariableInjection:
         # Set env var with path traversal
         monkeypatch.setenv("CONFIG_PATH", "../../../etc/passwd")
 
-        config = {
-            "config_path": "${CONFIG_PATH}"
-        }
+        config = {"config_path": "${CONFIG_PATH}"}
 
-        with pytest.raises(ConfigValidationError, match="path traversal|Path escapes base directory"):
+        with pytest.raises(
+            ConfigValidationError, match="path traversal|Path escapes base directory"
+        ):
             config_loader._substitute_env_vars(config)
 
     def test_env_var_path_traversal_non_path_var(self, config_loader, monkeypatch):
@@ -55,9 +55,7 @@ class TestEnvironmentVariableInjection:
         # Set env var with ../ but not in a path-like variable
         monkeypatch.setenv("SOME_VALUE", "../data")
 
-        config = {
-            "some_value": "${SOME_VALUE}"  # Not a path-like variable name
-        }
+        config = {"some_value": "${SOME_VALUE}"}  # Not a path-like variable name
 
         # Should work fine since it's not a path variable
         result = config_loader._substitute_env_vars(config)
@@ -69,9 +67,7 @@ class TestEnvironmentVariableInjection:
         long_value = "A" * (10 * 1024 + 1)
         monkeypatch.setenv("LONG_VAR", long_value)
 
-        config = {
-            "value": "${LONG_VAR}"
-        }
+        config = {"value": "${LONG_VAR}"}
 
         with pytest.raises(ConfigValidationError, match="value too long"):
             config_loader._substitute_env_vars(config)
@@ -82,9 +78,7 @@ class TestEnvironmentVariableInjection:
         reasonable_value = "A" * (5 * 1024)
         monkeypatch.setenv("REASONABLE_VAR", reasonable_value)
 
-        config = {
-            "value": "${REASONABLE_VAR}"
-        }
+        config = {"value": "${REASONABLE_VAR}"}
 
         result = config_loader._substitute_env_vars(config)
         assert result["value"] == reasonable_value
@@ -94,10 +88,7 @@ class TestEnvironmentVariableInjection:
         monkeypatch.setenv("API_KEY", "sk-test123")
         monkeypatch.setenv("BASE_URL", "https://api.example.com")
 
-        config = {
-            "api_key": "${API_KEY}",
-            "base_url": "${BASE_URL}"
-        }
+        config = {"api_key": "${API_KEY}", "base_url": "${BASE_URL}"}
 
         result = config_loader._substitute_env_vars(config)
         assert result["api_key"] == "sk-test123"
@@ -105,18 +96,14 @@ class TestEnvironmentVariableInjection:
 
     def test_env_var_with_default(self, config_loader):
         """Test env var with default value."""
-        config = {
-            "api_key": "${MISSING_VAR:default_value}"
-        }
+        config = {"api_key": "${MISSING_VAR:default_value}"}
 
         result = config_loader._substitute_env_vars(config)
         assert result["api_key"] == "default_value"
 
     def test_env_var_missing_without_default(self, config_loader):
         """Test that missing required env var raises error."""
-        config = {
-            "api_key": "${REQUIRED_MISSING_VAR}"
-        }
+        config = {"api_key": "${REQUIRED_MISSING_VAR}"}
 
         with pytest.raises(ConfigValidationError, match="required but not set"):
             config_loader._substitute_env_vars(config)
@@ -128,10 +115,7 @@ class TestEnvironmentVariableInjection:
 
         config = {
             "agent": {
-                "inference": {
-                    "model": "${MODEL_NAME}",
-                    "temperature": "${TEMPERATURE}"
-                }
+                "inference": {"model": "${MODEL_NAME}", "temperature": "${TEMPERATURE}"}
             }
         }
 
@@ -144,9 +128,7 @@ class TestEnvironmentVariableInjection:
         monkeypatch.setenv("TAG1", "production")
         monkeypatch.setenv("TAG2", "v1.0")
 
-        config = {
-            "tags": ["${TAG1}", "${TAG2}", "manual"]
-        }
+        config = {"tags": ["${TAG1}", "${TAG2}", "manual"]}
 
         result = config_loader._substitute_env_vars(config)
         assert result["tags"] == ["production", "v1.0", "manual"]
@@ -155,9 +137,7 @@ class TestEnvironmentVariableInjection:
         """Test that env vars can be part of larger strings."""
         monkeypatch.setenv("VERSION", "1.0")
 
-        config = {
-            "name": "app-${VERSION}-release"
-        }
+        config = {"name": "app-${VERSION}-release"}
 
         result = config_loader._substitute_env_vars(config)
         assert result["name"] == "app-1.0-release"
@@ -167,9 +147,7 @@ class TestEnvironmentVariableInjection:
         monkeypatch.setenv("HOST", "api.example.com")
         monkeypatch.setenv("PORT", "8080")
 
-        config = {
-            "url": "https://${HOST}:${PORT}/v1"
-        }
+        config = {"url": "https://${HOST}:${PORT}/v1"}
 
         result = config_loader._substitute_env_vars(config)
         assert result["url"] == "https://api.example.com:8080/v1"
@@ -196,8 +174,7 @@ class TestPathTraversalInPrompts:
         prompt_file.write_text("Hello {{name}}!")
 
         result = config_loader.load_prompt_template(
-            "test.txt",
-            variables={"name": "World"}
+            "test.txt", variables={"name": "World"}
         )
         assert result == "Hello World!"
 
@@ -210,8 +187,7 @@ class TestPathTraversalInPrompts:
         prompt_file.write_text("Agent prompt: {{task}}")
 
         result = config_loader.load_prompt_template(
-            "templates/agent.txt",
-            variables={"task": "research"}
+            "templates/agent.txt", variables={"task": "research"}
         )
         assert result == "Agent prompt: research"
 
@@ -277,24 +253,25 @@ class TestSecurityEdgeCases:
         # Env vars with shell metacharacters — now rejected by stricter validator
         monkeypatch.setenv("SPECIAL_VAR", "value; rm -rf /")
 
-        config = {
-            "command": "${SPECIAL_VAR}"
-        }
+        config = {"command": "${SPECIAL_VAR}"}
 
         # Stricter context-aware validation now rejects dangerous characters
-        with pytest.raises(ConfigValidationError, match="dangerous pattern|invalid characters|Command separator"):
+        with pytest.raises(
+            ConfigValidationError,
+            match="dangerous pattern|invalid characters|Command separator",
+        ):
             config_loader._substitute_env_vars(config)
 
     def test_env_var_with_unicode_injection(self, config_loader, monkeypatch):
         """Test that unicode bidi characters in env vars are rejected by context-aware validation."""
         monkeypatch.setenv("UNICODE_VAR", "测试\u202e\u202d")
 
-        config = {
-            "value": "${UNICODE_VAR}"
-        }
+        config = {"value": "${UNICODE_VAR}"}
 
         # Stricter validation now rejects bidi override characters as dangerous
-        with pytest.raises(ConfigValidationError, match="invalid characters|dangerous|bidi"):
+        with pytest.raises(
+            ConfigValidationError, match="invalid characters|dangerous|bidi"
+        ):
             config_loader._substitute_env_vars(config)
 
     def test_deeply_nested_substitution(self, config_loader, monkeypatch):
@@ -302,12 +279,7 @@ class TestSecurityEdgeCases:
         for i in range(20):
             monkeypatch.setenv(f"VAR{i}", f"value{i}")
 
-        config = {
-            f"level{i}": {
-                "value": f"${{VAR{i}}}"
-            }
-            for i in range(20)
-        }
+        config = {f"level{i}": {"value": f"${{VAR{i}}}"} for i in range(20)}
 
         result = config_loader._substitute_env_vars(config)
         for i in range(20):
@@ -319,13 +291,13 @@ class TestSecurityEdgeCases:
         monkeypatch.setenv("VAR1", "${VAR2}")
         monkeypatch.setenv("VAR2", "${VAR1}")
 
-        config = {
-            "value": "${VAR1}"
-        }
+        config = {"value": "${VAR1}"}
 
         # The stricter validator rejects values with ${} patterns or special chars
         # This is actually better than allowing circular references
-        with pytest.raises(ConfigValidationError, match="invalid characters|validation"):
+        with pytest.raises(
+            ConfigValidationError, match="invalid characters|validation"
+        ):
             config_loader._substitute_env_vars(config)
 
 
@@ -356,13 +328,20 @@ f: &f [*e,*e,*e,*e,*e,*e,*e,*e,*e]
             result = config_loader.load_agent("bomb", validate=False)
             # If it loads successfully, verify it's not excessively large
             import sys
+
             size = sys.getsizeof(result)
             # Should be reasonable size (< 10MB)
             assert size < 10 * 1024 * 1024, f"YAML expanded to {size} bytes"
         except (ConfigValidationError, MemoryError, RecursionError) as e:
             # Also acceptable to reject it entirely
             err_msg = str(e).lower()
-            assert "too large" in err_msg or "recursion" in err_msg or "memory" in err_msg or "node count" in err_msg or "yaml bomb" in err_msg
+            assert (
+                "too large" in err_msg
+                or "recursion" in err_msg
+                or "memory" in err_msg
+                or "node count" in err_msg
+                or "yaml bomb" in err_msg
+            )
 
     def test_deeply_nested_yaml_structure(self, config_loader, temp_config_dir):
         """Test that excessively deep YAML nesting is handled."""
@@ -466,6 +445,7 @@ class TestSymlinkAttackPrevention:
     def test_symlink_to_system_files(self, config_loader, temp_config_dir):
         """Test that symlinks to /etc are rejected."""
         import platform
+
         if platform.system() == "Windows":
             pytest.skip("Symlink test not applicable on Windows")
 
@@ -484,6 +464,7 @@ class TestSymlinkAttackPrevention:
     def test_symlink_outside_project_directory(self, config_loader, temp_config_dir):
         """Test that symlinks outside project directory are rejected."""
         import platform
+
         if platform.system() == "Windows":
             pytest.skip("Symlink test not applicable on Windows")
 
@@ -503,6 +484,7 @@ class TestSymlinkAttackPrevention:
     def test_symlink_traversal_attack(self, config_loader, temp_config_dir):
         """Test symlink traversal attacks are blocked."""
         import platform
+
         if platform.system() == "Windows":
             pytest.skip("Symlink test not applicable on Windows")
 
@@ -525,6 +507,7 @@ class TestSymlinkAttackPrevention:
     def test_relative_symlink_within_prompts(self, config_loader, temp_config_dir):
         """Test that symlinks within prompts directory are allowed."""
         import platform
+
         if platform.system() == "Windows":
             pytest.skip("Symlink test not applicable on Windows")
 
@@ -555,7 +538,7 @@ class TestResourceLimits:
         large_file = temp_config_dir / "agents" / "huge.yaml"
 
         # Write in chunks to avoid memory issues
-        with open(large_file, 'w') as f:
+        with open(large_file, "w") as f:
             f.write("agent:\n  name: test\n  data:\n")
             # Write ~11MB of data
             for i in range(550000):  # ~11MB
@@ -570,7 +553,7 @@ class TestResourceLimits:
         # Create 1MB file (well under 10MB limit)
         reasonable_file = temp_config_dir / "agents" / "reasonable.yaml"
 
-        with open(reasonable_file, 'w') as f:
+        with open(reasonable_file, "w") as f:
             f.write("agent:\n  name: test\n  data:\n")
             # Write ~1MB of data
             for i in range(50000):

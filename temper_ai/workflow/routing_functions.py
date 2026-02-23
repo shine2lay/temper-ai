@@ -7,17 +7,19 @@ Example:
     >>> router = create_conditional_router(stage_ref, "next_stage", 1, stages, evaluator)
     >>> target = router(state)  # returns "fix" or "next_stage" or "__end__"
 """
+
 import logging
-from typing import Any, Callable, Dict, List, Optional, Union, cast
+from collections.abc import Callable
+from typing import Any, cast
 
 from langgraph.graph import END
 
+from temper_ai.stage.executors.state_keys import StateKeys
 from temper_ai.workflow.condition_evaluator import (
     ConditionEvaluator,
     get_default_condition,
     get_default_loop_condition,
 )
-from temper_ai.stage.executors.state_keys import StateKeys
 
 logger = logging.getLogger(__name__)
 
@@ -33,11 +35,11 @@ def _ref_attr(ref: Any, attr: str, default: Any = None) -> Any:
 
 def create_conditional_router(
     stage_ref: Any,
-    next_stage: Optional[str],
+    next_stage: str | None,
     stage_index: int,
-    all_stages: List[Any],
+    all_stages: list[Any],
     evaluator: ConditionEvaluator,
-) -> Callable[[Dict[str, Any]], str]:
+) -> Callable[[dict[str, Any]], str]:
     """Create a router for a conditional stage (skip_if / condition).
 
     The router decides whether the *next* stage should execute or be skipped.
@@ -53,7 +55,9 @@ def create_conditional_router(
     Returns:
         Callable that takes state dict and returns target node name
     """
-    target_name = stage_ref if isinstance(stage_ref, str) else _ref_attr(stage_ref, "name")
+    target_name = (
+        stage_ref if isinstance(stage_ref, str) else _ref_attr(stage_ref, "name")
+    )
     skip_target = next_stage or END
 
     # Determine condition to evaluate
@@ -62,28 +66,31 @@ def create_conditional_router(
 
     if skip_if:
         # skip_if: if True, skip the stage
-        def _skip_if_router(state: Dict[str, Any]) -> str:
+        def _skip_if_router(state: dict[str, Any]) -> str:
             state_dict = _to_dict(state)
             if evaluator.evaluate(skip_if, state_dict):
                 logger.info("Skipping stage %r (skip_if condition met)", target_name)
                 return skip_target
             return target_name
+
         return _skip_if_router
 
     if condition:
         # condition: if True, execute the stage
-        def _condition_router(state: Dict[str, Any]) -> str:
+        def _condition_router(state: dict[str, Any]) -> str:
             state_dict = _to_dict(state)
             if evaluator.evaluate(condition, state_dict):
                 return target_name
             logger.info("Skipping stage %r (condition not met)", target_name)
             return skip_target
+
         return _condition_router
 
     # Default condition: previous stage failed/degraded → execute
     default_cond = get_default_condition(stage_index, all_stages)
     if default_cond:
-        def _default_router(state: Dict[str, Any]) -> str:
+
+        def _default_router(state: dict[str, Any]) -> str:
             state_dict = _to_dict(state)
             if evaluator.evaluate(default_cond, state_dict):
                 return target_name
@@ -92,19 +99,21 @@ def create_conditional_router(
                 target_name,
             )
             return skip_target
+
         return _default_router
 
     # No condition resolvable — always execute
-    def _always_router(_state: Dict[str, Any]) -> str:
+    def _always_router(_state: dict[str, Any]) -> str:
         return target_name
+
     return _always_router
 
 
 def create_loop_router(
     stage_ref: Any,
-    exit_targets: Union[Optional[str], List[Optional[str]]],
+    exit_targets: str | None | list[str | None],
     evaluator: ConditionEvaluator,
-) -> Callable[[Dict[str, Any]], Any]:
+) -> Callable[[dict[str, Any]], Any]:
     """Create a router for a stage with loops_back_to.
 
     Placed on the edge *after* the looping stage. Decides whether to
@@ -121,7 +130,9 @@ def create_loop_router(
     Returns:
         Callable that takes state dict and returns target(s)
     """
-    source_name = _ref_attr(stage_ref, "name") if not isinstance(stage_ref, str) else stage_ref
+    source_name = (
+        _ref_attr(stage_ref, "name") if not isinstance(stage_ref, str) else stage_ref
+    )
     loop_target = _ref_attr(stage_ref, "loops_back_to")
     max_loops = _ref_attr(stage_ref, "max_loops", 2)
     condition = _ref_attr(stage_ref, "condition")
@@ -134,21 +145,28 @@ def create_loop_router(
 
     # Determine loop condition
     explicit_loop_cond = _ref_attr(stage_ref, "loop_condition")
-    loop_condition = explicit_loop_cond or condition or get_default_loop_condition(source_name)
+    loop_condition = (
+        explicit_loop_cond or condition or get_default_loop_condition(source_name)
+    )
 
-    def _loop_router(state: Dict[str, Any]) -> Any:
+    def _loop_router(state: dict[str, Any]) -> Any:
         loop_counts = _get_loop_counts(state)
         current_count = loop_counts.get(source_name, 0)
 
         if current_count > max_loops:
-            logger.info("Stage %r reached max loops (%d), exiting", source_name, max_loops)
+            logger.info(
+                "Stage %r reached max loops (%d), exiting", source_name, max_loops
+            )
             return resolved_exits if len(resolved_exits) > 1 else resolved_exits[0]
 
         state_dict = _to_dict(state)
         if evaluator.evaluate(loop_condition, state_dict):
             logger.info(
                 "Stage %r looping back to %r (iteration %d/%d)",
-                source_name, loop_target, current_count, max_loops,
+                source_name,
+                loop_target,
+                current_count,
+                max_loops,
             )
             return loop_target
 
@@ -158,16 +176,16 @@ def create_loop_router(
     return _loop_router
 
 
-def _get_loop_counts(state: Any) -> Dict[str, int]:
+def _get_loop_counts(state: Any) -> dict[str, int]:
     """Extract loop counts from state (dict or dataclass)."""
     if isinstance(state, dict):
-        return cast(Dict[str, int], state.get(LOOP_COUNTS_KEY, {}))
+        return cast(dict[str, int], state.get(LOOP_COUNTS_KEY, {}))
     if hasattr(state, LOOP_COUNTS_KEY):
         return getattr(state, LOOP_COUNTS_KEY) or {}
     return {}
 
 
-def _to_dict(state: Any) -> Dict[str, Any]:
+def _to_dict(state: Any) -> dict[str, Any]:
     """Convert state to dict if it's a dataclass.
 
     Args:
@@ -179,7 +197,7 @@ def _to_dict(state: Any) -> Dict[str, Any]:
     if isinstance(state, dict):
         return state
     if hasattr(state, "to_dict"):
-        return cast(Dict[str, Any], state.to_dict())
+        return cast(dict[str, Any], state.to_dict())
     if hasattr(state, "__dict__"):
-        return cast(Dict[str, Any], state.__dict__)
+        return cast(dict[str, Any], state.__dict__)
     return {}

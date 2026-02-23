@@ -4,41 +4,40 @@ Verifies that LLMService.run() and LLMService.arun() emit
 LLMIterationEventData events for each loop iteration, and that
 LLMCache fires cache events through its callback.
 """
+
 from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any
 from unittest.mock import MagicMock, patch
 
-import pytest
-
-from temper_ai.llm.service import LLMService, LLMRunResult, _RunState
 from temper_ai.llm.llm_loop_events import (
-    CacheEventData,
     LLMIterationEventData,
-    emit_llm_iteration_event,
 )
-
+from temper_ai.llm.service import LLMService, _RunState
 
 # ---------------------------------------------------------------------------
 # Test fixtures
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class FakeLLMResponse:
     """Minimal LLM response for testing."""
+
     content: str = "Final answer."
     total_tokens: int = 100
     prompt_tokens: int = 50
     completion_tokens: int = 50
     latency_ms: float = 42.0
-    model: Optional[str] = "test-model"
+    model: str | None = "test-model"
 
 
 @dataclass
 class FakeInferenceConfig:
     """Minimal inference config for testing."""
+
     provider: str = "test"
     model: str = "test-model"
     temperature: float = 0.7
@@ -47,7 +46,7 @@ class FakeInferenceConfig:
 
 
 def make_llm_service(
-    responses: Optional[List[FakeLLMResponse]] = None,
+    responses: list[FakeLLMResponse] | None = None,
 ) -> tuple:
     """Create LLMService with a mock LLM that returns predefined responses.
 
@@ -79,6 +78,7 @@ def make_llm_service(
 # Tests: iteration event emission during run()
 # ---------------------------------------------------------------------------
 
+
 class TestLLMServiceIterationEvents:
     """Test that LLMService emits iteration events."""
 
@@ -87,7 +87,8 @@ class TestLLMServiceIterationEvents:
     @patch("temper_ai.llm.service.call_with_retry_sync")
     @patch("temper_ai.llm.service.track_call")
     def test_single_iteration_emits_event(
-        self, mock_track_call: MagicMock,
+        self,
+        mock_track_call: MagicMock,
         mock_retry: MagicMock,
         mock_cost: MagicMock,
         mock_emit: MagicMock,
@@ -112,7 +113,10 @@ class TestLLMServiceIterationEvents:
     @patch("temper_ai.llm.service.build_text_schemas", return_value=(None, 0))
     @patch("temper_ai.llm.service.build_native_tool_defs", return_value=(None, None))
     @patch("temper_ai.llm.service.inject_results", return_value="injected prompt")
-    @patch("temper_ai.llm.service.execute_tools", return_value=[{"name": "bash", "result": "ok"}])
+    @patch(
+        "temper_ai.llm.service.execute_tools",
+        return_value=[{"name": "bash", "result": "ok"}],
+    )
     @patch("temper_ai.llm.service.parse_tool_calls")
     @patch("temper_ai.llm.service.track_call")
     @patch("temper_ai.llm.service.call_with_retry_sync")
@@ -164,7 +168,8 @@ class TestLLMServiceIterationEvents:
     @patch("temper_ai.llm.service.call_with_retry_sync")
     @patch("temper_ai.llm.service.track_call")
     def test_none_observer_still_emits(
-        self, mock_track_call: MagicMock,
+        self,
+        mock_track_call: MagicMock,
         mock_retry: MagicMock,
         mock_cost: MagicMock,
         mock_emit: MagicMock,
@@ -183,7 +188,8 @@ class TestLLMServiceIterationEvents:
     @patch("temper_ai.llm.service.call_with_retry_sync")
     @patch("temper_ai.llm.service.track_call")
     def test_iteration_tokens_tracked(
-        self, mock_track_call: MagicMock,
+        self,
+        mock_track_call: MagicMock,
         mock_retry: MagicMock,
         mock_cost: MagicMock,
         mock_emit: MagicMock,
@@ -207,7 +213,8 @@ class TestLLMServiceIterationEventsAsync:
     @patch("temper_ai.llm.service.call_with_retry_async")
     @patch("temper_ai.llm.service.track_call")
     def test_arun_emits_iteration_event(
-        self, mock_track_call: MagicMock,
+        self,
+        mock_track_call: MagicMock,
         mock_retry: MagicMock,
         mock_cost: MagicMock,
         mock_emit: MagicMock,
@@ -253,6 +260,7 @@ class TestRunStateIterationNumber:
 # ---------------------------------------------------------------------------
 # Tests: LLMCache event callback
 # ---------------------------------------------------------------------------
+
 
 class TestLLMCacheEvents:
     """Test cache event emission via on_event callback."""

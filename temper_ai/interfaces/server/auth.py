@@ -6,6 +6,7 @@ When the ``TEMPER_API_KEY`` environment variable is set, all requests
 
 When ``TEMPER_API_KEY`` is not set, authentication is disabled (dev mode).
 """
+
 import logging
 import os
 from typing import Any
@@ -39,7 +40,9 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
         else:
             logger.info("API key authentication disabled (TEMPER_API_KEY not set)")
 
-    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+    async def dispatch(
+        self, request: Request, call_next: RequestResponseEndpoint
+    ) -> Response:
         """Check API key for non-exempt requests."""
         # No key configured → auth disabled
         if not self.api_key:

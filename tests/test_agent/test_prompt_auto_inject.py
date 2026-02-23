@@ -2,8 +2,6 @@
 
 from unittest.mock import patch
 
-import pytest
-
 from temper_ai.agent.standard_agent import StandardAgent
 from temper_ai.storage.schemas.agent_config import (
     AgentConfig,
@@ -53,8 +51,20 @@ def _make_agent(config: AgentConfig) -> StandardAgent:
 
 def _sample_dialogue_history() -> list:
     return [
-        {"agent": "skeptic", "round": 0, "output": "Wait", "reasoning": "Risk analysis", "confidence": 0.7},
-        {"agent": "optimist", "round": 0, "output": "Go", "reasoning": "Opportunity", "confidence": 0.8},
+        {
+            "agent": "skeptic",
+            "round": 0,
+            "output": "Wait",
+            "reasoning": "Risk analysis",
+            "confidence": 0.7,
+        },
+        {
+            "agent": "optimist",
+            "round": 0,
+            "output": "Go",
+            "reasoning": "Opportunity",
+            "confidence": 0.8,
+        },
     ]
 
 
@@ -62,32 +72,40 @@ class TestDialogueAutoInject:
 
     def test_injects_dialogue_history_when_dialogue_aware(self):
         agent = _make_agent(_make_config(dialogue_aware=True))
-        rendered = agent._build_prompt({
-            "dialogue_history": _sample_dialogue_history(),
-        })
+        rendered = agent._build_prompt(
+            {
+                "dialogue_history": _sample_dialogue_history(),
+            }
+        )
         assert "## Prior Dialogue" in rendered
         assert "Round 0 - skeptic" in rendered
         assert "Risk analysis" in rendered
 
     def test_no_inject_when_dialogue_aware_false(self):
         agent = _make_agent(_make_config(dialogue_aware=False))
-        rendered = agent._build_prompt({
-            "dialogue_history": _sample_dialogue_history(),
-        })
+        rendered = agent._build_prompt(
+            {
+                "dialogue_history": _sample_dialogue_history(),
+            }
+        )
         assert "## Prior Dialogue" not in rendered
 
     def test_no_inject_when_history_empty(self):
         agent = _make_agent(_make_config(dialogue_aware=True))
-        rendered = agent._build_prompt({
-            "dialogue_history": [],
-        })
+        rendered = agent._build_prompt(
+            {
+                "dialogue_history": [],
+            }
+        )
         assert "## Prior Dialogue" not in rendered
 
     def test_no_inject_when_history_none(self):
         agent = _make_agent(_make_config(dialogue_aware=True))
-        rendered = agent._build_prompt({
-            "dialogue_history": None,
-        })
+        rendered = agent._build_prompt(
+            {
+                "dialogue_history": None,
+            }
+        )
         assert "## Prior Dialogue" not in rendered
 
     def test_no_inject_when_history_absent(self):
@@ -97,23 +115,33 @@ class TestDialogueAutoInject:
 
     def test_injects_stage_agent_outputs(self):
         agent = _make_agent(_make_config(dialogue_aware=True))
-        rendered = agent._build_prompt({
-            "current_stage_agents": {"analyst": "The market is growing"},
-        })
+        rendered = agent._build_prompt(
+            {
+                "current_stage_agents": {"analyst": "The market is growing"},
+            }
+        )
         assert "## Prior Agent Outputs" in rendered
         assert "analyst" in rendered
 
     def test_no_inject_stage_agents_when_dialogue_aware_false(self):
         agent = _make_agent(_make_config(dialogue_aware=False))
-        rendered = agent._build_prompt({
-            "current_stage_agents": {"analyst": "output"},
-        })
+        rendered = agent._build_prompt(
+            {
+                "current_stage_agents": {"analyst": "output"},
+            }
+        )
         assert "## Prior Agent Outputs" not in rendered
 
     def test_respects_max_dialogue_context_chars(self):
         """Large dialogue history gets truncated."""
         history = [
-            {"agent": f"a{i}", "round": i, "output": "X" * 300, "reasoning": "Y" * 300, "confidence": 0.8}
+            {
+                "agent": f"a{i}",
+                "round": i,
+                "output": "X" * 300,
+                "reasoning": "Y" * 300,
+                "confidence": 0.8,
+            }
             for i in range(20)
         ]
         agent = _make_agent(_make_config(max_dialogue_context_chars=500))
@@ -127,11 +155,13 @@ class TestModeContextKeyExclusion:
 
     def test_mode_instruction_not_in_input_context(self):
         agent = _make_agent(_make_config())
-        rendered = agent._build_prompt({
-            "mode_instruction": "You are in a DEBATE.",
-            "interaction_mode": "debate",
-            "debate_framing": "State your position.",
-        })
+        rendered = agent._build_prompt(
+            {
+                "mode_instruction": "You are in a DEBATE.",
+                "interaction_mode": "debate",
+                "debate_framing": "State your position.",
+            }
+        )
         # These should NOT appear in the "# Input Context" section
         # (they're excluded from the string auto-inject loop)
         if "# Input Context" in rendered:
@@ -150,9 +180,9 @@ class TestBackwardCompat:
         # Simulate missing field by deleting it
         agent = _make_agent(config)
         # Even if somehow the field didn't exist, getattr default=True handles it
-        assert getattr(agent.config.agent, 'dialogue_aware', True) is True
+        assert getattr(agent.config.agent, "dialogue_aware", True) is True
 
     def test_getattr_fallback_for_max_chars(self):
         config = _make_config()
         agent = _make_agent(config)
-        assert getattr(agent.config.agent, 'max_dialogue_context_chars', 8000) == 8000
+        assert getattr(agent.config.agent, "max_dialogue_context_chars", 8000) == 8000

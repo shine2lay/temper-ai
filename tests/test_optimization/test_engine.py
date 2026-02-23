@@ -55,11 +55,13 @@ class TestOptimizationEngine:
     def test_single_step_criteria(self):
         config = OptimizationConfig(
             evaluators={"q": EvaluatorConfig(type="criteria", checks=[])},
-            pipeline=[PipelineStepConfig(
-                optimizer="refinement",
-                evaluator="q",
-                max_iterations=1,
-            )],
+            pipeline=[
+                PipelineStepConfig(
+                    optimizer="refinement",
+                    evaluator="q",
+                    max_iterations=1,
+                )
+            ],
         )
         engine = OptimizationEngine(config=config)
         runner = self._make_runner()
@@ -75,8 +77,12 @@ class TestOptimizationEngine:
                 "q2": EvaluatorConfig(type="criteria", checks=[]),
             },
             pipeline=[
-                PipelineStepConfig(optimizer="refinement", evaluator="q1", max_iterations=1),
-                PipelineStepConfig(optimizer="selection", evaluator="q2", runs=2),  # noqa
+                PipelineStepConfig(
+                    optimizer="refinement", evaluator="q1", max_iterations=1
+                ),
+                PipelineStepConfig(
+                    optimizer="selection", evaluator="q2", runs=2
+                ),  # noqa
             ],
         )
         engine = OptimizationEngine(config=config)
@@ -100,11 +106,13 @@ class TestOptimizationEngine:
     def test_selection_step(self):
         config = OptimizationConfig(
             evaluators={"q": EvaluatorConfig(type="criteria", checks=[])},
-            pipeline=[PipelineStepConfig(
-                optimizer="selection",
-                evaluator="q",
-                runs=3,  # noqa
-            )],
+            pipeline=[
+                PipelineStepConfig(
+                    optimizer="selection",
+                    evaluator="q",
+                    runs=3,  # noqa
+                )
+            ],
         )
         engine = OptimizationEngine(config=config)
         runner = self._make_runner()
@@ -116,11 +124,13 @@ class TestOptimizationEngine:
     def test_tuning_step_no_service(self):
         config = OptimizationConfig(
             evaluators={"q": EvaluatorConfig(type="criteria", checks=[])},
-            pipeline=[PipelineStepConfig(
-                optimizer="tuning",
-                evaluator="q",
-                strategies=[{"name": "v1"}, {"name": "v2"}],
-            )],
+            pipeline=[
+                PipelineStepConfig(
+                    optimizer="tuning",
+                    evaluator="q",
+                    strategies=[{"name": "v1"}, {"name": "v2"}],
+                )
+            ],
         )
         engine = OptimizationEngine(config=config)
         runner = self._make_runner()
@@ -135,11 +145,13 @@ class TestOptimizationEngine:
 
         config = OptimizationConfig(
             evaluators={"q": EvaluatorConfig(type="criteria", checks=[])},
-            pipeline=[PipelineStepConfig(
-                optimizer="refinement",
-                evaluator="q",
-                max_iterations=1,
-            )],
+            pipeline=[
+                PipelineStepConfig(
+                    optimizer="refinement",
+                    evaluator="q",
+                    max_iterations=1,
+                )
+            ],
         )
         engine = OptimizationEngine(config=config, llm=mock_llm)
         runner = self._make_runner()
@@ -161,13 +173,13 @@ class TestOptimizationEngine:
             evaluators={"q": EvaluatorConfig(type="criteria", checks=[])},
             pipeline=[
                 PipelineStepConfig(
-                    optimizer="selection", evaluator="q", runs=1,
+                    optimizer="selection",
+                    evaluator="q",
+                    runs=1,
                 ),
             ],
         )
-        engine = OptimizationEngine(
-            config=config, experiment_service=mock_service
-        )
+        engine = OptimizationEngine(config=config, experiment_service=mock_service)
         runner = self._make_runner()
 
         result = engine.run(runner, {"input": "data"})
@@ -185,9 +197,7 @@ class TestOptimizationEngine:
 
         mock_service = MagicMock()
         config = OptimizationConfig()
-        engine = OptimizationEngine(
-            config=config, experiment_service=mock_service
-        )
+        engine = OptimizationEngine(config=config, experiment_service=mock_service)
 
         kwargs = engine._build_optimizer_kwargs(SelectionOptimizer)
 
@@ -212,11 +222,13 @@ class TestOptimizationEngine:
     def test_evaluate_final_with_evaluators(self):
         config = OptimizationConfig(
             evaluators={"q": EvaluatorConfig(type="criteria", checks=[])},
-            pipeline=[PipelineStepConfig(
-                optimizer="refinement",
-                evaluator="q",
-                max_iterations=1,
-            )],
+            pipeline=[
+                PipelineStepConfig(
+                    optimizer="refinement",
+                    evaluator="q",
+                    max_iterations=1,
+                )
+            ],
         )
         engine = OptimizationEngine(config=config)
         runner = self._make_runner()

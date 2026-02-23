@@ -11,9 +11,10 @@ Two implementations:
 - ``NoopExtractor``: Returns empty dict. Used when no outputs are declared
   or extraction is disabled.
 """
+
 import json
 import logging
-from typing import Any, Dict, Optional, Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 from temper_ai.workflow.context_schemas import StageOutputDeclaration
 
@@ -33,9 +34,9 @@ class OutputExtractor(Protocol):
     def extract(
         self,
         raw_output: str,
-        output_declarations: Dict[str, StageOutputDeclaration],
+        output_declarations: dict[str, StageOutputDeclaration],
         stage_name: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Extract structured fields from raw output text.
 
         Args:
@@ -55,9 +56,9 @@ class NoopExtractor:
     def extract(
         self,
         raw_output: str,
-        output_declarations: Dict[str, StageOutputDeclaration],
+        output_declarations: dict[str, StageOutputDeclaration],
         stage_name: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Return empty dict — no extraction needed."""
         return {}
 
@@ -71,7 +72,7 @@ class LLMOutputExtractor:
 
     def __init__(
         self,
-        inference_config: Optional[Dict[str, Any]] = None,
+        inference_config: dict[str, Any] | None = None,
         timeout_seconds: int = DEFAULT_EXTRACTION_TIMEOUT,
     ) -> None:
         self.inference_config = inference_config or {}
@@ -80,9 +81,9 @@ class LLMOutputExtractor:
     def extract(
         self,
         raw_output: str,
-        output_declarations: Dict[str, StageOutputDeclaration],
+        output_declarations: dict[str, StageOutputDeclaration],
         stage_name: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Extract structured fields from raw output via LLM call."""
         if not output_declarations or not raw_output:
             return {}
@@ -96,14 +97,15 @@ class LLMOutputExtractor:
             logger.warning(
                 "Output extraction failed for stage '%s': %s. "
                 "Structured compartment will be empty.",
-                stage_name, e,
+                stage_name,
+                e,
             )
             return {}
 
     def _build_extraction_prompt(
         self,
         raw_output: str,
-        output_declarations: Dict[str, StageOutputDeclaration],
+        output_declarations: dict[str, StageOutputDeclaration],
     ) -> str:
         """Build the extraction prompt for the LLM."""
         fields_desc = []
@@ -149,11 +151,14 @@ class LLMOutputExtractor:
             start = time.monotonic()
             response = llm.complete(prompt)
             latency_ms = (time.monotonic() - start) * 1000  # scanner: skip-magic
-            content = response.content if hasattr(response, "content") else str(response)
+            content = (
+                response.content if hasattr(response, "content") else str(response)
+            )
 
             # Track the LLM call for observability
             try:
                 from temper_ai.observability.hooks import get_tracker
+
                 tracker = get_tracker()
                 tracker.track_llm_call(
                     provider=provider,
@@ -162,7 +167,7 @@ class LLMOutputExtractor:
                     completion_tokens=len(content) // 4,  # scanner: skip-magic
                     latency_ms=latency_ms,
                 )
-            except (ImportError, AttributeError, RuntimeError):
+            except (ImportError, AttributeError, RuntimeError, TypeError):
                 pass  # Observability should never break extraction
 
             return content
@@ -171,22 +176,22 @@ class LLMOutputExtractor:
             return "{}"
 
     @staticmethod
-    def _parse_extraction_response(response: str) -> Dict[str, Any]:
+    def _parse_extraction_response(response: str) -> dict[str, Any]:
         """Parse JSON from LLM response, handling markdown code blocks."""
         text = response.strip()
         # Strip markdown code block if present
         if text.startswith("```"):
             lines = text.split("\n")
-            # Remove first and last lines (```json and ```)
+            # Remove all lines starting with triple backticks (```json, ```, etc.)
             lines = [l for l in lines if not l.strip().startswith("```")]
             text = "\n".join(lines).strip()
 
-        result: Dict[str, Any] = json.loads(text)
+        result: dict[str, Any] = json.loads(text)
         return result
 
 
 def get_extractor(
-    workflow_config: Optional[Dict[str, Any]] = None,
+    workflow_config: dict[str, Any] | None = None,
 ) -> OutputExtractor:
     """Get the appropriate extractor based on workflow configuration.
 

@@ -3,19 +3,15 @@
 Tests lineage computation, hash determinism, mixed success/failed agents,
 serialization, and backward compatibility.
 """
-import pytest
-from typing import Any, Dict
 
 from temper_ai.observability.lineage import (
     CONTRIBUTION_FAILED,
     CONTRIBUTION_PRIMARY,
     CONTRIBUTION_SYNTHESIZED,
     CONTRIBUTION_VOTE,
-    OutputLineageEntry,
-    StageOutputLineage,
+    _hash_output,
     compute_output_lineage,
     lineage_to_dict,
-    _hash_output,
 )
 
 
@@ -198,5 +194,7 @@ class TestLineageBackwardCompat:
         from temper_ai.observability.backends.noop_backend import NoOpBackend
 
         backend = NoOpBackend()
-        result = backend.set_stage_output(stage_id="s-1", output_data={"result": "test"})
+        result = backend.set_stage_output(
+            stage_id="s-1", output_data={"result": "test"}
+        )
         assert result is None

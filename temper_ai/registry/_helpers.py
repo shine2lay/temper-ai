@@ -1,6 +1,7 @@
 """Helper functions for the agent registry module."""
+
 import uuid
-from typing import Any, Dict
+from typing import Any
 
 import yaml
 
@@ -12,7 +13,7 @@ def build_memory_namespace(agent_name: str) -> str:
     return f"{PERSISTENT_NAMESPACE_PREFIX}{agent_name}"
 
 
-def build_persistent_memory_config(agent_name: str) -> Dict[str, Any]:
+def build_persistent_memory_config(agent_name: str) -> dict[str, Any]:
     """Return a memory config dict for persistent agent storage."""
     return {
         "enabled": True,
@@ -25,7 +26,7 @@ def generate_agent_id() -> str:
     return uuid.uuid4().hex
 
 
-def load_config_from_path(config_path: str) -> Dict[str, Any]:
+def load_config_from_path(config_path: str) -> dict[str, Any]:
     """Load and return a YAML agent config from a file path.
 
     Args:
@@ -38,7 +39,7 @@ def load_config_from_path(config_path: str) -> Dict[str, Any]:
         FileNotFoundError: If the config file does not exist.
         ValueError: If the YAML content is not a mapping.
     """
-    with open(config_path, "r", encoding="utf-8") as fh:
+    with open(config_path, encoding="utf-8") as fh:
         data = yaml.safe_load(fh)
 
     if not isinstance(data, dict):

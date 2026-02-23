@@ -7,6 +7,7 @@ This test suite ensures that:
 3. Long malicious strings don't cause exponential execution time
 4. Entropy calculation doesn't cause memory exhaustion
 """
+
 import time
 
 import pytest
@@ -37,7 +38,9 @@ class TestReDoSProtection:
         elapsed_ms = (time.perf_counter() - start) * 1000
 
         # Should complete in <100ms (vulnerable version: >1000ms)
-        assert elapsed_ms < 100, f"ReDoS detected: {elapsed_ms:.2f}ms for {len(attack)} chars"
+        assert (
+            elapsed_ms < 100
+        ), f"ReDoS detected: {elapsed_ms:.2f}ms for {len(attack)} chars"
 
     def test_redos_attack_ignore_pattern_medium(self, detector):
         """Test ReDoS attack with 5000 chars completes quickly."""
@@ -48,7 +51,9 @@ class TestReDoSProtection:
         elapsed_ms = (time.perf_counter() - start) * 1000
 
         # Should complete in <100ms (vulnerable version: >60s)
-        assert elapsed_ms < 100, f"ReDoS detected: {elapsed_ms:.2f}ms for {len(attack)} chars"
+        assert (
+            elapsed_ms < 100
+        ), f"ReDoS detected: {elapsed_ms:.2f}ms for {len(attack)} chars"
 
     def test_redos_attack_ignore_pattern_long(self, detector):
         """Test ReDoS attack with 10000 chars completes quickly."""
@@ -59,7 +64,9 @@ class TestReDoSProtection:
         elapsed_ms = (time.perf_counter() - start) * 1000
 
         # Should complete in <100ms (vulnerable version: minutes)
-        assert elapsed_ms < 100, f"ReDoS detected: {elapsed_ms:.2f}ms for {len(attack)} chars"
+        assert (
+            elapsed_ms < 100
+        ), f"ReDoS detected: {elapsed_ms:.2f}ms for {len(attack)} chars"
 
     def test_redos_attack_disregard_pattern(self, detector):
         """Test ReDoS attack on 'disregard' pattern."""
@@ -94,7 +101,15 @@ class TestReDoSProtection:
     def test_redos_attack_alternating_separators(self, detector):
         """Test ReDoS with alternating separators to maximize backtracking."""
         # Worst case: alternating valid separator characters
-        attack = "ignore" + (" ." * 500) + "all" + (" ." * 500) + "previous" + (" ." * 500) + "X"
+        attack = (
+            "ignore"
+            + (" ." * 500)
+            + "all"
+            + (" ." * 500)
+            + "previous"
+            + (" ." * 500)
+            + "X"
+        )
 
         start = time.perf_counter()
         is_safe, violations = detector.detect(attack)
@@ -106,10 +121,17 @@ class TestReDoSProtection:
         """Test ReDoS with multiple attack patterns in one input."""
         # Multiple potential ReDoS triggers
         attack = (
-            "ignore all previous" + ("." * 1000) + " " +
-            "disregard all prior" + ("." * 1000) + " " +
-            "forget all previous" + ("." * 1000) + " " +
-            "override your" + ("." * 1000)
+            "ignore all previous"
+            + ("." * 1000)
+            + " "
+            + "disregard all prior"
+            + ("." * 1000)
+            + " "
+            + "forget all previous"
+            + ("." * 1000)
+            + " "
+            + "override your"
+            + ("." * 1000)
         )
 
         start = time.perf_counter()
@@ -190,7 +212,9 @@ class TestReDoSProtection:
 
         detected_count = sum(1 for attack in attacks if not detector.detect(attack)[0])
         # Should detect at least 75% of variations
-        assert detected_count >= 3, f"Only detected {detected_count}/{len(attacks)} variations"
+        assert (
+            detected_count >= 3
+        ), f"Only detected {detected_count}/{len(attacks)} variations"
 
     def test_separator_dots(self, detector):
         """Test detection with dot separators."""
@@ -233,7 +257,9 @@ class TestReDoSProtection:
 
         detected_count = sum(1 for attack in attacks if not detector.detect(attack)[0])
         # Should detect at least 50% of mixed variations
-        assert detected_count >= 1, f"Detected {detected_count}/{len(attacks)} mixed separator variations"
+        assert (
+            detected_count >= 1
+        ), f"Detected {detected_count}/{len(attacks)} mixed separator variations"
 
     # ====================================================================
     # Edge Case Tests
@@ -263,10 +289,14 @@ class TestReDoSProtection:
             is_safe, violations = detector.detect(prompt)
             # Should be safe (no command injection violations)
             command_injection_violations = [
-                v for v in violations
-                if v.violation_type == "prompt_injection" and "command injection" in v.description
+                v
+                for v in violations
+                if v.violation_type == "prompt_injection"
+                and "command injection" in v.description
             ]
-            assert len(command_injection_violations) == 0, f"False positive on: {prompt}"
+            assert (
+                len(command_injection_violations) == 0
+            ), f"False positive on: {prompt}"
 
     def test_unicode_handling(self, detector):
         """Test handling of Unicode characters."""
@@ -300,7 +330,9 @@ class TestReDoSProtection:
         is_safe, violations = detector.detect(oversized)
 
         # Should have oversized_input violation
-        oversized_violations = [v for v in violations if v.violation_type == "oversized_input"]
+        oversized_violations = [
+            v for v in violations if v.violation_type == "oversized_input"
+        ]
         assert len(oversized_violations) > 0
         assert oversized_violations[0].severity == "high"
 
@@ -312,7 +344,9 @@ class TestReDoSProtection:
         is_safe, violations = detector.detect(attack_after_limit)
 
         # Should detect oversized but might not detect the attack (it's truncated)
-        oversized_violations = [v for v in violations if v.violation_type == "oversized_input"]
+        oversized_violations = [
+            v for v in violations if v.violation_type == "oversized_input"
+        ]
         assert len(oversized_violations) > 0
 
     # ====================================================================
@@ -382,7 +416,9 @@ class TestReDoSProtection:
         ]
 
         detected_count = sum(1 for attack in attacks if not detector.detect(attack)[0])
-        assert detected_count >= 2, f"Only detected {detected_count}/{len(attacks)} role manipulation attacks"
+        assert (
+            detected_count >= 2
+        ), f"Only detected {detected_count}/{len(attacks)} role manipulation attacks"
 
     def test_system_prompt_leakage_detection(self, detector):
         """Verify system prompt leakage patterns still detected."""
@@ -393,7 +429,9 @@ class TestReDoSProtection:
         ]
 
         detected_count = sum(1 for attack in attacks if not detector.detect(attack)[0])
-        assert detected_count >= 2, f"Only detected {detected_count}/{len(attacks)} system prompt leakage attacks"
+        assert (
+            detected_count >= 2
+        ), f"Only detected {detected_count}/{len(attacks)} system prompt leakage attacks"
 
     def test_delimiter_injection_detection(self, detector):
         """Verify delimiter injection patterns still detected."""
@@ -404,7 +442,9 @@ class TestReDoSProtection:
         ]
 
         detected_count = sum(1 for attack in attacks if not detector.detect(attack)[0])
-        assert detected_count >= 2, f"Only detected {detected_count}/{len(attacks)} delimiter injection attacks"
+        assert (
+            detected_count >= 2
+        ), f"Only detected {detected_count}/{len(attacks)} delimiter injection attacks"
 
     def test_jailbreak_detection(self, detector):
         """Verify jailbreak patterns still detected."""
@@ -415,7 +455,9 @@ class TestReDoSProtection:
         ]
 
         detected_count = sum(1 for attack in attacks if not detector.detect(attack)[0])
-        assert detected_count >= 2, f"Only detected {detected_count}/{len(attacks)} jailbreak attempts"
+        assert (
+            detected_count >= 2
+        ), f"Only detected {detected_count}/{len(attacks)} jailbreak attempts"
 
 
 class TestPerformanceBenchmarks:
@@ -459,7 +501,9 @@ class TestPerformanceBenchmarks:
         max_time = max(times)
 
         # Attack detection should be <10ms average, <20ms max
-        assert avg_time < 10, f"Average attack detection time too high: {avg_time:.2f}ms"
+        assert (
+            avg_time < 10
+        ), f"Average attack detection time too high: {avg_time:.2f}ms"
         assert max_time < 20, f"Max attack detection time too high: {max_time:.2f}ms"
 
     def test_benchmark_redos_attack(self, detector):

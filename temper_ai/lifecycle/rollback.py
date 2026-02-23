@@ -5,7 +5,6 @@ disables problematic profiles to prevent sustained regressions.
 """
 
 import logging
-from typing import Optional
 
 from temper_ai.lifecycle._schemas import DegradationReport
 from temper_ai.lifecycle.constants import (
@@ -35,7 +34,7 @@ class RollbackMonitor:
         self,
         profile_name: str,
         window: int = DEFAULT_DEGRADATION_WINDOW,
-    ) -> Optional[DegradationReport]:
+    ) -> DegradationReport | None:
         """Check if a profile has caused quality degradation.
 
         Compares recent adapted runs vs baseline success rate.
@@ -56,9 +55,7 @@ class RollbackMonitor:
             return None  # Not enough data
 
         # Get workflow metrics for adapted runs
-        adapted_results = _compute_adapted_success_rate(
-            adaptations, self._history
-        )
+        adapted_results = _compute_adapted_success_rate(adaptations, self._history)
         if adapted_results is None:
             return None
 
@@ -73,9 +70,7 @@ class RollbackMonitor:
             if wf_name:
                 workflow_names.add(wf_name)
 
-        baseline_rate = _get_baseline_rate(
-            workflow_names, self._history
-        )
+        baseline_rate = _get_baseline_rate(workflow_names, self._history)
 
         degradation_pct = baseline_rate - adapted_rate
         if degradation_pct > self._threshold:
@@ -104,9 +99,7 @@ class RollbackMonitor:
         Args:
             profile_name: Name of the profile to disable.
         """
-        success = self._store.update_profile_status(
-            profile_name, enabled=False
-        )
+        success = self._store.update_profile_status(profile_name, enabled=False)
         if success:
             logger.info("Disabled profile: %s", profile_name)
         else:
@@ -119,19 +112,35 @@ class RollbackMonitor:
 def _compute_adapted_success_rate(
     adaptations: list,
     history: HistoryAnalyzer,
-) -> Optional[tuple[float, int]]:
-    """Compute success rate from adapted workflow runs.
+) -> tuple[float, int] | None:
+    """Compute real success rate for adapted workflow runs.
 
-    Returns (success_rate, sample_size) or None if insufficient data.
+    For each adaptation, extracts the workflow_name from characteristics
+    and queries actual metrics from HistoryAnalyzer.
+
+    Returns (success_rate, sample_size) or None if no measurable data.
     """
     if not adaptations:
         return None
 
-    # Count successful vs total adapted runs
     total = len(adaptations)
-    # For now use the adaptation count as proxy for sample size
-    # In production, would query actual workflow execution outcomes
-    return 1.0, total
+    successes: float = 0.0
+    measured = 0
+
+    for adaptation in adaptations:
+        chars = adaptation.characteristics or {}
+        wf_name = chars.get("workflow_name", "")
+        if not wf_name:
+            continue
+        metrics = history.get_workflow_metrics(wf_name)
+        if metrics.run_count > 0:
+            measured += 1
+            successes += metrics.success_rate
+
+    if measured == 0:
+        return None  # No measurable data yet
+
+    return successes / measured, total
 
 
 def _get_baseline_rate(

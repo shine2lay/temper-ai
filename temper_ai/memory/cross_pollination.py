@@ -1,12 +1,17 @@
 """Cross-agent knowledge sharing via published memory namespaces (M9)."""
+
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 PUBLISHED_KNOWLEDGE_NAMESPACE = "published_knowledge"
 MAX_CONTENT_LENGTH = 10000
 MEMORY_TYPE_PUBLISHED = "published"
+
+_DEFAULT_RETRIEVAL_K = 5
+_DEFAULT_RELEVANCE_THRESHOLD = 0.7
+_DEFAULT_MAX_CONTEXT_CHARS = 2000
 
 
 def _build_published_scope(agent_name: str) -> Any:
@@ -23,9 +28,9 @@ def publish_knowledge(
     agent_name: str,
     content: str,
     memory_service: Any,
-    metadata: Optional[Dict[str, Any]] = None,
+    metadata: dict[str, Any] | None = None,
     memory_type: str = MEMORY_TYPE_PUBLISHED,
-) -> Optional[str]:
+) -> str | None:
     """Publish knowledge from an agent to a shared namespace.
 
     Returns the memory entry ID or None on failure.
@@ -51,12 +56,12 @@ def publish_knowledge(
 
 
 def retrieve_subscribed_knowledge(
-    subscribe_to: List[str],
+    subscribe_to: list[str],
     query: str,
     memory_service: Any,
-    retrieval_k: int = 5,
-    relevance_threshold: float = 0.7,
-) -> List[Dict[str, Any]]:
+    retrieval_k: int = _DEFAULT_RETRIEVAL_K,
+    relevance_threshold: float = _DEFAULT_RELEVANCE_THRESHOLD,
+) -> list[dict[str, Any]]:
     """Retrieve knowledge from subscribed agents' namespaces.
 
     Args:
@@ -69,7 +74,7 @@ def retrieve_subscribed_knowledge(
     Returns:
         List of dicts with 'agent_name', 'content', 'relevance_score' keys.
     """
-    results: List[Dict[str, Any]] = []
+    results: list[dict[str, Any]] = []
     for agent_name in subscribe_to:
         scope = _build_published_scope(agent_name)
         try:
@@ -93,8 +98,8 @@ def retrieve_subscribed_knowledge(
 
 
 def format_cross_pollination_context(
-    results: List[Dict[str, Any]],
-    max_chars: int = 2000,
+    results: list[dict[str, Any]],
+    max_chars: int = _DEFAULT_MAX_CONTEXT_CHARS,
 ) -> str:
     """Format cross-pollination results as a context string for prompt injection."""
     if not results:

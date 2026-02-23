@@ -2,6 +2,7 @@
 
 These are internal implementation details and should not be imported directly.
 """
+
 from __future__ import annotations
 
 import importlib
@@ -9,10 +10,10 @@ import inspect
 import logging
 import pkgutil
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Type
+from typing import TYPE_CHECKING, Any
 
-from temper_ai.tools.base import BaseTool
 from temper_ai.shared.utils.exceptions import ToolRegistryError
+from temper_ai.tools.base import BaseTool
 
 if TYPE_CHECKING:
     from temper_ai.tools.registry import ToolRegistry
@@ -46,7 +47,8 @@ COMMON_ERROR_SUGGESTIONS = {
 # Validation helpers
 # ---------------------------------------------------------------------------
 
-def validate_tool_interface(tool_class: Type[Any]) -> Tuple[bool, List[str]]:
+
+def validate_tool_interface(tool_class: type[Any]) -> tuple[bool, list[str]]:
     """Validate that a tool class implements the required interface."""
     errors = []
 
@@ -60,7 +62,7 @@ def validate_tool_interface(tool_class: Type[Any]) -> Tuple[bool, List[str]]:
     if inspect.isabstract(tool_class):
         errors.append("Tool class has unimplemented abstract methods")
 
-    required_methods = ['execute', 'get_metadata', 'get_parameters_schema']
+    required_methods = ["execute", "get_metadata", "get_parameters_schema"]
     for method_name in required_methods:
         if not hasattr(tool_class, method_name):
             errors.append(f"Missing required method: {method_name}")
@@ -68,13 +70,13 @@ def validate_tool_interface(tool_class: Type[Any]) -> Tuple[bool, List[str]]:
             attr = getattr(tool_class, method_name)
             if not callable(attr):
                 errors.append(f"'{method_name}' is not callable")
-            elif getattr(attr, '__isabstractmethod__', False):
+            elif getattr(attr, "__isabstractmethod__", False):
                 errors.append(f"'{method_name}' is still abstract (not implemented)")
 
     return len(errors) == 0, errors
 
 
-def get_error_suggestion(error_msg: str) -> Optional[str]:
+def get_error_suggestion(error_msg: str) -> str | None:
     """Get helpful suggestion for common errors."""
     error_lower = error_msg.lower()
     for pattern, suggestion in COMMON_ERROR_SUGGESTIONS.items():
@@ -87,12 +89,13 @@ def get_error_suggestion(error_msg: str) -> Optional[str]:
 # Auto-discovery
 # ---------------------------------------------------------------------------
 
+
 def _load_cached_tools(
     registry: ToolRegistry,
     use_cache: bool,
     global_lock: Any,
     get_cache_fn: Any,
-) -> Optional[int]:
+) -> int | None:
     """Load cached tools if available. Returns tool count or None if no cache."""
     if not use_cache:
         return None
@@ -105,15 +108,24 @@ def _load_cached_tools(
 
     logger.info(f"Using cached discovered tools ({len(cached)} tools)")
     for tool_name, tool_instance in cached.items():
-        registry.register(tool_instance, allow_override=True)
+        # Create a fresh instance to give each registry its own tool.
+        # Without this, apply_tool_config() from one agent mutates the
+        # shared singleton, corrupting other agents' tool configs
+        # (e.g. Bash allowed_commands leaking across agents).
+        try:
+            fresh = type(tool_instance)()
+        except TypeError:
+            # Fallback: if constructor needs args, share the instance
+            fresh = tool_instance
+        registry.register(fresh, allow_override=True)
     return len(cached)
 
 
 def _try_register_tool(
-    tool_class: Type[BaseTool],
+    tool_class: type[BaseTool],
     registry: ToolRegistry,
-    discovered_tools: Dict[str, BaseTool],
-) -> Tuple[bool, Optional[Tuple[str, str]]]:
+    discovered_tools: dict[str, BaseTool],
+) -> tuple[bool, tuple[str, str] | None]:
     """Try to register a tool. Returns (success, skip_info)."""
     try:
         tool_instance = tool_class()
@@ -122,7 +134,9 @@ def _try_register_tool(
             metadata = tool_instance.get_metadata()
             version = metadata.version or "1.0.0"
             discovered_tools[f"{tool_instance.name}:{version}"] = tool_instance
-            logger.info(f"[OK] Registered tool: {tool_instance.name} v{version} ({tool_class.__name__})")
+            logger.info(
+                f"[OK] Registered tool: {tool_instance.name} v{version} ({tool_class.__name__})"
+            )
             return True, None
         except ToolRegistryError as e:
             logger.warning(f"Skipping {tool_class.__name__}: {e}")
@@ -142,17 +156,16 @@ def _try_register_tool(
 
     except (ValueError, AttributeError, RuntimeError) as e:
         logger.error(
-            f"Failed to instantiate tool {tool_class.__name__}: {e}",
-            exc_info=True
+            f"Failed to instantiate tool {tool_class.__name__}: {e}", exc_info=True
         )
         return False, (tool_class.__name__, f"Instantiation error: {e}")
 
 
 def _discover_tool_class(
-    tool_class: Type[Any],
+    tool_class: type[Any],
     registry: ToolRegistry,
-    discovered_tools: Dict[str, BaseTool],
-) -> Tuple[int, int, List[Tuple[str, str]]]:
+    discovered_tools: dict[str, BaseTool],
+) -> tuple[int, int, list[tuple[str, str]]]:
     """Discover and register a single tool class. Returns (registered, discovered, skipped)."""
     # Validate tool interface
     is_valid, validation_errors = validate_tool_interface(tool_class)
@@ -160,8 +173,7 @@ def _discover_tool_class(
     if not is_valid:
         error_msg = f"Tool {tool_class.__name__} failed validation"
         logger.warning(
-            f"{error_msg}:\n" +
-            "\n".join(f"  - {err}" for err in validation_errors)
+            f"{error_msg}:\n" + "\n".join(f"  - {err}" for err in validation_errors)
         )
         suggestion = get_error_suggestion("\n".join(validation_errors))
         if suggestion:
@@ -178,12 +190,12 @@ def _discover_tool_class(
 def _discover_module_tools(
     module: Any,
     registry: ToolRegistry,
-    discovered_tools: Dict[str, BaseTool],
-) -> Tuple[int, int, List[Tuple[str, str]]]:
+    discovered_tools: dict[str, BaseTool],
+) -> tuple[int, int, list[tuple[str, str]]]:
     """Discover tools in a module. Returns (registered, discovered, skipped)."""
     registered_count = 0
     discovered_count = 0
-    skipped_tools: List[Tuple[str, str]] = []
+    skipped_tools: list[tuple[str, str]] = []
 
     for name, obj in inspect.getmembers(module, inspect.isclass):
         # Skip if not a tool class or not defined in this module
@@ -224,8 +236,8 @@ def auto_discover(
     logger.info(f"Starting tool discovery in package: {tools_package}")
     registered_count = 0
     discovered_count = 0
-    skipped_tools: List[Tuple[str, str]] = []
-    discovered_tools: Dict[str, BaseTool] = {}
+    skipped_tools: list[tuple[str, str]] = []
+    discovered_tools: dict[str, BaseTool] = {}
 
     try:
         package = importlib.import_module(tools_package)
@@ -242,7 +254,9 @@ def auto_discover(
             # Try to import and discover tools in module
             try:
                 module = importlib.import_module(f"{tools_package}.{module_name}")
-                reg, disc, skip = _discover_module_tools(module, registry, discovered_tools)
+                reg, disc, skip = _discover_module_tools(
+                    module, registry, discovered_tools
+                )
                 registered_count += reg
                 discovered_count += disc
                 skipped_tools.extend(skip)
@@ -278,6 +292,7 @@ def auto_discover(
 # Config loading
 # ---------------------------------------------------------------------------
 
+
 def _parse_implementation_path(implementation: Any, config_name: str) -> str:
     """Parse implementation spec to class path. Raises ToolRegistryError on error."""
     if isinstance(implementation, str):
@@ -299,34 +314,28 @@ def _parse_implementation_path(implementation: Any, config_name: str) -> str:
     )
 
 
-def _load_tool_class(class_path: str) -> Type[BaseTool]:
+def _load_tool_class(class_path: str) -> type[BaseTool]:
     """Load and validate tool class. Raises ToolRegistryError on error."""
     parts = class_path.rsplit(".", 1)
     if len(parts) != 2:
-        raise ToolRegistryError(
-            f"Invalid class path format: {class_path}"
-        )
+        raise ToolRegistryError(f"Invalid class path format: {class_path}")
 
     module_name, class_name = parts
 
     try:
         module = importlib.import_module(module_name)
     except ImportError as e:
-        raise ToolRegistryError(
-            f"Failed to import tool class '{class_path}': {e}"
-        )
+        raise ToolRegistryError(f"Failed to import tool class '{class_path}': {e}")
 
     try:
-        tool_class: Type[BaseTool] = getattr(module, class_name)
+        tool_class: type[BaseTool] = getattr(module, class_name)
     except AttributeError:
         raise ToolRegistryError(
             f"Tool class not found in module '{module_name}': {class_name}"
         )
 
     if not issubclass(tool_class, BaseTool):
-        raise ToolRegistryError(
-            f"Tool class must inherit from BaseTool: {class_path}"
-        )
+        raise ToolRegistryError(f"Tool class must inherit from BaseTool: {class_path}")
 
     return tool_class
 
@@ -334,11 +343,12 @@ def _load_tool_class(class_path: str) -> Type[BaseTool]:
 def load_from_config(
     registry: ToolRegistry,
     config_name: str,
-    config_loader: Optional[Any] = None,
+    config_loader: Any | None = None,
 ) -> BaseTool:
     """Load and register a tool from configuration file."""
     if config_loader is None:
         from temper_ai.workflow.config_loader import ConfigLoader
+
         config_loader = ConfigLoader()
 
     # Load configuration
@@ -372,18 +382,17 @@ def load_from_config(
         return tool_instance
 
     except (TypeError, ValueError, RuntimeError) as e:
-        raise ToolRegistryError(
-            f"Failed to instantiate tool '{tool_name}': {e}"
-        )
+        raise ToolRegistryError(f"Failed to instantiate tool '{tool_name}': {e}")
 
 
 def load_all_from_configs(
     registry: ToolRegistry,
-    config_loader: Optional[Any] = None,
+    config_loader: Any | None = None,
 ) -> int:
     """Load and register all tools from configuration files."""
     if config_loader is None:
         from temper_ai.workflow.config_loader import ConfigLoader
+
         config_loader = ConfigLoader()
 
     try:
@@ -410,7 +419,8 @@ def load_all_from_configs(
 # Reporting / info
 # ---------------------------------------------------------------------------
 
-def list_available_tools(registry: ToolRegistry) -> Dict[str, Dict[str, Any]]:
+
+def list_available_tools(registry: ToolRegistry) -> dict[str, dict[str, Any]]:
     """List all registered tools with detailed information."""
     result = {}
     for name in registry._tools:
@@ -452,7 +462,7 @@ def get_registration_report(registry: ToolRegistry) -> str:
     return "\n".join(lines)
 
 
-def get_tool_metadata(registry: ToolRegistry, name: str) -> Dict[str, Any]:
+def get_tool_metadata(registry: ToolRegistry, name: str) -> dict[str, Any]:
     """Get tool metadata."""
     tool = registry.get(name)
     if not tool:
@@ -473,17 +483,18 @@ def get_tool_metadata(registry: ToolRegistry, name: str) -> Dict[str, Any]:
 # Version helpers
 # ---------------------------------------------------------------------------
 
-def get_latest_version(versions: List[str]) -> str:
+
+def get_latest_version(versions: list[str]) -> str:
     """Get the latest version from a list of version strings."""
     if not versions:
         raise ValueError("No versions provided")
     if len(versions) == 1:
         return versions[0]
 
-    def version_key(v: str) -> Tuple[int, ...]:
+    def version_key(v: str) -> tuple[int, ...]:
         """Parse version string into sortable tuple."""
         try:
-            parts = v.split('.')
+            parts = v.split(".")
             return tuple(int(p) for p in parts)
         except (ValueError, AttributeError):
             return (0, 0, 0)
@@ -495,26 +506,27 @@ def get_latest_version(versions: List[str]) -> str:
 # Mixin for reporting/query methods (extracted from ToolRegistry)
 # ---------------------------------------------------------------------------
 
+
 class ToolRegistryReportingMixin:
     """Mixin providing reporting and query methods for ToolRegistry."""
 
-    def get_tool_schema(self, name: str) -> Dict[str, Any]:
+    def get_tool_schema(self, name: str) -> dict[str, Any]:
         """Get tool schema for LLM."""
         tool = self.get(name)  # type: ignore[attr-defined]
         if not tool:
             raise ToolRegistryError(f"Tool not found: {name}")
-        schema: Dict[str, Any] = tool.to_llm_schema()
+        schema: dict[str, Any] = tool.to_llm_schema()
         return schema
 
-    def get_all_tool_schemas(self) -> List[Dict[str, Any]]:
+    def get_all_tool_schemas(self) -> list[dict[str, Any]]:
         """Get schemas for all registered tools."""
         return [tool.to_llm_schema() for tool in self.get_all_tools().values()]  # type: ignore[attr-defined]
 
-    def get_tool_metadata(self, name: str) -> Dict[str, Any]:
+    def get_tool_metadata(self, name: str) -> dict[str, Any]:
         """Get tool metadata."""
         return get_tool_metadata(self, name)  # type: ignore[arg-type]
 
-    def list_available_tools(self) -> Dict[str, Dict[str, Any]]:
+    def list_available_tools(self) -> dict[str, dict[str, Any]]:
         """List all registered tools with detailed information."""
         return list_available_tools(self)  # type: ignore[arg-type]
 
@@ -526,10 +538,10 @@ class ToolRegistryReportingMixin:
 class ToolRegistryValidationMixin:
     """Mixin providing validation methods for ToolRegistry."""
 
-    def _validate_tool_interface(self, tool_class: Type[Any]) -> Tuple[bool, List[str]]:
+    def _validate_tool_interface(self, tool_class: type[Any]) -> tuple[bool, list[str]]:
         """Validate that a tool class implements the required interface."""
         return validate_tool_interface(tool_class)
 
-    def _get_error_suggestion(self, error_msg: str) -> Optional[str]:
+    def _get_error_suggestion(self, error_msg: str) -> str | None:
         """Get helpful suggestion for common errors."""
         return get_error_suggestion(error_msg)

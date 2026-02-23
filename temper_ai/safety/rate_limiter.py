@@ -11,10 +11,12 @@ Supports multiple rate limiting strategies:
 - Sliding window: Rolling time window for smoother limits
 - Token bucket: Burst allowance with refill rate
 """
+
 import threading
 import time
+import unicodedata
 from collections import defaultdict
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from temper_ai.shared.constants.durations import (
     RATE_LIMIT_WINDOW_DAY,
@@ -37,7 +39,11 @@ DEFAULT_MAX_TOOL_CALLS_PER_MINUTE = 60  # scanner: skip-magic
 DEFAULT_MAX_API_CALLS_PER_MINUTE = 1000  # scanner: skip-magic
 from temper_ai.safety.base import BaseSafetyPolicy
 from temper_ai.safety.constants import RATE_LIMIT_PRIORITY
-from temper_ai.safety.interfaces import SafetyViolation, ValidationResult, ViolationSeverity
+from temper_ai.safety.interfaces import (
+    SafetyViolation,
+    ValidationResult,
+    ViolationSeverity,
+)
 
 # Burst allowance multiplier (1.5 = 50% burst above base rate)
 BURST_ALLOWANCE_DEFAULT = 1.5  # scanner: skip-magic
@@ -82,14 +88,23 @@ class WindowRateLimitPolicy(BaseSafetyPolicy):
 
     # Default limits for common operations
     DEFAULT_LIMITS = {
-        "llm_call": {"max_per_minute": DEFAULT_MAX_CALLS_PER_MINUTE, "max_per_hour": DEFAULT_MAX_CALLS_PER_HOUR},
+        "llm_call": {
+            "max_per_minute": DEFAULT_MAX_CALLS_PER_MINUTE,
+            "max_per_hour": DEFAULT_MAX_CALLS_PER_HOUR,
+        },
         "tool_call": {"max_per_minute": DEFAULT_MAX_TOOL_CALLS_PER_MINUTE},
         "file_operation": {"max_per_minute": DEFAULT_MAX_FILE_OPS_PER_MINUTE},
-        "api_call": {"max_per_second": DEFAULT_MAX_CALLS_PER_SECOND, "max_per_minute": DEFAULT_MAX_API_CALLS_PER_MINUTE},
-        "database_query": {"max_per_second": DEFAULT_MAX_DB_QUERIES_PER_SECOND, "max_per_minute": DEFAULT_MAX_DB_QUERIES_PER_MINUTE}
+        "api_call": {
+            "max_per_second": DEFAULT_MAX_CALLS_PER_SECOND,
+            "max_per_minute": DEFAULT_MAX_API_CALLS_PER_MINUTE,
+        },
+        "database_query": {
+            "max_per_second": DEFAULT_MAX_DB_QUERIES_PER_SECOND,
+            "max_per_minute": DEFAULT_MAX_DB_QUERIES_PER_MINUTE,
+        },
     }
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: dict[str, Any] | None = None):
         """Initialize rate limiter policy.
 
         Args:
@@ -100,11 +115,13 @@ class WindowRateLimitPolicy(BaseSafetyPolicy):
         # Configuration
         self.limits = self.config.get("limits", self.DEFAULT_LIMITS)
         self.strategy = self.config.get("strategy", "sliding_window")
-        self.burst_allowance = self.config.get("burst_allowance", BURST_ALLOWANCE_DEFAULT)
+        self.burst_allowance = self.config.get(
+            "burst_allowance", BURST_ALLOWANCE_DEFAULT
+        )
         self.per_entity = self.config.get("per_entity", True)
 
         # State tracking: {(operation, entity): [(timestamp, ...)]}
-        self._operation_history: Dict[tuple[str, str], List[float]] = defaultdict(list)
+        self._operation_history: dict[tuple[str, str], list[float]] = defaultdict(list)
         self._history_lock = threading.Lock()
 
     @property
@@ -125,30 +142,38 @@ class WindowRateLimitPolicy(BaseSafetyPolicy):
         """
         return RATE_LIMIT_PRIORITY
 
-    def _get_entity_key(self, context: Dict[str, Any]) -> str:
-        """Extract entity identifier from context.
+    def _get_entity_key(self, context: dict[str, Any]) -> str:
+        """Extract and normalize entity identifier from context.
+
+        Normalization prevents bypass attacks via:
+        - Case variation ("Admin" vs "admin")
+        - Whitespace insertion (" agent-1 " vs "agent-1")
+        - Unicode composition variants (NFD vs NFC)
 
         Args:
             context: Execution context
 
         Returns:
-            Entity key (agent_id, user_id, etc.) or "global"
+            Normalized entity key (agent_id, user_id, etc.) or "global"
         """
         if not self.per_entity:
             return "global"
 
-        return (
-            context.get("agent_id") or
-            context.get("user_id") or
-            context.get("workflow_id") or
-            "global"
+        raw = (
+            context.get("agent_id")
+            or context.get("user_id")
+            or context.get("workflow_id")
+            or "global"
         )
 
+        # Normalize: NFKC unicode -> lowercase -> strip whitespace
+        normalized = unicodedata.normalize("NFKC", str(raw))
+        normalized = normalized.lower().strip()
+        return normalized if normalized else "global"
+
     def _clean_old_records(
-        self,
-        history: List[float],
-        max_age_seconds: float
-    ) -> List[float]:
+        self, history: list[float], max_age_seconds: float
+    ) -> list[float]:
         """Remove records older than max_age.
 
         Args:
@@ -164,11 +189,11 @@ class WindowRateLimitPolicy(BaseSafetyPolicy):
 
     def _check_limit(
         self,
-        history: List[float],
+        history: list[float],
         max_count: int,
         window_seconds: float,
-        operation: str
-    ) -> Optional[SafetyViolation]:
+        operation: str,
+    ) -> SafetyViolation | None:
         """Check if operation count exceeds limit in time window.
 
         Args:
@@ -210,8 +235,8 @@ class WindowRateLimitPolicy(BaseSafetyPolicy):
                     "current_count": len(recent_history),
                     "max_count": max_count,
                     "window_seconds": window_seconds,
-                    "overage_ratio": round(overage_ratio, 2)
-                }
+                    "overage_ratio": round(overage_ratio, 2),
+                },
             )
 
         return None
@@ -233,11 +258,8 @@ class WindowRateLimitPolicy(BaseSafetyPolicy):
             return f"{int(seconds)} second{'s' if seconds >= OVERAGE_CRITICAL_THRESHOLD else ''}"
 
     def _check_time_window_limits(
-        self,
-        history: List[float],
-        operation_limits: Dict[str, int],
-        operation: str
-    ) -> List[SafetyViolation]:
+        self, history: list[float], operation_limits: dict[str, int], operation: str
+    ) -> list[SafetyViolation]:
         """Check all time window limits for an operation.
 
         Args:
@@ -248,7 +270,7 @@ class WindowRateLimitPolicy(BaseSafetyPolicy):
         Returns:
             List of violations
         """
-        violations: List[SafetyViolation] = []
+        violations: list[SafetyViolation] = []
 
         # Define limit checks
         limit_checks = [
@@ -262,17 +284,14 @@ class WindowRateLimitPolicy(BaseSafetyPolicy):
                 continue
 
             violation = self._check_limit(
-                history,
-                operation_limits[limit_key],
-                window_duration,
-                operation
+                history, operation_limits[limit_key], window_duration, operation
             )
             if violation:
                 violations.append(violation)
 
         return violations
 
-    def _get_max_window_duration(self, operation_limits: Dict[str, int]) -> float:
+    def _get_max_window_duration(self, operation_limits: dict[str, int]) -> float:
         """Get maximum window duration from operation limits.
 
         Args:
@@ -289,15 +308,16 @@ class WindowRateLimitPolicy(BaseSafetyPolicy):
         }
 
         return max(
-            (window_durations.get(k, RATE_LIMIT_WINDOW_HOUR)
-             for k in operation_limits if k.startswith("max_per_")),
-            default=RATE_LIMIT_WINDOW_HOUR
+            (
+                window_durations.get(k, RATE_LIMIT_WINDOW_HOUR)
+                for k in operation_limits
+                if k.startswith("max_per_")
+            ),
+            default=RATE_LIMIT_WINDOW_HOUR,
         )
 
     def _validate_impl(
-        self,
-        action: Dict[str, Any],
-        context: Dict[str, Any]
+        self, action: dict[str, Any], context: dict[str, Any]
     ) -> ValidationResult:
         """Check if operation exceeds rate limits.
 
@@ -326,7 +346,9 @@ class WindowRateLimitPolicy(BaseSafetyPolicy):
             now = time.time()
 
             # Check all time window limits
-            violations = self._check_time_window_limits(history, operation_limits, operation)
+            violations = self._check_time_window_limits(
+                history, operation_limits, operation
+            )
 
             # If no violations, record this operation
             if not violations:
@@ -337,15 +359,10 @@ class WindowRateLimitPolicy(BaseSafetyPolicy):
                 )
 
         # Determine validity
-        valid = not any(
-            v.severity >= ViolationSeverity.HIGH
-            for v in violations
-        )
+        valid = not any(v.severity >= ViolationSeverity.HIGH for v in violations)
 
         return ValidationResult(
-            valid=valid,
-            violations=violations,
-            policy_name=self.name
+            valid=valid, violations=violations, policy_name=self.name
         )
 
     def _delete_matching_keys(self, index: int, value: str) -> None:
@@ -361,7 +378,9 @@ class WindowRateLimitPolicy(BaseSafetyPolicy):
         for key in keys_to_delete:
             del self._operation_history[key]
 
-    def reset_limits(self, operation: Optional[str] = None, entity: Optional[str] = None) -> None:
+    def reset_limits(
+        self, operation: str | None = None, entity: str | None = None
+    ) -> None:
         """Reset rate limit tracking (useful for testing).
 
         Args:

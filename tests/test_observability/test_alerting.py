@@ -5,7 +5,7 @@ action execution (LOG_WARNING, LOG_ERROR, HALT_WORKFLOW), alert history,
 and edge cases like duplicate alerts and invalid configurations.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import Mock, patch
 
 import pytest
@@ -25,7 +25,9 @@ class TestAlertRule:
 
     def test_alert_rule_defaults(self):
         """Test alert rule with default values."""
-        rule = AlertRule(name="test_rule", metric_type=MetricType.COST_USD, threshold=10.0)
+        rule = AlertRule(
+            name="test_rule", metric_type=MetricType.COST_USD, threshold=10.0
+        )
         assert rule.name == "test_rule"
         assert rule.metric_type == MetricType.COST_USD
         assert rule.threshold == 10.0
@@ -79,7 +81,7 @@ class TestAlert:
 
     def test_alert_timestamp_default(self):
         """Test alert timestamp is automatically set."""
-        before = datetime.now(timezone.utc)
+        before = datetime.now(UTC)
         alert = Alert(
             rule_name="test",
             severity=AlertSeverity.INFO,
@@ -87,7 +89,7 @@ class TestAlert:
             metric_value=5.0,
             threshold=1.0,
         )
-        after = datetime.now(timezone.utc)
+        after = datetime.now(UTC)
         assert before <= alert.timestamp <= after
 
 
@@ -116,14 +118,18 @@ class TestAlertManager:
 
     def test_add_rule(self, manager):
         """Test adding alert rules."""
-        rule = AlertRule(name="test_rule", metric_type=MetricType.COST_USD, threshold=10.0)
+        rule = AlertRule(
+            name="test_rule", metric_type=MetricType.COST_USD, threshold=10.0
+        )
         manager.add_rule(rule)
         assert "test_rule" in manager.rules
         assert manager.rules["test_rule"].threshold == 10.0
 
     def test_remove_rule(self, manager):
         """Test removing alert rules."""
-        rule = AlertRule(name="test_rule", metric_type=MetricType.COST_USD, threshold=10.0)
+        rule = AlertRule(
+            name="test_rule", metric_type=MetricType.COST_USD, threshold=10.0
+        )
         manager.add_rule(rule)
         assert "test_rule" in manager.rules
 
@@ -133,7 +139,10 @@ class TestAlertManager:
     def test_enable_disable_rule(self, manager):
         """Test enabling and disabling rules."""
         rule = AlertRule(
-            name="test_rule", metric_type=MetricType.COST_USD, threshold=10.0, enabled=False
+            name="test_rule",
+            metric_type=MetricType.COST_USD,
+            threshold=10.0,
+            enabled=False,
         )
         manager.add_rule(rule)
         assert manager.rules["test_rule"].enabled is False
@@ -147,11 +156,16 @@ class TestAlertManager:
     def test_check_metric_triggers_alert(self, manager):
         """Test metric check triggers alert when threshold exceeded."""
         rule = AlertRule(
-            name="test_rule", metric_type=MetricType.COST_USD, threshold=10.0, enabled=True
+            name="test_rule",
+            metric_type=MetricType.COST_USD,
+            threshold=10.0,
+            enabled=True,
         )
         manager.add_rule(rule)
 
-        alerts = manager.check_metric("cost_usd", 15.0, context={"workflow_id": "wf-123"})
+        alerts = manager.check_metric(
+            "cost_usd", 15.0, context={"workflow_id": "wf-123"}
+        )
 
         assert len(alerts) == 1
         assert alerts[0].rule_name == "test_rule"
@@ -162,7 +176,10 @@ class TestAlertManager:
     def test_check_metric_no_alert_below_threshold(self, manager):
         """Test metric check does not trigger when below threshold."""
         rule = AlertRule(
-            name="test_rule", metric_type=MetricType.COST_USD, threshold=10.0, enabled=True
+            name="test_rule",
+            metric_type=MetricType.COST_USD,
+            threshold=10.0,
+            enabled=True,
         )
         manager.add_rule(rule)
 
@@ -173,7 +190,10 @@ class TestAlertManager:
     def test_check_metric_disabled_rule(self, manager):
         """Test disabled rules do not trigger alerts."""
         rule = AlertRule(
-            name="test_rule", metric_type=MetricType.COST_USD, threshold=10.0, enabled=False
+            name="test_rule",
+            metric_type=MetricType.COST_USD,
+            threshold=10.0,
+            enabled=False,
         )
         manager.add_rule(rule)
 
@@ -184,7 +204,10 @@ class TestAlertManager:
     def test_check_metric_unknown_type(self, manager):
         """Test unknown metric types are ignored."""
         rule = AlertRule(
-            name="test_rule", metric_type=MetricType.COST_USD, threshold=10.0, enabled=True
+            name="test_rule",
+            metric_type=MetricType.COST_USD,
+            threshold=10.0,
+            enabled=True,
         )
         manager.add_rule(rule)
 
@@ -195,7 +218,10 @@ class TestAlertManager:
     def test_alert_history_tracking(self, manager):
         """Test alerts are stored in history."""
         rule = AlertRule(
-            name="test_rule", metric_type=MetricType.COST_USD, threshold=10.0, enabled=True
+            name="test_rule",
+            metric_type=MetricType.COST_USD,
+            threshold=10.0,
+            enabled=True,
         )
         manager.add_rule(rule)
 
@@ -349,7 +375,10 @@ class TestAlertManager:
     def test_get_recent_alerts(self, manager):
         """Test retrieving recent alerts."""
         rule = AlertRule(
-            name="test_rule", metric_type=MetricType.COST_USD, threshold=10.0, enabled=True
+            name="test_rule",
+            metric_type=MetricType.COST_USD,
+            threshold=10.0,
+            enabled=True,
         )
         manager.add_rule(rule)
 
@@ -392,7 +421,10 @@ class TestAlertManager:
     def test_clear_history(self, manager):
         """Test clearing alert history."""
         rule = AlertRule(
-            name="test_rule", metric_type=MetricType.COST_USD, threshold=10.0, enabled=True
+            name="test_rule",
+            metric_type=MetricType.COST_USD,
+            threshold=10.0,
+            enabled=True,
         )
         manager.add_rule(rule)
 
@@ -425,7 +457,10 @@ class TestAlertManager:
         alerts = manager.check_metric("cost_usd", 60.0)
 
         assert len(alerts) == 2
-        assert {a.rule_name for a in alerts} == {"warning_threshold", "critical_threshold"}
+        assert {a.rule_name for a in alerts} == {
+            "warning_threshold",
+            "critical_threshold",
+        }
 
     @patch("temper_ai.observability.alerting.logger")
     def test_action_execution_error_handling(self, mock_logger, manager):
@@ -451,14 +486,19 @@ class TestAlertManager:
 
         mock_logger.error.assert_called()
         error_call = [
-            call for call in mock_logger.error.call_args_list if "Failed to execute" in str(call)
+            call
+            for call in mock_logger.error.call_args_list
+            if "Failed to execute" in str(call)
         ]
         assert len(error_call) > 0
 
     def test_empty_context_handling(self, manager):
         """Test metric check with no context."""
         rule = AlertRule(
-            name="test_rule", metric_type=MetricType.COST_USD, threshold=10.0, enabled=True
+            name="test_rule",
+            metric_type=MetricType.COST_USD,
+            threshold=10.0,
+            enabled=True,
         )
         manager.add_rule(rule)
 

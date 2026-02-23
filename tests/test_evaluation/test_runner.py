@@ -1,6 +1,8 @@
 """Tests for PromptTestRunner."""
+
+from unittest.mock import mock_open, patch
+
 import pytest
-from unittest.mock import MagicMock, patch, mock_open
 
 from temper_ai.evaluation._schemas import (
     TestCase,
@@ -8,7 +10,6 @@ from temper_ai.evaluation._schemas import (
     TestSuite,
 )
 from temper_ai.evaluation.constants import STATUS_ERROR, STATUS_FAIL, STATUS_PASS
-
 
 # Sample agent config dict (simulates yaml.safe_load output)
 SAMPLE_AGENT_CONFIG = {
@@ -29,6 +30,7 @@ def _make_runner():
     with patch("builtins.open", mock_open(read_data="")):
         with patch("yaml.safe_load", return_value=SAMPLE_AGENT_CONFIG):
             from temper_ai.evaluation.runner import PromptTestRunner
+
             return PromptTestRunner("fake_agent.yaml")
 
 
@@ -42,8 +44,12 @@ class TestRunCasePassesAllValidators:
             name="test_pass",
             input_vars={"suggestion_text": "test suggestion"},
             validators=[
-                TestCaseValidator(name="has_decision", pattern=r"DECISION:\s*(APPROVE|REJECT)"),
-                TestCaseValidator(name="has_confidence", pattern=r"CONFIDENCE:\s*[01]?\.\d+"),
+                TestCaseValidator(
+                    name="has_decision", pattern=r"DECISION:\s*(APPROVE|REJECT)"
+                ),
+                TestCaseValidator(
+                    name="has_confidence", pattern=r"CONFIDENCE:\s*[01]?\.\d+"
+                ),
             ],
         )
 
@@ -82,8 +88,12 @@ class TestRunCaseFailsMissingField:
             name="test_fail",
             input_vars={"suggestion_text": "test"},
             validators=[
-                TestCaseValidator(name="has_decision", pattern=r"DECISION:\s*(APPROVE|REJECT)"),
-                TestCaseValidator(name="has_confidence", pattern=r"CONFIDENCE:\s*[01]?\.\d+"),
+                TestCaseValidator(
+                    name="has_decision", pattern=r"DECISION:\s*(APPROVE|REJECT)"
+                ),
+                TestCaseValidator(
+                    name="has_confidence", pattern=r"CONFIDENCE:\s*[01]?\.\d+"
+                ),
             ],
         )
 
@@ -210,7 +220,9 @@ class TestValidatorToGuardrailConversion:
         answer = "FIELD: value"
         validators = [
             TestCaseValidator(name="has_field", pattern=r"FIELD:", severity="block"),
-            TestCaseValidator(name="optional_field", pattern=r"OPTIONAL:", severity="warn"),
+            TestCaseValidator(
+                name="optional_field", pattern=r"OPTIONAL:", severity="warn"
+            ),
         ]
         results, status = runner._validate_output(answer, validators)
 
@@ -223,7 +235,9 @@ class TestValidatorToGuardrailConversion:
         runner = _make_runner()
         answer = "no match here"
         validators = [
-            TestCaseValidator(name="required_field", pattern=r"REQUIRED:", severity="block"),
+            TestCaseValidator(
+                name="required_field", pattern=r"REQUIRED:", severity="block"
+            ),
         ]
         results, status = runner._validate_output(answer, validators)
 
@@ -272,8 +286,12 @@ class TestRunCaseWarnSeverityDoesNotFail:
             name="warn_only",
             input_vars={"suggestion_text": "x"},
             validators=[
-                TestCaseValidator(name="required", pattern=r"REQUIRED:", severity="block"),
-                TestCaseValidator(name="nice_to_have", pattern=r"NICE:", severity="warn"),
+                TestCaseValidator(
+                    name="required", pattern=r"REQUIRED:", severity="block"
+                ),
+                TestCaseValidator(
+                    name="nice_to_have", pattern=r"NICE:", severity="warn"
+                ),
             ],
         )
 
@@ -294,6 +312,7 @@ class TestRunnerInit:
 
     def test_missing_file_raises(self):
         from temper_ai.evaluation.runner import PromptTestRunner
+
         with pytest.raises(OSError):
             PromptTestRunner("/nonexistent/path.yaml")
 

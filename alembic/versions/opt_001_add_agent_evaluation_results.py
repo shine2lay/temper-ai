@@ -5,16 +5,17 @@ Revises: m9_001
 Create Date: 2026-02-20
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
+
+import sqlalchemy as sa
 
 from alembic import op
-import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = "opt_001"
-down_revision: Union[str, None] = "m9_001"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "m9_001"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -34,7 +35,8 @@ def upgrade() -> None:
         sa.Column("details", sa.JSON(), nullable=True),
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.UniqueConstraint(
-            "agent_execution_id", "evaluation_name",
+            "agent_execution_id",
+            "evaluation_name",
             name="uq_eval_agent_exec_name",
         ),
     )

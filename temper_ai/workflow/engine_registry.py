@@ -12,7 +12,7 @@ Design Philosophy:
 """
 
 import threading
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Optional
 
 from temper_ai.workflow.execution_engine import ExecutionEngine
 
@@ -32,7 +32,7 @@ class EngineRegistry:
 
     _lock: threading.Lock = threading.Lock()
     _instance: Optional["EngineRegistry"] = None
-    _engines: Dict[str, Type[ExecutionEngine]]
+    _engines: dict[str, type[ExecutionEngine]]
 
     def __new__(cls) -> "EngineRegistry":
         """Thread-safe singleton pattern with double-checked locking."""
@@ -52,7 +52,10 @@ class EngineRegistry:
             RuntimeError: If default engine cannot be imported/registered
         """
         try:
-            from temper_ai.workflow.engines.langgraph_engine import LangGraphExecutionEngine
+            from temper_ai.workflow.engines.langgraph_engine import (
+                LangGraphExecutionEngine,
+            )
+
             self._engines["langgraph"] = LangGraphExecutionEngine
         except ImportError as e:
             raise RuntimeError(
@@ -61,14 +64,11 @@ class EngineRegistry:
             ) from e
 
         from temper_ai.workflow.engines.dynamic_engine import DynamicExecutionEngine
+
         self._engines["dynamic"] = DynamicExecutionEngine
         self._engines["native"] = DynamicExecutionEngine  # Alias for backward compat
 
-    def register_engine(
-        self,
-        name: str,
-        engine_class: Type[ExecutionEngine]
-    ) -> None:
+    def register_engine(self, name: str, engine_class: type[ExecutionEngine]) -> None:
         """Register an execution engine (thread-safe).
 
         Args:
@@ -94,11 +94,7 @@ class EngineRegistry:
                 raise ValueError(f"Engine '{name}' already registered")
             self._engines[name] = engine_class
 
-    def get_engine(
-        self,
-        name: str = "langgraph",
-        **kwargs: Any
-    ) -> ExecutionEngine:
+    def get_engine(self, name: str = "langgraph", **kwargs: Any) -> ExecutionEngine:
         """Get engine instance by name (thread-safe).
 
         Args:
@@ -123,15 +119,14 @@ class EngineRegistry:
             if name not in self._engines:
                 available = ", ".join(self._engines.keys())
                 raise ValueError(
-                    f"Unknown engine '{name}'. "
-                    f"Available engines: {available}"
+                    f"Unknown engine '{name}'. " f"Available engines: {available}"
                 )
             engine_class = self._engines[name]
 
         # Instantiate outside lock
         return engine_class(**kwargs)
 
-    def list_engines(self) -> List[str]:
+    def list_engines(self) -> list[str]:
         """List all registered engine names (thread-safe).
 
         Returns:
@@ -146,9 +141,7 @@ class EngineRegistry:
             return list(self._engines.keys())
 
     def get_engine_from_config(
-        self,
-        workflow_config: Dict[str, Any],
-        **kwargs: Any
+        self, workflow_config: dict[str, Any], **kwargs: Any
     ) -> ExecutionEngine:
         """Create engine from workflow configuration.
 

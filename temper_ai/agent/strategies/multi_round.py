@@ -12,7 +12,7 @@ with a single configurable strategy.
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from temper_ai.agent.strategies._dialogue_helpers import (
     calculate_exact_match_convergence,
@@ -21,7 +21,11 @@ from temper_ai.agent.strategies._dialogue_helpers import (
     curate_relevant,
     merit_weighted_synthesis,
 )
-from temper_ai.agent.strategies.base import AgentOutput, CollaborationStrategy, SynthesisResult
+from temper_ai.agent.strategies.base import (
+    AgentOutput,
+    CollaborationStrategy,
+    SynthesisResult,
+)
 from temper_ai.agent.strategies.constants import (
     CONFIG_KEY_CONVERGENCE_THRESHOLD,
     CONFIG_KEY_DEBATE_FRAMING,
@@ -40,11 +44,18 @@ from temper_ai.agent.strategies.constants import (
 logger = logging.getLogger(__name__)
 
 # Valid interaction modes
-VALID_MODES = frozenset({STRATEGY_NAME_DIALOGUE, STRATEGY_NAME_DEBATE, STRATEGY_NAME_CONSENSUS})
+VALID_MODES = frozenset(
+    {STRATEGY_NAME_DIALOGUE, STRATEGY_NAME_DEBATE, STRATEGY_NAME_CONSENSUS}
+)
 VALID_CONTEXT_STRATEGIES = frozenset({MODE_VALUE_FULL, "recent", "relevant"})
 
 
-def _validate_config_ranges(config: "MultiRoundConfig", max_rounds: int, min_rounds: int, convergence_threshold: float) -> None:
+def _validate_config_ranges(
+    config: "MultiRoundConfig",
+    max_rounds: int,
+    min_rounds: int,
+    convergence_threshold: float,
+) -> None:
     """Validate numeric config ranges, raising ValueError on invalid values."""
     if max_rounds < 1:
         raise ValueError(f"max_rounds must be >= 1, got {max_rounds}")
@@ -57,7 +68,9 @@ def _validate_config_ranges(config: "MultiRoundConfig", max_rounds: int, min_rou
     if config.cost_budget_usd is not None and config.cost_budget_usd <= 0:
         raise ValueError(f"cost_budget_usd must be > 0, got {config.cost_budget_usd}")
     if config.context_window_size < 1:
-        raise ValueError(f"context_window_size must be >= 1, got {config.context_window_size}")
+        raise ValueError(
+            f"context_window_size must be >= 1, got {config.context_window_size}"
+        )
 
 
 # --- Stance extraction ---
@@ -91,7 +104,7 @@ def _extract_stance_regex(text: str) -> str:
 def _extract_stance_via_llm(
     llm_provider: Any,
     output_text: str,
-    other_outputs: List[tuple],
+    other_outputs: list[tuple],
 ) -> str:
     """Use a short LLM call to classify agent stance by comparing to others.
 
@@ -133,7 +146,7 @@ def _extract_stance_via_llm(
 
 
 # Mode-specific defaults (applied when param is None)
-_MODE_DEFAULTS: Dict[str, Dict[str, Any]] = {
+_MODE_DEFAULTS: dict[str, dict[str, Any]] = {
     STRATEGY_NAME_DIALOGUE: {
         CONFIG_KEY_CONVERGENCE_THRESHOLD: 0.85,
         CONFIG_KEY_MAX_ROUNDS: DEFAULT_MAX_ROUNDS,
@@ -170,15 +183,16 @@ class MultiRoundConfig:
         merit_domain: Domain for merit lookup
         require_unanimous: Require 100% agreement
     """
-    max_rounds: Optional[int] = None
-    min_rounds: Optional[int] = None
-    convergence_threshold: Optional[float] = None
+
+    max_rounds: int | None = None
+    min_rounds: int | None = None
+    convergence_threshold: float | None = None
     use_semantic_convergence: bool = True
     context_strategy: str = "full"
     context_window_size: int = DEFAULT_CONTEXT_WINDOW_SIZE
-    cost_budget_usd: Optional[float] = None
+    cost_budget_usd: float | None = None
     use_merit_weighting: bool = False
-    merit_domain: Optional[str] = None
+    merit_domain: str | None = None
     require_unanimous: bool = False
 
 
@@ -192,10 +206,11 @@ class CommunicationRound:
         convergence_score: Agreement level (0-1)
         metadata: Additional round metadata
     """
+
     round_number: int
-    agent_outputs: List[AgentOutput]
+    agent_outputs: list[AgentOutput]
     convergence_score: float = 0.0
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -210,11 +225,12 @@ class CommunicationHistory:
         early_stop_reason: Reason for stopping early
         total_cost_usd: Accumulated cost
     """
-    rounds: List[CommunicationRound] = field(default_factory=list)
+
+    rounds: list[CommunicationRound] = field(default_factory=list)
     total_rounds: int = 0
     converged: bool = False
     convergence_round: int = -1
-    early_stop_reason: Optional[str] = None
+    early_stop_reason: str | None = None
     total_cost_usd: float = 0.0
 
 
@@ -241,8 +257,8 @@ class MultiRoundStrategy(CollaborationStrategy):
     def __init__(
         self,
         mode: str = "dialogue",
-        config: Optional[MultiRoundConfig] = None,
-        **kwargs: Any
+        config: MultiRoundConfig | None = None,
+        **kwargs: Any,
     ):
         """Initialize multi-round strategy.
 
@@ -272,14 +288,25 @@ class MultiRoundStrategy(CollaborationStrategy):
         defaults = _MODE_DEFAULTS[mode]
 
         # Apply defaults for None values
-        self.max_rounds = config.max_rounds if config.max_rounds is not None else defaults["max_rounds"]
-        self.min_rounds = config.min_rounds if config.min_rounds is not None else defaults["min_rounds"]
+        self.max_rounds = (
+            config.max_rounds
+            if config.max_rounds is not None
+            else defaults["max_rounds"]
+        )
+        self.min_rounds = (
+            config.min_rounds
+            if config.min_rounds is not None
+            else defaults["min_rounds"]
+        )
         self.convergence_threshold = (
-            config.convergence_threshold if config.convergence_threshold is not None
+            config.convergence_threshold
+            if config.convergence_threshold is not None
             else defaults["convergence_threshold"]
         )
 
-        _validate_config_ranges(config, self.max_rounds, self.min_rounds, self.convergence_threshold)
+        _validate_config_ranges(
+            config, self.max_rounds, self.min_rounds, self.convergence_threshold
+        )
 
         # Store config values
         self.use_semantic_convergence = config.use_semantic_convergence
@@ -289,14 +316,16 @@ class MultiRoundStrategy(CollaborationStrategy):
         self.use_merit_weighting = config.use_merit_weighting
         self.merit_domain = config.merit_domain
         self.require_unanimous = config.require_unanimous
-        self._embeddings_available: Optional[bool] = None
+        self._embeddings_available: bool | None = None
 
     @property
     def requires_requery(self) -> bool:
         """Signal to executor: multi-round modes need agent re-invocation."""
         return self.mode != STRATEGY_NAME_CONSENSUS
 
-    def get_round_context(self, round_number: int, agent_name: Optional[str] = None) -> Dict[str, Any]:
+    def get_round_context(
+        self, round_number: int, agent_name: str | None = None
+    ) -> dict[str, Any]:
         """Get mode-specific context injected into agent input_data.
 
         Returns keys that will be merged into the agent's input_data dict,
@@ -309,7 +338,7 @@ class MultiRoundStrategy(CollaborationStrategy):
         Returns:
             Dict with keys: interaction_mode, mode_instruction, debate_framing, round_number
         """
-        context: Dict[str, Any] = {
+        context: dict[str, Any] = {
             "interaction_mode": self.mode,
             "round_number": round_number,
         }
@@ -321,7 +350,9 @@ class MultiRoundStrategy(CollaborationStrategy):
                 "opposing arguments. Be adversarial but constructive."
             )
             if round_number == 0:
-                context[CONFIG_KEY_DEBATE_FRAMING] = "State your initial position clearly with supporting arguments."
+                context[CONFIG_KEY_DEBATE_FRAMING] = (
+                    "State your initial position clearly with supporting arguments."
+                )
             else:
                 context[CONFIG_KEY_DEBATE_FRAMING] = (
                     "Review other agents' arguments from previous rounds. "
@@ -334,7 +365,9 @@ class MultiRoundStrategy(CollaborationStrategy):
                 "Be constructive and integrative."
             )
             if round_number == 0:
-                context[CONFIG_KEY_DEBATE_FRAMING] = "Share your initial perspective and key insights."
+                context[CONFIG_KEY_DEBATE_FRAMING] = (
+                    "Share your initial perspective and key insights."
+                )
             else:
                 context[CONFIG_KEY_DEBATE_FRAMING] = (
                     "Consider what other agents have shared. "
@@ -351,8 +384,8 @@ class MultiRoundStrategy(CollaborationStrategy):
 
     def synthesize(
         self,
-        agent_outputs: List[AgentOutput],
-        config: Dict[str, Any],
+        agent_outputs: list[AgentOutput],
+        config: dict[str, Any],
     ) -> SynthesisResult:
         """Synthesize agent outputs into a unified decision.
 
@@ -373,6 +406,7 @@ class MultiRoundStrategy(CollaborationStrategy):
             result.metadata["synthesis_method"] = "merit_weighted"
         else:
             from temper_ai.agent.strategies.consensus import ConsensusStrategy
+
             consensus = ConsensusStrategy()
             result = consensus.synthesize(agent_outputs, config)
             result.metadata["synthesis_method"] = "consensus_from_final_round"
@@ -383,10 +417,10 @@ class MultiRoundStrategy(CollaborationStrategy):
 
     def curate_dialogue_history(
         self,
-        dialogue_history: List[Dict[str, Any]],
+        dialogue_history: list[dict[str, Any]],
         current_round: int,
-        agent_name: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
+        agent_name: str | None = None,
+    ) -> list[dict[str, Any]]:
         """Curate dialogue history based on context strategy.
 
         Args:
@@ -405,15 +439,19 @@ class MultiRoundStrategy(CollaborationStrategy):
         elif self.context_strategy == "recent":
             return curate_recent(dialogue_history, self.context_window_size)
         elif self.context_strategy == "relevant":
-            return curate_relevant(dialogue_history, agent_name, self.context_window_size)
+            return curate_relevant(
+                dialogue_history, agent_name, self.context_window_size
+            )
         else:
-            logger.warning("Unknown context_strategy '%s', using 'full'", self.context_strategy)
+            logger.warning(
+                "Unknown context_strategy '%s', using 'full'", self.context_strategy
+            )
             return dialogue_history
 
     def calculate_convergence(
         self,
-        current_outputs: List[AgentOutput],
-        previous_outputs: List[AgentOutput],
+        current_outputs: list[AgentOutput],
+        previous_outputs: list[AgentOutput],
     ) -> float:
         """Calculate convergence score between rounds.
 
@@ -435,16 +473,17 @@ class MultiRoundStrategy(CollaborationStrategy):
                     )
                 except (ImportError, RuntimeError, ValueError, TypeError) as e:
                     logger.warning(
-                        "Semantic similarity failed: %s. Falling back to exact match.", e
+                        "Semantic similarity failed: %s. Falling back to exact match.",
+                        e,
                     )
 
         return calculate_exact_match_convergence(current_outputs, previous_outputs)
 
     def extract_stances(
         self,
-        outputs: List[AgentOutput],
-        llm_providers: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, str]:
+        outputs: list[AgentOutput],
+        llm_providers: dict[str, Any] | None = None,
+    ) -> dict[str, str]:
         """Extract stance (AGREE/DISAGREE/PARTIAL) from each agent's output.
 
         Uses regex fast-path first, then falls back to an LLM classification
@@ -457,9 +496,9 @@ class MultiRoundStrategy(CollaborationStrategy):
         Returns:
             Dict mapping agent_name -> stance string (or empty if undetected)
         """
-        stances: Dict[str, str] = {}
+        stances: dict[str, str] = {}
         providers = llm_providers or {}
-        unresolved: List[AgentOutput] = []
+        unresolved: list[AgentOutput] = []
 
         # Pass 1: try regex (free)
         for output in outputs:
@@ -488,6 +527,7 @@ class MultiRoundStrategy(CollaborationStrategy):
             return self._embeddings_available
         try:
             import sentence_transformers  # type: ignore[import-not-found, unused-ignore]  # noqa: F401
+
             self._embeddings_available = True
             return True
         except ImportError:
@@ -505,13 +545,14 @@ class MultiRoundStrategy(CollaborationStrategy):
                 from sentence_transformers import (
                     SentenceTransformer,  # type: ignore[import-not-found, unused-ignore]
                 )
-                cls._embedding_model = SentenceTransformer('paraphrase-MiniLM-L6-v2')
+
+                cls._embedding_model = SentenceTransformer("paraphrase-MiniLM-L6-v2")
                 cls._embedding_model_loaded = True
             except (ImportError, OSError, RuntimeError) as e:
                 logger.warning("Failed to load embedding model: %s", e)
         return cls._embedding_model
 
-    def get_capabilities(self) -> Dict[str, bool]:
+    def get_capabilities(self) -> dict[str, bool]:
         """Get strategy capabilities."""
         return {
             "supports_debate": self.mode == STRATEGY_NAME_DEBATE,
@@ -523,16 +564,24 @@ class MultiRoundStrategy(CollaborationStrategy):
             "supports_multi_round": self.mode != STRATEGY_NAME_CONSENSUS,
         }
 
-    def get_metadata(self) -> Dict[str, Any]:
+    def get_metadata(self) -> dict[str, Any]:
         """Get strategy metadata."""
         return {
             **super().get_metadata(),
             "config_schema": {
-                "mode": {"type": "str", "default": "dialogue", "options": list(VALID_MODES)},
+                "mode": {
+                    "type": "str",
+                    "default": "dialogue",
+                    "options": list(VALID_MODES),
+                },
                 "max_rounds": {"type": "int", "default": "mode-dependent"},
                 "min_rounds": {"type": "int", "default": 1},
                 "convergence_threshold": {"type": "float", "default": "mode-dependent"},
-                "context_strategy": {"type": "str", "default": "full", "options": list(VALID_CONTEXT_STRATEGIES)},
+                "context_strategy": {
+                    "type": "str",
+                    "default": "full",
+                    "options": list(VALID_CONTEXT_STRATEGIES),
+                },
                 "use_merit_weighting": {"type": "bool", "default": False},
                 "require_unanimous": {"type": "bool", "default": False},
             },

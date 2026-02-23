@@ -3,10 +3,11 @@ Git tool for running safe, read-friendly Git operations in a repository.
 
 Security: Blocked destructive flags, path validation, no shell=True.
 """
+
 import logging
 import os
 import subprocess
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from temper_ai.tools.base import BaseTool, ToolMetadata, ToolResult
 from temper_ai.tools.git_tool_constants import (
@@ -19,14 +20,14 @@ from temper_ai.tools.git_tool_constants import (
 logger = logging.getLogger(__name__)
 
 
-def _validate_operation(operation: str) -> Optional[str]:
+def _validate_operation(operation: str) -> str | None:
     """Return error string if operation is not allowed, else None."""
     if operation not in GIT_ALLOWED_OPERATIONS:
         return f"Operation '{operation}' is not allowed. Allowed: {sorted(GIT_ALLOWED_OPERATIONS)}"
     return None
 
 
-def _validate_args(args: List[str]) -> Optional[str]:
+def _validate_args(args: list[str]) -> str | None:
     """Return error string if any arg contains a blocked flag, else None."""
     for arg in args:
         if arg in GIT_BLOCKED_FLAGS:
@@ -34,7 +35,7 @@ def _validate_args(args: List[str]) -> Optional[str]:
     return None
 
 
-def _validate_repo_path(repo_path: str) -> Optional[str]:
+def _validate_repo_path(repo_path: str) -> str | None:
     """Return error string if repo_path does not exist or is not a directory, else None."""
     if not os.path.exists(repo_path):
         return f"Repository path does not exist: '{repo_path}'"
@@ -77,27 +78,27 @@ class GitTool(BaseTool):
             modifies_state=True,
         )
 
-    def get_parameters_schema(self) -> Dict[str, Any]:
+    def get_parameters_schema(self) -> dict[str, Any]:
         """Return JSON schema for Git tool parameters."""
         return {
             "type": "object",
             "properties": {
                 "operation": {
                     "type": "string",
-                    "description": "Git operation (e.g., status, diff, log, commit, branch)"
+                    "description": "Git operation (e.g., status, diff, log, commit, branch)",
                 },
                 "repo_path": {
                     "type": "string",
                     "description": "Path to the git repository (default: current directory)",
-                    "default": "."
+                    "default": ".",
                 },
                 "args": {
                     "type": "array",
                     "description": "Additional arguments to pass to the git command",
-                    "items": {"type": "string"}
+                    "items": {"type": "string"},
                 },
             },
-            "required": ["operation"]
+            "required": ["operation"],
         }
 
     def execute(self, **kwargs: Any) -> ToolResult:
@@ -114,7 +115,7 @@ class GitTool(BaseTool):
         """
         operation = kwargs.get("operation", "")
         repo_path = str(kwargs.get("repo_path", "."))
-        args: List[str] = list(kwargs.get("args") or [])
+        args: list[str] = list(kwargs.get("args") or [])
 
         op_error = _validate_operation(operation)
         if op_error:
@@ -143,13 +144,19 @@ class GitTool(BaseTool):
             stderr = proc.stderr.strip()
 
             success = proc.returncode == 0
-            error_msg: Optional[str] = None
+            error_msg: str | None = None
             if not success:
-                error_msg = stderr or f"git {operation} exited with code {proc.returncode}"
+                error_msg = (
+                    stderr or f"git {operation} exited with code {proc.returncode}"
+                )
 
             return ToolResult(
                 success=success,
-                result={"stdout": stdout, "stderr": stderr, "returncode": proc.returncode},
+                result={
+                    "stdout": stdout,
+                    "stderr": stderr,
+                    "returncode": proc.returncode,
+                },
                 error=error_msg,
                 metadata={
                     "operation": operation,
@@ -159,6 +166,9 @@ class GitTool(BaseTool):
             )
 
         except subprocess.TimeoutExpired:
-            return ToolResult(success=False, error=f"git {operation} timed out after {GIT_DEFAULT_TIMEOUT} seconds")
+            return ToolResult(
+                success=False,
+                error=f"git {operation} timed out after {GIT_DEFAULT_TIMEOUT} seconds",
+            )
         except (OSError, ValueError, FileNotFoundError) as exc:
             return ToolResult(success=False, error=f"Failed to run git: {exc}")

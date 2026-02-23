@@ -4,26 +4,35 @@ Error propagation tests for agent → stage → workflow chain.
 Tests error propagation, context preservation, partial failures, cascading control,
 and metadata sanitization to prevent secret leakage.
 """
-from typing import Any, Dict, List, Optional
+
+from typing import Any
 
 import pytest
 
 
 class AgentError(Exception):
     """Base agent error."""
-    def __init__(self, message: str, context: Optional[Dict[str, Any]] = None):
+
+    def __init__(self, message: str, context: dict[str, Any] | None = None):
         super().__init__(message)
         self.context = context or {}
 
 
 class ToolNotFoundError(AgentError):
     """Tool not found error."""
+
     pass
 
 
 class StageExecutionError(Exception):
     """Stage execution error."""
-    def __init__(self, message: str, agent_errors: Optional[List[Exception]] = None, context: Optional[Dict[str, Any]] = None):
+
+    def __init__(
+        self,
+        message: str,
+        agent_errors: list[Exception] | None = None,
+        context: dict[str, Any] | None = None,
+    ):
         super().__init__(message)
         self.agent_errors = agent_errors or []
         self.context = context or {}
@@ -31,7 +40,13 @@ class StageExecutionError(Exception):
 
 class WorkflowExecutionError(Exception):
     """Workflow execution error."""
-    def __init__(self, message: str, stage_errors: Optional[List[Exception]] = None, context: Optional[Dict[str, Any]] = None):
+
+    def __init__(
+        self,
+        message: str,
+        stage_errors: list[Exception] | None = None,
+        context: dict[str, Any] | None = None,
+    ):
         super().__init__(message)
         self.stage_errors = stage_errors or []
         self.context = context or {}
@@ -40,17 +55,19 @@ class WorkflowExecutionError(Exception):
 class MockAgent:
     """Mock agent for testing error propagation."""
 
-    def __init__(self, name: str, should_fail: bool = False, error_type: type = AgentError):
+    def __init__(
+        self, name: str, should_fail: bool = False, error_type: type = AgentError
+    ):
         self.name = name
         self.should_fail = should_fail
         self.error_type = error_type
 
-    async def execute(self, context: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, context: dict[str, Any]) -> dict[str, Any]:
         """Execute agent."""
         if self.should_fail:
             raise self.error_type(
                 f"Agent {self.name} failed",
-                context={"agent": self.name, "operation": "execute"}
+                context={"agent": self.name, "operation": "execute"},
             )
 
         return {"agent": self.name, "result": f"Success from {self.name}"}
@@ -59,12 +76,12 @@ class MockAgent:
 class MockStage:
     """Mock stage for testing error propagation."""
 
-    def __init__(self, name: str, agents: List[MockAgent], fail_on_error: bool = True):
+    def __init__(self, name: str, agents: list[MockAgent], fail_on_error: bool = True):
         self.name = name
         self.agents = agents
         self.fail_on_error = fail_on_error
 
-    async def execute(self, context: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, context: dict[str, Any]) -> dict[str, Any]:
         """Execute stage with agents."""
         results = []
         errors = []
@@ -79,7 +96,7 @@ class MockStage:
                     raise StageExecutionError(
                         f"Stage {self.name} failed due to agent error",
                         agent_errors=[e],
-                        context={"stage": self.name, "failed_agents": 1}
+                        context={"stage": self.name, "failed_agents": 1},
                     )
 
         if errors and not self.fail_on_error:
@@ -88,7 +105,7 @@ class MockStage:
                 "stage": self.name,
                 "results": results,
                 "errors": errors,
-                "partial_failure": True
+                "partial_failure": True,
             }
 
         return {"stage": self.name, "results": results}
@@ -97,11 +114,11 @@ class MockStage:
 class MockWorkflow:
     """Mock workflow for testing error propagation."""
 
-    def __init__(self, name: str, stages: List[MockStage]):
+    def __init__(self, name: str, stages: list[MockStage]):
         self.name = name
         self.stages = stages
 
-    async def execute(self, context: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, context: dict[str, Any]) -> dict[str, Any]:
         """Execute workflow with stages."""
         stage_results = []
         stage_errors = []
@@ -115,7 +132,7 @@ class MockWorkflow:
                 raise WorkflowExecutionError(
                     f"Workflow {self.name} failed at stage {stage.name}",
                     stage_errors=[e],
-                    context={"workflow": self.name, "failed_stage": stage.name}
+                    context={"workflow": self.name, "failed_stage": stage.name},
                 )
 
         return {"workflow": self.name, "stages": stage_results}
@@ -128,7 +145,9 @@ class TestErrorPropagationChain:
     async def test_agent_to_stage_error_propagation(self):
         """Test agent error propagates to stage with context."""
         # Create failing agent
-        agent = MockAgent("failing_agent", should_fail=True, error_type=ToolNotFoundError)
+        agent = MockAgent(
+            "failing_agent", should_fail=True, error_type=ToolNotFoundError
+        )
         stage = MockStage("test_stage", [agent])
 
         # Execute stage (should fail)
@@ -409,13 +428,22 @@ class TestErrorMetadataSanitization:
             import re
 
             # Sanitize API keys (sk-*, api-*, etc.)
-            message = re.sub(r'(sk|api|key)-[a-zA-Z0-9]+', '[REDACTED-API-KEY]', message)
+            message = re.sub(
+                r"(sk|api|key)-[a-zA-Z0-9]+", "[REDACTED-API-KEY]", message
+            )
 
             # Sanitize tokens (Bearer, etc.)
-            message = re.sub(r'Bearer [a-zA-Z0-9._-]+', 'Bearer [REDACTED-TOKEN]', message)
+            message = re.sub(
+                r"Bearer [a-zA-Z0-9._-]+", "Bearer [REDACTED-TOKEN]", message
+            )
 
             # Sanitize passwords
-            message = re.sub(r'password["\']?\s*[:=]\s*["\']?[^\s"\']+', 'password=[REDACTED]', message, flags=re.IGNORECASE)
+            message = re.sub(
+                r'password["\']?\s*[:=]\s*["\']?[^\s"\']+',
+                "password=[REDACTED]",
+                message,
+                flags=re.IGNORECASE,
+            )
 
             return message
 
@@ -435,7 +463,13 @@ class TestErrorMetadataSanitization:
 
         def sanitize_error_message(message: str) -> str:
             import re
-            return re.sub(r'password["\']?\s*[:=]\s*["\']?[^\s"\']+', 'password=[REDACTED]', message, flags=re.IGNORECASE)
+
+            return re.sub(
+                r'password["\']?\s*[:=]\s*["\']?[^\s"\']+',
+                "password=[REDACTED]",
+                message,
+                flags=re.IGNORECASE,
+            )
 
         error_message = f"Database connection failed: password={password}"
 
@@ -451,7 +485,8 @@ class TestErrorMetadataSanitization:
 
         def sanitize_error_message(message: str) -> str:
             import re
-            return re.sub(r'Bearer [a-zA-Z0-9._-]+', 'Bearer [REDACTED-TOKEN]', message)
+
+            return re.sub(r"Bearer [a-zA-Z0-9._-]+", "Bearer [REDACTED-TOKEN]", message)
 
         error_message = f"API request failed: Authorization: Bearer {token}"
 
@@ -469,12 +504,24 @@ class TestErrorMetadataSanitization:
 
         def sanitize_error_message(message: str) -> str:
             import re
-            message = re.sub(r'(sk|api|key)-[a-zA-Z0-9-]+', '[REDACTED-API-KEY]', message)
-            message = re.sub(r'password["\']?\s*[:=]\s*["\']?[^\s"\']+', 'password=[REDACTED]', message, flags=re.IGNORECASE)
-            message = re.sub(r'Bearer [a-zA-Z0-9._-]+', 'Bearer [REDACTED-TOKEN]', message)
+
+            message = re.sub(
+                r"(sk|api|key)-[a-zA-Z0-9-]+", "[REDACTED-API-KEY]", message
+            )
+            message = re.sub(
+                r'password["\']?\s*[:=]\s*["\']?[^\s"\']+',
+                "password=[REDACTED]",
+                message,
+                flags=re.IGNORECASE,
+            )
+            message = re.sub(
+                r"Bearer [a-zA-Z0-9._-]+", "Bearer [REDACTED-TOKEN]", message
+            )
             return message
 
-        error_message = f"Auth failed: api_key={api_key}, password={password}, Bearer {token}"
+        error_message = (
+            f"Auth failed: api_key={api_key}, password={password}, Bearer {token}"
+        )
 
         sanitized = sanitize_error_message(error_message)
 
@@ -508,7 +555,9 @@ class TestErrorMessageQuality:
     @pytest.mark.asyncio
     async def test_nested_error_messages_are_clear(self):
         """Test nested errors have clear messages at each level."""
-        agent = MockAgent("failing_agent", should_fail=True, error_type=ToolNotFoundError)
+        agent = MockAgent(
+            "failing_agent", should_fail=True, error_type=ToolNotFoundError
+        )
         stage = MockStage("processing_stage", [agent])
         workflow = MockWorkflow("data_pipeline", [stage])
 
@@ -536,8 +585,12 @@ class TestErrorMessageQuality:
     async def test_error_type_distinguishable(self):
         """Test different error types are distinguishable."""
         # Different error types
-        tool_error_agent = MockAgent("agent1", should_fail=True, error_type=ToolNotFoundError)
-        generic_error_agent = MockAgent("agent2", should_fail=True, error_type=AgentError)
+        tool_error_agent = MockAgent(
+            "agent1", should_fail=True, error_type=ToolNotFoundError
+        )
+        generic_error_agent = MockAgent(
+            "agent2", should_fail=True, error_type=AgentError
+        )
 
         # Both raise errors
         with pytest.raises(ToolNotFoundError):
@@ -561,7 +614,8 @@ class TestErrorSanitizationIntegration:
 
     def test_api_key_redacted_in_agent_error(self):
         """Test API keys are redacted in AgentError messages."""
-        from temper_ai.shared.utils.exceptions import AgentError, ErrorCode, ExecutionContext
+        from temper_ai.shared.core.context import ExecutionContext
+        from temper_ai.shared.utils.exceptions import AgentError, ErrorCode
 
         api_key = "sk-test-1234567890abcdef"
 
@@ -569,7 +623,7 @@ class TestErrorSanitizationIntegration:
         error = AgentError(
             message=f"API key {api_key} failed authentication",
             error_code=ErrorCode.AGENT_EXECUTION_ERROR,
-            context=ExecutionContext(agent_id="test-agent")
+            context=ExecutionContext(agent_id="test-agent"),
         )
 
         error_str = str(error)
@@ -587,7 +641,7 @@ class TestErrorSanitizationIntegration:
         error = LLMError(
             message=f"AWS access key {aws_key} unauthorized",
             error_code=ErrorCode.LLM_AUTHENTICATION_ERROR,
-            provider="openai"
+            provider="openai",
         )
 
         error_str = str(error)
@@ -604,7 +658,7 @@ class TestErrorSanitizationIntegration:
 
         error = ConfigurationError(
             message=f"Database connection failed: password={password}",
-            error_code=ErrorCode.CONFIG_INVALID
+            error_code=ErrorCode.CONFIG_INVALID,
         )
 
         error_str = str(error)
@@ -622,7 +676,7 @@ class TestErrorSanitizationIntegration:
         error = ToolError(
             message=f"API request failed: Authorization: Bearer {token}",
             error_code=ErrorCode.TOOL_EXECUTION_ERROR,
-            tool_name="api_caller"
+            tool_name="api_caller",
         )
 
         error_str = str(error)
@@ -639,7 +693,7 @@ class TestErrorSanitizationIntegration:
 
         error = WorkflowError(
             message=f"Auth failed with token {jwt}",
-            error_code=ErrorCode.WORKFLOW_EXECUTION_ERROR
+            error_code=ErrorCode.WORKFLOW_EXECUTION_ERROR,
         )
 
         error_str = str(error)
@@ -656,7 +710,7 @@ class TestErrorSanitizationIntegration:
 
         error = SafetyError(
             message=f"Invalid connection: {conn_str}",
-            error_code=ErrorCode.SAFETY_VIOLATION
+            error_code=ErrorCode.SAFETY_VIOLATION,
         )
 
         error_str = str(error)
@@ -667,7 +721,10 @@ class TestErrorSanitizationIntegration:
 
     def test_multiple_secrets_redacted_in_validation_error(self):
         """Test multiple secrets in same error are all redacted."""
-        from temper_ai.shared.utils.exceptions import ErrorCode, FrameworkValidationError
+        from temper_ai.shared.utils.exceptions import (
+            ErrorCode,
+            FrameworkValidationError,
+        )
 
         api_key = "sk-prod-key-xyz"
         password = "MyP@ssw0rd!"
@@ -675,7 +732,7 @@ class TestErrorSanitizationIntegration:
 
         error = FrameworkValidationError(
             message=f"Auth failed: api_key={api_key}, password={password}, token={token}",
-            error_code=ErrorCode.VALIDATION_ERROR
+            error_code=ErrorCode.VALIDATION_ERROR,
         )
 
         error_str = str(error)
@@ -694,7 +751,7 @@ class TestErrorSanitizationIntegration:
 
         error = LLMError(
             message=f"API call with key {api_key} failed",
-            error_code=ErrorCode.LLM_AUTHENTICATION_ERROR
+            error_code=ErrorCode.LLM_AUTHENTICATION_ERROR,
         )
 
         repr_str = repr(error)
@@ -711,7 +768,7 @@ class TestErrorSanitizationIntegration:
 
         error = AgentError(
             message=f"Login failed with password: {password}",
-            error_code=ErrorCode.AGENT_EXECUTION_ERROR
+            error_code=ErrorCode.AGENT_EXECUTION_ERROR,
         )
 
         error_dict = error.to_dict()
@@ -733,7 +790,7 @@ class TestErrorSanitizationIntegration:
             error = ToolError(
                 message="Tool execution failed",
                 error_code=ErrorCode.TOOL_EXECUTION_ERROR,
-                cause=e
+                cause=e,
             )
 
         error_str = str(error)
@@ -758,14 +815,15 @@ class TestErrorSanitizationIntegration:
             error = WorkflowError(
                 message="Workflow failed",
                 error_code=ErrorCode.WORKFLOW_EXECUTION_ERROR,
-                cause=e
+                cause=e,
             )
             error_dict = error.to_dict()
 
         # Password should be redacted in traceback
         if error_dict.get("traceback"):
-            assert password not in error_dict["traceback"], \
-                f"Password leaked in traceback: {error_dict['traceback']}"
+            assert (
+                password not in error_dict["traceback"]
+            ), f"Password leaked in traceback: {error_dict['traceback']}"
             assert "[REDACTED-PASSWORD]" in error_dict["traceback"]
 
     def test_api_key_formats_all_redacted(self):
@@ -783,7 +841,7 @@ class TestErrorSanitizationIntegration:
         for key, description in test_keys:
             error = LLMError(
                 message=f"Auth failed: {key}",
-                error_code=ErrorCode.LLM_AUTHENTICATION_ERROR
+                error_code=ErrorCode.LLM_AUTHENTICATION_ERROR,
             )
 
             error_str = str(error)
@@ -791,7 +849,9 @@ class TestErrorSanitizationIntegration:
             # Extract the actual secret from the key string
             if "=" in key or ":" in key:
                 # For assignment formats, check that value is redacted
-                assert "[REDACTED" in error_str, f"Failed to redact {description}: {key}"
+                assert (
+                    "[REDACTED" in error_str
+                ), f"Failed to redact {description}: {key}"
             else:
                 # For plain keys, check that key is redacted
                 assert key not in error_str, f"Failed to redact {description}: {key}"
@@ -810,14 +870,15 @@ class TestErrorSanitizationIntegration:
 
         for pwd_str, description in test_passwords:
             error = ConfigurationError(
-                message=f"Config error: {pwd_str}",
-                error_code=ErrorCode.CONFIG_INVALID
+                message=f"Config error: {pwd_str}", error_code=ErrorCode.CONFIG_INVALID
             )
 
             error_str = str(error)
 
             # Password value should be redacted
-            assert "[REDACTED" in error_str, f"Failed to redact {description}: {pwd_str}"
+            assert (
+                "[REDACTED" in error_str
+            ), f"Failed to redact {description}: {pwd_str}"
 
     def test_sanitization_performance(self):
         """Test that error sanitization has minimal performance overhead."""
@@ -835,15 +896,16 @@ class TestErrorSanitizationIntegration:
         start = time.time()
         for i in range(1000):
             error = AgentError(
-                message=message_with_secrets,
-                error_code=ErrorCode.AGENT_EXECUTION_ERROR
+                message=message_with_secrets, error_code=ErrorCode.AGENT_EXECUTION_ERROR
             )
             _ = str(error)
         elapsed = time.time() - start
 
         # Average time per error should be < 1ms
         avg_time_ms = (elapsed / 1000) * 1000
-        assert avg_time_ms < 1.0, f"Sanitization too slow: {avg_time_ms:.2f}ms per error"
+        assert (
+            avg_time_ms < 1.0
+        ), f"Sanitization too slow: {avg_time_ms:.2f}ms per error"
 
     def test_no_false_positives(self):
         """Test that sanitization doesn't redact non-secret data."""
@@ -855,10 +917,7 @@ class TestErrorSanitizationIntegration:
             "Password field was empty. Key parameter missing."
         )
 
-        error = ToolError(
-            message=message,
-            error_code=ErrorCode.TOOL_EXECUTION_ERROR
-        )
+        error = ToolError(message=message, error_code=ErrorCode.TOOL_EXECUTION_ERROR)
 
         error_str = str(error)
 
@@ -872,10 +931,7 @@ class TestErrorSanitizationIntegration:
         """Test sanitization handles empty messages gracefully."""
         from temper_ai.shared.utils.exceptions import BaseError, ErrorCode
 
-        error = BaseError(
-            message="",
-            error_code=ErrorCode.UNKNOWN_ERROR
-        )
+        error = BaseError(message="", error_code=ErrorCode.UNKNOWN_ERROR)
 
         error_str = str(error)
 
@@ -888,9 +944,7 @@ class TestErrorSanitizationIntegration:
         from temper_ai.shared.utils.exceptions import AgentError, ErrorCode
 
         error = AgentError(
-            message="Test error",
-            error_code=ErrorCode.AGENT_EXECUTION_ERROR,
-            cause=None
+            message="Test error", error_code=ErrorCode.AGENT_EXECUTION_ERROR, cause=None
         )
 
         error_str = str(error)

@@ -118,6 +118,8 @@ class TestObservabilityBufferPendingIdsPurge:
         assert isinstance(buf._pending_ids, dict)
 
     def test_purge_removes_stale_entries(self):
+        from temper_ai.observability._buffer_helpers import purge_stale_pending_ids
+
         buf = ObservabilityBuffer(auto_flush=False, pending_id_timeout=60)
         # Add entries with old timestamps
         old_time = time.time() - 120  # 2 minutes ago
@@ -125,18 +127,20 @@ class TestObservabilityBufferPendingIdsPurge:
         buf._pending_ids["old_2"] = old_time
         buf._pending_ids["fresh_1"] = time.time()
 
-        purged = buf._purge_stale_pending_ids()
+        purged = purge_stale_pending_ids(buf._pending_ids, buf._pending_id_timeout)
         assert purged == 2
         assert "old_1" not in buf._pending_ids
         assert "old_2" not in buf._pending_ids
         assert "fresh_1" in buf._pending_ids
 
     def test_purge_keeps_fresh_entries(self):
+        from temper_ai.observability._buffer_helpers import purge_stale_pending_ids
+
         buf = ObservabilityBuffer(auto_flush=False, pending_id_timeout=300)
         buf._pending_ids["a"] = time.time()
         buf._pending_ids["b"] = time.time()
 
-        purged = buf._purge_stale_pending_ids()
+        purged = purge_stale_pending_ids(buf._pending_ids, buf._pending_id_timeout)
         assert purged == 0
         assert len(buf._pending_ids) == 2
 

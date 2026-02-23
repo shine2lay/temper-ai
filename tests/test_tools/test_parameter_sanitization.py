@@ -8,6 +8,7 @@ Tests cover:
 - Input validation (length, range, type)
 - OWASP attack payloads
 """
+
 import os
 import tempfile
 from pathlib import Path
@@ -131,8 +132,8 @@ class TestPathTraversalPrevention:
 
         # These URL-encoded payloads won't be caught unless pre-decoded
         url_encoded_payloads = [
-            "..%2F",      # URL-encoded ../
-            "..%5C",      # URL-encoded ..\
+            "..%2F",  # URL-encoded ../
+            "..%5C",  # URL-encoded ..\
             "%2e%2e%2f",  # Fully encoded ../
         ]
 
@@ -201,7 +202,9 @@ class TestCommandInjectionPrevention:
         ]
 
         for cmd, expected_char in malicious_commands:
-            with pytest.raises(SecurityError, match=f"Dangerous character '\\{expected_char}'"):
+            with pytest.raises(
+                SecurityError, match=f"Dangerous character '\\{expected_char}'"
+            ):
                 sanitizer.sanitize_command(cmd)
 
     def test_sanitize_command_blocks_backticks(self):
@@ -267,8 +270,13 @@ class TestCommandInjectionPrevention:
         allowed = ["ls", "cat", "echo"]
 
         # Allowed commands should pass
-        assert sanitizer.sanitize_command("ls -la", allowed_commands=allowed) == "ls -la"
-        assert sanitizer.sanitize_command("cat file.txt", allowed_commands=allowed) == "cat file.txt"
+        assert (
+            sanitizer.sanitize_command("ls -la", allowed_commands=allowed) == "ls -la"
+        )
+        assert (
+            sanitizer.sanitize_command("cat file.txt", allowed_commands=allowed)
+            == "cat file.txt"
+        )
 
         # Disallowed commands should fail
         with pytest.raises(SecurityError, match="not in allowed list"):
@@ -430,7 +438,9 @@ class TestInputValidation:
         sanitizer = ParameterSanitizer()
 
         with pytest.raises(ValueError, match="username"):
-            sanitizer.validate_string_length("x" * 1001, max_length=1000, param_name="username")
+            sanitizer.validate_string_length(
+                "x" * 1001, max_length=1000, param_name="username"
+            )
 
     def test_validate_string_length_type_error(self):
         """Test type error for non-string input."""
@@ -503,7 +513,9 @@ class TestInputValidation:
         sanitizer = ParameterSanitizer()
 
         with pytest.raises(ValueError, match="age"):
-            sanitizer.validate_integer_range(150, minimum=0, maximum=120, param_name="age")
+            sanitizer.validate_integer_range(
+                150, minimum=0, maximum=120, param_name="age"
+            )
 
 
 class TestCommandInjectionUnicodeHomoglyphs:

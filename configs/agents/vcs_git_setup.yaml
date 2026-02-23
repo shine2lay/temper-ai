@@ -9,7 +9,15 @@ agent:
   type: script
 
   script: |
+    set -e
+
     WORKSPACE={{ workspace_path }}
+
+    # Validate workspace_path
+    if [ -z "$WORKSPACE" ] || [ ! -d "$WORKSPACE" ]; then
+      echo "ERROR: workspace_path is empty or does not exist: '$WORKSPACE'"
+      exit 1
+    fi
 
     # Initialize git if needed
     if [ ! -d "$WORKSPACE/.git" ]; then
@@ -38,15 +46,24 @@ agent:
     fi
 
     # Generate feature branch name
-    # Assign to a variable first so shlex.quote expansion is word-safe in pipelines
+    # Extract first WORK_ITEM line if present, otherwise take first line
     SUGGESTION_TEXT={{ suggestion_text }}
-    SLUG=$(printf '%s' "$SUGGESTION_TEXT" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | cut -c1-40)
+    WORK_LINE=$(printf '%s' "$SUGGESTION_TEXT" | grep -i 'WORK_ITEM' | head -1 || printf '%s' "$SUGGESTION_TEXT" | head -1)
+    SLUG=$(printf '%s' "$WORK_LINE" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//' | sed 's/-$//' | head -c 40)
+    # Fallback if slug is empty
+    if [ -z "$SLUG" ]; then
+      SLUG="auto-feature"
+    fi
     TIMESTAMP=$(date +%Y%m%d-%H%M%S)
     BRANCH_NAME="feature/$SLUG-$TIMESTAMP"
 
     # Create worktree
     WORKTREE=$(mktemp -d /tmp/vcs-run-XXXXXX)
-    git -C "$WORKSPACE" worktree add "$WORKTREE" -b "$BRANCH_NAME" HEAD
+    if ! git -C "$WORKSPACE" worktree add "$WORKTREE" -b "$BRANCH_NAME" HEAD; then
+      echo "ERROR: Failed to create worktree at $WORKTREE with branch $BRANCH_NAME"
+      rm -rf "$WORKTREE"
+      exit 1
+    fi
 
     # Verify
     CURRENT_BRANCH=$(git -C "$WORKTREE" branch --show-current)

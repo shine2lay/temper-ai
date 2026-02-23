@@ -8,12 +8,11 @@ import logging
 import threading
 import time
 import uuid
-from typing import List, Optional
 
-from temper_ai.storage.database.datetime_utils import utcnow
 from temper_ai.safety.autonomy.constants import EMERGENCY_STOP_TIMEOUT_SECONDS
 from temper_ai.safety.autonomy.models import EmergencyStopEvent
 from temper_ai.safety.autonomy.store import AutonomyStore
+from temper_ai.storage.database.datetime_utils import utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +21,7 @@ UUID_HEX_LEN = 12
 # Module-level event for O(1) cross-thread signaling
 _stop_event = threading.Event()
 _stop_lock = threading.Lock()
-_active_event_id: Optional[str] = None
+_active_event_id: str | None = None
 
 
 class EmergencyStopError(Exception):
@@ -40,14 +39,14 @@ class EmergencyStopController:
     All state is persisted to AutonomyStore for audit trail.
     """
 
-    def __init__(self, store: Optional[AutonomyStore] = None) -> None:
+    def __init__(self, store: AutonomyStore | None = None) -> None:
         self._store = store
 
     def activate(
         self,
         triggered_by: str,
         reason: str,
-        agents_halted: Optional[List[str]] = None,
+        agents_halted: list[str] | None = None,
     ) -> EmergencyStopEvent:
         """Activate emergency stop.
 
@@ -83,7 +82,9 @@ class EmergencyStopController:
 
         logger.warning(
             "EMERGENCY STOP activated by %s: %s (%.1fms)",
-            triggered_by, reason, elapsed_ms,
+            triggered_by,
+            reason,
+            elapsed_ms,
         )
         return event_record
 

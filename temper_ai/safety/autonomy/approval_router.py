@@ -3,7 +3,6 @@
 import logging
 import random
 from dataclasses import dataclass
-from typing import List, Optional
 
 from temper_ai.safety.autonomy.constants import SPOT_CHECK_SAMPLE_RATE
 from temper_ai.safety.autonomy.schemas import AutonomyLevel
@@ -45,7 +44,7 @@ class ApprovalRouter:
         self,
         agent_name: str,
         domain: str,
-        violations: Optional[List[SafetyViolation]] = None,
+        violations: list[SafetyViolation] | None = None,
         autonomy_level: AutonomyLevel = AutonomyLevel.SUPERVISED,
     ) -> ApprovalDecision:
         """Determine approval requirements for an action.
@@ -96,8 +95,8 @@ class ApprovalRouter:
         return ApprovalDecision(reason="No blocking violations")
 
     def _get_max_severity(
-        self, violations: Optional[List[SafetyViolation]]
-    ) -> Optional[ViolationSeverity]:
+        self, violations: list[SafetyViolation] | None
+    ) -> ViolationSeverity | None:
         """Get the highest severity from a list of violations."""
         if not violations:
             return None
@@ -105,7 +104,9 @@ class ApprovalRouter:
 
     def _spot_check_decision(self) -> ApprovalDecision:
         """Randomly sample for spot-check at configured rate."""
-        if random.random() < self._spot_check_rate:  # noqa: S311 — non-security random for sampling
+        if (
+            random.random() < self._spot_check_rate
+        ):  # noqa: S311 — non-security random for sampling
             return ApprovalDecision(
                 requires_approval=True,
                 required_approvers=1,

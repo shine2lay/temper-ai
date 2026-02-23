@@ -4,33 +4,35 @@ Extracted from WorkflowExecutor to keep class under 500-line threshold.
 These functions handle multi-target dynamic routing (sequential chains
 and parallel fan-out) from _next_stage signals.
 """
+
 import logging
-from typing import Any, Callable, Dict, List, Tuple
+from collections.abc import Callable
+from typing import Any
 
 from temper_ai.stage.executors.state_keys import StateKeys
 from temper_ai.workflow.engines.workflow_executor import (
     DEFAULT_MAX_DYNAMIC_HOPS,
+    _build_dynamic_input_wrappers,
     _extract_next_stage_signal,
     _run_parallel_stage_batch,
-    _build_dynamic_input_wrappers,
 )
 
 logger = logging.getLogger(__name__)
 
 # Type alias for the negotiation executor callable
 NegotiateFn = Callable[
-    [str, Dict[str, Callable], Dict[str, Any], Dict[str, Any]],
-    Dict[str, Any],
+    [str, dict[str, Callable], dict[str, Any], dict[str, Any]],
+    dict[str, Any],
 ]
 
 
 def follow_dynamic_edges(
     stage_name: str,
-    stage_nodes: Dict[str, Callable],
-    state: Dict[str, Any],
-    workflow_config: Dict[str, Any],
+    stage_nodes: dict[str, Callable],
+    state: dict[str, Any],
+    workflow_config: dict[str, Any],
     negotiate_fn: NegotiateFn,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Follow dynamic edge signals after a stage completes.
 
     Supports single targets, sequential chains (list), and
@@ -56,16 +58,24 @@ def follow_dynamic_edges(
 
         if signal["mode"] == "parallel":
             state, hop_count = _follow_parallel_targets(
-                signal, stage_nodes, state,
-                workflow_config, hop_count, negotiate_fn,
+                signal,
+                stage_nodes,
+                state,
+                workflow_config,
+                hop_count,
+                negotiate_fn,
             )
             break  # No further chaining from parallel source
 
         # Sequential: execute each target in order
         prev_hop_count = hop_count
         state, current_stage, hop_count = _follow_sequential_targets(
-            signal["targets"], stage_nodes, state,
-            workflow_config, current_stage, hop_count,
+            signal["targets"],
+            stage_nodes,
+            state,
+            workflow_config,
+            current_stage,
+            hop_count,
             negotiate_fn,
         )
         # If no hops were made (all targets skipped/unknown), stop
@@ -75,21 +85,22 @@ def follow_dynamic_edges(
     if hop_count >= DEFAULT_MAX_DYNAMIC_HOPS:
         logger.warning(
             "Dynamic edge chain reached max hops (%d) at stage '%s'",
-            DEFAULT_MAX_DYNAMIC_HOPS, current_stage,
+            DEFAULT_MAX_DYNAMIC_HOPS,
+            current_stage,
         )
 
     return state
 
 
 def _follow_sequential_targets(
-    targets: List[Dict[str, Any]],
-    stage_nodes: Dict[str, Callable],
-    state: Dict[str, Any],
-    workflow_config: Dict[str, Any],
+    targets: list[dict[str, Any]],
+    stage_nodes: dict[str, Callable],
+    state: dict[str, Any],
+    workflow_config: dict[str, Any],
     current_stage: str,
     hop_count: int,
     negotiate_fn: NegotiateFn,
-) -> Tuple[Dict[str, Any], str, int]:
+) -> tuple[dict[str, Any], str, int]:
     """Execute sequential targets in order, counting hops.
 
     Returns:
@@ -103,14 +114,18 @@ def _follow_sequential_targets(
             logger.warning(
                 "Stage '%s' declared _next_stage '%s' but "
                 "target not found; skipping",
-                current_stage, target,
+                current_stage,
+                target,
             )
             continue
 
         hop_count += 1
         logger.info(
             "Dynamic edge: '%s' → '%s' (hop %d/%d)",
-            current_stage, target, hop_count, DEFAULT_MAX_DYNAMIC_HOPS,
+            current_stage,
+            target,
+            hop_count,
+            DEFAULT_MAX_DYNAMIC_HOPS,
         )
 
         if target_info["inputs"]:
@@ -124,13 +139,13 @@ def _follow_sequential_targets(
 
 
 def _follow_parallel_targets(
-    signal: Dict[str, Any],
-    stage_nodes: Dict[str, Callable],
-    state: Dict[str, Any],
-    workflow_config: Dict[str, Any],
+    signal: dict[str, Any],
+    stage_nodes: dict[str, Callable],
+    state: dict[str, Any],
+    workflow_config: dict[str, Any],
     hop_count: int,
     negotiate_fn: NegotiateFn,
-) -> Tuple[Dict[str, Any], int]:
+) -> tuple[dict[str, Any], int]:
     """Execute parallel targets concurrently, then follow sequential signals.
 
     Parallel targets run via ``_run_parallel_stage_batch``. After
@@ -168,7 +183,9 @@ def _follow_parallel_targets(
     runnable_names = [t["name"] for t in runnable]
     logger.info(
         "Dynamic parallel fan-out: %s (hop %d/%d)",
-        runnable_names, hop_count, DEFAULT_MAX_DYNAMIC_HOPS,
+        runnable_names,
+        hop_count,
+        DEFAULT_MAX_DYNAMIC_HOPS,
     )
 
     wrapped_nodes = _build_dynamic_input_wrappers(runnable, stage_nodes)
@@ -181,27 +198,37 @@ def _follow_parallel_targets(
     followed: set[str] = set()
     for name in runnable_names:
         state, _, hop_count = _follow_sequential_signals_dedup(
-            name, stage_nodes, state, workflow_config, hop_count,
-            negotiate_fn, followed,
+            name,
+            stage_nodes,
+            state,
+            workflow_config,
+            hop_count,
+            negotiate_fn,
+            followed,
         )
 
     # Execute convergence stage once after all branches
     if converge and isinstance(converge, dict):
         state, hop_count = _execute_convergence(
-            converge, runnable_names, stage_nodes, state,
-            workflow_config, hop_count, negotiate_fn,
+            converge,
+            runnable_names,
+            stage_nodes,
+            state,
+            workflow_config,
+            hop_count,
+            negotiate_fn,
         )
 
     return state, hop_count
 
 
 def _dedup_targets(
-    targets: List[Dict[str, Any]],
-    stage_nodes: Dict[str, Callable],
-) -> List[Dict[str, Any]]:
+    targets: list[dict[str, Any]],
+    stage_nodes: dict[str, Callable],
+) -> list[dict[str, Any]]:
     """Deduplicate targets and filter to available stage nodes."""
     seen: set[str] = set()
-    deduped: List[Dict[str, Any]] = []
+    deduped: list[dict[str, Any]] = []
     for t in targets:
         name = t["name"]
         if name in stage_nodes and name not in seen:
@@ -211,14 +238,14 @@ def _dedup_targets(
 
 
 def _execute_convergence(
-    converge: Dict[str, Any],
-    branch_names: List[str],
-    stage_nodes: Dict[str, Callable],
-    state: Dict[str, Any],
-    workflow_config: Dict[str, Any],
+    converge: dict[str, Any],
+    branch_names: list[str],
+    stage_nodes: dict[str, Callable],
+    state: dict[str, Any],
+    workflow_config: dict[str, Any],
     hop_count: int,
     negotiate_fn: NegotiateFn,
-) -> Tuple[Dict[str, Any], int]:
+) -> tuple[dict[str, Any], int]:
     """Execute convergence stage after all parallel branches complete.
 
     Records ``_convergence_predecessors`` so PredecessorResolver knows
@@ -241,7 +268,10 @@ def _execute_convergence(
     hop_count += 1
     logger.info(
         "Dynamic convergence: %s → '%s' (hop %d/%d)",
-        branch_names, conv_name, hop_count, DEFAULT_MAX_DYNAMIC_HOPS,
+        branch_names,
+        conv_name,
+        hop_count,
+        DEFAULT_MAX_DYNAMIC_HOPS,
     )
 
     # Record convergence predecessors for PredecessorResolver
@@ -255,12 +285,12 @@ def _execute_convergence(
 
 def _follow_sequential_signals_from(
     stage_name: str,
-    stage_nodes: Dict[str, Callable],
-    state: Dict[str, Any],
-    workflow_config: Dict[str, Any],
+    stage_nodes: dict[str, Callable],
+    state: dict[str, Any],
+    workflow_config: dict[str, Any],
     hop_count: int,
     negotiate_fn: NegotiateFn,
-) -> Tuple[Dict[str, Any], str, int]:
+) -> tuple[dict[str, Any], str, int]:
     """Follow sequential-only signals from a completed stage.
 
     Used after parallel fan-out to prevent exponential fan-out.
@@ -272,21 +302,25 @@ def _follow_sequential_signals_from(
     if sub_signal is None or sub_signal["mode"] != "sequential":
         return state, stage_name, hop_count
     return _follow_sequential_targets(
-        sub_signal["targets"], stage_nodes, state,
-        workflow_config, stage_name, hop_count,
+        sub_signal["targets"],
+        stage_nodes,
+        state,
+        workflow_config,
+        stage_name,
+        hop_count,
         negotiate_fn,
     )
 
 
 def _follow_sequential_signals_dedup(
     stage_name: str,
-    stage_nodes: Dict[str, Callable],
-    state: Dict[str, Any],
-    workflow_config: Dict[str, Any],
+    stage_nodes: dict[str, Callable],
+    state: dict[str, Any],
+    workflow_config: dict[str, Any],
     hop_count: int,
     negotiate_fn: NegotiateFn,
     followed: set,
-) -> Tuple[Dict[str, Any], str, int]:
+) -> tuple[dict[str, Any], str, int]:
     """Follow sequential signals with dedup tracking.
 
     Same as ``_follow_sequential_signals_from`` but skips targets
@@ -301,9 +335,7 @@ def _follow_sequential_signals_dedup(
         return state, stage_name, hop_count
 
     # Filter out already-followed targets
-    deduped = [
-        t for t in sub_signal["targets"] if t["name"] not in followed
-    ]
+    deduped = [t for t in sub_signal["targets"] if t["name"] not in followed]
     if not deduped:
         return state, stage_name, hop_count
 
@@ -311,7 +343,11 @@ def _follow_sequential_signals_dedup(
         followed.add(t["name"])
 
     return _follow_sequential_targets(
-        deduped, stage_nodes, state,
-        workflow_config, stage_name, hop_count,
+        deduped,
+        stage_nodes,
+        state,
+        workflow_config,
+        stage_name,
+        hop_count,
         negotiate_fn,
     )

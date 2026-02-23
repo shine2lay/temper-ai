@@ -6,35 +6,34 @@ Tests cover:
 - Error formatting
 - Helper function edge cases
 """
+
 import base64
 import hashlib
-import pytest
-from datetime import datetime, timedelta, timezone
-from typing import Dict, Any
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, Mock
+
 import httpx
+import pytest
 
 from temper_ai.auth.oauth._service_helpers import (
-    generate_state,
-    generate_code_verifier,
-    generate_code_challenge,
-    build_authorization_url,
-    validate_state,
-    exchange_code,
-    refresh_token,
-    fetch_user_info,
-    revoke_tokens,
-    revoke_at_provider,
-    TokenExchangeParams,
     HTTP_OK,
     HTTP_UNAUTHORIZED,
+    TokenExchangeParams,
+    build_authorization_url,
+    exchange_code,
+    fetch_user_info,
+    generate_code_challenge,
+    generate_code_verifier,
+    generate_state,
+    refresh_token,
+    revoke_at_provider,
+    revoke_tokens,
+    validate_state,
 )
 from temper_ai.auth.oauth.config import OAuthConfig, OAuthProviderConfig
-from temper_ai.auth.oauth.rate_limiter import RateLimitExceeded, OAuthRateLimiter
+from temper_ai.auth.oauth.rate_limiter import OAuthRateLimiter, RateLimitExceeded
 from temper_ai.auth.oauth.service import OAuthError, OAuthProviderError, OAuthStateError
 from temper_ai.auth.oauth.token_store import SecureTokenStore
 from temper_ai.shared.constants.durations import SECONDS_PER_10_MINUTES
-
 
 # ==================== FIXTURES ====================
 
@@ -69,6 +68,7 @@ def mock_state_store():
 def token_store():
     """Create secure token store."""
     from cryptography.fernet import Fernet
+
     return SecureTokenStore(encryption_key=Fernet.generate_key().decode())
 
 
@@ -136,7 +136,9 @@ def test_generate_code_challenge_format():
 
     # Manually compute expected challenge
     expected_digest = hashlib.sha256(verifier.encode()).digest()
-    expected_challenge = base64.urlsafe_b64encode(expected_digest).rstrip(b'=').decode('ascii')
+    expected_challenge = (
+        base64.urlsafe_b64encode(expected_digest).rstrip(b"=").decode("ascii")
+    )
 
     assert challenge == expected_challenge
 
@@ -162,7 +164,9 @@ def test_generate_code_challenge_different_verifiers():
 
 
 @pytest.mark.asyncio
-async def test_build_authorization_url_success(oauth_config, mock_state_store, rate_limiter):
+async def test_build_authorization_url_success(
+    oauth_config, mock_state_store, rate_limiter
+):
     """Test building authorization URL."""
     auth_url, state = await build_authorization_url(
         provider="google",
@@ -187,7 +191,9 @@ async def test_build_authorization_url_success(oauth_config, mock_state_store, r
 
 
 @pytest.mark.asyncio
-async def test_build_authorization_url_stores_state_data(oauth_config, mock_state_store, rate_limiter):
+async def test_build_authorization_url_stores_state_data(
+    oauth_config, mock_state_store, rate_limiter
+):
     """Test authorization URL stores state data correctly."""
     auth_url, state = await build_authorization_url(
         provider="google",
@@ -199,15 +205,17 @@ async def test_build_authorization_url_stores_state_data(oauth_config, mock_stat
 
     # Check state data
     call_args = mock_state_store.set_state.call_args
-    assert call_args[1]['state'] == state
-    assert call_args[1]['data']['user_id'] == "test_user"
-    assert call_args[1]['data']['provider'] == "google"
-    assert 'code_verifier' in call_args[1]['data']
-    assert call_args[1]['ttl_seconds'] == SECONDS_PER_10_MINUTES
+    assert call_args[1]["state"] == state
+    assert call_args[1]["data"]["user_id"] == "test_user"
+    assert call_args[1]["data"]["provider"] == "google"
+    assert "code_verifier" in call_args[1]["data"]
+    assert call_args[1]["ttl_seconds"] == SECONDS_PER_10_MINUTES
 
 
 @pytest.mark.asyncio
-async def test_build_authorization_url_extra_params(oauth_config, mock_state_store, rate_limiter):
+async def test_build_authorization_url_extra_params(
+    oauth_config, mock_state_store, rate_limiter
+):
     """Test authorization URL with extra parameters."""
     auth_url, state = await build_authorization_url(
         provider="google",
@@ -222,7 +230,9 @@ async def test_build_authorization_url_extra_params(oauth_config, mock_state_sto
 
 
 @pytest.mark.asyncio
-async def test_build_authorization_url_rate_limited(oauth_config, mock_state_store, rate_limiter):
+async def test_build_authorization_url_rate_limited(
+    oauth_config, mock_state_store, rate_limiter
+):
     """Test authorization URL respects rate limiting."""
     # User limit is 5 per minute (lower than IP limit of 10)
     # Fill user limit with 5 requests
@@ -249,7 +259,9 @@ async def test_build_authorization_url_rate_limited(oauth_config, mock_state_sto
 
 
 @pytest.mark.asyncio
-async def test_build_authorization_url_provider_not_configured(oauth_config, mock_state_store, rate_limiter):
+async def test_build_authorization_url_provider_not_configured(
+    oauth_config, mock_state_store, rate_limiter
+):
     """Test error when provider not configured."""
     with pytest.raises(OAuthError, match="Provider 'github' not configured"):
         await build_authorization_url(
@@ -307,7 +319,9 @@ async def test_validate_state_provider_mismatch(mock_state_store):
 
 
 @pytest.mark.asyncio
-async def test_exchange_code_success(oauth_config, mock_state_store, token_store, mock_http_client, rate_limiter):
+async def test_exchange_code_success(
+    oauth_config, mock_state_store, token_store, mock_http_client, rate_limiter
+):
     """Test successful code exchange."""
     # Mock state validation
     mock_state_store.get_state.return_value = {
@@ -346,7 +360,9 @@ async def test_exchange_code_success(oauth_config, mock_state_store, token_store
 
 
 @pytest.mark.asyncio
-async def test_exchange_code_token_stored(oauth_config, mock_state_store, token_store, mock_http_client, rate_limiter):
+async def test_exchange_code_token_stored(
+    oauth_config, mock_state_store, token_store, mock_http_client, rate_limiter
+):
     """Test code exchange stores tokens."""
     mock_state_store.get_state.return_value = {
         "user_id": "test_user",
@@ -382,7 +398,9 @@ async def test_exchange_code_token_stored(oauth_config, mock_state_store, token_
 
 
 @pytest.mark.asyncio
-async def test_exchange_code_http_error(oauth_config, mock_state_store, token_store, mock_http_client, rate_limiter):
+async def test_exchange_code_http_error(
+    oauth_config, mock_state_store, token_store, mock_http_client, rate_limiter
+):
     """Test code exchange handles HTTP errors."""
     mock_state_store.get_state.return_value = {
         "user_id": "test_user",
@@ -411,7 +429,9 @@ async def test_exchange_code_http_error(oauth_config, mock_state_store, token_st
 
 
 @pytest.mark.asyncio
-async def test_exchange_code_missing_access_token(oauth_config, mock_state_store, token_store, mock_http_client, rate_limiter):
+async def test_exchange_code_missing_access_token(
+    oauth_config, mock_state_store, token_store, mock_http_client, rate_limiter
+):
     """Test error when access_token missing from response."""
     mock_state_store.get_state.return_value = {
         "user_id": "test_user",
@@ -493,7 +513,9 @@ async def test_refresh_token_no_tokens(oauth_config, token_store, mock_http_clie
 
 
 @pytest.mark.asyncio
-async def test_refresh_token_no_refresh_token(oauth_config, token_store, mock_http_client):
+async def test_refresh_token_no_refresh_token(
+    oauth_config, token_store, mock_http_client
+):
     """Test error when no refresh token available."""
     token_store.store_token(
         user_id="test_user",
@@ -515,7 +537,9 @@ async def test_refresh_token_no_refresh_token(oauth_config, token_store, mock_ht
 
 
 @pytest.mark.asyncio
-async def test_fetch_user_info_success(oauth_config, token_store, mock_http_client, rate_limiter):
+async def test_fetch_user_info_success(
+    oauth_config, token_store, mock_http_client, rate_limiter
+):
     """Test successful user info fetch."""
     token_store.store_token(
         user_id="test_user",
@@ -546,7 +570,9 @@ async def test_fetch_user_info_success(oauth_config, token_store, mock_http_clie
 
 
 @pytest.mark.asyncio
-async def test_fetch_user_info_auto_refresh(oauth_config, token_store, mock_http_client, rate_limiter):
+async def test_fetch_user_info_auto_refresh(
+    oauth_config, token_store, mock_http_client, rate_limiter
+):
     """Test auto-refresh when access token expired."""
     token_store.store_token(
         user_id="test_user",
@@ -639,7 +665,9 @@ async def test_revoke_tokens_no_tokens(oauth_config, token_store, mock_http_clie
 
 
 @pytest.mark.asyncio
-async def test_revoke_tokens_provider_failure_continues(oauth_config, token_store, mock_http_client):
+async def test_revoke_tokens_provider_failure_continues(
+    oauth_config, token_store, mock_http_client
+):
     """Test revoke continues even if provider revocation fails."""
     token_store.store_token(
         user_id="test_user",

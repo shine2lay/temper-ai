@@ -4,8 +4,9 @@ Encapsulates the repetitive tracker guard pattern used across StandardAgent
 to eliminate boilerplate. Each tracking call is safe to call even when
 tracker or execution context is unavailable.
 """
+
 import logging
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -30,9 +31,9 @@ class AgentObserver:
     def __init__(self, tracker: Any, execution_context: Any):
         self._tracker = tracker
         self._context = execution_context
-        self._agent_id: Optional[str] = None
+        self._agent_id: str | None = None
 
-        if execution_context is not None and hasattr(execution_context, 'agent_id'):
+        if execution_context is not None and hasattr(execution_context, "agent_id"):
             self._agent_id = execution_context.agent_id
 
     @property
@@ -47,6 +48,7 @@ class AgentObserver:
             return
         try:
             from temper_ai.observability._tracker_helpers import LLMCallTrackingData
+
             data = LLMCallTrackingData(agent_id=agent_id, **kwargs)
             self._tracker.track_llm_call(data)
         except (AttributeError, TypeError, ValueError, RuntimeError) as e:
@@ -59,6 +61,7 @@ class AgentObserver:
             return
         try:
             from temper_ai.observability._tracker_helpers import ToolCallTrackingData
+
             data = ToolCallTrackingData(agent_id=agent_id, **kwargs)
             self._tracker.track_tool_call(data)
         except (AttributeError, TypeError, ValueError, RuntimeError) as e:
@@ -69,24 +72,27 @@ class AgentObserver:
         content: str,
         chunk_type: str = "content",
         done: bool = False,
-        model: Optional[str] = None,
-        prompt_tokens: Optional[int] = None,
-        completion_tokens: Optional[int] = None,
+        model: str | None = None,
+        prompt_tokens: int | None = None,
+        completion_tokens: int | None = None,
     ) -> None:
         """Emit a streaming chunk event. Best-effort, never raises."""
         if self._tracker is None or self._agent_id is None:
             return
         try:
-            event_bus = getattr(self._tracker, '_event_bus', None)
+            event_bus = getattr(self._tracker, "_event_bus", None)
             if event_bus is None:
                 return
-            from temper_ai.observability._tracker_helpers import StreamChunkData, emit_llm_stream_chunk
+            from temper_ai.observability._tracker_helpers import (
+                StreamChunkData,
+                emit_llm_stream_chunk,
+            )
 
             workflow_id = None
             stage_id = None
             if self._context is not None:
-                workflow_id = getattr(self._context, 'workflow_id', None)
-                stage_id = getattr(self._context, 'stage_id', None)
+                workflow_id = getattr(self._context, "workflow_id", None)
+                stage_id = getattr(self._context, "stage_id", None)
 
             data = StreamChunkData(
                 agent_id=self._agent_id,

@@ -3,10 +3,13 @@
 Provides state initialization and init-node factory functions
 for LangGraph compiler and executors.
 """
+
 import logging
 import uuid
-from typing import Any, Callable, Dict, Optional
+from collections.abc import Callable
+from typing import Any
 
+from temper_ai.shared.constants.sizes import UUID_HEX_SHORT_LENGTH
 from temper_ai.workflow.domain_state import (
     ConfigLoaderProtocol,
     DomainToolRegistryProtocol,
@@ -14,33 +17,34 @@ from temper_ai.workflow.domain_state import (
 )
 from temper_ai.workflow.execution_context import WorkflowExecutionContext
 from temper_ai.workflow.langgraph_state import LangGraphWorkflowState
-from temper_ai.shared.constants.sizes import UUID_HEX_SHORT_LENGTH
 
 logger = logging.getLogger(__name__)
 
 # Keys managed by the framework that must not be overwritten by user input_data.
-RESERVED_STATE_KEYS = frozenset({
-    "stage_outputs",
-    "current_stage",
-    "workflow_id",
-    "workflow_inputs",
-    "stage_loop_counts",
-    "tracker",
-    "tool_registry",
-    "config_loader",
-    "visualizer",
-    "show_details",
-    "detail_console",
-    "stream_callback",
-})
+RESERVED_STATE_KEYS = frozenset(
+    {
+        "stage_outputs",
+        "current_stage",
+        "workflow_id",
+        "workflow_inputs",
+        "stage_loop_counts",
+        "tracker",
+        "tool_registry",
+        "config_loader",
+        "visualizer",
+        "show_details",
+        "detail_console",
+        "stream_callback",
+    }
+)
 
 
 def initialize_state(
-    input_data: Dict[str, Any],
-    workflow_id: Optional[str] = None,
-    tracker: Optional[TrackerProtocol] = None,
-    tool_registry: Optional[DomainToolRegistryProtocol] = None,
-    config_loader: Optional[ConfigLoaderProtocol] = None,
+    input_data: dict[str, Any],
+    workflow_id: str | None = None,
+    tracker: TrackerProtocol | None = None,
+    tool_registry: DomainToolRegistryProtocol | None = None,
+    config_loader: ConfigLoaderProtocol | None = None,
 ) -> WorkflowExecutionContext:
     """Create and initialize workflow state as a plain dict.
 
@@ -63,13 +67,15 @@ def initialize_state(
             f"Reserved keys: {sorted(RESERVED_STATE_KEYS)}"
         )
 
-    state: Dict[str, Any] = {
+    state: dict[str, Any] = {
         "stage_outputs": {},
         "current_stage": "",
         "workflow_inputs": input_data,
     }
 
-    state["workflow_id"] = workflow_id or f"wf-{uuid.uuid4().hex[:UUID_HEX_SHORT_LENGTH]}"
+    state["workflow_id"] = (
+        workflow_id or f"wf-{uuid.uuid4().hex[:UUID_HEX_SHORT_LENGTH]}"
+    )
     if tracker:
         state["tracker"] = tracker
     if tool_registry:
@@ -80,7 +86,7 @@ def initialize_state(
     return state  # type: ignore[return-value]
 
 
-def create_init_node() -> Callable[[LangGraphWorkflowState], Dict[str, Any]]:
+def create_init_node() -> Callable[[LangGraphWorkflowState], dict[str, Any]]:
     """Create LangGraph initialization node.
 
     Creates a node function that initializes workflow state fields
@@ -94,7 +100,8 @@ def create_init_node() -> Callable[[LangGraphWorkflowState], Dict[str, Any]]:
         >>> init_node = create_init_node()
         >>> graph.add_node("init", init_node)
     """
-    def init_node(state: LangGraphWorkflowState) -> Dict[str, Any]:
+
+    def init_node(state: LangGraphWorkflowState) -> dict[str, Any]:
         """Initialize workflow execution state.
 
         Ensures stage_outputs and workflow_id are properly initialized

@@ -3,7 +3,6 @@
 import hashlib
 import logging
 import uuid
-from typing import List, Optional
 
 from temper_ai.goals._schemas import GoalProposal
 from temper_ai.goals.analyzers.base import BaseAnalyzer
@@ -38,8 +37,8 @@ class GoalProposer:
     def __init__(
         self,
         store: GoalStore,
-        learning_store: Optional[object] = None,
-        analyzers: Optional[List[BaseAnalyzer]] = None,
+        learning_store: object | None = None,
+        analyzers: list[BaseAnalyzer] | None = None,
     ) -> None:
         self._store = store
         self._learning_store = learning_store
@@ -47,9 +46,9 @@ class GoalProposer:
 
     def generate_proposals(
         self, lookback_hours: int = DEFAULT_LOOKBACK_HOURS
-    ) -> List[GoalProposalRecord]:
+    ) -> list[GoalProposalRecord]:
         """Run all analyzers, deduplicate, score, and persist proposals."""
-        raw_proposals: List[GoalProposal] = []
+        raw_proposals: list[GoalProposal] = []
 
         for analyzer in self._analyzers:
             try:
@@ -71,7 +70,7 @@ class GoalProposer:
         unique = self._deduplicate(raw_proposals)
 
         # Score and enrich
-        records: List[GoalProposalRecord] = []
+        records: list[GoalProposalRecord] = []
         for proposal in unique:
             proposal.priority_score = self._score_proposal(proposal)
             self._enrich_with_patterns(proposal)
@@ -87,9 +86,7 @@ class GoalProposer:
         )
         return records
 
-    def _deduplicate(
-        self, proposals: List[GoalProposal]
-    ) -> List[GoalProposal]:
+    def _deduplicate(self, proposals: list[GoalProposal]) -> list[GoalProposal]:
         """Remove proposals that duplicate existing active proposals."""
         existing = self._store.list_proposals(limit=DEDUP_FETCH_LIMIT)
         active_keys = {
@@ -98,7 +95,7 @@ class GoalProposer:
             if r.status in ACTIVE_STATUSES
         }
 
-        unique: List[GoalProposal] = []
+        unique: list[GoalProposal] = []
         seen: set[str] = set()
         for p in proposals:
             key = _dedup_key(p.goal_type.value, p.title)
@@ -118,9 +115,7 @@ class GoalProposer:
             else DEFAULT_SCORE_FALLBACK
         )
         avg_improvement = (
-            sum(i.improvement_pct for i in impacts) / len(impacts)
-            if impacts
-            else 0.0
+            sum(i.improvement_pct for i in impacts) / len(impacts) if impacts else 0.0
         )
 
         # Normalize improvement to 0-1 scale (cap at 100%)
@@ -157,10 +152,7 @@ class GoalProposer:
             )
             for pattern in patterns:
                 # Match by overlapping workflow IDs
-                if (
-                    pattern.source_workflow_ids
-                    and proposal.evidence.workflow_ids
-                ):
+                if pattern.source_workflow_ids and proposal.evidence.workflow_ids:
                     overlap = set(pattern.source_workflow_ids) & set(
                         proposal.evidence.workflow_ids
                     )
@@ -179,9 +171,7 @@ class GoalProposer:
             status="proposed",
             risk_assessment=proposal.risk_assessment.model_dump(),
             effort_estimate=proposal.effort_estimate.value,
-            expected_impacts=[
-                i.model_dump() for i in proposal.expected_impacts
-            ],
+            expected_impacts=[i.model_dump() for i in proposal.expected_impacts],
             evidence=proposal.evidence.model_dump(),
             source_product_type=proposal.source_product_type,
             applicable_product_types=proposal.applicable_product_types,

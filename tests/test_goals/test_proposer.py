@@ -7,10 +7,10 @@ import pytest
 from temper_ai.goals._schemas import (
     EffortLevel,
     GoalProposal,
+    GoalRiskLevel,
     GoalType,
     ImpactEstimate,
     RiskAssessment,
-    GoalRiskLevel,
 )
 from temper_ai.goals.models import GoalProposalRecord
 from temper_ai.goals.proposer import GoalProposer, _dedup_key

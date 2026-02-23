@@ -3,9 +3,10 @@ Base class for all tools.
 
 Defines the interface that all tools must implement.
 """
+
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional, Tuple, Type, Union
+from typing import Any
 
 from pydantic import BaseModel, Field, ValidationError
 
@@ -16,36 +17,40 @@ logger = logging.getLogger(__name__)
 
 class ToolParameter(BaseModel):
     """Tool parameter definition."""
+
     name: str
     type: str  # "string", "number", "boolean", "object", "array"
     description: str
     required: bool = True
-    default: Optional[Any] = None
-    enum: Optional[list[Any]] = None
+    default: Any | None = None
+    enum: list[Any] | None = None
 
 
 class ToolMetadata(BaseModel):
     """Tool metadata."""
+
     name: str
     description: str
     version: str = "1.0"
-    category: Optional[str] = None
+    category: str | None = None
     requires_network: bool = False
     requires_credentials: bool = False
     modifies_state: bool = True  # Whether tool modifies system state (files, DB, etc.)
-    cacheable: Optional[bool] = None  # None = auto-detect from modifies_state
+    cacheable: bool | None = None  # None = auto-detect from modifies_state
 
 
 class ToolResult(BaseModel):
     """Structured tool execution result."""
+
     success: bool
-    result: Optional[Any] = None
-    error: Optional[str] = None
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    result: Any | None = None
+    error: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class ParameterValidationResult(BaseModel):
     """Parameter validation result."""
+
     valid: bool
     errors: list[str] = Field(default_factory=list)
 
@@ -64,7 +69,7 @@ class BaseTool(ABC):
     All tools must inherit from this class and implement the required methods.
     """
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: dict[str, Any] | None = None):
         """Initialize tool with metadata and optional configuration.
 
         Args:
@@ -99,7 +104,7 @@ class BaseTool(ABC):
         """
         pass
 
-    def get_parameters_model(self) -> Optional[Type[BaseModel]]:
+    def get_parameters_model(self) -> type[BaseModel] | None:
         """
         Return Pydantic model class for parameter validation.
 
@@ -121,7 +126,7 @@ class BaseTool(ABC):
         return None
 
     @abstractmethod
-    def get_parameters_schema(self) -> Dict[str, Any]:
+    def get_parameters_schema(self) -> dict[str, Any]:
         """
         Return JSON schema for tool parameters (OpenAI function calling format).
 
@@ -147,7 +152,7 @@ class BaseTool(ABC):
         """
         pass
 
-    def get_result_schema(self) -> Optional[Dict[str, Any]]:
+    def get_result_schema(self) -> dict[str, Any] | None:
         """
         Return JSON schema for tool result (optional).
 
@@ -193,9 +198,10 @@ class BaseTool(ABC):
         Execute tool with guaranteed no-exception contract (M-33).
 
         Validates parameters before execution and returns validation errors
-        as failed ToolResult if validation fails. Catches ALL exceptions from
-        execute() and wraps them in a ToolResult with success=False so callers
-        never need to handle exceptions.
+        as failed ToolResult if validation fails. Catches common exceptions
+        (RuntimeError, TypeError, ValueError, OSError, KeyError, AttributeError)
+        from execute() and wraps them in a ToolResult with success=False so
+        callers never need to handle those exceptions.
 
         Args:
             **kwargs: Tool-specific parameters
@@ -210,7 +216,7 @@ class BaseTool(ABC):
                 return ToolResult(
                     success=False,
                     error=f"Parameter validation failed: {validation_result.error_message}",
-                    metadata={"validation_errors": validation_result.errors}
+                    metadata={"validation_errors": validation_result.errors},
                 )
         except (TypeError, ValueError, KeyError, AttributeError) as e:
             logger.error("Tool %s parameter validation raised: %s", self.name, e)
@@ -222,7 +228,14 @@ class BaseTool(ABC):
         # Execute tool -- catch any exception to enforce no-exception contract
         try:
             return self.execute(**kwargs)
-        except (RuntimeError, TypeError, ValueError, OSError, KeyError, AttributeError) as e:
+        except (
+            RuntimeError,
+            TypeError,
+            ValueError,
+            OSError,
+            KeyError,
+            AttributeError,
+        ) as e:
             logger.error("Tool %s execution failed: %s", self.name, e, exc_info=True)
             return ToolResult(
                 success=False,
@@ -249,7 +262,7 @@ class BaseTool(ABC):
         """
         pass
 
-    def validate_params(self, params: Dict[str, Any]) -> ParameterValidationResult:
+    def validate_params(self, params: dict[str, Any]) -> ParameterValidationResult:
         """
         Validate parameters against schema using Pydantic if available.
 
@@ -268,9 +281,7 @@ class BaseTool(ABC):
         return self._validate_with_json_schema(params)
 
     def _validate_with_pydantic(
-        self,
-        params: Dict[str, Any],
-        model: Type[BaseModel]
+        self, params: dict[str, Any], model: type[BaseModel]
     ) -> ParameterValidationResult:
         """
         Validate parameters using Pydantic model.
@@ -297,17 +308,18 @@ class BaseTool(ABC):
             # Extract readable error messages
             errors = []
             for error in e.errors():
-                field = ".".join(str(loc) for loc in error['loc'])
-                msg = error['msg']
+                field = ".".join(str(loc) for loc in error["loc"])
+                msg = error["msg"]
                 errors.append(f"{field}: {msg}")
             return ParameterValidationResult(valid=False, errors=errors)
         except (TypeError, KeyError, AttributeError) as e:
             return ParameterValidationResult(
-                valid=False,
-                errors=[f"Validation error: {str(e)}"]
+                valid=False, errors=[f"Validation error: {str(e)}"]
             )
 
-    def _validate_with_json_schema(self, params: Dict[str, Any]) -> ParameterValidationResult:
+    def _validate_with_json_schema(
+        self, params: dict[str, Any]
+    ) -> ParameterValidationResult:
         """
         Validate parameters using JSON Schema (fallback for tools without Pydantic models).
 
@@ -342,14 +354,11 @@ class BaseTool(ABC):
                     f"{param_name}: expected {expected_type}, got {type(param_value).__name__}"
                 )
 
-        return ParameterValidationResult(
-            valid=len(errors) == 0,
-            errors=errors
-        )
+        return ParameterValidationResult(valid=len(errors) == 0, errors=errors)
 
     def _check_type(self, value: Any, expected_type: str) -> bool:
         """Check if value matches expected JSON schema type."""
-        type_map: Dict[str, Union[Type[Any], Tuple[Type[Any], ...]]] = {
+        type_map: dict[str, type[Any] | tuple[type[Any], ...]] = {
             "string": str,
             "number": (int, float),
             "integer": int,
@@ -372,7 +381,7 @@ class BaseTool(ABC):
         if not self._metadata.description:
             raise ValueError(f"Tool {self._metadata.name} must have a description")
 
-    def to_llm_schema(self) -> Dict[str, Any]:
+    def to_llm_schema(self) -> dict[str, Any]:
         """
         Convert tool to LLM function calling schema (OpenAI format).
 
@@ -384,8 +393,8 @@ class BaseTool(ABC):
             "function": {
                 "name": self.name,
                 "description": self.description,
-                "parameters": self.get_parameters_schema()
-            }
+                "parameters": self.get_parameters_schema(),
+            },
         }
 
     def __repr__(self) -> str:
@@ -394,7 +403,9 @@ class BaseTool(ABC):
         Returns:
             String representation showing tool class name, name, and version
         """
-        return f"{self.__class__.__name__}(name='{self.name}', version='{self.version}')"
+        return (
+            f"{self.__class__.__name__}(name='{self.name}', version='{self.version}')"
+        )
 
 
 # Consolidated: canonical definition in src/utils/exceptions.py
@@ -421,7 +432,7 @@ class ParameterSanitizer:
     """
 
     @staticmethod
-    def sanitize_path(path: str, allowed_base: Optional[str] = None) -> str:
+    def sanitize_path(path: str, allowed_base: str | None = None) -> str:
         """
         Sanitize file path to prevent traversal attacks.
 
@@ -450,12 +461,12 @@ class ParameterSanitizer:
             raise ValueError("Path cannot be empty")
 
         # Detect null bytes (directory traversal trick)
-        if '\x00' in path:
+        if "\x00" in path:
             raise SecurityError("Null bytes not allowed in path")
 
         # Normalize backslashes to forward slashes for cross-platform consistency
         # (Windows-style paths on Linux would otherwise bypass .. detection)
-        normalized_path = path.replace('\\', '/')
+        normalized_path = path.replace("\\", "/")
 
         # Block obvious traversal attempts in the original path BEFORE resolving
         # (Check original path because resolve() normalizes away the ..)
@@ -489,15 +500,15 @@ class ParameterSanitizer:
     def _check_dangerous_chars(normalized: str) -> None:
         """Raise SecurityError if command contains shell metacharacters."""
         dangerous_chars = [
-            ";",   # Command separator
-            "|",   # Pipe
-            "&",   # Background/AND
-            "$",   # Variable expansion
-            "`",   # Command substitution
+            ";",  # Command separator
+            "|",  # Pipe
+            "&",  # Background/AND
+            "$",  # Variable expansion
+            "`",  # Command substitution
             "\n",  # Newline injection
             "\r",  # Carriage return
-            ">",   # Output redirection
-            "<",   # Input redirection
+            ">",  # Output redirection
+            "<",  # Input redirection
         ]
         for char in dangerous_chars:
             if char in normalized:
@@ -527,8 +538,8 @@ class ParameterSanitizer:
     @staticmethod
     def sanitize_command(
         command: str,
-        allowed_commands: Optional[list[str]] = None,
-        max_length: Optional[int] = None,
+        allowed_commands: list[str] | None = None,
+        max_length: int | None = None,
     ) -> str:
         """
         Sanitize command to prevent injection attacks.
@@ -584,17 +595,14 @@ class ParameterSanitizer:
             cmd_name = normalized.split()[0] if normalized.split() else ""
             if cmd_name not in allowed_commands:
                 raise SecurityError(
-                    f"Command '{cmd_name}' not in allowed list: "
-                    f"{allowed_commands}"
+                    f"Command '{cmd_name}' not in allowed list: " f"{allowed_commands}"
                 )
 
         return normalized
 
     @staticmethod
     def validate_string_length(
-        value: str,
-        max_length: int = MAX_TEXT_LENGTH,
-        param_name: str = "parameter"
+        value: str, max_length: int = MAX_TEXT_LENGTH, param_name: str = "parameter"
     ) -> str:
         """
         Validate string length to prevent DoS attacks.
@@ -619,7 +627,9 @@ class ParameterSanitizer:
             ValueError: String too long
         """
         if not isinstance(value, str):
-            raise TypeError(f"{param_name}: expected string, got {type(value).__name__}")
+            raise TypeError(
+                f"{param_name}: expected string, got {type(value).__name__}"
+            )
 
         if len(value) > max_length:
             raise ValueError(
@@ -631,9 +641,9 @@ class ParameterSanitizer:
     @staticmethod
     def validate_integer_range(
         value: int,
-        minimum: Optional[int] = None,
-        maximum: Optional[int] = None,
-        param_name: str = "parameter"
+        minimum: int | None = None,
+        maximum: int | None = None,
+        param_name: str = "parameter",
     ) -> int:
         """
         Validate integer is within acceptable range.
@@ -665,14 +675,10 @@ class ParameterSanitizer:
             )
 
         if minimum is not None and value < minimum:
-            raise ValueError(
-                f"{param_name}: value {value} below minimum {minimum}"
-            )
+            raise ValueError(f"{param_name}: value {value} below minimum {minimum}")
 
         if maximum is not None and value > maximum:
-            raise ValueError(
-                f"{param_name}: value {value} above maximum {maximum}"
-            )
+            raise ValueError(f"{param_name}: value {value} above maximum {maximum}")
 
         return value
 
@@ -707,22 +713,22 @@ class ParameterSanitizer:
 
         # Detect common SQL injection patterns
         dangerous_patterns = [
-            "';",           # Statement terminator
-            "--",           # SQL comment
-            "/*",           # Block comment start
-            "*/",           # Block comment end
-            "xp_",          # SQL Server extended procedures
-            "sp_",          # SQL Server stored procedures
-            "UNION",        # UNION-based injection
-            "SELECT",       # SELECT injection
-            "INSERT",       # INSERT injection
-            "UPDATE",       # UPDATE injection
-            "DELETE",       # DELETE injection
-            "DROP",         # DROP injection
-            "CREATE",       # CREATE injection
-            "ALTER",        # ALTER injection
-            "EXEC",         # EXEC injection
-            "EXECUTE",      # EXECUTE injection
+            "';",  # Statement terminator
+            "--",  # SQL comment
+            "/*",  # Block comment start
+            "*/",  # Block comment end
+            "xp_",  # SQL Server extended procedures
+            "sp_",  # SQL Server stored procedures
+            "UNION",  # UNION-based injection
+            "SELECT",  # SELECT injection
+            "INSERT",  # INSERT injection
+            "UPDATE",  # UPDATE injection
+            "DELETE",  # DELETE injection
+            "DROP",  # DROP injection
+            "CREATE",  # CREATE injection
+            "ALTER",  # ALTER injection
+            "EXEC",  # EXEC injection
+            "EXECUTE",  # EXECUTE injection
         ]
 
         value_upper = value.upper()

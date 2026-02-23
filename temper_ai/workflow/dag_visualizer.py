@@ -5,9 +5,9 @@ Usage:
     >>> dag = build_stage_dag(names, refs)
     >>> print(export_mermaid(dag))
 """
+
 import logging
 from collections import defaultdict
-from typing import Dict, List
 
 from temper_ai.workflow.dag_builder import StageDAG, compute_depths
 from temper_ai.workflow.dag_visualizer_constants import (
@@ -55,8 +55,8 @@ def export_dot(dag: StageDAG) -> str:
     """
     lines = [
         "digraph workflow {",
-        f'    rankdir={DOT_RANKDIR};',
-        f'    node [shape={DOT_NODE_SHAPE}];',
+        f"    rankdir={DOT_RANKDIR};",
+        f"    node [shape={DOT_NODE_SHAPE}];",
     ]
     for stage in dag.topo_order:
         color = _dot_node_color(stage, dag)
@@ -95,7 +95,7 @@ def render_console_dag(dag: StageDAG) -> str:
         Multi-line ASCII string for terminal display.
     """
     depths = compute_depths(dag)
-    by_depth: Dict[int, List[str]] = defaultdict(list)
+    by_depth: dict[int, list[str]] = defaultdict(list)
     for stage, depth in depths.items():
         by_depth[depth].append(stage)
 
@@ -104,9 +104,7 @@ def render_console_dag(dag: StageDAG) -> str:
     for level in range(max_depth + 1):
         stages = by_depth.get(level, [])
         suffixes = _stage_suffixes(stages, dag)
-        stage_labels = ", ".join(
-            f"{s}{suffixes[s]}" for s in stages
-        )
+        stage_labels = ", ".join(f"{s}{suffixes[s]}" for s in stages)
         lines.append(f"  Level {level}: {stage_labels}")
         all_successors = _collect_successors(stages, dag)
         for succ in all_successors:
@@ -114,7 +112,7 @@ def render_console_dag(dag: StageDAG) -> str:
     return "\n".join(lines)
 
 
-def _stage_suffixes(stages: List[str], dag: StageDAG) -> Dict[str, str]:
+def _stage_suffixes(stages: list[str], dag: StageDAG) -> dict[str, str]:
     """Return display suffix per stage (' (root)', ' (terminal)', or '').
 
     Args:
@@ -135,7 +133,7 @@ def _stage_suffixes(stages: List[str], dag: StageDAG) -> Dict[str, str]:
     return result
 
 
-def _collect_successors(stages: List[str], dag: StageDAG) -> List[str]:
+def _collect_successors(stages: list[str], dag: StageDAG) -> list[str]:
     """Collect unique successors across a list of stages in topo order.
 
     Args:

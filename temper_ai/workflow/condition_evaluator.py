@@ -8,8 +8,9 @@ Example:
     >>> evaluator.evaluate("{{ stage_outputs.test.stage_status == 'failed' }}", state)
     True
 """
+
 import logging
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, cast
 
 from jinja2 import Undefined
 from jinja2.sandbox import ImmutableSandboxedEnvironment
@@ -17,11 +18,20 @@ from jinja2.sandbox import ImmutableSandboxedEnvironment
 logger = logging.getLogger(__name__)
 
 # Infrastructure keys filtered from condition context
-_INFRASTRUCTURE_KEYS = frozenset({
-    "tracker", "tool_registry", "config_loader", "visualizer",
-    "show_details", "detail_console", "stream_callback",
-    "tool_executor", "_dict_cache", "_dict_cache_exclude_internal",
-})
+_INFRASTRUCTURE_KEYS = frozenset(
+    {
+        "tracker",
+        "tool_registry",
+        "config_loader",
+        "visualizer",
+        "show_details",
+        "detail_console",
+        "stream_callback",
+        "tool_executor",
+        "_dict_cache",
+        "_dict_cache_exclude_internal",
+    }
+)
 
 
 class ConditionEvaluator:
@@ -46,9 +56,9 @@ class ConditionEvaluator:
         self._env = ImmutableSandboxedEnvironment(
             undefined=_SilentUndefined,
         )
-        self._template_cache: Dict[str, Any] = {}
+        self._template_cache: dict[str, Any] = {}
 
-    def evaluate(self, condition: str, state: Dict[str, Any]) -> bool:
+    def evaluate(self, condition: str, state: dict[str, Any]) -> bool:
         """Evaluate a Jinja2 condition expression against workflow state.
 
         Args:
@@ -71,7 +81,7 @@ class ConditionEvaluator:
             )
             return False
 
-    def _build_safe_context(self, state: Dict[str, Any]) -> Dict[str, Any]:
+    def _build_safe_context(self, state: dict[str, Any]) -> dict[str, Any]:
         """Build a safe context dictionary for template rendering.
 
         Filters out infrastructure keys (tracker, tool_registry, etc.)
@@ -83,10 +93,7 @@ class ConditionEvaluator:
         Returns:
             Filtered context safe for Jinja2 rendering
         """
-        return {
-            k: v for k, v in state.items()
-            if k not in _INFRASTRUCTURE_KEYS
-        }
+        return {k: v for k, v in state.items() if k not in _INFRASTRUCTURE_KEYS}
 
     def _get_template(self, condition: str) -> Any:
         """Get compiled Jinja2 template with instance-level caching.
@@ -131,19 +138,19 @@ class _SilentUndefined(Undefined):
     def __call__(self, *_args: Any, **_kwargs: Any) -> "_SilentUndefined":  # type: ignore[override]
         return _SilentUndefined()
 
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other: object) -> bool:
         if isinstance(other, _SilentUndefined):
             return True
         return False
 
-    def __ne__(self, other: Any) -> bool:
+    def __ne__(self, other: object) -> bool:
         return not self.__eq__(other)
 
 
 def get_default_condition(
     stage_index: int,
-    stages: List[Any],
-) -> Optional[str]:
+    stages: list[Any],
+) -> str | None:
     """Generate default condition for a conditional stage.
 
     Default: previous stage's status is 'failed' or 'degraded'.

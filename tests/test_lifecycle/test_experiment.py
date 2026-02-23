@@ -51,7 +51,8 @@ class TestLifecycleExperimenter:
             "var-ctrl", "control"
         )
         result = experimenter.get_adapted_profile(
-            "exp-1", "wf-1",
+            "exp-1",
+            "wf-1",
             {"lean": LifecycleProfile(name="lean")},
         )
         assert result is None
@@ -63,7 +64,8 @@ class TestLifecycleExperimenter:
         )
         profile = LifecycleProfile(name="lean", description="Lean profile")
         result = experimenter.get_adapted_profile(
-            "exp-1", "wf-1",
+            "exp-1",
+            "wf-1",
             {"lean": profile},
         )
         assert result is not None
@@ -75,7 +77,8 @@ class TestLifecycleExperimenter:
             "var-unknown", "unknown"
         )
         result = experimenter.get_adapted_profile(
-            "exp-1", "wf-1",
+            "exp-1",
+            "wf-1",
             {"lean": LifecycleProfile(name="lean")},
         )
         assert result is None
@@ -90,7 +93,9 @@ class TestLifecycleExperimenter:
         result = experimenter.get_adapted_profile("exp-1", "wf-1")
         assert result is None
 
-    def test_track_outcome_calls_track_execution_complete(self, experimenter, mock_service):
+    def test_track_outcome_calls_track_execution_complete(
+        self, experimenter, mock_service
+    ):
         experimenter.track_outcome("exp-1", "wf-1", {"duration": 42.0})
         mock_service.track_execution_complete.assert_called_once_with(
             "wf-1", {"duration": 42.0}
@@ -99,7 +104,12 @@ class TestLifecycleExperimenter:
     def test_track_outcome_failure_handled(self, experimenter, mock_service):
         mock_service.track_execution_complete.side_effect = RuntimeError("fail")
         # Should not propagate the exception — silent failure handling
-        experimenter.track_outcome("exp-1", "wf-1", {"duration": 42.0})
+        try:
+            experimenter.track_outcome("exp-1", "wf-1", {"duration": 42.0})
+            raised = False
+        except Exception:
+            raised = True
+        assert not raised, "track_outcome must not propagate exceptions"
 
     def test_no_profiles_dict(self, experimenter, mock_service):
         mock_service.assign_variant.return_value = _make_assignment("var-lean")

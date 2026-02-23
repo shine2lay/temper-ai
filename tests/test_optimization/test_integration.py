@@ -1,13 +1,8 @@
 """Integration tests for the optimization pipeline."""
 
 import json
-from unittest.mock import MagicMock, patch
-import sys
-
-import pytest
 
 from temper_ai.optimization.dspy._schemas import (
-    CompilationResult,
     PromptOptimizationConfig,
     TrainingExample,
 )
@@ -36,9 +31,7 @@ class TestOptimizationPipeline:
 
         # Adapt a prompt
         adapter = DSPyPromptAdapter(store=store)
-        result = adapter.augment_prompt(
-            "researcher", "Research {{ topic }}"
-        )
+        result = adapter.augment_prompt("researcher", "Research {{ topic }}")
         assert "Research {{ topic }}" in result
         assert "Be thorough in analysis" in result
         assert "AI safety" in result
@@ -93,13 +86,13 @@ class TestOptimizationPipeline:
     def test_autonomy_schema_has_optimization_field(self):
         """AutonomousLoopConfig has prompt_optimization_enabled field."""
         from temper_ai.autonomy._schemas import AutonomousLoopConfig
+
         config = AutonomousLoopConfig(prompt_optimization_enabled=True)
         assert config.prompt_optimization_enabled is True
 
     def test_post_execution_report_has_optimization_result(self):
         """PostExecutionReport has optimization_result field."""
         from temper_ai.autonomy._schemas import PostExecutionReport
-        report = PostExecutionReport(
-            optimization_result={"agents_compiled": 2}
-        )
+
+        report = PostExecutionReport(optimization_result={"agents_compiled": 2})
         assert report.optimization_result["agents_compiled"] == 2

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 from temper_ai.optimization._schemas import EvaluationResult, OptimizationResult
 from temper_ai.optimization.engine_constants import DEFAULT_MAX_ITERATIONS
@@ -18,8 +18,8 @@ class RefinementOptimizer:
 
     def __init__(
         self,
-        llm: Optional[Any] = None,
-        experiment_service: Optional[Any] = None,
+        llm: Any | None = None,
+        experiment_service: Any | None = None,
     ) -> None:
         self.llm = llm
         self.experiment_service = experiment_service
@@ -27,9 +27,9 @@ class RefinementOptimizer:
     def optimize(
         self,
         runner: Any,
-        input_data: Dict[str, Any],
+        input_data: dict[str, Any],
         evaluator: EvaluatorProtocol,
-        config: Dict[str, Any],
+        config: dict[str, Any],
     ) -> OptimizationResult:
         """Run refinement loop: execute -> evaluate -> critique -> retry."""
         if self.experiment_service:
@@ -39,14 +39,12 @@ class RefinementOptimizer:
     def _run_without_service(
         self,
         runner: Any,
-        input_data: Dict[str, Any],
+        input_data: dict[str, Any],
         evaluator: EvaluatorProtocol,
-        config: Dict[str, Any],
+        config: dict[str, Any],
     ) -> OptimizationResult:
         """Run refinement without experiment tracking."""
-        max_iterations: int = config.get(
-            "max_iterations", DEFAULT_MAX_ITERATIONS
-        )
+        max_iterations: int = config.get("max_iterations", DEFAULT_MAX_ITERATIONS)
 
         best_output = runner.execute(input_data)
         best_eval = evaluator.evaluate(best_output)
@@ -83,9 +81,9 @@ class RefinementOptimizer:
     def _run_with_service(
         self,
         runner: Any,
-        input_data: Dict[str, Any],
+        input_data: dict[str, Any],
         evaluator: EvaluatorProtocol,
-        config: Dict[str, Any],
+        config: dict[str, Any],
     ) -> OptimizationResult:
         """Run refinement WITH experiment tracking."""
         from temper_ai.optimization._experiment_helpers import (
@@ -93,9 +91,7 @@ class RefinementOptimizer:
             finalize_experiment,
         )
 
-        max_iterations: int = config.get(
-            "max_iterations", DEFAULT_MAX_ITERATIONS
-        )
+        max_iterations: int = config.get("max_iterations", DEFAULT_MAX_ITERATIONS)
         evaluator_name = getattr(evaluator, "name", "unknown")
         experiment_id = create_refinement_experiment(
             self.experiment_service, evaluator_name, max_iterations
@@ -107,13 +103,16 @@ class RefinementOptimizer:
 
         if not best_eval.passed:
             best_output, best_eval, iteration = self._run_iterations_tracked(
-                runner, input_data, evaluator, experiment_id,
-                best_output, best_eval, max_iterations,
+                runner,
+                input_data,
+                evaluator,
+                experiment_id,
+                best_output,
+                best_eval,
+                max_iterations,
             )
 
-        experiment_results = finalize_experiment(
-            self.experiment_service, experiment_id
-        )
+        experiment_results = finalize_experiment(self.experiment_service, experiment_id)
 
         return OptimizationResult(
             output=best_output,
@@ -128,10 +127,10 @@ class RefinementOptimizer:
     def _run_baseline_tracked(
         self,
         runner: Any,
-        input_data: Dict[str, Any],
+        input_data: dict[str, Any],
         evaluator: EvaluatorProtocol,
         experiment_id: str,
-    ) -> Tuple[Dict[str, Any], EvaluationResult, int]:
+    ) -> tuple[dict[str, Any], EvaluationResult, int]:
         """Run and track baseline execution."""
         from temper_ai.optimization._experiment_helpers import (
             create_workflow_id,
@@ -150,13 +149,13 @@ class RefinementOptimizer:
     def _run_iterations_tracked(  # noqa: params
         self,
         runner: Any,
-        input_data: Dict[str, Any],
+        input_data: dict[str, Any],
         evaluator: EvaluatorProtocol,
         experiment_id: str,
-        best_output: Dict[str, Any],
+        best_output: dict[str, Any],
         best_eval: EvaluationResult,
         max_iterations: int,
-    ) -> Tuple[Dict[str, Any], EvaluationResult, int]:
+    ) -> tuple[dict[str, Any], EvaluationResult, int]:
         """Run and track refinement iterations."""
         from temper_ai.optimization._experiment_helpers import (
             create_workflow_id,
@@ -173,9 +172,7 @@ class RefinementOptimizer:
             new_output = runner.execute(refined_input)
             new_eval = evaluator.evaluate(new_output)
 
-            track_run_result(
-                self.experiment_service, workflow_id, new_eval.score
-            )
+            track_run_result(self.experiment_service, workflow_id, new_eval.score)
 
             if new_eval.score > best_eval.score:
                 best_output = new_output
@@ -187,7 +184,7 @@ class RefinementOptimizer:
         return best_output, best_eval, iteration
 
     def _generate_critique(
-        self, output: Dict[str, Any], eval_result: EvaluationResult
+        self, output: dict[str, Any], eval_result: EvaluationResult
     ) -> str:
         """Generate critique of the output using LLM."""
         if not self.llm:
@@ -205,8 +202,8 @@ class RefinementOptimizer:
             return f"Score: {eval_result.score}. Please improve."
 
     def _inject_critique(
-        self, input_data: Dict[str, Any], critique: str
-    ) -> Dict[str, Any]:
+        self, input_data: dict[str, Any], critique: str
+    ) -> dict[str, Any]:
         """Inject critique feedback into input data for retry."""
         refined = dict(input_data)
         refined["_optimization_critique"] = critique

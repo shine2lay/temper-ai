@@ -3,15 +3,19 @@ Comprehensive tests for src/observability/backends/sql_backend.py.
 
 Tests the SQLObservabilityBackend with workflow, stage, agent, LLM, and tool tracking.
 """
-from datetime import datetime, timedelta, timezone
+
+from datetime import UTC, datetime
 from unittest.mock import Mock, patch
 
 import pytest
-from sqlmodel import Session, select
+from sqlmodel import Session
 
-from temper_ai.storage.database.models import AgentExecution, LLMCall, StageExecution, ToolExecution, WorkflowExecution
 from temper_ai.observability.backends.sql_backend import SQLObservabilityBackend
-
+from temper_ai.storage.database.models import (
+    AgentExecution,
+    StageExecution,
+    WorkflowExecution,
+)
 
 # ========== Fixtures ==========
 
@@ -56,7 +60,7 @@ def sample_workflow_config():
         "workflow": {
             "name": "test_workflow",
             "version": "1.0",
-            "description": "Test workflow"
+            "description": "Test workflow",
         }
     }
 
@@ -65,11 +69,7 @@ def sample_workflow_config():
 def sample_stage_config():
     """Sample stage configuration."""
     return {
-        "stage": {
-            "name": "test_stage",
-            "version": "1.0",
-            "description": "Test stage"
-        }
+        "stage": {"name": "test_stage", "version": "1.0", "description": "Test stage"}
     }
 
 
@@ -77,11 +77,7 @@ def sample_stage_config():
 def sample_agent_config():
     """Sample agent configuration."""
     return {
-        "agent": {
-            "name": "test_agent",
-            "version": "1.0",
-            "description": "Test agent"
-        }
+        "agent": {"name": "test_agent", "version": "1.0", "description": "Test agent"}
     }
 
 
@@ -115,20 +111,22 @@ def test_backend_init_with_custom_buffer(mock_buffer):
 # ========== Tests for Workflow Tracking ==========
 
 
-@patch('temper_ai.observability.backends.sql_backend.get_session')
-def test_track_workflow_start(mock_get_session, backend_no_buffer, sample_workflow_config):
+@patch("temper_ai.observability.backends.sql_backend.get_session")
+def test_track_workflow_start(
+    mock_get_session, backend_no_buffer, sample_workflow_config
+):
     """Test tracking workflow start."""
     mock_session = Mock()
     mock_get_session.return_value.__enter__.return_value = mock_session
 
-    start_time = datetime.now(timezone.utc)
+    start_time = datetime.now(UTC)
     backend_no_buffer.track_workflow_start(
         workflow_id="wf_123",
         workflow_name="test_workflow",
         workflow_config=sample_workflow_config,
         start_time=start_time,
         trigger_type="cli",
-        environment="test"
+        environment="test",
     )
 
     mock_session.add.assert_called_once()
@@ -142,11 +140,11 @@ def test_track_workflow_start(mock_get_session, backend_no_buffer, sample_workfl
     assert added_obj.status == "running"
 
 
-@patch('temper_ai.observability.backends.sql_backend.get_session')
+@patch("temper_ai.observability.backends.sql_backend.get_session")
 def test_track_workflow_end(mock_get_session, backend_no_buffer):
     """Test tracking workflow end."""
     mock_workflow = Mock(spec=WorkflowExecution)
-    mock_workflow.start_time = datetime.now(timezone.utc)
+    mock_workflow.start_time = datetime.now(UTC)
 
     mock_result = Mock()
     mock_result.first.return_value = mock_workflow
@@ -155,11 +153,9 @@ def test_track_workflow_end(mock_get_session, backend_no_buffer):
     mock_session.exec.return_value = mock_result
     mock_get_session.return_value.__enter__.return_value = mock_session
 
-    end_time = datetime.now(timezone.utc)
+    end_time = datetime.now(UTC)
     backend_no_buffer.track_workflow_end(
-        workflow_id="wf_123",
-        end_time=end_time,
-        status="completed"
+        workflow_id="wf_123", end_time=end_time, status="completed"
     )
 
     assert mock_workflow.status == "completed"
@@ -167,11 +163,11 @@ def test_track_workflow_end(mock_get_session, backend_no_buffer):
     mock_session.commit.assert_called_once()
 
 
-@patch('temper_ai.observability.backends.sql_backend.get_session')
+@patch("temper_ai.observability.backends.sql_backend.get_session")
 def test_track_workflow_end_with_error(mock_get_session, backend_no_buffer):
     """Test tracking workflow end with error."""
     mock_workflow = Mock(spec=WorkflowExecution)
-    mock_workflow.start_time = datetime.now(timezone.utc)
+    mock_workflow.start_time = datetime.now(UTC)
 
     mock_result = Mock()
     mock_result.first.return_value = mock_workflow
@@ -180,13 +176,13 @@ def test_track_workflow_end_with_error(mock_get_session, backend_no_buffer):
     mock_session.exec.return_value = mock_result
     mock_get_session.return_value.__enter__.return_value = mock_session
 
-    end_time = datetime.now(timezone.utc)
+    end_time = datetime.now(UTC)
     backend_no_buffer.track_workflow_end(
         workflow_id="wf_123",
         end_time=end_time,
         status="failed",
         error_message="Test error",
-        error_stack_trace="Stack trace"
+        error_stack_trace="Stack trace",
     )
 
     assert mock_workflow.status == "failed"
@@ -195,7 +191,7 @@ def test_track_workflow_end_with_error(mock_get_session, backend_no_buffer):
     mock_session.commit.assert_called_once()
 
 
-@patch('temper_ai.observability.backends.sql_backend.get_session')
+@patch("temper_ai.observability.backends.sql_backend.get_session")
 def test_track_workflow_end_not_found(mock_get_session, backend_no_buffer):
     """Test tracking workflow end when workflow not found."""
     mock_result = Mock()
@@ -205,18 +201,16 @@ def test_track_workflow_end_not_found(mock_get_session, backend_no_buffer):
     mock_session.exec.return_value = mock_result
     mock_get_session.return_value.__enter__.return_value = mock_session
 
-    end_time = datetime.now(timezone.utc)
+    end_time = datetime.now(UTC)
     backend_no_buffer.track_workflow_end(
-        workflow_id="wf_nonexistent",
-        end_time=end_time,
-        status="completed"
+        workflow_id="wf_nonexistent", end_time=end_time, status="completed"
     )
 
     # Should not crash, just not update anything
     mock_session.commit.assert_not_called()
 
 
-@patch('temper_ai.observability.backends.sql_backend.get_session')
+@patch("temper_ai.observability.backends.sql_backend.get_session")
 def test_update_workflow_metrics(mock_get_session, backend_no_buffer):
     """Test updating workflow metrics."""
     mock_workflow = Mock(spec=WorkflowExecution)
@@ -233,7 +227,7 @@ def test_update_workflow_metrics(mock_get_session, backend_no_buffer):
         total_llm_calls=10,
         total_tool_calls=5,
         total_tokens=1000,
-        total_cost_usd=0.05
+        total_cost_usd=0.05,
     )
 
     assert mock_workflow.total_llm_calls == 10
@@ -246,20 +240,20 @@ def test_update_workflow_metrics(mock_get_session, backend_no_buffer):
 # ========== Tests for Stage Tracking ==========
 
 
-@patch('temper_ai.observability.backends.sql_backend.get_session')
+@patch("temper_ai.observability.backends.sql_backend.get_session")
 def test_track_stage_start(mock_get_session, backend_no_buffer, sample_stage_config):
     """Test tracking stage start."""
     mock_session = Mock()
     mock_get_session.return_value.__enter__.return_value = mock_session
 
-    start_time = datetime.now(timezone.utc)
+    start_time = datetime.now(UTC)
     backend_no_buffer.track_stage_start(
         stage_id="st_123",
         workflow_id="wf_123",
         stage_name="test_stage",
         stage_config=sample_stage_config,
         start_time=start_time,
-        input_data={"key": "value"}
+        input_data={"key": "value"},
     )
 
     mock_session.add.assert_called_once()
@@ -272,11 +266,11 @@ def test_track_stage_start(mock_get_session, backend_no_buffer, sample_stage_con
     assert added_obj.status == "running"
 
 
-@patch('temper_ai.observability.backends.sql_backend.get_session')
+@patch("temper_ai.observability.backends.sql_backend.get_session")
 def test_track_stage_end(mock_get_session, backend_no_buffer):
     """Test tracking stage end."""
     mock_stage = Mock(spec=StageExecution)
-    mock_stage.start_time = datetime.now(timezone.utc)
+    mock_stage.start_time = datetime.now(UTC)
 
     mock_result = Mock()
     mock_result.first.return_value = mock_stage
@@ -285,14 +279,14 @@ def test_track_stage_end(mock_get_session, backend_no_buffer):
     mock_session.exec.return_value = mock_result
     mock_get_session.return_value.__enter__.return_value = mock_session
 
-    end_time = datetime.now(timezone.utc)
+    end_time = datetime.now(UTC)
     backend_no_buffer.track_stage_end(
         stage_id="st_123",
         end_time=end_time,
         status="completed",
         num_agents_executed=3,
         num_agents_succeeded=2,
-        num_agents_failed=1
+        num_agents_failed=1,
     )
 
     assert mock_stage.status == "completed"
@@ -302,11 +296,11 @@ def test_track_stage_end(mock_get_session, backend_no_buffer):
     mock_session.commit.assert_called_once()
 
 
-@patch('temper_ai.observability.backends.sql_backend.get_session')
+@patch("temper_ai.observability.backends.sql_backend.get_session")
 def test_track_stage_end_compute_metrics(mock_get_session, backend_no_buffer):
     """Test tracking stage end with computed metrics."""
     mock_stage = Mock(spec=StageExecution)
-    mock_stage.start_time = datetime.now(timezone.utc)
+    mock_stage.start_time = datetime.now(UTC)
 
     # Mock metrics result as tuple (total, succeeded, failed)
     mock_metrics_result = (5, 4, 1)
@@ -315,14 +309,15 @@ def test_track_stage_end_compute_metrics(mock_get_session, backend_no_buffer):
     mock_result.first.return_value = mock_stage
 
     mock_session = Mock()
-    mock_session.exec.side_effect = [mock_result, Mock(first=lambda: mock_metrics_result)]
+    mock_session.exec.side_effect = [
+        mock_result,
+        Mock(first=lambda: mock_metrics_result),
+    ]
     mock_get_session.return_value.__enter__.return_value = mock_session
 
-    end_time = datetime.now(timezone.utc)
+    end_time = datetime.now(UTC)
     backend_no_buffer.track_stage_end(
-        stage_id="st_123",
-        end_time=end_time,
-        status="completed"
+        stage_id="st_123", end_time=end_time, status="completed"
     )
 
     assert mock_stage.num_agents_executed == 5
@@ -330,7 +325,7 @@ def test_track_stage_end_compute_metrics(mock_get_session, backend_no_buffer):
     assert mock_stage.num_agents_failed == 1
 
 
-@patch('temper_ai.observability.backends.sql_backend.get_session')
+@patch("temper_ai.observability.backends.sql_backend.get_session")
 def test_set_stage_output(mock_get_session, backend_no_buffer):
     """Test setting stage output data."""
     mock_stage = Mock(spec=StageExecution)
@@ -352,20 +347,20 @@ def test_set_stage_output(mock_get_session, backend_no_buffer):
 # ========== Tests for Agent Tracking ==========
 
 
-@patch('temper_ai.observability.backends.sql_backend.get_session')
+@patch("temper_ai.observability.backends.sql_backend.get_session")
 def test_track_agent_start(mock_get_session, backend_no_buffer, sample_agent_config):
     """Test tracking agent start."""
     mock_session = Mock()
     mock_get_session.return_value.__enter__.return_value = mock_session
 
-    start_time = datetime.now(timezone.utc)
+    start_time = datetime.now(UTC)
     backend_no_buffer.track_agent_start(
         agent_id="ag_123",
         stage_id="st_123",
         agent_name="test_agent",
         agent_config=sample_agent_config,
         start_time=start_time,
-        input_data={"input": "test"}
+        input_data={"input": "test"},
     )
 
     mock_session.add.assert_called_once()
@@ -378,11 +373,11 @@ def test_track_agent_start(mock_get_session, backend_no_buffer, sample_agent_con
     assert added_obj.status == "running"
 
 
-@patch('temper_ai.observability.backends.sql_backend.get_session')
+@patch("temper_ai.observability.backends.sql_backend.get_session")
 def test_track_agent_end(mock_get_session, backend_no_buffer):
     """Test tracking agent end."""
     mock_agent = Mock(spec=AgentExecution)
-    mock_agent.start_time = datetime.now(timezone.utc)
+    mock_agent.start_time = datetime.now(UTC)
 
     mock_result = Mock()
     mock_result.first.return_value = mock_agent
@@ -391,11 +386,9 @@ def test_track_agent_end(mock_get_session, backend_no_buffer):
     mock_session.exec.return_value = mock_result
     mock_get_session.return_value.__enter__.return_value = mock_session
 
-    end_time = datetime.now(timezone.utc)
+    end_time = datetime.now(UTC)
     backend_no_buffer.track_agent_end(
-        agent_id="ag_123",
-        end_time=end_time,
-        status="completed"
+        agent_id="ag_123", end_time=end_time, status="completed"
     )
 
     assert mock_agent.status == "completed"
@@ -403,7 +396,7 @@ def test_track_agent_end(mock_get_session, backend_no_buffer):
     mock_session.commit.assert_called_once()
 
 
-@patch('temper_ai.observability.backends.sql_backend.get_session')
+@patch("temper_ai.observability.backends.sql_backend.get_session")
 def test_set_agent_output(mock_get_session, backend_no_buffer):
     """Test setting agent output data."""
     mock_agent = Mock(spec=AgentExecution)
@@ -426,7 +419,7 @@ def test_set_agent_output(mock_get_session, backend_no_buffer):
         completion_tokens=40,
         estimated_cost_usd=0.001,
         num_llm_calls=1,
-        num_tool_calls=0
+        num_tool_calls=0,
     )
 
     assert mock_agent.output_data == output_data
@@ -441,7 +434,7 @@ def test_set_agent_output(mock_get_session, backend_no_buffer):
     mock_session.commit.assert_called_once()
 
 
-@patch('temper_ai.observability.backends.sql_backend.get_session')
+@patch("temper_ai.observability.backends.sql_backend.get_session")
 def test_set_agent_output_partial_update(mock_get_session, backend_no_buffer):
     """Test setting agent output with partial fields."""
     mock_agent = Mock(spec=AgentExecution)
@@ -458,7 +451,7 @@ def test_set_agent_output_partial_update(mock_get_session, backend_no_buffer):
     backend_no_buffer.set_agent_output(
         agent_id="ag_123",
         output_data={"result": "ok"},
-        total_tokens=100  # Only update tokens
+        total_tokens=100,  # Only update tokens
     )
 
     assert mock_agent.total_tokens == 100
@@ -469,7 +462,7 @@ def test_set_agent_output_partial_update(mock_get_session, backend_no_buffer):
 # ========== Tests for LLM Call Tracking ==========
 
 
-@patch('temper_ai.observability.backends.sql_backend.get_session')
+@patch("temper_ai.observability.backends.sql_backend.get_session")
 def test_track_llm_call_no_buffer(mock_get_session, backend_no_buffer):
     """Test tracking LLM call without buffering."""
     mock_agent = Mock(spec=AgentExecution)
@@ -486,7 +479,7 @@ def test_track_llm_call_no_buffer(mock_get_session, backend_no_buffer):
     mock_session.exec.return_value = mock_result
     mock_get_session.return_value.__enter__.return_value = mock_session
 
-    start_time = datetime.now(timezone.utc)
+    start_time = datetime.now(UTC)
     backend_no_buffer.track_llm_call(
         llm_call_id="llm_123",
         agent_id="ag_123",
@@ -500,7 +493,7 @@ def test_track_llm_call_no_buffer(mock_get_session, backend_no_buffer):
         estimated_cost_usd=0.002,
         start_time=start_time,
         temperature=0.7,
-        max_tokens=100
+        max_tokens=100,
     )
 
     # Should add LLMCall and update agent metrics
@@ -514,7 +507,7 @@ def test_track_llm_call_no_buffer(mock_get_session, backend_no_buffer):
 
 def test_track_llm_call_with_buffer(backend_with_buffer, mock_buffer):
     """Test tracking LLM call with buffering."""
-    start_time = datetime.now(timezone.utc)
+    start_time = datetime.now(UTC)
     backend_with_buffer.track_llm_call(
         llm_call_id="llm_123",
         agent_id="ag_123",
@@ -526,7 +519,7 @@ def test_track_llm_call_with_buffer(backend_with_buffer, mock_buffer):
         completion_tokens=30,
         latency_ms=1000,
         estimated_cost_usd=0.002,
-        start_time=start_time
+        start_time=start_time,
     )
 
     # Should use buffer instead of direct insert
@@ -537,7 +530,7 @@ def test_track_llm_call_with_buffer(backend_with_buffer, mock_buffer):
     assert call_kwargs["prompt_tokens"] == 50
 
 
-@patch('temper_ai.observability.backends.sql_backend.get_session')
+@patch("temper_ai.observability.backends.sql_backend.get_session")
 def test_track_llm_call_with_error(mock_get_session, backend_no_buffer):
     """Test tracking failed LLM call."""
     mock_agent = Mock(spec=AgentExecution)
@@ -554,7 +547,7 @@ def test_track_llm_call_with_error(mock_get_session, backend_no_buffer):
     mock_session.exec.return_value = mock_result
     mock_get_session.return_value.__enter__.return_value = mock_session
 
-    start_time = datetime.now(timezone.utc)
+    start_time = datetime.now(UTC)
     backend_no_buffer.track_llm_call(
         llm_call_id="llm_123",
         agent_id="ag_123",
@@ -568,7 +561,7 @@ def test_track_llm_call_with_error(mock_get_session, backend_no_buffer):
         estimated_cost_usd=0.001,
         start_time=start_time,
         status="failed",
-        error_message="API error"
+        error_message="API error",
     )
 
     # Should still record the call
@@ -581,7 +574,7 @@ def test_track_llm_call_with_error(mock_get_session, backend_no_buffer):
 # ========== Tests for Tool Call Tracking ==========
 
 
-@patch('temper_ai.observability.backends.sql_backend.get_session')
+@patch("temper_ai.observability.backends.sql_backend.get_session")
 def test_track_tool_call_no_buffer(mock_get_session, backend_no_buffer):
     """Test tracking tool call without buffering."""
     mock_agent = Mock(spec=AgentExecution)
@@ -594,7 +587,7 @@ def test_track_tool_call_no_buffer(mock_get_session, backend_no_buffer):
     mock_session.exec.return_value = mock_result
     mock_get_session.return_value.__enter__.return_value = mock_session
 
-    start_time = datetime.now(timezone.utc)
+    start_time = datetime.now(UTC)
     backend_no_buffer.track_tool_call(
         tool_execution_id="tool_123",
         agent_id="ag_123",
@@ -604,7 +597,7 @@ def test_track_tool_call_no_buffer(mock_get_session, backend_no_buffer):
         start_time=start_time,
         duration_seconds=0.5,
         safety_checks=["input_validation"],
-        approval_required=False
+        approval_required=False,
     )
 
     mock_session.add.assert_called_once()
@@ -614,7 +607,7 @@ def test_track_tool_call_no_buffer(mock_get_session, backend_no_buffer):
 
 def test_track_tool_call_with_buffer(backend_with_buffer, mock_buffer):
     """Test tracking tool call with buffering."""
-    start_time = datetime.now(timezone.utc)
+    start_time = datetime.now(UTC)
     backend_with_buffer.track_tool_call(
         tool_execution_id="tool_123",
         agent_id="ag_123",
@@ -622,7 +615,7 @@ def test_track_tool_call_with_buffer(backend_with_buffer, mock_buffer):
         input_params={"operation": "add"},
         output_data={"result": 3},
         start_time=start_time,
-        duration_seconds=0.5
+        duration_seconds=0.5,
     )
 
     mock_buffer.buffer_tool_call.assert_called_once()
@@ -631,7 +624,7 @@ def test_track_tool_call_with_buffer(backend_with_buffer, mock_buffer):
     assert call_kwargs["tool_name"] == "calculator"
 
 
-@patch('temper_ai.observability.backends.sql_backend.get_session')
+@patch("temper_ai.observability.backends.sql_backend.get_session")
 def test_track_tool_call_with_error(mock_get_session, backend_no_buffer):
     """Test tracking failed tool call."""
     mock_agent = Mock(spec=AgentExecution)
@@ -644,7 +637,7 @@ def test_track_tool_call_with_error(mock_get_session, backend_no_buffer):
     mock_session.exec.return_value = mock_result
     mock_get_session.return_value.__enter__.return_value = mock_session
 
-    start_time = datetime.now(timezone.utc)
+    start_time = datetime.now(UTC)
     backend_no_buffer.track_tool_call(
         tool_execution_id="tool_123",
         agent_id="ag_123",
@@ -654,7 +647,7 @@ def test_track_tool_call_with_error(mock_get_session, backend_no_buffer):
         start_time=start_time,
         duration_seconds=0.1,
         status="failed",
-        error_message="Division by zero"
+        error_message="Division by zero",
     )
 
     mock_session.add.assert_called_once()
@@ -666,7 +659,7 @@ def test_track_tool_call_with_error(mock_get_session, backend_no_buffer):
 # ========== Tests for Session Context ==========
 
 
-@patch('temper_ai.observability.backends.sql_backend.get_session')
+@patch("temper_ai.observability.backends.sql_backend.get_session")
 def test_get_session_context(mock_get_session, backend_no_buffer):
     """Test getting session context."""
     mock_session = Mock()
@@ -680,7 +673,7 @@ def test_get_session_context(mock_get_session, backend_no_buffer):
 # ========== Tests for Get Agent Execution ==========
 
 
-@patch('temper_ai.observability.backends.sql_backend.get_session')
+@patch("temper_ai.observability.backends.sql_backend.get_session")
 def test_get_agent_execution_found(mock_get_session, backend_no_buffer):
     """Test getting agent execution when found."""
     mock_agent = Mock(spec=AgentExecution)
@@ -699,7 +692,7 @@ def test_get_agent_execution_found(mock_get_session, backend_no_buffer):
     mock_session.expunge.assert_called_once_with(mock_agent)
 
 
-@patch('temper_ai.observability.backends.sql_backend.get_session')
+@patch("temper_ai.observability.backends.sql_backend.get_session")
 def test_get_agent_execution_not_found(mock_get_session, backend_no_buffer):
     """Test getting agent execution when not found."""
     mock_result = Mock()
@@ -717,7 +710,7 @@ def test_get_agent_execution_not_found(mock_get_session, backend_no_buffer):
 # ========== Tests for Stats and Indexes ==========
 
 
-@patch('temper_ai.observability.backends._sql_backend_helpers.get_backend_stats')
+@patch("temper_ai.observability.backends._sql_backend_helpers.get_backend_stats")
 def test_get_stats(mock_get_stats, backend_no_buffer):
     """Test getting backend stats."""
     expected_stats = {"workflows": 10, "agents": 50}
@@ -742,7 +735,7 @@ def test_create_indexes(backend_no_buffer):
 # ========== Tests for Delegated Methods ==========
 
 
-@patch('temper_ai.observability.backends._sql_backend_helpers.track_safety_violation')
+@patch("temper_ai.observability.backends._sql_backend_helpers.track_safety_violation")
 def test_track_safety_violation(mock_track, backend_no_buffer):
     """Test tracking safety violation."""
     backend_no_buffer.track_safety_violation(
@@ -751,13 +744,15 @@ def test_track_safety_violation(mock_track, backend_no_buffer):
         agent_id="ag_123",
         violation_severity="high",
         violation_message="Unsafe operation",
-        policy_name="test_policy"
+        policy_name="test_policy",
     )
 
     mock_track.assert_called_once()
 
 
-@patch('temper_ai.observability.backends._sql_backend_helpers.track_collaboration_event')
+@patch(
+    "temper_ai.observability.backends._sql_backend_helpers.track_collaboration_event"
+)
 def test_track_collaboration_event(mock_track, backend_no_buffer):
     """Test tracking collaboration event."""
     mock_track.return_value = "collab_123"
@@ -766,14 +761,14 @@ def test_track_collaboration_event(mock_track, backend_no_buffer):
         stage_id="st_123",
         event_type="negotiation",
         agents_involved=["agent1", "agent2"],
-        event_data={"topic": "consensus"}
+        event_data={"topic": "consensus"},
     )
 
     assert event_id == "collab_123"
     mock_track.assert_called_once()
 
 
-@patch('temper_ai.observability.backends._sql_backend_helpers.cleanup_old_records')
+@patch("temper_ai.observability.backends._sql_backend_helpers.cleanup_old_records")
 def test_cleanup_old_records(mock_cleanup, backend_no_buffer):
     """Test cleaning up old records."""
     mock_cleanup.return_value = {"workflows": 5, "stages": 10}
@@ -784,13 +779,15 @@ def test_cleanup_old_records(mock_cleanup, backend_no_buffer):
     mock_cleanup.assert_called_once_with(30, True)
 
 
-@patch('temper_ai.observability.backends._sql_backend_helpers.aggregate_workflow_metrics')
+@patch(
+    "temper_ai.observability.backends._sql_backend_helpers.aggregate_workflow_metrics"
+)
 def test_aggregate_workflow_metrics(mock_aggregate, backend_no_buffer):
     """Test aggregating workflow metrics."""
     mock_aggregate.return_value = {
         "total_llm_calls": 100,
         "total_tool_calls": 50,
-        "total_tokens": 10000
+        "total_tokens": 10000,
     }
 
     metrics = backend_no_buffer.aggregate_workflow_metrics("wf_123")
@@ -800,13 +797,10 @@ def test_aggregate_workflow_metrics(mock_aggregate, backend_no_buffer):
     mock_aggregate.assert_called_once_with("wf_123")
 
 
-@patch('temper_ai.observability.backends._sql_backend_helpers.aggregate_stage_metrics')
+@patch("temper_ai.observability.backends._sql_backend_helpers.aggregate_stage_metrics")
 def test_aggregate_stage_metrics(mock_aggregate, backend_no_buffer):
     """Test aggregating stage metrics."""
-    mock_aggregate.return_value = {
-        "num_agents": 5,
-        "total_duration": 120.5
-    }
+    mock_aggregate.return_value = {"num_agents": 5, "total_duration": 120.5}
 
     metrics = backend_no_buffer.aggregate_stage_metrics("st_123")
 

@@ -1,7 +1,6 @@
 """Tests for src/observability/aggregation.py (deprecation shim)."""
-import warnings
 
-import pytest
+import warnings
 
 
 def test_aggregation_import_raises_deprecation_warning():
@@ -13,6 +12,7 @@ def test_aggregation_import_raises_deprecation_warning():
     import pathlib
 
     import temper_ai.observability
+
     pkg_dir = pathlib.Path(temper_ai.observability.__file__).parent
     agg_file = pkg_dir / "aggregation.py"
     source = agg_file.read_text()
@@ -31,15 +31,18 @@ def test_aggregation_re_exports_work():
         from temper_ai.observability import aggregation
 
         # Verify the exports exist
-        assert hasattr(aggregation, 'AggregationOrchestrator')
-        assert hasattr(aggregation, 'AggregationPeriod')
+        assert hasattr(aggregation, "AggregationOrchestrator")
+        assert hasattr(aggregation, "AggregationPeriod")
 
         # Verify the re-exports are actual classes, not stubs
         import inspect
-        assert inspect.isclass(aggregation.AggregationOrchestrator), \
-            "AggregationOrchestrator should be a class"
-        assert inspect.isclass(aggregation.AggregationPeriod), \
-            "AggregationPeriod should be a class"
+
+        assert inspect.isclass(
+            aggregation.AggregationOrchestrator
+        ), "AggregationOrchestrator should be a class"
+        assert inspect.isclass(
+            aggregation.AggregationPeriod
+        ), "AggregationPeriod should be a class"
 
 
 def test_aggregation_exports_in_all():
@@ -50,9 +53,9 @@ def test_aggregation_exports_in_all():
         from temper_ai.observability import aggregation
 
         # Verify __all__ is defined correctly
-        assert hasattr(aggregation, '__all__')
-        assert 'AggregationOrchestrator' in aggregation.__all__
-        assert 'AggregationPeriod' in aggregation.__all__
+        assert hasattr(aggregation, "__all__")
+        assert "AggregationOrchestrator" in aggregation.__all__
+        assert "AggregationPeriod" in aggregation.__all__
 
 
 def test_aggregation_new_import_location():
@@ -61,14 +64,17 @@ def test_aggregation_new_import_location():
         warnings.simplefilter("always")
 
         # Import from the new package location
-        from temper_ai.observability.aggregation import AggregationOrchestrator, AggregationPeriod
-
         # Note: This may have warnings from the aggregation.py file being imported as a side effect
         # but importing from the package should be the preferred way
-
         # Verify the imports are actual classes, not stubs
         import inspect
-        assert inspect.isclass(AggregationOrchestrator), \
-            "AggregationOrchestrator should be a class"
-        assert inspect.isclass(AggregationPeriod), \
-            "AggregationPeriod should be a class"
+
+        from temper_ai.observability.aggregation import (
+            AggregationOrchestrator,
+            AggregationPeriod,
+        )
+
+        assert inspect.isclass(
+            AggregationOrchestrator
+        ), "AggregationOrchestrator should be a class"
+        assert inspect.isclass(AggregationPeriod), "AggregationPeriod should be a class"

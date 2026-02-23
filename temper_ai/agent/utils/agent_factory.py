@@ -6,16 +6,21 @@ the 'type' field in agent config to concrete agent implementations.
 This supports the "radical modularity" vision by allowing multiple agent types
 (standard, debate, human, custom) to be used interchangeably.
 """
+
 from __future__ import annotations
 
 import threading
-from typing import TYPE_CHECKING, Dict, Type
+from typing import TYPE_CHECKING
 
 from temper_ai.agent.base_agent import BaseAgent
-from temper_ai.agent.utils.constants import AGENT_TYPE_SCRIPT, AGENT_TYPE_STANDARD, AGENT_TYPE_STATIC_CHECKER
+from temper_ai.agent.script_agent import ScriptAgent
 from temper_ai.agent.standard_agent import StandardAgent
 from temper_ai.agent.static_checker_agent import StaticCheckerAgent
-from temper_ai.agent.script_agent import ScriptAgent
+from temper_ai.agent.utils.constants import (
+    AGENT_TYPE_SCRIPT,
+    AGENT_TYPE_STANDARD,
+    AGENT_TYPE_STATIC_CHECKER,
+)
 
 if TYPE_CHECKING:
     from temper_ai.storage.schemas import AgentConfig
@@ -38,7 +43,7 @@ class AgentFactory:
     _lock = threading.Lock()
 
     # Map of agent type strings to implementation classes
-    _agent_types: Dict[str, Type[BaseAgent]] = {
+    _agent_types: dict[str, type[BaseAgent]] = {
         AGENT_TYPE_STANDARD: StandardAgent,
         AGENT_TYPE_SCRIPT: ScriptAgent,
         AGENT_TYPE_STATIC_CHECKER: StaticCheckerAgent,
@@ -69,6 +74,7 @@ class AgentFactory:
             if agent_type not in cls._agent_types:
                 # Try plugin registry before raising
                 from temper_ai.plugins.registry import ensure_plugin_registered
+
                 if not ensure_plugin_registered(agent_type):
                     raise ValueError(
                         f"Unknown agent type: '{agent_type}'. "
@@ -79,7 +85,7 @@ class AgentFactory:
         return agent_class(config)
 
     @classmethod
-    def register_type(cls, type_name: str, agent_class: Type[BaseAgent]) -> None:
+    def register_type(cls, type_name: str, agent_class: type[BaseAgent]) -> None:
         """Register a custom agent type.
 
         Allows plugins and extensions to register new agent types at runtime.
@@ -107,7 +113,7 @@ class AgentFactory:
             cls._agent_types[type_name] = agent_class
 
     @classmethod
-    def list_types(cls) -> Dict[str, Type[BaseAgent]]:
+    def list_types(cls) -> dict[str, type[BaseAgent]]:
         """List all registered agent types.
 
         Returns:

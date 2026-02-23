@@ -3,14 +3,18 @@
 import logging
 from collections import deque
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 from uuid import uuid4
 
 import yaml
 
 from temper_ai.portfolio._schemas import KGConceptType, KGRelation, PortfolioConfig
 from temper_ai.portfolio._tracking import track_portfolio_event
-from temper_ai.portfolio.constants import DEFAULT_BFS_DEPTH, DEFAULT_RUN_LIMIT, MAX_BFS_DEPTH
+from temper_ai.portfolio.constants import (
+    DEFAULT_BFS_DEPTH,
+    DEFAULT_RUN_LIMIT,
+    MAX_BFS_DEPTH,
+)
 from temper_ai.portfolio.models import (
     KGConceptRecord,
     KGEdgeRecord,
@@ -44,11 +48,12 @@ class KnowledgePopulator:
         )
         return added
 
-    def _populate_product(self, product_name: str, workflow_configs: List[str]) -> int:
+    def _populate_product(self, product_name: str, workflow_configs: list[str]) -> int:
         """Create concepts for a single product and its workflows."""
         added = 0
         product_concept = self._ensure_concept(
-            product_name, KGConceptType.PRODUCT,
+            product_name,
+            KGConceptType.PRODUCT,
         )
         if product_concept is not None:
             added += 1
@@ -64,7 +69,8 @@ class KnowledgePopulator:
         stages = self._extract_stages(wf_path)
         for stage_name, agent_names in stages:
             stage_concept = self._ensure_concept(
-                stage_name, KGConceptType.STAGE,
+                stage_name,
+                KGConceptType.STAGE,
             )
             if stage_concept is not None:
                 added += 1
@@ -73,12 +79,13 @@ class KnowledgePopulator:
             added += self._populate_agents(stage_id, agent_names)
         return added
 
-    def _populate_agents(self, stage_id: str, agent_names: List[str]) -> int:
+    def _populate_agents(self, stage_id: str, agent_names: list[str]) -> int:
         """Create agent concepts and link them to a stage."""
         added = 0
         for agent_name in agent_names:
             agent_concept = self._ensure_concept(
-                agent_name, KGConceptType.AGENT,
+                agent_name,
+                KGConceptType.AGENT,
             )
             if agent_concept is not None:
                 added += 1
@@ -86,7 +93,7 @@ class KnowledgePopulator:
             self._ensure_edge(stage_id, agent_id, KGRelation.HAS_AGENT)
         return added
 
-    def _extract_stages(self, wf_path: str) -> List[tuple]:
+    def _extract_stages(self, wf_path: str) -> list[tuple]:
         """Load a workflow YAML and return (stage_name, agent_names) pairs."""
         path = Path(wf_path)
         if not path.exists():
@@ -102,7 +109,7 @@ class KnowledgePopulator:
             return []
         return self._parse_stages_from_raw(raw)
 
-    def _parse_stages_from_raw(self, raw: Dict[str, Any]) -> List[tuple]:
+    def _parse_stages_from_raw(self, raw: dict[str, Any]) -> list[tuple]:
         """Extract stage names and agent names from parsed workflow data."""
         workflow = raw.get("workflow", raw)
         stages_raw = workflow.get("stages", [])
@@ -115,7 +122,7 @@ class KnowledgePopulator:
             result.append((stage_name, agents))
         return result
 
-    def _extract_agents_from_stage(self, stage_entry: Dict[str, Any]) -> List[str]:
+    def _extract_agents_from_stage(self, stage_entry: dict[str, Any]) -> list[str]:
         """Extract agent names from a stage entry or its referenced config."""
         agents = stage_entry.get("agents", [])
         if agents:
@@ -125,7 +132,7 @@ class KnowledgePopulator:
             return []
         return self._load_agents_from_stage_ref(stage_ref)
 
-    def _load_agents_from_stage_ref(self, stage_ref: str) -> List[str]:
+    def _load_agents_from_stage_ref(self, stage_ref: str) -> list[str]:
         """Load agent names from a stage reference YAML file."""
         ref_path = Path(stage_ref)
         if not ref_path.exists():
@@ -141,7 +148,9 @@ class KnowledgePopulator:
         agents = stage_data.get("agents", [])
         return [a if isinstance(a, str) else a.get("name", "") for a in agents]
 
-    def populate_from_runs(self, product_type: str, limit: int = DEFAULT_RUN_LIMIT) -> int:
+    def populate_from_runs(
+        self, product_type: str, limit: int = DEFAULT_RUN_LIMIT
+    ) -> int:
         """Create outcome concepts from product run history.
 
         Returns the count of new concepts added.
@@ -163,7 +172,9 @@ class KnowledgePopulator:
                 added += 1
             outcome_id = self._get_concept_id(outcome_name)
             self._ensure_edge(
-                product_concept.id, outcome_id, KGRelation.PRODUCED_RESULT,
+                product_concept.id,
+                outcome_id,
+                KGRelation.PRODUCED_RESULT,
             )
         track_portfolio_event(
             "kg_populate_from_runs",
@@ -175,7 +186,11 @@ class KnowledgePopulator:
         return added
 
     def add_tech_compatibility(
-        self, tech_a: str, tech_b: str, score: float, notes: str = "",
+        self,
+        tech_a: str,
+        tech_b: str,
+        score: float,
+        notes: str = "",
     ) -> None:
         """Record a technology compatibility assessment."""
         record = TechCompatibilityRecord(
@@ -190,8 +205,10 @@ class KnowledgePopulator:
     # ── Helpers ────────────────────────────────────────────────────────
 
     def _ensure_concept(
-        self, name: str, concept_type: KGConceptType,
-    ) -> Optional[KGConceptRecord]:
+        self,
+        name: str,
+        concept_type: KGConceptType,
+    ) -> KGConceptRecord | None:
         """Create a concept if it does not exist. Returns the record if new."""
         existing = self.store.get_concept(name)
         if existing is not None:
@@ -212,11 +229,16 @@ class KnowledgePopulator:
         return concept.id
 
     def _ensure_edge(
-        self, source_id: str, target_id: str, relation: KGRelation,
+        self,
+        source_id: str,
+        target_id: str,
+        relation: KGRelation,
     ) -> None:
         """Create an edge if it does not already exist."""
         existing = self.store.query_edges(
-            source_id=source_id, target_id=target_id, relation=relation.value,
+            source_id=source_id,
+            target_id=target_id,
+            relation=relation.value,
         )
         if existing:
             return
@@ -238,9 +260,9 @@ class KnowledgeQuery:
     def get_related_concepts(
         self,
         concept_name: str,
-        relation: Optional[str] = None,
+        relation: str | None = None,
         depth: int = DEFAULT_BFS_DEPTH,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """BFS traversal to find related concepts.
 
         Returns list of dicts with name, concept_type, relation, depth.
@@ -249,7 +271,7 @@ class KnowledgeQuery:
         if start is None:
             return []
 
-        results: List[Dict[str, Any]] = []
+        results: list[dict[str, Any]] = []
         visited: set[str] = {start.id}
         queue: deque[tuple[str, int]] = deque([(start.id, 0)])
 
@@ -265,25 +287,33 @@ class KnowledgeQuery:
                 concept = self.store.get_concept(concept_id=neighbor_id)
                 if concept is None:
                     continue
-                results.append({
-                    "name": concept.name,
-                    "concept_type": concept.concept_type,
-                    "relation": edge_relation,
-                    "depth": current_depth + 1,
-                })
+                results.append(
+                    {
+                        "name": concept.name,
+                        "concept_type": concept.concept_type,
+                        "relation": edge_relation,
+                        "depth": current_depth + 1,
+                    }
+                )
                 queue.append((neighbor_id, current_depth + 1))
         track_portfolio_event(
             "kg_bfs_related",
             {"concept": concept_name, "max_depth": depth},
             "completed",
-            impact_metrics={"results_found": len(results), "nodes_visited": len(visited)},
+            impact_metrics={
+                "results_found": len(results),
+                "nodes_visited": len(visited),
+            },
             tags=["portfolio", "knowledge_graph"],
         )
         return results
 
     def find_path(
-        self, source: str, target: str, max_depth: int = MAX_BFS_DEPTH,
-    ) -> Optional[List[str]]:
+        self,
+        source: str,
+        target: str,
+        max_depth: int = MAX_BFS_DEPTH,
+    ) -> list[str] | None:
         """BFS shortest path between two concepts.
 
         Returns list of concept names along the path, or None if no path.
@@ -296,7 +326,7 @@ class KnowledgeQuery:
             return [source]
 
         visited: set[str] = {start.id}
-        queue: deque[tuple[str, List[str]]] = deque([(start.id, [source])])
+        queue: deque[tuple[str, list[str]]] = deque([(start.id, [source])])
 
         while queue:
             current_id, path = queue.popleft()
@@ -316,8 +346,10 @@ class KnowledgeQuery:
                         "kg_find_path",
                         {"source": source, "target": target, "max_depth": max_depth},
                         "found",
-                        impact_metrics={"path_length": len(new_path),
-                                        "nodes_visited": len(visited)},
+                        impact_metrics={
+                            "path_length": len(new_path),
+                            "nodes_visited": len(visited),
+                        },
                         tags=["portfolio", "knowledge_graph"],
                     )
                     return new_path
@@ -335,22 +367,20 @@ class KnowledgeQuery:
         """Get all compatibility records for a technology."""
         return self.store.get_compatibility(tech_name)
 
-    def concept_stats(self) -> Dict[str, Any]:
+    def concept_stats(self) -> dict[str, Any]:
         """Count concepts by type and edges by relation."""
         concepts = self.store.list_concepts()
         edges = self.store.query_edges()
 
-        concepts_by_type: Dict[str, int] = {}
+        concepts_by_type: dict[str, int] = {}
         for c in concepts:
             concepts_by_type[c.concept_type] = (
                 concepts_by_type.get(c.concept_type, 0) + 1
             )
 
-        edges_by_relation: Dict[str, int] = {}
+        edges_by_relation: dict[str, int] = {}
         for e in edges:
-            edges_by_relation[e.relation] = (
-                edges_by_relation.get(e.relation, 0) + 1
-            )
+            edges_by_relation[e.relation] = edges_by_relation.get(e.relation, 0) + 1
 
         stats = {
             "concepts_by_type": concepts_by_type,
@@ -371,16 +401,20 @@ class KnowledgeQuery:
     # ── Helpers ────────────────────────────────────────────────────────
 
     def _get_neighbors(
-        self, concept_id: str, relation: Optional[str],
-    ) -> List[tuple]:
+        self,
+        concept_id: str,
+        relation: str | None,
+    ) -> list[tuple]:
         """Get (neighbor_id, relation) pairs for a concept (bidirectional)."""
         outgoing = self.store.query_edges(
-            source_id=concept_id, relation=relation,
+            source_id=concept_id,
+            relation=relation,
         )
         incoming = self.store.query_edges(
-            target_id=concept_id, relation=relation,
+            target_id=concept_id,
+            relation=relation,
         )
-        neighbors: List[tuple] = []
+        neighbors: list[tuple] = []
         for edge in outgoing:
             neighbors.append((edge.target_id, edge.relation))
         for edge in incoming:

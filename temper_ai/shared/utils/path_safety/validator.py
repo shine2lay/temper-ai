@@ -8,15 +8,17 @@ modules for:
 - Temporary directory management
 - Validation rules enforcement
 """
+
 import os
 from pathlib import Path
-from typing import List, Optional, Union
 
 from temper_ai.shared.utils.constants import MAX_COMPONENT_LENGTH, MAX_PATH_LENGTH
 from temper_ai.shared.utils.path_safety.exceptions import PathSafetyError
 from temper_ai.shared.utils.path_safety.path_rules import PathValidationRules
 from temper_ai.shared.utils.path_safety.platform_detector import PlatformPathDetector
-from temper_ai.shared.utils.path_safety.symlink_validator import SymlinkSecurityValidator
+from temper_ai.shared.utils.path_safety.symlink_validator import (
+    SymlinkSecurityValidator,
+)
 from temper_ai.shared.utils.path_safety.temp_directory import SecureTempDirectory
 
 
@@ -44,12 +46,12 @@ class PathSafetyValidator:
     MAX_COMPONENT_LENGTH = MAX_COMPONENT_LENGTH
 
     @staticmethod
-    def _get_windows_system_paths() -> List[str]:
+    def _get_windows_system_paths() -> list[str]:
         """DEPRECATED: Use PlatformPathDetector.get_windows_system_paths()."""
         return PlatformPathDetector.get_windows_system_paths()
 
     @classmethod
-    def _get_forbidden_paths(cls) -> List[str]:
+    def _get_forbidden_paths(cls) -> list[str]:
         """DEPRECATED: Use PlatformPathDetector.get_forbidden_paths()."""
         return PlatformPathDetector.get_forbidden_paths()
 
@@ -66,9 +68,9 @@ class PathSafetyValidator:
 
     def __init__(
         self,
-        allowed_root: Optional[Path] = None,
-        additional_forbidden: Optional[List[str]] = None,
-        enable_temp_directory: bool = True
+        allowed_root: Path | None = None,
+        additional_forbidden: list[str] | None = None,
+        enable_temp_directory: bool = True,
     ):
         """
         Initialize path safety validator.
@@ -83,10 +85,14 @@ class PathSafetyValidator:
 
         # Populate FORBIDDEN_PATHS on first access (class-level caching)
         if PathSafetyValidator.FORBIDDEN_PATHS is None:
-            PathSafetyValidator.FORBIDDEN_PATHS = PlatformPathDetector.get_forbidden_paths()
+            PathSafetyValidator.FORBIDDEN_PATHS = (
+                PlatformPathDetector.get_forbidden_paths()
+            )
 
         # Build full forbidden list
-        self.forbidden = self.FORBIDDEN_PATHS.copy() if self.FORBIDDEN_PATHS is not None else []
+        self.forbidden = (
+            self.FORBIDDEN_PATHS.copy() if self.FORBIDDEN_PATHS is not None else []
+        )
         if additional_forbidden:
             self.forbidden.extend(additional_forbidden)
 
@@ -94,7 +100,7 @@ class PathSafetyValidator:
         self.rules = PathValidationRules(
             allowed_root=self.allowed_root,
             forbidden_paths=self.forbidden,
-            forbidden_project_dirs=self.FORBIDDEN_PROJECT_DIRS
+            forbidden_project_dirs=self.FORBIDDEN_PROJECT_DIRS,
         )
 
         # Initialize symlink security validator
@@ -106,17 +112,14 @@ class PathSafetyValidator:
         self.temp_dir_manager = SecureTempDirectory(
             allowed_root=self.allowed_root,
             enabled=enable_temp_directory,
-            max_component_length=self.MAX_COMPONENT_LENGTH
+            max_component_length=self.MAX_COMPONENT_LENGTH,
         )
 
         # Expose temp_dir for backward compatibility
         self.temp_dir = self.temp_dir_manager.temp_dir
 
     def validate_path(
-        self,
-        path: Union[str, Path],
-        must_exist: bool = False,
-        allow_create: bool = True
+        self, path: str | Path, must_exist: bool = False, allow_create: bool = True
     ) -> Path:
         """
         Validate a path for safety.
@@ -136,10 +139,7 @@ class PathSafetyValidator:
         path = self.rules.normalize_and_validate_basic(path)
 
         # Step 2: Pre-resolution symlink security (CRITICAL for TOCTOU)
-        self.symlink_validator.validate_symlink_security(
-            path,
-            check_parents=True
-        )
+        self.symlink_validator.validate_symlink_security(path, check_parents=True)
 
         # Step 3: Resolve path safely
         resolved = self.rules.resolve_path_safely(path)
@@ -188,7 +188,9 @@ class PathSafetyValidator:
     def _resolve_nearest_ancestor(self, parent: Path) -> Path:
         """Find the nearest existing ancestor and resolve it."""
         parent_to_check = parent
-        while not parent_to_check.exists() and parent_to_check != parent_to_check.parent:
+        while (
+            not parent_to_check.exists() and parent_to_check != parent_to_check.parent
+        ):
             parent_to_check = parent_to_check.parent
 
         if parent_to_check.exists():
@@ -206,9 +208,7 @@ class PathSafetyValidator:
                 f"Parent directory '{parent}' is outside allowed root"
             )
 
-    def _validate_new_file_parent(
-        self, path: Path, allow_create_parents: bool
-    ) -> None:
+    def _validate_new_file_parent(self, path: Path, allow_create_parents: bool) -> None:
         """Validate that parent directory is safe for creating a new file."""
         parent = path.parent
         if not parent.exists() and not allow_create_parents:
@@ -217,7 +217,7 @@ class PathSafetyValidator:
 
     def validate_write(
         self,
-        path: Union[str, Path],
+        path: str | Path,
         allow_overwrite: bool = True,
         allow_create_parents: bool = False,
     ) -> Path:

@@ -7,7 +7,7 @@ and variant names, including Unicode normalization to prevent homograph attacks.
 
 import re
 import unicodedata
-from typing import Any, Dict, List
+from typing import Any
 
 from temper_ai.shared.utils.logging import get_logger
 
@@ -48,14 +48,16 @@ def validate_experiment_name(name: str) -> str:
     # 1. Length check (before expensive operations)
     # Strip whitespace for length validation to catch " " as empty
     if not name or not name.strip() or len(name) > MAX_EXPERIMENT_NAME_LENGTH:
-        raise ValueError(f"Experiment name must be 1-{MAX_EXPERIMENT_NAME_LENGTH} characters")
+        raise ValueError(
+            f"Experiment name must be 1-{MAX_EXPERIMENT_NAME_LENGTH} characters"
+        )
 
     # 2. Normalize Unicode (prevent homograph attacks)
     # NFKC = Compatibility Decomposition + Canonical Composition
-    normalized = unicodedata.normalize('NFKC', name)
+    normalized = unicodedata.normalize("NFKC", name)
 
     # 3. Character set validation
-    if not re.match(r'^[a-zA-Z0-9_-]+$', normalized):
+    if not re.match(r"^[a-zA-Z0-9_-]+$", normalized):
         raise ValueError(
             "Experiment name must contain only alphanumeric characters, "
             "underscores, and hyphens (a-zA-Z0-9_-)"
@@ -66,8 +68,10 @@ def validate_experiment_name(name: str) -> str:
         raise ValueError("Experiment name must start with a letter")
 
     # 5. No consecutive special characters (aesthetic + prevents parsing issues)
-    if re.search(r'[-_]{2,}', normalized):
-        raise ValueError("Experiment name cannot contain consecutive hyphens or underscores")
+    if re.search(r"[-_]{2,}", normalized):
+        raise ValueError(
+            "Experiment name cannot contain consecutive hyphens or underscores"
+        )
 
     return normalized
 
@@ -88,9 +92,9 @@ def validate_variant_name(name: str) -> str:
     if not name or len(name) > MAX_VARIANT_NAME_LENGTH:
         raise ValueError(f"Variant name must be 1-{MAX_VARIANT_NAME_LENGTH} characters")
 
-    normalized = unicodedata.normalize('NFKC', name)
+    normalized = unicodedata.normalize("NFKC", name)
 
-    if not re.match(r'^[a-zA-Z0-9_-]+$', normalized):
+    if not re.match(r"^[a-zA-Z0-9_-]+$", normalized):
         raise ValueError(
             "Variant name must contain only alphanumeric characters, "
             "underscores, and hyphens"
@@ -100,9 +104,8 @@ def validate_variant_name(name: str) -> str:
 
 
 def validate_variant_list(
-    variants: List[Dict[str, Any]],
-    experiment_name: str
-) -> List[Dict[str, Any]]:
+    variants: list[dict[str, Any]], experiment_name: str
+) -> list[dict[str, Any]]:
     """
     Validate all variant names in a list atomically.
 
@@ -128,10 +131,12 @@ def validate_variant_list(
                 f"Invalid variant name rejected: {variant_config.get('name', '')[:MAX_NAME_DISPLAY_LENGTH]}",
                 extra={
                     "security_event": "INPUT_VALIDATION_FAILED",
-                    "variant_name": variant_config.get("name", "")[:MAX_NAME_DISPLAY_LENGTH],
+                    "variant_name": variant_config.get("name", "")[
+                        :MAX_NAME_DISPLAY_LENGTH
+                    ],
                     "experiment_name": experiment_name,
-                    "error": str(e)
-                }
+                    "error": str(e),
+                },
             )
             raise
 

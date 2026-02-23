@@ -3,10 +3,16 @@ Tests for Pydantic configuration schemas.
 
 Tests validation of agent, stage, workflow, tool, and trigger configurations.
 """
+
 import pytest
 from pydantic import ValidationError
 
-from temper_ai.stage._schemas import CollaborationConfig, ConflictResolutionConfig, StageConfig, StageExecutionConfig
+from temper_ai.stage._schemas import (
+    CollaborationConfig,
+    ConflictResolutionConfig,
+    StageConfig,
+    StageExecutionConfig,
+)
 from temper_ai.storage.schemas.agent_config import (
     AgentConfig,
     InferenceConfig,
@@ -16,12 +22,17 @@ from temper_ai.storage.schemas.agent_config import (
     ToolReference,
 )
 from temper_ai.tools._schemas import ToolConfig
-from temper_ai.workflow._schemas import WorkflowConfig, WorkflowErrorHandlingConfig, WorkflowObservabilityConfig
+from temper_ai.workflow._schemas import (
+    WorkflowConfig,
+    WorkflowErrorHandlingConfig,
+    WorkflowObservabilityConfig,
+)
 from temper_ai.workflow._triggers import CronTrigger, EventTrigger, ThresholdTrigger
 
 # ============================================
 # AGENT SCHEMA TESTS
 # ============================================
+
 
 class TestInferenceConfig:
     """Tests for InferenceConfig schema."""
@@ -33,7 +44,7 @@ class TestInferenceConfig:
             model="llama3.2:3b",
             base_url="http://localhost:11434",
             temperature=0.7,
-            max_tokens=2048
+            max_tokens=2048,
         )
         assert config.provider == "ollama"
         assert config.model == "llama3.2:3b"
@@ -55,7 +66,9 @@ class TestInferenceConfig:
         with pytest.raises(ValidationError) as exc_info:
             InferenceConfig(provider="invalid_provider", model="test")
         # Pydantic's Literal validation error message
-        assert "Input should be" in str(exc_info.value) and "literal_error" in str(exc_info.value)
+        assert "Input should be" in str(exc_info.value) and "literal_error" in str(
+            exc_info.value
+        )
 
     def test_temperature_bounds(self):
         """Test temperature validation bounds."""
@@ -91,7 +104,7 @@ class TestSafetyConfig:
             mode="execute",
             require_approval_for_tools=["DatabaseQuery", "FileWriter"],
             max_tool_calls_per_execution=20,
-            risk_level="medium"
+            risk_level="medium",
         )
         assert config.mode == "execute"
         assert len(config.require_approval_for_tools) == 2
@@ -140,7 +153,7 @@ class TestMemoryConfig:
             type="vector",
             scope="session",
             retrieval_k=10,
-            relevance_threshold=0.7
+            relevance_threshold=0.7,
         )
         assert config.enabled is True
         assert config.type == "vector"
@@ -163,7 +176,7 @@ class TestPromptConfig:
         """Test prompt config with template."""
         config = PromptConfig(
             template="prompts/researcher_base.txt",
-            variables={"domain": "SaaS", "tone": "professional"}
+            variables={"domain": "SaaS", "tone": "professional"},
         )
         assert config.template == "prompts/researcher_base.txt"
         assert config.inline is None
@@ -199,19 +212,17 @@ class TestAgentConfig:
                 "name": "test_agent",
                 "description": "Test agent",
                 "version": "1.0",
-                "prompt": {
-                    "inline": "You are a test agent"
-                },
+                "prompt": {"inline": "You are a test agent"},
                 "inference": {
                     "provider": "ollama",
                     "model": "llama3.2:3b",
-                    "base_url": "http://localhost:11434"
+                    "base_url": "http://localhost:11434",
                 },
                 "tools": ["WebScraper", "Calculator"],
                 "error_handling": {
                     "retry_strategy": "ExponentialBackoff",
-                    "fallback": "GracefulDegradation"
-                }
+                    "fallback": "GracefulDegradation",
+                },
             }
         }
         config = AgentConfig(**config_dict)
@@ -231,13 +242,13 @@ class TestAgentConfig:
                     "WebScraper",
                     {
                         "name": "DatabaseQuery",
-                        "config": {"max_rows": 1000, "timeout_seconds": 30}
-                    }
+                        "config": {"max_rows": 1000, "timeout_seconds": 30},
+                    },
                 ],
                 "error_handling": {
                     "retry_strategy": "ExponentialBackoff",
-                    "fallback": "GracefulDegradation"
-                }
+                    "fallback": "GracefulDegradation",
+                },
             }
         }
         config = AgentConfig(**config_dict)
@@ -258,40 +269,37 @@ class TestAgentConfig:
                     "model": "gpt-4",
                     "api_key": "test-key",
                     "temperature": 0.5,
-                    "max_tokens": 4096
+                    "max_tokens": 4096,
                 },
                 "tools": ["WebScraper"],
                 "safety": {
                     "mode": "require_approval",
                     "require_approval_for_tools": ["FileWriter"],
-                    "risk_level": "high"
+                    "risk_level": "high",
                 },
                 "memory": {
                     "enabled": True,
                     "type": "vector",
                     "scope": "session",
-                    "retrieval_k": 20
+                    "retrieval_k": 20,
                 },
                 "error_handling": {
                     "retry_strategy": "ExponentialBackoff",
                     "max_retries": 5,
                     "fallback": "GracefulDegradation",
-                    "escalate_to_human_after": 3
+                    "escalate_to_human_after": 3,
                 },
                 "merit_tracking": {
                     "enabled": True,
                     "track_decision_outcomes": True,
-                    "domain_expertise": ["research", "analysis"]
+                    "domain_expertise": ["research", "analysis"],
                 },
                 "observability": {
                     "log_inputs": True,
                     "log_outputs": True,
-                    "track_latency": True
+                    "track_latency": True,
                 },
-                "metadata": {
-                    "tags": ["research", "external"],
-                    "owner": "team_a"
-                }
+                "metadata": {"tags": ["research", "external"], "owner": "team_a"},
             }
         }
         config = AgentConfig(**config_dict)
@@ -304,6 +312,7 @@ class TestAgentConfig:
 # TOOL SCHEMA TESTS
 # ============================================
 
+
 class TestToolConfig:
     """Tests for ToolConfig schema."""
 
@@ -315,10 +324,7 @@ class TestToolConfig:
                 "description": "Web scraping tool",
                 "version": "1.0",
                 "implementation": "temper_ai.tools.web.WebScraperTool",
-                "default_config": {
-                    "max_pages": 10,
-                    "timeout_seconds": 30
-                }
+                "default_config": {"max_pages": 10, "timeout_seconds": 30},
             }
         }
         config = ToolConfig(**config_dict)
@@ -335,8 +341,8 @@ class TestToolConfig:
                 "rate_limits": {
                     "max_calls_per_minute": 60,
                     "max_calls_per_hour": 1000,
-                    "max_concurrent_requests": 5
-                }
+                    "max_concurrent_requests": 5,
+                },
             }
         }
         config = ToolConfig(**config_dict)
@@ -352,8 +358,8 @@ class TestToolConfig:
                 "implementation": "temper_ai.tools.file.FileWriterTool",
                 "safety_checks": [
                     "PathTraversalPrevention",
-                    {"name": "RateLimitEnforcement", "config": {"max_requests": 100}}
-                ]
+                    {"name": "RateLimitEnforcement", "config": {"max_requests": 100}},
+                ],
             }
         }
         config = ToolConfig(**config_dict)
@@ -363,6 +369,7 @@ class TestToolConfig:
 # ============================================
 # STAGE SCHEMA TESTS
 # ============================================
+
 
 class TestStageConfig:
     """Tests for StageConfig schema."""
@@ -374,13 +381,8 @@ class TestStageConfig:
                 "name": "research",
                 "description": "Research stage",
                 "agents": ["market_researcher", "competitor_analyst"],
-                "collaboration": {
-                    "strategy": "DebateAndSynthesize",
-                    "max_rounds": 3
-                },
-                "conflict_resolution": {
-                    "strategy": "MeritWeighted"
-                }
+                "collaboration": {"strategy": "DebateAndSynthesize", "max_rounds": 3},
+                "conflict_resolution": {"strategy": "MeritWeighted"},
             }
         }
         config = StageConfig(**config_dict)
@@ -396,7 +398,7 @@ class TestStageConfig:
                 "description": "Test stage",
                 "agents": [],
                 "collaboration": {"strategy": "Test"},
-                "conflict_resolution": {"strategy": "Test"}
+                "conflict_resolution": {"strategy": "Test"},
             }
         }
         with pytest.raises(ValidationError) as exc_info:
@@ -410,12 +412,9 @@ class TestStageConfig:
                 "name": "test",
                 "description": "Test",
                 "agents": ["agent1"],
-                "execution": {
-                    "agent_mode": "sequential",
-                    "timeout_seconds": 300
-                },
+                "execution": {"agent_mode": "sequential", "timeout_seconds": 300},
                 "collaboration": {"strategy": "Test"},
-                "conflict_resolution": {"strategy": "Test"}
+                "conflict_resolution": {"strategy": "Test"},
             }
         }
         config = StageConfig(**config_dict)
@@ -426,6 +425,7 @@ class TestStageConfig:
 # ============================================
 # WORKFLOW SCHEMA TESTS
 # ============================================
+
 
 class TestWorkflowConfig:
     """Tests for WorkflowConfig schema."""
@@ -440,18 +440,18 @@ class TestWorkflowConfig:
                     {
                         "name": "research",
                         "stage_ref": "research_stage",
-                        "depends_on": []
+                        "depends_on": [],
                     },
                     {
                         "name": "build",
                         "stage_ref": "build_stage",
-                        "depends_on": ["research"]
-                    }
+                        "depends_on": ["research"],
+                    },
                 ],
                 "error_handling": {
                     "on_stage_failure": "halt",
-                    "escalation_policy": "HumanReview"
-                }
+                    "escalation_policy": "HumanReview",
+                },
             }
         }
         config = WorkflowConfig(**config_dict)
@@ -466,9 +466,7 @@ class TestWorkflowConfig:
                 "name": "test",
                 "description": "Test",
                 "stages": [],
-                "error_handling": {
-                    "escalation_policy": "HumanReview"
-                }
+                "error_handling": {"escalation_policy": "HumanReview"},
             }
         }
         with pytest.raises(ValidationError) as exc_info:
@@ -486,12 +484,10 @@ class TestWorkflowConfig:
                     "budget": {
                         "max_cost_usd": 100.0,
                         "max_tokens": 1000000,
-                        "action_on_exceed": "halt"
+                        "action_on_exceed": "halt",
                     }
                 },
-                "error_handling": {
-                    "escalation_policy": "HumanReview"
-                }
+                "error_handling": {"escalation_policy": "HumanReview"},
             }
         }
         config = WorkflowConfig(**config_dict)
@@ -503,6 +499,7 @@ class TestWorkflowConfig:
 # TRIGGER SCHEMA TESTS
 # ============================================
 
+
 class TestEventTrigger:
     """Tests for EventTrigger schema."""
 
@@ -513,21 +510,18 @@ class TestEventTrigger:
                 "name": "feedback_processor",
                 "description": "Process feedback events",
                 "type": "EventTrigger",
-                "source": {
-                    "type": "message_queue",
-                    "queue_name": "user_feedback"
-                },
+                "source": {"type": "message_queue", "queue_name": "user_feedback"},
                 "filter": {
                     "event_type": "new_feedback",
                     "conditions": [
                         {
                             "field": "sentiment",
                             "operator": "in",
-                            "values": ["negative", "neutral"]
+                            "values": ["negative", "neutral"],
                         }
-                    ]
+                    ],
                 },
-                "workflow": "feedback_workflow"
+                "workflow": "feedback_workflow",
             }
         }
         config = EventTrigger(**config_dict)
@@ -548,7 +542,7 @@ class TestCronTrigger:
                 "type": "CronTrigger",
                 "schedule": "0 0 * * 0",
                 "timezone": "UTC",
-                "workflow": "optimization_workflow"
+                "workflow": "optimization_workflow",
             }
         }
         config = CronTrigger(**config_dict)
@@ -570,12 +564,12 @@ class TestThresholdTrigger:
                 "metric": {
                     "source": "prometheus",
                     "query": "rate(http_errors_total[5m])",
-                    "evaluation_interval_seconds": 60
+                    "evaluation_interval_seconds": 60,
                 },
                 "condition": "greater_than",
                 "threshold": 0.05,
                 "duration_minutes": 10,
-                "workflow": "incident_response"
+                "workflow": "incident_response",
             }
         }
         config = ThresholdTrigger(**config_dict)
@@ -587,6 +581,7 @@ class TestThresholdTrigger:
 # ============================================
 # M3 COLLABORATION TESTS
 # ============================================
+
 
 class TestConflictResolutionConfig:
     """Tests for M3 conflict resolution configuration."""
@@ -609,11 +604,15 @@ class TestConflictResolutionConfig:
             metric_weights={"confidence": 0.4, "merit": 0.4, "recency": 0.2},
             auto_resolve_threshold=0.90,
             escalation_threshold=0.40,
-            config={"enable_logging": True}
+            config={"enable_logging": True},
         )
         assert config.strategy == "MeritWeighted"
         assert config.metrics == ["confidence", "merit", "recency"]
-        assert config.metric_weights == {"confidence": 0.4, "merit": 0.4, "recency": 0.2}
+        assert config.metric_weights == {
+            "confidence": 0.4,
+            "merit": 0.4,
+            "recency": 0.2,
+        }
         assert config.auto_resolve_threshold == 0.90
         assert config.escalation_threshold == 0.40
         assert config.config["enable_logging"] is True
@@ -624,7 +623,7 @@ class TestConflictResolutionConfig:
             ConflictResolutionConfig(
                 strategy="MeritWeighted",
                 auto_resolve_threshold=0.70,
-                escalation_threshold=0.80  # Invalid: higher than auto_resolve
+                escalation_threshold=0.80,  # Invalid: higher than auto_resolve
             )
         assert "escalation_threshold" in str(exc_info.value).lower()
 
@@ -633,7 +632,7 @@ class TestConflictResolutionConfig:
         config = ConflictResolutionConfig(
             strategy="MeritWeighted",
             auto_resolve_threshold=0.75,
-            escalation_threshold=0.75  # Valid: equal
+            escalation_threshold=0.75,  # Valid: equal
         )
         assert config.auto_resolve_threshold == 0.75
         assert config.escalation_threshold == 0.75
@@ -642,37 +641,25 @@ class TestConflictResolutionConfig:
         """Test threshold bounds (must be 0.0-1.0)."""
         # Test auto_resolve_threshold lower bound
         with pytest.raises(ValidationError):
-            ConflictResolutionConfig(
-                strategy="Test",
-                auto_resolve_threshold=-0.1
-            )
+            ConflictResolutionConfig(strategy="Test", auto_resolve_threshold=-0.1)
 
         # Test auto_resolve_threshold upper bound
         with pytest.raises(ValidationError):
-            ConflictResolutionConfig(
-                strategy="Test",
-                auto_resolve_threshold=1.1
-            )
+            ConflictResolutionConfig(strategy="Test", auto_resolve_threshold=1.1)
 
         # Test escalation_threshold bounds
         with pytest.raises(ValidationError):
-            ConflictResolutionConfig(
-                strategy="Test",
-                escalation_threshold=-0.1
-            )
+            ConflictResolutionConfig(strategy="Test", escalation_threshold=-0.1)
 
         with pytest.raises(ValidationError):
-            ConflictResolutionConfig(
-                strategy="Test",
-                escalation_threshold=1.1
-            )
+            ConflictResolutionConfig(strategy="Test", escalation_threshold=1.1)
 
     def test_metric_weights_validation_negative(self):
         """Test that negative metric weights are rejected."""
         with pytest.raises(ValidationError) as exc_info:
             ConflictResolutionConfig(
                 strategy="MeritWeighted",
-                metric_weights={"confidence": 0.5, "merit": -0.3}
+                metric_weights={"confidence": 0.5, "merit": -0.3},
             )
         assert "negative" in str(exc_info.value).lower()
 
@@ -680,7 +667,7 @@ class TestConflictResolutionConfig:
         """Test that zero weights are valid (metric disabled)."""
         config = ConflictResolutionConfig(
             strategy="MeritWeighted",
-            metric_weights={"confidence": 1.0, "merit": 0.0}  # Valid
+            metric_weights={"confidence": 1.0, "merit": 0.0},  # Valid
         )
         assert config.metric_weights["merit"] == 0.0
 
@@ -688,7 +675,7 @@ class TestConflictResolutionConfig:
         """Test that positive metric weights are valid."""
         config = ConflictResolutionConfig(
             strategy="MeritWeighted",
-            metric_weights={"confidence": 0.6, "merit": 0.3, "recency": 0.1}
+            metric_weights={"confidence": 0.6, "merit": 0.3, "recency": 0.1},
         )
         assert sum(config.metric_weights.values()) == 1.0
 
@@ -696,7 +683,7 @@ class TestConflictResolutionConfig:
         """Test custom metrics list."""
         config = ConflictResolutionConfig(
             strategy="Custom",
-            metrics=["domain_expertise", "historical_accuracy", "response_time"]
+            metrics=["domain_expertise", "historical_accuracy", "response_time"],
         )
         assert len(config.metrics) == 3
         assert "domain_expertise" in config.metrics
@@ -708,8 +695,8 @@ class TestConflictResolutionConfig:
             config={
                 "tie_breaker": "random",
                 "enable_caching": True,
-                "timeout_ms": 5000
-            }
+                "timeout_ms": 5000,
+            },
         )
         assert config.config["tie_breaker"] == "random"
         assert config.config["enable_caching"] is True
@@ -720,17 +707,10 @@ class TestConflictResolutionConfig:
         config = ConflictResolutionConfig(
             strategy="MeritWeighted",
             metrics=["confidence", "merit", "recency"],
-            metric_weights={
-                "confidence": 0.5,
-                "merit": 0.3,
-                "recency": 0.2
-            },
+            metric_weights={"confidence": 0.5, "merit": 0.3, "recency": 0.2},
             auto_resolve_threshold=0.85,
             escalation_threshold=0.50,
-            config={
-                "merit_decay_days": 30,
-                "require_unanimous": False
-            }
+            config={"merit_decay_days": 30, "require_unanimous": False},
         )
         assert config.strategy == "MeritWeighted"
         assert len(config.metrics) == 3
@@ -750,11 +730,7 @@ class TestCollaborationConfig:
         """Test debate collaboration configuration."""
         config = CollaborationConfig(
             strategy="DebateAndSynthesize",
-            config={
-                "max_rounds": 5,
-                "convergence_threshold": 0.80,
-                "min_rounds": 2
-            }
+            config={"max_rounds": 5, "convergence_threshold": 0.80, "min_rounds": 2},
         )
         assert config.strategy == "DebateAndSynthesize"
         assert config.config["max_rounds"] == 5
@@ -764,6 +740,7 @@ class TestCollaborationConfig:
 # ============================================
 # ENUM AND TYPE VALIDATION TESTS
 # ============================================
+
 
 class TestEnumValidation:
     """Tests for enum validation across all schemas."""
@@ -782,14 +759,14 @@ class TestEnumValidation:
         """Test invalid error handling mode."""
         with pytest.raises(ValidationError):
             WorkflowErrorHandlingConfig(
-                on_stage_failure="invalid",
-                escalation_policy="Test"
+                on_stage_failure="invalid", escalation_policy="Test"
             )
 
 
 # ============================================
 # DEFAULT VALUE TESTS
 # ============================================
+
 
 class TestDefaultValues:
     """Tests for default values across schemas."""
@@ -805,12 +782,13 @@ class TestDefaultValues:
         config = WorkflowObservabilityConfig()
         assert config.console_mode == "standard"
         assert config.trace_everything is True
-        assert config.export_format == ["json", "sqlite"]
+        assert config.export_format == ["json"]
 
 
 # ============================================
 # INTEGRATION TESTS
 # ============================================
+
 
 class TestSchemaIntegration:
     """Integration tests using complete config examples."""
@@ -824,33 +802,31 @@ class TestSchemaIntegration:
                 "version": "1.0",
                 "prompt": {
                     "template": "prompts/researcher_base.txt",
-                    "variables": {"domain": "SaaS", "tone": "analytical"}
+                    "variables": {"domain": "SaaS", "tone": "analytical"},
                 },
                 "inference": {
                     "provider": "ollama",
                     "model": "llama3.2:3b",
                     "base_url": "http://localhost:11434",
                     "temperature": 0.7,
-                    "max_tokens": 2048
+                    "max_tokens": 2048,
                 },
                 "tools": [
                     "WebScraper",
-                    {"name": "DatabaseQuery", "config": {"max_rows": 1000}}
+                    {"name": "DatabaseQuery", "config": {"max_rows": 1000}},
                 ],
                 "safety": {
                     "mode": "execute",
                     "max_tool_calls_per_execution": 20,
-                    "risk_level": "medium"
+                    "risk_level": "medium",
                 },
-                "memory": {
-                    "enabled": False
-                },
+                "memory": {"enabled": False},
                 "error_handling": {
                     "retry_strategy": "ExponentialBackoff",
                     "max_retries": 3,
                     "fallback": "GracefulDegradation",
-                    "escalate_to_human_after": 3
-                }
+                    "escalate_to_human_after": 3,
+                },
             }
         }
 
@@ -872,41 +848,35 @@ class TestSchemaIntegration:
                     {
                         "name": "research",
                         "stage_ref": "research_stage",
-                        "depends_on": []
+                        "depends_on": [],
                     },
                     {
                         "name": "requirements",
                         "stage_ref": "requirements_stage",
-                        "depends_on": ["research"]
+                        "depends_on": ["research"],
                     },
                     {
                         "name": "build",
                         "stage_ref": "build_stage",
-                        "depends_on": ["requirements"]
-                    }
+                        "depends_on": ["requirements"],
+                    },
                 ],
                 "config": {
                     "max_iterations": 5,
                     "timeout_seconds": 3600,
-                    "budget": {
-                        "max_cost_usd": 100.0,
-                        "action_on_exceed": "halt"
-                    }
+                    "budget": {"max_cost_usd": 100.0, "action_on_exceed": "halt"},
                 },
                 "safety": {
                     "composition_strategy": "MostRestrictive",
                     "global_mode": "execute",
-                    "approval_required_stages": ["build"]
+                    "approval_required_stages": ["build"],
                 },
-                "observability": {
-                    "console_mode": "standard",
-                    "trace_everything": True
-                },
+                "observability": {"console_mode": "standard", "trace_everything": True},
                 "error_handling": {
                     "on_stage_failure": "halt",
                     "max_stage_retries": 2,
-                    "escalation_policy": "HumanReview"
-                }
+                    "escalation_policy": "HumanReview",
+                },
             }
         }
 

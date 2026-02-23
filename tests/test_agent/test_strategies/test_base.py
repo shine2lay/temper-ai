@@ -32,20 +32,24 @@ class TestCollaborationStrategy:
 
     def test_synthesize_method_is_abstract(self):
         """synthesize() method is abstract."""
-        assert hasattr(CollaborationStrategy, 'synthesize')
-        assert getattr(CollaborationStrategy.synthesize, '__isabstractmethod__', False)
+        assert hasattr(CollaborationStrategy, "synthesize")
+        assert getattr(CollaborationStrategy.synthesize, "__isabstractmethod__", False)
 
     def test_get_capabilities_method_is_abstract(self):
         """get_capabilities() method is abstract."""
-        assert hasattr(CollaborationStrategy, 'get_capabilities')
-        assert getattr(CollaborationStrategy.get_capabilities, '__isabstractmethod__', False)
+        assert hasattr(CollaborationStrategy, "get_capabilities")
+        assert getattr(
+            CollaborationStrategy.get_capabilities, "__isabstractmethod__", False
+        )
 
     def test_get_metadata_has_default_implementation(self):
         """get_metadata() has a default implementation."""
+
         # Create concrete strategy for testing
         class MockStrategy(CollaborationStrategy):
             def synthesize(self, agent_outputs, config):
                 pass
+
             def get_capabilities(self):
                 return {}
 
@@ -69,7 +73,7 @@ class TestAgentOutput:
             decision="yes",
             reasoning="because it makes sense",
             confidence=0.9,
-            metadata={"tokens": 100}
+            metadata={"tokens": 100},
         )
 
         assert output.agent_name == "test_agent"
@@ -86,7 +90,7 @@ class TestAgentOutput:
                 decision="yes",
                 reasoning="reason",
                 confidence=1.5,
-                metadata={}
+                metadata={},
             )
 
     def test_agent_output_confidence_too_low(self):
@@ -97,7 +101,7 @@ class TestAgentOutput:
                 decision="yes",
                 reasoning="reason",
                 confidence=-0.1,
-                metadata={}
+                metadata={},
             )
 
     def test_agent_output_confidence_edge_cases(self):
@@ -118,16 +122,13 @@ class TestAgentOutput:
                 decision="yes",
                 reasoning="reason",
                 confidence=0.9,
-                metadata={}
+                metadata={},
             )
 
     def test_agent_output_default_metadata(self):
         """Test AgentOutput uses empty dict as default metadata."""
         output = AgentOutput(
-            agent_name="test",
-            decision="yes",
-            reasoning="reason",
-            confidence=0.9
+            agent_name="test", decision="yes", reasoning="reason", confidence=0.9
         )
         assert output.metadata == {}
 
@@ -141,7 +142,7 @@ class TestConflict:
             agents=["agent1", "agent2", "agent3"],
             decisions=["Option A", "Option B"],
             disagreement_score=0.67,
-            context={"num_rounds": 3}
+            context={"num_rounds": 3},
         )
 
         assert conflict.agents == ["agent1", "agent2", "agent3"]
@@ -151,52 +152,44 @@ class TestConflict:
 
     def test_conflict_disagreement_score_too_high(self):
         """Test Conflict rejects disagreement_score > 1."""
-        with pytest.raises(ValueError, match="disagreement_score must be between 0 and 1"):
+        with pytest.raises(
+            ValueError, match="disagreement_score must be between 0 and 1"
+        ):
             Conflict(
                 agents=["a1", "a2"],
                 decisions=["yes", "no"],
                 disagreement_score=1.5,
-                context={}
+                context={},
             )
 
     def test_conflict_disagreement_score_too_low(self):
         """Test Conflict rejects disagreement_score < 0."""
-        with pytest.raises(ValueError, match="disagreement_score must be between 0 and 1"):
+        with pytest.raises(
+            ValueError, match="disagreement_score must be between 0 and 1"
+        ):
             Conflict(
                 agents=["a1", "a2"],
                 decisions=["yes", "no"],
                 disagreement_score=-0.1,
-                context={}
+                context={},
             )
 
     def test_conflict_default_context(self):
         """Test Conflict uses empty dict as default context."""
-        conflict = Conflict(
-            agents=["a1"],
-            decisions=["yes"],
-            disagreement_score=0.5
-        )
+        conflict = Conflict(agents=["a1"], decisions=["yes"], disagreement_score=0.5)
         assert conflict.context == {}
 
     def test_conflict_empty_agents(self):
         """Test Conflict rejects empty agents list."""
         with pytest.raises(ValueError, match="Conflict must have at least one agent"):
-            Conflict(
-                agents=[],
-                decisions=["yes"],
-                disagreement_score=0.5,
-                context={}
-            )
+            Conflict(agents=[], decisions=["yes"], disagreement_score=0.5, context={})
 
     def test_conflict_empty_decisions(self):
         """Test Conflict rejects empty decisions list."""
-        with pytest.raises(ValueError, match="Conflict must have at least one decision"):
-            Conflict(
-                agents=["a1"],
-                decisions=[],
-                disagreement_score=0.5,
-                context={}
-            )
+        with pytest.raises(
+            ValueError, match="Conflict must have at least one decision"
+        ):
+            Conflict(agents=["a1"], decisions=[], disagreement_score=0.5, context={})
 
 
 class TestSynthesisResult:
@@ -211,7 +204,7 @@ class TestSynthesisResult:
             votes={"Option A": 3, "Option B": 1},
             conflicts=[],
             reasoning="Majority voted for Option A",
-            metadata={"rounds": 1}
+            metadata={"rounds": 1},
         )
 
         assert result.decision == "Option A"
@@ -232,7 +225,7 @@ class TestSynthesisResult:
                 votes={},
                 conflicts=[],
                 reasoning="test",
-                metadata={}
+                metadata={},
             )
 
     def test_synthesis_result_default_metadata(self):
@@ -243,7 +236,7 @@ class TestSynthesisResult:
             method="consensus",
             votes={},
             conflicts=[],
-            reasoning="test"
+            reasoning="test",
         )
         assert result.metadata == {}
 
@@ -270,9 +263,11 @@ class TestValidateInputs:
 
     def test_validate_inputs_empty_list(self):
         """Test validation rejects empty agent_outputs."""
+
         class MockStrategy(CollaborationStrategy):
             def synthesize(self, agent_outputs, config):
                 pass
+
             def get_capabilities(self):
                 return {}
 
@@ -283,22 +278,28 @@ class TestValidateInputs:
 
     def test_validate_inputs_wrong_type(self):
         """Test validation rejects non-AgentOutput instances."""
+
         class MockStrategy(CollaborationStrategy):
             def synthesize(self, agent_outputs, config):
                 pass
+
             def get_capabilities(self):
                 return {}
 
         strategy = MockStrategy()
 
-        with pytest.raises(ValueError, match="All outputs must be AgentOutput instances"):
+        with pytest.raises(
+            ValueError, match="All outputs must be AgentOutput instances"
+        ):
             strategy.validate_inputs([{"agent": "test"}])
 
     def test_validate_inputs_duplicate_agent_names(self):
         """Test validation rejects duplicate agent names."""
+
         class MockStrategy(CollaborationStrategy):
             def synthesize(self, agent_outputs, config):
                 pass
+
             def get_capabilities(self):
                 return {}
 
@@ -308,14 +309,18 @@ class TestValidateInputs:
             AgentOutput("agent1", "no", "r2", 0.8, {}),  # Duplicate name
         ]
 
-        with pytest.raises(ValueError, match="Duplicate agent names detected.*agent1.*2"):
+        with pytest.raises(
+            ValueError, match="Duplicate agent names detected.*agent1.*2"
+        ):
             strategy.validate_inputs(outputs)
 
     def test_validate_inputs_valid_outputs(self):
         """Test validation passes for valid outputs."""
+
         class MockStrategy(CollaborationStrategy):
             def synthesize(self, agent_outputs, config):
                 pass
+
             def get_capabilities(self):
                 return {}
 
@@ -325,8 +330,9 @@ class TestValidateInputs:
             AgentOutput("agent2", "yes", "r2", 0.8, {}),
         ]
 
-        # Should not raise — reaching this line is the assertion
-        strategy.validate_inputs(outputs)
+        # Should not raise and should return None (void validation)
+        result = strategy.validate_inputs(outputs)
+        assert result is None
 
 
 class TestDetectConflicts:
@@ -334,9 +340,11 @@ class TestDetectConflicts:
 
     def test_detect_conflicts_no_conflict(self):
         """Test no conflicts detected when all agents agree."""
+
         class MockStrategy(CollaborationStrategy):
             def synthesize(self, agent_outputs, config):
                 pass
+
             def get_capabilities(self):
                 return {}
 
@@ -352,9 +360,11 @@ class TestDetectConflicts:
 
     def test_detect_conflicts_minor_disagreement(self):
         """Test conflict detected for minor disagreement."""
+
         class MockStrategy(CollaborationStrategy):
             def synthesize(self, agent_outputs, config):
                 pass
+
             def get_capabilities(self):
                 return {}
 
@@ -373,9 +383,11 @@ class TestDetectConflicts:
 
     def test_detect_conflicts_threshold_filtering(self):
         """Test conflicts below threshold are filtered out."""
+
         class MockStrategy(CollaborationStrategy):
             def synthesize(self, agent_outputs, config):
                 pass
+
             def get_capabilities(self):
                 return {}
 
@@ -392,9 +404,11 @@ class TestDetectConflicts:
 
     def test_detect_conflicts_context_metadata(self):
         """Test conflict includes context metadata."""
+
         class MockStrategy(CollaborationStrategy):
             def synthesize(self, agent_outputs, config):
                 pass
+
             def get_capabilities(self):
                 return {}
 

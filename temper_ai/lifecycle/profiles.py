@@ -6,7 +6,6 @@ profiles to project characteristics.
 
 import logging
 from pathlib import Path
-from typing import List, Optional
 
 import yaml
 
@@ -28,7 +27,7 @@ class ProfileRegistry:
     def __init__(
         self,
         config_dir: Path,
-        store: Optional[LifecycleStore] = None,
+        store: LifecycleStore | None = None,
     ) -> None:
         self._config_dir = config_dir
         self._store = store
@@ -38,9 +37,7 @@ class ProfileRegistry:
     def _load_yaml_profiles(self) -> None:
         """Load all YAML profile files from config directory."""
         if not self._config_dir.exists():
-            logger.info(
-                "Lifecycle config dir not found: %s", self._config_dir
-            )
+            logger.info("Lifecycle config dir not found: %s", self._config_dir)
             return
 
         for path in sorted(self._config_dir.glob(YAML_GLOB)):
@@ -49,15 +46,11 @@ class ProfileRegistry:
                 if profile is not None:
                     self._yaml_profiles[profile.name] = profile
             except Exception:  # noqa: BLE001 -- skip invalid files
-                logger.warning(
-                    "Failed to load profile: %s", path, exc_info=True
-                )
+                logger.warning("Failed to load profile: %s", path, exc_info=True)
 
-        logger.info(
-            "Loaded %d YAML lifecycle profiles", len(self._yaml_profiles)
-        )
+        logger.info("Loaded %d YAML lifecycle profiles", len(self._yaml_profiles))
 
-    def list_profiles(self) -> List[LifecycleProfile]:
+    def list_profiles(self) -> list[LifecycleProfile]:
         """List all profiles from YAML and DB sources."""
         profiles = dict(self._yaml_profiles)
 
@@ -69,7 +62,7 @@ class ProfileRegistry:
 
         return list(profiles.values())
 
-    def get_profile(self, name: str) -> Optional[LifecycleProfile]:
+    def get_profile(self, name: str) -> LifecycleProfile | None:
         """Get a profile by name. YAML takes priority over DB."""
         if name in self._yaml_profiles:
             return self._yaml_profiles[name]
@@ -85,7 +78,7 @@ class ProfileRegistry:
         self,
         characteristics: ProjectCharacteristics,
         workflow_name: str = "",
-    ) -> List[LifecycleProfile]:
+    ) -> list[LifecycleProfile]:
         """Return profiles matching the given characteristics.
 
         A profile matches if:
@@ -93,14 +86,12 @@ class ProfileRegistry:
         - Its product_types list is empty (matches all) or contains
           the characteristics' product_type
         """
-        matched: List[LifecycleProfile] = []
+        matched: list[LifecycleProfile] = []
 
         for profile in self.list_profiles():
             if not profile.enabled:
                 continue
-            if not _matches_product_type(
-                profile, characteristics.product_type
-            ):
+            if not _matches_product_type(profile, characteristics.product_type):
                 continue
             matched.append(profile)
 
@@ -113,9 +104,7 @@ class ProfileRegistry:
         return matched
 
 
-def _matches_product_type(
-    profile: LifecycleProfile, product_type: Optional[str]
-) -> bool:
+def _matches_product_type(profile: LifecycleProfile, product_type: str | None) -> bool:
     """Check if a profile matches a product type."""
     if not profile.product_types:
         return True  # Empty = matches all
@@ -124,7 +113,7 @@ def _matches_product_type(
     return product_type in profile.product_types
 
 
-def _load_profile_yaml(path: Path) -> Optional[LifecycleProfile]:
+def _load_profile_yaml(path: Path) -> LifecycleProfile | None:
     """Load a single profile from a YAML file."""
     with open(path) as f:
         data = yaml.safe_load(f)

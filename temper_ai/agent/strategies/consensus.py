@@ -30,9 +30,8 @@ Example:
     0.567
 """
 
-from typing import Any, Dict, List
+from typing import Any
 
-from temper_ai.shared.constants.probabilities import PROB_LOW_MEDIUM, PROB_MEDIUM
 from temper_ai.agent.strategies.base import (
     AgentOutput,
     CollaborationStrategy,
@@ -46,6 +45,7 @@ from temper_ai.agent.strategies.constants import (
     FORMAT_PERCENT_1_DECIMAL,
     MODE_VALUE_FIRST,
 )
+from temper_ai.shared.constants.probabilities import PROB_LOW_MEDIUM, PROB_MEDIUM
 
 # Constants
 WEAK_CONSENSUS_CONFIDENCE_PENALTY = 0.7  # Reduce confidence by 30% for weak consensus
@@ -88,11 +88,7 @@ class ConsensusStrategy(CollaborationStrategy):
     """
 
     def _validate_config(
-        self,
-        min_consensus: float,
-        tie_breaker: str,
-        min_agents: int,
-        agent_count: int
+        self, min_consensus: float, tie_breaker: str, min_agents: int, agent_count: int
     ) -> None:
         """Validate synthesis configuration."""
         if not 0 <= min_consensus <= 1:
@@ -104,22 +100,16 @@ class ConsensusStrategy(CollaborationStrategy):
                 f"tie_breaker must be 'confidence' or 'first', got '{tie_breaker}'"
             )
         if agent_count < min_agents:
-            raise ValueError(
-                f"Need at least {min_agents} agents, got {agent_count}"
-            )
+            raise ValueError(f"Need at least {min_agents} agents, got {agent_count}")
 
     def _determine_winner(
         self,
-        vote_counts: Dict[Any, int],
-        agent_outputs: List[AgentOutput],
-        tie_breaker: str
+        vote_counts: dict[Any, int],
+        agent_outputs: list[AgentOutput],
+        tie_breaker: str,
     ) -> Any:
         """Determine winning decision from vote counts."""
-        sorted_decisions = sorted(
-            vote_counts.items(),
-            key=lambda x: x[1],
-            reverse=True
-        )
+        sorted_decisions = sorted(vote_counts.items(), key=lambda x: x[1], reverse=True)
 
         if not sorted_decisions:
             raise RuntimeError("No votes found")
@@ -138,15 +128,17 @@ class ConsensusStrategy(CollaborationStrategy):
         decision: Any,
         decision_support: float,
         min_consensus: float,
-        vote_counts: Dict[Any, int],
-        agent_outputs: List[AgentOutput],
-        total_votes: int
+        vote_counts: dict[Any, int],
+        agent_outputs: list[AgentOutput],
+        total_votes: int,
     ) -> SynthesisResult:
         """Build result for weak consensus (below threshold)."""
         conflicts = self.detect_conflicts(agent_outputs, threshold=PROB_LOW_MEDIUM)
         return SynthesisResult(
             decision=decision,
-            confidence=round(decision_support * WEAK_CONSENSUS_CONFIDENCE_PENALTY, 4),  # noqa: Standard precision
+            confidence=round(
+                decision_support * WEAK_CONSENSUS_CONFIDENCE_PENALTY, 4
+            ),  # noqa: Standard precision
             method="consensus_weak",
             votes=vote_counts,
             conflicts=conflicts,
@@ -159,14 +151,12 @@ class ConsensusStrategy(CollaborationStrategy):
                 "total_agents": total_votes,
                 "decision_support": decision_support,
                 "min_consensus": min_consensus,
-                "needs_conflict_resolution": True
-            }
+                "needs_conflict_resolution": True,
+            },
         )
 
     def synthesize(
-        self,
-        agent_outputs: List[AgentOutput],
-        config: Dict[str, Any]
+        self, agent_outputs: list[AgentOutput], config: dict[str, Any]
     ) -> SynthesisResult:
         """Synthesize using majority voting.
 
@@ -195,11 +185,15 @@ class ConsensusStrategy(CollaborationStrategy):
 
         # Get config
         min_agents = config.get("min_agents", 1)
-        min_consensus = config.get(CONFIG_KEY_MIN_CONSENSUS, PROB_MEDIUM + PERCENT_TO_FRACTION)
+        min_consensus = config.get(
+            CONFIG_KEY_MIN_CONSENSUS, PROB_MEDIUM + PERCENT_TO_FRACTION
+        )
         tie_breaker = config.get("tie_breaker", CONFIG_KEY_CONFIDENCE)
 
         # Validate config
-        self._validate_config(min_consensus, tie_breaker, min_agents, len(agent_outputs))
+        self._validate_config(
+            min_consensus, tie_breaker, min_agents, len(agent_outputs)
+        )
 
         # Count votes
         vote_counts = calculate_vote_distribution(agent_outputs)
@@ -212,8 +206,12 @@ class ConsensusStrategy(CollaborationStrategy):
         # Check if we have majority
         if decision_support < min_consensus:
             return self._build_weak_consensus_result(
-                decision, decision_support, min_consensus,
-                vote_counts, agent_outputs, total_votes
+                decision,
+                decision_support,
+                min_consensus,
+                vote_counts,
+                agent_outputs,
+                total_votes,
             )
 
         # Calculate confidence
@@ -243,17 +241,20 @@ class ConsensusStrategy(CollaborationStrategy):
                 "supporters": supporters,
                 "dissenters": dissenters,
                 "decision_support": decision_support,
-                "avg_supporter_confidence": sum(
-                    o.confidence for o in agent_outputs if o.decision == decision
-                ) / len(supporters) if supporters else 0.0
-            }
+                "avg_supporter_confidence": (
+                    sum(o.confidence for o in agent_outputs if o.decision == decision)
+                    / len(supporters)
+                    if supporters
+                    else 0.0
+                ),
+            },
         )
 
     def _break_tie(
         self,
-        tied_decisions: List[Any],
-        agent_outputs: List[AgentOutput],
-        method: str = "confidence"
+        tied_decisions: list[Any],
+        agent_outputs: list[AgentOutput],
+        method: str = "confidence",
     ) -> Any:
         """Break tie between decisions with equal votes.
 
@@ -282,10 +283,7 @@ class ConsensusStrategy(CollaborationStrategy):
         # Confidence-based: highest average confidence wins
         decision_confidences = {}
         for decision in tied_decisions:
-            supporters = [
-                o for o in agent_outputs
-                if o.decision == decision
-            ]
+            supporters = [o for o in agent_outputs if o.decision == decision]
             # Defensive check: if no supporters, assign 0 confidence
             if not supporters:
                 decision_confidences[decision] = 0.0
@@ -300,9 +298,9 @@ class ConsensusStrategy(CollaborationStrategy):
         self,
         decision: Any,
         support_pct: float,
-        supporters: List[str],
-        dissenters: List[str],
-        vote_counts: Dict[Any, int]
+        supporters: list[str],
+        dissenters: list[str],
+        vote_counts: dict[Any, int],
     ) -> str:
         """Build human-readable reasoning for decision.
 
@@ -351,7 +349,7 @@ class ConsensusStrategy(CollaborationStrategy):
 
         return " ".join(lines)
 
-    def get_capabilities(self) -> Dict[str, bool]:
+    def get_capabilities(self) -> dict[str, bool]:
         """Get strategy capabilities for feature detection.
 
         Returns:
@@ -371,10 +369,10 @@ class ConsensusStrategy(CollaborationStrategy):
             "supports_partial_participation": True,  # Can handle missing agents
             "supports_async": False,  # Sync only for now
             "deterministic": True,  # Same input -> same output
-            "requires_conflict_resolver": True  # Needs resolver for weak consensus
+            "requires_conflict_resolver": True,  # Needs resolver for weak consensus
         }
 
-    def get_metadata(self) -> Dict[str, Any]:
+    def get_metadata(self) -> dict[str, Any]:
         """Get strategy metadata for introspection.
 
         Returns:
@@ -393,18 +391,18 @@ class ConsensusStrategy(CollaborationStrategy):
                 "min_agents": {
                     "type": "int",
                     "default": 1,
-                    "description": "Minimum agents required"
+                    "description": "Minimum agents required",
                 },
                 "min_consensus": {
                     "type": "float",
                     "default": MIN_CONSENSUS_DEFAULT,
-                    "description": "Minimum consensus percentage (0-1)"
+                    "description": "Minimum consensus percentage (0-1)",
                 },
                 "tie_breaker": {
                     "type": "str",
                     "default": "confidence",
                     "options": ["confidence", "first"],
-                    "description": "Tie-breaking method"
-                }
-            }
+                    "description": "Tie-breaking method",
+                },
+            },
         }

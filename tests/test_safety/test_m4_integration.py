@@ -34,10 +34,14 @@ class TestCompleteSafetyPipeline:
         """Test: Policy validation → Approval → Execute → Success."""
         # Setup components
         composer = PolicyComposer()
-        composer.add_policy(FileAccessPolicy({
-            "allowed_paths": [f"{str(tmp_path)}/**"],
-            "denied_paths": ["/etc/**", "/root/**"]
-        }))
+        composer.add_policy(
+            FileAccessPolicy(
+                {
+                    "allowed_paths": [f"{str(tmp_path)}/**"],
+                    "denied_paths": ["/etc/**", "/root/**"],
+                }
+            )
+        )
         approval = ApprovalWorkflow(default_timeout_minutes=60)
         rollback_mgr = RollbackManager()
 
@@ -53,9 +57,7 @@ class TestCompleteSafetyPipeline:
 
         # Step 2: Request approval
         request = approval.request_approval(
-            action=action,
-            reason="Config update requires approval",
-            context=context
+            action=action, reason="Config update requires approval", context=context
         )
         assert request.is_pending()
 
@@ -79,10 +81,11 @@ class TestCompleteSafetyPipeline:
         """Test: Policy violation → Reject → No execution."""
         # Setup
         composer = PolicyComposer()
-        composer.add_policy(FileAccessPolicy({
-            "allowed_paths": ["/tmp"],
-            "denied_paths": ["/etc", "/root"]
-        }))
+        composer.add_policy(
+            FileAccessPolicy(
+                {"allowed_paths": ["/tmp"], "denied_paths": ["/etc", "/root"]}
+            )
+        )
 
         # Attempt forbidden action
         action = {"tool": "write_file", "path": "/etc/passwd"}
@@ -94,7 +97,9 @@ class TestCompleteSafetyPipeline:
 
         # Verify violation details (FileAccessPolicy uses CRITICAL severity)
         assert len(result.violations) > 0
-        critical_violations = result.get_violations_by_severity(ViolationSeverity.CRITICAL)
+        critical_violations = result.get_violations_by_severity(
+            ViolationSeverity.CRITICAL
+        )
         assert len(critical_violations) > 0
 
     def test_rollback_on_execution_failure(self, tmp_path):
@@ -106,8 +111,7 @@ class TestCompleteSafetyPipeline:
 
         # Create snapshot
         snapshot = rollback_mgr.create_snapshot(
-            action={"path": str(test_file)},
-            context={}
+            action={"path": str(test_file)}, context={}
         )
 
         # Modify file (simulating action)
@@ -129,9 +133,7 @@ class TestCircuitBreakerWithRollback:
         """Test: Circuit opens → Rollback triggered."""
         # Setup
         breaker = CircuitBreaker(
-            name="file_ops",
-            failure_threshold=2,
-            timeout_seconds=60
+            name="file_ops", failure_threshold=2, timeout_seconds=60
         )
         rollback_mgr = RollbackManager()
 
@@ -148,8 +150,7 @@ class TestCircuitBreakerWithRollback:
         # Simulate operations with failures
         for i in range(5):
             snapshot = rollback_mgr.create_snapshot(
-                action={"path": str(test_file)},
-                context={}
+                action={"path": str(test_file)}, context={}
             )
 
             try:
@@ -180,9 +181,7 @@ class TestCircuitBreakerWithRollback:
     def test_circuit_breaker_prevents_cascading_rollbacks(self, tmp_path):
         """Test: Circuit breaker prevents excessive rollback operations."""
         breaker = CircuitBreaker(
-            name="operations",
-            failure_threshold=3,
-            timeout_seconds=60
+            name="operations", failure_threshold=3, timeout_seconds=60
         )
         rollback_mgr = RollbackManager()
 
@@ -195,8 +194,7 @@ class TestCircuitBreakerWithRollback:
         # Attempt 10 operations (circuit should open after 3 failures)
         for i in range(10):
             snapshot = rollback_mgr.create_snapshot(
-                action={"path": str(test_file)},
-                context={}
+                action={"path": str(test_file)}, context={}
             )
 
             try:
@@ -228,15 +226,14 @@ class TestSafetyGateCoordination:
         # Setup components
         breaker = CircuitBreaker("file_ops", failure_threshold=5)
         composer = PolicyComposer()
-        composer.add_policy(FileAccessPolicy({
-            "allowed_paths": [f"{str(tmp_path)}/**"],
-            "denied_paths": ["/etc/**"]
-        }))
+        composer.add_policy(
+            FileAccessPolicy(
+                {"allowed_paths": [f"{str(tmp_path)}/**"], "denied_paths": ["/etc/**"]}
+            )
+        )
 
         gate = SafetyGate(
-            name="comprehensive_gate",
-            circuit_breaker=breaker,
-            policy_composer=composer
+            name="comprehensive_gate", circuit_breaker=breaker, policy_composer=composer
         )
 
         # Test 1: Allowed action passes all checks
@@ -260,14 +257,12 @@ class TestSafetyGateCoordination:
         """Test: Safety gate as context manager with all protections."""
         breaker = CircuitBreaker("ops")
         composer = PolicyComposer()
-        composer.add_policy(FileAccessPolicy({
-            "allowed_paths": [f"{str(tmp_path)}/**"]
-        }))
+        composer.add_policy(
+            FileAccessPolicy({"allowed_paths": [f"{str(tmp_path)}/**"]})
+        )
 
         gate = SafetyGate(
-            name="test_gate",
-            circuit_breaker=breaker,
-            policy_composer=composer
+            name="test_gate", circuit_breaker=breaker, policy_composer=composer
         )
 
         test_file = tmp_path / "test.txt"
@@ -299,14 +294,14 @@ class TestMultiServiceProtection:
         services = {
             "database": {"threshold": 3, "timeout": 30},
             "cache": {"threshold": 5, "timeout": 10},
-            "api": {"threshold": 10, "timeout": 60}
+            "api": {"threshold": 10, "timeout": 60},
         }
 
         for name, config in services.items():
             manager.create_breaker(
                 name,
                 failure_threshold=config["threshold"],
-                timeout_seconds=config["timeout"]
+                timeout_seconds=config["timeout"],
             )
 
         # Simulate failures on database
@@ -336,13 +331,9 @@ class TestMultiServiceProtection:
         manager.create_breaker("network_ops", failure_threshold=5)
 
         # Create gates
-        file_gate = manager.create_gate(
-            name="file_gate",
-            breaker_name="file_ops"
-        )
+        file_gate = manager.create_gate(name="file_gate", breaker_name="file_ops")
         network_gate = manager.create_gate(
-            name="network_gate",
-            breaker_name="network_ops"
+            name="network_gate", breaker_name="network_ops"
         )
 
         # Both gates should have their breakers
@@ -367,14 +358,20 @@ class TestRealWorldDeploymentWorkflow:
         manager = CircuitBreakerManager()
 
         # Circuit breakers for services
-        manager.create_breaker("deployment_service", failure_threshold=3, timeout_seconds=300)
+        manager.create_breaker(
+            "deployment_service", failure_threshold=3, timeout_seconds=300
+        )
 
         # Policies
         composer = PolicyComposer()
-        composer.add_policy(FileAccessPolicy({
-            "allowed_paths": [f"{str(tmp_path)}/**"],
-            "denied_paths": ["/etc/**", "/root/**"]
-        }))
+        composer.add_policy(
+            FileAccessPolicy(
+                {
+                    "allowed_paths": [f"{str(tmp_path)}/**"],
+                    "denied_paths": ["/etc/**", "/root/**"],
+                }
+            )
+        )
         # Note: RateLimiterPolicy doesn't have max_calls config, skip for now
         # composer.add_policy(RateLimiterPolicy({}))
 
@@ -388,7 +385,7 @@ class TestRealWorldDeploymentWorkflow:
         deploy_gate = manager.create_gate(
             name="deployment_gate",
             breaker_name="deployment_service",
-            policy_composer=composer
+            policy_composer=composer,
         )
 
         # Deployment action
@@ -398,12 +395,12 @@ class TestRealWorldDeploymentWorkflow:
         action = {
             "tool": "deploy",
             "environment": "production",
-            "config": str(deploy_file)
+            "config": str(deploy_file),
         }
         context = {
             "agent": "deployment_bot",
             "user": "admin",
-            "timestamp": "2026-01-27T12:00:00Z"
+            "timestamp": "2026-01-27T12:00:00Z",
         }
 
         # Step 1: Validate through safety gate
@@ -415,7 +412,7 @@ class TestRealWorldDeploymentWorkflow:
             action=action,
             reason="Production deployment requires dual approval",
             context=context,
-            required_approvers=2
+            required_approvers=2,
         )
 
         # Step 3: Create rollback snapshot
@@ -450,10 +447,14 @@ class TestRealWorldDeploymentWorkflow:
         """Test: Deployment rejected → No execution → No rollback needed."""
         # Setup
         composer = PolicyComposer()
-        composer.add_policy(FileAccessPolicy({
-            "allowed_paths": [f"{str(tmp_path)}/**"],
-            "denied_paths": ["/production/**"]
-        }))
+        composer.add_policy(
+            FileAccessPolicy(
+                {
+                    "allowed_paths": [f"{str(tmp_path)}/**"],
+                    "denied_paths": ["/production/**"],
+                }
+            )
+        )
         approval = ApprovalWorkflow()
 
         # Attempt forbidden deployment (use "path" key for FileAccessPolicy)
@@ -467,7 +468,7 @@ class TestRealWorldDeploymentWorkflow:
         request = approval.request_approval(
             action=action,
             reason="Deployment blocked by policy",
-            violations=result.violations
+            violations=result.violations,
         )
 
         # Step 3: Reject
@@ -490,7 +491,7 @@ class TestFailureRecovery:
             name="recovery_test",
             failure_threshold=2,
             timeout_seconds=1,  # Short timeout for testing
-            success_threshold=2
+            success_threshold=2,
         )
 
         # Fail twice to open circuit
@@ -522,8 +523,7 @@ class TestFailureRecovery:
 
         # Create snapshot with both
         snapshot = rollback_mgr.create_snapshot(
-            action={"files": [str(file1), str(file2)]},
-            context={}
+            action={"files": [str(file1), str(file2)]}, context={}
         )
 
         # Manually add snapshots for both
@@ -553,10 +553,9 @@ class TestPerformanceAndOverhead:
         import time
 
         composer = PolicyComposer()
-        composer.add_policy(FileAccessPolicy({
-            "allowed_paths": ["/tmp"],
-            "denied_paths": ["/etc"]
-        }))
+        composer.add_policy(
+            FileAccessPolicy({"allowed_paths": ["/tmp"], "denied_paths": ["/etc"]})
+        )
 
         action = {"tool": "write_file", "path": "/tmp/test.txt"}
         context = {}

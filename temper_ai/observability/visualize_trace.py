@@ -17,11 +17,12 @@ Usage:
     fig = visualize_trace(trace_data)
     fig.show()
 """
+
 import argparse
 import json
 import sys
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from temper_ai.shared.constants.limits import (
     LARGE_ITEM_LIMIT,
@@ -44,6 +45,7 @@ MONOSPACE_FONT_SIZE_REDUCTION = 9  # Points to subtract from title size for mono
 
 try:
     import plotly.graph_objects as go
+
     PLOTLY_AVAILABLE = True
 except ImportError:
     PLOTLY_AVAILABLE = False
@@ -51,10 +53,10 @@ except ImportError:
 
 
 def create_hierarchical_gantt(
-    trace: Dict[str, Any],
-    title: Optional[str] = None,
+    trace: dict[str, Any],
+    title: str | None = None,
     show_tree_lines: bool = True,
-    output_file: Optional[str] = None
+    output_file: str | None = None,
 ) -> Any:
     """
     Create hierarchical Gantt chart from execution trace.
@@ -102,9 +104,8 @@ def create_hierarchical_gantt(
 
 
 def _flatten_trace_with_tree(
-    trace: Dict[str, Any],
-    show_tree_lines: bool = True
-) -> List[Dict[str, Any]]:
+    trace: dict[str, Any], show_tree_lines: bool = True
+) -> list[dict[str, Any]]:
     """
     Flatten hierarchical trace into list with tree structure visualization.
 
@@ -119,10 +120,10 @@ def _flatten_trace_with_tree(
     flat = []
 
     def add_node(
-        node: Dict[str, Any],
+        node: dict[str, Any],
         depth: int = 0,
-        is_last_child: Optional[List[bool]] = None,
-        _parent_name: str = ""
+        is_last_child: list[bool] | None = None,
+        _parent_name: str = "",
     ) -> None:
         """Add node to trace visualization graph."""
         if is_last_child is None:
@@ -132,37 +133,38 @@ def _flatten_trace_with_tree(
         start_ms, duration_ms = _calculate_node_timing(node, workflow_start)
 
         # Build display name with tree structure
-        display_name = _build_tree_display_name(node, depth, is_last_child, show_tree_lines)
+        display_name = _build_tree_display_name(
+            node, depth, is_last_child, show_tree_lines
+        )
 
         # Build hover text
         hover_text = _build_node_hover_text(node)
 
-        flat.append({
-            "display_name": display_name,
-            "start_ms": start_ms,
-            "duration_ms": duration_ms,
-            "type": node["type"],
-            "hover_text": hover_text,
-            "depth": depth,
-            "metadata": node.get("metadata", {})
-        })
+        flat.append(
+            {
+                "display_name": display_name,
+                "start_ms": start_ms,
+                "duration_ms": duration_ms,
+                "type": node["type"],
+                "hover_text": hover_text,
+                "depth": depth,
+                "metadata": node.get("metadata", {}),
+            }
+        )
 
         # Process children
         children = node.get("children", [])
         for i, child in enumerate(children):
-            is_last = (i == len(children) - 1)
-            add_node(
-                child,
-                depth + 1,
-                is_last_child + [is_last],
-                node["name"]
-            )
+            is_last = i == len(children) - 1
+            add_node(child, depth + 1, is_last_child + [is_last], node["name"])
 
     add_node(trace)
     return flat
 
 
-def print_console_gantt(trace: Dict[str, Any], _max_width: int = LARGE_ITEM_LIMIT) -> None:
+def print_console_gantt(
+    trace: dict[str, Any], _max_width: int = LARGE_ITEM_LIMIT
+) -> None:
     """
     Print a text-based Gantt chart to console.
 
@@ -188,14 +190,18 @@ def print_console_gantt(trace: Dict[str, Any], _max_width: int = LARGE_ITEM_LIMI
         console.print(tree)
 
         # Print summary
-        console.print(f"\n[dim]Total duration: {_format_duration_simple(workflow_duration)}[/dim]")
+        console.print(
+            f"\n[dim]Total duration: {_format_duration_simple(workflow_duration)}[/dim]"
+        )
 
     except ImportError:
         # Fallback to simple text output if Rich not available
         _print_simple_gantt(trace)
 
 
-def _calculate_node_timing(node: Dict[str, Any], workflow_start: datetime) -> tuple[float, float]:
+def _calculate_node_timing(
+    node: dict[str, Any], workflow_start: datetime
+) -> tuple[float, float]:
     """Calculate start_ms and duration_ms for a node."""
     start = datetime.fromisoformat(node["start"])
     end_str = node.get("end")
@@ -207,10 +213,7 @@ def _calculate_node_timing(node: Dict[str, Any], workflow_start: datetime) -> tu
 
 
 def _build_tree_display_name(
-    node: Dict[str, Any],
-    depth: int,
-    is_last_child: List[bool],
-    show_tree_lines: bool
+    node: dict[str, Any], depth: int, is_last_child: list[bool], show_tree_lines: bool
 ) -> str:
     """Build display name with tree structure prefix."""
     if show_tree_lines:
@@ -244,58 +247,66 @@ def _build_tree_display_name(
         return f"{indent}{node['name']}"
 
 
-def _build_node_hover_text(node: Dict[str, Any]) -> str:
+def _build_node_hover_text(node: dict[str, Any]) -> str:
     """Build hover text with type-specific metadata."""
     metadata = node.get("metadata", {})
-    duration = node.get('duration') or 0
+    duration = node.get("duration") or 0
     hover_parts = [
         f"<b>{node['name']}</b>",
         f"Type: {node['type']}",
         f"Duration: {duration:.3f}s",
-        f"Status: {node.get('status', 'unknown')}"
+        f"Status: {node.get('status', 'unknown')}",
     ]
 
     # Add type-specific metadata
-    if node['type'] == 'agent':
-        cost = metadata.get('estimated_cost_usd') or 0
-        hover_parts.extend([
-            f"Tokens: {metadata.get('total_tokens', 0):,}",
-            f"Cost: ${cost:.4f}",
-            f"LLM Calls: {metadata.get('num_llm_calls', 0)}",
-            f"Tool Calls: {metadata.get('num_tool_calls', 0)}"
-        ])
-    elif node['type'] == 'llm':
-        hover_parts.extend([
-            f"Model: {metadata.get('model', 'unknown')}",
-            f"Tokens: {metadata.get('total_tokens', 0):,}",
-            f"Prompt: {metadata.get('prompt_tokens', 0):,}",
-            f"Completion: {metadata.get('completion_tokens', 0):,}"
-        ])
-    elif node['type'] == 'tool':
-        hover_parts.extend([
-            f"Tool: {metadata.get('tool_name', 'unknown')}",
-            f"Version: {metadata.get('tool_version', 'N/A')}"
-        ])
-    elif node['type'] == 'workflow':
-        total_cost = metadata.get('total_cost_usd') or 0
-        hover_parts.extend([
-            f"Total Tokens: {metadata.get('total_tokens', 0):,}",
-            f"Total Cost: ${total_cost:.4f}",
-            f"Environment: {metadata.get('environment', 'unknown')}"
-        ])
+    if node["type"] == "agent":
+        cost = metadata.get("estimated_cost_usd") or 0
+        hover_parts.extend(
+            [
+                f"Tokens: {metadata.get('total_tokens', 0):,}",
+                f"Cost: ${cost:.4f}",
+                f"LLM Calls: {metadata.get('num_llm_calls', 0)}",
+                f"Tool Calls: {metadata.get('num_tool_calls', 0)}",
+            ]
+        )
+    elif node["type"] == "llm":
+        hover_parts.extend(
+            [
+                f"Model: {metadata.get('model', 'unknown')}",
+                f"Tokens: {metadata.get('total_tokens', 0):,}",
+                f"Prompt: {metadata.get('prompt_tokens', 0):,}",
+                f"Completion: {metadata.get('completion_tokens', 0):,}",
+            ]
+        )
+    elif node["type"] == "tool":
+        hover_parts.extend(
+            [
+                f"Tool: {metadata.get('tool_name', 'unknown')}",
+                f"Version: {metadata.get('tool_version', 'N/A')}",
+            ]
+        )
+    elif node["type"] == "workflow":
+        total_cost = metadata.get("total_cost_usd") or 0
+        hover_parts.extend(
+            [
+                f"Total Tokens: {metadata.get('total_tokens', 0):,}",
+                f"Total Cost: ${total_cost:.4f}",
+                f"Environment: {metadata.get('environment', 'unknown')}",
+            ]
+        )
 
     return "<br>".join(hover_parts)
 
 
-def _create_gantt_chart_bars(flat_data: List[Dict[str, Any]]) -> Any:
+def _create_gantt_chart_bars(flat_data: list[dict[str, Any]]) -> Any:
     """Create plotly figure with colored bars for each node type."""
     # Define colors for each type
     color_map = {
-        "workflow": "#2E86AB",    # Blue
-        "stage": "#06A77D",       # Green
-        "agent": "#F77F00",       # Orange
-        "llm": "#D62828",         # Red
-        "tool": "#FCBF49"         # Yellow
+        "workflow": "#2E86AB",  # Blue
+        "stage": "#06A77D",  # Green
+        "agent": "#F77F00",  # Orange
+        "llm": "#D62828",  # Red
+        "tool": "#FCBF49",  # Yellow
     }
 
     # Create figure
@@ -306,17 +317,22 @@ def _create_gantt_chart_bars(flat_data: List[Dict[str, Any]]) -> Any:
         type_items = [item for item in flat_data if item["type"] == type_name]
 
         if type_items:
-            fig.add_trace(go.Bar(
-                name=type_name.capitalize(),
-                x=[item["duration_ms"] for item in type_items],
-                y=[item["display_name"] for item in type_items],
-                base=[item["start_ms"] for item in type_items],
-                orientation='h',
-                marker=dict(color=color, line=dict(width=CHART_MARKER_LINE_WIDTH, color='white')),
-                text=[item["hover_text"] for item in type_items],
-                hovertemplate='%{text}<extra></extra>',
-                textposition='none'
-            ))
+            fig.add_trace(
+                go.Bar(
+                    name=type_name.capitalize(),
+                    x=[item["duration_ms"] for item in type_items],
+                    y=[item["display_name"] for item in type_items],
+                    base=[item["start_ms"] for item in type_items],
+                    orientation="h",
+                    marker=dict(
+                        color=color,
+                        line=dict(width=CHART_MARKER_LINE_WIDTH, color="white"),
+                    ),
+                    text=[item["hover_text"] for item in type_items],
+                    hovertemplate="%{text}<extra></extra>",
+                    textposition="none",
+                )
+            )
 
     return fig
 
@@ -330,41 +346,44 @@ def _configure_gantt_layout(fig: Any, title: str, num_items: int) -> None:
         title=dict(
             text=f"{title} - Hierarchical Timeline",
             x=CHART_TITLE_X_POSITION,
-            xanchor='center',
-            font=dict(size=CHART_TITLE_FONT_SIZE, color='#2E86AB')
+            xanchor="center",
+            font=dict(size=CHART_TITLE_FONT_SIZE, color="#2E86AB"),
         ),
         xaxis=dict(
             title="Time (seconds from start)",
-            tickmode='linear',
+            tickmode="linear",
             tick0=0,
             dtick=TICK_INTERVAL_MS,
-            tickformat='.1f',
-            ticksuffix='s',
-            gridcolor='rgba(128,128,128,0.2)'
+            tickformat=".1f",
+            ticksuffix="s",
+            gridcolor="rgba(128,128,128,0.2)",
         ),
         yaxis=dict(
             title="",
             autorange="reversed",  # Top to bottom
-            gridcolor='rgba(128,128,128,0.1)',
-            tickfont=dict(family='monospace', size=CHART_TITLE_FONT_SIZE - MONOSPACE_FONT_SIZE_REDUCTION)  # Monospace for tree chars (11pt)
+            gridcolor="rgba(128,128,128,0.1)",
+            tickfont=dict(
+                family="monospace",
+                size=CHART_TITLE_FONT_SIZE - MONOSPACE_FONT_SIZE_REDUCTION,
+            ),  # Monospace for tree chars (11pt)
         ),
-        barmode='overlay',
+        barmode="overlay",
         height=height,
-        hovermode='closest',
-        template='plotly_white',
+        hovermode="closest",
+        template="plotly_white",
         showlegend=True,
         legend=dict(
             orientation="h",
             yanchor="bottom",
             y=CHART_LEGEND_Y_POSITION,
             xanchor="right",
-            x=1
+            x=1,
         ),
-        margin=dict(l=CHART_LEFT_MARGIN)
+        margin=dict(l=CHART_LEFT_MARGIN),
     )
 
 
-def _format_duration_simple(seconds: Optional[float]) -> str:
+def _format_duration_simple(seconds: float | None) -> str:
     """Format duration in human-readable form."""
     if seconds is None:
         return "0.000s"
@@ -377,7 +396,7 @@ def _create_timeline_bar(
     start_offset: float,
     duration: float,
     total_duration: float,
-    width: int = TIMELINE_BAR_WIDTH
+    width: int = TIMELINE_BAR_WIDTH,
 ) -> str:
     """Create a visual timeline bar."""
     if total_duration == 0:
@@ -404,9 +423,7 @@ _CONSOLE_TREE_COLOR_MAP = {
 }
 
 
-def _get_type_specific_info(
-    node_type: str, metadata: Dict[str, Any]
-) -> Optional[str]:
+def _get_type_specific_info(node_type: str, metadata: dict[str, Any]) -> str | None:
     """Return type-specific metadata string for tree label, or None."""
     if node_type == "agent":
         tokens = metadata.get("total_tokens", 0)
@@ -424,7 +441,7 @@ def _get_type_specific_info(
 
 
 def _build_console_tree(
-    node: Dict[str, Any],
+    node: dict[str, Any],
     parent_tree: Any,
     workflow_start: datetime,
     workflow_duration: float,
@@ -469,15 +486,15 @@ def _build_console_tree(
     return tree if parent_tree is None else current
 
 
-def _print_simple_gantt(trace: Dict[str, Any]) -> None:
+def _print_simple_gantt(trace: dict[str, Any]) -> None:
     """Print simple text-based Gantt chart (fallback when Rich unavailable)."""
     print("\nConsole Gantt Chart:")
     print(f"  {trace['name']} - {trace.get('duration', 0):.3f}s")
 
-    def print_simple(node: Dict[str, Any], indent: int = 0) -> None:
+    def print_simple(node: dict[str, Any], indent: int = 0) -> None:
         """Print simplified trace output."""
         prefix = "  " * indent
-        duration = node.get('duration') or 0
+        duration = node.get("duration") or 0
         print(f"{prefix}├─ {node['name']} ({duration:.3f}s)")
         for child in node.get("children", []):
             print_simple(child, indent + 1)
@@ -486,20 +503,20 @@ def _print_simple_gantt(trace: Dict[str, Any]) -> None:
         print_simple(child, 1)
 
 
-def _load_trace_data(args: Any) -> Optional[Dict[str, Any]]:
+def _load_trace_data(args: Any) -> dict[str, Any] | None:
     """Load trace data from file or database based on CLI args."""
     if args.file:
         # Load from JSON file
         print(f"Loading trace from: {args.file}")
         with open(args.file) as f:
-            data: Dict[str, Any] = json.load(f)
+            data: dict[str, Any] = json.load(f)
             return data
     else:
         # Load from database
         try:
             from sqlmodel import select
 
-            from examples.export_waterfall import export_waterfall_trace
+            from temper_ai.observability.trace_export import export_waterfall_trace
             from temper_ai.storage.database import get_session
             from temper_ai.storage.database.models import WorkflowExecution
         except ImportError as e:
@@ -512,9 +529,13 @@ def _load_trace_data(args: Any) -> Optional[Dict[str, Any]]:
         if args.latest or workflow_id is None:
             # Get latest workflow
             with get_session() as session:
-                stmt = select(WorkflowExecution).order_by(
-                    WorkflowExecution.start_time.desc()  # type: ignore[attr-defined]
-                ).limit(1)
+                stmt = (
+                    select(WorkflowExecution)
+                    .order_by(
+                        WorkflowExecution.start_time.desc()  # type: ignore[attr-defined]
+                    )
+                    .limit(1)
+                )
                 workflow = session.exec(stmt).first()
 
                 if not workflow:
@@ -534,19 +555,19 @@ def _load_trace_data(args: Any) -> Optional[Dict[str, Any]]:
         return trace
 
 
-def _print_trace_summary(trace: Dict[str, Any]) -> None:
+def _print_trace_summary(trace: dict[str, Any]) -> None:
     """Print execution trace summary."""
     print()
     print("=" * CHART_SEPARATOR_WIDTH)
     print("EXECUTION TRACE SUMMARY")
     print("=" * CHART_SEPARATOR_WIDTH)
     print(f"Workflow: {trace['name']}")
-    duration = trace.get('duration') or 0
+    duration = trace.get("duration") or 0
     print(f"Duration: {duration:.2f}s")
     print(f"Status: {trace['status']}")
-    metadata = trace.get('metadata', {})
+    metadata = trace.get("metadata", {})
     print(f"Total Tokens: {metadata.get('total_tokens', 0):,}")
-    total_cost = metadata.get('total_cost_usd') or 0
+    total_cost = metadata.get("total_cost_usd") or 0
     print(f"Total Cost: ${total_cost:.4f}")
     print()
 
@@ -566,10 +587,10 @@ def _print_usage_tips() -> None:
 
 
 def visualize_trace(
-    trace: Dict[str, Any],
-    output_file: Optional[str] = None,
+    trace: dict[str, Any],
+    output_file: str | None = None,
     show_tree_lines: bool = True,
-    auto_open: bool = True
+    auto_open: bool = True,
 ) -> Any:
     """
     Visualize execution trace as hierarchical Gantt chart.
@@ -590,15 +611,14 @@ def visualize_trace(
 
     # Create visualization
     fig = create_hierarchical_gantt(
-        trace,
-        show_tree_lines=show_tree_lines,
-        output_file=output_file
+        trace, show_tree_lines=show_tree_lines, output_file=output_file
     )
 
     # Try to open in browser
     if auto_open:
         try:
             import webbrowser
+
             webbrowser.open(output_file)
             print(f"✓ Opened in browser: {output_file}")
         except (ImportError, OSError) as e:
@@ -615,11 +635,22 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         description="Visualize execution trace as hierarchical Gantt chart"
     )
     parser.add_argument("workflow_id", nargs="?", help="Workflow ID to visualize")
-    parser.add_argument("--file", "-f", help="Load trace from JSON file instead of database")
-    parser.add_argument("--latest", "-l", action="store_true", help="Visualize latest workflow execution")
+    parser.add_argument(
+        "--file", "-f", help="Load trace from JSON file instead of database"
+    )
+    parser.add_argument(
+        "--latest",
+        "-l",
+        action="store_true",
+        help="Visualize latest workflow execution",
+    )
     parser.add_argument("--output", "-o", help="Output HTML file path")
-    parser.add_argument("--no-tree", action="store_true", help="Disable tree structure characters")
-    parser.add_argument("--no-open", action="store_true", help="Don't auto-open browser")
+    parser.add_argument(
+        "--no-tree", action="store_true", help="Disable tree structure characters"
+    )
+    parser.add_argument(
+        "--no-open", action="store_true", help="Don't auto-open browser"
+    )
     return parser
 
 
@@ -642,7 +673,7 @@ def main() -> int:
         trace,
         output_file=args.output,
         show_tree_lines=not args.no_tree,
-        auto_open=not args.no_open
+        auto_open=not args.no_open,
     )
 
     _print_usage_tips()

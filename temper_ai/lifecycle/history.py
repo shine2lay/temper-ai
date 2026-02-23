@@ -5,7 +5,6 @@ to provide context for lifecycle adaptation rule evaluation.
 """
 
 import logging
-from typing import Dict, Optional
 
 from temper_ai.lifecycle._schemas import StageMetrics, WorkflowMetrics
 from temper_ai.lifecycle.constants import COL_RUN_COUNT, DEFAULT_LOOKBACK_HOURS
@@ -16,14 +15,14 @@ logger = logging.getLogger(__name__)
 class HistoryAnalyzer:
     """Queries observability DB for historical workflow/stage metrics."""
 
-    def __init__(self, db_url: Optional[str] = None) -> None:
+    def __init__(self, db_url: str | None = None) -> None:
         self._db_url = db_url
 
     def get_stage_metrics(
         self,
         workflow_name: str,
         lookback_hours: int = DEFAULT_LOOKBACK_HOURS,
-    ) -> Dict[str, StageMetrics]:
+    ) -> dict[str, StageMetrics]:
         """Get historical metrics for each stage of a workflow.
 
         Args:
@@ -34,9 +33,7 @@ class HistoryAnalyzer:
             Dict mapping stage name to StageMetrics.
         """
         try:
-            return self._query_stage_metrics(
-                workflow_name, lookback_hours
-            )
+            return self._query_stage_metrics(workflow_name, lookback_hours)
         except Exception:  # noqa: BLE001 -- history is optional
             logger.warning(
                 "Failed to query stage metrics for %s",
@@ -60,9 +57,7 @@ class HistoryAnalyzer:
             WorkflowMetrics with aggregated stats.
         """
         try:
-            return self._query_workflow_metrics(
-                workflow_name, lookback_hours
-            )
+            return self._query_workflow_metrics(workflow_name, lookback_hours)
         except Exception:  # noqa: BLE001 -- history is optional
             logger.warning(
                 "Failed to query workflow metrics for %s",
@@ -75,7 +70,7 @@ class HistoryAnalyzer:
         self,
         workflow_name: str,
         lookback_hours: int,
-    ) -> Dict[str, StageMetrics]:
+    ) -> dict[str, StageMetrics]:
         """Query stage execution data from observability DB."""
         if self._db_url is None:
             return {}
@@ -101,7 +96,7 @@ class HistoryAnalyzer:
                     )
                 ).all()
 
-                result: Dict[str, StageMetrics] = {}
+                result: dict[str, StageMetrics] = {}
                 for row in rows:
                     name = row[0]
                     result[name] = StageMetrics(

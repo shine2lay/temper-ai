@@ -3,16 +3,16 @@
 Tests integration between multiple system components without requiring
 full end-to-end workflow execution (no Ollama dependency).
 """
+
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pytest
 
-from temper_ai.agent.llm_providers import LLMResponse
 from temper_ai.agent.standard_agent import StandardAgent
-from temper_ai.workflow.config_loader import ConfigLoader
-from temper_ai.workflow.langgraph_engine import LangGraphExecutionEngine
+from temper_ai.llm.providers.base import LLMResponse
+from temper_ai.observability.tracker import ExecutionTracker
 from temper_ai.storage.schemas.agent_config import (
     AgentConfig,
     AgentConfigInner,
@@ -20,21 +20,28 @@ from temper_ai.storage.schemas.agent_config import (
     InferenceConfig,
     PromptConfig,
 )
-from temper_ai.observability.database import DatabaseManager
-from temper_ai.observability.tracker import ExecutionTracker
 from temper_ai.tools.base import ToolResult
 from temper_ai.tools.calculator import Calculator
 from temper_ai.tools.registry import ToolRegistry
+from temper_ai.workflow.config_loader import ConfigLoader
+from temper_ai.workflow.langgraph_engine import LangGraphExecutionEngine
 
 # ============================================================================
 # Fixtures
 # ============================================================================
 
+
 @pytest.fixture
 def db_fixture():
     """Create in-memory test database."""
-    db = DatabaseManager("sqlite:///:memory:")
-    db.create_all_tables()
+    from temper_ai.observability.database import init_database
+
+    try:
+        from temper_ai.storage.database.manager import get_database
+
+        db = get_database()
+    except RuntimeError:
+        db = init_database("sqlite:///:memory:")
     return db
 
 
@@ -57,9 +64,7 @@ def config_loader():
 def execution_tracker(db_fixture):
     """Create execution tracker."""
     # ExecutionTracker uses get_session() internally
-    # For tests, we need to initialize the database first
-    from temper_ai.observability.database import init_database
-    init_database("sqlite:///:memory:")
+    # db_fixture ensures the database is initialized
     return ExecutionTracker()
 
 
@@ -93,8 +98,11 @@ def minimal_agent_config():
 # Integration Test 1: Multi-Agent Workflow
 # ============================================================================
 
-@patch('temper_ai.agent.base_agent.ToolRegistry')
-def test_multi_agent_workflow(mock_tool_registry, minimal_agent_config, execution_tracker):
+
+@patch("temper_ai.agent.base_agent.ToolRegistry")
+def test_multi_agent_workflow(
+    mock_tool_registry, minimal_agent_config, execution_tracker
+):
     """Test workflow with multiple agents collaborating.
 
     Simulates a research workflow where:
@@ -133,14 +141,14 @@ def test_multi_agent_workflow(mock_tool_registry, minimal_agent_config, executio
         total_tokens=50,
     )
 
-    agent1.llm = Mock()
-    agent1.llm.complete.return_value = mock_llm_response1
+    agent1.llm_service.llm = Mock()
+    agent1.llm_service.llm.complete.return_value = mock_llm_response1
 
-    agent2.llm = Mock()
-    agent2.llm.complete.return_value = mock_llm_response2
+    agent2.llm_service.llm = Mock()
+    agent2.llm_service.llm.complete.return_value = mock_llm_response2
 
-    agent3.llm = Mock()
-    agent3.llm.complete.return_value = mock_llm_response3
+    agent3.llm_service.llm = Mock()
+    agent3.llm_service.llm.complete.return_value = mock_llm_response3
 
     # Execute workflow: Agent 1 -> Agent 2 -> Agent 3
     with execution_tracker.track_workflow("multi_agent_workflow", {}) as workflow_id:
@@ -149,11 +157,15 @@ def test_multi_agent_workflow(mock_tool_registry, minimal_agent_config, executio
             result1 = agent1.execute({"input": "Research AI trends"})
 
         # Stage 2: Synthesis (uses output from stage 1)
-        with execution_tracker.track_stage("synthesis", {"previous": result1.output}, workflow_id) as stage_id:
+        with execution_tracker.track_stage(
+            "synthesis", {"previous": result1.output}, workflow_id
+        ) as stage_id:
             result2 = agent2.execute({"input": f"Synthesize: {result1.output}"})
 
         # Stage 3: Writing (uses output from stage 2)
-        with execution_tracker.track_stage("writing", {"previous": result2.output}, workflow_id) as stage_id:
+        with execution_tracker.track_stage(
+            "writing", {"previous": result2.output}, workflow_id
+        ) as stage_id:
             result3 = agent3.execute({"input": f"Write report: {result2.output}"})
 
     # Verify multi-agent collaboration
@@ -169,8 +181,11 @@ def test_multi_agent_workflow(mock_tool_registry, minimal_agent_config, executio
 # Integration Test 2: Tool Chaining Workflow
 # ============================================================================
 
-@patch('temper_ai.agent.base_agent.ToolRegistry')
-def test_tool_chaining_workflow(mock_tool_registry, minimal_agent_config, tool_registry, execution_tracker):
+
+@patch("temper_ai.agent.base_agent.ToolRegistry")
+def test_tool_chaining_workflow(
+    mock_tool_registry, minimal_agent_config, tool_registry, execution_tracker
+):
     """Test workflow where tool outputs feed into subsequent tool inputs.
 
     Simulates: Calculate(2+3) -> Calculate(result*4) -> Calculate(result-10)
@@ -204,8 +219,8 @@ def test_tool_chaining_workflow(mock_tool_registry, minimal_agent_config, tool_r
         ),
     ]
 
-    agent.llm = Mock()
-    agent.llm.complete.side_effect = tool_calls
+    agent.llm_service.llm = Mock()
+    agent.llm_service.llm.complete.side_effect = tool_calls
 
     # Mock tool execution results
     calc_mock = Mock()
@@ -214,21 +229,33 @@ def test_tool_chaining_workflow(mock_tool_registry, minimal_agent_config, tool_r
     calc_mock.get_parameters_schema.return_value = {
         "type": "object",
         "properties": {"operation": {"type": "string"}},
-        "required": []
+        "required": [],
     }
+    calc_mock.get_result_schema.return_value = None
     calc_mock.execute.side_effect = [
-        ToolResult(success=True, result=5, error=None),     # 2+3=5
-        ToolResult(success=True, result=20, error=None),    # 5*4=20
+        ToolResult(success=True, result=5, error=None),  # 2+3=5
+        ToolResult(success=True, result=20, error=None),  # 5*4=20
     ]
 
     mock_tool_registry.return_value.get.return_value = calc_mock
-    mock_tool_registry.return_value.list_tools.return_value = ["calculator"]  # Tool names, not objects
-    mock_tool_registry.return_value.get_all_tools.return_value = {"calculator": calc_mock}
+    mock_tool_registry.return_value.list_tools.return_value = [
+        "calculator"
+    ]  # Tool names, not objects
+    mock_tool_registry.return_value.get_all_tools.return_value = {
+        "calculator": calc_mock
+    }
+
+    # Create a tool executor with the mock registry so tools can actually be called
+    from temper_ai.tools.executor import ToolExecutor
+
+    mock_executor = ToolExecutor(mock_tool_registry.return_value)
 
     # Execute workflow
     with execution_tracker.track_workflow("tool_chaining", {}) as workflow_id:
         with execution_tracker.track_stage("calculation", {}, workflow_id) as stage_id:
-            result = agent.execute({"input": "Calculate (2+3)*4"})
+            result = agent.execute(
+                {"input": "Calculate (2+3)*4", "tool_executor": mock_executor}
+            )
 
     # Verify tool chaining
     assert result.output is not None
@@ -240,8 +267,11 @@ def test_tool_chaining_workflow(mock_tool_registry, minimal_agent_config, tool_r
 # Integration Test 3: Error Propagation Across Stages
 # ============================================================================
 
-@patch('temper_ai.agent.base_agent.ToolRegistry')
-def test_error_propagation_across_stages(mock_tool_registry, minimal_agent_config, execution_tracker):
+
+@patch("temper_ai.agent.base_agent.ToolRegistry")
+def test_error_propagation_across_stages(
+    mock_tool_registry, minimal_agent_config, execution_tracker
+):
     """Test that errors in one stage properly propagate to subsequent stages.
 
     Simulates:
@@ -266,11 +296,11 @@ def test_error_propagation_across_stages(mock_tool_registry, minimal_agent_confi
     )
 
     # Stage 2 will fail with LLM error
-    agent1.llm = Mock()
-    agent1.llm.complete.return_value = success_response
+    agent1.llm_service.llm = Mock()
+    agent1.llm_service.llm.complete.return_value = success_response
 
-    agent2.llm = Mock()
-    agent2.llm.complete.side_effect = Exception("LLM timeout error")
+    agent2.llm_service.llm = Mock()
+    agent2.llm_service.llm.complete.side_effect = Exception("LLM timeout error")
 
     error_recovery_response = LLMResponse(
         content="<answer>Recovered from error, using fallback</answer>",
@@ -278,8 +308,8 @@ def test_error_propagation_across_stages(mock_tool_registry, minimal_agent_confi
         provider="ollama",
         total_tokens=20,
     )
-    agent3.llm = Mock()
-    agent3.llm.complete.return_value = error_recovery_response
+    agent3.llm_service.llm = Mock()
+    agent3.llm_service.llm.complete.return_value = error_recovery_response
 
     # Execute workflow with error handling
     with execution_tracker.track_workflow("error_handling_workflow", {}) as workflow_id:
@@ -295,7 +325,9 @@ def test_error_propagation_across_stages(mock_tool_registry, minimal_agent_confi
         error_message = result2.error if result2.error else None
 
         # Stage 3: Error recovery
-        with execution_tracker.track_stage("stage3", {"error_from_stage2": error_message}, workflow_id) as stage_id:
+        with execution_tracker.track_stage(
+            "stage3", {"error_from_stage2": error_message}, workflow_id
+        ) as stage_id:
             result3 = agent3.execute({"input": f"Recover from: {error_message}"})
 
     # Verify error propagation
@@ -312,7 +344,8 @@ def test_error_propagation_across_stages(mock_tool_registry, minimal_agent_confi
 # Integration Test 4: Config to Execution Pipeline
 # ============================================================================
 
-@patch('temper_ai.workflow.langgraph_compiler.ConfigLoader')
+
+@patch("temper_ai.workflow.engines.langgraph_compiler.ConfigLoader")
 def test_config_to_execution_pipeline(mock_config_loader):
     """Test complete pipeline from YAML config to execution.
 
@@ -333,10 +366,7 @@ def test_config_to_execution_pipeline(mock_config_loader):
             "name": "test_workflow",
             "description": "Test workflow from config",
             "version": "1.0",
-            "stages": [
-                {"name": "stage1"},
-                {"name": "stage2"}
-            ]
+            "stages": [{"name": "stage1"}, {"name": "stage2"}],
         }
     }
 
@@ -371,8 +401,11 @@ def test_config_to_execution_pipeline(mock_config_loader):
 # Integration Test 5: Database Integration Full Workflow
 # ============================================================================
 
-@patch('temper_ai.agent.base_agent.ToolRegistry')
-def test_database_integration_full_workflow(mock_tool_registry, minimal_agent_config, db_fixture):
+
+@patch("temper_ai.agent.base_agent.ToolRegistry")
+def test_database_integration_full_workflow(
+    mock_tool_registry, minimal_agent_config, db_fixture
+):
     """Test full workflow execution with database trace persistence.
 
     Tests that all execution events are properly persisted to database.
@@ -390,15 +423,19 @@ def test_database_integration_full_workflow(mock_tool_registry, minimal_agent_co
         provider="ollama",
         total_tokens=50,
     )
-    agent.llm = Mock()
-    agent.llm.complete.return_value = mock_llm_response
+    agent.llm_service.llm = Mock()
+    agent.llm_service.llm.complete.return_value = mock_llm_response
 
     # Execute workflow with full tracking
     workflow_config = {"name": "test_workflow", "version": "1.0"}
 
     # Execute workflow with tracking
-    with tracker.track_workflow("database_test_workflow", workflow_config) as workflow_id:
-        with tracker.track_stage("test_stage", {"input": "test"}, workflow_id) as stage_id:
+    with tracker.track_workflow(
+        "database_test_workflow", workflow_config
+    ) as workflow_id:
+        with tracker.track_stage(
+            "test_stage", {"input": "test"}, workflow_id
+        ) as stage_id:
             result = agent.execute({"input": "Process data"})
 
     # Verify database persistence
@@ -409,8 +446,10 @@ def test_database_integration_full_workflow(mock_tool_registry, minimal_agent_co
     with get_session() as session:
         # Check workflow record
         workflow_result = session.execute(
-            text("SELECT id, workflow_name, status FROM workflow_executions WHERE id = :id"),
-            {"id": workflow_id}
+            text(
+                "SELECT id, workflow_name, status FROM workflow_executions WHERE id = :id"
+            ),
+            {"id": workflow_id},
         ).fetchone()
 
         assert workflow_result is not None
@@ -419,8 +458,10 @@ def test_database_integration_full_workflow(mock_tool_registry, minimal_agent_co
 
         # Check stage record
         stage_result = session.execute(
-            text("SELECT stage_name, status FROM stage_executions WHERE workflow_execution_id = :id"),
-            {"id": workflow_id}
+            text(
+                "SELECT stage_name, status FROM stage_executions WHERE workflow_execution_id = :id"
+            ),
+            {"id": workflow_id},
         ).fetchone()
 
         assert stage_result is not None
@@ -432,7 +473,8 @@ def test_database_integration_full_workflow(mock_tool_registry, minimal_agent_co
 # Integration Test 6: Streaming Execution
 # ============================================================================
 
-@patch('temper_ai.agent.base_agent.ToolRegistry')
+
+@patch("temper_ai.agent.base_agent.ToolRegistry")
 def test_streaming_execution(mock_tool_registry, minimal_agent_config):
     """Test real-time streaming of execution events.
 
@@ -449,8 +491,8 @@ def test_streaming_execution(mock_tool_registry, minimal_agent_config):
         provider="ollama",
         total_tokens=30,
     )
-    agent.llm = Mock()
-    agent.llm.complete.return_value = mock_llm_response
+    agent.llm_service.llm = Mock()
+    agent.llm_service.llm.complete.return_value = mock_llm_response
 
     # Simulate streaming with callback
     events = []
@@ -486,16 +528,17 @@ def test_streaming_execution(mock_tool_registry, minimal_agent_config):
 # Integration Test 7: LLM Provider Switching
 # ============================================================================
 
+
 def test_llm_provider_switching(minimal_agent_config):
     """Test dynamic switching between different LLM providers.
 
     Simulates workflow that switches from Ollama -> OpenAI -> Anthropic
     based on availability or requirements.
     """
-    from temper_ai.agent.llm_providers import LLMError
+    from temper_ai.shared.utils.exceptions import LLMError
 
     # Create agent
-    with patch('temper_ai.agent.base_agent.ToolRegistry') as mock_registry:
+    with patch("temper_ai.agent.base_agent.ToolRegistry") as mock_registry:
         mock_registry.return_value.list_tools.return_value = []
         mock_registry.return_value.get_all_tools.return_value = {}
         agent = StandardAgent(minimal_agent_config)
@@ -522,7 +565,7 @@ def test_llm_provider_switching(minimal_agent_config):
         result = None
         last_error = None
         for provider_name, provider in providers:
-            agent.llm = provider
+            agent.llm_service.llm = provider
             result = agent.execute({"input": "Test provider switching"})
 
             # Agent returns AgentResponse even on error, check if successful
@@ -536,13 +579,15 @@ def test_llm_provider_switching(minimal_agent_config):
         assert result is not None
         assert result.error is None, f"All providers failed: {last_error}"
         assert "Fallback provider" in result.output
-        assert mock_provider1.complete.call_count == 1  # Tried once
+        # Provider 1 is retried by LLMService retry logic (default 4 attempts)
+        assert mock_provider1.complete.call_count >= 1  # Tried at least once
         assert mock_provider2.complete.call_count == 1  # Used fallback
 
 
 # ============================================================================
 # Integration Test 8: Tool Registry Integration
 # ============================================================================
+
 
 def test_tool_registry_integration():
     """Test tool discovery, registration, and execution through registry.
@@ -578,6 +623,7 @@ def test_tool_registry_integration():
 
     # Test multiple tools
     from temper_ai.tools.file_writer import FileWriter
+
     writer = FileWriter()
     registry.register(writer)
 

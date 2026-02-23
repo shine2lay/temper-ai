@@ -46,9 +46,7 @@ class TestWorkflowRunContext:
     """Tests for WorkflowRunContext schema."""
 
     def test_required_fields(self) -> None:
-        ctx = WorkflowRunContext(
-            workflow_id="wf-123", workflow_name="test_wf"
-        )
+        ctx = WorkflowRunContext(workflow_id="wf-123", workflow_name="test_wf")
         assert ctx.workflow_id == "wf-123"
         assert ctx.workflow_name == "test_wf"
         assert ctx.product_type is None

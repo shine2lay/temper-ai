@@ -135,6 +135,7 @@ class TestExecutionContext:
     def test_is_dataclass(self):
         """ExecutionContext is a proper dataclass."""
         import dataclasses
+
         assert dataclasses.is_dataclass(ExecutionContext)
 
     def test_equality(self):
@@ -146,6 +147,7 @@ class TestExecutionContext:
     def test_no_import_shadowing(self):
         """Verify the canonical import path doesn't collide."""
         from temper_ai.shared.core.context import ExecutionContext as EC
+
         assert EC is ExecutionContext
 
 
@@ -182,9 +184,7 @@ class TestBackwardCompatibility:
 
     def test_tracker_pattern(self):
         """tracker.py used: workflow_id, stage_id, agent_id only."""
-        ctx = ExecutionContext(
-            workflow_id="wf-1", stage_id="s-1", agent_id="a-1"
-        )
+        ctx = ExecutionContext(workflow_id="wf-1", stage_id="s-1", agent_id="a-1")
         assert ctx.workflow_id == "wf-1"
         assert ctx.stage_id == "s-1"
         assert ctx.agent_id == "a-1"

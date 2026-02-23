@@ -1,18 +1,22 @@
 """Tests for checkpoint storage backends.
 
-Tests both FileCheckpointBackend and RedisCheckpointBackend to ensure:
+Tests FileCheckpointBackend to ensure:
 - Correct checkpoint save/load
 - Proper serialization/deserialization
 - Checkpoint listing and deletion
 - Error handling
 """
+
 import shutil
 import tempfile
 from pathlib import Path
 
 import pytest
 
-from temper_ai.workflow.checkpoint_backends import CheckpointNotFoundError, FileCheckpointBackend
+from temper_ai.workflow.checkpoint_backends import (
+    CheckpointNotFoundError,
+    FileCheckpointBackend,
+)
 from temper_ai.workflow.domain_state import WorkflowDomainState
 
 
@@ -35,8 +39,7 @@ class TestFileCheckpointBackend:
     def sample_domain_state(self):
         """Create sample domain state for testing."""
         domain = WorkflowDomainState(
-            workflow_id="wf-test-123",
-            input="Analyze market trends"
+            workflow_id="wf-test-123", input="Analyze market trends"
         )
         domain.set_stage_output("research", {"findings": ["trend1", "trend2"]})
         return domain
@@ -49,23 +52,19 @@ class TestFileCheckpointBackend:
 
     def test_save_checkpoint(self, backend, sample_domain_state):
         """Test saving a checkpoint."""
-        checkpoint_id = backend.save_checkpoint(
-            "wf-test-123",
-            sample_domain_state
-        )
+        checkpoint_id = backend.save_checkpoint("wf-test-123", sample_domain_state)
 
-        assert checkpoint_id.startswith("cp-"), \
-            f"Checkpoint ID must start with 'cp-', got: {checkpoint_id}"
-        assert len(checkpoint_id) >= 15, \
-            f"Checkpoint ID too short (needs timestamp + counter + random): {checkpoint_id}"
+        assert checkpoint_id.startswith(
+            "cp-"
+        ), f"Checkpoint ID must start with 'cp-', got: {checkpoint_id}"
+        assert (
+            len(checkpoint_id) >= 15
+        ), f"Checkpoint ID too short (needs timestamp + counter + random): {checkpoint_id}"
 
     def test_load_checkpoint(self, backend, sample_domain_state):
         """Test loading a saved checkpoint."""
         # Save checkpoint
-        checkpoint_id = backend.save_checkpoint(
-            "wf-test-123",
-            sample_domain_state
-        )
+        checkpoint_id = backend.save_checkpoint("wf-test-123", sample_domain_state)
 
         # Load checkpoint
         loaded_domain = backend.load_checkpoint("wf-test-123", checkpoint_id)
@@ -73,7 +72,9 @@ class TestFileCheckpointBackend:
         # Verify restoration
         assert loaded_domain.workflow_id == "wf-test-123"
         assert loaded_domain.input == "Analyze market trends"
-        assert loaded_domain.stage_outputs == {"research": {"findings": ["trend1", "trend2"]}}
+        assert loaded_domain.stage_outputs == {
+            "research": {"findings": ["trend1", "trend2"]}
+        }
         assert loaded_domain.current_stage == "research"
 
     def test_load_latest_checkpoint(self, backend, sample_domain_state):
@@ -160,9 +161,7 @@ class TestFileCheckpointBackend:
         metadata = {"user": "test-user", "reason": "manual"}
 
         checkpoint_id = backend.save_checkpoint(
-            "wf-test-123",
-            sample_domain_state,
-            metadata=metadata
+            "wf-test-123", sample_domain_state, metadata=metadata
         )
 
         # Verify metadata is stored
@@ -175,9 +174,7 @@ class TestFileCheckpointBackend:
         custom_id = "cp-custom-123"
 
         checkpoint_id = backend.save_checkpoint(
-            "wf-test-123",
-            sample_domain_state,
-            checkpoint_id=custom_id
+            "wf-test-123", sample_domain_state, checkpoint_id=custom_id
         )
 
         assert checkpoint_id == custom_id
@@ -260,18 +257,26 @@ class TestFileCheckpointBackend:
         # Verify format: cp-{timestamp}-{counter}-{random_hex}
         for checkpoint_id in checkpoint_ids:
             parts = checkpoint_id.split("-")
-            assert len(parts) == 4, f"Expected 4 parts, got {len(parts)}: {checkpoint_id}"
+            assert (
+                len(parts) == 4
+            ), f"Expected 4 parts, got {len(parts)}: {checkpoint_id}"
             assert parts[0] == "cp", "Must start with 'cp'"
             assert parts[1].isdigit(), "Timestamp must be numeric"
             assert parts[2].isdigit(), "Counter must be numeric"
-            assert len(parts[3]) == 12, "Random suffix must be 12 hex chars (48 bits entropy)"
+            assert (
+                len(parts[3]) == 12
+            ), "Random suffix must be 12 hex chars (48 bits entropy)"
             # Verify it's valid hex
             int(parts[3], 16)
 
         # Verify random suffixes are different (high entropy)
-        random_suffixes = [checkpoint_id.split("-")[3] for checkpoint_id in checkpoint_ids]
+        random_suffixes = [
+            checkpoint_id.split("-")[3] for checkpoint_id in checkpoint_ids
+        ]
         unique_suffixes = set(random_suffixes)
-        assert len(unique_suffixes) == 100, "Random suffixes must be unique (high entropy)"
+        assert (
+            len(unique_suffixes) == 100
+        ), "Random suffixes must be unique (high entropy)"
 
     def test_checkpoint_id_not_predictable(self, backend):
         """Test that consecutive checkpoint IDs are not predictable.
@@ -296,7 +301,9 @@ class TestFileCheckpointBackend:
 
     # --- Path Traversal Security Tests ---
 
-    def test_workflow_id_traversal_blocked(self, temp_dir, backend, sample_domain_state):
+    def test_workflow_id_traversal_blocked(
+        self, temp_dir, backend, sample_domain_state
+    ):
         """Path traversal via workflow_id must be sanitized and contained."""
         cp_id = backend.save_checkpoint("../../tmp/evil", sample_domain_state)
         # Verify all created files stay inside checkpoint_dir
@@ -306,11 +313,12 @@ class TestFileCheckpointBackend:
         loaded = backend.load_checkpoint("../../tmp/evil", cp_id)
         assert loaded.workflow_id == sample_domain_state.workflow_id
 
-    def test_checkpoint_id_traversal_blocked(self, temp_dir, backend, sample_domain_state):
+    def test_checkpoint_id_traversal_blocked(
+        self, temp_dir, backend, sample_domain_state
+    ):
         """Path traversal via checkpoint_id must be sanitized and contained."""
         cp_id = backend.save_checkpoint(
-            "wf-test-123", sample_domain_state,
-            checkpoint_id="../../etc/passwd"
+            "wf-test-123", sample_domain_state, checkpoint_id="../../etc/passwd"
         )
         # Verify all created files stay inside checkpoint_dir
         resolved_base = Path(temp_dir).resolve()
@@ -328,8 +336,7 @@ class TestFileCheckpointBackend:
         """Null bytes in checkpoint_id must be rejected."""
         with pytest.raises(ValueError, match="null bytes"):
             backend.save_checkpoint(
-                "wf-test-123", sample_domain_state,
-                checkpoint_id="cp\x00evil"
+                "wf-test-123", sample_domain_state, checkpoint_id="cp\x00evil"
             )
 
     def test_empty_workflow_id(self, backend, sample_domain_state):
@@ -341,8 +348,7 @@ class TestFileCheckpointBackend:
         """Empty checkpoint_id must be rejected."""
         with pytest.raises(ValueError, match="non-empty string"):
             backend.save_checkpoint(
-                "wf-test-123", sample_domain_state,
-                checkpoint_id=""
+                "wf-test-123", sample_domain_state, checkpoint_id=""
             )
 
     def test_long_workflow_id(self, backend, sample_domain_state):
@@ -350,7 +356,9 @@ class TestFileCheckpointBackend:
         with pytest.raises(ValueError, match="maximum length"):
             backend.save_checkpoint("a" * 256, sample_domain_state)
 
-    def test_sanitization_replaces_special_chars(self, temp_dir, backend, sample_domain_state):
+    def test_sanitization_replaces_special_chars(
+        self, temp_dir, backend, sample_domain_state
+    ):
         """Special characters in IDs are replaced with underscores."""
         cp_id = backend.save_checkpoint("wf/test@123", sample_domain_state)
         # Verify sanitized directory name
@@ -378,61 +386,9 @@ class TestFileCheckpointBackend:
 
     def test_sanitize_id_static_method(self):
         """_sanitize_id works correctly as a standalone method."""
-        assert FileCheckpointBackend._sanitize_id("hello-world_123", "test") == "hello-world_123"
+        assert (
+            FileCheckpointBackend._sanitize_id("hello-world_123", "test")
+            == "hello-world_123"
+        )
         assert FileCheckpointBackend._sanitize_id("../evil", "test") == "___evil"
         assert FileCheckpointBackend._sanitize_id("a/b/c", "test") == "a_b_c"
-
-
-# Redis backend tests require a running Redis instance
-# These are skipped by default and can be run with: pytest -m redis
-@pytest.mark.redis
-@pytest.mark.skipif(
-    True,  # Skip by default
-    reason="Redis tests require running Redis server"
-)
-class TestRedisCheckpointBackend:
-    """Test Redis-based checkpoint storage.
-
-    NOTE: These tests require a running Redis server.
-    Run with: pytest -m redis
-    """
-
-    @pytest.fixture
-    def backend(self):
-        """Create Redis backend."""
-        try:
-            from temper_ai.workflow.checkpoint_backends import RedisCheckpointBackend
-            backend = RedisCheckpointBackend(redis_url="redis://localhost:6379")
-            # Clean up any existing test data
-            backend.redis_client.flushdb()
-            return backend
-        except ImportError:
-            pytest.skip("Redis package not installed")
-
-    @pytest.fixture
-    def sample_domain_state(self):
-        """Create sample domain state for testing."""
-        domain = WorkflowDomainState(
-            workflow_id="wf-redis-test",
-            input="Test input"
-        )
-        domain.set_stage_output("stage1", {"data": "value"})
-        return domain
-
-    def test_redis_save_and_load(self, backend, sample_domain_state):
-        """Test Redis save and load."""
-        checkpoint_id = backend.save_checkpoint("wf-redis-test", sample_domain_state)
-        loaded_domain = backend.load_checkpoint("wf-redis-test", checkpoint_id)
-
-        assert loaded_domain.workflow_id == "wf-redis-test"
-        assert loaded_domain.stage_outputs == {"stage1": {"data": "value"}}
-
-    def test_redis_list_checkpoints(self, backend, sample_domain_state):
-        """Test Redis checkpoint listing."""
-        backend.save_checkpoint("wf-redis-test", sample_domain_state)
-
-        sample_domain_state.set_stage_output("stage2", {"data": "value2"})
-        backend.save_checkpoint("wf-redis-test", sample_domain_state)
-
-        checkpoints = backend.list_checkpoints("wf-redis-test")
-        assert len(checkpoints) == 2

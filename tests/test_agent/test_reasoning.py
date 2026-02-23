@@ -1,4 +1,5 @@
 """Tests for agent reasoning/planning pass (R0.7)."""
+
 from unittest.mock import MagicMock, Mock
 
 import pytest

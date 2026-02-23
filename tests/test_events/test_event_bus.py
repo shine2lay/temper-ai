@@ -2,18 +2,20 @@
 
 import threading
 import time
-import uuid
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
-from sqlmodel import Session, SQLModel, create_engine, select
 from sqlalchemy.pool import StaticPool
+from sqlmodel import Session, SQLModel, create_engine, select
 
+from temper_ai.events.constants import EVENT_STAGE_COMPLETED, EVENT_WORKFLOW_COMPLETED
 from temper_ai.events.event_bus import TemperEventBus
-from temper_ai.events.models import EventLog, EventSubscription  # noqa: F401 — table registration
-from temper_ai.events.constants import EVENT_WORKFLOW_COMPLETED, EVENT_STAGE_COMPLETED
+from temper_ai.events.models import (  # noqa: F401 — table registration
+    EventLog,
+    EventSubscription,
+)
 
 
 @pytest.fixture
@@ -74,6 +76,37 @@ class TestTemperEventBusInit:
     def test_persist_default(self):
         bus = TemperEventBus()
         assert bus._persist is True
+
+
+class TestSetExecutionService:
+    def test_replaces_trigger_instance(self, bus):
+        """set_execution_service should replace the CrossWorkflowTrigger."""
+        original_trigger = bus._trigger
+        mock_svc = MagicMock()
+        bus.set_execution_service(mock_svc)
+        assert bus._trigger is not original_trigger
+        assert bus._execution_service is mock_svc
+
+    def test_new_trigger_has_execution_service(self, bus):
+        """After set_execution_service, trigger should have the service."""
+        mock_svc = MagicMock()
+        bus.set_execution_service(mock_svc)
+        assert bus._trigger._execution_service is mock_svc
+
+    def test_trigger_dispatches_via_service(self, bus, session_factory):
+        """Workflow trigger subscriptions should use execution service."""
+        mock_svc = MagicMock()
+        mock_svc.submit_workflow.return_value = "exec-1"
+        bus.set_execution_service(mock_svc)
+
+        bus.subscribe_persistent(
+            agent_id="a",
+            event_type="workflow.completed",
+            workflow_to_trigger="path/wf.yaml",
+        )
+        bus.emit("workflow.completed")
+
+        mock_svc.submit_workflow.assert_called_once()
 
 
 class TestEmit:
@@ -173,7 +206,9 @@ class TestWaitForEvent:
 
         def emitter():
             time.sleep(0.05)  # intentional delay before emitting
-            bus.emit(EVENT_WORKFLOW_COMPLETED, payload={"z": 2}, source_workflow_id="wf-1")
+            bus.emit(
+                EVENT_WORKFLOW_COMPLETED, payload={"z": 2}, source_workflow_id="wf-1"
+            )
 
         t = threading.Thread(target=emitter, daemon=True)
         t.start()
@@ -202,7 +237,7 @@ class TestReplayEvents:
         assert all(e.event_type == EVENT_WORKFLOW_COMPLETED for e in events)
 
     def test_replay_filter_by_since(self, bus):
-        before = datetime.now(timezone.utc)
+        before = datetime.now(UTC)
         bus.emit(EVENT_WORKFLOW_COMPLETED)
 
         events = bus.replay_events(since=before)
@@ -249,3 +284,42 @@ class TestDispatchSubscriptions:
             )
             bus.emit(EVENT_WORKFLOW_COMPLETED)
             mock_trigger.assert_called_once()
+
+
+class TestSubscribeDelegate:
+    """Test subscribe() and unsubscribe() delegate methods."""
+
+    def test_subscribe_delegates_to_obs_bus(self, bus, mock_obs_bus):
+        """subscribe() forwards to the inner ObservabilityEventBus."""
+        mock_obs_bus.subscribe.return_value = "sub-123"
+        callback = MagicMock()
+
+        sub_id = bus.subscribe(callback)
+
+        mock_obs_bus.subscribe.assert_called_once_with(callback)
+        assert sub_id == "sub-123"
+
+    def test_unsubscribe_delegates_to_obs_bus(self, bus, mock_obs_bus):
+        """unsubscribe() forwards to the inner ObservabilityEventBus."""
+        bus.unsubscribe("sub-456")
+        mock_obs_bus.unsubscribe.assert_called_once_with("sub-456")
+
+    def test_subscribe_unsubscribe_roundtrip(self, bus, mock_obs_bus):
+        """subscribe/unsubscribe roundtrip works with same ID."""
+        mock_obs_bus.subscribe.return_value = "sub-rt"
+        callback = MagicMock()
+
+        sub_id = bus.subscribe(callback)
+        bus.unsubscribe(sub_id)
+
+        mock_obs_bus.subscribe.assert_called_once_with(callback)
+        mock_obs_bus.unsubscribe.assert_called_once_with("sub-rt")
+
+    def test_subscribe_no_db_bus(self, bus_no_db, mock_obs_bus):
+        """subscribe() works even without a DB session factory."""
+        mock_obs_bus.subscribe.return_value = "sub-no-db"
+        callback = MagicMock()
+
+        sub_id = bus_no_db.subscribe(callback)
+        assert sub_id == "sub-no-db"
+        mock_obs_bus.subscribe.assert_called_once_with(callback)

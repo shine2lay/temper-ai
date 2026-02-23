@@ -48,7 +48,9 @@ def test_workflow_execution_creation(session: Session):
     session.commit()
 
     # Retrieve and verify
-    result = session.exec(select(WorkflowExecution).where(WorkflowExecution.id == "wf-001")).first()
+    result = session.exec(
+        select(WorkflowExecution).where(WorkflowExecution.id == "wf-001")
+    ).first()
     assert result is not None
     assert result.workflow_name == "test_workflow"
     assert result.workflow_version == "1.0.0"
@@ -83,7 +85,9 @@ def test_stage_execution_creation(session: Session):
     session.commit()
 
     # Retrieve and verify
-    result = session.exec(select(StageExecution).where(StageExecution.id == "stage-001")).first()
+    result = session.exec(
+        select(StageExecution).where(StageExecution.id == "stage-001")
+    ).first()
     assert result is not None
     assert result.stage_name == "research_stage"
     assert result.workflow_execution_id == "wf-001"
@@ -129,7 +133,9 @@ def test_agent_execution_creation(session: Session):
     session.commit()
 
     # Retrieve and verify
-    result = session.exec(select(AgentExecution).where(AgentExecution.id == "agent-001")).first()
+    result = session.exec(
+        select(AgentExecution).where(AgentExecution.id == "agent-001")
+    ).first()
     assert result is not None
     assert result.agent_name == "researcher_agent"
     assert result.stage_execution_id == "stage-001"
@@ -237,7 +243,9 @@ def test_tool_execution_creation(session: Session):
     session.commit()
 
     # Retrieve and verify
-    result = session.exec(select(ToolExecution).where(ToolExecution.id == "tool-001")).first()
+    result = session.exec(
+        select(ToolExecution).where(ToolExecution.id == "tool-001")
+    ).first()
     assert result is not None
     assert result.tool_name == "web_scraper"
     assert result.status == "success"
@@ -280,7 +288,9 @@ def test_collaboration_event_creation(session: Session):
     session.commit()
 
     # Retrieve and verify
-    result = session.exec(select(CollaborationEvent).where(CollaborationEvent.id == "event-001")).first()
+    result = session.exec(
+        select(CollaborationEvent).where(CollaborationEvent.id == "event-001")
+    ).first()
     assert result is not None
     assert result.event_type == "vote"
     assert result.outcome == "option_a"
@@ -308,7 +318,9 @@ def test_agent_merit_score_creation(session: Session):
     session.commit()
 
     # Retrieve and verify
-    result = session.exec(select(AgentMeritScore).where(AgentMeritScore.id == "merit-001")).first()
+    result = session.exec(
+        select(AgentMeritScore).where(AgentMeritScore.id == "merit-001")
+    ).first()
     assert result is not None
     assert result.agent_name == "researcher_agent"
     assert result.domain == "market_research"
@@ -361,7 +373,9 @@ def test_decision_outcome_creation(session: Session):
     session.commit()
 
     # Retrieve and verify
-    result = session.exec(select(DecisionOutcome).where(DecisionOutcome.id == "outcome-001")).first()
+    result = session.exec(
+        select(DecisionOutcome).where(DecisionOutcome.id == "outcome-001")
+    ).first()
     assert result is not None
     assert result.decision_type == "synthesis"
     assert result.outcome == "success"
@@ -385,7 +399,9 @@ def test_system_metric_creation(session: Session):
     session.commit()
 
     # Retrieve and verify
-    result = session.exec(select(SystemMetric).where(SystemMetric.id == "metric-001")).first()
+    result = session.exec(
+        select(SystemMetric).where(SystemMetric.id == "metric-001")
+    ).first()
     assert result is not None
     assert result.metric_name == "avg_workflow_duration"
     assert result.metric_value == 125.5
@@ -422,16 +438,22 @@ def test_relationships(session: Session):
     session.commit()
 
     # Test relationships
-    wf = session.exec(select(WorkflowExecution).where(WorkflowExecution.id == "wf-001")).first()
+    wf = session.exec(
+        select(WorkflowExecution).where(WorkflowExecution.id == "wf-001")
+    ).first()
     assert len(wf.stages) == 1
     assert wf.stages[0].stage_name == "research_stage"
 
-    st = session.exec(select(StageExecution).where(StageExecution.id == "stage-001")).first()
+    st = session.exec(
+        select(StageExecution).where(StageExecution.id == "stage-001")
+    ).first()
     assert st.workflow.workflow_name == "test_workflow"
     assert len(st.agents) == 1
     assert st.agents[0].agent_name == "researcher_agent"
 
-    ag = session.exec(select(AgentExecution).where(AgentExecution.id == "agent-001")).first()
+    ag = session.exec(
+        select(AgentExecution).where(AgentExecution.id == "agent-001")
+    ).first()
     assert ag.stage.stage_name == "research_stage"
 
 
@@ -453,7 +475,9 @@ def test_json_field_serialization(session: Session):
     session.commit()
 
     # Retrieve and verify JSON fields
-    result = session.exec(select(WorkflowExecution).where(WorkflowExecution.id == "wf-001")).first()
+    result = session.exec(
+        select(WorkflowExecution).where(WorkflowExecution.id == "wf-001")
+    ).first()
     assert result.workflow_config_snapshot["nested"]["key"] == "value"
     assert result.workflow_config_snapshot["list"] == [1, 2, 3]
     assert result.workflow_config_snapshot["bool"] is True

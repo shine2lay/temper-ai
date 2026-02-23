@@ -9,20 +9,17 @@ Tests cover:
 - Sanitization advanced cases
 - Formatter integration
 """
+
 import logging
-import sys
-from io import StringIO
-from pathlib import Path
-import pytest
 
 from temper_ai.shared.utils.logging import (
-    setup_logging,
-    get_logger,
+    ConsoleFormatter,
     LogContext,
     SecretRedactingFormatter,
     StructuredFormatter,
-    ConsoleFormatter,
     _sanitize_for_logging,
+    get_logger,
+    setup_logging,
 )
 
 
@@ -171,8 +168,8 @@ class TestSanitizationAdvancedCases:
         result = _sanitize_for_logging(text)
 
         assert "\u2028" not in result  # Unicode line separator escaped
-        assert "\x00" not in result     # Null byte escaped
-        assert "\n" not in result       # Newline escaped
+        assert "\x00" not in result  # Null byte escaped
+        assert "\n" not in result  # Newline escaped
         assert "\\n" in result
 
     def test_sanitize_deeply_nested_url_encoding(self):
@@ -216,7 +213,7 @@ class TestFormatterIntegration:
             lineno=42,
             msg="Test message with api_key=secret123",
             args=(),
-            exc_info=None
+            exc_info=None,
         )
 
         original_msg = record.getMessage()

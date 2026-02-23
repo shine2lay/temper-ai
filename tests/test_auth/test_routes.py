@@ -8,20 +8,22 @@ Tests cover:
 - Error handling (OAuth errors, network errors)
 - CSRF token validation
 """
-import os
-import pytest
-from datetime import datetime, timezone, timedelta
-from pathlib import Path
-from typing import Dict, Any
-from unittest.mock import AsyncMock, Mock, patch
 
-from temper_ai.auth.models import User, Session
-from temper_ai.auth.oauth.config import OAuthConfig, OAuthProviderConfig
-from temper_ai.auth.oauth.rate_limiter import RateLimitExceeded, OAuthRateLimiter
-from temper_ai.auth.oauth.service import OAuthError, OAuthProviderError, OAuthStateError, OAuthService
+import os
+from unittest.mock import AsyncMock
+
+import pytest
+
+from temper_ai.auth.models import User
+from temper_ai.auth.oauth.rate_limiter import RateLimitExceeded
+from temper_ai.auth.oauth.service import (
+    OAuthError,
+    OAuthProviderError,
+    OAuthService,
+    OAuthStateError,
+)
 from temper_ai.auth.routes import OAuthRouteHandlers, _get_allowed_redirects
 from temper_ai.auth.session import SessionStore, UserStore
-
 
 # ==================== FIXTURES ====================
 
@@ -208,7 +210,7 @@ async def test_handle_login_redirect_success(route_handlers, mock_oauth_service)
     """Test successful login redirect."""
     mock_oauth_service.get_authorization_url.return_value = (
         "https://accounts.google.com/o/oauth2/auth?state=abc123",
-        "abc123"
+        "abc123",
     )
 
     auth_url, headers = await route_handlers.handle_login_redirect(
@@ -229,7 +231,7 @@ async def test_handle_login_redirect_invalid_url(route_handlers, mock_oauth_serv
     """Test login rejects invalid redirect URL."""
     mock_oauth_service.get_authorization_url.return_value = (
         "https://accounts.google.com/o/oauth2/auth?state=abc123",
-        "abc123"
+        "abc123",
     )
 
     # Invalid redirect URL should be replaced with /dashboard
@@ -275,11 +277,13 @@ async def test_handle_login_redirect_oauth_error(route_handlers, mock_oauth_serv
 
 
 @pytest.mark.asyncio
-async def test_handle_login_redirect_default_redirect(route_handlers, mock_oauth_service):
+async def test_handle_login_redirect_default_redirect(
+    route_handlers, mock_oauth_service
+):
     """Test login uses default redirect when none provided."""
     mock_oauth_service.get_authorization_url.return_value = (
         "https://accounts.google.com/o/oauth2/auth?state=abc123",
-        "abc123"
+        "abc123",
     )
 
     auth_url, headers = await route_handlers.handle_login_redirect(
@@ -297,7 +301,9 @@ async def test_handle_login_redirect_default_redirect(route_handlers, mock_oauth
 
 
 @pytest.mark.asyncio
-async def test_handle_oauth_callback_success(route_handlers, mock_oauth_service, sample_user):
+async def test_handle_oauth_callback_success(
+    route_handlers, mock_oauth_service, sample_user
+):
     """Test successful OAuth callback."""
     # Mock token exchange
     mock_oauth_service.exchange_code_for_tokens.return_value = {
@@ -330,7 +336,9 @@ async def test_handle_oauth_callback_success(route_handlers, mock_oauth_service,
 
 
 @pytest.mark.asyncio
-async def test_handle_oauth_callback_creates_user(route_handlers, mock_oauth_service, user_store):
+async def test_handle_oauth_callback_creates_user(
+    route_handlers, mock_oauth_service, user_store
+):
     """Test callback creates new user if not exists."""
     mock_oauth_service.exchange_code_for_tokens.return_value = {
         "access_token": "token",
@@ -357,7 +365,9 @@ async def test_handle_oauth_callback_creates_user(route_handlers, mock_oauth_ser
 
 
 @pytest.mark.asyncio
-async def test_handle_oauth_callback_updates_existing_user(route_handlers, mock_oauth_service, user_store):
+async def test_handle_oauth_callback_updates_existing_user(
+    route_handlers, mock_oauth_service, user_store
+):
     """Test callback updates existing user."""
     # Create existing user
     existing_user = User(
@@ -401,7 +411,9 @@ async def test_handle_oauth_callback_updates_existing_user(route_handlers, mock_
 
 
 @pytest.mark.asyncio
-async def test_handle_oauth_callback_creates_session(route_handlers, mock_oauth_service, session_store):
+async def test_handle_oauth_callback_creates_session(
+    route_handlers, mock_oauth_service, session_store
+):
     """Test callback creates authenticated session."""
     mock_oauth_service.exchange_code_for_tokens.return_value = {
         "access_token": "token",
@@ -497,7 +509,9 @@ async def test_handle_oauth_callback_rate_limit(route_handlers, mock_oauth_servi
 
 
 @pytest.mark.asyncio
-async def test_handle_oauth_callback_data_validation_error(route_handlers, mock_oauth_service):
+async def test_handle_oauth_callback_data_validation_error(
+    route_handlers, mock_oauth_service
+):
     """Test callback handles data validation errors."""
     mock_oauth_service.exchange_code_for_tokens.return_value = {
         "access_token": "token",
@@ -522,7 +536,9 @@ async def test_handle_oauth_callback_data_validation_error(route_handlers, mock_
 
 
 @pytest.mark.asyncio
-async def test_handle_logout_success(route_handlers, mock_oauth_service, session_store, user_store, sample_user):
+async def test_handle_logout_success(
+    route_handlers, mock_oauth_service, session_store, user_store, sample_user
+):
     """Test successful logout."""
     # Create user and session
     await user_store.create_or_update_user(
@@ -554,7 +570,9 @@ async def test_handle_logout_success(route_handlers, mock_oauth_service, session
 
 
 @pytest.mark.asyncio
-async def test_handle_logout_revokes_tokens(route_handlers, mock_oauth_service, session_store, user_store, sample_user):
+async def test_handle_logout_revokes_tokens(
+    route_handlers, mock_oauth_service, session_store, user_store, sample_user
+):
     """Test logout revokes OAuth tokens."""
     await user_store.create_or_update_user(
         user_id=sample_user.user_id,
@@ -564,7 +582,9 @@ async def test_handle_logout_revokes_tokens(route_handlers, mock_oauth_service, 
         oauth_subject=sample_user.oauth_subject,
     )
 
-    session = await session_store.create_session(user=sample_user, ip_address="192.168.1.1")
+    session = await session_store.create_session(
+        user=sample_user, ip_address="192.168.1.1"
+    )
 
     await route_handlers.handle_logout(
         session_id=session.session_id,
@@ -577,7 +597,9 @@ async def test_handle_logout_revokes_tokens(route_handlers, mock_oauth_service, 
 
 
 @pytest.mark.asyncio
-async def test_handle_logout_no_revoke(route_handlers, mock_oauth_service, session_store, user_store, sample_user):
+async def test_handle_logout_no_revoke(
+    route_handlers, mock_oauth_service, session_store, user_store, sample_user
+):
     """Test logout without token revocation."""
     await user_store.create_or_update_user(
         user_id=sample_user.user_id,
@@ -587,7 +609,9 @@ async def test_handle_logout_no_revoke(route_handlers, mock_oauth_service, sessi
         oauth_subject=sample_user.oauth_subject,
     )
 
-    session = await session_store.create_session(user=sample_user, ip_address="192.168.1.1")
+    session = await session_store.create_session(
+        user=sample_user, ip_address="192.168.1.1"
+    )
 
     await route_handlers.handle_logout(
         session_id=session.session_id,
@@ -624,7 +648,9 @@ async def test_handle_logout_invalid_session(route_handlers):
 
 
 @pytest.mark.asyncio
-async def test_handle_logout_revoke_failure_continues(route_handlers, mock_oauth_service, session_store, user_store, sample_user):
+async def test_handle_logout_revoke_failure_continues(
+    route_handlers, mock_oauth_service, session_store, user_store, sample_user
+):
     """Test logout continues even if token revocation fails."""
     await user_store.create_or_update_user(
         user_id=sample_user.user_id,
@@ -634,7 +660,9 @@ async def test_handle_logout_revoke_failure_continues(route_handlers, mock_oauth
         oauth_subject=sample_user.oauth_subject,
     )
 
-    session = await session_store.create_session(user=sample_user, ip_address="192.168.1.1")
+    session = await session_store.create_session(
+        user=sample_user, ip_address="192.168.1.1"
+    )
 
     # Mock revocation failure
     mock_oauth_service.revoke_tokens.side_effect = Exception("Revocation failed")
@@ -657,7 +685,9 @@ async def test_handle_logout_revoke_failure_continues(route_handlers, mock_oauth
 
 
 @pytest.mark.asyncio
-async def test_get_current_user_success(route_handlers, session_store, user_store, sample_user):
+async def test_get_current_user_success(
+    route_handlers, session_store, user_store, sample_user
+):
     """Test getting current user from valid session."""
     await user_store.create_or_update_user(
         user_id=sample_user.user_id,
@@ -667,7 +697,9 @@ async def test_get_current_user_success(route_handlers, session_store, user_stor
         oauth_subject=sample_user.oauth_subject,
     )
 
-    session = await session_store.create_session(user=sample_user, ip_address="192.168.1.1")
+    session = await session_store.create_session(
+        user=sample_user, ip_address="192.168.1.1"
+    )
 
     user = await route_handlers.get_current_user(session.session_id)
 
@@ -691,7 +723,9 @@ async def test_get_current_user_invalid_session(route_handlers):
 
 
 @pytest.mark.asyncio
-async def test_get_current_user_inactive_user(route_handlers, session_store, user_store):
+async def test_get_current_user_inactive_user(
+    route_handlers, session_store, user_store
+):
     """Test getting current user for inactive user."""
     inactive_user = User(
         user_id="inactive_user",
@@ -714,7 +748,9 @@ async def test_get_current_user_inactive_user(route_handlers, session_store, use
     stored_user = await user_store.get_user_by_id(inactive_user.user_id)
     stored_user.is_active = False
 
-    session = await session_store.create_session(user=stored_user, ip_address="192.168.1.1")
+    session = await session_store.create_session(
+        user=stored_user, ip_address="192.168.1.1"
+    )
 
     user = await route_handlers.get_current_user(session.session_id)
     # Implementation may return user even if inactive (business logic decision)

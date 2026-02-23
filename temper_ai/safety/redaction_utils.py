@@ -4,6 +4,7 @@ Provides functions to create safe previews of detected secrets
 and generate deterministic hashes for deduplication without
 exposing actual values.
 """
+
 import hashlib
 import hmac
 
@@ -54,8 +55,6 @@ def hash_secret(text: str, session_key: bytes) -> str:
         >>> hash_secret("AKIAIOSFODNN7EXAMPLE", key)
         'a1b2c3d4e5f6g7h8'  # First 16 chars (deterministic)
     """
-    return hmac.new(
-        session_key,
-        text.encode('utf-8'),
-        hashlib.sha256
-    ).hexdigest()[:HASH_PREFIX_LENGTH]
+    return hmac.new(session_key, text.encode("utf-8"), hashlib.sha256).hexdigest()[
+        :HASH_PREFIX_LENGTH
+    ]

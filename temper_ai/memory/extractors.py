@@ -8,7 +8,7 @@ using the agent's own LLM.
 from __future__ import annotations
 
 import re
-from typing import Callable, List
+from collections.abc import Callable
 
 MAX_PATTERNS_PER_EXTRACTION = 5
 MAX_PATTERN_LENGTH = 500
@@ -34,7 +34,7 @@ _NUMBERED_ITEM_RE = re.compile(r"^\s*\d+[\.\)][ \t]*(.+)", re.MULTILINE)
 def extract_procedural_patterns(
     text: str,
     llm_fn: Callable[[str], str],
-) -> List[str]:
+) -> list[str]:
     """Extract procedural patterns from *text* using an LLM.
 
     Args:
@@ -59,12 +59,12 @@ def extract_procedural_patterns(
     return _parse_patterns(response)
 
 
-def _parse_patterns(response: str) -> List[str]:
+def _parse_patterns(response: str) -> list[str]:
     """Parse numbered list items from an LLM response string."""
     if not response or "NONE" in response.upper():
         return []
 
-    patterns: List[str] = []
+    patterns: list[str] = []
     for match in _NUMBERED_ITEM_RE.finditer(response):
         pattern = match.group(1).strip()
         if pattern:

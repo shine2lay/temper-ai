@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Info } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { ArrowLeft, Info, Pencil } from 'lucide-react';
 import { useExecutionStore } from '@/store/executionStore';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { formatDuration, elapsedSeconds, cn } from '@/lib/utils';
 import { DURATION_TICK_MS } from '@/lib/constants';
+import { getActiveTheme, toggleTheme } from '@/lib/theme';
 
 export function WorkflowHeader() {
   const navigate = useNavigate();
@@ -16,6 +17,12 @@ export function WorkflowHeader() {
 
   const [elapsed, setElapsed] = useState(0);
   const [errorExpanded, setErrorExpanded] = useState(false);
+  const [theme, setTheme] = useState<'light' | 'dark'>(getActiveTheme);
+
+  function handleThemeToggle() {
+    const next = toggleTheme();
+    setTheme(next);
+  }
 
   const isRunning = workflow?.status === 'running';
 
@@ -105,11 +112,12 @@ export function WorkflowHeader() {
         {/* Streaming agent badges */}
         {streamingAgents.length > 0 && (
           <div className="flex items-center gap-1.5 ml-2">
-            {streamingAgents.map((sa) => (
+            {streamingAgents.map((sa, i) => (
               <button
                 key={sa.id}
                 onClick={() => select('agent', sa.id)}
                 className="px-2 py-0.5 rounded text-xs font-medium bg-temper-accent/20 text-temper-accent border border-temper-accent/30 animate-pulse-streaming hover:bg-temper-accent/30 transition-colors"
+                style={{ animationDelay: `${i * 0.2}s` }}
               >
                 {sa.name}
               </button>
@@ -117,7 +125,26 @@ export function WorkflowHeader() {
           </div>
         )}
 
-        <div className="ml-auto">{wsIndicator}</div>
+        {workflow && (
+          <Link
+            to={`/studio/${workflow.workflow_name}`}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-temper-surface text-temper-text-muted hover:text-temper-accent hover:bg-temper-accent/10 border border-temper-border transition-colors shrink-0"
+          >
+            <Pencil className="w-3 h-3" />
+            Edit in Studio
+          </Link>
+        )}
+
+        <button
+          onClick={handleThemeToggle}
+          className="text-temper-text-muted hover:text-temper-text transition-colors shrink-0 ml-auto text-base leading-none"
+          aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+        >
+          {theme === 'dark' ? '☀' : '🌙'}
+        </button>
+
+        <div>{wsIndicator}</div>
       </header>
       {workflow?.status === 'failed' && workflow?.error_message && (
         <div

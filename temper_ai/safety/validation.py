@@ -4,14 +4,13 @@ Input validation utilities for safety policies.
 Provides validation methods for common parameter types to prevent
 security vulnerabilities from malformed configurations.
 """
+
 import logging
 import re
 import time
-from typing import Any, Dict, List, Optional, Pattern
+from re import Pattern
+from typing import Any
 
-from temper_ai.shared.constants.limits import LARGE_ITEM_LIMIT
-from temper_ai.shared.constants.probabilities import PROB_VERY_LOW
-from temper_ai.shared.constants.sizes import BYTES_PER_GB, BYTES_PER_KB, BYTES_PER_MB
 from temper_ai.safety.constants import (
     DEFAULT_MAX_ITEM_LENGTH,
     DEFAULT_MAX_ITEMS,
@@ -24,6 +23,9 @@ from temper_ai.safety.constants import (
     FORMAT_ONE_DECIMAL,
     MAX_VALIDATION_TIME_SECONDS,
 )
+from temper_ai.shared.constants.limits import LARGE_ITEM_LIMIT
+from temper_ai.shared.constants.probabilities import PROB_VERY_LOW
+from temper_ai.shared.constants.sizes import BYTES_PER_GB, BYTES_PER_KB, BYTES_PER_MB
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +62,7 @@ class ValidationMixin:
         value: Any,
         param_name: str,
         min_value: int = 1,
-        max_value: Optional[int] = None
+        max_value: int | None = None,
     ) -> int:
         """Validate that a parameter is a positive integer within bounds.
 
@@ -114,7 +116,7 @@ class ValidationMixin:
         value: Any,
         param_name: str,
         min_seconds: float = PROB_VERY_LOW,
-        max_seconds: float = float(MAX_VALIDATION_TIME_SECONDS)
+        max_seconds: float = float(MAX_VALIDATION_TIME_SECONDS),
     ) -> float:
         """Validate that a parameter is a valid time value in seconds.
 
@@ -149,7 +151,7 @@ class ValidationMixin:
         if not (float_value == float_value):  # NaN check
             raise ValueError(f"{param_name} cannot be NaN")
 
-        if float_value == float('inf') or float_value == float('-inf'):
+        if float_value == float("inf") or float_value == float("-inf"):
             raise ValueError(f"{param_name} cannot be infinite")
 
         # Range check
@@ -166,11 +168,7 @@ class ValidationMixin:
         return float_value
 
     def _validate_byte_size(
-        self,
-        value: Any,
-        param_name: str,
-        min_bytes: int,
-        max_bytes: int
+        self, value: Any, param_name: str, min_bytes: int, max_bytes: int
     ) -> int:
         """Validate that a parameter is a valid byte size.
 
@@ -217,11 +215,7 @@ class ValidationMixin:
         return int_value
 
     def _validate_float_range(
-        self,
-        value: Any,
-        param_name: str,
-        min_value: float,
-        max_value: float
+        self, value: Any, param_name: str, min_value: float, max_value: float
     ) -> float:
         """Validate that a parameter is a float within range.
 
@@ -255,7 +249,7 @@ class ValidationMixin:
         if not (float_value == float_value):  # NaN check
             raise ValueError(f"{param_name} cannot be NaN")
 
-        if float_value == float('inf') or float_value == float('-inf'):
+        if float_value == float("inf") or float_value == float("-inf"):
             raise ValueError(f"{param_name} cannot be infinite")
 
         # Range check
@@ -268,10 +262,7 @@ class ValidationMixin:
         return float_value
 
     def _validate_boolean(
-        self,
-        value: Any,
-        param_name: str,
-        default: Optional[bool] = None
+        self, value: Any, param_name: str, default: bool | None = None
     ) -> bool:
         """Validate that a parameter is a boolean value.
 
@@ -316,8 +307,8 @@ class ValidationMixin:
         param_name: str,
         allow_empty: bool = False,
         max_items: int = DEFAULT_MAX_ITEMS,
-        max_item_length: int = DEFAULT_MAX_ITEM_LENGTH
-    ) -> List[str]:
+        max_item_length: int = DEFAULT_MAX_ITEM_LENGTH,
+    ) -> list[str]:
         """Validate that a parameter is a list of valid strings.
 
         Args:
@@ -361,8 +352,7 @@ class ValidationMixin:
         for i, item in enumerate(values):
             if not isinstance(item, str):
                 raise ValueError(
-                    f"{param_name}[{i}] must be a string, "
-                    f"got {type(item).__name__}"
+                    f"{param_name}[{i}] must be a string, " f"got {type(item).__name__}"
                 )
 
             if len(item) > max_item_length:
@@ -380,7 +370,7 @@ class ValidationMixin:
         pattern: str,
         param_name: str,
         max_length: int = DEFAULT_MAX_STRING_LENGTH,
-        test_timeout: float = PROB_VERY_LOW
+        test_timeout: float = PROB_VERY_LOW,
     ) -> Pattern[str]:
         """Validate that a pattern is a safe, compilable regex.
 
@@ -428,9 +418,7 @@ class ValidationMixin:
         try:
             compiled = re.compile(pattern, re.IGNORECASE)
         except re.error as e:
-            raise ValueError(
-                f"{param_name} is not a valid regex: {e}"
-            ) from e
+            raise ValueError(f"{param_name} is not a valid regex: {e}") from e
 
         # ReDoS check - test on adversarial inputs
         test_strings = [
@@ -459,11 +447,8 @@ class ValidationMixin:
         return compiled
 
     def _validate_dict(
-        self,
-        value: Any,
-        param_name: str,
-        allow_empty: bool = True
-    ) -> Dict[str, Any]:
+        self, value: Any, param_name: str, allow_empty: bool = True
+    ) -> dict[str, Any]:
         """Validate that a parameter is a dictionary.
 
         Args:

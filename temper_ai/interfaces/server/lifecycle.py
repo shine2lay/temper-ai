@@ -1,9 +1,10 @@
 """Graceful shutdown manager for MAF Server."""
+
 import asyncio
 import logging
 import signal
 import time
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +68,7 @@ class GracefulShutdownManager:
 
     async def drain(
         self,
-        execution_service: Optional[Any] = None,
+        execution_service: Any | None = None,
         timeout: int = DEFAULT_DRAIN_TIMEOUT_SECONDS,
     ) -> None:
         """Wait for active workflows to finish, then return.

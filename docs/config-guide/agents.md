@@ -345,26 +345,30 @@ agent:
 
 ```yaml
 agent:
-  name: erc721_architect
-  description: "ERC721 contract architect"
+  name: vcs_coder
+  description: "Generates code files based on the implementation spec"
 
   prompt:
     inline: |
-      Contract name: {{ contract_name | default("SimpleNFT") }}
-      Token name: {{ token_name | default("SimpleNFT") }}
-      Token symbol: {{ token_symbol | default("SNFT") }}
+      You are a code generation agent.
 
-      Plan the project structure...
+      Workspace: {{ workspace_path }}
+      Design spec: {{ design_output }}
+      Task specs: {{ task_specs }}
+
+      Write clean, working code. Follow the spec exactly.
 
   inference:
     provider: ollama
-    model: "{{ llm_model | default('llama3:8b') }}"
+    model: "{{ llm_model | default('llama3.2:3b') }}"
     base_url: http://localhost:11434
     temperature: 0.3
     max_tokens: 4096
     timeout_seconds: 1800
 
-  tools: []
+  tools:
+    - FileWriter
+    - Bash
 
   error_handling:
     retry_strategy: ExponentialBackoff

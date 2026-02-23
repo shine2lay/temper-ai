@@ -1,4 +1,5 @@
 """Tests for path_safety module."""
+
 import os
 import tempfile
 from pathlib import Path
@@ -201,8 +202,7 @@ class TestPathSafetyValidator:
     def test_additional_forbidden_paths(self, temp_workspace):
         """Test adding custom forbidden paths."""
         validator = PathSafetyValidator(
-            allowed_root=temp_workspace,
-            additional_forbidden=["/custom/forbidden"]
+            allowed_root=temp_workspace, additional_forbidden=["/custom/forbidden"]
         )
 
         assert "/custom/forbidden" in validator.forbidden
@@ -322,7 +322,9 @@ class TestSymlinkSecurity:
         (attack_dir / "secret.txt").write_text("SENSITIVE DATA")
         return attack_dir
 
-    def test_symlink_to_outside_directory_blocked(self, validator, temp_workspace, attack_target_dir):
+    def test_symlink_to_outside_directory_blocked(
+        self, validator, temp_workspace, attack_target_dir
+    ):
         """Test that symlink pointing outside allowed root is blocked.
 
         SECURITY: Prevents path traversal via symlinks.
@@ -336,7 +338,9 @@ class TestSymlinkSecurity:
         with pytest.raises(PathSafetyError, match="outside allowed root"):
             validator.validate_path(symlink_path)
 
-    def test_symlink_parent_directory_to_outside_blocked(self, validator, temp_workspace, attack_target_dir):
+    def test_symlink_parent_directory_to_outside_blocked(
+        self, validator, temp_workspace, attack_target_dir
+    ):
         """Test that symlink in parent directory pointing outside is blocked.
 
         SECURITY: Prevents path traversal via symlinked parent directories.
@@ -422,7 +426,9 @@ class TestSymlinkSecurity:
         result = validator.validate_path(symlink)
         assert isinstance(result, Path)
 
-    def test_symlink_to_subdirectory_within_root_permitted(self, validator, temp_workspace):
+    def test_symlink_to_subdirectory_within_root_permitted(
+        self, validator, temp_workspace
+    ):
         """Test that symlinks to subdirectories within root are permitted."""
         # Create subdirectory and symlink to it
         subdir = temp_workspace / "mysubdir"
@@ -465,7 +471,9 @@ class TestSymlinkSecurity:
             with pytest.raises(PathSafetyError, match="outside allowed root"):
                 validator.validate_path(symlink_path)
 
-    def test_time_of_check_time_of_use_prevented(self, validator, temp_workspace, attack_target_dir):
+    def test_time_of_check_time_of_use_prevented(
+        self, validator, temp_workspace, attack_target_dir
+    ):
         """Test that TOCTOU race condition is prevented.
 
         SECURITY: Verifies symlink checks happen before resolution.
@@ -480,4 +488,7 @@ class TestSymlinkSecurity:
             validator.validate_path(symlink)
 
         # Error should mention symlink, not just "outside allowed root"
-        assert "symlink" in str(exc_info.value).lower() or "points outside" in str(exc_info.value).lower()
+        assert (
+            "symlink" in str(exc_info.value).lower()
+            or "points outside" in str(exc_info.value).lower()
+        )

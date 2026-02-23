@@ -1,37 +1,43 @@
-# VCS Suggestion Pipeline v6 — Full Git Workflow
-# Purpose: Triage, design, task-plan, git-setup, code, static-check, quality-gate, git-commit
+# VCS Suggestion Pipeline v8 — Parallel Coders
+# Purpose: Discover work from VISION, design, task-plan, git-setup, split, parallel-code, static-check, quality-gate, git-commit
 #
 # Usage:
-#   maf run configs/workflows/vcs_suggestion.yaml --input examples/vcs_suggestion_input.yaml --show-details
+#   curl -X POST localhost:8420/api/runs -d '{"workflow": "configs/workflows/vcs_suggestion.yaml", "input_file": "examples/vcs_suggestion_input.yaml"}'
 #
-# Pipeline (8 stages, 19 agents):
-#   vcs_triage (leader: 4 perspectives + 1 decider)
+# Pipeline (9 stages):
+#   vcs_work_discovery (reads VISION.md + codebase → picks next work item)
 #   → vcs_design (leader: arch + impl + safety + decider)       [conditional: APPROVE only]
 #   → vcs_task_planning (sequential: foundation → integration)
 #   → vcs_git_setup (pull latest + create feature branch)
-#   → vcs_code_execute
+#   → vcs_task_split (split task specs into 3 groups for parallel coders)
+#   → vcs_code_execute (3 parallel coders write assigned files)
 #   → vcs_static_check (generic: syntax, lint, imports — loops to code_execute)
 #   → vcs_quality_gate (leader: correctness + regression + security_runtime + decider — loops to code_execute)
 #   → vcs_git_commit (commit + push — conditional on quality gate PASS)
 
 workflow:
   name: vcs_suggestion
-  description: "Multi-perspective triage, design, code, and quality-gate pipeline for The Vibe Coding Squad"
-  version: "6.0"
+  description: "Vision-driven discovery, design, code, and quality-gate pipeline for The Vibe Coding Squad"
+  version: "8.0"
   engine: dynamic
   product_type: api
 
   stages:
-    - name: vcs_triage
-      stage_ref: configs/stages/vcs_triage.yaml
-      description: "4 perspectives + decider evaluate suggestion"
+    # --- vcs_triage (commented out — replaced by vcs_work_discovery) ---
+    # - name: vcs_triage
+    #   stage_ref: configs/stages/vcs_triage.yaml
+    #   description: "4 perspectives + decider evaluate suggestion"
+
+    - name: vcs_work_discovery
+      stage_ref: configs/stages/vcs_work_discovery.yaml
+      description: "Read VISION.md + analyze codebase to pick next work item"
 
     - name: vcs_design
       stage_ref: configs/stages/vcs_design.yaml
       description: "Architecture + implementation + safety perspectives + decider produce unified design"
       depends_on:
-        - vcs_triage
-      condition: "{{ 'DECISION: APPROVE' in (stage_outputs.vcs_triage.output | default('') | upper) or 'DECISION:APPROVE' in (stage_outputs.vcs_triage.output | default('') | upper) }}"
+        - vcs_work_discovery
+      condition: "{{ 'DECISION: APPROVE' in (stage_outputs.vcs_work_discovery.output | default('') | upper) or 'DECISION:APPROVE' in (stage_outputs.vcs_work_discovery.output | default('') | upper) }}"
 
     - name: vcs_task_planning
       stage_ref: configs/stages/vcs_task_planning.yaml
@@ -45,11 +51,17 @@ workflow:
       depends_on:
         - vcs_task_planning
 
-    - name: vcs_code_execute
-      stage_ref: configs/stages/vcs_code_execute.yaml
-      description: "Coder writes files following exact task specs"
+    - name: vcs_task_split
+      stage_ref: configs/stages/vcs_task_split.yaml
+      description: "Split work into 3 groups for parallel coders"
       depends_on:
         - vcs_git_setup
+
+    - name: vcs_code_execute
+      stage_ref: configs/stages/vcs_code_execute.yaml
+      description: "3 parallel coders write assigned files"
+      depends_on:
+        - vcs_task_split
 
     - name: vcs_static_check
       stage_ref: configs/stages/vcs_static_check.yaml
@@ -57,7 +69,7 @@ workflow:
       depends_on:
         - vcs_code_execute
       loops_back_to: vcs_code_execute
-      max_loops: 2
+      max_loops: 3
       loop_condition: "{{ 'OVERALL: FAIL' in (stage_outputs.vcs_static_check.output | default('') | upper) or 'OVERALL:FAIL' in (stage_outputs.vcs_static_check.output | default('') | upper) }}"
 
     - name: vcs_quality_gate
@@ -78,14 +90,14 @@ workflow:
 
   inputs:
     required:
-      - suggestion_text
       - workspace_path
-    optional: []
+    optional:
+      - suggestion_text  # not used by vcs_work_discovery, kept for compat
 
   outputs:
-    - name: triage_output
-      description: "Triage decision"
-      source: vcs_triage.triage_output
+    - name: discovery_output
+      description: "Work item discovered from VISION + codebase"
+      source: vcs_work_discovery.discovery_output
     - name: design_output
       description: "Unified design (spec + plan)"
       source: vcs_design.design_output
@@ -116,6 +128,75 @@ workflow:
       provider: vllm
       model: qwen3-next
       timeout_seconds: 30
+
+  optimization:
+    enabled: false  # no pipeline optimizers yet, just per-agent evaluation
+
+    evaluations:
+      discovery_quality:
+        type: scored
+        rubric: |
+          Rate this work discovery output (0.0 to 1.0):
+          - Does it identify a SPECIFIC, scoped work item (not vague)?
+          - Does it reference actual VISION.md goals?
+          - Does it include real EXISTING_CODE_CONTEXT from files it read?
+          - Is the DESCRIPTION concrete enough for a designer to act on?
+          Score 0.3 if generic/vague. Score 0.7 if specific but missing context. Score 1.0 if excellent.
+
+      design_quality:
+        type: scored
+        rubric: |
+          Rate this design document (0.0 to 1.0):
+          - Does it contain complete file contents (not just outlines)?
+          - Are exact file paths, class names, and function signatures specified?
+          - Does EXECUTION_ORDER make sense (dependencies first)?
+          - Are ACCEPTANCE_CRITERIA specific and testable?
+          - Are REGRESSION_GUARDS present and realistic?
+          Score 0.2 if outline-only. Score 0.5 if partial. Score 0.8+ if implementation-ready.
+
+      code_quality:
+        type: composite
+        rubric: |
+          Rate the coder output (0.0 to 1.0):
+          - Did the coder create all files specified in the task specs?
+          - Are files complete (not truncated or placeholder)?
+          - Does the code follow the spec's exact names, types, and signatures?
+          Score 0.3 if incomplete. Score 0.7 if mostly complete. Score 1.0 if exact match.
+        weights:
+          quality: 0.6
+          cost: 0.2
+          latency: 0.2
+
+      gate_quality:
+        type: scored
+        rubric: |
+          Rate this quality gate assessment (0.0 to 1.0):
+          - Does it check ALL categories (correctness, regression, security, static)?
+          - Are findings specific (file + line, not generic)?
+          - On FAIL: are FIX_INSTRUCTIONS actionable (exact code changes)?
+          - On PASS: is there evidence the assessor actually checked things?
+          Score 0.3 if rubber-stamp. Score 0.6 if surface-level. Score 0.9+ if thorough.
+
+      split_quality:
+        type: scored
+        rubric: |
+          Rate this task split output (0.0 to 1.0):
+          - Does it assign ALL files from the input specs to exactly one group?
+          - Are files that import from each other in the SAME group?
+          - Is the grouping logical (foundation vs backend vs frontend)?
+          - Does ASSIGNMENT_SUMMARY accurately reflect the actual assignment?
+          - Are all file paths exact matches to the input spec file paths?
+          Score 0.2 if files are missing. Score 0.5 if grouping is poor.
+          Score 0.8 if all files assigned with good grouping. Score 1.0 if perfect.
+
+    agent_evaluations:
+      vcs_work_discoverer: [discovery_quality]
+      vcs_design_decider: [design_quality]
+      vcs_task_splitter: [split_quality]
+      vcs_coder_a: [code_quality]
+      vcs_coder_b: [code_quality]
+      vcs_coder_c: [code_quality]
+      vcs_gate_decider: [gate_quality]
 
   autonomous_loop:
     enabled: false

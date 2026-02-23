@@ -1,18 +1,18 @@
 """Tests for stage-level context management: schemas, provider, and resolver."""
+
 import pytest
 
+from temper_ai.workflow.context_provider import (
+    ContextResolutionError,
+    PassthroughResolver,
+    SourceResolver,
+)
 from temper_ai.workflow.context_schemas import (
     StageInputDeclaration,
     StageOutputDeclaration,
     parse_stage_inputs,
     parse_stage_outputs,
 )
-from temper_ai.workflow.context_provider import (
-    ContextResolutionError,
-    PassthroughResolver,
-    SourceResolver,
-)
-
 
 # ── Schema Tests ────────────────────────────────────────────────────
 
@@ -191,12 +191,14 @@ class TestSourceResolver:
         state = self._make_state(
             workflow_inputs={"suggestion_text": "Add button"},
         )
-        config = self._make_stage_config(inputs={
-            "suggestion_text": {
-                "source": "workflow.suggestion_text",
-                "required": True,
-            },
-        })
+        config = self._make_stage_config(
+            inputs={
+                "suggestion_text": {
+                    "source": "workflow.suggestion_text",
+                    "required": True,
+                },
+            }
+        )
         result = resolver.resolve(config, state)
         assert result["suggestion_text"] == "Add button"
 
@@ -212,12 +214,14 @@ class TestSourceResolver:
                 },
             },
         )
-        config = self._make_stage_config(inputs={
-            "triage_decision": {
-                "source": "vcs_triage.decision",
-                "required": True,
-            },
-        })
+        config = self._make_stage_config(
+            inputs={
+                "triage_decision": {
+                    "source": "vcs_triage.decision",
+                    "required": True,
+                },
+            }
+        )
         result = resolver.resolve(config, state)
         assert result["triage_decision"] == "APPROVE"
 
@@ -232,12 +236,14 @@ class TestSourceResolver:
                 },
             },
         )
-        config = self._make_stage_config(inputs={
-            "priority": {
-                "source": "vcs_triage.priority",
-                "required": True,
-            },
-        })
+        config = self._make_stage_config(
+            inputs={
+                "priority": {
+                    "source": "vcs_triage.priority",
+                    "required": True,
+                },
+            }
+        )
         result = resolver.resolve(config, state)
         # Should prefer structured
         assert result["priority"] == "high"
@@ -252,12 +258,14 @@ class TestSourceResolver:
                 },
             },
         )
-        config = self._make_stage_config(inputs={
-            "priority": {
-                "source": "vcs_triage.structured.priority",
-                "required": True,
-            },
-        })
+        config = self._make_stage_config(
+            inputs={
+                "priority": {
+                    "source": "vcs_triage.structured.priority",
+                    "required": True,
+                },
+            }
+        )
         result = resolver.resolve(config, state)
         assert result["priority"] == "high"
 
@@ -271,37 +279,43 @@ class TestSourceResolver:
                 },
             },
         )
-        config = self._make_stage_config(inputs={
-            "priority": {
-                "source": "vcs_triage.raw.priority",
-                "required": True,
-            },
-        })
+        config = self._make_stage_config(
+            inputs={
+                "priority": {
+                    "source": "vcs_triage.raw.priority",
+                    "required": True,
+                },
+            }
+        )
         result = resolver.resolve(config, state)
         assert result["priority"] == "medium"
 
     def test_missing_required_raises(self):
         resolver = SourceResolver()
         state = self._make_state()
-        config = self._make_stage_config(inputs={
-            "missing_field": {
-                "source": "workflow.nonexistent",
-                "required": True,
-            },
-        })
+        config = self._make_stage_config(
+            inputs={
+                "missing_field": {
+                    "source": "workflow.nonexistent",
+                    "required": True,
+                },
+            }
+        )
         with pytest.raises(ContextResolutionError, match="missing_field"):
             resolver.resolve(config, state)
 
     def test_optional_uses_default(self):
         resolver = SourceResolver()
         state = self._make_state()
-        config = self._make_stage_config(inputs={
-            "optional_field": {
-                "source": "workflow.nonexistent",
-                "required": False,
-                "default": "fallback_value",
-            },
-        })
+        config = self._make_stage_config(
+            inputs={
+                "optional_field": {
+                    "source": "workflow.nonexistent",
+                    "required": False,
+                    "default": "fallback_value",
+                },
+            }
+        )
         result = resolver.resolve(config, state)
         assert result["optional_field"] == "fallback_value"
 
@@ -312,9 +326,11 @@ class TestSourceResolver:
         )
         state["tracker"] = "mock_tracker"
         state["show_details"] = True
-        config = self._make_stage_config(inputs={
-            "text": {"source": "workflow.text", "required": True},
-        })
+        config = self._make_stage_config(
+            inputs={
+                "text": {"source": "workflow.text", "required": True},
+            }
+        )
         result = resolver.resolve(config, state)
         assert result["text"] == "hello"
         assert result.get("tracker") == "mock_tracker"
@@ -332,9 +348,11 @@ class TestSourceResolver:
                 },
             },
         )
-        config = self._make_stage_config(inputs={
-            "data": {"source": "stage_a.output", "required": True},
-        })
+        config = self._make_stage_config(
+            inputs={
+                "data": {"source": "stage_a.output", "required": True},
+            }
+        )
         result = resolver.resolve(config, state)
         assert result["data"] == "top-level-output"
 

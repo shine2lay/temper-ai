@@ -1,10 +1,7 @@
 """Tests for config file and .env loading."""
 
 import os
-from pathlib import Path
 from unittest.mock import patch
-
-import pytest
 
 from temper_ai.config._loader import inject_config_as_env, load_config_file
 
@@ -20,7 +17,9 @@ class TestLoadConfigFile:
 
     def test_loads_valid_yaml(self, tmp_path):
         config_file = tmp_path / "config.yaml"
-        config_file.write_text("database_url: sqlite:///from_file.db\nlog_level: DEBUG\n")
+        config_file.write_text(
+            "database_url: sqlite:///from_file.db\nlog_level: DEBUG\n"
+        )
         with patch("temper_ai.config._loader.CONFIG_FILE", config_file):
             result = load_config_file()
             assert result["database_url"] == "sqlite:///from_file.db"

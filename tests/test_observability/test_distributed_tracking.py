@@ -20,9 +20,8 @@ Test Coverage:
 import os
 import tempfile
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from multiprocessing import Process, Queue
-from typing import Optional
 
 import pytest
 from sqlmodel import select
@@ -44,10 +43,11 @@ from temper_ai.observability.tracker import ExecutionTracker
 # Test Fixtures
 # ========================================
 
+
 @pytest.fixture
 def temp_db_path():
     """Create temporary database file for multi-process tests."""
-    with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as f:
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
         db_path = f.name
 
     yield f"sqlite:///{db_path}"
@@ -79,6 +79,7 @@ def shared_db(temp_db_path):
 # Helper Functions for Multi-Process Tests
 # ========================================
 
+
 def track_workflow_process(
     db_url: str,
     workflow_id: str,
@@ -86,7 +87,7 @@ def track_workflow_process(
     result_queue: Queue,
     delay_ms: int = 0,
     simulate_crash: bool = False,
-    crash_at_stage: Optional[str] = None
+    crash_at_stage: str | None = None,
 ) -> None:
     """
     Worker process that tracks a workflow execution.
@@ -115,31 +116,31 @@ def track_workflow_process(
 
         config = {
             "workflow": {"name": f"process_{process_id}", "version": "1.0"},
-            "process_id": process_id
+            "process_id": process_id,
         }
 
         # Track workflow
-        if crash_at_stage == 'workflow_start':
+        if crash_at_stage == "workflow_start":
             with tracker.track_workflow(f"workflow_{process_id}", config) as wf_id:
                 if simulate_crash:
                     os._exit(1)  # Simulate crash without cleanup
 
         with tracker.track_workflow(f"workflow_{process_id}", config) as wf_id:
-            if crash_at_stage == 'workflow':
+            if crash_at_stage == "workflow":
                 if simulate_crash:
                     os._exit(1)
 
             # Track stage
             stage_config = {"stage": {"name": "stage_1"}}
             with tracker.track_stage("stage_1", stage_config, wf_id) as st_id:
-                if crash_at_stage == 'stage':
+                if crash_at_stage == "stage":
                     if simulate_crash:
                         os._exit(1)
 
                 # Track agent
                 agent_config = {"agent": {"name": "agent_1"}}
                 with tracker.track_agent("agent_1", agent_config, st_id) as ag_id:
-                    if crash_at_stage == 'agent':
+                    if crash_at_stage == "agent":
                         if simulate_crash:
                             os._exit(1)
 
@@ -153,7 +154,7 @@ def track_workflow_process(
                         prompt_tokens=10,
                         completion_tokens=5,
                         latency_ms=100,
-                        estimated_cost_usd=0.001
+                        estimated_cost_usd=0.001,
                     )
 
                     # Track tool call
@@ -162,24 +163,28 @@ def track_workflow_process(
                         tool_name="calculator",
                         input_params={"operation": "add", "a": 1, "b": 2},
                         output_data={"result": 3},
-                        duration_seconds=0.1
+                        duration_seconds=0.1,
                     )
 
         # Return success
-        result_queue.put({
-            "process_id": process_id,
-            "workflow_id": wf_id,
-            "status": "success",
-            "error": None
-        })
+        result_queue.put(
+            {
+                "process_id": process_id,
+                "workflow_id": wf_id,
+                "status": "success",
+                "error": None,
+            }
+        )
 
     except Exception as e:
-        result_queue.put({
-            "process_id": process_id,
-            "workflow_id": None,
-            "status": "error",
-            "error": str(e)
-        })
+        result_queue.put(
+            {
+                "process_id": process_id,
+                "workflow_id": None,
+                "status": "error",
+                "error": str(e),
+            }
+        )
 
 
 def concurrent_update_process(
@@ -188,7 +193,7 @@ def concurrent_update_process(
     process_id: int,
     num_updates: int,
     result_queue: Queue,
-    isolation_level: Optional[IsolationLevel] = None
+    isolation_level: IsolationLevel | None = None,
 ) -> None:
     """
     Worker process that performs concurrent updates to same workflow.
@@ -224,7 +229,7 @@ def concurrent_update_process(
                         current_counter = wf.workflow_config_snapshot.get("counter", 0)
                         wf.workflow_config_snapshot = {
                             "counter": current_counter + 1,
-                            "last_process": process_id
+                            "last_process": process_id,
                         }
                         session.add(wf)
                         # Commit happens on context exit
@@ -235,25 +240,30 @@ def concurrent_update_process(
                 error_count += 1
                 errors.append(str(e))
 
-        result_queue.put({
-            "process_id": process_id,
-            "success_count": success_count,
-            "error_count": error_count,
-            "errors": errors[:5]  # First 5 errors
-        })
+        result_queue.put(
+            {
+                "process_id": process_id,
+                "success_count": success_count,
+                "error_count": error_count,
+                "errors": errors[:5],  # First 5 errors
+            }
+        )
 
     except Exception as e:
-        result_queue.put({
-            "process_id": process_id,
-            "success_count": 0,
-            "error_count": num_updates,
-            "errors": [str(e)]
-        })
+        result_queue.put(
+            {
+                "process_id": process_id,
+                "success_count": 0,
+                "error_count": num_updates,
+                "errors": [str(e)],
+            }
+        )
 
 
 # ========================================
 # Test Class 1: Multi-Process Workflow Tracking
 # ========================================
+
 
 class TestMultiProcessWorkflowTracking:
     """Test multi-process workflow tracking with shared database."""
@@ -270,7 +280,7 @@ class TestMultiProcessWorkflowTracking:
         processes = [
             Process(
                 target=track_workflow_process,
-                args=(temp_db_path, f"wf-{i}", i, result_queue)
+                args=(temp_db_path, f"wf-{i}", i, result_queue),
             )
             for i in range(num_processes)
         ]
@@ -292,16 +302,22 @@ class TestMultiProcessWorkflowTracking:
             results.append(result_queue.get())
 
         # Verify all processes completed
-        assert len(results) == num_processes, f"Expected {num_processes} results, got {len(results)}"
+        assert (
+            len(results) == num_processes
+        ), f"Expected {num_processes} results, got {len(results)}"
 
         # Verify all succeeded
         for result in results:
-            assert result["status"] == "success", f"Process {result['process_id']} failed: {result['error']}"
+            assert (
+                result["status"] == "success"
+            ), f"Process {result['process_id']} failed: {result['error']}"
 
         # Verify database consistency
         with shared_db.session() as session:
             workflows = session.exec(select(WorkflowExecution)).all()
-            assert len(workflows) == num_processes, f"Expected {num_processes} workflows, got {len(workflows)}"
+            assert (
+                len(workflows) == num_processes
+            ), f"Expected {num_processes} workflows, got {len(workflows)}"
 
             # Verify each workflow has complete hierarchy
             for wf in workflows:
@@ -310,14 +326,18 @@ class TestMultiProcessWorkflowTracking:
                         StageExecution.workflow_execution_id == wf.id
                     )
                 ).all()
-                assert len(stages) == 1, f"Expected 1 stage for workflow {wf.id}, got {len(stages)}"
+                assert (
+                    len(stages) == 1
+                ), f"Expected 1 stage for workflow {wf.id}, got {len(stages)}"
 
                 agents = session.exec(
                     select(AgentExecution).where(
                         AgentExecution.stage_execution_id == stages[0].id
                     )
                 ).all()
-                assert len(agents) == 1, f"Expected 1 agent for stage {stages[0].id}, got {len(agents)}"
+                assert (
+                    len(agents) == 1
+                ), f"Expected 1 agent for stage {stages[0].id}, got {len(agents)}"
 
     def test_concurrent_workflow_tracking_5_processes(self, shared_db, temp_db_path):
         """
@@ -331,7 +351,7 @@ class TestMultiProcessWorkflowTracking:
         processes = [
             Process(
                 target=track_workflow_process,
-                args=(temp_db_path, f"wf-{i}", i, result_queue)
+                args=(temp_db_path, f"wf-{i}", i, result_queue),
             )
             for i in range(num_processes)
         ]
@@ -357,8 +377,9 @@ class TestMultiProcessWorkflowTracking:
 
         # Verify all succeeded
         success_count = sum(1 for r in results if r["status"] == "success")
-        assert success_count == num_processes, \
-            f"Only {success_count}/{num_processes} processes succeeded"
+        assert (
+            success_count == num_processes
+        ), f"Only {success_count}/{num_processes} processes succeeded"
 
         # Verify database consistency
         with shared_db.session() as session:
@@ -367,8 +388,9 @@ class TestMultiProcessWorkflowTracking:
 
             # Verify all workflows completed
             completed = [wf for wf in workflows if wf.status == "completed"]
-            assert len(completed) == num_processes, \
-                f"Only {len(completed)}/{num_processes} workflows completed"
+            assert (
+                len(completed) == num_processes
+            ), f"Only {len(completed)}/{num_processes} workflows completed"
 
     def test_concurrent_workflow_tracking_10_processes(self, shared_db, temp_db_path):
         """
@@ -382,7 +404,7 @@ class TestMultiProcessWorkflowTracking:
         processes = [
             Process(
                 target=track_workflow_process,
-                args=(temp_db_path, f"wf-{i}", i, result_queue)
+                args=(temp_db_path, f"wf-{i}", i, result_queue),
             )
             for i in range(num_processes)
         ]
@@ -405,8 +427,9 @@ class TestMultiProcessWorkflowTracking:
 
         # Verify at least 80% succeeded (some SQLite lock contention expected)
         success_count = sum(1 for r in results if r["status"] == "success")
-        assert success_count >= num_processes * 0.8, \
-            f"Only {success_count}/{num_processes} processes succeeded (expected >= 80%)"
+        assert (
+            success_count >= num_processes * 0.8
+        ), f"Only {success_count}/{num_processes} processes succeeded (expected >= 80%)"
 
         # Verify database consistency
         with shared_db.session() as session:
@@ -426,7 +449,13 @@ class TestMultiProcessWorkflowTracking:
         processes = [
             Process(
                 target=track_workflow_process,
-                args=(temp_db_path, f"wf-{i}", i, result_queue, i * 50)  # Stagger by 50ms
+                args=(
+                    temp_db_path,
+                    f"wf-{i}",
+                    i,
+                    result_queue,
+                    i * 50,
+                ),  # Stagger by 50ms
             )
             for i in range(num_processes)
         ]
@@ -448,8 +477,9 @@ class TestMultiProcessWorkflowTracking:
 
         # Verify all succeeded (staggering should reduce contention)
         success_count = sum(1 for r in results if r["status"] == "success")
-        assert success_count == num_processes, \
-            f"Only {success_count}/{num_processes} processes succeeded"
+        assert (
+            success_count == num_processes
+        ), f"Only {success_count}/{num_processes} processes succeeded"
 
     def test_concurrent_workflow_with_same_name(self, shared_db, temp_db_path):
         """
@@ -463,7 +493,7 @@ class TestMultiProcessWorkflowTracking:
         processes = [
             Process(
                 target=track_workflow_process,
-                args=(temp_db_path, "shared_workflow", i, result_queue)
+                args=(temp_db_path, "shared_workflow", i, result_queue),
             )
             for i in range(num_processes)
         ]
@@ -491,17 +521,22 @@ class TestMultiProcessWorkflowTracking:
         with shared_db.session() as session:
             workflows = session.exec(select(WorkflowExecution)).all()
             workflow_ids = {wf.id for wf in workflows}
-            assert len(workflow_ids) == num_processes, "Workflows should have unique IDs"
+            assert (
+                len(workflow_ids) == num_processes
+            ), "Workflows should have unique IDs"
 
 
 # ========================================
 # Test Class 2: Distributed Locking & Concurrency
 # ========================================
 
+
 class TestDistributedLockingConcurrency:
     """Test distributed locking for concurrent observability writes."""
 
-    def test_concurrent_updates_same_workflow_read_committed(self, shared_db, temp_db_path):
+    def test_concurrent_updates_same_workflow_read_committed(
+        self, shared_db, temp_db_path
+    ):
         """
         Test concurrent updates to same workflow with READ_COMMITTED isolation.
 
@@ -513,7 +548,7 @@ class TestDistributedLockingConcurrency:
                 id="wf-concurrent-test",
                 workflow_name="concurrent_test",
                 workflow_config_snapshot={"counter": 0},
-                status="running"
+                status="running",
             )
             session.add(workflow)
 
@@ -530,8 +565,8 @@ class TestDistributedLockingConcurrency:
                     i,
                     updates_per_process,
                     result_queue,
-                    IsolationLevel.READ_COMMITTED
-                )
+                    IsolationLevel.READ_COMMITTED,
+                ),
             )
             for i in range(num_processes)
         ]
@@ -572,7 +607,9 @@ class TestDistributedLockingConcurrency:
             # Allow for some lost updates due to race conditions
             assert final_counter <= total_expected
 
-    def test_concurrent_updates_same_workflow_serializable(self, shared_db, temp_db_path):
+    def test_concurrent_updates_same_workflow_serializable(
+        self, shared_db, temp_db_path
+    ):
         """
         Test concurrent updates to same workflow with SERIALIZABLE isolation.
 
@@ -585,7 +622,7 @@ class TestDistributedLockingConcurrency:
                 id="wf-serializable-test",
                 workflow_name="serializable_test",
                 workflow_config_snapshot={"counter": 0},
-                status="running"
+                status="running",
             )
             session.add(workflow)
 
@@ -602,8 +639,8 @@ class TestDistributedLockingConcurrency:
                     i,
                     updates_per_process,
                     result_queue,
-                    IsolationLevel.SERIALIZABLE
-                )
+                    IsolationLevel.SERIALIZABLE,
+                ),
             )
             for i in range(num_processes)
         ]
@@ -641,7 +678,7 @@ class TestDistributedLockingConcurrency:
                 id="wf-llm-test",
                 workflow_name="llm_test",
                 workflow_config_snapshot={},
-                status="running"
+                status="running",
             )
             session.add(workflow)
 
@@ -650,7 +687,7 @@ class TestDistributedLockingConcurrency:
                 workflow_execution_id="wf-llm-test",
                 stage_name="llm_stage",
                 stage_config_snapshot={},
-                status="running"
+                status="running",
             )
             session.add(stage)
 
@@ -659,16 +696,22 @@ class TestDistributedLockingConcurrency:
                 stage_execution_id="st-llm-test",
                 agent_name="llm_agent",
                 agent_config_snapshot={},
-                status="running"
+                status="running",
             )
             session.add(agent)
 
-        def track_llm_calls(db_url: str, agent_id: str, num_calls: int, result_queue: Queue):
+        def track_llm_calls(
+            db_url: str, agent_id: str, num_calls: int, result_queue: Queue
+        ):
             """Track multiple LLM calls from a process."""
             try:
+                from temper_ai.observability.backends import SQLObservabilityBackend
+
                 reset_database()
                 init_database(db_url)
-                tracker = ExecutionTracker()
+                tracker = ExecutionTracker(
+                    backend=SQLObservabilityBackend(buffer=False)
+                )
 
                 for i in range(num_calls):
                     tracker.track_llm_call(
@@ -680,7 +723,7 @@ class TestDistributedLockingConcurrency:
                         prompt_tokens=10 + i,
                         completion_tokens=5 + i,
                         latency_ms=100 + i,
-                        estimated_cost_usd=0.001 * (i + 1)
+                        estimated_cost_usd=0.001 * (i + 1),
                     )
 
                 result_queue.put({"status": "success", "num_calls": num_calls})
@@ -694,7 +737,7 @@ class TestDistributedLockingConcurrency:
         processes = [
             Process(
                 target=track_llm_calls,
-                args=(temp_db_path, "ag-llm-test", calls_per_process, result_queue)
+                args=(temp_db_path, "ag-llm-test", calls_per_process, result_queue),
             )
             for i in range(num_processes)
         ]
@@ -727,8 +770,9 @@ class TestDistributedLockingConcurrency:
 
             # Should have all calls (some may be lost due to concurrency)
             total_expected = num_processes * calls_per_process
-            assert len(llm_calls) >= total_expected * 0.8, \
-                f"Expected ~{total_expected} LLM calls, got {len(llm_calls)}"
+            assert (
+                len(llm_calls) >= total_expected * 0.8
+            ), f"Expected ~{total_expected} LLM calls, got {len(llm_calls)}"
 
     def test_concurrent_agent_metric_updates(self, shared_db, temp_db_path):
         """
@@ -742,7 +786,7 @@ class TestDistributedLockingConcurrency:
                 id="wf-metrics-test",
                 workflow_name="metrics_test",
                 workflow_config_snapshot={},
-                status="running"
+                status="running",
             )
             session.add(workflow)
 
@@ -751,7 +795,7 @@ class TestDistributedLockingConcurrency:
                 workflow_execution_id="wf-metrics-test",
                 stage_name="metrics_stage",
                 stage_config_snapshot={},
-                status="running"
+                status="running",
             )
             session.add(stage)
 
@@ -762,11 +806,13 @@ class TestDistributedLockingConcurrency:
                 agent_config_snapshot={},
                 status="running",
                 num_llm_calls=0,
-                total_tokens=0
+                total_tokens=0,
             )
             session.add(agent)
 
-        def update_agent_metrics(db_url: str, agent_id: str, num_updates: int, result_queue: Queue):
+        def update_agent_metrics(
+            db_url: str, agent_id: str, num_updates: int, result_queue: Queue
+        ):
             """Update agent metrics concurrently."""
             try:
                 reset_database()
@@ -777,7 +823,9 @@ class TestDistributedLockingConcurrency:
                     try:
                         with db_manager.session() as session:
                             agent = session.exec(
-                                select(AgentExecution).where(AgentExecution.id == agent_id)
+                                select(AgentExecution).where(
+                                    AgentExecution.id == agent_id
+                                )
                             ).first()
 
                             if agent:
@@ -800,7 +848,12 @@ class TestDistributedLockingConcurrency:
         processes = [
             Process(
                 target=update_agent_metrics,
-                args=(temp_db_path, "ag-metrics-test", updates_per_process, result_queue)
+                args=(
+                    temp_db_path,
+                    "ag-metrics-test",
+                    updates_per_process,
+                    result_queue,
+                ),
             )
             for i in range(num_processes)
         ]
@@ -836,6 +889,7 @@ class TestDistributedLockingConcurrency:
 # Test Class 3: Transaction Conflicts & Recovery
 # ========================================
 
+
 class TestTransactionConflictsRecovery:
     """Test transaction conflict detection and recovery."""
 
@@ -851,11 +905,13 @@ class TestTransactionConflictsRecovery:
                 id="wf-conflict-detection",
                 workflow_name="conflict_test",
                 workflow_config_snapshot={"version": 1},
-                status="running"
+                status="running",
             )
             session.add(workflow)
 
-        def concurrent_modifier(db_url: str, workflow_id: str, new_version: int, result_queue: Queue):
+        def concurrent_modifier(
+            db_url: str, workflow_id: str, new_version: int, result_queue: Queue
+        ):
             """Modify workflow concurrently."""
             try:
                 reset_database()
@@ -864,7 +920,9 @@ class TestTransactionConflictsRecovery:
                 # Read workflow
                 with db_manager.session() as session:
                     workflow = session.exec(
-                        select(WorkflowExecution).where(WorkflowExecution.id == workflow_id)
+                        select(WorkflowExecution).where(
+                            WorkflowExecution.id == workflow_id
+                        )
                     ).first()
 
                     if workflow:
@@ -877,7 +935,9 @@ class TestTransactionConflictsRecovery:
 
                 result_queue.put({"status": "success", "version": new_version})
             except Exception as e:
-                result_queue.put({"status": "error", "error": str(e), "version": new_version})
+                result_queue.put(
+                    {"status": "error", "error": str(e), "version": new_version}
+                )
 
         result_queue = Queue()
 
@@ -885,7 +945,7 @@ class TestTransactionConflictsRecovery:
         processes = [
             Process(
                 target=concurrent_modifier,
-                args=(temp_db_path, "wf-conflict-detection", i + 2, result_queue)
+                args=(temp_db_path, "wf-conflict-detection", i + 2, result_queue),
             )
             for i in range(3)
         ]
@@ -915,7 +975,11 @@ class TestTransactionConflictsRecovery:
 
             assert workflow is not None
             final_version = workflow.workflow_config_snapshot.get("version")
-            assert final_version in [2, 3, 4], f"Unexpected final version: {final_version}"
+            assert final_version in [
+                2,
+                3,
+                4,
+            ], f"Unexpected final version: {final_version}"
 
     def test_retry_after_transaction_conflict(self, shared_db, temp_db_path):
         """
@@ -929,15 +993,12 @@ class TestTransactionConflictsRecovery:
                 id="wf-retry-test",
                 workflow_name="retry_test",
                 workflow_config_snapshot={"attempts": 0},
-                status="running"
+                status="running",
             )
             session.add(workflow)
 
         def concurrent_updater_with_retry(
-            db_url: str,
-            workflow_id: str,
-            process_id: int,
-            result_queue: Queue
+            db_url: str, workflow_id: str, process_id: int, result_queue: Queue
         ):
             """Update workflow with retry logic."""
             try:
@@ -955,19 +1016,23 @@ class TestTransactionConflictsRecovery:
                             ).first()
 
                             if workflow:
-                                attempts = workflow.workflow_config_snapshot.get("attempts", 0)
+                                attempts = workflow.workflow_config_snapshot.get(
+                                    "attempts", 0
+                                )
                                 workflow.workflow_config_snapshot = {
                                     "attempts": attempts + 1,
-                                    "last_process": process_id
+                                    "last_process": process_id,
                                 }
                                 session.add(workflow)
 
                         # Success
-                        result_queue.put({
-                            "status": "success",
-                            "process_id": process_id,
-                            "attempts": attempt + 1
-                        })
+                        result_queue.put(
+                            {
+                                "status": "success",
+                                "process_id": process_id,
+                                "attempts": attempt + 1,
+                            }
+                        )
                         return
 
                     except Exception:
@@ -976,11 +1041,9 @@ class TestTransactionConflictsRecovery:
                         time.sleep(0.05 * (attempt + 1))  # Exponential backoff
 
             except Exception as e:
-                result_queue.put({
-                    "status": "error",
-                    "process_id": process_id,
-                    "error": str(e)
-                })
+                result_queue.put(
+                    {"status": "error", "process_id": process_id, "error": str(e)}
+                )
 
         result_queue = Queue()
         num_processes = 5
@@ -988,7 +1051,7 @@ class TestTransactionConflictsRecovery:
         processes = [
             Process(
                 target=concurrent_updater_with_retry,
-                args=(temp_db_path, "wf-retry-test", i, result_queue)
+                args=(temp_db_path, "wf-retry-test", i, result_queue),
             )
             for i in range(num_processes)
         ]
@@ -1008,8 +1071,9 @@ class TestTransactionConflictsRecovery:
 
         # All processes should eventually succeed with retry
         success_count = sum(1 for r in results if r["status"] == "success")
-        assert success_count >= num_processes * 0.8, \
-            f"Only {success_count}/{num_processes} processes succeeded with retry"
+        assert (
+            success_count >= num_processes * 0.8
+        ), f"Only {success_count}/{num_processes} processes succeeded with retry"
 
     def test_foreign_key_constraint_enforcement(self, shared_db, temp_db_path):
         """
@@ -1020,6 +1084,7 @@ class TestTransactionConflictsRecovery:
         FIXED (test-crit-foreign-keys-01): Foreign keys now enabled via event listener
         in database.py _create_engine(). PRAGMA foreign_keys = ON set on every connection.
         """
+
         def create_orphaned_stage(db_url: str, result_queue: Queue):
             """Try to create stage with non-existent workflow."""
             try:
@@ -1033,7 +1098,7 @@ class TestTransactionConflictsRecovery:
                         workflow_execution_id="wf-does-not-exist",
                         stage_name="orphaned_stage",
                         stage_config_snapshot={},
-                        status="running"
+                        status="running",
                     )
                     session.add(stage)
                     # Commit will fail due to FK constraint
@@ -1044,17 +1109,18 @@ class TestTransactionConflictsRecovery:
                 # Expected to fail
                 error_msg = str(e).lower()
                 is_fk_error = "foreign key" in error_msg or "constraint" in error_msg
-                result_queue.put({
-                    "status": "expected_error",
-                    "is_fk_error": is_fk_error,
-                    "error": str(e)
-                })
+                result_queue.put(
+                    {
+                        "status": "expected_error",
+                        "is_fk_error": is_fk_error,
+                        "error": str(e),
+                    }
+                )
 
         result_queue = Queue()
 
         process = Process(
-            target=create_orphaned_stage,
-            args=(temp_db_path, result_queue)
+            target=create_orphaned_stage, args=(temp_db_path, result_queue)
         )
 
         process.start()
@@ -1065,13 +1131,15 @@ class TestTransactionConflictsRecovery:
 
         # Verify foreign key constraint was enforced
         result = result_queue.get()
-        assert result["status"] == "expected_error", \
-            "Foreign key constraint should have prevented orphaned stage creation"
+        assert (
+            result["status"] == "expected_error"
+        ), "Foreign key constraint should have prevented orphaned stage creation"
 
 
 # ========================================
 # Test Class 4: Process Crash Recovery
 # ========================================
+
 
 class TestProcessCrashRecovery:
     """Test recovery from process crashes during workflow tracking."""
@@ -1087,7 +1155,7 @@ class TestProcessCrashRecovery:
         # Start process that will crash mid-workflow
         process = Process(
             target=track_workflow_process,
-            args=(temp_db_path, "wf-crash", 0, result_queue, 0, True, 'workflow')
+            args=(temp_db_path, "wf-crash", 0, result_queue, 0, True, "workflow"),
         )
 
         process.start()
@@ -1111,8 +1179,9 @@ class TestProcessCrashRecovery:
 
             # At least one should be in 'running' state
             running_workflows = [wf for wf in workflows if wf.status == "running"]
-            assert len(running_workflows) > 0, \
-                "Crashed workflow should be left in 'running' state"
+            assert (
+                len(running_workflows) > 0
+            ), "Crashed workflow should be left in 'running' state"
 
     def test_stage_left_running_after_crash(self, shared_db, temp_db_path):
         """
@@ -1125,7 +1194,7 @@ class TestProcessCrashRecovery:
         # Start process that will crash during stage
         process = Process(
             target=track_workflow_process,
-            args=(temp_db_path, "wf-stage-crash", 0, result_queue, 0, True, 'stage')
+            args=(temp_db_path, "wf-stage-crash", 0, result_queue, 0, True, "stage"),
         )
 
         process.start()
@@ -1138,9 +1207,7 @@ class TestProcessCrashRecovery:
         # Verify stage is in 'running' state
         with shared_db.session() as session:
             stages = session.exec(
-                select(StageExecution).where(
-                    StageExecution.stage_name == "stage_1"
-                )
+                select(StageExecution).where(StageExecution.stage_name == "stage_1")
             ).all()
 
             assert len(stages) > 0
@@ -1160,7 +1227,7 @@ class TestProcessCrashRecovery:
                 workflow_name="orphaned_workflow",
                 workflow_config_snapshot={},
                 status="running",
-                start_time=datetime.now(timezone.utc) - timedelta(hours=2)
+                start_time=datetime.now(UTC) - timedelta(hours=2),
             )
             session.add(old_workflow)
 
@@ -1170,18 +1237,18 @@ class TestProcessCrashRecovery:
                 workflow_name="recent_workflow",
                 workflow_config_snapshot={},
                 status="running",
-                start_time=datetime.now(timezone.utc) - timedelta(minutes=5)
+                start_time=datetime.now(UTC) - timedelta(minutes=5),
             )
             session.add(recent_workflow)
 
         # Query for orphaned workflows (running for > 1 hour)
-        timeout_threshold = datetime.now(timezone.utc) - timedelta(hours=1)
+        timeout_threshold = datetime.now(UTC) - timedelta(hours=1)
 
         with shared_db.session() as session:
             orphaned = session.exec(
                 select(WorkflowExecution).where(
                     WorkflowExecution.status == "running",
-                    WorkflowExecution.start_time < timeout_threshold  # type: ignore[arg-type]
+                    WorkflowExecution.start_time < timeout_threshold,  # type: ignore[arg-type]
                 )
             ).all()
 
@@ -1192,6 +1259,7 @@ class TestProcessCrashRecovery:
 # ========================================
 # Test Class 5: Orphaned Resource Cleanup
 # ========================================
+
 
 class TestOrphanedResourceCleanup:
     """Test cleanup of orphaned resources after crashes."""
@@ -1210,32 +1278,36 @@ class TestOrphanedResourceCleanup:
                     workflow_name=f"orphaned_{i}",
                     workflow_config_snapshot={},
                     status="running",
-                    start_time=datetime.now(timezone.utc) - timedelta(hours=3)
+                    start_time=datetime.now(UTC) - timedelta(hours=3),
                 )
                 session.add(workflow)
 
         # Cleanup function (simulates periodic cleanup job)
-        def cleanup_orphaned_workflows(db_url: str, timeout_hours: int, result_queue: Queue):
+        def cleanup_orphaned_workflows(
+            db_url: str, timeout_hours: int, result_queue: Queue
+        ):
             """Mark orphaned workflows as failed."""
             try:
                 reset_database()
                 db_manager = init_database(db_url)
 
-                timeout_threshold = datetime.now(timezone.utc) - timedelta(hours=timeout_hours)
+                timeout_threshold = datetime.now(UTC) - timedelta(hours=timeout_hours)
 
                 with db_manager.session() as session:
                     orphaned = session.exec(
                         select(WorkflowExecution).where(
                             WorkflowExecution.status == "running",
-                            WorkflowExecution.start_time < timeout_threshold  # type: ignore[arg-type]
+                            WorkflowExecution.start_time < timeout_threshold,  # type: ignore[arg-type]
                         )
                     ).all()
 
                     cleaned_count = 0
                     for wf in orphaned:
                         wf.status = "failed"
-                        wf.error_message = "Workflow orphaned (process crashed or timed out)"
-                        wf.end_time = datetime.now(timezone.utc)
+                        wf.error_message = (
+                            "Workflow orphaned (process crashed or timed out)"
+                        )
+                        wf.end_time = datetime.now(UTC)
                         session.add(wf)
                         cleaned_count += 1
 
@@ -1247,8 +1319,7 @@ class TestOrphanedResourceCleanup:
         result_queue = Queue()
 
         cleanup_process = Process(
-            target=cleanup_orphaned_workflows,
-            args=(temp_db_path, 1, result_queue)
+            target=cleanup_orphaned_workflows, args=(temp_db_path, 1, result_queue)
         )
 
         cleanup_process.start()
@@ -1266,7 +1337,7 @@ class TestOrphanedResourceCleanup:
             failed_workflows = session.exec(
                 select(WorkflowExecution).where(
                     WorkflowExecution.status == "failed",
-                    WorkflowExecution.error_message.like("%orphaned%")  # type: ignore[attr-defined]
+                    WorkflowExecution.error_message.like("%orphaned%"),  # type: ignore[attr-defined]
                 )
             ).all()
 
@@ -1285,7 +1356,7 @@ class TestOrphanedResourceCleanup:
                 workflow_name="cascade_test",
                 workflow_config_snapshot={},
                 status="running",
-                start_time=datetime.now(timezone.utc) - timedelta(hours=3)
+                start_time=datetime.now(UTC) - timedelta(hours=3),
             )
             session.add(workflow)
 
@@ -1294,7 +1365,7 @@ class TestOrphanedResourceCleanup:
                 workflow_execution_id="wf-cascade-orphaned",
                 stage_name="orphaned_stage",
                 stage_config_snapshot={},
-                status="running"
+                status="running",
             )
             session.add(stage)
 
@@ -1303,7 +1374,7 @@ class TestOrphanedResourceCleanup:
                 stage_execution_id="st-cascade-orphaned",
                 agent_name="orphaned_agent",
                 agent_config_snapshot={},
-                status="running"
+                status="running",
             )
             session.add(agent)
 
@@ -1314,14 +1385,14 @@ class TestOrphanedResourceCleanup:
                 reset_database()
                 db_manager = init_database(db_url)
 
-                timeout_threshold = datetime.now(timezone.utc) - timedelta(hours=1)
+                timeout_threshold = datetime.now(UTC) - timedelta(hours=1)
 
                 with db_manager.session() as session:
                     # Find orphaned workflows
                     orphaned_workflows = session.exec(
                         select(WorkflowExecution).where(
                             WorkflowExecution.status == "running",
-                            WorkflowExecution.start_time < timeout_threshold  # type: ignore[arg-type]
+                            WorkflowExecution.start_time < timeout_threshold,  # type: ignore[arg-type]
                         )
                     ).all()
 
@@ -1335,7 +1406,7 @@ class TestOrphanedResourceCleanup:
                         stages = session.exec(
                             select(StageExecution).where(
                                 StageExecution.workflow_execution_id == wf.id,
-                                StageExecution.status == "running"
+                                StageExecution.status == "running",
                             )
                         ).all()
 
@@ -1348,7 +1419,7 @@ class TestOrphanedResourceCleanup:
                             agents = session.exec(
                                 select(AgentExecution).where(
                                     AgentExecution.stage_execution_id == stage.id,
-                                    AgentExecution.status == "running"
+                                    AgentExecution.status == "running",
                                 )
                             ).all()
 
@@ -1365,8 +1436,7 @@ class TestOrphanedResourceCleanup:
         result_queue = Queue()
 
         cleanup_process = Process(
-            target=cascade_cleanup,
-            args=(temp_db_path, result_queue)
+            target=cascade_cleanup, args=(temp_db_path, result_queue)
         )
 
         cleanup_process.start()
@@ -1388,16 +1458,12 @@ class TestOrphanedResourceCleanup:
             assert workflow.status == "failed"
 
             stage = session.exec(
-                select(StageExecution).where(
-                    StageExecution.id == "st-cascade-orphaned"
-                )
+                select(StageExecution).where(StageExecution.id == "st-cascade-orphaned")
             ).first()
             assert stage.status == "failed"
 
             agent = session.exec(
-                select(AgentExecution).where(
-                    AgentExecution.id == "ag-cascade-orphaned"
-                )
+                select(AgentExecution).where(AgentExecution.id == "ag-cascade-orphaned")
             ).first()
             assert agent.status == "failed"
 
@@ -1405,6 +1471,7 @@ class TestOrphanedResourceCleanup:
 # ========================================
 # Test Class 6: Clock Skew & Timing Issues
 # ========================================
+
 
 class TestClockSkewTiming:
     """Test handling of clock skew and timing issues across processes."""
@@ -1415,11 +1482,12 @@ class TestClockSkewTiming:
 
         CRITICAL: Verifies timestamp handling doesn't cause ordering issues.
         """
+
         def create_workflow_with_timestamp(
             db_url: str,
             workflow_id: str,
             timestamp_offset_seconds: int,
-            result_queue: Queue
+            result_queue: Queue,
         ):
             """Create workflow with specific timestamp."""
             try:
@@ -1432,7 +1500,8 @@ class TestClockSkewTiming:
                         workflow_name=f"workflow_{workflow_id}",
                         workflow_config_snapshot={},
                         status="running",
-                        start_time=datetime.now(timezone.utc) + timedelta(seconds=timestamp_offset_seconds)
+                        start_time=datetime.now(UTC)
+                        + timedelta(seconds=timestamp_offset_seconds),
                     )
                     session.add(workflow)
 
@@ -1448,7 +1517,7 @@ class TestClockSkewTiming:
         processes = [
             Process(
                 target=create_workflow_with_timestamp,
-                args=(temp_db_path, f"wf-ts-{i}", offsets[i], result_queue)
+                args=(temp_db_path, f"wf-ts-{i}", offsets[i], result_queue),
             )
             for i in range(len(offsets))
         ]
@@ -1481,13 +1550,18 @@ class TestClockSkewTiming:
             for i in range(len(workflows) - 1):
                 assert workflows[i].start_time <= workflows[i + 1].start_time
 
-    def test_duration_calculation_with_timezone_aware_timestamps(self, shared_db, temp_db_path):
+    def test_duration_calculation_with_timezone_aware_timestamps(
+        self, shared_db, temp_db_path
+    ):
         """
         Test duration calculation with timezone-aware timestamps.
 
         CRITICAL: Verifies duration calculations are correct across processes.
         """
-        def create_and_complete_workflow(db_url: str, workflow_id: str, result_queue: Queue):
+
+        def create_and_complete_workflow(
+            db_url: str, workflow_id: str, result_queue: Queue
+        ):
             """Create and complete workflow with timezone-aware timestamps."""
             try:
                 reset_database()
@@ -1508,7 +1582,7 @@ class TestClockSkewTiming:
 
         process = Process(
             target=create_and_complete_workflow,
-            args=(temp_db_path, "wf-duration", result_queue)
+            args=(temp_db_path, "wf-duration", result_queue),
         )
 
         process.start()
@@ -1530,10 +1604,12 @@ class TestClockSkewTiming:
 
             assert workflow is not None
             assert workflow.duration_seconds is not None
-            assert workflow.duration_seconds >= 0.5, \
-                f"Duration should be >= 0.5s, got {workflow.duration_seconds}"
-            assert workflow.duration_seconds < 5.0, \
-                f"Duration should be < 5s, got {workflow.duration_seconds}"
+            assert (
+                workflow.duration_seconds >= 0.5
+            ), f"Duration should be >= 0.5s, got {workflow.duration_seconds}"
+            assert (
+                workflow.duration_seconds < 5.0
+            ), f"Duration should be < 5s, got {workflow.duration_seconds}"
 
     def test_concurrent_workflows_completion_order(self, shared_db, temp_db_path):
         """
@@ -1541,11 +1617,9 @@ class TestClockSkewTiming:
 
         CRITICAL: Verifies timing and ordering are preserved.
         """
+
         def create_workflow_with_sleep(
-            db_url: str,
-            workflow_id: str,
-            sleep_seconds: float,
-            result_queue: Queue
+            db_url: str, workflow_id: str, sleep_seconds: float, result_queue: Queue
         ):
             """Create workflow that sleeps for specified duration."""
             try:
@@ -1560,11 +1634,13 @@ class TestClockSkewTiming:
                     time.sleep(sleep_seconds)
                 end = time.time()
 
-                result_queue.put({
-                    "status": "success",
-                    "workflow_id": wf_id,
-                    "actual_duration": end - start
-                })
+                result_queue.put(
+                    {
+                        "status": "success",
+                        "workflow_id": wf_id,
+                        "actual_duration": end - start,
+                    }
+                )
 
             except Exception as e:
                 result_queue.put({"status": "error", "error": str(e)})
@@ -1576,7 +1652,7 @@ class TestClockSkewTiming:
         processes = [
             Process(
                 target=create_workflow_with_sleep,
-                args=(temp_db_path, f"wf-sleep-{i}", sleep_times[i], result_queue)
+                args=(temp_db_path, f"wf-sleep-{i}", sleep_times[i], result_queue),
             )
             for i in range(len(sleep_times))
         ]
@@ -1613,6 +1689,7 @@ class TestClockSkewTiming:
 # Test Class 7: Data Consistency Verification
 # ========================================
 
+
 class TestDataConsistencyVerification:
     """Test verification of data consistency across process boundaries."""
 
@@ -1628,7 +1705,7 @@ class TestDataConsistencyVerification:
         processes = [
             Process(
                 target=track_workflow_process,
-                args=(temp_db_path, f"wf-unique-{i}", i, result_queue)
+                args=(temp_db_path, f"wf-unique-{i}", i, result_queue),
             )
             for i in range(num_processes)
         ]
@@ -1649,16 +1726,16 @@ class TestDataConsistencyVerification:
                 workflow_ids.append(result["workflow_id"])
 
         # Verify all IDs are unique
-        assert len(workflow_ids) == len(set(workflow_ids)), \
-            "Duplicate workflow IDs detected!"
+        assert len(workflow_ids) == len(
+            set(workflow_ids)
+        ), "Duplicate workflow IDs detected!"
 
         # Verify in database
         with shared_db.session() as session:
             workflows = session.exec(select(WorkflowExecution)).all()
             db_ids = {wf.id for wf in workflows}
 
-            assert len(db_ids) == len(workflows), \
-                "Duplicate IDs found in database!"
+            assert len(db_ids) == len(workflows), "Duplicate IDs found in database!"
 
     def test_verify_foreign_key_relationships_intact(self, shared_db, temp_db_path):
         """
@@ -1672,7 +1749,7 @@ class TestDataConsistencyVerification:
         processes = [
             Process(
                 target=track_workflow_process,
-                args=(temp_db_path, f"wf-fk-{i}", i, result_queue)
+                args=(temp_db_path, f"wf-fk-{i}", i, result_queue),
             )
             for i in range(num_processes)
         ]
@@ -1694,22 +1771,25 @@ class TestDataConsistencyVerification:
             # Verify no orphaned stages (every stage references an existing workflow)
             all_stages = session.exec(select(StageExecution)).all()
             for stage in all_stages:
-                assert stage.workflow_execution_id in workflow_ids, \
-                    f"Orphaned stage {stage.id} references non-existent workflow {stage.workflow_execution_id}"
+                assert (
+                    stage.workflow_execution_id in workflow_ids
+                ), f"Orphaned stage {stage.id} references non-existent workflow {stage.workflow_execution_id}"
             stage_ids = {s.id for s in all_stages}
 
             # Verify no orphaned agents (every agent references an existing stage)
             all_agents = session.exec(select(AgentExecution)).all()
             for agent in all_agents:
-                assert agent.stage_execution_id in stage_ids, \
-                    f"Orphaned agent {agent.id} references non-existent stage {agent.stage_execution_id}"
+                assert (
+                    agent.stage_execution_id in stage_ids
+                ), f"Orphaned agent {agent.id} references non-existent stage {agent.stage_execution_id}"
             agent_ids = {a.id for a in all_agents}
 
             # Verify no orphaned LLM calls (every call references an existing agent)
             all_llm_calls = session.exec(select(LLMCall)).all()
             for llm_call in all_llm_calls:
-                assert llm_call.agent_execution_id in agent_ids, \
-                    f"Orphaned LLM call {llm_call.id} references non-existent agent {llm_call.agent_execution_id}"
+                assert (
+                    llm_call.agent_execution_id in agent_ids
+                ), f"Orphaned LLM call {llm_call.id} references non-existent agent {llm_call.agent_execution_id}"
 
     def test_verify_metric_aggregation_consistency(self, shared_db, temp_db_path):
         """
@@ -1723,7 +1803,7 @@ class TestDataConsistencyVerification:
         processes = [
             Process(
                 target=track_workflow_process,
-                args=(temp_db_path, f"wf-metrics-{i}", i, result_queue)
+                args=(temp_db_path, f"wf-metrics-{i}", i, result_queue),
             )
             for i in range(num_processes)
         ]
@@ -1743,9 +1823,9 @@ class TestDataConsistencyVerification:
             for workflow in workflows:
                 # Get all agents for this workflow
                 agents = session.exec(
-                    select(AgentExecution).join(StageExecution).where(
-                        StageExecution.workflow_execution_id == workflow.id
-                    )
+                    select(AgentExecution)
+                    .join(StageExecution)
+                    .where(StageExecution.workflow_execution_id == workflow.id)
                 ).all()
 
                 # Calculate expected totals from agents
@@ -1758,5 +1838,6 @@ class TestDataConsistencyVerification:
                 # in all cases with concurrent updates
                 if workflow.status == "completed":
                     if workflow.total_llm_calls is not None:
-                        assert workflow.total_llm_calls >= expected_llm_calls * 0.8, \
-                            f"LLM call aggregation mismatch: {workflow.total_llm_calls} vs {expected_llm_calls}"
+                        assert (
+                            workflow.total_llm_calls >= expected_llm_calls * 0.8
+                        ), f"LLM call aggregation mismatch: {workflow.total_llm_calls} vs {expected_llm_calls}"

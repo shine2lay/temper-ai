@@ -12,13 +12,20 @@ from temper_ai.config._compat import apply_compat_env_vars
 def _clean_env():
     """Remove any TEMPER_*/MAF_* vars that tests may set."""
     keys_to_clean = [
-        "MAF_CONFIG_ROOT", "TEMPER_CONFIG_ROOT",
-        "MAF_SERVER_URL", "TEMPER_SERVER_URL",
-        "MAF_API_KEY", "TEMPER_API_KEY",
-        "LOG_LEVEL", "TEMPER_LOG_LEVEL",
-        "SAFETY_ENV", "TEMPER_SAFETY_ENV",
-        "MAF_HOST", "TEMPER_HOST",
-        "MAF_PORT", "TEMPER_PORT",
+        "MAF_CONFIG_ROOT",
+        "TEMPER_CONFIG_ROOT",
+        "MAF_SERVER_URL",
+        "TEMPER_SERVER_URL",
+        "MAF_API_KEY",
+        "TEMPER_API_KEY",
+        "LOG_LEVEL",
+        "TEMPER_LOG_LEVEL",
+        "SAFETY_ENV",
+        "TEMPER_SAFETY_ENV",
+        "MAF_HOST",
+        "TEMPER_HOST",
+        "MAF_PORT",
+        "TEMPER_PORT",
     ]
     saved = {k: os.environ.pop(k, None) for k in keys_to_clean}
     yield

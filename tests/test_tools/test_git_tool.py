@@ -1,4 +1,5 @@
 """Tests for the GitTool."""
+
 import subprocess
 from unittest.mock import MagicMock, patch
 
@@ -45,7 +46,9 @@ def test_status(tool, tmp_path):
 def test_log(tool, tmp_path):
     with patch("temper_ai.tools.git_tool.subprocess.run") as mock_run:
         mock_run.return_value = _make_proc(stdout="commit abc123\nAuthor: Dev")
-        result = tool.execute(operation="log", repo_path=str(tmp_path), args=["--oneline"])
+        result = tool.execute(
+            operation="log", repo_path=str(tmp_path), args=["--oneline"]
+        )
 
     assert result.success is True
     assert "abc123" in result.result["stdout"]
@@ -91,7 +94,9 @@ def test_invalid_repo_path(tool):
 
 def test_timeout(tool, tmp_path):
     with patch("temper_ai.tools.git_tool.subprocess.run") as mock_run:
-        mock_run.side_effect = subprocess.TimeoutExpired(cmd=["git"], timeout=GIT_DEFAULT_TIMEOUT)
+        mock_run.side_effect = subprocess.TimeoutExpired(
+            cmd=["git"], timeout=GIT_DEFAULT_TIMEOUT
+        )
         result = tool.execute(operation="fetch", repo_path=str(tmp_path))
 
     assert result.success is False
@@ -106,4 +111,7 @@ def test_nonzero_exit_code(tool, tmp_path):
         result = tool.execute(operation="status", repo_path=str(tmp_path))
 
     assert result.success is False
-    assert "fatal" in result.error.lower() or "not a git repository" in result.error.lower()
+    assert (
+        "fatal" in result.error.lower()
+        or "not a git repository" in result.error.lower()
+    )

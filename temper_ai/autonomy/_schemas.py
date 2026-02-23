@@ -1,6 +1,6 @@
 """Schemas for the post-execution autonomous loop."""
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -40,8 +40,8 @@ class WorkflowRunContext(BaseModel):
 
     workflow_id: str
     workflow_name: str
-    product_type: Optional[str] = None
-    result: Dict[str, Any] = Field(default_factory=dict)
+    product_type: str | None = None
+    result: dict[str, Any] = Field(default_factory=dict)
     duration_seconds: float = 0.0
     status: str = "unknown"
     cost_usd: float = 0.0
@@ -51,11 +51,11 @@ class WorkflowRunContext(BaseModel):
 class PostExecutionReport(BaseModel):
     """Report produced by the autonomous loop after post-execution analysis."""
 
-    learning_result: Optional[Dict[str, Any]] = None
-    goals_result: Optional[Dict[str, Any]] = None
-    portfolio_result: Optional[Dict[str, Any]] = None
-    feedback_result: Optional[Dict[str, Any]] = None
-    memory_sync_result: Optional[Dict[str, Any]] = None
-    optimization_result: Optional[Dict[str, Any]] = None
-    errors: List[str] = Field(default_factory=list)
+    learning_result: dict[str, Any] | None = None
+    goals_result: dict[str, Any] | None = None
+    portfolio_result: dict[str, Any] | None = None
+    feedback_result: dict[str, Any] | None = None
+    memory_sync_result: dict[str, Any] | None = None
+    optimization_result: dict[str, Any] | None = None
+    errors: list[str] = Field(default_factory=list)
     duration_ms: float = 0.0

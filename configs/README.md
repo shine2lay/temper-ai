@@ -1,6 +1,6 @@
 # Configuration Directory
 
-This directory contains YAML configuration files for the Meta-Autonomous Framework.
+This directory contains YAML configuration files for Temper AI.
 
 ## Directory Structure
 
@@ -148,7 +148,7 @@ class: temper_ai.tools.web.WebScraperTool
 parameters:
   timeout: 30
   max_retries: 3
-  user_agent: "Meta-Autonomous-Bot/1.0"
+  user_agent: "Temper-AI-Bot/1.0"
 
 rate_limit:
   requests_per_minute: 60

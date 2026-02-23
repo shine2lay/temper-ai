@@ -2,11 +2,12 @@
 
 Verifies state initialization and init-node creation.
 """
+
 import pytest
 
 from temper_ai.stage.executors.state_keys import StateKeys
 from temper_ai.workflow.langgraph_state import LangGraphWorkflowState
-from temper_ai.workflow.state_manager import initialize_state, create_init_node
+from temper_ai.workflow.state_manager import create_init_node, initialize_state
 
 
 class TestStateInitialization:
@@ -23,10 +24,7 @@ class TestStateInitialization:
 
     def test_initialize_state_with_workflow_id(self):
         """Test initialization with custom workflow ID."""
-        state = initialize_state(
-            {"input": "test"},
-            workflow_id="wf-custom-123"
-        )
+        state = initialize_state({"input": "test"}, workflow_id="wf-custom-123")
 
         assert state[StateKeys.WORKFLOW_ID] == "wf-custom-123"
 
@@ -34,10 +32,7 @@ class TestStateInitialization:
         """Test initialization with tracker."""
         mock_tracker = object()
 
-        state = initialize_state(
-            {"input": "test"},
-            tracker=mock_tracker
-        )
+        state = initialize_state({"input": "test"}, tracker=mock_tracker)
 
         assert state["tracker"] is mock_tracker
 
@@ -51,7 +46,7 @@ class TestStateInitialization:
             {"input": "test"},
             tracker=mock_tracker,
             tool_registry=mock_registry,
-            config_loader=mock_loader
+            config_loader=mock_loader,
         )
 
         assert state["tracker"] is mock_tracker
@@ -96,7 +91,7 @@ class TestInitNode:
         state = LangGraphWorkflowState(
             input="test",
             workflow_id="wf-existing-123",
-            stage_outputs={"stage1": "output1"}
+            stage_outputs={"stage1": "output1"},
         )
 
         # Run init node — should return empty updates since nothing needs initialization

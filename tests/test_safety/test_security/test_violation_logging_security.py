@@ -4,6 +4,7 @@ Security tests for sensitive data exposure in violation logging.
 Tests verify that detected secrets, PII, and credentials are not exposed
 in application logs or observability database when safety violations occur.
 """
+
 import logging
 
 from temper_ai.observability.sanitization import DataSanitizer, SanitizationConfig
@@ -16,10 +17,7 @@ class TestViolationContextSanitization:
     def test_sanitize_simple_context_with_secret(self):
         """Ensure simple context with secret is sanitized."""
         # Setup - use OpenAI key pattern that definitely matches
-        context = {
-            "user": "alice",
-            "api_key": "sk-proj-abc123def456ghi789xyz"
-        }
+        context = {"user": "alice", "api_key": "sk-proj-abc123def456ghi789xyz"}
 
         # Execute
         result = _sanitize_violation_context(context)
@@ -30,8 +28,10 @@ class TestViolationContextSanitization:
         assert "sk-proj-abc123def456ghi789xyz" not in str(result)  # Secret redacted
         assert "api_key" in result  # Key name preserved
         # Value should be redacted
-        assert "REDACTED" in str(result.get("api_key", "")) or \
-               result.get("api_key") != "sk-proj-abc123def456ghi789xyz"
+        assert (
+            "REDACTED" in str(result.get("api_key", ""))
+            or result.get("api_key") != "sk-proj-abc123def456ghi789xyz"
+        )
 
     def test_sanitize_nested_context_with_credentials(self):
         """Ensure nested context structures are recursively sanitized."""
@@ -43,11 +43,9 @@ class TestViolationContextSanitization:
                 "type": "api_call",
                 "params": {
                     "url": "https://api.example.com",
-                    "headers": {
-                        "Authorization": f"Bearer {jwt_token}"
-                    }
-                }
-            }
+                    "headers": {"Authorization": f"Bearer {jwt_token}"},
+                },
+            },
         }
 
         # Execute
@@ -81,10 +79,7 @@ class TestViolationContextSanitization:
     def test_sanitize_context_with_email(self):
         """Ensure PII (email) is redacted from context."""
         # Setup
-        context = {
-            "user_email": "john.doe@company.com",
-            "action": "login_attempt"
-        }
+        context = {"user_email": "john.doe@company.com", "action": "login_attempt"}
 
         # Execute
         result = _sanitize_violation_context(context)
@@ -92,15 +87,17 @@ class TestViolationContextSanitization:
         # Assert
         assert result is not None
         assert "john.doe@company.com" not in str(result)
-        assert "REDACTED" in str(result.get("user_email", "")) or \
-               "EMAIL" in str(result.get("user_email", "")).upper()
+        assert (
+            "REDACTED" in str(result.get("user_email", ""))
+            or "EMAIL" in str(result.get("user_email", "")).upper()
+        )
 
     def test_sanitize_context_with_password(self):
         """Ensure password values are redacted."""
         # Setup - Use generic API key pattern
         context = {
             "content": 'api_key="sk-proj-MyS3cr3tK3yValue123"',
-            "file_path": "config.py"
+            "file_path": "config.py",
         }
 
         # Execute
@@ -116,14 +113,11 @@ class TestViolationContextSanitization:
         # Setup
         openai_key = "sk-proj-" + "a" * 40  # Meets minimum 20 char requirement
         context = {
-            "detected_patterns": [
-                "api_key",
-                "password"
-            ],
+            "detected_patterns": ["api_key", "password"],
             "samples": [
                 openai_key,  # Full OpenAI key pattern (sk-proj- + 40 chars)
-                "AKIAIOSFODNN7EXAMPLE"  # AWS access key
-            ]
+                "AKIAIOSFODNN7EXAMPLE",  # AWS access key
+            ],
         }
 
         # Execute
@@ -145,6 +139,7 @@ class TestDataSanitizerHMAC:
         """Ensure content hashing uses HMAC, not raw SHA256."""
         # Setup
         import hashlib
+
         sanitizer = DataSanitizer(SanitizationConfig(include_hash=True))
         test_content = "test secret content"
 
@@ -155,11 +150,12 @@ class TestDataSanitizerHMAC:
         assert result.content_hash is not None
 
         # Compute raw SHA256 for comparison
-        raw_sha256 = hashlib.sha256(test_content.encode('utf-8')).hexdigest()[:16]
+        raw_sha256 = hashlib.sha256(test_content.encode("utf-8")).hexdigest()[:16]
 
         # HMAC hash should be different from raw SHA256
-        assert result.content_hash != raw_sha256, \
-            "Content hash appears to be raw SHA256, not HMAC!"
+        assert (
+            result.content_hash != raw_sha256
+        ), "Content hash appears to be raw SHA256, not HMAC!"
 
     def test_content_hash_consistency(self):
         """Ensure same content produces same HMAC hash."""
@@ -172,8 +168,9 @@ class TestDataSanitizerHMAC:
         result2 = sanitizer.sanitize_text(test_content)
 
         # Assert
-        assert result1.content_hash == result2.content_hash, \
-            "Same content should produce same HMAC hash"
+        assert (
+            result1.content_hash == result2.content_hash
+        ), "Same content should produce same HMAC hash"
 
     def test_different_content_different_hash(self):
         """Ensure different content produces different HMAC hashes."""
@@ -185,14 +182,15 @@ class TestDataSanitizerHMAC:
         result2 = sanitizer.sanitize_text("content two")
 
         # Assert
-        assert result1.content_hash != result2.content_hash, \
-            "Different content should produce different hashes"
+        assert (
+            result1.content_hash != result2.content_hash
+        ), "Different content should produce different hashes"
 
     def test_hmac_key_from_environment(self, monkeypatch):
         """Ensure HMAC key can be loaded from environment variable."""
         # Setup - set environment variable
         test_key_hex = "0123456789abcdef" * 4  # 32 bytes in hex
-        monkeypatch.setenv('OBSERVABILITY_HMAC_KEY', test_key_hex)
+        monkeypatch.setenv("OBSERVABILITY_HMAC_KEY", test_key_hex)
 
         # Execute
         sanitizer = DataSanitizer(SanitizationConfig(include_hash=True))
@@ -208,7 +206,7 @@ class TestDataSanitizerHMAC:
     def test_invalid_hmac_key_falls_back_to_random(self, monkeypatch):
         """Ensure invalid HMAC key in env falls back to random generation."""
         # Setup - set invalid hex
-        monkeypatch.setenv('OBSERVABILITY_HMAC_KEY', 'invalid_hex_value')
+        monkeypatch.setenv("OBSERVABILITY_HMAC_KEY", "invalid_hex_value")
 
         # Execute (should not raise exception)
         sanitizer = DataSanitizer(SanitizationConfig(include_hash=True))
@@ -220,7 +218,9 @@ class TestDataSanitizerHMAC:
         sanitizer2 = DataSanitizer(SanitizationConfig(include_hash=True))
         result2 = sanitizer2.sanitize_text("test")
         assert result2.content_hash is not None
-        assert result.content_hash != result2.content_hash, "Random fallback keys should differ per instance"
+        assert (
+            result.content_hash != result2.content_hash
+        ), "Random fallback keys should differ per instance"
 
 
 class TestLoggingSecurityIntegration:
@@ -240,8 +240,8 @@ class TestLoggingSecurityIntegration:
             action="file_write",
             context={
                 "file_path": "config.py",
-                "detected_secret": "sk-proj-abc123def456ghi789xyz"  # OpenAI pattern
-            }
+                "detected_secret": "sk-proj-abc123def456ghi789xyz",  # OpenAI pattern
+            },
         )
 
         # Execute
@@ -257,7 +257,7 @@ class TestLoggingSecurityIntegration:
 
         # Check log records for context (extra data)
         for record in caplog.records:
-            if hasattr(record, 'context'):
+            if hasattr(record, "context"):
                 # Context should exist but secret should be redacted
                 context_str = str(record.context)
                 assert "sk-proj-abc123def456ghi789xyz" not in context_str
@@ -277,15 +277,15 @@ class TestLoggingSecurityIntegration:
                 severity=ViolationSeverity.MEDIUM,
                 message="First violation",
                 action="action1",
-                context={"secret": "AKIAIOSFODNN7EXAMPLE"}  # AWS access key
+                context={"secret": "AKIAIOSFODNN7EXAMPLE"},  # AWS access key
             ),
             SafetyViolation(
                 policy_name="Policy2",
                 severity=ViolationSeverity.HIGH,
                 message="Second violation",
                 action="action2",
-                context={"api_key": "sk-proj-xyz789abcdefghijklmno"}  # OpenAI key
-            )
+                context={"api_key": "sk-proj-xyz789abcdefghijklmno"},  # OpenAI key
+            ),
         ]
 
         # Execute

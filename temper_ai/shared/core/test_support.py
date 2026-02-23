@@ -23,15 +23,16 @@ Usage as a pytest fixture (see tests/conftest.py)::
         yield
         reset_all_globals()
 """
+
 import logging
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
-from typing import Callable, Generator, List
 
 logger = logging.getLogger(__name__)
 
 # Registry of reset functions.
 # Each entry is (module_path, reset_callable).
-_reset_registry: List[Callable[[], None]] = []
+_reset_registry: list[Callable[[], None]] = []
 
 
 def register_reset(fn: Callable[[], None]) -> None:
@@ -53,7 +54,9 @@ def reset_all_globals() -> None:
         try:
             fn()
         except Exception as e:
-            logger.debug(f"Reset function {fn.__module__}.{fn.__qualname__} failed: {e}")
+            logger.debug(
+                f"Reset function {fn.__module__}.{fn.__qualname__} failed: {e}"
+            )
 
 
 @contextmanager
@@ -75,29 +78,32 @@ def isolated_globals() -> Generator[None, None, None]:
         reset_all_globals()
 
 
-def _get_all_reset_functions() -> List[Callable[[], None]]:
+def _get_all_reset_functions() -> list[Callable[[], None]]:
     """Collect all known reset functions from framework modules.
 
     Uses lazy imports to avoid circular dependencies and to only
     collect from modules that are actually loaded.
     """
-    fns: List[Callable[[], None]] = list(_reset_registry)
+    fns: list[Callable[[], None]] = list(_reset_registry)
 
     # Observability
     try:
         from temper_ai.observability.hooks import reset_tracker
+
         fns.append(reset_tracker)
     except ImportError:
         pass
 
     try:
         from temper_ai.observability.performance import reset_performance_tracker
+
         fns.append(reset_performance_tracker)
     except ImportError:
         pass
 
     try:
         from temper_ai.storage.database import reset_database
+
         fns.append(reset_database)
     except ImportError:
         pass
@@ -105,6 +111,7 @@ def _get_all_reset_functions() -> List[Callable[[], None]]:
     # Core
     try:
         from temper_ai.safety.service_mixin import reset_sanitizer
+
         fns.append(reset_sanitizer)
     except ImportError:
         pass
@@ -112,6 +119,7 @@ def _get_all_reset_functions() -> List[Callable[[], None]]:
     # Security
     try:
         from temper_ai.safety.security.llm_security import reset_security_components
+
         fns.append(reset_security_components)
     except ImportError:
         pass
@@ -119,19 +127,30 @@ def _get_all_reset_functions() -> List[Callable[[], None]]:
     # Registries
     try:
         from temper_ai.agent.strategies.registry import StrategyRegistry
+
         fns.append(StrategyRegistry.reset_for_testing)
     except ImportError:
         pass
 
     try:
         from temper_ai.agent.utils.agent_factory import AgentFactory
+
         fns.append(AgentFactory.reset_for_testing)
     except ImportError:
         pass
 
     try:
         from temper_ai.llm.pricing import PricingManager
+
         fns.append(PricingManager.reset_for_testing)
+    except ImportError:
+        pass
+
+    # Stage executors
+    try:
+        from temper_ai.stage.executors import _agent_execution
+
+        fns.append(_agent_execution._persistent_agent_cache.clear)
     except ImportError:
         pass
 

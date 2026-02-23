@@ -7,17 +7,15 @@ Tests cover:
 - Memory efficiency
 - Database performance
 """
+
 import statistics
 import time
-import uuid
-from datetime import datetime, timezone
-
-import pytest
-
+from datetime import UTC, datetime
 
 # ============================================================================
 # Throughput Benchmarks
 # ============================================================================
+
 
 class TestThroughputBenchmarks:
     """Test system throughput characteristics."""
@@ -41,7 +39,7 @@ class TestThroughputBenchmarks:
         assert throughput > 1000, f"Throughput too low: {throughput:.2f} items/sec"
         assert len(processed) == item_count
 
-        print(f"\n=== Data Processing Throughput ===")
+        print("\n=== Data Processing Throughput ===")
         print(f"Items: {item_count}")
         print(f"Duration: {duration:.2f}s")
         print(f"Throughput: {throughput:.2f} items/sec")
@@ -54,7 +52,7 @@ class TestThroughputBenchmarks:
         start_time = time.perf_counter()
 
         for i in range(operation_count):
-            data[f"key_{i}"] = {"value": i, "timestamp": datetime.now(timezone.utc)}
+            data[f"key_{i}"] = {"value": i, "timestamp": datetime.now(UTC)}
 
         end_time = time.perf_counter()
         duration = end_time - start_time
@@ -63,7 +61,7 @@ class TestThroughputBenchmarks:
         assert throughput > 5000, f"Dict ops too slow: {throughput:.2f} ops/sec"
         assert len(data) == operation_count
 
-        print(f"\n=== Dictionary Operations Throughput ===")
+        print("\n=== Dictionary Operations Throughput ===")
         print(f"Operations: {operation_count}")
         print(f"Duration: {duration:.2f}s")
         print(f"Throughput: {throughput:.2f} ops/sec")
@@ -72,6 +70,7 @@ class TestThroughputBenchmarks:
 # ============================================================================
 # Latency Benchmarks
 # ============================================================================
+
 
 class TestLatencyBenchmarks:
     """Test latency percentiles for common operations."""
@@ -102,7 +101,7 @@ class TestLatencyBenchmarks:
         assert p50 < 10, f"p50 too high: {p50:.2f} μs"
         assert p95 < 50, f"p95 too high: {p95:.2f} μs"
 
-        print(f"\n=== Dict Lookup Latency ===")
+        print("\n=== Dict Lookup Latency ===")
         print(f"Samples: {sample_count}")
         print(f"p50: {p50:.2f} μs")
         print(f"p95: {p95:.2f} μs")
@@ -129,7 +128,7 @@ class TestLatencyBenchmarks:
         assert p50 < 10, f"p50 too high: {p50:.2f} μs"
         assert p95 < 50, f"p95 too high: {p95:.2f} μs"
 
-        print(f"\n=== List Append Latency ===")
+        print("\n=== List Append Latency ===")
         print(f"Samples: {sample_count}")
         print(f"p50: {p50:.2f} μs")
         print(f"p95: {p95:.2f} μs")
@@ -139,6 +138,7 @@ class TestLatencyBenchmarks:
 # ============================================================================
 # Concurrency Simulation
 # ============================================================================
+
 
 class TestConcurrencyCharacteristics:
     """Test concurrent operation characteristics."""
@@ -163,9 +163,11 @@ class TestConcurrencyCharacteristics:
         throughput = total_processed / duration
 
         assert total_processed == worker_count * tasks_per_worker
-        assert throughput > 100, f"Worker throughput too low: {throughput:.2f} tasks/sec"
+        assert (
+            throughput > 100
+        ), f"Worker throughput too low: {throughput:.2f} tasks/sec"
 
-        print(f"\n=== Worker Simulation ===")
+        print("\n=== Worker Simulation ===")
         print(f"Workers: {worker_count}")
         print(f"Tasks/Worker: {tasks_per_worker}")
         print(f"Total Tasks: {total_processed}")
@@ -191,9 +193,11 @@ class TestConcurrencyCharacteristics:
 
         expected_batches = total_items // batch_size
         assert processed_batches == expected_batches
-        assert batches_per_second > 10, f"Batch processing too slow: {batches_per_second:.2f} batches/sec"
+        assert (
+            batches_per_second > 10
+        ), f"Batch processing too slow: {batches_per_second:.2f} batches/sec"
 
-        print(f"\n=== Batch Processing ===")
+        print("\n=== Batch Processing ===")
         print(f"Total Items: {total_items}")
         print(f"Batch Size: {batch_size}")
         print(f"Batches: {processed_batches}")
@@ -204,6 +208,7 @@ class TestConcurrencyCharacteristics:
 # ============================================================================
 # Memory Efficiency
 # ============================================================================
+
 
 class TestMemoryEfficiency:
     """Test memory efficiency of operations."""
@@ -230,6 +235,7 @@ class TestMemoryEfficiency:
 
     def test_iterator_efficiency(self):
         """Iterators should process data efficiently."""
+
         # Process large dataset with iterator
         def process_with_iterator(count):
             total = 0
@@ -246,6 +252,7 @@ class TestMemoryEfficiency:
 # ============================================================================
 # Database Performance (Simple)
 # ============================================================================
+
 
 class TestDatabasePerformanceSimple:
     """Test basic database performance characteristics."""
@@ -269,14 +276,14 @@ class TestDatabasePerformanceSimple:
 
         assert avg_latency < 100, f"Connection creation too slow: {avg_latency:.2f} ms"
 
-        print(f"\n=== Database Connection Creation ===")
+        print("\n=== Database Connection Creation ===")
         print(f"Connections: {connection_count}")
         print(f"Avg Latency: {avg_latency:.2f} ms")
         print(f"p95 Latency: {p95_latency:.2f} ms")
 
     def test_session_context_overhead(self):
         """Measure session context manager overhead."""
-        from temper_ai.storage.database import init_database, get_session
+        from temper_ai.storage.database import get_session, init_database
 
         init_database("sqlite:///:memory:")
 
@@ -294,7 +301,7 @@ class TestDatabasePerformanceSimple:
 
         assert avg_overhead < 10, f"Session overhead too high: {avg_overhead:.2f} ms"
 
-        print(f"\n=== Session Context Overhead ===")
+        print("\n=== Session Context Overhead ===")
         print(f"Iterations: {iteration_count}")
         print(f"Total Duration: {duration:.2f}s")
         print(f"Avg Overhead: {avg_overhead:.2f} ms")
@@ -303,6 +310,7 @@ class TestDatabasePerformanceSimple:
 # ============================================================================
 # Stress Testing (Simple)
 # ============================================================================
+
 
 class TestStressCharacteristics:
     """Test system behavior under stress."""
@@ -313,7 +321,9 @@ class TestStressCharacteristics:
 
         start_time = time.perf_counter()
 
-        large_dict = {f"key_{i}": {"value": i, "data": f"data_{i}"} for i in range(item_count)}
+        large_dict = {
+            f"key_{i}": {"value": i, "data": f"data_{i}"} for i in range(item_count)
+        }
 
         end_time = time.perf_counter()
         duration = end_time - start_time
@@ -321,7 +331,7 @@ class TestStressCharacteristics:
         assert len(large_dict) == item_count
         assert duration < 5.0, f"Large dict creation too slow: {duration:.2f}s"
 
-        print(f"\n=== Large Data Structure ===")
+        print("\n=== Large Data Structure ===")
         print(f"Items: {item_count}")
         print(f"Duration: {duration:.2f}s")
         print(f"Items/sec: {item_count / duration:.2f}")
@@ -345,9 +355,11 @@ class TestStressCharacteristics:
         duration = end_time - start_time
         ops_per_second = (operation_count * 3) / duration  # 3 ops per iteration
 
-        assert ops_per_second > 10000, f"Operations too slow: {ops_per_second:.2f} ops/sec"
+        assert (
+            ops_per_second > 10000
+        ), f"Operations too slow: {ops_per_second:.2f} ops/sec"
 
-        print(f"\n=== Repeated Operations ===")
+        print("\n=== Repeated Operations ===")
         print(f"Iterations: {operation_count}")
         print(f"Total Operations: {operation_count * 3}")
         print(f"Duration: {duration:.2f}s")

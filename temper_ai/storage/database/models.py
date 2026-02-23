@@ -7,9 +7,16 @@ and learning/merit systems.
 
 import uuid
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-from sqlalchemy import JSON, CheckConstraint, ForeignKey, Index, String, UniqueConstraint
+from sqlalchemy import (
+    JSON,
+    CheckConstraint,
+    ForeignKey,
+    Index,
+    String,
+    UniqueConstraint,
+)
 from sqlmodel import Column, Field, Relationship, SQLModel
 
 from temper_ai.shared.constants.sizes import BYTES_PER_MB
@@ -41,47 +48,54 @@ class WorkflowExecution(SQLModel, table=True):
 
     id: str = Field(primary_key=True)
     workflow_name: str = Field(index=True)
-    workflow_version: Optional[str] = None
-    workflow_config_snapshot: Dict[str, Any] = Field(sa_column=Column(JSON))  # noqa: duplicate
+    workflow_version: str | None = None
+    workflow_config_snapshot: dict[str, Any] = Field(
+        sa_column=Column(JSON)
+    )  # noqa: duplicate
 
     # Trigger info
-    trigger_type: Optional[str] = None
-    trigger_id: Optional[str] = None
-    trigger_data: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
+    trigger_type: str | None = None
+    trigger_id: str | None = None
+    trigger_data: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
 
     # Timing
     start_time: datetime = Field(default_factory=utcnow)
-    end_time: Optional[datetime] = None
-    duration_seconds: Optional[float] = None
+    end_time: datetime | None = None
+    duration_seconds: float | None = None
 
     # Status
     status: str = Field(index=True)  # running | completed | failed | halted | timeout
-    error_message: Optional[str] = None
-    error_stack_trace: Optional[str] = None
-    error_fingerprint: Optional[str] = Field(default=None, index=True)
+    error_message: str | None = None
+    error_stack_trace: str | None = None
+    error_fingerprint: str | None = Field(default=None, index=True)
 
     # Context
-    optimization_target: Optional[str] = None
-    product_type: Optional[str] = None
-    environment: Optional[str] = None
+    optimization_target: str | None = None
+    product_type: str | None = None
+    environment: str | None = None
 
     # Metrics
-    total_cost_usd: Optional[float] = None
-    total_tokens: Optional[int] = None
-    total_llm_calls: Optional[int] = None
-    total_tool_calls: Optional[int] = None
+    total_cost_usd: float | None = None
+    total_tokens: int | None = None
+    total_llm_calls: int | None = None
+    total_tool_calls: int | None = None
 
     # Metadata
-    tags: Optional[List[str]] = Field(default=None, sa_column=Column(JSON))
-    extra_metadata: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
+    tags: list[str] | None = Field(default=None, sa_column=Column(JSON))
+    extra_metadata: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
 
     # Cost attribution
-    cost_attribution_tags: Optional[Dict[str, str]] = Field(default=None, sa_column=Column(JSON))
+    cost_attribution_tags: dict[str, str] | None = Field(
+        default=None, sa_column=Column(JSON)
+    )
+
+    # Multi-tenancy
+    tenant_id: str | None = Field(default=None, index=True)
 
     created_at: datetime = Field(default_factory=utcnow)
 
     # Relationships
-    stages: List["StageExecution"] = Relationship(
+    stages: list["StageExecution"] = Relationship(
         back_populates="workflow",
         sa_relationship_kwargs={CASCADE_SIMPLE: CASCADE_ALL_DELETE_ORPHAN},
     )
@@ -120,54 +134,63 @@ class StageExecution(SQLModel, table=True):
     id: str = Field(primary_key=True)
     workflow_execution_id: str = Field(
         sa_column=Column(
-            String, ForeignKey(FK_WORKFLOW_EXECUTIONS_ID, ondelete=FK_CASCADE), index=True
+            String,
+            ForeignKey(FK_WORKFLOW_EXECUTIONS_ID, ondelete=FK_CASCADE),
+            index=True,
         )
     )
 
     # Identity
     stage_name: str = Field(index=True)
-    stage_version: Optional[str] = None
-    stage_config_snapshot: Dict[str, Any] = Field(sa_column=Column(JSON))  # noqa: duplicate
+    stage_version: str | None = None
+    stage_config_snapshot: dict[str, Any] = Field(
+        sa_column=Column(JSON)
+    )  # noqa: duplicate
 
     # Timing
     start_time: datetime = Field(default_factory=utcnow)
-    end_time: Optional[datetime] = None
-    duration_seconds: Optional[float] = None
+    end_time: datetime | None = None
+    duration_seconds: float | None = None
 
     # Status
     status: str = Field(index=True)
-    error_message: Optional[str] = None
-    error_fingerprint: Optional[str] = Field(default=None, index=True)
+    error_message: str | None = None
+    error_fingerprint: str | None = Field(default=None, index=True)
 
     # Data
-    input_data: Optional[Dict[str, Any]] = Field(
+    input_data: dict[str, Any] | None = Field(
         default=None, sa_column=Column(JSON)
     )  # noqa: duplicate
-    output_data: Optional[Dict[str, Any]] = Field(
+    output_data: dict[str, Any] | None = Field(
         default=None, sa_column=Column(JSON)
     )  # noqa: duplicate
 
     # Metrics
-    num_agents_executed: Optional[int] = None
-    num_agents_succeeded: Optional[int] = None
-    num_agents_failed: Optional[int] = None
-    collaboration_rounds: Optional[int] = None
+    num_agents_executed: int | None = None
+    num_agents_succeeded: int | None = None
+    num_agents_failed: int | None = None
+    collaboration_rounds: int | None = None
 
     # Metadata
-    extra_metadata: Optional[Dict[str, Any]] = Field(
+    extra_metadata: dict[str, Any] | None = Field(
         default=None, sa_column=Column(JSON)
     )  # noqa: duplicate
 
     # Data lineage
-    output_lineage: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
+    output_lineage: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+
+    # Multi-tenancy
+    tenant_id: str | None = Field(default=None, index=True)
 
     # Relationships
     workflow: WorkflowExecution = Relationship(back_populates="stages")
-    agents: List["AgentExecution"] = Relationship(
-        back_populates="stage", sa_relationship_kwargs={CASCADE_SIMPLE: CASCADE_ALL_DELETE_ORPHAN}
+    agents: list["AgentExecution"] = Relationship(
+        back_populates="stage",
+        sa_relationship_kwargs={CASCADE_SIMPLE: CASCADE_ALL_DELETE_ORPHAN},
     )
-    collaboration_events: List["CollaborationEvent"] = Relationship(
-        back_populates="stage", sa_relationship_kwargs={CASCADE_SIMPLE: CASCADE_ALL_DELETE_ORPHAN}
+    collaboration_events: list["CollaborationEvent"] = Relationship(
+        back_populates="stage",
+        sa_relationship_kwargs={CASCADE_SIMPLE: CASCADE_ALL_DELETE_ORPHAN},
     )
 
     def __init__(self, **data: Any) -> None:
@@ -205,63 +228,70 @@ class AgentExecution(SQLModel, table=True):
 
     id: str = Field(primary_key=True)
     stage_execution_id: str = Field(
-        sa_column=Column(String, ForeignKey(FK_STAGE_EXECUTIONS_ID, ondelete="CASCADE"), index=True)
+        sa_column=Column(
+            String, ForeignKey(FK_STAGE_EXECUTIONS_ID, ondelete="CASCADE"), index=True
+        )
     )
 
     # Identity
     agent_name: str = Field(index=True)
-    agent_version: Optional[str] = None
-    agent_config_snapshot: Dict[str, Any] = Field(sa_column=Column(JSON))
+    agent_version: str | None = None
+    agent_config_snapshot: dict[str, Any] = Field(sa_column=Column(JSON))
 
     # Timing
     start_time: datetime = Field(default_factory=utcnow)
-    end_time: Optional[datetime] = None
-    duration_seconds: Optional[float] = None
+    end_time: datetime | None = None
+    duration_seconds: float | None = None
 
     # Status
     status: str = Field(index=True)
-    error_message: Optional[str] = None
-    error_fingerprint: Optional[str] = Field(default=None, index=True)
+    error_message: str | None = None
+    error_fingerprint: str | None = Field(default=None, index=True)
     retry_count: int = 0
 
     # Core data
-    reasoning: Optional[str] = None
-    input_data: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
-    output_data: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
+    reasoning: str | None = None
+    input_data: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+    output_data: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
 
     # Performance metrics
-    llm_duration_seconds: Optional[float] = None
-    tool_duration_seconds: Optional[float] = None
+    llm_duration_seconds: float | None = None
+    tool_duration_seconds: float | None = None
 
     # LLM metrics
-    total_tokens: Optional[int] = None
-    prompt_tokens: Optional[int] = None
-    completion_tokens: Optional[int] = None
-    estimated_cost_usd: Optional[float] = None
-    num_llm_calls: Optional[int] = None
+    total_tokens: int | None = None
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    estimated_cost_usd: float | None = None
+    num_llm_calls: int | None = None
 
     # Tool metrics
-    num_tool_calls: Optional[int] = None
+    num_tool_calls: int | None = None
 
     # Collaboration data
-    votes_cast: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
-    conflicts_with_agents: Optional[List[str]] = Field(default=None, sa_column=Column(JSON))
-    final_decision: Optional[str] = None
-    confidence_score: Optional[float] = None
+    votes_cast: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+    conflicts_with_agents: list[str] | None = Field(
+        default=None, sa_column=Column(JSON)
+    )
+    final_decision: str | None = None
+    confidence_score: float | None = None
 
     # Quality metrics
-    output_quality_score: Optional[float] = None
-    reasoning_quality_score: Optional[float] = None
+    output_quality_score: float | None = None
+    reasoning_quality_score: float | None = None
 
     # Metadata
-    extra_metadata: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
+    extra_metadata: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+
+    # Multi-tenancy
+    tenant_id: str | None = Field(default=None, index=True)
 
     # Relationships
     stage: StageExecution = Relationship(back_populates="agents")
-    llm_calls: List["LLMCall"] = Relationship(
+    llm_calls: list["LLMCall"] = Relationship(
         back_populates="agent", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
-    tool_executions: List["ToolExecution"] = Relationship(
+    tool_executions: list["ToolExecution"] = Relationship(
         back_populates="agent", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
 
@@ -300,55 +330,62 @@ class LLMCall(SQLModel, table=True):
 
     id: str = Field(primary_key=True)
     agent_execution_id: str = Field(
-        sa_column=Column(String, ForeignKey(FK_AGENT_EXECUTIONS_ID, ondelete="CASCADE"), index=True)
+        sa_column=Column(
+            String, ForeignKey(FK_AGENT_EXECUTIONS_ID, ondelete="CASCADE"), index=True
+        )
     )
 
     # Provider info
     provider: str = Field(index=True)
     model: str = Field(index=True)
-    base_url: Optional[str] = None
+    base_url: str | None = None
 
     # Timing
     start_time: datetime = Field(default_factory=utcnow)
-    end_time: Optional[datetime] = None
-    latency_ms: Optional[int] = None
+    end_time: datetime | None = None
+    latency_ms: int | None = None
 
     # Request/Response
-    prompt: Optional[str] = None
-    response: Optional[str] = None
+    prompt: str | None = None
+    response: str | None = None
 
     # Token metrics
-    prompt_tokens: Optional[int] = None
-    completion_tokens: Optional[int] = None
-    total_tokens: Optional[int] = None
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    total_tokens: int | None = None
 
     # Cost
-    estimated_cost_usd: Optional[float] = None
+    estimated_cost_usd: float | None = None
 
     # Parameters
-    temperature: Optional[float] = None
-    max_tokens: Optional[int] = None
-    top_p: Optional[float] = None
+    temperature: float | None = None
+    max_tokens: int | None = None
+    top_p: float | None = None
 
     # Status
     status: str = Field(index=True)
-    error_message: Optional[str] = None
-    error_fingerprint: Optional[str] = Field(default=None, index=True)
-    http_status_code: Optional[int] = None
+    error_message: str | None = None
+    error_fingerprint: str | None = Field(default=None, index=True)
+    http_status_code: int | None = None
 
     # Retry info
     retry_count: int = 0
 
     # Failover tracking
-    failover_sequence: Optional[List[str]] = Field(default=None, sa_column=Column(JSON))
-    failover_from_provider: Optional[str] = None
+    failover_sequence: list[str] | None = Field(default=None, sa_column=Column(JSON))
+    failover_from_provider: str | None = None
 
     # Prompt versioning
-    prompt_template_hash: Optional[str] = Field(default=None, max_length=16)  # noqa: duplicate
-    prompt_template_source: Optional[str] = None
+    prompt_template_hash: str | None = Field(
+        default=None, max_length=16
+    )  # noqa: duplicate
+    prompt_template_source: str | None = None
 
     # Metadata
-    extra_metadata: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
+    extra_metadata: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+
+    # Multi-tenancy
+    tenant_id: str | None = Field(default=None, index=True)
 
     # Relationships
     agent: AgentExecution = Relationship(back_populates="llm_calls")
@@ -360,43 +397,50 @@ class ToolExecution(SQLModel, table=True):
     __tablename__ = "tool_executions"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('success', 'error', 'timeout', 'cancelled')",
+            "status IN ('success', 'error', 'failed', 'timeout', 'cancelled')",
             name="tool_valid_status",
         ),
     )
 
     id: str = Field(primary_key=True)
     agent_execution_id: str = Field(
-        sa_column=Column(String, ForeignKey(FK_AGENT_EXECUTIONS_ID, ondelete="CASCADE"), index=True)
+        sa_column=Column(
+            String, ForeignKey(FK_AGENT_EXECUTIONS_ID, ondelete="CASCADE"), index=True
+        )
     )
 
     # Tool info
     tool_name: str = Field(index=True)
-    tool_version: Optional[str] = None
+    tool_version: str | None = None
 
     # Timing
     start_time: datetime = Field(default_factory=utcnow)
-    end_time: Optional[datetime] = None
-    duration_seconds: Optional[float] = None
+    end_time: datetime | None = None
+    duration_seconds: float | None = None
 
     # Input/Output
-    input_params: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
-    output_data: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
+    input_params: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+    output_data: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
 
     # Status
     status: str = Field(index=True)
-    error_message: Optional[str] = None
-    error_fingerprint: Optional[str] = Field(default=None, index=True)
+    error_message: str | None = None
+    error_fingerprint: str | None = Field(default=None, index=True)
     retry_count: int = 0
 
     # Safety
-    safety_checks_applied: Optional[List[str]] = Field(default=None, sa_column=Column(JSON))
+    safety_checks_applied: list[str] | None = Field(
+        default=None, sa_column=Column(JSON)
+    )
     approval_required: bool = Field(default=False, index=True)
-    approved_by: Optional[str] = None
-    approval_timestamp: Optional[datetime] = None
+    approved_by: str | None = None
+    approval_timestamp: datetime | None = None
 
     # Metadata
-    extra_metadata: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
+    extra_metadata: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+
+    # Multi-tenancy
+    tenant_id: str | None = Field(default=None, index=True)
 
     # Relationships
     agent: AgentExecution = Relationship(back_populates="tool_executions")
@@ -409,27 +453,34 @@ class CollaborationEvent(SQLModel, table=True):
 
     id: str = Field(primary_key=True)
     stage_execution_id: str = Field(
-        sa_column=Column(String, ForeignKey(FK_STAGE_EXECUTIONS_ID, ondelete="CASCADE"), index=True)
+        sa_column=Column(
+            String, ForeignKey(FK_STAGE_EXECUTIONS_ID, ondelete="CASCADE"), index=True
+        )
     )
 
     # Event type
-    event_type: str = Field(index=True)  # vote | conflict | resolution | consensus | debate_round
+    event_type: str = Field(
+        index=True
+    )  # vote | conflict | resolution | consensus | debate_round
     timestamp: datetime = Field(default_factory=utcnow)
-    round_number: Optional[int] = None
+    round_number: int | None = None
 
     # Participants
-    agents_involved: Optional[List[str]] = Field(default=None, sa_column=Column(JSON))
+    agents_involved: list[str] | None = Field(default=None, sa_column=Column(JSON))
 
     # Data
-    event_data: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
+    event_data: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
 
     # Outcome
-    resolution_strategy: Optional[str] = None
-    outcome: Optional[str] = None
-    confidence_score: Optional[float] = None
+    resolution_strategy: str | None = None
+    outcome: str | None = None
+    confidence_score: float | None = None
 
     # Metadata
-    extra_metadata: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
+    extra_metadata: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+
+    # Multi-tenancy
+    tenant_id: str | None = Field(default=None, index=True)
 
     # Relationships
     stage: StageExecution = Relationship(back_populates="collaboration_events")
@@ -439,7 +490,9 @@ class AgentMeritScore(SQLModel, table=True):
     """Agent reputation/merit tracking."""
 
     __tablename__ = "agent_merit_scores"
-    __table_args__ = (UniqueConstraint("agent_name", "domain", name="uq_merit_agent_domain"),)
+    __table_args__ = (
+        UniqueConstraint("agent_name", "domain", name="uq_merit_agent_domain"),
+    )
 
     id: str = Field(primary_key=True)
     agent_name: str = Field(index=True)
@@ -453,21 +506,24 @@ class AgentMeritScore(SQLModel, table=True):
     overridden_decisions: int = 0
 
     # Calculated metrics
-    success_rate: Optional[float] = None
-    average_confidence: Optional[float] = None
-    expertise_score: Optional[float] = None
+    success_rate: float | None = None
+    average_confidence: float | None = None
+    expertise_score: float | None = None
 
     # Time-based metrics (with decay)
-    last_30_days_success_rate: Optional[float] = None
-    last_90_days_success_rate: Optional[float] = None
+    last_30_days_success_rate: float | None = None
+    last_90_days_success_rate: float | None = None
 
     # Timestamps
-    first_decision_date: Optional[datetime] = None
-    last_decision_date: Optional[datetime] = None
+    first_decision_date: datetime | None = None
+    last_decision_date: datetime | None = None
     last_updated: datetime = Field(default_factory=utcnow)
 
     # Metadata
-    extra_metadata: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
+    extra_metadata: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+
+    # Multi-tenancy
+    tenant_id: str | None = Field(default=None, index=True)
 
 
 class DecisionOutcome(SQLModel, table=True):
@@ -482,45 +538,54 @@ class DecisionOutcome(SQLModel, table=True):
     )
 
     id: str = Field(primary_key=True)
-    agent_execution_id: Optional[str] = Field(
+    agent_execution_id: str | None = Field(
         default=None,
         sa_column=Column(
-            String, ForeignKey(FK_AGENT_EXECUTIONS_ID, ondelete="CASCADE"), nullable=True
+            String,
+            ForeignKey(FK_AGENT_EXECUTIONS_ID, ondelete="CASCADE"),
+            nullable=True,
         ),
     )
-    stage_execution_id: Optional[str] = Field(
+    stage_execution_id: str | None = Field(
         default=None,
         sa_column=Column(
-            String, ForeignKey(FK_STAGE_EXECUTIONS_ID, ondelete="CASCADE"), nullable=True
+            String,
+            ForeignKey(FK_STAGE_EXECUTIONS_ID, ondelete="CASCADE"),
+            nullable=True,
         ),
     )
-    workflow_execution_id: Optional[str] = Field(
+    workflow_execution_id: str | None = Field(
         default=None,
         sa_column=Column(
-            String, ForeignKey("workflow_executions.id", ondelete="CASCADE"), nullable=True
+            String,
+            ForeignKey("workflow_executions.id", ondelete="CASCADE"),
+            nullable=True,
         ),
     )
 
     # Decision info
     decision_type: str = Field(index=True)
-    decision_data: Dict[str, Any] = Field(sa_column=Column(JSON))
+    decision_data: dict[str, Any] = Field(sa_column=Column(JSON))
 
     # Validation
-    validation_method: Optional[str] = None
-    validation_timestamp: Optional[datetime] = None
-    validation_duration_seconds: Optional[float] = None
+    validation_method: str | None = None
+    validation_timestamp: datetime | None = None
+    validation_duration_seconds: float | None = None
 
     # Outcome
     outcome: str = Field(index=True)  # success | failure | neutral | mixed
-    impact_metrics: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
+    impact_metrics: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
 
     # Learning
-    lessons_learned: Optional[str] = None
-    should_repeat: Optional[bool] = None
-    tags: Optional[List[str]] = Field(default=None, sa_column=Column(JSON))
+    lessons_learned: str | None = None
+    should_repeat: bool | None = None
+    tags: list[str] | None = Field(default=None, sa_column=Column(JSON))
 
     # Metadata
-    extra_metadata: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
+    extra_metadata: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+
+    # Multi-tenancy
+    tenant_id: str | None = Field(default=None, index=True)
 
 
 class SystemMetric(SQLModel, table=True):
@@ -531,21 +596,24 @@ class SystemMetric(SQLModel, table=True):
     id: str = Field(primary_key=True)
     metric_name: str = Field(index=True)
     metric_value: float
-    metric_unit: Optional[str] = None
+    metric_unit: str | None = None
 
     # Dimensions
-    workflow_name: Optional[str] = Field(default=None, index=True)
-    stage_name: Optional[str] = None
-    agent_name: Optional[str] = None
-    environment: Optional[str] = None
+    workflow_name: str | None = Field(default=None, index=True)
+    stage_name: str | None = None
+    agent_name: str | None = None
+    environment: str | None = None
 
     # Time
     timestamp: datetime = Field(default_factory=utcnow, index=True)
-    aggregation_period: Optional[str] = None  # minute | hour | day
+    aggregation_period: str | None = None  # minute | hour | day
 
     # Metadata
-    tags: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
-    extra_metadata: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
+    tags: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+    extra_metadata: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+
+    # Multi-tenancy
+    tenant_id: str | None = Field(default=None, index=True)
 
 
 class SchemaVersion(SQLModel, table=True):
@@ -553,10 +621,10 @@ class SchemaVersion(SQLModel, table=True):
 
     __tablename__ = "schema_version"
 
-    id: Optional[int] = Field(default=None, primary_key=True)
+    id: int | None = Field(default=None, primary_key=True)
     version: str = Field(index=True, unique=True)
     applied_at: datetime = Field(default_factory=utcnow)
-    description: Optional[str] = None
+    description: str | None = None
 
 
 class ErrorFingerprint(SQLModel, table=True):
@@ -573,7 +641,7 @@ class ErrorFingerprint(SQLModel, table=True):
 
     # Messages
     normalized_message: str  # Deterministic, for display
-    sample_message: Optional[str] = None  # One raw example
+    sample_message: str | None = None  # One raw example
 
     # Trending
     occurrence_count: int = Field(default=1)
@@ -581,13 +649,16 @@ class ErrorFingerprint(SQLModel, table=True):
     last_seen: datetime = Field(default_factory=utcnow)
 
     # Context (capped JSON arrays)
-    recent_workflow_ids: Optional[List[str]] = Field(default=None, sa_column=Column(JSON))
-    recent_agent_names: Optional[List[str]] = Field(default=None, sa_column=Column(JSON))
+    recent_workflow_ids: list[str] | None = Field(default=None, sa_column=Column(JSON))
+    recent_agent_names: list[str] | None = Field(default=None, sa_column=Column(JSON))
 
     # Lifecycle
     resolved: bool = Field(default=False)
-    resolved_at: Optional[datetime] = None
-    resolution_note: Optional[str] = None
+    resolved_at: datetime | None = None
+    resolution_note: str | None = None
+
+    # Multi-tenancy
+    tenant_id: str | None = Field(default=None, index=True)
 
 
 class AlertRecord(SQLModel, table=True):
@@ -602,7 +673,10 @@ class AlertRecord(SQLModel, table=True):
     metric_value: float
     threshold: float
     timestamp: datetime = Field(default_factory=utcnow, index=True)
-    context: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
+    context: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+
+    # Multi-tenancy
+    tenant_id: str | None = Field(default=None, index=True)
 
 
 # Create composite indexes for common query patterns
@@ -614,7 +688,11 @@ class AlertRecord(SQLModel, table=True):
 Index("idx_workflow_status", WorkflowExecution.status, WorkflowExecution.start_time)  # type: ignore[arg-type]
 Index("idx_workflow_name", WorkflowExecution.workflow_name, WorkflowExecution.start_time)  # type: ignore[arg-type]
 Index("idx_workflow_end_time", WorkflowExecution.end_time)  # type: ignore[arg-type]  # For completion time queries
-Index("idx_stage_workflow", StageExecution.workflow_execution_id, StageExecution.stage_name)
+Index(
+    "idx_stage_workflow",
+    StageExecution.workflow_execution_id,
+    StageExecution.stage_name,
+)
 Index("idx_stage_status", StageExecution.status, StageExecution.start_time)  # type: ignore[arg-type]
 Index("idx_stage_end_time", StageExecution.end_time)  # type: ignore[arg-type]  # For stage completion queries
 Index("idx_agent_stage", AgentExecution.stage_execution_id, AgentExecution.agent_name)
@@ -626,7 +704,11 @@ Index("idx_llm_status", LLMCall.status, LLMCall.start_time)  # type: ignore[arg-
 Index("idx_tool_agent", ToolExecution.agent_execution_id, ToolExecution.tool_name)
 Index("idx_tool_name", ToolExecution.tool_name, ToolExecution.start_time)  # type: ignore[arg-type]
 Index("idx_tool_status", ToolExecution.status, ToolExecution.start_time)  # type: ignore[arg-type]
-Index("idx_collab_stage", CollaborationEvent.stage_execution_id, CollaborationEvent.event_type)
+Index(
+    "idx_collab_stage",
+    CollaborationEvent.stage_execution_id,
+    CollaborationEvent.event_type,
+)
 Index("idx_merit_agent", AgentMeritScore.agent_name, AgentMeritScore.domain)
 Index("idx_outcome_agent", DecisionOutcome.agent_execution_id, DecisionOutcome.outcome)  # type: ignore[arg-type]
 Index("idx_outcome_type", DecisionOutcome.decision_type, DecisionOutcome.outcome)
@@ -641,7 +723,7 @@ class RollbackSnapshotDB(SQLModel, table=True):
     __tablename__ = "rollback_snapshots"
 
     id: str = Field(primary_key=True)
-    workflow_execution_id: Optional[str] = Field(
+    workflow_execution_id: str | None = Field(
         default=None,
         sa_column=Column(
             String,
@@ -650,15 +732,18 @@ class RollbackSnapshotDB(SQLModel, table=True):
             nullable=True,
         ),
     )
-    checkpoint_id: Optional[str] = None
+    checkpoint_id: str | None = None
 
-    action: Dict[str, Any] = Field(sa_column=Column(JSON))
-    context: Dict[str, Any] = Field(sa_column=Column(JSON))
-    file_snapshots: Dict[str, Any] = Field(sa_column=Column(JSON))
-    state_snapshots: Dict[str, Any] = Field(sa_column=Column(JSON))
+    action: dict[str, Any] = Field(sa_column=Column(JSON))
+    context: dict[str, Any] = Field(sa_column=Column(JSON))
+    file_snapshots: dict[str, Any] = Field(sa_column=Column(JSON))
+    state_snapshots: dict[str, Any] = Field(sa_column=Column(JSON))
 
     created_at: datetime = Field(default_factory=utcnow, index=True)
-    expires_at: Optional[datetime] = None
+    expires_at: datetime | None = None
+
+    # Multi-tenancy
+    tenant_id: str | None = Field(default=None, index=True)
 
 
 class RollbackEvent(SQLModel, table=True):
@@ -684,17 +769,22 @@ class RollbackEvent(SQLModel, table=True):
 
     status: str = Field(index=True)  # completed | partial | failed
     trigger: str = Field(index=True)  # auto | manual | approval_rejection
-    operator: Optional[str] = None
+    operator: str | None = None
 
-    reverted_items: List[str] = Field(sa_column=Column(JSON))
-    failed_items: List[str] = Field(sa_column=Column(JSON))
-    errors: List[str] = Field(sa_column=Column(JSON))
+    reverted_items: list[str] = Field(sa_column=Column(JSON))
+    failed_items: list[str] = Field(sa_column=Column(JSON))
+    errors: list[str] = Field(sa_column=Column(JSON))
 
     executed_at: datetime = Field(default_factory=utcnow, index=True)
 
     # Metadata for manual rollbacks
-    reason: Optional[str] = None
-    rollback_metadata: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
+    reason: str | None = None
+    rollback_metadata: dict[str, Any] | None = Field(
+        default=None, sa_column=Column(JSON)
+    )
+
+    # Multi-tenancy
+    tenant_id: str | None = Field(default=None, index=True)
 
 
 # Indexes for rollback tables
@@ -710,5 +800,21 @@ Index("idx_rollback_snapshots_expires", RollbackSnapshotDB.expires_at)  # type: 
 Index("idx_alert_rule_time", AlertRecord.rule_name, AlertRecord.timestamp)  # type: ignore[arg-type]
 
 # M9: Import new models for SQLModel metadata registration
-from temper_ai.storage.database.models_registry import AgentRegistryDB  # noqa: F401
 from temper_ai.events.models import EventLog, EventSubscription  # noqa: F401
+
+# Optimization: Per-agent evaluation results (imported for SQLModel metadata registration)
+from temper_ai.storage.database.models_evaluation import (  # noqa: F401
+    AgentEvaluationResult as AgentEvaluationResult,
+)
+from temper_ai.storage.database.models_registry import AgentRegistryDB  # noqa: F401
+
+# Multi-tenancy: Access control + DB-backed config storage
+from temper_ai.storage.database.models_tenancy import (  # noqa: F401
+    AgentConfigDB,
+    APIKey,
+    StageConfigDB,
+    Tenant,
+    TenantMembership,
+    UserDB,
+    WorkflowConfigDB,
+)

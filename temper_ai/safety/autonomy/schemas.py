@@ -1,7 +1,6 @@
 """Pydantic schemas for progressive autonomy configuration."""
 
 from enum import IntEnum
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -29,7 +28,5 @@ class AutonomyConfig(BaseModel):
     allow_escalation: bool = True
     max_level: AutonomyLevel = Field(default=AutonomyLevel.RISK_GATED)
     shadow_mode: bool = True
-    budget_usd: Optional[float] = None
-    spot_check_rate: float = Field(
-        default=SPOT_CHECK_SAMPLE_RATE, ge=0.0, le=1.0
-    )
+    budget_usd: float | None = None
+    spot_check_rate: float = Field(default=SPOT_CHECK_SAMPLE_RATE, ge=0.0, le=1.0)

@@ -37,6 +37,7 @@ def sample_database():
 def execution_tracker(sample_database):
     """Execution tracker with test database."""
     from temper_ai.observability.backends.sql_backend import SQLObservabilityBackend
+
     backend = SQLObservabilityBackend()
     return ExecutionTracker(backend=backend)
 
@@ -61,6 +62,7 @@ class TestTimeoutCascading:
 
         Expected: Agent timeout at ~10s (NOT 30s or 60s)
         """
+
         # Simulate tool layer (60s operation, 30s timeout)
         async def tool_operation():
             await asyncio.sleep(60)
@@ -76,17 +78,16 @@ class TestTimeoutCascading:
         # Execute: Should timeout at agent level (10s)
         with pytest.raises((asyncio.TimeoutError, TimeoutError)):
             await asyncio.wait_for(
-                agent_operation(),
-                timeout=10.0  # Agent timeout - should win
+                agent_operation(), timeout=10.0  # Agent timeout - should win
             )
 
         elapsed = time.time() - start_time
 
         # STRICT VALIDATION: Timeout at ~10s (agent), not 30s (tool) or 60s (completion)
-        assert elapsed < 11.5, \
-            f"TIMEOUT NOT ENFORCED! Took {elapsed:.2f}s, expected ~10s agent timeout"
-        assert elapsed >= 9.0, \
-            f"Timeout too early: {elapsed:.2f}s (expected ~10s)"
+        assert (
+            elapsed < 11.5
+        ), f"TIMEOUT NOT ENFORCED! Took {elapsed:.2f}s, expected ~10s agent timeout"
+        assert elapsed >= 9.0, f"Timeout too early: {elapsed:.2f}s (expected ~10s)"
 
     @pytest.mark.asyncio
     async def test_agent_timeout_propagates_to_stage(self):
@@ -100,6 +101,7 @@ class TestTimeoutCascading:
 
         Expected: Stage timeout at ~15s (NOT 40s or 60s)
         """
+
         # Simulate agent layer (60s operation, 40s timeout)
         async def agent_operation():
             await asyncio.sleep(60)
@@ -115,17 +117,16 @@ class TestTimeoutCascading:
         # Execute: Should timeout at stage level (15s)
         with pytest.raises((asyncio.TimeoutError, TimeoutError)):
             await asyncio.wait_for(
-                stage_operation(),
-                timeout=15.0  # Stage timeout - should win
+                stage_operation(), timeout=15.0  # Stage timeout - should win
             )
 
         elapsed = time.time() - start_time
 
         # STRICT VALIDATION: Timeout at ~15s (stage), not 40s (agent) or 60s
-        assert elapsed < 17.0, \
-            f"STAGE TIMEOUT NOT ENFORCED! Took {elapsed:.2f}s, expected ~15s"
-        assert elapsed >= 13.0, \
-            f"Timeout too early: {elapsed:.2f}s (expected ~15s)"
+        assert (
+            elapsed < 17.0
+        ), f"STAGE TIMEOUT NOT ENFORCED! Took {elapsed:.2f}s, expected ~15s"
+        assert elapsed >= 13.0, f"Timeout too early: {elapsed:.2f}s (expected ~15s)"
 
     @pytest.mark.asyncio
     async def test_stage_timeout_propagates_to_workflow(self):
@@ -164,22 +165,22 @@ class TestTimeoutCascading:
         # Execute: Should timeout at workflow level (20s)
         with pytest.raises((asyncio.TimeoutError, TimeoutError)):
             await asyncio.wait_for(
-                workflow_operation(),
-                timeout=20.0  # Workflow timeout - should win
+                workflow_operation(), timeout=20.0  # Workflow timeout - should win
             )
 
         elapsed = time.time() - start_time
 
         # STRICT VALIDATION: Timeout at ~20s (workflow), not later
-        assert elapsed < 22.0, \
-            f"WORKFLOW TIMEOUT NOT ENFORCED! Took {elapsed:.2f}s, expected ~20s"
-        assert elapsed >= 18.0, \
-            f"Timeout too early: {elapsed:.2f}s (expected ~20s)"
+        assert (
+            elapsed < 22.0
+        ), f"WORKFLOW TIMEOUT NOT ENFORCED! Took {elapsed:.2f}s, expected ~20s"
+        assert elapsed >= 18.0, f"Timeout too early: {elapsed:.2f}s (expected ~20s)"
 
         # PARTIAL EXECUTION VALIDATION: stage_1 started, stage_2 never executed
         assert "stage_1" in stages_executed, "Stage 1 should have started"
-        assert "stage_2" not in stages_executed, \
-            "Stage 2 should not execute after timeout"
+        assert (
+            "stage_2" not in stages_executed
+        ), "Stage 2 should not execute after timeout"
 
     @pytest.mark.asyncio
     async def test_full_stack_timeout_cascade(self):
@@ -195,6 +196,7 @@ class TestTimeoutCascading:
 
         Expected: Workflow timeout at ~12s (NOT 30s, 40s, 50s, or 60s)
         """
+
         # Layer 1: Tool (60s execution, 50s timeout)
         async def tool_operation():
             await asyncio.sleep(60)
@@ -217,18 +219,17 @@ class TestTimeoutCascading:
         # Execute: Should timeout at OUTERMOST (workflow) level at 12s
         with pytest.raises((asyncio.TimeoutError, TimeoutError)):
             await asyncio.wait_for(
-                workflow_operation(),
-                timeout=12.0  # Workflow timeout - shortest
+                workflow_operation(), timeout=12.0  # Workflow timeout - shortest
             )
 
         elapsed = time.time() - start_time
 
         # STRICT VALIDATION: Timeout at ~12s (workflow), not any inner layer
-        assert elapsed < 14.0, \
-            f"WORKFLOW TIMEOUT NOT ENFORCED! Took {elapsed:.2f}s, expected ~12s. " \
+        assert elapsed < 14.0, (
+            f"WORKFLOW TIMEOUT NOT ENFORCED! Took {elapsed:.2f}s, expected ~12s. "
             f"Inner timeout (stage:30s, agent:40s, tool:50s) may have blocked cascade."
-        assert elapsed >= 10.5, \
-            f"Timeout too early: {elapsed:.2f}s (expected ~12s)"
+        )
+        assert elapsed >= 10.5, f"Timeout too early: {elapsed:.2f}s (expected ~12s)"
 
 
 # ============================================================================
@@ -269,18 +270,16 @@ class TestTimeoutCleanup:
 
         # Execute with timeout
         with pytest.raises((asyncio.TimeoutError, TimeoutError)):
-            await asyncio.wait_for(
-                resource_intensive_operation(),
-                timeout=5.0
-            )
+            await asyncio.wait_for(resource_intensive_operation(), timeout=5.0)
 
         # Wait briefly for cleanup
         await asyncio.sleep(0.5)
 
         # RESOURCE LEAK VALIDATION
-        assert resource_tracker["files_opened"] == resource_tracker["files_closed"], \
-            f"RESOURCE LEAK! Opened {resource_tracker['files_opened']}, " \
+        assert resource_tracker["files_opened"] == resource_tracker["files_closed"], (
+            f"RESOURCE LEAK! Opened {resource_tracker['files_opened']}, "
             f"closed {resource_tracker['files_closed']}"
+        )
 
     @pytest.mark.asyncio
     async def test_concurrent_timeouts_no_deadlock(self):
@@ -303,10 +302,7 @@ class TestTimeoutCleanup:
                 return "done"
             finally:
                 # Track cleanup time
-                cleanup_times.append({
-                    "op_id": op_id,
-                    "cleanup_time": time.time()
-                })
+                cleanup_times.append({"op_id": op_id, "cleanup_time": time.time()})
 
         start_time = time.time()
 
@@ -314,10 +310,7 @@ class TestTimeoutCleanup:
         operations = [concurrent_operation(i) for i in range(5)]
 
         with pytest.raises((asyncio.TimeoutError, TimeoutError)):
-            await asyncio.wait_for(
-                asyncio.gather(*operations),
-                timeout=10.0
-            )
+            await asyncio.wait_for(asyncio.gather(*operations), timeout=10.0)
 
         timeout_time = time.time()
         elapsed = timeout_time - start_time
@@ -329,15 +322,17 @@ class TestTimeoutCleanup:
         assert elapsed < 12.0, f"Timeout took {elapsed:.2f}s, expected ~10s"
 
         # CLEANUP VALIDATION: All operations cleaned up
-        assert len(cleanup_times) == 5, \
-            f"Only {len(cleanup_times)}/5 operations cleaned up - possible deadlock"
+        assert (
+            len(cleanup_times) == 5
+        ), f"Only {len(cleanup_times)}/5 operations cleaned up - possible deadlock"
 
         # DEADLOCK VALIDATION: All cleanups happened within 2s of timeout
         for cleanup in cleanup_times:
             cleanup_delay = cleanup["cleanup_time"] - timeout_time
-            assert cleanup_delay < 2.0, \
-                f"Operation {cleanup['op_id']} cleanup took {cleanup_delay:.2f}s - " \
+            assert cleanup_delay < 2.0, (
+                f"Operation {cleanup['op_id']} cleanup took {cleanup_delay:.2f}s - "
                 f"possible deadlock"
+            )
 
 
 # ============================================================================
@@ -406,6 +401,7 @@ class TestTimeoutEdgeCases:
         Challenge: OS scheduling, async overhead may add ~100-200ms
         Expected: Timeout at ~0.5s ± 0.2s tolerance
         """
+
         async def slow_operation():
             await asyncio.sleep(10)
 
@@ -415,10 +411,10 @@ class TestTimeoutEdgeCases:
         elapsed = time.time() - start
 
         # More lenient validation for sub-second timeouts
-        assert elapsed < 0.7, \
-            f"Fast timeout not enforced: {elapsed:.3f}s (expected ~0.5s)"
-        assert elapsed >= 0.4, \
-            f"Timeout too early: {elapsed:.3f}s (expected ~0.5s)"
+        assert (
+            elapsed < 0.7
+        ), f"Fast timeout not enforced: {elapsed:.3f}s (expected ~0.5s)"
+        assert elapsed >= 0.4, f"Timeout too early: {elapsed:.3f}s (expected ~0.5s)"
 
     @pytest.mark.asyncio
     async def test_nested_timeout_hierarchy(self):
@@ -428,6 +424,7 @@ class TestTimeoutEdgeCases:
         Hierarchy: outer (5s) < middle (10s) < inner (20s)
         Expected: Timeout at 5s (outer)
         """
+
         async def inner_operation():
             """Innermost operation with 20s timeout."""
             await asyncio.sleep(60)

@@ -2,8 +2,6 @@
 
 from unittest.mock import patch
 
-import pytest
-
 from temper_ai.observability.otel_setup import (
     _ENV_TEMPER_OTEL_INSTRUMENT_HTTPX,
     _ENV_TEMPER_OTEL_INSTRUMENT_SQLALCHEMY,

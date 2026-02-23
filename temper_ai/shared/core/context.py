@@ -1,4 +1,4 @@
-"""Canonical ExecutionContext for the meta-autonomous framework.
+"""Canonical ExecutionContext for Temper AI.
 
 This module provides the single authoritative ExecutionContext class used
 across the entire codebase. It consolidates fields from previously separate
@@ -13,7 +13,7 @@ Usage:
 
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional
+from typing import Any
 
 
 @dataclass
@@ -41,20 +41,20 @@ class ExecutionContext:
         metadata: Additional contextual key-value pairs.
     """
 
-    workflow_id: Optional[str] = None
-    stage_id: Optional[str] = None
-    agent_id: Optional[str] = None
-    session_id: Optional[str] = None
-    user_id: Optional[str] = None
-    tool_name: Optional[str] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    workflow_id: str | None = None
+    stage_id: str | None = None
+    agent_id: str | None = None
+    session_id: str | None = None
+    user_id: str | None = None
+    tool_name: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
     def execution_mode(self) -> str:
         """Return 'project' if workflow_id is set, else 'desk'."""
         return "project" if self.workflow_id else "desk"
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert context to a plain dictionary."""
         return {
             "workflow_id": self.workflow_id,

@@ -26,7 +26,10 @@ class TestApprovalRouter:
         router = ApprovalRouter()
         for level in AutonomyLevel:
             decision = router.route_action(
-                "agent", "domain", [_violation(ViolationSeverity.CRITICAL)], level,
+                "agent",
+                "domain",
+                [_violation(ViolationSeverity.CRITICAL)],
+                level,
             )
             assert decision.requires_approval
             assert decision.required_approvers == 2
@@ -35,7 +38,10 @@ class TestApprovalRouter:
         """HIGH severity requires 1 approver at SUPERVISED."""
         router = ApprovalRouter()
         d = router.route_action(
-            "a", "d", [_violation(ViolationSeverity.HIGH)], AutonomyLevel.SUPERVISED,
+            "a",
+            "d",
+            [_violation(ViolationSeverity.HIGH)],
+            AutonomyLevel.SUPERVISED,
         )
         assert d.requires_approval
         assert d.required_approvers == 1
@@ -44,7 +50,10 @@ class TestApprovalRouter:
         """HIGH severity auto-approved at AUTONOMOUS."""
         router = ApprovalRouter()
         d = router.route_action(
-            "a", "d", [_violation(ViolationSeverity.HIGH)], AutonomyLevel.AUTONOMOUS,
+            "a",
+            "d",
+            [_violation(ViolationSeverity.HIGH)],
+            AutonomyLevel.AUTONOMOUS,
         )
         assert not d.requires_approval
 
@@ -52,7 +61,10 @@ class TestApprovalRouter:
         """MEDIUM severity requires approval at SUPERVISED."""
         router = ApprovalRouter()
         d = router.route_action(
-            "a", "d", [_violation(ViolationSeverity.MEDIUM)], AutonomyLevel.SUPERVISED,
+            "a",
+            "d",
+            [_violation(ViolationSeverity.MEDIUM)],
+            AutonomyLevel.SUPERVISED,
         )
         assert d.requires_approval
 
@@ -60,7 +72,10 @@ class TestApprovalRouter:
         """MEDIUM severity auto-approved at RISK_GATED."""
         router = ApprovalRouter()
         d = router.route_action(
-            "a", "d", [_violation(ViolationSeverity.MEDIUM)], AutonomyLevel.RISK_GATED,
+            "a",
+            "d",
+            [_violation(ViolationSeverity.MEDIUM)],
+            AutonomyLevel.RISK_GATED,
         )
         assert not d.requires_approval
 
@@ -71,7 +86,10 @@ class TestApprovalRouter:
         with patch("temper_ai.safety.autonomy.approval_router.random") as mock_random:
             mock_random.random.return_value = 0.05  # Below 0.10 threshold
             d = router.route_action(
-                "a", "d", [_violation(ViolationSeverity.MEDIUM)], AutonomyLevel.SPOT_CHECKED,
+                "a",
+                "d",
+                [_violation(ViolationSeverity.MEDIUM)],
+                AutonomyLevel.SPOT_CHECKED,
             )
             assert d.requires_approval
             assert d.is_sampled
@@ -82,7 +100,10 @@ class TestApprovalRouter:
         with patch("temper_ai.safety.autonomy.approval_router.random") as mock_random:
             mock_random.random.return_value = 0.50  # Above 0.10
             d = router.route_action(
-                "a", "d", [_violation(ViolationSeverity.MEDIUM)], AutonomyLevel.SPOT_CHECKED,
+                "a",
+                "d",
+                [_violation(ViolationSeverity.MEDIUM)],
+                AutonomyLevel.SPOT_CHECKED,
             )
             assert not d.requires_approval
 
@@ -91,7 +112,10 @@ class TestApprovalRouter:
         router = ApprovalRouter()
         for level in AutonomyLevel:
             d = router.route_action(
-                "a", "d", [_violation(ViolationSeverity.LOW)], level,
+                "a",
+                "d",
+                [_violation(ViolationSeverity.LOW)],
+                level,
             )
             assert not d.requires_approval
 
@@ -111,7 +135,8 @@ class TestApprovalRouter:
         """Multiple violations use max severity."""
         router = ApprovalRouter()
         d = router.route_action(
-            "a", "d",
+            "a",
+            "d",
             [_violation(ViolationSeverity.LOW), _violation(ViolationSeverity.CRITICAL)],
             AutonomyLevel.STRATEGIC,
         )

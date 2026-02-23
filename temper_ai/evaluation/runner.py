@@ -1,10 +1,11 @@
 """Prompt test runner — loads agent config, renders prompt, calls LLM, validates output."""
+
 from __future__ import annotations
 
 import logging
 import time
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 import yaml
 from jinja2.sandbox import SandboxedEnvironment
@@ -36,7 +37,7 @@ class PromptTestRunner:
         """Run all test cases and aggregate results."""
         agent_name = Path(self._config_path).stem
         suite_start = time.monotonic()
-        results: List[TestResult] = []
+        results: list[TestResult] = []
 
         for case in suite.test_cases:
             result = self.run_case(case)
@@ -64,7 +65,9 @@ class PromptTestRunner:
         try:
             rendered = self._render_prompt(case)
             raw_output, answer_text = self._call_llm(rendered)
-            validator_results, status = self._validate_output(answer_text, case.validators)
+            validator_results, status = self._validate_output(
+                answer_text, case.validators
+            )
         except (OSError, yaml.YAMLError, ValueError, RuntimeError) as exc:
             logger.warning("Test case '%s' raised error: %s", case.name, exc)
             duration = time.monotonic() - start
@@ -106,10 +109,13 @@ class PromptTestRunner:
     def _validate_output(
         self,
         answer_text: str,
-        validators: List[TestCaseValidator],
+        validators: list[TestCaseValidator],
     ) -> tuple[list, str]:
         """Run guardrail checks and determine pass/fail status."""
-        from temper_ai.agent.guardrails import has_blocking_failures, run_guardrail_checks
+        from temper_ai.agent.guardrails import (
+            has_blocking_failures,
+            run_guardrail_checks,
+        )
         from temper_ai.storage.schemas.agent_config import GuardrailCheck
 
         checks = [
@@ -131,14 +137,16 @@ class PromptTestRunner:
             }
             for r in guardrail_results
         ]
-        status = STATUS_FAIL if has_blocking_failures(guardrail_results) else STATUS_PASS
+        status = (
+            STATUS_FAIL if has_blocking_failures(guardrail_results) else STATUS_PASS
+        )
         return validator_results, status
 
     @staticmethod
-    def _load_config(path: str) -> Dict[str, Any]:
+    def _load_config(path: str) -> dict[str, Any]:
         """Load agent YAML config."""
         with open(path) as f:
-            result: Dict[str, Any] = yaml.safe_load(f)
+            result: dict[str, Any] = yaml.safe_load(f)
             return result
 
     def _extract_prompt_template(self) -> str:

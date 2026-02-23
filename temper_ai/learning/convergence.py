@@ -1,6 +1,6 @@
 """Convergence detection for pattern mining."""
 
-from typing import Any, Dict
+from typing import Any
 
 from temper_ai.learning.store import LearningStore
 
@@ -29,7 +29,7 @@ class ConvergenceDetector:
         avg = sum(scores) / len(scores)
         return avg < threshold
 
-    def get_trend(self) -> Dict[str, Any]:
+    def get_trend(self) -> dict[str, Any]:
         """Return novelty trend data for visualization."""
         runs = self.store.list_mining_runs(limit=self.window_size)
         scores = [r.novelty_score for r in runs]

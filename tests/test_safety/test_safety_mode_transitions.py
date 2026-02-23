@@ -8,6 +8,7 @@ Tests for safety mode transitions between:
 These modes are defined in SafetyConfig and control how risky
 operations are handled during workflow execution.
 """
+
 import pytest
 from pydantic import ValidationError
 
@@ -64,7 +65,7 @@ class TestSafetyModeTransitions:
             risk_level="high",
             require_approval_for_tools=config.require_approval_for_tools,
             max_tool_calls_per_execution=config.max_tool_calls_per_execution,
-            max_execution_time_seconds=config.max_execution_time_seconds
+            max_execution_time_seconds=config.max_execution_time_seconds,
         )
 
         assert escalated_config.mode == "dry_run"
@@ -86,7 +87,7 @@ class TestSafetyModeTransitions:
             risk_level="high",
             require_approval_for_tools=["file_write", "database_modify"],
             max_tool_calls_per_execution=config.max_tool_calls_per_execution,
-            max_execution_time_seconds=config.max_execution_time_seconds
+            max_execution_time_seconds=config.max_execution_time_seconds,
         )
 
         assert escalated_config.mode == "require_approval"
@@ -102,7 +103,7 @@ class TestSafetyModeTransitions:
         config = SafetyConfig(
             mode="require_approval",
             risk_level="high",
-            require_approval_for_tools=["deployment", "database_modify"]
+            require_approval_for_tools=["deployment", "database_modify"],
         )
         assert config.mode == "require_approval"
 
@@ -112,7 +113,7 @@ class TestSafetyModeTransitions:
             risk_level="medium",  # Risk reduced after approval
             require_approval_for_tools=[],  # Clear approval requirements
             max_tool_calls_per_execution=config.max_tool_calls_per_execution,
-            max_execution_time_seconds=config.max_execution_time_seconds
+            max_execution_time_seconds=config.max_execution_time_seconds,
         )
 
         assert approved_config.mode == "execute"
@@ -131,7 +132,7 @@ class TestSafetyModeTransitions:
         critical_config = SafetyConfig(
             mode="require_approval",
             risk_level="high",
-            require_approval_for_tools=["system_shutdown", "data_deletion"]
+            require_approval_for_tools=["system_shutdown", "data_deletion"],
         )
 
         assert critical_config.mode == "require_approval"
@@ -143,28 +144,22 @@ class TestSafetyModeContextPreservation:
 
     def test_transition_preserves_tool_limits(self):
         """Test that max_tool_calls is preserved across transitions."""
-        original = SafetyConfig(
-            mode="execute",
-            max_tool_calls_per_execution=50
-        )
+        original = SafetyConfig(mode="execute", max_tool_calls_per_execution=50)
 
         escalated = SafetyConfig(
             mode="dry_run",
-            max_tool_calls_per_execution=original.max_tool_calls_per_execution
+            max_tool_calls_per_execution=original.max_tool_calls_per_execution,
         )
 
         assert escalated.max_tool_calls_per_execution == 50
 
     def test_transition_preserves_time_limits(self):
         """Test that max_execution_time is preserved across transitions."""
-        original = SafetyConfig(
-            mode="execute",
-            max_execution_time_seconds=600
-        )
+        original = SafetyConfig(mode="execute", max_execution_time_seconds=600)
 
         escalated = SafetyConfig(
             mode="require_approval",
-            max_execution_time_seconds=original.max_execution_time_seconds
+            max_execution_time_seconds=original.max_execution_time_seconds,
         )
 
         assert escalated.max_execution_time_seconds == 600
@@ -186,17 +181,18 @@ class TestSafetyModeContextPreservation:
         """Test that approval tool list grows during escalation."""
         # Start with some approval requirements
         config1 = SafetyConfig(
-            mode="execute",
-            require_approval_for_tools=["deployment"]
+            mode="execute", require_approval_for_tools=["deployment"]
         )
 
         # Escalate with more tools requiring approval
         config2 = SafetyConfig(
             mode="require_approval",
-            require_approval_for_tools=["deployment", "file_write", "database_modify"]
+            require_approval_for_tools=["deployment", "file_write", "database_modify"],
         )
 
-        assert len(config2.require_approval_for_tools) > len(config1.require_approval_for_tools)
+        assert len(config2.require_approval_for_tools) > len(
+            config1.require_approval_for_tools
+        )
         assert "deployment" in config2.require_approval_for_tools
         assert "file_write" in config2.require_approval_for_tools
 
@@ -219,10 +215,7 @@ class TestSafetyModeEdgeCases:
         config = SafetyConfig(mode="dry_run", risk_level="high")
 
         # Risk assessment shows safe to proceed
-        de_escalated = SafetyConfig(
-            mode="execute",
-            risk_level="low"
-        )
+        de_escalated = SafetyConfig(mode="execute", risk_level="low")
 
         assert de_escalated.mode == "execute"
         assert de_escalated.risk_level == "low"
@@ -231,10 +224,7 @@ class TestSafetyModeEdgeCases:
         """Test require_approval mode with empty tool list."""
         # This is valid - might be requiring approval for all tools
         # or approval list is managed elsewhere
-        config = SafetyConfig(
-            mode="require_approval",
-            require_approval_for_tools=[]
-        )
+        config = SafetyConfig(mode="require_approval", require_approval_for_tools=[])
 
         assert config.mode == "require_approval"
         assert len(config.require_approval_for_tools) == 0
@@ -242,9 +232,6 @@ class TestSafetyModeEdgeCases:
     def test_mode_with_max_approval_tools(self):
         """Test mode with many tools requiring approval."""
         tools = [f"tool_{i}" for i in range(100)]
-        config = SafetyConfig(
-            mode="require_approval",
-            require_approval_for_tools=tools
-        )
+        config = SafetyConfig(mode="require_approval", require_approval_for_tools=tools)
 
         assert len(config.require_approval_for_tools) == 100

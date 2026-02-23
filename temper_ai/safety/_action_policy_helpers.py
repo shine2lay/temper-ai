@@ -3,12 +3,13 @@
 Extracted from ActionPolicyEngine to keep the class below 500 lines.
 These are internal implementation details and should not be used directly.
 """
+
 import hashlib
 import json
 import logging
 import time
 from collections import OrderedDict
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from temper_ai.safety.constants import (
     ACTION_TYPE_KEY,
@@ -40,6 +41,7 @@ def canonical_json(obj: Any) -> str:
     Returns:
         Canonical JSON string
     """
+
     def canonicalize(o: Any) -> Any:
         """Recursively canonicalize an object."""
         if isinstance(o, dict):
@@ -56,16 +58,13 @@ def canonical_json(obj: Any) -> str:
     canonical_obj = canonicalize(obj)
 
     return json.dumps(
-        canonical_obj,
-        sort_keys=True,
-        separators=(',', ':'),
-        ensure_ascii=True
+        canonical_obj, sort_keys=True, separators=(",", ":"), ensure_ascii=True
     )
 
 
 def get_cache_key(
     policy: SafetyPolicy,
-    action: Dict[str, Any],
+    action: dict[str, Any],
     agent_id: str,
     action_type: str,
     workflow_id: str,
@@ -91,8 +90,8 @@ def get_cache_key(
     """
     data = {
         POLICY_KEY: policy.name,
-        'policy_version': policy.version,
-        'action': action,
+        "policy_version": policy.version,
+        "action": action,
         AGENT_ID_KEY: agent_id,
         ACTION_TYPE_KEY: action_type,
         WORKFLOW_ID_KEY: workflow_id,
@@ -107,7 +106,7 @@ def get_cached_result(
     cache: "OrderedDict[str, tuple[ValidationResult, float]]",
     cache_key: str,
     cache_ttl: float,
-) -> Optional[ValidationResult]:
+) -> ValidationResult | None:
     """Get cached validation result if available and not expired."""
     if cache_key in cache:
         cached_result, timestamp = cache[cache_key]
@@ -145,20 +144,20 @@ def get_policy_snapshot(registry: Any) -> str:
     return hashlib.sha256(",".join(names).encode()).hexdigest()
 
 
-def context_to_dict(context: Any) -> Dict[str, Any]:
+def context_to_dict(context: Any) -> dict[str, Any]:
     """Convert PolicyExecutionContext to dict for policy validation."""
     return {
         AGENT_ID_KEY: context.agent_id,
         WORKFLOW_ID_KEY: context.workflow_id,
         STAGE_ID_KEY: context.stage_id,
         ACTION_TYPE_KEY: context.action_type,
-        'action_data': context.action_data,
-        'metadata': context.metadata
+        "action_data": context.action_data,
+        "metadata": context.metadata,
     }
 
 
 async def log_violations(
-    violations: List[SafetyViolation],
+    violations: list[SafetyViolation],
     context: Any,
     sanitizer: Any,
 ) -> None:
@@ -180,14 +179,14 @@ async def log_violations(
                 WORKFLOW_ID_KEY: context.workflow_id,
                 STAGE_ID_KEY: context.stage_id,
                 POLICY_KEY: violation.policy_name,
-                'severity': violation.severity.name,
-                ACTION_TYPE_KEY: context.action_type
-            }
+                "severity": violation.severity.name,
+                ACTION_TYPE_KEY: context.action_type,
+            },
         )
 
 
 def log_violations_sync(
-    violations: List[SafetyViolation],
+    violations: list[SafetyViolation],
     context: Any,
     sanitizer: Any,
 ) -> None:
@@ -203,7 +202,7 @@ def log_violations_sync(
                 WORKFLOW_ID_KEY: context.workflow_id,
                 STAGE_ID_KEY: context.stage_id,
                 POLICY_KEY: violation.policy_name,
-                'severity': violation.severity.name,
-                ACTION_TYPE_KEY: context.action_type
-            }
+                "severity": violation.severity.name,
+                ACTION_TYPE_KEY: context.action_type,
+            },
         )

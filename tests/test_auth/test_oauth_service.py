@@ -8,24 +8,25 @@ Tests OAuth 2.0 authorization code flow with PKCE support including:
 - Token refresh flow
 - Error handling and edge cases
 """
-import pytest
+
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, Mock
-from datetime import datetime, timezone
 
 import httpx
+import pytest
 from cryptography.fernet import Fernet
 
+from temper_ai.auth.oauth.callback_validator import CallbackURLValidator
+from temper_ai.auth.oauth.config import OAuthConfig, OAuthProviderConfig
+from temper_ai.auth.oauth.rate_limiter import OAuthRateLimiter, RateLimitExceeded
 from temper_ai.auth.oauth.service import (
-    OAuthService,
     OAuthError,
     OAuthProviderError,
+    OAuthService,
     OAuthStateError,
 )
-from temper_ai.auth.oauth.config import OAuthConfig, OAuthProviderConfig
 from temper_ai.auth.oauth.state_store import InMemoryStateStore
 from temper_ai.auth.oauth.token_store import SecureTokenStore
-from temper_ai.auth.oauth.callback_validator import CallbackURLValidator
-from temper_ai.auth.oauth.rate_limiter import OAuthRateLimiter, RateLimitExceeded
 
 
 class TestOAuthServiceInitialization:
@@ -235,7 +236,7 @@ class TestTokenExchange:
                 "user_id": "user_123",
                 "provider": "google",
                 "code_verifier": "test_verifier_12345",
-                "created_at": datetime.now(timezone.utc).isoformat(),
+                "created_at": datetime.now(UTC).isoformat(),
             }
         )
 
@@ -335,7 +336,9 @@ class TestTokenExchange:
             side_effect=httpx.ConnectError("Connection failed")
         )
 
-        with pytest.raises(OAuthProviderError, match="HTTP error during token exchange"):
+        with pytest.raises(
+            OAuthProviderError, match="HTTP error during token exchange"
+        ):
             await service.exchange_code_for_tokens(
                 provider="google", code="auth_code_123", state="test_state"
             )

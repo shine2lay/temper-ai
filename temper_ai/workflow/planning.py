@@ -3,10 +3,11 @@
 Generates a high-level plan before workflow execution begins, which is
 then injected into agent prompts via ``_inject_input_context()``.
 """
+
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -15,10 +16,11 @@ logger = logging.getLogger(__name__)
 
 class PlanningConfig(BaseModel):
     """Configuration for workflow planning pass."""
+
     enabled: bool = False
     provider: Literal["ollama", "vllm", "openai", "anthropic", "custom"] = "openai"
     model: str = "gpt-4o-mini"
-    base_url: Optional[str] = None
+    base_url: str | None = None
     temperature: float = Field(default=0.3, ge=0.0, le=2.0)  # scanner: skip-magic
     max_tokens: int = Field(default=2048, gt=0)
 
@@ -35,17 +37,14 @@ _PLAN_PROMPT_TEMPLATE = (
 
 
 def build_planning_prompt(
-    workflow_config: Dict[str, Any],
-    inputs: Dict[str, Any],
+    workflow_config: dict[str, Any],
+    inputs: dict[str, Any],
 ) -> str:
     """Build the planning prompt from workflow config and inputs."""
     wf = workflow_config.get("workflow", {})
-    stage_names = ", ".join(
-        s.get("name", "?") for s in wf.get("stages", [])
-    )
+    stage_names = ", ".join(s.get("name", "?") for s in wf.get("stages", []))
     user_input_str = ", ".join(
-        f"{k}: {v}" for k, v in inputs.items()
-        if isinstance(v, (str, int, float, bool))
+        f"{k}: {v}" for k, v in inputs.items() if isinstance(v, (str, int, float, bool))
     )
     return _PLAN_PROMPT_TEMPLATE.format(
         workflow_name=wf.get("name", "unknown"),
@@ -56,10 +55,10 @@ def build_planning_prompt(
 
 
 def generate_workflow_plan(
-    workflow_config: Dict[str, Any],
-    inputs: Dict[str, Any],
+    workflow_config: dict[str, Any],
+    inputs: dict[str, Any],
     planning_config: PlanningConfig,
-) -> Optional[str]:
+) -> str | None:
     """Generate a workflow plan using an LLM.
 
     Returns the plan text, or None if planning fails.
@@ -86,9 +85,16 @@ def generate_workflow_plan(
         )
         plan_text = str(response.content).strip()
         logger.info(
-            "Workflow plan generated (%d chars)", len(plan_text),
+            "Workflow plan generated (%d chars)",
+            len(plan_text),
         )
         return plan_text
-    except (ImportError, ValueError, RuntimeError, ConnectionError, TimeoutError) as exc:
+    except (
+        ImportError,
+        ValueError,
+        RuntimeError,
+        ConnectionError,
+        TimeoutError,
+    ) as exc:
         logger.warning("Workflow planning failed: %s", exc)
         return None

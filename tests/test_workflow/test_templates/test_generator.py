@@ -1,13 +1,11 @@
 """Tests for TemplateGenerator."""
 
 import yaml
-import pytest
 
-from temper_ai.workflow.templates._schemas import TemplateManifest, TemplateQualityGates
 from temper_ai.workflow.templates.generator import (
     TemplateGenerator,
-    _replace_placeholder,
     _apply_inference_overrides,
+    _replace_placeholder,
 )
 from temper_ai.workflow.templates.registry import TemplateRegistry
 
@@ -112,7 +110,10 @@ class TestReplacePlaceholder:
         assert result == "myproj_api"
 
     def test_nested_dict(self):
-        data = {"name": "{{project_name}}_api", "inner": {"ref": "{{project_name}}_ref"}}
+        data = {
+            "name": "{{project_name}}_api",
+            "inner": {"ref": "{{project_name}}_ref"},
+        }
         result = _replace_placeholder(data, "myproj")
         assert result["name"] == "myproj_api"
         assert result["inner"]["ref"] == "myproj_ref"
@@ -144,9 +145,14 @@ class TestApplyInferenceOverrides:
         assert result["agent"]["inference"]["model"] == "m1"
 
     def test_overrides_multiple(self):
-        agent = {"agent": {"inference": {"provider": "vllm", "model": "m1", "base_url": "http://a"}}}
+        agent = {
+            "agent": {
+                "inference": {"provider": "vllm", "model": "m1", "base_url": "http://a"}
+            }
+        }
         result = _apply_inference_overrides(
-            agent, {"model": "m2", "base_url": "http://b"},
+            agent,
+            {"model": "m2", "base_url": "http://b"},
         )
         assert result["agent"]["inference"]["provider"] == "vllm"
         assert result["agent"]["inference"]["model"] == "m2"
@@ -232,7 +238,9 @@ class TestTemplateGeneratorGenerate:
 
         output = tmp_path / "output"
         gen.generate(
-            "api", "myproj", output,
+            "api",
+            "myproj",
+            output,
             inference_overrides={"provider": "ollama", "model": "llama3"},
         )
 

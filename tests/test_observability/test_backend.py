@@ -1,7 +1,8 @@
 """
 Tests for observability backend abstraction.
 """
-from datetime import datetime, timezone
+
+from datetime import UTC, datetime
 
 import pytest
 
@@ -21,6 +22,7 @@ def db():
     # Reset global database before each test
     import temper_ai.observability.database as db_module
     from temper_ai.observability.database import _db_lock
+
     with _db_lock:
         db_module._db_manager = None
 
@@ -42,16 +44,16 @@ class TestBackendAbstraction:
 
     def test_prometheus_backend_creation(self):
         """Test Prometheus backend can be created."""
-        backend = PrometheusObservabilityBackend(push_gateway_url="http://localhost:9091")
+        backend = PrometheusObservabilityBackend(
+            push_gateway_url="http://localhost:9091"
+        )
         assert isinstance(backend, ObservabilityBackend)
         assert backend.push_gateway_url == "http://localhost:9091"
 
     def test_s3_backend_creation(self):
         """Test S3 backend can be created."""
         backend = S3ObservabilityBackend(
-            bucket_name="test-bucket",
-            prefix="observability",
-            region="us-west-2"
+            bucket_name="test-bucket", prefix="observability", region="us-west-2"
         )
         assert isinstance(backend, ObservabilityBackend)
         assert backend.bucket_name == "test-bucket"
@@ -169,7 +171,7 @@ class TestBackendWorkflowExecution:
                         prompt_tokens=10,
                         completion_tokens=5,
                         latency_ms=100,
-                        estimated_cost_usd=0.001
+                        estimated_cost_usd=0.001,
                     )
                     assert llm_id is not None
 
@@ -179,13 +181,15 @@ class TestBackendWorkflowExecution:
                         tool_name="calculator",
                         input_params={"a": 1, "b": 2},
                         output_data={"result": 3},
-                        duration_seconds=0.01
+                        duration_seconds=0.01,
                     )
                     assert tool_id is not None
 
     def test_prometheus_backend_workflow_execution(self):
         """Test workflow execution with Prometheus backend (stub)."""
-        backend = PrometheusObservabilityBackend(push_gateway_url="http://localhost:9091")
+        backend = PrometheusObservabilityBackend(
+            push_gateway_url="http://localhost:9091"
+        )
         tracker = ExecutionTracker(backend=backend)
 
         config = {"workflow": {"name": "test"}}
@@ -206,14 +210,14 @@ class TestBackendWorkflowExecution:
                         prompt_tokens=10,
                         completion_tokens=5,
                         latency_ms=100,
-                        estimated_cost_usd=0.001
+                        estimated_cost_usd=0.001,
                     )
                     tracker.track_tool_call(
                         agent_id=agent_id,
                         tool_name="calculator",
                         input_params={},
                         output_data={},
-                        duration_seconds=0.01
+                        duration_seconds=0.01,
                     )
 
     def test_safety_violation_tracking(self, db):
@@ -232,7 +236,7 @@ class TestBackendWorkflowExecution:
                         violation_message="Test violation",
                         policy_name="TestPolicy",
                         service_name="test_service",
-                        context={"test": "data"}
+                        context={"test": "data"},
                     )
 
         # Verify violation was tracked (SQL backend specific)
@@ -241,6 +245,7 @@ class TestBackendWorkflowExecution:
 
         with get_session() as session:
             from sqlmodel import select
+
             statement = select(AgentExecution).where(AgentExecution.id == agent_id)
             agent = session.exec(statement).first()
             assert agent is not None
@@ -266,69 +271,119 @@ class TestCascadeDelete:
             WorkflowExecution,
         )
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Insert records directly via session to avoid standalone session issues
         with get_session() as session:
             wf = WorkflowExecution(
-                id="wf-cascade-1", workflow_name="cascade_test",
+                id="wf-cascade-1",
+                workflow_name="cascade_test",
                 workflow_config_snapshot={"version": "1.0"},
-                start_time=now, status="running",
-                total_llm_calls=0, total_tool_calls=0,
-                total_tokens=0, total_cost_usd=0.0,
+                start_time=now,
+                status="running",
+                total_llm_calls=0,
+                total_tool_calls=0,
+                total_tokens=0,
+                total_cost_usd=0.0,
             )
             session.add(wf)
             session.commit()
 
             st = StageExecution(
-                id="st-cascade-1", workflow_execution_id="wf-cascade-1",
-                stage_name="test_stage", stage_config_snapshot={"stage": {"version": "1.0"}},
-                start_time=now, status="running",
+                id="st-cascade-1",
+                workflow_execution_id="wf-cascade-1",
+                stage_name="test_stage",
+                stage_config_snapshot={"stage": {"version": "1.0"}},
+                start_time=now,
+                status="running",
             )
             session.add(st)
             session.commit()
 
             ag = AgentExecution(
-                id="ag-cascade-1", stage_execution_id="st-cascade-1",
-                agent_name="test_agent", agent_config_snapshot={"agent": {"version": "1.0"}},
-                start_time=now, status="running",
+                id="ag-cascade-1",
+                stage_execution_id="st-cascade-1",
+                agent_name="test_agent",
+                agent_config_snapshot={"agent": {"version": "1.0"}},
+                start_time=now,
+                status="running",
             )
             session.add(ag)
             session.commit()
 
             llm = LLMCall(
-                id="llm-cascade-1", agent_execution_id="ag-cascade-1",
-                provider="test", model="test-model",
-                prompt="hello", response="world",
-                prompt_tokens=5, completion_tokens=5, total_tokens=10,
-                latency_ms=100, estimated_cost_usd=0.001,
-                start_time=now, status="success",
+                id="llm-cascade-1",
+                agent_execution_id="ag-cascade-1",
+                provider="test",
+                model="test-model",
+                prompt="hello",
+                response="world",
+                prompt_tokens=5,
+                completion_tokens=5,
+                total_tokens=10,
+                latency_ms=100,
+                estimated_cost_usd=0.001,
+                start_time=now,
+                status="success",
             )
             session.add(llm)
             session.commit()
 
             tool = ToolExecution(
-                id="tool-cascade-1", agent_execution_id="ag-cascade-1",
+                id="tool-cascade-1",
+                agent_execution_id="ag-cascade-1",
                 tool_name="calculator",
                 input_params={"expression": "2+2"},
                 output_data={"result": 4},
-                start_time=now, duration_seconds=0.01, status="success",
+                start_time=now,
+                duration_seconds=0.01,
+                status="success",
             )
             session.add(tool)
             session.commit()
 
         # Verify all records exist
         with get_session() as session:
-            assert session.exec(select(func.count(WorkflowExecution.id)).where(
-                WorkflowExecution.id == "wf-cascade-1")).first() == 1
-            assert session.exec(select(func.count(StageExecution.id)).where(
-                StageExecution.workflow_execution_id == "wf-cascade-1")).first() == 1
-            assert session.exec(select(func.count(AgentExecution.id)).where(
-                AgentExecution.stage_execution_id == "st-cascade-1")).first() == 1
-            assert session.exec(select(func.count(LLMCall.id)).where(
-                LLMCall.agent_execution_id == "ag-cascade-1")).first() == 1
-            assert session.exec(select(func.count(ToolExecution.id)).where(
-                ToolExecution.agent_execution_id == "ag-cascade-1")).first() == 1
+            assert (
+                session.exec(
+                    select(func.count(WorkflowExecution.id)).where(
+                        WorkflowExecution.id == "wf-cascade-1"
+                    )
+                ).first()
+                == 1
+            )
+            assert (
+                session.exec(
+                    select(func.count(StageExecution.id)).where(
+                        StageExecution.workflow_execution_id == "wf-cascade-1"
+                    )
+                ).first()
+                == 1
+            )
+            assert (
+                session.exec(
+                    select(func.count(AgentExecution.id)).where(
+                        AgentExecution.stage_execution_id == "st-cascade-1"
+                    )
+                ).first()
+                == 1
+            )
+            assert (
+                session.exec(
+                    select(func.count(LLMCall.id)).where(
+                        LLMCall.agent_execution_id == "ag-cascade-1"
+                    )
+                ).first()
+                == 1
+            )
+            assert (
+                session.exec(
+                    select(func.count(ToolExecution.id)).where(
+                        ToolExecution.agent_execution_id == "ag-cascade-1"
+                    )
+                ).first()
+                == 1
+            )
 
         # Delete workflow via raw SQL DELETE (same as cleanup_old_records)
         with get_session() as session:
@@ -339,21 +394,49 @@ class TestCascadeDelete:
 
         # Verify ALL child records are gone (no orphans)
         with get_session() as session:
-            assert session.exec(select(func.count(WorkflowExecution.id)).where(
-                WorkflowExecution.id == "wf-cascade-1")).first() == 0
-            assert session.exec(select(func.count(StageExecution.id)).where(
-                StageExecution.id == "st-cascade-1")).first() == 0
-            assert session.exec(select(func.count(AgentExecution.id)).where(
-                AgentExecution.id == "ag-cascade-1")).first() == 0
-            assert session.exec(select(func.count(LLMCall.id)).where(
-                LLMCall.id == "llm-cascade-1")).first() == 0
-            assert session.exec(select(func.count(ToolExecution.id)).where(
-                ToolExecution.id == "tool-cascade-1")).first() == 0
+            assert (
+                session.exec(
+                    select(func.count(WorkflowExecution.id)).where(
+                        WorkflowExecution.id == "wf-cascade-1"
+                    )
+                ).first()
+                == 0
+            )
+            assert (
+                session.exec(
+                    select(func.count(StageExecution.id)).where(
+                        StageExecution.id == "st-cascade-1"
+                    )
+                ).first()
+                == 0
+            )
+            assert (
+                session.exec(
+                    select(func.count(AgentExecution.id)).where(
+                        AgentExecution.id == "ag-cascade-1"
+                    )
+                ).first()
+                == 0
+            )
+            assert (
+                session.exec(
+                    select(func.count(LLMCall.id)).where(LLMCall.id == "llm-cascade-1")
+                ).first()
+                == 0
+            )
+            assert (
+                session.exec(
+                    select(func.count(ToolExecution.id)).where(
+                        ToolExecution.id == "tool-cascade-1"
+                    )
+                ).first()
+                == 0
+            )
 
     def test_delete_stage_does_not_cascade_up(self, db):
         """Deleting a stage should NOT delete its parent workflow."""
         backend = SQLObservabilityBackend(buffer=False)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         with backend.get_session_context() as session:
             backend.track_workflow_start(
@@ -383,17 +466,30 @@ class TestCascadeDelete:
 
         # Workflow should still exist
         with get_session() as session:
-            assert session.exec(select(func.count(WorkflowExecution.id)).where(
-                WorkflowExecution.id == "wf-up-1")).first() == 1
+            assert (
+                session.exec(
+                    select(func.count(WorkflowExecution.id)).where(
+                        WorkflowExecution.id == "wf-up-1"
+                    )
+                ).first()
+                == 1
+            )
             # But stage should be gone
-            assert session.exec(select(func.count(StageExecution.id)).where(
-                StageExecution.id == "st-up-1")).first() == 0
+            assert (
+                session.exec(
+                    select(func.count(StageExecution.id)).where(
+                        StageExecution.id == "st-up-1"
+                    )
+                ).first()
+                == 0
+            )
 
     def test_cleanup_old_records_no_orphans(self, db):
         """cleanup_old_records deletes workflows and all nested records."""
         from datetime import timedelta
+
         backend = SQLObservabilityBackend(buffer=False)
-        old_time = datetime.now(timezone.utc) - timedelta(days=100)
+        old_time = datetime.now(UTC) - timedelta(days=100)
 
         # Create old workflow with children
         with backend.get_session_context() as session:
@@ -431,7 +527,19 @@ class TestCascadeDelete:
         from temper_ai.observability.models import AgentExecution, StageExecution
 
         with get_session() as session:
-            assert session.exec(select(func.count(StageExecution.id)).where(
-                StageExecution.id == "st-old-1")).first() == 0
-            assert session.exec(select(func.count(AgentExecution.id)).where(
-                AgentExecution.id == "ag-old-1")).first() == 0
+            assert (
+                session.exec(
+                    select(func.count(StageExecution.id)).where(
+                        StageExecution.id == "st-old-1"
+                    )
+                ).first()
+                == 0
+            )
+            assert (
+                session.exec(
+                    select(func.count(AgentExecution.id)).where(
+                        AgentExecution.id == "ag-old-1"
+                    )
+                ).first()
+                == 0
+            )

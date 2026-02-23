@@ -7,7 +7,6 @@ Tests end-to-end workflow:
 3. StatisticalAnalyzer analyzes experiment results
 """
 
-
 import pytest
 
 from temper_ai.experimentation.analyzer import StatisticalAnalyzer
@@ -31,6 +30,7 @@ def db():
     # Reset global database before each test
     import temper_ai.observability.database as db_module
     from temper_ai.observability.database import _db_lock
+
     with _db_lock:
         db_module._db_manager = None
 
@@ -109,13 +109,14 @@ class TestObservabilityIntegration:
             variant_id="var-control",
             assignment_strategy="hash",
             assignment_context={"user_id": "user-123"},
-            custom_metrics={"quality_score": 85.0}
+            custom_metrics={"quality_score": 85.0},
         ) as workflow_id:
             assert workflow_id is not None
 
         # Verify workflow was created with experiment metadata
         with obs_backend.get_session_context() as session:
             from temper_ai.observability.models import WorkflowExecution
+
             workflow = session.get(WorkflowExecution, workflow_id)
 
             assert workflow is not None
@@ -123,15 +124,13 @@ class TestObservabilityIntegration:
             assert workflow.extra_metadata["experiment_id"] == "exp-001"
             assert workflow.extra_metadata["variant_id"] == "var-control"
             assert workflow.extra_metadata["assignment_strategy"] == "hash"
-            assert workflow.extra_metadata["assignment_context"]["user_id"] == "user-123"
+            assert (
+                workflow.extra_metadata["assignment_context"]["user_id"] == "user-123"
+            )
             assert workflow.extra_metadata["custom_metrics"]["quality_score"] == 85.0
 
     def test_end_to_end_experiment_workflow(
-        self,
-        tracker,
-        obs_backend,
-        experiment,
-        variants
+        self, tracker, obs_backend, experiment, variants
     ):
         """Test complete workflow: track -> collect -> analyze."""
         assigner = VariantAssigner()
@@ -142,10 +141,7 @@ class TestObservabilityIntegration:
 
             # Assign variant
             variant_id = assigner.assign_variant(
-                experiment,
-                variants,
-                workflow_execution_id,
-                context={}
+                experiment, variants, workflow_execution_id, context={}
             )
 
             # Determine quality score based on variant
@@ -162,7 +158,7 @@ class TestObservabilityIntegration:
                 experiment_id=experiment.id,
                 variant_id=variant_id,
                 assignment_strategy=experiment.assignment_strategy.value,
-                custom_metrics={"quality_score": quality_score}
+                custom_metrics={"quality_score": quality_score},
             ) as workflow_id:
                 # Simulate some work
                 pass
@@ -170,6 +166,7 @@ class TestObservabilityIntegration:
         # Collect experiment metrics from observability DB
         # Use a fresh session from get_session() instead of backend's session stack
         from temper_ai.observability.database import get_session
+
         with get_session() as session:
             collector = ExperimentMetricsCollector(session=session)
 
@@ -189,7 +186,11 @@ class TestObservabilityIntegration:
             assert aggregated["var-control"]["count"] > 0
             assert aggregated["var-treatment"]["count"] > 0
             # Total should be 20
-            assert aggregated["var-control"]["count"] + aggregated["var-treatment"]["count"] == 20
+            assert (
+                aggregated["var-control"]["count"]
+                + aggregated["var-treatment"]["count"]
+                == 20
+            )
 
             # Analyze experiment with statistical analyzer
             analyzer = StatisticalAnalyzer(confidence_level=0.95, min_effect_size=0.05)
@@ -223,7 +224,7 @@ class TestObservabilityIntegration:
                 workflow_config={},
                 experiment_id="exp-001",
                 variant_id="var-control",
-                custom_metrics={"score": 50.0}
+                custom_metrics={"score": 50.0},
             ):
                 pass
 
@@ -234,7 +235,7 @@ class TestObservabilityIntegration:
                 workflow_config={},
                 experiment_id="exp-002",
                 variant_id="var-treatment",
-                custom_metrics={"score": 75.0}
+                custom_metrics={"score": 75.0},
             ):
                 pass
 
@@ -261,7 +262,7 @@ class TestObservabilityIntegration:
             workflow_config={},
             experiment_id=experiment.id,
             variant_id="var-control",
-            custom_metrics={"quality_score": 80.0}
+            custom_metrics={"quality_score": 80.0},
         ):
             pass
 
@@ -272,7 +273,7 @@ class TestObservabilityIntegration:
                 workflow_config={},
                 experiment_id=experiment.id,
                 variant_id="var-treatment",
-                custom_metrics={"quality_score": 90.0}
+                custom_metrics={"quality_score": 90.0},
             ):
                 raise RuntimeError("Simulated failure")
         except RuntimeError:
@@ -307,7 +308,7 @@ class TestObservabilityIntegration:
                     workflow_config={},
                     experiment_id=experiment.id,
                     variant_id=variant,
-                    custom_metrics={"quality_score": 80.0 + i}
+                    custom_metrics={"quality_score": 80.0 + i},
                 ):
                     if not status_ok:
                         raise RuntimeError("Simulated failure")
@@ -331,7 +332,7 @@ class TestObservabilityIntegration:
             "quality_score": 85.0,
             "latency_ms": 250.0,
             "user_satisfaction": 4.5,
-            "success": 1.0
+            "success": 1.0,
         }
 
         with tracker.track_workflow(
@@ -339,7 +340,7 @@ class TestObservabilityIntegration:
             workflow_config={},
             experiment_id="exp-001",
             variant_id="var-control",
-            custom_metrics=custom_metrics
+            custom_metrics=custom_metrics,
         ):
             pass
 
@@ -354,7 +355,9 @@ class TestObservabilityIntegration:
             # All custom metrics should be present
             for metric_name, metric_value in custom_metrics.items():
                 assert metric_name in assignment.metrics
-                assert assignment.metrics[metric_name] == pytest.approx(metric_value, rel=0.01)
+                assert assignment.metrics[metric_name] == pytest.approx(
+                    metric_value, rel=0.01
+                )
 
     def test_time_series_with_tracking(self, tracker, obs_backend, experiment):
         """Test time-series metrics extraction from tracked workflows."""
@@ -369,7 +372,7 @@ class TestObservabilityIntegration:
                 workflow_config={},
                 experiment_id=experiment.id,
                 variant_id=variant,
-                custom_metrics={"quality_score": 80.0 + i * 2}
+                custom_metrics={"quality_score": 80.0 + i * 2},
             ):
                 # Small delay to ensure different timestamps
                 time.sleep(0.01)
@@ -378,8 +381,7 @@ class TestObservabilityIntegration:
         with obs_backend.get_session_context() as session:
             collector = ExperimentMetricsCollector(session=session)
             time_series = collector.get_time_series_metrics(
-                experiment.id,
-                "quality_score"
+                experiment.id, "quality_score"
             )
 
             assert "var-control" in time_series
@@ -393,7 +395,7 @@ class TestObservabilityIntegration:
             # Verify time series is sorted
             control_series = time_series["var-control"]
             for i in range(len(control_series) - 1):
-                assert control_series[i][0] <= control_series[i+1][0]
+                assert control_series[i][0] <= control_series[i + 1][0]
 
 
 class TestBackwardsCompatibility:
@@ -404,13 +406,14 @@ class TestBackwardsCompatibility:
         # Should work exactly as before
         with tracker.track_workflow(
             workflow_name="test_workflow",
-            workflow_config={"agent": {"temperature": 0.7}}
+            workflow_config={"agent": {"temperature": 0.7}},
         ) as workflow_id:
             assert workflow_id is not None
 
         # Verify workflow was created without experiment metadata
         with obs_backend.get_session_context() as session:
             from temper_ai.observability.models import WorkflowExecution
+
             workflow = session.get(WorkflowExecution, workflow_id)
 
             assert workflow is not None
@@ -429,6 +432,7 @@ class TestBackwardsCompatibility:
 
         with obs_backend.get_session_context() as session:
             from temper_ai.observability.models import WorkflowExecution
+
             workflow = session.get(WorkflowExecution, workflow_id)
 
             assert workflow.extra_metadata["experiment_id"] == "exp-001"

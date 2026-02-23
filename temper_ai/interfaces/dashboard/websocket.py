@@ -1,8 +1,10 @@
 """WebSocket handler for real-time dashboard updates."""
+
 import asyncio
 import logging
-from datetime import datetime, timezone
-from typing import Any, Callable, Dict, List
+from collections.abc import Callable
+from datetime import UTC, datetime
+from typing import Any
 
 from fastapi import WebSocket, WebSocketDisconnect
 
@@ -14,12 +16,14 @@ CHUNK_IDLE_TIMEOUT_SECONDS = 0.03  # 30ms adaptive idle timeout
 CHUNK_BATCH_SIZE = 10  # Flush immediately when buffer reaches this size
 DB_POLL_INTERVAL_SECONDS = 2.0  # DB polling interval for cross-process updates
 TERMINAL_STATUSES = frozenset({"completed", "failed", "halted", "timeout"})
+WS_CLOSE_AUTH_FAILED = 4001
 
 
 def _create_event_callback(
     workflow_id: str,
     event_queue: asyncio.Queue,
-    chunk_buffer: List[dict],
+    chunk_buffer: list[dict],
+    loop: asyncio.AbstractEventLoop,
 ) -> Callable:
     """Create event callback for event bus subscription.
 
@@ -27,13 +31,20 @@ def _create_event_callback(
         workflow_id: Workflow ID for logging.
         event_queue: Queue to put non-chunk events.
         chunk_buffer: Buffer for batched stream chunks.
+        loop: The asyncio event loop (captured at creation time so the
+            callback can schedule work from the emitting thread).
 
     Returns:
         Event callback function.
     """
+
     def on_event(event: Any) -> None:
         """Callback from event bus (runs in sync emitting thread)."""
-        logger.info("[WebSocket] Received event: %s for workflow %s", event.event_type, workflow_id)
+        logger.info(
+            "[WebSocket] Received event: %s for workflow %s",
+            event.event_type,
+            workflow_id,
+        )
         event_dict = {
             "type": "event",
             "event_type": event.event_type,
@@ -43,16 +54,11 @@ def _create_event_callback(
             "stage_id": event.stage_id,
             "agent_id": event.agent_id,
         }
-        # Batch streaming chunks instead of queueing individually
-        if event.event_type == "llm_stream_chunk":
-            try:
-                loop = asyncio.get_running_loop()
-                loop.call_soon_threadsafe(chunk_buffer.append, event_dict)
-            except RuntimeError:
-                logger.debug(
-                    "No running event loop; dropping stream chunk for workflow %s",
-                    workflow_id,
-                )
+        # Batch streaming chunks instead of queueing individually.
+        # Both "llm_stream_chunk" (internal event bus) and "stream_token"
+        # (wire-up event type for partial LLM content) are batched the same way.
+        if event.event_type in ("llm_stream_chunk", "stream_token"):
+            loop.call_soon_threadsafe(chunk_buffer.append, event_dict)
             return
 
         try:
@@ -65,7 +71,7 @@ def _create_event_callback(
 
 async def _flush_chunks_task(
     websocket: WebSocket,
-    chunk_buffer: List[dict],
+    chunk_buffer: list[dict],
     chunk_lock: asyncio.Lock,
 ) -> None:
     """Flush accumulated stream chunks with adaptive batching.
@@ -91,19 +97,23 @@ async def _flush_chunks_task(
         # via call_soon_threadsafe and executes on this same event loop
         # thread, so there is no concurrent mutation.
         if len(chunk_buffer) < CHUNK_BATCH_SIZE:
-            await asyncio.sleep(CHUNK_IDLE_TIMEOUT_SECONDS)  # intentional wait for batching
+            await asyncio.sleep(
+                CHUNK_IDLE_TIMEOUT_SECONDS
+            )  # intentional wait for batching
         async with chunk_lock:
             if not chunk_buffer:
                 continue
             batch = list(chunk_buffer)
             chunk_buffer.clear()
         try:
-            await websocket.send_json({
-                "type": "event",
-                "event_type": "llm_stream_batch",
-                "data": {"chunks": [c["data"] for c in batch]},
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            })
+            await websocket.send_json(
+                {
+                    "type": "event",
+                    "event_type": "llm_stream_batch",
+                    "data": {"chunks": [c["data"] for c in batch]},
+                    "timestamp": datetime.now(UTC).isoformat(),
+                }
+            )
         except (ConnectionError, OSError, RuntimeError):
             break  # Connection closed
 
@@ -124,16 +134,16 @@ async def _stream_events_loop(
                 event_queue.get(), timeout=HEARTBEAT_TIMEOUT_SECONDS
             )
             await websocket.send_json(event_dict)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             await websocket.send_json(
                 {
                     "type": "heartbeat",
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "timestamp": datetime.now(UTC).isoformat(),
                 }
             )
 
 
-def _workflow_fingerprint(snapshot: Dict[str, Any]) -> str:
+def _workflow_fingerprint(snapshot: dict[str, Any]) -> str:
     """Create a fingerprint to detect workflow state changes.
 
     Covers all major UI-visible transitions: workflow status, stage
@@ -156,7 +166,7 @@ async def _db_poll_loop(
     """Poll DB for workflow changes and push snapshots.
 
     Enables real-time updates for workflows started in a separate
-    process (e.g. ``temper-ai run``) by periodically reading the shared
+    process (e.g. a separate API client) by periodically reading the shared
     database and sending updated snapshots over WebSocket.
 
     DB queries run in a thread executor to avoid blocking the async
@@ -167,7 +177,8 @@ async def _db_poll_loop(
         await asyncio.sleep(DB_POLL_INTERVAL_SECONDS)  # intentional polling interval
         try:
             snapshot = await asyncio.to_thread(
-                data_service.get_workflow_snapshot, workflow_id,
+                data_service.get_workflow_snapshot,
+                workflow_id,
             )
             if not snapshot:
                 continue
@@ -183,11 +194,104 @@ async def _db_poll_loop(
         except Exception:
             logger.warning(
                 "DB poll error for workflow %s; will retry",
-                workflow_id, exc_info=True,
+                workflow_id,
+                exc_info=True,
             )
 
 
-def create_ws_endpoint(data_service: Any) -> Callable:
+async def _authenticate_ws(websocket: WebSocket) -> bool:
+    """Authenticate WebSocket connection via ticket or token.
+
+    Returns True if auth succeeded, False if the connection was closed.
+    """
+    ticket = websocket.query_params.get("ticket")
+    token = websocket.query_params.get("token")  # Backward compat
+    if ticket:
+        from temper_ai.auth.ws_tickets import validate_ws_ticket
+
+        ctx = validate_ws_ticket(ticket)
+        if ctx is None:
+            await websocket.close(
+                code=WS_CLOSE_AUTH_FAILED, reason="Invalid or expired ticket"
+            )
+            return False
+    elif token:
+        logging.getLogger(__name__).warning(
+            "WebSocket auth via ?token= is deprecated; use /api/auth/ws-ticket"
+        )
+        from temper_ai.auth.api_key_auth import authenticate_ws_token
+
+        ctx = await authenticate_ws_token(token)
+        if ctx is None:
+            await websocket.close(
+                code=WS_CLOSE_AUTH_FAILED, reason="Invalid auth token"
+            )
+            return False
+    else:
+        await websocket.close(code=WS_CLOSE_AUTH_FAILED, reason="Missing auth ticket")
+        return False
+    return True
+
+
+async def _cancel_background_tasks(*tasks: asyncio.Task | None) -> None:
+    """Cancel and await background tasks, suppressing CancelledError."""
+    for task in tasks:
+        if task is not None:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+
+async def _run_ws_session(
+    websocket: WebSocket,
+    workflow_id: str,
+    data_service: Any,
+) -> None:
+    """Run the main WebSocket session: subscribe, stream, and poll."""
+    subscription_id = None
+    event_queue: asyncio.Queue = asyncio.Queue(maxsize=EVENT_QUEUE_MAXSIZE)
+    chunk_buffer: list[dict] = []
+    chunk_lock = asyncio.Lock()
+    loop = asyncio.get_running_loop()
+
+    on_event = _create_event_callback(workflow_id, event_queue, chunk_buffer, loop)
+
+    flush_task = None
+    poll_task = None
+    try:
+        snapshot = await asyncio.to_thread(
+            data_service.get_workflow_snapshot, workflow_id
+        )
+        initial_fp = ""
+        if snapshot:
+            await websocket.send_json({"type": "snapshot", "workflow": snapshot})
+            initial_fp = _workflow_fingerprint(snapshot)
+
+        logger.info("[WebSocket] Subscribing to events for workflow %s", workflow_id)
+        subscription_id = data_service.subscribe_workflow(workflow_id, on_event)
+        logger.info("[WebSocket] Subscription ID: %s", subscription_id)
+
+        flush_task = asyncio.create_task(
+            _flush_chunks_task(websocket, chunk_buffer, chunk_lock)
+        )
+        poll_task = asyncio.create_task(
+            _db_poll_loop(websocket, data_service, workflow_id, initial_fp)
+        )
+
+        await _stream_events_loop(websocket, event_queue)
+    except WebSocketDisconnect:
+        logger.debug("WebSocket disconnected for workflow %s", workflow_id)
+    except (ConnectionError, OSError, RuntimeError):
+        logger.warning("WebSocket error", exc_info=True)
+    finally:
+        await _cancel_background_tasks(flush_task, poll_task)
+        if subscription_id:
+            data_service.unsubscribe(subscription_id)
+
+
+def create_ws_endpoint(data_service: Any, auth_enabled: bool = False) -> Callable:
     """Create WebSocket endpoint handler.
 
     Returns an async callable suitable for ``app.add_api_websocket_route``.
@@ -195,59 +299,11 @@ def create_ws_endpoint(data_service: Any) -> Callable:
 
     async def websocket_handler(websocket: WebSocket, workflow_id: str) -> None:
         """Handle WebSocket connection for real-time workflow updates."""
+        if auth_enabled:
+            if not await _authenticate_ws(websocket):
+                return
+
         await websocket.accept()
-
-        subscription_id = None
-        event_queue: asyncio.Queue = asyncio.Queue(maxsize=EVENT_QUEUE_MAXSIZE)
-        chunk_buffer: List[dict] = []
-        chunk_lock = asyncio.Lock()
-
-        # Create event callback
-        on_event = _create_event_callback(workflow_id, event_queue, chunk_buffer)
-
-        flush_task = None
-        poll_task = None
-        try:
-            # Send initial snapshot (run in thread to avoid blocking event loop)
-            snapshot = await asyncio.to_thread(
-                data_service.get_workflow_snapshot, workflow_id,
-            )
-            initial_fp = ""
-            if snapshot:
-                await websocket.send_json({"type": "snapshot", "workflow": snapshot})
-                initial_fp = _workflow_fingerprint(snapshot)
-
-            # Subscribe to events for this workflow
-            logger.info("[WebSocket] Subscribing to events for workflow %s", workflow_id)
-            subscription_id = data_service.subscribe_workflow(workflow_id, on_event)
-            logger.info("[WebSocket] Subscription ID: %s", subscription_id)
-
-            # Start chunk flusher
-            flush_task = asyncio.create_task(
-                _flush_chunks_task(websocket, chunk_buffer, chunk_lock),
-            )
-
-            # Start DB poller for cross-process workflow updates
-            poll_task = asyncio.create_task(
-                _db_poll_loop(websocket, data_service, workflow_id, initial_fp),
-            )
-
-            # Stream events with heartbeat
-            await _stream_events_loop(websocket, event_queue)
-
-        except WebSocketDisconnect:
-            logger.debug("WebSocket disconnected for workflow %s", workflow_id)
-        except (ConnectionError, OSError, RuntimeError):
-            logger.warning("WebSocket error", exc_info=True)
-        finally:
-            for task in (flush_task, poll_task):
-                if task is not None:
-                    task.cancel()
-                    try:
-                        await task
-                    except asyncio.CancelledError:
-                        pass
-            if subscription_id:
-                data_service.unsubscribe(subscription_id)
+        await _run_ws_session(websocket, workflow_id, data_service)
 
     return websocket_handler

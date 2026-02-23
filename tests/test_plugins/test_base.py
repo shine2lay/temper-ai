@@ -1,8 +1,9 @@
 """Tests for ExternalAgentPlugin base class."""
+
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, ClassVar, Dict, List
+from typing import Any, ClassVar
 from unittest.mock import MagicMock
 
 import pytest
@@ -21,11 +22,11 @@ class ConcretePlugin(ExternalAgentPlugin):
     def _initialize_external_agent(self) -> None:
         self._external_agent = MagicMock()
 
-    def _execute_external(self, input_data: Dict[str, Any]) -> str:
+    def _execute_external(self, input_data: dict[str, Any]) -> str:
         return f"executed: {self._extract_task_description(input_data)}"
 
     @classmethod
-    def translate_config(cls, source_path: Path) -> List[Dict[str, Any]]:
+    def translate_config(cls, source_path: Path) -> list[dict[str, Any]]:
         return [{"agent": {"name": "test", "type": "test_plugin"}}]
 
 
@@ -68,7 +69,9 @@ class TestPluginExecution:
         assert isinstance(result, AgentResponse)
         assert "executed: hello" in result.output
 
-    def test_run_includes_framework_metadata(self, mock_agent_config: MagicMock) -> None:
+    def test_run_includes_framework_metadata(
+        self, mock_agent_config: MagicMock
+    ) -> None:
         plugin = ConcretePlugin(mock_agent_config)
         plugin._initialized = True
         result = plugin._run({"query": "test"}, None, 0.0)
@@ -97,19 +100,30 @@ class TestPluginExecution:
         assert ExternalAgentPlugin._extract_task_description({"query": "hi"}) == "hi"
 
     def test_extract_task_description_task(self) -> None:
-        assert ExternalAgentPlugin._extract_task_description({"task": "do it"}) == "do it"
+        assert (
+            ExternalAgentPlugin._extract_task_description({"task": "do it"}) == "do it"
+        )
 
     def test_extract_task_description_input(self) -> None:
         assert ExternalAgentPlugin._extract_task_description({"input": "run"}) == "run"
 
     def test_extract_task_description_question(self) -> None:
-        assert ExternalAgentPlugin._extract_task_description({"question": "why?"}) == "why?"
+        assert (
+            ExternalAgentPlugin._extract_task_description({"question": "why?"})
+            == "why?"
+        )
 
     def test_extract_task_description_prompt(self) -> None:
-        assert ExternalAgentPlugin._extract_task_description({"prompt": "write"}) == "write"
+        assert (
+            ExternalAgentPlugin._extract_task_description({"prompt": "write"})
+            == "write"
+        )
 
     def test_extract_task_description_message(self) -> None:
-        assert ExternalAgentPlugin._extract_task_description({"message": "hello"}) == "hello"
+        assert (
+            ExternalAgentPlugin._extract_task_description({"message": "hello"})
+            == "hello"
+        )
 
     def test_extract_task_description_fallback(self) -> None:
         result = ExternalAgentPlugin._extract_task_description({"data": "val"})
@@ -120,6 +134,7 @@ class TestPluginExecution:
 
     def test_run_latency_non_negative(self, mock_agent_config: MagicMock) -> None:
         import time
+
         plugin = ConcretePlugin(mock_agent_config)
         plugin._initialized = True
         start = time.time()
@@ -135,7 +150,9 @@ class TestPluginCapabilities:
         assert caps["framework"] == "TestFramework"
         assert caps["supports_streaming"] is False
 
-    def test_get_capabilities_supports_multimodal_false(self, mock_agent_config: MagicMock) -> None:
+    def test_get_capabilities_supports_multimodal_false(
+        self, mock_agent_config: MagicMock
+    ) -> None:
         plugin = ConcretePlugin(mock_agent_config)
         caps = plugin.get_capabilities()
         assert caps["supports_multimodal"] is False
@@ -183,12 +200,16 @@ class TestPluginErrorHandling:
         result = plugin._on_error(TimeoutError("timed out"), 0.0)
         assert isinstance(result, AgentResponse)
 
-    def test_on_error_returns_none_for_unknown(self, mock_agent_config: MagicMock) -> None:
+    def test_on_error_returns_none_for_unknown(
+        self, mock_agent_config: MagicMock
+    ) -> None:
         plugin = ConcretePlugin(mock_agent_config)
         result = plugin._on_error(KeyError("k"), 0.0)
         assert result is None
 
-    def test_on_error_returns_none_for_type_error(self, mock_agent_config: MagicMock) -> None:
+    def test_on_error_returns_none_for_type_error(
+        self, mock_agent_config: MagicMock
+    ) -> None:
         plugin = ConcretePlugin(mock_agent_config)
         result = plugin._on_error(TypeError("bad type"), 0.0)
         assert result is None
@@ -207,6 +228,7 @@ class TestGetPluginConfig:
 
     def test_pydantic_model_config(self, mock_agent_config: MagicMock) -> None:
         from temper_ai.plugins._schemas import PluginConfig
+
         pc = PluginConfig(framework="test")
         mock_agent_config.agent.plugin_config = pc
         plugin = ConcretePlugin(mock_agent_config)

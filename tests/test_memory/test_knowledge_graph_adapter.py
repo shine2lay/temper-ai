@@ -1,6 +1,6 @@
 """Tests for KnowledgeGraphMemoryAdapter."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -23,7 +23,7 @@ def _make_concept(name: str, concept_type: str = "product", cid: str = "c1"):
     concept.id = cid
     concept.name = name
     concept.concept_type = concept_type
-    concept.created_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    concept.created_at = datetime(2026, 1, 1, tzinfo=UTC)
     concept.properties = {}
     return concept
 
@@ -63,11 +63,13 @@ class TestDelete:
 
 class TestSearch:
     def test_search_returns_matching_concepts(self, scope):
-        adapter = _make_adapter_with_concepts([
-            _make_concept("web_app", "product", "c1"),
-            _make_concept("api", "product", "c2"),
-            _make_concept("data_pipeline", "stage", "c3"),
-        ])
+        adapter = _make_adapter_with_concepts(
+            [
+                _make_concept("web_app", "product", "c1"),
+                _make_concept("api", "product", "c2"),
+                _make_concept("data_pipeline", "stage", "c3"),
+            ]
+        )
         results = adapter.search(scope, "api")
         assert len(results) == 1
         assert results[0].metadata["name"] == "api"
@@ -75,74 +77,89 @@ class TestSearch:
         assert results[0].relevance_score > 0
 
     def test_search_empty_query_returns_all(self, scope):
-        adapter = _make_adapter_with_concepts([
-            _make_concept("web_app", "product", "c1"),
-            _make_concept("api", "product", "c2"),
-        ])
+        adapter = _make_adapter_with_concepts(
+            [
+                _make_concept("web_app", "product", "c1"),
+                _make_concept("api", "product", "c2"),
+            ]
+        )
         results = adapter.search(scope, "")
         assert len(results) == 2
 
     def test_search_no_match_returns_empty(self, scope):
-        adapter = _make_adapter_with_concepts([
-            _make_concept("web_app", "product", "c1"),
-        ])
+        adapter = _make_adapter_with_concepts(
+            [
+                _make_concept("web_app", "product", "c1"),
+            ]
+        )
         results = adapter.search(scope, "nonexistent_xyz")
         assert results == []
 
     def test_search_respects_limit(self, scope):
-        adapter = _make_adapter_with_concepts([
-            _make_concept(f"item_{i}", "product", f"c{i}")
-            for i in range(10)
-        ])
+        adapter = _make_adapter_with_concepts(
+            [_make_concept(f"item_{i}", "product", f"c{i}") for i in range(10)]
+        )
         results = adapter.search(scope, "item", limit=3)
         assert len(results) == 3
 
     def test_search_filters_by_threshold(self, scope):
-        adapter = _make_adapter_with_concepts([
-            _make_concept("this_is_a_very_long_concept_name", "product", "c1"),
-        ])
+        adapter = _make_adapter_with_concepts(
+            [
+                _make_concept("this_is_a_very_long_concept_name", "product", "c1"),
+            ]
+        )
         # Short query against long name => low score, filtered by high threshold
         results = adapter.search(scope, "this", threshold=0.9)
         assert results == []
 
     def test_search_wrong_memory_type_returns_empty(self, scope):
-        adapter = _make_adapter_with_concepts([
-            _make_concept("api", "product", "c1"),
-        ])
+        adapter = _make_adapter_with_concepts(
+            [
+                _make_concept("api", "product", "c1"),
+            ]
+        )
         results = adapter.search(scope, "api", memory_type="episodic")
         assert results == []
 
     def test_search_semantic_type_allowed(self, scope):
-        adapter = _make_adapter_with_concepts([
-            _make_concept("api", "product", "c1"),
-        ])
+        adapter = _make_adapter_with_concepts(
+            [
+                _make_concept("api", "product", "c1"),
+            ]
+        )
         results = adapter.search(scope, "api", memory_type=MEMORY_TYPE_SEMANTIC)
         assert len(results) == 1
 
     def test_search_results_sorted_by_relevance(self, scope):
-        adapter = _make_adapter_with_concepts([
-            _make_concept("api_long_name_extra", "product", "c1"),
-            _make_concept("api", "product", "c2"),
-        ])
+        adapter = _make_adapter_with_concepts(
+            [
+                _make_concept("api_long_name_extra", "product", "c1"),
+                _make_concept("api", "product", "c2"),
+            ]
+        )
         results = adapter.search(scope, "api")
         assert len(results) == 2
         # "api" exact match has higher score than "api_long_name_extra"
         assert results[0].metadata["name"] == "api"
 
     def test_search_case_insensitive(self, scope):
-        adapter = _make_adapter_with_concepts([
-            _make_concept("WebApp", "product", "c1"),
-        ])
+        adapter = _make_adapter_with_concepts(
+            [
+                _make_concept("WebApp", "product", "c1"),
+            ]
+        )
         results = adapter.search(scope, "webapp")
         assert len(results) == 1
 
 
 class TestGetAll:
     def test_get_all_returns_all_concepts(self, scope):
-        adapter = _make_adapter_with_concepts([
-            _make_concept("web_app", "product", "c1"),
-            _make_concept("api", "product", "c2"),
-        ])
+        adapter = _make_adapter_with_concepts(
+            [
+                _make_concept("web_app", "product", "c1"),
+                _make_concept("api", "product", "c2"),
+            ]
+        )
         results = adapter.get_all(scope)
         assert len(results) == 2
         assert results[0].content == "product: web_app"
@@ -154,16 +171,20 @@ class TestGetAll:
         assert results == []
 
     def test_get_all_wrong_type_returns_empty(self, scope):
-        adapter = _make_adapter_with_concepts([
-            _make_concept("api", "product", "c1"),
-        ])
+        adapter = _make_adapter_with_concepts(
+            [
+                _make_concept("api", "product", "c1"),
+            ]
+        )
         results = adapter.get_all(scope, memory_type="episodic")
         assert results == []
 
     def test_get_all_semantic_type_allowed(self, scope):
-        adapter = _make_adapter_with_concepts([
-            _make_concept("api", "product", "c1"),
-        ])
+        adapter = _make_adapter_with_concepts(
+            [
+                _make_concept("api", "product", "c1"),
+            ]
+        )
         results = adapter.get_all(scope, memory_type=MEMORY_TYPE_SEMANTIC)
         assert len(results) == 1
 
@@ -196,7 +217,9 @@ class TestLazyInit:
     def test_ensure_initialized_creates_store(self, mock_query_cls, mock_store_cls):
         mock_store = MagicMock()
         mock_store_cls.return_value = mock_store
-        adapter = KnowledgeGraphMemoryAdapter(config={"database_url": "sqlite:///test.db"})
+        adapter = KnowledgeGraphMemoryAdapter(
+            config={"database_url": "sqlite:///test.db"}
+        )
         adapter._ensure_initialized()
         mock_store_cls.assert_called_once_with(database_url="sqlite:///test.db")
         mock_query_cls.assert_called_once_with(mock_store)

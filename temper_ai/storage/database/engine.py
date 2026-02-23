@@ -10,7 +10,6 @@ Tests can pass explicit SQLite URLs for isolation.
 import logging
 import os
 import sys
-from typing import Optional
 
 from sqlalchemy import event
 from sqlalchemy.engine import Engine
@@ -39,7 +38,7 @@ def get_database_url() -> str:
 
 
 def create_app_engine(
-    database_url: Optional[str] = None,
+    database_url: str | None = None,
     pool_size: int = SMALL_POOL_SIZE,
 ) -> Engine:
     """Create a SQLAlchemy engine with dialect-appropriate settings.

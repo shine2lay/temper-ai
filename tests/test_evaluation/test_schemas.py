@@ -1,4 +1,5 @@
 """Tests for prompt testing harness schemas."""
+
 import pytest
 from pydantic import ValidationError
 
@@ -13,7 +14,9 @@ from temper_ai.evaluation._schemas import (
 
 class TestTestCaseValidator:
     def test_valid_construction(self):
-        v = TestCaseValidator(name="has_decision", pattern=r"DECISION:\s*(APPROVE|REJECT)")
+        v = TestCaseValidator(
+            name="has_decision", pattern=r"DECISION:\s*(APPROVE|REJECT)"
+        )
         assert v.name == "has_decision"
         assert v.type == "regex"
         assert v.severity == "block"

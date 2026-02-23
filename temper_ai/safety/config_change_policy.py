@@ -3,13 +3,23 @@
 Validates config changes before deployment to prevent unsafe modifications
 that could degrade system performance or violate safety constraints.
 """
+
 import logging
 from dataclasses import dataclass
-from typing import Any, Dict, List
+from typing import Any
 
 from temper_ai.safety.base import BaseSafetyPolicy
-from temper_ai.safety.constants import FIELD_KEY, MODEL_KEY, NEW_MODEL_KEY, OLD_MODEL_KEY
-from temper_ai.safety.interfaces import SafetyViolation, ValidationResult, ViolationSeverity
+from temper_ai.safety.constants import (
+    FIELD_KEY,
+    MODEL_KEY,
+    NEW_MODEL_KEY,
+    OLD_MODEL_KEY,
+)
+from temper_ai.safety.interfaces import (
+    SafetyViolation,
+    ValidationResult,
+    ViolationSeverity,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +36,7 @@ DEFAULT_MODEL_COST = 3  # Default cost for unknown models
 @dataclass
 class ConfigChange:
     """Represents a configuration change."""
+
     field_path: str  # e.g., "inference.model"
     old_value: Any
     new_value: Any
@@ -51,7 +62,7 @@ class ConfigChangePolicy(BaseSafetyPolicy):
         >>> result = await policy.validate_async(action, context)
     """
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         """Initialize config change policy.
 
         Args:
@@ -64,12 +75,16 @@ class ConfigChangePolicy(BaseSafetyPolicy):
                 - max_cost_increase_pct: float (default: 50.0)
         """
         super().__init__(config)
-        self.require_approval_for_model_change = config.get("require_approval_for_model_change", True)
+        self.require_approval_for_model_change = config.get(
+            "require_approval_for_model_change", True
+        )
         self.max_temperature = config.get("max_temperature", 1.0)
         self.min_temperature = config.get("min_temperature", 0.0)
         self.allowed_models = config.get("allowed_models", None)  # None = all allowed
         self.block_safety_downgrades = config.get("block_safety_downgrades", True)
-        self.max_cost_increase_pct = config.get("max_cost_increase_pct", DEFAULT_MAX_COST_INCREASE_PCT)
+        self.max_cost_increase_pct = config.get(
+            "max_cost_increase_pct", DEFAULT_MAX_COST_INCREASE_PCT
+        )
 
     @property
     def name(self) -> str:
@@ -82,7 +97,7 @@ class ConfigChangePolicy(BaseSafetyPolicy):
         return "1.0.0"
 
     @property
-    def action_types(self) -> List[str]:
+    def action_types(self) -> list[str]:
         """Action types this policy applies to."""
         return ["config_change"]
 
@@ -90,9 +105,9 @@ class ConfigChangePolicy(BaseSafetyPolicy):
         self,
         change: ConfigChange,
         agent_name: str,
-        action: Dict[str, Any],
-        context: Dict[str, Any],
-    ) -> List[SafetyViolation]:
+        action: dict[str, Any],
+        context: dict[str, Any],
+    ) -> list[SafetyViolation]:
         """Dispatch a single config change to the appropriate checker.
 
         Args:
@@ -116,7 +131,9 @@ class ConfigChangePolicy(BaseSafetyPolicy):
             return self._check_tool_change(change, agent_name, action, context)
         return []
 
-    def _validate_impl(self, action: Dict[str, Any], context: Dict[str, Any]) -> ValidationResult:
+    def _validate_impl(
+        self, action: dict[str, Any], context: dict[str, Any]
+    ) -> ValidationResult:
         """Validate config change action.
 
         Args:
@@ -130,7 +147,7 @@ class ConfigChangePolicy(BaseSafetyPolicy):
         Returns:
             ValidationResult with valid=True/False and violations
         """
-        violations: List[SafetyViolation] = []
+        violations: list[SafetyViolation] = []
 
         agent_name = action.get("agent_name", "unknown")
         old_config = action.get("old_config", {})
@@ -141,9 +158,13 @@ class ConfigChangePolicy(BaseSafetyPolicy):
         for change in changes:
             violations.extend(self._check_change(change, agent_name, action, context))
 
-        violations.extend(self._check_cost_impact(old_config, new_config, agent_name, action, context))
+        violations.extend(
+            self._check_cost_impact(old_config, new_config, agent_name, action, context)
+        )
 
-        critical_count = sum(1 for v in violations if v.severity == ViolationSeverity.CRITICAL)
+        critical_count = sum(
+            1 for v in violations if v.severity == ViolationSeverity.CRITICAL
+        )
         high_count = sum(1 for v in violations if v.severity == ViolationSeverity.HIGH)
 
         return ValidationResult(
@@ -160,11 +181,8 @@ class ConfigChangePolicy(BaseSafetyPolicy):
         )
 
     def _detect_changes(
-        self,
-        old_config: Dict[str, Any],
-        new_config: Dict[str, Any],
-        prefix: str = ""
-    ) -> List[ConfigChange]:
+        self, old_config: dict[str, Any], new_config: dict[str, Any], prefix: str = ""
+    ) -> list[ConfigChange]:
         """Detect all changes between configs.
 
         Args:
@@ -187,32 +205,38 @@ class ConfigChangePolicy(BaseSafetyPolicy):
 
             if key not in old_config:
                 # Added field
-                changes.append(ConfigChange(
-                    field_path=field_path,
-                    old_value=None,
-                    new_value=new_value,
-                    change_type="added"
-                ))
+                changes.append(
+                    ConfigChange(
+                        field_path=field_path,
+                        old_value=None,
+                        new_value=new_value,
+                        change_type="added",
+                    )
+                )
             elif key not in new_config:
                 # Removed field
-                changes.append(ConfigChange(
-                    field_path=field_path,
-                    old_value=old_value,
-                    new_value=None,
-                    change_type="removed"
-                ))
+                changes.append(
+                    ConfigChange(
+                        field_path=field_path,
+                        old_value=old_value,
+                        new_value=None,
+                        change_type="removed",
+                    )
+                )
             elif isinstance(old_value, dict) and isinstance(new_value, dict):
                 # Recurse into nested dicts
                 nested_changes = self._detect_changes(old_value, new_value, field_path)
                 changes.extend(nested_changes)
             elif old_value != new_value:
                 # Modified field
-                changes.append(ConfigChange(
-                    field_path=field_path,
-                    old_value=old_value,
-                    new_value=new_value,
-                    change_type="modified"
-                ))
+                changes.append(
+                    ConfigChange(
+                        field_path=field_path,
+                        old_value=old_value,
+                        new_value=new_value,
+                        change_type="modified",
+                    )
+                )
 
         return changes
 
@@ -220,9 +244,9 @@ class ConfigChangePolicy(BaseSafetyPolicy):
         self,
         change: ConfigChange,
         agent_name: str,
-        action: Dict[str, Any],
-        context: Dict[str, Any]
-    ) -> List[SafetyViolation]:
+        action: dict[str, Any],
+        context: dict[str, Any],
+    ) -> list[SafetyViolation]:
         """Check if model change is safe.
 
         Args:
@@ -240,33 +264,37 @@ class ConfigChangePolicy(BaseSafetyPolicy):
 
         # Check if model is in allowed list
         if self.allowed_models is not None and new_model not in self.allowed_models:
-            violations.append(SafetyViolation(
-                policy_name=self.name,
-                severity=ViolationSeverity.CRITICAL,
-                message=f"Model '{new_model}' not in allowed list for {agent_name}",
-                action=str(action),
-                context=context,
-                metadata={
-                    FIELD_KEY:change.field_path,
-                    NEW_MODEL_KEY:new_model,
-                    "allowed_models": self.allowed_models
-                }
-            ))
+            violations.append(
+                SafetyViolation(
+                    policy_name=self.name,
+                    severity=ViolationSeverity.CRITICAL,
+                    message=f"Model '{new_model}' not in allowed list for {agent_name}",
+                    action=str(action),
+                    context=context,
+                    metadata={
+                        FIELD_KEY: change.field_path,
+                        NEW_MODEL_KEY: new_model,
+                        "allowed_models": self.allowed_models,
+                    },
+                )
+            )
 
         # Require approval for model changes
         if self.require_approval_for_model_change:
-            violations.append(SafetyViolation(
-                policy_name=self.name,
-                severity=ViolationSeverity.HIGH,
-                message=f"Model change from '{change.old_value}' to '{new_model}' requires approval for {agent_name}",
-                action=str(action),
-                context=context,
-                metadata={
-                    FIELD_KEY:change.field_path,
-                    OLD_MODEL_KEY:change.old_value,
-                    NEW_MODEL_KEY:new_model
-                }
-            ))
+            violations.append(
+                SafetyViolation(
+                    policy_name=self.name,
+                    severity=ViolationSeverity.HIGH,
+                    message=f"Model change from '{change.old_value}' to '{new_model}' requires approval for {agent_name}",
+                    action=str(action),
+                    context=context,
+                    metadata={
+                        FIELD_KEY: change.field_path,
+                        OLD_MODEL_KEY: change.old_value,
+                        NEW_MODEL_KEY: new_model,
+                    },
+                )
+            )
 
         return violations
 
@@ -274,9 +302,9 @@ class ConfigChangePolicy(BaseSafetyPolicy):
         self,
         change: ConfigChange,
         agent_name: str,
-        action: Dict[str, Any],
-        context: Dict[str, Any]
-    ) -> List[SafetyViolation]:
+        action: dict[str, Any],
+        context: dict[str, Any],
+    ) -> list[SafetyViolation]:
         """Check if temperature change is within safe range.
 
         Args:
@@ -294,19 +322,21 @@ class ConfigChangePolicy(BaseSafetyPolicy):
 
         # Validate temperature range
         if new_temp < self.min_temperature or new_temp > self.max_temperature:
-            violations.append(SafetyViolation(
-                policy_name=self.name,
-                severity=ViolationSeverity.CRITICAL,
-                message=f"Temperature {new_temp} outside safe range [{self.min_temperature}, {self.max_temperature}] for {agent_name}",
-                action=str(action),
-                context=context,
-                metadata={
-                    FIELD_KEY:change.field_path,
-                    "new_temperature": new_temp,
-                    "min_allowed": self.min_temperature,
-                    "max_allowed": self.max_temperature
-                }
-            ))
+            violations.append(
+                SafetyViolation(
+                    policy_name=self.name,
+                    severity=ViolationSeverity.CRITICAL,
+                    message=f"Temperature {new_temp} outside safe range [{self.min_temperature}, {self.max_temperature}] for {agent_name}",
+                    action=str(action),
+                    context=context,
+                    metadata={
+                        FIELD_KEY: change.field_path,
+                        "new_temperature": new_temp,
+                        "min_allowed": self.min_temperature,
+                        "max_allowed": self.max_temperature,
+                    },
+                )
+            )
 
         return violations
 
@@ -314,9 +344,9 @@ class ConfigChangePolicy(BaseSafetyPolicy):
         self,
         change: ConfigChange,
         agent_name: str,
-        action: Dict[str, Any],
-        context: Dict[str, Any]
-    ) -> List[SafetyViolation]:
+        action: dict[str, Any],
+        context: dict[str, Any],
+    ) -> list[SafetyViolation]:
         """Check if safety mode change is allowed.
 
         Args:
@@ -336,18 +366,20 @@ class ConfigChangePolicy(BaseSafetyPolicy):
         # Block downgrades from require_approval to execute
         if self.block_safety_downgrades:
             if old_mode == "require_approval" and new_mode in ("execute", "dry_run"):
-                violations.append(SafetyViolation(
-                    policy_name=self.name,
-                    severity=ViolationSeverity.CRITICAL,
-                    message=f"Safety mode downgrade from '{old_mode}' to '{new_mode}' blocked for {agent_name}",
-                    action=str(action),
-                    context=context,
-                    metadata={
-                        FIELD_KEY:change.field_path,
-                        "old_mode": old_mode,
-                        "new_mode": new_mode
-                    }
-                ))
+                violations.append(
+                    SafetyViolation(
+                        policy_name=self.name,
+                        severity=ViolationSeverity.CRITICAL,
+                        message=f"Safety mode downgrade from '{old_mode}' to '{new_mode}' blocked for {agent_name}",
+                        action=str(action),
+                        context=context,
+                        metadata={
+                            FIELD_KEY: change.field_path,
+                            "old_mode": old_mode,
+                            "new_mode": new_mode,
+                        },
+                    )
+                )
 
         return violations
 
@@ -355,9 +387,9 @@ class ConfigChangePolicy(BaseSafetyPolicy):
         self,
         change: ConfigChange,
         agent_name: str,
-        action: Dict[str, Any],
-        context: Dict[str, Any]
-    ) -> List[SafetyViolation]:
+        action: dict[str, Any],
+        context: dict[str, Any],
+    ) -> list[SafetyViolation]:
         """Check if tool configuration change is safe.
 
         Args:
@@ -373,29 +405,31 @@ class ConfigChangePolicy(BaseSafetyPolicy):
 
         # For now, just flag tool changes as requiring approval
         # More sophisticated checks could validate specific tool configs
-        violations.append(SafetyViolation(
-            policy_name=self.name,
-            severity=ViolationSeverity.HIGH,
-            message=f"Tool configuration change requires approval for {agent_name}",
-            action=str(action),
-            context=context,
-            metadata={
-                FIELD_KEY:change.field_path,
-                "old_value": change.old_value,
-                "new_value": change.new_value
-            }
-        ))
+        violations.append(
+            SafetyViolation(
+                policy_name=self.name,
+                severity=ViolationSeverity.HIGH,
+                message=f"Tool configuration change requires approval for {agent_name}",
+                action=str(action),
+                context=context,
+                metadata={
+                    FIELD_KEY: change.field_path,
+                    "old_value": change.old_value,
+                    "new_value": change.new_value,
+                },
+            )
+        )
 
         return violations
 
     def _check_cost_impact(
         self,
-        old_config: Dict[str, Any],
-        new_config: Dict[str, Any],
+        old_config: dict[str, Any],
+        new_config: dict[str, Any],
         agent_name: str,
-        action: Dict[str, Any],
-        context: Dict[str, Any]
-    ) -> List[SafetyViolation]:
+        action: dict[str, Any],
+        context: dict[str, Any],
+    ) -> list[SafetyViolation]:
         """Check estimated cost impact of config change.
 
         Args:
@@ -431,18 +465,22 @@ class ConfigChangePolicy(BaseSafetyPolicy):
             cost_increase_pct = ((new_cost - old_cost) / old_cost) * 100
 
             if cost_increase_pct > self.max_cost_increase_pct:
-                violations.append(SafetyViolation(
-                    policy_name=self.name,
-                    severity=ViolationSeverity.HIGH,
-                    message=f"Estimated cost increase of {cost_increase_pct:.0f}% exceeds threshold for {agent_name}",
-                    action=str({OLD_MODEL_KEY:old_model, NEW_MODEL_KEY:new_model}),
-                    context=context,
-                    metadata={
-                        OLD_MODEL_KEY:old_model,
-                        NEW_MODEL_KEY:new_model,
-                        "cost_increase_pct": cost_increase_pct,
-                        "max_allowed_pct": self.max_cost_increase_pct
-                    }
-                ))
+                violations.append(
+                    SafetyViolation(
+                        policy_name=self.name,
+                        severity=ViolationSeverity.HIGH,
+                        message=f"Estimated cost increase of {cost_increase_pct:.0f}% exceeds threshold for {agent_name}",
+                        action=str(
+                            {OLD_MODEL_KEY: old_model, NEW_MODEL_KEY: new_model}
+                        ),
+                        context=context,
+                        metadata={
+                            OLD_MODEL_KEY: old_model,
+                            NEW_MODEL_KEY: new_model,
+                            "cost_increase_pct": cost_increase_pct,
+                            "max_allowed_pct": self.max_cost_increase_pct,
+                        },
+                    )
+                )
 
         return violations

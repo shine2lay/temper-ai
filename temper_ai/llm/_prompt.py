@@ -3,11 +3,12 @@
 Formats tool results into text and applies a sliding window
 to keep prompt size within bounds across tool-calling iterations.
 """
+
 from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from temper_ai.llm.response_parser import sanitize_tool_output
 from temper_ai.llm.tool_keys import ToolKeys
@@ -18,26 +19,28 @@ logger = logging.getLogger(__name__)
 def inject_results(
     system_prompt: str,
     llm_response_content: str,
-    tool_results: List[Dict[str, Any]],
-    conversation_turns: List[str],
+    tool_results: list[dict[str, Any]],
+    conversation_turns: list[str],
     max_tool_result_size: int,
     max_prompt_length: int,
-    remaining_tool_calls: Optional[int] = None,
+    remaining_tool_calls: int | None = None,
 ) -> str:
     """Inject tool results into prompt for next iteration.
 
     Uses a sliding-window approach to prevent unbounded prompt growth.
     """
-    results_text = format_tool_results_text(tool_results, max_tool_result_size, remaining_tool_calls)
+    results_text = format_tool_results_text(
+        tool_results, max_tool_result_size, remaining_tool_calls
+    )
     turn_text = "\n\nAssistant: " + llm_response_content + results_text
     conversation_turns.append(turn_text)
     return apply_sliding_window(system_prompt, conversation_turns, max_prompt_length)
 
 
 def format_tool_results_text(
-    tool_results: List[Dict[str, Any]],
+    tool_results: list[dict[str, Any]],
     max_tool_result_size: int,
-    remaining_tool_calls: Optional[int] = None,
+    remaining_tool_calls: int | None = None,
 ) -> str:
     """Format tool results into text for prompt injection."""
     results_parts = ["\n\nTool Results:\n"]
@@ -70,12 +73,12 @@ def format_tool_results_text(
                 "\n[System Info: This is your last tool call. Budget exhausted after this iteration.]\n"
             )
 
-    return ''.join(results_parts)
+    return "".join(results_parts)
 
 
 def apply_sliding_window(
     system_prompt: str,
-    conversation_turns: List[str],
+    conversation_turns: list[str],
     max_prompt_length: int,
 ) -> str:
     """Apply sliding window to conversation turns to fit within max_prompt_length."""
@@ -86,7 +89,7 @@ def apply_sliding_window(
         recent_turn = sanitize_tool_output(conversation_turns[-1])
         return system_prompt + recent_turn + suffix
 
-    included_turns: List[str] = []
+    included_turns: list[str] = []
     total_turn_chars = 0
     for turn in reversed(conversation_turns):
         if total_turn_chars + len(turn) > budget:
@@ -99,11 +102,13 @@ def apply_sliding_window(
     dropped_count = len(conversation_turns) - len(included_turns)
     truncation_marker = ""
     if dropped_count > 0:
-        truncation_marker = f"\n\n[...{dropped_count} earlier iteration(s) omitted for brevity...]\n"
+        truncation_marker = (
+            f"\n\n[...{dropped_count} earlier iteration(s) omitted for brevity...]\n"
+        )
 
     # NOTE: Do NOT re-sanitize assembled turns. Tool results are already
     # sanitized individually. Re-sanitizing escapes the LLM's own <tool_call> tags.
-    assembled_turns = truncation_marker + ''.join(included_turns)
+    assembled_turns = truncation_marker + "".join(included_turns)
 
     # Prune old turns to free memory
     if dropped_count > 0:

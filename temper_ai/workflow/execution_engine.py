@@ -14,7 +14,7 @@ Design Philosophy:
 
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import Any, Dict
+from typing import Any
 
 from temper_ai.shared.utils.exceptions import ErrorCode, WorkflowError
 
@@ -28,9 +28,7 @@ class WorkflowCancelledError(WorkflowError):
 
     def __init__(self, message: str = "Workflow was cancelled", **kwargs: Any) -> None:
         super().__init__(
-            message=message,
-            error_code=ErrorCode.WORKFLOW_EXECUTION_ERROR,
-            **kwargs
+            message=message, error_code=ErrorCode.WORKFLOW_EXECUTION_ERROR, **kwargs
         )
 
 
@@ -42,6 +40,7 @@ class ExecutionMode(Enum):
         ASYNC: Asynchronous execution (non-blocking)
         STREAM: Streaming execution (yields intermediate results)
     """
+
     SYNC = "sync"
     ASYNC = "async"
     STREAM = "stream"
@@ -59,7 +58,7 @@ class CompiledWorkflow(ABC):
     """
 
     @abstractmethod
-    def invoke(self, state: Dict[str, Any]) -> Dict[str, Any]:
+    def invoke(self, state: dict[str, Any]) -> dict[str, Any]:
         """Execute workflow synchronously.
 
         Args:
@@ -77,7 +76,7 @@ class CompiledWorkflow(ABC):
         pass
 
     @abstractmethod
-    async def ainvoke(self, state: Dict[str, Any]) -> Dict[str, Any]:
+    async def ainvoke(self, state: dict[str, Any]) -> dict[str, Any]:
         """Execute workflow asynchronously.
 
         Args:
@@ -95,7 +94,7 @@ class CompiledWorkflow(ABC):
         pass
 
     @abstractmethod
-    def get_metadata(self) -> Dict[str, Any]:
+    def get_metadata(self) -> dict[str, Any]:
         """Get workflow metadata.
 
         Returns:
@@ -173,7 +172,7 @@ class ExecutionEngine(ABC):
     """
 
     @abstractmethod
-    def compile(self, workflow_config: Dict[str, Any]) -> CompiledWorkflow:
+    def compile(self, workflow_config: dict[str, Any]) -> CompiledWorkflow:
         """Compile workflow configuration into executable form.
 
         This phase validates the workflow configuration, performs any necessary
@@ -205,9 +204,9 @@ class ExecutionEngine(ABC):
     def execute(
         self,
         compiled_workflow: CompiledWorkflow,
-        input_data: Dict[str, Any],
-        mode: ExecutionMode = ExecutionMode.SYNC
-    ) -> Dict[str, Any]:
+        input_data: dict[str, Any],
+        mode: ExecutionMode = ExecutionMode.SYNC,
+    ) -> dict[str, Any]:
         """Execute compiled workflow.
 
         Args:
@@ -241,9 +240,9 @@ class ExecutionEngine(ABC):
     async def async_execute(
         self,
         compiled_workflow: CompiledWorkflow,
-        input_data: Dict[str, Any],
-        mode: ExecutionMode = ExecutionMode.ASYNC
-    ) -> Dict[str, Any]:
+        input_data: dict[str, Any],
+        mode: ExecutionMode = ExecutionMode.ASYNC,
+    ) -> dict[str, Any]:
         """Execute compiled workflow asynchronously.
 
         Use this method when calling from an async context (FastAPI, Jupyter,

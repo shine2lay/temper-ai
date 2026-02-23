@@ -6,7 +6,7 @@ current and proposed-level decisions without affecting real outcomes.
 
 import logging
 from dataclasses import dataclass
-from typing import Any, List, Optional
+from typing import Any
 
 from temper_ai.safety.autonomy.constants import (
     SHADOW_AGREEMENT_THRESHOLD,
@@ -49,7 +49,7 @@ class ShadowMode:
         self,
         agent_name: str,
         domain: str,
-        violations: Optional[List[SafetyViolation]],
+        violations: list[SafetyViolation] | None,
         current_requires_approval: bool,
         proposed_level: AutonomyLevel,
         approval_router: Any,
@@ -69,7 +69,10 @@ class ShadowMode:
         """
         # Simulate what would happen at the proposed level
         shadow_decision = approval_router.route_action(
-            agent_name, domain, violations, proposed_level,
+            agent_name,
+            domain,
+            violations,
+            proposed_level,
         )
         shadow_requires_approval = shadow_decision.requires_approval
 
@@ -93,8 +96,12 @@ class ShadowMode:
 
         logger.debug(
             "Shadow validation %s/%s: agrees=%s, rate=%.2f (%d/%d)",
-            agent_name, domain, agrees, agreement_rate,
-            state.shadow_agreements, state.shadow_runs,
+            agent_name,
+            domain,
+            agrees,
+            agreement_rate,
+            state.shadow_agreements,
+            state.shadow_runs,
         )
 
         return ShadowResult(
@@ -106,9 +113,7 @@ class ShadowMode:
             agreement_rate=agreement_rate,
         )
 
-    def check_promotion_ready(
-        self, agent_name: str, domain: str
-    ) -> bool:
+    def check_promotion_ready(self, agent_name: str, domain: str) -> bool:
         """Check if shadow validation indicates readiness for promotion.
 
         Returns True if shadow_runs >= SHADOW_MIN_RUNS AND
@@ -136,9 +141,7 @@ class ShadowMode:
             state.updated_at = _utcnow()
             self._store.save_state(state)
 
-    def _get_or_create_state(
-        self, agent_name: str, domain: str
-    ) -> AutonomyState:
+    def _get_or_create_state(self, agent_name: str, domain: str) -> AutonomyState:
         """Get or create AutonomyState from store."""
         import uuid
 
@@ -156,4 +159,5 @@ class ShadowMode:
 def _utcnow():  # type: ignore[no-untyped-def]
     """Lazy import to avoid module-level import overhead."""
     from temper_ai.storage.database.datetime_utils import utcnow
+
     return utcnow()

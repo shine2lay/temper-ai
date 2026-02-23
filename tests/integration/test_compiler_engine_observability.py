@@ -9,6 +9,7 @@ Tests the full pipeline:
 
 These tests use real database (in-memory) and verify end-to-end integrity.
 """
+
 import json
 import tempfile
 from pathlib import Path
@@ -16,6 +17,10 @@ from unittest.mock import Mock, patch
 
 import pytest
 
+from temper_ai.observability.database import DatabaseManager, init_database
+from temper_ai.observability.tracker import ExecutionTracker
+from temper_ai.tools.calculator import Calculator
+from temper_ai.tools.registry import ToolRegistry
 from temper_ai.workflow.checkpoint_backends import FileCheckpointBackend
 from temper_ai.workflow.checkpoint_manager import CheckpointManager, CheckpointStrategy
 from temper_ai.workflow.config_loader import ConfigLoader
@@ -23,14 +28,11 @@ from temper_ai.workflow.domain_state import InfrastructureContext, WorkflowDomai
 from temper_ai.workflow.langgraph_compiler import LangGraphCompiler
 from temper_ai.workflow.langgraph_engine import LangGraphExecutionEngine
 from temper_ai.workflow.state_manager import initialize_state
-from temper_ai.observability.database import DatabaseManager, init_database
-from temper_ai.observability.tracker import ExecutionTracker
-from temper_ai.tools.calculator import Calculator
-from temper_ai.tools.registry import ToolRegistry
 
 # ============================================================================
 # Fixtures
 # ============================================================================
+
 
 @pytest.fixture
 def db_fixture():
@@ -69,26 +71,18 @@ def execution_tracker(init_db_fixture):
     return ExecutionTracker()
 
 
-
-
 @pytest.fixture
 def checkpoint_manager():
     """Create checkpoint manager with file backend."""
     temp_dir = tempfile.mkdtemp()
     backend = FileCheckpointBackend(checkpoint_dir=temp_dir)
-    return CheckpointManager(
-        backend=backend,
-        strategy=CheckpointStrategy.EVERY_STAGE
-    )
+    return CheckpointManager(backend=backend, strategy=CheckpointStrategy.EVERY_STAGE)
 
 
 @pytest.fixture
 def compiler(tool_registry, config_loader):
     """Create LangGraph compiler."""
-    return LangGraphCompiler(
-        tool_registry=tool_registry,
-        config_loader=config_loader
-    )
+    return LangGraphCompiler(tool_registry=tool_registry, config_loader=config_loader)
 
 
 @pytest.fixture
@@ -101,27 +95,19 @@ def execution_engine(compiler):
 # Test 1: Basic Workflow Compilation and Execution
 # ============================================================================
 
-@patch('temper_ai.agent.standard_agent.StandardAgent.execute')
+
+@patch("temper_ai.agent.standard_agent.StandardAgent.execute")
 def test_workflow_compilation_to_execution(
-    mock_agent_execute,
-    compiler,
-    tool_registry,
-    config_loader
+    mock_agent_execute, compiler, tool_registry, config_loader
 ):
     """Test basic workflow compilation and execution flow."""
     # Mock agent response
     mock_agent_execute.return_value = Mock(
-        output="Test output",
-        metadata={"tokens": 100}
+        output="Test output", metadata={"tokens": 100}
     )
 
     # Create simple workflow config
-    workflow_config = {
-        "workflow": {
-            "name": "test_workflow",
-            "stages": ["research"]
-        }
-    }
+    workflow_config = {"workflow": {"name": "test_workflow", "stages": ["research"]}}
 
     # Compile workflow
     compiled_graph = compiler.compile(workflow_config)
@@ -129,33 +115,30 @@ def test_workflow_compilation_to_execution(
     assert compiled_graph is not None
 
     # Execute workflow (test state initialization)
-    initial_state = {
-        "input": "test input",
-        "workflow_id": "wf-test-001"
-    }
+    initial_state = {"input": "test input", "workflow_id": "wf-test-001"}
 
     # Verify compilation produces executable graph
     # (Actual execution would require LLM, so we just verify structure)
-    assert hasattr(compiled_graph, 'invoke')
+    assert hasattr(compiled_graph, "invoke")
 
 
 # ============================================================================
 # Test 2: State Propagation Through Stages
 # ============================================================================
 
+
 def test_state_propagation_multi_stage():
     """Test state propagates correctly through multiple stages."""
     # Initialize state
     domain_state = WorkflowDomainState(
-        workflow_id="wf-multi-stage",
-        input="Initial input"
+        workflow_id="wf-multi-stage", input="Initial input"
     )
 
     # Simulate stage 1: research
-    domain_state.set_stage_output("research", {
-        "findings": ["finding1", "finding2"],
-        "sources": ["source1", "source2"]
-    })
+    domain_state.set_stage_output(
+        "research",
+        {"findings": ["finding1", "finding2"], "sources": ["source1", "source2"]},
+    )
 
     assert domain_state.current_stage == "research"
     assert domain_state.has_stage_output("research")
@@ -164,7 +147,7 @@ def test_state_propagation_multi_stage():
     research_output = domain_state.get_stage_output("research")
     analysis_result = {
         "insights": f"Analyzed {len(research_output['findings'])} findings",
-        "input_sources": research_output["sources"]
+        "input_sources": research_output["sources"],
     }
     domain_state.set_stage_output("analysis", analysis_result)
 
@@ -176,7 +159,7 @@ def test_state_propagation_multi_stage():
     synthesis_result = {
         "summary": "Combined analysis",
         "total_findings": len(previous_outputs["research"]["findings"]),
-        "insights": previous_outputs["analysis"]["insights"]
+        "insights": previous_outputs["analysis"]["insights"],
     }
     domain_state.set_stage_output("synthesis", synthesis_result)
 
@@ -191,6 +174,7 @@ def test_state_propagation_multi_stage():
 # Test 3: State Serialization and Deserialization
 # ============================================================================
 
+
 def test_state_serialization_roundtrip():
     """Test state can be serialized and deserialized correctly."""
     # Create state with complex data
@@ -198,14 +182,13 @@ def test_state_serialization_roundtrip():
         workflow_id="wf-serialize-test",
         input="Test input",
         topic="Serialization",
-        focus_areas=["JSON", "State Management"]
+        focus_areas=["JSON", "State Management"],
     )
 
-    original_domain.set_stage_output("stage1", {
-        "data": "complex data",
-        "nested": {"key": "value"},
-        "list": [1, 2, 3]
-    })
+    original_domain.set_stage_output(
+        "stage1",
+        {"data": "complex data", "nested": {"key": "value"}, "list": [1, 2, 3]},
+    )
 
     # Serialize to dict
     serialized = original_domain.to_dict(exclude_none=True)
@@ -229,12 +212,12 @@ def test_state_serialization_roundtrip():
 # Test 4: Checkpoint Integration
 # ============================================================================
 
+
 def test_checkpoint_save_and_resume(checkpoint_manager):
     """Test checkpoint save and resume workflow."""
     # Create workflow state
     domain = WorkflowDomainState(
-        workflow_id="wf-checkpoint-test",
-        input="Long-running workflow"
+        workflow_id="wf-checkpoint-test", input="Long-running workflow"
     )
 
     # Simulate stages completing
@@ -260,6 +243,7 @@ def test_checkpoint_save_and_resume(checkpoint_manager):
 # ============================================================================
 # Test 5: Checkpoint Strategy Behavior
 # ============================================================================
+
 
 def test_checkpoint_strategy_every_stage(checkpoint_manager):
     """Test EVERY_STAGE checkpoint strategy."""
@@ -287,21 +271,22 @@ def test_checkpoint_strategy_every_stage(checkpoint_manager):
 # Test 6: Execution Context Separation
 # ============================================================================
 
+
 def test_execution_context_not_checkpointed(checkpoint_manager):
     """Test that execution context is not included in checkpoints."""
     # Create domain state and context
     domain = WorkflowDomainState(workflow_id="wf-context-test", input="test")
     context = InfrastructureContext(
-        tracker=Mock(),
-        tool_registry=Mock(),
-        config_loader=Mock()
+        tracker=Mock(), tool_registry=Mock(), config_loader=Mock()
     )
 
     # Save checkpoint (only domain should be saved)
     checkpoint_id = checkpoint_manager.save_checkpoint(domain)
 
     # Load checkpoint
-    restored_domain = checkpoint_manager.load_checkpoint("wf-context-test", checkpoint_id)
+    restored_domain = checkpoint_manager.load_checkpoint(
+        "wf-context-test", checkpoint_id
+    )
 
     # Verify domain restored correctly
     assert restored_domain.workflow_id == "wf-context-test"
@@ -315,12 +300,12 @@ def test_execution_context_not_checkpointed(checkpoint_manager):
 # Test 7: StateManager Integration
 # ============================================================================
 
+
 def test_state_initialization_checkpoint_integration(checkpoint_manager):
     """Test initialize_state works with checkpoint system."""
     # Initialize state
     state = initialize_state(
-        input_data={"input": "test"},
-        workflow_id="wf-state-mgr-test"
+        input_data={"input": "test"}, workflow_id="wf-state-mgr-test"
     )
 
     # Create domain state for checkpointing
@@ -342,6 +327,7 @@ def test_state_initialization_checkpoint_integration(checkpoint_manager):
 # ============================================================================
 # Test 8: Multi-Workflow Checkpoint Isolation
 # ============================================================================
+
 
 def test_multi_workflow_checkpoint_isolation(checkpoint_manager):
     """Test checkpoints for different workflows are isolated."""
@@ -373,6 +359,7 @@ def test_multi_workflow_checkpoint_isolation(checkpoint_manager):
 # Test 9: Checkpoint Cleanup
 # ============================================================================
 
+
 def test_checkpoint_cleanup_old_checkpoints(checkpoint_manager):
     """Test old checkpoints are cleaned up based on max_checkpoints."""
     checkpoint_manager.max_checkpoints = 3
@@ -398,6 +385,7 @@ def test_checkpoint_cleanup_old_checkpoints(checkpoint_manager):
 # Test 10: Error Handling in Checkpoint Operations
 # ============================================================================
 
+
 def test_checkpoint_load_nonexistent_workflow(checkpoint_manager):
     """Test loading checkpoint for non-existent workflow raises error."""
     from temper_ai.workflow.checkpoint_backends import CheckpointNotFoundError
@@ -419,59 +407,13 @@ def test_checkpoint_has_checkpoint_check(checkpoint_manager):
     assert checkpoint_manager.has_checkpoint("wf-test") is True
 
 
-# ============================================================================
-# Test 11: Compiler + State + Checkpoint Full Pipeline
-# ============================================================================
-
-@patch('temper_ai.agent.standard_agent.StandardAgent.execute')
-def test_full_pipeline_compilation_state_checkpoint(
-    mock_agent_execute,
-    compiler,
-    state_manager,
-    checkpoint_manager
-):
-    """Test full pipeline: compile → state → checkpoint."""
-    # Mock agent response
-    mock_agent_execute.return_value = Mock(
-        output="Analysis complete",
-        metadata={"tokens": 150}
-    )
-
-    # 1. Compile workflow
-    workflow_config = {
-        "workflow": {
-            "name": "full_pipeline_test",
-            "stages": ["research"]
-        }
-    }
-
-    compiled_graph = compiler.compile(workflow_config)
-    assert compiled_graph is not None
-
-    # 2. Initialize state
-    initial_state = state_manager.initialize_state(
-        input_data={"input": "test input"},
-        workflow_id="wf-full-pipeline"
-    )
-
-    # 3. Simulate stage execution and checkpoint
-    initial_state.set_stage_output("research", {
-        "findings": ["finding1", "finding2"]
-    })
-
-    # Save checkpoint
-    checkpoint_id = checkpoint_manager.save_checkpoint(initial_state.domain)
-
-    # 4. Verify checkpoint can be restored
-    restored_domain = checkpoint_manager.load_checkpoint("wf-full-pipeline")
-
-    assert restored_domain.workflow_id == "wf-full-pipeline"
-    assert restored_domain.has_stage_output("research")
+# Test 11 removed: StateManager class was never implemented
 
 
 # ============================================================================
 # Test 12: Performance Baseline
 # ============================================================================
+
 
 def test_checkpoint_performance_baseline(checkpoint_manager):
     """Test checkpoint operations meet performance baselines."""
@@ -480,10 +422,13 @@ def test_checkpoint_performance_baseline(checkpoint_manager):
     domain = WorkflowDomainState(workflow_id="wf-perf-test", input="test")
 
     # Add realistic stage output
-    domain.set_stage_output("research", {
-        "findings": [f"finding{i}" for i in range(100)],
-        "sources": [f"source{i}" for i in range(50)]
-    })
+    domain.set_stage_output(
+        "research",
+        {
+            "findings": [f"finding{i}" for i in range(100)],
+            "sources": [f"source{i}" for i in range(50)],
+        },
+    )
 
     # Measure save performance
     start = time.time()

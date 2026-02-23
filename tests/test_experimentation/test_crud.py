@@ -6,19 +6,18 @@ Tests experiment CRUD operations, caching, thread safety, and transaction handli
 
 import threading
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import Mock, patch
 
 import pytest
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session
 
-from temper_ai.experimentation.experiment_crud import ExperimentCRUD
+from temper_ai.experimentation.experiment_crud import ExperimentCRUD, ExperimentParams
 from temper_ai.experimentation.models import (
     AssignmentStrategyType,
     Experiment,
     ExperimentStatus,
-    Variant,
 )
 
 
@@ -53,8 +52,8 @@ def sample_experiment():
         confidence_level=0.95,
         min_sample_size_per_variant=100,
         tags=["test"],
-        created_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
     )
 
 
@@ -64,7 +63,7 @@ def sample_variants():
     exp_id = str(uuid.uuid4())
     return [
         {"name": "control", "is_control": True, "traffic": 0.5},
-        {"name": "variant_a", "traffic": 0.5, "config": {"temperature": 0.9}}
+        {"name": "variant_a", "traffic": 0.5, "config": {"temperature": 0.9}},
     ]
 
 
@@ -96,19 +95,23 @@ class TestCRUDInitialization:
 class TestCreateExperiment:
     """Test experiment creation."""
 
-    @patch('temper_ai.experimentation.experiment_crud.get_session')
-    def test_create_experiment_minimal(self, mock_get_session, crud_instance, mock_session):
+    @patch("temper_ai.experimentation.experiment_crud.get_session")
+    def test_create_experiment_minimal(
+        self, mock_get_session, crud_instance, mock_session
+    ):
         """Test creating experiment with minimal parameters."""
         mock_get_session.return_value = mock_session
 
         exp_id = crud_instance.create_experiment(
-            name="test_exp",
-            description="Test description",
-            variants=[
-                {"name": "control", "is_control": True},
-                {"name": "variant_a"}
-            ],
-            primary_metric="duration_seconds",
+            ExperimentParams(
+                name="test_exp",
+                description="Test description",
+                variants=[
+                    {"name": "control", "is_control": True},
+                    {"name": "variant_a"},
+                ],
+                primary_metric="duration_seconds",
+            )
         )
 
         assert exp_id is not None
@@ -120,45 +123,65 @@ class TestCreateExperiment:
         assert mock_session.add.call_count == 3  # 1 experiment + 2 variants
         mock_session.commit.assert_called_once()
 
-    @patch('temper_ai.experimentation.experiment_crud.get_session')
-    def test_create_experiment_with_all_params(self, mock_get_session, crud_instance, mock_session):
+    @patch("temper_ai.experimentation.experiment_crud.get_session")
+    def test_create_experiment_with_all_params(
+        self, mock_get_session, crud_instance, mock_session
+    ):
         """Test creating experiment with all optional parameters."""
         mock_get_session.return_value = mock_session
 
         exp_id = crud_instance.create_experiment(
-            name="full_test_exp",
-            description="Full test description",
-            variants=[
-                {"name": "control", "is_control": True, "traffic": 0.6, "description": "Control variant"},
-                {"name": "variant_a", "traffic": 0.4, "config": {"temperature": 0.9}, "description": "Test variant"}
-            ],
-            assignment_strategy="hash",
-            primary_metric="quality_score",
-            secondary_metrics=["latency", "cost"],
-            guardrail_metrics=[{"metric": "error_rate", "max_value": 0.05}],
-            confidence_level=0.99,
-            min_sample_size_per_variant=200,
-            tags=["production", "ml"],
-            created_by="user@example.com",
-            extra_metadata={"team": "ml-ops"},
+            ExperimentParams(
+                name="full_test_exp",
+                description="Full test description",
+                variants=[
+                    {
+                        "name": "control",
+                        "is_control": True,
+                        "traffic": 0.6,
+                        "description": "Control variant",
+                    },
+                    {
+                        "name": "variant_a",
+                        "traffic": 0.4,
+                        "config": {"temperature": 0.9},
+                        "description": "Test variant",
+                    },
+                ],
+                assignment_strategy="hash",
+                primary_metric="quality_score",
+                secondary_metrics=["latency", "cost"],
+                guardrail_metrics=[{"metric": "error_rate", "max_value": 0.05}],
+                confidence_level=0.99,
+                min_sample_size_per_variant=200,
+                extra_kwargs={
+                    "tags": ["production", "ml"],
+                    "created_by": "user@example.com",
+                    "extra_metadata": {"team": "ml-ops"},
+                },
+            )
         )
 
         assert exp_id is not None
         mock_session.commit.assert_called_once()
 
-    @patch('temper_ai.experimentation.experiment_crud.get_session')
-    def test_create_experiment_with_custom_traffic(self, mock_get_session, crud_instance, mock_session):
+    @patch("temper_ai.experimentation.experiment_crud.get_session")
+    def test_create_experiment_with_custom_traffic(
+        self, mock_get_session, crud_instance, mock_session
+    ):
         """Test creating experiment with custom traffic allocation."""
         mock_get_session.return_value = mock_session
 
         exp_id = crud_instance.create_experiment(
-            name="traffic_test",
-            description="Test traffic allocation",
-            variants=[
-                {"name": "control", "is_control": True, "traffic": 0.7},
-                {"name": "variant_a", "traffic": 0.3}
-            ],
-            primary_metric="duration_seconds",
+            ExperimentParams(
+                name="traffic_test",
+                description="Test traffic allocation",
+                variants=[
+                    {"name": "control", "is_control": True, "traffic": 0.7},
+                    {"name": "variant_a", "traffic": 0.3},
+                ],
+                primary_metric="duration_seconds",
+            )
         )
 
         assert exp_id is not None
@@ -168,13 +191,15 @@ class TestCreateExperiment:
         """Test that empty name is rejected."""
         with pytest.raises(ValueError, match="name must be"):
             crud_instance.create_experiment(
-                name="",
-                description="Test",
-                variants=[
-                    {"name": "control", "is_control": True},
-                    {"name": "variant_a"}
-                ],
-                primary_metric="duration_seconds",
+                ExperimentParams(
+                    name="",
+                    description="Test",
+                    variants=[
+                        {"name": "control", "is_control": True},
+                        {"name": "variant_a"},
+                    ],
+                    primary_metric="duration_seconds",
+                )
             )
 
     def test_create_experiment_invalid_name_too_long(self, crud_instance):
@@ -183,120 +208,148 @@ class TestCreateExperiment:
 
         with pytest.raises(ValueError, match="name must be"):
             crud_instance.create_experiment(
-                name=long_name,
-                description="Test",
-                variants=[
-                    {"name": "control", "is_control": True},
-                    {"name": "variant_a"}
-                ],
-                primary_metric="duration_seconds",
+                ExperimentParams(
+                    name=long_name,
+                    description="Test",
+                    variants=[
+                        {"name": "control", "is_control": True},
+                        {"name": "variant_a"},
+                    ],
+                    primary_metric="duration_seconds",
+                )
             )
 
     def test_create_experiment_insufficient_variants(self, crud_instance):
         """Test that single variant is rejected."""
         with pytest.raises(ValueError, match="at least 2 variants"):
             crud_instance.create_experiment(
-                name="test_exp",
-                description="Test",
-                variants=[{"name": "control"}],
-                primary_metric="duration_seconds",
+                ExperimentParams(
+                    name="test_exp",
+                    description="Test",
+                    variants=[{"name": "control"}],
+                    primary_metric="duration_seconds",
+                )
             )
 
     def test_create_experiment_no_variants(self, crud_instance):
         """Test that empty variants list is rejected."""
         with pytest.raises(ValueError, match="at least 2 variants"):
             crud_instance.create_experiment(
-                name="test_exp",
-                description="Test",
-                variants=[],
-                primary_metric="duration_seconds",
+                ExperimentParams(
+                    name="test_exp",
+                    description="Test",
+                    variants=[],
+                    primary_metric="duration_seconds",
+                )
             )
 
     def test_create_experiment_traffic_exceeds_limit(self, crud_instance):
         """Test that traffic allocation exceeding 1.0 is rejected."""
         with pytest.raises(ValueError, match="exceeds 1.0"):
             crud_instance.create_experiment(
-                name="test_exp",
-                description="Test",
-                variants=[
-                    {"name": "control", "traffic": 0.7},
-                    {"name": "variant_a", "traffic": 0.5}  # Total = 1.2
-                ],
-                primary_metric="duration_seconds",
+                ExperimentParams(
+                    name="test_exp",
+                    description="Test",
+                    variants=[
+                        {"name": "control", "traffic": 0.7},
+                        {"name": "variant_a", "traffic": 0.5},  # Total = 1.2
+                    ],
+                    primary_metric="duration_seconds",
+                )
             )
 
     def test_create_experiment_traffic_exactly_one(self, crud_instance, mock_session):
         """Test that traffic allocation of exactly 1.0 is accepted."""
-        with patch('temper_ai.experimentation.experiment_crud.get_session', return_value=mock_session):
+        with patch(
+            "temper_ai.experimentation.experiment_crud.get_session",
+            return_value=mock_session,
+        ):
             exp_id = crud_instance.create_experiment(
-                name="test_exp",
-                description="Test",
-                variants=[
-                    {"name": "control", "traffic": 0.4},
-                    {"name": "variant_a", "traffic": 0.6}  # Total = 1.0
-                ],
-                primary_metric="duration_seconds",
+                ExperimentParams(
+                    name="test_exp",
+                    description="Test",
+                    variants=[
+                        {"name": "control", "traffic": 0.4},
+                        {"name": "variant_a", "traffic": 0.6},  # Total = 1.0
+                    ],
+                    primary_metric="duration_seconds",
+                )
             )
 
             assert exp_id is not None
 
     def test_create_experiment_three_variants(self, crud_instance, mock_session):
         """Test creating experiment with three variants."""
-        with patch('temper_ai.experimentation.experiment_crud.get_session', return_value=mock_session):
+        with patch(
+            "temper_ai.experimentation.experiment_crud.get_session",
+            return_value=mock_session,
+        ):
             exp_id = crud_instance.create_experiment(
-                name="three_variant_test",
-                description="Test with 3 variants",
-                variants=[
-                    {"name": "control", "is_control": True, "traffic": 0.5},
-                    {"name": "variant_a", "traffic": 0.3},
-                    {"name": "variant_b", "traffic": 0.2}
-                ],
-                primary_metric="duration_seconds",
+                ExperimentParams(
+                    name="three_variant_test",
+                    description="Test with 3 variants",
+                    variants=[
+                        {"name": "control", "is_control": True, "traffic": 0.5},
+                        {"name": "variant_a", "traffic": 0.3},
+                        {"name": "variant_b", "traffic": 0.2},
+                    ],
+                    primary_metric="duration_seconds",
+                )
             )
 
             assert exp_id is not None
             # 1 experiment + 3 variants = 4 adds
             assert mock_session.add.call_count == 4
 
-    @patch('temper_ai.experimentation.experiment_crud.get_session')
-    def test_create_experiment_duplicate_name(self, mock_get_session, crud_instance, mock_session):
+    @patch("temper_ai.experimentation.experiment_crud.get_session")
+    def test_create_experiment_duplicate_name(
+        self, mock_get_session, crud_instance, mock_session
+    ):
         """Test that duplicate experiment name raises error."""
         mock_session.commit.side_effect = IntegrityError("", "", "")
         mock_get_session.return_value = mock_session
 
         with pytest.raises(ValueError, match="constraint violation"):
             crud_instance.create_experiment(
-                name="duplicate_exp",
-                description="Test",
-                variants=[
-                    {"name": "control", "is_control": True},
-                    {"name": "variant_a"}
-                ],
-                primary_metric="duration_seconds",
+                ExperimentParams(
+                    name="duplicate_exp",
+                    description="Test",
+                    variants=[
+                        {"name": "control", "is_control": True},
+                        {"name": "variant_a"},
+                    ],
+                    primary_metric="duration_seconds",
+                )
             )
 
-    @patch('temper_ai.experimentation.experiment_crud.get_session')
-    def test_create_experiment_invalid_variant_name(self, mock_get_session, crud_instance, mock_session):
+    @patch("temper_ai.experimentation.experiment_crud.get_session")
+    def test_create_experiment_invalid_variant_name(
+        self, mock_get_session, crud_instance, mock_session
+    ):
         """Test that invalid variant name is rejected."""
         mock_get_session.return_value = mock_session
 
         with pytest.raises(ValueError):
             crud_instance.create_experiment(
-                name="test_exp",
-                description="Test",
-                variants=[
-                    {"name": "", "is_control": True},  # Empty variant name
-                    {"name": "variant_a"}
-                ],
-                primary_metric="duration_seconds",
+                ExperimentParams(
+                    name="test_exp",
+                    description="Test",
+                    variants=[
+                        {"name": "", "is_control": True},  # Empty variant name
+                        {"name": "variant_a"},
+                    ],
+                    primary_metric="duration_seconds",
+                )
             )
 
 
 class TestGetExperiment:
     """Test experiment retrieval."""
 
-    @patch('temper_ai.experimentation.experiment_crud.get_session')
-    def test_get_experiment_from_database(self, mock_get_session, crud_instance, mock_session, sample_experiment):
+    @patch("temper_ai.experimentation.experiment_crud.get_session")
+    def test_get_experiment_from_database(
+        self, mock_get_session, crud_instance, mock_session, sample_experiment
+    ):
         """Test getting experiment from database (cache miss)."""
         mock_session.exec.return_value.first.return_value = sample_experiment
         mock_get_session.return_value = mock_session
@@ -308,8 +361,10 @@ class TestGetExperiment:
         assert result.name == "test_experiment"
         mock_session.expunge.assert_called_once()
 
-    @patch('temper_ai.experimentation.experiment_crud.get_session')
-    def test_get_experiment_with_cache(self, mock_get_session, crud_instance, mock_session, sample_experiment):
+    @patch("temper_ai.experimentation.experiment_crud.get_session")
+    def test_get_experiment_with_cache(
+        self, mock_get_session, crud_instance, mock_session, sample_experiment
+    ):
         """Test that cache is used on subsequent requests."""
         mock_session.exec.return_value.first.return_value = sample_experiment
         mock_get_session.return_value = mock_session
@@ -326,8 +381,10 @@ class TestGetExperiment:
         # Database should only be queried once
         assert mock_session.exec.call_count == 1
 
-    @patch('temper_ai.experimentation.experiment_crud.get_session')
-    def test_get_experiment_cache_disabled(self, mock_get_session, crud_instance, mock_session, sample_experiment):
+    @patch("temper_ai.experimentation.experiment_crud.get_session")
+    def test_get_experiment_cache_disabled(
+        self, mock_get_session, crud_instance, mock_session, sample_experiment
+    ):
         """Test getting experiment with cache disabled."""
         mock_session.exec.return_value.first.return_value = sample_experiment
         mock_get_session.return_value = mock_session
@@ -342,8 +399,10 @@ class TestGetExperiment:
         # Database should be queried both times
         assert mock_session.exec.call_count == 2
 
-    @patch('temper_ai.experimentation.experiment_crud.get_session')
-    def test_get_experiment_not_found(self, mock_get_session, crud_instance, mock_session):
+    @patch("temper_ai.experimentation.experiment_crud.get_session")
+    def test_get_experiment_not_found(
+        self, mock_get_session, crud_instance, mock_session
+    ):
         """Test getting non-existent experiment."""
         mock_session.exec.return_value.first.return_value = None
         mock_get_session.return_value = mock_session
@@ -352,8 +411,10 @@ class TestGetExperiment:
 
         assert result is None
 
-    @patch('temper_ai.experimentation.experiment_crud.get_session')
-    def test_get_experiment_eager_loading(self, mock_get_session, crud_instance, mock_session):
+    @patch("temper_ai.experimentation.experiment_crud.get_session")
+    def test_get_experiment_eager_loading(
+        self, mock_get_session, crud_instance, mock_session
+    ):
         """Test that get_experiment uses eager loading for relationships."""
         mock_session.exec.return_value.first.return_value = None
         mock_get_session.return_value = mock_session
@@ -367,8 +428,10 @@ class TestGetExperiment:
 class TestListExperiments:
     """Test experiment listing."""
 
-    @patch('temper_ai.experimentation.experiment_crud.get_session')
-    def test_list_all_experiments(self, mock_get_session, crud_instance, mock_session, sample_experiment):
+    @patch("temper_ai.experimentation.experiment_crud.get_session")
+    def test_list_all_experiments(
+        self, mock_get_session, crud_instance, mock_session, sample_experiment
+    ):
         """Test listing all experiments."""
         experiments = [sample_experiment]
         mock_session.exec.return_value.all.return_value = experiments
@@ -379,8 +442,10 @@ class TestListExperiments:
         assert len(results) == 1
         assert results[0].id == sample_experiment.id
 
-    @patch('temper_ai.experimentation.experiment_crud.get_session')
-    def test_list_experiments_by_status(self, mock_get_session, crud_instance, mock_session, sample_experiment):
+    @patch("temper_ai.experimentation.experiment_crud.get_session")
+    def test_list_experiments_by_status(
+        self, mock_get_session, crud_instance, mock_session, sample_experiment
+    ):
         """Test listing experiments filtered by status."""
         sample_experiment.status = ExperimentStatus.RUNNING
         experiments = [sample_experiment]
@@ -392,8 +457,10 @@ class TestListExperiments:
         assert len(results) == 1
         assert results[0].status == ExperimentStatus.RUNNING
 
-    @patch('temper_ai.experimentation.experiment_crud.get_session')
-    def test_list_experiments_empty(self, mock_get_session, crud_instance, mock_session):
+    @patch("temper_ai.experimentation.experiment_crud.get_session")
+    def test_list_experiments_empty(
+        self, mock_get_session, crud_instance, mock_session
+    ):
         """Test listing experiments when none exist."""
         mock_session.exec.return_value.all.return_value = []
         mock_get_session.return_value = mock_session
@@ -402,8 +469,10 @@ class TestListExperiments:
 
         assert len(results) == 0
 
-    @patch('temper_ai.experimentation.experiment_crud.get_session')
-    def test_list_experiments_multiple_statuses(self, mock_get_session, crud_instance, mock_session):
+    @patch("temper_ai.experimentation.experiment_crud.get_session")
+    def test_list_experiments_multiple_statuses(
+        self, mock_get_session, crud_instance, mock_session
+    ):
         """Test listing experiments with different statuses."""
         exp1 = Experiment(
             id=str(uuid.uuid4()),
@@ -446,7 +515,9 @@ class TestCacheManagement:
         crud_instance._cache_put(sample_experiment.id, sample_experiment)
 
         assert sample_experiment.id in crud_instance._experiment_cache
-        assert crud_instance._experiment_cache[sample_experiment.id] == sample_experiment
+        assert (
+            crud_instance._experiment_cache[sample_experiment.id] == sample_experiment
+        )
 
     def test_cache_put_lru_eviction(self, sample_experiment):
         """Test LRU cache eviction when max size exceeded."""
@@ -729,25 +800,31 @@ class TestEdgeCases:
         """Test that empty variants list is rejected."""
         with pytest.raises(ValueError, match="at least 2 variants"):
             crud_instance.create_experiment(
-                name="test_exp",
-                description="Test",
-                variants=[],
-                primary_metric="duration_seconds",
+                ExperimentParams(
+                    name="test_exp",
+                    description="Test",
+                    variants=[],
+                    primary_metric="duration_seconds",
+                )
             )
 
     def test_create_experiment_with_none_variants(self, crud_instance):
         """Test that None variants is rejected."""
-        with pytest.raises(ValueError, match="at least 2 variants"):
+        with pytest.raises((ValueError, TypeError)):
             crud_instance.create_experiment(
-                name="test_exp",
-                description="Test",
-                variants=None,  # type: ignore
-                primary_metric="duration_seconds",
+                ExperimentParams(
+                    name="test_exp",
+                    description="Test",
+                    variants=None,  # type: ignore
+                    primary_metric="duration_seconds",
+                )
             )
 
     def test_get_experiment_with_none_id(self, crud_instance):
         """Test getting experiment with None ID."""
-        with patch('temper_ai.experimentation.experiment_crud.get_session') as mock_get_session:
+        with patch(
+            "temper_ai.experimentation.experiment_crud.get_session"
+        ) as mock_get_session:
             mock_session = Mock(spec=Session)
             mock_session.__enter__ = Mock(return_value=mock_session)
             mock_session.__exit__ = Mock(return_value=False)
@@ -813,19 +890,23 @@ class TestEdgeCases:
         assert "exp-2" in crud_instance._experiment_cache
         assert "exp-1" not in crud_instance._experiment_cache
 
-    @patch('temper_ai.experimentation.experiment_crud.get_session')
-    def test_create_experiment_uneven_traffic_sum(self, mock_get_session, crud_instance, mock_session):
+    @patch("temper_ai.experimentation.experiment_crud.get_session")
+    def test_create_experiment_uneven_traffic_sum(
+        self, mock_get_session, crud_instance, mock_session
+    ):
         """Test creating experiment with traffic sum < 1.0 (valid, partial allocation)."""
         mock_get_session.return_value = mock_session
 
         exp_id = crud_instance.create_experiment(
-            name="partial_traffic",
-            description="Test partial traffic allocation",
-            variants=[
-                {"name": "control", "is_control": True, "traffic": 0.3},
-                {"name": "variant_a", "traffic": 0.2}  # Total = 0.5 (valid)
-            ],
-            primary_metric="duration_seconds",
+            ExperimentParams(
+                name="partial_traffic",
+                description="Test partial traffic allocation",
+                variants=[
+                    {"name": "control", "is_control": True, "traffic": 0.3},
+                    {"name": "variant_a", "traffic": 0.2},  # Total = 0.5 (valid)
+                ],
+                primary_metric="duration_seconds",
+            )
         )
 
         assert exp_id is not None

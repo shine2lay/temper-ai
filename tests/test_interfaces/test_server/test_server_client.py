@@ -1,8 +1,6 @@
 """Tests for MAFServerClient and CLI trigger/status/logs commands."""
-from unittest.mock import MagicMock, patch
 
-import httpx
-import pytest
+from unittest.mock import MagicMock, patch
 
 from temper_ai.interfaces.cli.server_client import DEFAULT_SERVER_URL, MAFServerClient
 
@@ -95,42 +93,18 @@ class TestMAFServerClient:
         assert result["status"] == "cancelled"
 
 
-class TestCLICommands:
-    """Test CLI help output for trigger/status/logs commands."""
+class TestCLIServeHelp:
+    """Test CLI serve command help output."""
 
-    def test_trigger_help(self) -> None:
+    def test_serve_help(self) -> None:
         from click.testing import CliRunner
 
         from temper_ai.interfaces.cli.main import main
 
         runner = CliRunner()
-        result = runner.invoke(main, ["trigger", "--help"])
+        result = runner.invoke(main, ["serve", "--help"])
         assert result.exit_code == 0
-        assert "--server" in result.output
-        assert "--api-key" in result.output
-        assert "--wait" in result.output
-        assert "--workspace" in result.output
-
-    def test_status_help(self) -> None:
-        from click.testing import CliRunner
-
-        from temper_ai.interfaces.cli.main import main
-
-        runner = CliRunner()
-        result = runner.invoke(main, ["status", "--help"])
-        assert result.exit_code == 0
-        assert "--server" in result.output
-        assert "--api-key" in result.output
-        assert "--all" in result.output
-
-    def test_logs_help(self) -> None:
-        from click.testing import CliRunner
-
-        from temper_ai.interfaces.cli.main import main
-
-        runner = CliRunner()
-        result = runner.invoke(main, ["logs", "--help"])
-        assert result.exit_code == 0
-        assert "--server" in result.output
-        assert "--api-key" in result.output
-        assert "--follow" in result.output
+        assert "--host" in result.output
+        assert "--port" in result.output
+        assert "--mcp" in result.output
+        assert "--dev" in result.output

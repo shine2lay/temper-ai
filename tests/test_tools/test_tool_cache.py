@@ -1,4 +1,5 @@
 """Tests for tool result caching (R0.3)."""
+
 from __future__ import annotations
 
 import threading
@@ -7,33 +8,39 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from temper_ai.tools.base import BaseTool, ToolMetadata, ToolResult
-from temper_ai.tools.tool_cache import ToolResultCache, _CacheEntry
-from temper_ai.tools.tool_cache_constants import (
-    DEFAULT_CACHE_MAX_SIZE,
-    DEFAULT_CACHE_TTL_SECONDS,
-)
 from temper_ai.tools._executor_helpers import (
     _is_tool_cacheable,
     check_tool_cache,
     store_tool_cache,
 )
-
+from temper_ai.tools.base import BaseTool, ToolMetadata, ToolResult
+from temper_ai.tools.tool_cache import ToolResultCache
+from temper_ai.tools.tool_cache_constants import (
+    DEFAULT_CACHE_MAX_SIZE,
+    DEFAULT_CACHE_TTL_SECONDS,
+)
 
 # ---------------------------------------------------------------------------
 # Helper fixtures / mock tools
 # ---------------------------------------------------------------------------
+
 
 class ReadOnlyTool(BaseTool):
     """Tool that does NOT modify state (cacheable by default)."""
 
     def get_metadata(self) -> ToolMetadata:
         return ToolMetadata(
-            name="search", description="Search tool", modifies_state=False,
+            name="search",
+            description="Search tool",
+            modifies_state=False,
         )
 
     def get_parameters_schema(self) -> dict:
-        return {"type": "object", "properties": {"q": {"type": "string"}}, "required": ["q"]}
+        return {
+            "type": "object",
+            "properties": {"q": {"type": "string"}},
+            "required": ["q"],
+        }
 
     def execute(self, **kwargs) -> ToolResult:
         return ToolResult(success=True, result=f"found: {kwargs.get('q')}")
@@ -44,11 +51,17 @@ class StatefulTool(BaseTool):
 
     def get_metadata(self) -> ToolMetadata:
         return ToolMetadata(
-            name="file_write", description="Write file", modifies_state=True,
+            name="file_write",
+            description="Write file",
+            modifies_state=True,
         )
 
     def get_parameters_schema(self) -> dict:
-        return {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}
+        return {
+            "type": "object",
+            "properties": {"path": {"type": "string"}},
+            "required": ["path"],
+        }
 
     def execute(self, **kwargs) -> ToolResult:
         return ToolResult(success=True, result="written")
@@ -59,8 +72,10 @@ class ExplicitCacheableTool(BaseTool):
 
     def get_metadata(self) -> ToolMetadata:
         return ToolMetadata(
-            name="idempotent_write", description="Idempotent",
-            modifies_state=True, cacheable=True,
+            name="idempotent_write",
+            description="Idempotent",
+            modifies_state=True,
+            cacheable=True,
         )
 
     def get_parameters_schema(self) -> dict:
@@ -75,8 +90,10 @@ class ExplicitNonCacheableTool(BaseTool):
 
     def get_metadata(self) -> ToolMetadata:
         return ToolMetadata(
-            name="volatile_search", description="Volatile",
-            modifies_state=False, cacheable=False,
+            name="volatile_search",
+            description="Volatile",
+            modifies_state=False,
+            cacheable=False,
         )
 
     def get_parameters_schema(self) -> dict:
@@ -94,6 +111,7 @@ def cache() -> ToolResultCache:
 # ---------------------------------------------------------------------------
 # ToolResultCache unit tests
 # ---------------------------------------------------------------------------
+
 
 class TestToolResultCache:
 
@@ -121,7 +139,9 @@ class TestToolResultCache:
         assert cache.get("search", {"q": "ttl"}) is not None
 
         # Simulate time passing beyond TTL
-        with patch("temper_ai.tools.tool_cache.time.time", return_value=time.time() + 3):
+        with patch(
+            "temper_ai.tools.tool_cache.time.time", return_value=time.time() + 3
+        ):
             assert cache.get("search", {"q": "ttl"}) is None
 
     def test_lru_eviction(self) -> None:
@@ -212,7 +232,11 @@ class TestToolResultCache:
             try:
                 barrier.wait(timeout=5)
                 for i in range(20):
-                    cache.put(f"tool_{idx}", {"i": i}, ToolResult(success=True, result=f"{idx}-{i}"))
+                    cache.put(
+                        f"tool_{idx}",
+                        {"i": i},
+                        ToolResult(success=True, result=f"{idx}-{i}"),
+                    )
                     cache.get(f"tool_{idx}", {"i": i})
             except (RuntimeError, ValueError, threading.BrokenBarrierError) as e:
                 errors.append(str(e))
@@ -235,6 +259,7 @@ class TestToolResultCache:
 # _is_tool_cacheable tests
 # ---------------------------------------------------------------------------
 
+
 class TestIsToolCacheable:
 
     def test_readonly_tool_cacheable(self) -> None:
@@ -254,6 +279,7 @@ class TestIsToolCacheable:
 # check_tool_cache / store_tool_cache integration
 # ---------------------------------------------------------------------------
 
+
 class TestCacheHelpers:
 
     def test_check_returns_none_when_no_cache(self) -> None:
@@ -269,21 +295,33 @@ class TestCacheHelpers:
     def test_store_skips_when_no_cache(self) -> None:
         executor = MagicMock()
         executor._tool_cache = None
-        store_tool_cache(executor, ReadOnlyTool(), {"q": "x"}, ToolResult(success=True, result="ok"))
+        store_tool_cache(
+            executor, ReadOnlyTool(), {"q": "x"}, ToolResult(success=True, result="ok")
+        )
         assert executor._tool_cache is None  # unchanged, no error
 
     def test_store_skips_non_cacheable(self) -> None:
         cache = ToolResultCache()
         executor = MagicMock()
         executor._tool_cache = cache
-        store_tool_cache(executor, StatefulTool(), {"path": "/x"}, ToolResult(success=True, result="ok"))
+        store_tool_cache(
+            executor,
+            StatefulTool(),
+            {"path": "/x"},
+            ToolResult(success=True, result="ok"),
+        )
         assert cache.stats()["size"] == 0
 
     def test_store_skips_failed_result(self) -> None:
         cache = ToolResultCache()
         executor = MagicMock()
         executor._tool_cache = cache
-        store_tool_cache(executor, ReadOnlyTool(), {"q": "x"}, ToolResult(success=False, error="fail"))
+        store_tool_cache(
+            executor,
+            ReadOnlyTool(),
+            {"q": "x"},
+            ToolResult(success=False, error="fail"),
+        )
         assert cache.stats()["size"] == 0
 
     def test_roundtrip_check_store(self) -> None:

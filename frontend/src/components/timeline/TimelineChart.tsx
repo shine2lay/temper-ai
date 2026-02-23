@@ -89,7 +89,7 @@ export function TimelineChart() {
         <span className="text-xs text-temper-text-muted">Zoom</span>
         <button
           onClick={() => setZoomLevel((z) => Math.max(MIN_ZOOM, z / ZOOM_STEP))}
-          className="px-1.5 py-0.5 rounded text-xs bg-temper-surface text-temper-text-muted hover:text-temper-text"
+          className="px-1.5 py-0.5 rounded text-xs bg-temper-surface text-temper-text-muted hover:text-temper-text focus:outline-none focus:ring-1 focus:ring-temper-accent/50"
           aria-label="Zoom out"
         >
           &minus;
@@ -99,14 +99,14 @@ export function TimelineChart() {
         </span>
         <button
           onClick={() => setZoomLevel((z) => Math.min(MAX_ZOOM, z * ZOOM_STEP))}
-          className="px-1.5 py-0.5 rounded text-xs bg-temper-surface text-temper-text-muted hover:text-temper-text"
+          className="px-1.5 py-0.5 rounded text-xs bg-temper-surface text-temper-text-muted hover:text-temper-text focus:outline-none focus:ring-1 focus:ring-temper-accent/50"
           aria-label="Zoom in"
         >
           +
         </button>
         <button
           onClick={() => setZoomLevel(1)}
-          className="px-1.5 py-0.5 rounded text-xs text-temper-text-muted hover:text-temper-text"
+          className="px-1.5 py-0.5 rounded text-xs text-temper-text-muted hover:text-temper-text focus:outline-none focus:ring-1 focus:ring-temper-accent/50"
         >
           Reset
         </button>

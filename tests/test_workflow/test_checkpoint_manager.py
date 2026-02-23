@@ -6,12 +6,16 @@ Tests the high-level checkpoint management functionality including:
 - Cleanup of old checkpoints
 - Different checkpoint strategies
 """
+
 import shutil
 import tempfile
 
 import pytest
 
-from temper_ai.workflow.checkpoint_backends import CheckpointNotFoundError, FileCheckpointBackend
+from temper_ai.workflow.checkpoint_backends import (
+    CheckpointNotFoundError,
+    FileCheckpointBackend,
+)
 from temper_ai.workflow.checkpoint_manager import (
     CheckpointManager,
     CheckpointStrategy,
@@ -44,8 +48,7 @@ class TestCheckpointManager:
     def sample_domain_state(self):
         """Create sample domain state for testing."""
         domain = WorkflowDomainState(
-            workflow_id="wf-test-123",
-            input="Analyze market trends"
+            workflow_id="wf-test-123", input="Analyze market trends"
         )
         domain.set_stage_output("research", {"findings": ["trend1"]})
         return domain
@@ -58,10 +61,7 @@ class TestCheckpointManager:
 
     def test_manager_with_custom_strategy(self, backend):
         """Test manager with custom checkpoint strategy."""
-        manager = CheckpointManager(
-            backend=backend,
-            strategy=CheckpointStrategy.MANUAL
-        )
+        manager = CheckpointManager(backend=backend, strategy=CheckpointStrategy.MANUAL)
         assert manager.strategy == CheckpointStrategy.MANUAL
 
     def test_save_checkpoint(self, manager, sample_domain_state):
@@ -74,10 +74,7 @@ class TestCheckpointManager:
     def test_save_checkpoint_with_metadata(self, manager, sample_domain_state):
         """Test saving checkpoint with custom metadata."""
         metadata = {"user": "test-user"}
-        checkpoint_id = manager.save_checkpoint(
-            sample_domain_state,
-            metadata=metadata
-        )
+        checkpoint_id = manager.save_checkpoint(sample_domain_state, metadata=metadata)
 
         # Verify metadata is stored
         checkpoints = manager.list_checkpoints("wf-test-123")
@@ -171,18 +168,14 @@ class TestCheckpointManager:
 
     def test_should_checkpoint_manual(self, backend):
         """Test should_checkpoint with MANUAL strategy."""
-        manager = CheckpointManager(
-            backend=backend,
-            strategy=CheckpointStrategy.MANUAL
-        )
+        manager = CheckpointManager(backend=backend, strategy=CheckpointStrategy.MANUAL)
 
         assert manager.should_checkpoint("research") is False
 
     def test_should_checkpoint_disabled(self, backend):
         """Test should_checkpoint with DISABLED strategy."""
         manager = CheckpointManager(
-            backend=backend,
-            strategy=CheckpointStrategy.DISABLED
+            backend=backend, strategy=CheckpointStrategy.DISABLED
         )
 
         assert manager.should_checkpoint("research") is False
@@ -192,7 +185,7 @@ class TestCheckpointManager:
         manager = CheckpointManager(
             backend=backend,
             strategy=CheckpointStrategy.PERIODIC,
-            periodic_interval=300  # 5 minutes
+            periodic_interval=300,  # 5 minutes
         )
 
         # Not enough time elapsed
@@ -204,8 +197,7 @@ class TestCheckpointManager:
     def test_save_checkpoint_disabled_strategy(self, backend, sample_domain_state):
         """Test that checkpoints are skipped with DISABLED strategy."""
         manager = CheckpointManager(
-            backend=backend,
-            strategy=CheckpointStrategy.DISABLED
+            backend=backend, strategy=CheckpointStrategy.DISABLED
         )
 
         checkpoint_id = manager.save_checkpoint(sample_domain_state)
@@ -214,8 +206,7 @@ class TestCheckpointManager:
     def test_save_checkpoint_force_with_disabled(self, backend, sample_domain_state):
         """Test forcing checkpoint save even with DISABLED strategy."""
         manager = CheckpointManager(
-            backend=backend,
-            strategy=CheckpointStrategy.DISABLED
+            backend=backend, strategy=CheckpointStrategy.DISABLED
         )
 
         checkpoint_id = manager.save_checkpoint(sample_domain_state, force=True)
@@ -242,10 +233,7 @@ class TestCheckpointManager:
 
     def test_no_cleanup_with_zero_limit(self, backend, sample_domain_state):
         """Test that cleanup doesn't happen with max_checkpoints=0."""
-        manager = CheckpointManager(
-            backend=backend,
-            max_checkpoints=0  # No limit
-        )
+        manager = CheckpointManager(backend=backend, max_checkpoints=0)  # No limit
 
         # Save multiple checkpoints
         for i in range(5):
@@ -301,8 +289,7 @@ class TestCheckpointManagerFactory:
     def test_create_file_backend_manager(self, temp_dir):
         """Test creating manager with file backend."""
         manager = create_checkpoint_manager(
-            backend_type="file",
-            checkpoint_dir=temp_dir
+            backend_type="file", checkpoint_dir=temp_dir
         )
 
         assert isinstance(manager, CheckpointManager)

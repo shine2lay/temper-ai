@@ -10,8 +10,6 @@ This replaces over-mocking in integration tests with realistic fixtures that:
 - Can simulate retry scenarios for testing error handling
 """
 
-from typing import Optional
-
 from temper_ai.llm.providers import LLMResponse
 from temper_ai.shared.utils.exceptions import (
     LLMAuthenticationError,
@@ -38,10 +36,9 @@ RECORDED_RESPONSES = {
             "model": "llama3.2:3b",
             "created_at": "2026-02-01T10:30:00Z",
             "response": "Python is a high-level, interpreted programming language known for readability.",
-            "done": True
-        }
+            "done": True,
+        },
     },
-
     "ollama_tool_call_response": {
         "content": '<tool_call>{"name": "calculator", "parameters": {"expression": "2+3"}}</tool_call>',
         "model": "llama3.2:3b",
@@ -55,10 +52,9 @@ RECORDED_RESPONSES = {
             "model": "llama3.2:3b",
             "created_at": "2026-02-01T10:30:00Z",
             "response": '{"name": "calculator", "parameters": {"expression": "2+3"}}',
-            "done": True
-        }
+            "done": True,
+        },
     },
-
     "ollama_multi_turn_research": {
         "content": "<answer>Research findings: AI advances rapidly with 15 peer-reviewed studies showing 34% improvement. Key themes: safety, scalability, regulation. Confidence: 0.87</answer>",
         "model": "llama2",
@@ -72,10 +68,9 @@ RECORDED_RESPONSES = {
             "model": "llama2",
             "created_at": "2026-02-01T10:30:00Z",
             "response": "Research findings: AI advances rapidly...",
-            "done": True
-        }
+            "done": True,
+        },
     },
-
     "openai_gpt4_completion": {
         "content": "Python typing helps catch bugs early through static analysis and improves code maintainability by documenting expected types.",
         "model": "gpt-4-turbo",
@@ -90,22 +85,19 @@ RECORDED_RESPONSES = {
             "object": "chat.completion",
             "created": 1706774400,
             "model": "gpt-4-turbo",
-            "choices": [{
-                "index": 0,
-                "message": {
-                    "role": "assistant",
-                    "content": "Python typing helps catch bugs early through static analysis and improves code maintainability by documenting expected types."
-                },
-                "finish_reason": "stop"
-            }],
-            "usage": {
-                "prompt_tokens": 50,
-                "completion_tokens": 32,
-                "total_tokens": 82
-            }
-        }
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": "Python typing helps catch bugs early through static analysis and improves code maintainability by documenting expected types.",
+                    },
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {"prompt_tokens": 50, "completion_tokens": 32, "total_tokens": 82},
+        },
     },
-
     "ollama_synthesis_response": {
         "content": "<answer>Based on the research: Python's type system provides static analysis for early bug detection, improving code quality and maintainability.</answer>",
         "model": "llama3.2:3b",
@@ -119,10 +111,9 @@ RECORDED_RESPONSES = {
             "model": "llama3.2:3b",
             "created_at": "2026-02-01T10:30:00Z",
             "response": "Based on the research: Python's type system provides static analysis...",
-            "done": True
-        }
+            "done": True,
+        },
     },
-
     "ollama_writing_response": {
         "content": "<answer>Technical Report:\n\nPython Type System Analysis\n\n1. Introduction\nPython's gradual type system offers static analysis capabilities.\n\n2. Benefits\n- Early bug detection\n- Improved maintainability\n- Better IDE support\n\n3. Conclusion\nType hints provide significant value for large codebases.</answer>",
         "model": "llama3.2:3b",
@@ -136,10 +127,9 @@ RECORDED_RESPONSES = {
             "model": "llama3.2:3b",
             "created_at": "2026-02-01T10:30:00Z",
             "response": "Technical Report:\n\nPython Type System Analysis...",
-            "done": True
-        }
+            "done": True,
+        },
     },
-
     "anthropic_claude_completion": {
         "content": "Python's type system, introduced in PEP 484, provides optional static type hints that enable tools like mypy to catch type errors before runtime, significantly improving code reliability.",
         "model": "claude-3-sonnet-20240229",
@@ -156,17 +146,14 @@ RECORDED_RESPONSES = {
             "content": [
                 {
                     "type": "text",
-                    "text": "Python's type system, introduced in PEP 484..."
+                    "text": "Python's type system, introduced in PEP 484...",
                 }
             ],
             "model": "claude-3-sonnet-20240229",
             "stop_reason": "end_turn",
-            "usage": {
-                "input_tokens": 55,
-                "output_tokens": 38
-            }
-        }
-    }
+            "usage": {"input_tokens": 55, "output_tokens": 38},
+        },
+    },
 }
 
 
@@ -185,19 +172,17 @@ RECORDED_ERRORS = {
             "error": {
                 "message": "Rate limit exceeded",
                 "type": "rate_limit_error",
-                "code": "rate_limit_exceeded"
+                "code": "rate_limit_exceeded",
             }
-        }
+        },
     },
-
     "timeout_error": {
         "error_type": "timeout",
         "message": "Request timed out after 30000ms",
         "status_code": 504,
         "provider": "ollama",
-        "timeout_ms": 30000
+        "timeout_ms": 30000,
     },
-
     "authentication_error": {
         "error_type": "authentication",
         "message": "Invalid API key provided",
@@ -207,18 +192,16 @@ RECORDED_ERRORS = {
             "error": {
                 "message": "Incorrect API key provided",
                 "type": "invalid_request_error",
-                "code": "invalid_api_key"
+                "code": "invalid_api_key",
             }
-        }
+        },
     },
-
     "model_not_found": {
         "error_type": "not_found",
         "message": "Model 'llama-nonexistent' not found",
         "status_code": 404,
-        "provider": "ollama"
+        "provider": "ollama",
     },
-
     "context_length_exceeded": {
         "error_type": "invalid_request",
         "message": "Context length exceeded. Maximum tokens: 4096, requested: 5000",
@@ -228,16 +211,17 @@ RECORDED_ERRORS = {
             "error": {
                 "message": "This model's maximum context length is 4096 tokens",
                 "type": "invalid_request_error",
-                "code": "context_length_exceeded"
+                "code": "context_length_exceeded",
             }
-        }
-    }
+        },
+    },
 }
 
 
 # ============================================================================
 # TEST DOUBLE: Realistic LLM Provider
 # ============================================================================
+
 
 class RealisticLLMTestDouble:
     """Test double that returns pre-recorded LLM responses.
@@ -259,8 +243,8 @@ class RealisticLLMTestDouble:
     def __init__(
         self,
         scenario: str = "ollama_simple_completion",
-        error_scenario: Optional[str] = None,
-        fail_on_attempt: Optional[int] = None
+        error_scenario: str | None = None,
+        fail_on_attempt: int | None = None,
     ):
         """Initialize test double.
 
@@ -311,8 +295,7 @@ class RealisticLLMTestDouble:
 
         if error_data["error_type"] == "rate_limit":
             raise LLMRateLimitError(
-                error_data["message"],
-                retry_after=error_data.get("retry_after")
+                error_data["message"], retry_after=error_data.get("retry_after")
             )
         elif error_data["error_type"] == "timeout":
             raise LLMTimeoutError(error_data["message"])
@@ -326,11 +309,12 @@ class RealisticLLMTestDouble:
 # SCENARIO BUILDER HELPERS
 # ============================================================================
 
+
 def create_llm_test_double(
     scenario_type: str = "simple",
     provider: str = "ollama",
     should_fail: bool = False,
-    error_type: Optional[str] = None
+    error_type: str | None = None,
 ) -> RealisticLLMTestDouble:
     """Create LLM test double for common scenarios.
 
@@ -376,7 +360,9 @@ def create_llm_test_double(
     return RealisticLLMTestDouble(scenario=scenario, error_scenario=error_scenario)
 
 
-def create_mock_llm_with_response(response_content: str, tokens: int = 100) -> RealisticLLMTestDouble:
+def create_mock_llm_with_response(
+    response_content: str, tokens: int = 100
+) -> RealisticLLMTestDouble:
     """Create a simple mock LLM with custom response content.
 
     Useful for quick tests where you need custom response text but still want
@@ -405,7 +391,7 @@ def create_mock_llm_with_response(response_content: str, tokens: int = 100) -> R
         "total_tokens": tokens,
         "latency_ms": 1000,
         "finish_reason": "stop",
-        "raw_response": {}
+        "raw_response": {},
     }
 
     return RealisticLLMTestDouble(scenario=custom_scenario)

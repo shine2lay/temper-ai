@@ -7,12 +7,11 @@ Tests cover:
 - estimate_cost with unknown model (uses default pricing)
 - estimate_cost with fallback_model parameter
 """
-from unittest.mock import patch
 
+from unittest.mock import patch
 
 from temper_ai.llm.cost_estimator import estimate_cost
 from temper_ai.llm.providers.base import LLMResponse
-
 
 _SENTINEL = object()
 
@@ -96,6 +95,4 @@ class TestEstimateCost:
         with patch("temper_ai.llm.cost_estimator.get_pricing_manager") as mock_pm:
             mock_pm.return_value.get_cost.return_value = 0.02
             cost = estimate_cost(response, fallback_model="fallback")
-            mock_pm.return_value.get_cost.assert_called_once_with(
-                "claude-3", 100, 50
-            )
+            mock_pm.return_value.get_cost.assert_called_once_with("claude-3", 100, 50)

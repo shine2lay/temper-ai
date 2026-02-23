@@ -1,10 +1,10 @@
 """Tests for CrewAI adapter."""
+
 from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 import yaml
@@ -66,7 +66,9 @@ class TestCrewAIInitializeExternal:
         finally:
             _remove_mock_crewai()
 
-    def test_uses_agent_name_as_fallback_role(self, mock_agent_config: MagicMock) -> None:
+    def test_uses_agent_name_as_fallback_role(
+        self, mock_agent_config: MagicMock
+    ) -> None:
         mock_agent_config.agent.plugin_config = {
             "framework": "crewai",
             "goal": "G",
@@ -126,7 +128,9 @@ class TestCrewAIExecuteExternal:
         finally:
             _remove_mock_crewai()
 
-    def test_task_uses_extracted_description(self, mock_agent_config: MagicMock) -> None:
+    def test_task_uses_extracted_description(
+        self, mock_agent_config: MagicMock
+    ) -> None:
         mock_crewai = _inject_mock_crewai()
         try:
             agent = CrewAIAgent(mock_agent_config)
@@ -230,6 +234,7 @@ class TestCrewAIAgentFactory:
 
     def test_factory_create_crewai(self) -> None:
         from temper_ai.agent.utils.agent_factory import AgentFactory
+
         AgentFactory.reset_for_testing()
 
         # Register CrewAIAgent directly — avoids needing crewai installed
@@ -240,7 +245,11 @@ class TestCrewAIAgentFactory:
         mock_config.agent.name = "test"
         mock_config.agent.description = "test"
         mock_config.agent.version = "1.0"
-        mock_config.agent.plugin_config = {"framework": "crewai", "role": "R", "goal": "G"}
+        mock_config.agent.plugin_config = {
+            "framework": "crewai",
+            "role": "R",
+            "goal": "G",
+        }
 
         agent = AgentFactory.create(mock_config)
         assert isinstance(agent, CrewAIAgent)

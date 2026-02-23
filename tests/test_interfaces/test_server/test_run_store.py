@@ -1,5 +1,6 @@
 """Tests for RunStore persistent run history."""
-from datetime import datetime, timezone
+
+from datetime import UTC, datetime
 
 import pytest
 
@@ -18,7 +19,7 @@ def _make_run(
         workflow_path="workflows/test.yaml",
         workflow_name=workflow_name,
         status=status,
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
     )
 
 
@@ -89,8 +90,9 @@ class TestRunStore:
     def test_update_status(self, store: RunStore) -> None:
         store.save_run(_make_run("exec-1", "pending"))
         updated = store.update_status(
-            "exec-1", "completed",
-            completed_at=datetime.now(timezone.utc),
+            "exec-1",
+            "completed",
+            completed_at=datetime.now(UTC),
             workflow_id="wf-abc",
         )
         assert updated is True

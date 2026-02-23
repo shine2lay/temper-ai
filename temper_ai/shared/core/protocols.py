@@ -4,10 +4,18 @@ This module provides Protocol definitions for common patterns used across
 the framework, enabling type checking and structural subtyping without
 tight coupling between components.
 """
-from contextlib import contextmanager
-from typing import Any, Dict, Iterator, List, Optional, Protocol, TypeVar, runtime_checkable
 
-T = TypeVar('T', covariant=True)
+import builtins
+from collections.abc import Iterator
+from contextlib import contextmanager
+from typing import (
+    Any,
+    Protocol,
+    TypeVar,
+    runtime_checkable,
+)
+
+T = TypeVar("T", covariant=True)
 
 
 @runtime_checkable
@@ -34,7 +42,7 @@ class Registry(Protocol[T]):
         True
     """
 
-    def get(self, name: str) -> Optional[T]:
+    def get(self, name: str) -> T | None:
         """Get an item by name.
 
         Args:
@@ -45,7 +53,7 @@ class Registry(Protocol[T]):
         """
         ...
 
-    def list(self) -> List[str]:
+    def list(self) -> list[str]:
         """Get names of all registered items.
 
         Returns:
@@ -53,8 +61,8 @@ class Registry(Protocol[T]):
         """
         ...
 
-    # Backward compatibility alias
-    def list_all(self) -> List[str]:
+    # Deprecated — prefer list() in new code
+    def list_all(self) -> builtins.list[str]:
         """DEPRECATED: Use list() instead.
 
         Returns:
@@ -88,7 +96,7 @@ class ToolRegistryProtocol(Protocol):
         """
         ...
 
-    def get_tool(self, name: str) -> Optional[Any]:
+    def get_tool(self, name: str) -> Any | None:
         """Get a tool instance by name.
 
         Args:
@@ -99,7 +107,7 @@ class ToolRegistryProtocol(Protocol):
         """
         ...
 
-    def list_tools(self) -> List[str]:
+    def list_tools(self) -> list[str]:
         """Get names of all registered tools.
 
         Returns:
@@ -132,7 +140,7 @@ class PolicyRegistryProtocol(Protocol):
         """
         ...
 
-    def get_policy(self, name: str) -> Optional[Any]:
+    def get_policy(self, name: str) -> Any | None:
         """Get a policy by name.
 
         Args:
@@ -143,7 +151,7 @@ class PolicyRegistryProtocol(Protocol):
         """
         ...
 
-    def list_policies(self) -> List[str]:
+    def list_policies(self) -> list[str]:
         """Get names of all registered policies.
 
         Returns:
@@ -177,7 +185,7 @@ class StrategyRegistryProtocol(Protocol):
         """
         ...
 
-    def get_strategy(self, name: str) -> Optional[Any]:
+    def get_strategy(self, name: str) -> Any | None:
         """Get a strategy instance by name.
 
         Args:
@@ -188,7 +196,7 @@ class StrategyRegistryProtocol(Protocol):
         """
         ...
 
-    def list_strategies(self) -> List[str]:
+    def list_strategies(self) -> list[str]:
         """Get names of all registered strategies.
 
         Returns:
@@ -219,9 +227,9 @@ class TrackerProtocol(Protocol):
     def track_stage(
         self,
         stage_name: str,
-        stage_config: Dict[str, Any],
+        stage_config: dict[str, Any],
         workflow_id: str,
-        input_data: Dict[str, Any],
+        input_data: dict[str, Any],
     ) -> Iterator[str]:
         """Track stage execution."""
         ...
@@ -230,9 +238,9 @@ class TrackerProtocol(Protocol):
     def track_agent(
         self,
         agent_name: str,
-        agent_config: Dict[str, Any],
+        agent_config: dict[str, Any],
         stage_id: str,
-        input_data: Dict[str, Any],
+        input_data: dict[str, Any],
     ) -> Iterator[str]:
         """Track agent execution."""
         ...
@@ -240,10 +248,10 @@ class TrackerProtocol(Protocol):
     def set_agent_output(
         self,
         agent_id: str,
-        output_data: Dict[str, Any],
-        reasoning: Optional[str] = None,
-        total_tokens: Optional[int] = None,
-        estimated_cost_usd: Optional[float] = None,
+        output_data: dict[str, Any],
+        reasoning: str | None = None,
+        total_tokens: int | None = None,
+        estimated_cost_usd: float | None = None,
         num_llm_calls: int = 0,
         num_tool_calls: int = 0,
     ) -> None:
@@ -254,10 +262,10 @@ class TrackerProtocol(Protocol):
         self,
         event_type: str,
         stage_name: str,
-        agents: List[str],
-        decision: Optional[str],
+        agents: list[str],
+        decision: str | None,
         confidence: float,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         """Track collaboration event."""
         ...
@@ -267,7 +275,7 @@ class TrackerProtocol(Protocol):
 class DomainToolRegistryProtocol(Protocol):
     """Minimal interface for a tool registry in domain state context."""
 
-    def get(self, name: str, version: Optional[str] = None) -> Any:
+    def get(self, name: str, version: str | None = None) -> Any:
         """Get tool by name and optional version."""
         ...
 
@@ -276,11 +284,11 @@ class DomainToolRegistryProtocol(Protocol):
 class ConfigLoaderProtocol(Protocol):
     """Minimal interface for a configuration loader."""
 
-    def load_agent(self, agent_name: str) -> Dict[str, Any]:
+    def load_agent(self, agent_name: str) -> dict[str, Any]:
         """Load agent configuration by name."""
         ...
 
-    def load_stage(self, stage_name: str) -> Dict[str, Any]:
+    def load_stage(self, stage_name: str) -> dict[str, Any]:
         """Load stage configuration by name."""
         ...
 
@@ -289,6 +297,6 @@ class ConfigLoaderProtocol(Protocol):
 class VisualizerProtocol(Protocol):
     """Minimal interface for a workflow visualizer."""
 
-    def update(self, state: Dict[str, Any]) -> None:
+    def update(self, state: dict[str, Any]) -> None:
         """Update visualizer with workflow state."""
         ...

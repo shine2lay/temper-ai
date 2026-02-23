@@ -2,7 +2,7 @@
 
 ## Overview
 
-Comprehensive performance benchmark suite for meta-autonomous-framework with 50+ benchmarks covering all critical execution paths, baseline storage, regression detection, and historical tracking.
+Comprehensive performance benchmark suite for Temper AI with 50+ benchmarks covering all critical execution paths, baseline storage, regression detection, and historical tracking.
 
 ## Goals
 

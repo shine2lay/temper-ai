@@ -11,13 +11,16 @@ Usage::
     # With event callback:
     result = runner.run("workflows/research.yaml", inputs, on_event=print)
 """
-import logging
-from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any, Callable, Dict, Optional
 
-import yaml
+import logging
+from collections.abc import Callable
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+
 from pydantic import BaseModel
+
+from temper_ai.shared.utils.exceptions import ConfigValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +29,7 @@ class WorkflowRunnerConfig(BaseModel):
     """Configuration for WorkflowRunner."""
 
     config_root: str = "configs"
-    workspace: Optional[str] = None
+    workspace: str | None = None
     show_details: bool = False
     trigger_type: str = "api"
     environment: str = "server"
@@ -38,8 +41,8 @@ class WorkflowRunResult(BaseModel):
     workflow_id: str
     workflow_name: str
     status: str  # "completed" | "failed"
-    result: Optional[Dict[str, Any]] = None
-    error_message: Optional[str] = None
+    result: dict[str, Any] | None = None
+    error_message: str | None = None
     started_at: datetime
     completed_at: datetime
     duration_seconds: float
@@ -54,8 +57,8 @@ class WorkflowRunner:
 
     def __init__(
         self,
-        config: Optional[WorkflowRunnerConfig] = None,
-        event_bus: Optional[Any] = None,
+        config: WorkflowRunnerConfig | None = None,
+        event_bus: Any | None = None,
     ) -> None:
         self.config = config or WorkflowRunnerConfig()
         self.event_bus = event_bus
@@ -63,10 +66,10 @@ class WorkflowRunner:
     def run(
         self,
         workflow_path: str,
-        input_data: Optional[Dict[str, Any]] = None,
-        on_event: Optional[Callable] = None,
-        run_id: Optional[str] = None,
-        workspace: Optional[str] = None,
+        input_data: dict[str, Any] | None = None,
+        on_event: Callable | None = None,
+        run_id: str | None = None,
+        workspace: str | None = None,
     ) -> WorkflowRunResult:
         """Execute a workflow synchronously and return the result.
 
@@ -83,67 +86,83 @@ class WorkflowRunner:
         Raises:
             FileNotFoundError: If workflow file does not exist.
         """
-        started_at = datetime.now(timezone.utc)
-        sub_id: Optional[str] = None
+        started_at = datetime.now(UTC)
+        sub_id: str | None = None
 
         if on_event is not None and self.event_bus is not None:
             sub_id = self.event_bus.subscribe(on_event)
 
-        engine = None
         try:
-            result_data, workflow_name, engine = self._run_core(
-                workflow_path, input_data or {}, workspace, run_id,
+            result_data, workflow_name, _engine, _rt = self._run_core(
+                workflow_path,
+                input_data or {},
+                workspace,
+                run_id,
             )
-            completed_at = datetime.now(timezone.utc)
+            completed_at = datetime.now(UTC)
             return self._build_result(
-                "completed", result_data.get("workflow_id", ""),
-                workflow_name, started_at, completed_at,
+                "completed",
+                result_data.get("workflow_id", ""),
+                workflow_name,
+                started_at,
+                completed_at,
                 result=self._sanitize_result(result_data),
             )
         except FileNotFoundError:
             raise
+        except ConfigValidationError:
+            raise
         except Exception as exc:
-            completed_at = datetime.now(timezone.utc)
+            completed_at = datetime.now(UTC)
             logger.exception("WorkflowRunner execution failed")
             return self._build_result(
-                "failed", "", workflow_path, started_at, completed_at,
+                "failed",
+                "",
+                workflow_path,
+                started_at,
+                completed_at,
                 error_message=str(exc),
             )
         finally:
             if sub_id is not None and self.event_bus is not None:
                 self.event_bus.unsubscribe(sub_id)
-            if engine is not None:
-                self._cleanup_engine(engine)
 
     def _run_core(
         self,
         workflow_path: str,
-        input_data: Dict[str, Any],
-        workspace: Optional[str],
-        run_id: Optional[str],
+        input_data: dict[str, Any],
+        workspace: str | None,
+        run_id: str | None,
     ) -> tuple:
-        """Resolve, compile, and execute a workflow.
+        """Execute a workflow via the unified run_pipeline().
 
         Returns:
-            Tuple of (result_data, workflow_name, engine).
+            Tuple of (result_data, workflow_name, engine=None, rt).
         """
-        workflow_file = self._resolve_workflow_path(workflow_path)
+        from temper_ai.workflow.runtime import RuntimeConfig, WorkflowRuntime
 
-        with open(workflow_file) as f:
-            workflow_config = yaml.safe_load(f)
-
-        wf = workflow_config.get("workflow", {})
-        workflow_name = wf.get("name", workflow_file.stem)
-
-        infra = self._setup_infrastructure()
-        compiled, engine = self._compile(workflow_config, infra[1], infra[0])
+        rt = WorkflowRuntime(
+            config=RuntimeConfig(
+                config_root=self.config.config_root,
+                trigger_type=self.config.trigger_type,
+                environment=self.config.environment,
+                initialize_database=False,
+                event_bus=self.event_bus,
+            ),
+        )
 
         effective_workspace = workspace or self.config.workspace
-        result_data = self._execute(
-            compiled, workflow_config, workflow_name,
-            input_data, infra, effective_workspace, run_id,
+        result_data = rt.run_pipeline(
+            workflow_path=workflow_path,
+            input_data=input_data,
+            workspace=effective_workspace,
+            run_id=run_id,
+            show_details=self.config.show_details,
         )
-        return result_data, workflow_name, engine
+
+        workflow_name = result_data.get("workflow_name", Path(workflow_path).stem)
+        # Engine cleanup is handled by run_pipeline internally
+        return result_data, workflow_name, None, rt
 
     def _build_result(
         self,
@@ -152,8 +171,8 @@ class WorkflowRunner:
         workflow_name: str,
         started_at: datetime,
         completed_at: datetime,
-        result: Optional[Dict[str, Any]] = None,
-        error_message: Optional[str] = None,
+        result: dict[str, Any] | None = None,
+        error_message: str | None = None,
     ) -> WorkflowRunResult:
         """Construct a WorkflowRunResult."""
         return WorkflowRunResult(
@@ -167,111 +186,10 @@ class WorkflowRunner:
             duration_seconds=(completed_at - started_at).total_seconds(),
         )
 
-    def _resolve_workflow_path(self, workflow_path: str) -> Path:
-        """Resolve workflow path, checking config_root if not absolute."""
-        path = Path(workflow_path)
-        if path.is_absolute() and path.exists():
-            return path
-
-        config_path = Path(self.config.config_root) / workflow_path
-        if config_path.exists():
-            return config_path
-
-        if path.exists():
-            return path
-
-        raise FileNotFoundError(f"Workflow file not found: {workflow_path}")
-
-    def _setup_infrastructure(self) -> tuple:
-        """Initialize config loader, tool registry, and tracker.
-
-        Returns:
-            Tuple of (config_loader, tool_registry, tracker).
-        """
-        from temper_ai.observability.tracker import ExecutionTracker
-        from temper_ai.tools.registry import ToolRegistry
-        from temper_ai.workflow.config_loader import ConfigLoader
-
-        config_loader = ConfigLoader(config_root=self.config.config_root)
-        tool_registry = ToolRegistry(auto_discover=True)
-        if self.event_bus is not None:
-            tracker = ExecutionTracker(event_bus=self.event_bus)
-        else:
-            tracker = ExecutionTracker()
-        return config_loader, tool_registry, tracker
-
-    def _compile(
-        self,
-        workflow_config: Dict[str, Any],
-        tool_registry: Any,
-        config_loader: Any,
-    ) -> tuple:
-        """Compile workflow config into executable graph.
-
-        Returns:
-            Tuple of (compiled_workflow, engine).
-        """
-        from temper_ai.workflow.engine_registry import EngineRegistry
-
-        registry = EngineRegistry()
-        engine = registry.get_engine_from_config(
-            workflow_config,
-            tool_registry=tool_registry,
-            config_loader=config_loader,
-        )
-        compiled = engine.compile(workflow_config)
-        return compiled, engine
-
-    def _execute(
-        self,
-        compiled: Any,
-        workflow_config: Dict[str, Any],
-        workflow_name: str,
-        input_data: Dict[str, Any],
-        infra: tuple,
-        workspace: Optional[str] = None,
-        run_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """Execute compiled workflow with tracking."""
-        from temper_ai.observability.tracker import WorkflowTrackingParams
-
-        config_loader, tool_registry, tracker = infra
-
-        with tracker.track_workflow(WorkflowTrackingParams(
-            workflow_name=workflow_name,
-            workflow_config=workflow_config,
-            trigger_type=self.config.trigger_type,
-            environment=self.config.environment,
-        )) as workflow_id:
-            state: Dict[str, Any] = {
-                "workflow_inputs": input_data,
-                "tracker": tracker,
-                "config_loader": config_loader,
-                "tool_registry": tool_registry,
-                "workflow_id": workflow_id,
-                "show_details": self.config.show_details,
-                "detail_console": None,
-                "stream_callback": None,
-            }
-            if workspace is not None:
-                state["workspace_root"] = workspace
-            if run_id is not None:
-                state["run_id"] = run_id
-
-            result: Dict[str, Any] = compiled.invoke(state)
-            result["workflow_id"] = workflow_id
-            return result
-
-    def _sanitize_result(self, result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def _sanitize_result(self, result: dict[str, Any]) -> dict[str, Any] | None:
         """Strip non-serializable keys from result."""
-        from temper_ai.interfaces.dashboard.execution_service import _sanitize_workflow_result
+        from temper_ai.interfaces.dashboard.execution_service import (
+            _sanitize_workflow_result,
+        )
 
         return _sanitize_workflow_result(result)
-
-    def _cleanup_engine(self, engine: Any) -> None:
-        """Clean up engine resources."""
-        if hasattr(engine, "tool_executor") and engine.tool_executor:
-            try:
-                engine.tool_executor.shutdown()
-            except Exception as exc:  # noqa: BLE001
-                logger.debug("Error during tool executor shutdown: %s", exc)

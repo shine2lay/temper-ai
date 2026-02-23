@@ -8,11 +8,12 @@ Provides controlled command execution with:
 - Shell metacharacter injection prevention
 - stdout/stderr capture with exit code reporting
 """
+
 import logging
 import shlex
 import subprocess  # noqa: F401 — kept for test mock patching compatibility
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any
 
 from temper_ai.tools._bash_helpers import (
     get_safe_env,
@@ -31,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 
 # Commands allowed by default
-DEFAULT_ALLOWED_COMMANDS: Set[str] = {
+DEFAULT_ALLOWED_COMMANDS: set[str] = {
     "npm",
     "npx",
     "node",
@@ -44,18 +45,18 @@ DEFAULT_ALLOWED_COMMANDS: Set[str] = {
 }
 
 # Shell metacharacters that indicate injection attempts
-DANGEROUS_CHARS: Set[str] = {
-    ";",   # Command separator
-    "|",   # Pipe
-    "&",   # Background / AND
-    "$",   # Variable expansion
-    "`",   # Command substitution
+DANGEROUS_CHARS: set[str] = {
+    ";",  # Command separator
+    "|",  # Pipe
+    "&",  # Background / AND
+    "$",  # Variable expansion
+    "`",  # Command substitution
     "\n",  # Newline injection
     "\r",  # Carriage return
-    ">",   # Output redirection
-    "<",   # Input redirection
-    "(",   # Subshell open
-    ")",   # Subshell close
+    ">",  # Output redirection
+    "<",  # Input redirection
+    "(",  # Subshell open
+    ")",  # Subshell close
 }
 
 # Maximum allowed timeout in seconds
@@ -109,7 +110,7 @@ def _split_shell_commands(command: str) -> list[str]:
             i += 1
             continue
 
-        if ch == '\\' and not in_single_quote:
+        if ch == "\\" and not in_single_quote:
             current.append(ch)
             escaped = True
             i += 1
@@ -137,7 +138,7 @@ def _split_shell_commands(command: str) -> list[str]:
         # Outside quotes: check for shell operators (longest match first)
         matched = False
         for op in _SHELL_OPERATORS:
-            if command[i:i + len(op)] == op:
+            if command[i : i + len(op)] == op:
                 # Found an unquoted operator -- split here
                 sub_commands.append("".join(current))
                 current = []
@@ -180,7 +181,7 @@ class Bash(BaseTool):
 
     DEFAULT_TIMEOUT = DEFAULT_BASH_TIMEOUT  # 2 minutes default
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: dict[str, Any] | None = None):
         """Initialize Bash tool.
 
         Args:
@@ -201,7 +202,7 @@ class Bash(BaseTool):
         # Configure allowlist
         allowed = self.config.get("allowed_commands")
         if allowed is not None:
-            self.allowed_commands: Set[str] = set(allowed)
+            self.allowed_commands: set[str] = set(allowed)
         else:
             self.allowed_commands = DEFAULT_ALLOWED_COMMANDS.copy()
 
@@ -245,7 +246,7 @@ class Bash(BaseTool):
             modifies_state=True,
         )
 
-    def get_parameters_schema(self) -> Dict[str, Any]:
+    def get_parameters_schema(self) -> dict[str, Any]:
         """Return JSON schema for Bash parameters."""
         if self.shell_mode:
             cmd_desc = (
@@ -296,7 +297,8 @@ class Bash(BaseTool):
             if resolved != self.workspace_root:
                 logger.warning(
                     "Bash workspace_root changed: %s -> %s",
-                    self.workspace_root, resolved,
+                    self.workspace_root,
+                    resolved,
                 )
                 self.workspace_root = resolved
 
@@ -307,11 +309,14 @@ class Bash(BaseTool):
             if new_cmds != self.allowed_commands:
                 logger.warning(
                     "Bash allowed_commands changed: %s -> %s",
-                    sorted(self.allowed_commands), sorted(new_cmds),
+                    sorted(self.allowed_commands),
+                    sorted(new_cmds),
                 )
                 self.allowed_commands = new_cmds
 
-    def _validate_command_input(self, command: Any) -> tuple[Optional[str], Optional[ToolResult]]:
+    def _validate_command_input(
+        self, command: Any
+    ) -> tuple[str | None, ToolResult | None]:
         """Validate command input. Returns (command, None) or (None, error_result)."""
         if not command or not isinstance(command, str):
             return None, ToolResult(
@@ -328,18 +333,24 @@ class Bash(BaseTool):
 
         return command_stripped, None
 
-    def _validate_command_mode(self, command: str) -> tuple[Optional[List[str]], Optional[ToolResult]]:
+    def _validate_command_mode(
+        self, command: str
+    ) -> tuple[list[str] | None, ToolResult | None]:
         """Validate command for shell or strict mode. Returns (parts, None) or (None, error_result)."""
         if self.shell_mode:
             error_result = validate_shell_mode_command(
-                command, self.allowed_commands, self.workspace_root,
+                command,
+                self.allowed_commands,
+                self.workspace_root,
             )
             if error_result is not None:
                 return None, error_result
             return None, None  # None parts signals shell=True
 
         parts, error_result = validate_strict_mode_command(
-            command, self.allowed_commands, DANGEROUS_CHARS,
+            command,
+            self.allowed_commands,
+            DANGEROUS_CHARS,
         )
         return parts, error_result
 
@@ -380,7 +391,9 @@ class Bash(BaseTool):
 
         # Validate working directory (sandbox)
         resolved_cwd, error_result = validate_sandbox(
-            self.workspace_root, working_directory, parts,
+            self.workspace_root,
+            working_directory,
+            parts,
         )
         if error_result is not None:
             return error_result
@@ -389,8 +402,12 @@ class Bash(BaseTool):
         if resolved_cwd is None:
             raise ValueError("resolved_cwd should not be None after validate_sandbox")
         return run_command(
-            command, parts, resolved_cwd, timeout,
-            self.shell_mode, get_safe_env(self.SAFE_ENV_VARS),
+            command,
+            parts,
+            resolved_cwd,
+            timeout,
+            self.shell_mode,
+            get_safe_env(self.SAFE_ENV_VARS),
         )
 
     # Environment variables safe to pass to subprocesses
@@ -415,6 +432,6 @@ class Bash(BaseTool):
         "NPM_CONFIG_CACHE",
     }
 
-    def _get_safe_env(self) -> Dict[str, str]:
+    def _get_safe_env(self) -> dict[str, str]:
         """Build a safe environment for subprocess execution."""
         return get_safe_env(self.SAFE_ENV_VARS)

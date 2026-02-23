@@ -4,6 +4,7 @@ Regression tests for tool execution bugs.
 Tests for previously discovered bugs in tool execution to ensure
 they don't reappear.
 """
+
 import os
 import shutil
 import tempfile
@@ -80,10 +81,7 @@ class TestFileWriter:
         writer = FileWriter()
         malicious_path = "../../../etc/passwd"
 
-        result = writer.execute(
-            file_path=malicious_path,
-            content="malicious content"
-        )
+        result = writer.execute(file_path=malicious_path, content="malicious content")
 
         # Should be blocked
         assert result.success is False
@@ -99,22 +97,15 @@ class TestFileWriter:
         Severity: HIGH (data loss)
         Fixed: Added overwrite parameter check
         """
-        writer = FileWriter()
+        writer = FileWriter(config={"allowed_root": self.temp_dir})
         path = os.path.join(self.temp_dir, "existing.txt")
 
         # Create file
-        result1 = writer.execute(
-            file_path=path,
-            content="original content"
-        )
+        result1 = writer.execute(file_path=path, content="original content")
         assert result1.success is True
 
         # Try to overwrite without permission
-        result2 = writer.execute(
-            file_path=path,
-            content="new content",
-            overwrite=False
-        )
+        result2 = writer.execute(file_path=path, content="new content", overwrite=False)
 
         # Should be blocked
         assert result2.success is False
@@ -190,9 +181,7 @@ class TestToolExecutor:
         # Execute with explicit short timeout
         # Should complete within timeout (calculator is fast)
         result = executor.execute(
-            tool_name="Calculator",
-            params={"expression": "2 + 2"},
-            timeout=1
+            tool_name="Calculator", params={"expression": "2 + 2"}, timeout=1
         )
 
         # Should complete successfully or timeout, not hang
@@ -211,10 +200,7 @@ class TestToolExecutor:
         registry = ToolRegistry()
         executor = ToolExecutor(registry)
 
-        result = executor.execute(
-            tool_name="NonexistentTool",
-            params={}
-        )
+        result = executor.execute(tool_name="NonexistentTool", params={})
 
         # Should return error result, not raise exception
         assert result.success is False
@@ -246,7 +232,10 @@ class TestToolRegistry:
             registry.register(calc2)
 
         # Should get clear error message
-        assert "already registered" in str(exc_info.value).lower() or "calculator" in str(exc_info.value).lower()
+        assert (
+            "already registered" in str(exc_info.value).lower()
+            or "calculator" in str(exc_info.value).lower()
+        )
 
     def test_case_sensitive_tool_lookup(self):
         """

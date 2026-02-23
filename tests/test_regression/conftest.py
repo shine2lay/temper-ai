@@ -1,4 +1,5 @@
 """Fixtures for regression tests."""
+
 import pytest
 
 from temper_ai.storage.schemas.agent_config import (

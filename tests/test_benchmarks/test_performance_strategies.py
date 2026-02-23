@@ -9,18 +9,19 @@ Run with: pytest tests/test_benchmarks/test_performance_strategies.py --benchmar
 
 import pytest
 
-from temper_ai.safety.action_policy_engine import ActionPolicyEngine
-from temper_ai.safety.rollback import RollbackManager
 from temper_ai.agent.strategies.base import AgentOutput
 from temper_ai.agent.strategies.conflict_resolution import MeritWeightedResolver
 from temper_ai.agent.strategies.consensus import ConsensusStrategy
 from temper_ai.agent.strategies.debate import DebateAndSynthesize
+from temper_ai.safety.action_policy_engine import ActionPolicyEngine
+from temper_ai.safety.rollback import RollbackManager
 from temper_ai.tools.calculator import Calculator
 from temper_ai.tools.executor import ToolExecutor
 
 # ============================================================================
 # CATEGORY 6: Collaboration Strategies (6 benchmarks)
 # ============================================================================
+
 
 @pytest.mark.benchmark(group="strategies")
 def test_strategy_consensus_3_agents(benchmark):
@@ -37,13 +38,14 @@ def test_strategy_consensus_3_agents(benchmark):
             decision="result_A",
             reasoning="test reasoning",
             confidence=0.8,
-            metadata={}
+            metadata={},
         )
         for i in range(3)
     ]
 
     result = benchmark(strategy.synthesize, outputs, {})
     assert result.final_decision is not None
+
 
 @pytest.mark.benchmark(group="strategies")
 def test_strategy_consensus_10_agents(benchmark):
@@ -60,13 +62,14 @@ def test_strategy_consensus_10_agents(benchmark):
             decision="result_A" if i < 7 else "result_B",
             reasoning="test reasoning",
             confidence=0.8,
-            metadata={}
+            metadata={},
         )
         for i in range(10)
     ]
 
     result = benchmark(strategy.synthesize, outputs, {})
     assert result.final_decision is not None
+
 
 @pytest.mark.benchmark(group="strategies")
 def test_strategy_debate(benchmark):
@@ -83,13 +86,14 @@ def test_strategy_debate(benchmark):
             decision=f"result_{i}",
             reasoning=f"reasoning {i}",
             confidence=0.7 + (i * 0.1),
-            metadata={}
+            metadata={},
         )
         for i in range(3)
     ]
 
     result = benchmark(strategy.synthesize, outputs, {})
     assert result.final_decision is not None
+
 
 @pytest.mark.benchmark(group="strategies")
 def test_strategy_merit_weighted(benchmark):
@@ -106,13 +110,14 @@ def test_strategy_merit_weighted(benchmark):
             decision="result_A",
             reasoning="test reasoning",
             confidence=0.5 + (i * 0.1),
-            metadata={}
+            metadata={},
         )
         for i in range(5)
     ]
 
     result = benchmark(strategy.synthesize, outputs, {})
     assert result.final_decision is not None
+
 
 @pytest.mark.benchmark(group="strategies")
 def test_strategy_conflict_resolution(benchmark):
@@ -121,7 +126,9 @@ def test_strategy_conflict_resolution(benchmark):
     Target: <100ms
     Measures: Conflict detection and resolution overhead
     """
-    from temper_ai.agent.strategies.conflict_resolution import MeritWeightedConflictResolution
+    from temper_ai.agent.strategies.conflict_resolution import (
+        MeritWeightedConflictResolution,
+    )
 
     resolver = MeritWeightedConflictResolution()
 
@@ -131,19 +138,20 @@ def test_strategy_conflict_resolution(benchmark):
             decision="result_A",
             reasoning="reasoning A",
             confidence=0.8,
-            metadata={}
+            metadata={},
         ),
         AgentOutput(
             agent_name="agent_1",
             decision="result_B",
             reasoning="reasoning B",
             confidence=0.7,
-            metadata={}
+            metadata={},
         ),
     ]
 
     result = benchmark(resolver.resolve, outputs, {})
     assert result.final_decision is not None
+
 
 @pytest.mark.benchmark(group="strategies")
 def test_strategy_quality_gate_validation(benchmark):
@@ -158,7 +166,7 @@ def test_strategy_quality_gate_validation(benchmark):
         final_decision="test result",
         reasoning="test reasoning",
         confidence=0.9,
-        metadata={"agent_count": 3}
+        metadata={"agent_count": 3},
     )
 
     def validate_quality():
@@ -171,9 +179,11 @@ def test_strategy_quality_gate_validation(benchmark):
     result = benchmark(validate_quality)
     assert result is True
 
+
 # ============================================================================
 # CATEGORY 7: Safety & Security (4 benchmarks)
 # ============================================================================
+
 
 @pytest.mark.benchmark(group="safety")
 def test_safety_action_policy_validation(benchmark):
@@ -185,16 +195,18 @@ def test_safety_action_policy_validation(benchmark):
     policy_engine = ActionPolicyEngine()
 
     from temper_ai.safety.action_policy_engine import PolicyExecutionContext
+
     context = PolicyExecutionContext(
         action_type="tool_execution",
         tool_name="calculator",
         parameters={"expression": "2+2"},
-        agent_name="test_agent"
+        agent_name="test_agent",
     )
 
     result = benchmark(policy_engine.validate, context)
     # Validation returns None on success, raises on failure
     assert True  # Benchmark completed without policy violation
+
 
 @pytest.mark.benchmark(group="safety")
 def test_safety_rate_limiter_overhead(tool_registry, benchmark):
@@ -204,21 +216,14 @@ def test_safety_rate_limiter_overhead(tool_registry, benchmark):
     Measures: Rate limiting check overhead
     """
     tool_registry.register(Calculator())
-    executor = ToolExecutor(
-        registry=tool_registry,
-        rate_limit=100,
-        rate_window=1.0
-    )
+    executor = ToolExecutor(registry=tool_registry, rate_limit=100, rate_window=1.0)
 
     try:
-        result = benchmark(
-            executor.execute,
-            "calculator",
-            {"expression": "2 + 2"}
-        )
+        result = benchmark(executor.execute, "calculator", {"expression": "2 + 2"})
         assert result.success is True
     finally:
         executor.shutdown()
+
 
 @pytest.mark.benchmark(group="safety")
 def test_safety_circuit_breaker_overhead(benchmark):
@@ -230,9 +235,7 @@ def test_safety_circuit_breaker_overhead(benchmark):
     from temper_ai.llm.circuit_breaker import CircuitBreaker, CircuitBreakerConfig
 
     config = CircuitBreakerConfig(
-        failure_threshold=5,
-        timeout=60,
-        expected_exception=Exception
+        failure_threshold=5, timeout=60, expected_exception=Exception
     )
     circuit_breaker = CircuitBreaker(config)
 
@@ -242,6 +245,7 @@ def test_safety_circuit_breaker_overhead(benchmark):
 
     result = benchmark(protected_operation)
     assert result == "success"
+
 
 @pytest.mark.benchmark(group="safety")
 def test_safety_rollback_snapshot(benchmark):
@@ -255,12 +259,8 @@ def test_safety_rollback_snapshot(benchmark):
     test_state = {
         "workflow_id": "test_workflow",
         "stage": "test_stage",
-        "data": {"key": "value"}
+        "data": {"key": "value"},
     }
 
-    result = benchmark(
-        rollback_manager.create_snapshot,
-        "test_operation",
-        test_state
-    )
+    result = benchmark(rollback_manager.create_snapshot, "test_operation", test_state)
     assert result is not None

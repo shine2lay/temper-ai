@@ -5,16 +5,16 @@ iterative loop instead of recursion, preventing stack overflow.
 """
 
 import sys
-from typing import Any, Callable, Dict, Optional
+from collections.abc import Callable
+from typing import Any
 from unittest.mock import Mock, patch
 
 import pytest
 
+from temper_ai.agent.strategies.base import SynthesisResult
 from temper_ai.stage.executors.base import ParallelRunner
 from temper_ai.stage.executors.parallel import ParallelStageExecutor
 from temper_ai.stage.executors.state_keys import StateKeys
-from temper_ai.agent.strategies.base import SynthesisResult
-
 
 # ---------------------------------------------------------------------------
 # Shared helpers
@@ -22,7 +22,7 @@ from temper_ai.agent.strategies.base import SynthesisResult
 
 # Standard parallel result returned by FakeParallelRunner.
 # Mirrors the shape that LangGraphParallelRunner produces.
-_PARALLEL_RESULT: Dict[str, Any] = {
+_PARALLEL_RESULT: dict[str, Any] = {
     "agent_outputs": {
         "agent_a": {
             "output": "test",
@@ -44,18 +44,18 @@ class FakeParallelRunner(ParallelRunner):
     logic without coupling to the graph engine at all.
     """
 
-    def __init__(self, result: Optional[Dict[str, Any]] = None):
+    def __init__(self, result: dict[str, Any] | None = None):
         self._result = result if result is not None else dict(_PARALLEL_RESULT)
         self.call_count = 0
 
     def run_parallel(
         self,
-        nodes: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]],
-        initial_state: Dict[str, Any],
+        nodes: dict[str, Callable[[dict[str, Any]], dict[str, Any]]],
+        initial_state: dict[str, Any],
         *,
-        init_node: Optional[Callable[[Dict[str, Any]], Dict[str, Any]]] = None,
-        collect_node: Optional[Callable[[Dict[str, Any]], Dict[str, Any]]] = None,
-    ) -> Dict[str, Any]:
+        init_node: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
+        collect_node: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
         self.call_count += 1
         return dict(self._result)
 
@@ -165,7 +165,10 @@ class TestIterativeRetry:
         finally:
             sys.setrecursionlimit(initial_limit)
 
-        assert result[StateKeys.STAGE_OUTPUTS]["test_stage"][StateKeys.DECISION] == "test_decision"
+        assert (
+            result[StateKeys.STAGE_OUTPUTS]["test_stage"][StateKeys.DECISION]
+            == "test_decision"
+        )
         assert executor.parallel_runner.call_count == 100
 
     def test_pass_on_nth_retry(self):
@@ -194,7 +197,10 @@ class TestIterativeRetry:
 
         # Should succeed on 3rd attempt
         assert "test_stage" in result[StateKeys.STAGE_OUTPUTS]
-        assert result[StateKeys.STAGE_OUTPUTS]["test_stage"][StateKeys.DECISION] == "test_decision"
+        assert (
+            result[StateKeys.STAGE_OUTPUTS]["test_stage"][StateKeys.DECISION]
+            == "test_decision"
+        )
         # Synthesis was called 3 times
         assert executor.synthesis_coordinator.synthesize.call_count == 3
         assert executor.parallel_runner.call_count == 3
@@ -299,11 +305,12 @@ class TestIterativeRetry:
         """Stack depth should not increase with retry count."""
         stack_depths = []
 
-        def tracking_validate(self_inner, synthesis_result, stage_config, stage_name, state):
-            stack_depths.append(len([
-                f for f in _get_stack_frames()
-                if "execute_stage" in f
-            ]))
+        def tracking_validate(
+            self_inner, synthesis_result, stage_config, stage_name, state
+        ):
+            stack_depths.append(
+                len([f for f in _get_stack_frames() if "execute_stage" in f])
+            )
             # Fail for first 9, pass on 10th
             if len(stack_depths) < 10:
                 return (False, ["low confidence"])
@@ -333,12 +340,13 @@ class TestIterativeRetry:
 
         # All stack depths should be equal (constant depth)
         assert len(stack_depths) == 10
-        assert all(d == stack_depths[0] for d in stack_depths), (
-            f"Stack depths varied: {stack_depths}"
-        )
+        assert all(
+            d == stack_depths[0] for d in stack_depths
+        ), f"Stack depths varied: {stack_depths}"
 
 
 def _get_stack_frames():
     """Get current stack frame names."""
     import traceback
+
     return [line.name for line in traceback.extract_stack()]

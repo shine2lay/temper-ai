@@ -3,10 +3,11 @@
 Performs an extra LLM call before the main execution to generate a
 step-by-step plan, which is then injected into the main prompt.
 """
+
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from temper_ai.llm.service import LLMService
@@ -15,9 +16,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _DEFAULT_PLANNING_TEMPLATE = (
-    "Given the following task, create a step-by-step plan:\n\n"
-    "{prompt}\n\n"
-    "Plan:"
+    "Given the following task, create a step-by-step plan:\n\n" "{prompt}\n\n" "Plan:"
 )
 
 _PLAN_SECTION_START = "\n\n--- Reasoning Plan ---\n"
@@ -37,7 +36,7 @@ def run_planning_pass(
     llm_service: LLMService,
     original_prompt: str,
     config: ReasoningConfig,
-) -> Optional[str]:
+) -> str | None:
     """Call LLM with planning prompt and return plan text.
 
     Returns None on failure so the caller can fall back to the

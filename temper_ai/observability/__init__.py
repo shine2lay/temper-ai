@@ -5,6 +5,7 @@ are lazily imported via __getattr__ to avoid pulling in SQLAlchemy/Rich at
 module load time. Lightweight re-exports (backend ABC, context, models, hooks,
 tracker) remain eager.
 """
+
 from typing import Any
 
 # Lightweight / frequently-used — keep eager

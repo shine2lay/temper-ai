@@ -192,12 +192,10 @@ class TestHashAssignment:
 
         # Same hash_key should give same variant
         variant_1 = strategy.assign(
-            experiment, variants, "workflow-1",
-            context={"hash_key": "user-123"}
+            experiment, variants, "workflow-1", context={"hash_key": "user-123"}
         )
         variant_2 = strategy.assign(
-            experiment, variants, "workflow-2",
-            context={"hash_key": "user-123"}
+            experiment, variants, "workflow-2", context={"hash_key": "user-123"}
         )
 
         assert variant_1 == variant_2
@@ -209,8 +207,7 @@ class TestHashAssignment:
         results = []
         for i in range(50):
             variant_id = strategy.assign(
-                experiment, variants, f"workflow-{i}",
-                context={"hash_key": "user-same"}
+                experiment, variants, f"workflow-{i}", context={"hash_key": "user-same"}
             )
             results.append(variant_id)
 
@@ -247,8 +244,7 @@ class TestVariantAssigner:
         assigner = VariantAssigner()
 
         variant_id = assigner.assign_variant(
-            experiment, variants, "workflow-123",
-            context={"hash_key": "user-456"}
+            experiment, variants, "workflow-123", context={"hash_key": "user-456"}
         )
 
         assert variant_id in ["var-control", "var-a"]
@@ -325,7 +321,7 @@ class TestEdgeCases:
         experiment.traffic_allocation = {
             "control": 0.5,
             "variant_a": 0.3,
-            "variant_b": 0.2
+            "variant_b": 0.2,
         }
 
         strategy = RandomAssignment()

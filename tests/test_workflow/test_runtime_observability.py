@@ -1,8 +1,7 @@
 """Tests for WorkflowRuntime lifecycle observability events."""
-import os
-import tempfile
-from datetime import timezone
-from unittest.mock import MagicMock, call, patch
+
+from datetime import UTC
+from unittest.mock import MagicMock, patch
 
 import pytest
 import yaml
@@ -13,10 +12,9 @@ from temper_ai.observability.constants import (
     EVENT_WORKFLOW_COMPILED,
     EVENT_WORKFLOW_COMPILING,
 )
-from temper_ai.observability.event_bus import ObservabilityEvent, ObservabilityEventBus
+from temper_ai.observability.event_bus import ObservabilityEventBus
 from temper_ai.workflow.runtime import (
     InfrastructureBundle,
-    RuntimeConfig,
     WorkflowRuntime,
 )
 
@@ -37,11 +35,21 @@ def captured_events(event_bus):
 
 @pytest.fixture
 def tmp_workflow(tmp_path):
-    """Create a minimal workflow YAML file."""
+    """Create a schema-valid workflow YAML file."""
     config = {
         "workflow": {
             "name": "test_wf",
-            "stages": ["s1", "s2"],
+            "description": "Test workflow",
+            "stages": [
+                {"name": "s1", "stage_ref": "stages/s1.yaml"},
+                {"name": "s2", "stage_ref": "stages/s2.yaml"},
+            ],
+            "error_handling": {
+                "on_stage_failure": "halt",
+                "max_stage_retries": 2,
+                "escalation_policy": "log_and_notify",
+                "enable_rollback": False,
+            },
         }
     }
     path = tmp_path / "test.yaml"
@@ -82,7 +90,7 @@ class TestLoadConfigEvents:
         rt.load_config(tmp_workflow)
 
         evt = captured_events[0]
-        assert evt.timestamp.tzinfo == timezone.utc
+        assert evt.timestamp.tzinfo == UTC
 
 
 class TestAdaptLifecycleEvents:
@@ -95,8 +103,7 @@ class TestAdaptLifecycleEvents:
         rt.adapt_lifecycle(config, {})
 
         lifecycle_events = [
-            e for e in captured_events
-            if e.event_type == EVENT_LIFECYCLE_ADAPTED
+            e for e in captured_events if e.event_type == EVENT_LIFECYCLE_ADAPTED
         ]
         assert len(lifecycle_events) == 0
 
@@ -105,8 +112,13 @@ class TestAdaptLifecycleEvents:
     @patch("temper_ai.lifecycle.profiles.ProfileRegistry")
     @patch("temper_ai.lifecycle.store.LifecycleStore")
     def test_emits_lifecycle_adapted(
-        self, _store, _registry, _classifier, _adapter,
-        event_bus, captured_events,
+        self,
+        _store,
+        _registry,
+        _classifier,
+        _adapter,
+        event_bus,
+        captured_events,
     ):
         """adapt_lifecycle emits EVENT_LIFECYCLE_ADAPTED on success."""
         rt = WorkflowRuntime(event_bus=event_bus, workflow_id="wf-lc")
@@ -121,8 +133,7 @@ class TestAdaptLifecycleEvents:
         rt.adapt_lifecycle(config, {"topic": "test"})
 
         lifecycle_events = [
-            e for e in captured_events
-            if e.event_type == EVENT_LIFECYCLE_ADAPTED
+            e for e in captured_events if e.event_type == EVENT_LIFECYCLE_ADAPTED
         ]
         assert len(lifecycle_events) == 1
         assert lifecycle_events[0].data["status"] == "adapted"
@@ -133,7 +144,10 @@ class TestCompileEvents:
 
     @patch("temper_ai.workflow.engine_registry.EngineRegistry")
     def test_emits_compiling_and_compiled(
-        self, mock_registry_cls, event_bus, captured_events,
+        self,
+        mock_registry_cls,
+        event_bus,
+        captured_events,
     ):
         """compile emits compiling and compiled events."""
         mock_engine = MagicMock()

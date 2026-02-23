@@ -1,8 +1,7 @@
 """Tests for OTEL setup — env var detection and graceful import failure."""
+
 import os
 from unittest.mock import patch
-
-import pytest
 
 from temper_ai.observability.otel_setup import is_otel_configured
 
@@ -15,7 +14,9 @@ class TestIsOtelConfigured:
             assert is_otel_configured() is False
 
     def test_configured_via_endpoint(self) -> None:
-        with patch.dict(os.environ, {"OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4317"}):
+        with patch.dict(
+            os.environ, {"OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4317"}
+        ):
             assert is_otel_configured() is True
 
     def test_configured_via_maf_flag(self) -> None:

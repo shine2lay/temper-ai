@@ -70,11 +70,11 @@ class TestParseToolCalls:
     def test_html_encoded_tool_calls(self):
         """Models sometimes HTML-encode <tool_call> in multi-turn."""
         response = (
-            'Fix the file:\n'
-            '&lt;tool_call&gt;\n'
+            "Fix the file:\n"
+            "&lt;tool_call&gt;\n"
             '{"name": "FileWriter", "parameters": '
             '{"path": "/tmp/f.py", "contents": "x=1"}}\n'
-            '&lt;/tool_call&gt;'
+            "&lt;/tool_call&gt;"
         )
         calls = parse_tool_calls(response)
         assert len(calls) == 1
@@ -84,9 +84,9 @@ class TestParseToolCalls:
     def test_multiple_html_encoded_tool_calls(self):
         response = (
             '&lt;tool_call&gt;{"name": "A", "parameters": {}}'
-            '&lt;/tool_call&gt;\n'
+            "&lt;/tool_call&gt;\n"
             '&lt;tool_call&gt;{"name": "B", "parameters": {}}'
-            '&lt;/tool_call&gt;'
+            "&lt;/tool_call&gt;"
         )
         calls = parse_tool_calls(response)
         assert len(calls) == 2
@@ -97,15 +97,18 @@ class TestParseToolCalls:
         assert parse_tool_calls("") == []
 
     def test_tool_call_with_extra_fields(self):
-        response = '<tool_call>{"name": "calc", "parameters": {}, "extra": "ok"}</tool_call>'
+        response = (
+            '<tool_call>{"name": "calc", "parameters": {}, "extra": "ok"}</tool_call>'
+        )
         calls = parse_tool_calls(response)
         assert len(calls) == 1
         assert calls[0]["extra"] == "ok"
 
-
     def test_bare_json_tool_call(self):
         """Bare JSON object with 'name' key is recovered as tool call."""
-        response = '{"name": "FileWriter", "parameters": {"path": "f.py", "content": "x=1"}}'
+        response = (
+            '{"name": "FileWriter", "parameters": {"path": "f.py", "content": "x=1"}}'
+        )
         calls = parse_tool_calls(response)
         assert len(calls) == 1
         assert calls[0]["name"] == "FileWriter"
@@ -127,7 +130,7 @@ class TestParseToolCalls:
         """Multiple bare JSON tool calls are all recovered."""
         response = (
             '{"name": "FileWriter", "parameters": {"path": "a.py", "content": "a"}}\n'
-            'Some text\n'
+            "Some text\n"
             '{"name": "Bash", "parameters": {"command": "ls"}}\n'
         )
         calls = parse_tool_calls(response)
@@ -137,7 +140,9 @@ class TestParseToolCalls:
 
     def test_bare_json_with_arguments_key(self):
         """'arguments' key is normalized to 'parameters'."""
-        response = '{"name": "FileWriter", "arguments": {"path": "f.py", "content": "x"}}'
+        response = (
+            '{"name": "FileWriter", "arguments": {"path": "f.py", "content": "x"}}'
+        )
         calls = parse_tool_calls(response)
         assert len(calls) == 1
         assert calls[0]["name"] == "FileWriter"
@@ -166,9 +171,7 @@ class TestParseToolCalls:
         code = 'def foo():\n    d = {"key": "value"}\n    return d\n'
         response = (
             '{"name": "FileWriter", "parameters": '
-            '{"path": "app.py", "content": '
-            + json.dumps(code)
-            + "}}"
+            '{"path": "app.py", "content": ' + json.dumps(code) + "}}"
         )
         calls = parse_tool_calls(response)
         assert len(calls) == 1

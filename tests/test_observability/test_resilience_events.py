@@ -2,12 +2,11 @@
 
 Covers dataclass creation, emit helpers with mock trackers, and structured logging.
 """
+
 from __future__ import annotations
 
 import logging
-from unittest.mock import Mock, call, patch
-
-import pytest
+from unittest.mock import Mock
 
 from temper_ai.observability.resilience_events import (
     EVENT_TYPE_CIRCUIT_BREAKER,

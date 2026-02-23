@@ -6,8 +6,8 @@ See docs/database/MIGRATION_SYSTEM.md for details.
 The deprecated raw SQL migration functions (apply_migration, _validate_migration_sql,
 _normalize_sql) have been removed. Use Alembic instead.
 """
+
 import logging
-from typing import Optional
 
 from sqlalchemy import text
 
@@ -21,10 +21,11 @@ logger = logging.getLogger(__name__)
 
 class MigrationSecurityError(SecurityError):
     """Raised when migration validation fails security checks."""
+
     pass
 
 
-def create_schema(database_url: Optional[str] = None) -> None:
+def create_schema(database_url: str | None = None) -> None:
     """Create all tables in the database.
 
     Args:
@@ -38,7 +39,7 @@ def create_schema(database_url: Optional[str] = None) -> None:
     db_manager.create_all_tables()
 
 
-def drop_schema(database_url: Optional[str] = None) -> None:
+def drop_schema(database_url: str | None = None) -> None:
     """Drop all tables in the database. Use with caution!
 
     Args:
@@ -52,7 +53,7 @@ def drop_schema(database_url: Optional[str] = None) -> None:
     db_manager.drop_all_tables()
 
 
-def reset_schema(database_url: Optional[str] = None) -> None:
+def reset_schema(database_url: str | None = None) -> None:
     """Drop and recreate all tables. Use with caution!
 
     Args:
@@ -62,7 +63,7 @@ def reset_schema(database_url: Optional[str] = None) -> None:
     create_schema(database_url)
 
 
-def check_schema_version(db_manager: DatabaseManager) -> Optional[str]:
+def check_schema_version(db_manager: DatabaseManager) -> str | None:
     """Check the current schema version.
 
     Args:
@@ -74,8 +75,10 @@ def check_schema_version(db_manager: DatabaseManager) -> Optional[str]:
     try:
         with db_manager.session() as session:
             result = session.execute(
-                text("SELECT version FROM schema_version ORDER BY applied_at DESC LIMIT :limit"),
-                {"limit": DEFAULT_MIN_ITEMS}
+                text(
+                    "SELECT version FROM schema_version ORDER BY applied_at DESC LIMIT :limit"
+                ),
+                {"limit": DEFAULT_MIN_ITEMS},
             )
             row = result.fetchone()
             return row[0] if row else None

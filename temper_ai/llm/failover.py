@@ -4,15 +4,20 @@ LLM provider with automatic failover to backup providers.
 Provides resilient LLM access by automatically switching to backup providers
 when the primary provider fails due to transient errors.
 """
+
 import asyncio
 import logging
 import threading
 from dataclasses import dataclass
-from typing import Any, List, Optional
+from typing import Any
 
 import httpx
 
-from temper_ai.llm.providers import BaseLLM, LLMError, LLMResponse  # M-04: Import from new location
+from temper_ai.llm.providers import (  # M-04: Import from new location
+    BaseLLM,
+    LLMError,
+    LLMResponse,
+)
 from temper_ai.shared.constants.limits import (
     HTTP_CLIENT_ERROR_MAX,
     HTTP_CLIENT_ERROR_MIN,
@@ -20,7 +25,11 @@ from temper_ai.shared.constants.limits import (
     HTTP_SERVER_ERROR_MIN,
 )
 from temper_ai.shared.constants.retries import DEFAULT_MAX_RETRIES
-from temper_ai.shared.utils.exceptions import LLMAuthenticationError, LLMRateLimitError, LLMTimeoutError
+from temper_ai.shared.utils.exceptions import (
+    LLMAuthenticationError,
+    LLMRateLimitError,
+    LLMTimeoutError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -28,8 +37,11 @@ logger = logging.getLogger(__name__)
 @dataclass
 class FailoverConfig:
     """Configuration for failover behavior."""
+
     sticky_session: bool = True  # Use last successful provider first
-    retry_primary_after: int = DEFAULT_MAX_RETRIES  # Retry primary after N successful backup calls
+    retry_primary_after: int = (
+        DEFAULT_MAX_RETRIES  # Retry primary after N successful backup calls
+    )
     failover_on_timeout: bool = True
     failover_on_rate_limit: bool = True
     failover_on_connection_error: bool = True
@@ -67,11 +79,7 @@ class FailoverProvider:
         ```
     """
 
-    def __init__(
-        self,
-        providers: List[BaseLLM],
-        config: Optional[FailoverConfig] = None
-    ):
+    def __init__(self, providers: list[BaseLLM], config: FailoverConfig | None = None):
         """
         Initialize failover provider.
 
@@ -96,7 +104,7 @@ class FailoverProvider:
         self._async_state_lock = asyncio.Lock()
         self.last_successful_index = 0
         self.backup_success_count = 0
-        self._last_failover_sequence: List[str] = []
+        self._last_failover_sequence: list[str] = []
 
         logger.info(
             f"Initialized FailoverProvider with {len(providers)} providers: "
@@ -116,8 +124,8 @@ class FailoverProvider:
         Raises:
             LLMError: If all providers fail
         """
-        errors: List[str] = []
-        failover_sequence: List[str] = []
+        errors: list[str] = []
+        failover_sequence: list[str] = []
         start_index = self._get_start_index()
 
         for attempt in range(len(self.providers)):
@@ -130,20 +138,30 @@ class FailoverProvider:
                 self._record_success(index, provider, failover_sequence)
                 return result
 
-            except (LLMError, LLMTimeoutError, LLMRateLimitError, LLMAuthenticationError,
-                    httpx.HTTPError, ConnectionError, TimeoutError, OSError) as e:
+            except (
+                LLMError,
+                LLMTimeoutError,
+                LLMRateLimitError,
+                LLMAuthenticationError,
+                httpx.HTTPError,
+                ConnectionError,
+                TimeoutError,
+                OSError,
+            ) as e:
                 self._record_failure(provider, e, errors, failover_sequence)
                 if not self._should_failover(e):
                     self._store_sequence(failover_sequence)
                     raise
 
         self._store_sequence(failover_sequence)
-        raise LLMError(f"All {len(self.providers)} providers failed. Errors: {'; '.join(errors)}")
+        raise LLMError(
+            f"All {len(self.providers)} providers failed. Errors: {'; '.join(errors)}"
+        )
 
     async def acomplete(self, prompt: str, **kwargs: Any) -> LLMResponse:
         """Async: Generate completion with automatic failover."""
-        errors: List[str] = []
-        failover_sequence: List[str] = []
+        errors: list[str] = []
+        failover_sequence: list[str] = []
         start_index = await self._async_get_start_index()
 
         for attempt in range(len(self.providers)):
@@ -156,75 +174,115 @@ class FailoverProvider:
                 await self._async_record_success(index, provider, failover_sequence)
                 return result
 
-            except (LLMError, LLMTimeoutError, LLMRateLimitError, LLMAuthenticationError,
-                    httpx.HTTPError, ConnectionError, TimeoutError, OSError) as e:
+            except (
+                LLMError,
+                LLMTimeoutError,
+                LLMRateLimitError,
+                LLMAuthenticationError,
+                httpx.HTTPError,
+                ConnectionError,
+                TimeoutError,
+                OSError,
+            ) as e:
                 self._record_failure(provider, e, errors, failover_sequence)
                 if not self._should_failover(e):
                     self._store_sequence(failover_sequence)
                     raise
 
         self._store_sequence(failover_sequence)
-        raise LLMError(f"All {len(self.providers)} providers failed. Errors: {'; '.join(errors)}")
+        raise LLMError(
+            f"All {len(self.providers)} providers failed. Errors: {'; '.join(errors)}"
+        )
 
     def _get_start_index(self) -> int:
         """Determine starting provider index (thread-safe)."""
         with self._state_lock:
-            if self.config.sticky_session and self.backup_success_count < self.config.retry_primary_after:
-                logger.debug(f"Sticky session: starting at provider {self.last_successful_index}")
+            if (
+                self.config.sticky_session
+                and self.backup_success_count < self.config.retry_primary_after
+            ):
+                logger.debug(
+                    f"Sticky session: starting at provider {self.last_successful_index}"
+                )
                 return self.last_successful_index
             if self.backup_success_count >= self.config.retry_primary_after:
-                logger.info(f"Retrying primary after {self.backup_success_count} backup successes")
+                logger.info(
+                    f"Retrying primary after {self.backup_success_count} backup successes"
+                )
                 self.backup_success_count = 0
             return 0
 
     async def _async_get_start_index(self) -> int:  # noqa: duplicate
         """Determine starting provider index (async-safe)."""
         async with self._async_state_lock:
-            if self.config.sticky_session and self.backup_success_count < self.config.retry_primary_after:
-                logger.debug(f"Sticky session: starting at provider {self.last_successful_index}")
+            if (
+                self.config.sticky_session
+                and self.backup_success_count < self.config.retry_primary_after
+            ):
+                logger.debug(
+                    f"Sticky session: starting at provider {self.last_successful_index}"
+                )
                 return self.last_successful_index
             if self.backup_success_count >= self.config.retry_primary_after:
-                logger.info(f"Retrying primary after {self.backup_success_count} backup successes")
+                logger.info(
+                    f"Retrying primary after {self.backup_success_count} backup successes"
+                )
                 self.backup_success_count = 0
             return 0
 
-    def _record_success(self, index: int, provider: Any, failover_sequence: List[str]) -> None:
+    def _record_success(
+        self, index: int, provider: Any, failover_sequence: list[str]
+    ) -> None:
         """Record successful provider call and update state (thread-safe)."""
         provider_name = getattr(provider, "provider", provider.__class__.__name__)
         failover_sequence.append(f"{provider_name}:{provider.model}:success")
         with self._state_lock:
             if index != self.last_successful_index:
-                logger.info(f"Failover: {self.last_successful_index} -> {index} ({provider.model})")
+                logger.info(
+                    f"Failover: {self.last_successful_index} -> {index} ({provider.model})"
+                )
             self.last_successful_index = index
-            self.backup_success_count = self.backup_success_count + 1 if index != 0 else 0
+            self.backup_success_count = (
+                self.backup_success_count + 1 if index != 0 else 0
+            )
             self._last_failover_sequence = failover_sequence
         logger.info(f"Success with provider [{index}]: {provider.model}")
 
     async def _async_record_success(  # noqa: duplicate
-        self, index: int, provider: Any, failover_sequence: List[str]
+        self, index: int, provider: Any, failover_sequence: list[str]
     ) -> None:
         """Record successful provider call and update state (async-safe)."""
         provider_name = getattr(provider, "provider", provider.__class__.__name__)
         failover_sequence.append(f"{provider_name}:{provider.model}:success")
         async with self._async_state_lock:
             if index != self.last_successful_index:
-                logger.info(f"Failover: {self.last_successful_index} -> {index} ({provider.model})")
+                logger.info(
+                    f"Failover: {self.last_successful_index} -> {index} ({provider.model})"
+                )
             self.last_successful_index = index
-            self.backup_success_count = self.backup_success_count + 1 if index != 0 else 0
+            self.backup_success_count = (
+                self.backup_success_count + 1 if index != 0 else 0
+            )
             self._last_failover_sequence = failover_sequence
         logger.info(f"Success with provider [{index}]: {provider.model}")
 
     def _record_failure(
-        self, provider: Any, error: Exception, errors: List[str], failover_sequence: List[str]
+        self,
+        provider: Any,
+        error: Exception,
+        errors: list[str],
+        failover_sequence: list[str],
     ) -> None:
         """Record provider failure in error list and failover sequence."""
         error_msg = f"{provider.model}: {type(error).__name__}: {str(error)}"
         logger.warning(f"Provider failed: {error_msg}")
         errors.append(error_msg)
         provider_name = getattr(provider, "provider", provider.__class__.__name__)
-        failover_sequence.append(f"{provider_name}:{provider.model}:{type(error).__name__}")
+        failover_sequence.append(
+            f"{provider_name}:{provider.model}:{type(error).__name__}"
+        )
 
-    def _store_sequence(self, failover_sequence: List[str]) -> None:
+    def _store_sequence(self, failover_sequence: list[str]) -> None:
         """Store failover sequence (thread-safe)."""
         with self._state_lock:
             self._last_failover_sequence = failover_sequence
@@ -267,7 +325,7 @@ class FailoverProvider:
         return True
 
     @property
-    def last_failover_sequence(self) -> List[str]:
+    def last_failover_sequence(self) -> list[str]:
         """Return the failover sequence from the last call (thread-safe)."""
         with self._state_lock:
             return list(self._last_failover_sequence)
@@ -293,4 +351,4 @@ class FailoverProvider:
         with self._state_lock:
             index = self.last_successful_index
         provider = self.providers[index]
-        return getattr(provider, 'provider', provider.__class__.__name__)
+        return getattr(provider, "provider", provider.__class__.__name__)

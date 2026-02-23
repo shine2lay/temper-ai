@@ -6,18 +6,19 @@ This module tests the fundamental separation between:
 
 Critical for checkpoint/resume capability (m3.2-06).
 """
+
 import json
 from datetime import datetime
 
 import pytest
 
+from temper_ai.stage.executors.state_keys import StateKeys
 from temper_ai.workflow.domain_state import (
     ExecutionContext,
     WorkflowDomainState,
     create_initial_domain_state,
     merge_domain_states,
 )
-from temper_ai.stage.executors.state_keys import StateKeys
 
 
 class TestWorkflowDomainState:
@@ -41,7 +42,7 @@ class TestWorkflowDomainState:
             input="Analyze market trends",
             topic="Market Analysis",
             depth="comprehensive",
-            focus_areas=["technology", "finance"]
+            focus_areas=["technology", "finance"],
         )
 
         assert state.workflow_id == "wf-test-123"
@@ -104,9 +105,7 @@ class TestWorkflowDomainState:
     def test_to_dict_serialization(self):
         """Test domain state serialization to dict."""
         state = WorkflowDomainState(
-            workflow_id="wf-test-123",
-            input="test input",
-            topic="test topic"
+            workflow_id="wf-test-123", input="test input", topic="test topic"
         )
         state.set_stage_output("research", {"findings": ["item1"]})
 
@@ -116,14 +115,16 @@ class TestWorkflowDomainState:
         assert state_dict[StateKeys.WORKFLOW_ID] == "wf-test-123"
         assert state_dict["input"] == "test input"
         assert state_dict["topic"] == "test topic"
-        assert state_dict[StateKeys.STAGE_OUTPUTS] == {"research": {"findings": ["item1"]}}
+        assert state_dict[StateKeys.STAGE_OUTPUTS] == {
+            "research": {"findings": ["item1"]}
+        }
         assert isinstance(state_dict["created_at"], str)  # datetime serialized
 
     def test_to_dict_exclude_none(self):
         """Test domain state serialization excluding None values."""
         state = WorkflowDomainState(
             workflow_id="wf-test-123",
-            input="test input"
+            input="test input",
             # topic, depth, etc. are None
         )
 
@@ -143,7 +144,7 @@ class TestWorkflowDomainState:
             "input": "test input",
             "topic": "test topic",
             "version": "1.0",
-            "created_at": "2026-01-27T10:00:00"
+            "created_at": "2026-01-27T10:00:00",
         }
 
         state = WorkflowDomainState.from_dict(data)
@@ -158,9 +159,7 @@ class TestWorkflowDomainState:
     def test_json_serialization_roundtrip(self):
         """Test that domain state can be serialized to JSON and back (checkpoint)."""
         original = WorkflowDomainState(
-            workflow_id="wf-checkpoint-test",
-            input="test input",
-            topic="test topic"
+            workflow_id="wf-checkpoint-test", input="test input", topic="test topic"
         )
         original.set_stage_output("research", {"findings": ["item1", "item2"]})
 
@@ -253,9 +252,7 @@ class TestWorkflowDomainState:
 
     def test_workflow_inputs_deep_copied(self):
         """workflow_inputs is deep-copied in copy()."""
-        state = WorkflowDomainState(
-            workflow_inputs={"nested": {"key": "original"}}
-        )
+        state = WorkflowDomainState(workflow_inputs={"nested": {"key": "original"}})
         copied = state.copy()
         state.workflow_inputs["nested"]["key"] = "modified"
         assert copied.workflow_inputs["nested"]["key"] == "original"
@@ -281,9 +278,7 @@ class TestExecutionContext:
         mock_loader = {"type": "loader"}
 
         context = ExecutionContext(
-            tracker=mock_tracker,
-            tool_registry=mock_registry,
-            config_loader=mock_loader
+            tracker=mock_tracker, tool_registry=mock_registry, config_loader=mock_loader
         )
 
         assert context.tracker == mock_tracker
@@ -293,13 +288,13 @@ class TestExecutionContext:
 
     def test_context_not_serialized(self):
         """Test that execution context cannot be JSON-serialized (by design)."""
+
         # Mock non-serializable objects
         class NonSerializable:
             pass
 
         context = ExecutionContext(
-            tracker=NonSerializable(),
-            tool_registry=NonSerializable()
+            tracker=NonSerializable(), tool_registry=NonSerializable()
         )
 
         # Attempting to serialize should raise error (this is intentional)
@@ -309,8 +304,7 @@ class TestExecutionContext:
     def test_repr(self):
         """Test string representation shows available components."""
         context = ExecutionContext(
-            tracker={"type": "tracker"},
-            tool_registry={"type": "registry"}
+            tracker={"type": "tracker"}, tool_registry={"type": "registry"}
         )
 
         repr_str = repr(context)
@@ -327,9 +321,7 @@ class TestStateFactoryFunctions:
     def test_create_initial_domain_state(self):
         """Test create_initial_domain_state factory function."""
         state = create_initial_domain_state(
-            input="test input",
-            topic="test topic",
-            depth="comprehensive"
+            input="test input", topic="test topic", depth="comprehensive"
         )
 
         assert isinstance(state, WorkflowDomainState)
@@ -340,15 +332,11 @@ class TestStateFactoryFunctions:
     def test_merge_domain_states(self):
         """Test merge_domain_states merges updates correctly."""
         base_state = WorkflowDomainState(
-            workflow_id="wf-test-123",
-            input="original input"
+            workflow_id="wf-test-123", input="original input"
         )
         base_state.set_stage_output("research", {"data": "original"})
 
-        updates = {
-            "current_stage": "analysis",
-            "data": {"new": "data"}
-        }
+        updates = {"current_stage": "analysis", "data": {"new": "data"}}
 
         merged = merge_domain_states(base_state, updates)
 
@@ -374,15 +362,14 @@ class TestCheckpoint:
         domain = WorkflowDomainState(
             workflow_id="wf-checkpoint-test",
             input="Analyze market trends",
-            topic="Market Analysis"
+            topic="Market Analysis",
         )
         domain.set_stage_output("research", {"findings": ["trend1", "trend2"]})
         domain.set_stage_output("analysis", {"insights": ["insight1"]})
 
         # Mock infrastructure (not checkpointed)
         context = ExecutionContext(
-            tracker={"type": "mock_tracker"},
-            tool_registry={"type": "mock_registry"}
+            tracker={"type": "mock_tracker"}, tool_registry={"type": "mock_registry"}
         )
 
         # Step 2: Save checkpoint (only domain state)
@@ -395,8 +382,7 @@ class TestCheckpoint:
 
         # Step 4: Recreate infrastructure (not from checkpoint)
         resumed_context = ExecutionContext(
-            tracker={"type": "new_tracker"},
-            tool_registry={"type": "new_registry"}
+            tracker={"type": "new_tracker"}, tool_registry={"type": "new_registry"}
         )
 
         # Verify: Domain state fully restored
@@ -405,7 +391,7 @@ class TestCheckpoint:
         assert resumed_domain.topic == "Market Analysis"
         assert resumed_domain.stage_outputs == {
             "research": {"findings": ["trend1", "trend2"]},
-            "analysis": {"insights": ["insight1"]}
+            "analysis": {"insights": ["insight1"]},
         }
 
         # Verify: Infrastructure recreated (different instances)

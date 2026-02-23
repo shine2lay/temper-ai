@@ -10,13 +10,15 @@ Implements the classic token bucket algorithm with:
 The token bucket algorithm allows for bursty traffic while maintaining
 an average rate limit over time.
 """
+
 import functools
 import math
 import threading
 import time
 from collections import OrderedDict
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any
 
 from temper_ai.shared.constants.durations import (
     SECONDS_PER_DAY,
@@ -38,8 +40,9 @@ def _validate_int_field(name: str, value: Any, min_val: int, max_val: int) -> No
         raise ValueError(f"{name} must be <= {max_val} (safety limit), got {value}")
 
 
-def _validate_float_field(name: str, value: Any, upper: float,
-                          upper_label: Optional[str] = None) -> None:
+def _validate_float_field(
+    name: str, value: Any, upper: float, upper_label: str | None = None
+) -> None:
     """SECURITY: Validate numeric field is finite, positive, and bounded."""
     if not isinstance(value, (int, float)):
         raise ValueError(f"{name} must be numeric, got {type(value).__name__}")
@@ -52,16 +55,20 @@ def _validate_float_field(name: str, value: Any, upper: float,
         raise ValueError(f"{name} must be <= {label}, got {value}")
 
 
-def _validate_burst_size(burst_size: Optional[int], max_tokens: int) -> int:
+def _validate_burst_size(burst_size: int | None, max_tokens: int) -> int:
     """SECURITY: Validate burst_size or default to max_tokens."""
     if burst_size is None:
         return max_tokens
     if not isinstance(burst_size, int):
-        raise ValueError(f"burst_size must be an integer, got {type(burst_size).__name__}")
+        raise ValueError(
+            f"burst_size must be an integer, got {type(burst_size).__name__}"
+        )
     if burst_size <= 0:
         raise ValueError(f"burst_size must be positive, got {burst_size}")
     if burst_size > max_tokens:
-        raise ValueError(f"burst_size ({burst_size}) cannot exceed max_tokens ({max_tokens})")
+        raise ValueError(
+            f"burst_size ({burst_size}) cannot exceed max_tokens ({max_tokens})"
+        )
     return burst_size
 
 
@@ -86,6 +93,7 @@ def requires_lock(method: Callable[..., Any]) -> Callable[..., Any]:
         ...             self._internal_method()  # OK
         ...         self._internal_method()  # RuntimeError!
     """
+
     @functools.wraps(method)
     def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
         """Decorator wrapper for rate limiting."""
@@ -100,6 +108,7 @@ def requires_lock(method: Callable[..., Any]) -> Callable[..., Any]:
             )
         # Lock is held (acquire failed), proceed with method call
         return method(self, *args, **kwargs)
+
     return wrapper
 
 
@@ -122,17 +131,24 @@ class RateLimit:
         ...     burst_size=2           # Allow 2 immediate requests
         ... )
     """
+
     max_tokens: int
     refill_rate: float
     refill_period: float = 1.0
-    burst_size: Optional[int] = None
+    burst_size: int | None = None
 
     def __post_init__(self) -> None:
         """Validate configuration with safety bounds."""
         _validate_int_field("max_tokens", self.max_tokens, 1, MAX_TOKENS_SAFETY_LIMIT)
-        _validate_float_field("refill_rate", self.refill_rate, MAX_REFILL_RATE_SAFETY_LIMIT)
-        _validate_float_field("refill_period", self.refill_period, SECONDS_PER_DAY,
-                              upper_label=f"{SECONDS_PER_DAY}s (24h)")
+        _validate_float_field(
+            "refill_rate", self.refill_rate, MAX_REFILL_RATE_SAFETY_LIMIT
+        )
+        _validate_float_field(
+            "refill_period",
+            self.refill_period,
+            SECONDS_PER_DAY,
+            upper_label=f"{SECONDS_PER_DAY}s (24h)",
+        )
         self.burst_size = _validate_burst_size(self.burst_size, self.max_tokens)
 
 
@@ -319,7 +335,7 @@ class TokenBucket:
             self.tokens = float(self.max_tokens)
             self.last_refill = time.time()
 
-    def get_info(self) -> Dict[str, Any]:
+    def get_info(self) -> dict[str, Any]:
         """Get bucket information for debugging/monitoring.
 
         Returns:
@@ -341,13 +357,15 @@ class TokenBucket:
             self._refill()
 
             return {
-                'current_tokens': round(self.tokens, 2),
-                'max_tokens': self.max_tokens,
-                'refill_rate': self.refill_rate,
-                'refill_period': self.refill_period,
-                'burst_size': self.burst_size,
-                'time_since_last_refill': round(time.time() - self.last_refill, 2),
-                'fill_percentage': round((self.tokens / self.max_tokens) * PERCENT_100, 1)
+                "current_tokens": round(self.tokens, 2),
+                "max_tokens": self.max_tokens,
+                "refill_rate": self.refill_rate,
+                "refill_period": self.refill_period,
+                "burst_size": self.burst_size,
+                "time_since_last_refill": round(time.time() - self.last_refill, 2),
+                "fill_percentage": round(
+                    (self.tokens / self.max_tokens) * PERCENT_100, 1
+                ),
             }
 
 
@@ -388,11 +406,11 @@ class TokenBucketManager:
         self.max_buckets = max_buckets
 
         # Rate limit configurations: {limit_type: RateLimit}
-        self.limits: Dict[str, RateLimit] = {}
+        self.limits: dict[str, RateLimit] = {}
 
         # Token buckets with LRU ordering: {(entity_id, limit_type): TokenBucket}
         # OrderedDict maintains insertion/access order for O(1) LRU eviction
-        self.buckets: OrderedDict[Tuple[str, str], TokenBucket] = OrderedDict()
+        self.buckets: OrderedDict[tuple[str, str], TokenBucket] = OrderedDict()
 
         # Thread safety for bucket creation
         self.lock = threading.Lock()
@@ -411,7 +429,7 @@ class TokenBucketManager:
         with self.lock:
             self.limits[limit_type] = rate_limit
 
-    def get_bucket(self, entity_id: str, limit_type: str) -> Optional[TokenBucket]:
+    def get_bucket(self, entity_id: str, limit_type: str) -> TokenBucket | None:
         """Get or create token bucket for entity and limit type.
 
         Uses LRU eviction: accessed buckets are moved to end, and when the
@@ -473,7 +491,7 @@ class TokenBucketManager:
 
         return bucket.consume(tokens)
 
-    def get_tokens(self, entity_id: str, limit_type: str) -> Optional[float]:
+    def get_tokens(self, entity_id: str, limit_type: str) -> float | None:
         """Get current token count.
 
         Args:
@@ -530,7 +548,9 @@ class TokenBucketManager:
             if key[index] == value:
                 bucket.reset()
 
-    def reset(self, entity_id: Optional[str] = None, limit_type: Optional[str] = None) -> None:
+    def reset(
+        self, entity_id: str | None = None, limit_type: str | None = None
+    ) -> None:
         """Reset token buckets.
 
         Args:
@@ -556,7 +576,7 @@ class TokenBucketManager:
             elif limit_type:
                 self._reset_matching_buckets(1, limit_type)
 
-    def get_all_info(self) -> Dict[Tuple[str, str], Dict[str, Any]]:
+    def get_all_info(self) -> dict[tuple[str, str], dict[str, Any]]:
         """Get information about all token buckets.
 
         Returns:

@@ -1,6 +1,7 @@
 """
 Tests for performance instrumentation and metrics tracking.
 """
+
 import time
 from datetime import datetime
 
@@ -122,7 +123,7 @@ class TestPerformanceTracker:
         metrics = tracker.get_metrics("test_op")
         assert metrics["count"] == 1
         assert metrics["p50"] >= 10.0  # At least 10ms
-        assert metrics["p50"] < 50.0   # But not too long
+        assert metrics["p50"] < 50.0  # But not too long
 
     def test_measure_with_context(self):
         """Test measure with context data."""
@@ -173,7 +174,7 @@ class TestPerformanceTracker:
         """Test slow operation detection and logging."""
         tracker = PerformanceTracker(slow_thresholds={"test_op": 100.0})
 
-        tracker.record("test_op", 50.0)   # Not slow
+        tracker.record("test_op", 50.0)  # Not slow
         tracker.record("test_op", 150.0)  # Slow
         tracker.record("test_op", 200.0)  # Slow
 
@@ -196,7 +197,9 @@ class TestPerformanceTracker:
 
     def test_get_slow_operations(self):
         """Test retrieving slow operations."""
-        tracker = PerformanceTracker(slow_thresholds={"test_op": 100.0, "other_op": 100.0})
+        tracker = PerformanceTracker(
+            slow_thresholds={"test_op": 100.0, "other_op": 100.0}
+        )
 
         tracker.record("test_op", 150.0, context={"id": 1})
         tracker.record("test_op", 200.0, context={"id": 2})
@@ -332,14 +335,14 @@ class TestPerformanceMetrics:
                         tracker.record(
                             "llm_call",
                             100.0 + (i * 50),
-                            context={"model": "gpt-4", "stage": i, "call": j}
+                            context={"model": "gpt-4", "stage": i, "call": j},
                         )
 
                     # Simulate tool execution
                     tracker.record(
                         "tool_execution",
                         50.0,
-                        context={"tool": "calculator", "stage": i}
+                        context={"tool": "calculator", "stage": i},
                     )
 
         summary = tracker.get_summary()

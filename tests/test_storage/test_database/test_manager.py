@@ -2,9 +2,10 @@
 
 Tests database connection and session management.
 """
+
 import os
 import threading
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import patch
 
 import pytest
 from sqlalchemy import text
@@ -50,7 +51,7 @@ class TestMaskDatabaseUrl:
 
     def test_unparseable_url(self):
         """Test with unparseable URL."""
-        with patch('urllib.parse.urlparse', side_effect=Exception("parse error")):
+        with patch("urllib.parse.urlparse", side_effect=Exception("parse error")):
             masked = _mask_database_url("invalid://url")
             assert masked == "<unparseable url>"
 
@@ -92,8 +93,7 @@ class TestDatabaseManager:
         assert manager.engine is not None
 
     @pytest.mark.skipif(
-        os.getenv("CI") == "true",
-        reason="PostgreSQL not available in CI"
+        os.getenv("CI") == "true", reason="PostgreSQL not available in CI"
     )
     def test_postgres_engine_creation(self):
         """Test that PostgreSQL engine is created with pool settings."""
@@ -299,5 +299,7 @@ class TestSessionIsolation:
         manager = DatabaseManager("sqlite:///:memory:")
 
         # Should not raise even if isolation level setting fails
-        with manager.session(isolation_level=IsolationLevel.READ_UNCOMMITTED) as session:
+        with manager.session(
+            isolation_level=IsolationLevel.READ_UNCOMMITTED
+        ) as session:
             assert isinstance(session, Session)

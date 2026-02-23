@@ -1,6 +1,6 @@
 """Tests for AutonomyManager."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -69,7 +69,9 @@ class TestEscalation:
         """No-op when already at target level."""
         manager.escalate("a", "d", reason="1")
         # Try to escalate to same level
-        t = manager.escalate("a", "d", reason="2", target_level=AutonomyLevel.SUPERVISED)
+        t = manager.escalate(
+            "a", "d", reason="2", target_level=AutonomyLevel.SUPERVISED
+        )
         assert t is None
 
 

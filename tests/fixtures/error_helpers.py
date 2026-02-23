@@ -7,8 +7,9 @@ Provides:
 - Workflow configs with failing stages
 - Error assertion helpers
 """
+
 import time
-from typing import Any, Dict, List, Type
+from typing import Any
 
 from temper_ai.tools.base import BaseTool, ToolMetadata, ToolResult
 
@@ -16,24 +17,20 @@ from temper_ai.tools.base import BaseTool, ToolMetadata, ToolResult
 class FailingTool(BaseTool):
     """Tool that always fails with specified error."""
 
-    def __init__(self, error_type: type = Exception, error_message: str = "Tool failed"):
+    def __init__(
+        self, error_type: type = Exception, error_message: str = "Tool failed"
+    ):
         self.error_type = error_type
         self.error_message = error_message
         super().__init__()
 
     def get_metadata(self) -> ToolMetadata:
         return ToolMetadata(
-            name="FailingTool",
-            description="Always fails for testing",
-            version="1.0"
+            name="FailingTool", description="Always fails for testing", version="1.0"
         )
 
-    def get_parameters_schema(self) -> Dict[str, Any]:
-        return {
-            "type": "object",
-            "properties": {},
-            "required": []
-        }
+    def get_parameters_schema(self) -> dict[str, Any]:
+        return {"type": "object", "properties": {}, "required": []}
 
     def execute(self, **kwargs) -> ToolResult:
         raise self.error_type(self.error_message)
@@ -50,15 +47,11 @@ class TimeoutTool(BaseTool):
         return ToolMetadata(
             name="TimeoutTool",
             description="Sleeps for specified duration",
-            version="1.0"
+            version="1.0",
         )
 
-    def get_parameters_schema(self) -> Dict[str, Any]:
-        return {
-            "type": "object",
-            "properties": {},
-            "required": []
-        }
+    def get_parameters_schema(self) -> dict[str, Any]:
+        return {"type": "object", "properties": {}, "required": []}
 
     def execute(self, **kwargs) -> ToolResult:
         time.sleep(self.timeout_seconds)
@@ -86,15 +79,11 @@ class FlakyTool(BaseTool):
         return ToolMetadata(
             name="FlakyTool",
             description="Fails first N times, then succeeds",
-            version="1.0"
+            version="1.0",
         )
 
-    def get_parameters_schema(self) -> Dict[str, Any]:
-        return {
-            "type": "object",
-            "properties": {},
-            "required": []
-        }
+    def get_parameters_schema(self) -> dict[str, Any]:
+        return {"type": "object", "properties": {}, "required": []}
 
     def execute(self, **kwargs) -> ToolResult:
         self.call_count += 1
@@ -103,7 +92,7 @@ class FlakyTool(BaseTool):
         return ToolResult(success=True, result={"retry_count": self.call_count - 1})
 
 
-def assert_error_chain(error: Exception, expected_chain: List[Type[Exception]]) -> None:
+def assert_error_chain(error: Exception, expected_chain: list[type[Exception]]) -> None:
     """Assert error has expected cause chain.
 
     Args:
@@ -119,19 +108,25 @@ def assert_error_chain(error: Exception, expected_chain: List[Type[Exception]]) 
     """
     current = error
     for i, expected_type in enumerate(expected_chain):
-        assert isinstance(current, expected_type), \
-            f"Level {i}: expected {expected_type.__name__}, got {type(current).__name__}"
+        assert isinstance(
+            current, expected_type
+        ), f"Level {i}: expected {expected_type.__name__}, got {type(current).__name__}"
 
         if i < len(expected_chain) - 1:
             # Not the last item, should have a cause
             # Check both __cause__ (Python standard) and .cause (our custom field)
-            next_error = getattr(current, '__cause__', None) or getattr(current, 'cause', None)
-            assert next_error is not None, \
-                f"Level {i} ({expected_type.__name__}) missing __cause__ or .cause"
+            next_error = getattr(current, "__cause__", None) or getattr(
+                current, "cause", None
+            )
+            assert (
+                next_error is not None
+            ), f"Level {i} ({expected_type.__name__}) missing __cause__ or .cause"
             current = next_error
 
 
-def assert_context_preserved(error: Exception, expected_context: Dict[str, Any]) -> None:
+def assert_context_preserved(
+    error: Exception, expected_context: dict[str, Any]
+) -> None:
     """Assert error context contains expected fields.
 
     Args:
@@ -140,8 +135,9 @@ def assert_context_preserved(error: Exception, expected_context: Dict[str, Any])
     """
     for field, expected_value in expected_context.items():
         actual_value = getattr(error.context, field, None)
-        assert actual_value == expected_value, \
-            f"Context mismatch: {field}={actual_value}, expected {expected_value}"
+        assert (
+            actual_value == expected_value
+        ), f"Context mismatch: {field}={actual_value}, expected {expected_value}"
 
 
 def assert_secrets_sanitized(error_message: str) -> None:
@@ -160,5 +156,6 @@ def assert_secrets_sanitized(error_message: str) -> None:
     ]
 
     for pattern in secret_patterns:
-        assert pattern.lower() not in error_message.lower(), \
-            f"Secret pattern '{pattern}' found in error message: {error_message}"
+        assert (
+            pattern.lower() not in error_message.lower()
+        ), f"Secret pattern '{pattern}' found in error message: {error_message}"

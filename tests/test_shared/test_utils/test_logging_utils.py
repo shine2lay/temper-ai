@@ -1,8 +1,9 @@
 """Tests for structured logging utilities."""
+
 import logging
 from datetime import datetime
 from io import StringIO
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -71,7 +72,7 @@ class TestSanitization:
         # Bell character
         assert _sanitize_control_characters("text\x07bell") == "text\\x07bell"
         # DEL character
-        assert _sanitize_control_characters("text\x7Fdel") == "text\\x7fdel"
+        assert _sanitize_control_characters("text\x7fdel") == "text\\x7fdel"
 
     def test_sanitize_control_characters_printable(self):
         """Test printable characters are preserved."""
@@ -117,9 +118,9 @@ class TestSanitization:
 
     def test_sanitize_for_logging_zero_width_chars(self):
         """Test zero-width character removal."""
-        text = "hello\u200Bworld"  # Zero-width space
+        text = "hello\u200bworld"  # Zero-width space
         result = _sanitize_for_logging(text)
-        assert "\u200B" not in result
+        assert "\u200b" not in result
         assert "helloworld" in result
 
     def test_sanitize_for_logging_length_limit(self):
@@ -153,7 +154,7 @@ class TestSecretRedactingFormatter:
             lineno=1,
             msg="api_key=sk-1234567890abcdef",
             args=(),
-            exc_info=None
+            exc_info=None,
         )
 
         result = formatter.format(record)
@@ -170,7 +171,7 @@ class TestSecretRedactingFormatter:
             lineno=1,
             msg="password=secret123",
             args=(),
-            exc_info=None
+            exc_info=None,
         )
 
         result = formatter.format(record)
@@ -187,7 +188,7 @@ class TestSecretRedactingFormatter:
             lineno=1,
             msg="Using API key from ${env:API_KEY}",
             args=(),
-            exc_info=None
+            exc_info=None,
         )
 
         result = formatter.format(record)
@@ -204,7 +205,7 @@ class TestSecretRedactingFormatter:
             lineno=1,
             msg=original_msg,
             args=(),
-            exc_info=None
+            exc_info=None,
         )
 
         formatter.format(record)
@@ -220,7 +221,7 @@ class TestSecretRedactingFormatter:
             lineno=1,
             msg="Test message",
             args=(),
-            exc_info=None
+            exc_info=None,
         )
         record.api_key = "secret_key_123"
         record.password = "password123"
@@ -259,7 +260,7 @@ class TestStructuredFormatter:
             lineno=42,
             msg="Test message",
             args=(),
-            exc_info=None
+            exc_info=None,
         )
 
         result = formatter.format(record)
@@ -283,7 +284,7 @@ class TestStructuredFormatter:
             lineno=1,
             msg="Test",
             args=(),
-            exc_info=None
+            exc_info=None,
         )
 
         result = formatter.format(record)
@@ -303,6 +304,7 @@ class TestStructuredFormatter:
             raise ValueError("Test error")
         except ValueError:
             import sys
+
             exc_info = sys.exc_info()
 
         record = logging.LogRecord(
@@ -312,7 +314,7 @@ class TestStructuredFormatter:
             lineno=1,
             msg="Error occurred",
             args=(),
-            exc_info=exc_info
+            exc_info=exc_info,
         )
 
         result = formatter.format(record)
@@ -334,7 +336,7 @@ class TestStructuredFormatter:
             lineno=1,
             msg="Test",
             args=(),
-            exc_info=None
+            exc_info=None,
         )
         record.user_id = 123
         record.request_id = "req-456"
@@ -358,7 +360,7 @@ class TestStructuredFormatter:
             lineno=1,
             msg="Test",
             args=(),
-            exc_info=None
+            exc_info=None,
         )
         record.api_key = "secret123"
 
@@ -392,7 +394,7 @@ class TestConsoleFormatter:
             lineno=1,
             msg="Test message",
             args=(),
-            exc_info=None
+            exc_info=None,
         )
 
         result = formatter.format(record)
@@ -411,7 +413,7 @@ class TestConsoleFormatter:
             lineno=1,
             msg="Test message",
             args=(),
-            exc_info=None
+            exc_info=None,
         )
 
         result = formatter.format(record)
@@ -439,7 +441,7 @@ class TestConsoleFormatter:
                 lineno=1,
                 msg="Test",
                 args=(),
-                exc_info=None
+                exc_info=None,
             )
 
             result = formatter.format(record)
@@ -467,8 +469,8 @@ class TestLoggingSetup:
         assert root_logger.level == logging.DEBUG
 
     def test_setup_logging_env_variable(self):
-        """Test setup_logging reads from LOG_LEVEL env var."""
-        with patch.dict("os.environ", {"LOG_LEVEL": "WARNING"}):
+        """Test setup_logging reads from TEMPER_LOG_LEVEL env var."""
+        with patch.dict("os.environ", {"TEMPER_LOG_LEVEL": "WARNING"}):
             setup_logging()
 
             root_logger = logging.getLogger()
@@ -628,6 +630,7 @@ class TestLogFunctionCall:
         logger = get_logger("test")
 
         with patch.object(logger, "log") as mock_log:
+
             @log_function_call(logger, level=logging.DEBUG)
             def test_function(x, y):
                 return x + y
@@ -644,6 +647,7 @@ class TestLogFunctionCall:
         logger = get_logger("test")
 
         with patch.object(logger, "error") as mock_error:
+
             @log_function_call(logger)
             def failing_function():
                 raise ValueError("Test error")
@@ -659,6 +663,7 @@ class TestLogFunctionCall:
         logger = get_logger("test")
 
         with patch.object(logger, "log") as mock_log:
+
             @log_function_call(logger)
             def secure_function(username, password="default"):
                 return f"User: {username}"

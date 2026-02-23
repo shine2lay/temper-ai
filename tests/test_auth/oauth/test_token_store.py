@@ -1,7 +1,7 @@
 """Comprehensive tests for SecureTokenStore - P0 SECURITY.
 
 Tests cover:
-1. Token storage (InMemory, Redis-like backends)
+1. Token storage (InMemory backends)
 2. Token encryption at rest (Fernet AES-128-CBC + HMAC)
 3. Token expiration and rotation
 4. Token revocation (delete)
@@ -11,15 +11,16 @@ Tests cover:
 8. Audit logging
 9. Key rotation security
 """
+
 import json
 import secrets
 import threading
 import time
-from datetime import datetime, timedelta, timezone
-from unittest.mock import Mock, patch, MagicMock
+from datetime import datetime
+from unittest.mock import MagicMock, patch
 
 import pytest
-from cryptography.fernet import Fernet, InvalidToken
+from cryptography.fernet import Fernet
 
 from temper_ai.auth.oauth.token_store import SecureTokenStore
 from temper_ai.shared.utils.exceptions import SecurityError
@@ -81,11 +82,17 @@ class TestSecureTokenStoreInitialization:
         mock_keyring.get_password = MagicMock(return_value=None)
         mock_keyring.set_password = MagicMock(return_value=None)
 
-        with patch.dict('sys.modules', {'keyring': mock_keyring, 'keyring.errors': MagicMock()}):
-            with patch('temper_ai.auth.oauth._token_store_helpers.KEYRING_AVAILABLE', True):
+        with patch.dict(
+            "sys.modules", {"keyring": mock_keyring, "keyring.errors": MagicMock()}
+        ):
+            with patch(
+                "temper_ai.auth.oauth._token_store_helpers.KEYRING_AVAILABLE", True
+            ):
                 # Re-import to pick up mocked keyring
                 import importlib
+
                 import temper_ai.auth.oauth._token_store_helpers
+
                 importlib.reload(temper_ai.auth.oauth._token_store_helpers)
 
                 store = SecureTokenStore(use_keyring=True, require_keyring=False)
@@ -102,10 +109,16 @@ class TestSecureTokenStoreInitialization:
         mock_keyring.get_password = MagicMock(return_value=existing_key)
         mock_keyring.set_password = MagicMock(return_value=None)
 
-        with patch.dict('sys.modules', {'keyring': mock_keyring, 'keyring.errors': MagicMock()}):
-            with patch('temper_ai.auth.oauth._token_store_helpers.KEYRING_AVAILABLE', True):
+        with patch.dict(
+            "sys.modules", {"keyring": mock_keyring, "keyring.errors": MagicMock()}
+        ):
+            with patch(
+                "temper_ai.auth.oauth._token_store_helpers.KEYRING_AVAILABLE", True
+            ):
                 import importlib
+
                 import temper_ai.auth.oauth._token_store_helpers
+
                 importlib.reload(temper_ai.auth.oauth._token_store_helpers)
 
                 store = SecureTokenStore(use_keyring=True, require_keyring=False)
@@ -120,7 +133,9 @@ class TestSecureTokenStoreInitialization:
         monkeypatch.delenv("OAUTH_TOKEN_ENCRYPTION_KEY", raising=False)
 
         # Patch KEYRING_AVAILABLE to simulate missing keyring
-        with patch('temper_ai.auth.oauth._token_store_helpers.KEYRING_AVAILABLE', False):
+        with patch(
+            "temper_ai.auth.oauth._token_store_helpers.KEYRING_AVAILABLE", False
+        ):
             # Should raise error because keyring is required but not available
             # The exact exception type depends on the environment
             with pytest.raises(Exception):
@@ -135,15 +150,27 @@ class TestSecureTokenStoreInitialization:
             pass
 
         mock_keyring = MagicMock()
-        mock_keyring.get_password = MagicMock(side_effect=MockKeyringError("No keyring backend"))
+        mock_keyring.get_password = MagicMock(
+            side_effect=MockKeyringError("No keyring backend")
+        )
         mock_keyring_errors = MagicMock()
         mock_keyring_errors.KeyringError = MockKeyringError
 
-        with patch.dict('sys.modules', {'keyring': mock_keyring, 'keyring.errors': mock_keyring_errors}):
-            with patch('temper_ai.auth.oauth._token_store_helpers.KEYRING_AVAILABLE', True):
-                with patch('temper_ai.auth.oauth._token_store_helpers.KeyringError', MockKeyringError):
+        with patch.dict(
+            "sys.modules",
+            {"keyring": mock_keyring, "keyring.errors": mock_keyring_errors},
+        ):
+            with patch(
+                "temper_ai.auth.oauth._token_store_helpers.KEYRING_AVAILABLE", True
+            ):
+                with patch(
+                    "temper_ai.auth.oauth._token_store_helpers.KeyringError",
+                    MockKeyringError,
+                ):
                     import importlib
+
                     import temper_ai.auth.oauth._token_store_helpers
+
                     importlib.reload(temper_ai.auth.oauth._token_store_helpers)
 
                     store = SecureTokenStore(use_keyring=True, require_keyring=False)
@@ -161,9 +188,7 @@ class TestSecureTokenStoreInitialization:
     def test_initialization_custom_access_log_size(self, encryption_key):
         """Test initialization with custom max access log size."""
         store = SecureTokenStore(
-            encryption_key=encryption_key,
-            use_keyring=False,
-            max_access_log_size=100
+            encryption_key=encryption_key, use_keyring=False, max_access_log_size=100
         )
 
         assert store._access_log.maxlen == 100
@@ -180,7 +205,9 @@ class TestTokenStorageAndRetrieval:
         # Token should be encrypted (not plaintext)
         encrypted = token_store._tokens[user_id]
         assert isinstance(encrypted, bytes)
-        assert sample_token_data["access_token"] not in encrypted.decode('utf-8', errors='ignore')
+        assert sample_token_data["access_token"] not in encrypted.decode(
+            "utf-8", errors="ignore"
+        )
 
     def test_store_token_adds_metadata(self, token_store, sample_token_data):
         """Test store_token adds stored_at and expires_at metadata."""
@@ -270,7 +297,9 @@ class TestTokenExpiration:
         decrypted = token_store.cipher.decrypt(encrypted)
         data = json.loads(decrypted.decode())
         data["expires_at"] = "invalid_date"
-        token_store._tokens[user_id] = token_store.cipher.encrypt(json.dumps(data).encode())
+        token_store._tokens[user_id] = token_store.cipher.encrypt(
+            json.dumps(data).encode()
+        )
 
         result = token_store.retrieve_token(user_id)
 
@@ -366,7 +395,14 @@ class TestKeyRotation:
         rotated = token_store.retrieve_token(user_id)
         # Expires_at should be approximately the same (within 5 seconds)
         rotated_expires = datetime.fromisoformat(rotated["expires_at"])
-        assert abs((rotated_expires - datetime.fromisoformat(original_expires)).total_seconds()) < 5
+        assert (
+            abs(
+                (
+                    rotated_expires - datetime.fromisoformat(original_expires)
+                ).total_seconds()
+            )
+            < 5
+        )
 
     def test_rotate_key_skips_expired_tokens(self, token_store, sample_token_data):
         """Test rotate_key skips expired tokens during rotation."""
@@ -389,12 +425,16 @@ class TestKeyRotation:
         mock_keyring.get_password = MagicMock(return_value=encryption_key)
         mock_keyring.set_password = MagicMock(return_value=None)
 
-        with patch.dict('sys.modules', {'keyring': mock_keyring}):
+        with patch.dict("sys.modules", {"keyring": mock_keyring}):
             import importlib
+
             import temper_ai.auth.oauth.token_store
+
             importlib.reload(temper_ai.auth.oauth.token_store)
 
-            store = temper_ai.auth.oauth.token_store.SecureTokenStore(encryption_key=encryption_key, use_keyring=False)
+            store = temper_ai.auth.oauth.token_store.SecureTokenStore(
+                encryption_key=encryption_key, use_keyring=False
+            )
             store.using_keyring = True  # Force keyring mode for test
             store.keyring_service = "test_service"
             store.keyring_key_name = "test_key"
@@ -420,6 +460,7 @@ class TestThreadSafety:
 
     def test_concurrent_store_operations(self, token_store, sample_token_data):
         """Test concurrent store operations are thread-safe."""
+
         def store_tokens(thread_id):
             for i in range(10):
                 user_id = f"user_{thread_id}_{i}"
@@ -485,7 +526,9 @@ class TestThreadSafety:
         successful_deletes = sum(1 for _, success in delete_results if success)
         assert successful_deletes == 10
 
-    def test_concurrent_key_rotation_blocks_other_ops(self, token_store, sample_token_data):
+    def test_concurrent_key_rotation_blocks_other_ops(
+        self, token_store, sample_token_data
+    ):
         """Test key rotation blocks all other operations (thread safety)."""
         for i in range(5):
             token_store.store_token(f"user_{i}", sample_token_data, expires_in=3600)
@@ -569,7 +612,7 @@ class TestAuditLogging:
         custom_store = SecureTokenStore(
             encryption_key=Fernet.generate_key().decode(),
             use_keyring=False,
-            max_access_log_size=10
+            max_access_log_size=10,
         )
 
         # Generate more logs than max size

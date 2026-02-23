@@ -1,4 +1,5 @@
 """Tests for heuristic quality scorer."""
+
 from temper_ai.observability._quality_scorer import (
     SCORE_EMPTY,
     SCORE_FAILED,

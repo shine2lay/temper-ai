@@ -30,7 +30,7 @@ services:
       - ./configs:/app/configs:ro
       - temper-ai-data:/app/.temper-ai
     environment:
-      MAF_CONFIG_ROOT: /app/configs
+      TEMPER_CONFIG_ROOT: /app/configs
       TEMPER_DATABASE_URL: postgresql://temper_ai:${POSTGRES_PASSWORD:-changeme}@postgres:5432/temper_ai
       TEMPER_LOG_LEVEL: ${TEMPER_LOG_LEVEL:-INFO}
     env_file:
@@ -44,30 +44,6 @@ services:
       resources:
         limits:
           memory: 1G
-
-  temper-ai-worker:
-    build:
-      context: .
-      target: worker
-    volumes:
-      - ./configs:/app/configs:ro
-      - temper-ai-data:/app/.temper-ai
-    environment:
-      MAF_CONFIG_ROOT: /app/configs
-      TEMPER_DATABASE_URL: postgresql://temper_ai:${POSTGRES_PASSWORD:-changeme}@postgres:5432/temper_ai
-      TEMPER_WORKER_CONCURRENCY: ${TEMPER_WORKER_CONCURRENCY:-4}
-      TEMPER_LOG_LEVEL: ${TEMPER_LOG_LEVEL:-INFO}
-    env_file:
-      - path: .env
-        required: false
-    depends_on:
-      postgres:
-        condition: service_healthy
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          memory: 2G
 
 volumes:
   postgres-data:

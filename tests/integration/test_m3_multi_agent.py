@@ -25,6 +25,7 @@ M3 Feature Checklist:
 - ✅ m3-13: Configuration Schema
 - ✅ m3-14: Example Workflows
 """
+
 from importlib.util import find_spec
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -32,18 +33,21 @@ from unittest.mock import Mock, patch
 import pytest
 
 from temper_ai.agent.base_agent import AgentResponse
-
-# Core components
-from temper_ai.workflow.config_loader import ConfigLoader
-from temper_ai.workflow.domain_state import WorkflowDomainState
-from temper_ai.workflow.langgraph_compiler import LangGraphCompiler
 from temper_ai.agent.strategies.base import AgentOutput, SynthesisResult
 from temper_ai.agent.strategies.consensus import ConsensusStrategy
 from temper_ai.agent.strategies.debate import DebateAndSynthesize
 from temper_ai.agent.strategies.merit_weighted import MeritWeightedResolver
 
+# Core components
+from temper_ai.workflow.config_loader import ConfigLoader
+from temper_ai.workflow.domain_state import WorkflowDomainState
+from temper_ai.workflow.langgraph_compiler import LangGraphCompiler
+
 # Check for registry (may not exist yet)
 REGISTRY_AVAILABLE = find_spec("temper_ai.agent.strategies.registry") is not None
+
+if REGISTRY_AVAILABLE:
+    from temper_ai.agent.strategies.registry import get_strategy_from_config
 
 # Check for observability
 OBSERVABILITY_AVAILABLE = find_spec("temper_ai.observability.tracker") is not None
@@ -52,6 +56,7 @@ OBSERVABILITY_AVAILABLE = find_spec("temper_ai.observability.tracker") is not No
 # ============================================================================
 # FIXTURES
 # ============================================================================
+
 
 @pytest.fixture
 def config_loader():
@@ -79,14 +84,16 @@ def db_fixture():
 @pytest.fixture
 def mock_agent_responses():
     """Create mock agent responses for testing."""
+
     def create_mock_response(agent_name: str, output: str, confidence: float = 0.8):
         return AgentResponse(
             output=output,
             reasoning=f"Reasoning from {agent_name}: {output}",
             tokens=100,
             estimated_cost_usd=0.001,
-            tool_calls=[]
+            tool_calls=[],
         )
+
     return create_mock_response
 
 
@@ -94,6 +101,7 @@ def mock_agent_responses():
 def ollama_available():
     """Check if Ollama is available."""
     import httpx
+
     try:
         response = httpx.get("http://localhost:11434/api/tags", timeout=2.0)
         return response.status_code == 200
@@ -105,6 +113,7 @@ def ollama_available():
 # STRATEGY UNIT TESTS (Fast, no LLM required)
 # ============================================================================
 
+
 class TestConsensusStrategy:
     """Test consensus voting strategy."""
 
@@ -115,7 +124,7 @@ class TestConsensusStrategy:
         outputs = [
             AgentOutput("agent1", "Option A", "reason1", 0.9, {}),
             AgentOutput("agent2", "Option A", "reason2", 0.85, {}),
-            AgentOutput("agent3", "Option A", "reason3", 0.8, {})
+            AgentOutput("agent3", "Option A", "reason3", 0.8, {}),
         ]
 
         result = strategy.synthesize(outputs, {})
@@ -125,7 +134,10 @@ class TestConsensusStrategy:
         assert result.confidence > 0.8
         assert result.votes == {"Option A": 3}
         assert len(result.conflicts) == 0
-        assert "100.0% support" in result.reasoning or "unanimous" in result.reasoning.lower()
+        assert (
+            "100.0% support" in result.reasoning
+            or "unanimous" in result.reasoning.lower()
+        )
 
     def test_majority_consensus(self):
         """Test 2/3 majority voting."""
@@ -134,7 +146,7 @@ class TestConsensusStrategy:
         outputs = [
             AgentOutput("agent1", "Option A", "reason1", 0.9, {}),
             AgentOutput("agent2", "Option A", "reason2", 0.8, {}),
-            AgentOutput("agent3", "Option B", "reason3", 0.7, {})
+            AgentOutput("agent3", "Option B", "reason3", 0.7, {}),
         ]
 
         result = strategy.synthesize(outputs, {})
@@ -153,7 +165,7 @@ class TestConsensusStrategy:
         outputs = [
             AgentOutput("agent1", "Option A", "reason1", 0.8, {}),
             AgentOutput("agent2", "Option B", "reason2", 0.8, {}),
-            AgentOutput("agent3", "Option C", "reason3", 0.8, {})
+            AgentOutput("agent3", "Option C", "reason3", 0.8, {}),
         ]
 
         result = strategy.synthesize(outputs, {})
@@ -173,17 +185,16 @@ class TestDebateAndSynthesize:
 
         outputs = [
             AgentOutput("agent1", "Option A", "Strong argument for A", 0.9, {}),
-            AgentOutput("agent2", "Option A", "I agree with A", 0.85, {})
+            AgentOutput("agent2", "Option A", "I agree with A", 0.85, {}),
         ]
 
         result = strategy.synthesize(outputs, {"max_rounds": 1})
 
         assert result.decision == "Option A"
         assert result.method == "debate_and_synthesize"
-        assert result.metadata.get("total_rounds") == 1
-        # Convergence detection: if agents already agree, converged may be False with max_rounds=1
-        # Just check that it completed
-        assert result.metadata.get("total_rounds") >= 1
+        # The multi-round strategy metadata uses 'strategy' and 'mode' keys
+        assert result.metadata.get("mode") == "debate"
+        assert result.metadata.get("strategy") == "multi_round_debate"
 
     def test_multi_round_convergence(self):
         """Test debate converges after multiple rounds."""
@@ -192,16 +203,16 @@ class TestDebateAndSynthesize:
         # Round 1: Disagreement
         outputs_round1 = [
             AgentOutput("agent1", "Option A", "Initial position", 0.6, {}),
-            AgentOutput("agent2", "Option B", "Counter position", 0.6, {})
+            AgentOutput("agent2", "Option B", "Counter position", 0.6, {}),
         ]
 
         # Simulate debate (in practice would call LLM again)
         # For unit test, just verify the strategy accepts multi-round inputs
         result = strategy.synthesize(outputs_round1, {"max_rounds": 3})
 
-        # Should produce a decision (even if forced)
+        # Should produce a decision
         assert result.decision in ["Option A", "Option B"]
-        assert result.method in ["debate_and_synthesize", "debate_forced"]
+        assert result.method == "debate_and_synthesize"
 
 
 class TestMeritWeightedResolution:
@@ -214,15 +225,16 @@ class TestMeritWeightedResolution:
         # Expert agent vs novice agent (using confidence as merit proxy)
         outputs = [
             AgentOutput("expert", "Option A", "Expert analysis", 0.9, {}),
-            AgentOutput("novice", "Option B", "Novice view", 0.6, {})
+            AgentOutput("novice", "Option B", "Novice view", 0.6, {}),
         ]
 
         from temper_ai.agent.strategies.base import Conflict
+
         conflict = Conflict(
             agents=["expert", "novice"],
             decisions=["Option A", "Option B"],
             disagreement_score=0.5,
-            context={}
+            context={},
         )
 
         result = resolver.resolve(conflict, outputs, {})
@@ -245,6 +257,7 @@ class TestMeritWeightedResolution:
 # PARALLEL EXECUTION TESTS (Mock-based, fast)
 # ============================================================================
 
+
 class TestParallelExecution:
     """Test parallel agent execution."""
 
@@ -253,14 +266,14 @@ class TestParallelExecution:
         # Parallel config
         stage_config_parallel = {
             "execution": {"agent_mode": "parallel"},
-            "agents": ["agent1", "agent2"]
+            "agents": ["agent1", "agent2"],
         }
         assert compiler._get_agent_mode(stage_config_parallel) == "parallel"
 
         # Sequential config
         stage_config_sequential = {
             "execution": {"agent_mode": "sequential"},
-            "agents": ["agent1"]
+            "agents": ["agent1"],
         }
         assert compiler._get_agent_mode(stage_config_sequential) == "sequential"
 
@@ -283,13 +296,10 @@ class TestParallelExecution:
             "agents": ["agent1", "agent2", "agent3"],
             "execution": {"agent_mode": "parallel"},
             "collaboration": {"strategy": "consensus"},
-            "error_handling": {"min_successful_agents": 2}
+            "error_handling": {"min_successful_agents": 2},
         }
 
-        state = WorkflowDomainState(
-            workflow_id="test-wf",
-            stage_outputs={}
-        )
+        state = WorkflowDomainState(workflow_id="test-wf", stage_outputs={})
 
         # Mock config loader and agent factory
         def mock_load_agent(name):
@@ -303,10 +313,20 @@ class TestParallelExecution:
         def mock_create(config):
             return mock_agents[config.name]
 
-        with patch.object(compiler.config_loader, 'load_agent', side_effect=mock_load_agent):
-            with patch('temper_ai.workflow.schemas.AgentConfig', side_effect=mock_agent_config):
-                with patch('temper_ai.agent.utils.agent_factory.AgentFactory.create', side_effect=mock_create):
-                    result = compiler._execute_parallel_stage("test_stage", stage_config, state)
+        with patch.object(
+            compiler.config_loader, "load_agent", side_effect=mock_load_agent
+        ):
+            with patch(
+                "temper_ai.storage.schemas.agent_config.AgentConfig",
+                side_effect=mock_agent_config,
+            ):
+                with patch(
+                    "temper_ai.agent.utils.agent_factory.AgentFactory.create",
+                    side_effect=mock_create,
+                ):
+                    result = compiler._execute_parallel_stage(
+                        "test_stage", stage_config, state
+                    )
 
                     # Verify parallel execution completed
                     assert "test_stage" in result["stage_outputs"]
@@ -335,7 +355,7 @@ class TestParallelExecution:
             "agents": ["agent1", "agent2", "agent3"],
             "execution": {"agent_mode": "parallel"},
             "collaboration": {"strategy": "consensus"},
-            "error_handling": {"min_successful_agents": 2}  # 2/3 is OK
+            "error_handling": {"min_successful_agents": 2},  # 2/3 is OK
         }
 
         state = WorkflowDomainState(workflow_id="test-wf", stage_outputs={})
@@ -351,11 +371,21 @@ class TestParallelExecution:
         def mock_create(config):
             return mock_agents[config.name]
 
-        with patch.object(compiler.config_loader, 'load_agent', side_effect=mock_load_agent):
-            with patch('temper_ai.workflow.schemas.AgentConfig', side_effect=mock_agent_config):
-                with patch('temper_ai.agent.utils.agent_factory.AgentFactory.create', side_effect=mock_create):
+        with patch.object(
+            compiler.config_loader, "load_agent", side_effect=mock_load_agent
+        ):
+            with patch(
+                "temper_ai.storage.schemas.agent_config.AgentConfig",
+                side_effect=mock_agent_config,
+            ):
+                with patch(
+                    "temper_ai.agent.utils.agent_factory.AgentFactory.create",
+                    side_effect=mock_create,
+                ):
                     # Should succeed with 2/3 agents
-                    result = compiler._execute_parallel_stage("test_stage", stage_config, state)
+                    result = compiler._execute_parallel_stage(
+                        "test_stage", stage_config, state
+                    )
 
                     assert "test_stage" in result["stage_outputs"]
                     # Consensus from 2 successful agents
@@ -384,7 +414,7 @@ class TestParallelExecution:
             "agents": ["agent1", "agent2", "agent3"],
             "execution": {"agent_mode": "parallel"},
             "collaboration": {"strategy": "consensus"},
-            "error_handling": {"min_successful_agents": 2}  # Need 2, only 1 succeeds
+            "error_handling": {"min_successful_agents": 2},  # Need 2, only 1 succeeds
         }
 
         state = WorkflowDomainState(workflow_id="test-wf", stage_outputs={})
@@ -400,17 +430,28 @@ class TestParallelExecution:
         def mock_create(config):
             return mock_agents[config.name]
 
-        with patch.object(compiler.config_loader, 'load_agent', side_effect=mock_load_agent):
-            with patch('temper_ai.workflow.schemas.AgentConfig', side_effect=mock_agent_config):
-                with patch('temper_ai.agent.utils.agent_factory.AgentFactory.create', side_effect=mock_create):
+        with patch.object(
+            compiler.config_loader, "load_agent", side_effect=mock_load_agent
+        ):
+            with patch(
+                "temper_ai.storage.schemas.agent_config.AgentConfig",
+                side_effect=mock_agent_config,
+            ):
+                with patch(
+                    "temper_ai.agent.utils.agent_factory.AgentFactory.create",
+                    side_effect=mock_create,
+                ):
                     # Should raise RuntimeError
                     with pytest.raises(RuntimeError, match="Only 1/3 agents succeeded"):
-                        compiler._execute_parallel_stage("test_stage", stage_config, state)
+                        compiler._execute_parallel_stage(
+                            "test_stage", stage_config, state
+                        )
 
 
 # ============================================================================
 # SYNTHESIS TRACKING TESTS
 # ============================================================================
+
 
 class TestSynthesisTracking:
     """Test synthesis events are tracked in observability."""
@@ -421,68 +462,70 @@ class TestSynthesisTracking:
 
         outputs = [
             AgentOutput("agent1", "Option A", "reason1", 0.9, {}),
-            AgentOutput("agent2", "Option A", "reason2", 0.8, {})
+            AgentOutput("agent2", "Option A", "reason2", 0.8, {}),
         ]
 
         result = strategy.synthesize(outputs, {})
 
         # Verify result structure
-        assert hasattr(result, 'decision')
-        assert hasattr(result, 'confidence')
-        assert hasattr(result, 'method')
-        assert hasattr(result, 'votes')
-        assert hasattr(result, 'conflicts')
-        assert hasattr(result, 'reasoning')
-        assert hasattr(result, 'metadata')
+        assert hasattr(result, "decision")
+        assert hasattr(result, "confidence")
+        assert hasattr(result, "method")
+        assert hasattr(result, "votes")
+        assert hasattr(result, "conflicts")
+        assert hasattr(result, "reasoning")
+        assert hasattr(result, "metadata")
 
         # Verify metadata includes tracking info
-        assert 'supporters' in result.metadata
-        assert 'dissenters' in result.metadata
-        assert 'total_agents' in result.metadata
+        assert "supporters" in result.metadata
+        assert "dissenters" in result.metadata
+        assert "total_agents" in result.metadata
 
 
 # ============================================================================
 # STRATEGY REGISTRY TESTS (if available)
 # ============================================================================
 
-@pytest.mark.skipif(not REGISTRY_AVAILABLE, reason="Strategy registry not yet implemented")
+
+@pytest.mark.skipif(
+    not REGISTRY_AVAILABLE, reason="Strategy registry not yet implemented"
+)
 class TestStrategyRegistry:
     """Test strategy registry and factory."""
 
     def test_get_consensus_strategy(self):
         """Test getting consensus strategy from registry."""
-        strategy = get_strategy_from_config({
-            "collaboration": {"strategy": "consensus"}
-        })
+        strategy = get_strategy_from_config(
+            {"collaboration": {"strategy": "consensus"}}
+        )
 
         assert isinstance(strategy, ConsensusStrategy)
 
     def test_get_debate_strategy(self):
         """Test getting debate strategy from registry."""
-        strategy = get_strategy_from_config({
-            "collaboration": {"strategy": "debate"}
-        })
+        strategy = get_strategy_from_config({"collaboration": {"strategy": "debate"}})
 
         assert isinstance(strategy, DebateAndSynthesize)
 
     def test_invalid_strategy_name(self):
         """Test error handling for invalid strategy name."""
         with pytest.raises((ValueError, KeyError)):
-            get_strategy_from_config({
-                "collaboration": {"strategy": "nonexistent"}
-            })
+            get_strategy_from_config({"collaboration": {"strategy": "nonexistent"}})
 
 
 # ============================================================================
 # END-TO-END WORKFLOW TESTS (Require Ollama, marked slow)
 # ============================================================================
 
+
 @pytest.mark.slow
-@pytest.mark.skipif(True, reason="E2E tests with real LLM disabled by default - run with pytest -m slow")
+@pytest.mark.skip(reason="E2E tests with real LLM — run with: pytest -m slow")
 class TestE2EWorkflows:
     """End-to-end workflow tests with real Ollama execution."""
 
-    def test_parallel_consensus_workflow(self, compiler, config_loader, ollama_available):
+    def test_parallel_consensus_workflow(
+        self, compiler, config_loader, ollama_available
+    ):
         """Test multi_agent_research workflow with parallel execution."""
         if not ollama_available:
             pytest.skip("Ollama not available")
@@ -494,11 +537,9 @@ class TestE2EWorkflows:
         graph = compiler.compile(workflow_dict)
 
         # Execute with real LLM
-        result = graph.invoke({
-            "topic": "AI Safety",
-            "depth": "brief",
-            "workflow_id": "test-e2e-parallel"
-        })
+        result = graph.invoke(
+            {"topic": "AI Safety", "depth": "brief", "workflow_id": "test-e2e-parallel"}
+        )
 
         # Verify execution completed
         assert "stage_outputs" in result
@@ -521,12 +562,14 @@ class TestE2EWorkflows:
         graph = compiler.compile(workflow_dict)
 
         # Execute with real LLM
-        result = graph.invoke({
-            "decision_prompt": "Should we use microservices or monolith?",
-            "options": ["microservices", "monolith"],
-            "context": "Small startup with 5 engineers",
-            "workflow_id": "test-e2e-debate"
-        })
+        result = graph.invoke(
+            {
+                "decision_prompt": "Should we use microservices or monolith?",
+                "options": ["microservices", "monolith"],
+                "context": "Small startup with 5 engineers",
+                "workflow_id": "test-e2e-debate",
+            }
+        )
 
         # Verify execution completed
         assert "stage_outputs" in result
@@ -534,12 +577,17 @@ class TestE2EWorkflows:
 
         # Verify decision made
         decision = result["stage_outputs"]["debate_and_decide"]
-        assert decision in ["microservices", "monolith"] or "microservices" in decision or "monolith" in decision
+        assert (
+            decision in ["microservices", "monolith"]
+            or "microservices" in decision
+            or "monolith" in decision
+        )
 
 
 # ============================================================================
 # CONFIGURATION VALIDATION TESTS
 # ============================================================================
+
 
 class TestM3Configuration:
     """Test M3 configuration schemas and validation."""
@@ -564,14 +612,18 @@ class TestM3Configuration:
 
     def test_debate_stage_config_valid(self, config_loader):
         """Test debate stage config is valid."""
-        # Load without validation to test file structure
-        stage_dict = config_loader.load_stage("debate_stage", validate=False)
+        # Load without validation to test file structure (quick_debate is the debate stage)
+        stage_dict = config_loader.load_stage("quick_debate", validate=False)
 
         # Verify debate-specific fields
         collab = stage_dict.get("stage", {}).get("collaboration", {})
-        assert collab.get("strategy") in ["debate", "debate_and_synthesize"]
+        assert collab.get("strategy") in [
+            "debate",
+            "debate_and_synthesize",
+            "multi_round",
+        ]
 
-        # Should have max_rounds config
+        # Should have max_rounds config or convergence_threshold
         config = collab.get("config", {})
         assert "max_rounds" in config or "convergence_threshold" in config
 
@@ -580,8 +632,9 @@ class TestM3Configuration:
 # PERFORMANCE BENCHMARK TESTS (Optional)
 # ============================================================================
 
+
 @pytest.mark.benchmark
-@pytest.mark.skipif(True, reason="Benchmark tests disabled by default")
+@pytest.mark.skip(reason="Benchmark tests — run with: pytest -m slow")
 class TestM3Performance:
     """Performance benchmark tests for M3 features."""
 
@@ -602,7 +655,9 @@ class TestM3Performance:
         """Measure overhead of parallel execution vs sequential."""
         # This would require actual agent execution timing
         # Placeholder for future implementation
-        assert True, "Placeholder test for future parallel execution overhead measurement"
+        assert (
+            True
+        ), "Placeholder test for future parallel execution overhead measurement"
 
 
 class TestQualityGates:
@@ -622,7 +677,7 @@ class TestQualityGates:
             votes={"A": 1},
             conflicts=[],
             reasoning="Low confidence test",
-            metadata={}
+            metadata={},
         )
 
         # Stage config with quality gates enabled and escalate on failure
@@ -632,7 +687,7 @@ class TestQualityGates:
                 "min_confidence": 0.7,
                 "min_findings": 0,  # Disable
                 "require_citations": False,  # Disable
-                "on_failure": "escalate"
+                "on_failure": "escalate",
             }
         }
 
@@ -658,7 +713,7 @@ class TestQualityGates:
             votes={"A": 1},
             conflicts=[],
             reasoning="test",
-            metadata={}
+            metadata={},
         )
 
         stage_config = {
@@ -667,7 +722,7 @@ class TestQualityGates:
                 "min_confidence": 0.7,
                 "min_findings": 0,
                 "require_citations": False,
-                "on_failure": "proceed_with_warning"
+                "on_failure": "proceed_with_warning",
             }
         }
 
@@ -694,8 +749,8 @@ class TestQualityGates:
             reasoning="test",
             metadata={
                 "findings": ["f1", "f2", "f3", "f4", "f5", "f6"],
-                "citations": ["source1", "source2"]
-            }
+                "citations": ["source1", "source2"],
+            },
         )
 
         stage_config = {
@@ -704,7 +759,7 @@ class TestQualityGates:
                 "min_confidence": 0.7,
                 "min_findings": 5,
                 "require_citations": True,
-                "on_failure": "escalate"
+                "on_failure": "escalate",
             }
         }
 

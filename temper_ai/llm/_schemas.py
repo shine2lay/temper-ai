@@ -11,7 +11,6 @@ import json
 import logging
 from typing import Any
 
-from temper_ai.llm.providers import AnthropicLLM, OllamaLLM, OpenAILLM
 from temper_ai.llm.tool_keys import ToolKeys
 
 logger = logging.getLogger(__name__)
@@ -61,19 +60,18 @@ def build_text_schemas(
 
 
 def build_native_tool_defs(
-    llm: Any,
     tools: list[Any] | None,
     cached_defs: list[dict[str, Any]] | None,
     cached_hash: str | None,
 ) -> tuple[list[dict[str, Any]] | None, str | None]:
     """Build native tool definitions for providers with function calling.
 
+    Native tool definitions are the default for all providers.  Text-based
+    fallback is controlled by ``InferenceConfig.use_text_tool_schemas``.
+
     Returns (native_defs, new_hash). Reuses cached value when tool names
     hash matches cached_hash.
     """
-    if not isinstance(llm, (OllamaLLM, OpenAILLM, AnthropicLLM)):
-        return None, None
-
     if not tools:
         return None, None
 

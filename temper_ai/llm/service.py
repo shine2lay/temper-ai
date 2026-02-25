@@ -344,10 +344,14 @@ class LLMService:
         s.effective_start = start_time if start_time is not None else time.time()
         s.effective_timeout = max_execution_time or float("inf")
 
-        s.native_tool_defs = self._build_native_tool_defs(s.tools) if s.tools else None
         text_schemas = None
-        if s.tools and not s.native_tool_defs:
+        if s.tools and getattr(self.inference_config, "use_text_tool_schemas", False):
             text_schemas = self._build_text_schemas(s.tools)
+            s.native_tool_defs = None
+        else:
+            s.native_tool_defs = (
+                self._build_native_tool_defs(s.tools) if s.tools else None
+            )
 
         s.system_prompt = prompt
         s.prompt = prompt + text_schemas if text_schemas else prompt
@@ -583,7 +587,6 @@ class LLMService:
     ) -> list[dict[str, Any]] | None:
         """Build native tool definitions. Delegates to _schemas module."""
         defs, hash_val = build_native_tool_defs(
-            self.llm,
             tools,
             self._cached_native_defs,
             self._cached_native_defs_hash,

@@ -64,6 +64,14 @@ class InferenceConfig(BaseModel):
     timeout_seconds: int = Field(default=SECONDS_PER_30_MINUTES, gt=0)
     max_retries: int = Field(default=DEFAULT_MAX_RETRIES, ge=0)
     retry_delay_seconds: int = Field(default=int(SHORT_BACKOFF_SECONDS), ge=0)
+    use_text_tool_schemas: bool = Field(
+        default=False,
+        description=(
+            "Use text-based tool schemas in the prompt instead of native "
+            "function calling. Enable for providers that don't support "
+            "OpenAI-compatible tool_calls."
+        ),
+    )
 
     @model_validator(mode="after")
     def migrate_api_key(self) -> "InferenceConfig":

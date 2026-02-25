@@ -460,6 +460,13 @@ def _configure_app_middleware_and_routes(  # noqa: long
         auth_enabled=auth_enabled,
     )
 
+    # Unauthenticated endpoint: exposes TEMPER_DASHBOARD_TOKEN so the
+    # frontend can auto-authenticate without a manual login step.
+    @app.get(f"{_API_PREFIX}/runtime-config")
+    async def runtime_config() -> dict:
+        token = os.environ.get("TEMPER_DASHBOARD_TOKEN")
+        return {"dashboard_token": token}
+
     if auth_enabled:
         _register_auth_routes(app)
 

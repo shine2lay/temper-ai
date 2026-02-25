@@ -8,6 +8,8 @@ import json
 import logging
 from typing import Any
 
+from pydantic import BaseModel, ConfigDict, Field
+
 from temper_ai.tools.base import BaseTool, ToolMetadata, ToolResult
 
 logger = logging.getLogger(__name__)
@@ -85,6 +87,26 @@ def _validate_json(data: str, schema: dict[str, Any] | None) -> tuple[bool, str 
     return True, None
 
 
+class JsonParserParams(BaseModel):
+    """Parameters for the JSON parser tool."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    data: str = Field(description="JSON string to operate on")
+    operation: str = Field(
+        description="Operation: parse | extract | validate | format",
+    )
+    path: str | None = Field(
+        default=None,
+        description="Dot-notation path for extract operation (e.g., 'users.0.name')",
+    )
+    schema_: dict[str, Any] | None = Field(
+        default=None,
+        alias="schema",
+        description="Optional schema for validate operation (supports 'required' key list)",
+    )
+
+
 class JSONParserTool(BaseTool):
     """
     JSON parser tool for parsing, extracting, validating, and formatting JSON.
@@ -95,6 +117,8 @@ class JSONParserTool(BaseTool):
     - validate: Check if the data is valid JSON (optionally check required keys)
     - format: Pretty-print JSON with indentation
     """
+
+    params_model = JsonParserParams
 
     def get_metadata(self) -> ToolMetadata:
         """Return JSON parser tool metadata."""
@@ -110,28 +134,6 @@ class JSONParserTool(BaseTool):
             requires_credentials=False,
             modifies_state=False,
         )
-
-    def get_parameters_schema(self) -> dict[str, Any]:
-        """Return JSON schema for JSON parser parameters."""
-        return {
-            "type": "object",
-            "properties": {
-                "data": {"type": "string", "description": "JSON string to operate on"},
-                "operation": {
-                    "type": "string",
-                    "description": "Operation: parse | extract | validate | format",
-                },
-                "path": {
-                    "type": "string",
-                    "description": "Dot-notation path for extract operation (e.g., 'users.0.name')",
-                },
-                "schema": {
-                    "type": "object",
-                    "description": "Optional schema for validate operation (supports 'required' key list)",
-                },
-            },
-            "required": ["data", "operation"],
-        }
 
     def execute(self, **kwargs: Any) -> ToolResult:
         """Execute the JSON parser operation."""

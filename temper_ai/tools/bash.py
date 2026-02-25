@@ -15,6 +15,8 @@ import subprocess  # noqa: F401 — kept for test mock patching compatibility
 from pathlib import Path
 from typing import Any
 
+from pydantic import BaseModel, Field
+
 from temper_ai.tools._bash_helpers import (
     get_safe_env,
     run_command,
@@ -156,6 +158,47 @@ def _split_shell_commands(command: str) -> list[str]:
     return sub_commands
 
 
+class BashConfig(BaseModel):
+    """YAML config schema for the Bash tool."""
+
+    allowed_commands: list[str] | None = Field(
+        default=None,
+        description="Whitelist of allowed shell commands. If set, only these commands can be executed.",
+    )
+    workspace_root: str | None = Field(
+        default=None,
+        description="Root directory for command execution. Commands are restricted to this directory tree.",
+    )
+    default_timeout: int = Field(
+        default=DEFAULT_BASH_TIMEOUT,
+        description="Default timeout in seconds for command execution.",
+    )
+    shell_mode: bool = Field(
+        default=False,
+        description="If true, allow shell metacharacters and use shell=True. Still enforces workspace sandbox.",
+    )
+
+
+class BashParams(BaseModel):
+    """Call-time parameters for the Bash tool."""
+
+    command: str = Field(
+        description="Shell command to execute.",
+    )
+    working_directory: str | None = Field(
+        default=None,
+        description=(
+            "Working directory for command execution. "
+            "Use this instead of 'cd <dir> && <command>'. "
+            "Must be within the workspace/ directory."
+        ),
+    )
+    timeout: int = Field(
+        default=DEFAULT_BASH_TIMEOUT,
+        description=f"Timeout in seconds (max {MAX_BASH_TIMEOUT}). Default: {DEFAULT_BASH_TIMEOUT}.",
+    )
+
+
 class Bash(BaseTool):
     """
     Sandboxed bash command execution tool.
@@ -178,6 +221,9 @@ class Bash(BaseTool):
     - Commands run with shell=False by default to prevent injection
     - Working directory is validated before execution
     """
+
+    config_model = BashConfig
+    params_model = BashParams
 
     DEFAULT_TIMEOUT = DEFAULT_BASH_TIMEOUT  # 2 minutes default
 

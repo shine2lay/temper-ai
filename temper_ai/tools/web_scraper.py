@@ -231,7 +231,7 @@ def _check_ip_against_networks(
 
 def _validate_resolved_ips(addr_info: list[tuple]) -> str | None:
     """Validate all resolved IPs against blocked networks. Returns error or None."""
-    for family, _, _, _, sockaddr in addr_info:
+    for _family, _, _, _, sockaddr in addr_info:
         ip_str = sockaddr[0]
         try:
             ip = ipaddress.ip_address(ip_str)
@@ -471,6 +471,8 @@ class WebScraper(BaseTool):
         except (OSError, RuntimeError):
             pass
 
+    params_model = WebScraperParams
+
     def get_metadata(self) -> ToolMetadata:
         """Return web scraper tool metadata."""
         return ToolMetadata(
@@ -481,37 +483,6 @@ class WebScraper(BaseTool):
             requires_network=True,
             requires_credentials=False,
         )
-
-    def get_parameters_model(self) -> type[BaseModel]:
-        """Return Pydantic model for comprehensive parameter validation."""
-        return WebScraperParams
-
-    def get_parameters_schema(self) -> dict[str, Any]:
-        """Return JSON schema for web scraper parameters."""
-        return {
-            "type": "object",
-            "properties": {
-                "url": {
-                    "type": "string",
-                    "description": "URL to fetch (must start with http:// or https://)",
-                },
-                "extract_text": {
-                    "type": "boolean",
-                    "description": "Whether to extract text from HTML (default: true)",
-                    "default": True,
-                },
-                "timeout": {
-                    "type": "integer",
-                    "description": f"Request timeout in seconds (default: {self.DEFAULT_TIMEOUT})",
-                    "default": self.DEFAULT_TIMEOUT,
-                },
-                "user_agent": {
-                    "type": "string",
-                    "description": "Custom User-Agent header (optional)",
-                },
-            },
-            "required": ["url"],
-        }
 
     def _validate_url_input(self, url: Any) -> ToolResult | None:
         """Validate URL input. Returns error or None."""

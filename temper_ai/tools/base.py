@@ -6,13 +6,91 @@ Defines the interface that all tools must implement.
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, ClassVar
 
 from pydantic import BaseModel, Field, ValidationError
 
 from temper_ai.shared.constants.limits import MAX_LONG_STRING_LENGTH, MAX_TEXT_LENGTH
 
 logger = logging.getLogger(__name__)
+
+
+# ------------------------------------------------------------------
+# Module-level schema utilities (kept out of BaseTool to stay under
+# the 20-method god-class threshold).
+# ------------------------------------------------------------------
+
+
+def _pydantic_to_llm_schema(model: type[BaseModel]) -> dict[str, Any]:
+    """Convert a Pydantic ``model_json_schema()`` to LLM function-calling format.
+
+    Strips Pydantic noise (``title``, ``$defs``, root ``description``),
+    simplifies ``anyOf`` for Optional fields, and resolves ``$ref``.
+    """
+    raw = model.model_json_schema()
+    defs = raw.pop("$defs", {})
+    cleaned: dict[str, Any] = {}
+
+    for key, value in raw.items():
+        if key in ("title", "description"):
+            continue
+        if key == "properties":
+            cleaned["properties"] = {
+                name: _clean_schema_property(prop, defs) for name, prop in value.items()
+            }
+        else:
+            cleaned[key] = value
+
+    return cleaned
+
+
+def _clean_schema_property(
+    prop: dict[str, Any], defs: dict[str, Any]
+) -> dict[str, Any]:
+    """Clean a single property schema node for LLM consumption."""
+    result = dict(prop)
+
+    # Resolve $ref
+    if "$ref" in result:
+        ref_name = result["$ref"].rsplit("/", 1)[-1]
+        if ref_name in defs:
+            resolved = dict(defs[ref_name])
+            for key in ("description", "default"):
+                if key in result:
+                    resolved[key] = result[key]
+            result = resolved
+
+    # Simplify anyOf for Optional types (pick non-null branch)
+    if "anyOf" in result:
+        non_null = [t for t in result["anyOf"] if t != {"type": "null"}]
+        if len(non_null) == 1:
+            outer = {k: v for k, v in result.items() if k != "anyOf"}
+            result = {**non_null[0], **outer}
+
+    # Strip Pydantic title noise
+    result.pop("title", None)
+
+    # Strip default=null (implicit for optional fields)
+    if "default" in result and result["default"] is None:
+        del result["default"]
+
+    return result
+
+
+def _check_json_schema_type(value: Any, expected_type: str) -> bool:
+    """Check if value matches expected JSON schema type."""
+    type_map: dict[str, type[Any] | tuple[type[Any], ...]] = {
+        "string": str,
+        "number": (int, float),
+        "integer": int,
+        "boolean": bool,
+        "array": list,
+        "object": dict,
+    }
+    if expected_type not in type_map:
+        return True  # Unknown type, skip validation
+    expected_python_type = type_map[expected_type]
+    return isinstance(value, expected_python_type)
 
 
 class ToolParameter(BaseModel):
@@ -69,6 +147,9 @@ class BaseTool(ABC):
     All tools must inherit from this class and implement the required methods.
     """
 
+    config_model: ClassVar[type[BaseModel] | None] = None
+    params_model: ClassVar[type[BaseModel] | None] = None
+
     def __init__(self, config: dict[str, Any] | None = None):
         """Initialize tool with metadata and optional configuration.
 
@@ -105,52 +186,54 @@ class BaseTool(ABC):
         pass
 
     def get_parameters_model(self) -> type[BaseModel] | None:
-        """
-        Return Pydantic model class for parameter validation.
+        """Return Pydantic model class for parameter validation."""
+        return self.params_model
 
-        Override this method to provide a Pydantic model for comprehensive
-        parameter validation including constraints, formats, and custom validators.
-
-        Returns:
-            Pydantic BaseModel class or None for basic validation
-
-        Example:
-            class WebScraperParams(BaseModel):
-                url: HttpUrl  # Built-in URL validation
-                timeout: int = Field(default=30, gt=0, le=300)
-                user_agent: Optional[str] = None
-
-            def get_parameters_model(self):
-                return WebScraperParams
-        """
-        return None
-
-    @abstractmethod
     def get_parameters_schema(self) -> dict[str, Any]:
-        """
-        Return JSON schema for tool parameters (OpenAI function calling format).
+        """Return JSON schema for tool parameters (OpenAI function calling format).
 
-        Returns:
-            Dict with "type", "properties", "required" keys following JSON Schema spec.
-
-        Example:
-            {
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "Search query"
-                    },
-                    "max_results": {
-                        "type": "integer",
-                        "description": "Maximum results",
-                        "default": 10
-                    }
-                },
-                "required": ["query"]
-            }
+        Auto-derived from ``params_model`` when set. Override for dynamic schemas.
         """
-        pass
+        if self.params_model is not None:
+            return _pydantic_to_llm_schema(self.params_model)
+        raise NotImplementedError(
+            f"{self.__class__.__name__} must set params_model or override get_parameters_schema()"
+        )
+
+    def get_config_schema(self) -> dict[str, Any]:
+        """Return JSON schema for YAML config overrides.
+
+        Auto-derived from ``config_model`` when set. Override for custom schemas.
+        """
+        if self.config_model is not None:
+            return _pydantic_to_llm_schema(self.config_model)
+        return {"type": "object", "properties": {}}
+
+    def validate_config(self) -> ParameterValidationResult:
+        """Validate ``self.config`` against ``config_model`` if defined.
+
+        Jinja2 template strings (containing ``{{``) and internal keys
+        (starting with ``_``) are excluded from validation.
+        """
+        if self.config_model is None:
+            return ParameterValidationResult(valid=True, errors=[])
+        config_to_validate = {
+            k: v
+            for k, v in self.config.items()
+            if not k.startswith("_") and not (isinstance(v, str) and "{{" in v)
+        }
+        return self._validate_with_pydantic(config_to_validate, self.config_model)
+
+    def get_typed_config(self) -> BaseModel | None:
+        """Return a validated Pydantic instance of the tool config, or None."""
+        if self.config_model is None:
+            return None
+        config_clean = {
+            k: v
+            for k, v in self.config.items()
+            if not k.startswith("_") and not (isinstance(v, str) and "{{" in v)
+        }
+        return self.config_model(**config_clean)
 
     def get_result_schema(self) -> dict[str, Any] | None:
         """
@@ -349,30 +432,12 @@ class BaseTool(ABC):
             expected_type = param_schema.get("type")
 
             # Basic type checking
-            if not self._check_type(param_value, expected_type):
+            if not _check_json_schema_type(param_value, expected_type):
                 errors.append(
                     f"{param_name}: expected {expected_type}, got {type(param_value).__name__}"
                 )
 
         return ParameterValidationResult(valid=len(errors) == 0, errors=errors)
-
-    def _check_type(self, value: Any, expected_type: str) -> bool:
-        """Check if value matches expected JSON schema type."""
-        type_map: dict[str, type[Any] | tuple[type[Any], ...]] = {
-            "string": str,
-            "number": (int, float),
-            "integer": int,
-            "boolean": bool,
-            "array": list,
-            "object": dict,
-        }
-
-        if expected_type not in type_map:
-            return True  # Unknown type, skip validation
-
-        expected_python_type = type_map[expected_type]
-        # mypy needs help here - isinstance accepts both Type and Tuple of Types
-        return isinstance(value, expected_python_type)
 
     def _validate_metadata(self) -> None:
         """Validate that metadata is properly set."""
@@ -409,7 +474,7 @@ class BaseTool(ABC):
 
 
 # Consolidated: canonical definition in src/utils/exceptions.py
-from temper_ai.shared.utils.exceptions import SecurityError  # noqa: F401
+from temper_ai.shared.utils.exceptions import SecurityError  # noqa: E402, F401
 
 
 class ParameterSanitizer:
@@ -478,7 +543,7 @@ class ParameterSanitizer:
         try:
             normalized = Path(path).resolve()
         except (OSError, RuntimeError) as e:
-            raise SecurityError(f"Invalid path: {e}")
+            raise SecurityError(f"Invalid path: {e}") from e
 
         # Check if within allowed base directory
         if allowed_base:
@@ -486,10 +551,10 @@ class ParameterSanitizer:
                 allowed = Path(allowed_base).resolve()
                 # Check if normalized path is within allowed base
                 normalized.relative_to(allowed)
-            except ValueError:
+            except ValueError as e:
                 raise SecurityError(
                     f"Path traversal detected: {path} is outside {allowed_base}"
-                )
+                ) from e
 
         return str(normalized)
 

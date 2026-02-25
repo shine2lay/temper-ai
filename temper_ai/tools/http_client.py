@@ -9,6 +9,7 @@ import urllib.parse
 from typing import Any
 
 import httpx
+from pydantic import BaseModel, Field
 
 from temper_ai.tools.base import BaseTool, ToolMetadata, ToolResult
 from temper_ai.tools.http_client_constants import (
@@ -63,6 +64,30 @@ def _validate_headers(headers: Any) -> str | None:
     return None
 
 
+class HttpClientParams(BaseModel):
+    """Parameters for the HTTP client tool."""
+
+    url: str = Field(
+        description="Target URL (must start with http:// or https://)",
+    )
+    method: str = Field(
+        default="GET",
+        description="HTTP method (GET, POST, PUT, DELETE, PATCH, HEAD)",
+    )
+    headers: dict[str, str] | None = Field(
+        default=None,
+        description="Optional HTTP headers as key-value pairs",
+    )
+    body: dict[str, Any] | None = Field(
+        default=None,
+        description="Optional request body (sent as JSON)",
+    )
+    timeout: int = Field(
+        default=HTTP_DEFAULT_TIMEOUT,
+        description=f"Request timeout in seconds (default: {HTTP_DEFAULT_TIMEOUT})",
+    )
+
+
 class HTTPClientTool(BaseTool):
     """
     HTTP client tool for making outbound HTTP requests.
@@ -70,6 +95,8 @@ class HTTPClientTool(BaseTool):
     Supports common HTTP methods with SSRF protection (blocks localhost,
     internal IPs, and cloud metadata endpoints).
     """
+
+    params_model = HttpClientParams
 
     def get_metadata(self) -> ToolMetadata:
         """Return HTTP client tool metadata."""
@@ -85,37 +112,6 @@ class HTTPClientTool(BaseTool):
             requires_credentials=False,
             modifies_state=True,
         )
-
-    def get_parameters_schema(self) -> dict[str, Any]:
-        """Return JSON schema for HTTP client parameters."""
-        return {
-            "type": "object",
-            "properties": {
-                "url": {
-                    "type": "string",
-                    "description": "Target URL (must start with http:// or https://)",
-                },
-                "method": {
-                    "type": "string",
-                    "description": "HTTP method (GET, POST, PUT, DELETE, PATCH, HEAD)",
-                    "default": "GET",
-                },
-                "headers": {
-                    "type": "object",
-                    "description": "Optional HTTP headers as key-value pairs",
-                },
-                "body": {
-                    "type": "object",
-                    "description": "Optional request body (sent as JSON)",
-                },
-                "timeout": {
-                    "type": "integer",
-                    "description": f"Request timeout in seconds (default: {HTTP_DEFAULT_TIMEOUT})",
-                    "default": HTTP_DEFAULT_TIMEOUT,
-                },
-            },
-            "required": ["url"],
-        }
 
     def execute(self, **kwargs: Any) -> ToolResult:
         """

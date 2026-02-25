@@ -62,7 +62,7 @@ def validate_tool_interface(tool_class: type[Any]) -> tuple[bool, list[str]]:
     if inspect.isabstract(tool_class):
         errors.append("Tool class has unimplemented abstract methods")
 
-    required_methods = ["execute", "get_metadata", "get_parameters_schema"]
+    required_methods = ["execute", "get_metadata"]
     for method_name in required_methods:
         if not hasattr(tool_class, method_name):
             errors.append(f"Missing required method: {method_name}")
@@ -107,7 +107,7 @@ def _load_cached_tools(
         return None
 
     logger.info(f"Using cached discovered tools ({len(cached)} tools)")
-    for tool_name, tool_instance in cached.items():
+    for _tool_name, tool_instance in cached.items():
         # Create a fresh instance to give each registry its own tool.
         # Without this, apply_tool_config() from one agent mutates the
         # shared singleton, corrupting other agents' tool configs
@@ -197,7 +197,7 @@ def _discover_module_tools(
     discovered_count = 0
     skipped_tools: list[tuple[str, str]] = []
 
-    for name, obj in inspect.getmembers(module, inspect.isclass):
+    for _name, obj in inspect.getmembers(module, inspect.isclass):
         # Skip if not a tool class or not defined in this module
         if obj is BaseTool or obj.__module__ != module.__name__:
             continue
@@ -218,6 +218,39 @@ def _discover_module_tools(
     return registered_count, discovered_count, skipped_tools
 
 
+def _discover_package_tools(
+    tools_package: str,
+    registry: ToolRegistry,
+    discovered_tools: dict[str, BaseTool],
+) -> tuple[int, int, list[tuple[str, str]]]:
+    """Import all modules in a package and discover tools. Returns (registered, discovered, skipped)."""
+    registered_count = 0
+    discovered_count = 0
+    skipped_tools: list[tuple[str, str]] = []
+
+    package = importlib.import_module(tools_package)
+    if package.__file__ is None:
+        raise ValueError(f"Package {tools_package} has no __file__ attribute")
+    package_path = Path(package.__file__).parent
+
+    for _, module_name, is_pkg in pkgutil.iter_modules([str(package_path)]):
+        if is_pkg or module_name.startswith("_"):
+            continue
+        try:
+            module = importlib.import_module(f"{tools_package}.{module_name}")
+            reg, disc, skip = _discover_module_tools(module, registry, discovered_tools)
+            registered_count += reg
+            discovered_count += disc
+            skipped_tools.extend(skip)
+        except ImportError as e:
+            logger.warning(
+                f"Failed to import module {tools_package}.{module_name}: {e}"
+            )
+            skipped_tools.append((module_name, f"Import error: {e}"))
+
+    return registered_count, discovered_count, skipped_tools
+
+
 def auto_discover(
     registry: ToolRegistry,
     tools_package: str,
@@ -227,60 +260,28 @@ def auto_discover(
     set_cache_fn: Any,
 ) -> int:
     """Auto-discover and register tools from a package with detailed logging."""
-    # Try to load from cache first
     cached_count = _load_cached_tools(registry, use_cache, global_lock, get_cache_fn)
     if cached_count is not None:
         return cached_count
 
-    # Perform discovery
     logger.info(f"Starting tool discovery in package: {tools_package}")
-    registered_count = 0
-    discovered_count = 0
-    skipped_tools: list[tuple[str, str]] = []
     discovered_tools: dict[str, BaseTool] = {}
-
     try:
-        package = importlib.import_module(tools_package)
-        if package.__file__ is None:
-            raise ValueError(f"Package {tools_package} has no __file__ attribute")
-        package_path = Path(package.__file__).parent
-
-        # Iterate through modules
-        for _, module_name, is_pkg in pkgutil.iter_modules([str(package_path)]):
-            # Skip packages and private modules
-            if is_pkg or module_name.startswith("_"):
-                continue
-
-            # Try to import and discover tools in module
-            try:
-                module = importlib.import_module(f"{tools_package}.{module_name}")
-                reg, disc, skip = _discover_module_tools(
-                    module, registry, discovered_tools
-                )
-                registered_count += reg
-                discovered_count += disc
-                skipped_tools.extend(skip)
-            except ImportError as e:
-                logger.warning(
-                    f"Failed to import module {tools_package}.{module_name}: {e}"
-                )
-                skipped_tools.append((module_name, f"Import error: {e}"))
-
+        registered_count, discovered_count, skipped_tools = _discover_package_tools(
+            tools_package, registry, discovered_tools
+        )
     except ImportError as e:
         logger.error(f"Package {tools_package} not found for auto-discovery: {e}")
         return 0
 
     logger.info(
-        f"Tool discovery complete: {registered_count}/{discovered_count} tools registered, "
-        f"{len(skipped_tools)} skipped"
+        f"Tool discovery complete: {registered_count}/{discovered_count} tools registered, {len(skipped_tools)} skipped"
     )
-
     if skipped_tools and logger.isEnabledFor(logging.DEBUG):
         logger.debug("Skipped tools details:")
         for tool_name, reason in skipped_tools:
             logger.debug(f"  {tool_name}: {reason}")
 
-    # Cache discovered tools
     if use_cache and discovered_tools:
         with global_lock:
             set_cache_fn(discovered_tools)
@@ -325,14 +326,16 @@ def _load_tool_class(class_path: str) -> type[BaseTool]:
     try:
         module = importlib.import_module(module_name)
     except ImportError as e:
-        raise ToolRegistryError(f"Failed to import tool class '{class_path}': {e}")
+        raise ToolRegistryError(
+            f"Failed to import tool class '{class_path}': {e}"
+        ) from e
 
     try:
         tool_class: type[BaseTool] = getattr(module, class_name)
-    except AttributeError:
+    except AttributeError as e:
         raise ToolRegistryError(
             f"Tool class not found in module '{module_name}': {class_name}"
-        )
+        ) from e
 
     if not issubclass(tool_class, BaseTool):
         raise ToolRegistryError(f"Tool class must inherit from BaseTool: {class_path}")
@@ -357,7 +360,7 @@ def load_from_config(
     except Exception as e:
         raise ToolRegistryError(
             f"Failed to load tool configuration '{config_name}': {e}"
-        )
+        ) from e
 
     # Parse tool data
     tool_data = tool_config.get("tool", {})
@@ -382,7 +385,7 @@ def load_from_config(
         return tool_instance
 
     except (TypeError, ValueError, RuntimeError) as e:
-        raise ToolRegistryError(f"Failed to instantiate tool '{tool_name}': {e}")
+        raise ToolRegistryError(f"Failed to instantiate tool '{tool_name}': {e}") from e
 
 
 def load_all_from_configs(

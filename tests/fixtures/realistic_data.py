@@ -107,7 +107,7 @@ well-tested, production-ready code. {{input}}"""
             temperature=0.3,
             max_tokens=4000,
         ),
-        tools=["code_executor", "test_runner", "linter", "debugger"],
+        tools=["test_runner", "linter", "debugger"],
         error_handling=ErrorHandlingConfig(
             retry_strategy="ExponentialBackoff", fallback="GracefulDegradation"
         ),
@@ -363,7 +363,7 @@ def create_realistic_workflow_config(
     stage_types = ["research", "analysis", "synthesis", "development", "review"]
     selected_stages = stage_types[: min(num_stages, len(stage_types))]
 
-    config = {"workflow": {"name": name, "stages": selected_stages}}
+    config: dict[str, Any] = {"workflow": {"name": name, "stages": selected_stages}}
 
     if include_metadata:
         config["workflow"]["metadata"] = REALISTIC_COMPLEX_METADATA
@@ -411,7 +411,9 @@ def create_realistic_init_node():
     return init_node
 
 
-def create_realistic_stage_node(stage_name: str, output_data: dict[str, Any] = None):
+def create_realistic_stage_node(
+    stage_name: str, output_data: dict[str, Any] | None = None
+):
     """Create a realistic stage node for testing.
 
     Returns a function that simulates stage execution with realistic outputs.
@@ -967,7 +969,11 @@ class RealisticConfigLoader:
         >>> assert agent_config["agent"]["name"] == "research_agent"
     """
 
-    def __init__(self, agents: dict[str, dict] = None, stages: dict[str, dict] = None):
+    def __init__(
+        self,
+        agents: dict[str, dict] | None = None,
+        stages: dict[str, dict] | None = None,
+    ):
         """Initialize with custom agent and stage configurations.
 
         Args:
@@ -1067,7 +1073,7 @@ REALISTIC_CONFIG_LOADER = RealisticConfigLoader(
 
 def create_realistic_stage_config(
     name: str = "test_stage",
-    agents: list[str] = None,
+    agents: list[str] | None = None,
     agent_mode: str = "sequential",
     enable_synthesis: bool = False,
     enable_quality_gates: bool = False,
@@ -1176,10 +1182,10 @@ class TestAgent:
         )
         self.confidence = confidence
         self.call_count = 0
-        self.last_input = None
+        self.last_input: dict[str, Any] | None = None
 
     def execute(
-        self, input_data: dict[str, Any], context: dict[str, Any] = None
+        self, input_data: dict[str, Any], context: dict[str, Any] | None = None
     ) -> dict[str, Any]:
         """Execute with deterministic output - no LLM calls.
 
@@ -1228,7 +1234,7 @@ class TestAgent:
 
 
 def create_test_agent(
-    name: str, output: str = None, confidence: float = 0.85
+    name: str, output: str | None = None, confidence: float = 0.85
 ) -> TestAgent:
     """Create test agent with specific output.
 

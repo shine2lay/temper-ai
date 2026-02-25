@@ -67,7 +67,10 @@ def check_budget(test_name: str, result_seconds: float) -> None:
     elif result_seconds > budget["alert"]:
         import warnings
 
-        warnings.warn(f"APPROACHING BUDGET: {result_seconds:.3f}s > {budget['alert']}s")
+        warnings.warn(
+            f"APPROACHING BUDGET: {result_seconds:.3f}s > {budget['alert']}s",
+            stacklevel=2,
+        )
 
 
 # ============================================================================
@@ -278,7 +281,7 @@ def test_compiler_schema_validation(benchmark):
                 inference=InferenceConfig(
                     provider="ollama", model="llama2", base_url="http://localhost:11434"
                 ),
-                tools=["code_executor", "test_runner", "linter"],
+                tools=["test_runner", "linter"],
             )
         )
 
@@ -589,7 +592,7 @@ def test_observability_buffer_flush(clean_db, benchmark):
             input_data={"test": i},
         )
 
-    result = benchmark(buffer.flush)
+    benchmark(buffer.flush)
     # Flush returns None on success
     assert True  # Benchmark completed successfully
 
@@ -621,7 +624,7 @@ def test_observability_tracker_percentiles(benchmark):
     tracker = PerformanceTracker()
 
     # Pre-fill with samples
-    for i in range(1000):
+    for _i in range(1000):
         with tracker.track_operation("test_op"):
             time.sleep(0.001)  # 1ms operation
 

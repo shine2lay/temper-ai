@@ -347,14 +347,8 @@ def _make_input_wrapper(
 class WorkflowExecutor:
     """Walks workflow stages as a Python loop — no compiled graph.
 
-    The core execution loop that replaces LangGraph's Pregel model for the
-    native engine. Walks stages respecting DAG order, evaluates conditions
-    and loops, and supports stage-to-stage negotiation.
-
-    Args:
-        node_builder: NodeBuilder for creating stage execution callables
-        condition_evaluator: ConditionEvaluator for conditional/loop expressions
-        negotiation_config: Optional negotiation configuration dict
+    Replaces LangGraph's Pregel model. Walks stages respecting DAG order,
+    evaluates conditions/loops, and supports stage-to-stage negotiation.
     """
 
     def __init__(

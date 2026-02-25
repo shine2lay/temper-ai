@@ -9,6 +9,8 @@ import math
 import operator
 from typing import Any
 
+from pydantic import BaseModel, Field
+
 from temper_ai.tools.base import BaseTool, ToolMetadata, ToolResult
 from temper_ai.tools.constants import (
     MAX_COLLECTION_SIZE,
@@ -60,6 +62,14 @@ MAX_NESTING_DEPTH = _MAX_NESTING_DEPTH
 MAX_EXPONENT = _MAX_EXPONENT
 
 
+class CalculatorParams(BaseModel):
+    """Parameters for the Calculator tool."""
+
+    expression: str = Field(
+        description="Mathematical expression to evaluate (e.g., '2 + 2', 'sqrt(16)', 'sin(pi/2)')",
+    )
+
+
 class Calculator(BaseTool):
     """
     Safe calculator tool for evaluating mathematical expressions.
@@ -76,6 +86,8 @@ class Calculator(BaseTool):
     - Division by zero handling
     """
 
+    params_model = CalculatorParams
+
     def get_metadata(self) -> ToolMetadata:
         """Return calculator tool metadata."""
         return ToolMetadata(
@@ -86,19 +98,6 @@ class Calculator(BaseTool):
             requires_network=False,
             requires_credentials=False,
         )
-
-    def get_parameters_schema(self) -> dict[str, Any]:
-        """Return JSON schema for calculator parameters."""
-        return {
-            "type": "object",
-            "properties": {
-                "expression": {
-                    "type": "string",
-                    "description": "Mathematical expression to evaluate (e.g., '2 + 2', 'sqrt(16)', 'sin(pi/2)')",
-                }
-            },
-            "required": ["expression"],
-        }
 
     def execute(self, **kwargs: Any) -> ToolResult:
         """

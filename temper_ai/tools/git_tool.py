@@ -9,6 +9,8 @@ import os
 import subprocess
 from typing import Any
 
+from pydantic import BaseModel, Field
+
 from temper_ai.tools.base import BaseTool, ToolMetadata, ToolResult
 from temper_ai.tools.git_tool_constants import (
     GIT_ALLOWED_OPERATIONS,
@@ -51,6 +53,22 @@ def _truncate_diff(output: str, operation: str) -> tuple[str, bool]:
     return output, False
 
 
+class GitToolParams(BaseModel):
+    """Parameters for the Git tool."""
+
+    operation: str = Field(
+        description="Git operation (e.g., status, diff, log, commit, branch)",
+    )
+    repo_path: str = Field(
+        default=".",
+        description="Path to the git repository (default: current directory)",
+    )
+    args: list[str] | None = Field(
+        default=None,
+        description="Additional arguments to pass to the git command",
+    )
+
+
 class GitTool(BaseTool):
     """
     Git tool for running safe Git operations in a local repository.
@@ -62,6 +80,8 @@ class GitTool(BaseTool):
     - No shell=True — subprocess with explicit arg list
     - Output truncated for large diffs/logs
     """
+
+    params_model = GitToolParams
 
     def get_metadata(self) -> ToolMetadata:
         """Return Git tool metadata."""
@@ -78,28 +98,47 @@ class GitTool(BaseTool):
             modifies_state=True,
         )
 
-    def get_parameters_schema(self) -> dict[str, Any]:
-        """Return JSON schema for Git tool parameters."""
-        return {
-            "type": "object",
-            "properties": {
-                "operation": {
-                    "type": "string",
-                    "description": "Git operation (e.g., status, diff, log, commit, branch)",
+    def _run_git_subprocess(
+        self, cmd: list[str], operation: str, repo_path: str
+    ) -> ToolResult:
+        """Run the git command and return a ToolResult."""
+        try:
+            proc = subprocess.run(  # noqa: S603
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=GIT_DEFAULT_TIMEOUT,
+                shell=False,
+            )
+            stdout, truncated = _truncate_diff(proc.stdout, operation)
+            stderr = proc.stderr.strip()
+            success = proc.returncode == 0
+            error_msg: str | None = (
+                (stderr or f"git {operation} exited with code {proc.returncode}")
+                if not success
+                else None
+            )
+            return ToolResult(
+                success=success,
+                result={
+                    "stdout": stdout,
+                    "stderr": stderr,
+                    "returncode": proc.returncode,
                 },
-                "repo_path": {
-                    "type": "string",
-                    "description": "Path to the git repository (default: current directory)",
-                    "default": ".",
+                error=error_msg,
+                metadata={
+                    "operation": operation,
+                    "repo_path": repo_path,
+                    "output_truncated": truncated,
                 },
-                "args": {
-                    "type": "array",
-                    "description": "Additional arguments to pass to the git command",
-                    "items": {"type": "string"},
-                },
-            },
-            "required": ["operation"],
-        }
+            )
+        except subprocess.TimeoutExpired:
+            return ToolResult(
+                success=False,
+                error=f"git {operation} timed out after {GIT_DEFAULT_TIMEOUT} seconds",
+            )
+        except (OSError, ValueError, FileNotFoundError) as exc:
+            return ToolResult(success=False, error=f"Failed to run git: {exc}")
 
     def execute(self, **kwargs: Any) -> ToolResult:
         """
@@ -129,46 +168,6 @@ class GitTool(BaseTool):
         if path_error:
             return ToolResult(success=False, error=path_error)
 
-        cmd = ["git", "-C", repo_path, operation] + args
-
-        try:
-            proc = subprocess.run(  # noqa: S603
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=GIT_DEFAULT_TIMEOUT,
-                shell=False,
-            )
-
-            stdout, truncated = _truncate_diff(proc.stdout, operation)
-            stderr = proc.stderr.strip()
-
-            success = proc.returncode == 0
-            error_msg: str | None = None
-            if not success:
-                error_msg = (
-                    stderr or f"git {operation} exited with code {proc.returncode}"
-                )
-
-            return ToolResult(
-                success=success,
-                result={
-                    "stdout": stdout,
-                    "stderr": stderr,
-                    "returncode": proc.returncode,
-                },
-                error=error_msg,
-                metadata={
-                    "operation": operation,
-                    "repo_path": repo_path,
-                    "output_truncated": truncated,
-                },
-            )
-
-        except subprocess.TimeoutExpired:
-            return ToolResult(
-                success=False,
-                error=f"git {operation} timed out after {GIT_DEFAULT_TIMEOUT} seconds",
-            )
-        except (OSError, ValueError, FileNotFoundError) as exc:
-            return ToolResult(success=False, error=f"Failed to run git: {exc}")
+        return self._run_git_subprocess(
+            ["git", "-C", repo_path, operation] + args, operation, repo_path
+        )

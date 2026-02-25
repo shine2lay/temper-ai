@@ -51,6 +51,16 @@ def apply_tool_config(
         else:
             tool_instance.config = dict(tool_config)
 
+    # Validate merged config against config_model (if defined)
+    if hasattr(tool_instance, "validate_config"):
+        result = tool_instance.validate_config()
+        if not result.valid:
+            logger.warning(
+                "Config validation failed for %s: %s",
+                tool_name,
+                result.error_message,
+            )
+
 
 def _restore_saved_templates(config: dict[str, Any]) -> None:
     """Restore original template strings from the ``_templates`` backup.
@@ -110,6 +120,17 @@ def _resolve_single_tool_templates(
             getattr(tool, "name", type(tool).__name__),
             {k: v for k, v in tool.config.items() if not k.startswith("_")},
         )
+
+    # Re-validate config after template resolution
+    if hasattr(tool, "validate_config"):
+        result = tool.validate_config()
+        if not result.valid:
+            logger.warning(
+                "[%s] Config validation failed for %s after template resolution: %s",
+                agent_name,
+                getattr(tool, "name", type(tool).__name__),
+                result.error_message,
+            )
 
 
 def resolve_tool_config_templates(

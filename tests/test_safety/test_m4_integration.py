@@ -372,8 +372,8 @@ class TestRealWorldDeploymentWorkflow:
                 }
             )
         )
-        # Note: RateLimiterPolicy doesn't have max_calls config, skip for now
-        # composer.add_policy(RateLimiterPolicy({}))
+        # Note: WindowRateLimitPolicy doesn't have max_calls config, skip for now
+        # composer.add_policy(WindowRateLimitPolicy({}))
 
         # Approval workflow
         approval = ApprovalWorkflow(default_timeout_minutes=60)

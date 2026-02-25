@@ -88,7 +88,7 @@ class PolicyComposer:
     Example:
         >>> composer = PolicyComposer()
         >>> composer.add_policy(FileAccessPolicy())
-        >>> composer.add_policy(RateLimiterPolicy())
+        >>> composer.add_policy(WindowRateLimitPolicy())
         >>> composer.add_policy(SecretDetectionPolicy())
         >>>
         >>> result = composer.validate(

@@ -201,7 +201,7 @@ class LLMService:
         self.pre_call_hooks = pre_call_hooks or []
         # Cached tool schemas (persists across run() calls)
         self._cached_text_schemas: str | None = None
-        self._cached_text_schemas_version: int = 0
+        self._cached_text_schemas_hash: str | None = None
         self._cached_native_defs: list[dict[str, Any]] | None = None
         self._cached_native_defs_hash: str | None = None
 
@@ -573,13 +573,13 @@ class LLMService:
 
     def _build_text_schemas(self, tools: list[Any] | None) -> str | None:
         """Build text-based tool schemas. Delegates to _schemas module."""
-        schemas, version = build_text_schemas(
+        schemas, hash_val = build_text_schemas(
             tools,
             self._cached_text_schemas,
-            self._cached_text_schemas_version,
+            self._cached_text_schemas_hash,
         )
         self._cached_text_schemas = schemas
-        self._cached_text_schemas_version = version
+        self._cached_text_schemas_hash = hash_val
         return schemas
 
     def _build_native_tool_defs(

@@ -181,24 +181,26 @@ class TestPromptCaching:
         assert time2 < time1
         assert schemas1 == schemas2
 
-    def test_cache_version_tracking(self):
-        """Test that cache version tracks tool count changes."""
+    def test_cache_hash_tracking(self):
+        """Test that cache hash tracks tool set changes."""
         service = _make_llm_service()
 
         # Initially no cached schemas
         assert service._cached_text_schemas is None
-        assert service._cached_text_schemas_version == 0
+        assert service._cached_text_schemas_hash is None
 
         # Add one tool
         tool1 = DummyTool("tool1")
         service._build_text_schemas([tool1])
-        assert service._cached_text_schemas_version == 1
+        assert service._cached_text_schemas_hash is not None
         assert service._cached_text_schemas is not None
+        hash_one_tool = service._cached_text_schemas_hash
 
-        # Add another tool
+        # Add another tool — hash should change
         tool2 = DummyTool("tool2")
         service._build_text_schemas([tool1, tool2])
-        assert service._cached_text_schemas_version == 2
+        assert service._cached_text_schemas_hash is not None
+        assert service._cached_text_schemas_hash != hash_one_tool
 
     def test_cache_with_different_tool_parameters(self):
         """Test that cache correctly includes tool parameter schemas."""
@@ -309,7 +311,7 @@ class TestPromptCaching:
         schemas = service._build_text_schemas([])
         assert schemas is None
         assert service._cached_text_schemas is None
-        assert service._cached_text_schemas_version == 0
+        assert service._cached_text_schemas_hash is None
 
     def test_cache_updates_when_tools_removed(self):
         """Test that cache updates when tools are removed."""

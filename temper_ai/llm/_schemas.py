@@ -1,7 +1,7 @@
 """Tool schema building and caching for LLMService.
 
 Builds text-based and native (function-calling) tool definitions,
-with caching by tool count/hash to avoid redundant rebuilds.
+with content-hash caching to avoid redundant rebuilds.
 """
 
 from __future__ import annotations
@@ -19,23 +19,24 @@ logger = logging.getLogger(__name__)
 def build_text_schemas(
     tools: list[Any] | None,
     cached_schemas: str | None,
-    cached_version: int,
-) -> tuple[str | None, int]:
+    cached_hash: str | None,
+) -> tuple[str | None, str | None]:
     """Build text-based tool schemas for LLMs without native tool support.
 
-    Returns (schemas_text, new_version). Reuses cached value when tool count
-    matches cached_version.
+    Returns (schemas_text, content_hash). Reuses cached value when tool names
+    hash matches cached_hash.
     """
     if not tools:
-        return None, 0
+        return None, None
 
     tools_dict = {t.name: t for t in tools}
     if not tools_dict:
-        return None, 0
+        return None, None
 
-    current_version = len(tools_dict)
-    if cached_schemas is not None and cached_version == current_version:
-        return cached_schemas, cached_version
+    tool_names_key = ",".join(sorted(tools_dict.keys()))
+    current_hash = hashlib.sha256(tool_names_key.encode()).hexdigest()
+    if cached_schemas is not None and cached_hash == current_hash:
+        return cached_schemas, cached_hash
 
     tool_schemas = [
         {
@@ -56,7 +57,7 @@ def build_text_schemas(
         + json.dumps(tool_schemas, indent=2)
     )
 
-    return tools_section, current_version
+    return tools_section, current_hash
 
 
 def build_native_tool_defs(
@@ -69,7 +70,7 @@ def build_native_tool_defs(
     Native tool definitions are the default for all providers.  Text-based
     fallback is controlled by ``InferenceConfig.use_text_tool_schemas``.
 
-    Returns (native_defs, new_hash). Reuses cached value when tool names
+    Returns (native_defs, new_hash). Reuses cached value when tool schemas
     hash matches cached_hash.
     """
     if not tools:
@@ -79,8 +80,12 @@ def build_native_tool_defs(
     if not tools_dict:
         return None, None
 
-    tool_names_key = ",".join(sorted(tools_dict.keys()))
-    current_hash = hashlib.sha256(tool_names_key.encode()).hexdigest()
+    schema_data = {
+        name: tool.get_parameters_schema() for name, tool in sorted(tools_dict.items())
+    }
+    current_hash = hashlib.sha256(
+        json.dumps(schema_data, sort_keys=True).encode()
+    ).hexdigest()
 
     if cached_defs is not None and cached_hash == current_hash:
         return cached_defs, cached_hash

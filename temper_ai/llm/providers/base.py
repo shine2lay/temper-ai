@@ -25,7 +25,6 @@ except ImportError:
 
 from temper_ai.llm.constants import (
     DEFAULT_MAX_CIRCUIT_BREAKERS,
-    DEFAULT_MAX_HTTP_CLIENTS,
     ERROR_MSG_RATE_LIMIT_EXCEEDED,
 )
 
@@ -46,9 +45,6 @@ from temper_ai.llm.providers._base_helpers import (
     get_or_create_async_client_safe as _get_async_client_safe,
 )
 from temper_ai.llm.providers._base_helpers import (
-    get_or_create_async_client_sync as _get_async_client_sync,
-)
-from temper_ai.llm.providers._base_helpers import (
     get_or_create_sync_client as _get_sync_client,
 )
 from temper_ai.llm.providers._base_helpers import (
@@ -58,7 +54,7 @@ from temper_ai.llm.providers._base_helpers import (
     reset_shared_circuit_breakers as _reset_shared_cbs,
 )
 from temper_ai.llm.providers._base_helpers import (
-    reset_shared_http_clients as _reset_shared_http,
+    sync_backoff_sleep as _sync_backoff_sleep,
 )
 from temper_ai.llm.providers._base_helpers import (
     validate_base_url as _validate_base_url,
@@ -98,7 +94,7 @@ HTTP_RATE_LIMIT = 429  # Rate limit exceeded
 HTTP_SERVER_ERROR = 500  # Server error threshold
 
 
-class LLMProvider(str, Enum):
+class LLMProvider(str, Enum):  # noqa: UP042
     """Supported LLM providers."""
 
     OLLAMA = "ollama"
@@ -204,10 +200,6 @@ class BaseLLM(LLMContextManagerMixin, ABC):
     )
     _circuit_breaker_lock = threading.Lock()
 
-    _MAX_HTTP_CLIENTS = DEFAULT_MAX_HTTP_CLIENTS
-    _http_clients: dict[tuple[str, str], httpx.Client] = {}
-    _http_client_lock = threading.Lock()
-
     _async_client_lock: asyncio.Lock | None = None
 
     def __init__(
@@ -267,11 +259,6 @@ class BaseLLM(LLMContextManagerMixin, ABC):
         """Reset all shared circuit breakers."""
         _reset_shared_cbs(cls._circuit_breakers, cls._circuit_breaker_lock)
 
-    @classmethod
-    def reset_shared_http_clients(cls) -> None:
-        """Close and remove all shared HTTP clients."""
-        _reset_shared_http(cls._http_clients, cls._http_client_lock)
-
     def _get_client(self) -> httpx.Client:
         """Get or create HTTPx client with lazy initialization."""
         return _get_sync_client(self)
@@ -279,10 +266,6 @@ class BaseLLM(LLMContextManagerMixin, ABC):
     async def _get_async_client_safe(self) -> httpx.AsyncClient:
         """Get or create async HTTPx client with proper async locking (M-19)."""
         return await _get_async_client_safe(self)
-
-    def _get_async_client(self) -> httpx.AsyncClient:
-        """Get or create async HTTPx client (sync accessor, backward compat)."""
-        return _get_async_client_sync(self)
 
     def close(self) -> None:
         """Close sync resources and release references (H-06)."""
@@ -394,7 +377,7 @@ class BaseLLM(LLMContextManagerMixin, ABC):
         """
         return await self.acomplete(prompt, context, **kwargs)
 
-    def complete(
+    def complete(  # noqa: C901
         self, prompt: str, context: ExecutionContext | None = None, **kwargs: Any
     ) -> LLMResponse:
         """Generate completion for prompt."""
@@ -419,51 +402,38 @@ class BaseLLM(LLMContextManagerMixin, ABC):
                     request_data = self._build_request(prompt, **kwargs)
                     headers = self._get_headers()
                     endpoint = f"{self.base_url}{self._get_endpoint()}"
-
                     response = self._get_client().post(
-                        endpoint,
-                        json=request_data,
-                        headers=headers,
+                        endpoint, json=request_data, headers=headers
                     )
-
                     return self._execute_and_parse(response, start_time, cache_key)
-
-                except httpx.TimeoutException:
+                except httpx.TimeoutException as exc:
                     if attempt == self.max_retries - 1:
                         raise LLMTimeoutError(
                             f"Request timed out after {self.timeout}s (attempt {attempt + 1}/{self.max_retries})"
-                        )
-                    # Exponential backoff with jitter (R-15) to decorrelate
-                    # retries across concurrent callers.
-                    delay = (
-                        self.retry_delay
-                        * (DEFAULT_BACKOFF_FACTOR**attempt)
-                        * (RETRY_JITTER_MIN + random.random())
-                    )  # noqa: S311 -- jitter/backoff, not crypto
-                    time.sleep(
-                        delay
-                    )  # Intentional blocking: sync retry uses sleep; use acomplete() for async contexts
-
+                        ) from exc
+                    _sync_backoff_sleep(self.retry_delay, attempt)
                 except LLMRateLimitError:
                     if attempt == self.max_retries - 1:
                         raise
-                    delay = (
-                        self.retry_delay
-                        * (DEFAULT_BACKOFF_FACTOR**attempt)
-                        * (RETRY_JITTER_MIN + random.random())
-                    )  # noqa: S311 -- jitter/backoff, not crypto
-                    time.sleep(
-                        delay
-                    )  # Intentional blocking: sync rate limit backoff; use acomplete() for async contexts
-
+                    _sync_backoff_sleep(self.retry_delay, attempt)
                 except (LLMAuthenticationError, httpx.HTTPStatusError):
                     raise
-
             raise LLMError(f"Failed after {self.max_retries} attempts")
 
         return self._circuit_breaker.call(_make_api_call)
 
-    async def acomplete(
+    async def _async_backoff_sleep(self, attempt: int) -> None:
+        """Async exponential backoff with jitter for retry loops."""
+        delay = (
+            self.retry_delay
+            * (DEFAULT_BACKOFF_FACTOR**attempt)
+            * (
+                RETRY_JITTER_MIN + random.random()
+            )  # noqa: S311 -- jitter/backoff, not crypto
+        )
+        await asyncio.sleep(delay)
+
+    async def acomplete(  # noqa: C901
         self, prompt: str, context: ExecutionContext | None = None, **kwargs: Any
     ) -> LLMResponse:
         """Async version: Generate completion for prompt."""
@@ -488,42 +458,23 @@ class BaseLLM(LLMContextManagerMixin, ABC):
                     request_data = self._build_request(prompt, **kwargs)
                     headers = self._get_headers()
                     endpoint = f"{self.base_url}{self._get_endpoint()}"
-
                     client = await self._get_async_client_safe()
                     response = await client.post(
-                        endpoint,
-                        json=request_data,
-                        headers=headers,
+                        endpoint, json=request_data, headers=headers
                     )
-
                     return self._execute_and_parse(response, start_time, cache_key)
-
-                except httpx.TimeoutException:
+                except httpx.TimeoutException as exc:
                     if attempt == self.max_retries - 1:
                         raise LLMTimeoutError(
                             f"Request timed out after {self.timeout}s (attempt {attempt + 1}/{self.max_retries})"
-                        )
-                    # Exponential backoff with jitter (R-15)
-                    delay = (
-                        self.retry_delay
-                        * (DEFAULT_BACKOFF_FACTOR**attempt)
-                        * (RETRY_JITTER_MIN + random.random())
-                    )  # noqa: S311 -- jitter/backoff, not crypto
-                    await asyncio.sleep(delay)
-
+                        ) from exc
+                    await self._async_backoff_sleep(attempt)
                 except LLMRateLimitError:
                     if attempt == self.max_retries - 1:
                         raise
-                    delay = (
-                        self.retry_delay
-                        * (DEFAULT_BACKOFF_FACTOR**attempt)
-                        * (RETRY_JITTER_MIN + random.random())
-                    )  # noqa: S311 -- jitter/backoff, not crypto
-                    await asyncio.sleep(delay)
-
+                    await self._async_backoff_sleep(attempt)
                 except (LLMAuthenticationError, httpx.HTTPStatusError):
                     raise
-
             raise LLMError(f"Failed after {self.max_retries} attempts")
 
         result: LLMResponse = await self._circuit_breaker.async_call(
@@ -554,6 +505,7 @@ def _init_infrastructure(
                 "LLM caching requested but cache module not available. "
                 "Install with: pip install src/cache",
                 RuntimeWarning,
+                stacklevel=2,
             )
 
     llm._circuit_breaker = _get_shared_cb(

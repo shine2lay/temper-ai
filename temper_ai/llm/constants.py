@@ -22,7 +22,6 @@ __all__ = [  # scanner: skip-unused
 DEFAULT_MAX_HTTP_CONNECTIONS = 100
 DEFAULT_MAX_KEEPALIVE_CONNECTIONS = 20
 DEFAULT_KEEPALIVE_EXPIRY_SECONDS = 30.0
-DEFAULT_MAX_HTTP_CLIENTS = 50  # LRU eviction threshold for shared client pool
 DEFAULT_MAX_CIRCUIT_BREAKERS = 100  # LRU eviction threshold for circuit breakers
 
 # ============================================================================

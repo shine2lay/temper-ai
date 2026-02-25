@@ -59,18 +59,12 @@ class InMemoryStorage:
 @pytest.fixture
 def mock_httpx_client():
     """Create a mock httpx.Client for testing."""
-    # M-49: Clear shared HTTP client pool before each test for isolation
-    from temper_ai.llm.providers.base import BaseLLM
-
-    BaseLLM.reset_shared_http_clients()
-
-    with patch("temper_ai.llm.providers.base.httpx.Client") as mock_client_class:
+    with patch(
+        "temper_ai.llm.providers._base_helpers.httpx.Client"
+    ) as mock_client_class:
         mock_client = MagicMock()
         mock_client_class.return_value = mock_client
         yield mock_client
-
-    # M-49: Clear again after test to prevent pollution
-    BaseLLM.reset_shared_http_clients()
 
 
 class TestOllamaLLM:
@@ -948,7 +942,7 @@ class TestCircuitBreaker:
         mock_httpx_client.post.side_effect = httpx.ConnectError("Connection refused")
 
         # Trigger 5 failures to open circuit
-        for i in range(5):
+        for _ in range(5):
             with pytest.raises(httpx.ConnectError):
                 llm.complete("test")
 
@@ -1867,7 +1861,7 @@ class TestFailoverProvider:
             "complete",
             return_value=LLMResponse(content="OK", model="backup", provider="openai"),
         ):
-            for i in range(3):
+            for _ in range(3):
                 failover.last_successful_index = 1  # Force backup
                 failover.complete("test")
 

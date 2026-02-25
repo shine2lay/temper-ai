@@ -13,7 +13,7 @@ import logging
 import threading
 import time
 from types import TracebackType
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, Self, cast
 from urllib.parse import urlparse
 
 import httpx
@@ -129,39 +129,6 @@ def reset_shared_circuit_breakers(
 # ---------------------------------------------------------------------------
 
 
-def get_shared_http_client(
-    clients: dict[tuple[str, str], httpx.Client],
-    lock: threading.Lock,
-    max_clients: int,
-    provider: str,
-    base_url: str,
-    **kwargs: Any,
-) -> httpx.Client:
-    """Get or create a shared HTTP client for this provider+base_url (M-42)."""
-    key = (provider, base_url)
-    with lock:
-        if key not in clients:
-            if len(clients) >= max_clients:
-                oldest_key = next(iter(clients))
-                clients.pop(oldest_key)
-            clients[key] = httpx.Client(**kwargs)
-        return clients[key]
-
-
-def reset_shared_http_clients(
-    clients: dict[tuple[str, str], httpx.Client],
-    lock: threading.Lock,
-) -> None:
-    """Close and remove all shared HTTP clients."""
-    with lock:
-        for client in clients.values():
-            try:
-                client.close()
-            except (OSError, RuntimeError) as e:
-                logger.debug(f"Error closing HTTP client during cleanup: {e}")
-        clients.clear()
-
-
 def get_or_create_sync_client(instance: BaseLLM) -> httpx.Client:
     """Get or create HTTPx client with lazy initialization and connection pooling."""
     if instance._client is None:
@@ -180,19 +147,10 @@ def get_or_create_sync_client(instance: BaseLLM) -> httpx.Client:
                 except ImportError:
                     http2_enabled = False
 
-                provider_name = instance.__class__.__name__.replace("LLM", "").lower()
-                from temper_ai.llm.providers.base import BaseLLM as _BaseLLM
-
-                # Create explicit timeout object to ensure all timeout types are set
                 timeout_config = httpx.Timeout(
                     timeout=instance.timeout, connect=CONNECT_TIMEOUT_SECONDS
                 )
-                instance._client = get_shared_http_client(
-                    _BaseLLM._http_clients,
-                    _BaseLLM._http_client_lock,
-                    _BaseLLM._MAX_HTTP_CLIENTS,
-                    provider=provider_name,
-                    base_url=instance.base_url,
+                instance._client = httpx.Client(
                     timeout=timeout_config,
                     limits=limits,
                     http2=http2_enabled,
@@ -548,6 +506,26 @@ async def execute_streaming_async_impl(
 # ---------------------------------------------------------------------------
 
 
+def sync_backoff_sleep(retry_delay: float, attempt: int) -> None:
+    """Exponential backoff with jitter for sync retry loops."""
+    import random
+    import time
+
+    from temper_ai.shared.constants.retries import (
+        DEFAULT_BACKOFF_MULTIPLIER,
+        RETRY_JITTER_MIN,
+    )
+
+    delay = (
+        retry_delay
+        * (DEFAULT_BACKOFF_MULTIPLIER**attempt)
+        * (
+            RETRY_JITTER_MIN + random.random()
+        )  # noqa: S311 -- jitter/backoff, not crypto
+    )
+    time.sleep(delay)  # Intentional blocking: sync retry backoff
+
+
 def bind_callable_attributes(instance: BaseLLM) -> None:
     """Bind callable attributes (not methods) to reduce class method count."""
     instance._build_bearer_auth_headers = lambda: build_bearer_auth_headers(instance)
@@ -582,7 +560,7 @@ def bind_callable_attributes(instance: BaseLLM) -> None:
 class LLMContextManagerMixin:
     """Mixin providing sync and async context manager support for LLM classes."""
 
-    def __enter__(self) -> LLMContextManagerMixin:
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(
@@ -594,7 +572,7 @@ class LLMContextManagerMixin:
         self.close()  # type: ignore[attr-defined]
         return False
 
-    async def __aenter__(self) -> LLMContextManagerMixin:
+    async def __aenter__(self) -> Self:
         return self
 
     async def __aexit__(

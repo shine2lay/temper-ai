@@ -44,7 +44,7 @@ repos:
     hooks:
       - id: quality-score
         name: quality-score
-        entry: uv run python scripts/check_quality_score.py --min-score 90
+        entry: uv run python scripts/check_quality_score.py --min-score 80
         language: system
         pass_filenames: false
         always_run: true

@@ -9,17 +9,19 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from pydantic import BaseModel, Field
+
+from temper_ai.shared.utils.path_safety import PathSafetyError, PathSafetyValidator
 from temper_ai.tools.base import (
     BaseTool,
     ParameterValidationResult,
     ToolMetadata,
     ToolResult,
 )
-
-logger = logging.getLogger(__name__)
-from temper_ai.shared.utils.path_safety import PathSafetyError, PathSafetyValidator
 from temper_ai.tools.constants import FILE_ENCODING_UTF8
 from temper_ai.tools.constants import MAX_FILE_SIZE as _MAX_FILE_SIZE
+
+logger = logging.getLogger(__name__)
 
 # Dangerous file extensions
 FORBIDDEN_EXTENSIONS: set[str] = {
@@ -34,6 +36,32 @@ FORBIDDEN_EXTENSIONS: set[str] = {
     ".cmd",
     ".ps1",
 }
+
+
+class FileWriterParams(BaseModel):
+    """Call-time parameters for the FileWriter tool."""
+
+    file_path: str = Field(
+        description="Path to file to write (absolute or relative to current directory)",
+    )
+    content: str = Field(description="Content to write to file")
+    overwrite: bool = Field(
+        default=False,
+        description="Whether to overwrite existing file (default: false)",
+    )
+    create_dirs: bool = Field(
+        default=True,
+        description="Whether to create parent directories if they don't exist (default: true)",
+    )
+
+
+class FileWriterConfig(BaseModel):
+    """YAML config schema for the FileWriter tool."""
+
+    allowed_root: str | None = Field(
+        default=None,
+        description="Root directory for file writes. Files can only be written within this directory tree.",
+    )
 
 
 class FileWriter(BaseTool):
@@ -55,6 +83,9 @@ class FileWriter(BaseTool):
     - File size limits
     - Uses centralized path_safety module
     """
+
+    params_model = FileWriterParams
+    config_model = FileWriterConfig
 
     MAX_FILE_SIZE = _MAX_FILE_SIZE  # 10MB limit
 
@@ -112,33 +143,6 @@ class FileWriter(BaseTool):
             requires_network=False,
             requires_credentials=False,
         )
-
-    def get_parameters_schema(self) -> dict[str, Any]:
-        """Return JSON schema for file writer parameters."""
-        return {
-            "type": "object",
-            "properties": {
-                "file_path": {
-                    "type": "string",
-                    "description": "Path to file to write (absolute or relative to current directory)",
-                },
-                "content": {
-                    "type": "string",
-                    "description": "Content to write to file",
-                },
-                "overwrite": {
-                    "type": "boolean",
-                    "description": "Whether to overwrite existing file (default: false)",
-                    "default": False,
-                },
-                "create_dirs": {
-                    "type": "boolean",
-                    "description": "Whether to create parent directories if they don't exist (default: true)",
-                    "default": True,
-                },
-            },
-            "required": ["file_path", "content"],
-        }
 
     def _sync_config(self) -> None:
         """Sync allowed_root from config (may be updated by agent)."""
@@ -292,5 +296,6 @@ class FileWriter(BaseTool):
         if self._configured_root and not Path(file_path).is_absolute():
             file_path = str(Path(self._configured_root) / file_path)
 
-        assert isinstance(content, str)  # guaranteed by _validate_inputs above
+        if not isinstance(content, str):
+            return ToolResult(success=False, error="content must be a string")
         return self._do_write(file_path, content, overwrite, create_dirs)

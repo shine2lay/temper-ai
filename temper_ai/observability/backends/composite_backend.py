@@ -8,12 +8,12 @@ are logged but never propagated, ensuring they cannot disrupt execution.
 import asyncio
 import logging
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import AbstractContextManager, asynccontextmanager
 from datetime import datetime
 from typing import (
     TYPE_CHECKING,
     Any,
-    ContextManager,
+    Literal,
 )
 
 from temper_ai.observability.backend import (
@@ -332,7 +332,7 @@ class _CompositeReadMixin:
         self,
         limit: int = 50,
         offset: int = 0,
-        status: str | None = None,  # noqa: params
+        status: str | None = None,
     ) -> list[dict[str, Any]]:
         """Delegate workflow listing to primary if it supports reads."""
         if isinstance(self._primary, ReadableBackendMixin):
@@ -484,7 +484,7 @@ class CompositeBackend(
         self,
         stage_id: str,
         end_time: datetime,
-        status: str,
+        status: Literal["completed", "failed"],
         error_message: str | None = None,
         num_agents_executed: int = 0,
         num_agents_succeeded: int = 0,
@@ -495,7 +495,7 @@ class CompositeBackend(
             stage_id,
             end_time,
             status,
-            error_message,  # type: ignore[arg-type]
+            error_message,
             num_agents_executed,
             num_agents_succeeded,
             num_agents_failed,
@@ -673,7 +673,7 @@ class CompositeBackend(
 
     # ========== Reads, Sessions, Maintenance — primary only ==========
 
-    def get_session_context(self) -> ContextManager[Any]:
+    def get_session_context(self) -> AbstractContextManager[Any]:
         """Delegate session context to primary backend."""
         return self._primary.get_session_context()
 

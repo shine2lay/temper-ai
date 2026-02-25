@@ -37,14 +37,15 @@ def export_waterfall_trace(workflow_id: str) -> dict[str, Any]:
     """
     with get_session() as session:
         # Get workflow
-        stmt = select(WorkflowExecution).where(WorkflowExecution.id == workflow_id)
-        workflow = session.exec(stmt).first()
+        wf_stmt = select(WorkflowExecution).where(WorkflowExecution.id == workflow_id)
+        workflow = session.exec(wf_stmt).first()
 
         if not workflow:
             return {"error": f"Workflow {workflow_id} not found"}
 
         # Build hierarchical trace
-        trace = {
+        children: list[dict[str, Any]] = []
+        trace: dict[str, Any] = {
             "id": workflow.id,
             "name": workflow.workflow_name,
             "type": "workflow",
@@ -59,20 +60,21 @@ def export_waterfall_trace(workflow_id: str) -> dict[str, Any]:
                 "total_tool_calls": workflow.total_tool_calls,
                 "environment": workflow.environment,
             },
-            "children": [],
+            "children": children,
         }
 
         # Get stages
-        stmt = (
+        stage_stmt = (
             select(StageExecution)
             .where(StageExecution.workflow_execution_id == workflow_id)
-            .order_by(StageExecution.start_time)
+            .order_by(StageExecution.start_time)  # type: ignore[arg-type]
         )
 
-        stages = session.exec(stmt).all()
+        stages = session.exec(stage_stmt).all()
 
         for stage in stages:
-            stage_node = {
+            stage_children: list[dict[str, Any]] = []
+            stage_node: dict[str, Any] = {
                 "id": stage.id,
                 "parent_id": workflow.id,
                 "name": stage.stage_name,
@@ -85,20 +87,21 @@ def export_waterfall_trace(workflow_id: str) -> dict[str, Any]:
                     "num_agents": stage.num_agents_executed,
                     "collaboration_rounds": stage.collaboration_rounds,
                 },
-                "children": [],
+                "children": stage_children,
             }
 
             # Get agents for this stage
-            stmt = (
+            agent_stmt = (
                 select(AgentExecution)
                 .where(AgentExecution.stage_execution_id == stage.id)
-                .order_by(AgentExecution.start_time)
+                .order_by(AgentExecution.start_time)  # type: ignore[arg-type]
             )
 
-            agents = session.exec(stmt).all()
+            agents = session.exec(agent_stmt).all()
 
             for agent in agents:
-                agent_node = {
+                agent_children: list[dict[str, Any]] = []
+                agent_node: dict[str, Any] = {
                     "id": agent.id,
                     "parent_id": stage.id,
                     "name": agent.agent_name,
@@ -115,20 +118,20 @@ def export_waterfall_trace(workflow_id: str) -> dict[str, Any]:
                         "llm_duration": agent.llm_duration_seconds,
                         "tool_duration": agent.tool_duration_seconds,
                     },
-                    "children": [],
+                    "children": agent_children,
                 }
 
                 # Get LLM calls for this agent
-                stmt = (
+                llm_stmt = (
                     select(LLMCall)
                     .where(LLMCall.agent_execution_id == agent.id)
-                    .order_by(LLMCall.start_time)
+                    .order_by(LLMCall.start_time)  # type: ignore[arg-type]
                 )
 
-                llm_calls = session.exec(stmt).all()
+                llm_calls = session.exec(llm_stmt).all()
 
                 for llm in llm_calls:
-                    llm_node = {
+                    llm_node: dict[str, Any] = {
                         "id": llm.id,
                         "parent_id": agent.id,
                         "name": f"{llm.provider}/{llm.model}",
@@ -149,19 +152,19 @@ def export_waterfall_trace(workflow_id: str) -> dict[str, Any]:
                             "temperature": llm.temperature,
                         },
                     }
-                    agent_node["children"].append(llm_node)
+                    agent_children.append(llm_node)
 
                 # Get tool executions for this agent
-                stmt = (
+                tool_stmt = (
                     select(ToolExecution)
                     .where(ToolExecution.agent_execution_id == agent.id)
-                    .order_by(ToolExecution.start_time)
+                    .order_by(ToolExecution.start_time)  # type: ignore[arg-type]
                 )
 
-                tools = session.exec(stmt).all()
+                tools = session.exec(tool_stmt).all()
 
                 for tool in tools:
-                    tool_node = {
+                    tool_node: dict[str, Any] = {
                         "id": tool.id,
                         "parent_id": agent.id,
                         "name": tool.tool_name,
@@ -177,11 +180,11 @@ def export_waterfall_trace(workflow_id: str) -> dict[str, Any]:
                             "safety_checks": tool.safety_checks_applied,
                         },
                     }
-                    agent_node["children"].append(tool_node)
+                    agent_children.append(tool_node)
 
-                stage_node["children"].append(agent_node)
+                stage_children.append(agent_node)
 
-            trace["children"].append(stage_node)
+            children.append(stage_node)
 
         return trace
 
@@ -203,6 +206,7 @@ def flatten_for_waterfall(trace: dict[str, Any]) -> list[dict[str, Any]]:
     flat: list[dict[str, Any]] = []
 
     def add_node(node: dict[str, Any], depth: int = 0) -> None:
+        """Recursively flatten a trace node and its children."""
         start = datetime.fromisoformat(node["start"])
         start_offset_ms = int((start - workflow_start).total_seconds() * 1000)
         duration_ms = int((node["duration"] or 0) * 1000)

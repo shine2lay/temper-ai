@@ -943,7 +943,7 @@ class TestCircuitBreaker:
 
         # Trigger 5 failures to open circuit
         for _ in range(5):
-            with pytest.raises(httpx.ConnectError):
+            with pytest.raises(LLMError, match="Connection failed"):
                 llm.complete("test")
 
         # Verify circuit is open
@@ -1005,7 +1005,7 @@ class TestCircuitBreaker:
         mock_httpx_client.post.side_effect = httpx.ConnectError("Connection refused")
 
         # Half-open test fails, circuit should re-open
-        with pytest.raises(httpx.ConnectError):
+        with pytest.raises(LLMError, match="Connection failed"):
             llm.complete("test")
 
         assert breaker.state == CircuitState.OPEN
@@ -1027,7 +1027,7 @@ class TestCircuitBreaker:
         # Fail Ollama circuit
         mock_httpx_client.post.side_effect = httpx.ConnectError("Refused")
         for _ in range(5):
-            with pytest.raises(httpx.ConnectError):
+            with pytest.raises(LLMError, match="Connection failed"):
                 ollama.complete("test")
 
         # Ollama circuit should be OPEN
@@ -1205,7 +1205,7 @@ class TestCircuitBreaker:
         def trigger_failure():
             try:
                 llm.complete("test")
-            except (httpx.ConnectError, CircuitBreakerError):
+            except (LLMError, CircuitBreakerError):
                 pass
 
         threads = [threading.Thread(target=trigger_failure) for _ in range(10)]
@@ -1233,7 +1233,7 @@ class TestCircuitBreaker:
         for _ in range(3):
             try:
                 llm.complete("test")
-            except httpx.ConnectError:
+            except LLMError:
                 pass
 
         # Failure count should be 3
@@ -1256,6 +1256,52 @@ class TestCircuitBreaker:
         llm.complete("test")
         assert llm._circuit_breaker.failure_count == 0
         assert llm._circuit_breaker.state == CircuitState.CLOSED
+
+
+class TestConnectErrorRetry:
+    """Test that connection errors are retried in BaseLLM.complete()/acomplete()."""
+
+    def test_retry_on_connect_error(self, mock_httpx_client):
+        """Test that ConnectError is retried and succeeds on retry."""
+        llm = OllamaLLM(
+            model="llama3.2:3b",
+            base_url="http://localhost:11434",
+            max_retries=3,
+            retry_delay=0.01,
+        )
+
+        # First call fails, second succeeds
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "response": "success",
+            "prompt_eval_count": 10,
+            "eval_count": 20,
+        }
+        mock_httpx_client.post.side_effect = [
+            httpx.ConnectError("Connection refused"),
+            mock_response,
+        ]
+
+        result = llm.complete("test")
+        assert result.content == "success"
+        assert mock_httpx_client.post.call_count == 2
+
+    def test_connect_error_exhausts_retries(self, mock_httpx_client):
+        """Test that ConnectError wraps in LLMError after max retries."""
+        llm = OllamaLLM(
+            model="llama3.2:3b",
+            base_url="http://localhost:11434",
+            max_retries=2,
+            retry_delay=0.01,
+        )
+
+        mock_httpx_client.post.side_effect = httpx.ConnectError("Connection refused")
+
+        with pytest.raises(LLMError, match="Connection failed"):
+            llm.complete("test")
+
+        assert mock_httpx_client.post.call_count == 2  # max_retries attempts
 
 
 class TestTokenLimitEnforcement:

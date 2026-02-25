@@ -12,6 +12,8 @@ import threading
 from collections.abc import Callable
 from typing import Any
 
+import httpx
+
 from temper_ai.shared.constants.retries import (
     DEFAULT_BACKOFF_MULTIPLIER,
     RETRY_JITTER_MIN,
@@ -44,7 +46,7 @@ def call_with_retry_sync(
                 return llm.stream(prompt, on_chunk=stream_callback, **llm_kwargs), None
             else:
                 return llm.complete(prompt, **llm_kwargs), None
-        except LLMError as e:
+        except (LLMError, httpx.TransportError) as e:
             last_error = e
             safe_err = sanitize_error_message(str(e))
             track_failed_call(observer, prompt, e, attempt + 1, max_retries + 1)
@@ -63,7 +65,7 @@ def call_with_retry_sync(
                 )
                 shutdown_event = threading.Event()
                 if shutdown_event.wait(timeout=backoff_delay):
-                    raise KeyboardInterrupt("Agent execution interrupted")
+                    raise KeyboardInterrupt("Agent execution interrupted") from None
             else:
                 logger.error(
                     "LLM call failed after %d attempts: %s",
@@ -101,7 +103,7 @@ async def call_with_retry_async(
                 )
             else:
                 return await llm.acomplete(prompt, **llm_kwargs), None
-        except LLMError as e:
+        except (LLMError, httpx.TransportError) as e:
             last_error = e
             safe_err = sanitize_error_message(str(e))
             track_failed_call(observer, prompt, e, attempt + 1, max_retries + 1)

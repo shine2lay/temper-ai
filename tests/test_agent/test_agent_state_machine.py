@@ -28,7 +28,11 @@ def create_mock_config(name: str = "test_agent", **kwargs) -> AgentConfig:
             "name": name,
             "description": "Test agent",
             "version": "1.0",
-            "inference": {"provider": "openai", "model": "gpt-4"},
+            "inference": {
+                "provider": "openai",
+                "model": "gpt-4",
+                "api_key_ref": "${env:OPENAI_API_KEY}",
+            },
             "prompt": {"template": "test template"},
             "tools": [],  # Required field
             "error_handling": {  # Required field
@@ -45,7 +49,7 @@ def create_mock_config(name: str = "test_agent", **kwargs) -> AgentConfig:
         for key, value in kwargs.items():
             config_dict["agent"][key] = value
 
-    return AgentConfig(**config_dict)
+    return AgentConfig(**config_dict)  # type: ignore[arg-type]
 
 
 class MockAgent(BaseAgent):

@@ -44,6 +44,9 @@ from temper_ai.llm.providers._base_helpers import (
 from temper_ai.llm.providers._base_helpers import (
     get_or_create_async_client_safe as _get_async_client_safe,
 )
+from temper_ai.llm.providers._base_helpers import (  # noqa: F401
+    get_or_create_async_client_sync as _get_async_client_sync,
+)
 from temper_ai.llm.providers._base_helpers import (
     get_or_create_sync_client as _get_sync_client,
 )
@@ -267,6 +270,10 @@ class BaseLLM(LLMContextManagerMixin, ABC):
         """Get or create async HTTPx client with proper async locking (M-19)."""
         return await _get_async_client_safe(self)
 
+    def _get_async_client(self) -> httpx.AsyncClient:
+        """Get or create async HTTPx client (sync accessor, backward compat)."""
+        return _get_async_client_sync(self)
+
     def close(self) -> None:
         """Close sync resources and release references (H-06)."""
         _close_sync(self)
@@ -416,6 +423,13 @@ class BaseLLM(LLMContextManagerMixin, ABC):
                     if attempt == self.max_retries - 1:
                         raise
                     _sync_backoff_sleep(self.retry_delay, attempt)
+                except httpx.ConnectError as exc:
+                    if attempt == self.max_retries - 1:
+                        raise LLMError(
+                            f"Connection failed to {self.base_url} after "
+                            f"{self.max_retries} attempts: {exc}"
+                        ) from exc
+                    _sync_backoff_sleep(self.retry_delay, attempt)
                 except (LLMAuthenticationError, httpx.HTTPStatusError):
                     raise
             raise LLMError(f"Failed after {self.max_retries} attempts")
@@ -472,6 +486,13 @@ class BaseLLM(LLMContextManagerMixin, ABC):
                 except LLMRateLimitError:
                     if attempt == self.max_retries - 1:
                         raise
+                    await self._async_backoff_sleep(attempt)
+                except httpx.ConnectError as exc:
+                    if attempt == self.max_retries - 1:
+                        raise LLMError(
+                            f"Connection failed to {self.base_url} after "
+                            f"{self.max_retries} attempts: {exc}"
+                        ) from exc
                     await self._async_backoff_sleep(attempt)
                 except (LLMAuthenticationError, httpx.HTTPStatusError):
                     raise

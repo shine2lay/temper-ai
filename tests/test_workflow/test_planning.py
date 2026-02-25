@@ -154,7 +154,7 @@ class TestGenerateWorkflowPlan:
         mock_llm.complete.return_value = mock_response
         mock_create.return_value = mock_llm
 
-        config = PlanningConfig(enabled=True)
+        config = PlanningConfig(enabled=True, api_key_ref="${env:OPENAI_API_KEY}")
         workflow_config = {
             "workflow": {
                 "name": "test",
@@ -176,7 +176,7 @@ class TestGenerateWorkflowPlan:
         side_effect=ImportError("no module"),
     )
     def test_handles_import_error(self, mock_create: MagicMock) -> None:
-        config = PlanningConfig(enabled=True)
+        config = PlanningConfig(enabled=True, api_key_ref="${env:OPENAI_API_KEY}")
         result = generate_workflow_plan({}, {}, config)
         assert result is None
 
@@ -185,7 +185,7 @@ class TestGenerateWorkflowPlan:
         side_effect=RuntimeError("connection failed"),
     )
     def test_handles_runtime_error(self, mock_create: MagicMock) -> None:
-        config = PlanningConfig(enabled=True)
+        config = PlanningConfig(enabled=True, api_key_ref="${env:OPENAI_API_KEY}")
         result = generate_workflow_plan({}, {}, config)
         assert result is None
 
@@ -194,7 +194,7 @@ class TestGenerateWorkflowPlan:
         side_effect=ConnectionError("timeout"),
     )
     def test_handles_connection_error(self, mock_create: MagicMock) -> None:
-        config = PlanningConfig(enabled=True)
+        config = PlanningConfig(enabled=True, api_key_ref="${env:OPENAI_API_KEY}")
         result = generate_workflow_plan({}, {}, config)
         assert result is None
 
@@ -203,7 +203,7 @@ class TestGenerateWorkflowPlan:
         side_effect=ValueError("bad config"),
     )
     def test_handles_value_error(self, mock_create: MagicMock) -> None:
-        config = PlanningConfig(enabled=True)
+        config = PlanningConfig(enabled=True, api_key_ref="${env:OPENAI_API_KEY}")
         result = generate_workflow_plan({}, {}, config)
         assert result is None
 
@@ -215,7 +215,7 @@ class TestGenerateWorkflowPlan:
         mock_llm.complete.return_value = mock_response
         mock_create.return_value = mock_llm
 
-        config = PlanningConfig(enabled=True)
+        config = PlanningConfig(enabled=True, api_key_ref="${env:OPENAI_API_KEY}")
         result = generate_workflow_plan(
             {"workflow": {"name": "t", "stages": []}}, {}, config
         )
@@ -230,7 +230,12 @@ class TestGenerateWorkflowPlan:
         mock_llm.complete.return_value = mock_response
         mock_create.return_value = mock_llm
 
-        config = PlanningConfig(enabled=True, temperature=0.5, max_tokens=1024)
+        config = PlanningConfig(
+            enabled=True,
+            temperature=0.5,
+            max_tokens=1024,
+            api_key_ref="${env:OPENAI_API_KEY}",
+        )
         generate_workflow_plan({"workflow": {"name": "t", "stages": []}}, {}, config)
 
         mock_llm.complete.assert_called_once()

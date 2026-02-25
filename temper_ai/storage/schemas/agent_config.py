@@ -86,6 +86,29 @@ class InferenceConfig(BaseModel):
 
         return self
 
+    @model_validator(mode="after")
+    def validate_provider_requirements(self) -> "InferenceConfig":
+        """Validate provider-specific field requirements at parse time."""
+        if self.provider == "custom":
+            raise ValueError(
+                "Provider 'custom' is not yet supported. "
+                "Use 'ollama', 'vllm', 'openai', or 'anthropic'."
+            )
+
+        if self.provider in ("openai", "anthropic") and not self.api_key_ref:
+            raise ValueError(
+                f"Provider '{self.provider}' requires 'api_key_ref' "
+                f"(e.g. api_key_ref: ${{env:OPENAI_API_KEY}})"
+            )
+
+        if self.provider == "vllm" and not self.base_url:
+            raise ValueError(
+                "Provider 'vllm' requires 'base_url' "
+                "(e.g. base_url: http://localhost:8000)"
+            )
+
+        return self
+
 
 class SafetyConfig(BaseModel):
     """Safety configuration."""

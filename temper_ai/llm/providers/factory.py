@@ -47,11 +47,11 @@ def _resolve_provider_enum(provider_str: str) -> LLMProvider:
     """
     try:
         return LLMProvider(provider_str.lower())
-    except ValueError:
+    except ValueError as exc:
         valid = [p.value for p in LLMProvider]
         raise LLMError(
             f"Unknown LLM provider '{provider_str}{ERROR_MSG_VALID_PROVIDERS_SUFFIX}{valid}"
-        )
+        ) from exc
 
 
 def create_llm_provider(inference_config: "InferenceConfig") -> BaseLLM:
@@ -120,7 +120,8 @@ def create_llm_from_config(inference_config: "InferenceConfig") -> BaseLLM:
     }
 
     if provider_enum in (LLMProvider.OPENAI, LLMProvider.ANTHROPIC):
-        # H-05: Resolve api_key_ref (prefer it over deprecated api_key)
+        # Schema-level validation (InferenceConfig) catches missing api_key_ref;
+        # here we resolve the actual env-var value.
         if inference_config.api_key_ref:
             # Secret resolution from environment variable matching the ref name
             import os

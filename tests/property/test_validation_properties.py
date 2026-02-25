@@ -189,7 +189,7 @@ class TestInferenceConfigValidation:
     """Property-based tests for InferenceConfig validation."""
 
     @given(
-        provider=st.sampled_from(["openai", "anthropic", "ollama", "custom"]),
+        provider=st.sampled_from(["openai", "anthropic", "ollama", "vllm"]),
         model=st.text(min_size=1, max_size=50),
         temperature=st.floats(
             min_value=0.0, max_value=2.0, allow_nan=False, allow_infinity=False
@@ -201,11 +201,19 @@ class TestInferenceConfigValidation:
         self, provider, model, temperature, max_tokens
     ):
         """Property: InferenceConfig accepts valid parameters."""
+        # Provide required fields per provider
+        extra: dict[str, str] = {}
+        if provider in ("openai", "anthropic"):
+            extra["api_key_ref"] = "${env:TEST_API_KEY}"
+        if provider == "vllm":
+            extra["base_url"] = "http://localhost:8000"
+
         config = InferenceConfig(
             provider=provider,
             model=model,
             temperature=temperature,
             max_tokens=max_tokens,
+            **extra,
         )
 
         assert config.provider == provider
@@ -220,7 +228,11 @@ class TestInferenceConfigValidation:
     @settings(max_examples=50)
     def test_temperature_defaults_if_not_provided(self, provider, model):
         """Property: InferenceConfig has reasonable defaults for optional fields."""
-        config = InferenceConfig(provider=provider, model=model)
+        extra: dict[str, str] = {}
+        if provider in ("openai", "anthropic"):
+            extra["api_key_ref"] = "${env:TEST_API_KEY}"
+
+        config = InferenceConfig(provider=provider, model=model, **extra)
 
         assert config.provider == provider
         assert config.model == model

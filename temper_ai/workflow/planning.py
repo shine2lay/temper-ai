@@ -21,6 +21,7 @@ class PlanningConfig(BaseModel):
     provider: Literal["ollama", "vllm", "openai", "anthropic", "custom"] = "openai"
     model: str = "gpt-4o-mini"
     base_url: str | None = None
+    api_key_ref: str | None = None
     temperature: float = Field(default=0.3, ge=0.0, le=2.0)  # scanner: skip-magic
     max_tokens: int = Field(default=2048, gt=0)
 
@@ -76,6 +77,7 @@ def generate_workflow_plan(
             provider=planning_config.provider,
             model=planning_config.model,
             base_url=planning_config.base_url,
+            api_key_ref=planning_config.api_key_ref,
         )
         llm = create_llm_provider(inference_cfg)
         response = llm.complete(

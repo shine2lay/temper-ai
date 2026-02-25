@@ -53,7 +53,11 @@ class TestInferenceConfig:
 
     def test_inference_config_defaults(self):
         """Test default values in inference config."""
-        config = InferenceConfig(provider="openai", model="gpt-4")
+        config = InferenceConfig(
+            provider="openai",
+            model="gpt-4",
+            api_key_ref="${env:OPENAI_API_KEY}",
+        )
         assert config.temperature == 0.7
         assert config.max_tokens == 131072
         assert config.top_p == 0.9
@@ -93,6 +97,65 @@ class TestInferenceConfig:
             InferenceConfig(provider="ollama", model="test", top_p=-0.1)
         with pytest.raises(ValidationError):
             InferenceConfig(provider="ollama", model="test", top_p=1.1)
+
+    def test_openai_requires_api_key_ref(self):
+        """Test that openai provider requires api_key_ref."""
+        with pytest.raises(ValidationError, match="requires 'api_key_ref'"):
+            InferenceConfig(provider="openai", model="gpt-4")
+
+    def test_anthropic_requires_api_key_ref(self):
+        """Test that anthropic provider requires api_key_ref."""
+        with pytest.raises(ValidationError, match="requires 'api_key_ref'"):
+            InferenceConfig(provider="anthropic", model="claude-3")
+
+    def test_openai_with_api_key_ref_valid(self):
+        """Test that openai with api_key_ref passes validation."""
+        config = InferenceConfig(
+            provider="openai",
+            model="gpt-4",
+            api_key_ref="${env:OPENAI_API_KEY}",
+        )
+        assert config.api_key_ref == "${env:OPENAI_API_KEY}"
+
+    def test_openai_with_deprecated_api_key_valid(self):
+        """Test that deprecated api_key is migrated and passes validation."""
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            config = InferenceConfig(
+                provider="openai",
+                model="gpt-4",
+                api_key="sk-test-key",
+            )
+        # api_key should have been migrated to api_key_ref
+        assert config.api_key_ref == "sk-test-key"
+        assert config.api_key is None
+
+    def test_vllm_requires_base_url(self):
+        """Test that vllm provider requires base_url."""
+        with pytest.raises(ValidationError, match="requires 'base_url'"):
+            InferenceConfig(provider="vllm", model="meta-llama/Llama-3")
+
+    def test_vllm_with_base_url_valid(self):
+        """Test that vllm with base_url passes validation."""
+        config = InferenceConfig(
+            provider="vllm",
+            model="meta-llama/Llama-3",
+            base_url="http://localhost:8000",
+        )
+        assert config.base_url == "http://localhost:8000"
+
+    def test_ollama_no_api_key_required(self):
+        """Test that ollama needs neither api_key nor base_url."""
+        config = InferenceConfig(provider="ollama", model="llama3.2:3b")
+        assert config.api_key_ref is None
+        assert config.base_url is None
+
+    def test_custom_provider_rejected(self):
+        """Test that 'custom' provider is rejected with clear message."""
+        with pytest.raises(ValidationError, match="not yet supported"):
+            InferenceConfig(provider="custom", model="test")
 
 
 class TestSafetyConfig:

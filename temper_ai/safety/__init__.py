@@ -103,14 +103,7 @@ _LAZY_IMPORTS = {
         "temper_ai.safety.rollback",
         "CompositeRollbackStrategy",
     ),
-    # Circuit breakers and safety gates
-    "CircuitBreaker": ("temper_ai.safety.circuit_breaker", "CircuitBreaker"),
-    "CircuitBreakerState": ("temper_ai.safety.circuit_breaker", "CircuitBreakerState"),
-    "CircuitBreakerOpen": ("temper_ai.safety.circuit_breaker", "CircuitBreakerOpen"),
-    "CircuitBreakerMetrics": (
-        "temper_ai.safety.circuit_breaker",
-        "CircuitBreakerMetrics",
-    ),
+    # Safety gates and circuit breaker manager
     "SafetyGate": ("temper_ai.safety.circuit_breaker", "SafetyGate"),
     "SafetyGateBlocked": ("temper_ai.safety.circuit_breaker", "SafetyGateBlocked"),
     "CircuitBreakerManager": (
@@ -242,11 +235,7 @@ __all__ = [
     "FileRollbackStrategy",
     "StateRollbackStrategy",
     "CompositeRollbackStrategy",
-    # Circuit breakers and safety gates
-    "CircuitBreaker",
-    "CircuitBreakerState",
-    "CircuitBreakerOpen",
-    "CircuitBreakerMetrics",
+    # Safety gates and circuit breaker manager
     "SafetyGate",
     "SafetyGateBlocked",
     "CircuitBreakerManager",

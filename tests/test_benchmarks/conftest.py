@@ -8,8 +8,7 @@ from unittest.mock import MagicMock, Mock
 import pytest
 
 try:
-    from temper_ai.agent.llm_providers import BaseLLM, LLMResponse
-
+    from temper_ai.llm.providers.base import BaseLLM, LLMResponse
     from temper_ai.observability.database import DatabaseManager
 except ImportError:
     BaseLLM = None  # type: ignore[assignment,misc]
@@ -48,7 +47,7 @@ WORKFLOW_LLM_LATENCY = float(os.getenv("WORKFLOW_LLM_LATENCY", "0.1"))
 # Performance Budgets (seconds unless noted)
 # ============================================================================
 
-PERFORMANCE_BUDGETS = {
+PERFORMANCE_BUDGETS: dict[str, dict[str, float]] = {
     # Compiler budgets
     "compiler_simple": {"target": 1.0, "alert": 0.9, "fail": 1.5},
     "compiler_medium": {"target": 3.0, "alert": 2.7, "fail": 4.5},
@@ -81,7 +80,10 @@ def check_budget(test_name: str, result_seconds: float) -> None:
     elif result_seconds > budget["alert"]:
         import warnings
 
-        warnings.warn(f"APPROACHING BUDGET: {result_seconds:.3f}s > {budget['alert']}s")
+        warnings.warn(
+            f"APPROACHING BUDGET: {result_seconds:.3f}s > {budget['alert']}s",
+            stacklevel=2,
+        )
 
 
 # ============================================================================

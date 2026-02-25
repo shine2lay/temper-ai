@@ -3,33 +3,13 @@
 This module provides SafetyGate and CircuitBreakerManager which build on
 top of the unified CircuitBreaker from ``temper_ai.shared.core.circuit_breaker``.
 
-.. deprecated::
-    The core circuit breaker classes (CircuitBreaker, CircuitBreakerError,
-    CircuitBreakerMetrics, CircuitState) re-exported here are deprecated.
-    Import them directly from ``temper_ai.shared.core.circuit_breaker`` instead.
-
 Key Features:
-- Circuit breaker pattern (CLOSED/OPEN/HALF_OPEN states)
-- Failure threshold monitoring
-- Automatic recovery attempts
 - Safety gates with policy integration
-- Circuit breaker metrics and history
+- Circuit breaker manager for coordinating multiple breakers
 - Integration with rollback and approval systems
-
-Example:
-    >>> breaker = CircuitBreaker(name="api_calls", failure_threshold=5, timeout_seconds=60)
-    >>>
-    >>> # Execute with circuit breaker protection
-    >>> try:
-    ...     with breaker:
-    ...         risky_api_call()
-    ... except CircuitBreakerOpen:
-    ...     print("Circuit breaker is open - too many failures")
 """
 
-import importlib
 import threading
-import warnings
 from collections.abc import Generator
 from contextlib import contextmanager
 from typing import Any
@@ -40,45 +20,9 @@ from temper_ai.shared.constants.limits import (
     MULTIPLIER_SMALL,
     THRESHOLD_SMALL_COUNT,
 )
-
-# Re-export map for deprecated names from temper_ai.shared.core.circuit_breaker
-_SHIM_EXPORTS = {
-    "CircuitBreaker": "temper_ai.shared.core.circuit_breaker",
-    "CircuitBreakerError": "temper_ai.shared.core.circuit_breaker",
-    "CircuitBreakerMetrics": "temper_ai.shared.core.circuit_breaker",
-    "CircuitState": "temper_ai.shared.core.circuit_breaker",
-    # Backward-compatible aliases
-    "CircuitBreakerState": ("temper_ai.shared.core.circuit_breaker", "CircuitState"),
-    "CircuitBreakerOpen": (
-        "temper_ai.shared.core.circuit_breaker",
-        "CircuitBreakerError",
-    ),
-}
-
-# Eagerly import for use by local classes (SafetyGate, CircuitBreakerManager)
-# These don't trigger deprecation warnings because they're internal usage.
-from temper_ai.shared.core.circuit_breaker import (  # noqa: E402
+from temper_ai.shared.core.circuit_breaker import (
     CircuitBreaker as _CircuitBreaker,
 )
-
-
-def __getattr__(name: str) -> Any:
-    if name in _SHIM_EXPORTS:
-        mapping = _SHIM_EXPORTS[name]
-        if isinstance(mapping, tuple):
-            mod_path, attr_name = mapping
-        else:
-            mod_path = mapping
-            attr_name = name
-        warnings.warn(
-            f"Importing {name} from temper_ai.safety.circuit_breaker is deprecated. "
-            f"Import {attr_name} from temper_ai.shared.core.circuit_breaker instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        mod = importlib.import_module(mod_path)
-        return getattr(mod, attr_name)
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 class SafetyGateBlocked(Exception):  # noqa: N818 — public API name

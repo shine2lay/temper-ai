@@ -18,10 +18,10 @@ from unittest.mock import Mock, patch
 
 import psutil
 import pytest
-from temper_ai.agent.llm_providers import LLMResponse
 
 from temper_ai.agent.standard_agent import StandardAgent
 from temper_ai.agent.utils.agent_factory import AgentFactory
+from temper_ai.llm.providers.base import LLMResponse
 from temper_ai.tools.base import BaseTool, ToolResult
 from tests.test_benchmarks.conftest import check_budget
 
@@ -91,7 +91,7 @@ def test_agent_prompt_rendering(minimal_agent_config, benchmark):
     with patch("temper_ai.agent.base_agent.ToolRegistry") as mock_registry:
         mock_registry.return_value.list_tools.return_value = []
 
-        agent = StandardAgent(minimal_agent_config)
+        StandardAgent(minimal_agent_config)  # ensure creation doesn't fail
 
         def render_prompt():
             from temper_ai.llm.prompts.engine import PromptEngine

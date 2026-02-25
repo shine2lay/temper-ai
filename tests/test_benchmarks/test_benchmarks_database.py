@@ -13,7 +13,8 @@ import asyncio
 import time
 
 import pytest
-from temper_ai.agent.llm_providers import LLMResponse
+
+from temper_ai.llm.providers.base import LLMResponse
 
 from .conftest import (
     DEFAULT_BATCH_SIZE,

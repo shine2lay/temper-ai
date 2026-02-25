@@ -67,7 +67,7 @@ def test_agent_execution_overhead(mock_llm_provider, minimal_agent_config, bench
         agent = StandardAgent(minimal_agent_config)
 
         # Mock LLM response
-        from temper_ai.agent.llm_providers import LLMResponse
+        from temper_ai.llm.providers.base import LLMResponse
 
         mock_llm_response = LLMResponse(
             content="<answer>4</answer>",
@@ -218,7 +218,7 @@ def test_memory_usage_under_load(mock_llm_provider, minimal_agent_config, benchm
         agent = StandardAgent(minimal_agent_config)
 
         # Mock LLM response
-        from temper_ai.agent.llm_providers import LLMResponse
+        from temper_ai.llm.providers.base import LLMResponse
 
         mock_llm_response = LLMResponse(
             content="<answer>test response</answer>",

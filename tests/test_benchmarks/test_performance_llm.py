@@ -20,7 +20,9 @@ import asyncio
 import time
 
 import pytest
-from temper_ai.agent.llm_providers import LLMResponse, OllamaLLM
+
+from temper_ai.llm.providers.base import LLMResponse
+from temper_ai.llm.providers.ollama import OllamaLLM
 
 # ============================================================================
 # CATEGORY 3: LLM Provider Performance (8 benchmarks)

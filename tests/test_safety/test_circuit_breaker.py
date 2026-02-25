@@ -5,13 +5,19 @@ from unittest.mock import Mock, patch
 import pytest
 
 from temper_ai.safety.circuit_breaker import (
-    CircuitBreaker,
     CircuitBreakerManager,
-    CircuitBreakerMetrics,
-    CircuitBreakerOpen,
-    CircuitBreakerState,
     SafetyGate,
     SafetyGateBlocked,
+)
+from temper_ai.shared.core.circuit_breaker import (
+    CircuitBreaker,
+    CircuitBreakerMetrics,
+)
+from temper_ai.shared.core.circuit_breaker import (
+    CircuitBreakerError as CircuitBreakerOpen,
+)
+from temper_ai.shared.core.circuit_breaker import (
+    CircuitState as CircuitBreakerState,
 )
 
 

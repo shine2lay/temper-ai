@@ -66,7 +66,7 @@ def _handle_get_checkpoint(checkpoint_id: str, workflow_id: str) -> dict[str, An
         raise HTTPException(
             status_code=HTTP_404_NOT_FOUND,
             detail=f"Checkpoint '{checkpoint_id}' not found for workflow '{workflow_id}'",
-        )
+        ) from None
     except Exception as e:
         logger.exception("Failed to load checkpoint %s", checkpoint_id)
         raise HTTPException(
@@ -89,7 +89,7 @@ def _handle_resume_checkpoint(
         raise HTTPException(
             status_code=HTTP_404_NOT_FOUND,
             detail=f"Checkpoint '{checkpoint_id}' not found for workflow '{body.workflow_id}'",
-        )
+        ) from None
     except Exception as e:
         logger.exception("Failed to load checkpoint %s for resume", checkpoint_id)
         raise HTTPException(

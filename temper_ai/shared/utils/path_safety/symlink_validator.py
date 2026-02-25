@@ -68,7 +68,7 @@ class SymlinkSecurityValidator:
                 except ValueError:
                     raise PathSafetyError(
                         f"Symlink '{symlink}' points to absolute path outside allowed root: {symlink_target}"
-                    )
+                    ) from None
             else:
                 # Relative symlink - resolve it relative to symlink location
                 symlink_resolved = (symlink.parent / symlink_target).resolve()
@@ -77,9 +77,9 @@ class SymlinkSecurityValidator:
                 except ValueError:
                     raise PathSafetyError(
                         f"Symlink '{symlink}' points outside allowed root: {symlink_resolved}"
-                    )
+                    ) from None
         except OSError as e:
-            raise PathSafetyError(f"Cannot read symlink target: {e}")
+            raise PathSafetyError(f"Cannot read symlink target: {e}") from e
 
     def _walk_and_validate_parent_symlinks(self, path: Path) -> None:
         """Walk up directory tree checking for symlinks.
@@ -111,9 +111,11 @@ class SymlinkSecurityValidator:
                     except ValueError:
                         raise PathSafetyError(
                             f"Parent directory '{current}' is a symlink pointing outside allowed root: {symlink_resolved}"
-                        )
+                        ) from None
                 except OSError as e:
-                    raise PathSafetyError(f"Cannot validate symlink in path: {e}")
+                    raise PathSafetyError(
+                        f"Cannot validate symlink in path: {e}"
+                    ) from e
 
             current = current.parent
 
@@ -139,4 +141,4 @@ class SymlinkSecurityValidator:
                 except ValueError:
                     raise PathSafetyError(
                         f"Symlink points outside allowed root: {original} -> {target}"
-                    )
+                    ) from None

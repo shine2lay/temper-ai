@@ -169,7 +169,7 @@ def _validate_name(name: str) -> None:
         raise ValueError(f"name must be 1-100 characters, got {len(name)}")
 
 
-def _build_config(
+def _build_config(  # noqa: radon
     config: Optional["CircuitBreakerConfig"],
     failure_threshold: int | None,
     timeout_seconds: int | None,

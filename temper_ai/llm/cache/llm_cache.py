@@ -395,7 +395,7 @@ def _hash_cache_key(request: dict[str, Any], security_context: dict[str, str]) -
         raise ValueError(
             f"Cache key generation failed: parameters must be JSON-serializable. "
             f"Error: {e}"
-        )
+        ) from e
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 

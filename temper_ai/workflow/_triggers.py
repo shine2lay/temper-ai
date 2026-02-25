@@ -1,6 +1,6 @@
 """Trigger configuration schemas (event, cron, threshold)."""
 
-from typing import Any, Literal, Union
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -165,4 +165,4 @@ class ThresholdTrigger(BaseModel):
     trigger: ThresholdTriggerInner
 
 
-TriggerConfig = Union[EventTrigger, CronTrigger, ThresholdTrigger]
+TriggerConfig = EventTrigger | CronTrigger | ThresholdTrigger

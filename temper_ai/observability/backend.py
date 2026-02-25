@@ -10,13 +10,12 @@ from __future__ import annotations
 import asyncio
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator, Callable
-from contextlib import asynccontextmanager
+from contextlib import AbstractContextManager, asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from typing import (
     TYPE_CHECKING,
     Any,
-    ContextManager,
     Literal,
 )
 
@@ -186,7 +185,7 @@ class _AsyncBackendDefaults:
         track_tool_call: Callable[..., None]
         track_safety_violation: Callable[..., None]
         track_collaboration_event: Callable[..., str]
-        get_session_context: Callable[..., ContextManager[Any]]
+        get_session_context: Callable[..., AbstractContextManager[Any]]
 
     async def atrack_workflow_start(
         self,
@@ -789,7 +788,7 @@ class ObservabilityBackend(_AsyncBackendDefaults, ABC):
     # ========== Context Management ==========
 
     @abstractmethod
-    def get_session_context(self) -> ContextManager[Any]:
+    def get_session_context(self) -> AbstractContextManager[Any]:
         """
         Get backend-specific session/transaction context manager.
 

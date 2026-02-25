@@ -8,8 +8,9 @@ Integrates A/B testing framework with observability system to:
 """
 
 import logging
+from contextlib import AbstractContextManager
 from datetime import datetime
-from typing import Any, ContextManager
+from typing import Any
 
 from sqlalchemy import and_, text
 from sqlmodel import Session, select
@@ -381,7 +382,7 @@ class ExperimentMetricsCollector:
 
         return time_series
 
-    def _get_session(self) -> ContextManager[Session]:
+    def _get_session(self) -> AbstractContextManager[Session]:
         """Get database session (either provided or create new)."""
         if self._session_provided:
             # Return a no-op context manager that yields the provided session

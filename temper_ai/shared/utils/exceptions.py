@@ -194,9 +194,9 @@ class ErrorCode(str, Enum):
     UNKNOWN_ERROR = "UNKNOWN_ERROR"
 
 
-class FrameworkException(
+class FrameworkException(  # noqa: N818 — intentional: base exception, not a specific error
     Exception
-):  # noqa: N818 — intentional: base exception, not a specific error
+):
     """Root exception for Temper AI.
 
     All framework-specific exceptions should ultimately inherit from this class,

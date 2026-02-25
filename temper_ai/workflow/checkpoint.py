@@ -135,7 +135,9 @@ class CheckpointManager:
         try:
             return self._manager.load_checkpoint(workflow_id)
         except CheckpointNotFoundError:
-            raise FileNotFoundError(f"No checkpoint found for workflow: {workflow_id}")
+            raise FileNotFoundError(
+                f"No checkpoint found for workflow: {workflow_id}"
+            ) from None
 
     def has_checkpoint(self, workflow_id: str) -> bool:
         """Check if checkpoint exists for workflow."""

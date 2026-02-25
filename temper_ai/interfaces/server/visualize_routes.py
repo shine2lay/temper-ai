@@ -42,7 +42,7 @@ def _load_workflow_config(config_root: str, workflow_path: str) -> dict[str, Any
     except ValueError:
         raise HTTPException(
             status_code=HTTP_400_BAD_REQUEST, detail="Invalid workflow path"
-        )
+        ) from None
 
     if not workflow_file.exists():
         raise HTTPException(

@@ -208,8 +208,7 @@ class CompiledGraphRunner:
         )
 
         # Stream execution
-        for chunk in self.graph.stream(state):  # type: ignore[attr-defined]
-            yield chunk
+        yield from self.graph.stream(state)  # type: ignore[attr-defined]
 
     def execute_with_checkpoints(
         self,

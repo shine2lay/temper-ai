@@ -33,7 +33,7 @@ def _ref_attr(ref: Any, attr: str, default: Any = None) -> Any:
     return getattr(ref, attr, default)
 
 
-def create_conditional_router(
+def create_conditional_router(  # noqa: C901
     stage_ref: Any,
     next_stage: str | None,
     stage_index: int,

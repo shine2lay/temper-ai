@@ -109,7 +109,7 @@ class CallbackURLValidator:
         except ValueError:
             return False
 
-    def validate(self, callback_url: str) -> tuple[bool, str | None]:
+    def validate(self, callback_url: str) -> tuple[bool, str | None]:  # noqa: C901
         """Validate callback URL against whitelist.
 
         Args:

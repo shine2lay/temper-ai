@@ -260,7 +260,7 @@ class BaseAgent(ABC):
     # Hooks (no-op defaults — subclasses can override)
     # ------------------------------------------------------------------
 
-    def _on_setup(
+    def _on_setup(  # noqa: B027
         self,
         input_data: dict[str, Any],
         context: ExecutionContext | None,
@@ -493,7 +493,7 @@ class BaseAgent(ABC):
             except (PromptRenderError, ValueError, KeyError, FileNotFoundError) as e:
                 raise PromptRenderError(
                     f"Failed to render template file {prompt_config.template}: {e}"
-                )
+                ) from e
         elif prompt_config.inline:
             return self.prompt_engine.render(prompt_config.inline, all_variables)
         else:

@@ -41,7 +41,7 @@ class MetricRecordCreator:
         """
         self.session = session
 
-    def create_workflow_metrics(
+    def create_workflow_metrics(  # noqa: radon
         self, result: Any, period: AggregationPeriod, timestamp: datetime
     ) -> list[str]:
         """Create metric records for a single workflow's aggregated data.

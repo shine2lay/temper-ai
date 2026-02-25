@@ -72,7 +72,7 @@ def register_agent(request: RegisterRequest):
         )
         return {"agent": entry.model_dump()}
     except (ValueError, FileNotFoundError) as e:
-        raise HTTPException(status_code=_HTTP_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=_HTTP_BAD_REQUEST, detail=str(e)) from None
 
 
 @router.delete("/{name}")
@@ -108,4 +108,4 @@ def send_message(name: str, request: MessageRequestAPI):
         response = service.invoke(name, msg)
         return response.model_dump()
     except (RuntimeError, ValueError, KeyError) as e:
-        raise HTTPException(status_code=_HTTP_SERVER_ERROR, detail=str(e))
+        raise HTTPException(status_code=_HTTP_SERVER_ERROR, detail=str(e)) from None

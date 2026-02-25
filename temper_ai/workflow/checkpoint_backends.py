@@ -310,7 +310,7 @@ class FileCheckpointBackend(CheckpointBackend):
             raise ValueError(
                 f"Path traversal detected: {resolved_path} is outside "
                 f"allowed directory {resolved_parent}"
-            )
+            ) from None
 
     def _get_workflow_dir(self, workflow_id: str) -> Path:
         """Get checkpoint directory for a workflow with path traversal protection."""

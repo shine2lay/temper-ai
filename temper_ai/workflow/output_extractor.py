@@ -183,7 +183,7 @@ class LLMOutputExtractor:
         if text.startswith("```"):
             lines = text.split("\n")
             # Remove all lines starting with triple backticks (```json, ```, etc.)
-            lines = [l for l in lines if not l.strip().startswith("```")]
+            lines = [line for line in lines if not line.strip().startswith("```")]
             text = "\n".join(lines).strip()
 
         result: dict[str, Any] = json.loads(text)

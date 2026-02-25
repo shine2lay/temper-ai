@@ -42,7 +42,7 @@ except ImportError:
     _LLMAuthenticationError = None  # type: ignore[assignment,misc]
 
 
-def should_count_failure(error: Exception) -> bool:
+def should_count_failure(error: Exception) -> bool:  # noqa: radon
     """Determine if error should count toward circuit breaker.
 
     Network/server errors count (transient). Client errors don't.

@@ -15,11 +15,12 @@ import logging
 import os
 import re
 import sys
+import types
 import unicodedata
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Self
 from urllib.parse import unquote
 
 from temper_ai.shared.constants.limits import DEFAULT_MAX_ITEMS
@@ -705,7 +706,7 @@ class LogContext:
         self.context_fields = context_fields
         self.old_factory: Callable[..., logging.LogRecord] | None = None
 
-    def __enter__(self) -> "LogContext":
+    def __enter__(self) -> Self:
         """Enter context and install log record factory."""
         # Save old factory
         self.old_factory = logging.getLogRecordFactory()
@@ -726,7 +727,12 @@ class LogContext:
         logging.setLogRecordFactory(record_factory)
         return self
 
-    def __exit__(self, _exc_type: Any, _exc_val: Any, _exc_tb: Any) -> None:
+    def __exit__(
+        self,
+        _exc_type: type[BaseException] | None,
+        _exc_val: BaseException | None,
+        _exc_tb: types.TracebackType | None,
+    ) -> None:
         """Exit context and restore old factory."""
         if self.old_factory is not None:
             logging.setLogRecordFactory(self.old_factory)

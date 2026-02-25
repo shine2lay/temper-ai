@@ -37,7 +37,7 @@ class MigrationStep:
             version.parse(self.from_version)
             version.parse(self.to_version)
         except version.InvalidVersion as e:
-            raise ValueError(f"Invalid version format: {e}")
+            raise ValueError(f"Invalid version format: {e}") from e
 
 
 class ConfigMigrationRegistry:

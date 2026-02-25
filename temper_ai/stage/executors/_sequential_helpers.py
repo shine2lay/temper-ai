@@ -501,7 +501,7 @@ def _print_sequential_stage_header(ctx: AgentExecutionContext) -> None:
         stream_cb._current_stage = ctx.stage_name
 
 
-def run_all_agents(  # noqa: long
+def run_all_agents(  # noqa: long radon
     ctx: AgentExecutionContext,
     agents: list,
     error_handling: Any,

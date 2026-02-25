@@ -69,7 +69,7 @@ MAX_TIMEOUT_SECONDS = MAX_BASH_TIMEOUT
 _SHELL_OPERATORS = ("||", "&&", ";", "|")
 
 
-def _split_shell_commands(command: str) -> list[str]:
+def _split_shell_commands(command: str) -> list[str]:  # noqa: radon
     """Split a shell command string on unquoted shell operators.
 
     Uses shlex lexical analysis to correctly handle quoting so that

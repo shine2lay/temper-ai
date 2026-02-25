@@ -57,7 +57,7 @@ class RefinementOptimizer:
                 iterations=iteration,
             )
 
-        for iteration in range(1, max_iterations + 1):
+        for iteration in range(1, max_iterations + 1):  # noqa: B007
             critique = self._generate_critique(best_output, best_eval)
             refined_input = self._inject_critique(input_data, critique)
             new_output = runner.execute(refined_input)

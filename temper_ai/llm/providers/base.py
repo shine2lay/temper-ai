@@ -447,7 +447,7 @@ class BaseLLM(LLMContextManagerMixin, ABC):
         )
         await asyncio.sleep(delay)
 
-    async def acomplete(  # noqa: C901
+    async def acomplete(  # noqa: C901 long
         self, prompt: str, context: ExecutionContext | None = None, **kwargs: Any
     ) -> LLMResponse:
         """Async version: Generate completion for prompt."""

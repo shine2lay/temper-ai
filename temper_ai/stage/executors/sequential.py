@@ -236,7 +236,7 @@ class SequentialStageExecutor(StageExecutor):
             return None
 
     @staticmethod
-    def _store_stage_output(
+    def _store_stage_output(  # noqa: radon
         state: dict[str, Any],
         stage_name: str,
         data: StageOutputData,

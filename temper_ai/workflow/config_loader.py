@@ -311,7 +311,7 @@ class ConfigLoader:
             )
             raise ConfigValidationError(
                 f"Template path must be within prompts directory: {template_path}"
-            )
+            ) from None
 
     def load_prompt_template(
         self, template_path: str, variables: dict[str, str] | None = None

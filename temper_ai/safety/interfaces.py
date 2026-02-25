@@ -340,7 +340,7 @@ class SafetyPolicy(ABC):
         """
         return self.validate(action, context)
 
-    def report_violation(self, violation: SafetyViolation) -> None:
+    def report_violation(self, violation: SafetyViolation) -> None:  # noqa: B027
         """Report violation to observability/logging system.
 
         Default implementation does nothing. Override to integrate with

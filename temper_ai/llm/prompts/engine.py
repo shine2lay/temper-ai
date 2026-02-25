@@ -181,7 +181,7 @@ class PromptEngine:
         except TemplateNotFound:
             raise PromptRenderError(
                 f"Template file not found: {template_path} in {self.templates_dir}"
-            )
+            ) from None
         except Exception as e:
             raise PromptRenderError(
                 f"Failed to render template file {template_path}: {e}"
@@ -238,7 +238,7 @@ class PromptEngine:
         except TemplateNotFound:
             raise PromptRenderError(
                 f"Template file not found: {template_path} in {self.templates_dir}"
-            )
+            ) from None
 
         rendered = self.render_file(template_path, variables)
         template_hash = _compute_template_hash(raw_source)

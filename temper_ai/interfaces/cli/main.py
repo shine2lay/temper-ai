@@ -109,7 +109,7 @@ def _init_server_app(
             f"[red]Error:[/red] Server dependencies not installed: {e}\n"
             "Install with: pip install 'temper-ai[dashboard]'"
         )
-        raise SystemExit(1)
+        raise SystemExit(1) from None
 
     from temper_ai.events.event_bus import TemperEventBus
     from temper_ai.observability.backends import SQLObservabilityBackend
@@ -122,7 +122,7 @@ def _init_server_app(
         ExecutionTracker.ensure_database(db_url)
     except (OSError, ConnectionError, RuntimeError) as e:
         console.print(f"[red]Database error:[/red] {e}")
-        raise SystemExit(1)
+        raise SystemExit(1) from None
 
     backend = SQLObservabilityBackend(buffer=False)
     event_bus = TemperEventBus(observability_bus=ObservabilityEventBus(), persist=False)

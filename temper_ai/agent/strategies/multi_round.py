@@ -101,7 +101,7 @@ def _extract_stance_regex(text: str) -> str:
     return ""
 
 
-def _extract_stance_via_llm(
+def _extract_stance_via_llm(  # noqa: radon
     llm_provider: Any,
     output_text: str,
     other_outputs: list[tuple],

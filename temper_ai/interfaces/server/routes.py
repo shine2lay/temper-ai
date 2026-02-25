@@ -91,7 +91,7 @@ async def _handle_create_run(
     except ValueError:
         raise HTTPException(
             status_code=HTTP_400_BAD_REQUEST, detail="Invalid workflow path"
-        )
+        ) from None
 
     try:
         execution_id = await execution_service.execute_workflow_async(
@@ -145,7 +145,7 @@ async def _handle_get_run(execution_service: Any, run_id: str) -> dict[str, Any]
         raise HTTPException(
             status_code=HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve run status",
-        )
+        ) from None
     if result is None:
         raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Run not found")
     return cast(dict[str, Any], result)

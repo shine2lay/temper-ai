@@ -183,65 +183,70 @@ class MeritScoreService:
             f"expertise={expertise_val:.3f}"
         )
 
+    def _compute_time_windowed_metrics(
+        self, session: Any, merit_score: Any, agent_name: str
+    ) -> None:
+        """Compute and assign 30-day and 90-day success rates (no exception handling)."""
+        from sqlalchemy import String, cast, func
+        from sqlmodel import select
+
+        from temper_ai.storage.database.models import DecisionOutcome
+
+        thirty_days_ago = utcnow() - timedelta(days=DEFAULT_MERIT_WINDOW_DAYS)
+        ninety_days_ago = utcnow() - timedelta(days=DAYS_90)
+
+        # Use cast() for portable JSON field access (works on both SQLite and PostgreSQL)
+        agent_name_field = cast(DecisionOutcome.decision_data["agent_name"], String)
+
+        # 30-day success rate
+        recent_statement = (
+            select(
+                func.count().label("total"),
+                func.sum(
+                    func.case((DecisionOutcome.outcome == "success", 1), else_=0)
+                ).label("successful"),
+            )
+            .select_from(DecisionOutcome)
+            .where(
+                agent_name_field == agent_name,
+                DecisionOutcome.validation_timestamp.is_not(None),  # type: ignore[union-attr]
+                DecisionOutcome.validation_timestamp >= thirty_days_ago,  # type: ignore[operator]
+            )
+        )
+
+        recent_result = session.exec(recent_statement).first()
+        if recent_result and recent_result.total > 0:
+            merit_score.last_30_days_success_rate = (
+                recent_result.successful / recent_result.total
+            )
+
+        # 90-day success rate
+        ninety_statement = (
+            select(
+                func.count().label("total"),
+                func.sum(
+                    func.case((DecisionOutcome.outcome == "success", 1), else_=0)
+                ).label("successful"),
+            )
+            .select_from(DecisionOutcome)
+            .where(
+                agent_name_field == agent_name,
+                DecisionOutcome.validation_timestamp.is_not(None),  # type: ignore[union-attr]
+                DecisionOutcome.validation_timestamp >= ninety_days_ago,  # type: ignore[operator]
+            )
+        )
+
+        ninety_result = session.exec(ninety_statement).first()
+        if ninety_result and ninety_result.total > 0:
+            merit_score.last_90_days_success_rate = (
+                ninety_result.successful / ninety_result.total
+            )
+
     def _update_time_windowed_metrics(
         self, session: Any, merit_score: Any, agent_name: str
     ) -> None:
         """Update 30-day and 90-day success rates from DecisionOutcome records."""
         try:
-            from sqlalchemy import String, cast, func
-            from sqlmodel import select
-
-            from temper_ai.storage.database.models import DecisionOutcome
-
-            thirty_days_ago = utcnow() - timedelta(days=DEFAULT_MERIT_WINDOW_DAYS)
-            ninety_days_ago = utcnow() - timedelta(days=DAYS_90)
-
-            # Use cast() for portable JSON field access (works on both SQLite and PostgreSQL)
-            agent_name_field = cast(DecisionOutcome.decision_data["agent_name"], String)
-
-            # 30-day success rate
-            recent_statement = (
-                select(
-                    func.count().label("total"),
-                    func.sum(
-                        func.case((DecisionOutcome.outcome == "success", 1), else_=0)
-                    ).label("successful"),
-                )
-                .select_from(DecisionOutcome)
-                .where(
-                    agent_name_field == agent_name,
-                    DecisionOutcome.validation_timestamp.is_not(None),  # type: ignore[union-attr]
-                    DecisionOutcome.validation_timestamp >= thirty_days_ago,  # type: ignore[operator]
-                )
-            )
-
-            recent_result = session.exec(recent_statement).first()
-            if recent_result and recent_result.total > 0:
-                merit_score.last_30_days_success_rate = (
-                    recent_result.successful / recent_result.total
-                )
-
-            # 90-day success rate
-            ninety_statement = (
-                select(
-                    func.count().label("total"),
-                    func.sum(
-                        func.case((DecisionOutcome.outcome == "success", 1), else_=0)
-                    ).label("successful"),
-                )
-                .select_from(DecisionOutcome)
-                .where(
-                    agent_name_field == agent_name,
-                    DecisionOutcome.validation_timestamp.is_not(None),  # type: ignore[union-attr]
-                    DecisionOutcome.validation_timestamp >= ninety_days_ago,  # type: ignore[operator]
-                )
-            )
-
-            ninety_result = session.exec(ninety_statement).first()
-            if ninety_result and ninety_result.total > 0:
-                merit_score.last_90_days_success_rate = (
-                    ninety_result.successful / ninety_result.total
-                )
-
+            self._compute_time_windowed_metrics(session, merit_score, agent_name)
         except Exception as e:
             logger.debug(f"Could not compute time-windowed metrics: {e}")

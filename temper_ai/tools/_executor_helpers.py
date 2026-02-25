@@ -624,7 +624,7 @@ def check_workflow_rate_limit(executor: ToolExecutor) -> None:
     executor.workflow_rate_limiter.acquire()
 
 
-def execute_with_timeout(
+def execute_with_timeout(  # noqa: radon
     executor: ToolExecutor,
     tool: BaseTool,
     params: dict[str, Any],

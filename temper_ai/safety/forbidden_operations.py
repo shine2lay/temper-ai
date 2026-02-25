@@ -168,7 +168,7 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy, ValidationMixin):
             except ValueError as e:
                 raise ValueError(
                     f"Invalid regex in {CUSTOM_FORBIDDEN_PATTERNS_PREFIX}{name}']: {e}"
-                )
+                ) from e
 
         if len(custom_patterns) > MAX_CUSTOM_PATTERNS:
             raise ValueError(

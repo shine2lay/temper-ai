@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 MAX_TEXT_PREVIEW_LENGTH = 50  # Maximum characters to show in text preview/truncation
 
 
-def get_merit_weights(
+def get_merit_weights(  # noqa: radon
     agent_outputs: list[AgentOutput],
     merit_domain: str | None,
 ) -> dict[str, float]:

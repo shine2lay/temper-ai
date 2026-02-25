@@ -66,7 +66,7 @@ def decode_url_fully(path: str, max_iterations: int = 10) -> str:
         ValueError: If decoding doesn't stabilize after max_iterations
     """
     decoded = path
-    for i in range(max_iterations):
+    for _i in range(max_iterations):
         previous = decoded
         try:
             decoded = urllib.parse.unquote(decoded, errors="strict")

@@ -169,7 +169,7 @@ class PathValidationRules:
             # Handle "too many levels of symbolic links" and other resolution errors
             error_msg = str(e).lower()
             if "too many" in error_msg or "symbolic" in error_msg:
-                raise PathSafetyError(f"Symlink chain too deep or circular: {e}")
-            raise PathSafetyError(f"Cannot resolve path: {e}")
+                raise PathSafetyError(f"Symlink chain too deep or circular: {e}") from e
+            raise PathSafetyError(f"Cannot resolve path: {e}") from e
 
         return resolved

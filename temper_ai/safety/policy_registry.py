@@ -230,7 +230,7 @@ class PolicyRegistry:
                 return policy
 
         # Search action-specific policies
-        for action_type, policies in self._policies.items():
+        for _action_type, policies in self._policies.items():
             for policy in policies:
                 if policy.name == policy_name:
                     return policy

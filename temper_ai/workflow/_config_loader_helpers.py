@@ -84,11 +84,13 @@ def load_and_validate_config_file(file_path: Path) -> dict[str, Any]:
         return cast(dict[str, Any], config)
 
     except yaml.YAMLError as e:
-        raise ConfigValidationError(f"YAML parsing failed for {file_path}: {e}")
+        raise ConfigValidationError(f"YAML parsing failed for {file_path}: {e}") from e
     except json.JSONDecodeError as e:
-        raise ConfigValidationError(f"JSON parsing failed for {file_path}: {e}")
+        raise ConfigValidationError(f"JSON parsing failed for {file_path}: {e}") from e
     except Exception as e:
-        raise ConfigValidationError(f"Failed to parse config file {file_path}: {e}")
+        raise ConfigValidationError(
+            f"Failed to parse config file {file_path}: {e}"
+        ) from e
 
 
 def _check_config_limits(
@@ -205,7 +207,7 @@ def resolve_secrets(config: Any) -> Any:
     try:
         return resolve_secret(config)
     except (ValueError, NotImplementedError) as e:
-        raise ConfigValidationError(f"Secret resolution failed: {e}")
+        raise ConfigValidationError(f"Secret resolution failed: {e}") from e
 
 
 def substitute_template_vars(template: str, variables: dict[str, str]) -> str:
@@ -259,4 +261,6 @@ def validate_config(config_type: str, config: dict[str, Any]) -> None:
             schema_map[config_type](**config)
 
     except ValidationError as e:
-        raise ConfigValidationError(f"Config validation failed for {config_type}: {e}")
+        raise ConfigValidationError(
+            f"Config validation failed for {config_type}: {e}"
+        ) from e

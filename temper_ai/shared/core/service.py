@@ -22,7 +22,7 @@ class Service(ABC):
         """Service name for registration and lookup."""
         pass
 
-    def initialize(self) -> None:
+    def initialize(self) -> None:  # noqa: B027
         """Initialize service resources.
 
         Called once during framework startup.
@@ -30,7 +30,7 @@ class Service(ABC):
         """
         pass
 
-    def shutdown(self) -> None:
+    def shutdown(self) -> None:  # noqa: B027
         """Clean up service resources.
 
         Called during framework shutdown.

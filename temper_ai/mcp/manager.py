@@ -2,8 +2,9 @@
 
 import concurrent.futures
 import logging
+import types
 import weakref
-from typing import Any
+from typing import Any, Self
 
 from temper_ai.mcp._client_helpers import create_event_loop_thread, stop_event_loop
 from temper_ai.mcp._schemas import MCPServerConfig
@@ -118,16 +119,19 @@ class MCPManager:
                 async def _close(s: Any) -> None:
                     await s.__aexit__(None, None, None)
 
-                def _do_close() -> None:
+                def _do_close(
+                    _session: Any = session,
+                    _future: concurrent.futures.Future[None] = future,
+                ) -> None:
                     import asyncio
 
-                    coro = _close(session)
+                    coro = _close(_session)
                     task = asyncio.ensure_future(coro, loop=self._loop)
                     task.add_done_callback(
-                        lambda t: (
-                            future.set_exception(t.exception())
+                        lambda t, f=_future: (  # type: ignore[misc]
+                            f.set_exception(t.exception())
                             if t.exception()
-                            else future.set_result(None)
+                            else f.set_result(None)
                         )
                     )
 
@@ -143,14 +147,14 @@ class MCPManager:
     # Context manager protocol
     # ------------------------------------------------------------------
 
-    def __enter__(self) -> "MCPManager":
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(
         self,
-        _exc_type: type | None,
+        _exc_type: type[BaseException] | None,
         _exc_val: BaseException | None,
-        _exc_tb: Any | None,
+        _exc_tb: types.TracebackType | None,
     ) -> None:
         self.disconnect_all()
 

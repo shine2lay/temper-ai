@@ -12,7 +12,7 @@ Design Philosophy:
 """
 
 import threading
-from typing import Any, Optional
+from typing import Any, Optional, Self
 
 from temper_ai.workflow.execution_engine import ExecutionEngine
 
@@ -34,7 +34,7 @@ class EngineRegistry:
     _instance: Optional["EngineRegistry"] = None
     _engines: dict[str, type[ExecutionEngine]]
 
-    def __new__(cls) -> "EngineRegistry":
+    def __new__(cls) -> Self:
         """Thread-safe singleton pattern with double-checked locking."""
         if cls._instance is None:
             with cls._lock:
@@ -43,7 +43,7 @@ class EngineRegistry:
                     instance._engines = {}
                     instance._initialize_default_engines()
                     cls._instance = instance
-        return cls._instance
+        return cls._instance  # type: ignore[return-value]
 
     def _initialize_default_engines(self) -> None:
         """Register default engines on first instantiation.

@@ -141,7 +141,7 @@ class CollaborationEventData:
     metadata: dict[str, Any] | None = None
 
 
-def sanitize_dict(
+def sanitize_dict(  # noqa: radon
     sanitizer: Any,
     data: dict[str, Any],
     _depth: int = 0,

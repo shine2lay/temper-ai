@@ -38,7 +38,7 @@ def reset_sanitizer() -> None:
     _sanitizer = None
 
 
-def _sanitize_violation_context(
+def _sanitize_violation_context(  # noqa: C901
     context: dict[str, Any] | None,
 ) -> dict[str, Any] | None:
     """

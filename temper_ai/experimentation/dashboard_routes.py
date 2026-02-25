@@ -33,7 +33,7 @@ def _register_query_routes(
         try:
             return service.list_experiments(status=status, limit=limit)
         except ValueError as exc:
-            raise HTTPException(status_code=HTTP_400, detail=str(exc))
+            raise HTTPException(status_code=HTTP_400, detail=str(exc)) from None
 
     @router.get("/{experiment_id}")
     def get_experiment(experiment_id: str) -> dict[str, Any]:
@@ -79,7 +79,7 @@ def _register_action_routes(
             )
             return {"id": exp_id, "status": "created"}
         except ValueError as exc:
-            raise HTTPException(status_code=HTTP_400, detail=str(exc))
+            raise HTTPException(status_code=HTTP_400, detail=str(exc)) from None
 
     @router.post("/{experiment_id}/start")
     def start_experiment(experiment_id: str) -> dict[str, Any]:
@@ -88,7 +88,7 @@ def _register_action_routes(
             service._service.start_experiment(experiment_id)
             return {"id": experiment_id, "status": "running"}
         except ValueError as exc:
-            raise HTTPException(status_code=HTTP_400, detail=str(exc))
+            raise HTTPException(status_code=HTTP_400, detail=str(exc)) from None
 
     @router.post("/{experiment_id}/stop")
     def stop_experiment(experiment_id: str) -> dict[str, Any]:
@@ -97,4 +97,4 @@ def _register_action_routes(
             service._service.stop_experiment(experiment_id)
             return {"id": experiment_id, "status": "stopped"}
         except ValueError as exc:
-            raise HTTPException(status_code=HTTP_400, detail=str(exc))
+            raise HTTPException(status_code=HTTP_400, detail=str(exc)) from None

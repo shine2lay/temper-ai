@@ -222,7 +222,7 @@ def _build_tree_display_name(
         prefix_parts = []
 
         # Add vertical lines for parent levels
-        for i, is_last in enumerate(is_last_child[:-1]):
+        for _i, is_last in enumerate(is_last_child[:-1]):
             if is_last:
                 prefix_parts.append("    ")  # 4 spaces for cleared level
             else:
@@ -324,10 +324,10 @@ def _create_gantt_chart_bars(flat_data: list[dict[str, Any]]) -> Any:
                     y=[item["display_name"] for item in type_items],
                     base=[item["start_ms"] for item in type_items],
                     orientation="h",
-                    marker=dict(
-                        color=color,
-                        line=dict(width=CHART_MARKER_LINE_WIDTH, color="white"),
-                    ),
+                    marker={
+                        "color": color,
+                        "line": {"width": CHART_MARKER_LINE_WIDTH, "color": "white"},
+                    },
                     text=[item["hover_text"] for item in type_items],
                     hovertemplate="%{text}<extra></extra>",
                     textposition="none",
@@ -343,43 +343,43 @@ def _configure_gantt_layout(fig: Any, title: str, num_items: int) -> None:
     height = max(MIN_CHART_HEIGHT, num_items * HEIGHT_PER_ITEM)
 
     fig.update_layout(
-        title=dict(
-            text=f"{title} - Hierarchical Timeline",
-            x=CHART_TITLE_X_POSITION,
-            xanchor="center",
-            font=dict(size=CHART_TITLE_FONT_SIZE, color="#2E86AB"),
-        ),
-        xaxis=dict(
-            title="Time (seconds from start)",
-            tickmode="linear",
-            tick0=0,
-            dtick=TICK_INTERVAL_MS,
-            tickformat=".1f",
-            ticksuffix="s",
-            gridcolor="rgba(128,128,128,0.2)",
-        ),
-        yaxis=dict(
-            title="",
-            autorange="reversed",  # Top to bottom
-            gridcolor="rgba(128,128,128,0.1)",
-            tickfont=dict(
-                family="monospace",
-                size=CHART_TITLE_FONT_SIZE - MONOSPACE_FONT_SIZE_REDUCTION,
-            ),  # Monospace for tree chars (11pt)
-        ),
+        title={
+            "text": f"{title} - Hierarchical Timeline",
+            "x": CHART_TITLE_X_POSITION,
+            "xanchor": "center",
+            "font": {"size": CHART_TITLE_FONT_SIZE, "color": "#2E86AB"},
+        },
+        xaxis={
+            "title": "Time (seconds from start)",
+            "tickmode": "linear",
+            "tick0": 0,
+            "dtick": TICK_INTERVAL_MS,
+            "tickformat": ".1f",
+            "ticksuffix": "s",
+            "gridcolor": "rgba(128,128,128,0.2)",
+        },
+        yaxis={
+            "title": "",
+            "autorange": "reversed",  # Top to bottom
+            "gridcolor": "rgba(128,128,128,0.1)",
+            "tickfont": {
+                "family": "monospace",
+                "size": CHART_TITLE_FONT_SIZE - MONOSPACE_FONT_SIZE_REDUCTION,
+            },  # Monospace for tree chars (11pt)
+        },
         barmode="overlay",
         height=height,
         hovermode="closest",
         template="plotly_white",
         showlegend=True,
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=CHART_LEGEND_Y_POSITION,
-            xanchor="right",
-            x=1,
-        ),
-        margin=dict(l=CHART_LEFT_MARGIN),
+        legend={
+            "orientation": "h",
+            "yanchor": "bottom",
+            "y": CHART_LEGEND_Y_POSITION,
+            "xanchor": "right",
+            "x": 1,
+        },
+        margin={"l": CHART_LEFT_MARGIN},
     )
 
 

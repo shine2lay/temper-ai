@@ -8,7 +8,7 @@ import logging
 import threading
 from datetime import date
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, Self
 
 import yaml
 from pydantic import BaseModel, Field, ValidationError, field_validator
@@ -122,12 +122,12 @@ class PricingManager:
     # Supported schema versions
     SUPPORTED_SCHEMA_VERSIONS = {"1.0"}
 
-    def __new__(cls, *args: Any, **kwargs: Any) -> "PricingManager":
+    def __new__(cls, *args: Any, **kwargs: Any) -> Self:
         """Thread-safe singleton instantiation."""
         with cls._lock:
             if cls._instance is None:
                 cls._instance = super().__new__(cls)
-            return cls._instance
+            return cls._instance  # type: ignore[return-value]
 
     def __init__(self, config_path: str = "configs/model_pricing.yaml"):
         """Initialize pricing manager.
@@ -168,7 +168,9 @@ class PricingManager:
         try:
             self.config_path.relative_to(project_root)
         except ValueError:
-            raise SecurityError(f"Config path outside project: {self.config_path}")
+            raise SecurityError(
+                f"Config path outside project: {self.config_path}"
+            ) from None
 
         # Check file size if it exists (prevent DoS)
         if self.config_path.exists():

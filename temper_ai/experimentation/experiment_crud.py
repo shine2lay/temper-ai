@@ -239,7 +239,7 @@ class ExperimentCRUD:
             raise ValueError(
                 "Experiment creation failed. "
                 "This may be due to a duplicate name or other constraint violation."
-            )
+            ) from e
 
     def create_experiment(self, params: ExperimentParams) -> str:
         """

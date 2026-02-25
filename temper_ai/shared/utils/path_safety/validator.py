@@ -206,7 +206,7 @@ class PathSafetyValidator:
         except ValueError:
             raise PathSafetyError(
                 f"Parent directory '{parent}' is outside allowed root"
-            )
+            ) from None
 
     def _validate_new_file_parent(self, path: Path, allow_create_parents: bool) -> None:
         """Validate that parent directory is safe for creating a new file."""

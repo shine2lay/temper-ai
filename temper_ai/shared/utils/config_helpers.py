@@ -309,7 +309,7 @@ def resolve_config_path(path: str, config_root: Path | None = None) -> Path:
     try:
         resolved.relative_to(config_root_resolved)
     except ValueError:
-        raise ValueError(f"Config path escapes config_root: {path}")
+        raise ValueError(f"Config path escapes config_root: {path}") from None
 
     if not resolved.exists():
         raise FileNotFoundError(f"Config file not found: {resolved}")

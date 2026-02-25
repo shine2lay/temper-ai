@@ -23,7 +23,9 @@ def _load_config(name: str) -> PortfolioConfig:
         loader = PortfolioLoader()
         return loader.load(name)
     except FileNotFoundError:
-        raise HTTPException(status_code=HTTP_404, detail=ERR_PORTFOLIO_NOT_FOUND)
+        raise HTTPException(
+            status_code=HTTP_404, detail=ERR_PORTFOLIO_NOT_FOUND
+        ) from None
 
 
 def create_portfolio_router(store: PortfolioStore) -> APIRouter:

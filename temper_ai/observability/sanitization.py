@@ -95,7 +95,7 @@ class SanitizationResult:
             "sanitized_length": len(self.sanitized_text),
             "num_redactions": len(self.redactions),
             "redaction_types": list(
-                set(r.get("type", "unknown") for r in self.redactions)
+                {r.get("type", "unknown") for r in self.redactions}
             ),
             "content_hash": self.content_hash,
         }

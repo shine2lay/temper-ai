@@ -140,13 +140,11 @@ class ConfigSyncService:
                 .filter_by(tenant_id=tenant_id, name=name)
                 .first()
             )
-
-        if record is None:
-            raise FileNotFoundError(
-                f"{config_type} config '{name}' not found for tenant '{tenant_id}'."
-            )
-
-        return yaml.safe_dump(record.config_data, default_flow_style=False)
+            if record is None:
+                raise FileNotFoundError(
+                    f"{config_type} config '{name}' not found for tenant '{tenant_id}'."
+                )
+            return yaml.safe_dump(record.config_data, default_flow_style=False)
 
     def list_configs(
         self,
@@ -163,14 +161,13 @@ class ConfigSyncService:
 
         with get_session() as session:
             records = session.query(db_model_cls).filter_by(tenant_id=tenant_id).all()
-
-        configs: list[dict[str, Any]] = [
-            {
-                "name": r.name,
-                "version": r.version,
-                "created_at": r.created_at.isoformat(),
-                "updated_at": r.updated_at.isoformat(),
-            }
-            for r in records
-        ]
+            configs: list[dict[str, Any]] = [
+                {
+                    "name": r.name,
+                    "version": r.version,
+                    "created_at": r.created_at.isoformat(),
+                    "updated_at": r.updated_at.isoformat(),
+                }
+                for r in records
+            ]
         return {"configs": configs, "total": len(configs)}

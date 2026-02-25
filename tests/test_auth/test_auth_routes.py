@@ -261,6 +261,7 @@ def test_revoke_api_key():
     api_key = MagicMock()
     api_key.id = "key-001"
     api_key.user_id = "user-001"
+    api_key.tenant_id = "tenant-001"
     api_key.is_active = True
     session.get.return_value = api_key
     session.commit = MagicMock()

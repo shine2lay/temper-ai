@@ -1,5 +1,6 @@
 """Temper AI MCP server -- exposes workflows as MCP tools."""
 
+import hmac
 import json
 import logging
 from pathlib import Path
@@ -24,9 +25,8 @@ class BearerAuthMiddleware:
         if scope["type"] == "http":
             headers = dict(scope.get("headers", []))
             auth = headers.get(b"authorization", b"").decode("latin-1")
-            if (
-                not auth.startswith("Bearer ")
-                or auth[_API_KEY_MIN_LENGTH:].strip() != self._api_key
+            if not auth.startswith("Bearer ") or not hmac.compare_digest(
+                auth[_API_KEY_MIN_LENGTH:].strip(), self._api_key
             ):
                 await self._send_unauthorized(send)
                 return

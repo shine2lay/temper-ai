@@ -167,26 +167,15 @@ class TestPathTraversalEncodingBypasses:
         """
         result = file_access_policy.validate(action={"path": attack_path}, context={})
 
-        # Some null byte positions are blocked, others are not
-        if attack_path == "/etc\x00/passwd":
-            # VULNERABILITY: Null byte in middle bypasses checks
-            if result.valid:
-                pytest.skip(
-                    f"KNOWN VULNERABILITY: {name} bypasses forbidden checks. "
-                    "TODO: Add null byte detection to FileAccessPolicy"
-                )
-            else:
-                # If this starts passing, the vulnerability was fixed
-                assert not result.valid
-        else:
-            # Other null byte positions should be blocked
-            assert not result.valid, f"Null byte bypass {name} should be blocked"
-            assert any(
-                "forbidden" in v.message.lower()
-                or "/etc" in v.message.lower()
-                or "passwd" in v.message.lower()
-                for v in result.violations
-            ), f"Expected forbidden file/directory violation for {name}"
+        # All null byte paths must be blocked (C-07 fix)
+        assert not result.valid, f"Null byte bypass {name} should be blocked"
+        assert any(
+            "null" in v.message.lower()
+            or "forbidden" in v.message.lower()
+            or "/etc" in v.message.lower()
+            or "passwd" in v.message.lower()
+            for v in result.violations
+        ), f"Expected null byte or forbidden violation for {name}"
 
 
 class TestPathTraversalMixedSeparators:

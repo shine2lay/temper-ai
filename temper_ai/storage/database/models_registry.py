@@ -15,9 +15,12 @@ class AgentRegistryDB(SQLModel, table=True):
     """Persistent agent registration record."""
 
     __tablename__ = "agent_registry"
-    __table_args__ = (UniqueConstraint("name", name="uq_agent_registry_name"),)
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "name", name="uq_agent_registry_tenant_name"),
+    )
 
     id: str = Field(primary_key=True)
+    tenant_id: str = Field(index=True)
     name: str = Field(max_length=_MAX_NAME_LENGTH, index=True)
     description: str = ""
     version: str = "1.0"

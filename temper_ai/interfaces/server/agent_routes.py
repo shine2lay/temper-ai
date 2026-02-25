@@ -2,8 +2,10 @@
 
 import logging
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+
+from temper_ai.auth.api_key_auth import AuthContext, require_auth, require_role
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +44,7 @@ def _get_service():
 
 
 @router.get("")
-def list_agents(status: str | None = None):
+def list_agents(status: str | None = None, ctx: AuthContext = Depends(require_auth)):
     """List all registered agents."""
     service = _get_service()
     agents = service.list_agents(status=status)
@@ -50,7 +52,7 @@ def list_agents(status: str | None = None):
 
 
 @router.get("/{name}")
-def get_agent(name: str):
+def get_agent(name: str, ctx: AuthContext = Depends(require_auth)):
     """Get agent details by name."""
     service = _get_service()
     agent = service.get_agent(name)
@@ -62,7 +64,10 @@ def get_agent(name: str):
 
 
 @router.post("/register")
-def register_agent(request: RegisterRequest):
+def register_agent(
+    request: RegisterRequest,
+    ctx: AuthContext = Depends(require_role("owner", "editor")),
+):
     """Register a new persistent agent."""
     service = _get_service()
     try:
@@ -76,7 +81,9 @@ def register_agent(request: RegisterRequest):
 
 
 @router.delete("/{name}")
-def unregister_agent(name: str):
+def unregister_agent(
+    name: str, ctx: AuthContext = Depends(require_role("owner", "editor"))
+):
     """Unregister an agent."""
     service = _get_service()
     success = service.unregister_agent(name)
@@ -88,7 +95,11 @@ def unregister_agent(name: str):
 
 
 @router.post("/{name}/message")
-def send_message(name: str, request: MessageRequestAPI):
+def send_message(
+    name: str,
+    request: MessageRequestAPI,
+    ctx: AuthContext = Depends(require_role("owner", "editor")),
+):
     """Send a message to a registered agent (direct invocation)."""
     from temper_ai.registry._schemas import MessageRequest
 

@@ -117,6 +117,7 @@ async def _handle_list_runs(
     status: str | None,
     limit: int,
     offset: int,
+    tenant_id: str | None = None,
 ) -> dict[str, Any]:
     """List workflow executions with optional filtering."""
     from temper_ai.interfaces.dashboard.execution_service import WorkflowExecutionStatus
@@ -128,6 +129,9 @@ async def _handle_list_runs(
         except ValueError:
             return {"runs": [], "total": 0}
 
+    # TODO: propagate tenant_id to service layer for data isolation
+    if tenant_id:
+        logger.debug("list_runs called for tenant_id=%s", tenant_id)
     runs = await execution_service.list_executions(
         status=status_enum,
         limit=limit,
@@ -136,8 +140,13 @@ async def _handle_list_runs(
     return {"runs": runs, "total": len(runs)}
 
 
-async def _handle_get_run(execution_service: Any, run_id: str) -> dict[str, Any]:
+async def _handle_get_run(
+    execution_service: Any, run_id: str, tenant_id: str | None = None
+) -> dict[str, Any]:
     """Get execution status by ID."""
+    # TODO: propagate tenant_id to service layer for data isolation
+    if tenant_id:
+        logger.debug("get_run called for tenant_id=%s run_id=%s", tenant_id, run_id)
     try:
         result = await execution_service.get_execution_status(run_id)
     except Exception:
@@ -151,8 +160,13 @@ async def _handle_get_run(execution_service: Any, run_id: str) -> dict[str, Any]
     return cast(dict[str, Any], result)
 
 
-async def _handle_cancel_run(execution_service: Any, run_id: str) -> dict[str, Any]:
+async def _handle_cancel_run(
+    execution_service: Any, run_id: str, tenant_id: str | None = None
+) -> dict[str, Any]:
     """Cancel a running workflow execution."""
+    # TODO: propagate tenant_id to service layer for data isolation
+    if tenant_id:
+        logger.debug("cancel_run called for tenant_id=%s run_id=%s", tenant_id, run_id)
     cancelled = await execution_service.cancel_execution(run_id)
     if not cancelled:
         raise HTTPException(
@@ -253,36 +267,76 @@ def _handle_list_available_workflows(config_root: str) -> dict[str, Any]:
     return {"workflows": workflows, "total": len(workflows)}
 
 
-def _register_run_routes(
+def _register_run_routes_auth(
     router: APIRouter,
     execution_service: Any,
-    config_root: str = "configs",
-    auth_enabled: bool = False,
+    config_root: str,
 ) -> None:
-    """Register run CRUD routes on the router."""
-    write_deps = [Depends(require_role("owner", "editor"))] if auth_enabled else []
-    read_deps = [Depends(require_auth)] if auth_enabled else []
+    """Register run routes with tenant-scoped auth."""
 
-    if auth_enabled:
+    @router.post("/runs", response_model=RunResponse)
+    async def create_run(
+        body: RunRequest = Body(...),
+        ctx: AuthContext = Depends(require_role("owner", "editor")),
+    ) -> RunResponse:
+        """Start a workflow execution."""
+        return await _handle_create_run(
+            execution_service, body, config_root, tenant_id=ctx.tenant_id
+        )
 
-        @router.post("/runs", response_model=RunResponse)
-        async def create_run(
-            body: RunRequest = Body(...),
-            ctx: AuthContext = Depends(require_role("owner", "editor")),
-        ) -> RunResponse:
-            """Start a workflow execution."""
-            return await _handle_create_run(
-                execution_service, body, config_root, tenant_id=ctx.tenant_id
-            )
+    @router.get("/runs")
+    async def list_runs(
+        status: str | None = Query(None),
+        limit: int = Query(100, ge=1, le=1000),
+        offset: int = Query(0, ge=0),
+        ctx: AuthContext = Depends(require_auth),
+    ) -> dict[str, Any]:
+        """List workflow executions."""
+        return await _handle_list_runs(
+            execution_service, status, limit, offset, tenant_id=ctx.tenant_id
+        )
 
-    else:
+    @router.get("/runs/{run_id}")
+    async def get_run(
+        run_id: str, ctx: AuthContext = Depends(require_auth)
+    ) -> dict[str, Any]:
+        """Get execution status by ID."""
+        return await _handle_get_run(execution_service, run_id, tenant_id=ctx.tenant_id)
 
-        @router.post("/runs", response_model=RunResponse, dependencies=write_deps)
-        async def create_run(body: RunRequest = Body(...)) -> RunResponse:  # type: ignore[misc]
-            """Start a workflow execution."""
-            return await _handle_create_run(execution_service, body, config_root)
+    @router.post("/runs/{run_id}/cancel")
+    async def cancel_run(
+        run_id: str,
+        ctx: AuthContext = Depends(require_role("owner", "editor")),
+    ) -> dict[str, Any]:
+        """Cancel a running workflow execution."""
+        return await _handle_cancel_run(
+            execution_service, run_id, tenant_id=ctx.tenant_id
+        )
 
-    @router.get("/runs", dependencies=read_deps)
+    @router.get("/runs/{run_id}/events")
+    async def get_run_events(
+        run_id: str,
+        limit: int = Query(100, ge=1, le=1000),
+        offset: int = Query(0, ge=0),
+        ctx: AuthContext = Depends(require_auth),
+    ) -> dict[str, Any]:
+        """Get events for a specific run."""
+        return await _handle_get_run_events(execution_service, run_id, limit, offset)
+
+
+def _register_run_routes_noauth(
+    router: APIRouter,
+    execution_service: Any,
+    config_root: str,
+) -> None:
+    """Register run routes without auth (dev/testing mode)."""
+
+    @router.post("/runs", response_model=RunResponse)
+    async def create_run(body: RunRequest = Body(...)) -> RunResponse:
+        """Start a workflow execution."""
+        return await _handle_create_run(execution_service, body, config_root)
+
+    @router.get("/runs")
     async def list_runs(
         status: str | None = Query(None),
         limit: int = Query(100, ge=1, le=1000),
@@ -291,17 +345,17 @@ def _register_run_routes(
         """List workflow executions."""
         return await _handle_list_runs(execution_service, status, limit, offset)
 
-    @router.get("/runs/{run_id}", dependencies=read_deps)
+    @router.get("/runs/{run_id}")
     async def get_run(run_id: str) -> dict[str, Any]:
         """Get execution status by ID."""
         return await _handle_get_run(execution_service, run_id)
 
-    @router.post("/runs/{run_id}/cancel", dependencies=write_deps)
+    @router.post("/runs/{run_id}/cancel")
     async def cancel_run(run_id: str) -> dict[str, Any]:
         """Cancel a running workflow execution."""
         return await _handle_cancel_run(execution_service, run_id)
 
-    @router.get("/runs/{run_id}/events", dependencies=read_deps)
+    @router.get("/runs/{run_id}/events")
     async def get_run_events(
         run_id: str,
         limit: int = Query(100, ge=1, le=1000),
@@ -309,6 +363,19 @@ def _register_run_routes(
     ) -> dict[str, Any]:
         """Get events for a specific run."""
         return await _handle_get_run_events(execution_service, run_id, limit, offset)
+
+
+def _register_run_routes(
+    router: APIRouter,
+    execution_service: Any,
+    config_root: str = "configs",
+    auth_enabled: bool = False,
+) -> None:
+    """Register run CRUD routes on the router."""
+    if auth_enabled:
+        _register_run_routes_auth(router, execution_service, config_root)
+    else:
+        _register_run_routes_noauth(router, execution_service, config_root)
 
 
 def create_server_router(

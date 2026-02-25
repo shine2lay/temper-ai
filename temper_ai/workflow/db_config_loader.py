@@ -72,17 +72,27 @@ class DBConfigLoader:
         """Load stage config from DB by name.
 
         Raises FileNotFoundError if not found.
-        The validate parameter is accepted for interface compatibility.
+        Raises ValueError if validate=True and config fails Pydantic validation.
         """
-        return _load_config(self._tenant_id, StageConfigDB, name)
+        data = _load_config(self._tenant_id, StageConfigDB, name)
+        if validate:
+            from temper_ai.auth.config_sync import _validate_with_pydantic
+
+            _validate_with_pydantic("stage", data)
+        return data
 
     def load_agent(self, name: str, validate: bool = True) -> dict[str, Any]:
         """Load agent config from DB by name.
 
         Raises FileNotFoundError if not found.
-        The validate parameter is accepted for interface compatibility.
+        Raises ValueError if validate=True and config fails Pydantic validation.
         """
-        return _load_config(self._tenant_id, AgentConfigDB, name)
+        data = _load_config(self._tenant_id, AgentConfigDB, name)
+        if validate:
+            from temper_ai.auth.config_sync import _validate_with_pydantic
+
+            _validate_with_pydantic("agent", data)
+        return data
 
     def list_configs(self, config_type: str) -> list[str]:
         """List config names of the given type for this tenant.

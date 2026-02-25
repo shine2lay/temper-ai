@@ -4,6 +4,7 @@ Flow: Authorization: Bearer tk_... → SHA-256 hash → DB lookup →
 join tenant_memberships for role → return AuthContext.
 """
 
+import asyncio
 import hashlib
 import hmac
 import logging
@@ -17,11 +18,11 @@ from starlette.status import HTTP_401_UNAUTHORIZED, HTTP_403_FORBIDDEN
 
 logger = logging.getLogger(__name__)
 
-_API_KEY_PEPPER = os.environ.get("TEMPER_API_KEY_PEPPER", "")
-if not _API_KEY_PEPPER:
-    logger.warning(
-        "TEMPER_API_KEY_PEPPER not set — using plain SHA-256 (not recommended for production)"
-    )
+
+def _get_pepper() -> str:
+    """Read pepper from environment at call time, not import time."""
+    return os.environ.get("TEMPER_API_KEY_PEPPER", "")
+
 
 BEARER_PREFIX = "Bearer "
 API_KEY_TOKEN_PREFIX = "tk_"
@@ -33,6 +34,7 @@ KEY_PREFIX_DISPLAY_LEN = 8
 _ROW_IS_ACTIVE = 3
 _ROW_EXPIRES_AT = 4
 _ROW_ROLE = 5
+_ROW_KEY_HASH = 6
 
 
 @dataclass(frozen=True)
@@ -47,11 +49,11 @@ class AuthContext:
 
 def hash_api_key(raw_key: str) -> str:
     """HMAC-SHA256 hash an API key with server-side pepper."""
-    if not _API_KEY_PEPPER:
-        # Fall back to plain SHA-256 if no pepper configured (dev mode)
+    pepper = _get_pepper()
+    if not pepper:
         return hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
     return hmac.new(
-        _API_KEY_PEPPER.encode("utf-8"),
+        pepper.encode("utf-8"),
         raw_key.encode("utf-8"),
         hashlib.sha256,
     ).hexdigest()
@@ -79,12 +81,8 @@ def _extract_bearer_token(request: Request) -> str | None:
     return auth_header[len(BEARER_PREFIX) :].strip()
 
 
-async def _lookup_api_key(key_hash: str) -> dict | None:
-    """Look up API key by hash, joining user and membership info.
-
-    Returns dict with user_id, tenant_id, role, api_key_id, is_active,
-    expires_at, or None if not found.
-    """
+def _lookup_api_key_sync(key_hash: str) -> dict | None:
+    """Synchronous DB lookup for API key — runs in a thread."""
     from sqlmodel import col, select
 
     from temper_ai.storage.database.manager import get_session
@@ -99,6 +97,7 @@ async def _lookup_api_key(key_hash: str) -> dict | None:
                 APIKey.is_active,
                 APIKey.expires_at,
                 TenantMembership.role,
+                APIKey.key_hash,
             )
             .join(
                 TenantMembership,
@@ -111,7 +110,11 @@ async def _lookup_api_key(key_hash: str) -> dict | None:
         if row is None:
             return None
 
-        # Update usage stats (fire-and-forget within same session)
+        # C-09: Defense-in-depth constant-time key hash comparison
+        if not hmac.compare_digest(row[_ROW_KEY_HASH], key_hash):
+            return None
+
+        # Update usage stats
         api_key_record = session.get(APIKey, row[0])
         if api_key_record is not None:
             api_key_record.last_used_at = datetime.now(UTC)
@@ -127,6 +130,11 @@ async def _lookup_api_key(key_hash: str) -> dict | None:
             "expires_at": row[_ROW_EXPIRES_AT],
             "role": row[_ROW_ROLE],
         }
+
+
+async def _lookup_api_key(key_hash: str) -> dict | None:
+    """Look up API key by hash, joining user and membership info."""
+    return await asyncio.to_thread(_lookup_api_key_sync, key_hash)
 
 
 async def require_auth(request: Request) -> AuthContext:

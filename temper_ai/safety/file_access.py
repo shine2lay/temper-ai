@@ -40,6 +40,7 @@ from temper_ai.safety.interfaces import (
 )
 from temper_ai.safety.validation import ValidationMixin
 from temper_ai.shared.constants.limits import MAX_SHORT_STRING_LENGTH
+from temper_ai.shared.utils.exceptions import SecurityError
 
 # File access violation types
 VIOLATION_PARENT_TRAVERSAL = "parent_traversal"
@@ -344,7 +345,19 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
         paths = extract_paths(action)
 
         for path in paths:
-            normalized_path = normalize_path(path, self.case_sensitive)
+            try:
+                normalized_path = normalize_path(path, self.case_sensitive)
+            except SecurityError as exc:
+                violations.append(
+                    SafetyViolation(
+                        policy_name=self.name,
+                        severity=ViolationSeverity.CRITICAL,
+                        message=str(exc),
+                        action=str(action),
+                        context=context,
+                    )
+                )
+                continue
 
             # Check for security violations
             violation = self._check_path_security(

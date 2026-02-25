@@ -197,7 +197,10 @@ def _handle_list_api_keys(ctx: AuthContext) -> dict[str, Any]:
     """List API keys for the authenticated user (prefix only)."""
     with get_session() as session:
         keys = session.exec(
-            select(APIKey).where(col(APIKey.user_id) == ctx.user_id)
+            select(APIKey).where(
+                col(APIKey.user_id) == ctx.user_id,
+                col(APIKey.tenant_id) == ctx.tenant_id,
+            )
         ).all()
         return {
             "keys": [
@@ -221,7 +224,11 @@ def _handle_revoke_api_key(key_id: str, ctx: AuthContext) -> dict[str, Any]:
     """Revoke an API key (soft-delete: set is_active=False)."""
     with get_session() as session:
         api_key = session.get(APIKey, key_id)
-        if api_key is None or api_key.user_id != ctx.user_id:
+        if (
+            api_key is None
+            or api_key.user_id != ctx.user_id
+            or api_key.tenant_id != ctx.tenant_id
+        ):
             raise HTTPException(
                 status_code=HTTP_404_NOT_FOUND, detail="API key not found."
             )

@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from temper_ai.safety.constants import PATH_KEY, PATHS_KEY
+from temper_ai.shared.utils.exceptions import SecurityError
 
 
 def extract_paths(action: dict[str, Any]) -> list[str]:
@@ -150,6 +151,9 @@ def normalize_path(path: str, case_sensitive: bool) -> str:
     Returns:
         Fully normalized path
     """
+    if "\x00" in path:
+        raise SecurityError("Null bytes not allowed in paths")
+
     try:
         decoded = decode_url_fully(path)
     except ValueError:

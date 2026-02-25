@@ -31,6 +31,7 @@ class AgentEvaluationResult(SQLModel, table=True):
         default_factory=lambda: str(uuid.uuid4()),
         primary_key=True,
     )
+    tenant_id: str = Field(index=True)
     agent_execution_id: str = Field(
         sa_column=Column(
             String,

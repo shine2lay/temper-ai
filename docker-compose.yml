@@ -4,7 +4,7 @@ services:
     environment:
       POSTGRES_DB: temper_ai
       POSTGRES_USER: temper_ai
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
     ports:
       - "5432:5432"
     volumes:
@@ -31,7 +31,7 @@ services:
       - temper-ai-data:/app/.temper-ai
     environment:
       TEMPER_CONFIG_ROOT: /app/configs
-      TEMPER_DATABASE_URL: postgresql://temper_ai:${POSTGRES_PASSWORD:-changeme}@postgres:5432/temper_ai
+      TEMPER_DATABASE_URL: postgresql://temper_ai:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/temper_ai
       TEMPER_LOG_LEVEL: ${TEMPER_LOG_LEVEL:-INFO}
     env_file:
       - path: .env

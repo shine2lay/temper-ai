@@ -3,14 +3,14 @@
 Tests the three main safety policies:
 - BlastRadiusPolicy
 - SecretDetectionPolicy
-- RateLimiterPolicy
+- WindowRateLimitPolicy
 """
 
 from temper_ai.safety import (
     BlastRadiusPolicy,
-    RateLimiterPolicy,
     SecretDetectionPolicy,
     ViolationSeverity,
+    WindowRateLimitPolicy,
 )
 
 
@@ -234,12 +234,12 @@ class TestSecretDetectionPolicy:
         assert low_entropy < 1.0
 
 
-class TestRateLimiterPolicy:
-    """Test RateLimiterPolicy."""
+class TestWindowRateLimitPolicy:
+    """Test WindowRateLimitPolicy."""
 
     def test_initialization_with_defaults(self):
         """Test policy initializes with default values."""
-        policy = RateLimiterPolicy()
+        policy = WindowRateLimitPolicy()
 
         assert policy.name == "rate_limiter"
         assert policy.version == "1.0.0"
@@ -249,14 +249,14 @@ class TestRateLimiterPolicy:
     def test_initialization_with_custom_limits(self):
         """Test policy initializes with custom limits."""
         config = {"limits": {"my_operation": {"max_per_minute": 10}}}
-        policy = RateLimiterPolicy(config)
+        policy = WindowRateLimitPolicy(config)
 
         assert "my_operation" in policy.limits
         assert policy.limits["my_operation"]["max_per_minute"] == 10
 
     def test_allows_operation_under_limit(self):
         """Test policy allows operations under rate limit."""
-        policy = RateLimiterPolicy({"limits": {"test_op": {"max_per_minute": 10}}})
+        policy = WindowRateLimitPolicy({"limits": {"test_op": {"max_per_minute": 10}}})
 
         # First operation should be allowed
         result = policy.validate(
@@ -268,7 +268,7 @@ class TestRateLimiterPolicy:
 
     def test_blocks_operation_over_limit(self):
         """Test policy blocks operations over rate limit."""
-        policy = RateLimiterPolicy({"limits": {"test_op": {"max_per_second": 2}}})
+        policy = WindowRateLimitPolicy({"limits": {"test_op": {"max_per_second": 2}}})
 
         # Make 3 rapid operations (should block 3rd)
         for i in range(3):
@@ -285,7 +285,7 @@ class TestRateLimiterPolicy:
 
     def test_tracks_per_entity(self):
         """Test policy tracks limits per entity."""
-        policy = RateLimiterPolicy(
+        policy = WindowRateLimitPolicy(
             {"limits": {"test_op": {"max_per_second": 2}}, "per_entity": True}
         )
 
@@ -304,7 +304,7 @@ class TestRateLimiterPolicy:
 
     def test_tracks_global_limit(self):
         """Test policy tracks global limits across entities."""
-        policy = RateLimiterPolicy(
+        policy = WindowRateLimitPolicy(
             {"limits": {"test_op": {"max_per_second": 2}}, "per_entity": False}
         )
 
@@ -325,7 +325,7 @@ class TestRateLimiterPolicy:
 
     def test_allows_unknown_operation(self):
         """Test policy allows operations with no defined limits."""
-        policy = RateLimiterPolicy()
+        policy = WindowRateLimitPolicy()
 
         result = policy.validate(action={"operation": "unknown_operation"}, context={})
 
@@ -334,7 +334,7 @@ class TestRateLimiterPolicy:
 
     def test_reset_limits(self):
         """Test resetting rate limits."""
-        policy = RateLimiterPolicy({"limits": {"test_op": {"max_per_second": 1}}})
+        policy = WindowRateLimitPolicy({"limits": {"test_op": {"max_per_second": 1}}})
 
         # Use up limit
         policy.validate(action={"operation": "test_op"}, context={})
@@ -348,7 +348,7 @@ class TestRateLimiterPolicy:
 
     def test_reset_specific_operation(self):
         """Test resetting specific operation limits."""
-        policy = RateLimiterPolicy(
+        policy = WindowRateLimitPolicy(
             {"limits": {"op1": {"max_per_second": 1}, "op2": {"max_per_second": 1}}}
         )
 
@@ -372,7 +372,7 @@ class TestRateLimiterPolicy:
 
     def test_format_window(self):
         """Test time window formatting."""
-        policy = RateLimiterPolicy()
+        policy = WindowRateLimitPolicy()
 
         assert "second" in policy._format_window(1)
         assert "minute" in policy._format_window(60)
@@ -380,7 +380,7 @@ class TestRateLimiterPolicy:
 
     def test_violation_includes_wait_time(self):
         """Test violation message includes wait time hint."""
-        policy = RateLimiterPolicy({"limits": {"test_op": {"max_per_second": 1}}})
+        policy = WindowRateLimitPolicy({"limits": {"test_op": {"max_per_second": 1}}})
 
         # Use up limit
         policy.validate(action={"operation": "test_op"}, context={})

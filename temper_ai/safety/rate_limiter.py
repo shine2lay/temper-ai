@@ -396,7 +396,3 @@ class WindowRateLimitPolicy(BaseSafetyPolicy):
                 self._delete_matching_keys(0, operation)
             elif entity:
                 self._delete_matching_keys(1, entity)
-
-
-# Backward-compatible alias (deprecated)
-RateLimiterPolicy = WindowRateLimitPolicy

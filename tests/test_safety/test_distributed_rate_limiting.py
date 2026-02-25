@@ -2,7 +2,7 @@
 
 Tests multi-instance rate limiting coordination.
 
-CRITICAL: Current RateLimiterPolicy uses in-memory state (defaultdict + threading.Lock)
+CRITICAL: Current WindowRateLimitPolicy uses in-memory state (defaultdict + threading.Lock)
 which does NOT enforce rate limits across multiple processes/instances.
 
 These tests verify rate limiting behavior:
@@ -19,11 +19,14 @@ Reference:
 - DISTRIBUTED_RATE_LIMITING_SECURITY_ANALYSIS.md
 """
 
+from __future__ import annotations
+
 from multiprocessing import Barrier, Process, Queue
+from multiprocessing.synchronize import Barrier as BarrierType
 
 import pytest
 
-from temper_ai.safety import RateLimiterPolicy
+from temper_ai.safety import WindowRateLimitPolicy
 
 # ============================================================================
 # HELPER FUNCTIONS
@@ -35,11 +38,11 @@ def worker_make_requests(
     operation: str,
     count: int,
     results_queue: Queue,
-    barrier: Barrier = None,
+    barrier: BarrierType | None = None,
 ) -> None:
     """Worker process that makes rate-limited requests.
 
-    NOTE: This function INTENTIONALLY creates independent RateLimiterPolicy
+    NOTE: This function INTENTIONALLY creates independent WindowRateLimitPolicy
     instances to demonstrate the multi-instance bypass vulnerability.
 
     Args:
@@ -49,7 +52,7 @@ def worker_make_requests(
         results_queue: Queue to put results (success/blocked counts)
         barrier: Optional barrier for synchronization
     """
-    policy = RateLimiterPolicy(
+    policy = WindowRateLimitPolicy(
         {
             "limits": {operation: {"max_per_minute": 100}},
             "per_entity": True,
@@ -63,7 +66,7 @@ def worker_make_requests(
     if barrier:
         barrier.wait()
 
-    for i in range(count):
+    for _ in range(count):
         result = policy.validate(
             action={"operation": operation}, context={"agent_id": agent_id}
         )
@@ -82,7 +85,7 @@ def normalize_agent_id(agent_id: str) -> str:
     """Reference implementation: How agent IDs SHOULD be normalized.
 
     This function demonstrates the expected normalization behavior
-    that RateLimiterPolicy should implement to prevent bypasses.
+    that WindowRateLimitPolicy should implement to prevent bypasses.
 
     Applies:
     - Lowercase conversion (prevent case bypass)
@@ -290,7 +293,7 @@ class TestAgentIDNormalization:
         - Make 2 requests each with different casing
         - Expected: 5 total successes, 1 blocked (not 6 successes)
         """
-        policy = RateLimiterPolicy(
+        policy = WindowRateLimitPolicy(
             {"limits": {"test_op": {"max_per_minute": 5}}, "per_entity": True}
         )
 
@@ -324,7 +327,7 @@ class TestAgentIDNormalization:
 
         Both normalize to the same NFKC form and share the same rate limit bucket.
         """
-        policy = RateLimiterPolicy(
+        policy = WindowRateLimitPolicy(
             {"limits": {"test_op": {"max_per_minute": 3}}, "per_entity": True}
         )
 
@@ -352,7 +355,7 @@ class TestAgentIDNormalization:
 
         SECURITY: Prevent key injection via special characters.
         """
-        policy = RateLimiterPolicy(
+        policy = WindowRateLimitPolicy(
             {"limits": {"test_op": {"max_per_minute": 2}}, "per_entity": True}
         )
 
@@ -388,7 +391,7 @@ class TestAgentIDNormalization:
         Scenario:
         - " agent-1 ", "agent-1", "  agent-1" should all be same
         """
-        policy = RateLimiterPolicy(
+        policy = WindowRateLimitPolicy(
             {"limits": {"test_op": {"max_per_minute": 3}}, "per_entity": True}
         )
 
@@ -433,7 +436,7 @@ class TestClockSkewHandling:
         """
         import inspect
 
-        source = inspect.getsource(RateLimiterPolicy._check_limit)
+        source = inspect.getsource(WindowRateLimitPolicy._check_limit)
 
         # Verify implementation uses time-based tracking (either time.time or time.monotonic)
         uses_time = "time.time()" in source or "time.monotonic()" in source
@@ -504,7 +507,7 @@ class TestFailureRecovery:
         - Backend unavailable
         - Policy should allow requests using local rate limiting
         """
-        policy = RateLimiterPolicy(
+        policy = WindowRateLimitPolicy(
             {
                 "limits": {"test_op": {"max_per_minute": 10}},
             }

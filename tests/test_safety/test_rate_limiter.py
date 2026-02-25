@@ -1,4 +1,4 @@
-"""Comprehensive tests for RateLimiterPolicy.
+"""Comprehensive tests for WindowRateLimitPolicy.
 
 Tests cover:
 - Configuration and initialization
@@ -19,37 +19,37 @@ from unittest.mock import patch
 import pytest
 
 from temper_ai.safety.interfaces import ViolationSeverity
-from temper_ai.safety.rate_limiter import RateLimiterPolicy
+from temper_ai.safety.rate_limiter import WindowRateLimitPolicy
 
 
 class TestRateLimiterBasics:
-    """Basic tests for RateLimiterPolicy initialization and properties."""
+    """Basic tests for WindowRateLimitPolicy initialization and properties."""
 
     def test_default_initialization(self):
         """Test policy with default configuration."""
-        policy = RateLimiterPolicy()
+        policy = WindowRateLimitPolicy()
 
         assert policy.name == "rate_limiter"
         assert policy.version == "1.0.0"
         assert policy.priority == 85
-        assert policy.limits == RateLimiterPolicy.DEFAULT_LIMITS
+        assert policy.limits == WindowRateLimitPolicy.DEFAULT_LIMITS
         assert policy.strategy == "sliding_window"
         assert policy.burst_allowance == 1.5
         assert policy.per_entity is True
 
     def test_empty_config_uses_defaults(self):
         """Test that empty config uses all defaults."""
-        policy = RateLimiterPolicy({})
+        policy = WindowRateLimitPolicy({})
 
-        assert policy.limits == RateLimiterPolicy.DEFAULT_LIMITS
+        assert policy.limits == WindowRateLimitPolicy.DEFAULT_LIMITS
         assert policy.strategy == "sliding_window"
 
     def test_none_config_uses_defaults(self):
         """Test that None config uses all defaults."""
-        policy = RateLimiterPolicy(None)
+        policy = WindowRateLimitPolicy(None)
 
         assert policy.name == "rate_limiter"
-        assert policy.limits == RateLimiterPolicy.DEFAULT_LIMITS
+        assert policy.limits == WindowRateLimitPolicy.DEFAULT_LIMITS
 
 
 class TestRateLimitEnforcement:
@@ -57,7 +57,7 @@ class TestRateLimitEnforcement:
 
     def test_operation_within_limit(self):
         """Test operation within rate limit passes."""
-        policy = RateLimiterPolicy()
+        policy = WindowRateLimitPolicy()
 
         # Use default llm_call limit (100/min)
         result = policy.validate(
@@ -69,7 +69,7 @@ class TestRateLimitEnforcement:
 
     def test_per_second_limit_exceeded(self):
         """Test that exceeding per-second limit is detected."""
-        policy = RateLimiterPolicy()
+        policy = WindowRateLimitPolicy()
 
         # Use api_call which has max_per_second: 20 in defaults
         # We'll make 21 calls to exceed
@@ -91,7 +91,7 @@ class TestRateLimitEnforcement:
 
     def test_per_minute_limit_exceeded(self):
         """Test that exceeding per-minute limit is detected."""
-        policy = RateLimiterPolicy()
+        policy = WindowRateLimitPolicy()
 
         # Use tool_call which has max_per_minute: 60 in defaults
         for i in range(60):
@@ -110,7 +110,7 @@ class TestRateLimitEnforcement:
 
     def test_unknown_operation_allowed(self):
         """Test that operations without configured limits are allowed."""
-        policy = RateLimiterPolicy()
+        policy = WindowRateLimitPolicy()
 
         result = policy.validate(
             action={"operation": "unconfigured_operation"}, context={}
@@ -120,7 +120,7 @@ class TestRateLimitEnforcement:
 
     def test_multiple_violations_same_operation(self):
         """Test multiple limit violations for same operation."""
-        policy = RateLimiterPolicy()
+        policy = WindowRateLimitPolicy()
 
         # Fill up api_call limit (20/sec, 1000/min)
         for _ in range(20):
@@ -139,7 +139,7 @@ class TestEntityTracking:
 
     def test_per_entity_tracking(self):
         """Test that per_entity=True tracks limits per agent."""
-        policy = RateLimiterPolicy()
+        policy = WindowRateLimitPolicy()
 
         # Agent 1 uses some of their api_call limit
         for _ in range(10):
@@ -158,7 +158,7 @@ class TestEntityTracking:
     def test_entity_key_extraction(self):
         """Test entity key extraction from context."""
         # Intentional private access: unit test for key derivation logic
-        policy = RateLimiterPolicy()
+        policy = WindowRateLimitPolicy()
 
         # Test with agent_id
         key1 = policy._get_entity_key({"agent_id": "agent-1", "user_id": "user-1"})
@@ -182,7 +182,7 @@ class TestHistoryCleanup:
 
     def test_old_records_cleaned(self):
         """Test that old records are removed from history."""
-        policy = RateLimiterPolicy()
+        policy = WindowRateLimitPolicy()
 
         # Add some operations at time 1000
         with patch("time.time", return_value=1000.0):
@@ -197,7 +197,7 @@ class TestHistoryCleanup:
     def test_clean_old_records_function(self):
         """Test _clean_old_records helper method."""
         # Intentional private access: unit test for history cleanup logic
-        policy = RateLimiterPolicy()
+        policy = WindowRateLimitPolicy()
 
         now = time.time()
         history = [
@@ -220,7 +220,7 @@ class TestResetFunctionality:
 
     def test_reset_all_limits(self):
         """Test resetting all rate limits."""
-        policy = RateLimiterPolicy()
+        policy = WindowRateLimitPolicy()
 
         # Use up some api_call limit
         for _ in range(20):
@@ -245,7 +245,7 @@ class TestResetFunctionality:
 
     def test_reset_specific_operation(self):
         """Test resetting limits for specific operation."""
-        policy = RateLimiterPolicy()
+        policy = WindowRateLimitPolicy()
 
         # Use up limits for two operations
         for _ in range(20):
@@ -270,7 +270,7 @@ class TestResetFunctionality:
 
     def test_reset_specific_entity(self):
         """Test resetting limits for specific entity."""
-        policy = RateLimiterPolicy()
+        policy = WindowRateLimitPolicy()
 
         # Use up limits for two agents
         for _ in range(20):
@@ -311,7 +311,7 @@ class TestFormatWindow:
 
     def test_format_seconds(self):
         """Test formatting for seconds."""
-        policy = RateLimiterPolicy()
+        policy = WindowRateLimitPolicy()
 
         assert policy._format_window(1.0) == "1 second"
         assert policy._format_window(2.0) == "2 seconds"
@@ -319,7 +319,7 @@ class TestFormatWindow:
 
     def test_format_minutes(self):
         """Test formatting for minutes."""
-        policy = RateLimiterPolicy()
+        policy = WindowRateLimitPolicy()
 
         assert policy._format_window(60.0) == "1 minute"
         assert policy._format_window(120.0) == "2 minutes"
@@ -327,7 +327,7 @@ class TestFormatWindow:
 
     def test_format_hours(self):
         """Test formatting for hours."""
-        policy = RateLimiterPolicy()
+        policy = WindowRateLimitPolicy()
 
         assert policy._format_window(3600.0) == "1 hour"
         assert policy._format_window(7200.0) == "2 hours"
@@ -339,7 +339,7 @@ class TestAsyncValidation:
     @pytest.mark.asyncio
     async def test_async_validation_basic(self):
         """Test basic async validation."""
-        policy = RateLimiterPolicy()
+        policy = WindowRateLimitPolicy()
 
         # Should work like sync version
         result = await policy.validate_async(
@@ -351,7 +351,7 @@ class TestAsyncValidation:
     @pytest.mark.asyncio
     async def test_async_validation_enforces_limits(self):
         """Test that async validation enforces limits."""
-        policy = RateLimiterPolicy()
+        policy = WindowRateLimitPolicy()
 
         # Fill up api_call limit
         for _ in range(20):
@@ -369,28 +369,28 @@ class TestEdgeCases:
 
     def test_empty_action(self):
         """Test with empty action dict."""
-        policy = RateLimiterPolicy()
+        policy = WindowRateLimitPolicy()
 
         result = policy.validate(action={}, context={})
         assert result.valid  # Unknown operation is allowed
 
     def test_missing_operation_field(self):
         """Test action without operation field."""
-        policy = RateLimiterPolicy()
+        policy = WindowRateLimitPolicy()
 
         result = policy.validate(action={"other_field": "value"}, context={})
         assert result.valid  # Defaults to "unknown"
 
     def test_empty_context(self):
         """Test with empty context."""
-        policy = RateLimiterPolicy()
+        policy = WindowRateLimitPolicy()
 
         result = policy.validate(action={"operation": "llm_call"}, context={})
         assert result.valid
 
     def test_violation_metadata(self):
         """Test that violations include useful metadata."""
-        policy = RateLimiterPolicy()
+        policy = WindowRateLimitPolicy()
 
         # Use up api_call limit
         for _ in range(20):
@@ -409,7 +409,7 @@ class TestEdgeCases:
 
     def test_remediation_hint_provided(self):
         """Test that violations include remediation hints."""
-        policy = RateLimiterPolicy()
+        policy = WindowRateLimitPolicy()
 
         # Use up limit
         for _ in range(20):
@@ -424,7 +424,7 @@ class TestEdgeCases:
     def test_check_limit_function(self):
         """Test _check_limit helper method."""
         # Intentional private access: unit test for limit checking logic
-        policy = RateLimiterPolicy()
+        policy = WindowRateLimitPolicy()
 
         now = time.time()
         history = [now - 0.5, now - 0.3, now - 0.1]  # 3 recent operations
@@ -441,7 +441,7 @@ class TestEdgeCases:
     def test_check_limit_no_violation(self):
         """Test _check_limit when within limit."""
         # Intentional private access: unit test for limit checking logic
-        policy = RateLimiterPolicy()
+        policy = WindowRateLimitPolicy()
 
         now = time.time()
         history = [now - 0.5]  # 1 operation

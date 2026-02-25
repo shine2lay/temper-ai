@@ -1,6 +1,5 @@
 """Factory functions for creating LLM provider instances."""
 
-import warnings
 from typing import TYPE_CHECKING, Any
 
 from temper_ai.llm.constants import ERROR_MSG_VALID_PROVIDERS_SUFFIX
@@ -52,32 +51,6 @@ def _resolve_provider_enum(provider_str: str) -> LLMProvider:
         raise LLMError(
             f"Unknown LLM provider '{provider_str}{ERROR_MSG_VALID_PROVIDERS_SUFFIX}{valid}"
         ) from exc
-
-
-def create_llm_provider(inference_config: "InferenceConfig") -> BaseLLM:
-    """Create LLM provider from inference configuration.
-
-    .. deprecated::
-        Use :func:`create_llm_from_config` instead.  This function will be
-        removed in a future release.
-
-    Args:
-        inference_config: Inference configuration object with attributes:
-            provider, model, base_url, temperature, max_tokens, top_p,
-            timeout_seconds, max_retries, retry_delay_seconds, api_key
-
-    Returns:
-        Initialized LLM provider instance
-
-    Raises:
-        LLMError: If provider type is unknown
-    """
-    warnings.warn(
-        "create_llm_provider is deprecated, use create_llm_from_config instead",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return create_llm_from_config(inference_config)
 
 
 def create_llm_from_config(inference_config: "InferenceConfig") -> BaseLLM:

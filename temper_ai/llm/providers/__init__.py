@@ -14,7 +14,6 @@ from temper_ai.llm.providers.base import (
 from temper_ai.llm.providers.factory import (
     create_llm_client,
     create_llm_from_config,
-    create_llm_provider,
 )
 from temper_ai.llm.providers.ollama import OllamaLLM
 from temper_ai.llm.providers.openai_provider import OpenAILLM
@@ -39,7 +38,6 @@ __all__ = [
     "VllmLLM",
     "create_llm_client",
     "create_llm_from_config",
-    "create_llm_provider",
     "LLMError",
     "LLMTimeoutError",
     "LLMRateLimitError",

@@ -70,7 +70,7 @@ def generate_workflow_plan(
     prompt = build_planning_prompt(workflow_config, inputs)
 
     try:
-        from temper_ai.agent.llm import create_llm_provider
+        from temper_ai.llm.providers.factory import create_llm_from_config
         from temper_ai.storage.schemas.agent_config import InferenceConfig
 
         inference_cfg = InferenceConfig(
@@ -79,7 +79,7 @@ def generate_workflow_plan(
             base_url=planning_config.base_url,
             api_key_ref=planning_config.api_key_ref,
         )
-        llm = create_llm_provider(inference_cfg)
+        llm = create_llm_from_config(inference_cfg)
         response = llm.complete(
             prompt,
             temperature=planning_config.temperature,

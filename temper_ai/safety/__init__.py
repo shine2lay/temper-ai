@@ -60,10 +60,6 @@ _LAZY_IMPORTS = {
         "SecretDetectionPolicy",
     ),
     "WindowRateLimitPolicy": ("temper_ai.safety.rate_limiter", "WindowRateLimitPolicy"),
-    "RateLimiterPolicy": (
-        "temper_ai.safety.rate_limiter",
-        "RateLimiterPolicy",
-    ),  # backward-compat alias
     "FileAccessPolicy": ("temper_ai.safety.file_access", "FileAccessPolicy"),
     "ForbiddenOperationsPolicy": (
         "temper_ai.safety.forbidden_operations",
@@ -118,14 +114,6 @@ _LAZY_IMPORTS = {
         "temper_ai.safety.policies.rate_limit_policy",
         "TokenBucketRateLimitPolicy",
     ),
-    "RateLimitPolicy": (
-        "temper_ai.safety.policies.rate_limit_policy",
-        "RateLimitPolicy",
-    ),  # backward-compat alias
-    "RateLimitPolicyV2": (
-        "temper_ai.safety.policies.rate_limit_policy",
-        "RateLimitPolicy",
-    ),  # backward-compat alias
     # Resource consumption limits
     "ResourceLimitPolicy": (
         "temper_ai.safety.policies.resource_limit_policy",
@@ -147,10 +135,6 @@ _LAZY_IMPORTS = {
         "ForbiddenOperationViolation",
     ),
     "AccessDeniedViolation": ("temper_ai.safety.exceptions", "AccessDeniedViolation"),
-    # Models (aliases for compatibility)
-    "SafetyViolationModel": ("temper_ai.safety.interfaces", "SafetyViolation"),
-    "ValidationResultModel": ("temper_ai.safety.interfaces", "ValidationResult"),
-    "ViolationSeverityEnum": ("temper_ai.safety.interfaces", "ViolationSeverity"),
     # LLM Security boundary protocols
     "PromptInjectionDetectorProtocol": (
         "temper_ai.safety.interfaces",
@@ -164,17 +148,6 @@ _LAZY_IMPORTS = {
 }
 
 
-# Aliases that are deprecated and should emit warnings on first access.
-_DEPRECATED_ALIASES = {
-    "SafetyViolationModel": "SafetyViolation",
-    "ValidationResultModel": "ValidationResult",
-    "ViolationSeverityEnum": "ViolationSeverity",
-    "RateLimitPolicyV2": "TokenBucketRateLimitPolicy",
-    "RateLimiterPolicy": "WindowRateLimitPolicy",
-    "RateLimitPolicy": "TokenBucketRateLimitPolicy",
-}
-
-
 def __getattr__(name: str) -> Any:
     if name in _LAZY_IMPORTS:
         module_path, obj_name = _LAZY_IMPORTS[name]
@@ -182,15 +155,6 @@ def __getattr__(name: str) -> Any:
 
         module = importlib.import_module(module_path)
         obj = getattr(module, obj_name)
-        if name in _DEPRECATED_ALIASES:
-            import warnings
-
-            canonical = _DEPRECATED_ALIASES[name]
-            warnings.warn(
-                f"'{name}' is deprecated, use '{canonical}' instead",
-                DeprecationWarning,
-                stacklevel=2,
-            )
         # Cache in module namespace for subsequent fast access
         globals()[name] = obj
         return obj

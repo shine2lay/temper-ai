@@ -146,7 +146,7 @@ class TestGenerateWorkflowPlan:
         result = generate_workflow_plan({}, {}, config)
         assert result is None
 
-    @patch("temper_ai.agent.llm.create_llm_provider")
+    @patch("temper_ai.llm.providers.factory.create_llm_from_config")
     def test_calls_llm_when_enabled(self, mock_create: MagicMock) -> None:
         mock_llm = MagicMock()
         mock_response = MagicMock()
@@ -172,7 +172,7 @@ class TestGenerateWorkflowPlan:
         mock_llm.complete.assert_called_once()
 
     @patch(
-        "temper_ai.agent.llm.create_llm_provider",
+        "temper_ai.llm.providers.factory.create_llm_from_config",
         side_effect=ImportError("no module"),
     )
     def test_handles_import_error(self, mock_create: MagicMock) -> None:
@@ -181,7 +181,7 @@ class TestGenerateWorkflowPlan:
         assert result is None
 
     @patch(
-        "temper_ai.agent.llm.create_llm_provider",
+        "temper_ai.llm.providers.factory.create_llm_from_config",
         side_effect=RuntimeError("connection failed"),
     )
     def test_handles_runtime_error(self, mock_create: MagicMock) -> None:
@@ -190,7 +190,7 @@ class TestGenerateWorkflowPlan:
         assert result is None
 
     @patch(
-        "temper_ai.agent.llm.create_llm_provider",
+        "temper_ai.llm.providers.factory.create_llm_from_config",
         side_effect=ConnectionError("timeout"),
     )
     def test_handles_connection_error(self, mock_create: MagicMock) -> None:
@@ -199,7 +199,7 @@ class TestGenerateWorkflowPlan:
         assert result is None
 
     @patch(
-        "temper_ai.agent.llm.create_llm_provider",
+        "temper_ai.llm.providers.factory.create_llm_from_config",
         side_effect=ValueError("bad config"),
     )
     def test_handles_value_error(self, mock_create: MagicMock) -> None:
@@ -207,7 +207,7 @@ class TestGenerateWorkflowPlan:
         result = generate_workflow_plan({}, {}, config)
         assert result is None
 
-    @patch("temper_ai.agent.llm.create_llm_provider")
+    @patch("temper_ai.llm.providers.factory.create_llm_from_config")
     def test_strips_whitespace_from_plan(self, mock_create: MagicMock) -> None:
         mock_llm = MagicMock()
         mock_response = MagicMock()
@@ -222,7 +222,7 @@ class TestGenerateWorkflowPlan:
 
         assert result == "Plan with whitespace"
 
-    @patch("temper_ai.agent.llm.create_llm_provider")
+    @patch("temper_ai.llm.providers.factory.create_llm_from_config")
     def test_passes_temperature_and_max_tokens(self, mock_create: MagicMock) -> None:
         mock_llm = MagicMock()
         mock_response = MagicMock()

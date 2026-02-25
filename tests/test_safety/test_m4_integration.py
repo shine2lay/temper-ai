@@ -14,16 +14,22 @@ import pytest
 
 from temper_ai.safety import (
     ApprovalWorkflow,
-    CircuitBreaker,
     CircuitBreakerManager,
-    CircuitBreakerOpen,
-    CircuitBreakerState,
     FileAccessPolicy,
     PolicyComposer,
     RollbackManager,
     SafetyGate,
     SafetyGateBlocked,
     ViolationSeverity,
+)
+from temper_ai.shared.core.circuit_breaker import (
+    CircuitBreaker,
+)
+from temper_ai.shared.core.circuit_breaker import (
+    CircuitBreakerError as CircuitBreakerOpen,
+)
+from temper_ai.shared.core.circuit_breaker import (
+    CircuitState as CircuitBreakerState,
 )
 
 

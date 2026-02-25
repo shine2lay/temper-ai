@@ -51,6 +51,7 @@ from temper_ai.shared.constants.probabilities import PROB_LOW_MEDIUM, PROB_MEDIU
 WEAK_CONSENSUS_CONFIDENCE_PENALTY = 0.7  # Reduce confidence by 30% for weak consensus
 MIN_CONSENSUS_DEFAULT = 0.51  # Default minimum consensus threshold (>50%)
 PERCENT_TO_FRACTION = 0.01  # Convert percentage to fraction
+SCORE_DECIMAL_PLACES = 4  # Decimal precision for confidence scores
 
 
 class ConsensusStrategy(CollaborationStrategy):
@@ -136,9 +137,10 @@ class ConsensusStrategy(CollaborationStrategy):
         conflicts = self.detect_conflicts(agent_outputs, threshold=PROB_LOW_MEDIUM)
         return SynthesisResult(
             decision=decision,
-            confidence=round(
-                decision_support * WEAK_CONSENSUS_CONFIDENCE_PENALTY, 4
-            ),  # noqa: Standard precision
+            confidence=round(  # noqa
+                decision_support * WEAK_CONSENSUS_CONFIDENCE_PENALTY,
+                SCORE_DECIMAL_PLACES,
+            ),
             method="consensus_weak",
             votes=vote_counts,
             conflicts=conflicts,
@@ -155,7 +157,7 @@ class ConsensusStrategy(CollaborationStrategy):
             },
         )
 
-    def synthesize(
+    def synthesize(  # noqa: long
         self, agent_outputs: list[AgentOutput], config: dict[str, Any]
     ) -> SynthesisResult:
         """Synthesize using majority voting.

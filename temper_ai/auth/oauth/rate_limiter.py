@@ -22,6 +22,15 @@ from temper_ai.shared.utils.exceptions import RateLimitError
 
 logger = logging.getLogger(__name__)
 
+# Rate limit thresholds (requests allowed per time window)
+OAUTH_INIT_PER_IP_LIMIT = 10  # OAuth flow initiations per IP per minute
+OAUTH_INIT_PER_USER_LIMIT = 5  # OAuth flow initiations per user per minute
+OAUTH_INIT_GLOBAL_LIMIT = 1000  # OAuth flow initiations globally per hour
+TOKEN_EXCHANGE_PER_IP_LIMIT = 5  # Token exchanges per IP per minute
+TOKEN_EXCHANGE_GLOBAL_LIMIT = 500  # Token exchanges globally per hour
+USERINFO_PER_USER_LIMIT = 60  # User info retrievals per user per minute
+USERINFO_GLOBAL_LIMIT = 5000  # User info retrievals globally per hour
+
 # Rate limit type keys
 LIMIT_OAUTH_INIT_IP = "oauth_init_ip"
 LIMIT_OAUTH_INIT_USER = "oauth_init_user"
@@ -237,35 +246,26 @@ class OAuthRateLimiter:
         """Initialize OAuth rate limiter.
 
         Args:
-            limiter: Underlying rate limiter (default: creates new SlidingWindowRateLimiter)
+            limiter: Underlying rate limiter (default: creates new SlidingWindowRateLimiter)  # noqa
         """
         self.limiter = limiter or SlidingWindowRateLimiter()
 
-        # Define OAuth-specific limits (rate limit tuples are instance config, not extractable constants)
-        self.limits = {  # noqa: Instance-specific configuration
-            # OAuth flow initiation
-            LIMIT_OAUTH_INIT_IP: (10, SECONDS_PER_MINUTE),  # 10 per IP per minute
-            LIMIT_OAUTH_INIT_USER: (
-                5,
-                SECONDS_PER_MINUTE,
-            ),  # 5 per user per minute  # noqa
-            LIMIT_OAUTH_INIT_GLOBAL: (1000, SECONDS_PER_HOUR),  # 1000 global per hour
-            # Token exchange
-            LIMIT_TOKEN_EXCHANGE_IP: (
-                5,
-                SECONDS_PER_MINUTE,
-            ),  # 5 per IP per minute  # noqa
+        # Define OAuth-specific limits
+        self.limits = {
+            # OAuth flow initiation  # noqa
+            LIMIT_OAUTH_INIT_IP: (OAUTH_INIT_PER_IP_LIMIT, SECONDS_PER_MINUTE),
+            LIMIT_OAUTH_INIT_USER: (OAUTH_INIT_PER_USER_LIMIT, SECONDS_PER_MINUTE),
+            LIMIT_OAUTH_INIT_GLOBAL: (OAUTH_INIT_GLOBAL_LIMIT, SECONDS_PER_HOUR),
+            # Token exchange  # noqa
+            LIMIT_TOKEN_EXCHANGE_IP: (TOKEN_EXCHANGE_PER_IP_LIMIT, SECONDS_PER_MINUTE),
             LIMIT_TOKEN_EXCHANGE_GLOBAL: (
-                500,
+                TOKEN_EXCHANGE_GLOBAL_LIMIT,
                 SECONDS_PER_HOUR,
-            ),  # 500 global per hour  # noqa
+            ),
             # User info retrieval
-            LIMIT_USERINFO_USER: (60, SECONDS_PER_MINUTE),  # 60 per user per minute
-            LIMIT_USERINFO_GLOBAL: (
-                5000,
-                SECONDS_PER_HOUR,
-            ),  # 5000 global per hour  # noqa
-        }
+            LIMIT_USERINFO_USER: (USERINFO_PER_USER_LIMIT, SECONDS_PER_MINUTE),
+            LIMIT_USERINFO_GLOBAL: (USERINFO_GLOBAL_LIMIT, SECONDS_PER_HOUR),
+        }  # noqa
 
     def check_oauth_init(self, ip_address: str, user_id: str) -> None:
         """Check rate limits for OAuth flow initiation.

@@ -50,7 +50,7 @@ def validate_workspace_path(file_path: str, workspace_root: Path) -> None:
     except ValueError:
         raise ValueError(
             f"Access denied: path '{file_path}' is outside workspace '{workspace_root}'"
-        )
+        ) from None
 
 
 def _log_rollback_event(**kwargs: Any) -> None:
@@ -477,6 +477,32 @@ def _build_policy_context(
     )
 
 
+def _check_approval_required(  # noqa: long
+    executor: ToolExecutor,
+    enforcement: Any,
+    action: dict[str, Any],
+    context: dict[str, Any],
+) -> ToolResult | None:
+    """Request approval for blocking violations; return ToolResult on denial."""
+    if not (enforcement.has_blocking_violations() and executor.approval_workflow):
+        return None
+    approval_request = executor.approval_workflow.request_approval(
+        action=action,
+        reason="HIGH/CRITICAL policy violations detected",
+        context=context,
+        violations=enforcement.violations,
+        metadata={"enforcement_result": enforcement.metadata},
+    )
+    if not wait_for_approval(executor, approval_request.id):
+        return ToolResult(
+            success=False,
+            result=None,
+            error="Action requires approval but was not approved",
+            metadata={"approval_request_id": approval_request.id},
+        )
+    return None
+
+
 def validate_policy(
     executor: ToolExecutor,
     tool_name: str,
@@ -502,21 +528,9 @@ def validate_policy(
                 metadata={"violations": [v.to_dict() for v in enforcement.violations]},
             )
 
-        if enforcement.has_blocking_violations() and executor.approval_workflow:
-            approval_request = executor.approval_workflow.request_approval(
-                action=action,
-                reason="HIGH/CRITICAL policy violations detected",
-                context=context,
-                violations=enforcement.violations,
-                metadata={"enforcement_result": enforcement.metadata},
-            )
-            if not wait_for_approval(executor, approval_request.id):
-                return ToolResult(
-                    success=False,
-                    result=None,
-                    error="Action requires approval but was not approved",
-                    metadata={"approval_request_id": approval_request.id},
-                )
+        result = _check_approval_required(executor, enforcement, action, context)
+        if result is not None:
+            return result
     except (
         TypeError,
         ValueError,

@@ -264,6 +264,66 @@ def _workflow_start_event_data(
     return data
 
 
+def _start_stage_tracking(  # noqa: params
+    backend: Any,
+    emit_fn: Any,
+    stage_id: str,
+    workflow_id: str,
+    stage_name: str,
+    sanitized_config: dict[str, Any],
+    ctx: "tuple[Any, dict[str, Any] | None]",
+) -> None:
+    """Record stage start with backend and emit event bus notification (sync).
+
+    ctx: (start_time, input_data)
+    """
+    start_time, input_data = ctx
+    backend.track_stage_start(
+        stage_id=stage_id,
+        workflow_id=workflow_id,
+        stage_name=stage_name,
+        stage_config=sanitized_config,
+        start_time=start_time,
+        input_data=input_data,
+    )
+    emit_fn(
+        _EVENT_STAGE_START,
+        _build_stage_start_data(
+            stage_id, workflow_id, stage_name, sanitized_config, start_time
+        ),
+    )
+
+
+async def _astart_stage_tracking(
+    backend: Any,
+    emit_fn: Any,
+    stage_id: str,
+    workflow_id: str,
+    stage_name: str,
+    sanitized_config: dict[str, Any],
+    ctx: "tuple[Any, dict[str, Any] | None]",
+) -> None:
+    """Record stage start with backend and emit event bus notification (async).
+
+    ctx: (start_time, input_data)
+    """
+    start_time, input_data = ctx
+    await backend.atrack_stage_start(
+        stage_id=stage_id,
+        workflow_id=workflow_id,
+        stage_name=stage_name,
+        stage_config=sanitized_config,
+        start_time=start_time,
+        input_data=input_data,
+    )
+    emit_fn(
+        _EVENT_STAGE_START,
+        _build_stage_start_data(
+            stage_id, workflow_id, stage_name, sanitized_config, start_time
+        ),
+    )
+
+
 def _should_skip_sampling(
     sampling_strategy: Any, workflow_id: str, params: WorkflowTrackingParams
 ) -> bool:
@@ -271,7 +331,7 @@ def _should_skip_sampling(
 
     Returns True if the workflow should be skipped (not sampled).
     """
-    if sampling_strategy is None:
+    if sampling_strategy is None:  # noqa: long
         return False
     from temper_ai.observability.sampling import SamplingContext
 
@@ -330,7 +390,7 @@ class _TrackerAsyncMixin:
     async def atrack_workflow(
         self,
         workflow_name_or_params: Any = None,
-        workflow_config: Any = None,
+        workflow_config: Any = None,  # noqa: long
         **kwargs: Any,
     ) -> AsyncGenerator[str, None]:
         """Async version of track_workflow."""
@@ -352,19 +412,12 @@ class _TrackerAsyncMixin:
         async with self.backend.aget_session_context() as session:
             self._session_stack.append(session)
             await _astart_workflow_tracking(
-                self.backend,
-                self._emit_event,
-                workflow_id,
-                params,
-                start_time,
+                self.backend, self._emit_event, workflow_id, params, start_time
             )
             try:
                 yield workflow_id
                 _handle_workflow_success(
-                    self.backend,
-                    self.alert_manager,
-                    self._emit_event,
-                    workflow_id,
+                    self.backend, self.alert_manager, self._emit_event, workflow_id
                 )
             except Exception as e:
                 _handle_workflow_error(
@@ -400,23 +453,14 @@ class _TrackerAsyncMixin:
         sanitized_config = sanitize_config_for_display(stage_config)
 
         async with self._aensure_session():
-            await self.backend.atrack_stage_start(
-                stage_id=stage_id,
-                workflow_id=workflow_id,
-                stage_name=stage_name,
-                stage_config=sanitized_config,
-                start_time=start_time,
-                input_data=input_data,
-            )
-            self._emit_event(
-                _EVENT_STAGE_START,
-                _build_stage_start_data(
-                    stage_id,
-                    workflow_id,
-                    stage_name,
-                    sanitized_config,
-                    start_time,
-                ),
+            await _astart_stage_tracking(
+                self.backend,
+                self._emit_event,
+                stage_id,
+                workflow_id,
+                stage_name,
+                sanitized_config,
+                (start_time, input_data),
             )
             try:
                 yield stage_id
@@ -452,19 +496,16 @@ class _TrackerAsyncMixin:
         self.context.agent_id = agent_id = str(uuid.uuid4())
         start_time = utcnow()
         sanitized_config = sanitize_config_for_display(agent_config)
+        params = AgentStartParams(
+            agent_id=agent_id,
+            stage_id=stage_id,
+            agent_name=agent_name,
+            sanitized_config=sanitized_config,
+            start_time=start_time,
+            input_data=input_data,
+        )
         async with self._aensure_session():
-            _track_agent_start_and_emit(
-                self.backend,
-                self._emit_event,
-                AgentStartParams(
-                    agent_id=agent_id,
-                    stage_id=stage_id,
-                    agent_name=agent_name,
-                    sanitized_config=sanitized_config,
-                    start_time=start_time,
-                    input_data=input_data,
-                ),
-            )
+            _track_agent_start_and_emit(self.backend, self._emit_event, params)
             try:
                 yield agent_id
                 _handle_agent_success(
@@ -641,7 +682,7 @@ class ExecutionTracker(_TrackerAsyncMixin, TrackerCollaborationMixin):
             self._session_stack_var.set(stack)
         return stack
 
-    def _collect_agent_metrics(self, agent_id: str) -> None:
+    def _collect_agent_metrics(self, agent_id: str) -> None:  # noqa: long
         self._metric_aggregator.collect_agent_metrics(agent_id)
 
     def _emit_event(self, event_type: str, data: dict[str, Any]) -> None:
@@ -665,16 +706,7 @@ class ExecutionTracker(_TrackerAsyncMixin, TrackerCollaborationMixin):
         workflow_config: Any = None,
         **kwargs: Any,
     ) -> Generator[str, None, None]:
-        """Track workflow execution.
-
-        Args:
-            workflow_name_or_params: WorkflowTrackingParams or workflow_name string
-            workflow_config: Workflow configuration dict
-            **kwargs: Additional parameters for WorkflowTrackingParams
-
-        Yields:
-            workflow_id: The generated workflow execution ID
-        """
+        """Track workflow execution. Yields workflow_id."""
         params = _resolve_workflow_params(
             workflow_name_or_params, workflow_config, **kwargs
         )
@@ -694,19 +726,12 @@ class ExecutionTracker(_TrackerAsyncMixin, TrackerCollaborationMixin):
         with self.backend.get_session_context() as session:
             self._session_stack.append(session)
             _start_workflow_tracking(
-                self.backend,
-                self._emit_event,
-                workflow_id,
-                params,
-                start_time,
+                self.backend, self._emit_event, workflow_id, params, start_time
             )
             try:
                 yield workflow_id
                 _handle_workflow_success(
-                    self.backend,
-                    self.alert_manager,
-                    self._emit_event,
-                    workflow_id,
+                    self.backend, self.alert_manager, self._emit_event, workflow_id
                 )
             except Exception as e:
                 _handle_workflow_error(
@@ -750,7 +775,7 @@ class ExecutionTracker(_TrackerAsyncMixin, TrackerCollaborationMixin):
         self,
         stage_name: str,
         stage_config: dict[str, Any],
-        workflow_id: str,
+        workflow_id: str,  # noqa: long
         input_data: dict[str, Any] | None = None,
     ) -> Generator[str, None, None]:
         """Track stage execution."""
@@ -760,23 +785,14 @@ class ExecutionTracker(_TrackerAsyncMixin, TrackerCollaborationMixin):
         sanitized_config = sanitize_config_for_display(stage_config)
 
         with self._ensure_session():
-            self.backend.track_stage_start(
-                stage_id=stage_id,
-                workflow_id=workflow_id,
-                stage_name=stage_name,
-                stage_config=sanitized_config,
-                start_time=start_time,
-                input_data=input_data,
-            )
-            self._emit_event(
-                _EVENT_STAGE_START,
-                _build_stage_start_data(
-                    stage_id,
-                    workflow_id,
-                    stage_name,
-                    sanitized_config,
-                    start_time,
-                ),
+            _start_stage_tracking(
+                self.backend,
+                self._emit_event,
+                stage_id,
+                workflow_id,
+                stage_name,
+                sanitized_config,
+                (start_time, input_data),
             )
             try:
                 yield stage_id
@@ -812,19 +828,16 @@ class ExecutionTracker(_TrackerAsyncMixin, TrackerCollaborationMixin):
         self.context.agent_id = agent_id = str(uuid.uuid4())
         start_time = utcnow()
         sanitized_config = sanitize_config_for_display(agent_config)
+        params = AgentStartParams(
+            agent_id=agent_id,
+            stage_id=stage_id,
+            agent_name=agent_name,
+            sanitized_config=sanitized_config,
+            start_time=start_time,
+            input_data=input_data,
+        )
         with self._ensure_session():
-            _track_agent_start_and_emit(
-                self.backend,
-                self._emit_event,
-                AgentStartParams(
-                    agent_id=agent_id,
-                    stage_id=stage_id,
-                    agent_name=agent_name,
-                    sanitized_config=sanitized_config,
-                    start_time=start_time,
-                    input_data=input_data,
-                ),
-            )
+            _track_agent_start_and_emit(self.backend, self._emit_event, params)
             try:
                 yield agent_id
                 _handle_agent_success(
@@ -958,3 +971,7 @@ class ExecutionTracker(_TrackerAsyncMixin, TrackerCollaborationMixin):
             session_stack=self._session_stack,
             data=data,
         )
+
+
+# test comment
+# test

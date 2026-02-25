@@ -44,33 +44,43 @@ def _pydantic_to_llm_schema(model: type[BaseModel]) -> dict[str, Any]:
     return cleaned
 
 
+def _resolve_schema_ref(
+    prop: dict[str, Any], defs: dict[str, Any]
+) -> dict[str, Any]:  # noqa: radon
+    """Resolve a $ref to its definition, preserving description/default overrides."""
+    ref_name = prop["$ref"].rsplit("/", 1)[-1]
+    if ref_name not in defs:
+        return prop
+    resolved = dict(defs[ref_name])
+    for key in ("description", "default"):
+        if key in prop:
+            resolved[key] = prop[key]
+    return resolved
+
+
+def _simplify_schema_any_of(prop: dict[str, Any]) -> dict[str, Any]:
+    """Simplify anyOf for Optional types by picking the single non-null branch."""
+    non_null = [t for t in prop["anyOf"] if t != {"type": "null"}]
+    if len(non_null) != 1:
+        return prop
+    outer = {k: v for k, v in prop.items() if k != "anyOf"}
+    return {**non_null[0], **outer}
+
+
 def _clean_schema_property(
     prop: dict[str, Any], defs: dict[str, Any]
 ) -> dict[str, Any]:
     """Clean a single property schema node for LLM consumption."""
     result = dict(prop)
 
-    # Resolve $ref
     if "$ref" in result:
-        ref_name = result["$ref"].rsplit("/", 1)[-1]
-        if ref_name in defs:
-            resolved = dict(defs[ref_name])
-            for key in ("description", "default"):
-                if key in result:
-                    resolved[key] = result[key]
-            result = resolved
+        result = _resolve_schema_ref(result, defs)
 
-    # Simplify anyOf for Optional types (pick non-null branch)
     if "anyOf" in result:
-        non_null = [t for t in result["anyOf"] if t != {"type": "null"}]
-        if len(non_null) == 1:
-            outer = {k: v for k, v in result.items() if k != "anyOf"}
-            result = {**non_null[0], **outer}
+        result = _simplify_schema_any_of(result)
 
-    # Strip Pydantic title noise
     result.pop("title", None)
 
-    # Strip default=null (implicit for optional fields)
     if "default" in result and result["default"] is None:
         del result["default"]
 

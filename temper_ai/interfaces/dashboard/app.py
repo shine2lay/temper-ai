@@ -191,7 +191,7 @@ def _register_management_routes(
     """
     import importlib
 
-    _MANAGEMENT_ROUTES: list[tuple[str, str, str]] = [
+    management_routes: list[tuple[str, str, str]] = [
         (
             "temper_ai.interfaces.server.checkpoint_routes",
             "create_checkpoint_router",
@@ -227,7 +227,7 @@ def _register_management_routes(
         ),
         ("temper_ai.interfaces.server.chat_routes", "create_chat_router", "Chat"),
     ]
-    for module_path, factory_name, label in _MANAGEMENT_ROUTES:
+    for module_path, factory_name, label in management_routes:
         try:
             mod = importlib.import_module(module_path)
             factory = getattr(mod, factory_name)
@@ -315,12 +315,12 @@ def _register_optional_routes(app: FastAPI, config_root: str) -> None:
     except Exception:  # noqa: BLE001
         logger.warning("Autonomy routes not available")
 
-    _OPTIONAL_ROUTES = [
+    optional_routes = [
         ("temper_ai.learning", "Learning"),
         ("temper_ai.goals", "Goal"),
         ("temper_ai.portfolio", "Portfolio"),
     ]
-    for domain, label in _OPTIONAL_ROUTES:
+    for domain, label in optional_routes:
         try:
             mod_routes = importlib.import_module(f"{domain}.dashboard_routes")
             _register_domain_routes(app, domain, mod_routes)
@@ -435,7 +435,36 @@ def _init_server_components(mode: str) -> tuple:
     return shutdown_mgr, run_store, mining_job, analysis_job
 
 
-def create_app(
+def _configure_app_middleware_and_routes(  # noqa: long
+    app: FastAPI,
+    execution_service: Any,
+    backend: Any,
+    event_bus: Any,
+    config_root: str,
+    mode: str,
+) -> None:
+    """Apply middleware, CORS, and register all routes on the app."""
+    from temper_ai.interfaces.dashboard.data_service import DashboardDataService
+
+    _configure_cors(app, mode)
+    app.add_middleware(_SecurityHeadersMiddleware)
+    auth_enabled = mode == "server"
+
+    data_service = DashboardDataService(backend=backend, event_bus=event_bus)
+    _register_routes(
+        app,
+        execution_service,
+        data_service,
+        config_root,
+        mode,
+        auth_enabled=auth_enabled,
+    )
+
+    if auth_enabled:
+        _register_auth_routes(app)
+
+
+def create_app(  # noqa: long
     backend: Any = None,
     event_bus: Any = None,
     mode: str = "dev",
@@ -454,7 +483,6 @@ def create_app(
     Returns:
         Configured FastAPI application.
     """
-    from temper_ai.interfaces.dashboard.data_service import DashboardDataService
     from temper_ai.interfaces.dashboard.execution_service import (
         WorkflowExecutionService,
     )
@@ -497,21 +525,7 @@ def create_app(
     if shutdown_mgr is not None:
         app.state.shutdown_manager = shutdown_mgr
 
-    _configure_cors(app, mode)
-    app.add_middleware(_SecurityHeadersMiddleware)
-    auth_enabled = mode == "server"
-
-    data_service = DashboardDataService(backend=backend, event_bus=event_bus)
-    _register_routes(
-        app,
-        execution_service,
-        data_service,
-        config_root,
-        mode,
-        auth_enabled=auth_enabled,
+    _configure_app_middleware_and_routes(
+        app, execution_service, backend, event_bus, config_root, mode
     )
-
-    if auth_enabled:
-        _register_auth_routes(app)
-
     return app

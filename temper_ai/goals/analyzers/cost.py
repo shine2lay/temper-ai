@@ -81,6 +81,50 @@ class CostAnalyzer(BaseAnalyzer):
         return agents, llm_calls
 
 
+def _make_agent_cost_proposal(  # noqa: long
+    agent_name: str, agent_cost: float, total_cost: float, share: float
+) -> GoalProposal:
+    """Build a GoalProposal for a high-cost agent."""
+    savings = agent_cost * SAVINGS_FACTOR
+    return GoalProposal(
+        goal_type=GoalType.COST_REDUCTION,
+        title=f"Reduce cost for agent: {agent_name}",
+        description=(
+            f"Agent '{agent_name}' consumes "
+            f"{share * PCT_MULTIPLIER:.0f}% of total "
+            f"cost (${agent_cost:.2f} of ${total_cost:.2f})."
+        ),
+        risk_assessment=RiskAssessment(
+            level=GoalRiskLevel.LOW,
+            blast_radius=f"agent:{agent_name}",
+            reversible=True,
+        ),
+        effort_estimate=EffortLevel.SMALL,
+        expected_impacts=[
+            ImpactEstimate(
+                metric_name="cost_usd",
+                current_value=agent_cost,
+                expected_value=agent_cost - savings,
+                improvement_pct=SAVINGS_FACTOR * PCT_MULTIPLIER,
+                confidence=MID_CONFIDENCE,
+            )
+        ],
+        evidence=GoalEvidence(
+            metrics={
+                "agent_cost_usd": agent_cost,
+                "total_cost_usd": total_cost,
+                "cost_share": share,
+            },
+            analysis_summary=f"High cost concentration: {share * PCT_MULTIPLIER:.0f}%",
+        ),
+        proposed_actions=[
+            "Switch to a cheaper model variant",
+            "Reduce prompt length or token usage",
+            "Add caching for repeated queries",
+        ],
+    )
+
+
 def _analyze_agent_costs(agents: list) -> list[GoalProposal]:
     """Find agents consuming disproportionate cost share."""
     if not agents:
@@ -98,48 +142,58 @@ def _analyze_agent_costs(agents: list) -> list[GoalProposal]:
     proposals: list[GoalProposal] = []
     for agent_name, agent_cost in by_agent.items():
         share = agent_cost / total_cost
-        if share > HIGH_COST_AGENT_SHARE:
-            savings = agent_cost * SAVINGS_FACTOR
+        if share > HIGH_COST_AGENT_SHARE:  # noqa: long
             proposals.append(
-                GoalProposal(
-                    goal_type=GoalType.COST_REDUCTION,
-                    title=f"Reduce cost for agent: {agent_name}",
-                    description=(
-                        f"Agent '{agent_name}' consumes "
-                        f"{share * PCT_MULTIPLIER:.0f}% of total "
-                        f"cost (${agent_cost:.2f} of ${total_cost:.2f})."
-                    ),
-                    risk_assessment=RiskAssessment(
-                        level=GoalRiskLevel.LOW,
-                        blast_radius=f"agent:{agent_name}",
-                        reversible=True,
-                    ),
-                    effort_estimate=EffortLevel.SMALL,
-                    expected_impacts=[
-                        ImpactEstimate(
-                            metric_name="cost_usd",
-                            current_value=agent_cost,
-                            expected_value=agent_cost - savings,
-                            improvement_pct=SAVINGS_FACTOR * PCT_MULTIPLIER,
-                            confidence=MID_CONFIDENCE,
-                        )
-                    ],
-                    evidence=GoalEvidence(
-                        metrics={
-                            "agent_cost_usd": agent_cost,
-                            "total_cost_usd": total_cost,
-                            "cost_share": share,
-                        },
-                        analysis_summary=f"High cost concentration: {share * PCT_MULTIPLIER:.0f}%",
-                    ),
-                    proposed_actions=[
-                        "Switch to a cheaper model variant",
-                        "Reduce prompt length or token usage",
-                        "Add caching for repeated queries",
-                    ],
-                )
+                _make_agent_cost_proposal(agent_name, agent_cost, total_cost, share)
             )
     return proposals
+
+
+def _make_model_cost_proposal(
+    model_name: str,
+    cheapest_name: str,
+    per_call: float,
+    cheapest_per_call: float,
+    ratio: float,
+    stats: dict,
+) -> GoalProposal:
+    """Build a GoalProposal for a model that costs significantly more than cheapest."""
+    savings = stats["cost"] - (cheapest_per_call * stats["calls"])
+    improvement = (savings / stats["cost"]) * PCT_MULTIPLIER if stats["cost"] > 0 else 0
+    return GoalProposal(
+        goal_type=GoalType.COST_REDUCTION,
+        title=f"Consider cheaper model for: {model_name}",
+        description=(
+            f"Model '{model_name}' costs ${per_call:.4f}/call vs "
+            f"'{cheapest_name}' at ${cheapest_per_call:.4f}/call ({ratio:.1f}x)."
+        ),
+        risk_assessment=RiskAssessment(
+            level=GoalRiskLevel.MEDIUM,
+            blast_radius=f"model:{model_name}",
+            reversible=True,
+        ),
+        effort_estimate=EffortLevel.SMALL,
+        expected_impacts=[
+            ImpactEstimate(
+                metric_name="cost_usd",
+                current_value=stats["cost"],
+                expected_value=stats["cost"] - savings,
+                improvement_pct=improvement,
+                confidence=LOW_CONFIDENCE,
+            )
+        ],
+        evidence=GoalEvidence(
+            metrics={
+                "cost_per_call": per_call,
+                "cheap_cost_per_call": cheapest_per_call,
+            },
+            analysis_summary=f"Model cost ratio: {ratio:.1f}x",
+        ),
+        proposed_actions=[
+            f"Evaluate '{cheapest_name}' as replacement",
+            "Run A/B test comparing output quality",
+        ],
+    )
 
 
 def _analyze_model_costs(llm_calls: list) -> list[GoalProposal]:
@@ -168,44 +222,9 @@ def _analyze_model_costs(llm_calls: list) -> list[GoalProposal]:
         per_call = stats["cost"] / max(stats["calls"], 1)
         ratio = per_call / cheapest_per_call
         if ratio > MODEL_COST_RATIO:
-            savings = stats["cost"] - (cheapest_per_call * stats["calls"])
-            improvement = (
-                (savings / stats["cost"]) * PCT_MULTIPLIER if stats["cost"] > 0 else 0
-            )
             proposals.append(
-                GoalProposal(
-                    goal_type=GoalType.COST_REDUCTION,
-                    title=f"Consider cheaper model for: {model_name}",
-                    description=(
-                        f"Model '{model_name}' costs ${per_call:.4f}/call vs "
-                        f"'{cheapest_name}' at ${cheapest_per_call:.4f}/call ({ratio:.1f}x)."
-                    ),
-                    risk_assessment=RiskAssessment(
-                        level=GoalRiskLevel.MEDIUM,
-                        blast_radius=f"model:{model_name}",
-                        reversible=True,
-                    ),
-                    effort_estimate=EffortLevel.SMALL,
-                    expected_impacts=[
-                        ImpactEstimate(
-                            metric_name="cost_usd",
-                            current_value=stats["cost"],
-                            expected_value=stats["cost"] - savings,
-                            improvement_pct=improvement,
-                            confidence=LOW_CONFIDENCE,
-                        )
-                    ],
-                    evidence=GoalEvidence(
-                        metrics={
-                            "cost_per_call": per_call,
-                            "cheap_cost_per_call": cheapest_per_call,
-                        },
-                        analysis_summary=f"Model cost ratio: {ratio:.1f}x",
-                    ),
-                    proposed_actions=[
-                        f"Evaluate '{cheapest_name}' as replacement",
-                        "Run A/B test comparing output quality",
-                    ],
+                _make_model_cost_proposal(
+                    model_name, cheapest_name, per_call, cheapest_per_call, ratio, stats
                 )
             )
     return proposals

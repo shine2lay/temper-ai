@@ -4,7 +4,7 @@ import logging
 import time
 from datetime import UTC, datetime
 from threading import Event, Thread
-from typing import Any
+from typing import Any, Self
 
 from rich import box
 from rich.console import Console
@@ -443,7 +443,7 @@ class StreamingVisualizer(WorkflowVisualizer):
                     # Stop if workflow completed/failed
                     if workflow.status in ["completed", "failed", "timeout", "halted"]:
                         # Wait a bit to show final state
-                        time.sleep(
+                        time.sleep(  # Intentional blocking
                             FINAL_STATE_DISPLAY_DURATION_SECONDS
                         )  # Intentional blocking: brief pause to display final workflow state in UI thread
                         break
@@ -453,7 +453,7 @@ class StreamingVisualizer(WorkflowVisualizer):
                 logger.debug(f"Error in _update_loop polling: {e}")
 
             # Wait before next poll
-            time.sleep(
+            time.sleep(  # Intentional blocking
                 self.poll_interval
             )  # Intentional blocking: polling interval for UI update thread
 
@@ -475,11 +475,16 @@ class StreamingVisualizer(WorkflowVisualizer):
         }
         return colors.get(status, "blue")
 
-    def __enter__(self) -> "StreamingVisualizer":
+    def __enter__(self) -> Self:
         """Context manager entry."""
         self.start()
         return self
 
-    def __exit__(self, _exc_type: Any, _exc_val: Any, _exc_tb: Any) -> None:
+    def __exit__(
+        self,
+        _exc_type: type[BaseException] | None,
+        _exc_val: BaseException | None,
+        _exc_tb: object,
+    ) -> None:
         """Context manager exit."""
         self.stop()

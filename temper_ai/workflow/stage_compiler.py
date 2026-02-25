@@ -37,6 +37,18 @@ logger = logging.getLogger(__name__)
 LOOP_GATE_PREFIX = "_loop_gate_"
 
 
+def _build_ref_lookup(stage_refs: list[Any]) -> dict[str, Any]:  # noqa: god
+    """Build a lookup dict from stage name to stage reference."""
+    lookup: dict[str, Any] = {}
+    for ref in stage_refs:
+        if isinstance(ref, str):
+            continue
+        name = ref.get("name") if isinstance(ref, dict) else getattr(ref, "name", None)
+        if name:
+            lookup[name] = ref
+    return lookup
+
+
 class StageCompiler:
     """Compiles stage configurations into LangGraph StateGraph.
 
@@ -478,18 +490,10 @@ class StageCompiler:
         )
         return True
 
-    def _build_ref_lookup(self, stage_refs: list[Any]) -> dict[str, Any]:
+    @staticmethod
+    def _build_ref_lookup(stage_refs: list[Any]) -> dict[str, Any]:
         """Build a lookup dict from stage name to stage reference."""
-        lookup: dict[str, Any] = {}
-        for ref in stage_refs:
-            if isinstance(ref, str):
-                continue
-            name = (
-                ref.get("name") if isinstance(ref, dict) else getattr(ref, "name", None)
-            )
-            if name:
-                lookup[name] = ref
-        return lookup
+        return _build_ref_lookup(stage_refs)
 
     @staticmethod
     def _is_conditional(stage_ref: Any) -> bool:
@@ -626,7 +630,7 @@ def _filter_reachable_targets(
     if len(raw_targets) <= 1:
         return raw_targets
 
-    target_set = set(t for t in raw_targets if t)
+    target_set = {t for t in raw_targets if t}
     filtered: list[str | None] = []
     for target in raw_targets:
         if target is None:

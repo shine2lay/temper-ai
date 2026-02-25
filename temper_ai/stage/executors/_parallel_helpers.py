@@ -358,7 +358,7 @@ def create_agent_node(
     return agent_node
 
 
-def build_collect_outputs_node(
+def build_collect_outputs_node(  # noqa: long
     agents: list,
     stage_config: Any,
 ) -> Callable[[dict[str, Any]], dict[str, Any]]:

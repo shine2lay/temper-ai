@@ -242,6 +242,60 @@ class VllmLLM(BaseLLM):
             if "arguments" in func and func["arguments"]:
                 tool_call_buf[idx]["arguments"] += func["arguments"]
 
+    def _process_sse_chunk(  # noqa: long
+        self,
+        data: Any,
+        content_parts: list[str],
+        thinking_parts: list[str],
+        tool_call_buf: dict[int, dict[str, str]],
+        on_chunk: StreamCallback,
+    ) -> tuple[int | None, int | None, str | None]:
+        """Process one SSE data chunk. Returns (prompt_tokens, completion_tokens, finish_reason)."""
+        chunk_content, chunk_type, is_done = self._extract_chunk_fields(data)
+        if chunk_content:
+            process_chunk_content(
+                chunk_content,
+                chunk_type,
+                content_parts,
+                thinking_parts,
+                on_chunk,
+                self.model,
+            )
+        self._accumulate_delta_tool_calls(data, tool_call_buf)
+        usage = data.get("usage")
+        prompt_tokens = usage.get("prompt_tokens") if usage else None
+        completion_tokens = usage.get("completion_tokens") if usage else None
+        finish_reason = data["choices"][0].get("finish_reason") if is_done else None
+        return prompt_tokens, completion_tokens, finish_reason
+
+    def _finalize_and_build(
+        self,
+        content_parts: list[str],
+        tool_call_buf: dict[int, dict[str, str]],
+        prompt_tokens: int | None,
+        completion_tokens: int | None,
+        finish_reason: str | None,
+    ) -> LLMResponse:
+        """Convert tool call buffer to XML and build final LLMResponse."""
+        if tool_call_buf:
+            tc_list = [
+                {"function": tool_call_buf[idx]} for idx in sorted(tool_call_buf)
+            ]
+            xml = self._format_tool_calls_xml(tc_list)
+            if xml:
+                content_parts.append("\n" + xml)
+        return cast(
+            LLMResponse,
+            build_stream_result(
+                content_parts,
+                self.model,
+                LLMProvider.VLLM,
+                prompt_tokens,
+                completion_tokens,
+                finish_reason,
+            ),
+        )
+
     def _consume_stream(
         self,
         response: httpx.Response,
@@ -259,7 +313,6 @@ class VllmLLM(BaseLLM):
             data = self._parse_sse_line(line)
             if data is None:
                 continue
-
             if data == SSE_STREAM_DONE_MARKER:
                 emit_final_chunk(
                     on_chunk,
@@ -269,50 +322,22 @@ class VllmLLM(BaseLLM):
                     finish_reason,
                 )
                 break
+            pt, ct, fr = self._process_sse_chunk(
+                data, content_parts, thinking_parts, tool_call_buf, on_chunk
+            )
+            if pt is not None:
+                prompt_tokens = pt
+            if ct is not None:
+                completion_tokens = ct
+            if fr is not None:
+                finish_reason = fr
 
-            chunk_content, chunk_type, is_done = self._extract_chunk_fields(data)
-
-            if chunk_content:
-                process_chunk_content(
-                    chunk_content,
-                    chunk_type,
-                    content_parts,
-                    thinking_parts,
-                    on_chunk,
-                    self.model,
-                )
-
-            # Accumulate native tool calls from streaming deltas
-            self._accumulate_delta_tool_calls(data, tool_call_buf)
-
-            # Extract usage from the chunk with stream_options.include_usage
-            usage = data.get("usage")
-            if usage:
-                prompt_tokens = usage.get("prompt_tokens")
-                completion_tokens = usage.get("completion_tokens")
-
-            if is_done:
-                finish_reason = data["choices"][0].get("finish_reason")
-
-        # Convert accumulated native tool calls to XML tags
-        if tool_call_buf:
-            tc_list = [
-                {"function": tool_call_buf[idx]} for idx in sorted(tool_call_buf)
-            ]
-            xml = self._format_tool_calls_xml(tc_list)
-            if xml:
-                content_parts.append("\n" + xml)
-
-        return cast(
-            LLMResponse,
-            build_stream_result(
-                content_parts,
-                self.model,
-                LLMProvider.VLLM,
-                prompt_tokens,
-                completion_tokens,
-                finish_reason,
-            ),
+        return self._finalize_and_build(
+            content_parts,
+            tool_call_buf,
+            prompt_tokens,
+            completion_tokens,
+            finish_reason,
         )
 
     async def _aconsume_stream(
@@ -320,7 +345,7 @@ class VllmLLM(BaseLLM):
         response: httpx.Response,
         on_chunk: StreamCallback,
     ) -> LLMResponse:
-        """Consume SSE streaming response asynchronously."""
+        """Consume SSE streaming response asynchronously."""  # noqa: long
         content_parts: list[str] = []
         thinking_parts: list[str] = []
         tool_call_buf: dict[int, dict[str, str]] = {}
@@ -332,7 +357,6 @@ class VllmLLM(BaseLLM):
             data = self._parse_sse_line(line)
             if data is None:
                 continue
-
             if data == SSE_STREAM_DONE_MARKER:
                 emit_final_chunk(
                     on_chunk,
@@ -342,50 +366,22 @@ class VllmLLM(BaseLLM):
                     finish_reason,
                 )
                 break
+            pt, ct, fr = self._process_sse_chunk(
+                data, content_parts, thinking_parts, tool_call_buf, on_chunk
+            )
+            if pt is not None:
+                prompt_tokens = pt
+            if ct is not None:
+                completion_tokens = ct
+            if fr is not None:
+                finish_reason = fr
 
-            chunk_content, chunk_type, is_done = self._extract_chunk_fields(data)
-
-            if chunk_content:
-                process_chunk_content(
-                    chunk_content,
-                    chunk_type,
-                    content_parts,
-                    thinking_parts,
-                    on_chunk,
-                    self.model,
-                )
-
-            # Accumulate native tool calls from streaming deltas
-            self._accumulate_delta_tool_calls(data, tool_call_buf)
-
-            # Extract usage from the chunk
-            usage = data.get("usage")
-            if usage:
-                prompt_tokens = usage.get("prompt_tokens")
-                completion_tokens = usage.get("completion_tokens")
-
-            if is_done:
-                finish_reason = data["choices"][0].get("finish_reason")
-
-        # Convert accumulated native tool calls to XML tags
-        if tool_call_buf:
-            tc_list = [
-                {"function": tool_call_buf[idx]} for idx in sorted(tool_call_buf)
-            ]
-            xml = self._format_tool_calls_xml(tc_list)
-            if xml:
-                content_parts.append("\n" + xml)
-
-        return cast(
-            LLMResponse,
-            build_stream_result(
-                content_parts,
-                self.model,
-                LLMProvider.VLLM,
-                prompt_tokens,
-                completion_tokens,
-                finish_reason,
-            ),
+        return self._finalize_and_build(
+            content_parts,
+            tool_call_buf,
+            prompt_tokens,
+            completion_tokens,
+            finish_reason,
         )
 
     @staticmethod

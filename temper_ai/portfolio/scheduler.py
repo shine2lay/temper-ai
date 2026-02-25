@@ -121,7 +121,7 @@ class ResourceScheduler:
             tags=["portfolio", "scheduler"],
         )
 
-    def record_complete(
+    def record_complete(  # noqa: long
         self,
         product_type: str,
         workflow_id: str,

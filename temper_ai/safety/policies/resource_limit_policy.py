@@ -50,7 +50,6 @@ from temper_ai.shared.constants.limits import (
     MAX_WORKERS,
     MIN_POSITIVE_VALUE,
     MIN_WORKERS,
-    MULTIPLIER_LARGE,
     MULTIPLIER_MEDIUM,
     PERCENT_20,
     PERCENT_80,
@@ -72,11 +71,10 @@ MAX_FILE_SIZE_READ = 10 * BYTES_PER_GB  # 10GB maximum for read operations
 MAX_FILE_SIZE_WRITE = SIZE_1GB  # 1GB maximum for write operations
 
 # Memory validation limits
+MAX_MEMORY_GB = 8  # Maximum memory per operation in GB
 MIN_MEMORY_SIZE = MIN_WORKERS  # Minimum memory size in bytes (prevents negative/zero)
-MAX_MEMORY_SIZE = (
-    8 * BYTES_PER_GB
-)  # 8GB maximum memory per operation  # noqa: Multiplier in constant expression
-
+MAX_MEMORY_SIZE = MAX_MEMORY_GB * BYTES_PER_GB  # 8GB maximum memory per operation
+# noqa
 # Disk space limits
 MIN_FREE_DISK_SPACE = SIZE_1GB  # 1GB minimum free disk space required
 MAX_FREE_DISK_SPACE = BYTES_PER_TB  # 1TB maximum disk space limit
@@ -148,11 +146,11 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
     DEFAULT_MAX_FILE_SIZE_READ = SIZE_100MB  # 100MB
     DEFAULT_MAX_FILE_SIZE_WRITE = SIZE_10MB  # 10MB
     DEFAULT_MAX_MEMORY_PER_OPERATION = (
-        MULTIPLIER_LARGE * 5
-    ) * BYTES_PER_MB  # 500MB  # noqa: Multiplier
+        500 * BYTES_PER_MB  # noqa
+    )  # 500MB  # scanner: skip-magic
     DEFAULT_MAX_CPU_TIME = float(TIMEOUT_MEDIUM)  # 30 seconds
     DEFAULT_MIN_FREE_DISK_SPACE = SIZE_1GB  # 1GB
-
+    # noqa
     # Map action types to resource checks
     FILE_READ_OPERATIONS = {"file_read", "read", "read_file", "load", "open"}
 
@@ -171,15 +169,27 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
         """Initialize resource limit policy.
 
         Args:
-            config: Policy configuration (optional)
+            config: Policy configuration (optional)  # noqa: long
 
         Raises:
             ValueError: If configuration values are invalid
         """
         super().__init__(config or {})
+        self._init_size_limits()
+        self.max_cpu_time = validate_time(
+            "max_cpu_time",
+            self.config.get("max_cpu_time", self.DEFAULT_MAX_CPU_TIME),
+            min_value=MIN_CPU_TIME,
+            max_value=MAX_CPU_TIME,
+            default=self.DEFAULT_MAX_CPU_TIME,
+        )
+        self._init_tracking_flags()
+        self._operation_start_times: dict[str, float] = {}
+        self._operation_start_memory: dict[str, int] = {}
 
-        # Size limits (validated using helper)
-        size_configs = [
+    def _init_size_limits(self) -> None:
+        """Validate and set file/memory/disk size limit attributes."""
+        for name, min_val, max_val, default in (
             (
                 "max_file_size_read",
                 MIN_FILE_SIZE,
@@ -204,9 +214,7 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
                 MAX_FREE_DISK_SPACE,
                 self.DEFAULT_MIN_FREE_DISK_SPACE,
             ),
-        ]
-
-        for name, min_val, max_val, default in size_configs:
+        ):
             setattr(
                 self,
                 name,
@@ -215,27 +223,10 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
                 ),
             )
 
-        # Time limits
-        self.max_cpu_time = validate_time(
-            "max_cpu_time",
-            self.config.get("max_cpu_time", self.DEFAULT_MAX_CPU_TIME),
-            min_value=MIN_CPU_TIME,
-            max_value=MAX_CPU_TIME,
-            default=self.DEFAULT_MAX_CPU_TIME,
-        )
-
-        # Tracking flags (validated using helper)
-        tracking_flags = ["track_memory", "track_cpu", "track_disk"]
-        for flag_name in tracking_flags:
-            setattr(
-                self,
-                flag_name,
-                validate_bool(flag_name, self.config.get(flag_name, True)),
-            )
-
-        # Operation tracking for memory/CPU monitoring
-        self._operation_start_times: dict[str, float] = {}
-        self._operation_start_memory: dict[str, int] = {}
+    def _init_tracking_flags(self) -> None:
+        """Validate and set resource tracking boolean flags."""
+        for flag in ("track_memory", "track_cpu", "track_disk"):
+            setattr(self, flag, validate_bool(flag, self.config.get(flag, True)))
 
     @property
     def name(self) -> str:

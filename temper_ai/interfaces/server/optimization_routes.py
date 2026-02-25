@@ -43,31 +43,10 @@ class CompileRequest(BaseModel):
 # ── Endpoint handlers ─────────────────────────────────────────────────
 
 
-def _handle_compile_program(body: CompileRequest) -> dict[str, Any]:
-    """Compile a DSPy program using training examples."""
-    from temper_ai.optimization.dspy._schemas import (
-        PromptOptimizationConfig,
-        TrainingExample,
-    )
-    from temper_ai.optimization.dspy.compiler import DSPyCompiler
-    from temper_ai.optimization.dspy.program_store import CompiledProgramStore
-
-    compiler = DSPyCompiler()
-    store = CompiledProgramStore()
-    examples = [
-        TrainingExample(
-            input_text=str(ex.inputs),
-            output_text=str(ex.outputs),
-            metric_score=float(ex.score) if ex.score is not None else 1.0,
-            agent_name=body.agent_name,
-        )
-        for ex in body.training_examples
-    ]
-    config = PromptOptimizationConfig(
-        optimizer=body.optimizer,
-        max_demos=body.max_bootstrapped_demos,
-    )
-
+def _run_dspy_compile(  # noqa: long
+    body: CompileRequest, compiler: Any, store: Any, examples: list, config: Any
+) -> dict[str, Any]:
+    """Run the DSPy compilation and persist. Raises HTTPException on failure."""
     try:
         import dspy
 
@@ -106,17 +85,44 @@ def _handle_compile_program(body: CompileRequest) -> dict[str, Any]:
             "num_demos": result.num_demos,
             "status": "compiled",
         }
-    except ImportError:
+    except ImportError as exc:
         raise HTTPException(
             status_code=HTTP_500_INTERNAL_SERVER_ERROR,
             detail="DSPy is not installed. Install with: pip install 'temper-ai[dspy]'",
-        )
+        ) from exc
     except Exception as e:
         logger.exception("DSPy compilation failed for agent %s", body.agent_name)
         raise HTTPException(
             status_code=HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Compilation failed: {e}",
         ) from e
+
+
+def _handle_compile_program(body: CompileRequest) -> dict[str, Any]:
+    """Compile a DSPy program using training examples."""
+    from temper_ai.optimization.dspy._schemas import (
+        PromptOptimizationConfig,
+        TrainingExample,
+    )
+    from temper_ai.optimization.dspy.compiler import DSPyCompiler
+    from temper_ai.optimization.dspy.program_store import CompiledProgramStore
+
+    compiler = DSPyCompiler()
+    store = CompiledProgramStore()
+    examples = [
+        TrainingExample(
+            input_text=str(ex.inputs),
+            output_text=str(ex.outputs),
+            metric_score=float(ex.score) if ex.score is not None else 1.0,
+            agent_name=body.agent_name,
+        )
+        for ex in body.training_examples
+    ]
+    config = PromptOptimizationConfig(
+        optimizer=body.optimizer,
+        max_demos=body.max_bootstrapped_demos,
+    )
+    return _run_dspy_compile(body, compiler, store, examples, config)
 
 
 def _handle_list_programs(agent_name: str | None) -> dict[str, Any]:
@@ -158,7 +164,9 @@ def create_optimization_router(auth_enabled: bool = False) -> APIRouter:
     write_deps = [Depends(require_role("owner", "editor"))] if auth_enabled else []
 
     @router.post("/compile", dependencies=write_deps)
-    def compile_program(body: CompileRequest = Body(...)) -> dict[str, Any]:
+    def compile_program(
+        body: CompileRequest = Body(...),  # noqa: B008
+    ) -> dict[str, Any]:
         """Compile a DSPy optimization program."""
         return _handle_compile_program(body)
 

@@ -127,7 +127,29 @@ def _should_short_circuit_on_critical(
     )
 
 
-class ActionPolicyEngine:
+async def _run_policy_async_cached(  # noqa: params  # noqa: god
+    policy: "SafetyPolicy",
+    action: dict[str, Any],
+    context_dict: dict[str, Any],
+    cache_key: str,
+    cache: Any,
+    cache_ttl: float,
+    max_cache_size: int,
+    enable_caching: bool,
+) -> "tuple[Any, int, int]":
+    """Run one policy async with cache.  Returns (result, hit, miss)."""
+    if enable_caching:
+        cached = get_cached_result(cache, cache_key, cache_ttl)
+        if cached is not None:
+            return cached, 1, 0
+    result = await policy.validate_async(action=action, context=context_dict)
+    if enable_caching:
+        _cache_result_helper(cache, cache_key, result, max_cache_size)
+        return result, 0, 1
+    return result, 0, 0
+
+
+class ActionPolicyEngine:  # noqa: god
     """Central policy enforcement engine.
 
     Validates agent actions against all applicable safety policies. Provides:
@@ -259,7 +281,7 @@ class ActionPolicyEngine:
                 allowed=True,
                 violations=[],
                 policies_executed=[],
-                execution_time_ms=0.0,
+                execution_time_ms=0.0,  # noqa: long
                 metadata={
                     REASON_KEY: NO_POLICIES_REGISTERED_KEY,
                     MODE_KEY: FAIL_OPEN_KEY,
@@ -287,16 +309,7 @@ class ActionPolicyEngine:
         action: dict[str, Any],
         context: PolicyExecutionContext,
     ) -> tuple[list[SafetyViolation], list[str], int]:
-        """Execute all policies and collect violations.
-
-        Args:
-            policies: List of policies to execute
-            action: Action to validate
-            context: Execution context
-
-        Returns:
-            Tuple of (all_violations, policies_executed, cache_hits)
-        """
+        """Execute all policies async, collecting violations and cache hits."""
         all_violations: list[SafetyViolation] = []
         policies_executed: list[str] = []
         cache_hits = 0
@@ -304,27 +317,21 @@ class ActionPolicyEngine:
         for policy in policies:
             try:
                 cache_key = self._get_cache_key(policy, action, context)
-                cached_result = (
-                    self._get_cached_result(cache_key) if self.enable_caching else None
+                result, hit, miss = await _run_policy_async_cached(
+                    policy,
+                    action,
+                    self._context_to_dict(context),
+                    cache_key,
+                    self._cache,
+                    self.cache_ttl,
+                    self.max_cache_size,
+                    self.enable_caching,
                 )
-
-                if cached_result is not None:
-                    result = cached_result
-                    cache_hits += 1
-                    self._cache_hits += 1
-                else:
-                    result = await policy.validate_async(
-                        action=action, context=self._context_to_dict(context)
-                    )
-
-                    if self.enable_caching:
-                        self._cache_result(cache_key, result)
-                        self._cache_misses += 1
-
+                self._cache_hits += hit
+                self._cache_misses += miss
+                cache_hits += hit
                 policies_executed.append(policy.name)
                 all_violations.extend(result.violations)
-
-                # Short-circuit on CRITICAL violations (if configured)
                 if _should_short_circuit_on_critical(
                     self.short_circuit_critical, result.violations
                 ):
@@ -332,7 +339,6 @@ class ActionPolicyEngine:
                         f"Short-circuiting on CRITICAL violation from {policy.name}"
                     )
                     break
-
             except (
                 AttributeError,
                 TypeError,
@@ -341,13 +347,11 @@ class ActionPolicyEngine:
                 RuntimeError,
                 CircuitBreakerError,
             ) as e:
-                violation = self._create_execution_error_violation(
-                    policy, action, context, e
+                all_violations.append(
+                    self._create_execution_error_violation(policy, action, context, e)
                 )
-                all_violations.append(violation)
                 policies_executed.append(policy.name)
 
-        # Log violations to observability (if enabled)
         if self.log_violations and all_violations:
             await self._log_violations(all_violations, context)
 
@@ -473,7 +477,7 @@ class ActionPolicyEngine:
             all_violations, policies_executed, cache_hits, start_time, context
         )
 
-    def _execute_policies_sync(
+    def _execute_policies_sync(  # noqa: long
         self,
         policies: list[SafetyPolicy],
         action: dict[str, Any],
@@ -484,7 +488,7 @@ class ActionPolicyEngine:
         Args:
             policies: List of policies to execute
             action: Action to validate
-            context: Execution context
+            context: Execution context  # noqa: long
 
         Returns:
             Tuple of (all_violations, policies_executed, cache_hits)

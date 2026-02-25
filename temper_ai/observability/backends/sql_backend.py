@@ -13,7 +13,7 @@ patterns (C-02).
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager, contextmanager
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any
 
 from sqlmodel import select
@@ -34,9 +34,20 @@ from temper_ai.observability.backends._sql_backend_helpers import (
     SQLDelegatedMethodsMixin,
 )
 from temper_ai.observability.backends._sql_backend_helpers import (
+    build_llm_call_record as _build_llm_call_record,
+)
+from temper_ai.observability.backends._sql_backend_helpers import (
+    build_tool_execution_record as _build_tool_execution_record,
+)
+from temper_ai.observability.backends._sql_backend_helpers import (
+    fetch_run_events as _fetch_run_events,
+)
+from temper_ai.observability.backends._sql_backend_helpers import (
     flush_buffer as _flush_buffer,
 )
-from temper_ai.observability.constants import ObservabilityFields
+from temper_ai.observability.backends._sql_backend_helpers import (
+    update_agent_llm_metrics as _update_agent_llm_metrics,
+)
 from temper_ai.storage.database import get_session
 from temper_ai.storage.database.datetime_utils import (
     ensure_utc,
@@ -45,9 +56,7 @@ from temper_ai.storage.database.datetime_utils import (
 )
 from temper_ai.storage.database.models import (
     AgentExecution,
-    LLMCall,
     StageExecution,
-    ToolExecution,
     WorkflowExecution,
 )
 
@@ -85,7 +94,7 @@ def _ensure_tool_data(
     return _DEFAULT_TOOL_DATA
 
 
-class SQLObservabilityBackend(
+class SQLObservabilityBackend(  # noqa: god
     SQLDelegatedMethodsMixin, ObservabilityBackend, ReadableBackendMixin
 ):
     """SQL-based observability backend with per-operation sessions and buffering."""
@@ -395,8 +404,7 @@ class SQLObservabilityBackend(
                 session.commit()
 
     # ========== LLM Call Tracking ==========
-
-    def track_llm_call(  # noqa: radon
+    def track_llm_call(  # noqa: long  # noqa: radon
         self,
         llm_call_id: str,
         agent_id: str,
@@ -434,45 +442,14 @@ class SQLObservabilityBackend(
             )
             return
 
-        llm_call = LLMCall(
-            id=llm_call_id,
-            agent_execution_id=agent_id,
-            provider=provider,
-            model=model,
-            prompt=data.prompt,
-            response=data.response,
-            prompt_tokens=data.prompt_tokens,
-            completion_tokens=data.completion_tokens,
-            total_tokens=data.prompt_tokens + data.completion_tokens,
-            latency_ms=data.latency_ms,
-            estimated_cost_usd=data.estimated_cost_usd,
-            temperature=data.temperature,
-            max_tokens=data.max_tokens,
-            status=data.status,
-            error_message=data.error_message,
-            start_time=ensure_utc(start_time),
-            retry_count=0,
-            failover_sequence=data.failover_sequence,
-            failover_from_provider=data.failover_from_provider,
-            prompt_template_hash=data.prompt_template_hash,
-            prompt_template_source=data.prompt_template_source,
+        llm_call = _build_llm_call_record(
+            llm_call_id, agent_id, provider, model, data, start_time
         )
         with get_session() as session:
             session.add(llm_call)
-            statement = select(AgentExecution).where(AgentExecution.id == agent_id)
-            agent = session.exec(statement).first()
-            if agent:
-                agent.num_llm_calls = (agent.num_llm_calls or 0) + 1
-                agent.total_tokens = (agent.total_tokens or 0) + (
-                    llm_call.total_tokens or 0
-                )
-                agent.prompt_tokens = (agent.prompt_tokens or 0) + data.prompt_tokens
-                agent.completion_tokens = (
-                    agent.completion_tokens or 0
-                ) + data.completion_tokens
-                agent.estimated_cost_usd = (
-                    agent.estimated_cost_usd or 0.0
-                ) + data.estimated_cost_usd
+            _update_agent_llm_metrics(
+                session, agent_id, data, llm_call.total_tokens or 0
+            )
             session.commit()
 
     # ========== Tool Call Tracking ==========
@@ -509,22 +486,9 @@ class SQLObservabilityBackend(
         start_time_utc = ensure_utc(start_time)
         if start_time_utc is None:
             raise ValueError("Tool call start_time cannot be None")
-        end_time = start_time_utc + timedelta(seconds=data.duration_seconds)
-        tool_exec = ToolExecution(
-            id=tool_execution_id,
-            agent_execution_id=agent_id,
-            tool_name=tool_name,
-            input_params=data.input_params,
-            output_data=data.output_data,
-            start_time=start_time_utc,
-            end_time=end_time,
-            duration_seconds=data.duration_seconds,
-            status=data.status,
-            error_message=data.error_message,
-            safety_checks_applied=data.safety_checks,
-            approval_required=data.approval_required,
-            retry_count=0,
-        )
+        tool_exec = _build_tool_execution_record(
+            tool_execution_id, agent_id, tool_name, data, start_time_utc
+        )  # noqa: long
         with get_session() as session:
             session.add(tool_exec)
             statement = select(AgentExecution).where(AgentExecution.id == agent_id)
@@ -581,56 +545,8 @@ class SQLObservabilityBackend(
         limit: int = 100,
         offset: int = 0,
     ) -> list[dict[str, Any]]:
-        """Query stage and agent execution events for a workflow run.
-
-        Returns a chronological list of event dicts suitable for API responses.
-        """
-        events: list[dict[str, Any]] = []
-        with get_session() as session:
-            # Stage events
-            stages = session.exec(
-                select(StageExecution)
-                .where(StageExecution.workflow_execution_id == workflow_id)
-                .order_by(StageExecution.start_time)  # type: ignore[arg-type]
-            ).all()
-            for s in stages:
-                events.append(
-                    {
-                        "id": s.id,
-                        "event_type": "stage",
-                        "stage": s.stage_name,
-                        "agent": None,
-                        ObservabilityFields.STATUS: s.status,
-                        "timestamp": s.start_time.isoformat() if s.start_time else None,
-                    }
-                )
-
-            # Agent events
-            for s in stages:
-                agents = session.exec(
-                    select(AgentExecution)
-                    .where(AgentExecution.stage_execution_id == s.id)
-                    .order_by(AgentExecution.start_time)  # type: ignore[arg-type]
-                ).all()
-                for a in agents:
-                    events.append(
-                        {
-                            "id": a.id,
-                            "event_type": "agent",
-                            "stage": s.stage_name,
-                            "agent": a.agent_name,
-                            ObservabilityFields.STATUS: a.status,
-                            "timestamp": (
-                                a.start_time.isoformat() if a.start_time else None
-                            ),
-                        }
-                    )
-
-        # Sort chronologically
-        events.sort(key=lambda e: e.get("timestamp") or "")
-
-        # Apply offset and limit
-        return events[offset : offset + limit]
+        """Query stage and agent events for a workflow run (chronological)."""
+        return _fetch_run_events(workflow_id, limit, offset)
 
     @staticmethod
     def create_indexes() -> None:

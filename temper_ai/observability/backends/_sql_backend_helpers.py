@@ -784,6 +784,84 @@ def get_backend_stats() -> dict[str, Any]:
         }
 
 
+def build_llm_call_record(
+    llm_call_id: str,
+    agent_id: str,
+    provider: str,
+    model: str,
+    data: Any,
+    start_time: Any,
+) -> LLMCall:
+    """Build a LLMCall ORM record from tracking parameters."""
+    return LLMCall(
+        id=llm_call_id,
+        agent_execution_id=agent_id,
+        provider=provider,
+        model=model,
+        prompt=data.prompt,
+        response=data.response,
+        prompt_tokens=data.prompt_tokens,
+        completion_tokens=data.completion_tokens,
+        total_tokens=data.prompt_tokens + data.completion_tokens,
+        latency_ms=data.latency_ms,
+        estimated_cost_usd=data.estimated_cost_usd,
+        temperature=data.temperature,
+        max_tokens=data.max_tokens,
+        status=data.status,
+        error_message=data.error_message,
+        start_time=ensure_utc(start_time),
+        retry_count=0,
+        failover_sequence=data.failover_sequence,
+        failover_from_provider=data.failover_from_provider,
+        prompt_template_hash=data.prompt_template_hash,
+        prompt_template_source=data.prompt_template_source,
+    )
+
+
+def update_agent_llm_metrics(
+    session: Any, agent_id: str, data: Any, total_tokens: int
+) -> None:
+    """Update AgentExecution LLM counters after inserting an LLM call."""
+    statement = select(AgentExecution).where(AgentExecution.id == agent_id)
+    agent = session.exec(statement).first()
+    if agent:
+        agent.num_llm_calls = (agent.num_llm_calls or 0) + 1
+        agent.total_tokens = (agent.total_tokens or 0) + total_tokens
+        agent.prompt_tokens = (agent.prompt_tokens or 0) + data.prompt_tokens
+        agent.completion_tokens = (
+            agent.completion_tokens or 0
+        ) + data.completion_tokens
+        agent.estimated_cost_usd = (
+            agent.estimated_cost_usd or 0.0
+        ) + data.estimated_cost_usd
+
+
+def build_tool_execution_record(
+    tool_execution_id: str,
+    agent_id: str,
+    tool_name: str,
+    data: Any,
+    start_time_utc: Any,
+) -> ToolExecution:
+    """Build a ToolExecution ORM record from tracking parameters."""
+    end_time = start_time_utc + timedelta(seconds=data.duration_seconds)
+    return ToolExecution(
+        id=tool_execution_id,
+        agent_execution_id=agent_id,
+        tool_name=tool_name,
+        input_params=data.input_params,
+        output_data=data.output_data,
+        start_time=start_time_utc,
+        end_time=end_time,
+        duration_seconds=data.duration_seconds,
+        status=data.status,
+        error_message=data.error_message,
+        safety_checks_applied=data.safety_checks,
+        approval_required=data.approval_required,
+        retry_count=0,
+    )
+
+
 def _create_llm_call_models(llm_calls: list[Any]) -> list[LLMCall]:
     """Create LLMCall ORM objects from buffered calls."""
     return [
@@ -999,6 +1077,54 @@ def get_top_errors(
     except SQLAlchemyError as e:
         logger.warning("Failed to query top errors: %s", e)
         return []
+
+
+def fetch_run_events(
+    workflow_id: str,
+    limit: int = 100,
+    offset: int = 0,
+) -> list[dict]:
+    """Query stage and agent execution events for a workflow run.
+
+    Returns a chronological list of event dicts suitable for API responses.
+    """
+    events: list[dict] = []
+    with get_session() as session:
+        stages = session.exec(
+            select(StageExecution)
+            .where(StageExecution.workflow_execution_id == workflow_id)
+            .order_by(StageExecution.start_time)  # type: ignore[arg-type]
+        ).all()
+        for s in stages:
+            events.append(
+                {
+                    "id": s.id,
+                    "event_type": "stage",
+                    "stage": s.stage_name,
+                    "agent": None,
+                    ObservabilityFields.STATUS: s.status,
+                    "timestamp": s.start_time.isoformat() if s.start_time else None,
+                }
+            )
+        for s in stages:
+            agents = session.exec(
+                select(AgentExecution)
+                .where(AgentExecution.stage_execution_id == s.id)
+                .order_by(AgentExecution.start_time)  # type: ignore[arg-type]
+            ).all()
+            for a in agents:
+                events.append(
+                    {
+                        "id": a.id,
+                        "event_type": "agent",
+                        "stage": s.stage_name,
+                        "agent": a.agent_name,
+                        ObservabilityFields.STATUS: a.status,
+                        "timestamp": a.start_time.isoformat() if a.start_time else None,
+                    }
+                )
+    events.sort(key=lambda e: e.get("timestamp") or "")
+    return events[offset : offset + limit]
 
 
 class SQLDelegatedMethodsMixin:

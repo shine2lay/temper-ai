@@ -20,9 +20,10 @@ from temper_ai.shared.constants.sizes import BYTES_PER_KB
 
 # Constants (duplicated from resource_limit_policy to avoid circular import)
 BYTES_PER_KB_FLOAT = float(BYTES_PER_KB)
+SAFETY_MARGIN_FINE_TUNE = 0.05  # Fine-tuning factor subtracted from safety margin
 DISK_SPACE_SAFETY_MARGIN = (
-    1.0 + FRACTION_QUARTER - 0.05
-)  # 1.2  # noqa: Calculation constant
+    1.0 + FRACTION_QUARTER - SAFETY_MARGIN_FINE_TUNE
+)  # 1.2  # noqa
 DISK_SPACE_SAFETY_MARGIN_PERCENT = PERCENT_20
 CPU_SAMPLE_INTERVAL_SECONDS = SLEEP_VERY_SHORT
 

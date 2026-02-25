@@ -115,67 +115,60 @@ def _add_event(
         logger.debug("Failed to add event %s to span %s", event_name, entity_id)
 
 
-def _init_metrics(backend: Any, meter: Any) -> None:
-    """Create all OTEL counters and histograms on the backend."""
+def _init_core_metrics(backend: Any, meter: Any) -> None:  # noqa: long
+    """Create core workflow/LLM/tool counters and histograms."""
     backend._workflow_counter = meter.create_counter(
-        _METRIC_WORKFLOW_COUNT,
-        description="Workflow executions",
+        _METRIC_WORKFLOW_COUNT, description="Workflow executions"
     )
     backend._llm_call_counter = meter.create_counter(
-        _METRIC_LLM_CALL_COUNT,
-        description="LLM calls",
+        _METRIC_LLM_CALL_COUNT, description="LLM calls"
     )
     backend._tool_call_counter = meter.create_counter(
-        _METRIC_TOOL_CALL_COUNT,
-        description="Tool calls",
+        _METRIC_TOOL_CALL_COUNT, description="Tool calls"
     )
     backend._llm_latency_histogram = meter.create_histogram(
-        _METRIC_LLM_LATENCY,
-        unit="ms",
-        description="LLM call latency",
+        _METRIC_LLM_LATENCY, unit="ms", description="LLM call latency"
     )
     backend._cost_counter = meter.create_counter(
-        _METRIC_COST_TOTAL,
-        unit="usd",
-        description="Accumulated cost",
+        _METRIC_COST_TOTAL, unit="usd", description="Accumulated cost"
     )
     backend._tokens_counter = meter.create_counter(
-        _METRIC_TOKENS_TOTAL,
-        description="Accumulated tokens",
+        _METRIC_TOKENS_TOTAL, description="Accumulated tokens"
     )
     backend._llm_iteration_counter = meter.create_counter(
-        _METRIC_LLM_ITERATION,
-        description="LLM loop iterations",
+        _METRIC_LLM_ITERATION, description="LLM loop iterations"
     )
+
+
+def _init_resilience_metrics(backend: Any, meter: Any) -> None:
+    """Create cache, retry, circuit-breaker, and failover counters."""
     backend._cache_hit_counter = meter.create_counter(
-        _METRIC_CACHE_HIT,
-        description="Cache hits",
+        _METRIC_CACHE_HIT, description="Cache hits"
     )
     backend._cache_miss_counter = meter.create_counter(
-        _METRIC_CACHE_MISS,
-        description="Cache misses",
+        _METRIC_CACHE_MISS, description="Cache misses"
     )
     backend._retry_counter = meter.create_counter(
-        _METRIC_RETRY_COUNT,
-        description="Agent retry attempts",
+        _METRIC_RETRY_COUNT, description="Agent retry attempts"
     )
     backend._cb_state_change_counter = meter.create_counter(
-        _METRIC_CB_STATE_CHANGE,
-        description="Circuit breaker state changes",
+        _METRIC_CB_STATE_CHANGE, description="Circuit breaker state changes"
     )
     backend._dialogue_convergence_histogram = meter.create_histogram(
-        _METRIC_DIALOGUE_CONVERGENCE,
-        description="Dialogue convergence speed per round",
+        _METRIC_DIALOGUE_CONVERGENCE, description="Dialogue convergence speed per round"
     )
     backend._stage_cost_counter = meter.create_counter(
-        _METRIC_STAGE_COST,
-        unit="usd",
-        description="Per-stage cost",
+        _METRIC_STAGE_COST, unit="usd", description="Per-stage cost"
     )
     backend._failover_counter = meter.create_counter(
-        _METRIC_FAILOVER_COUNT,
-        description="Provider failover events",
+        _METRIC_FAILOVER_COUNT, description="Provider failover events"
     )
+
+
+def _init_metrics(backend: Any, meter: Any) -> None:
+    """Create all OTEL counters and histograms on the backend."""
+    _init_core_metrics(backend, meter)
+    _init_resilience_metrics(backend, meter)
 
 
 def _start_span(
@@ -464,7 +457,7 @@ class OTelBackend(_OTelAsyncMixin, ObservabilityBackend):
 
     # ========== Workflow Tracking ==========
 
-    def track_workflow_start(  # noqa: radon
+    def track_workflow_start(  # noqa: C901  # noqa: radon
         self,
         workflow_id: str,
         workflow_name: str,

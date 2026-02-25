@@ -344,7 +344,7 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
         paths = extract_paths(action)
 
         for path in paths:
-            normalized_path = self._normalize_path(path)
+            normalized_path = normalize_path(path, self.case_sensitive)
 
             # Check for security violations
             violation = self._check_path_security(
@@ -368,26 +368,27 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
             policy_name=self.name,
         )
 
-    def _check_path_security(
+    def _check_path_security(  # noqa: long
         self,
         path: str,
         normalized_path: str,
         action: dict[str, Any],
         context: dict[str, Any],
     ) -> SafetyViolation | None:
-        """Check path for security violations.
+        """Check path for traversal, absolute-path, and forbidden-path violations."""
+        v = self._check_traversal_and_absolute(path, action, context)
+        if v is not None:
+            return v
+        return self._check_forbidden_path(path, normalized_path, action, context)
 
-        Args:
-            path: Original path
-            normalized_path: Normalized path
-            action: Action being validated
-            context: Execution context
-
-        Returns:
-            SafetyViolation if path fails security check, None otherwise
-        """
-        # Check parent traversal
-        if not self.allow_parent_traversal and self._has_parent_traversal(path):
+    def _check_traversal_and_absolute(
+        self,
+        path: str,
+        action: dict[str, Any],
+        context: dict[str, Any],
+    ) -> SafetyViolation | None:
+        """Return a violation if path uses traversal or an absolute path."""
+        if not self.allow_parent_traversal and has_parent_traversal(path):
             return SafetyViolation(
                 policy_name=self.name,
                 severity=ViolationSeverity.CRITICAL,
@@ -397,8 +398,6 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
                 remediation_hint="Remove parent directory references (../)",
                 metadata={PATH_KEY: path, VIOLATION_KEY: VIOLATION_PARENT_TRAVERSAL},
             )
-
-        # Check absolute paths
         if not self.allow_absolute_paths and os.path.isabs(path):
             return SafetyViolation(
                 policy_name=self.name,
@@ -409,9 +408,19 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
                 remediation_hint="Use relative paths only",
                 metadata={PATH_KEY: path, VIOLATION_KEY: VIOLATION_ABSOLUTE_PATH},
             )
+        return None
 
-        # Check forbidden file
-        if self._is_forbidden_file(normalized_path):
+    def _check_forbidden_path(
+        self,
+        path: str,
+        normalized_path: str,
+        action: dict[str, Any],
+        context: dict[str, Any],
+    ) -> SafetyViolation | None:
+        """Return a violation if path is a forbidden file, directory, or extension."""
+        if is_forbidden_file(
+            normalized_path, self.forbidden_files, self.case_sensitive
+        ):
             return SafetyViolation(
                 policy_name=self.name,
                 severity=ViolationSeverity.CRITICAL,
@@ -421,9 +430,9 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
                 remediation_hint="This file contains sensitive data and cannot be accessed",
                 metadata={PATH_KEY: path, VIOLATION_KEY: VIOLATION_FORBIDDEN_FILE},
             )
-
-        # Check forbidden directory
-        if self._is_forbidden_directory(normalized_path):
+        if is_forbidden_directory(
+            normalized_path, self.forbidden_directories, self.case_sensitive
+        ):
             return SafetyViolation(
                 policy_name=self.name,
                 severity=ViolationSeverity.CRITICAL,
@@ -433,9 +442,7 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
                 remediation_hint="This directory is protected and cannot be accessed",
                 metadata={PATH_KEY: path, VIOLATION_KEY: VIOLATION_FORBIDDEN_DIRECTORY},
             )
-
-        # Check forbidden extension
-        if self._has_forbidden_extension(path):
+        if has_forbidden_extension(path, self.forbidden_extensions):
             ext = Path(path).suffix
             return SafetyViolation(
                 policy_name=self.name,
@@ -450,7 +457,6 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
                     "violation": VIOLATION_FORBIDDEN_EXTENSION,
                 },
             )
-
         return None
 
     def _check_path_access(
@@ -472,7 +478,7 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
             SafetyViolation if path fails access check, None otherwise
         """
         if self.mode == MODE_ALLOWLIST:
-            if not self._is_allowed(normalized_path):
+            if not is_allowed(normalized_path, self.allowed_paths, self.case_sensitive):
                 return SafetyViolation(
                     policy_name=self.name,
                     severity=ViolationSeverity.CRITICAL,
@@ -486,7 +492,7 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
                     },
                 )
         else:
-            if self._is_denied(normalized_path):
+            if is_denied(normalized_path, self.denied_paths, self.case_sensitive):
                 return SafetyViolation(
                     policy_name=self.name,
                     severity=ViolationSeverity.CRITICAL,
@@ -497,33 +503,3 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
                     metadata={PATH_KEY: path, VIOLATION_KEY: VIOLATION_IN_DENYLIST},
                 )
         return None
-
-    def _normalize_path(self, path: str) -> str:
-        """Normalize path for comparison. Delegates to helper."""
-        return normalize_path(path, self.case_sensitive)
-
-    def _has_parent_traversal(self, path: str) -> bool:
-        """Check if path contains parent directory traversal. Delegates to helper."""
-        return has_parent_traversal(path)
-
-    def _is_forbidden_file(self, path: str) -> bool:
-        """Check if path is a forbidden file. Delegates to helper."""
-        return is_forbidden_file(path, self.forbidden_files, self.case_sensitive)
-
-    def _is_forbidden_directory(self, path: str) -> bool:
-        """Check if path is under a forbidden directory. Delegates to helper."""
-        return is_forbidden_directory(
-            path, self.forbidden_directories, self.case_sensitive
-        )
-
-    def _has_forbidden_extension(self, path: str) -> bool:
-        """Check if path has a forbidden extension. Delegates to helper."""
-        return has_forbidden_extension(path, self.forbidden_extensions)
-
-    def _is_allowed(self, path: str) -> bool:
-        """Check if path matches allowlist. Delegates to helper."""
-        return is_allowed(path, self.allowed_paths, self.case_sensitive)
-
-    def _is_denied(self, path: str) -> bool:
-        """Check if path matches denylist. Delegates to helper."""
-        return is_denied(path, self.denied_paths, self.case_sensitive)

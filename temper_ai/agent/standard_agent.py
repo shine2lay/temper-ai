@@ -68,7 +68,7 @@ def _extract_memory_query(input_data: dict[str, Any]) -> str:
     return " ".join(parts)[:MEMORY_QUERY_MAX_CHARS]
 
 
-class StandardAgent(BaseAgent):
+class StandardAgent(BaseAgent):  # noqa: god
     """Standard agent with LLM and tool execution loop.
 
     This is the primary agent implementation that handles:
@@ -192,18 +192,18 @@ class StandardAgent(BaseAgent):
     def _llm_kwargs(self, prompt: str, start_time: float) -> dict[str, Any]:
         """Build kwargs shared between sync run() and async arun()."""
         tools = list(self.tool_registry.get_all_tools().values())
-        return dict(
-            prompt=prompt,
-            tools=tools if tools else None,
-            tool_executor=self.tool_executor,
-            observer=self._observer,
-            stream_callback=self._make_stream_callback(),
-            safety_config=self.config.agent.safety,
-            agent_name=self.name,
-            max_iterations=self.config.agent.safety.max_tool_calls_per_execution,
-            max_execution_time=self.config.agent.safety.max_execution_time_seconds,
-            start_time=start_time,
-        )
+        return {
+            "prompt": prompt,
+            "tools": tools if tools else None,
+            "tool_executor": self.tool_executor,
+            "observer": self._observer,
+            "stream_callback": self._make_stream_callback(),
+            "safety_config": self.config.agent.safety,
+            "agent_name": self.name,
+            "max_iterations": self.config.agent.safety.max_tool_calls_per_execution,
+            "max_execution_time": self.config.agent.safety.max_execution_time_seconds,
+            "start_time": start_time,
+        }
 
     def _on_error(self, error: Exception, start_time: float) -> AgentResponse | None:
         """Handle expected execution errors with accumulated metrics."""
@@ -309,27 +309,11 @@ class StandardAgent(BaseAgent):
         self, context: ExecutionContext | None = None
     ) -> MemoryScope:
         """Build a MemoryScope from agent config and execution context."""
-        mem_cfg = self.config.agent.memory
-        workflow_name = ""
-        if context and context.metadata:
-            workflow_name = context.metadata.get("workflow_name", "")
-        scope = self._get_memory_service().build_scope(
-            tenant_id=mem_cfg.tenant_id,
-            workflow_name=workflow_name,
-            agent_name=self.name,
-            namespace=mem_cfg.memory_namespace,
-        )
-        if getattr(self.config.agent, "persistent", False):
-            from temper_ai.registry.constants import PERSISTENT_NAMESPACE_PREFIX
+        from temper_ai.agent._standard_agent_helpers import build_memory_scope
 
-            scope = MemoryScope(
-                tenant_id=scope.tenant_id,
-                workflow_name="",
-                agent_name=scope.agent_name,
-                namespace=f"{PERSISTENT_NAMESPACE_PREFIX}{self.config.agent.name}",
-                agent_id=getattr(self.config.agent, "agent_id", None),
-            )
-        return scope
+        return build_memory_scope(
+            self.config, self.name, self._get_memory_service(), context
+        )
 
     def _inject_memory_context(
         self,
@@ -337,65 +321,18 @@ class StandardAgent(BaseAgent):
         input_data: dict[str, Any],
         context: ExecutionContext | None = None,
     ) -> str:
-        """Inject relevant memories into the prompt template.
-
-        Returns template unchanged if memory is disabled or on error.
-        """
+        """Inject relevant memories into the prompt template."""
         if not self.config.agent.memory.enabled:
             return template
+        from temper_ai.agent._standard_agent_helpers import retrieve_memory_text
 
         try:
-            mem_cfg = self.config.agent.memory
             svc = self._get_memory_service()
             scope = self._build_memory_scope(context)
             query = _extract_memory_query(input_data)
-            shared_ns = getattr(mem_cfg, "shared_namespace", None)
-
-            if shared_ns:
-                shared_scope = svc.build_shared_scope(scope, shared_ns)
-                memory_text = svc.retrieve_with_shared(
-                    scope,
-                    shared_scope,
-                    query,
-                    retrieval_k=mem_cfg.retrieval_k,
-                    relevance_threshold=mem_cfg.relevance_threshold,
-                    decay_factor=mem_cfg.decay_factor,
-                )
-            else:
-                memory_text = svc.retrieve_context(
-                    scope,
-                    query,
-                    retrieval_k=mem_cfg.retrieval_k,
-                    relevance_threshold=mem_cfg.relevance_threshold,
-                    decay_factor=mem_cfg.decay_factor,
-                )
-
-            if memory_text:
-                template += "\n\n---\n\n" + memory_text
-
-            # Retrieve procedural memories (learned best practices)
-            try:
-                procedural_text = svc.retrieve_procedural_context(
-                    scope,
-                    query,
-                    retrieval_k=mem_cfg.retrieval_k,
-                    relevance_threshold=mem_cfg.relevance_threshold,
-                )
-                if procedural_text:
-                    template += "\n\n" + procedural_text
-            except (
-                ValueError,
-                TypeError,
-                KeyError,
-                RuntimeError,
-                OSError,
-                ImportError,
-            ) as exc:
-                logger.warning(
-                    "Procedural memory injection failed for agent %s: %s",
-                    self.name,
-                    exc,
-                )
+            template += retrieve_memory_text(
+                svc, scope, self.config.agent.memory, query, self.name
+            )
         except (
             ValueError,
             TypeError,
@@ -405,8 +342,7 @@ class StandardAgent(BaseAgent):
             ImportError,
         ) as exc:
             logger.warning("Memory injection failed for agent %s: %s", self.name, exc)
-
-        return template
+        return template  # noqa: long
 
     def _inject_persistent_context(
         self, prompt: str, context: ExecutionContext | None

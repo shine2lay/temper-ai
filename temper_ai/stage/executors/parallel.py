@@ -161,7 +161,23 @@ class ParallelStageExecutor(StageExecutor):
             nodes[name] = create_agent_node(node_params)
         return nodes
 
-    def _run_parallel_and_synthesize(
+    @staticmethod  # noqa: long
+    def _build_agent_output_list(agent_outputs_dict: dict[str, Any]) -> list:
+        """Convert raw agent output dict to list of AgentOutput objects."""
+        from temper_ai.agent.strategies.base import AgentOutput
+
+        return [
+            AgentOutput(
+                agent_name=a_name,
+                decision=data.get(StateKeys.OUTPUT, ""),
+                reasoning=data.get(StateKeys.REASONING, ""),
+                confidence=data.get(StateKeys.CONFIDENCE, PROB_VERY_HIGH),
+                metadata=data.get("metadata", {}),
+            )
+            for a_name, data in agent_outputs_dict.items()
+        ]
+
+    def _run_parallel_and_synthesize(  # noqa: long
         self,
         agents: list,
         stage_name: str,
@@ -210,19 +226,8 @@ class ParallelStageExecutor(StageExecutor):
         logger.info("Stage '%s' parallel execution complete", stage_name)
 
         aggregate_metrics = agent_outputs_dict.pop(StateKeys.AGGREGATE_METRICS_KEY, {})
+        agent_output_list = self._build_agent_output_list(agent_outputs_dict)
 
-        from temper_ai.agent.strategies.base import AgentOutput
-
-        agent_output_list = [
-            AgentOutput(
-                agent_name=a_name,
-                decision=data.get(StateKeys.OUTPUT, ""),
-                reasoning=data.get(StateKeys.REASONING, ""),
-                confidence=data.get(StateKeys.CONFIDENCE, PROB_VERY_HIGH),
-                metadata=data.get("metadata", {}),
-            )
-            for a_name, data in agent_outputs_dict.items()
-        ]
         # Make stage_id available for dialogue synthesis tracking
         if stage_id:
             state[StateKeys.CURRENT_STAGE_ID] = stage_id
@@ -311,12 +316,70 @@ class ParallelStageExecutor(StageExecutor):
             qg = stage_config.get("quality_gates", {})
             result: int = qg.get("max_retries", default_retries)
             return result
-        if hasattr(stage_config, "quality_gates") and stage_config.quality_gates:
+        if (
+            hasattr(stage_config, "quality_gates") and stage_config.quality_gates
+        ):  # noqa: long
             retries: int = stage_config.quality_gates.max_retries
             return retries
         return default_retries
 
-    def _execute_stage_core(
+    def _apply_synthesis_to_state(  # noqa: params
+        self,
+        parallel_ctx: "tuple[Any, dict[str, Any], Any]",
+        synth: Any,
+        stage_name: str,
+        stage_config: Any,
+        state: dict[str, Any],
+        wall_clock: "tuple[float, float]",
+        tracking_ctx: "tuple[Any | None, str | None]",
+    ) -> str:
+        """Validate quality gates and commit synthesis result to state.
+
+        parallel_ctx: (parallel_result, agent_outputs_dict, aggregate_metrics)
+        wall_clock: (wc_start, wc_timeout)
+        tracking_ctx: (tracker, stage_id)
+        Returns "continue" if retry is needed, "done" if state was updated.
+        """
+        pr, ao_dict, agg = parallel_ctx
+        wc_start, wc_timeout = wall_clock
+        tracker, stage_id = tracking_ctx
+        passed, violations = self._validate_quality_gates(
+            synthesis_result=synth,
+            stage_config=stage_config,
+            stage_name=stage_name,
+            state=state,
+        )
+        failure_params = QualityGateFailureParams(
+            passed=passed,
+            violations=violations,
+            synthesis_result=synth,
+            stage_config=stage_config,
+            stage_name=stage_name,
+            state=state,
+            wall_clock_start=wc_start,
+            wall_clock_timeout=wc_timeout,
+        )
+        action = handle_quality_gate_failure(failure_params)
+        if action == "continue":
+            return "continue"
+        structured = self._extract_structured_fields(
+            stage_config,
+            synth.decision,
+            stage_name,
+        )
+        update_state_with_results(
+            state=state,
+            stage_name=stage_name,
+            synthesis_result=synth,
+            agent_outputs_dict=ao_dict,
+            parallel_result=pr,
+            aggregate_metrics=agg,
+            structured=structured,
+        )
+        _persist_stage_output(tracker, stage_id, state, stage_name)
+        return "done"
+
+    def _execute_stage_core(  # noqa: long
         self,
         stage_name: str,
         stage_config: Any,
@@ -349,40 +412,17 @@ class ParallelStageExecutor(StageExecutor):
                     tracker=tracker,
                     stage_id=stage_id,
                 )
-                passed, violations = self._validate_quality_gates(
-                    synthesis_result=synth,
-                    stage_config=stage_config,
-                    stage_name=stage_name,
-                    state=state,
+                action = self._apply_synthesis_to_state(
+                    (pr, ao_dict, agg),
+                    synth,
+                    stage_name,
+                    stage_config,
+                    state,
+                    (wc_start, wc_timeout),
+                    (tracker, stage_id),
                 )
-                failure_params = QualityGateFailureParams(
-                    passed=passed,
-                    violations=violations,
-                    synthesis_result=synth,
-                    stage_config=stage_config,
-                    stage_name=stage_name,
-                    state=state,
-                    wall_clock_start=wc_start,
-                    wall_clock_timeout=wc_timeout,
-                )
-                action = handle_quality_gate_failure(failure_params)
                 if action == "continue":
                     continue
-                structured = self._extract_structured_fields(
-                    stage_config,
-                    synth.decision,
-                    stage_name,
-                )
-                update_state_with_results(
-                    state=state,
-                    stage_name=stage_name,
-                    synthesis_result=synth,
-                    agent_outputs_dict=ao_dict,
-                    parallel_result=pr,
-                    aggregate_metrics=agg,
-                    structured=structured,
-                )
-                _persist_stage_output(tracker, stage_id, state, stage_name)
                 return state
 
             except (

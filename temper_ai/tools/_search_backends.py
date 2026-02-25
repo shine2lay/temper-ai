@@ -105,17 +105,10 @@ class TavilyBackend(SearchBackend):
         """Record a request timestamp for rate limiting."""
         self._rate_limiter.record_request()
 
-    def search(  # noqa: C901
-        self, query: str, max_results: int = DEFAULT_SEARCH_MAX_RESULTS
-    ) -> tuple[ToolResult, float]:
-        """Execute a Tavily API search and return (ToolResult, elapsed_ms)."""
-        # Get API key
-        try:
-            api_key = self._get_api_key()
-        except ValueError as e:
-            return ToolResult(success=False, error=str(e)), 0
-
-        # Build request body
+    def _build_request_body(
+        self, api_key: str, query: str, max_results: int
+    ) -> dict[str, Any]:  # noqa: long  # noqa: radon
+        """Build the Tavily API request body."""
         body: dict[str, Any] = {
             "api_key": api_key,
             "query": query,
@@ -126,42 +119,65 @@ class TavilyBackend(SearchBackend):
             body["include_domains"] = self._include_domains
         if self._exclude_domains is not None:
             body["exclude_domains"] = self._exclude_domains
+        return body
 
-        # Execute
+    @staticmethod
+    def _map_http_status_error(e: httpx.HTTPStatusError) -> str:
+        """Map an HTTP status error to a human-readable message."""
+        status = e.response.status_code
+        if status == HTTP_STATUS_UNAUTHORIZED:
+            return "Tavily API authentication failed. Check your TAVILY_API_KEY."
+        if status == HTTP_STATUS_TOO_MANY_REQUESTS:
+            return "Tavily API rate limit exceeded. Try again later."
+        return f"Tavily API error (HTTP {status}): {e.response.text[:ERROR_RESPONSE_TEXT_MAX_LENGTH]}"
+
+    def _execute_request(
+        self, body: dict[str, Any]
+    ) -> tuple["ToolResult | None", Any, float]:
+        """Execute HTTP request. Returns (error_or_None, response, elapsed_ms)."""
         start_time = time.monotonic()
         try:
-            client = self._get_client()
-            response = client.post(
+            response = self._get_client().post(
                 f"{self._base_url}/search",
                 json=body,
                 timeout=DEFAULT_SEARCH_TIMEOUT,
             )
             response.raise_for_status()
-            elapsed_ms = (time.monotonic() - start_time) * 1000
+            return None, response, (time.monotonic() - start_time) * 1000
         except httpx.TimeoutException:
             return (
                 ToolResult(
                     success=False,
                     error=f"Tavily API request timed out after {DEFAULT_SEARCH_TIMEOUT} seconds",
                 ),
+                None,
                 0,
             )
         except httpx.HTTPStatusError as e:
-            status = e.response.status_code
-            if status == HTTP_STATUS_UNAUTHORIZED:
-                error_msg = (
-                    "Tavily API authentication failed. Check your TAVILY_API_KEY."
-                )
-            elif status == HTTP_STATUS_TOO_MANY_REQUESTS:
-                error_msg = "Tavily API rate limit exceeded. Try again later."
-            else:
-                error_msg = f"Tavily API error (HTTP {status}): {e.response.text[:ERROR_RESPONSE_TEXT_MAX_LENGTH]}"
-            return ToolResult(success=False, error=error_msg), 0
-        except httpx.RequestError as e:
             return (
-                ToolResult(success=False, error=f"Tavily API request error: {str(e)}"),
+                ToolResult(success=False, error=self._map_http_status_error(e)),
+                None,
                 0,
             )
+        except httpx.RequestError as e:
+            return (
+                ToolResult(success=False, error=f"Tavily API request error: {e}"),
+                None,
+                0,
+            )
+
+    def search(
+        self, query: str, max_results: int = DEFAULT_SEARCH_MAX_RESULTS
+    ) -> tuple[ToolResult, float]:
+        """Execute a Tavily API search and return (ToolResult, elapsed_ms)."""
+        try:
+            api_key = self._get_api_key()
+        except ValueError as e:
+            return ToolResult(success=False, error=str(e)), 0
+        body = self._build_request_body(api_key, query, max_results)
+        err, response, elapsed_ms = self._execute_request(body)
+        if err is not None:
+            return err, 0
 
         # Parse response
         try:
@@ -272,26 +288,16 @@ class SearxngBackend(SearchBackend):
                 success=False,
                 error=f"Rate limit exceeded. Please wait {wait_time:.1f} seconds.",
             )
-        return None
+        return None  # noqa: long
 
     def record_request(self) -> None:
         """Record a request timestamp for rate limiting."""
         self._rate_limiter.record_request()
 
-    def search(
-        self, query: str, max_results: int = DEFAULT_SEARCH_MAX_RESULTS
-    ) -> tuple[ToolResult, float]:
-        """Execute a SearXNG search and return (ToolResult, elapsed_ms)."""
-        # Build query parameters
-        params: dict[str, str] = {
-            "q": query,
-            "format": "json",
-            "language": self._language,
-        }
-        if self._categories:
-            params["categories"] = ",".join(self._categories)
-
-        # Execute
+    def _execute_http_search(
+        self, params: dict[str, str]
+    ) -> "tuple[Any, float] | tuple[ToolResult, float]":
+        """Run HTTP GET to SearXNG. Returns (response, elapsed_ms) or (ToolResult, 0) on error."""
         start_time = time.monotonic()
         try:
             client = self._get_client()
@@ -301,7 +307,7 @@ class SearxngBackend(SearchBackend):
                 timeout=DEFAULT_SEARCH_TIMEOUT,
             )
             response.raise_for_status()
-            elapsed_ms = (time.monotonic() - start_time) * 1000
+            return response, (time.monotonic() - start_time) * 1000
         except httpx.TimeoutException:
             return (
                 ToolResult(
@@ -319,55 +325,66 @@ class SearxngBackend(SearchBackend):
                 0,
             )
         except httpx.RequestError as e:
-            return (
-                ToolResult(success=False, error=f"Request error: {str(e)}"),
-                0,
-            )
+            return ToolResult(success=False, error=f"Request error: {str(e)}"), 0
 
-        # Parse response
-        try:
-            data = response.json()
-        except (ValueError, TypeError) as e:
-            return (
-                ToolResult(
-                    success=False,
-                    error=f"Failed to parse SearXNG response: {e}",
-                ),
-                elapsed_ms,
+    def _build_search_result(
+        self, query: str, data: dict, elapsed_ms: float
+    ) -> ToolResult:
+        """Build a successful ToolResult from parsed SearXNG JSON data."""
+        items = [
+            SearchResultItem(
+                title=entry.get("title", ""),
+                url=entry.get("url", ""),
+                snippet=entry.get("content", ""),
+                score=entry.get("score"),
             )
-
-        raw_results = data.get("results", [])
-        items: list[SearchResultItem] = []
-        for entry in raw_results[:max_results]:
-            items.append(
-                SearchResultItem(
-                    title=entry.get("title", ""),
-                    url=entry.get("url", ""),
-                    snippet=entry.get("content", ""),
-                    score=entry.get("score"),
-                )
-            )
-
+            for entry in data.get("results", [])
+        ]
         search_response = SearchResponse(
             query=query,
             results=items,
             total_results=data.get("number_of_results"),
             search_time_ms=round(elapsed_ms, 2),
         )
-
-        return (
-            ToolResult(
-                success=True,
-                result=search_response.model_dump(),
-                metadata={
-                    "base_url": self._base_url,
-                    "categories": self._categories,
-                    "language": self._language,
-                    "result_count": len(search_response.results),
-                },
-            ),
-            elapsed_ms,
+        return ToolResult(
+            success=True,
+            result=search_response.model_dump(),
+            metadata={
+                "base_url": self._base_url,
+                "categories": self._categories,
+                "language": self._language,
+                "result_count": len(search_response.results),
+            },
         )
+
+    def search(
+        self, query: str, max_results: int = DEFAULT_SEARCH_MAX_RESULTS
+    ) -> tuple[ToolResult, float]:
+        """Execute a SearXNG search and return (ToolResult, elapsed_ms)."""
+        params: dict[str, str] = {
+            "q": query,
+            "format": "json",
+            "language": self._language,
+        }
+        if self._categories:
+            params["categories"] = ",".join(self._categories)
+
+        http_result, elapsed_ms = self._execute_http_search(params)
+        if isinstance(http_result, ToolResult):
+            return http_result, elapsed_ms
+
+        try:
+            data = http_result.json()
+        except (ValueError, TypeError) as e:
+            return (
+                ToolResult(
+                    success=False, error=f"Failed to parse SearXNG response: {e}"
+                ),
+                elapsed_ms,
+            )
+
+        data["results"] = data.get("results", [])[:max_results]
+        return self._build_search_result(query, data, elapsed_ms), elapsed_ms
 
     def close(self) -> None:
         """Close the HTTP client and release resources."""

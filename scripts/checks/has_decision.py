@@ -4,6 +4,7 @@
 Reads JSON from stdin, checks for 'final_decision' or 'decision'
 in stage outputs. Exits 0 (pass) or 1 (fail).
 """
+
 import json
 import sys
 

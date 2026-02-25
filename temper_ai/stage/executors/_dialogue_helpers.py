@@ -169,7 +169,43 @@ def _curate_history_and_resolve_context(
     return curated_history, {}
 
 
-def _invoke_single_dialogue_agent(
+def _build_and_execute_dialogue_agent(  # noqa: long
+    params: SingleDialogueAgentParams,
+    agent: Any,
+    agent_config: Any,
+    agent_config_dict: dict[str, Any],
+    input_data: dict[str, Any],
+) -> Any:
+    """Build AgentExecutionParams and run tracking or non-tracking execution."""
+    from temper_ai.stage.executors._base_helpers import (
+        AgentExecutionParams,
+        _execute_agent_with_tracking,
+        _execute_agent_without_tracking,
+        _get_stage_id,
+    )
+
+    tracker = params.state.get(StateKeys.TRACKER)
+    current_stage_id = _get_stage_id(params.state)
+    exec_params = AgentExecutionParams(
+        agent=agent,
+        input_data=input_data,
+        current_stage_id=current_stage_id,
+        stage_name=params.stage_name,
+        agent_name=params.agent_name,
+        state=params.state,
+        execution_mode="dialogue",
+        tracker=tracker,
+        agent_config=agent_config,
+        agent_config_dict=agent_config_dict,
+        tracking_input={"round": params.round_number, "max_rounds": params.max_rounds},
+        extra_metadata={"round": params.round_number},
+    )
+    if tracker:
+        return _execute_agent_with_tracking(exec_params)
+    return _execute_agent_without_tracking(exec_params)
+
+
+def _invoke_single_dialogue_agent(  # noqa: long
     params: SingleDialogueAgentParams,
 ) -> tuple[Any, Any]:
     """Invoke a single agent for a dialogue round.
@@ -178,13 +214,7 @@ def _invoke_single_dialogue_agent(
         Tuple of (AgentOutput, llm_provider)
     """
     from temper_ai.agent.utils.agent_factory import AgentFactory
-    from temper_ai.stage.executors._base_helpers import (
-        AgentExecutionParams,
-        _build_agent_output,
-        _execute_agent_with_tracking,
-        _execute_agent_without_tracking,
-        _get_stage_id,
-    )
+    from temper_ai.stage.executors._base_helpers import _build_agent_output
     from temper_ai.storage.schemas.agent_config import AgentConfig
 
     agent_config_dict = params.config_loader.load_agent(params.agent_name)
@@ -207,30 +237,9 @@ def _invoke_single_dialogue_agent(
         mode_context,
     )
 
-    tracker = params.state.get(StateKeys.TRACKER)
-    current_stage_id = _get_stage_id(params.state)
-    extra_meta = {"round": params.round_number}
-    tracking_input = {"round": params.round_number, "max_rounds": params.max_rounds}
-
-    exec_params = AgentExecutionParams(
-        agent=agent,
-        input_data=input_data,
-        current_stage_id=current_stage_id,
-        stage_name=params.stage_name,
-        agent_name=params.agent_name,
-        state=params.state,
-        execution_mode="dialogue",
-        tracker=tracker,
-        agent_config=agent_config,
-        agent_config_dict=agent_config_dict,
-        tracking_input=tracking_input,
-        extra_metadata=extra_meta,
+    response = _build_and_execute_dialogue_agent(
+        params, agent, agent_config, agent_config_dict, input_data
     )
-    if tracker:
-        response = _execute_agent_with_tracking(exec_params)
-    else:
-        response = _execute_agent_without_tracking(exec_params)
-
     output = _build_agent_output(
         params.agent_name,
         response,
@@ -447,7 +456,7 @@ def check_dialogue_convergence(
 
     if conv_score >= strategy.convergence_threshold:
         logger.info(
-            f"Dialogue converged at round {round_num + 1} for "
+            f"Dialogue converged at round {round_num + 1} for "  # noqa: long
             f"stage '{stage_name}': {conv_score:.1%} >= "
             f"{strategy.convergence_threshold:.1%}"
         )
@@ -456,7 +465,47 @@ def check_dialogue_convergence(
     return conv_score, False, "in_progress"
 
 
-def execute_dialogue_round(
+def _check_convergence_and_track(
+    params: DialogueRoundParams,
+    current_outputs: list,
+    agent_stances: dict[str, str],
+    round_outcome: str,
+    conv_score: float | None,
+) -> tuple[float | None, bool, int, str]:
+    """Check convergence if min_rounds reached, then track the round.
+
+    Returns (conv_score, converged, convergence_round, round_outcome).
+    """
+    converged = False
+    convergence_round = -1
+
+    if params.round_num >= params.strategy.min_rounds:
+        conv_score, converged, round_outcome = check_dialogue_convergence(
+            params.strategy,
+            current_outputs,
+            params.previous_outputs,
+            params.round_num,
+            params.stage_name,
+        )
+        if converged:
+            convergence_round = params.round_num
+
+    track_params = DialogueTrackingParams(
+        tracker=params.tracker,
+        strategy=params.strategy,
+        state=params.state,
+        current_outputs=current_outputs,
+        round_num=params.round_num,
+        round_outcome=round_outcome,
+        conv_score=conv_score,
+        agent_stances=agent_stances,
+        dialogue_history=params.dialogue_history,
+    )
+    track_dialogue_round(track_params)
+    return conv_score, converged, convergence_round, round_outcome
+
+
+def execute_dialogue_round(  # noqa: long
     params: DialogueRoundParams,
 ) -> tuple[list, float, float | None, bool, int, str]:
     """Execute a single dialogue round: re-invoke, record, check convergence.
@@ -491,34 +540,11 @@ def execute_dialogue_round(
         params.dialogue_history,
     )
 
-    conv_score: float | None = None
-    converged = False
-    convergence_round = -1
-    round_outcome = "in_progress"
-
-    if params.round_num >= params.strategy.min_rounds:
-        conv_score, converged, round_outcome = check_dialogue_convergence(
-            params.strategy,
-            current_outputs,
-            params.previous_outputs,
-            params.round_num,
-            params.stage_name,
+    conv_score, converged, convergence_round, round_outcome = (
+        _check_convergence_and_track(
+            params, current_outputs, agent_stances, "in_progress", None
         )
-        if converged:
-            convergence_round = params.round_num
-
-    track_params = DialogueTrackingParams(
-        tracker=params.tracker,
-        strategy=params.strategy,
-        state=params.state,
-        current_outputs=current_outputs,
-        round_num=params.round_num,
-        round_outcome=round_outcome,
-        conv_score=conv_score,
-        agent_stances=agent_stances,
-        dialogue_history=params.dialogue_history,
     )
-    track_dialogue_round(track_params)
 
     return (
         current_outputs,

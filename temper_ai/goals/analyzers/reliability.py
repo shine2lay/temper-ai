@@ -127,6 +127,49 @@ def _proposals_from_errors(fingerprints: list) -> list[GoalProposal]:
     ]
 
 
+def _make_failure_rate_proposal(
+    agent_name: str, rate: float, stats: dict
+) -> GoalProposal:  # noqa: long
+    """Build a GoalProposal for an agent with a high failure rate."""
+    target = rate * HALF_FACTOR
+    return GoalProposal(
+        goal_type=GoalType.RELIABILITY_IMPROVEMENT,
+        title=f"Reduce failure rate for: {agent_name}",
+        description=(
+            f"Agent '{agent_name}' has a {rate * PCT_MULTIPLIER:.0f}% "
+            f"failure rate ({stats['failed']}/{stats['total']} executions)."
+        ),
+        risk_assessment=RiskAssessment(
+            level=GoalRiskLevel.LOW,
+            blast_radius=f"agent:{agent_name}",
+            reversible=True,
+        ),
+        effort_estimate=EffortLevel.MEDIUM,
+        expected_impacts=[
+            ImpactEstimate(
+                metric_name="failure_rate",
+                current_value=rate,
+                expected_value=target,
+                improvement_pct=FAILURE_RATE_IMPROVEMENT_PCT,
+                confidence=FAILURE_RATE_CONFIDENCE,
+            )
+        ],
+        evidence=GoalEvidence(
+            metrics={
+                "failure_rate": rate,
+                "total_executions": float(stats["total"]),
+                "failed_executions": float(stats["failed"]),
+            },
+            analysis_summary=f"High failure rate: {rate * PCT_MULTIPLIER:.0f}%",
+        ),
+        proposed_actions=[
+            "Review agent error logs for patterns",
+            "Add better error handling and retries",
+            "Consider model or prompt adjustments",
+        ],
+    )
+
+
 def _proposals_from_failure_rates(agents: list) -> list[GoalProposal]:
     """Generate proposals for agents with high failure rates."""
     if not agents:
@@ -145,43 +188,5 @@ def _proposals_from_failure_rates(agents: list) -> list[GoalProposal]:
             continue
         rate = stats["failed"] / stats["total"]
         if rate > HIGH_FAILURE_RATE:
-            target = rate * HALF_FACTOR
-            proposals.append(
-                GoalProposal(
-                    goal_type=GoalType.RELIABILITY_IMPROVEMENT,
-                    title=f"Reduce failure rate for: {agent_name}",
-                    description=(
-                        f"Agent '{agent_name}' has a {rate * PCT_MULTIPLIER:.0f}% "
-                        f"failure rate ({stats['failed']}/{stats['total']} executions)."
-                    ),
-                    risk_assessment=RiskAssessment(
-                        level=GoalRiskLevel.LOW,
-                        blast_radius=f"agent:{agent_name}",
-                        reversible=True,
-                    ),
-                    effort_estimate=EffortLevel.MEDIUM,
-                    expected_impacts=[
-                        ImpactEstimate(
-                            metric_name="failure_rate",
-                            current_value=rate,
-                            expected_value=target,
-                            improvement_pct=FAILURE_RATE_IMPROVEMENT_PCT,
-                            confidence=FAILURE_RATE_CONFIDENCE,
-                        )
-                    ],
-                    evidence=GoalEvidence(
-                        metrics={
-                            "failure_rate": rate,
-                            "total_executions": float(stats["total"]),
-                            "failed_executions": float(stats["failed"]),
-                        },
-                        analysis_summary=f"High failure rate: {rate * PCT_MULTIPLIER:.0f}%",
-                    ),
-                    proposed_actions=[
-                        "Review agent error logs for patterns",
-                        "Add better error handling and retries",
-                        "Consider model or prompt adjustments",
-                    ],
-                )
-            )
+            proposals.append(_make_failure_rate_proposal(agent_name, rate, stats))
     return proposals

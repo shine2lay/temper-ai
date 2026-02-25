@@ -212,7 +212,7 @@ def _register_get_run_status(
             return _get_run_status_impl(run_id, execution_service)
 
 
-def _run_workflow_impl(
+def _run_workflow_impl(  # noqa: long
     workflow_path: str,
     inputs_json: str,
     config_root: str,

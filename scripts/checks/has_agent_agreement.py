@@ -6,6 +6,7 @@ stage_outputs.*.agent_outputs and checks whether all agents mention
 the same option (from workflow_inputs.options) in their first 300 chars.
 Exits 0 if unanimous, 1 if split.
 """
+
 import json
 import sys
 

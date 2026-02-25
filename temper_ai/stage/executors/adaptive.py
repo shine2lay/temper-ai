@@ -233,7 +233,15 @@ class AdaptiveStageExecutor(StageExecutor):
             error_mode_metadata,
         )
 
-    def execute_stage(
+    @staticmethod  # noqa: long
+    def _get_disagreement_threshold(stage_config: Any) -> float:
+        """Extract disagreement threshold from adaptive stage config."""
+        stage_dict = stage_config if isinstance(stage_config, dict) else {}
+        adaptive_config = stage_dict.get("execution", {}).get("adaptive_config", {})
+        threshold: float = adaptive_config.get("disagreement_threshold", PROB_MEDIUM)
+        return threshold
+
+    def execute_stage(  # noqa: long
         self,
         stage_name: str,
         stage_config: Any,
@@ -264,13 +272,7 @@ class AdaptiveStageExecutor(StageExecutor):
                 max_parallel_rounds: 2
         """
         tracker = state.get("tracker")
-
-        stage_dict = stage_config if isinstance(stage_config, dict) else {}
-        execution_config = stage_dict.get("execution", {})
-        adaptive_config = execution_config.get("adaptive_config", {})
-        disagreement_threshold = adaptive_config.get(
-            "disagreement_threshold", PROB_MEDIUM
-        )
+        disagreement_threshold = self._get_disagreement_threshold(stage_config)
 
         try:
             switch_params = ParallelSwitchCheckParams(

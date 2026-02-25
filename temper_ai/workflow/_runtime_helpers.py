@@ -171,10 +171,10 @@ def emit_lifecycle_event(
     global _ObservabilityEvent  # noqa: PLW0603
     if _ObservabilityEvent is None:
         from temper_ai.observability.event_bus import (
-            ObservabilityEvent as _OE,
+            ObservabilityEvent,
         )
 
-        _ObservabilityEvent = _OE
+        _ObservabilityEvent = ObservabilityEvent
 
     event = _ObservabilityEvent(
         event_type=event_type,
@@ -183,3 +183,70 @@ def emit_lifecycle_event(
         workflow_id=workflow_id,
     )
     event_bus.emit(event)
+
+
+def load_workflow_config(
+    workflow_path: str,
+    config_root: str,
+    event_bus: Any | None,
+    workflow_id: str | None,
+    input_data: dict[str, Any] | None = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Load, parse, validate, and return (workflow_config, inputs).
+
+    Applies: file-size check, YAML parse, mapping check, structure
+    validation (depth/nodes/circular refs), and Pydantic schema validation.
+
+    Args:
+        workflow_path: Path to workflow YAML (absolute or relative to config_root).
+        config_root: Root directory for resolving relative paths.
+        event_bus: Optional event bus for lifecycle events.
+        workflow_id: Workflow execution ID for events.
+        input_data: Optional pre-loaded input dict.
+
+    Returns:
+        Tuple of (workflow_config, inputs).
+
+    Raises:
+        FileNotFoundError: If workflow file does not exist.
+        ConfigValidationError: If file too large, structure invalid, or schema fails.
+        ValueError: If workflow config is not a YAML mapping.
+    """
+    import yaml
+
+    from temper_ai.shared.utils.exceptions import ConfigValidationError
+
+    workflow_file = resolve_path(workflow_path, config_root)
+    validate_file_size(workflow_file)
+
+    try:
+        with open(workflow_file, encoding="utf-8") as f:
+            workflow_config: dict[str, Any] = yaml.safe_load(f)
+    except yaml.YAMLError as exc:
+        raise ConfigValidationError(
+            f"YAML parsing failed for {workflow_file}: {exc}"
+        ) from exc
+
+    if workflow_config is None:
+        raise ConfigValidationError("Empty workflow file")
+    if not isinstance(workflow_config, dict):
+        raise ValueError(
+            f"Workflow config must be a YAML mapping, got {type(workflow_config).__name__}"
+        )
+
+    validate_structure(workflow_config, workflow_file)
+    validate_schema(workflow_config)
+
+    from temper_ai.observability.constants import EVENT_CONFIG_LOADED
+
+    emit_lifecycle_event(
+        event_bus,
+        workflow_id,
+        EVENT_CONFIG_LOADED,
+        {
+            "workflow_path": str(workflow_file),
+            "stage_count": len(workflow_config.get("workflow", {}).get("stages", [])),
+        },
+    )
+
+    return workflow_config, dict(input_data) if input_data else {}

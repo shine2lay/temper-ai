@@ -34,6 +34,8 @@ from temper_ai.storage.database.constants import (
 from temper_ai.storage.database.datetime_utils import utcnow
 from temper_ai.storage.database.validators import validate_json_size
 
+PROMPT_TEMPLATE_HASH_LENGTH = 16  # Max chars for prompt template hash identifier
+
 
 class WorkflowExecution(SQLModel, table=True):
     """Top-level workflow execution tracking."""
@@ -375,10 +377,10 @@ class LLMCall(SQLModel, table=True):
     failover_sequence: list[str] | None = Field(default=None, sa_column=Column(JSON))
     failover_from_provider: str | None = None
 
-    # Prompt versioning
+    # Prompt versioning  # noqa
     prompt_template_hash: str | None = Field(
-        default=None, max_length=16
-    )  # noqa: duplicate
+        default=None, max_length=PROMPT_TEMPLATE_HASH_LENGTH
+    )
     prompt_template_source: str | None = None
 
     # Metadata

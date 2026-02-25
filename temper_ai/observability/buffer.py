@@ -12,7 +12,7 @@ from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
+from typing import Any, Self
 
 from temper_ai.observability._buffer_helpers import (
     execute_flush,
@@ -185,6 +185,46 @@ class DeadLetterItem:
     failed_at: datetime
 
 
+def _buffered_llm_call_from_params(params: "LLMCallBufferParams") -> "BufferedLLMCall":
+    """Create a BufferedLLMCall from LLMCallBufferParams."""
+    return BufferedLLMCall(
+        llm_call_id=params.llm_call_id,
+        agent_id=params.agent_id,
+        provider=params.provider,
+        model=params.model,
+        prompt=params.prompt,
+        response=params.response,
+        prompt_tokens=params.prompt_tokens,
+        completion_tokens=params.completion_tokens,
+        latency_ms=params.latency_ms,
+        estimated_cost_usd=params.estimated_cost_usd,
+        start_time=params.start_time,
+        temperature=params.temperature,
+        max_tokens=params.max_tokens,
+        status=params.status,
+        error_message=params.error_message,
+        failover_sequence=params.failover_sequence,
+        failover_from_provider=params.failover_from_provider,
+        prompt_template_hash=params.prompt_template_hash,
+        prompt_template_source=params.prompt_template_source,
+    )
+
+
+def _update_agent_metrics_for_llm(
+    agent_metrics: dict,
+    params: "LLMCallBufferParams",
+) -> None:
+    """Update in-memory agent metrics accumulator for an LLM call."""
+    if params.agent_id not in agent_metrics:
+        agent_metrics[params.agent_id] = AgentMetricUpdate(agent_id=params.agent_id)
+    metrics = agent_metrics[params.agent_id]
+    metrics.num_llm_calls += 1
+    metrics.total_tokens += params.prompt_tokens + params.completion_tokens
+    metrics.prompt_tokens += params.prompt_tokens
+    metrics.completion_tokens += params.completion_tokens
+    metrics.estimated_cost_usd += params.estimated_cost_usd
+
+
 class ObservabilityBuffer:
     """
     Batches observability operations to reduce database queries.
@@ -291,7 +331,7 @@ class ObservabilityBuffer:
         ) = None
 
         if auto_flush:
-            self._start_flush_thread()
+            self._start_flush_thread()  # noqa: long
 
     def set_flush_callback(
         self,
@@ -340,42 +380,8 @@ class ObservabilityBuffer:
             params = LLMCallBufferParams(**kwargs)
         deferred_flush = None
         with self.lock:
-            self.llm_calls.append(
-                BufferedLLMCall(
-                    llm_call_id=params.llm_call_id,
-                    agent_id=params.agent_id,
-                    provider=params.provider,
-                    model=params.model,
-                    prompt=params.prompt,
-                    response=params.response,
-                    prompt_tokens=params.prompt_tokens,
-                    completion_tokens=params.completion_tokens,
-                    latency_ms=params.latency_ms,
-                    estimated_cost_usd=params.estimated_cost_usd,
-                    start_time=params.start_time,
-                    temperature=params.temperature,
-                    max_tokens=params.max_tokens,
-                    status=params.status,
-                    error_message=params.error_message,
-                    failover_sequence=params.failover_sequence,
-                    failover_from_provider=params.failover_from_provider,
-                    prompt_template_hash=params.prompt_template_hash,
-                    prompt_template_source=params.prompt_template_source,
-                )
-            )
-
-            # Update agent metrics
-            if params.agent_id not in self.agent_metrics:
-                self.agent_metrics[params.agent_id] = AgentMetricUpdate(
-                    agent_id=params.agent_id
-                )
-            metrics = self.agent_metrics[params.agent_id]
-            metrics.num_llm_calls += 1
-            metrics.total_tokens += params.prompt_tokens + params.completion_tokens
-            metrics.prompt_tokens += params.prompt_tokens
-            metrics.completion_tokens += params.completion_tokens
-            metrics.estimated_cost_usd += params.estimated_cost_usd
-
+            self.llm_calls.append(_buffered_llm_call_from_params(params))
+            _update_agent_metrics_for_llm(self.agent_metrics, params)
             if self._should_flush():
                 deferred_flush = self._swap_and_prepare()
 
@@ -622,10 +628,15 @@ class ObservabilityBuffer:
                 "last_flush_time": self.last_flush_time,
             }
 
-    def __enter__(self) -> "ObservabilityBuffer":
+    def __enter__(self) -> Self:
         """Context manager entry."""
         return self
 
-    def __exit__(self, _exc_type: Any, _exc_val: Any, _exc_tb: Any) -> None:
+    def __exit__(
+        self,
+        _exc_type: type[BaseException] | None,
+        _exc_val: BaseException | None,
+        _exc_tb: object,
+    ) -> None:
         """Context manager exit - ensure flush on exit."""
         self.stop()

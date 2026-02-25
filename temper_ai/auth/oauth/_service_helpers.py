@@ -535,6 +535,54 @@ async def _get_access_token_and_endpoint(
     return access_token, userinfo_endpoint
 
 
+async def _fetch_userinfo_response(  # noqa: long
+    user_id: str,
+    provider: str,
+    config: OAuthConfig,
+    token_store: SecureTokenStore,
+    http_client: httpx.AsyncClient,
+    rate_limiter: Any,
+    request_ctx: "tuple[str, str]",
+) -> dict[str, Any]:
+    """Make userinfo HTTP request, handling 401 with token refresh.
+
+    request_ctx: (access_token, userinfo_endpoint)
+    """
+    from temper_ai.auth.oauth.service import OAuthProviderError
+
+    access_token, userinfo_endpoint = request_ctx
+    response = await http_client.get(
+        userinfo_endpoint,
+        headers={
+            "Authorization": f"Bearer {access_token}",
+            "Accept": "application/json",
+        },
+    )
+    if response.status_code == HTTP_UNAUTHORIZED:
+        logger.info(
+            f"Access token expired, refreshing: provider={provider}{LOG_USER_SEPARATOR}{user_id}"
+        )
+        await refresh_token(user_id, provider, config, token_store, http_client)
+        return await fetch_user_info(
+            user_id,
+            provider,
+            config,
+            token_store,
+            http_client,
+            rate_limiter,
+            auto_refresh=False,
+        )
+    if response.status_code != HTTP_OK:
+        raise OAuthProviderError(
+            f"User info request failed: {response.status_code}", provider=provider
+        )
+    user_info: dict[str, Any] = response.json()
+    logger.info(
+        f"Retrieved user info: provider={provider}{LOG_USER_SEPARATOR}{user_id}"
+    )
+    return user_info
+
+
 async def fetch_user_info(
     user_id: str,
     provider: str,
@@ -564,55 +612,26 @@ async def fetch_user_info(
     """
     from temper_ai.auth.oauth.service import OAuthProviderError
 
-    # Rate limiting
     try:
         rate_limiter.check_userinfo(user_id)
     except RateLimitExceeded:
         logger.warning(f"Rate limit exceeded for user info: user={user_id}")
         raise
 
-    # Get token and endpoint
     access_token, userinfo_endpoint = await _get_access_token_and_endpoint(
         user_id, provider, config, token_store
     )
 
     try:
-        response = await http_client.get(
-            userinfo_endpoint,
-            headers={
-                "Authorization": f"Bearer {access_token}",
-                "Accept": "application/json",
-            },
+        return await _fetch_userinfo_response(
+            user_id,
+            provider,
+            config,
+            token_store,
+            http_client,
+            rate_limiter,
+            (access_token, userinfo_endpoint),
         )
-
-        # Handle token expiration with auto-refresh
-        if response.status_code == HTTP_UNAUTHORIZED and auto_refresh:
-            logger.info(
-                f"Access token expired, refreshing: provider={provider}{LOG_USER_SEPARATOR}{user_id}"
-            )
-            await refresh_token(user_id, provider, config, token_store, http_client)
-            return await fetch_user_info(
-                user_id,
-                provider,
-                config,
-                token_store,
-                http_client,
-                rate_limiter,
-                auto_refresh=False,
-            )
-
-        if response.status_code != HTTP_OK:
-            raise OAuthProviderError(
-                f"User info request failed: {response.status_code}", provider=provider
-            )
-
-        user_info: dict[str, Any] = response.json()
-        logger.info(
-            f"Retrieved user info: provider={provider}{LOG_USER_SEPARATOR}{user_id}"
-        )
-
-        return user_info
-
     except httpx.HTTPError as e:
         raise OAuthProviderError(
             f"HTTP error during user info retrieval: {e}", provider=provider

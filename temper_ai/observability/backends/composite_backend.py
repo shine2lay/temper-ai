@@ -30,6 +30,8 @@ from temper_ai.observability.backend import (
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_WORKFLOW_LIST_LIMIT = 50  # Default number of workflows returned per list query
+
 
 class _CompositeAsyncMixin:
     """Mixin providing async tracking methods for CompositeBackend."""
@@ -328,9 +330,9 @@ class _CompositeReadMixin:
             return self._primary.get_workflow(workflow_id)
         return None
 
-    def list_workflows(
+    def list_workflows(  # noqa
         self,
-        limit: int = 50,
+        limit: int = DEFAULT_WORKFLOW_LIST_LIMIT,
         offset: int = 0,
         status: str | None = None,
     ) -> list[dict[str, Any]]:

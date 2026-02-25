@@ -54,54 +54,37 @@ def purge_stale_pending_ids(
     return len(stale)
 
 
-def prepare_flush_batch(params: FlushBatchParams) -> list:
-    """Prepare batch for flushing, combining new items and retry queue.
-
-    Implements deduplication to prevent double-insertion.
-
-    Args:
-        params: FlushBatchParams with all batch preparation parameters
-
-    Returns:
-        List of RetryableItem objects ready for flush
-    """
-    llm_calls = params.llm_calls
-    tool_calls = params.tool_calls
-    agent_metrics = params.agent_metrics
-    retry_queue = params.retry_queue
-    pending_ids = params.pending_ids
-    retryable_item_cls = params.retryable_item_cls
-    merge_fn = params.merge_fn
-    retryable_items = []
-
-    # Add new LLM calls
-    for llm_call in llm_calls:
-        item_id = llm_call.llm_call_id
+def _add_new_call_items(  # noqa: long
+    calls: list,
+    item_type: str,
+    pending_ids: dict[str, float],
+    retryable_items: list,
+    retryable_item_cls: type,
+) -> None:
+    """Add new LLM or tool call items, deduplicating via pending_ids."""
+    for call in calls:
+        item_id = (
+            call.llm_call_id if item_type == "llm_call" else call.tool_execution_id
+        )
         if item_id not in pending_ids:
             retryable_items.append(
                 retryable_item_cls(
-                    item=llm_call, item_type="llm_call", item_id=item_id, retry_count=0
+                    item=call, item_type=item_type, item_id=item_id, retry_count=0
                 )
             )
             pending_ids[item_id] = time.time()
 
-    # Add new tool calls
-    for tool_call in tool_calls:
-        item_id = tool_call.tool_execution_id
-        if item_id not in pending_ids:
-            retryable_items.append(
-                retryable_item_cls(
-                    item=tool_call,
-                    item_type="tool_call",
-                    item_id=item_id,
-                    retry_count=0,
-                )
-            )
-            pending_ids[item_id] = time.time()
 
-    # Add agent metrics (merge if already in retry queue)
+def _add_agent_metric_items(
+    agent_metrics: dict,
+    retry_queue: list,
+    pending_ids: dict[str, float],
+    retryable_items: list,
+    retryable_item_cls: type,
+    merge_fn: Callable,
+) -> None:
+    """Add agent metric items, merging into retry queue entries if present."""
     for agent_id, metrics in agent_metrics.items():
-        # Check if already in retry queue
         existing = next(
             (
                 item
@@ -110,9 +93,7 @@ def prepare_flush_batch(params: FlushBatchParams) -> list:
             ),
             None,
         )
-
         if existing:
-            # Merge new metrics into existing retry item
             merge_fn(existing.item, metrics)
         else:
             retryable_items.append(
@@ -125,9 +106,42 @@ def prepare_flush_batch(params: FlushBatchParams) -> list:
             )
             pending_ids[agent_id] = time.time()
 
-    # Add items from retry queue
-    retryable_items.extend(retry_queue)
 
+def prepare_flush_batch(params: FlushBatchParams) -> list:
+    """Prepare batch for flushing, combining new items and retry queue.
+
+    Implements deduplication to prevent double-insertion.
+
+    Args:
+        params: FlushBatchParams with all batch preparation parameters
+
+    Returns:
+        List of RetryableItem objects ready for flush
+    """
+    retryable_items: list = []
+    _add_new_call_items(
+        params.llm_calls,
+        "llm_call",
+        params.pending_ids,
+        retryable_items,
+        params.retryable_item_cls,
+    )
+    _add_new_call_items(
+        params.tool_calls,
+        "tool_call",
+        params.pending_ids,
+        retryable_items,
+        params.retryable_item_cls,
+    )
+    _add_agent_metric_items(
+        params.agent_metrics,
+        params.retry_queue,
+        params.pending_ids,
+        retryable_items,
+        params.retryable_item_cls,
+        params.merge_fn,
+    )
+    retryable_items.extend(params.retry_queue)
     return retryable_items
 
 

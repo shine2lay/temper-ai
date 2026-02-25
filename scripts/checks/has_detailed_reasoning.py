@@ -5,6 +5,7 @@ Reads JSON from stdin. Checks that every agent's output is at least
 MIN_LENGTH characters (substantial reasoning, not a terse answer).
 Exits 0 if all agents meet the threshold, 1 otherwise.
 """
+
 import json
 import sys
 

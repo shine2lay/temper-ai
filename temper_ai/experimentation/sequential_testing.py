@@ -59,6 +59,30 @@ class SequentialTester:
         self.log_likelihood_upper = np.log((1 - beta) / alpha)
         self.log_likelihood_lower = np.log(beta / (1 - alpha))
 
+    def _compute_sprt_llr(  # noqa: long
+        self, control_values: list[float], treatment_values: list[float]
+    ) -> tuple[float, float] | None:
+        """Compute (observed_effect, llr) using pooled std. Returns None if zero variance."""
+        control_mean = np.mean(control_values)
+        treatment_mean = np.mean(treatment_values)
+        n1, n2 = len(control_values), len(treatment_values)
+        pooled_var = (
+            (n1 - 1) * np.var(control_values, ddof=1)
+            + (n2 - 1) * np.var(treatment_values, ddof=1)
+        ) / (n1 + n2 - 2)
+        pooled_std = np.sqrt(pooled_var)
+        if pooled_std == 0:
+            return None
+        observed_effect = (treatment_mean - control_mean) / pooled_std
+        expected_effect = (
+            self.mde * np.sign(treatment_mean - control_mean)
+            if treatment_mean != control_mean
+            else self.mde
+        )
+        n_eff = (n1 * n2) / (n1 + n2)
+        llr = (observed_effect * expected_effect - (expected_effect**2) / 2) * n_eff
+        return observed_effect, llr
+
     def test_sequential(
         self, control_values: list[float], treatment_values: list[float]
     ) -> tuple[str, dict[str, Any]]:
@@ -81,41 +105,12 @@ class SequentialTester:
         ):
             return ("continue", {"reason": "Insufficient samples for sequential test"})
 
-        # Calculate means and pooled variance
-        control_mean = np.mean(control_values)
-        treatment_mean = np.mean(treatment_values)
-
-        control_var = np.var(control_values, ddof=1)
-        treatment_var = np.var(treatment_values, ddof=1)
-
-        n1 = len(control_values)
-        n2 = len(treatment_values)
-
-        # Pooled standard deviation
-        pooled_var = ((n1 - 1) * control_var + (n2 - 1) * treatment_var) / (n1 + n2 - 2)
-        pooled_std = np.sqrt(pooled_var)
-
-        if pooled_std == 0:
-            # No variance - likely all values are identical
+        result = self._compute_sprt_llr(control_values, treatment_values)
+        if result is None:
             return ("stop_no_difference", {"reason": "Zero variance detected"})
+        observed_effect, llr = result
+        n1, n2 = len(control_values), len(treatment_values)
 
-        # Calculate standardized effect size
-        observed_effect = (treatment_mean - control_mean) / pooled_std
-
-        # Expected effect under alternative hypothesis
-        expected_effect = (
-            self.mde * np.sign(treatment_mean - control_mean)
-            if treatment_mean != control_mean
-            else self.mde
-        )
-
-        # ST-06: Corrected SPRT log-likelihood ratio for normal distributions.
-        # LLR = (observed_effect * expected_effect - expected_effect^2 / 2) * n_eff
-        # where n_eff = (n1 * n2) / (n1 + n2)
-        n_eff = (n1 * n2) / (n1 + n2)
-        llr = (observed_effect * expected_effect - (expected_effect**2) / 2) * n_eff
-
-        # Decision based on SPRT boundaries
         if llr >= self.log_likelihood_upper:
             return (
                 "stop_winner",

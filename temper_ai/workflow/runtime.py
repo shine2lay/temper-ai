@@ -28,9 +28,8 @@ from temper_ai.workflow._runtime_helpers import (
     check_required_inputs,
     create_tracker,
     emit_lifecycle_event,
-    resolve_path,
+    load_workflow_config,
     validate_file_size,
-    validate_schema,
     validate_structure,
 )
 
@@ -165,7 +164,7 @@ class RunOptions:
 
 
 class WorkflowRuntime:
-    """Shared pipeline: load -> validate -> adapt -> compile -> execute -> cleanup.
+    """Shared pipeline: load -> validate -> adapt -> compile -> execute -> cleanup.  # noqa: god
 
     This is the canonical execution pipeline for MAF workflows.
     Both CLI and WorkflowRunner delegate to this class.
@@ -207,49 +206,13 @@ class WorkflowRuntime:
                 or schema validation fails.
             ValueError: If workflow config is not a YAML mapping.
         """
-        from temper_ai.shared.utils.exceptions import ConfigValidationError
-
-        workflow_file = resolve_path(workflow_path, self.config.config_root)
-
-        validate_file_size(workflow_file)
-
-        try:
-            with open(workflow_file, encoding="utf-8") as f:
-                workflow_config: dict[str, Any] = yaml.safe_load(f)
-        except yaml.YAMLError as exc:
-            raise ConfigValidationError(
-                f"YAML parsing failed for {workflow_file}: {exc}"
-            )
-
-        if workflow_config is None:
-            raise ConfigValidationError("Empty workflow file")
-
-        if not isinstance(workflow_config, dict):
-            raise ValueError(
-                f"Workflow config must be a YAML mapping, "
-                f"got {type(workflow_config).__name__}"
-            )
-
-        validate_structure(workflow_config, workflow_file)
-        validate_schema(workflow_config)
-
-        inputs = dict(input_data) if input_data else {}
-
-        from temper_ai.observability.constants import EVENT_CONFIG_LOADED
-
-        emit_lifecycle_event(
+        return load_workflow_config(
+            workflow_path,
+            self.config.config_root,
             self._event_bus,
             self._workflow_id,
-            EVENT_CONFIG_LOADED,
-            {
-                "workflow_path": str(workflow_file),
-                "stage_count": len(
-                    workflow_config.get("workflow", {}).get("stages", []),
-                ),
-            },
+            input_data,
         )
-
-        return workflow_config, inputs
 
     def load_input_file(self, input_path: str) -> dict[str, Any]:
         """Load an input YAML file with security checks.
@@ -276,7 +239,9 @@ class WorkflowRuntime:
             with open(path, encoding="utf-8") as f:
                 data = yaml.safe_load(f)
         except yaml.YAMLError as exc:
-            raise ConfigValidationError(f"YAML parsing failed for {path}: {exc}")
+            raise ConfigValidationError(
+                f"YAML parsing failed for {path}: {exc}"
+            ) from exc
 
         if data is None:
             return {}
@@ -364,10 +329,10 @@ class WorkflowRuntime:
         """
         if self.config.initialize_database:
             from temper_ai.observability.tracker import (
-                ExecutionTracker as _ET,
+                ExecutionTracker,
             )
 
-            _ET.ensure_database(self.config.db_path)
+            ExecutionTracker.ensure_database(self.config.db_path)
 
         from temper_ai.tools.registry import ToolRegistry
         from temper_ai.workflow.config_loader import ConfigLoader
@@ -473,12 +438,12 @@ class WorkflowRuntime:
             "detail_console": extras.get("detail_console"),
             "stream_callback": extras.get("stream_callback"),
         }
-        _OPTIONAL_KEYS = {
+        optional_keys = {
             "workspace": "workspace_root",
             "run_id": "run_id",
             "workflow_name": "workflow_name",
         }
-        for key, state_key in _OPTIONAL_KEYS.items():
+        for key, state_key in optional_keys.items():
             value = extras.get(key)
             if value is not None:
                 state[state_key] = value

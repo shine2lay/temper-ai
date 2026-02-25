@@ -19,6 +19,7 @@ from temper_ai.shared.constants.limits import MAX_QUEUE_SIZE
 # Hash normalization constants
 HASH_MODULO_DIVISOR = 100000  # Divisor for normalizing hash to [0, 1)
 HASH_FRACTION_LENGTH = 16  # Number of hex digits for hash-based assignment
+HEX_BASE = 16  # Base for hexadecimal integer conversion
 
 
 class AssignmentStrategy(ABC):
@@ -185,9 +186,9 @@ class HashAssignment(AssignmentStrategy):
 
         # Compute hash using SHA-256 (FIPS 140-2 approved, collision-resistant)
         # Security: Replaced MD5 (broken, collision vulnerable) with SHA-256
-        hash_value = int(
-            hashlib.sha256(hash_input.encode()).hexdigest(), 16
-        )  # noqa: Hexadecimal base
+        hash_value = int(  # noqa
+            hashlib.sha256(hash_input.encode()).hexdigest(), HEX_BASE
+        )
 
         # Map hash to variant based on traffic allocation
         variant_id = self._hash_to_variant(hash_value, variants)

@@ -92,7 +92,31 @@ class SequentialStageExecutor(StageExecutor):
         """Extract agents list and error handling config from stage config."""
         return get_stage_agents(stage_config), get_error_handling(stage_config)
 
-    def _run_agents_tracked(
+    def _build_execution_context(  # noqa: long
+        self,
+        stage_id: str,
+        stage_name: str,
+        workflow_id: str,
+        state: dict[str, Any],
+        tracker: Any,
+        config_loader: ConfigLoaderProtocol,
+        stage_config: Any,
+    ) -> AgentExecutionContext:
+        """Build an AgentExecutionContext for agent execution."""
+        return AgentExecutionContext(
+            executor=self,
+            stage_id=stage_id,
+            stage_name=stage_name,
+            workflow_id=workflow_id,
+            state=state,
+            tracker=tracker,
+            config_loader=config_loader,
+            agent_factory_cls=AgentFactory,
+            context_provider=self.context_provider,
+            stage_config=stage_config,
+        )
+
+    def _run_agents_tracked(  # noqa: long
         self,
         agents: list,
         stage_name: str,
@@ -117,43 +141,25 @@ class SequentialStageExecutor(StageExecutor):
                 workflow_id=workflow_id,
                 input_data=tracking_input,
             ) as stage_id:
-                # Store stage_id for dialogue synthesis tracking
                 state[StateKeys.CURRENT_STAGE_ID] = stage_id
-                ctx = AgentExecutionContext(
-                    executor=self,
-                    stage_id=stage_id,
-                    stage_name=stage_name,
-                    workflow_id=workflow_id,
-                    state=state,
-                    tracker=tracker,
-                    config_loader=config_loader,
-                    agent_factory_cls=AgentFactory,
-                    context_provider=self.context_provider,
-                    stage_config=stage_config,
+                ctx = self._build_execution_context(
+                    stage_id,
+                    stage_name,
+                    workflow_id,
+                    state,
+                    tracker,
+                    config_loader,
+                    stage_config,
                 )
                 return run_all_agents(
-                    ctx=ctx,
-                    agents=agents,
-                    error_handling=error_handling,
+                    ctx=ctx, agents=agents, error_handling=error_handling
                 )
+
         stage_id = f"stage-{uuid.uuid4().hex[:UUID_HEX_SHORT_LENGTH]}"
-        ctx = AgentExecutionContext(
-            executor=self,
-            stage_id=stage_id,
-            stage_name=stage_name,
-            workflow_id=workflow_id,
-            state=state,
-            tracker=None,
-            config_loader=config_loader,
-            agent_factory_cls=AgentFactory,
-            context_provider=self.context_provider,
-            stage_config=stage_config,
+        ctx = self._build_execution_context(
+            stage_id, stage_name, workflow_id, state, None, config_loader, stage_config
         )
-        return run_all_agents(
-            ctx=ctx,
-            agents=agents,
-            error_handling=error_handling,
-        )
+        return run_all_agents(ctx=ctx, agents=agents, error_handling=error_handling)
 
     def _resolve_final_output(
         self,

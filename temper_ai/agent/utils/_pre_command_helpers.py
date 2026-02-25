@@ -306,6 +306,41 @@ def _track_pre_command_observability(
         )
 
 
+def _log_pre_command_status(  # noqa: long
+    agent: BaseAgent,
+    name: str,
+    result: dict[str, Any],
+) -> None:
+    """Log the final status of a pre_command execution."""
+    exit_code = result[ToolResultFields.EXIT_CODE]
+    status_label = "PASS" if exit_code == 0 else "FAIL"
+    if result.get(ToolResultFields.ERROR):
+        logger.warning(
+            "[%s] pre_command '%s' error: %s",
+            agent.name,
+            name,
+            result[ToolResultFields.ERROR],
+        )
+    elif exit_code != 0:
+        logger.warning(
+            "[%s] pre_command '%s' %s (exit=%d, %.1fs)",
+            agent.name,
+            name,
+            status_label,
+            exit_code,
+            result[ToolResultFields.DURATION_SECONDS],
+        )
+    else:
+        logger.info(
+            "[%s] pre_command '%s' %s (exit=%d, %.1fs)",
+            agent.name,
+            name,
+            status_label,
+            exit_code,
+            result[ToolResultFields.DURATION_SECONDS],
+        )
+
+
 def execute_pre_commands(
     agent: BaseAgent,
     input_data: dict[str, Any],
@@ -353,34 +388,6 @@ def execute_pre_commands(
         # Emit events and track observability
         _emit_pre_command_events(agent, tool_label, result)
         _track_pre_command_observability(agent, tool_label, rendered, result)
-
-        # Log final status
-        exit_code = result[ToolResultFields.EXIT_CODE]
-        status_label = "PASS" if exit_code == 0 else "FAIL"
-        if result.get(ToolResultFields.ERROR):
-            logger.warning(
-                "[%s] pre_command '%s' error: %s",
-                agent.name,
-                name,
-                result[ToolResultFields.ERROR],
-            )
-        elif exit_code != 0:
-            logger.warning(
-                "[%s] pre_command '%s' %s (exit=%d, %.1fs)",
-                agent.name,
-                name,
-                status_label,
-                exit_code,
-                result[ToolResultFields.DURATION_SECONDS],
-            )
-        else:
-            logger.info(
-                "[%s] pre_command '%s' %s (exit=%d, %.1fs)",
-                agent.name,
-                name,
-                status_label,
-                exit_code,
-                result[ToolResultFields.DURATION_SECONDS],
-            )
+        _log_pre_command_status(agent, name, result)
 
     return format_pre_command_results(results)

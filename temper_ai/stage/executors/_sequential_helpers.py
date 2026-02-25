@@ -398,7 +398,7 @@ def _dispatch_sequential_evaluation(
     )
 
 
-def run_agent(
+def run_agent(  # noqa: long
     ctx: AgentExecutionContext,
     agent_name: str,
     agent_ref: Any,
@@ -501,7 +501,7 @@ def _print_sequential_stage_header(ctx: AgentExecutionContext) -> None:
         stream_cb._current_stage = ctx.stage_name
 
 
-def run_all_agents(
+def run_all_agents(  # noqa: long
     ctx: AgentExecutionContext,
     agents: list,
     error_handling: Any,

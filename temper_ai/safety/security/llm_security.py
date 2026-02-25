@@ -118,12 +118,10 @@ class PromptInjectionDetector:
     # Maximum evidence length in violation reports (prevent log injection)
     MAX_EVIDENCE_LENGTH = MAX_SHORT_STRING_LENGTH  # Balance detail vs log safety
 
-    def __init__(self) -> None:
-        """Initialize detector with ReDoS-safe attack patterns."""
-        # Prompt injection patterns (ReDoS-safe - no nested quantifiers)
-        # Multiple patterns per attack type to maintain detection coverage
-        self.injection_patterns = [
-            # Direct command injection - whitespace separators (most common)
+    @staticmethod  # noqa: long
+    def _command_injection_patterns() -> list[tuple[str, str]]:
+        """Return command injection patterns (whitespace + alt separators)."""
+        return [
             (
                 r"ignore\s+all\s+previous\s+(?:instructions|steps|context|prompts)",
                 ThreatTypes.COMMAND_INJECTION,
@@ -156,8 +154,6 @@ class PromptInjectionDetector:
                 r"override\s+(?:training|instructions|rules|programming)",
                 ThreatTypes.COMMAND_INJECTION,
             ),
-            # Direct command injection - alternative separators (tokenization exploits)
-            # Limited character class [._-] without nested quantifiers
             (
                 r"ignore[._-]+all[._-]+previous[._-]+instructions",
                 ThreatTypes.COMMAND_INJECTION,
@@ -171,12 +167,16 @@ class PromptInjectionDetector:
                 r"disregard[._-]+(?:previous|prior)[._-]+instructions",
                 ThreatTypes.COMMAND_INJECTION,
             ),
-            # Role manipulation
+        ]
+
+    @staticmethod
+    def _other_attack_patterns() -> list[tuple[str, str]]:
+        """Return role manipulation, prompt leakage, delimiter, encoding, and jailbreak patterns."""
+        return [
             (r"you\s+are\s+now\s+(?:a|an)\s+", ThreatTypes.ROLE_MANIPULATION),
             (r"act\s+as\s+(?:a|an)\s+", ThreatTypes.ROLE_MANIPULATION),
             (r"pretend\s+(?:you\s+are|to\s+be)\s+", ThreatTypes.ROLE_MANIPULATION),
             (r"new\s+(?:role|persona|character)\s*:", ThreatTypes.ROLE_MANIPULATION),
-            # System prompt extraction
             (
                 r"(?:show|reveal|display|print)\s+(?:me\s+)?(?:your\s+)?(?:system\s+)?(?:prompt|instructions)",
                 ThreatTypes.SYSTEM_PROMPT_LEAKAGE,
@@ -201,7 +201,6 @@ class PromptInjectionDetector:
                 r"output\s+your\s+(?:initialization|initial)\s+message",
                 ThreatTypes.SYSTEM_PROMPT_LEAKAGE,
             ),
-            # Delimiter injection
             (
                 r"</?\s*(?:system|user|assistant|instructions?)\s*>",
                 ThreatTypes.DELIMITER_INJECTION,
@@ -211,26 +210,32 @@ class PromptInjectionDetector:
                 ThreatTypes.DELIMITER_INJECTION,
             ),
             (r"(?:System|User|Assistant)\s*:", ThreatTypes.DELIMITER_INJECTION),
-            # Encoding bypass attempts - length-limited to prevent ReDoS
             (
                 r"(?:decode|execute|run)\s+(?:and\s+)?(?:execute|run)?\s*:\s*[a-zA-Z0-9+/=]{20,200}",
                 ThreatTypes.ENCODING_BYPASS,
             ),
             (r"base64|hex\s+encoded|rot13", ThreatTypes.ENCODING_BYPASS),
-            (r"\\x[0-9a-f]{2}", ThreatTypes.ENCODING_BYPASS),  # hex encoding detection
-            # DAN/Jailbreak patterns
+            (r"\\x[0-9a-f]{2}", ThreatTypes.ENCODING_BYPASS),
             (r"(?:do\s+anything\s+now|DAN\s+mode)", ThreatTypes.JAILBREAK_ATTEMPT),
             (r"developer\s+mode", ThreatTypes.JAILBREAK_ATTEMPT),
             (r"evil\s+mode", ThreatTypes.JAILBREAK_ATTEMPT),
         ]
 
-        # Compile patterns for performance
+    @staticmethod
+    def _build_injection_patterns() -> list[tuple[str, str]]:
+        """Return all injection detection patterns."""
+        return (
+            PromptInjectionDetector._command_injection_patterns()
+            + PromptInjectionDetector._other_attack_patterns()
+        )
+
+    def __init__(self) -> None:
+        """Initialize detector with ReDoS-safe attack patterns."""
+        self.injection_patterns = self._build_injection_patterns()
         self.compiled_patterns = [
             (re.compile(pattern, re.IGNORECASE | re.UNICODE), name)
             for pattern, name in self.injection_patterns
         ]
-
-        # High-risk keywords
         self.high_risk_keywords = [
             "sudo",
             "root",

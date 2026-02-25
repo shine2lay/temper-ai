@@ -20,6 +20,117 @@ from temper_ai.observability.models import (
 )
 
 
+def _build_llm_node(
+    llm: Any, agent_id: str
+) -> dict[str, Any]:  # noqa: long  # noqa: radon
+    """Build a waterfall trace node for a single LLM call."""
+    return {
+        "id": llm.id,
+        "parent_id": agent_id,
+        "name": f"{llm.provider}/{llm.model}",
+        "type": "llm",
+        "start": llm.start_time.isoformat(),
+        "end": llm.end_time.isoformat() if llm.end_time else None,
+        "duration": (llm.latency_ms / 1000.0 if llm.latency_ms else None),
+        "status": llm.status,
+        "metadata": {
+            "provider": llm.provider,
+            "model": llm.model,
+            "total_tokens": llm.total_tokens,
+            "prompt_tokens": llm.prompt_tokens,
+            "completion_tokens": llm.completion_tokens,
+            "estimated_cost_usd": llm.estimated_cost_usd,
+            "temperature": llm.temperature,
+        },
+    }
+
+
+def _build_tool_node(tool: Any, agent_id: str) -> dict[str, Any]:
+    """Build a waterfall trace node for a single tool execution."""
+    return {
+        "id": tool.id,
+        "parent_id": agent_id,
+        "name": tool.tool_name,
+        "type": "tool",
+        "start": tool.start_time.isoformat(),
+        "end": tool.end_time.isoformat() if tool.end_time else None,
+        "duration": tool.duration_seconds,
+        "status": tool.status,
+        "metadata": {
+            "tool_name": tool.tool_name,
+            "tool_version": tool.tool_version,
+            "input_params": tool.input_params,
+            "safety_checks": tool.safety_checks_applied,
+        },
+    }
+
+
+def _build_agent_node(agent: Any, stage_id: str, session: Any) -> dict[str, Any]:
+    """Build a waterfall trace node for a single agent with its leaf children."""
+    children: list[dict[str, Any]] = []
+    llm_stmt = (
+        select(LLMCall)
+        .where(LLMCall.agent_execution_id == agent.id)
+        .order_by(LLMCall.start_time)  # type: ignore[arg-type]
+    )
+    for llm in session.exec(llm_stmt).all():
+        children.append(_build_llm_node(llm, agent.id))
+    tool_stmt = (
+        select(ToolExecution)
+        .where(ToolExecution.agent_execution_id == agent.id)
+        .order_by(ToolExecution.start_time)  # type: ignore[arg-type]
+    )
+    for tool in session.exec(tool_stmt).all():
+        children.append(_build_tool_node(tool, agent.id))
+    return {
+        "id": agent.id,
+        "parent_id": stage_id,
+        "name": agent.agent_name,
+        "type": "agent",
+        "start": agent.start_time.isoformat(),
+        "end": agent.end_time.isoformat() if agent.end_time else None,
+        "duration": agent.duration_seconds,
+        "status": agent.status,
+        "metadata": {
+            "total_tokens": agent.total_tokens,
+            "estimated_cost_usd": agent.estimated_cost_usd,
+            "num_llm_calls": agent.num_llm_calls,
+            "num_tool_calls": agent.num_tool_calls,
+            "llm_duration": agent.llm_duration_seconds,
+            "tool_duration": agent.tool_duration_seconds,
+        },
+        "children": children,
+    }
+
+
+def _build_stage_node(stage: Any, workflow_id: str, session: Any) -> dict[str, Any]:
+    """Build a waterfall trace node for a single stage with its agent children."""
+    agent_stmt = (
+        select(AgentExecution)
+        .where(AgentExecution.stage_execution_id == stage.id)
+        .order_by(AgentExecution.start_time)  # type: ignore[arg-type]
+    )
+    children = [
+        _build_agent_node(agent, stage.id, session)
+        for agent in session.exec(agent_stmt).all()
+    ]
+    return {
+        "id": stage.id,
+        "parent_id": workflow_id,
+        "name": stage.stage_name,
+        "type": "stage",
+        "start": stage.start_time.isoformat(),
+        "end": stage.end_time.isoformat() if stage.end_time else None,
+        "duration": stage.duration_seconds,
+        "status": stage.status,
+        "metadata": {
+            "num_agents": stage.num_agents_executed,
+            "collaboration_rounds": stage.collaboration_rounds,
+        },
+        "children": children,
+    }
+
+
 def export_waterfall_trace(workflow_id: str) -> dict[str, Any]:
     """
     Export execution trace in waterfall chart format.
@@ -36,16 +147,20 @@ def export_waterfall_trace(workflow_id: str) -> dict[str, Any]:
     - children: list of child nodes
     """
     with get_session() as session:
-        # Get workflow
         wf_stmt = select(WorkflowExecution).where(WorkflowExecution.id == workflow_id)
         workflow = session.exec(wf_stmt).first()
-
         if not workflow:
             return {"error": f"Workflow {workflow_id} not found"}
-
-        # Build hierarchical trace
-        children: list[dict[str, Any]] = []
-        trace: dict[str, Any] = {
+        stage_stmt = (
+            select(StageExecution)
+            .where(StageExecution.workflow_execution_id == workflow_id)
+            .order_by(StageExecution.start_time)  # type: ignore[arg-type]
+        )
+        stage_children = [
+            _build_stage_node(stage, workflow_id, session)
+            for stage in session.exec(stage_stmt).all()
+        ]
+        return {
             "id": workflow.id,
             "name": workflow.workflow_name,
             "type": "workflow",
@@ -60,133 +175,8 @@ def export_waterfall_trace(workflow_id: str) -> dict[str, Any]:
                 "total_tool_calls": workflow.total_tool_calls,
                 "environment": workflow.environment,
             },
-            "children": children,
+            "children": stage_children,
         }
-
-        # Get stages
-        stage_stmt = (
-            select(StageExecution)
-            .where(StageExecution.workflow_execution_id == workflow_id)
-            .order_by(StageExecution.start_time)  # type: ignore[arg-type]
-        )
-
-        stages = session.exec(stage_stmt).all()
-
-        for stage in stages:
-            stage_children: list[dict[str, Any]] = []
-            stage_node: dict[str, Any] = {
-                "id": stage.id,
-                "parent_id": workflow.id,
-                "name": stage.stage_name,
-                "type": "stage",
-                "start": stage.start_time.isoformat(),
-                "end": stage.end_time.isoformat() if stage.end_time else None,
-                "duration": stage.duration_seconds,
-                "status": stage.status,
-                "metadata": {
-                    "num_agents": stage.num_agents_executed,
-                    "collaboration_rounds": stage.collaboration_rounds,
-                },
-                "children": stage_children,
-            }
-
-            # Get agents for this stage
-            agent_stmt = (
-                select(AgentExecution)
-                .where(AgentExecution.stage_execution_id == stage.id)
-                .order_by(AgentExecution.start_time)  # type: ignore[arg-type]
-            )
-
-            agents = session.exec(agent_stmt).all()
-
-            for agent in agents:
-                agent_children: list[dict[str, Any]] = []
-                agent_node: dict[str, Any] = {
-                    "id": agent.id,
-                    "parent_id": stage.id,
-                    "name": agent.agent_name,
-                    "type": "agent",
-                    "start": agent.start_time.isoformat(),
-                    "end": agent.end_time.isoformat() if agent.end_time else None,
-                    "duration": agent.duration_seconds,
-                    "status": agent.status,
-                    "metadata": {
-                        "total_tokens": agent.total_tokens,
-                        "estimated_cost_usd": agent.estimated_cost_usd,
-                        "num_llm_calls": agent.num_llm_calls,
-                        "num_tool_calls": agent.num_tool_calls,
-                        "llm_duration": agent.llm_duration_seconds,
-                        "tool_duration": agent.tool_duration_seconds,
-                    },
-                    "children": agent_children,
-                }
-
-                # Get LLM calls for this agent
-                llm_stmt = (
-                    select(LLMCall)
-                    .where(LLMCall.agent_execution_id == agent.id)
-                    .order_by(LLMCall.start_time)  # type: ignore[arg-type]
-                )
-
-                llm_calls = session.exec(llm_stmt).all()
-
-                for llm in llm_calls:
-                    llm_node: dict[str, Any] = {
-                        "id": llm.id,
-                        "parent_id": agent.id,
-                        "name": f"{llm.provider}/{llm.model}",
-                        "type": "llm",
-                        "start": llm.start_time.isoformat(),
-                        "end": llm.end_time.isoformat() if llm.end_time else None,
-                        "duration": (
-                            llm.latency_ms / 1000.0 if llm.latency_ms else None
-                        ),
-                        "status": llm.status,
-                        "metadata": {
-                            "provider": llm.provider,
-                            "model": llm.model,
-                            "total_tokens": llm.total_tokens,
-                            "prompt_tokens": llm.prompt_tokens,
-                            "completion_tokens": llm.completion_tokens,
-                            "estimated_cost_usd": llm.estimated_cost_usd,
-                            "temperature": llm.temperature,
-                        },
-                    }
-                    agent_children.append(llm_node)
-
-                # Get tool executions for this agent
-                tool_stmt = (
-                    select(ToolExecution)
-                    .where(ToolExecution.agent_execution_id == agent.id)
-                    .order_by(ToolExecution.start_time)  # type: ignore[arg-type]
-                )
-
-                tools = session.exec(tool_stmt).all()
-
-                for tool in tools:
-                    tool_node: dict[str, Any] = {
-                        "id": tool.id,
-                        "parent_id": agent.id,
-                        "name": tool.tool_name,
-                        "type": "tool",
-                        "start": tool.start_time.isoformat(),
-                        "end": tool.end_time.isoformat() if tool.end_time else None,
-                        "duration": tool.duration_seconds,
-                        "status": tool.status,
-                        "metadata": {
-                            "tool_name": tool.tool_name,
-                            "tool_version": tool.tool_version,
-                            "input_params": tool.input_params,
-                            "safety_checks": tool.safety_checks_applied,
-                        },
-                    }
-                    agent_children.append(tool_node)
-
-                stage_children.append(agent_node)
-
-            children.append(stage_node)
-
-        return trace
 
 
 def flatten_for_waterfall(trace: dict[str, Any]) -> list[dict[str, Any]]:

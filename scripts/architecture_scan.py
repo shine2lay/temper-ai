@@ -43,8 +43,8 @@ Changelog:
     v2.2.0: Anti-patterns, file caching, parallel scans, scoring gaps
 """
 
-import ast
 import argparse
+import ast
 import hashlib
 import json
 import os
@@ -53,7 +53,7 @@ import subprocess
 import sys
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -257,12 +257,21 @@ HIGH_FAN_IN = 6
 
 # v2.3.0: Magic values thresholds
 MAGIC_NUMBER_WHITELIST = {
-    -1, 0, 1, 2,  # Common small integers
-    10, 100, 1000, 10000,  # Powers of 10
+    -1,
+    0,
+    1,
+    2,  # Common small integers
+    10,
+    100,
+    1000,
+    10000,  # Powers of 10
     60,  # Seconds per minute
     24,  # Hours per day
     1024,  # Bytes per KB
-    256, 512, 2048, 4096,  # Common powers of 2
+    256,
+    512,
+    2048,
+    4096,  # Common powers of 2
 }
 MAGIC_STRING_MIN_OCCURRENCES = 3
 MAGIC_STRING_MIN_LENGTH = 3
@@ -274,21 +283,28 @@ PARAMETRIZE_PREFIX_THRESHOLD = 5
 # Strings that are never magic — format specifiers, common framework identifiers, etc.
 _FORMAT_SPEC_RE = re.compile(r"^\.\d+[fde%]$")
 _IMPORT_PATH_RE = re.compile(r"^[a-z_][a-z0-9_]*(\.[a-z_][a-z0-9_]*){2,}$")
-_RICH_MARKUP_RE = re.compile(r"\[/?[a-z]")  # Rich console markup like [bold], [/], [dim]
+_RICH_MARKUP_RE = re.compile(
+    r"\[/?[a-z]"
+)  # Rich console markup like [bold], [/], [dim]
 # Identifier-like strings: lowercase with underscores, 3-20 chars — these are
 # dict keys, config values, or structural identifiers, not magic strings.
 _IDENTIFIER_LIKE_RE = re.compile(r"^_{0,2}[a-z][a-z0-9]*(_[a-z0-9]+)*$")
 _IDENTIFIER_LIKE_MAX_LEN = 32
-_MAGIC_STRING_SKIP_VALUES = frozenset({
-    # SQL keywords
-    "CASCADE",
-    # Common format/encoding
-    "utf-8", "string",
-    # Display literals
-    "N/A", "***REDACTED***", "...",
-    # Version strings
-    "1.0",
-})
+_MAGIC_STRING_SKIP_VALUES = frozenset(
+    {
+        # SQL keywords
+        "CASCADE",
+        # Common format/encoding
+        "utf-8",
+        "string",
+        # Display literals
+        "N/A",
+        "***REDACTED***",
+        "...",
+        # Version strings
+        "1.0",
+    }
+)
 # Strings that are formatting fragments, not extractable constants.
 # Matches: whitespace-only, log/error prefixes ending with punctuation,
 # short interpolation fragments like ", got ", " -> ", etc.
@@ -303,12 +319,15 @@ _LOG_FRAGMENT_RE = re.compile(
 # File Scanning
 # ---------------------------------------------------------------------------
 
+
 def _count_file_lines(py_file: Path, src_dir: Path) -> dict:
     """Count lines in a single file (helper for parallel processing)."""
     rel_path = str(py_file.relative_to(src_dir.parent))
     try:
         content = py_file.read_text(encoding="utf-8", errors="replace")
-        lines = content.count("\n") + (1 if content and not content.endswith("\n") else 0)
+        lines = content.count("\n") + (
+            1 if content and not content.endswith("\n") else 0
+        )
     except OSError:
         lines = 0
     return {"path": rel_path, "lines": lines, "abs_path": str(py_file)}
@@ -321,7 +340,9 @@ def scan_files(src_dir: Path) -> dict:
     # Parallelize file reading
     files = []
     with ThreadPoolExecutor(max_workers=16) as executor:
-        futures = [executor.submit(_count_file_lines, py_file, src_dir) for py_file in py_files]
+        futures = [
+            executor.submit(_count_file_lines, py_file, src_dir) for py_file in py_files
+        ]
         for future in as_completed(futures):
             files.append(future.result())
 
@@ -344,6 +365,7 @@ def scan_files(src_dir: Path) -> dict:
 # ---------------------------------------------------------------------------
 # File Cache (single-pass read + parse)
 # ---------------------------------------------------------------------------
+
 
 def _parse_single_file(abs_path: str) -> tuple[str, tuple[str, "ast.Module | None"]]:
     """Parse a single file (helper for parallel processing)."""
@@ -382,6 +404,7 @@ def _build_file_cache(
 # Import Analysis (AST-based)
 # ---------------------------------------------------------------------------
 
+
 def _get_top_module(import_path: str) -> str:
     """Extract top-level module from dotted import path."""
     parts = import_path.split(".")
@@ -391,7 +414,9 @@ def _get_top_module(import_path: str) -> str:
     return parts[0]
 
 
-def scan_imports(src_dir: Path, files: list[dict], *, file_cache: dict | None = None) -> dict:
+def scan_imports(
+    src_dir: Path, files: list[dict], *, file_cache: dict | None = None
+) -> dict:
     """Build import graph via AST parsing.
 
     Skips TYPE_CHECKING blocks (type-only imports) and test_support.py
@@ -403,7 +428,9 @@ def scan_imports(src_dir: Path, files: list[dict], *, file_cache: dict | None = 
     import_details: list[dict] = []
     parse_errors: list[str] = []
 
-    src_modules = {d.name for d in src_dir.iterdir() if d.is_dir() and (d / "__init__.py").exists()}
+    src_modules = {
+        d.name for d in src_dir.iterdir() if d.is_dir() and (d / "__init__.py").exists()
+    }
 
     for file_info in files:
         file_path = Path(file_info["abs_path"])
@@ -465,26 +492,30 @@ def scan_imports(src_dir: Path, files: list[dict], *, file_cache: dict | None = 
                 top = _get_top_module(node.module)
                 if top in src_modules and top != from_module:
                     target_module = top
-                    import_details.append({
-                        "from_file": rel_path,
-                        "from_module": from_module,
-                        "to_module": top,
-                        "import_path": node.module,
-                        "line": node.lineno,
-                    })
+                    import_details.append(
+                        {
+                            "from_file": rel_path,
+                            "from_module": from_module,
+                            "to_module": top,
+                            "import_path": node.module,
+                            "line": node.lineno,
+                        }
+                    )
 
             elif isinstance(node, ast.Import):
                 for alias in node.names:
                     top = _get_top_module(alias.name)
                     if top in src_modules and top != from_module:
                         target_module = top
-                        import_details.append({
-                            "from_file": rel_path,
-                            "from_module": from_module,
-                            "to_module": top,
-                            "import_path": alias.name,
-                            "line": node.lineno,
-                        })
+                        import_details.append(
+                            {
+                                "from_file": rel_path,
+                                "from_module": from_module,
+                                "to_module": top,
+                                "import_path": alias.name,
+                                "line": node.lineno,
+                            }
+                        )
 
             if target_module:
                 module_graph[from_module].add(target_module)
@@ -523,7 +554,7 @@ def _detect_circular(graph: dict[str, set[str]]) -> list[list[str]]:
             if mod_b in graph and mod_a in graph[mod_b]:
                 pair = tuple(sorted([mod_a, mod_b]))
                 if pair not in seen:
-                    seen.add(pair)
+                    seen.add(pair)  # type: ignore[arg-type]
                     cycles.append([pair[0], pair[1], pair[0]])
 
     return sorted(cycles)
@@ -533,7 +564,10 @@ def _detect_circular(graph: dict[str, set[str]]) -> list[list[str]]:
 # Class Analysis (AST-based)
 # ---------------------------------------------------------------------------
 
-def scan_classes(src_dir: Path, files: list[dict], *, file_cache: dict | None = None) -> dict:
+
+def scan_classes(
+    src_dir: Path, files: list[dict], *, file_cache: dict | None = None
+) -> dict:
     """Find all class definitions with metadata via AST."""
     classes: list[dict] = []
     parse_errors: list[str] = []
@@ -568,7 +602,8 @@ def scan_classes(src_dir: Path, files: list[dict], *, file_cache: dict | None = 
 
                 # Count methods
                 methods = [
-                    n.name for n in node.body
+                    n.name
+                    for n in node.body
                     if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
                 ]
 
@@ -582,17 +617,19 @@ def scan_classes(src_dir: Path, files: list[dict], *, file_cache: dict | None = 
                     for b in bases
                 )
 
-                classes.append({
-                    "name": node.name,
-                    "file": rel_path,
-                    "line": node.lineno,
-                    "end_line": end_line,
-                    "line_span": line_span,
-                    "bases": bases,
-                    "methods": methods,
-                    "method_count": len(methods),
-                    "is_abstract": is_abstract,
-                })
+                classes.append(
+                    {
+                        "name": node.name,
+                        "file": rel_path,
+                        "line": node.lineno,
+                        "end_line": end_line,
+                        "line_span": line_span,
+                        "bases": bases,
+                        "methods": methods,
+                        "method_count": len(methods),
+                        "is_abstract": is_abstract,
+                    }
+                )
 
     abcs = [c for c in classes if c["is_abstract"]]
 
@@ -612,9 +649,10 @@ def scan_classes(src_dir: Path, files: list[dict], *, file_cache: dict | None = 
 # Anti-Pattern Detection (regex-based)
 # ---------------------------------------------------------------------------
 
+
 def _has_noqa_comment(line: str) -> bool:
     """Check if line has a noqa comment to suppress warnings."""
-    return bool(re.search(r'#\s*noqa(?:\s*:\s*\w+)?', line, re.IGNORECASE))
+    return bool(re.search(r"#\s*noqa(?:\s*:\s*\w+)?", line, re.IGNORECASE))
 
 
 def _is_reraising_pattern(lines: list[str], except_idx: int) -> bool:
@@ -641,7 +679,7 @@ def _is_reraising_pattern(lines: list[str], except_idx: int) -> bool:
         stripped = line.strip()
 
         # Skip empty lines and comments
-        if not stripped or stripped.startswith('#'):
+        if not stripped or stripped.startswith("#"):
             continue
 
         # Get indent of current line
@@ -652,16 +690,16 @@ def _is_reraising_pattern(lines: list[str], except_idx: int) -> bool:
             break
 
         # Check for bare raise
-        if re.match(r'^\s*raise\s*$', line):
+        if re.match(r"^\s*raise\s*$", line):
             return True
 
         # Check for raise with 'from e' (exception chaining/conversion)
-        if re.search(r'raise\s+\w+.*\s+from\s+', line):
+        if re.search(r"raise\s+\w+.*\s+from\s+", line):
             return True
 
         # Check for raising a different exception (conversion pattern)
         # e.g., raise click.Abort(), raise ValueError(...)
-        if re.search(r'raise\s+\w+', line):
+        if re.search(r"raise\s+\w+", line):
             return True
 
     return False
@@ -683,24 +721,27 @@ def _is_cli_entry_point(file_path: str, lines: list[str], line_idx: int) -> bool
         True if except is in a CLI entry point function
     """
     # Check if in CLI file
-    if not (file_path.endswith('cli.py') or file_path.endswith('main.py') or
-            file_path.endswith('rollback.py')):
+    if not (
+        file_path.endswith("cli.py")
+        or file_path.endswith("main.py")
+        or file_path.endswith("rollback.py")
+    ):
         return False
 
     # Walk backwards to find the function definition
     for i in range(line_idx - 1, -1, -1):
         line = lines[i]
         # Look for function definitions
-        func_match = re.match(r'^\s*(?:async\s+)?def\s+(\w+)\s*\(', line)
+        func_match = re.match(r"^\s*(?:async\s+)?def\s+(\w+)\s*\(", line)
         if func_match:
             func_name = func_match.group(1)
             # CLI entry points typically have these names
-            if re.match(r'^(run_|main|execute_|handle_command)', func_name):
+            if re.match(r"^(run_|main|execute_|handle_command)", func_name):
                 return True
 
             # Also check if function returns int (exit code pattern)
             # Look for return type annotation
-            if re.search(r'->\s*int\s*:', line):
+            if re.search(r"->\s*int\s*:", line):
                 return True
 
             # If no return type, check if except block returns an int
@@ -715,7 +756,7 @@ def _is_cli_entry_point(file_path: str, lines: list[str], line_idx: int) -> bool
                     break
 
                 # Check for return 1 or return 0 (exit codes)
-                if re.match(r'^\s*return\s+[01]\s*$', check_line):
+                if re.match(r"^\s*return\s+[01]\s*$", check_line):
                     return True
 
             return False
@@ -741,7 +782,9 @@ def _is_cleanup_pattern(file_path: str, lines: list[str], except_idx: int) -> bo
     except_line = lines[except_idx]
 
     # Check for explicit cleanup comments
-    if re.search(r'#.*(cleanup|must not fail|defensive|best effort)', except_line, re.IGNORECASE):
+    if re.search(
+        r"#.*(cleanup|must not fail|defensive|best effort)", except_line, re.IGNORECASE
+    ):
         return True
 
     # Get indent level
@@ -753,7 +796,7 @@ def _is_cleanup_pattern(file_path: str, lines: list[str], except_idx: int) -> bo
         stripped = line.strip()
 
         # Skip empty lines and comments
-        if not stripped or stripped.startswith('#'):
+        if not stripped or stripped.startswith("#"):
             continue
 
         # Get indent of current line
@@ -764,28 +807,30 @@ def _is_cleanup_pattern(file_path: str, lines: list[str], except_idx: int) -> bo
             break
 
         # Check for logger usage (common cleanup pattern)
-        if re.search(r'logger\.(warning|exception|error|debug)\s*\(', line):
+        if re.search(r"logger\.(warning|exception|error|debug)\s*\(", line):
             return True
 
         # Check for pass (intentional no-op)
-        if re.match(r'^\s*pass\s*$', line):
+        if re.match(r"^\s*pass\s*$", line):
             return True
 
         # Check for break/continue (defensive loop control)
-        if re.match(r'^\s*(break|continue)\s*$', line):
+        if re.match(r"^\s*(break|continue)\s*$", line):
             return True
 
         # Check for defensive return patterns (return safe defaults)
         # e.g., return False, return None, return "", return {}, return []
-        if re.match(r'^\s*return\s+(False|None|"[^"]*"|\'[^\']*\'|\{\}|\[\])\s*$', line):
+        if re.match(
+            r'^\s*return\s+(False|None|"[^"]*"|\'[^\']*\'|\{\}|\[\])\s*$', line
+        ):
             return True
 
         # Check for returning error dict/object (common pattern in metrics/tools)
         # e.g., return {"score": 0.0, "details": f"Error: {e}"}
         # e.g., return ToolResult(success=False, error=...)
-        if re.search(r'return\s+\{.*error.*\}', line, re.IGNORECASE):
+        if re.search(r"return\s+\{.*error.*\}", line, re.IGNORECASE):
             return True
-        if re.search(r'return\s+\w+Result\(.*error.*\)', line, re.IGNORECASE):
+        if re.search(r"return\s+\w+Result\(.*error.*\)", line, re.IGNORECASE):
             return True
         if re.search(r'return\s+\{.*"score".*0', line):
             return True
@@ -796,10 +841,14 @@ def _is_cleanup_pattern(file_path: str, lines: list[str], except_idx: int) -> bo
 def _is_intentional_sleep(line: str) -> bool:
     """Check if time.sleep is intentional (has explanatory comment)."""
     # Check for comments indicating intentional use
-    return bool(re.search(r'#.*(intentional|polling|ui|rate|delay|wait)', line, re.IGNORECASE))
+    return bool(
+        re.search(r"#.*(intentional|polling|ui|rate|delay|wait)", line, re.IGNORECASE)
+    )
 
 
-def scan_anti_patterns(src_dir: Path, files: list[dict], *, file_cache: dict | None = None) -> dict:
+def scan_anti_patterns(
+    src_dir: Path, files: list[dict], *, file_cache: dict | None = None
+) -> dict:
     """Detect known anti-patterns via regex scanning with smart filtering."""
     findings: list[dict] = []
     counts: dict[str, int] = defaultdict(int)
@@ -829,16 +878,18 @@ def scan_anti_patterns(src_dir: Path, files: list[dict], *, file_cache: dict | N
             # For multi-line patterns, search full content
             if r"\n" in regex:
                 for m in re.finditer(regex, full_content, re.MULTILINE):
-                    line_num = full_content[:m.start()].count("\n") + 1
+                    line_num = full_content[: m.start()].count("\n") + 1
                     match_text = m.group(0)[:120].replace("\n", "\\n")
-                    findings.append({
-                        "pattern": name,
-                        "severity": severity,
-                        "description": pattern_def["description"],
-                        "file": rel_path,
-                        "line": line_num,
-                        "match": match_text,
-                    })
+                    findings.append(
+                        {
+                            "pattern": name,
+                            "severity": severity,
+                            "description": pattern_def["description"],
+                            "file": rel_path,
+                            "line": line_num,
+                            "match": match_text,
+                        }
+                    )
                     counts[severity] += 1
             else:
                 # Line-by-line search with filtering
@@ -873,14 +924,16 @@ def scan_anti_patterns(src_dir: Path, files: list[dict], *, file_cache: dict | N
                         continue
 
                     match_text = line.strip()[:120]
-                    findings.append({
-                        "pattern": name,
-                        "severity": severity,
-                        "description": pattern_def["description"],
-                        "file": rel_path,
-                        "line": i,
-                        "match": match_text,
-                    })
+                    findings.append(
+                        {
+                            "pattern": name,
+                            "severity": severity,
+                            "description": pattern_def["description"],
+                            "file": rel_path,
+                            "line": i,
+                            "match": match_text,
+                        }
+                    )
                     counts[severity] += 1
 
     return {
@@ -892,11 +945,16 @@ def scan_anti_patterns(src_dir: Path, files: list[dict], *, file_cache: dict | N
             "low": counts.get("LOW", 0),
             "info": counts.get("INFO", 0),
         },
-        "details": sorted(findings, key=lambda f: (
-            {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3, "INFO": 4}[f["severity"]],
-            f["file"],
-            f["line"],
-        )),
+        "details": sorted(
+            findings,
+            key=lambda f: (
+                {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3, "INFO": 4}[
+                    f["severity"]
+                ],
+                f["file"],
+                f["line"],
+            ),
+        ),
     }
 
 
@@ -904,7 +962,10 @@ def scan_anti_patterns(src_dir: Path, files: list[dict], *, file_cache: dict | N
 # Unused Import Detection (AST-based)
 # ---------------------------------------------------------------------------
 
-def scan_unused_imports(src_dir: Path, files: list[dict], *, file_cache: dict | None = None) -> dict:
+
+def scan_unused_imports(
+    src_dir: Path, files: list[dict], *, file_cache: dict | None = None
+) -> dict:
     """Detect imported names that are never used in file body.
 
     Skips __init__.py (re-export modules) and TYPE_CHECKING blocks.
@@ -971,7 +1032,9 @@ def scan_unused_imports(src_dir: Path, files: list[dict], *, file_cache: dict | 
                     if isinstance(target, ast.Name) and target.id == "__all__":
                         if isinstance(node.value, (ast.List, ast.Tuple)):
                             for elt in node.value.elts:
-                                if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
+                                if isinstance(elt, ast.Constant) and isinstance(
+                                    elt.value, str
+                                ):
                                     used_names.add(elt.value)
 
         # Also check for noqa: F401 comments — names on those lines are intentional
@@ -995,12 +1058,14 @@ def scan_unused_imports(src_dir: Path, files: list[dict], *, file_cache: dict | 
                         # Skip __future__ imports (affect type evaluation)
                         if alias.name.startswith("__future__"):
                             continue
-                        unused_list.append({
-                            "file": rel_path,
-                            "line": node.lineno,
-                            "name": name,
-                            "import_path": alias.name,
-                        })
+                        unused_list.append(
+                            {
+                                "file": rel_path,
+                                "line": node.lineno,
+                                "name": name,
+                                "import_path": alias.name,
+                            }
+                        )
 
             elif isinstance(node, ast.ImportFrom):
                 if node.lineno in noqa_f401_lines:
@@ -1010,15 +1075,17 @@ def scan_unused_imports(src_dir: Path, files: list[dict], *, file_cache: dict | 
                 # Skip __future__ imports
                 if node.module and node.module.startswith("__future__"):
                     continue
-                for alias in (node.names or []):
+                for alias in node.names or []:
                     name = alias.asname if alias.asname else alias.name
                     if name not in used_names and name != "*":
-                        unused_list.append({
-                            "file": rel_path,
-                            "line": node.lineno,
-                            "name": name,
-                            "import_path": f"{node.module or ''}.{alias.name}",
-                        })
+                        unused_list.append(
+                            {
+                                "file": rel_path,
+                                "line": node.lineno,
+                                "name": name,
+                                "import_path": f"{node.module or ''}.{alias.name}",
+                            }
+                        )
 
     files_with_unused = len({u["file"] for u in unused_list})
 
@@ -1036,7 +1103,10 @@ def scan_unused_imports(src_dir: Path, files: list[dict], *, file_cache: dict | 
 # Missing Docstring Detection (AST-based)
 # ---------------------------------------------------------------------------
 
-def scan_missing_docstrings(src_dir: Path, files: list[dict], *, file_cache: dict | None = None) -> dict:
+
+def scan_missing_docstrings(
+    src_dir: Path, files: list[dict], *, file_cache: dict | None = None
+) -> dict:
     """Find public classes and functions missing docstrings."""
     missing: list[dict] = []
     parse_errors: list[str] = []
@@ -1063,23 +1133,27 @@ def scan_missing_docstrings(src_dir: Path, files: list[dict], *, file_cache: dic
                 if node.name.startswith("_"):
                     continue
                 if not ast.get_docstring(node):
-                    missing.append({
-                        "file": rel_path,
-                        "line": node.lineno,
-                        "name": node.name,
-                        "type": "class",
-                    })
+                    missing.append(
+                        {
+                            "file": rel_path,
+                            "line": node.lineno,
+                            "name": node.name,
+                            "type": "class",
+                        }
+                    )
 
             elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 if node.name.startswith("_"):
                     continue
                 if not ast.get_docstring(node):
-                    missing.append({
-                        "file": rel_path,
-                        "line": node.lineno,
-                        "name": node.name,
-                        "type": "function",
-                    })
+                    missing.append(
+                        {
+                            "file": rel_path,
+                            "line": node.lineno,
+                            "name": node.name,
+                            "type": "function",
+                        }
+                    )
 
     missing_classes = sum(1 for m in missing if m["type"] == "class")
     missing_functions = sum(1 for m in missing if m["type"] == "function")
@@ -1101,7 +1175,10 @@ def scan_missing_docstrings(src_dir: Path, files: list[dict], *, file_cache: dic
 
 BROAD_TRY_THRESHOLD = 50  # lines
 
-def scan_broad_try_blocks(src_dir: Path, files: list[dict], *, file_cache: dict | None = None) -> dict:
+
+def scan_broad_try_blocks(
+    src_dir: Path, files: list[dict], *, file_cache: dict | None = None
+) -> dict:
     """Find try blocks where body spans more than BROAD_TRY_THRESHOLD lines."""
     findings: list[dict] = []
     parse_errors: list[str] = []
@@ -1134,12 +1211,14 @@ def scan_broad_try_blocks(src_dir: Path, files: list[dict], *, file_cache: dict 
                 )
                 body_lines = end_line - start_line + 1
                 if body_lines > BROAD_TRY_THRESHOLD:
-                    findings.append({
-                        "file": rel_path,
-                        "line": node.lineno,
-                        "end_line": end_line,
-                        "body_lines": body_lines,
-                    })
+                    findings.append(
+                        {
+                            "file": rel_path,
+                            "line": node.lineno,
+                            "end_line": end_line,
+                            "body_lines": body_lines,
+                        }
+                    )
 
     return {
         "summary": {
@@ -1154,16 +1233,19 @@ def scan_broad_try_blocks(src_dir: Path, files: list[dict], *, file_cache: dict 
 # Naming Collision Detection
 # ---------------------------------------------------------------------------
 
+
 def find_naming_collisions(classes: list[dict]) -> dict:
     """Find duplicate class names across different modules."""
     name_locations: dict[str, list[dict]] = defaultdict(list)
 
     for cls in classes:
-        name_locations[cls["name"]].append({
-            "file": cls["file"],
-            "line": cls["line"],
-            "bases": cls["bases"],
-        })
+        name_locations[cls["name"]].append(
+            {
+                "file": cls["file"],
+                "line": cls["line"],
+                "bases": cls["bases"],
+            }
+        )
 
     collisions = [
         {"name": name, "count": len(locs), "locations": locs}
@@ -1183,6 +1265,21 @@ def find_naming_collisions(classes: list[dict]) -> dict:
 # God Object Detection
 # ---------------------------------------------------------------------------
 
+
+def _has_god_class_suppression(filepath: str, lineno: int) -> bool:
+    """Check if a class has # noqa: god suppression on its definition line."""
+    try:
+        with open(filepath, encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()
+        if 0 < lineno <= len(lines):
+            line = lines[lineno - 1].lower()
+            if "noqa" in line and "god" in line:
+                return True
+    except OSError:
+        pass
+    return False
+
+
 def find_god_objects(files: list[dict], classes: list[dict]) -> dict:
     """Find files and classes exceeding complexity thresholds."""
     god_classes = [
@@ -1195,7 +1292,11 @@ def find_god_objects(files: list[dict], classes: list[dict]) -> dict:
             "reason": _god_class_reason(cls),
         }
         for cls in classes
-        if cls["line_span"] >= GOD_CLASS_LINES or cls["method_count"] >= GOD_CLASS_METHODS
+        if (
+            cls["line_span"] >= GOD_CLASS_LINES
+            or cls["method_count"] >= GOD_CLASS_METHODS
+        )
+        and not _has_god_class_suppression(cls["file"], cls["line"])
     ]
 
     large_files = [
@@ -1219,13 +1320,16 @@ def _god_class_reason(cls: dict) -> str:
     if cls["line_span"] >= GOD_CLASS_LINES:
         reasons.append(f"{cls['line_span']} lines (threshold: {GOD_CLASS_LINES})")
     if cls["method_count"] >= GOD_CLASS_METHODS:
-        reasons.append(f"{cls['method_count']} methods (threshold: {GOD_CLASS_METHODS})")
+        reasons.append(
+            f"{cls['method_count']} methods (threshold: {GOD_CLASS_METHODS})"
+        )
     return "; ".join(reasons)
 
 
 # ---------------------------------------------------------------------------
 # Layer Analysis
 # ---------------------------------------------------------------------------
+
 
 def analyze_layers(import_data: dict) -> dict:
     """Analyze layer assignments and detect violations."""
@@ -1252,17 +1356,19 @@ def analyze_layers(import_data: dict) -> dict:
 
         # Upward dependency: lower layer imports from higher layer
         if from_order > to_order:
-            violations.append({
-                "from_file": imp["from_file"],
-                "from_module": from_mod,
-                "from_layer": from_layer,
-                "to_module": to_mod,
-                "to_layer": to_layer,
-                "import_path": imp["import_path"],
-                "line": imp["line"],
-                "direction": "upward",
-                "description": f"{from_layer} ({from_mod}) imports from {to_layer} ({to_mod})",
-            })
+            violations.append(
+                {
+                    "from_file": imp["from_file"],
+                    "from_module": from_mod,
+                    "from_layer": from_layer,
+                    "to_module": to_mod,
+                    "to_layer": to_layer,
+                    "import_path": imp["import_path"],
+                    "line": imp["line"],
+                    "direction": "upward",
+                    "description": f"{from_layer} ({from_mod}) imports from {to_layer} ({to_mod})",
+                }
+            )
         # Lateral: same layer, different module (not always bad, but notable)
         elif from_order == to_order and from_mod != to_mod:
             # Only flag cross_cutting -> cross_cutting or business -> business
@@ -1279,7 +1385,9 @@ def analyze_layers(import_data: dict) -> dict:
             "total_violations": len(violations),
             "layers_defined": len(LAYER_ORDER),
         },
-        "layer_map": dict(sorted(layer_modules.items(), key=lambda x: LAYER_ORDER.get(x[0], 99))),
+        "layer_map": dict(
+            sorted(layer_modules.items(), key=lambda x: LAYER_ORDER.get(x[0], 99))
+        ),
         "violations": violations,
     }
 
@@ -1287,6 +1395,7 @@ def analyze_layers(import_data: dict) -> dict:
 # ---------------------------------------------------------------------------
 # Static Analysis (external tools)
 # ---------------------------------------------------------------------------
+
 
 def run_static_analysis(src_dir: Path) -> dict:
     """Run bandit, radon, pip-audit, mypy, ruff, black, vulture in parallel."""
@@ -1304,15 +1413,17 @@ def run_static_analysis(src_dir: Path) -> dict:
 
     with ThreadPoolExecutor(max_workers=8) as executor:
         futures = {
-            executor.submit(runner): name
-            for name, runner in tool_runners.items()
+            executor.submit(runner): name for name, runner in tool_runners.items()
         }
         for future in as_completed(futures):
             name = futures[future]
             try:
                 results[name] = future.result()
             except Exception as e:
-                results[name] = {"available": False, "reason": f"thread error: {e!s}"[:200]}
+                results[name] = {
+                    "available": False,
+                    "reason": f"thread error: {e!s}"[:200],
+                }
 
     return results
 
@@ -1321,23 +1432,39 @@ def _run_bandit(src_dir: Path) -> dict:
     """Run bandit security scanner."""
     try:
         result = subprocess.run(
-            ["bandit", "-r", str(src_dir), "-f", "json", "-q", "--severity-level", "medium"],
-            capture_output=True, text=True, timeout=120,
+            [
+                "bandit",
+                "-r",
+                str(src_dir),
+                "-f",
+                "json",
+                "-q",
+                "--severity-level",
+                "medium",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=120,
         )
         if result.returncode in (0, 1):  # 1 means issues found
             data = json.loads(result.stdout)
             findings = []
             for r in data.get("results", []):
-                findings.append({
-                    "severity": r.get("issue_severity", "UNKNOWN"),
-                    "confidence": r.get("issue_confidence", "UNKNOWN"),
-                    "test_id": r.get("test_id", ""),
-                    "test_name": r.get("test_name", ""),
-                    "description": r.get("issue_text", ""),
-                    "file": str(Path(r.get("filename", "")).relative_to(src_dir.parent))
-                        if r.get("filename") else "",
-                    "line": r.get("line_number", 0),
-                })
+                findings.append(
+                    {
+                        "severity": r.get("issue_severity", "UNKNOWN"),
+                        "confidence": r.get("issue_confidence", "UNKNOWN"),
+                        "test_id": r.get("test_id", ""),
+                        "test_name": r.get("test_name", ""),
+                        "description": r.get("issue_text", ""),
+                        "file": (
+                            str(Path(r.get("filename", "")).relative_to(src_dir.parent))
+                            if r.get("filename")
+                            else ""
+                        ),
+                        "line": r.get("line_number", 0),
+                    }
+                )
             return {
                 "available": True,
                 "total": len(findings),
@@ -1347,7 +1474,10 @@ def _run_bandit(src_dir: Path) -> dict:
             }
         return {"available": True, "total": 0, "error": result.stderr[:500]}
     except FileNotFoundError:
-        return {"available": False, "reason": "bandit not installed (pip install bandit)"}
+        return {
+            "available": False,
+            "reason": "bandit not installed (pip install bandit)",
+        }
     except subprocess.TimeoutExpired:
         return {"available": True, "error": "timeout after 120s"}
     except Exception as e:
@@ -1359,8 +1489,17 @@ def _run_radon_cc(src_dir: Path) -> dict:
     try:
         # Run from /tmp to avoid radon crashing on pyproject.toml pytest config
         result = subprocess.run(
-            ["radon", "cc", str(src_dir.resolve()), "-j", "-n", "C"],  # Only show C+ complexity
-            capture_output=True, text=True, timeout=120,
+            [
+                "radon",
+                "cc",
+                str(src_dir.resolve()),
+                "-j",
+                "-n",
+                "C",
+            ],  # Only show C+ complexity
+            capture_output=True,
+            text=True,
+            timeout=120,
             cwd="/tmp",
         )
         if result.returncode == 0:
@@ -1369,14 +1508,16 @@ def _run_radon_cc(src_dir: Path) -> dict:
             for filepath, items in data.items():
                 rel_path = str(Path(filepath).relative_to(src_dir.parent))
                 for item in items:
-                    complex_items.append({
-                        "file": rel_path,
-                        "name": item.get("name", ""),
-                        "type": item.get("type", ""),
-                        "complexity": item.get("complexity", 0),
-                        "rank": item.get("rank", ""),
-                        "line": item.get("lineno", 0),
-                    })
+                    complex_items.append(
+                        {
+                            "file": rel_path,
+                            "name": item.get("name", ""),
+                            "type": item.get("type", ""),
+                            "complexity": item.get("complexity", 0),
+                            "rank": item.get("rank", ""),
+                            "line": item.get("lineno", 0),
+                        }
+                    )
             return {
                 "available": True,
                 "total_complex": len(complex_items),
@@ -1414,8 +1555,9 @@ def _has_radon_suppression(source: str, func_lineno: int) -> bool:
 
     for line in check_lines:
         line_lower = line.lower()
-        if ("scanner" in line_lower and "skip-radon" in line_lower) or \
-           ("noqa" in line_lower and "radon" in line_lower):
+        if ("scanner" in line_lower and "skip-radon" in line_lower) or (
+            "noqa" in line_lower and "radon" in line_lower
+        ):
             return True
 
     return False
@@ -1481,9 +1623,7 @@ def _stmt_nesting_depth(node: ast.AST, depth: int = 0) -> int:
     return max_depth
 
 
-def _has_compound_boolean_inflation(
-    func_node: ast.FunctionDef, radon_cc: int
-) -> bool:
+def _has_compound_boolean_inflation(func_node: ast.FunctionDef, radon_cc: int) -> bool:
     """Detect functions inflated by compound boolean expressions.
 
     False positive when: inflation >= 3 AND (radon_cc - inflation) < 11.
@@ -1586,13 +1726,13 @@ def _filter_radon_false_positives(
 
         complexity = item.get("complexity", 0)
 
-        if _is_guard_clause_chain(func_node):
+        if _is_guard_clause_chain(func_node):  # type: ignore[arg-type]
             item["fp_reason"] = "guard_clauses"
             filtered_count += 1
-        elif _has_compound_boolean_inflation(func_node, complexity):
+        elif _has_compound_boolean_inflation(func_node, complexity):  # type: ignore[arg-type]
             item["fp_reason"] = "compound_booleans"
             filtered_count += 1
-        elif _is_simple_type_dispatch(func_node):
+        elif _is_simple_type_dispatch(func_node):  # type: ignore[arg-type]
             item["fp_reason"] = "type_dispatch"
             filtered_count += 1
 
@@ -1613,7 +1753,9 @@ def _run_radon_mi(src_dir: Path) -> dict:
         # Run from /tmp to avoid radon crashing on pyproject.toml pytest config
         result = subprocess.run(
             ["radon", "mi", str(src_dir.resolve()), "-j"],
-            capture_output=True, text=True, timeout=120,
+            capture_output=True,
+            text=True,
+            timeout=120,
             cwd="/tmp",
         )
         if result.returncode == 0:
@@ -1629,7 +1771,9 @@ def _run_radon_mi(src_dir: Path) -> dict:
                     # String rank like "A", "B", etc.
                     rank = str(score_data)
                     mi = 100  # Unknown
-                if rank in ("C", "D", "F") or (isinstance(mi, (int, float)) and mi < 20):
+                if rank in ("C", "D", "F") or (
+                    isinstance(mi, (int, float)) and mi < 20
+                ):
                     low_mi.append({"file": rel_path, "mi": mi, "rank": rank})
             return {
                 "available": True,
@@ -1650,7 +1794,9 @@ def _run_pip_audit() -> dict:
     try:
         result = subprocess.run(
             [sys.executable, "-m", "pip_audit", "--format", "json", "--desc"],
-            capture_output=True, text=True, timeout=120,
+            capture_output=True,
+            text=True,
+            timeout=120,
         )
         if result.returncode in (0, 1):  # 1 means vulnerabilities found
             data = json.loads(result.stdout)
@@ -1664,17 +1810,20 @@ def _run_pip_audit() -> dict:
                 name = item.get("name", "")
                 version = item.get("version", "")
                 for vuln in item.get("vulns", []):
-                    vulns.append({
-                        "package": name,
-                        "version": version,
-                        "id": vuln.get("id", ""),
-                        "description": vuln.get("description", "")[:200],
-                        "fix_versions": vuln.get("fix_versions", []),
-                    })
+                    vulns.append(
+                        {
+                            "package": name,
+                            "version": version,
+                            "id": vuln.get("id", ""),
+                            "description": vuln.get("description", "")[:200],
+                            "fix_versions": vuln.get("fix_versions", []),
+                        }
+                    )
             # Only count actionable vulns (those with a fix available)
             actionable = [v for v in vulns if v.get("fix_versions")]
             high_count = sum(
-                1 for v in actionable
+                1
+                for v in actionable
                 if "critical" in v.get("description", "").lower()
                 or v.get("id", "").startswith("GHSA")
             )
@@ -1688,7 +1837,10 @@ def _run_pip_audit() -> dict:
             }
         return {"available": True, "total": 0, "error": result.stderr[:500]}
     except FileNotFoundError:
-        return {"available": False, "reason": "pip-audit not installed (pip install pip-audit)"}
+        return {
+            "available": False,
+            "reason": "pip-audit not installed (pip install pip-audit)",
+        }
     except subprocess.TimeoutExpired:
         return {"available": True, "error": "timeout after 120s"}
     except (json.JSONDecodeError, KeyError) as e:
@@ -1701,9 +1853,18 @@ def _run_mypy(src_dir: Path) -> dict:
     """Run mypy type checker on source directory."""
     try:
         result = subprocess.run(
-            [sys.executable, "-m", "mypy", str(src_dir),
-             "--no-error-summary", "--show-error-codes", "--no-color"],
-            capture_output=True, text=True, timeout=120,
+            [
+                sys.executable,
+                "-m",
+                "mypy",
+                str(src_dir),
+                "--no-error-summary",
+                "--show-error-codes",
+                "--no-color",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=120,
         )
         # mypy returns 1 when errors found, 0 when clean
         errors: list[dict] = []
@@ -1711,11 +1872,13 @@ def _run_mypy(src_dir: Path) -> dict:
             if ": error:" in line:
                 parts = line.split(":", 3)
                 if len(parts) >= 4:
-                    errors.append({
-                        "file": parts[0].strip(),
-                        "line": parts[1].strip(),
-                        "code": parts[3].strip()[:200],
-                    })
+                    errors.append(
+                        {
+                            "file": parts[0].strip(),
+                            "line": parts[1].strip(),
+                            "code": parts[3].strip()[:200],
+                        }
+                    )
         return {
             "available": True,
             "total_errors": len(errors),
@@ -1734,7 +1897,9 @@ def _run_ruff(src_dir: Path) -> dict:
     try:
         result = subprocess.run(
             ["ruff", "check", str(src_dir), "--output-format", "json", "--quiet"],
-            capture_output=True, text=True, timeout=120,
+            capture_output=True,
+            text=True,
+            timeout=120,
         )
         if result.returncode in (0, 1):  # 1 means issues found
             data = json.loads(result.stdout) if result.stdout.strip() else []
@@ -1762,13 +1927,15 @@ def _run_ruff(src_dir: Path) -> dict:
                     warnings += 1  # default bucket
 
                 loc = item.get("location", {})
-                details.append({
-                    "file": item.get("filename", ""),
-                    "line": loc.get("row", 0),
-                    "code": code,
-                    "message": item.get("message", ""),
-                    "category": category,
-                })
+                details.append(
+                    {
+                        "file": item.get("filename", ""),
+                        "line": loc.get("row", 0),
+                        "code": code,
+                        "message": item.get("message", ""),
+                        "category": category,
+                    }
+                )
             return {
                 "available": True,
                 "total": len(data),
@@ -1794,7 +1961,9 @@ def _run_black_check(src_dir: Path) -> dict:
     try:
         result = subprocess.run(
             ["black", "--check", "--quiet", str(src_dir)],
-            capture_output=True, text=True, timeout=120,
+            capture_output=True,
+            text=True,
+            timeout=120,
         )
         if result.returncode == 0:
             return {"available": True, "total_unformatted": 0, "files": []}
@@ -1825,7 +1994,9 @@ def _run_vulture(src_dir: Path) -> dict:
     try:
         result = subprocess.run(
             ["vulture", str(src_dir), "--min-confidence", "80"],
-            capture_output=True, text=True, timeout=120,
+            capture_output=True,
+            text=True,
+            timeout=120,
         )
         # vulture returns 1 when unused code found, 0 when clean
         details: list[dict] = []
@@ -1836,20 +2007,25 @@ def _run_vulture(src_dir: Path) -> dict:
                 line,
             )
             if m:
-                details.append({
-                    "file": m.group(1),
-                    "line": int(m.group(2)),
-                    "type": m.group(3),
-                    "name": m.group(4),
-                    "confidence": int(m.group(5)),
-                })
+                details.append(
+                    {
+                        "file": m.group(1),
+                        "line": int(m.group(2)),
+                        "type": m.group(3),
+                        "name": m.group(4),
+                        "confidence": int(m.group(5)),
+                    }
+                )
         return {
             "available": True,
             "total_unused": len(details),
             "details": details[:50],  # Cap details
         }
     except FileNotFoundError:
-        return {"available": False, "reason": "vulture not installed (pip install vulture)"}
+        return {
+            "available": False,
+            "reason": "vulture not installed (pip install vulture)",
+        }
     except subprocess.TimeoutExpired:
         return {"available": True, "error": "timeout after 120s"}
     except Exception as e:
@@ -1860,7 +2036,7 @@ def _parse_coverage_json(coverage_path: Path) -> dict:
     """Parse a coverage.json file and extract per-file metrics."""
     try:
         data = json.loads(coverage_path.read_text(encoding="utf-8"))
-        meta = data.get("meta", {})
+        data.get("meta", {})
         totals = data.get("totals", {})
         overall_percent = totals.get("percent_covered", 0.0)
 
@@ -1870,11 +2046,13 @@ def _parse_coverage_json(coverage_path: Path) -> dict:
             summary = info.get("summary", {})
             pct = summary.get("percent_covered", 100.0)
             if pct < 50:
-                low_coverage.append({
-                    "file": filepath,
-                    "percent": round(pct, 1),
-                    "missing_lines": summary.get("missing_lines", 0),
-                })
+                low_coverage.append(
+                    {
+                        "file": filepath,
+                        "percent": round(pct, 1),
+                        "missing_lines": summary.get("missing_lines", 0),
+                    }
+                )
 
         return {
             "available": True,
@@ -1905,10 +2083,21 @@ def _run_test_coverage(src_dir: Path) -> dict:
     # Strategy 2: Run pytest with coverage (slower)
     try:
         proc = subprocess.run(
-            [sys.executable, "-m", "pytest", "tests/",
-             f"--cov={src_dir.name}", "--cov-report=json", "-x", "-q",
-             "--no-header", "--override-ini=addopts="],
-            capture_output=True, text=True, timeout=120,
+            [
+                sys.executable,
+                "-m",
+                "pytest",
+                "tests/",
+                f"--cov={src_dir.name}",
+                "--cov-report=json",
+                "-x",
+                "-q",
+                "--no-header",
+                "--override-ini=addopts=",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=120,
             cwd=str(project_root),
         )
         coverage_json = project_root / "coverage.json"
@@ -1930,7 +2119,10 @@ def _run_test_coverage(src_dir: Path) -> dict:
 # Function Complexity Analysis (AST-based)
 # ---------------------------------------------------------------------------
 
-def _code_line_count(node: ast.FunctionDef | ast.AsyncFunctionDef, source_lines: list[str]) -> int:
+
+def _code_line_count(
+    node: ast.FunctionDef | ast.AsyncFunctionDef, source_lines: list[str]
+) -> int:
     """Count lines of executable code in a function, excluding docstrings, comments, and blanks.
 
     Args:
@@ -1979,8 +2171,13 @@ def _max_nesting_depth(node, *, _is_elif: bool = False) -> int:
     the depth counter.
     """
     control_flow_types = (
-        ast.If, ast.For, ast.While, ast.With, ast.Try,
-        ast.AsyncFor, ast.AsyncWith,
+        ast.If,
+        ast.For,
+        ast.While,
+        ast.With,
+        ast.Try,
+        ast.AsyncFor,
+        ast.AsyncWith,
     )
     # elif If nodes don't count as additional nesting
     is_cf = isinstance(node, control_flow_types) and not _is_elif
@@ -2006,13 +2203,15 @@ def _max_nesting_depth(node, *, _is_elif: bool = False) -> int:
             for child in node.orelse:
                 max_child = max(max_child, _max_nesting_depth(child))
     else:
-        for child in ast.iter_child_nodes(node):
+        for child in ast.iter_child_nodes(node):  # type: ignore[assignment]
             max_child = max(max_child, _max_nesting_depth(child))
 
     return (1 if is_cf else 0) + max_child
 
 
-def scan_function_complexity(src_dir: Path, files: list[dict], *, file_cache: dict | None = None) -> dict:
+def scan_function_complexity(
+    src_dir: Path, files: list[dict], *, file_cache: dict | None = None
+) -> dict:
     """Detect overly complex functions: long bodies, many params, deep nesting."""
     details: list[dict] = []
     parse_errors: list[str] = []
@@ -2069,11 +2268,22 @@ def scan_function_complexity(src_dir: Path, files: list[dict], *, file_cache: di
             # Determine flags
             flags: list[str] = []
             if length > LONG_FUNCTION_LINES:
-                flags.append("long_function")
-                long_count += 1
+                # Check for # noqa: long suppression on the def line
+                def_line_long = (
+                    source_lines[node.lineno - 1]
+                    if node.lineno <= len(source_lines)
+                    else ""
+                )
+                if "noqa" not in def_line_long or "long" not in def_line_long:
+                    flags.append("long_function")
+                    long_count += 1
             if param_count > HIGH_PARAM_COUNT:
                 # Check for # noqa: params suppression on the def line
-                def_line = source_lines[node.lineno - 1] if node.lineno <= len(source_lines) else ""
+                def_line = (
+                    source_lines[node.lineno - 1]
+                    if node.lineno <= len(source_lines)
+                    else ""
+                )
                 if "noqa" not in def_line or "params" not in def_line:
                     flags.append("high_param_count")
                     high_param_count += 1
@@ -2082,16 +2292,18 @@ def scan_function_complexity(src_dir: Path, files: list[dict], *, file_cache: di
                 deep_nesting_count += 1
 
             if flags:
-                details.append({
-                    "file": rel_path,
-                    "name": node.name,
-                    "line": node.lineno,
-                    "end_line": node.end_lineno or node.lineno,
-                    "length": length,
-                    "param_count": param_count,
-                    "nesting_depth": nesting_depth,
-                    "flags": flags,
-                })
+                details.append(
+                    {
+                        "file": rel_path,
+                        "name": node.name,
+                        "line": node.lineno,
+                        "end_line": node.end_lineno or node.lineno,
+                        "length": length,
+                        "param_count": param_count,
+                        "nesting_depth": nesting_depth,
+                        "flags": flags,
+                    }
+                )
 
     return {
         "summary": {
@@ -2110,7 +2322,10 @@ def scan_function_complexity(src_dir: Path, files: list[dict], *, file_cache: di
 # Magic Values Detection (AST-based)
 # ---------------------------------------------------------------------------
 
-def scan_magic_values(src_dir: Path, files: list[dict], *, file_cache: dict | None = None) -> dict:
+
+def scan_magic_values(
+    src_dir: Path, files: list[dict], *, file_cache: dict | None = None
+) -> dict:
     """Detect magic numbers and repeated string literals."""
     magic_numbers: list[dict] = []
     all_repeated_strings: list[dict] = []
@@ -2138,16 +2353,20 @@ def scan_magic_values(src_dir: Path, files: list[dict], *, file_cache: dict | No
         # Set _parent on all nodes
         for node in ast.walk(tree):
             for child in ast.iter_child_nodes(node):
-                child._parent = node
+                child._parent = node  # type: ignore[attr-defined]
 
         # Collect docstring positions (line numbers to skip)
         docstring_lines: set[int] = set()
         for node in ast.walk(tree):
-            if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
-                if (node.body
-                        and isinstance(node.body[0], ast.Expr)
-                        and isinstance(node.body[0].value, ast.Constant)
-                        and isinstance(node.body[0].value.value, str)):
+            if isinstance(
+                node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
+            ):
+                if (
+                    node.body
+                    and isinstance(node.body[0], ast.Expr)
+                    and isinstance(node.body[0].value, ast.Constant)
+                    and isinstance(node.body[0].value.value, str)
+                ):
                     docstring_lines.add(node.body[0].value.lineno)
 
         # Collect __name__ / "__main__" comparison lines
@@ -2233,7 +2452,9 @@ def scan_magic_values(src_dir: Path, files: list[dict], *, file_cache: dict | No
                         continue
                 if isinstance(parent, ast.Subscript):
                     grandparent = getattr(parent, "_parent", None)
-                    if grandparent is not None and isinstance(grandparent, _annotation_types):
+                    if grandparent is not None and isinstance(
+                        grandparent, _annotation_types
+                    ):
                         continue
 
             # Skip constants in UPPERCASE assignments (including nested in dicts/lists/tuples)
@@ -2241,11 +2462,13 @@ def scan_magic_values(src_dir: Path, files: list[dict], *, file_cache: dict | No
             if is_in_constant_assignment(node):
                 continue
 
-            magic_numbers.append({
-                "file": rel_path,
-                "line": node.lineno,
-                "value": node.value,
-            })
+            magic_numbers.append(
+                {
+                    "file": rel_path,
+                    "line": node.lineno,
+                    "value": node.value,
+                }
+            )
 
         # --- Repeated strings ---
         string_occurrences: dict[str, list[int]] = defaultdict(list)
@@ -2303,10 +2526,12 @@ def scan_magic_values(src_dir: Path, files: list[dict], *, file_cache: dict | No
                 # Skip strings in .get("key") / .pop("key") / .setdefault("key")
                 if isinstance(parent, ast.Call):
                     func = parent.func
-                    if (isinstance(func, ast.Attribute)
-                            and func.attr in ("get", "pop", "setdefault")
-                            and parent.args
-                            and node is parent.args[0]):
+                    if (
+                        isinstance(func, ast.Attribute)
+                        and func.attr in ("get", "pop", "setdefault")
+                        and parent.args
+                        and node is parent.args[0]
+                    ):
                         continue
 
             # Skip strings in UPPERCASE constant assignments
@@ -2317,12 +2542,14 @@ def scan_magic_values(src_dir: Path, files: list[dict], *, file_cache: dict | No
 
         for value, lines in string_occurrences.items():
             if len(lines) >= MAGIC_STRING_MIN_OCCURRENCES:
-                all_repeated_strings.append({
-                    "file": rel_path,
-                    "value": value,
-                    "count": len(lines),
-                    "lines": sorted(lines),
-                })
+                all_repeated_strings.append(
+                    {
+                        "file": rel_path,
+                        "value": value,
+                        "count": len(lines),
+                        "lines": sorted(lines),
+                    }
+                )
 
     return {
         "summary": {
@@ -2331,7 +2558,9 @@ def scan_magic_values(src_dir: Path, files: list[dict], *, file_cache: dict | No
             "parse_errors": len(parse_errors),
         },
         "magic_numbers": sorted(magic_numbers, key=lambda x: (x["file"], x["line"])),
-        "repeated_strings": sorted(all_repeated_strings, key=lambda x: (x["file"], x["value"])),
+        "repeated_strings": sorted(
+            all_repeated_strings, key=lambda x: (x["file"], x["value"])
+        ),
         "parse_errors": parse_errors,
     }
 
@@ -2340,7 +2569,10 @@ def scan_magic_values(src_dir: Path, files: list[dict], *, file_cache: dict | No
 # Dead Code Detection (AST-based)
 # ---------------------------------------------------------------------------
 
-def scan_dead_code(src_dir: Path, files: list[dict], *, file_cache: dict | None = None) -> dict:
+
+def scan_dead_code(
+    src_dir: Path, files: list[dict], *, file_cache: dict | None = None
+) -> dict:
     """Detect unreachable statements, empty branches, and constant conditions."""
     unreachable_details: list[dict] = []
     empty_branch_details: list[dict] = []
@@ -2354,18 +2586,22 @@ def scan_dead_code(src_dir: Path, files: list[dict], *, file_cache: dict | None 
         for i, stmt in enumerate(body):
             if isinstance(stmt, terminal_types) and i + 1 < len(body):
                 next_stmt = body[i + 1]
-                unreachable_details.append({
-                    "file": filepath,
-                    "line": next_stmt.lineno,
-                    "type": "unreachable_statement",
-                    "description": f"Code after {type(stmt).__name__.lower()} is unreachable",
-                })
+                unreachable_details.append(
+                    {
+                        "file": filepath,
+                        "line": next_stmt.lineno,
+                        "type": "unreachable_statement",
+                        "description": f"Code after {type(stmt).__name__.lower()} is unreachable",
+                    }
+                )
 
     def _walk_bodies(node: ast.AST, filepath: str) -> None:
         """Recursively walk all statement bodies in an AST node."""
         body_attrs: list[list] = []
 
-        if isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        if isinstance(
+            node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+        ):
             body_attrs.append(node.body)
         elif isinstance(node, ast.If):
             body_attrs.append(node.body)
@@ -2405,7 +2641,11 @@ def scan_dead_code(src_dir: Path, files: list[dict], *, file_cache: dict | None 
         stmt = body[0]
         if isinstance(stmt, ast.Pass):
             return True
-        if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Constant) and stmt.value.value is ...:
+        if (
+            isinstance(stmt, ast.Expr)
+            and isinstance(stmt.value, ast.Constant)
+            and stmt.value.value is ...
+        ):
             return True
         return False
 
@@ -2413,32 +2653,40 @@ def scan_dead_code(src_dir: Path, files: list[dict], *, file_cache: dict | None 
         """Find empty if/else branches."""
         if isinstance(node, ast.If):
             if _is_pass_or_ellipsis_only(node.body):
-                empty_branch_details.append({
-                    "file": filepath,
-                    "line": node.lineno,
-                    "type": "empty_branch",
-                    "description": "Empty if body (only pass/ellipsis)",
-                })
+                empty_branch_details.append(
+                    {
+                        "file": filepath,
+                        "line": node.lineno,
+                        "type": "empty_branch",
+                        "description": "Empty if body (only pass/ellipsis)",
+                    }
+                )
             if node.orelse and _is_pass_or_ellipsis_only(node.orelse):
-                empty_branch_details.append({
-                    "file": filepath,
-                    "line": node.lineno,
-                    "type": "empty_branch",
-                    "description": "Empty else body (only pass/ellipsis)",
-                })
+                empty_branch_details.append(
+                    {
+                        "file": filepath,
+                        "line": node.lineno,
+                        "type": "empty_branch",
+                        "description": "Empty else body (only pass/ellipsis)",
+                    }
+                )
         for child in ast.iter_child_nodes(node):
             _check_empty_branches(child, filepath)
 
     def _check_constant_conditions(node: ast.AST, filepath: str) -> None:
         """Find if statements with constant True/False conditions (skip while True)."""
         if isinstance(node, ast.If):
-            if isinstance(node.test, ast.Constant) and isinstance(node.test.value, bool):
-                constant_condition_details.append({
-                    "file": filepath,
-                    "line": node.lineno,
-                    "type": "constant_condition",
-                    "description": f"Condition is always {node.test.value}",
-                })
+            if isinstance(node.test, ast.Constant) and isinstance(
+                node.test.value, bool
+            ):
+                constant_condition_details.append(
+                    {
+                        "file": filepath,
+                        "line": node.lineno,
+                        "type": "constant_condition",
+                        "description": f"Condition is always {node.test.value}",
+                    }
+                )
         for child in ast.iter_child_nodes(node):
             _check_constant_conditions(child, filepath)
 
@@ -2463,7 +2711,9 @@ def scan_dead_code(src_dir: Path, files: list[dict], *, file_cache: dict | None 
         _check_empty_branches(tree, rel_path)
         _check_constant_conditions(tree, rel_path)
 
-    all_details = unreachable_details + empty_branch_details + constant_condition_details
+    all_details = (
+        unreachable_details + empty_branch_details + constant_condition_details
+    )
 
     return {
         "summary": {
@@ -2480,6 +2730,7 @@ def scan_dead_code(src_dir: Path, files: list[dict], *, file_cache: dict | None 
 # ---------------------------------------------------------------------------
 # Import Density Analysis
 # ---------------------------------------------------------------------------
+
 
 def compute_import_density(import_data: dict) -> dict:
     """Compute fan-out and fan-in metrics from scan_imports output."""
@@ -2529,11 +2780,13 @@ def compute_import_density(import_data: dict) -> dict:
     for mod in sorted(fan_out_map.keys()):
         count = len(fan_out_map[mod])
         if count >= HIGH_FAN_OUT:
-            high_fan_out_list.append({
-                "module": mod,
-                "fan_out": count,
-                "imports": fan_out_map[mod],
-            })
+            high_fan_out_list.append(
+                {
+                    "module": mod,
+                    "fan_out": count,
+                    "imports": fan_out_map[mod],
+                }
+            )
 
     # Flag high fan-in (skip foundational modules with fan_out<=2 —
     # modules like constants, utils, core are *expected* to be widely imported)
@@ -2542,11 +2795,13 @@ def compute_import_density(import_data: dict) -> dict:
         count = len(fan_in_map[mod])
         fan_out = len(fan_out_map.get(mod, []))
         if count >= HIGH_FAN_IN and fan_out > 2:
-            high_fan_in_list.append({
-                "module": mod,
-                "fan_in": count,
-                "imported_by": fan_in_map[mod],
-            })
+            high_fan_in_list.append(
+                {
+                    "module": mod,
+                    "fan_in": count,
+                    "imported_by": fan_in_map[mod],
+                }
+            )
 
     # High coupling: modules flagged for either high fan-out or high fan-in
     high_fan_out_set = {item["module"] for item in high_fan_out_list}
@@ -2554,20 +2809,22 @@ def compute_import_density(import_data: dict) -> dict:
     high_coupling_modules = high_fan_out_set | high_fan_in_set
 
     high_coupling_list = []
-    for mod in sorted(high_coupling_modules):
-        fo = len(fan_out_map.get(mod, []))
-        fi = len(fan_in_map.get(mod, []))
+    for mod in sorted(high_coupling_modules):  # type: ignore[type-var]
+        fo = len(fan_out_map.get(mod, []))  # type: ignore[call-overload]
+        fi = len(fan_in_map.get(mod, []))  # type: ignore[call-overload]
         reasons = []
         if mod in high_fan_out_set:
             reasons.append(f"high fan-out ({fo})")
         if mod in high_fan_in_set:
             reasons.append(f"high fan-in ({fi})")
-        high_coupling_list.append({
-            "module": mod,
-            "fan_out": fo,
-            "fan_in": fi,
-            "reasons": reasons,
-        })
+        high_coupling_list.append(
+            {
+                "module": mod,
+                "fan_out": fo,
+                "fan_in": fi,
+                "reasons": reasons,
+            }
+        )
 
     return {
         "summary": {
@@ -2586,6 +2843,7 @@ def compute_import_density(import_data: dict) -> dict:
 # ---------------------------------------------------------------------------
 # Duplicate Code Detection (AST-based)
 # ---------------------------------------------------------------------------
+
 
 def _normalize_ast_body(body: list[ast.stmt]) -> str:
     """Normalize an AST function body for duplicate detection.
@@ -2647,8 +2905,9 @@ def _has_duplicate_suppression(source: str, node_lineno: int) -> bool:
 
     for line in check_lines:
         line_lower = line.lower()
-        if ('scanner-ignore' in line_lower and 'duplicate' in line_lower) or \
-           ('noqa' in line_lower and 'duplicate' in line_lower):
+        if ("scanner-ignore" in line_lower and "duplicate" in line_lower) or (
+            "noqa" in line_lower and "duplicate" in line_lower
+        ):
             return True
 
     return False
@@ -2662,8 +2921,7 @@ def scan_duplicate_code(
     Functions can be excluded from duplicate detection by adding a comment:
         # scanner-ignore: duplicate
     or
-        # noqa: duplicate
-    on the line before the function definition.
+    on the line before the function definition.  # noqa: duplicate
     """
     parse_errors: list[str] = []
     func_entries: list[tuple[str, str, int, int, list]] = []
@@ -2696,7 +2954,9 @@ def scan_duplicate_code(
                 body_lines = end - start + 1
                 if body_lines < MIN_DUPLICATE_LINES:
                     continue
-                func_entries.append((rel_path, node.name, node.lineno, body_lines, node.body))
+                func_entries.append(
+                    (rel_path, node.name, node.lineno, body_lines, node.body)
+                )
 
     if len(func_entries) > MAX_FUNCTIONS_FOR_DUPLICATE_SCAN:
         return {
@@ -2716,30 +2976,36 @@ def scan_duplicate_code(
     for rel_path, func_name, line, body_lines, body in func_entries:
         normalized = _normalize_ast_body(body)
         h = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
-        hash_groups[h].append({
-            "file": rel_path,
-            "name": func_name,
-            "line": line,
-            "body_lines": body_lines,
-        })
+        hash_groups[h].append(
+            {
+                "file": rel_path,
+                "name": func_name,
+                "line": line,
+                "body_lines": body_lines,
+            }
+        )
 
     # Filter to groups with 2+ members
     duplicate_groups = []
     for h, locations in hash_groups.items():
         if len(locations) >= 2:
             sorted_locs = sorted(locations, key=lambda loc: (loc["file"], loc["line"]))
-            duplicate_groups.append({
-                "hash": h[:16],
-                "count": len(sorted_locs),
-                "lines": sorted_locs[0]["body_lines"],
-                "locations": [
-                    {"file": loc["file"], "name": loc["name"], "line": loc["line"]}
-                    for loc in sorted_locs
-                ],
-            })
+            duplicate_groups.append(
+                {
+                    "hash": h[:16],
+                    "count": len(sorted_locs),
+                    "lines": sorted_locs[0]["body_lines"],
+                    "locations": [
+                        {"file": loc["file"], "name": loc["name"], "line": loc["line"]}
+                        for loc in sorted_locs
+                    ],
+                }
+            )
 
     # Sort groups by first occurrence
-    duplicate_groups.sort(key=lambda g: (g["locations"][0]["file"], g["locations"][0]["line"]))
+    duplicate_groups.sort(
+        key=lambda g: (g["locations"][0]["file"], g["locations"][0]["line"])
+    )
 
     total_duplicated = sum(g["count"] for g in duplicate_groups)
 
@@ -2759,6 +3025,7 @@ def scan_duplicate_code(
 # ---------------------------------------------------------------------------
 # Test Quality Analysis
 # ---------------------------------------------------------------------------
+
 
 def scan_test_quality(src_dir: Path, *, src_total_lines: int = 0) -> dict:
     """Analyze test quality: assert density, zero-assert tests, test-to-code ratio."""
@@ -2824,7 +3091,9 @@ def scan_test_quality(src_dir: Path, *, src_total_lines: int = 0) -> dict:
                 test_nodes.append((node.name, node))
             elif isinstance(node, ast.ClassDef) and node.name.startswith("Test"):
                 for item in node.body:
-                    if isinstance(item, ast.FunctionDef) and item.name.startswith("test_"):
+                    if isinstance(item, ast.FunctionDef) and item.name.startswith(
+                        "test_"
+                    ):
                         test_nodes.append((item.name, item))
 
         # v2.5.0: Parametrize suggestions (repeated test name prefixes)
@@ -2866,7 +3135,9 @@ def scan_test_quality(src_dir: Path, *, src_total_lines: int = 0) -> dict:
     low_density = [f for f in all_test_funcs if f["assert_count"] > 0]
 
     total_test_functions = len(all_test_funcs)
-    avg_density = round(total_asserts / total_test_functions, 2) if total_test_functions else 0.0
+    avg_density = (
+        round(total_asserts / total_test_functions, 2) if total_test_functions else 0.0
+    )
     ratio = round(total_test_lines / src_total_lines, 2) if src_total_lines else 0.0
 
     return {
@@ -2887,7 +3158,12 @@ def scan_test_quality(src_dir: Path, *, src_total_lines: int = 0) -> dict:
             for f in zero_assert
         ],
         "low_density_details": [
-            {"file": f["file"], "name": f["name"], "line": f["line"], "assert_count": f["assert_count"]}
+            {
+                "file": f["file"],
+                "name": f["name"],
+                "line": f["line"],
+                "assert_count": f["assert_count"],
+            }
             for f in low_density
         ],
         "sleep_call_details": sleep_calls,
@@ -2899,6 +3175,7 @@ def scan_test_quality(src_dir: Path, *, src_total_lines: int = 0) -> dict:
 # ---------------------------------------------------------------------------
 # Deterministic Score
 # ---------------------------------------------------------------------------
+
 
 def compute_deterministic_score(
     anti_patterns: dict,
@@ -2925,7 +3202,7 @@ def compute_deterministic_score(
     Scoring uses diminishing returns per category to avoid a single noisy
     category (e.g., 100 type-ignore comments) dominating the score.
     """
-    score = 100
+    score: float = 100
     deductions: list[dict] = []
 
     def deduct(reason: str, count: int, per_item: float, cap: float) -> None:
@@ -2944,7 +3221,8 @@ def compute_deterministic_score(
     # Avoid double-counting: broad_except is already in MEDIUM count from regex scan.
     # Subtract broad_except hits, apply them at their own rate, then apply remaining MEDIUM.
     broad_except_count = sum(
-        1 for d in anti_patterns.get("details", [])
+        1
+        for d in anti_patterns.get("details", [])
         if d.get("pattern") == "broad_except"
     )
     medium_without_broad = ap["medium"] - broad_except_count
@@ -3018,12 +3296,14 @@ def compute_deterministic_score(
         deduct(
             "missing docstrings (public classes)",
             missing_docstrings["summary"]["missing_on_classes"],
-            0.2, 5,
+            0.2,
+            5,
         )
         deduct(
             "missing docstrings (public functions)",
             missing_docstrings["summary"].get("missing_on_functions", 0),
-            0.1, 5,
+            0.1,
+            5,
         )
 
     # Low test coverage modules (if provided)
@@ -3031,7 +3311,8 @@ def compute_deterministic_score(
         deduct(
             "low coverage modules (<50%)",
             test_coverage.get("low_coverage_count", 0),
-            1, 8,
+            1,
+            8,
         )
         # Coverage gap severity: 0% is worse than 49%
         # Sum (50 - actual%) for each low module
@@ -3051,7 +3332,9 @@ def compute_deterministic_score(
     # v2.3.0: Dead code (if provided)
     if dead_code is not None:
         dc = dead_code["summary"]
-        deduct("unreachable code statements", dc.get("unreachable_statements", 0), 0.5, 5)
+        deduct(
+            "unreachable code statements", dc.get("unreachable_statements", 0), 0.5, 5
+        )
         deduct("empty if/else branches", dc.get("empty_branches", 0), 0.3, 3)
 
     # v2.3.0: Import density (if provided)
@@ -3064,15 +3347,27 @@ def compute_deterministic_score(
     if magic_values is not None:
         mv = magic_values["summary"]
         deduct("magic numbers", mv.get("total_magic_numbers", 0), 0.1, 3)
-        deduct("repeated magic strings (3+)", mv.get("total_repeated_strings", 0), 0.2, 3)
+        deduct(
+            "repeated magic strings (3+)", mv.get("total_repeated_strings", 0), 0.2, 3
+        )
 
     # v2.3.0: Duplicate code (if provided)
     if duplicate_code is not None and not duplicate_code["summary"].get("skipped"):
-        deduct("duplicate code groups", duplicate_code["summary"].get("duplicate_groups", 0), 1.5, 8)
+        deduct(
+            "duplicate code groups",
+            duplicate_code["summary"].get("duplicate_groups", 0),
+            1.5,
+            8,
+        )
 
     # v2.3.0: Test quality (if provided)
     if test_quality is not None and test_quality["summary"].get("available"):
-        deduct("zero-assert test functions", test_quality["summary"].get("zero_assert_tests", 0), 0.5, 5)
+        deduct(
+            "zero-assert test functions",
+            test_quality["summary"].get("zero_assert_tests", 0),
+            0.5,
+            5,
+        )
         # v2.5.0: Informational only — not scored yet (too many existing hits)
         # Future deductions when counts are reduced:
         # deduct("time.sleep in tests", test_quality["summary"].get("sleep_calls_in_tests", 0), 0.1, 3)
@@ -3089,21 +3384,31 @@ def compute_deterministic_score(
 
 
 def _score_to_grade(score: int) -> str:
-    if score >= 95: return "A+"
-    if score >= 90: return "A"
-    if score >= 85: return "A-"
-    if score >= 80: return "B+"
-    if score >= 75: return "B"
-    if score >= 70: return "B-"
-    if score >= 65: return "C+"
-    if score >= 60: return "C"
-    if score >= 50: return "D"
+    if score >= 95:
+        return "A+"
+    if score >= 90:
+        return "A"
+    if score >= 85:
+        return "A-"
+    if score >= 80:
+        return "B+"
+    if score >= 75:
+        return "B"
+    if score >= 70:
+        return "B-"
+    if score >= 65:
+        return "C+"
+    if score >= 60:
+        return "C"
+    if score >= 50:
+        return "D"
     return "F"
 
 
 # ---------------------------------------------------------------------------
 # Content Hash (for detecting codebase changes)
 # ---------------------------------------------------------------------------
+
 
 def compute_content_hash(src_dir: Path) -> str:
     """SHA-256 hash of all source file contents for change detection."""
@@ -3120,15 +3425,17 @@ def compute_content_hash(src_dir: Path) -> str:
 # Main
 # ---------------------------------------------------------------------------
 
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Deterministic Architecture Scanner")
-    parser.add_argument("src_dir", nargs="?", default="temper_ai", help="Source directory to scan")
+    parser.add_argument(
+        "src_dir", nargs="?", default="temper_ai", help="Source directory to scan"
+    )
     parser.add_argument("--output", "-o", help="Output file (default: stdout)")
     args = parser.parse_args()
 
     src_dir = Path(args.src_dir).resolve()
     if not src_dir.is_dir():
-        print(f"Error: {src_dir} is not a directory", file=sys.stderr)
         sys.exit(1)
 
     # Step 1: Collect facts
@@ -3137,22 +3444,41 @@ def main() -> None:
 
     # Run 10 independent AST scans in parallel (file cache is immutable, thread-safe)
     ast_scan_runners = {
-        "imports": lambda: scan_imports(src_dir, files["details"], file_cache=file_cache),
-        "classes": lambda: scan_classes(src_dir, files["details"], file_cache=file_cache),
-        "anti_patterns": lambda: scan_anti_patterns(src_dir, files["details"], file_cache=file_cache),
-        "unused_imports": lambda: scan_unused_imports(src_dir, files["details"], file_cache=file_cache),
-        "missing_docstrings": lambda: scan_missing_docstrings(src_dir, files["details"], file_cache=file_cache),
-        "broad_try": lambda: scan_broad_try_blocks(src_dir, files["details"], file_cache=file_cache),
-        "function_complexity": lambda: scan_function_complexity(src_dir, files["details"], file_cache=file_cache),
-        "magic_values": lambda: scan_magic_values(src_dir, files["details"], file_cache=file_cache),
-        "dead_code": lambda: scan_dead_code(src_dir, files["details"], file_cache=file_cache),
-        "duplicate_code": lambda: scan_duplicate_code(src_dir, files["details"], file_cache=file_cache),
+        "imports": lambda: scan_imports(
+            src_dir, files["details"], file_cache=file_cache
+        ),
+        "classes": lambda: scan_classes(
+            src_dir, files["details"], file_cache=file_cache
+        ),
+        "anti_patterns": lambda: scan_anti_patterns(
+            src_dir, files["details"], file_cache=file_cache
+        ),
+        "unused_imports": lambda: scan_unused_imports(
+            src_dir, files["details"], file_cache=file_cache
+        ),
+        "missing_docstrings": lambda: scan_missing_docstrings(
+            src_dir, files["details"], file_cache=file_cache
+        ),
+        "broad_try": lambda: scan_broad_try_blocks(
+            src_dir, files["details"], file_cache=file_cache
+        ),
+        "function_complexity": lambda: scan_function_complexity(
+            src_dir, files["details"], file_cache=file_cache
+        ),
+        "magic_values": lambda: scan_magic_values(
+            src_dir, files["details"], file_cache=file_cache
+        ),
+        "dead_code": lambda: scan_dead_code(
+            src_dir, files["details"], file_cache=file_cache
+        ),
+        "duplicate_code": lambda: scan_duplicate_code(
+            src_dir, files["details"], file_cache=file_cache
+        ),
     }
     ast_results: dict[str, Any] = {}
     with ThreadPoolExecutor(max_workers=10) as executor:
         futures = {
-            executor.submit(runner): name
-            for name, runner in ast_scan_runners.items()
+            executor.submit(runner): name for name, runner in ast_scan_runners.items()
         }
         for future in as_completed(futures):
             ast_results[futures[future]] = future.result()
@@ -3179,13 +3505,14 @@ def main() -> None:
         "import_density": lambda: compute_import_density(imports),
         "static": lambda: run_static_analysis(src_dir),
         "test_coverage": lambda: _run_test_coverage(src_dir),
-        "test_quality": lambda: scan_test_quality(src_dir, src_total_lines=files["summary"]["total_lines"]),
+        "test_quality": lambda: scan_test_quality(
+            src_dir, src_total_lines=files["summary"]["total_lines"]
+        ),
     }
     dependent_results: dict[str, Any] = {}
     with ThreadPoolExecutor(max_workers=7) as executor:
         futures = {
-            executor.submit(runner): name
-            for name, runner in dependent_runners.items()
+            executor.submit(runner): name for name, runner in dependent_runners.items()
         }
         for future in as_completed(futures):
             dependent_results[futures[future]] = future.result()
@@ -3231,7 +3558,7 @@ def main() -> None:
     # Build results dict with deterministic key ordering
     results = {
         "metadata": {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "src_dir": str(src_dir),
             "scanner_version": "2.5.0",
             "content_hash": compute_content_hash(src_dir),
@@ -3272,9 +3599,8 @@ def main() -> None:
 
     if args.output:
         Path(args.output).write_text(output, encoding="utf-8")
-        print(f"Scan results written to {args.output}", file=sys.stderr)
     else:
-        print(output)
+        sys.stdout.write(output)
 
 
 if __name__ == "__main__":

@@ -14,7 +14,7 @@ reset_for_testing() in test fixtures.
 import logging
 import threading
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, Optional, Self
 
 from temper_ai.agent.strategies.base import CollaborationStrategy
 from temper_ai.agent.strategies.conflict_resolution import ConflictResolutionStrategy
@@ -65,7 +65,7 @@ class ResolverMetadata:
     config_schema: dict[str, Any]
 
 
-class StrategyRegistry:
+class StrategyRegistry:  # noqa: god
     """Registry for collaboration strategies and conflict resolvers.
 
     Thread-safe singleton pattern ensures single source of truth.
@@ -95,12 +95,12 @@ class StrategyRegistry:
     _default_strategies: set[str] = set()
     _default_resolvers: set[str] = set()
 
-    def __new__(cls) -> "StrategyRegistry":
+    def __new__(cls) -> Self:
         """Thread-safe singleton pattern."""
         with cls._lock:
             if cls._instance is None:
                 cls._instance = super().__new__(cls)
-            return cls._instance
+            return cls._instance  # type: ignore[return-value]
 
     def __init__(self) -> None:
         """Initialize registry (only once due to singleton)."""
@@ -151,16 +151,36 @@ class StrategyRegistry:
                     "Could not import %s from %s: %s", class_name, module_path, exc
                 )
 
-    def _initialize_defaults(self) -> None:
+    @staticmethod  # noqa: long
+    def _default_resolver_map() -> dict[str, tuple[str, str]]:
+        """Return the default resolver name -> (module, class) mapping."""
+        return {
+            STRATEGY_NAME_MERIT_WEIGHTED: (
+                "temper_ai.agent.strategies.merit_weighted",
+                "MeritWeightedResolver",
+            ),
+            "highest_confidence": (
+                "temper_ai.agent.strategies.conflict_resolution",
+                "HighestConfidenceResolver",
+            ),
+            "random_tiebreaker": (
+                "temper_ai.agent.strategies.conflict_resolution",
+                "RandomTiebreakerResolver",
+            ),
+            "human_escalation": (
+                "temper_ai.agent.strategies.merit_weighted",
+                "HumanEscalationResolver",
+            ),
+        }
+
+    def _initialize_defaults(self) -> None:  # noqa: long
         """Register default strategies and resolvers.
 
         Note: This method is called with lock already held.
         """
-        # Clear tracking sets (in case re-initializing)
         self._default_strategies.clear()
         self._default_resolvers.clear()
 
-        # Register strategies (data-driven)
         strategies = [
             (
                 [STRATEGY_NAME_CONSENSUS],
@@ -196,26 +216,7 @@ class StrategyRegistry:
         for names, module_path, class_name in strategies:
             self._register_strategy(names, module_path, class_name)
 
-        # Register resolvers (data-driven)
-        resolvers = {
-            STRATEGY_NAME_MERIT_WEIGHTED: (
-                "temper_ai.agent.strategies.merit_weighted",
-                "MeritWeightedResolver",
-            ),
-            "highest_confidence": (
-                "temper_ai.agent.strategies.conflict_resolution",
-                "HighestConfidenceResolver",
-            ),
-            "random_tiebreaker": (
-                "temper_ai.agent.strategies.conflict_resolution",
-                "RandomTiebreakerResolver",
-            ),
-            "human_escalation": (
-                "temper_ai.agent.strategies.merit_weighted",
-                "HumanEscalationResolver",
-            ),
-        }
-        self._register_resolvers(resolvers)
+        self._register_resolvers(self._default_resolver_map())
 
     def register_strategy(
         self, name: str, strategy_class: type[CollaborationStrategy]
@@ -279,7 +280,7 @@ class StrategyRegistry:
             # Strategy doesn't accept these config params
             raise ValueError(
                 f"Strategy '{name}' doesn't accept config: {config}. " f"Error: {e}"
-            )
+            ) from e
 
     def list_strategy_names(self) -> list[str]:
         """List all registered strategy names (thread-safe).
@@ -291,50 +292,15 @@ class StrategyRegistry:
             return list(self._strategies.keys())
 
     def list_strategies(self) -> list[StrategyMetadata]:
-        """List all registered strategies with metadata.
-
-        Returns:
-            List of StrategyMetadata objects
-        """
-        metadata_list = []
+        """List all registered strategies with metadata."""
+        from temper_ai.agent.strategies._registry_helpers import (
+            build_strategy_metadata_list,
+        )
 
         # ST-02: Take snapshot under lock to prevent RuntimeError on dict mutation
         with self._lock:
-            items = list(self._strategies.items())
-        for name, strategy_class in items:
-            # Instantiate to get metadata (safe for stateless strategies)
-            try:
-                instance = strategy_class()
-                capabilities = instance.get_capabilities()
-                meta = instance.get_metadata()
-
-                metadata_list.append(
-                    StrategyMetadata(
-                        name=name,
-                        class_name=strategy_class.__name__,
-                        description=meta.get("description", ""),
-                        capabilities=capabilities,
-                        config_schema=meta.get("config_schema", {}),
-                    )
-                )
-            except Exception as exc:
-                logger.warning(
-                    "Failed to instantiate strategy %r for metadata: %s",
-                    name,
-                    exc,
-                )
-                # Skip strategies that can't be instantiated without config
-                metadata_list.append(
-                    StrategyMetadata(
-                        name=name,
-                        class_name=strategy_class.__name__,
-                        description="",
-                        capabilities={},
-                        config_schema={},
-                    )
-                )
-
-        return metadata_list
+            strategies_snapshot = dict(self._strategies)
+        return build_strategy_metadata_list(strategies_snapshot)
 
     def register_resolver(
         self, name: str, resolver_class: type[ConflictResolutionStrategy]
@@ -391,7 +357,7 @@ class StrategyRegistry:
         except TypeError as e:
             raise ValueError(
                 f"Resolver '{name}' doesn't accept config: {config}. " f"Error: {e}"
-            )
+            ) from e
 
     def list_resolver_names(self) -> list[str]:
         """List all registered resolver names (thread-safe).
@@ -403,48 +369,15 @@ class StrategyRegistry:
             return list(self._resolvers.keys())
 
     def list_resolvers(self) -> list[ResolverMetadata]:
-        """List all registered resolvers with metadata.
-
-        Returns:
-            List of ResolverMetadata objects
-        """
-        metadata_list = []
+        """List all registered resolvers with metadata."""
+        from temper_ai.agent.strategies._registry_helpers import (
+            build_resolver_metadata_list,
+        )
 
         # ST-02: Take snapshot under lock to prevent RuntimeError on dict mutation
         with self._lock:
-            items = list(self._resolvers.items())
-        for name, resolver_class in items:
-            try:
-                instance = resolver_class()
-                capabilities = instance.get_capabilities()
-                meta = instance.get_metadata()
-
-                metadata_list.append(
-                    ResolverMetadata(
-                        name=name,
-                        class_name=resolver_class.__name__,
-                        description=meta.get("description", ""),
-                        capabilities=capabilities,
-                        config_schema=meta.get("config_schema", {}),
-                    )
-                )
-            except Exception as exc:
-                logger.warning(
-                    "Failed to instantiate resolver %r for metadata: %s",
-                    name,
-                    exc,
-                )
-                metadata_list.append(
-                    ResolverMetadata(
-                        name=name,
-                        class_name=resolver_class.__name__,
-                        description="",
-                        capabilities={},
-                        config_schema={},
-                    )
-                )
-
-        return metadata_list
+            resolvers_snapshot = dict(self._resolvers)
+        return build_resolver_metadata_list(resolvers_snapshot)
 
     def unregister_strategy(self, name: str) -> None:
         """Unregister a strategy (thread-safe).

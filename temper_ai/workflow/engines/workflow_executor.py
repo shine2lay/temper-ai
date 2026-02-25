@@ -344,12 +344,24 @@ def _make_input_wrapper(
     return wrapper
 
 
+def _build_stage_nodes(
+    stage_names: list[str],
+    node_builder: "NodeBuilder",
+    workflow_config: dict[str, Any],
+) -> "dict[str, Callable]":
+    """Pre-build callable node functions for all stages."""
+    return {
+        name: node_builder.create_stage_node(name, workflow_config)
+        for name in stage_names
+    }
+
+
 class WorkflowExecutor:
     """Walks workflow stages as a Python loop — no compiled graph.
 
     Replaces LangGraph's Pregel model. Walks stages respecting DAG order,
     evaluates conditions/loops, and supports stage-to-stage negotiation.
-    """
+    """  # noqa: long
 
     def __init__(
         self,
@@ -361,7 +373,7 @@ class WorkflowExecutor:
         self.condition_evaluator = condition_evaluator
         self._negotiation_config = negotiation_config or {}
 
-    def run(
+    def run(  # noqa: long
         self,
         stage_refs: list[Any],
         workflow_config: dict[str, Any],
@@ -369,42 +381,18 @@ class WorkflowExecutor:
     ) -> dict[str, Any]:
         """Execute all stages, returning final state.
 
-        1. Build DAG from depends_on declarations
-        2. Group stages by depth
-        3. Walk depth groups:
-           - Single stage at depth: execute directly
-           - Multiple stages at depth: execute in parallel
-        4. Evaluate conditions, loops, and negotiation at each stage
-        5. Return final state
-
-        Args:
-            stage_refs: List of stage references from workflow config
-            workflow_config: Full workflow configuration
-            state: Initial workflow state
-
-        Returns:
-            Final workflow state with all stage outputs
+        Builds DAG, groups by depth, then walks depth groups executing
+        single or parallel stages as appropriate.
         """
         stage_names = [self.node_builder.extract_stage_name(ref) for ref in stage_refs]
-
-        # Build DAG and compute depths
         dag = build_stage_dag(stage_names, stage_refs)
-        depths = compute_depths(dag)
-        depth_groups = _group_by_depth(dag, depths)
+        depth_groups = _group_by_depth(dag, compute_depths(dag))
         ref_lookup = _build_ref_lookup(stage_refs)
-
-        # Wire DAG into predecessor resolver for context resolution
         self.node_builder.wire_dag_context(dag)
+        stage_nodes = _build_stage_nodes(
+            stage_names, self.node_builder, workflow_config
+        )
 
-        # Pre-build stage node callables
-        stage_nodes: dict[str, Callable] = {}
-        for name in stage_names:
-            stage_nodes[name] = self.node_builder.create_stage_node(
-                name,
-                workflow_config,
-            )
-
-        # Walk depth groups in order
         for depth in sorted(depth_groups):
             if state.get(StateKeys.SKIP_TO_END):
                 logger.info(
@@ -413,33 +401,49 @@ class WorkflowExecutor:
                     state[StateKeys.SKIP_TO_END],
                 )
                 break
-
-            stages_at_depth = depth_groups[depth]
             try:
-                if len(stages_at_depth) == 1:
-                    state = self._execute_single_stage(
-                        stages_at_depth[0],
-                        stage_nodes,
-                        ref_lookup,
-                        stage_refs,
-                        state,
-                        workflow_config,
-                    )
-                else:
-                    state = self._execute_parallel_stages(
-                        stages_at_depth,
-                        stage_nodes,
-                        ref_lookup,
-                        stage_refs,
-                        state,
-                        workflow_config,
-                    )
+                state = self._run_depth_group(
+                    depth_groups[depth],
+                    stage_nodes,
+                    ref_lookup,
+                    stage_refs,
+                    state,
+                    workflow_config,
+                )
             except WorkflowStageError as exc:
                 logger.error("Stage failed, halting workflow: %s", exc)
                 state[StateKeys.SKIP_TO_END] = exc.stage_name
                 break
 
         return state
+
+    def _run_depth_group(
+        self,
+        stages_at_depth: list[str],
+        stage_nodes: dict[str, Callable],
+        ref_lookup: dict[str, Any],
+        stage_refs: list[Any],
+        state: dict[str, Any],
+        workflow_config: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Execute one depth level: single or parallel depending on count."""
+        if len(stages_at_depth) == 1:
+            return self._execute_single_stage(
+                stages_at_depth[0],
+                stage_nodes,
+                ref_lookup,
+                stage_refs,
+                state,
+                workflow_config,
+            )
+        return self._execute_parallel_stages(
+            stages_at_depth,
+            stage_nodes,
+            ref_lookup,
+            stage_refs,
+            state,
+            workflow_config,
+        )
 
     def _execute_single_stage(
         self,
@@ -570,14 +574,9 @@ class WorkflowExecutor:
         state: dict[str, Any],
         workflow_config: dict[str, Any],
     ) -> dict[str, Any]:
-        """Execute a stage with loop-back support.
-
-        Runs the stage, then checks the loop condition. If met and under
-        max_loops, re-runs the loop target stage and any intermediate
-        stages between the target and this stage.
-        """
+        """Execute a stage with loop-back support, re-running while condition holds."""
         loop_cfg = self._build_loop_config(stage_ref, stage_name)
-        intermediate = self._find_intermediate_stages(
+        intermediate = self._find_intermediate_stages(  # noqa: long
             loop_cfg["target"],
             stage_name,
             stage_refs,
@@ -587,50 +586,51 @@ class WorkflowExecutor:
 
         while True:
             state = self._execute_with_negotiation(
+                stage_name, stage_nodes, state, workflow_config
+            )
+            loop_count += 1
+            state = self._update_loop_count(state, stage_name, loop_count)
+            if not self._check_loop_continue(stage_name, loop_count, loop_cfg, state):
+                break
+            state = self._run_loop_iteration(
                 stage_name,
+                loop_cfg,
+                loop_count,
+                intermediate,
                 stage_nodes,
                 state,
                 workflow_config,
             )
-            loop_count += 1
-            state = self._update_loop_count(state, stage_name, loop_count)
 
-            should_continue = self._check_loop_continue(
-                stage_name,
-                loop_count,
-                loop_cfg,
-                state,
+        return state
+
+    def _run_loop_iteration(
+        self,
+        stage_name: str,
+        loop_cfg: dict[str, Any],
+        loop_count: int,
+        intermediate: list[str],
+        stage_nodes: dict[str, Callable],
+        state: dict[str, Any],
+        workflow_config: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Re-run loop target and intermediate stages for one iteration."""
+        logger.info(
+            "Stage '%s' looping back to '%s' (iteration %d/%d)",
+            stage_name,
+            loop_cfg["target"],
+            loop_count,
+            loop_cfg["max"],
+        )
+        if loop_cfg["target"] in stage_nodes:
+            state = self._execute_with_negotiation(
+                loop_cfg["target"], stage_nodes, state, workflow_config
             )
-            if not should_continue:
-                break
-
-            logger.info(
-                "Stage '%s' looping back to '%s' (iteration %d/%d)",
-                stage_name,
-                loop_cfg["target"],
-                loop_count,
-                loop_cfg["max"],
+        for mid_name in intermediate:
+            logger.info("Re-running intermediate stage '%s' in loop", mid_name)
+            state = self._execute_with_negotiation(
+                mid_name, stage_nodes, state, workflow_config
             )
-            if loop_cfg["target"] in stage_nodes:
-                state = self._execute_with_negotiation(
-                    loop_cfg["target"],
-                    stage_nodes,
-                    state,
-                    workflow_config,
-                )
-
-            for mid_name in intermediate:
-                logger.info(
-                    "Re-running intermediate stage '%s' in loop",
-                    mid_name,
-                )
-                state = self._execute_with_negotiation(
-                    mid_name,
-                    stage_nodes,
-                    state,
-                    workflow_config,
-                )
-
         return state
 
     @staticmethod

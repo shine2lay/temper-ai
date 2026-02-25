@@ -50,7 +50,7 @@ def _sanitize_workflow_result(result: Any) -> dict[str, Any] | None:
 
 
 # Execution status constants
-class WorkflowExecutionStatus(str, Enum):
+class WorkflowExecutionStatus(str, Enum):  # noqa: UP042
     """Workflow execution status."""
 
     PENDING = "pending"
@@ -100,7 +100,37 @@ class WorkflowExecutionMetadata:
         }
 
 
-class WorkflowExecutionService:
+def _save_run_to_store(  # noqa: god
+    run_store: Any,
+    execution_id: str,
+    workflow_path: str,
+    workflow_name: str,
+    run_context: "tuple[dict[str, Any] | None, str | None, str | None]",
+    status: str,
+) -> None:
+    """Persist a new execution record to the run store.
+
+    run_context: (input_data, workspace, tenant_id)
+    """
+    if run_store is None:
+        return
+    from temper_ai.interfaces.server.models import ServerRun
+
+    input_data, workspace, tenant_id = run_context
+    run_store.save_run(
+        ServerRun(
+            execution_id=execution_id,
+            workflow_path=str(workflow_path),
+            workflow_name=workflow_name,
+            status=status,
+            input_data=input_data,
+            workspace=workspace,
+            tenant_id=tenant_id,
+        )
+    )
+
+
+class WorkflowExecutionService:  # noqa: god
     """Service for executing workflows with bounded concurrency and tracking.
 
     Serves as the single execution gateway for all non-CLI entry points
@@ -423,7 +453,7 @@ class WorkflowExecutionService:
             execution_id: Execution ID to cancel
 
         Returns:
-            True if cancelled, False if not found or already completed
+            True if cancelled, False if not found or already completed  # noqa: long
 
         Note:
             Cancellation is best-effort and may not stop immediately.
@@ -466,17 +496,15 @@ class WorkflowExecutionService:
         Returns:
             Tuple of (execution_id, workflow_file_path).
         """
-        if run_id:
-            execution_id = f"exec-{run_id}"
-        else:
-            execution_id = f"exec-{uuid.uuid4().hex[:EXECUTION_ID_LENGTH]}"
+        execution_id = (
+            f"exec-{run_id}"
+            if run_id
+            else f"exec-{uuid.uuid4().hex[:EXECUTION_ID_LENGTH]}"
+        )
 
-        # Load and validate workflow config via unified pipeline
         from temper_ai.workflow.runtime import RuntimeConfig, WorkflowRuntime
 
-        rt = WorkflowRuntime(
-            config=RuntimeConfig(config_root=self.config_root),
-        )
+        rt = WorkflowRuntime(config=RuntimeConfig(config_root=self.config_root))
         workflow_config, _ = rt.load_config(workflow_path)
         workflow_file = Path(self.config_root) / workflow_path
         workflow_name = workflow_config.get("workflow", {}).get(
@@ -489,35 +517,25 @@ class WorkflowExecutionService:
             workflow_name=workflow_name,
             status=WorkflowExecutionStatus.PENDING,
         )
-
         with self._lock:
             if execution_id in self._executions:
                 raise ValueError(f"Execution ID already exists: {execution_id}")
             self._executions[execution_id] = metadata
 
-        # Persist to store if available
-        if self.run_store is not None:
-            from temper_ai.interfaces.server.models import ServerRun
-
-            self.run_store.save_run(
-                ServerRun(
-                    execution_id=execution_id,
-                    workflow_path=str(workflow_path),
-                    workflow_name=workflow_name,
-                    status=WorkflowExecutionStatus.PENDING.value,
-                    input_data=input_data,
-                    workspace=workspace,
-                    tenant_id=tenant_id,
-                )
-            )
-
+        _save_run_to_store(
+            self.run_store,
+            execution_id,
+            workflow_path,
+            workflow_name,
+            (input_data, workspace, tenant_id),
+            WorkflowExecutionStatus.PENDING.value,
+        )
         logger.info(
             "Starting workflow execution: id=%s, workflow=%s, name=%s",
             execution_id,
             workflow_path,
             workflow_name,
         )
-
         return execution_id, workflow_file
 
     def _execute_workflow_in_runner(

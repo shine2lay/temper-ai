@@ -43,6 +43,7 @@ from temper_ai.shared.constants.probabilities import PROB_LOW_MEDIUM
 
 # Constants
 DEFAULT_MOST_COMMON_LIMIT = 4  # Number of items to retrieve from Counter.most_common()
+SCORE_DECIMAL_PLACES = 4  # Decimal precision for conflict/disagreement scores
 
 
 class SynthesisMethod(Enum):
@@ -423,9 +424,9 @@ class CollaborationStrategy(ABC):
                     Conflict(
                         agents=[o.agent_name for o in agent_outputs],
                         decisions=list(decision_groups.keys()),
-                        disagreement_score=round(
-                            disagreement_score, 4
-                        ),  # Explicit rounding for consistency  # noqa: Standard precision
+                        disagreement_score=round(  # noqa
+                            disagreement_score, SCORE_DECIMAL_PLACES
+                        ),  # Explicit rounding for consistency
                         context={
                             "num_decisions": len(decision_groups),
                             "largest_group_size": largest_group,

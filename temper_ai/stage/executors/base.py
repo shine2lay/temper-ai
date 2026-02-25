@@ -120,6 +120,60 @@ class StageExecutor(ABC):
 
         return extract_agent_name(agent_ref)
 
+    def _run_strategy_synthesis(  # noqa: long
+        self,
+        agent_outputs: list,
+        stage_config: Any,
+        stage_name: str,
+        state: dict[str, Any] | None,
+        config_loader: ConfigLoaderProtocol | None,
+        agents: list | None,
+    ) -> Any:
+        """Run strategy-based synthesis (leader, dialogue, or default)."""
+        from temper_ai.agent.strategies.registry import get_strategy_from_config
+        from temper_ai.stage.executors._protocols import (
+            DialogueCapableStrategy,
+            LeaderCapableStrategy,
+        )
+
+        strategy = get_strategy_from_config(stage_config)
+
+        if (
+            isinstance(strategy, LeaderCapableStrategy)
+            and strategy.requires_leader_synthesis
+        ):
+            return self._run_leader_synthesis(
+                agent_outputs=agent_outputs,
+                strategy=strategy,
+                stage_config=stage_config,
+                stage_name=stage_name,
+                state=state,
+                config_loader=config_loader,
+                agents=agents,
+            )
+
+        if isinstance(strategy, DialogueCapableStrategy) and strategy.requires_requery:
+            if state is None or config_loader is None or agents is None:
+                logger.warning(
+                    "Dialogue mode requires state, config_loader, and agents. Falling back to one-shot."
+                )
+            else:
+                return self._run_dialogue_synthesis(
+                    initial_outputs=agent_outputs,
+                    strategy=strategy,
+                    stage_config=stage_config,
+                    stage_name=stage_name,
+                    state=state,
+                    config_loader=config_loader,
+                    agents=agents,
+                )
+
+        from temper_ai.stage._config_accessors import (
+            get_collaboration_inner_config as _get_collab_cfg,
+        )
+
+        return strategy.synthesize(agent_outputs, _get_collab_cfg(stage_config))
+
     def _run_synthesis(
         self,
         agent_outputs: list,
@@ -140,57 +194,13 @@ class StageExecutor(ABC):
             )
 
         try:
-            from temper_ai.agent.strategies.registry import get_strategy_from_config
-            from temper_ai.stage.executors._protocols import (
-                DialogueCapableStrategy,
-                LeaderCapableStrategy,
+            return self._run_strategy_synthesis(  # noqa: long
+                agent_outputs, stage_config, stage_name, state, config_loader, agents
             )
-
-            strategy = get_strategy_from_config(stage_config)
-
-            if (
-                isinstance(strategy, LeaderCapableStrategy)
-                and strategy.requires_leader_synthesis
-            ):
-                return self._run_leader_synthesis(
-                    agent_outputs=agent_outputs,
-                    strategy=strategy,
-                    stage_config=stage_config,
-                    stage_name=stage_name,
-                    state=state,
-                    config_loader=config_loader,
-                    agents=agents,
-                )
-
-            if (
-                isinstance(strategy, DialogueCapableStrategy)
-                and strategy.requires_requery
-            ):
-                if state is None or config_loader is None or agents is None:
-                    logger.warning(
-                        "Dialogue mode requires state, config_loader, and agents. Falling back to one-shot."
-                    )
-                else:
-                    return self._run_dialogue_synthesis(
-                        initial_outputs=agent_outputs,
-                        strategy=strategy,
-                        stage_config=stage_config,
-                        stage_name=stage_name,
-                        state=state,
-                        config_loader=config_loader,
-                        agents=agents,
-                    )
-
-            from temper_ai.stage._config_accessors import (
-                get_collaboration_inner_config as _get_collab_cfg,
-            )
-
-            return strategy.synthesize(agent_outputs, _get_collab_cfg(stage_config))
-
         except ImportError:
             return fallback_consensus_synthesis(agent_outputs)
 
-    def _run_dialogue_synthesis(
+    def _run_dialogue_synthesis(  # noqa: long
         self,
         initial_outputs: list,
         strategy: Any,

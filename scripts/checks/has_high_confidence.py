@@ -8,6 +8,7 @@ This check is intentionally strict — consensus_weak synthesis typically
 produces lower confidence, so this check forces the selection optimizer
 to run all iterations and pick the best-scoring output.
 """
+
 import json
 import sys
 
@@ -31,7 +32,10 @@ def main() -> int:
         synthesis = stage.get("synthesis", {})
         if isinstance(synthesis, dict):
             confidence = synthesis.get("confidence", 0)
-            if isinstance(confidence, (int, float)) and confidence >= CONFIDENCE_THRESHOLD:
+            if (
+                isinstance(confidence, (int, float))
+                and confidence >= CONFIDENCE_THRESHOLD
+            ):
                 return 0
 
     return 1

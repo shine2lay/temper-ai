@@ -18,9 +18,6 @@ from typing import (
     TypeVar,
 )
 
-T = TypeVar("T")
-logger = logging.getLogger(__name__)
-
 from temper_ai.shared.constants.retries import (
     CIRCUIT_BREAKER_FAILURE_THRESHOLD,
     CIRCUIT_BREAKER_RESET_TIMEOUT,
@@ -58,6 +55,9 @@ from temper_ai.shared.core.constants import (
     MIN_TIMEOUT_SECONDS,
 )
 from temper_ai.shared.utils.exceptions import FrameworkException
+
+T = TypeVar("T")
+logger = logging.getLogger(__name__)
 
 
 class StateStorage(Protocol):
@@ -240,6 +240,31 @@ def _init_state_from_storage(
     }
 
 
+def _init_lambda_bindings(breaker: "CircuitBreaker") -> None:
+    """Bind helper functions as instance lambdas for internal use."""
+    breaker._on_success = lambda reserved_state=None: _on_call_success_helper(
+        breaker, reserved_state
+    )
+    breaker._on_failure = lambda error, reserved_state=None: _on_call_failure_helper(
+        breaker, error, reserved_state
+    )
+    breaker._reserve_execution = lambda: _reserve_execution_helper(breaker)
+    breaker.can_execute = lambda: breaker.state != CircuitState.OPEN
+    breaker.get_metrics = lambda: breaker.metrics
+    breaker._save_state = lambda: _save_state_helper(
+        breaker.storage,
+        breaker.name,
+        breaker._state,  # noqa: long
+        breaker._failure_count,
+        breaker._success_count,
+        breaker._last_failure_time,
+        breaker.config,
+    )
+    breaker._load_state = lambda: _apply_loaded_state(
+        breaker, _load_state_helper(breaker.storage, breaker.name)
+    )
+
+
 class CircuitBreaker:
     """Unified circuit breaker for resilience and safety.
 
@@ -253,8 +278,15 @@ class CircuitBreaker:
     _success_count: int
     _last_failure_time: float | None
     _opened_at: datetime | None
+    _on_success: Callable
+    _on_failure: Callable
+    _reserve_execution: Callable
+    can_execute: Callable
+    get_metrics: Callable
+    _save_state: Callable
+    _load_state: Callable
 
-    def __init__(
+    def __init__(  # noqa: long
         self,
         name: str,
         config: CircuitBreakerConfig | None = None,
@@ -296,27 +328,7 @@ class CircuitBreaker:
         if loaded["config"] is not None:
             self.config = loaded["config"]
 
-        self._on_success = lambda reserved_state=None: _on_call_success_helper(
-            self, reserved_state
-        )
-        self._on_failure = lambda error, reserved_state=None: _on_call_failure_helper(
-            self, error, reserved_state
-        )
-        self._reserve_execution = lambda: _reserve_execution_helper(self)
-        self.can_execute = lambda: self.state != CircuitState.OPEN
-        self.get_metrics = lambda: self.metrics
-        self._save_state = lambda: _save_state_helper(
-            self.storage,
-            self.name,
-            self._state,
-            self._failure_count,
-            self._success_count,
-            self._last_failure_time,
-            self.config,
-        )
-        self._load_state = lambda: _apply_loaded_state(
-            self, _load_state_helper(self.storage, self.name)
-        )
+        _init_lambda_bindings(self)
 
     @property
     def state(self) -> CircuitState:

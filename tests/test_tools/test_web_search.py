@@ -3,14 +3,13 @@
 Tests both Tavily and SearXNG backends via the WebSearch interface.
 """
 
-import warnings
 from unittest.mock import MagicMock, Mock, patch
 
 import httpx
 import pytest
 
 from temper_ai.tools._search_backends import SearxngBackend, TavilyBackend
-from temper_ai.tools.web_search import SearXNGSearch, TavilySearch, WebSearch
+from temper_ai.tools.web_search import WebSearch
 
 # ===========================================================================
 # Helpers
@@ -701,27 +700,3 @@ class TestClientLifecycle:
 # ===========================================================================
 # Deprecation shims
 # ===========================================================================
-
-
-class TestDeprecationShims:
-    """Test backward-compat shim classes."""
-
-    def test_tavily_shim_warns(self):
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            tool = TavilySearch()
-            assert len(w) == 1
-            assert issubclass(w[0].category, DeprecationWarning)
-            assert "deprecated" in str(w[0].message).lower()
-        assert tool.name == "WebSearch"
-        assert isinstance(tool._backend, TavilyBackend)
-
-    def test_searxng_shim_warns(self):
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            tool = SearXNGSearch()
-            assert len(w) == 1
-            assert issubclass(w[0].category, DeprecationWarning)
-            assert "deprecated" in str(w[0].message).lower()
-        assert tool.name == "WebSearch"
-        assert isinstance(tool._backend, SearxngBackend)

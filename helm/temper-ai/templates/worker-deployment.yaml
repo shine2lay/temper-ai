@@ -36,6 +36,12 @@ spec:
                 name: {{ include "temper-ai.fullname" . }}-config
             - secretRef:
                 name: {{ include "temper-ai.fullname" . }}-secret
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
           resources:
             {{- toYaml .Values.worker.resources | nindent 12 }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
 {{- end }}

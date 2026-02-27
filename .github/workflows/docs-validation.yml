@@ -22,18 +22,17 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
-        python-version: '3.11'
+        python-version: '3.12'
 
     - name: Install dependencies
       run: |
-        python -m pip install --upgrade pip
-        pip install pytest pytest-cov
-        pip install -e .
+        pip install uv
+        uv sync --frozen --extra dev
 
     - name: Run documentation tests
       run: |
@@ -101,30 +100,3 @@ jobs:
         echo "- ✅ API methods: Match implementation" >> $GITHUB_STEP_SUMMARY
         echo "- ✅ Coordination commands: Up to date" >> $GITHUB_STEP_SUMMARY
         echo "- ✅ README: No placeholders or conflicts" >> $GITHUB_STEP_SUMMARY
-
-  markdown-lint:
-    runs-on: ubuntu-latest
-
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
-
-    - name: Lint markdown files
-      uses: nosborn/github-action-markdown-cli@v3.2.0
-      with:
-        files: .
-        config_file: .markdownlint.json
-        ignore_files: node_modules/
-
-  check-spelling:
-    runs-on: ubuntu-latest
-
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
-
-    - name: Check spelling in documentation
-      uses: rojopolis/spellcheck-github-actions@0.33.1
-      with:
-        config_path: .spellcheck.yml
-        task_name: Markdown

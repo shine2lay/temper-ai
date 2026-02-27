@@ -9,7 +9,7 @@ import pytest
 
 try:
     from temper_ai.llm.providers.base import BaseLLM, LLMResponse
-    from temper_ai.observability.database import DatabaseManager
+    from temper_ai.storage.database.manager import DatabaseManager
 except ImportError:
     BaseLLM = None  # type: ignore[assignment,misc]
     LLMResponse = None  # type: ignore[assignment,misc]

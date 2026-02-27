@@ -8,15 +8,17 @@ Tests:
 - Recovery after failures
 """
 
+import json
 import uuid
 from datetime import UTC, datetime
 
 import pytest
 
-from temper_ai.observability.database import get_session, init_database
-from temper_ai.observability.models import StageExecution, WorkflowExecution
 from temper_ai.observability.tracker import ExecutionTracker
-from temper_ai.workflow.checkpoint import CheckpointManager, FileCheckpointBackend
+from temper_ai.storage.database.manager import get_session, init_database
+from temper_ai.storage.database.models import StageExecution, WorkflowExecution
+from temper_ai.workflow.checkpoint_backends import FileCheckpointBackend
+from temper_ai.workflow.checkpoint_manager import CheckpointManager
 from temper_ai.workflow.domain_state import WORKFLOW_ID_PREFIX, WorkflowDomainState
 
 
@@ -35,7 +37,7 @@ class TestCheckpointCreation:
     def sample_database(self):
         """Initialize test database."""
         try:
-            from temper_ai.observability.database import get_database
+            from temper_ai.storage.database.manager import get_database
 
             get_database()
         except RuntimeError:
@@ -95,7 +97,7 @@ class TestCheckpointCreation:
             workflow_inputs={},
         )
 
-        checkpoint_manager.save_checkpoint(workflow_id, domain_state)
+        checkpoint_manager.save_checkpoint(domain_state)
 
         # VERIFICATION: Checkpoint exists
         checkpoints = checkpoint_manager.list_checkpoints(workflow_id)
@@ -145,7 +147,7 @@ class TestCheckpointCreation:
             workflow_inputs={},
         )
         checkpoint_manager.save_checkpoint(
-            workflow_id, domain_state_1, checkpoint_id="cp-checkpoint-1"
+            domain_state_1, checkpoint_id="cp-checkpoint-1"
         )
 
         # Execute stage 2
@@ -169,7 +171,7 @@ class TestCheckpointCreation:
             workflow_inputs={},
         )
         checkpoint_manager.save_checkpoint(
-            workflow_id, domain_state_2, checkpoint_id="cp-checkpoint-2"
+            domain_state_2, checkpoint_id="cp-checkpoint-2"
         )
 
         # VERIFICATION: Both checkpoints exist
@@ -201,7 +203,7 @@ class TestCheckpointCreation:
         )
 
         # Save checkpoint
-        checkpoint_manager.save_checkpoint(workflow_id, domain_state)
+        checkpoint_manager.save_checkpoint(domain_state)
 
         # Load and verify
         loaded = checkpoint_manager.load_checkpoint(workflow_id)
@@ -221,7 +223,7 @@ class TestWorkflowResume:
     def sample_database(self):
         """Initialize test database."""
         try:
-            from temper_ai.observability.database import get_database
+            from temper_ai.storage.database.manager import get_database
 
             get_database()
         except RuntimeError:
@@ -273,7 +275,7 @@ class TestWorkflowResume:
             stage_outputs={"stage1": {"completed": True}},
             query="original",
         )
-        checkpoint_manager.save_checkpoint(workflow_id, domain_state)
+        checkpoint_manager.save_checkpoint(domain_state)
 
         # Simulate failure after stage 1
         workflow_exec.status = "failed"
@@ -368,7 +370,7 @@ class TestWorkflowResume:
             stage_outputs=stage_outputs,
             workflow_inputs={},
         )
-        checkpoint_manager.save_checkpoint(workflow_id, domain_state)
+        checkpoint_manager.save_checkpoint(domain_state)
 
         # Fail before stage 3
         workflow_exec.status = "failed"
@@ -432,7 +434,7 @@ class TestWorkflowResume:
         )
 
         # Save checkpoint
-        checkpoint_manager.save_checkpoint(workflow_id, original_state)
+        checkpoint_manager.save_checkpoint(original_state)
 
         # Load checkpoint
         loaded_state = checkpoint_manager.load_checkpoint(workflow_id)
@@ -456,7 +458,7 @@ class TestCheckpointFailureRecovery:
     def sample_database(self):
         """Initialize test database."""
         try:
-            from temper_ai.observability.database import get_database
+            from temper_ai.storage.database.manager import get_database
 
             get_database()
         except RuntimeError:
@@ -480,7 +482,7 @@ class TestCheckpointFailureRecovery:
             stage_outputs={"stage1": {"completed": True}},
             workflow_inputs={},
         )
-        checkpoint_manager.save_checkpoint(workflow_id, domain_state)
+        checkpoint_manager.save_checkpoint(domain_state)
 
         # RESUME: Can restart from checkpoint
         loaded = checkpoint_manager.load_checkpoint(workflow_id)
@@ -504,7 +506,7 @@ class TestCheckpointFailureRecovery:
             },
             workflow_inputs={},
         )
-        checkpoint_manager.save_checkpoint(workflow_id, domain_state)
+        checkpoint_manager.save_checkpoint(domain_state)
 
         # RESUME: Restore state after timeout
         loaded = checkpoint_manager.load_checkpoint(workflow_id)
@@ -522,7 +524,7 @@ class TestCheckpointFailureRecovery:
             stage_outputs={"stage1": {}},
             workflow_inputs={},
         )
-        checkpoint_manager.save_checkpoint(workflow_id, domain_state)
+        checkpoint_manager.save_checkpoint(domain_state)
 
         # Corrupt the checkpoint file
         checkpoint_dir = tmp_path / "checkpoints"
@@ -533,5 +535,5 @@ class TestCheckpointFailureRecovery:
             f.write("{ invalid json }")
 
         # VERIFICATION: Loading corrupted checkpoint raises error
-        with pytest.raises(Exception):  # JSON decode error or validation error
+        with pytest.raises((json.JSONDecodeError, ValueError)):
             checkpoint_manager.load_checkpoint(workflow_id)

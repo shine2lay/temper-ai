@@ -20,16 +20,16 @@ from temper_ai.experimentation.models import (
     Variant,
 )
 from temper_ai.observability.backends.sql_backend import SQLObservabilityBackend
-from temper_ai.observability.database import init_database
 from temper_ai.observability.tracker import ExecutionTracker
+from temper_ai.storage.database.manager import init_database
 
 
 @pytest.fixture
 def db():
     """Initialize in-memory database for testing."""
     # Reset global database before each test
-    import temper_ai.observability.database as db_module
-    from temper_ai.observability.database import _db_lock
+    import temper_ai.storage.database.manager as db_module
+    from temper_ai.storage.database.manager import _db_lock
 
     with _db_lock:
         db_module._db_manager = None
@@ -115,7 +115,7 @@ class TestObservabilityIntegration:
 
         # Verify workflow was created with experiment metadata
         with obs_backend.get_session_context() as session:
-            from temper_ai.observability.models import WorkflowExecution
+            from temper_ai.storage.database.models import WorkflowExecution
 
             workflow = session.get(WorkflowExecution, workflow_id)
 
@@ -159,13 +159,13 @@ class TestObservabilityIntegration:
                 variant_id=variant_id,
                 assignment_strategy=experiment.assignment_strategy.value,
                 custom_metrics={"quality_score": quality_score},
-            ) as workflow_id:
+            ):
                 # Simulate some work
                 pass
 
         # Collect experiment metrics from observability DB
         # Use a fresh session from get_session() instead of backend's session stack
-        from temper_ai.observability.database import get_session
+        from temper_ai.storage.database.manager import get_session
 
         with get_session() as session:
             collector = ExperimentMetricsCollector(session=session)
@@ -218,7 +218,7 @@ class TestObservabilityIntegration:
     def test_multiple_experiments_isolation(self, tracker, obs_backend):
         """Test that multiple experiments are properly isolated."""
         # Create workflows for experiment 1
-        for i in range(5):
+        for _i in range(5):
             with tracker.track_workflow(
                 workflow_name="workflow_a",
                 workflow_config={},
@@ -229,7 +229,7 @@ class TestObservabilityIntegration:
                 pass
 
         # Create workflows for experiment 2
-        for i in range(3):
+        for _i in range(3):
             with tracker.track_workflow(
                 workflow_name="workflow_b",
                 workflow_config={},
@@ -254,7 +254,7 @@ class TestObservabilityIntegration:
 
     def test_failed_workflow_tracking(self, tracker, obs_backend, experiment, variants):
         """Test that failed workflows are tracked correctly."""
-        assigner = VariantAssigner()
+        VariantAssigner()
 
         # Create successful workflow
         with tracker.track_workflow(
@@ -412,7 +412,7 @@ class TestBackwardsCompatibility:
 
         # Verify workflow was created without experiment metadata
         with obs_backend.get_session_context() as session:
-            from temper_ai.observability.models import WorkflowExecution
+            from temper_ai.storage.database.models import WorkflowExecution
 
             workflow = session.get(WorkflowExecution, workflow_id)
 
@@ -431,7 +431,7 @@ class TestBackwardsCompatibility:
             assert workflow_id is not None
 
         with obs_backend.get_session_context() as session:
-            from temper_ai.observability.models import WorkflowExecution
+            from temper_ai.storage.database.models import WorkflowExecution
 
             workflow = session.get(WorkflowExecution, workflow_id)
 

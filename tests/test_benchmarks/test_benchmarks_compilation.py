@@ -17,7 +17,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 from temper_ai.agent.standard_agent import StandardAgent
-from temper_ai.workflow.langgraph_compiler import LangGraphCompiler
+from temper_ai.workflow.engines.langgraph_compiler import LangGraphCompiler
 
 # ============================================================================
 # Benchmark Tests: Compilation and Execution

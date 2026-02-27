@@ -16,15 +16,15 @@ from pathlib import Path
 
 import pytest
 
-from temper_ai.observability.database import get_session, init_database
-from temper_ai.observability.models import (
+from temper_ai.observability.tracker import ExecutionTracker
+from temper_ai.storage.database.manager import get_session, init_database
+from temper_ai.storage.database.models import (
     AgentExecution,
     LLMCall,
     StageExecution,
     ToolExecution,
     WorkflowExecution,
 )
-from temper_ai.observability.tracker import ExecutionTracker
 from temper_ai.workflow.config_loader import ConfigLoader
 
 pytestmark = [pytest.mark.integration, pytest.mark.critical_path]
@@ -37,7 +37,7 @@ class TestThreeStageWorkflow:
     def sample_database(self):
         """Initialize in-memory database for testing."""
         try:
-            from temper_ai.observability.database import get_database
+            from temper_ai.storage.database.manager import get_database
 
             get_database()
         except RuntimeError:
@@ -365,9 +365,7 @@ class TestThreeStageWorkflow:
             # Simulate parallel execution
             for i in range(1, 5):
                 agent_name = f"agent{i}"
-                with execution_tracker.track_agent(
-                    agent_name, {}, stage_id
-                ) as agent_id:
+                with execution_tracker.track_agent(agent_name, {}, stage_id):
                     # Simulate work
                     pass
 
@@ -455,7 +453,7 @@ class TestWorkflowWithToolExecution:
     def sample_database(self):
         """Initialize test database."""
         try:
-            from temper_ai.observability.database import get_database
+            from temper_ai.storage.database.manager import get_database
 
             get_database()
         except RuntimeError:
@@ -498,7 +496,7 @@ class TestWorkflowWithToolExecution:
                 "calculator_agent", {}, stage_id
             ) as agent_id:
                 # Simulate tool execution
-                tool_exec_id = execution_tracker.track_tool_call(
+                execution_tracker.track_tool_call(
                     agent_id,
                     tool_name="Calculator",
                     input_params={"operation": "add", "a": 5, "b": 3},
@@ -552,7 +550,7 @@ class TestWorkflowWithToolExecution:
                 "agent_with_tool", {}, stage_id
             ) as agent_id:
                 # Simulate failed tool execution
-                tool_exec_id = execution_tracker.track_tool_call(
+                execution_tracker.track_tool_call(
                     agent_id,
                     tool_name="WebScraper",
                     input_params={"url": "http://invalid"},
@@ -587,7 +585,7 @@ class TestSingleAgentWorkflows:
     def sample_database(self):
         """Initialize in-memory database for testing."""
         try:
-            from temper_ai.observability.database import get_database
+            from temper_ai.storage.database.manager import get_database
 
             get_database()
         except RuntimeError:
@@ -722,7 +720,7 @@ class TestSingleAgentWorkflows:
         ) as stage_id:
             with execution_tracker.track_agent("coder_agent", {}, stage_id) as agent_id:
                 # Simulate code generation with tool usage
-                tool_exec_id = execution_tracker.track_tool_call(
+                execution_tracker.track_tool_call(
                     agent_id,
                     tool_name="CodeGenerator",
                     input_params={"language": "python", "function_name": "fibonacci"},
@@ -764,7 +762,7 @@ class TestSingleAgentWorkflows:
                 "validator_agent", {}, stage_id
             ) as agent_id:
                 # Simulate validation tool
-                tool_exec_id = execution_tracker.track_tool_call(
+                execution_tracker.track_tool_call(
                     agent_id,
                     tool_name="CodeValidator",
                     input_params={"code": "def fibonacci(n): ..."},

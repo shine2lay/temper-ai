@@ -10,7 +10,6 @@ from unittest.mock import Mock
 
 import pytest
 
-from temper_ai.observability.database import init_database
 from temper_ai.safety.action_policy_engine import (
     ActionPolicyEngine,
     EnforcementResult,
@@ -18,6 +17,7 @@ from temper_ai.safety.action_policy_engine import (
 from temper_ai.safety.approval import ApprovalWorkflow
 from temper_ai.safety.interfaces import SafetyViolation, ViolationSeverity
 from temper_ai.safety.rollback import RollbackManager, RollbackStatus
+from temper_ai.storage.database.manager import init_database
 from temper_ai.tools.base import BaseTool, ToolMetadata, ToolResult
 from temper_ai.tools.executor import ToolExecutor
 from temper_ai.tools.registry import ToolRegistry
@@ -69,7 +69,7 @@ class TestToolRollback:
     def sample_database(self):
         """Initialize in-memory database for rollback logging."""
         try:
-            from temper_ai.observability.database import get_database
+            from temper_ai.storage.database.manager import get_database
 
             get_database()
         except RuntimeError:
@@ -302,7 +302,7 @@ class TestApprovalRejectionRollback:
     def sample_database(self):
         """Initialize in-memory database for rollback logging."""
         try:
-            from temper_ai.observability.database import get_database
+            from temper_ai.storage.database.manager import get_database
 
             get_database()
         except RuntimeError:
@@ -330,7 +330,7 @@ class TestApprovalRejectionRollback:
         registry = ToolRegistry()
         registry.register(FileWriteTool())
 
-        executor = ToolExecutor(
+        ToolExecutor(
             registry=registry,
             rollback_manager=rollback_manager,
             approval_workflow=approval_workflow,

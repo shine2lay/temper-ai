@@ -21,7 +21,7 @@ from temper_ai.stage.executors import (
 )
 from temper_ai.stage.executors.state_keys import StateKeys
 from temper_ai.workflow.domain_state import WorkflowDomainState
-from temper_ai.workflow.langgraph_compiler import LangGraphCompiler
+from temper_ai.workflow.engines.langgraph_compiler import LangGraphCompiler
 
 
 class TestAgentModeDetection:

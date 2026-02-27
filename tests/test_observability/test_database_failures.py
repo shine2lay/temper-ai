@@ -13,8 +13,8 @@ from pathlib import Path
 import pytest
 from sqlalchemy.exc import ArgumentError, IntegrityError, OperationalError
 
-from temper_ai.observability.database import DatabaseManager
-from temper_ai.observability.models import (
+from temper_ai.storage.database.manager import DatabaseManager
+from temper_ai.storage.database.models import (
     StageExecution,
     WorkflowExecution,
 )
@@ -62,9 +62,9 @@ class TestConnectionFailures:
 
     def test_connection_with_invalid_url(self):
         """Test connection with invalid database URL."""
-        with pytest.raises(Exception):
+        with pytest.raises((ValueError, OSError)):
             # Malformed URL should raise error
-            manager = DatabaseManager(database_url="invalid://url")
+            DatabaseManager(database_url="invalid://url")
 
     def test_multiple_connections_to_same_database(self, temp_db_file):
         """Test multiple connections to the same database."""

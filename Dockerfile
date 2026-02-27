@@ -5,9 +5,9 @@
 #   docker build --target server -t temper-ai-server:latest .
 
 # ── base ──────────────────────────────────────────────────────────────
-FROM python:3.11.11-slim-bookworm AS base
+FROM python:3.12-slim-bookworm AS base
 
-ARG TEMPER_VERSION=0.1.0
+ARG TEMPER_VERSION=1.0.0
 ARG TEMPER_COMMIT=unknown
 
 RUN apt-get update && \

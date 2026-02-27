@@ -490,7 +490,7 @@ def create_app(  # noqa: long
     Returns:
         Configured FastAPI application.
     """
-    from temper_ai.interfaces.dashboard.execution_service import (
+    from temper_ai.workflow.execution_service import (
         WorkflowExecutionService,
     )
 

@@ -21,9 +21,8 @@ import pytest
 from sqlalchemy import text
 
 from temper_ai.observability.buffer import ObservabilityBuffer
-from temper_ai.observability.database import DatabaseManager, IsolationLevel
 from temper_ai.observability.performance import PerformanceTracker
-from temper_ai.stage.stage_compiler import StageCompiler
+from temper_ai.storage.database.manager import DatabaseManager, IsolationLevel
 from temper_ai.storage.schemas.agent_config import (
     AgentConfig,
     AgentConfigInner,
@@ -32,8 +31,9 @@ from temper_ai.storage.schemas.agent_config import (
 )
 from temper_ai.tools.registry import ToolRegistry
 from temper_ai.workflow.config_loader import ConfigLoader
-from temper_ai.workflow.langgraph_compiler import LangGraphCompiler
+from temper_ai.workflow.engines.langgraph_compiler import LangGraphCompiler
 from temper_ai.workflow.node_builder import NodeBuilder
+from temper_ai.workflow.stage_compiler import StageCompiler
 from temper_ai.workflow.state_manager import initialize_state
 from tests.fixtures.realistic_data import (
     REALISTIC_RESEARCH_WORKFLOW_AGENTS,

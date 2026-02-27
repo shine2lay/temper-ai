@@ -109,7 +109,7 @@ def test_workflow_compile_time(ten_stage_workflow_config, benchmark):
     Measures: graph construction, node allocation, state initialisation.
     Threshold: 500 ms (WORKFLOW_COMPILE_THRESHOLD_S).
     """
-    from temper_ai.workflow.langgraph_compiler import LangGraphCompiler
+    from temper_ai.workflow.engines.langgraph_compiler import LangGraphCompiler
 
     with patch("temper_ai.workflow.engines.langgraph_compiler.ConfigLoader"):
         compiler = LangGraphCompiler()
@@ -137,7 +137,7 @@ def test_workflow_compile_time_plain(ten_stage_workflow_config):
     This test runs even when pytest-benchmark is not installed and provides
     a simple CI gate.
     """
-    from temper_ai.workflow.langgraph_compiler import LangGraphCompiler
+    from temper_ai.workflow.engines.langgraph_compiler import LangGraphCompiler
 
     with patch("temper_ai.workflow.engines.langgraph_compiler.ConfigLoader"):
         compiler = LangGraphCompiler()

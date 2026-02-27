@@ -12,16 +12,16 @@ from temper_ai.observability.backends import (
     S3ObservabilityBackend,
     SQLObservabilityBackend,
 )
-from temper_ai.observability.database import init_database
 from temper_ai.observability.tracker import ExecutionTracker
+from temper_ai.storage.database.manager import init_database
 
 
 @pytest.fixture
 def db():
     """Initialize in-memory database for testing."""
     # Reset global database before each test
-    import temper_ai.observability.database as db_module
-    from temper_ai.observability.database import _db_lock
+    import temper_ai.storage.database.manager as db_module
+    from temper_ai.storage.database.manager import _db_lock
 
     with _db_lock:
         db_module._db_manager = None
@@ -240,8 +240,8 @@ class TestBackendWorkflowExecution:
                     )
 
         # Verify violation was tracked (SQL backend specific)
-        from temper_ai.observability.database import get_session
-        from temper_ai.observability.models import AgentExecution
+        from temper_ai.storage.database.manager import get_session
+        from temper_ai.storage.database.models import AgentExecution
 
         with get_session() as session:
             from sqlmodel import select
@@ -262,8 +262,8 @@ class TestCascadeDelete:
         """Deleting a workflow removes all stages, agents, llm_calls, tool_executions."""
         from sqlmodel import delete, func, select
 
-        from temper_ai.observability.database import get_session
-        from temper_ai.observability.models import (
+        from temper_ai.storage.database.manager import get_session
+        from temper_ai.storage.database.models import (
             AgentExecution,
             LLMCall,
             StageExecution,
@@ -456,8 +456,8 @@ class TestCascadeDelete:
 
         from sqlmodel import delete, func, select
 
-        from temper_ai.observability.database import get_session
-        from temper_ai.observability.models import StageExecution, WorkflowExecution
+        from temper_ai.storage.database.manager import get_session
+        from temper_ai.storage.database.models import StageExecution, WorkflowExecution
 
         # Delete stage
         with get_session() as session:
@@ -523,8 +523,8 @@ class TestCascadeDelete:
         # Verify no orphans remain
         from sqlmodel import func, select
 
-        from temper_ai.observability.database import get_session
-        from temper_ai.observability.models import AgentExecution, StageExecution
+        from temper_ai.storage.database.manager import get_session
+        from temper_ai.storage.database.models import AgentExecution, StageExecution
 
         with get_session() as session:
             assert (

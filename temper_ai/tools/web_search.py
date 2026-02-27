@@ -5,7 +5,6 @@ via a single tool interface. Backend is selected through config.
 """
 
 import logging
-import warnings
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -140,33 +139,3 @@ class WebSearch(BaseTool):
             self.close()
         except (OSError, RuntimeError, AttributeError):
             pass
-
-
-# ---------------------------------------------------------------------------
-# Deprecation shims — auto-discovered under the old names.
-# Remove after one release cycle.
-# ---------------------------------------------------------------------------
-
-
-class TavilySearch(WebSearch):
-    """DEPRECATED: Use WebSearch with config.provider='tavily' instead."""
-
-    def __init__(self, config: dict[str, Any] | None = None):
-        warnings.warn(
-            "TavilySearch is deprecated. Use WebSearch with provider='tavily'.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        super().__init__(config={**(config or {}), "provider": "tavily"})
-
-
-class SearXNGSearch(WebSearch):
-    """DEPRECATED: Use WebSearch with config.provider='searxng' instead."""
-
-    def __init__(self, config: dict[str, Any] | None = None):
-        warnings.warn(
-            "SearXNGSearch is deprecated. Use WebSearch with provider='searxng'.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        super().__init__(config={**(config or {}), "provider": "searxng"})

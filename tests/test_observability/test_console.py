@@ -19,7 +19,7 @@ from temper_ai.observability.formatters import (
     status_to_icon,
     truncate_text,
 )
-from temper_ai.observability.models import (
+from temper_ai.storage.database.models import (
     AgentExecution,
     CollaborationEvent,
     LLMCall,

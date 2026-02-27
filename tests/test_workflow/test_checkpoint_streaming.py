@@ -5,8 +5,9 @@ from unittest.mock import Mock
 import pytest
 
 from temper_ai.stage.executors.state_keys import StateKeys
-from temper_ai.workflow.checkpoint import CheckpointManager
-from temper_ai.workflow.workflow_executor import WorkflowExecutor
+from temper_ai.workflow.checkpoint_backends import FileCheckpointBackend
+from temper_ai.workflow.checkpoint_manager import CheckpointManager
+from temper_ai.workflow.engines.langgraph_compiler import WorkflowExecutor
 
 
 def test_checkpoint_saved_after_each_stage(tmp_path):
@@ -42,7 +43,9 @@ def test_checkpoint_saved_after_each_stage(tmp_path):
     ]
     mock_graph.stream = Mock(return_value=iter(stage_chunks))
 
-    checkpoint_manager = CheckpointManager(storage_path=str(tmp_path))
+    checkpoint_manager = CheckpointManager(
+        backend=FileCheckpointBackend(checkpoint_dir=str(tmp_path))
+    )
     executor = WorkflowExecutor(
         graph=mock_graph, checkpoint_manager=checkpoint_manager, enable_checkpoints=True
     )
@@ -61,7 +64,7 @@ def test_checkpoint_saved_after_each_stage(tmp_path):
     assert checkpoint_manager.has_checkpoint("wf-test-123")
 
     # Verify checkpoint contains all stage outputs
-    domain_state = checkpoint_manager.resume("wf-test-123")
+    domain_state = checkpoint_manager.load_checkpoint("wf-test-123")
     assert "stage1" in domain_state.stage_outputs
     assert "stage2" in domain_state.stage_outputs
     assert "stage3" in domain_state.stage_outputs
@@ -73,7 +76,9 @@ def test_checkpoint_interval_respected(tmp_path):
     save_calls = []
 
     # Create mock checkpoint manager
-    checkpoint_manager = CheckpointManager(storage_path=str(tmp_path))
+    checkpoint_manager = CheckpointManager(
+        backend=FileCheckpointBackend(checkpoint_dir=str(tmp_path))
+    )
     original_save = checkpoint_manager.save_checkpoint
 
     def track_save(domain_state, **kwargs):
@@ -126,7 +131,7 @@ def test_checkpoint_interval_respected(tmp_path):
     )
 
     # Execute with checkpoint every 2 stages
-    result = executor.execute_with_checkpoints(
+    executor.execute_with_checkpoints(
         input_data={"topic": "test"}, workflow_id="wf-123", checkpoint_interval=2
     )
 
@@ -161,7 +166,9 @@ def test_checkpoint_on_failure(tmp_path):
 
     mock_graph.stream = Mock(side_effect=failing_stream)
 
-    checkpoint_manager = CheckpointManager(storage_path=str(tmp_path))
+    checkpoint_manager = CheckpointManager(
+        backend=FileCheckpointBackend(checkpoint_dir=str(tmp_path))
+    )
     executor = WorkflowExecutor(
         graph=mock_graph, checkpoint_manager=checkpoint_manager, enable_checkpoints=True
     )
@@ -174,7 +181,7 @@ def test_checkpoint_on_failure(tmp_path):
 
     # Verify checkpoint was saved before failure
     assert checkpoint_manager.has_checkpoint("wf-fail")
-    domain_state = checkpoint_manager.resume("wf-fail")
+    domain_state = checkpoint_manager.load_checkpoint("wf-fail")
 
     # Should have stage1 and stage2 completed
     assert "stage1" in domain_state.stage_outputs
@@ -202,7 +209,9 @@ def test_empty_workflow_raises_error(tmp_path):
     mock_graph = Mock()
     mock_graph.stream = Mock(return_value=iter([]))
 
-    checkpoint_manager = CheckpointManager(storage_path=str(tmp_path))
+    checkpoint_manager = CheckpointManager(
+        backend=FileCheckpointBackend(checkpoint_dir=str(tmp_path))
+    )
     executor = WorkflowExecutor(
         graph=mock_graph, checkpoint_manager=checkpoint_manager, enable_checkpoints=True
     )
@@ -239,7 +248,9 @@ def test_checkpoint_with_tracker(tmp_path):
     ]
     mock_graph.stream = Mock(return_value=iter(stage_chunks))
 
-    checkpoint_manager = CheckpointManager(storage_path=str(tmp_path))
+    checkpoint_manager = CheckpointManager(
+        backend=FileCheckpointBackend(checkpoint_dir=str(tmp_path))
+    )
     executor = WorkflowExecutor(
         graph=mock_graph,
         tracker=mock_tracker,
@@ -276,7 +287,9 @@ def test_checkpoint_error_handling_doesnt_mask_original_error(tmp_path):
     mock_graph.stream = Mock(side_effect=failing_stream)
 
     # Create checkpoint manager that fails on save DURING error handling (not during interval save)
-    checkpoint_manager = CheckpointManager(storage_path=str(tmp_path))
+    checkpoint_manager = CheckpointManager(
+        backend=FileCheckpointBackend(checkpoint_dir=str(tmp_path))
+    )
     original_save = checkpoint_manager.save_checkpoint
 
     call_count = [0]

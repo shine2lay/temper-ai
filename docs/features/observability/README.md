@@ -121,8 +121,8 @@ Output:
 
 ### Querying Execution Data
 ```python
-from temper_ai.observability.database import get_session
-from temper_ai.observability.models import WorkflowExecution, AgentExecution
+from temper_ai.storage.database.manager import get_session
+from temper_ai.storage.database.models import WorkflowExecution, AgentExecution
 from sqlalchemy import func
 
 with get_session() as session:

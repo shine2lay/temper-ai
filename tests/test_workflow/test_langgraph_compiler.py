@@ -5,7 +5,10 @@ from unittest.mock import Mock
 import pytest
 
 from temper_ai.workflow.domain_state import WorkflowDomainState
-from temper_ai.workflow.langgraph_compiler import LangGraphCompiler, WorkflowExecutor
+from temper_ai.workflow.engines.langgraph_compiler import (
+    LangGraphCompiler,
+    WorkflowExecutor,
+)
 from temper_ai.workflow.state_manager import create_init_node
 from tests.fixtures.realistic_data import REALISTIC_CONFIG_LOADER
 
@@ -160,7 +163,7 @@ def test_workflow_executor_execute_adds_tracker():
     executor = WorkflowExecutor(mock_graph, tracker=mock_tracker)
 
     input_data = {"input": "test"}
-    result = executor.execute(input_data)
+    executor.execute(input_data)
 
     # Check that invoke was called with tracker in state
     call_args = mock_graph.invoke.call_args

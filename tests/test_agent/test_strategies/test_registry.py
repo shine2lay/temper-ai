@@ -353,18 +353,18 @@ class TestDebateAliases:
         registry = StrategyRegistry()
         strategy = registry.get_strategy("debate_and_synthesize")
         assert strategy is not None
-        from temper_ai.agent.strategies.debate import DebateAndSynthesize
+        from temper_ai.agent.strategies.multi_round import MultiRoundStrategy
 
-        assert isinstance(strategy, DebateAndSynthesize)
+        assert isinstance(strategy, MultiRoundStrategy)
 
     def test_llm_debate_and_synthesize_alias_registered(self):
         """Verify 'llm_debate_and_synthesize' resolves to DebateAndSynthesize."""
         registry = StrategyRegistry()
         strategy = registry.get_strategy("llm_debate_and_synthesize")
         assert strategy is not None
-        from temper_ai.agent.strategies.debate import DebateAndSynthesize
+        from temper_ai.agent.strategies.multi_round import MultiRoundStrategy
 
-        assert isinstance(strategy, DebateAndSynthesize)
+        assert isinstance(strategy, MultiRoundStrategy)
 
     def test_aliases_are_default_strategies(self):
         """Verify aliases are protected as default strategies."""

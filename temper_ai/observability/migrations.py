@@ -13,8 +13,7 @@ from sqlalchemy import text
 
 from temper_ai.shared.constants.limits import DEFAULT_MIN_ITEMS
 from temper_ai.shared.utils.exceptions import SecurityError
-
-from .database import DatabaseManager, get_database
+from temper_ai.storage.database.manager import DatabaseManager, get_database
 
 logger = logging.getLogger(__name__)
 

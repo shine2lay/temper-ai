@@ -15,6 +15,7 @@ Tests cover:
 
 import uuid
 from datetime import timedelta
+from unittest.mock import Mock
 
 import pytest
 from sqlmodel import select
@@ -1123,3 +1124,42 @@ def test_full_workflow_lifecycle(sql_backend: SQLObservabilityBackend):
             select(ToolExecution).where(ToolExecution.id == tool_id)
         ).first()
         assert tool_call is not None
+
+
+# ========== Backend Initialization Tests (merged from test_backends/) ==========
+
+
+def test_backend_init_with_default_buffer():
+    """Test backend initialization with default buffer."""
+    backend = SQLObservabilityBackend()
+
+    assert backend._buffer is not None
+    # Buffer should have flush callback set
+    assert backend._buffer._flush_callback is not None
+
+
+def test_backend_init_no_buffer():
+    """Test backend initialization without buffer."""
+    backend = SQLObservabilityBackend(buffer=False)
+
+    assert backend._buffer is None
+
+
+def test_backend_init_with_custom_buffer():
+    """Test backend initialization with custom buffer."""
+    mock_buffer = Mock()
+    mock_buffer.set_flush_callback = Mock()
+    backend = SQLObservabilityBackend(buffer=mock_buffer)
+
+    assert backend._buffer == mock_buffer
+    mock_buffer.set_flush_callback.assert_called_once()
+
+
+def test_create_indexes(sql_backend: SQLObservabilityBackend):
+    """Test creating database indexes."""
+    # create_indexes is a static method that just logs
+    # It doesn't raise, so call it
+    sql_backend.create_indexes()
+
+    # Method should complete without error
+    assert True

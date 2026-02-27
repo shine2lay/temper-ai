@@ -81,7 +81,7 @@ setup:
 
 ## dev: Start the dev server (FastAPI dashboard + API on port 8420)
 dev:
-	temper-ai serve --dev
+	uv run temper-ai serve --dev
 
 ## help: Show available targets
 help:

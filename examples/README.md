@@ -101,8 +101,8 @@ sqlite3 workflow_execution.db "SELECT * FROM workflow_executions ORDER BY start_
 
 **Query traces with Python:**
 ```python
-from temper_ai.observability.database import get_session
-from temper_ai.observability.models import WorkflowExecution
+from temper_ai.storage.database.manager import get_session
+from temper_ai.storage.database.models import WorkflowExecution
 
 with get_session() as session:
     executions = session.query(WorkflowExecution).all()

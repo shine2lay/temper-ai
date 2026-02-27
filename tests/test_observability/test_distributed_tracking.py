@@ -26,18 +26,18 @@ from multiprocessing import Process, Queue
 import pytest
 from sqlmodel import select
 
-from temper_ai.observability.database import (
+from temper_ai.observability.tracker import ExecutionTracker
+from temper_ai.storage.database.manager import (
     IsolationLevel,
     init_database,
     reset_database,
 )
-from temper_ai.observability.models import (
+from temper_ai.storage.database.models import (
     AgentExecution,
     LLMCall,
     StageExecution,
     WorkflowExecution,
 )
-from temper_ai.observability.tracker import ExecutionTracker
 
 # ========================================
 # Test Fixtures
@@ -214,7 +214,7 @@ def concurrent_update_process(
         error_count = 0
         errors = []
 
-        for i in range(num_updates):
+        for _i in range(num_updates):
             try:
                 with db_manager.session(isolation_level=isolation_level) as session:
                     # Read workflow
@@ -819,7 +819,7 @@ class TestDistributedLockingConcurrency:
                 db_manager = init_database(db_url)
 
                 success_count = 0
-                for i in range(num_updates):
+                for _i in range(num_updates):
                     try:
                         with db_manager.session() as session:
                             agent = session.exec(
@@ -1830,8 +1830,8 @@ class TestDataConsistencyVerification:
 
                 # Calculate expected totals from agents
                 expected_llm_calls = sum(agent.num_llm_calls or 0 for agent in agents)
-                expected_tool_calls = sum(agent.num_tool_calls or 0 for agent in agents)
-                expected_tokens = sum(agent.total_tokens or 0 for agent in agents)
+                sum(agent.num_tool_calls or 0 for agent in agents)
+                sum(agent.total_tokens or 0 for agent in agents)
 
                 # Verify workflow aggregates match (allow for some tolerance due to timing)
                 # Note: Aggregation happens on workflow completion, so may not be perfect

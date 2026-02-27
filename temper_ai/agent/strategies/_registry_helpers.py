@@ -28,13 +28,13 @@ _DEFAULT_STRATEGIES: list[tuple[list[str], str, str]] = [
     ),
     (
         ["debate", "debate_and_synthesize", "llm_debate_and_synthesize"],
-        "temper_ai.agent.strategies.debate",
-        "DebateAndSynthesize",
+        "temper_ai.agent.strategies.multi_round",
+        "MultiRoundStrategy",
     ),
     (
         ["dialogue"],
-        "temper_ai.agent.strategies.dialogue",
-        "DialogueOrchestrator",
+        "temper_ai.agent.strategies.multi_round",
+        "MultiRoundStrategy",
     ),
     (
         ["multi_round"],

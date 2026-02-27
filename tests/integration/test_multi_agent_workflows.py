@@ -10,13 +10,13 @@ from datetime import UTC, datetime
 
 import pytest
 
-from temper_ai.observability.database import get_session, init_database
-from temper_ai.observability.models import (
+from temper_ai.observability.tracker import ExecutionTracker
+from temper_ai.storage.database.manager import get_session, init_database
+from temper_ai.storage.database.models import (
     AgentExecution,
     StageExecution,
     WorkflowExecution,
 )
-from temper_ai.observability.tracker import ExecutionTracker
 
 pytestmark = [pytest.mark.integration]
 
@@ -28,7 +28,7 @@ class TestAgentHandoffWorkflows:
     def sample_database(self):
         """Initialize in-memory database for testing."""
         try:
-            from temper_ai.observability.database import get_database
+            from temper_ai.storage.database.manager import get_database
 
             get_database()
         except RuntimeError:
@@ -248,7 +248,7 @@ class TestAgentHandoffWorkflows:
                 partial_output = stage1_data.output_data
 
                 assert partial_output["review_complete"] is False
-                remaining = partial_output["files_remaining"]
+                partial_output["files_remaining"]
 
             with execution_tracker.track_agent("reviewer2", {}, stage2_id):
                 pass
@@ -302,7 +302,7 @@ class TestConsensusWorkflows:
     def sample_database(self):
         """Initialize in-memory database for testing."""
         try:
-            from temper_ai.observability.database import get_database
+            from temper_ai.storage.database.manager import get_database
 
             get_database()
         except RuntimeError:
@@ -362,17 +362,13 @@ class TestConsensusWorkflows:
             "peer_review", stage_config, workflow_id
         ) as stage_id:
             # Simulate 3 parallel reviews
-            for i, agent_name in enumerate(["reviewer1", "reviewer2", "reviewer3"]):
+            for _i, agent_name in enumerate(["reviewer1", "reviewer2", "reviewer3"]):
                 with execution_tracker.track_agent(agent_name, {}, stage_id):
                     pass
 
         # Set individual review outputs
         with get_session() as session:
-            agents = (
-                session.query(AgentExecution)
-                .filter_by(stage_execution_id=stage_id)
-                .all()
-            )
+            (session.query(AgentExecution).filter_by(stage_execution_id=stage_id).all())
 
             # 2 agents approve, 1 rejects
             reviews = [

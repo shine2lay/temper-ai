@@ -27,9 +27,9 @@ import temper_ai.interfaces.server.models  # noqa: F401
 import temper_ai.learning.models  # noqa: F401
 import temper_ai.lifecycle.models  # noqa: F401
 import temper_ai.memory.adapters.pg_adapter  # noqa: F401
-import temper_ai.observability.models  # noqa: F401
 import temper_ai.portfolio.models  # noqa: F401
 import temper_ai.safety.autonomy.models  # noqa: F401
+import temper_ai.storage.database.models  # noqa: F401
 import temper_ai.storage.database.models_evaluation  # noqa: F401
 
 # M10 models

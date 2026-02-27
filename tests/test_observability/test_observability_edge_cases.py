@@ -14,20 +14,20 @@ from datetime import datetime
 
 import pytest
 
-from temper_ai.observability.database import get_session, init_database
 from temper_ai.observability.hooks import (
     ExecutionHook,
     get_tracker,
     reset_tracker,
     track_workflow,
 )
-from temper_ai.observability.models import (
+from temper_ai.observability.tracker import ExecutionTracker
+from temper_ai.storage.database.manager import get_session, init_database
+from temper_ai.storage.database.models import (
     AgentExecution,
     LLMCall,
     StageExecution,
     WorkflowExecution,
 )
-from temper_ai.observability.tracker import ExecutionTracker
 
 
 @pytest.fixture(autouse=True)
@@ -41,8 +41,8 @@ def reset_global_tracker():
 @pytest.fixture
 def db():
     """Initialize in-memory database for testing."""
-    import temper_ai.observability.database as db_module
-    from temper_ai.observability.database import _db_lock
+    import temper_ai.storage.database.manager as db_module
+    from temper_ai.storage.database.manager import _db_lock
 
     with _db_lock:
         db_module._db_manager = None
@@ -65,7 +65,7 @@ class TestHookFailureResilience:
             return "workflow_success"
 
         # Close database to simulate failure
-        from temper_ai.observability.database import _db_lock, _db_manager
+        from temper_ai.storage.database.manager import _db_lock, _db_manager
 
         with _db_lock:
             if _db_manager:
@@ -393,7 +393,7 @@ class TestLongErrorTraces:
         except Exception as final_error:
             import traceback
 
-            full_trace = traceback.format_exc()
+            traceback.format_exc()
             error_message = str(final_error)
 
         # Store stage with error chain (no parent workflow needed)

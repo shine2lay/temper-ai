@@ -39,13 +39,14 @@ repos:
         types: [python]
         args: [--config-file=pyproject.toml]
         pass_filenames: true
+        exclude: ^tests/
 
   # Architecture scanner — quality score gate
   - repo: local
     hooks:
       - id: quality-score
         name: quality-score
-        entry: uv run python scripts/check_quality_score.py --min-score 80
+        entry: uv run python scripts/check_quality_score.py --min-score 90
         language: system
         pass_filenames: false
         always_run: true

@@ -252,25 +252,3 @@ class TestSanitizeWorkflowResult:
         )
         assert "good" in result
         assert "bad" not in result
-
-
-class TestReExportShim:
-    def test_shim_imports_match(self):
-        """Re-export shim at old location should provide same classes."""
-        from temper_ai.interfaces.dashboard.execution_service import (
-            WorkflowExecutionMetadata as Shim_Meta,
-        )
-        from temper_ai.interfaces.dashboard.execution_service import (
-            WorkflowExecutionService as Shim_Service,
-        )
-        from temper_ai.interfaces.dashboard.execution_service import (
-            WorkflowExecutionStatus as Shim_Status,
-        )
-        from temper_ai.interfaces.dashboard.execution_service import (
-            _sanitize_workflow_result as shim_sanitize,
-        )
-
-        assert Shim_Meta is WorkflowExecutionMetadata
-        assert Shim_Service is WorkflowExecutionService
-        assert Shim_Status is WorkflowExecutionStatus
-        assert shim_sanitize is _sanitize_workflow_result

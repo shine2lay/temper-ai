@@ -47,7 +47,7 @@ query = "SELECT * FROM users WHERE id = %s" % user_id  # SQL INJECTION!
 ✅ **CORRECT:**
 ```python
 from sqlmodel import select
-from temper_ai.observability.models import User
+from temper_ai.storage.database.models import User
 
 user_id = request.get("user_id")
 stmt = select(User).where(User.id == user_id)  # SAFE: Parameterized
@@ -63,7 +63,7 @@ SQLModel automatically uses parameterized queries and provides type safety.
 ✅ **CORRECT: SELECT Queries**
 ```python
 from sqlmodel import select, func
-from temper_ai.observability.models import WorkflowExecution, StageExecution
+from temper_ai.storage.database.models import WorkflowExecution, StageExecution
 
 # Simple select
 stmt = select(WorkflowExecution).where(WorkflowExecution.id == workflow_id)
@@ -93,7 +93,7 @@ agents = session.exec(stmt).all()
 
 ✅ **CORRECT: INSERT Queries**
 ```python
-from temper_ai.observability.models import WorkflowExecution
+from temper_ai.storage.database.models import WorkflowExecution
 
 # Create and insert
 workflow = WorkflowExecution(

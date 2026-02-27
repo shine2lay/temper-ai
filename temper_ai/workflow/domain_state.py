@@ -426,23 +426,6 @@ class InfrastructureContext:
         return f"InfrastructureContext(components=[{', '.join(components)}])"
 
 
-class DomainExecutionContext(InfrastructureContext):
-    """Backward-compatible alias.
-
-    DEPRECATED: Use InfrastructureContext directly.
-    """
-
-    def __init_subclass__(cls, **kwargs: Any) -> None:
-        import warnings
-
-        warnings.warn(
-            "DomainExecutionContext is deprecated. Use InfrastructureContext.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        super().__init_subclass__(**kwargs)
-
-
 def __getattr__(name: str) -> object:
     """Module-level __getattr__ for backward-compatible access to ExecutionContext."""
     if name == "ExecutionContext":
@@ -450,7 +433,7 @@ def __getattr__(name: str) -> object:
 
         warnings.warn(
             "Importing ExecutionContext from temper_ai.workflow.domain_state is deprecated. "
-            "Use InfrastructureContext (or DomainExecutionContext) instead. "
+            "Use InfrastructureContext instead. "
             "For the agent/tracking execution context, use temper_ai.shared.core.context.ExecutionContext.",
             DeprecationWarning,
             stacklevel=2,

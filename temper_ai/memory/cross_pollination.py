@@ -48,7 +48,7 @@ def publish_knowledge(
         metadata=metadata or {},
     )
     try:
-        entry_id = memory_service.store(scope, entry)
+        entry_id = memory_service.store_episodic(scope, entry.content, entry.metadata)
         return entry_id
     except Exception as exc:  # noqa: BLE001
         logger.warning("Failed to publish knowledge for agent %s: %s", agent_name, exc)

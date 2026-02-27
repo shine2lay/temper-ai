@@ -26,7 +26,6 @@ from temper_ai.workflow.config_loader import (
     ConfigValidationError,
 )
 from temper_ai.workflow.domain_state import (
-    DomainExecutionContext,
     InfrastructureContext,
     WorkflowDomainState,
     create_initial_domain_state,
@@ -41,11 +40,11 @@ from temper_ai.workflow.execution_engine import (
 )
 
 # Note: LangGraphCompiler not imported here to avoid circular imports
-# Import directly: from temper_ai.workflow.langgraph_compiler import LangGraphCompiler
+# Import directly: from temper_ai.workflow.engines.langgraph_compiler import LangGraphCompiler
 
 # Note: WorkflowState in src/compiler/state.py is deprecated.
 # Use WorkflowDomainState + InfrastructureContext from src/compiler/domain_state.py.
-# DomainExecutionContext replaces the old ExecutionContext alias (which collided
+# InfrastructureContext replaces the old ExecutionContext alias (which collided
 # with temper_ai.shared.core.context.ExecutionContext).
 
 __all__ = [
@@ -56,7 +55,6 @@ __all__ = [
     # Domain state
     "WorkflowDomainState",
     "InfrastructureContext",
-    "DomainExecutionContext",
     "create_initial_domain_state",
     "merge_domain_states",
     # Checkpoint management

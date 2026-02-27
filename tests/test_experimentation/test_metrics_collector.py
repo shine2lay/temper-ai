@@ -11,16 +11,16 @@ import pytest
 
 from temper_ai.experimentation.metrics_collector import ExperimentMetricsCollector
 from temper_ai.experimentation.models import ExecutionStatus, VariantAssignment
-from temper_ai.observability.database import get_session, init_database
-from temper_ai.observability.models import WorkflowExecution
+from temper_ai.storage.database.manager import get_session, init_database
+from temper_ai.storage.database.models import WorkflowExecution
 
 
 @pytest.fixture
 def db():
     """Initialize in-memory database for testing."""
     # Reset global database before each test
-    import temper_ai.observability.database as db_module
-    from temper_ai.observability.database import _db_lock
+    import temper_ai.storage.database.manager as db_module
+    from temper_ai.storage.database.manager import _db_lock
 
     with _db_lock:
         db_module._db_manager = None

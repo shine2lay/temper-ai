@@ -172,7 +172,7 @@ class TestWorkflowCancellation:
     @pytest.fixture
     def engine(self):
         """Create LangGraphExecutionEngine instance."""
-        from temper_ai.workflow.langgraph_engine import LangGraphExecutionEngine
+        from temper_ai.workflow.engines.langgraph_engine import LangGraphExecutionEngine
 
         return LangGraphExecutionEngine()
 

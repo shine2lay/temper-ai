@@ -10,8 +10,12 @@ from uuid import uuid4
 
 import pytest
 
-from temper_ai.observability.database import get_session, init_database, reset_database
-from temper_ai.observability.models import (
+from temper_ai.storage.database.manager import (
+    get_session,
+    init_database,
+    reset_database,
+)
+from temper_ai.storage.database.models import (
     AgentExecution,
     DecisionOutcome,
     LLMCall,
@@ -26,8 +30,8 @@ from temper_ai.observability.models import (
 @pytest.fixture(autouse=True)
 def setup_db():
     """Initialize a fresh in-memory database for each test."""
-    import temper_ai.observability.database as db_module
-    from temper_ai.observability.database import _db_lock
+    import temper_ai.storage.database.manager as db_module
+    from temper_ai.storage.database.manager import _db_lock
 
     with _db_lock:
         db_module._db_manager = None

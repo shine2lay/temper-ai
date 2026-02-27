@@ -211,7 +211,7 @@ app.include_router(graphql_app, prefix="/graphql")
 # config/database.py
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from temper_ai.observability.database import Base
+from temper_ai.storage.database.manager import Base
 
 DATABASE_URL = "postgresql://user:password@localhost:5432/agents"
 

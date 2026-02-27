@@ -14,7 +14,7 @@ import time
 import psutil
 import pytest
 
-from temper_ai.observability.database import DatabaseManager
+from temper_ai.storage.database.manager import DatabaseManager
 from temper_ai.tools.base import BaseTool, ToolResult
 from temper_ai.tools.registry import ToolRegistry
 
@@ -170,7 +170,7 @@ async def test_1000_database_writes(stress_db):
     num_writes = 1000
 
     async def write_operation(op_id: int):
-        with stress_db.session() as session:
+        with stress_db.session():
             # Simulate database write (actual SQL execution)
             await asyncio.sleep(0)
             return op_id
@@ -200,7 +200,7 @@ async def test_concurrent_database_access(stress_db):
     num_operations = 100
 
     async def db_operation(op_id: int):
-        with stress_db.session() as session:
+        with stress_db.session():
             await asyncio.sleep(0.001)
             return op_id
 
@@ -231,7 +231,7 @@ async def test_database_write_contention(stress_db):
     async def concurrent_writer(writer_id: int):
         results = []
         for i in range(writes_per_writer):
-            with stress_db.session() as session:
+            with stress_db.session():
                 await asyncio.sleep(0.001)
                 results.append(f"writer_{writer_id}_write_{i}")
         return results
@@ -269,14 +269,14 @@ async def test_database_read_write_mix(stress_db):
     operations_per_task = 10
 
     async def reader(reader_id: int):
-        for i in range(operations_per_task):
-            with stress_db.session() as session:
+        for _i in range(operations_per_task):
+            with stress_db.session():
                 await asyncio.sleep(0.001)
         return reader_id
 
     async def writer(writer_id: int):
-        for i in range(operations_per_task):
-            with stress_db.session() as session:
+        for _i in range(operations_per_task):
+            with stress_db.session():
                 await asyncio.sleep(0.002)
         return writer_id
 
@@ -334,7 +334,7 @@ def test_memory_pressure_tool_registry():
     # Execute many tool calls
     tool = registry.get("MockTool")
     for i in range(10000):
-        result = tool.execute(input=f"test_{i}")
+        tool.execute(input=f"test_{i}")
 
         if i % 1000 == 0:
             gc.collect()
@@ -364,7 +364,7 @@ def test_memory_leak_detection_database():
 
     # Perform many database operations
     for i in range(1000):
-        with db.session() as session:
+        with db.session():
             pass  # Simple session open/close
 
         if i % 100 == 0:
@@ -397,8 +397,8 @@ def test_file_descriptor_management(stress_db):
     )
 
     # Perform many operations
-    for i in range(100):
-        with stress_db.session() as session:
+    for _i in range(100):
+        with stress_db.session():
             pass
 
     # Check file descriptor count
@@ -450,7 +450,7 @@ def test_tool_registry_throughput():
     start_time = time.time()
 
     while time.time() - start_time < duration_seconds:
-        result = tool.execute(input="test")
+        tool.execute(input="test")
         operations += 1
 
     actual_duration = time.time() - start_time
@@ -487,7 +487,7 @@ async def test_async_throughput():
         if operations % 100 == 0:
             await asyncio.sleep(0)
 
-    results = await asyncio.gather(*tasks)
+    await asyncio.gather(*tasks)
 
     actual_duration = time.time() - start_time
     throughput = operations / actual_duration

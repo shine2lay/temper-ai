@@ -13,7 +13,7 @@ from unittest.mock import MagicMock, Mock, patch
 import pytest
 
 from temper_ai.agent.base_agent import AgentResponse
-from temper_ai.workflow.langgraph_compiler import LangGraphCompiler
+from temper_ai.workflow.engines.langgraph_compiler import LangGraphCompiler
 
 
 class TestAdaptiveModeDetection:

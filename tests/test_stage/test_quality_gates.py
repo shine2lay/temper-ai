@@ -7,7 +7,7 @@ Tests quality gate validation after synthesis.
 from unittest.mock import Mock
 
 from temper_ai.agent.strategies.base import SynthesisResult
-from temper_ai.workflow.langgraph_compiler import LangGraphCompiler
+from temper_ai.workflow.engines.langgraph_compiler import LangGraphCompiler
 
 
 class TestQualityGateValidation:

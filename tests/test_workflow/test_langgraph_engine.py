@@ -8,11 +8,11 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from temper_ai.workflow.execution_engine import ExecutionMode
-from temper_ai.workflow.langgraph_engine import (
+from temper_ai.workflow.engines.langgraph_engine import (
     LangGraphCompiledWorkflow,
     LangGraphExecutionEngine,
 )
+from temper_ai.workflow.execution_engine import ExecutionMode
 
 # Sample workflow configs for testing
 SIMPLE_WORKFLOW_CONFIG = {"workflow": {"stages": ["research", "synthesis"]}}
@@ -81,7 +81,7 @@ class TestLangGraphCompiledWorkflow:
             tracker=mock_tracker,
         )
 
-        result = compiled.invoke({"input": "test"})
+        compiled.invoke({"input": "test"})
 
         # Verify tracker was injected into state
         call_args = mock_graph.invoke.call_args[0][0]

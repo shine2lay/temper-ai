@@ -118,7 +118,7 @@ class TestFullStackIntegration:
         Validates: Compiler→Agent→Tool→Observability
         """
         compiler = integrated_system["compiler"]
-        config_loader = integrated_system["config_loader"]
+        integrated_system["config_loader"]
         tracker = integrated_system["execution_tracker"]
 
         # 1. Create workflow configuration
@@ -208,8 +208,8 @@ class TestConfigurationPropagation:
         - Safety limits applied
         """
         compiler = integrated_system["compiler"]
-        config_loader = integrated_system["config_loader"]
-        tracker = integrated_system["execution_tracker"]
+        integrated_system["config_loader"]
+        integrated_system["execution_tracker"]
 
         # 1. Create workflow config with module-specific settings
         workflow_config = {
@@ -243,13 +243,13 @@ class TestErrorPropagationWithObservability:
         """
         tracker = integrated_system["execution_tracker"]
 
-        workflow_id = str(uuid.uuid4())
+        str(uuid.uuid4())
 
         with tracker.track_workflow("error_test", {}) as wf_id:
             with tracker.track_stage("stage1", {}, wf_id) as stage_id:
                 with tracker.track_agent("agent1", {}, stage_id) as agent_id:
                     # Track failed tool execution
-                    tool_call_id = tracker.track_tool_call(
+                    tracker.track_tool_call(
                         agent_id=agent_id,
                         tool_name="FailingTool",
                         input_params={"should_fail": True},
@@ -394,7 +394,7 @@ class TestConcurrentCrossModuleOperations:
         - Database connection pooling
         - No state leakage between workflows
         """
-        compiler = integrated_system["compiler"]
+        integrated_system["compiler"]
         tracker = integrated_system["execution_tracker"]
 
         workflow_config = {

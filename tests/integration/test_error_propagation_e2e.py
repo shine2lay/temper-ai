@@ -14,14 +14,14 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from temper_ai.observability.database import get_session, init_database
-from temper_ai.observability.models import (
+from temper_ai.observability.tracker import ExecutionTracker
+from temper_ai.storage.database.manager import get_session, init_database
+from temper_ai.storage.database.models import (
     AgentExecution,
     StageExecution,
     ToolExecution,
     WorkflowExecution,
 )
-from temper_ai.observability.tracker import ExecutionTracker
 
 pytestmark = [pytest.mark.integration, pytest.mark.critical_path]
 
@@ -33,7 +33,7 @@ class TestToolToAgentErrorPropagation:
     def sample_database(self):
         """Initialize test database."""
         try:
-            from temper_ai.observability.database import get_database
+            from temper_ai.storage.database.manager import get_database
 
             get_database()
         except RuntimeError:
@@ -72,7 +72,7 @@ class TestToolToAgentErrorPropagation:
         ) as stage_id:
             with execution_tracker.track_agent("agent1", {}, stage_id) as agent_id:
                 # Tool fails
-                tool_exec_id = execution_tracker.track_tool_call(
+                execution_tracker.track_tool_call(
                     agent_id,
                     tool_name="Calculator",
                     input_params={"operation": "divide", "a": 10, "b": 0},
@@ -121,7 +121,7 @@ class TestToolToAgentErrorPropagation:
         with execution_tracker.track_stage("slow_stage", {}, workflow_id) as stage_id:
             with execution_tracker.track_agent("agent1", {}, stage_id) as agent_id:
                 # Tool times out
-                tool_exec_id = execution_tracker.track_tool_call(
+                execution_tracker.track_tool_call(
                     agent_id,
                     tool_name="WebScraper",
                     input_params={"url": "http://slow-server.com"},
@@ -166,7 +166,7 @@ class TestToolToAgentErrorPropagation:
         with execution_tracker.track_stage("error_stage", {}, workflow_id) as stage_id:
             with execution_tracker.track_agent("agent1", {}, stage_id) as agent_id:
                 # Tool fails with context
-                tool_exec_id = execution_tracker.track_tool_call(
+                execution_tracker.track_tool_call(
                     agent_id,
                     tool_name="DatabaseQuery",
                     input_params={
@@ -200,7 +200,7 @@ class TestAgentToStageErrorPropagation:
     def sample_database(self):
         """Initialize test database."""
         try:
-            from temper_ai.observability.database import get_database
+            from temper_ai.storage.database.manager import get_database
 
             get_database()
         except RuntimeError:
@@ -482,7 +482,7 @@ class TestStageToWorkflowErrorPropagation:
     def sample_database(self):
         """Initialize test database."""
         try:
-            from temper_ai.observability.database import get_database
+            from temper_ai.storage.database.manager import get_database
 
             get_database()
         except RuntimeError:
@@ -580,7 +580,7 @@ class TestTimeoutCascading:
     def sample_database(self):
         """Initialize test database."""
         try:
-            from temper_ai.observability.database import get_database
+            from temper_ai.storage.database.manager import get_database
 
             get_database()
         except RuntimeError:
@@ -650,7 +650,7 @@ class TestTimeoutCascading:
             session.commit()
 
         # Tool with 5s timeout times out
-        tool_exec_id = execution_tracker.track_tool_call(
+        execution_tracker.track_tool_call(
             agent_id,
             tool_name="SlowTool",
             input_params={"delay": 20},

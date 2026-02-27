@@ -10,6 +10,7 @@ from temper_ai.safety._secret_detection_helpers import (
     validate_enabled_patterns,
     validate_excluded_paths,
 )
+from temper_ai.safety._secret_filter_helpers import TestSecretFilter
 from temper_ai.safety.base import BaseSafetyPolicy
 from temper_ai.safety.constants import (
     ALLOW_TEST_SECRETS_KEY,
@@ -30,7 +31,6 @@ from temper_ai.safety.interfaces import (
 )
 from temper_ai.safety.pattern_matcher import PatternMatcher
 from temper_ai.safety.redaction_utils import create_redacted_preview, hash_secret
-from temper_ai.safety.test_secret_filter import TestSecretFilter
 from temper_ai.safety.validation import ValidationMixin
 
 

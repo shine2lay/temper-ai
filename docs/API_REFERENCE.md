@@ -2094,10 +2094,11 @@ result = strategy.synthesize(outputs, context={})
 Multi-round argumentation strategy.
 
 ```python
-from temper_ai.strategies.debate import DebateAndSynthesize
+from temper_ai.agent.strategies.multi_round import MultiRoundStrategy
 
-strategy = DebateAndSynthesize(
-    max_rounds=3,
+strategy = MultiRoundStrategy(
+    mode="debate",
+    rounds=3,
     convergence_threshold=0.8
 )
 

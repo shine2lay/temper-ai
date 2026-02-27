@@ -92,7 +92,7 @@ frontend/dist/
 frontend/test-results/
 frontend/*.db
 !frontend/src/lib/
-src/interfaces/dashboard/react-dist/
+temper_ai/interfaces/dashboard/react-dist/
 
 # Generated data
 .meta-autonomous/

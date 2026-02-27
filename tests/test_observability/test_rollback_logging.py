@@ -8,7 +8,6 @@ from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
-from temper_ai.observability.models import RollbackEvent, RollbackSnapshotDB
 from temper_ai.observability.rollback_logger import (
     get_rollback_events,
     get_rollback_snapshots,
@@ -16,6 +15,7 @@ from temper_ai.observability.rollback_logger import (
     log_rollback_snapshot,
 )
 from temper_ai.safety.rollback import RollbackResult, RollbackSnapshot, RollbackStatus
+from temper_ai.storage.database.models import RollbackEvent, RollbackSnapshotDB
 
 
 class TestRollbackLogging:

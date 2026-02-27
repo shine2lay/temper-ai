@@ -1,29 +1,16 @@
 """
 End-to-end integration tests for Milestone 3 (Multi-Agent Collaboration).
 
-Tests complete M3 features with real execution:
+Tests cover:
 - Parallel agent execution
 - Consensus synthesis strategy
 - Debate strategy with convergence
 - Merit-weighted conflict resolution
 - Partial agent failures and error handling
 - Min successful agents enforcement
+- Quality gates and confidence thresholds
+- Strategy registry and configuration validation
 - Observability tracking for multi-agent workflows
-
-M3 Feature Checklist:
-- ✅ m3-01: Collaboration Strategy Interface
-- ✅ m3-02: Conflict Resolution Interface
-- ✅ m3-03: Consensus Strategy
-- ✅ m3-04: Debate Strategy
-- ✅ m3-05: Merit-Weighted Resolution
-- ✅ m3-06: Strategy Registry
-- ✅ m3-07: Parallel Stage Execution
-- ⏳ m3-08: Multi-Agent State Management (in progress)
-- ✅ m3-09: Synthesis Node
-- ✅ m3-11: Convergence Detection
-- ⏳ m3-12: Quality Gates (in progress)
-- ✅ m3-13: Configuration Schema
-- ✅ m3-14: Example Workflows
 """
 
 from importlib.util import find_spec
@@ -35,13 +22,13 @@ import pytest
 from temper_ai.agent.base_agent import AgentResponse
 from temper_ai.agent.strategies.base import AgentOutput, SynthesisResult
 from temper_ai.agent.strategies.consensus import ConsensusStrategy
-from temper_ai.agent.strategies.debate import DebateAndSynthesize
 from temper_ai.agent.strategies.merit_weighted import MeritWeightedResolver
+from temper_ai.agent.strategies.multi_round import MultiRoundStrategy
 
 # Core components
 from temper_ai.workflow.config_loader import ConfigLoader
 from temper_ai.workflow.domain_state import WorkflowDomainState
-from temper_ai.workflow.langgraph_compiler import LangGraphCompiler
+from temper_ai.workflow.engines.langgraph_compiler import LangGraphCompiler
 
 # Check for registry (may not exist yet)
 REGISTRY_AVAILABLE = find_spec("temper_ai.agent.strategies.registry") is not None
@@ -51,6 +38,9 @@ if REGISTRY_AVAILABLE:
 
 # Check for observability
 OBSERVABILITY_AVAILABLE = find_spec("temper_ai.observability.tracker") is not None
+
+if OBSERVABILITY_AVAILABLE:
+    from temper_ai.storage.database.manager import init_database
 
 
 # ============================================================================
@@ -181,7 +171,7 @@ class TestDebateAndSynthesize:
 
     def test_single_round_debate(self):
         """Test debate with immediate convergence."""
-        strategy = DebateAndSynthesize()
+        strategy = MultiRoundStrategy(mode="debate")
 
         outputs = [
             AgentOutput("agent1", "Option A", "Strong argument for A", 0.9, {}),
@@ -191,14 +181,13 @@ class TestDebateAndSynthesize:
         result = strategy.synthesize(outputs, {"max_rounds": 1})
 
         assert result.decision == "Option A"
-        assert result.method == "debate_and_synthesize"
         # The multi-round strategy metadata uses 'strategy' and 'mode' keys
         assert result.metadata.get("mode") == "debate"
         assert result.metadata.get("strategy") == "multi_round_debate"
 
     def test_multi_round_convergence(self):
         """Test debate converges after multiple rounds."""
-        strategy = DebateAndSynthesize()
+        strategy = MultiRoundStrategy(mode="debate")
 
         # Round 1: Disagreement
         outputs_round1 = [
@@ -505,7 +494,7 @@ class TestStrategyRegistry:
         """Test getting debate strategy from registry."""
         strategy = get_strategy_from_config({"collaboration": {"strategy": "debate"}})
 
-        assert isinstance(strategy, DebateAndSynthesize)
+        assert isinstance(strategy, MultiRoundStrategy)
 
     def test_invalid_strategy_name(self):
         """Test error handling for invalid strategy name."""
@@ -665,7 +654,7 @@ class TestQualityGates:
 
     def test_quality_gates_confidence_failure_escalate(self):
         """Test quality gate failure with escalate action."""
-        from temper_ai.workflow.langgraph_compiler import LangGraphCompiler
+        from temper_ai.workflow.engines.langgraph_compiler import LangGraphCompiler
 
         compiler = LangGraphCompiler()
 
@@ -702,7 +691,7 @@ class TestQualityGates:
 
     def test_quality_gates_proceed_with_warning(self):
         """Test quality gate failure with proceed_with_warning action."""
-        from temper_ai.workflow.langgraph_compiler import LangGraphCompiler
+        from temper_ai.workflow.engines.langgraph_compiler import LangGraphCompiler
 
         compiler = LangGraphCompiler()
 
@@ -736,7 +725,7 @@ class TestQualityGates:
 
     def test_quality_gates_all_checks_pass(self):
         """Test quality gates with all checks passing."""
-        from temper_ai.workflow.langgraph_compiler import LangGraphCompiler
+        from temper_ai.workflow.engines.langgraph_compiler import LangGraphCompiler
 
         compiler = LangGraphCompiler()
 

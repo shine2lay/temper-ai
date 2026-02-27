@@ -18,7 +18,6 @@ from temper_ai.shared.utils.config_helpers import sanitize_config_for_display
 from temper_ai.shared.utils.secrets import (
     ObfuscatedCredential,
     SecretReference,
-    SecureCredential,  # Deprecated alias
     detect_secret_patterns,
     resolve_secret,
 )
@@ -78,7 +77,7 @@ class TestSecretReference:
 
         try:
             SecretReference._validate_secret_value("test", "value\x00bad")
-            assert False, "Should have raised ValueError"
+            raise AssertionError("Should have raised ValueError")
         except ValueError as e:
             assert "null bytes" in str(e)
 
@@ -164,80 +163,6 @@ class TestObfuscatedCredential:
         # Conclusion: This is OBFUSCATION (prevents accidental logging),
         # NOT security against determined attackers or memory dumps.
         # For real encryption, use OS keyring or external secrets manager.
-
-
-class TestSecureCredentialDeprecation:
-    """Tests for SecureCredential deprecation (DEPRECATED - use ObfuscatedCredential)."""
-
-    def test_deprecated_alias_emits_warning(self):
-        """Test that SecureCredential emits deprecation warning."""
-        # Reset warning flag to ensure we catch it
-        SecureCredential._warning_shown = False
-
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-
-            cred = SecureCredential("sk-secret-123")
-
-            # Check deprecation warning was emitted
-            deprecation_warnings = [
-                x for x in w if issubclass(x.category, DeprecationWarning)
-            ]
-            assert len(deprecation_warnings) >= 1
-
-            # Check our warning message is present
-            our_warnings = [
-                x
-                for x in deprecation_warnings
-                if "ObfuscatedCredential" in str(x.message)
-            ]
-            assert len(our_warnings) >= 1
-            assert "OBFUSCATION" in str(our_warnings[0].message)
-
-            # Verify it still works (backward compatibility)
-            assert cred.get() == "sk-secret-123"
-
-    def test_deprecated_alias_only_warns_once(self):
-        """Test that deprecation warning is only shown once per process."""
-        # Reset and trigger first warning
-        SecureCredential._warning_shown = False
-
-        with warnings.catch_warnings(record=True) as w1:
-            warnings.simplefilter("always")
-            SecureCredential("secret1")
-            first_count = len(
-                [x for x in w1 if issubclass(x.category, DeprecationWarning)]
-            )
-
-        # Second instantiation should not warn again
-        with warnings.catch_warnings(record=True) as w2:
-            warnings.simplefilter("always")
-            SecureCredential("secret2")
-            second_count = len(
-                [x for x in w2 if issubclass(x.category, DeprecationWarning)]
-            )
-
-        # First should have warning, second should not (already shown)
-        assert first_count >= 1
-        assert second_count == 0
-
-    def test_backward_compatibility_same_behavior(self):
-        """Test that SecureCredential has same behavior as ObfuscatedCredential."""
-        # Reset warning flag
-        SecureCredential._warning_shown = False
-
-        with warnings.catch_warnings():
-            warnings.simplefilter(
-                "ignore"
-            )  # Suppress deprecation warning for this test
-
-            secure_cred = SecureCredential("sk-test-key")
-            obfuscated_cred = ObfuscatedCredential("sk-test-key")
-
-            # Both should work the same way
-            assert secure_cred.get() == obfuscated_cred.get()
-            assert str(secure_cred) == str(obfuscated_cred)
-            assert bool(secure_cred) == bool(obfuscated_cred)
 
 
 class TestResolveSecret:

@@ -8,7 +8,7 @@ from langgraph.graph import StateGraph
 from temper_ai.observability.tracker import ExecutionTracker
 from temper_ai.stage.executors.state_keys import StateKeys
 from temper_ai.workflow.domain_state import WorkflowDomainState
-from temper_ai.workflow.workflow_executor import WorkflowExecutor
+from temper_ai.workflow.engines.langgraph_compiler import WorkflowExecutor
 
 
 class TestWorkflowExecutorInitialization:
@@ -62,7 +62,7 @@ class TestExecute:
         mock_graph.invoke = Mock(return_value={"workflow_id": "custom-123"})
 
         executor = WorkflowExecutor(mock_graph)
-        result = executor.execute(input_data={"topic": "AI"}, workflow_id="custom-123")
+        executor.execute(input_data={"topic": "AI"}, workflow_id="custom-123")
 
         # Verify state manager received workflow_id
         call_args = mock_graph.invoke.call_args[0][0]
@@ -133,7 +133,7 @@ class TestExecuteAsync:
         mock_graph.ainvoke = AsyncMock(return_value={"workflow_id": "custom-async"})
 
         executor = WorkflowExecutor(mock_graph)
-        result = await executor.execute_async(
+        await executor.execute_async(
             input_data={"topic": "quantum"}, workflow_id="custom-async"
         )
 
@@ -202,13 +202,17 @@ class TestStream:
 class TestBackwardCompatibility:
     """Test backward compatibility with imports."""
 
-    def test_can_import_from_langgraph_compiler(self):
-        """Test that WorkflowExecutor can still be imported from langgraph_compiler."""
-        from temper_ai.workflow.langgraph_compiler import WorkflowExecutor as OldImport
-        from temper_ai.workflow.workflow_executor import WorkflowExecutor as NewImport
+    def test_can_import_from_engines_langgraph_compiler(self):
+        """Test that WorkflowExecutor can be imported from engines.langgraph_compiler."""
+        from temper_ai.workflow.engines.langgraph_compiler import (
+            WorkflowExecutor as EngineImport,
+        )
+        from temper_ai.workflow.workflow_executor import (
+            WorkflowExecutor as LegacyImport,
+        )
 
         # Should be the same class
-        assert OldImport is NewImport
+        assert EngineImport is LegacyImport
 
 
 class TestCheckpointSupport:
@@ -218,11 +222,14 @@ class TestCheckpointSupport:
         """Test initialization with checkpoint manager."""
         import tempfile
 
-        from temper_ai.workflow.checkpoint import CheckpointManager
+        from temper_ai.workflow.checkpoint_backends import FileCheckpointBackend
+        from temper_ai.workflow.checkpoint_manager import CheckpointManager
 
         mock_graph = Mock()
         with tempfile.TemporaryDirectory() as tmpdir:
-            checkpoint_manager = CheckpointManager(storage_path=tmpdir)
+            checkpoint_manager = CheckpointManager(
+                backend=FileCheckpointBackend(checkpoint_dir=tmpdir)
+            )
 
             executor = WorkflowExecutor(
                 mock_graph,
@@ -246,7 +253,8 @@ class TestCheckpointSupport:
         """Test basic execution with checkpointing."""
         import tempfile
 
-        from temper_ai.workflow.checkpoint import CheckpointManager
+        from temper_ai.workflow.checkpoint_backends import FileCheckpointBackend
+        from temper_ai.workflow.checkpoint_manager import CheckpointManager
 
         mock_graph = Mock()
         # Mock stream to return chunks (updated to use streaming)
@@ -262,7 +270,9 @@ class TestCheckpointSupport:
         mock_graph.stream = Mock(return_value=iter(stage_chunks))
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            checkpoint_manager = CheckpointManager(storage_path=tmpdir)
+            checkpoint_manager = CheckpointManager(
+                backend=FileCheckpointBackend(checkpoint_dir=tmpdir)
+            )
             executor = WorkflowExecutor(
                 mock_graph,
                 checkpoint_manager=checkpoint_manager,
@@ -290,12 +300,15 @@ class TestCheckpointSupport:
         """Test resuming execution from checkpoint."""
         import tempfile
 
-        from temper_ai.workflow.checkpoint import CheckpointManager
+        from temper_ai.workflow.checkpoint_backends import FileCheckpointBackend
+        from temper_ai.workflow.checkpoint_manager import CheckpointManager
         from temper_ai.workflow.domain_state import WorkflowDomainState
 
         # Create and save a checkpoint
         with tempfile.TemporaryDirectory() as tmpdir:
-            checkpoint_manager = CheckpointManager(storage_path=tmpdir)
+            checkpoint_manager = CheckpointManager(
+                backend=FileCheckpointBackend(checkpoint_dir=tmpdir)
+            )
 
             # Save checkpoint
             domain_state = WorkflowDomainState(
@@ -303,7 +316,7 @@ class TestCheckpointSupport:
                 input="test input",
             )
             domain_state.set_stage_output("stage1", "output1")
-            checkpoint_manager.save_checkpoint("wf-resume-test", domain_state)
+            checkpoint_manager.save_checkpoint(domain_state)
 
             # Create executor and resume
             mock_graph = Mock()

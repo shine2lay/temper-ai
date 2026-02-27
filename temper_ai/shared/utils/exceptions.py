@@ -749,24 +749,6 @@ class FrameworkValidationError(BaseError):
         )
 
 
-# Backward-compat alias (deprecated)
-class ValidationError(FrameworkValidationError):
-    """Backward-compatible ValidationError alias.
-
-    DEPRECATED: Use FrameworkValidationError directly.
-    """
-
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        import warnings
-
-        warnings.warn(
-            "ValidationError is deprecated. Use FrameworkValidationError instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        super().__init__(*args, **kwargs)
-
-
 # Utility Functions
 
 

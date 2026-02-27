@@ -12,7 +12,6 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
-from temper_ai.observability.database import DatabaseManager
 from temper_ai.observability.migrations import (
     MigrationSecurityError,
     check_schema_version,
@@ -20,6 +19,7 @@ from temper_ai.observability.migrations import (
     drop_schema,
     reset_schema,
 )
+from temper_ai.storage.database.manager import DatabaseManager
 
 
 @pytest.fixture

@@ -10,8 +10,8 @@ from typing import Any
 
 from sqlmodel import select
 
-from temper_ai.observability.database import get_session
-from temper_ai.observability.models import (
+from temper_ai.storage.database.manager import get_session
+from temper_ai.storage.database.models import (
     AgentExecution,
     LLMCall,
     StageExecution,

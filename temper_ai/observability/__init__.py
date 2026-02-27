@@ -10,6 +10,18 @@ from typing import Any
 
 # Lightweight / frequently-used — keep eager
 from temper_ai.shared.core.context import ExecutionContext
+from temper_ai.storage.database.models import (
+    AgentExecution,
+    AgentMeritScore,
+    CollaborationEvent,
+    DecisionOutcome,
+    LLMCall,
+    SchemaVersion,
+    StageExecution,
+    SystemMetric,
+    ToolExecution,
+    WorkflowExecution,
+)
 
 from .backend import ObservabilityBackend
 from .hooks import (
@@ -23,18 +35,6 @@ from .hooks import (
     track_agent,
     track_stage,
     track_workflow,
-)
-from .models import (
-    AgentExecution,
-    AgentMeritScore,
-    CollaborationEvent,
-    DecisionOutcome,
-    LLMCall,
-    SchemaVersion,
-    StageExecution,
-    SystemMetric,
-    ToolExecution,
-    WorkflowExecution,
 )
 from .tracker import ExecutionTracker
 
@@ -54,10 +54,10 @@ _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "StreamingVisualizer": (".console", "StreamingVisualizer"),
     "print_workflow_tree": (".console", "print_workflow_tree"),
     # Database
-    "DatabaseManager": (".database", "DatabaseManager"),
-    "init_database": (".database", "init_database"),
-    "get_database": (".database", "get_database"),
-    "get_session": (".database", "get_session"),
+    "DatabaseManager": ("temper_ai.storage.database.manager", "DatabaseManager"),
+    "init_database": ("temper_ai.storage.database.manager", "init_database"),
+    "get_database": ("temper_ai.storage.database.manager", "get_database"),
+    "get_session": ("temper_ai.storage.database.manager", "get_session"),
     # Formatters
     "format_duration": (".formatters", "format_duration"),
     "format_timestamp": (".formatters", "format_timestamp"),

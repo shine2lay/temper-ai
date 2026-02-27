@@ -4,7 +4,8 @@ from unittest.mock import Mock
 
 import pytest
 
-from temper_ai.workflow.checkpoint import CheckpointManager
+from temper_ai.workflow.checkpoint_backends import FileCheckpointBackend
+from temper_ai.workflow.checkpoint_manager import CheckpointManager
 from temper_ai.workflow.domain_state import WorkflowDomainState
 
 
@@ -19,7 +20,9 @@ def temp_checkpoint_dir(tmp_path):
 @pytest.fixture
 def checkpoint_manager(temp_checkpoint_dir):
     """Provide configured checkpoint manager."""
-    return CheckpointManager(storage_path=str(temp_checkpoint_dir))
+    return CheckpointManager(
+        backend=FileCheckpointBackend(checkpoint_dir=str(temp_checkpoint_dir))
+    )
 
 
 @pytest.fixture

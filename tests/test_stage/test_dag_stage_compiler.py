@@ -7,10 +7,10 @@ fan-out/fan-in edges when stages declare depends_on.
 from unittest.mock import Mock, patch
 
 from temper_ai.stage.executors.state_keys import StateKeys
-from temper_ai.stage.stage_compiler import StageCompiler
 from temper_ai.tools.registry import ToolRegistry
 from temper_ai.workflow.config_loader import ConfigLoader
 from temper_ai.workflow.node_builder import NodeBuilder
+from temper_ai.workflow.stage_compiler import StageCompiler
 
 
 def _make_compiler():

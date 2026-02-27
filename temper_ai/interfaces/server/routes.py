@@ -120,7 +120,7 @@ async def _handle_list_runs(
     tenant_id: str | None = None,
 ) -> dict[str, Any]:
     """List workflow executions with optional filtering."""
-    from temper_ai.interfaces.dashboard.execution_service import WorkflowExecutionStatus
+    from temper_ai.workflow.execution_service import WorkflowExecutionStatus
 
     status_enum = None
     if status is not None:

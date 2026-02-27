@@ -12,7 +12,7 @@ import pytest
 
 from temper_ai.agent.standard_agent import StandardAgent
 from temper_ai.llm.service import LLMRunResult
-from temper_ai.observability.database import DatabaseManager
+from temper_ai.storage.database.manager import DatabaseManager
 from temper_ai.storage.schemas.agent_config import (
     AgentConfig,
     AgentConfigInner,
@@ -20,7 +20,7 @@ from temper_ai.storage.schemas.agent_config import (
     InferenceConfig,
     PromptConfig,
 )
-from temper_ai.workflow.langgraph_engine import LangGraphExecutionEngine
+from temper_ai.workflow.engines.langgraph_engine import LangGraphExecutionEngine
 
 # ============================================================================
 # Fixtures
@@ -184,7 +184,7 @@ async def test_async_llm_streaming(mock_tool_registry, minimal_agent_config):
     """
     # Setup
     mock_tool_registry.return_value.list_tools.return_value = []
-    agent = StandardAgent(minimal_agent_config)
+    StandardAgent(minimal_agent_config)
 
     # Mock streaming LLM response
     async def mock_stream():
@@ -539,7 +539,7 @@ async def test_cancellation_handling():
     async def long_running_task():
         """Task that can be cancelled."""
         try:
-            for i in range(100):
+            for _i in range(100):
                 await asyncio.sleep(0.01)
         except asyncio.CancelledError:
             cancelled["flag"] = True
@@ -624,8 +624,8 @@ async def test_async_workflow_timeout():
     # Execute with 0.5 second timeout
     try:
         async with asyncio.timeout(0.5):
-            result = await slow_workflow()
-            assert False, "Should have timed out"
+            await slow_workflow()
+            raise AssertionError("Should have timed out")
     except TimeoutError:
         pass  # Expected
 

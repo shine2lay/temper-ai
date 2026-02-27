@@ -87,7 +87,7 @@ class TestLatencyBenchmarks:
             key = f"key_{i % 10000}"
 
             start = time.perf_counter()
-            value = data.get(key)
+            data.get(key)
             end = time.perf_counter()
 
             latencies.append((end - start) * 1000000)  # Convert to microseconds
@@ -151,11 +151,10 @@ class TestConcurrencyCharacteristics:
         start_time = time.perf_counter()
 
         total_processed = 0
-        for worker_id in range(worker_count):
+        for _worker_id in range(worker_count):
             # Simulate worker processing tasks
-            for task_id in range(tasks_per_worker):
+            for _task_id in range(tasks_per_worker):
                 # Minimal processing
-                result = {"worker": worker_id, "task": task_id}
                 total_processed += 1
 
         end_time = time.perf_counter()
@@ -183,7 +182,7 @@ class TestConcurrencyCharacteristics:
 
         processed_batches = 0
         for batch_start in range(0, total_items, batch_size):
-            batch = list(range(batch_start, min(batch_start + batch_size, total_items)))
+            list(range(batch_start, min(batch_start + batch_size, total_items)))
             # Process batch
             processed_batches += 1
 
@@ -231,7 +230,7 @@ class TestMemoryEfficiency:
         generator_result = list(generator_approach(item_count))
 
         assert len(list_result) == len(generator_result)
-        assert all(a == b for a, b in zip(list_result, generator_result))
+        assert all(a == b for a, b in zip(list_result, generator_result, strict=False))
 
     def test_iterator_efficiency(self):
         """Iterators should process data efficiently."""
@@ -264,7 +263,7 @@ class TestDatabasePerformanceSimple:
         connection_count = 10
         latencies = []
 
-        for i in range(connection_count):
+        for _i in range(connection_count):
             start = time.perf_counter()
             init_database("sqlite:///:memory:")
             end = time.perf_counter()
@@ -290,8 +289,8 @@ class TestDatabasePerformanceSimple:
         iteration_count = 100
         start_time = time.perf_counter()
 
-        for i in range(iteration_count):
-            with get_session() as session:
+        for _i in range(iteration_count):
+            with get_session():
                 # Minimal operation
                 pass
 

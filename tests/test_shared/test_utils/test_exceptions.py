@@ -26,7 +26,6 @@ from temper_ai.shared.utils.exceptions import (
     ToolExecutionError,
     ToolNotFoundError,
     ToolRegistryError,
-    ValidationError,
     WorkflowError,
     get_error_info,
     sanitize_error_message,
@@ -318,12 +317,6 @@ class TestFrameworkValidationError:
         """Test with field name."""
         error = FrameworkValidationError("Invalid", field_name="timeout")
         assert error.extra_data["field_name"] == "timeout"
-
-    def test_deprecated_validation_error(self):
-        """Test deprecated ValidationError alias."""
-        with pytest.warns(DeprecationWarning, match="ValidationError is deprecated"):
-            error = ValidationError("test")
-            assert isinstance(error, FrameworkValidationError)
 
 
 class TestUtilityFunctions:

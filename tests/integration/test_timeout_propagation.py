@@ -14,8 +14,8 @@ import time
 
 import pytest
 
-from temper_ai.observability.database import get_database, init_database
 from temper_ai.observability.tracker import ExecutionTracker
+from temper_ai.storage.database.manager import get_database, init_database
 
 # ============================================================================
 # Fixtures
@@ -266,7 +266,7 @@ class TestTimeoutCleanup:
                 # Release resource
                 resource_tracker["files_closed"] += 1
 
-        start_time = time.time()
+        time.time()
 
         # Execute with timeout
         with pytest.raises((asyncio.TimeoutError, TimeoutError)):

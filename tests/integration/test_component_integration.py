@@ -24,7 +24,7 @@ from temper_ai.tools.base import ToolResult
 from temper_ai.tools.calculator import Calculator
 from temper_ai.tools.registry import ToolRegistry
 from temper_ai.workflow.config_loader import ConfigLoader
-from temper_ai.workflow.langgraph_engine import LangGraphExecutionEngine
+from temper_ai.workflow.engines.langgraph_engine import LangGraphExecutionEngine
 
 # ============================================================================
 # Fixtures
@@ -34,7 +34,7 @@ from temper_ai.workflow.langgraph_engine import LangGraphExecutionEngine
 @pytest.fixture
 def db_fixture():
     """Create in-memory test database."""
-    from temper_ai.observability.database import init_database
+    from temper_ai.storage.database.manager import init_database
 
     try:
         from temper_ai.storage.database.manager import get_database
@@ -153,19 +153,19 @@ def test_multi_agent_workflow(
     # Execute workflow: Agent 1 -> Agent 2 -> Agent 3
     with execution_tracker.track_workflow("multi_agent_workflow", {}) as workflow_id:
         # Stage 1: Research
-        with execution_tracker.track_stage("research", {}, workflow_id) as stage_id:
+        with execution_tracker.track_stage("research", {}, workflow_id):
             result1 = agent1.execute({"input": "Research AI trends"})
 
         # Stage 2: Synthesis (uses output from stage 1)
         with execution_tracker.track_stage(
             "synthesis", {"previous": result1.output}, workflow_id
-        ) as stage_id:
+        ):
             result2 = agent2.execute({"input": f"Synthesize: {result1.output}"})
 
         # Stage 3: Writing (uses output from stage 2)
         with execution_tracker.track_stage(
             "writing", {"previous": result2.output}, workflow_id
-        ) as stage_id:
+        ):
             result3 = agent3.execute({"input": f"Write report: {result2.output}"})
 
     # Verify multi-agent collaboration
@@ -252,7 +252,7 @@ def test_tool_chaining_workflow(
 
     # Execute workflow
     with execution_tracker.track_workflow("tool_chaining", {}) as workflow_id:
-        with execution_tracker.track_stage("calculation", {}, workflow_id) as stage_id:
+        with execution_tracker.track_stage("calculation", {}, workflow_id):
             result = agent.execute(
                 {"input": "Calculate (2+3)*4", "tool_executor": mock_executor}
             )
@@ -314,11 +314,11 @@ def test_error_propagation_across_stages(
     # Execute workflow with error handling
     with execution_tracker.track_workflow("error_handling_workflow", {}) as workflow_id:
         # Stage 1: Success
-        with execution_tracker.track_stage("stage1", {}, workflow_id) as stage_id:
+        with execution_tracker.track_stage("stage1", {}, workflow_id):
             result1 = agent1.execute({"input": "Process data"})
 
         # Stage 2: Error
-        with execution_tracker.track_stage("stage2", {}, workflow_id) as stage_id:
+        with execution_tracker.track_stage("stage2", {}, workflow_id):
             result2 = agent2.execute({"input": "Process with error"})
 
         # Extract error message from response
@@ -327,7 +327,7 @@ def test_error_propagation_across_stages(
         # Stage 3: Error recovery
         with execution_tracker.track_stage(
             "stage3", {"error_from_stage2": error_message}, workflow_id
-        ) as stage_id:
+        ):
             result3 = agent3.execute({"input": f"Recover from: {error_message}"})
 
     # Verify error propagation
@@ -433,15 +433,13 @@ def test_database_integration_full_workflow(
     with tracker.track_workflow(
         "database_test_workflow", workflow_config
     ) as workflow_id:
-        with tracker.track_stage(
-            "test_stage", {"input": "test"}, workflow_id
-        ) as stage_id:
-            result = agent.execute({"input": "Process data"})
+        with tracker.track_stage("test_stage", {"input": "test"}, workflow_id):
+            agent.execute({"input": "Process data"})
 
     # Verify database persistence
     from sqlalchemy import text
 
-    from temper_ai.observability.database import get_session
+    from temper_ai.storage.database.manager import get_session
 
     with get_session() as session:
         # Check workflow record
@@ -564,7 +562,7 @@ def test_llm_provider_switching(minimal_agent_config):
         # Test provider switching logic
         result = None
         last_error = None
-        for provider_name, provider in providers:
+        for _provider_name, provider in providers:
             agent.llm_service.llm = provider
             result = agent.execute({"input": "Test provider switching"})
 

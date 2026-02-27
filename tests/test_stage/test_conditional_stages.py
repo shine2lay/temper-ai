@@ -5,10 +5,10 @@ from unittest.mock import Mock, patch
 import pytest
 
 from temper_ai.stage.executors.state_keys import StateKeys
-from temper_ai.stage.stage_compiler import StageCompiler
 from temper_ai.workflow._schemas import WorkflowStageReference
 from temper_ai.workflow.condition_evaluator import ConditionEvaluator
 from temper_ai.workflow.node_builder import NodeBuilder
+from temper_ai.workflow.stage_compiler import StageCompiler
 
 
 class TestConditionalStageSkip:
@@ -160,7 +160,7 @@ class TestSkipIfStage:
             graph = compiler.compile_stages(
                 ["setup", "optional", "final"], workflow_config
             )
-            result = graph.invoke(
+            graph.invoke(
                 {
                     "workflow_id": "wf-skip-if",
                     "current_stage": "",
@@ -227,7 +227,7 @@ class TestLoopExecution:
 
         with patch.object(node_builder, "create_stage_node", side_effect=make_node):
             graph = compiler.compile_stages(["test", "fix"], workflow_config)
-            result = graph.invoke(
+            graph.invoke(
                 {
                     "workflow_id": "wf-loop",
                     "current_stage": "",
@@ -283,7 +283,7 @@ class TestLoopExecution:
 
         with patch.object(node_builder, "create_stage_node", side_effect=make_node):
             graph = compiler.compile_stages(["test", "fix"], workflow_config)
-            result = graph.invoke(
+            graph.invoke(
                 {
                     "workflow_id": "wf-max-loop",
                     "current_stage": "",

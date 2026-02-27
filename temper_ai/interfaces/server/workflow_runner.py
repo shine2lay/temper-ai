@@ -188,7 +188,7 @@ class WorkflowRunner:
 
     def _sanitize_result(self, result: dict[str, Any]) -> dict[str, Any] | None:
         """Strip non-serializable keys from result."""
-        from temper_ai.interfaces.dashboard.execution_service import (
+        from temper_ai.workflow.execution_service import (
             _sanitize_workflow_result,
         )
 

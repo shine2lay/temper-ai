@@ -12,7 +12,7 @@ from temper_ai.observability.console import (
     WorkflowVisualizer,
     print_workflow_tree,
 )
-from temper_ai.observability.models import (
+from temper_ai.storage.database.models import (
     AgentExecution,
     CollaborationEvent,
     LLMCall,

@@ -1,5 +1,5 @@
 """
-End-to-end integration test for Milestone 2.
+End-to-end integration tests for Milestone 2.
 
 Tests complete workflow execution with:
 - Real Ollama LLM
@@ -7,19 +7,9 @@ Tests complete workflow execution with:
 - Database tracking
 - Console visualization
 
-CURRENT STATUS (M2 Progress):
-- ✅ m2-01: LLM providers (Ollama, OpenAI, Anthropic)
-- ✅ m2-02: Tool registry
-- ✅ m2-03: Prompt engine
-- ✅ m2-04: StandardAgent implementation
-- ✅ m2-04b: AgentFactory
-- ⏳ m2-05: LangGraph compiler (IN PROGRESS)
-- ⏳ m2-06: Observability hooks integration (IN PROGRESS)
-- ✅ m2-07: Console streaming
-
-This file contains tests at multiple levels:
-1. Component-level tests (work now with completed components)
-2. Full workflow tests (require m2-05 + m2-06, marked as pending)
+Tests at multiple levels:
+1. Component-level tests (config loading, tool registry, agent factory, agent execution)
+2. Full workflow tests (require LangGraph compiler + observability hooks)
 """
 
 from importlib.util import find_spec
@@ -42,8 +32,8 @@ TRACKER_READY = find_spec("temper_ai.observability.tracker") is not None
 FULL_WORKFLOW_READY = ENGINE_REGISTRY_READY and TRACKER_READY
 
 from temper_ai.observability.console import StreamingVisualizer, WorkflowVisualizer
-from temper_ai.observability.database import get_session, init_database
-from temper_ai.observability.models import (
+from temper_ai.storage.database.manager import get_session, init_database
+from temper_ai.storage.database.models import (
     AgentExecution,
     StageExecution,
     WorkflowExecution,

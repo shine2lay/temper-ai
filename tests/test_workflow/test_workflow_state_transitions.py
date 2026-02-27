@@ -22,8 +22,8 @@ from temper_ai.workflow.domain_state import (
     WorkflowDomainState,
     create_initial_domain_state,
 )
+from temper_ai.workflow.engines.langgraph_engine import LangGraphCompiledWorkflow
 from temper_ai.workflow.execution_engine import WorkflowCancelledError
-from temper_ai.workflow.langgraph_engine import LangGraphCompiledWorkflow
 
 
 class TestWorkflowStateInitialization:

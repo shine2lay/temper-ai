@@ -10,17 +10,17 @@ from datetime import UTC
 import pytest
 from sqlmodel import select
 
-from temper_ai.observability.database import get_session, init_database
 from temper_ai.observability.decision_tracker import DecisionTracker
-from temper_ai.observability.models import AgentMeritScore, DecisionOutcome
+from temper_ai.storage.database.manager import get_session, init_database
+from temper_ai.storage.database.models import AgentMeritScore, DecisionOutcome
 
 
 @pytest.fixture
 def db():
     """Initialize in-memory database for testing."""
     # Reset global database before each test
-    import temper_ai.observability.database as db_module
-    from temper_ai.observability.database import _db_lock
+    import temper_ai.storage.database.manager as db_module
+    from temper_ai.storage.database.manager import _db_lock
 
     with _db_lock:
         db_module._db_manager = None
@@ -323,7 +323,7 @@ class TestMeritScoreIntegration:
     def test_track_updates_merit_score(self, db, tracker):
         """Test tracking decision updates agent merit score."""
         with get_session() as session:
-            decision_id = tracker.track(
+            tracker.track(
                 session=session,
                 decision_type="analysis",
                 decision_data={"agent_name": "researcher", "analysis": "completed"},
@@ -346,7 +346,7 @@ class TestMeritScoreIntegration:
     def test_track_with_confidence_in_impact_metrics(self, db, tracker):
         """Test merit score uses confidence from impact_metrics."""
         with get_session() as session:
-            decision_id = tracker.track(
+            tracker.track(
                 session=session,
                 decision_type="prediction",
                 decision_data={"agent_name": "predictor"},
@@ -365,7 +365,7 @@ class TestMeritScoreIntegration:
     def test_track_without_agent_name_no_merit_update(self, db, tracker):
         """Test tracking without agent_name in decision_data skips merit update."""
         with get_session() as session:
-            decision_id = tracker.track(
+            tracker.track(
                 session=session,
                 decision_type="system_decision",
                 decision_data={"system": "auto"},
@@ -381,7 +381,7 @@ class TestMeritScoreIntegration:
     def test_track_uses_first_tag_as_domain(self, db, tracker):
         """Test merit score uses first tag as domain."""
         with get_session() as session:
-            decision_id = tracker.track(
+            tracker.track(
                 session=session,
                 decision_type="analysis",
                 decision_data={"agent_name": "researcher"},
@@ -400,7 +400,7 @@ class TestMeritScoreIntegration:
     def test_track_without_tags_uses_decision_type_as_domain(self, db, tracker):
         """Test merit score uses decision_type as domain when no tags."""
         with get_session() as session:
-            decision_id = tracker.track(
+            tracker.track(
                 session=session,
                 decision_type="optimization",
                 decision_data={"agent_name": "optimizer"},
@@ -482,8 +482,8 @@ class TestErrorHandling:
     def test_track_failure_returns_empty_string(self, db, tracker):
         """Test track returns empty string on database error."""
         # Close the database to force error
-        import temper_ai.observability.database as db_module
-        from temper_ai.observability.database import _db_lock
+        import temper_ai.storage.database.manager as db_module
+        from temper_ai.storage.database.manager import _db_lock
 
         with _db_lock:
             db_module._db_manager = None

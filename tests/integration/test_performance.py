@@ -48,7 +48,7 @@ class TestThroughputBenchmarks:
         for i in range(event_count):
             event_start = time.perf_counter()
 
-            with execution_tracker.track_workflow(f"throughput_{i}") as wf_id:
+            with execution_tracker.track_workflow(f"throughput_{i}"):
                 pass  # Minimal workflow open/close as event proxy
 
             event_end = time.perf_counter()
@@ -87,7 +87,7 @@ class TestThroughputBenchmarks:
                 ) as stage_id:
                     with execution_tracker.track_agent(
                         "test_agent", {"version": "1.0"}, stage_id
-                    ) as agent_id:
+                    ):
                         pass  # Minimal agent execution
 
         end_time = time.perf_counter()
@@ -165,7 +165,7 @@ class TestLatencyBenchmarks:
         for i in range(sample_count):
             start = time.perf_counter()
 
-            with execution_tracker.track_workflow(f"latency_{i}") as wf_id:
+            with execution_tracker.track_workflow(f"latency_{i}"):
                 pass  # Minimal workflow as event proxy
 
             end = time.perf_counter()
@@ -198,7 +198,7 @@ class TestLatencyBenchmarks:
         for i in range(sample_count):
             start = time.perf_counter()
 
-            with execution_tracker.track_workflow(f"context_latency_{i}") as wf_id:
+            with execution_tracker.track_workflow(f"context_latency_{i}"):
                 pass  # Minimal workflow
 
             end = time.perf_counter()
@@ -244,7 +244,7 @@ class TestLatencyBenchmarks:
             start = time.perf_counter()
 
             # Perform query
-            results = (
+            (
                 db_session.query(WorkflowExecution)
                 .filter(WorkflowExecution.workflow_name == f"query_test_{i % 10}")
                 .limit(10)
@@ -339,9 +339,7 @@ class TestConcurrencyStress:
         def worker_task(worker_id):
             count = 0
             for i in range(events_per_worker):
-                with execution_tracker.track_workflow(
-                    f"worker_{worker_id}_event_{i}"
-                ) as wf_id:
+                with execution_tracker.track_workflow(f"worker_{worker_id}_event_{i}"):
                     pass  # Minimal workflow open/close as event proxy
                 count += 1
             return count
@@ -457,7 +455,7 @@ class TestMemoryLeaks:
                 ) as stage_id:
                     with execution_tracker.track_agent(
                         "test_agent", {"version": "1.0"}, stage_id
-                    ) as agent_id:
+                    ):
                         pass  # Minimal agent execution
 
         gc.collect()
@@ -488,7 +486,7 @@ class TestMemoryLeaks:
 
         # Warm up
         for i in range(100):
-            with execution_tracker.track_workflow(f"warmup_{i}") as wf_id:
+            with execution_tracker.track_workflow(f"warmup_{i}"):
                 pass
 
         gc.collect()
@@ -497,7 +495,7 @@ class TestMemoryLeaks:
         # Track many workflows
         event_count = 1000
         for i in range(event_count):
-            with execution_tracker.track_workflow(f"memory_growth_{i}") as wf_id:
+            with execution_tracker.track_workflow(f"memory_growth_{i}"):
                 pass  # Minimal workflow as event proxy
 
         gc.collect()
@@ -533,7 +531,7 @@ class TestMemoryLeaks:
 
         # Create and close many sessions
         session_count = 50
-        for i in range(session_count):
+        for _i in range(session_count):
             init_database("sqlite:///:memory:")
             with get_session() as session:
                 session.execute(text("SELECT 1"))
@@ -606,11 +604,11 @@ class TestDatabasePerformance:
         query_count = 50
         latencies = []
 
-        for i in range(query_count):
+        for _i in range(query_count):
             start = time.perf_counter()
 
             # Query workflows
-            workflows = (
+            (
                 populated_db.query(WorkflowExecution)
                 .filter(WorkflowExecution.status == "completed")
                 .limit(10)
@@ -642,11 +640,11 @@ class TestDatabasePerformance:
         query_count = 30
         latencies = []
 
-        for i in range(query_count):
+        for _i in range(query_count):
             start = time.perf_counter()
 
             # Aggregate stages by name
-            results = (
+            (
                 populated_db.query(
                     StageExecution.stage_name,
                     func.count(StageExecution.id).label("count"),
@@ -678,11 +676,11 @@ class TestDatabasePerformance:
         query_count = 20
         latencies = []
 
-        for i in range(query_count):
+        for _i in range(query_count):
             start = time.perf_counter()
 
             # Join workflows and stages
-            results = (
+            (
                 populated_db.query(WorkflowExecution, StageExecution)
                 .join(
                     StageExecution,

@@ -12,7 +12,7 @@ import pytest
 from temper_ai.agent.strategies.base import AgentOutput
 from temper_ai.agent.strategies.conflict_resolution import MeritWeightedResolver
 from temper_ai.agent.strategies.consensus import ConsensusStrategy
-from temper_ai.agent.strategies.debate import DebateAndSynthesize
+from temper_ai.agent.strategies.multi_round import MultiRoundStrategy
 from temper_ai.safety.action_policy_engine import ActionPolicyEngine
 from temper_ai.safety.rollback import RollbackManager
 from temper_ai.tools.calculator import Calculator
@@ -78,7 +78,7 @@ def test_strategy_debate(benchmark):
     Target: <200ms
     Measures: Debate coordination overhead
     """
-    strategy = DebateAndSynthesize(rounds=2)
+    strategy = MultiRoundStrategy(mode="debate", rounds=2)
 
     outputs = [
         AgentOutput(
@@ -203,7 +203,7 @@ def test_safety_action_policy_validation(benchmark):
         agent_name="test_agent",
     )
 
-    result = benchmark(policy_engine.validate, context)
+    benchmark(policy_engine.validate, context)
     # Validation returns None on success, raises on failure
     assert True  # Benchmark completed without policy violation
 

@@ -99,7 +99,7 @@ Workflows, stages, and agents are defined in `configs/`. Runtime secrets (LLM AP
 ```
 OPENAI_API_KEY=...
 ANTHROPIC_API_KEY=...
-DATABASE_URL=postgresql://...   # defaults to SQLite for local dev
+TEMPER_DATABASE_URL=postgresql://...   # defaults to SQLite for local dev
 ```
 
 A minimal agent config looks like:

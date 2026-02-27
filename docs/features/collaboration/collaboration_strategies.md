@@ -171,9 +171,9 @@ collaboration:
 ### Python API
 
 ```python
-from temper_ai.strategies.debate import DebateAndSynthesize
+from temper_ai.agent.strategies.multi_round import MultiRoundStrategy
 
-strategy = DebateAndSynthesize()
+strategy = MultiRoundStrategy(mode="debate")
 
 # Initial positions
 outputs_r1 = [

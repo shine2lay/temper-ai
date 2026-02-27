@@ -6,14 +6,14 @@ from importlib.util import find_spec
 import pytest
 from sqlmodel import select
 
-from temper_ai.observability.database import (
+from temper_ai.storage.database.manager import (
     DatabaseManager,
     _mask_database_url,
     get_database,
     get_session,
     init_database,
 )
-from temper_ai.observability.models import WorkflowExecution
+from temper_ai.storage.database.models import WorkflowExecution
 
 # Check if psycopg2 is available
 PSYCOPG2_AVAILABLE = find_spec("psycopg2") is not None
@@ -160,7 +160,7 @@ def test_init_database():
 def test_get_database():
     """Test get_database function."""
     # Reset global state
-    import temper_ai.observability.database as db_module
+    import temper_ai.storage.database.manager as db_module
 
     db_module._db_manager = None
 
@@ -181,7 +181,7 @@ def test_get_database():
 def test_get_session_context():
     """Test get_session convenience function."""
     # Reset and initialize
-    import temper_ai.observability.database as db_module
+    import temper_ai.storage.database.manager as db_module
 
     db_module._db_manager = None
     init_database("sqlite:///:memory:")
@@ -761,7 +761,7 @@ class TestDatabaseFailureRecovery:
 
         # Test with clearly invalid URL (fails during init)
         with pytest.raises(NoSuchModuleError):
-            manager = DatabaseManager("invalid://not-a-database")
+            DatabaseManager("invalid://not-a-database")
 
     def test_readonly_database_handling(self):
         """Test handling of read-only database scenarios.

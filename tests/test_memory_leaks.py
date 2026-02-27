@@ -27,8 +27,8 @@ except ImportError:
 from temper_ai.agent.standard_agent import StandardAgent
 from temper_ai.llm.providers import LLMResponse
 from temper_ai.observability.backends.noop_backend import NoOpBackend
-from temper_ai.observability.database import DatabaseManager
 from temper_ai.observability.tracker import ExecutionTracker
+from temper_ai.storage.database.manager import DatabaseManager
 from temper_ai.storage.schemas.agent_config import (
     AgentConfig,
     AgentConfigInner,
@@ -36,7 +36,7 @@ from temper_ai.storage.schemas.agent_config import (
     InferenceConfig,
     PromptConfig,
 )
-from temper_ai.workflow.langgraph_compiler import LangGraphCompiler
+from temper_ai.workflow.engines.langgraph_compiler import LangGraphCompiler
 
 # ============================================================================
 # Constants
@@ -641,7 +641,7 @@ def test_database_connection_pool_no_memory_leak(leak_db):
     - Memory growth <10MB per 100 connection cycles
     - Connections properly returned to pool
     """
-    from temper_ai.observability.models import WorkflowExecution
+    from temper_ai.storage.database.models import WorkflowExecution
 
     # Define operation
     db_counter = count()

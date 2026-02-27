@@ -8,17 +8,17 @@ import pytest
 
 from temper_ai.observability.backends import SQLObservabilityBackend
 from temper_ai.observability.buffer import ObservabilityBuffer
-from temper_ai.observability.database import get_session, init_database
-from temper_ai.observability.models import AgentExecution, LLMCall, ToolExecution
 from temper_ai.observability.tracker import ExecutionTracker
+from temper_ai.storage.database.manager import get_session, init_database
+from temper_ai.storage.database.models import AgentExecution, LLMCall, ToolExecution
 
 
 @pytest.fixture
 def db():
     """Initialize in-memory database for testing."""
     # Reset global database before each test
-    import temper_ai.observability.database as db_module
-    from temper_ai.observability.database import _db_lock
+    import temper_ai.storage.database.manager as db_module
+    from temper_ai.storage.database.manager import _db_lock
 
     with _db_lock:
         db_module._db_manager = None
@@ -41,7 +41,7 @@ class TestObservabilityBuffer:
         )
         assert buffer.flush_size == 50
         assert buffer.flush_interval == 2.0
-        assert buffer.auto_flush == False
+        assert not buffer.auto_flush
 
     def test_buffer_llm_call(self):
         """Test buffering LLM calls."""
@@ -319,7 +319,7 @@ class TestBufferedSQLBackend:
             with tracker.track_stage("test_stage", config, workflow_id) as stage_id:
                 with tracker.track_agent("test_agent", config, stage_id) as agent_id:
                     # Track 3 LLM calls
-                    for i in range(3):
+                    for _i in range(3):
                         tracker.track_llm_call(
                             agent_id=agent_id,
                             provider="ollama",

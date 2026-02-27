@@ -17,16 +17,16 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from temper_ai.observability.database import DatabaseManager, init_database
 from temper_ai.observability.tracker import ExecutionTracker
+from temper_ai.storage.database.manager import DatabaseManager, init_database
 from temper_ai.tools.calculator import Calculator
 from temper_ai.tools.registry import ToolRegistry
 from temper_ai.workflow.checkpoint_backends import FileCheckpointBackend
 from temper_ai.workflow.checkpoint_manager import CheckpointManager, CheckpointStrategy
 from temper_ai.workflow.config_loader import ConfigLoader
 from temper_ai.workflow.domain_state import InfrastructureContext, WorkflowDomainState
-from temper_ai.workflow.langgraph_compiler import LangGraphCompiler
-from temper_ai.workflow.langgraph_engine import LangGraphExecutionEngine
+from temper_ai.workflow.engines.langgraph_compiler import LangGraphCompiler
+from temper_ai.workflow.engines.langgraph_engine import LangGraphExecutionEngine
 from temper_ai.workflow.state_manager import initialize_state
 
 # ============================================================================
@@ -115,7 +115,6 @@ def test_workflow_compilation_to_execution(
     assert compiled_graph is not None
 
     # Execute workflow (test state initialization)
-    initial_state = {"input": "test input", "workflow_id": "wf-test-001"}
 
     # Verify compilation produces executable graph
     # (Actual execution would require LLM, so we just verify structure)
@@ -276,9 +275,7 @@ def test_execution_context_not_checkpointed(checkpoint_manager):
     """Test that execution context is not included in checkpoints."""
     # Create domain state and context
     domain = WorkflowDomainState(workflow_id="wf-context-test", input="test")
-    context = InfrastructureContext(
-        tracker=Mock(), tool_registry=Mock(), config_loader=Mock()
-    )
+    InfrastructureContext(tracker=Mock(), tool_registry=Mock(), config_loader=Mock())
 
     # Save checkpoint (only domain should be saved)
     checkpoint_id = checkpoint_manager.save_checkpoint(domain)

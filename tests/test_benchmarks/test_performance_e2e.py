@@ -19,7 +19,7 @@ from unittest.mock import Mock, patch
 import psutil
 import pytest
 
-from temper_ai.workflow.langgraph_compiler import LangGraphCompiler
+from temper_ai.workflow.engines.langgraph_compiler import LangGraphCompiler
 from tests.fixtures.realistic_data import REALISTIC_RESEARCH_WORKFLOW_AGENTS
 from tests.test_benchmarks.conftest import PERFORMANCE_BUDGETS
 
@@ -107,7 +107,7 @@ def test_e2e_workflow_with_checkpointing(simple_workflow_config, benchmark):
         compiler.config_loader = mock_loader
 
         # Compile with checkpointing
-        from temper_ai.workflow.checkpoint import CheckpointManager
+        from temper_ai.workflow.checkpoint_manager import CheckpointManager
 
         checkpoint_manager = CheckpointManager()
 
@@ -175,7 +175,7 @@ def test_e2e_workflow_memory_baseline(simple_workflow_config):
         process = psutil.Process(os.getpid())
         mem_before = process.memory_info().rss / 1024 / 1024  # MB
 
-        graph = compiler.compile(simple_workflow_config)
+        compiler.compile(simple_workflow_config)
 
         mem_after = process.memory_info().rss / 1024 / 1024  # MB
         growth_mb = mem_after - mem_before

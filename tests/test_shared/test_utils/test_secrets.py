@@ -11,7 +11,6 @@ import pytest
 from temper_ai.shared.utils.secrets import (
     ObfuscatedCredential,
     SecretReference,
-    SecureCredential,
     detect_secret_patterns,
     mask_url_password,
     resolve_secret,
@@ -200,33 +199,6 @@ class TestObfuscatedCredential:
         assert cred1.get() == "secret1"
         assert cred2.get() == "secret2"
         assert cred1._key != cred2._key
-
-
-class TestSecureCredential:
-    """Test deprecated SecureCredential alias."""
-
-    def test_secure_credential_works(self):
-        """Test that SecureCredential still works (with warning)."""
-        import warnings
-
-        # Reset the once-per-process warning flag so it fires in this test
-        SecureCredential._warning_shown = False
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            cred = SecureCredential("secret-value")
-            assert cred.get() == "secret-value"
-            # Warning should have been emitted
-            assert len(w) >= 1
-            assert issubclass(w[0].category, DeprecationWarning)
-
-    def test_secure_credential_is_obfuscated_credential(self):
-        """Test that SecureCredential is a subclass of ObfuscatedCredential."""
-        import warnings
-
-        with warnings.catch_warnings(record=True):
-            warnings.simplefilter("always")
-            cred = SecureCredential("secret")
-            assert isinstance(cred, ObfuscatedCredential)
 
 
 class TestResolveSecret:

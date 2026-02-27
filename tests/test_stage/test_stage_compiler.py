@@ -8,8 +8,8 @@ from unittest.mock import Mock, patch
 import pytest
 
 from temper_ai.stage.executors.state_keys import StateKeys
-from temper_ai.stage.stage_compiler import StageCompiler
 from temper_ai.workflow.node_builder import NodeBuilder
+from temper_ai.workflow.stage_compiler import StageCompiler
 from tests.fixtures.realistic_data import (
     create_realistic_workflow_config,
 )

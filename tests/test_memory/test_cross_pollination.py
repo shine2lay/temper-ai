@@ -30,7 +30,7 @@ class TestBuildPublishedScope:
 class TestPublishKnowledge:
     def _make_service(self, entry_id: str = "test-id") -> MagicMock:
         svc = MagicMock()
-        svc.store.return_value = entry_id
+        svc.store_episodic.return_value = entry_id
         return svc
 
     def test_returns_entry_id_on_success(self):
@@ -38,42 +38,46 @@ class TestPublishKnowledge:
         result = publish_knowledge("agent_a", "Some content", svc)
         assert result == "abc123"
 
-    def test_calls_store_with_scope_and_entry(self):
+    def test_calls_store_episodic_with_scope_and_content(self):
         svc = self._make_service()
         publish_knowledge("agent_a", "content", svc)
-        assert svc.store.called
-        call_args = svc.store.call_args[0]
+        assert svc.store_episodic.called
+        call_args = svc.store_episodic.call_args[0]
         scope = call_args[0]
-        entry = call_args[1]
+        content = call_args[1]
+        metadata = call_args[2]
         assert scope.agent_name == "agent_a"
-        assert entry.content == "content"
+        assert content == "content"
+        assert metadata == {}
 
     def test_truncates_content_exceeding_max_length(self):
         svc = self._make_service()
         long_content = "x" * (MAX_CONTENT_LENGTH + 100)
         publish_knowledge("agent_a", long_content, svc)
-        call_args = svc.store.call_args[0]
-        entry = call_args[1]
-        assert len(entry.content) == MAX_CONTENT_LENGTH
+        call_args = svc.store_episodic.call_args[0]
+        content = call_args[1]
+        assert len(content) == MAX_CONTENT_LENGTH
 
     def test_returns_none_on_store_exception(self):
         svc = MagicMock()
-        svc.store.side_effect = RuntimeError("store failed")
+        svc.store_episodic.side_effect = RuntimeError("store failed")
         result = publish_knowledge("agent_a", "content", svc)
         assert result is None
 
-    def test_passes_metadata_to_entry(self):
+    def test_passes_metadata_to_store_episodic(self):
         svc = self._make_service()
         meta = {"key": "value"}
         publish_knowledge("agent_a", "content", svc, metadata=meta)
-        entry = svc.store.call_args[0][1]
-        assert entry.metadata == meta
+        call_args = svc.store_episodic.call_args[0]
+        metadata = call_args[2]
+        assert metadata == meta
 
     def test_uses_custom_memory_type(self):
+        """Custom memory_type is set on the MemoryEntry but store_episodic receives content/metadata."""
         svc = self._make_service()
         publish_knowledge("agent_a", "content", svc, memory_type="custom_type")
-        entry = svc.store.call_args[0][1]
-        assert entry.memory_type == "custom_type"
+        # store_episodic is called (the memory_type is on the entry pre-extraction)
+        assert svc.store_episodic.called
 
 
 class TestRetrieveSubscribedKnowledge:

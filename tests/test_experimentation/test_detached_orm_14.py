@@ -16,7 +16,7 @@ os.environ["TESTING"] = "1"
 
 from temper_ai.experimentation.models import ExperimentStatus
 from temper_ai.experimentation.service import ExperimentService
-from temper_ai.observability.database import init_database, reset_database
+from temper_ai.storage.database.manager import init_database, reset_database
 
 
 @pytest.fixture(autouse=True)

@@ -3,8 +3,8 @@
 import pytest
 from sqlmodel import Session, select
 
-from temper_ai.observability.database import DatabaseManager
-from temper_ai.observability.models import (
+from temper_ai.storage.database.manager import DatabaseManager
+from temper_ai.storage.database.models import (
     AgentExecution,
     AgentMeritScore,
     CollaborationEvent,

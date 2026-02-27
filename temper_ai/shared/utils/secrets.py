@@ -15,7 +15,6 @@ Supports:
 
 import os
 import re
-import warnings
 from typing import Any
 
 from cryptography.fernet import Fernet
@@ -32,7 +31,6 @@ __all__ = [
     "mask_url_password",
     # Credential obfuscation
     "ObfuscatedCredential",
-    "SecureCredential",  # Deprecated alias for ObfuscatedCredential
 ]
 
 
@@ -312,60 +310,6 @@ class ObfuscatedCredential:
     def __bool__(self) -> bool:
         """Credential is truthy if it exists."""
         return True
-
-
-class SecureCredential(ObfuscatedCredential):
-    """
-    DEPRECATED: Use ObfuscatedCredential instead.
-
-    This class name is misleading because it implies cryptographic security,
-    but it only provides obfuscation (prevents accidental logging).
-
-    **Migration:**
-    Replace all usage of SecureCredential with ObfuscatedCredential:
-        # Old (deprecated):
-        cred = SecureCredential("secret")
-
-        # New (recommended):
-        cred = ObfuscatedCredential("secret")
-
-    **Why Deprecated:**
-    The name "SecureCredential" creates a false sense of security. While the
-    implementation has extensive documentation explaining it's only obfuscation,
-    the name itself is misleading. "ObfuscatedCredential" accurately describes
-    what this class does.
-
-    **Deprecation Timeline:**
-    - 2026-01-31: Deprecated (warnings added)
-    - Future: Will be removed in a future version
-
-    For backward compatibility, this alias will continue to work but emits
-    a DeprecationWarning on first use.
-    """
-
-    # Class-level flag to emit warning only once per process
-    _warning_shown = False
-
-    def __init__(self, value: str):
-        """
-        Initialize with plaintext value (emits deprecation warning).
-
-        Args:
-            value: Plaintext credential value
-        """
-        # Emit deprecation warning (once per process)
-        if not SecureCredential._warning_shown:
-            warnings.warn(
-                "SecureCredential is deprecated. Use ObfuscatedCredential instead. "
-                "The name 'SecureCredential' is misleading because it provides "
-                "OBFUSCATION (prevents accidental logging), not cryptographic security. "
-                "It does NOT protect against memory attacks or malicious code.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-            SecureCredential._warning_shown = True
-
-        super().__init__(value)
 
 
 def resolve_secret(value: Any) -> Any:

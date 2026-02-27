@@ -11,13 +11,13 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from temper_ai.observability.database import get_session, init_database
-from temper_ai.observability.models import (
+from temper_ai.observability.tracker import ExecutionTracker
+from temper_ai.storage.database.manager import get_session, init_database
+from temper_ai.storage.database.models import (
     AgentExecution,
     StageExecution,
     WorkflowExecution,
 )
-from temper_ai.observability.tracker import ExecutionTracker
 
 pytestmark = [pytest.mark.integration]
 
@@ -29,7 +29,7 @@ class TestWorkflowRecovery:
     def sample_database(self):
         """Initialize in-memory database for testing."""
         try:
-            from temper_ai.observability.database import get_database
+            from temper_ai.storage.database.manager import get_database
 
             get_database()
         except RuntimeError:
@@ -397,7 +397,7 @@ class TestCheckpointResume:
     def sample_database(self):
         """Initialize in-memory database for testing."""
         try:
-            from temper_ai.observability.database import get_database
+            from temper_ai.storage.database.manager import get_database
 
             get_database()
         except RuntimeError:

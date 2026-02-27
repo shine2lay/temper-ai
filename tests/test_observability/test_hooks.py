@@ -4,7 +4,6 @@ Tests for observability hooks.
 
 import pytest
 
-from temper_ai.observability.database import get_session, init_database
 from temper_ai.observability.hooks import (
     ExecutionHook,
     get_tracker,
@@ -14,12 +13,13 @@ from temper_ai.observability.hooks import (
     track_stage,
     track_workflow,
 )
-from temper_ai.observability.models import (
+from temper_ai.observability.tracker import ExecutionTracker, WorkflowTrackingParams
+from temper_ai.storage.database.manager import get_session, init_database
+from temper_ai.storage.database.models import (
     AgentExecution,
     StageExecution,
     WorkflowExecution,
 )
-from temper_ai.observability.tracker import ExecutionTracker, WorkflowTrackingParams
 
 
 @pytest.fixture(autouse=True)
@@ -34,8 +34,8 @@ def reset_global_tracker():
 def db():
     """Initialize in-memory database for testing."""
     # Reset global database before each test
-    import temper_ai.observability.database as db_module
-    from temper_ai.observability.database import _db_lock
+    import temper_ai.storage.database.manager as db_module
+    from temper_ai.storage.database.manager import _db_lock
 
     with _db_lock:
         db_module._db_manager = None
@@ -111,7 +111,7 @@ class TestWorkflowDecorator:
         def my_custom_workflow(config):
             return "success"
 
-        result = my_custom_workflow({})
+        my_custom_workflow({})
 
         # Should use function name "my_custom_workflow"
         with get_session() as session:
@@ -382,7 +382,7 @@ class TestExecutionHook:
 
         # Verify LLM call recorded
         with get_session() as session:
-            from temper_ai.observability.models import LLMCall
+            from temper_ai.storage.database.models import LLMCall
 
             llm_call = session.query(LLMCall).filter_by(id=llm_call_id).first()
             assert llm_call is not None
@@ -409,7 +409,7 @@ class TestExecutionHook:
 
         # Verify tool call recorded
         with get_session() as session:
-            from temper_ai.observability.models import ToolExecution
+            from temper_ai.storage.database.models import ToolExecution
 
             tool_exec = session.query(ToolExecution).filter_by(id=tool_id).first()
             assert tool_exec is not None

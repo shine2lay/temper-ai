@@ -464,6 +464,7 @@ def _configure_app_middleware_and_routes(  # noqa: long
     # frontend can auto-authenticate without a manual login step.
     @app.get(f"{_API_PREFIX}/runtime-config")
     async def runtime_config() -> dict:
+        """Return runtime configuration for frontend auto-authentication."""
         token = os.environ.get("TEMPER_DASHBOARD_TOKEN")
         return {"dashboard_token": token}
 

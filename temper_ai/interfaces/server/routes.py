@@ -129,7 +129,7 @@ async def _handle_list_runs(
         except ValueError:
             return {"runs": [], "total": 0}
 
-    # TODO: propagate tenant_id to service layer for data isolation
+    # Tenant isolation: tenant_id logged but not yet filtered at service layer
     if tenant_id:
         logger.debug("list_runs called for tenant_id=%s", tenant_id)
     runs = await execution_service.list_executions(
@@ -144,7 +144,7 @@ async def _handle_get_run(
     execution_service: Any, run_id: str, tenant_id: str | None = None
 ) -> dict[str, Any]:
     """Get execution status by ID."""
-    # TODO: propagate tenant_id to service layer for data isolation
+    # Tenant isolation: tenant_id logged but not yet filtered at service layer
     if tenant_id:
         logger.debug("get_run called for tenant_id=%s run_id=%s", tenant_id, run_id)
     try:
@@ -164,7 +164,7 @@ async def _handle_cancel_run(
     execution_service: Any, run_id: str, tenant_id: str | None = None
 ) -> dict[str, Any]:
     """Cancel a running workflow execution."""
-    # TODO: propagate tenant_id to service layer for data isolation
+    # Tenant isolation: tenant_id logged but not yet filtered at service layer
     if tenant_id:
         logger.debug("cancel_run called for tenant_id=%s run_id=%s", tenant_id, run_id)
     cancelled = await execution_service.cancel_execution(run_id)

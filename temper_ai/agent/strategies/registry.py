@@ -181,6 +181,9 @@ class StrategyRegistry:  # noqa: god
         self._default_strategies.clear()
         self._default_resolvers.clear()
 
+        _multi_round_module = "temper_ai.agent.strategies.multi_round"
+        _multi_round_class = "MultiRoundStrategy"
+
         strategies = [
             (
                 [STRATEGY_NAME_CONSENSUS],
@@ -194,18 +197,18 @@ class StrategyRegistry:  # noqa: god
             ),
             (
                 ["debate", "debate_and_synthesize", "llm_debate_and_synthesize"],
-                "temper_ai.agent.strategies.multi_round",
-                "MultiRoundStrategy",
+                _multi_round_module,
+                _multi_round_class,
             ),
             (
                 ["dialogue"],
-                "temper_ai.agent.strategies.multi_round",
-                "MultiRoundStrategy",
+                _multi_round_module,
+                _multi_round_class,
             ),
             (
                 ["multi_round"],
-                "temper_ai.agent.strategies.multi_round",
-                "MultiRoundStrategy",
+                _multi_round_module,
+                _multi_round_class,
             ),
             (
                 ["leader"],

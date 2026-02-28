@@ -863,7 +863,7 @@ class TestFileCache:
         )
         cache = scanner._build_file_cache([fi1, fi2])
         assert len(cache) == 2
-        for abs_path, (source, tree) in cache.items():
+        for _abs_path, (source, tree) in cache.items():
             assert isinstance(source, str)
             assert tree is not None
 
@@ -1373,7 +1373,7 @@ class TestMagicValues:
         )
         result = scanner.scan_magic_values(tmp_path / "src", [fi])
         magic_nums = result["magic_numbers"]
-        values = [m["value"] for m in magic_nums]
+        [m["value"] for m in magic_nums]
 
         # Values in UPPERCASE assignments should NOT be flagged
         # Lines 2-3 are DEFAULT_THRESHOLDS dict

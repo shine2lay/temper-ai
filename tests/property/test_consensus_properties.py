@@ -168,7 +168,7 @@ class TestConsensusProperties:
 
         # Should accept valid min_consensus values
         try:
-            result = strategy.synthesize(outputs_data, config)
+            strategy.synthesize(outputs_data, config)
             assert 0.0 <= min_consensus <= 1.0
         except ValueError as e:
             # Only acceptable if min_consensus is invalid

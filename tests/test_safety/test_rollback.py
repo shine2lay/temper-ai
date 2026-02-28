@@ -913,7 +913,7 @@ class TestPathTraversalSecurity:
 
     def test_rollback_execution_rejects_path_traversal_in_restore(self):
         """Test that rollback execution rejects path traversal during file restore."""
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with tempfile.TemporaryDirectory():
             # Create a snapshot with a malicious path
             snapshot = RollbackSnapshot(
                 action={},
@@ -954,7 +954,7 @@ class TestPathTraversalSecurity:
 
     def test_validate_rollback_path_uses_safe_defaults(self):
         """Test that default allowed directories are safe."""
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with tempfile.TemporaryDirectory():
             # Path in temp directory should be allowed by default
             test_file = os.path.join(tempfile.gettempdir(), "test.txt")
 

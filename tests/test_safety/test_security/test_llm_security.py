@@ -201,14 +201,14 @@ class TestToolAbuseViaLLM:
 
     def test_tool_chaining_attack(self):
         """Test that LLM can't chain tools maliciously."""
-        sanitizer = OutputSanitizer()
+        OutputSanitizer()
         rate_limiter = LLMSecurityRateLimiter()
 
         # Simulate rapid tool calls (part of chaining attack)
         agent_id = "tool_abuse_test"
 
         # Make multiple rapid calls
-        for i in range(10):
+        for _i in range(10):
             rate_limiter.check_and_record_rate_limit(agent_id)
 
         # Verify rate limiting would eventually kick in
@@ -852,7 +852,7 @@ class TestRateLimiting:
         agent_id = "stats_test"
 
         # Make 5 requests
-        for i in range(5):
+        for _i in range(5):
             limiter.check_and_record_rate_limit(agent_id)
 
         stats = limiter.get_stats(agent_id)
@@ -865,7 +865,7 @@ class TestRateLimiting:
         agent_id = "reset_test"
 
         # Make some requests
-        for i in range(5):
+        for _i in range(5):
             limiter.check_and_record_rate_limit(agent_id)
 
         # Reset limits
@@ -1113,7 +1113,7 @@ class TestWorkflowSecurity:
         workflow_id = "test_workflow"
 
         # Make some calls
-        for i in range(10):
+        for _i in range(10):
             limiter.check_and_record_rate_limit(workflow_id)
 
         stats = limiter.get_stats(workflow_id)
@@ -1354,7 +1354,7 @@ class TestSingletonThreadSafety:
         # First call (initialization)
         start = time.perf_counter()
         _ = get_prompt_detector()
-        first_call_ms = (time.perf_counter() - start) * 1000
+        (time.perf_counter() - start) * 1000
 
         # Subsequent calls (should be fast - just double-check)
         iterations = 10000

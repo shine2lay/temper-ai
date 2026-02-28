@@ -286,8 +286,8 @@ class TestGepaFeedbackMetric:
                 _Ex("expected", "input"),
                 _Pred("actual"),
                 trace=None,
-                pred_name=None,
-                pred_trace=None,
+                _pred_name=None,
+                _pred_trace=None,
             )
 
         assert hasattr(result, "score")

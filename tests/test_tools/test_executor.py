@@ -484,7 +484,7 @@ class TestTimeoutComprehensive:
             initial_threads = threading.active_count()
 
             # Trigger 10 consecutive timeouts
-            for i in range(10):
+            for _i in range(10):
                 result = executor.execute("slow_tool", {"delay": 3}, timeout=0.5)
                 assert result.success is False
                 assert "timed out" in result.error.lower()
@@ -795,7 +795,7 @@ class TestResourceExhaustionPrevention:
                 results = [f.result() for f in futures]
 
             # Most should succeed, but some might be rate limited
-            successful = [r for r in results if r.success]
+            [r for r in results if r.success]
             rate_limited = [
                 r for r in results if not r.success and "limit" in r.error.lower()
             ]
@@ -824,7 +824,7 @@ class TestResourceExhaustionPrevention:
                 result = executor.execute("fast_tool", {"value": f"test{i}"})
                 results.append(result)
 
-            elapsed = time.time() - start
+            time.time() - start
 
             # Check how many succeeded vs rate limited
             successful = [r for r in results if r.success]
@@ -1021,7 +1021,7 @@ class TestResourceExhaustionPrevention:
                 results.append(result)
 
             # Check results
-            successful = [r for r in results if r.success]
+            [r for r in results if r.success]
             rate_limited = [
                 r for r in results if not r.success and "rate limit" in r.error.lower()
             ]

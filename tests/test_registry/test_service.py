@@ -211,3 +211,42 @@ class TestAgentRegistryServiceInvoke:
 
         found = store.get("counter")
         assert found.total_invocations == 1
+
+
+class TestLoadAgent:
+    """Test _load_agent method (service.py:118-128)."""
+
+    def test_load_agent_creates_standard_agent(self):
+        store = _make_store()
+        svc = AgentRegistryService(store=store)
+
+        entry = MagicMock()
+        entry.config_snapshot = {"name": "test", "inference": {"provider": "vllm"}}
+        entry.memory_namespace = "ns_test"
+
+        with patch("temper_ai.agent.standard_agent.StandardAgent") as mock_cls:
+            svc._load_agent(entry)
+
+        mock_cls.assert_called_once()
+        call_kwargs = mock_cls.call_args
+        config = (
+            call_kwargs[1]["config"]
+            if "config" in call_kwargs[1]
+            else call_kwargs[0][0]
+        )
+        assert config["memory_namespace"] == "ns_test"
+
+    def test_load_agent_does_not_mutate_original(self):
+        store = _make_store()
+        svc = AgentRegistryService(store=store)
+
+        original = {"name": "test"}
+        entry = MagicMock()
+        entry.config_snapshot = original
+        entry.memory_namespace = "ns"
+
+        with patch("temper_ai.agent.standard_agent.StandardAgent"):
+            svc._load_agent(entry)
+
+        # Original dict should not have memory_namespace injected
+        assert "memory_namespace" not in original

@@ -6,25 +6,40 @@ from unittest.mock import MagicMock, patch
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from temper_ai.auth.api_key_auth import AuthContext, require_auth
 from temper_ai.interfaces.server.agent_routes import router
 from temper_ai.registry._schemas import AgentRegistryEntry, MessageResponse
 
 _MOCK_SERVICE_PATH = "temper_ai.interfaces.server.agent_routes._get_service"
 
+_MOCK_AUTH_CTX = AuthContext(
+    user_id="test-user",
+    tenant_id="test-tenant",
+    role="owner",
+    api_key_id="key-test",
+)
+
+
+def _mock_auth():
+    async def _dep():
+        return _MOCK_AUTH_CTX
+
+    return _dep
+
 
 def _make_entry(**kwargs) -> AgentRegistryEntry:
     """Build a minimal AgentRegistryEntry for testing."""
-    defaults = dict(
-        id="abc123",
-        name="test-agent",
-        agent_type="standard",
-        version="1.0",
-        status="registered",
-        memory_namespace="agent__test-agent",
-        total_invocations=0,
-        registered_at=datetime(2026, 1, 1, tzinfo=UTC),
-        last_active_at=None,
-    )
+    defaults = {
+        "id": "abc123",
+        "name": "test-agent",
+        "agent_type": "standard",
+        "version": "1.0",
+        "status": "registered",
+        "memory_namespace": "agent__test-agent",
+        "total_invocations": 0,
+        "registered_at": datetime(2026, 1, 1, tzinfo=UTC),
+        "last_active_at": None,
+    }
     defaults.update(kwargs)
     return AgentRegistryEntry(**defaults)
 
@@ -32,6 +47,7 @@ def _make_entry(**kwargs) -> AgentRegistryEntry:
 def _make_client() -> TestClient:
     app = FastAPI()
     app.include_router(router)
+    app.dependency_overrides[require_auth] = _mock_auth()
     return TestClient(app, raise_server_exceptions=False)
 
 

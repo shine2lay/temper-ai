@@ -246,7 +246,7 @@ class TestContextPropagation:
         )
 
         # Execute parent (which calls child)
-        response = parent.execute({"test": True}, context=parent_context)
+        parent.execute({"test": True}, context=parent_context)
 
         # Verify child received the context
         assert ChildAgent.received_context is not None
@@ -329,7 +329,7 @@ class TestContextPropagation:
         )
 
         # Execute
-        response = agent1.execute({"test": True}, context=context)
+        agent1.execute({"test": True}, context=context)
 
         # Verify parent was tracked
         assert context.metadata["current_agent_id"] == "agent-1"
@@ -364,7 +364,7 @@ class TestContextPropagation:
         context = ExecutionContext(metadata={"depth": 0})
 
         # Execute with nesting
-        response = agent.execute({"nested": True}, context=context)
+        agent.execute({"nested": True}, context=context)
 
         # Verify depth was tracked
         assert context.metadata["depth"] == 4  # 0→1→2→3→4
@@ -503,7 +503,7 @@ class TestContextImmutability:
         )
 
         # Execute agent
-        response = agent.execute({"test": True}, context=original_context)
+        agent.execute({"test": True}, context=original_context)
 
         # Verify context was mutated (this test documents current behavior)
         assert original_context.metadata.get("mutated") is True
@@ -539,7 +539,7 @@ class TestContextImmutability:
         context_copy = copy.deepcopy(original_context)
 
         # Execute with deep copy
-        response = agent.execute({"test": True}, context=context_copy)
+        agent.execute({"test": True}, context=context_copy)
 
         # Original context should remain unchanged
         assert original_context.metadata["nested"]["value"] == "original"
@@ -574,11 +574,11 @@ class TestContextImmutability:
         )
 
         # Agent1 executes first
-        response1 = agent1.execute({"test": 1}, context=shared_context)
+        agent1.execute({"test": 1}, context=shared_context)
         assert shared_context.metadata["call_count"] == 1
 
         # Agent2 sees the mutation from agent1
-        response2 = agent2.execute({"test": 2}, context=shared_context)
+        agent2.execute({"test": 2}, context=shared_context)
         assert shared_context.metadata["call_count"] == 2
 
     def test_context_metadata_list_mutation(self, minimal_agent_config):
@@ -599,7 +599,7 @@ class TestContextImmutability:
             workflow_id="wf-001", metadata={"items": ["item1", "item2"]}
         )
 
-        response = agent.execute({"test": True}, context=context)
+        agent.execute({"test": True}, context=context)
 
         assert len(context.metadata["items"]) == 3
         assert "new_item" in context.metadata["items"]
@@ -623,7 +623,7 @@ class TestContextImmutability:
             workflow_id="wf-001", metadata={"config": {"timeout": 30, "retries": 3}}
         )
 
-        response = agent.execute({"test": True}, context=context)
+        agent.execute({"test": True}, context=context)
 
         assert context.metadata["config"]["timeout"] == 60
         assert "new_setting" in context.metadata["config"]
@@ -766,7 +766,7 @@ class TestContextThreadSafety:
                 workflow_id=f"wf-{thread_id}", metadata={"thread_id": thread_id}
             )
 
-            response = agent.execute({"value": value}, context=thread_context)
+            agent.execute({"value": value}, context=thread_context)
 
             with results_lock:
                 results[thread_id] = thread_context.metadata["value"]
@@ -822,7 +822,7 @@ class TestContextThreadSafety:
             except Exception as e:
                 errors.append(e)
 
-        for i in range(num_threads):
+        for _i in range(num_threads):
             thread = threading.Thread(target=thread_reader)
             threads.append(thread)
             thread.start()

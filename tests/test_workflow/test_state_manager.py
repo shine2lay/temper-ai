@@ -101,5 +101,25 @@ class TestInitNode:
         assert "stage_outputs" not in result
 
 
+class TestStateInitializationValidation:
+    """Test validation and default values in initialize_state."""
+
+    def test_reserved_key_collision_raises(self):
+        with pytest.raises(ValueError, match="reserved state keys"):
+            initialize_state({"workflow_id": "x"})
+
+    def test_multiple_reserved_keys_collision(self):
+        with pytest.raises(ValueError, match="reserved state keys"):
+            initialize_state({"workflow_id": "x", "tracker": "y"})
+
+    def test_empty_input_data(self):
+        state = initialize_state({})
+        assert state[StateKeys.STAGE_OUTPUTS] == {}
+
+    def test_current_stage_default_empty(self):
+        state = initialize_state({})
+        assert state["current_stage"] == ""
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

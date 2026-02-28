@@ -36,7 +36,7 @@ class TestProductQualityGates:
         assert "help_text" in qg.custom_checks
 
     def test_all_presets_are_valid(self):
-        for product_type, qg in PRODUCT_QUALITY_GATES.items():
+        for _product_type, qg in PRODUCT_QUALITY_GATES.items():
             assert isinstance(qg, TemplateQualityGates)
             assert qg.enabled is True
 

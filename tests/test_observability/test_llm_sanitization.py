@@ -27,7 +27,7 @@ def sql_backend():
         db_module._db_manager = None
 
     # Initialize in-memory database
-    db_manager = init_database("sqlite:///:memory:")
+    init_database("sqlite:///:memory:")
     backend = SQLObservabilityBackend(buffer=False)
     yield backend
 

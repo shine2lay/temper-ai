@@ -252,3 +252,104 @@ class TestSanitizeWorkflowResult:
         )
         assert "good" in result
         assert "bad" not in result
+
+
+class TestCancelExecution:
+    @pytest.mark.asyncio
+    async def test_cancel_running_returns_true(self, service):
+        metadata = WorkflowExecutionMetadata(
+            execution_id="exec-run-1",
+            workflow_path="wf.yaml",
+            workflow_name="test",
+            status=WorkflowExecutionStatus.RUNNING,
+        )
+        service._executions["exec-run-1"] = metadata
+
+        result = await service.cancel_execution("exec-run-1")
+
+        assert result is True
+        assert metadata.status == WorkflowExecutionStatus.CANCELLED
+
+    @pytest.mark.asyncio
+    async def test_cancel_completed_returns_false(self, service):
+        metadata = WorkflowExecutionMetadata(
+            execution_id="exec-done-1",
+            workflow_path="wf.yaml",
+            workflow_name="test",
+            status=WorkflowExecutionStatus.COMPLETED,
+        )
+        service._executions["exec-done-1"] = metadata
+
+        result = await service.cancel_execution("exec-done-1")
+
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_cancel_unknown_returns_false(self, service):
+        result = await service.cancel_execution("nonexistent-id")
+        assert result is False
+
+
+class TestListExecutions:
+    @pytest.mark.asyncio
+    async def test_list_from_memory_no_store(self, service):
+        service.run_store = None
+        for i, status in enumerate(
+            [WorkflowExecutionStatus.RUNNING, WorkflowExecutionStatus.COMPLETED]
+        ):
+            metadata = WorkflowExecutionMetadata(
+                execution_id=f"exec-mem-{i}",
+                workflow_path="wf.yaml",
+                workflow_name="test",
+                status=status,
+            )
+            service._executions[f"exec-mem-{i}"] = metadata
+
+        result = await service.list_executions()
+        assert len(result) == 2
+
+    @pytest.mark.asyncio
+    async def test_list_with_status_filter(self, service):
+        service.run_store = None
+        for i, status in enumerate(
+            [WorkflowExecutionStatus.RUNNING, WorkflowExecutionStatus.COMPLETED]
+        ):
+            metadata = WorkflowExecutionMetadata(
+                execution_id=f"exec-flt-{i}",
+                workflow_path="wf.yaml",
+                workflow_name="test",
+                status=status,
+            )
+            service._executions[f"exec-flt-{i}"] = metadata
+
+        result = await service.list_executions(status=WorkflowExecutionStatus.RUNNING)
+        assert len(result) == 1
+        assert result[0]["status"] == "running"
+
+    @pytest.mark.asyncio
+    async def test_list_with_offset_limit(self, service):
+        from datetime import UTC, datetime
+
+        service.run_store = None
+        for i in range(5):
+            metadata = WorkflowExecutionMetadata(
+                execution_id=f"exec-pg-{i}",
+                workflow_path="wf.yaml",
+                workflow_name="test",
+                status=WorkflowExecutionStatus.RUNNING,
+                started_at=datetime(2024, 1, i + 1, tzinfo=UTC),
+            )
+            service._executions[f"exec-pg-{i}"] = metadata
+
+        result = await service.list_executions(offset=1, limit=2)
+        assert len(result) == 2
+
+
+class TestShutdown:
+    def test_shutdown_calls_executor_shutdown(self, service):
+        mock_executor = MagicMock()
+        service._executor = mock_executor
+
+        service.shutdown()
+
+        mock_executor.shutdown.assert_called_once_with(wait=True)

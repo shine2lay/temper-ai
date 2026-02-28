@@ -342,7 +342,7 @@ class TestDNSRebindingPrevention:
             ]
 
             # Create cache with short TTL
-            short_cache = DNSCache(ttl=1)
+            DNSCache(ttl=1)
 
             # First validation - gets cached
             is_safe, _ = validate_url_safety("http://example.com", use_cache=True)

@@ -251,7 +251,7 @@ class TestParallelExecution:
 
             # Execute stage and measure total time
             start = time.time()
-            result_state = executor.execute_stage(
+            executor.execute_stage(
                 stage_name="test_stage",
                 stage_config=stage_config,
                 state=initial_state,

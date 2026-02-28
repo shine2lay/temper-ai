@@ -30,7 +30,7 @@ def test_strategy_consensus_3_agents(benchmark):
     Target: <100ms
     Measures: Synthesis overhead
     """
-    strategy = ConsensusStrategy(min_agreement=0.5)
+    strategy = ConsensusStrategy()
 
     outputs = [
         AgentOutput(
@@ -44,7 +44,7 @@ def test_strategy_consensus_3_agents(benchmark):
     ]
 
     result = benchmark(strategy.synthesize, outputs, {})
-    assert result.final_decision is not None
+    assert result.decision is not None
 
 
 @pytest.mark.benchmark(group="strategies")
@@ -54,7 +54,7 @@ def test_strategy_consensus_10_agents(benchmark):
     Target: <500ms
     Measures: Synthesis scalability
     """
-    strategy = ConsensusStrategy(min_agreement=0.5)
+    strategy = ConsensusStrategy()
 
     outputs = [
         AgentOutput(
@@ -68,7 +68,7 @@ def test_strategy_consensus_10_agents(benchmark):
     ]
 
     result = benchmark(strategy.synthesize, outputs, {})
-    assert result.final_decision is not None
+    assert result.decision is not None
 
 
 @pytest.mark.benchmark(group="strategies")
@@ -78,7 +78,7 @@ def test_strategy_debate(benchmark):
     Target: <200ms
     Measures: Debate coordination overhead
     """
-    strategy = MultiRoundStrategy(mode="debate", rounds=2)
+    strategy = MultiRoundStrategy(mode="debate", max_rounds=2)
 
     outputs = [
         AgentOutput(
@@ -92,7 +92,7 @@ def test_strategy_debate(benchmark):
     ]
 
     result = benchmark(strategy.synthesize, outputs, {})
-    assert result.final_decision is not None
+    assert result.decision is not None
 
 
 @pytest.mark.benchmark(group="strategies")
@@ -102,7 +102,9 @@ def test_strategy_merit_weighted(benchmark):
     Target: <150ms
     Measures: Weighted voting overhead
     """
-    strategy = MeritWeightedResolver()
+    from temper_ai.agent.strategies.base import Conflict
+
+    resolver = MeritWeightedResolver()
 
     outputs = [
         AgentOutput(
@@ -115,8 +117,15 @@ def test_strategy_merit_weighted(benchmark):
         for i in range(5)
     ]
 
-    result = benchmark(strategy.synthesize, outputs, {})
-    assert result.final_decision is not None
+    conflict = Conflict(
+        agents=[f"agent_{i}" for i in range(5)],
+        decisions=["result_A"],
+        disagreement_score=0.0,
+        context={},
+    )
+
+    result = benchmark(resolver.resolve, conflict, outputs, {})
+    assert result.decision is not None
 
 
 @pytest.mark.benchmark(group="strategies")
@@ -126,11 +135,9 @@ def test_strategy_conflict_resolution(benchmark):
     Target: <100ms
     Measures: Conflict detection and resolution overhead
     """
-    from temper_ai.agent.strategies.conflict_resolution import (
-        MeritWeightedConflictResolution,
-    )
+    from temper_ai.agent.strategies.base import Conflict
 
-    resolver = MeritWeightedConflictResolution()
+    resolver = MeritWeightedResolver()
 
     outputs = [
         AgentOutput(
@@ -149,8 +156,15 @@ def test_strategy_conflict_resolution(benchmark):
         ),
     ]
 
-    result = benchmark(resolver.resolve, outputs, {})
-    assert result.final_decision is not None
+    conflict = Conflict(
+        agents=["agent_0", "agent_1"],
+        decisions=["result_A", "result_B"],
+        disagreement_score=1.0,
+        context={},
+    )
+
+    result = benchmark(resolver.resolve, conflict, outputs, {})
+    assert result.decision is not None
 
 
 @pytest.mark.benchmark(group="strategies")
@@ -163,16 +177,19 @@ def test_strategy_quality_gate_validation(benchmark):
     from temper_ai.agent.strategies.base import SynthesisResult
 
     synthesis_result = SynthesisResult(
-        final_decision="test result",
-        reasoning="test reasoning",
+        decision="test result",
         confidence=0.9,
+        method="consensus",
+        votes={"test result": 3},
+        conflicts=[],
+        reasoning="test reasoning",
         metadata={"agent_count": 3},
     )
 
     def validate_quality():
         # Simple quality checks
         assert synthesis_result.confidence >= 0.5
-        assert synthesis_result.final_decision is not None
+        assert synthesis_result.decision is not None
         assert len(synthesis_result.reasoning) > 0
         return True
 
@@ -192,19 +209,23 @@ def test_safety_action_policy_validation(benchmark):
     Target: <10ms
     Measures: Policy check overhead
     """
-    policy_engine = ActionPolicyEngine()
+    from temper_ai.safety.policy_registry import PolicyRegistry
+
+    policy_engine = ActionPolicyEngine(policy_registry=PolicyRegistry())
 
     from temper_ai.safety.action_policy_engine import PolicyExecutionContext
 
     context = PolicyExecutionContext(
+        agent_id="test_agent",
+        workflow_id="test_workflow",
+        stage_id="test_stage",
         action_type="tool_execution",
-        tool_name="calculator",
-        parameters={"expression": "2+2"},
-        agent_name="test_agent",
+        action_data={"tool_name": "calculator", "expression": "2+2"},
     )
 
-    benchmark(policy_engine.validate, context)
-    # Validation returns None on success, raises on failure
+    action = {"type": "tool_execution", "tool": "calculator"}
+    benchmark(policy_engine.validate_action, action, context)
+    # Validation returns EnforcementResult
     assert True  # Benchmark completed without policy violation
 
 
@@ -216,10 +237,10 @@ def test_safety_rate_limiter_overhead(tool_registry, benchmark):
     Measures: Rate limiting check overhead
     """
     tool_registry.register(Calculator())
-    executor = ToolExecutor(registry=tool_registry, rate_limit=100, rate_window=1.0)
+    executor = ToolExecutor(registry=tool_registry, rate_limit=100000, rate_window=1.0)
 
     try:
-        result = benchmark(executor.execute, "calculator", {"expression": "2 + 2"})
+        result = benchmark(executor.execute, "Calculator", {"expression": "2 + 2"})
         assert result.success is True
     finally:
         executor.shutdown()
@@ -232,15 +253,16 @@ def test_safety_circuit_breaker_overhead(benchmark):
     Target: <5ms
     Measures: Circuit breaker check overhead
     """
-    from temper_ai.llm.circuit_breaker import CircuitBreaker, CircuitBreakerConfig
-
-    config = CircuitBreakerConfig(
-        failure_threshold=5, timeout=60, expected_exception=Exception
+    from temper_ai.shared.core.circuit_breaker import (
+        CircuitBreaker,
+        CircuitBreakerConfig,
     )
-    circuit_breaker = CircuitBreaker(config)
+
+    config = CircuitBreakerConfig(failure_threshold=5, timeout=60)
+    circuit_breaker = CircuitBreaker("benchmark_test", config=config)
 
     def protected_operation():
-        with circuit_breaker:
+        with circuit_breaker():
             return "success"
 
     result = benchmark(protected_operation)
@@ -262,5 +284,6 @@ def test_safety_rollback_snapshot(benchmark):
         "data": {"key": "value"},
     }
 
-    result = benchmark(rollback_manager.create_snapshot, "test_operation", test_state)
+    test_action = {"type": "test_operation", "tool": "test_tool"}
+    result = benchmark(rollback_manager.create_snapshot, test_action, test_state)
     assert result is not None

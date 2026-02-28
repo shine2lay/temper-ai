@@ -9,7 +9,7 @@ Models:
 """
 
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from sqlalchemy import JSON, DateTime, ForeignKey, String, func
@@ -22,7 +22,7 @@ from temper_ai.storage.database.datetime_utils import utcnow
 
 
 # Enum types for type safety
-class ExperimentStatus(str, Enum):
+class ExperimentStatus(StrEnum):
     """Experiment lifecycle status."""
 
     DRAFT = "draft"
@@ -32,7 +32,7 @@ class ExperimentStatus(str, Enum):
     COMPLETED = "completed"
 
 
-class AssignmentStrategyType(str, Enum):
+class AssignmentStrategyType(StrEnum):
     """Variant assignment strategy types."""
 
     RANDOM = "random"
@@ -41,7 +41,7 @@ class AssignmentStrategyType(str, Enum):
     BANDIT = "bandit"
 
 
-class ConfigType(str, Enum):
+class ConfigType(StrEnum):
     """Configuration override types."""
 
     AGENT = "agent"
@@ -50,7 +50,7 @@ class ConfigType(str, Enum):
     PROMPT = "prompt"
 
 
-class ExecutionStatus(str, Enum):
+class ExecutionStatus(StrEnum):
     """Workflow execution status in experiment context."""
 
     PENDING = "pending"
@@ -59,7 +59,7 @@ class ExecutionStatus(str, Enum):
     FAILED = "failed"
 
 
-class RecommendationType(str, Enum):
+class RecommendationType(StrEnum):
     """Experiment analysis recommendation types."""
 
     CONTINUE = "continue"

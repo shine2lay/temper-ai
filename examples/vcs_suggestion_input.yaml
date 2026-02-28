@@ -19,4 +19,4 @@
 #   - Mount static files directory for CSS
 #   - Keep all existing API endpoints working (don't break /api/suggestions or /api/vision)
 
-workspace_path: /home/shinelay/temper-ai/workspace/vibe-coding-squad
+workspace_path: /home/shinelay/vibe-coding-squad

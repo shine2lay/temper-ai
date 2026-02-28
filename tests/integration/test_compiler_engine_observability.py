@@ -107,7 +107,9 @@ def test_workflow_compilation_to_execution(
     )
 
     # Create simple workflow config
-    workflow_config = {"workflow": {"name": "test_workflow", "stages": ["research"]}}
+    workflow_config = {
+        "workflow": {"name": "test_workflow", "stages": ["research_stage"]}
+    }
 
     # Compile workflow
     compiled_graph = compiler.compile(workflow_config)

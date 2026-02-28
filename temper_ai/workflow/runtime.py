@@ -448,6 +448,12 @@ class WorkflowRuntime:
             if value is not None:
                 state[state_key] = value
 
+        # Ensure workspace is also available in workflow_inputs for
+        # SourceResolver (stages declare source: workflow.workspace_path)
+        workspace = extras.get("workspace")
+        if workspace is not None:
+            inputs.setdefault("workspace_path", workspace)
+
         if workflow_config is not None:
             temper_event_bus = _create_temper_event_bus(workflow_config)
             if temper_event_bus is not None:

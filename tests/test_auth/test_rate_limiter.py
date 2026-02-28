@@ -19,7 +19,7 @@ class TestSlidingWindowRateLimiter:
         limiter = SlidingWindowRateLimiter()
 
         # 10 requests should all succeed
-        for i in range(10):
+        for _i in range(10):
             limiter.check_limit(
                 "test", "identifier_1", max_requests=10, window_seconds=60
             )
@@ -32,7 +32,7 @@ class TestSlidingWindowRateLimiter:
         limiter = SlidingWindowRateLimiter()
 
         # First 5 requests succeed
-        for i in range(5):
+        for _i in range(5):
             limiter.check_limit(
                 "test", "identifier_1", max_requests=5, window_seconds=60
             )
@@ -53,7 +53,7 @@ class TestSlidingWindowRateLimiter:
         limiter = SlidingWindowRateLimiter()
 
         # Make 3 requests
-        for i in range(3):
+        for _i in range(3):
             limiter.check_limit(
                 "test", "identifier_1", max_requests=3, window_seconds=2
             )
@@ -75,7 +75,7 @@ class TestSlidingWindowRateLimiter:
         limiter = SlidingWindowRateLimiter()
 
         # Fill limit for identifier_1
-        for i in range(5):
+        for _i in range(5):
             limiter.check_limit(
                 "test", "identifier_1", max_requests=5, window_seconds=60
             )
@@ -87,7 +87,7 @@ class TestSlidingWindowRateLimiter:
             )
 
         # identifier_2 should still be able to make requests
-        for i in range(5):
+        for _i in range(5):
             limiter.check_limit(
                 "test", "identifier_2", max_requests=5, window_seconds=60
             )
@@ -97,7 +97,7 @@ class TestSlidingWindowRateLimiter:
         limiter = SlidingWindowRateLimiter()
 
         # Fill limit for type_a
-        for i in range(5):
+        for _i in range(5):
             limiter.check_limit(
                 "type_a", "identifier_1", max_requests=5, window_seconds=60
             )
@@ -109,7 +109,7 @@ class TestSlidingWindowRateLimiter:
             )
 
         # type_b should still be available
-        for i in range(5):
+        for _i in range(5):
             limiter.check_limit(
                 "type_b", "identifier_1", max_requests=5, window_seconds=60
             )
@@ -123,7 +123,7 @@ class TestSlidingWindowRateLimiter:
         assert remaining == 10
 
         # Make 3 requests
-        for i in range(3):
+        for _i in range(3):
             limiter.check_limit("test", "id_1", max_requests=10, window_seconds=60)
 
         # Should have 7 remaining
@@ -132,7 +132,7 @@ class TestSlidingWindowRateLimiter:
         assert reset_after > 0
 
         # Make 7 more requests
-        for i in range(7):
+        for _i in range(7):
             limiter.check_limit("test", "id_1", max_requests=10, window_seconds=60)
 
         # Should have 0 remaining
@@ -144,7 +144,7 @@ class TestSlidingWindowRateLimiter:
         limiter = SlidingWindowRateLimiter()
 
         # Make requests with short TTL
-        for i in range(3):
+        for _i in range(3):
             limiter.check_limit("test", "id_1", max_requests=10, window_seconds=1)
 
         # Internal state should have data
@@ -211,7 +211,7 @@ class TestOAuthRateLimiter:
         limiter = OAuthRateLimiter()
 
         # Make requests up to IP limit (5 per minute)
-        for i in range(5):
+        for _i in range(5):
             limiter.check_token_exchange("192.168.1.1")
 
         # 6th request from same IP should fail
@@ -223,7 +223,7 @@ class TestOAuthRateLimiter:
         limiter = OAuthRateLimiter()
 
         # Make requests up to user limit (60 per minute)
-        for i in range(60):
+        for _i in range(60):
             limiter.check_userinfo("user_123")
 
         # 61st request should fail

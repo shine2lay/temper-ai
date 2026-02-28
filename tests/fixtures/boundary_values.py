@@ -164,7 +164,7 @@ def get_boundary_test_cases(boundary_type: str, valid_range: tuple = None):
         min_val = boundaries[min_key]
         max_val = boundaries[max_key]
 
-        for key, value in boundaries.items():
+        for _key, value in boundaries.items():
             should_accept = min_val <= value <= max_val
             test_cases.append((value, should_accept))
     else:

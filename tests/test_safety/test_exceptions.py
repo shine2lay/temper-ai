@@ -409,7 +409,7 @@ class TestExceptionHierarchy:
 
     def test_all_inherit_from_base(self):
         """Test that all specific exceptions inherit from base."""
-        base_exc = SafetyViolationException(
+        SafetyViolationException(
             policy_name="Test",
             severity=ViolationSeverity.HIGH,
             message="Test",

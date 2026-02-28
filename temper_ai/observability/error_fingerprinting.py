@@ -18,7 +18,7 @@ import hashlib
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 
 from temper_ai.storage.database.datetime_utils import utcnow
 
@@ -48,7 +48,7 @@ _MEMORY_ADDR_PATTERN = re.compile(r"0x[0-9a-fA-F]+")  # Memory addresses
 # ============================================================================
 
 
-class ErrorClassification(str, Enum):
+class ErrorClassification(StrEnum):
     """Error classification for fingerprints."""
 
     TRANSIENT = "transient"

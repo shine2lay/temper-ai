@@ -11,9 +11,6 @@ from pathlib import Path
 
 import pytest
 
-from temper_ai.shared.utils.exceptions import (
-    FrameworkValidationError,
-)
 from temper_ai.storage.schemas.agent_config import PromptConfig
 from temper_ai.tools.base import BaseTool, ToolMetadata, ToolResult
 from temper_ai.tools.executor import ToolExecutor
@@ -54,7 +51,7 @@ class TestStringBoundaries:
         try:
             config = PromptConfig(inline=string_with_null)
             assert "\x00" in config.inline or config.inline == "HelloWorld"
-        except (ValueError, FrameworkValidationError):
+        except ValueError:
             # Also acceptable to reject
             pass
 
@@ -92,7 +89,7 @@ class TestNumericBoundaries:
             executor = ToolExecutor(ToolRegistry(), default_timeout=-1)
             # If allowed, should either be -1 or converted to positive
             assert executor.default_timeout == -1 or executor.default_timeout >= 0
-        except (ValueError, FrameworkValidationError):
+        except ValueError:
             # Also acceptable to reject negative timeouts
             pass
 

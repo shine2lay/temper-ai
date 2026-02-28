@@ -17,11 +17,11 @@ from temper_ai.memory.constants import (
     MEMORY_TYPE_CROSS_SESSION,
     MEMORY_TYPE_EPISODIC,
     MEMORY_TYPE_PROCEDURAL,
-    SECONDS_PER_DAY,
 )
 from temper_ai.memory.formatter import format_memory_context
 from temper_ai.memory.protocols import MemoryStoreProtocol
 from temper_ai.memory.registry import MemoryProviderRegistry
+from temper_ai.shared.constants.durations import SECONDS_PER_DAY
 
 logger = logging.getLogger(__name__)
 

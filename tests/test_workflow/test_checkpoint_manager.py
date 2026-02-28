@@ -74,7 +74,7 @@ class TestCheckpointManager:
     def test_save_checkpoint_with_metadata(self, manager, sample_domain_state):
         """Test saving checkpoint with custom metadata."""
         metadata = {"user": "test-user"}
-        checkpoint_id = manager.save_checkpoint(sample_domain_state, metadata=metadata)
+        manager.save_checkpoint(sample_domain_state, metadata=metadata)
 
         # Verify metadata is stored
         checkpoints = manager.list_checkpoints("wf-test-123")

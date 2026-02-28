@@ -6,7 +6,7 @@ import threading
 import urllib.parse
 from collections.abc import Generator
 from contextlib import contextmanager
-from enum import Enum
+from enum import StrEnum
 
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
@@ -42,7 +42,7 @@ def _mask_database_url(url: str | None) -> str:
         return "<unparseable url>"
 
 
-class IsolationLevel(str, Enum):
+class IsolationLevel(StrEnum):
     """Database transaction isolation levels.
 
     Isolation levels control how transactions handle concurrent access:

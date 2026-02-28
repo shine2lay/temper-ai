@@ -319,7 +319,7 @@ class TestExtremelyLongPaths:
         # Create an extremely long filename
         long_component = "a" * 300
         long_path = temp_workspace
-        for i in range(20):  # 20 * 300 = 6000 char path
+        for _i in range(20):  # 20 * 300 = 6000 char path
             long_path = long_path / long_component
 
         try:

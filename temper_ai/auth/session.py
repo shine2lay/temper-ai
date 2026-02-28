@@ -13,12 +13,11 @@ from datetime import UTC, datetime, timedelta
 
 from temper_ai.auth.constants import DISPLAY_ELLIPSIS
 from temper_ai.auth.models import Session, User
-from temper_ai.shared.constants.durations import (
-    CLEANUP_INTERVAL_FREQUENT,
-)
+from temper_ai.shared.constants.durations import DEFAULT_SESSION_TTL_SECONDS
 from temper_ai.shared.constants.limits import THRESHOLD_MASSIVE_COUNT
 from temper_ai.shared.constants.sizes import TOKEN_BYTES_SESSION
-from temper_ai.shared.constants.timeouts import DEFAULT_SESSION_TTL_SECONDS
+
+CLEANUP_INTERVAL_FREQUENT = 100  # Every N operations
 
 logger = logging.getLogger(__name__)
 

@@ -48,7 +48,7 @@ def test_aggregation_period_equality():
 
 def test_aggregation_period_iteration():
     """Test that AggregationPeriod can be iterated."""
-    periods = [p for p in AggregationPeriod]
+    periods = list(AggregationPeriod)
     assert len(periods) == 3
 
     values = [p.value for p in AggregationPeriod]

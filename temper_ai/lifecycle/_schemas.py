@@ -1,6 +1,6 @@
 """Pydantic schemas for self-modifying lifecycle configuration."""
 
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from temper_ai.lifecycle.constants import DEFAULT_COMPLEXITY, MIN_PRIORITY
 
 
-class ProjectSize(str, Enum):
+class ProjectSize(StrEnum):
     """Project size classification."""
 
     SMALL = "small"
@@ -16,7 +16,7 @@ class ProjectSize(str, Enum):
     LARGE = "large"
 
 
-class RiskLevel(str, Enum):
+class RiskLevel(StrEnum):
     """Project risk level classification."""
 
     LOW = "low"
@@ -36,7 +36,7 @@ class ProjectCharacteristics(BaseModel):
     tags: list[str] = Field(default_factory=list)
 
 
-class AdaptationAction(str, Enum):
+class AdaptationAction(StrEnum):
     """Types of adaptation that can be applied to a workflow stage."""
 
     SKIP = "skip"

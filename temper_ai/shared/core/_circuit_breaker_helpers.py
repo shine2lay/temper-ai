@@ -42,7 +42,7 @@ except ImportError:
     _LLMAuthenticationError = None  # type: ignore[assignment,misc]
 
 
-def should_count_failure(error: Exception) -> bool:  # noqa: radon
+def _should_count_failure(error: Exception) -> bool:  # noqa: radon
     """Determine if error should count toward circuit breaker.
 
     Network/server errors count (transient). Client errors don't.
@@ -79,7 +79,7 @@ def should_count_failure(error: Exception) -> bool:  # noqa: radon
     return False
 
 
-def should_attempt_reset(last_failure_time: float | None, timeout: int) -> bool:
+def _should_attempt_reset(last_failure_time: float | None, timeout: int) -> bool:
     """Check if enough time has passed to try half-open.
 
     Args:
@@ -111,7 +111,7 @@ def time_until_retry(last_failure_time: float | None, timeout: int) -> float:
     return max(0, timeout - elapsed)
 
 
-def get_state_key(name: str) -> str:
+def _get_state_key(name: str) -> str:
     """Get storage key for a circuit breaker.
 
     Args:
@@ -154,7 +154,7 @@ def save_state(
         "config": asdict(config),
     }
 
-    key = get_state_key(name)
+    key = _get_state_key(name)
     storage.set(key, json.dumps(state_dict))
 
 
@@ -183,7 +183,7 @@ def load_state(storage: Any, name: str) -> dict:
     if not storage:
         return defaults
 
-    key = get_state_key(name)
+    key = _get_state_key(name)
     data = storage.get(key)
 
     if data:
@@ -371,7 +371,7 @@ def on_call_failure(
     """
     from temper_ai.shared.core.circuit_breaker import CircuitState
 
-    if not should_count_failure(error):
+    if not _should_count_failure(error):
         if reserved_state == CircuitState.HALF_OPEN:
             breaker._half_open_semaphore.release()
         return
@@ -430,7 +430,7 @@ def reserve_execution(breaker: Any) -> Any | None:
 
     with breaker.lock:
         if breaker._state == CircuitState.OPEN:
-            if should_attempt_reset(breaker.last_failure_time, breaker.config.timeout):
+            if _should_attempt_reset(breaker.last_failure_time, breaker.config.timeout):
                 breaker._state = CircuitState.HALF_OPEN
                 breaker.success_count = 0
                 if breaker.storage:

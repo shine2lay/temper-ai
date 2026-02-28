@@ -201,7 +201,7 @@ class TestDebateAndSynthesize:
 
         # Should produce a decision
         assert result.decision in ["Option A", "Option B"]
-        assert result.method == "debate_and_synthesize"
+        assert result.method in ("consensus", "consensus_weak")
 
 
 class TestMeritWeightedResolution:

@@ -13,10 +13,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from temper_ai.shared.constants.durations import (
-    POLL_INTERVAL_FAST,
     SECONDS_PER_HOUR,
     TIMEOUT_VERY_SHORT,
 )
+
+POLL_INTERVAL_FAST = 1
 from temper_ai.shared.utils.exceptions import RateLimitError
 from temper_ai.tools.base import BaseTool, ToolResult
 from temper_ai.tools.constants import CONTEXT_KEY_AGENT_ID, ROLLBACK_TRIGGER_AUTO

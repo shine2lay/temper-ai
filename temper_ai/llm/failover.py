@@ -18,13 +18,13 @@ from temper_ai.llm.providers import (  # M-04: Import from new location
     LLMError,
     LLMResponse,
 )
-from temper_ai.shared.constants.limits import (
-    HTTP_CLIENT_ERROR_MAX,
-    HTTP_CLIENT_ERROR_MIN,
-    HTTP_SERVER_ERROR_MAX,
-    HTTP_SERVER_ERROR_MIN,
-)
 from temper_ai.shared.constants.retries import DEFAULT_MAX_RETRIES
+
+# HTTP status code ranges
+HTTP_CLIENT_ERROR_MIN = 400
+HTTP_CLIENT_ERROR_MAX = 500
+HTTP_SERVER_ERROR_MIN = 500
+HTTP_SERVER_ERROR_MAX = 600
 from temper_ai.shared.utils.exceptions import (
     LLMAuthenticationError,
     LLMRateLimitError,

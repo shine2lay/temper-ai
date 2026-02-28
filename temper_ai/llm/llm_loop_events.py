@@ -23,9 +23,6 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-# Key prefix length shown in logs for cache keys
-_CACHE_KEY_PREFIX_LENGTH = 16
-
 
 @dataclass
 class LLMIterationEventData:

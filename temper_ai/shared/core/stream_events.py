@@ -1,8 +1,7 @@
 """Generic stream event types for multi-source real-time display.
 
 Producers (agents, executors, tool runners) emit ``StreamEvent`` instances.
-``StreamDisplay`` consumes them.  An adapter converts legacy ``LLMStreamChunk``
-objects at the callback boundary so existing code keeps working.
+``StreamDisplay`` consumes them.
 """
 
 from __future__ import annotations
@@ -11,13 +10,10 @@ from dataclasses import dataclass, field
 from typing import Any
 
 # ── Event type constants ──────────────────────────────────────────────
-LLM_TOKEN = "llm_token"  # noqa: S105  # Event type identifier, not credential
-LLM_DONE = "llm_done"  # done=True, metadata has token counts
 TOOL_START = "tool_start"  # metadata["tool_name"], metadata["input_params"]
 TOOL_RESULT = (
     "tool_result"  # metadata["tool_name"], metadata["success"], metadata["duration_s"]
 )
-STATUS = "status"  # content=status message (overwrites, not appends)
 PROGRESS = "progress"  # content=progress message (appends)
 
 
@@ -44,47 +40,3 @@ class StreamEvent:
     content: str = ""
     done: bool = False
     metadata: dict[str, Any] = field(default_factory=dict)
-
-
-# ── LLMStreamChunk adapter ───────────────────────────────────────────
-
-
-def from_llm_chunk(source: str, chunk: Any) -> StreamEvent:
-    """Convert an ``LLMStreamChunk`` into a ``StreamEvent``.
-
-    Parameters
-    ----------
-    source : str
-        Logical name for the stream (agent name, model name, etc.).
-    chunk : LLMStreamChunk
-        The legacy chunk object.
-
-    Returns
-    -------
-    StreamEvent
-    """
-    if chunk.done:
-        return StreamEvent(
-            source=source,
-            event_type=LLM_DONE,
-            content=chunk.content,
-            done=True,
-            metadata={
-                "model": chunk.model,
-                "chunk_type": getattr(chunk, "chunk_type", "content"),
-                "prompt_tokens": chunk.prompt_tokens,
-                "completion_tokens": chunk.completion_tokens,
-                "finish_reason": getattr(chunk, "finish_reason", None),
-            },
-        )
-
-    return StreamEvent(
-        source=source,
-        event_type=LLM_TOKEN,
-        content=chunk.content,
-        done=False,
-        metadata={
-            "model": chunk.model,
-            "chunk_type": getattr(chunk, "chunk_type", "content"),
-        },
-    )

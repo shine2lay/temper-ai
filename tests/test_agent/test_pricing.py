@@ -340,7 +340,7 @@ class TestGetPricingManager:
         manager = PricingManager()
 
         # Should use default path
-        assert "config/model_pricing.yaml" in str(manager.config_path)
+        assert "configs/model_pricing.yaml" in str(manager.config_path)
 
 
 class TestPricingIntegration:

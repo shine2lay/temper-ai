@@ -100,7 +100,7 @@ class TestExplicitShutdown:
 
         # Submit multiple tasks
         futures = []
-        for i in range(10):
+        for _i in range(10):
             future = executor._executor.submit(time.sleep, 1)
             futures.append(future)
 
@@ -250,7 +250,7 @@ class TestThreadLeakPrevention:
 
         # Create executors without shutting down
         for _ in range(3):
-            executor = ToolExecutor(registry, max_workers=3)
+            ToolExecutor(registry, max_workers=3)
             # Don't call shutdown - let finalizer handle it
 
         # Force garbage collection
@@ -341,7 +341,6 @@ class TestErrors:
         executor = ToolExecutor(registry)
 
         # Mock the executor to raise an exception
-        original_shutdown = executor._executor.shutdown
 
         def failing_shutdown(*args, **kwargs):
             raise RuntimeError("Shutdown failed")

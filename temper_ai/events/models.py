@@ -1,6 +1,5 @@
 """SQLModel table definitions for event persistence."""
 
-import uuid
 from datetime import datetime
 from typing import Any
 
@@ -42,8 +41,3 @@ class EventSubscription(SQLModel, table=True):
     active: bool = Field(default=True, index=True)
     last_event_id: str | None = None
     last_triggered_at: datetime | None = None
-
-
-def _new_id() -> str:
-    """Generate a new UUID string."""
-    return str(uuid.uuid4())

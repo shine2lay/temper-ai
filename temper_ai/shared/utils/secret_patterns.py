@@ -4,12 +4,13 @@ Single source of truth for all secret detection, sanitization,
 and redaction patterns used across the framework.
 
 Consumers:
-    - src/observability/sanitization.py (DataSanitizer)
-    - src/safety/secret_detection.py (SecretDetectionPolicy)
-    - src/security/llm_security.py (OutputSanitizer)
-    - src/utils/secrets.py (detect_secret_patterns)
-    - src/utils/logging.py (log redaction)
-    - src/utils/config_helpers.py (config display redaction)
+    - observability/sanitization.py (DataSanitizer)
+    - safety/secret_detection.py (SecretDetectionPolicy)
+    - safety/security/llm_security.py (OutputSanitizer)
+    - shared/utils/secrets.py (detect_secret_patterns)
+    - shared/utils/logging.py (log redaction)
+    - shared/utils/config_helpers.py (config display redaction)
+    - shared/utils/exceptions.py (error message sanitization)
 
 SECURITY: All patterns use bounded quantifiers to prevent ReDoS attacks.
 """
@@ -27,8 +28,8 @@ SECRET_PATTERNS: dict[str, str] = {
     "openai_key": r"\bsk-[a-zA-Z0-9]{20,200}\b",
     # Anthropic
     "anthropic_key": r"\bsk-ant-api\d{2,4}-[a-zA-Z0-9_-]{20,200}\b",
-    # AWS
-    "aws_access_key": r"AKIA[0-9A-Z]{16}",
+    # AWS (AKIA = long-term, ASIA = temporary STS credentials)
+    "aws_access_key": r"(AKIA|ASIA)[0-9A-Z]{16}",
     "aws_secret_key": (
         r"['\"]?(?:aws_secret_access_key|SecretAccessKey|AWS_SECRET)['\"]?"
         r"\s*[=:]\s*['\"]?([a-zA-Z0-9+/]{40})['\"]?"
@@ -43,15 +44,25 @@ SECRET_PATTERNS: dict[str, str] = {
     # Stripe
     "stripe_key": r"\b(sk|pk)_(test|live)_[0-9a-zA-Z]{24,200}\b",
     # Connection strings (database URLs with potential credentials)
-    "connection_string": r"\b(mongodb|postgres|mysql|redis)://[^'\"\s]{1,500}",
-    # JWT
+    "connection_string": r"\b(mongodb|postgres|postgresql|mysql|redis)://[^'\"\s]{1,500}",
+    # JWT (bare tokens and Bearer prefix)
     "jwt_token": (
         r"\beyJ[a-zA-Z0-9_-]{1,2000}"
         r"\.eyJ[a-zA-Z0-9_-]{1,2000}"
         r"\.[a-zA-Z0-9_-]{1,2000}\b"
     ),
+    "bearer_token": r"Bearer\s+[a-zA-Z0-9._\-]{10,2000}",
     # Private keys (line-anchored, no word boundary needed for dashes)
     "private_key": r"-----BEGIN (?:RSA |EC |DSA )?PRIVATE KEY-----",
+    # HTTP auth headers (x-api-key, authorization)
+    "http_auth_header": (
+        r"(x-api-key|authorization)['\"]?\s*[:=]\s*['\"]?"
+        r"[a-zA-Z0-9\-_]{10,500}['\"]?"
+    ),
+    # URL query parameter secrets (?password=..., &token=..., etc.)
+    "url_query_secret": (
+        r"[?&](password|pwd|pass|token|key|secret|api_key|apikey)" r"=[^&\s]{1,500}"
+    ),
 }
 
 # ---------------------------------------------------------------------------
@@ -118,7 +129,22 @@ SECRET_KEY_NAMES: list[str] = [
     "secret",
     "token",
     "auth",
+    "authorization",
     "credential",
+    "credentials",
     "private_key",
     "access_key",
+    "encryption_key",
 ]
+
+# ---------------------------------------------------------------------------
+# Medium-confidence heuristic patterns
+# ---------------------------------------------------------------------------
+# These match hash-like or encoded strings that may be secrets.
+# Higher false positive rate — consumers should use with caution.
+
+MEDIUM_CONFIDENCE_PATTERNS: dict[str, str] = {
+    "md5_hash": r"[a-f0-9]{32}",
+    "sha1_hash": r"[a-f0-9]{40}",
+    "base64_encoded": r"[A-Za-z0-9+/]{40,100}={0,2}",
+}

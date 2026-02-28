@@ -242,12 +242,48 @@ class NodeBuilder:
         """
         try:
             return self.config_loader.load_stage(stage_name)
-        except Exception as e:
+        except Exception as first_err:
+            # Try loading via stage_ref from the workflow config
+            stage_ref_path = self._find_stage_ref(stage_name, workflow_config)
+            if stage_ref_path:
+                try:
+                    return self.config_loader.load_stage(stage_ref_path)
+                except Exception:
+                    pass
+
             # Stage might be embedded in workflow config
             stage_config = self.find_embedded_stage(stage_name, workflow_config)
             if not stage_config:
-                raise ValueError(f"Cannot load stage config: {stage_name}") from e
+                raise ValueError(
+                    f"Cannot load stage config: {stage_name}"
+                ) from first_err
             return stage_config
+
+    def _find_stage_ref(self, stage_name: str, workflow_config: Any) -> str | None:
+        """Extract stage config name from stage_ref in the workflow config.
+
+        Converts a stage_ref path like 'configs/stages/research_stage.yaml'
+        to the config name 'research_stage' for the config loader.
+        """
+        from pathlib import Path as _Path
+
+        wf = workflow_config
+        if isinstance(wf, dict):
+            wf = wf.get("workflow", wf)
+        elif hasattr(wf, "workflow"):
+            wf = wf.workflow
+
+        stages = (
+            wf.get("stages", []) if isinstance(wf, dict) else getattr(wf, "stages", [])
+        )
+        for entry in stages:
+            if isinstance(entry, dict):
+                name = entry.get("name", "")
+                ref = entry.get("stage_ref", "")
+                if name == stage_name and ref:
+                    # Extract filename stem: 'configs/stages/research_stage.yaml' -> 'research_stage'
+                    return _Path(ref).stem
+        return None
 
     def get_agent_mode(self, stage_config: Any) -> str:
         """Get agent execution mode from stage config.

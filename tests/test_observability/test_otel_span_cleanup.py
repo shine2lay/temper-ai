@@ -11,6 +11,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+pytest.importorskip("opentelemetry")
+
 from temper_ai.observability.backends.otel_backend import (
     CLEANUP_THRESHOLD,
     MAX_ACTIVE_SPANS,

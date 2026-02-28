@@ -84,7 +84,7 @@ class TestPromptOptimizer:
             ),
             patch(
                 "temper_ai.optimization.optimizers.prompt.DSPyProgramBuilder",
-            ) as MockBuilder,
+            ),
             patch(
                 "temper_ai.optimization.optimizers.prompt.DSPyCompiler",
                 return_value=mock_compiler,

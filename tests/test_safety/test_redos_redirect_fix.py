@@ -56,7 +56,7 @@ class TestReDoSFix:
         attack_vector = "x" * 100000 + " > "
 
         start_time = time.time()
-        result = policy.validate(action={"command": attack_vector}, context={})
+        policy.validate(action={"command": attack_vector}, context={})
         elapsed = time.time() - start_time
 
         assert elapsed < 0.1, f"Pattern took {elapsed:.3f}s"
@@ -69,7 +69,7 @@ class TestReDoSFix:
         attack_vector = ("a" * 5000) + (" " * 5000) + ">"
 
         start_time = time.time()
-        result = policy.validate(action={"command": attack_vector}, context={})
+        policy.validate(action={"command": attack_vector}, context={})
         elapsed = time.time() - start_time
 
         assert elapsed < 0.1, f"Pattern took {elapsed:.3f}s"

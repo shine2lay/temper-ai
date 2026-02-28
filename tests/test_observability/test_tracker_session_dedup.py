@@ -202,7 +202,7 @@ class TestNestedSessions:
             workflow_config=config,
         )
 
-        with tracker.track_workflow(params) as workflow_id:
+        with tracker.track_workflow(params):
             assert len(tracker._session_stack) == 1
 
             with tracker.track_agent("nested_agent", {}, "stage-1") as agent_id:

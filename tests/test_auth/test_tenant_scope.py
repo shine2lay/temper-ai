@@ -192,7 +192,7 @@ def test_count_scoped_uses_sqlalchemy_count():
     with (
         patch("temper_ai.auth.tenant_scope.select") as mock_select,
         patch("temper_ai.auth.tenant_scope.col"),
-        patch("sqlalchemy.func") as mock_func,
+        patch("sqlalchemy.func"),
     ):
         mock_stmt = MagicMock()
         mock_select.return_value = mock_stmt

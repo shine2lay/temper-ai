@@ -171,7 +171,7 @@ class TestThreadPoolParallelRunner:
             return {"result": "done"}
 
         initial = {"original": True}
-        result = runner.run_parallel(
+        runner.run_parallel(
             {"a": mutating_node},
             initial,
         )

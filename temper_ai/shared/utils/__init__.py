@@ -5,7 +5,6 @@ This package provides shared utilities:
 - error_handling: Error handling helpers
 - logging: Logging configuration
 - config_helpers: Configuration loading utilities
-- config_migrations: Configuration migration support
 - path_safety: Path validation and sanitization
 - secret_patterns: Secret/credential detection patterns
 - secrets: Secret management utilities

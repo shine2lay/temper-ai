@@ -17,7 +17,7 @@ from temper_ai.tools.base import BaseTool, ToolMetadata, ToolResult
 from temper_ai.tools.tool_cache import ToolResultCache
 from temper_ai.tools.tool_cache_constants import (
     DEFAULT_CACHE_MAX_SIZE,
-    DEFAULT_CACHE_TTL_SECONDS,
+    DEFAULT_TOOL_CACHE_TTL_SECONDS,
 )
 
 # ---------------------------------------------------------------------------
@@ -252,7 +252,7 @@ class TestToolResultCache:
 
     def test_default_constants(self) -> None:
         assert DEFAULT_CACHE_MAX_SIZE == 256
-        assert DEFAULT_CACHE_TTL_SECONDS == 300
+        assert DEFAULT_TOOL_CACHE_TTL_SECONDS == 300
 
 
 # ---------------------------------------------------------------------------

@@ -18,6 +18,7 @@ class AgentRegistryEntry(BaseModel):
     """A registered agent entry in the registry."""
 
     id: str
+    tenant_id: str = "default"
     name: str
     description: str = ""
     version: str = "1.0"

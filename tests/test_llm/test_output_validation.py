@@ -4,7 +4,6 @@ import json
 
 from temper_ai.llm.output_validation import (
     build_retry_prompt_with_error,
-    build_schema_enforcement_prompt,
     validate_output_against_schema,
 )
 
@@ -96,23 +95,6 @@ class TestValidateOutputAgainstSchema:
             assert valid is False
         except ImportError:
             assert valid is True
-
-
-class TestBuildSchemaEnforcementPrompt:
-    """Tests for build_schema_enforcement_prompt."""
-
-    def test_appends_schema(self):
-        """Should append schema instructions to prompt."""
-        result = build_schema_enforcement_prompt("Do X", SIMPLE_SCHEMA)
-        assert result.startswith("Do X")
-        assert '"name"' in result
-        assert "MUST respond with valid JSON" in result
-
-    def test_preserves_original_prompt(self):
-        """Should keep the original prompt intact."""
-        prompt = "This is my original task"
-        result = build_schema_enforcement_prompt(prompt, SIMPLE_SCHEMA)
-        assert prompt in result
 
 
 class TestBuildRetryPromptWithError:

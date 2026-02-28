@@ -302,7 +302,7 @@ class TestTemplateCaching:
             engine.render(
                 template, {"agent_name": "researcher", "domain": "AI", "detailed": True}
             )
-        uncached_time = time.time() - start
+        time.time() - start
 
         # Clear cache for fair comparison
         engine.clear_cache()
@@ -313,7 +313,7 @@ class TestTemplateCaching:
             engine.render(
                 template, {"agent_name": "researcher", "domain": "AI", "detailed": True}
             )
-        cached_time = time.time() - start
+        time.time() - start
 
         # Verify cache is used deterministically via stats
         stats = engine.get_cache_stats()
@@ -1167,7 +1167,7 @@ class TestLargeTemplatePerformance:
 
             # Measure render time
             start = time.time()
-            result = engine.render(template, variables)
+            engine.render(template, variables)
             elapsed_ms = (time.time() - start) * 1000
 
             times.append(elapsed_ms)

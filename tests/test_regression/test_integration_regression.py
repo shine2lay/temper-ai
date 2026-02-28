@@ -52,7 +52,7 @@ class TestAgentToolIntegration:
 
         # Agent creation should now fail early with validation error
         with pytest.raises((ValueError, KeyError, Exception)) as exc_info:
-            agent = AgentFactory.create(config)
+            AgentFactory.create(config)
 
         # Should get clear error about missing tool
         error_msg = str(exc_info.value).lower()

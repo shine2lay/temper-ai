@@ -40,7 +40,9 @@ class TestCreateRollout:
         rollout = _make_rollout()
         assert rollout.id.startswith("rollout-")
         assert len(rollout.phases) == len(DEFAULT_ROLLOUT_PHASES)
-        for phase, expected_pct in zip(rollout.phases, DEFAULT_ROLLOUT_PHASES):
+        for phase, expected_pct in zip(
+            rollout.phases, DEFAULT_ROLLOUT_PHASES, strict=False
+        ):
             assert phase.traffic_percent == expected_pct
 
     def test_first_phase_is_active(self) -> None:

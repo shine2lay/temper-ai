@@ -333,7 +333,7 @@ class TestTrackerBackendFactory:
 
         with patch("temper_ai.observability.tracker.ExecutionTracker") as mock_et:
             mock_et.return_value = MagicMock()
-            bundle = rt.setup_infrastructure()
+            rt.setup_infrastructure()
 
         factory.assert_called_once()
         mock_et.assert_called_once_with(backend=mock_backend, event_bus=None)

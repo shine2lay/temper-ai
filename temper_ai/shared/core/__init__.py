@@ -7,13 +7,6 @@ This package contains foundational components used throughout the framework:
 - Service utilities
 """
 
-from temper_ai.shared.core.protocols import (
-    PolicyRegistryProtocol,
-    Registry,
-    StrategyRegistryProtocol,
-    ToolRegistryProtocol,
-)
-
 
 # Lazy imports to avoid circular dependencies
 def __getattr__(name: str) -> type:
@@ -31,8 +24,4 @@ def __getattr__(name: str) -> type:
 __all__ = [
     "CircuitBreaker",
     "ExecutionContext",
-    "Registry",
-    "PolicyRegistryProtocol",
-    "StrategyRegistryProtocol",
-    "ToolRegistryProtocol",
 ]

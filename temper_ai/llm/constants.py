@@ -29,8 +29,6 @@ DEFAULT_MAX_CIRCUIT_BREAKERS = 100  # LRU eviction threshold for circuit breaker
 # ============================================================================
 
 DEFAULT_TOP_P = 0.9
-DEFAULT_TIMEOUT_SECONDS = 600  # 10 minutes for LLM calls
-DEFAULT_RETRY_DELAY_SECONDS = 2.0
 OLLAMA_DEFAULT_PORT = 11434
 
 # ============================================================================
@@ -59,7 +57,6 @@ SSE_STREAM_DONE_MARKER = "[DONE]"
 # ============================================================================
 
 CPU_MULTIPLIER = 2  # Multiplier for CPU count in pool sizing
-CPU_OFFSET = 4  # Offset added to pool size calculation
 
 # ============================================================================
 # Cost Estimation

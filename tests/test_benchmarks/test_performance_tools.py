@@ -33,16 +33,18 @@ from temper_ai.tools.executor import ToolExecutor
 
 
 @pytest.mark.benchmark(group="tools")
-def test_tool_registry_lookup(tool_registry, benchmark):
+def test_tool_registry_lookup(benchmark):
     """Benchmark tool registry lookup.
 
     Target: <5ms
     Measures: Registry search overhead
     """
-    # Register a tool
-    tool_registry.register(Calculator())
+    from temper_ai.tools.registry import ToolRegistry
 
-    result = benchmark(tool_registry.get, "calculator")
+    registry = ToolRegistry()
+    registry.register(Calculator())
+
+    result = benchmark(registry.get, "Calculator")
     assert result is not None
 
 
@@ -72,7 +74,7 @@ def test_tool_executor_overhead(tool_registry, benchmark):
     executor = ToolExecutor(registry=tool_registry, max_workers=4)
 
     try:
-        result = benchmark(executor.execute, "calculator", {"expression": "2 + 2"})
+        result = benchmark(executor.execute, "Calculator", {"expression": "2 + 2"})
         assert result.success is True
     finally:
         executor.shutdown()
@@ -94,7 +96,7 @@ def test_tool_concurrent_execution_4_workers(tool_registry, benchmark):
         with ThreadPoolExecutor(max_workers=4) as pool:
             for i in range(10):
                 future = pool.submit(
-                    executor.execute, "calculator", {"expression": f"{i} + {i}"}
+                    executor.execute, "Calculator", {"expression": f"{i} + {i}"}
                 )
                 futures.append(future)
 
@@ -125,7 +127,7 @@ def test_tool_concurrent_execution_10_workers(tool_registry, benchmark):
         with ThreadPoolExecutor(max_workers=10) as pool:
             for i in range(10):
                 future = pool.submit(
-                    executor.execute, "calculator", {"expression": f"{i} + {i}"}
+                    executor.execute, "Calculator", {"expression": f"{i} + {i}"}
                 )
                 futures.append(future)
 

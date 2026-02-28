@@ -258,7 +258,7 @@ class TestOutputSanitization:
         ]
 
         detected_count = 0
-        for text, expected_secret, should_detect in test_cases:
+        for text, expected_secret, _should_detect in test_cases:
             sanitized, violations = sanitizer.sanitize(text)
             if expected_secret not in sanitized:
                 detected_count += 1

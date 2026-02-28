@@ -23,10 +23,11 @@ from temper_ai.shared.constants.durations import (
     RATE_LIMIT_WINDOW_HOUR,
     RATE_LIMIT_WINDOW_MINUTE,
     RATE_LIMIT_WINDOW_SECOND,
-    SECONDS_PER_2_HOURS,
     SECONDS_PER_HOUR,
     SECONDS_PER_MINUTE,
 )
+
+SECONDS_PER_2_HOURS = 7200
 
 # Default rate limit values
 DEFAULT_MAX_CALLS_PER_MINUTE = 100  # scanner: skip-magic

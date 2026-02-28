@@ -5,7 +5,6 @@ Verifies that FileCheckpointBackend.save_checkpoint() uses atomic file writes
 or crashes mid-write.
 """
 
-import json
 import os
 import shutil
 import tempfile
@@ -49,7 +48,7 @@ class TestAtomicWritePattern:
         with patch(
             "temper_ai.workflow.checkpoint_backends.os.replace", wraps=os.replace
         ) as mock_replace:
-            cp_id = backend.save_checkpoint("wf-lock-test", domain_state)
+            backend.save_checkpoint("wf-lock-test", domain_state)
 
             mock_replace.assert_called_once()
             # Verify the target path is the checkpoint file
@@ -62,7 +61,7 @@ class TestAtomicWritePattern:
             "temper_ai.workflow.checkpoint_backends.tempfile.mkstemp",
             wraps=tempfile.mkstemp,
         ) as mock_mkstemp:
-            cp_id = backend.save_checkpoint("wf-lock-test", domain_state)
+            backend.save_checkpoint("wf-lock-test", domain_state)
 
             mock_mkstemp.assert_called_once()
             # Temp file should be in the same directory as the checkpoint
@@ -158,9 +157,7 @@ class TestCrashRecovery:
     def test_previous_checkpoint_intact_on_write_failure(self, backend, domain_state):
         """If write fails mid-way, the previous checkpoint should be intact."""
         # Save initial checkpoint
-        cp_id = backend.save_checkpoint(
-            "wf-crash", domain_state, checkpoint_id="cp-good"
-        )
+        backend.save_checkpoint("wf-crash", domain_state, checkpoint_id="cp-good")
 
         # Verify initial checkpoint
         loaded = backend.load_checkpoint("wf-crash", "cp-good")
@@ -168,7 +165,6 @@ class TestCrashRecovery:
 
         # Simulate a crash during the second save to the SAME checkpoint ID
         # by making json.dump raise mid-write
-        original_dump = json.dump
 
         def crashing_dump(data, f, **kwargs):
             f.write("{corrupted")

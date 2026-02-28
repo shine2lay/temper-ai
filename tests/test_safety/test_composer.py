@@ -394,7 +394,7 @@ class TestViolationReporting:
 
         composer.add_policy(policy)
 
-        result = composer.validate(action={"tool": "test"}, context={})
+        composer.validate(action={"tool": "test"}, context={})
 
         # Violation should be reported to policy
         assert len(policy.reported_violations) == 1
@@ -413,7 +413,7 @@ class TestViolationReporting:
 
         composer.add_policy(policy)
 
-        result = composer.validate(action={"tool": "test"}, context={})
+        composer.validate(action={"tool": "test"}, context={})
 
         # No violations should be reported
         assert len(policy.reported_violations) == 0
@@ -463,7 +463,7 @@ class TestExceptionHandling:
         policy = MockPolicy("failing_policy", raise_exception=True)
         composer.add_policy(policy)
 
-        result = composer.validate(action={"tool": "test"}, context={})
+        composer.validate(action={"tool": "test"}, context={})
 
         # Exception violation should be reported
         assert len(policy.reported_violations) == 1

@@ -469,7 +469,7 @@ class WebScraper(BaseTool):
         try:
             self.close()
         except (OSError, RuntimeError):
-            pass
+            self._client = None
 
     params_model = WebScraperParams
 

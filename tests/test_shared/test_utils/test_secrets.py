@@ -9,46 +9,10 @@ from unittest.mock import patch
 import pytest
 
 from temper_ai.shared.utils.secrets import (
-    ObfuscatedCredential,
     SecretReference,
     detect_secret_patterns,
-    mask_url_password,
     resolve_secret,
 )
-
-
-class TestMaskUrlPassword:
-    """Test mask_url_password function."""
-
-    def test_mask_redis_url(self):
-        """Test masking Redis URL password."""
-        url = "redis://:secret@localhost:6379/0"
-        masked = mask_url_password(url)
-        assert masked == "redis://:***@localhost:6379/0"
-
-    def test_mask_postgres_url(self):
-        """Test masking PostgreSQL URL password."""
-        url = "postgresql://user:password123@localhost:5432/mydb"
-        masked = mask_url_password(url)
-        assert masked == "postgresql://user:***@localhost:5432/mydb"
-
-    def test_no_password(self):
-        """Test URL without password is unchanged."""
-        url = "redis://localhost:6379/0"
-        masked = mask_url_password(url)
-        assert masked == url
-
-    def test_user_without_password(self):
-        """Test URL with user but no password."""
-        url = "postgresql://user@localhost:5432/mydb"
-        masked = mask_url_password(url)
-        assert masked == url
-
-    def test_http_url_with_auth(self):
-        """Test HTTP URL with authentication."""
-        url = "http://admin:secret@api.example.com/path"
-        masked = mask_url_password(url)
-        assert masked == "http://admin:***@api.example.com/path"
 
 
 class TestSecretReference:
@@ -139,66 +103,6 @@ class TestSecretReference:
         """Test that plain text is returned as-is."""
         result = SecretReference.resolve("plain-value")
         assert result == "plain-value"
-
-
-class TestObfuscatedCredential:
-    """Test ObfuscatedCredential class."""
-
-    def test_initialization(self):
-        """Test credential initialization."""
-        cred = ObfuscatedCredential("secret-value")
-        assert cred._access_count == 0
-        assert cred._encrypted is not None
-        assert cred._key is not None
-
-    def test_empty_value_raises(self):
-        """Test that empty value raises ValueError."""
-        with pytest.raises(
-            ValueError, match="Cannot create ObfuscatedCredential with empty value"
-        ):
-            ObfuscatedCredential("")
-
-    def test_get_returns_original(self):
-        """Test that get() returns the original value."""
-        original = "secret-api-key-123"
-        cred = ObfuscatedCredential(original)
-        assert cred.get() == original
-
-    def test_access_count_increments(self):
-        """Test that access count increments on each get()."""
-        cred = ObfuscatedCredential("secret")
-        assert cred._access_count == 0
-        cred.get()
-        assert cred._access_count == 1
-        cred.get()
-        assert cred._access_count == 2
-
-    def test_str_redacted(self):
-        """Test that str() returns redacted value."""
-        cred = ObfuscatedCredential("secret-value")
-        assert str(cred) == "***REDACTED***"
-
-    def test_repr_redacted(self):
-        """Test that repr() returns redacted value."""
-        cred = ObfuscatedCredential("secret-value")
-        repr_str = repr(cred)
-        assert "***REDACTED***" in repr_str
-        assert "ObfuscatedCredential" in repr_str
-        assert "secret-value" not in repr_str
-
-    def test_bool_always_true(self):
-        """Test that credential is always truthy."""
-        cred = ObfuscatedCredential("any-value")
-        assert bool(cred) is True
-
-    def test_multiple_credentials_independent(self):
-        """Test that multiple credentials are independent."""
-        cred1 = ObfuscatedCredential("secret1")
-        cred2 = ObfuscatedCredential("secret2")
-
-        assert cred1.get() == "secret1"
-        assert cred2.get() == "secret2"
-        assert cred1._key != cred2._key
 
 
 class TestResolveSecret:

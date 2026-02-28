@@ -12,8 +12,6 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-_SCHEMA_INSTRUCTION = "\n\nYou MUST respond with valid JSON matching this schema:\n"
-
 _RETRY_INSTRUCTION = (
     "Your previous output was invalid JSON.\n"
     "Error: {error}\n\n"
@@ -46,15 +44,6 @@ def validate_output_against_schema(
         return True, None
     except jsonschema.ValidationError as exc:
         return False, f"Schema validation failed: {exc.message}"
-
-
-def build_schema_enforcement_prompt(
-    original_prompt: str,
-    json_schema: dict[str, Any],
-) -> str:
-    """Append JSON schema instructions to the prompt."""
-    schema_text = json.dumps(json_schema, indent=2)
-    return original_prompt + _SCHEMA_INSTRUCTION + schema_text
 
 
 def build_retry_prompt_with_error(

@@ -12,7 +12,7 @@ modules for:
 import os
 from pathlib import Path
 
-from temper_ai.shared.utils.constants import MAX_COMPONENT_LENGTH, MAX_PATH_LENGTH
+from temper_ai.shared.constants.limits import MAX_COMPONENT_LENGTH, MAX_PATH_LENGTH
 from temper_ai.shared.utils.path_safety.exceptions import PathSafetyError
 from temper_ai.shared.utils.path_safety.path_rules import PathValidationRules
 from temper_ai.shared.utils.path_safety.platform_detector import PlatformPathDetector

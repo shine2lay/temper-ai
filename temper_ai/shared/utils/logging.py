@@ -9,24 +9,19 @@ Provides centralized logging with:
 - Log level configuration from environment
 """
 
-import functools
 import json
 import logging
-import os
 import re
-import sys
-import types
 import unicodedata
 from collections.abc import Callable
 from datetime import datetime
-from pathlib import Path
-from typing import Any, Self
 from urllib.parse import unquote
 
 from temper_ai.shared.constants.limits import DEFAULT_MAX_ITEMS
 from temper_ai.shared.constants.probabilities import PROB_VERY_HIGH
 from temper_ai.shared.constants.sizes import SIZE_10KB
-from temper_ai.shared.utils.constants import REDACTION_REPLACEMENT
+
+REDACTION_REPLACEMENT = "\\1=[REDACTED]"
 
 # ASCII control character boundaries
 ASCII_CONTROL_CHAR_MAX = (
@@ -74,18 +69,9 @@ def _build_sensitive_patterns() -> list[tuple[re.Pattern[str], str]]:
             REDACTION_REPLACEMENT,
         ),
     ]
-    # Add vendor-specific patterns from centralized registry
-    for name in (
-        "openai_project_key",
-        "openai_key",
-        "anthropic_key",
-        "aws_access_key",
-        "github_token",
-        "google_api_key",
-        "stripe_key",
-    ):
-        if name in SECRET_PATTERNS:
-            patterns.append((re.compile(SECRET_PATTERNS[name]), "***REDACTED***"))
+    # Add ALL vendor-specific patterns from centralized registry
+    for pattern in SECRET_PATTERNS.values():
+        patterns.append((re.compile(pattern), "***REDACTED***"))
     return patterns
 
 
@@ -300,21 +286,9 @@ class SecretRedactingFormatter(logging.Formatter):
     - Known secret patterns
     """
 
-    REDACTED_KEYS = [
-        "api_key",
-        "apikey",
-        "api-key",
-        "api_key_ref",
-        "password",
-        "passwd",
-        "pwd",
-        "secret",
-        "token",
-        "auth",
-        "credential",
-        "private_key",
-        "access_key",
-    ]
+    from temper_ai.shared.utils.secret_patterns import SECRET_KEY_NAMES
+
+    REDACTED_KEYS = SECRET_KEY_NAMES
 
     def format(self, record: logging.LogRecord) -> str:
         """
@@ -556,116 +530,6 @@ class ConsoleFormatter(SecretRedactingFormatter):
         return formatted
 
 
-def _configure_console_handler(
-    numeric_level: int,
-    context_filter: ExecutionContextFilter,
-    use_colors: bool,
-) -> logging.Handler:
-    """Create a console handler with the given level, filter, and color settings."""
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setLevel(numeric_level)
-    console_handler.setFormatter(ConsoleFormatter(use_colors=use_colors))
-    console_handler.addFilter(context_filter)
-    return console_handler
-
-
-def _configure_json_handler(
-    numeric_level: int,
-    context_filter: ExecutionContextFilter,
-) -> logging.Handler:
-    """Create a JSON handler writing to stderr with structured formatting."""
-    json_handler = logging.StreamHandler(sys.stderr)
-    json_handler.setLevel(numeric_level)
-    json_handler.setFormatter(StructuredFormatter())
-    json_handler.addFilter(context_filter)
-    return json_handler
-
-
-def _configure_rich_handler(
-    numeric_level: int,
-    context_filter: ExecutionContextFilter,
-    use_colors: bool,
-) -> logging.Handler:
-    """Create a Rich handler, falling back to console if Rich is unavailable."""
-    try:
-        from rich.logging import RichHandler
-
-        rich_handler = RichHandler(show_path=False, show_time=True, markup=False)
-        rich_handler.setLevel(numeric_level)
-        rich_handler.addFilter(context_filter)
-        return rich_handler
-    except ImportError:
-        # Fall back to console if rich not available
-        return _configure_console_handler(numeric_level, context_filter, use_colors)
-
-
-def _configure_file_handler(
-    log_file: str,
-    numeric_level: int,
-    context_filter: ExecutionContextFilter,
-) -> logging.Handler:
-    """Create a file handler with structured JSON formatting."""
-    log_path = Path(log_file)
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    file_handler = logging.FileHandler(log_file)
-    file_handler.setLevel(numeric_level)
-    file_handler.setFormatter(StructuredFormatter())
-    file_handler.addFilter(context_filter)
-    return file_handler
-
-
-def setup_logging(
-    level: str | None = None,
-    format_type: str | None = None,
-    log_file: str | None = None,
-    use_colors: bool = True,
-) -> None:
-    """Configure logging for the application.
-
-    Args:
-        level: Log level (default: TEMPER_LOG_LEVEL env var or INFO).
-        format_type: Output format - "console", "json", "rich", or "both"
-                     (default: TEMPER_LOG_FORMAT env var or "console").
-        log_file: Optional file path for logging.
-        use_colors: Whether to use colors in console output.
-
-    ``ExecutionContextFilter`` is attached to every handler so that
-    execution-context and OTEL fields are available on every ``LogRecord``.
-    """
-    if level is None:
-        level = os.environ.get("TEMPER_LOG_LEVEL", "INFO").upper()
-    if format_type is None:
-        format_type = os.environ.get("TEMPER_LOG_FORMAT", "console").lower()
-
-    numeric_level = getattr(logging, level, None)
-    if not isinstance(numeric_level, int):
-        numeric_level = logging.INFO
-
-    context_filter = ExecutionContextFilter()
-    root_logger = logging.getLogger()
-    root_logger.setLevel(numeric_level)
-    root_logger.handlers.clear()
-
-    if format_type in ("console", "both"):
-        root_logger.addHandler(
-            _configure_console_handler(numeric_level, context_filter, use_colors)
-        )
-    if format_type in ("json", "both"):
-        root_logger.addHandler(_configure_json_handler(numeric_level, context_filter))
-    if format_type == "rich":
-        root_logger.addHandler(
-            _configure_rich_handler(numeric_level, context_filter, use_colors)
-        )
-    if log_file:
-        root_logger.addHandler(
-            _configure_file_handler(log_file, numeric_level, context_filter)
-        )
-
-    get_logger(__name__).debug(
-        f"Logging configured: level={level}, format={format_type}, file={log_file}"
-    )
-
-
 def get_logger(name: str) -> logging.Logger:
     """
     Get a logger instance with the given name.
@@ -681,124 +545,3 @@ def get_logger(name: str) -> logging.Logger:
         >>> logger.info("Processing started", user_id=123)
     """
     return logging.getLogger(name)
-
-
-class LogContext:
-    """
-    Context manager for adding structured fields to log messages.
-
-    Example:
-        >>> logger = get_logger(__name__)
-        >>> with LogContext(logger, user_id=123, request_id="abc"):
-        ...     logger.info("Processing request")
-        # Logs: Processing request {user_id: 123, request_id: "abc"}
-    """
-
-    def __init__(self, logger: logging.Logger, **context_fields: Any) -> None:
-        """
-        Initialize log context.
-
-        Args:
-            logger: Logger to add context to
-            **context_fields: Key-value pairs to add to log messages
-        """
-        self.logger = logger
-        self.context_fields = context_fields
-        self.old_factory: Callable[..., logging.LogRecord] | None = None
-
-    def __enter__(self) -> Self:
-        """Enter context and install log record factory."""
-        # Save old factory
-        self.old_factory = logging.getLogRecordFactory()
-
-        # Create new factory that adds context fields
-        context_fields = self.context_fields
-        old_factory = self.old_factory
-
-        def record_factory(*args: Any, **kwargs: Any) -> logging.LogRecord:
-            """Logging record factory."""
-            if old_factory is None:
-                raise RuntimeError("old_factory is None in logging context manager")
-            record = old_factory(*args, **kwargs)
-            for key, value in context_fields.items():
-                setattr(record, key, value)
-            return record
-
-        logging.setLogRecordFactory(record_factory)
-        return self
-
-    def __exit__(
-        self,
-        _exc_type: type[BaseException] | None,
-        _exc_val: BaseException | None,
-        _exc_tb: types.TracebackType | None,
-    ) -> None:
-        """Exit context and restore old factory."""
-        if self.old_factory is not None:
-            logging.setLogRecordFactory(self.old_factory)
-
-
-def log_function_call(
-    logger: logging.Logger, level: int = logging.DEBUG
-) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
-    """
-    Decorator to log function entry and exit.
-
-    Args:
-        logger: Logger to use
-        level: Log level for messages
-
-    Example:
-        >>> logger = get_logger(__name__)
-        >>> @log_function_call(logger)
-        ... def process_data(data):
-        ...     return len(data)
-    """
-    # Parameter names that indicate sensitive values
-    _sensitive_names = frozenset(
-        {
-            "password",
-            "passwd",
-            "secret",
-            "token",
-            "api_key",
-            "apikey",
-            "credentials",
-            "auth",
-            "authorization",
-            "private_key",
-            "encryption_key",
-        }
-    )
-
-    def _redact_value(name: str, value: Any) -> Any:
-        """Redact value if parameter name suggests it is sensitive."""
-        if name.lower() in _sensitive_names:
-            return "***"
-        return value
-
-    def _safe_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
-        return {k: _redact_value(k, v) for k, v in kwargs.items()}
-
-    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
-        """Logging decorator."""
-
-        @functools.wraps(func)
-        def wrapper(*func_args: Any, **func_kwargs: Any) -> Any:
-            """Logging wrapper."""
-            safe_kw = _safe_kwargs(func_kwargs)
-            logger.log(
-                level,
-                f"Entering {func.__name__} with args={func_args}, kwargs={safe_kw}",
-            )
-            try:
-                result = func(*func_args, **func_kwargs)
-                logger.log(level, f"Exiting {func.__name__}")
-                return result
-            except Exception as e:
-                logger.error(f"Exception in {func.__name__}: {e}", exc_info=True)
-                raise
-
-        return wrapper
-
-    return decorator

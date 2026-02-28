@@ -140,7 +140,7 @@ class TestNestedValidation:
         # Build a dict nested >20 levels deep
         d: dict = {}
         current = d
-        for i in range(25):
+        for _i in range(25):
             current["level"] = {}
             current = current["level"]
         current["leaf"] = "value"

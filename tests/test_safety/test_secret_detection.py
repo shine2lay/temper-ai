@@ -630,7 +630,7 @@ class TestSecretAllowlist:
         """Real password should not be allowed."""
         policy = SecretDetectionPolicy()
         content = 'password="MyR3alP@ssw0rd!"'
-        result = policy.validate({"content": content}, {})
+        policy.validate({"content": content}, {})
         # May or may not be detected depending on entropy
         # At minimum should not be in allowlist
         assert not policy._is_test_secret("MyR3alP@ssw0rd!")
@@ -865,7 +865,7 @@ class TestConfiguration:
     def test_default_configuration(self):
         """Default configuration should be sensible."""
         policy = SecretDetectionPolicy()
-        assert len(policy.enabled_patterns) == 19
+        assert len(policy.enabled_patterns) == 22
         assert policy.entropy_threshold == 4.5
         assert policy.allow_test_secrets is True
         assert policy.excluded_paths == []
@@ -986,7 +986,7 @@ class TestPerformance:
         policy = SecretDetectionPolicy()
         content = "api_key=AKIAIOSFODNN7EXAMPLE password=test123"
         start = time.time()
-        result = policy.validate({"content": content}, {})
+        policy.validate({"content": content}, {})
         elapsed = (time.time() - start) * 1000  # Convert to ms
         assert elapsed < 5.0  # Should be <5ms
 
@@ -999,7 +999,7 @@ class TestPerformance:
         )
         assert len(content) > 10_000
         start = time.time()
-        result = policy.validate({"content": content}, {})
+        policy.validate({"content": content}, {})
         elapsed = (time.time() - start) * 1000
         assert elapsed < 50.0  # Should be <50ms
 
@@ -1010,7 +1010,7 @@ class TestPerformance:
         content = "safe content " * 80_000
         start = time.time()
         result = policy.validate({"content": content}, {})
-        elapsed = (time.time() - start) * 1000
+        (time.time() - start) * 1000
         # Should complete without error (no strict time limit)
         assert result.valid
 
@@ -1286,7 +1286,7 @@ SECRET_KEY = "sk-proj-aB3dE5fG7hI9jK1lM3nO5pQ7rS9tU1vW3xY5zA7"
         import time
 
         start = time.time()
-        result = policy.validate({"content": content}, {})
+        policy.validate({"content": content}, {})
         duration = time.time() - start
 
         # Should complete quickly (< 1 second)
@@ -1324,13 +1324,13 @@ class TestDetectionSummary:
         policy = SecretDetectionPolicy()
         summary = policy.get_detection_summary()
 
-        assert summary["pattern_count"] == 19
+        assert summary["pattern_count"] == 22
         assert summary["entropy_threshold"] == 4.5
         assert summary["entropy_threshold_generic"] == 3.5
         assert summary["allow_test_secrets"] is True
         assert summary["excluded_paths"] == []
-        assert len(summary["enabled_patterns"]) == 19
-        assert len(summary["specific_patterns"]) == 13  # SECRET_PATTERNS
+        assert len(summary["enabled_patterns"]) == 22
+        assert len(summary["specific_patterns"]) == 16  # SECRET_PATTERNS
         assert len(summary["generic_patterns"]) == 6  # GENERIC_SECRET_PATTERNS
 
     def test_get_detection_summary_custom_config(self):

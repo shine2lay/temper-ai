@@ -62,7 +62,7 @@ from temper_ai.llm.providers._base_helpers import (
 from temper_ai.llm.providers._base_helpers import (
     validate_base_url as _validate_base_url,
 )
-from temper_ai.shared.constants.durations import SLEEP_VERY_SHORT, TIMEOUT_HTTP_DEFAULT
+from temper_ai.shared.constants.durations import SLEEP_VERY_SHORT
 from temper_ai.shared.constants.retries import (
     DEFAULT_BACKOFF_MULTIPLIER,
     DEFAULT_MAX_RETRIES,
@@ -80,7 +80,6 @@ from temper_ai.shared.utils.exceptions import (
 logger = logging.getLogger(__name__)
 
 # Timeout and retry constants
-DEFAULT_TIMEOUT_SECONDS = TIMEOUT_HTTP_DEFAULT
 DEFAULT_BACKOFF_FACTOR = DEFAULT_BACKOFF_MULTIPLIER
 CPU_SAMPLE_INTERVAL_SECONDS = SLEEP_VERY_SHORT
 

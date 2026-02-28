@@ -55,6 +55,7 @@ from temper_ai.stage.executors._parallel_quality_gates import (  # noqa: F401
     validate_quality_gates,
 )
 from temper_ai.stage.executors.state_keys import StateKeys
+from temper_ai.workflow.context_provider import ContextResolutionError
 
 logger = logging.getLogger(__name__)
 
@@ -461,6 +462,8 @@ def _resolve_context_parallel_input(
         if "_context_meta" in resolved:
             state["_context_meta"] = resolved["_context_meta"]
         return resolved
+    except ContextResolutionError:
+        raise  # Let WorkflowExecutor handle required-input failures
     except Exception:  # noqa: BLE001
         logger.warning(
             "Context provider resolution failed for parallel stage, "

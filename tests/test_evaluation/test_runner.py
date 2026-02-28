@@ -301,6 +301,76 @@ class TestRunCaseWarnSeverityDoesNotFail:
         assert result.status == STATUS_PASS
 
 
+class TestCallLlm:
+    """Tests for _call_llm to cover lines 98-107."""
+
+    def test_call_llm_returns_raw_and_answer(self):
+        runner = _make_runner()
+        mock_result = type("R", (), {"output": "raw <answer>DECISION: OK</answer>"})()
+        mock_llm = object()
+        mock_svc = type("S", (), {"run": lambda self, p: mock_result})()
+
+        with (
+            patch(
+                "temper_ai.llm.providers.factory.create_llm_from_config",
+                return_value=mock_llm,
+            ),
+            patch(
+                "temper_ai.llm.service.LLMService",
+                return_value=mock_svc,
+            ),
+            patch(
+                "temper_ai.llm.response_parser.extract_final_answer",
+                return_value="DECISION: OK",
+            ),
+        ):
+            raw, answer = runner._call_llm("test prompt")
+
+        assert raw == "raw <answer>DECISION: OK</answer>"
+        assert answer == "DECISION: OK"
+
+    def test_call_llm_extracts_answer_text(self):
+        runner = _make_runner()
+        mock_result = type("R", (), {"output": "hello world"})()
+        mock_svc = type("S", (), {"run": lambda self, p: mock_result})()
+
+        with (
+            patch(
+                "temper_ai.llm.providers.factory.create_llm_from_config",
+            ),
+            patch(
+                "temper_ai.llm.service.LLMService",
+                return_value=mock_svc,
+            ),
+            patch(
+                "temper_ai.llm.response_parser.extract_final_answer",
+                return_value="extracted",
+            ) as mock_extract,
+        ):
+            raw, answer = runner._call_llm("prompt")
+
+        assert answer == "extracted"
+        mock_extract.assert_called_once_with("hello world")
+
+
+class TestEvaluationLazyImport:
+    """Tests for temper_ai.evaluation.__init__ lazy import (lines 20-24)."""
+
+    def test_lazy_import_prompt_test_runner(self):
+        import temper_ai.evaluation as mod
+
+        cls = mod.__getattr__("PromptTestRunner")
+        from temper_ai.evaluation.runner import PromptTestRunner
+
+        assert cls is PromptTestRunner
+
+    def test_lazy_import_unknown_raises(self):
+        import temper_ai.evaluation as mod
+
+        with pytest.raises(AttributeError, match="no attribute"):
+            mod.__getattr__("NonExistentClass")
+
+
 class TestRunnerInit:
     def test_loads_config_and_extracts_prompt(self):
         runner = _make_runner()

@@ -363,7 +363,7 @@ class TestConfigSizeLimits:
             # Calculate how much data to write to reach 10MB
             target_size = 10 * 1024 * 1024  # 10MB
             header = "name: test_agent\nversion: 1.0\nllm:\n  provider: openai\n  model: gpt-4\ndata:\n"
-            header_size = len(header.encode("utf-8"))
+            len(header.encode("utf-8"))
 
             # Use fewer nodes with larger values to stay under 100k node limit
             # Each line is ~1KB (1000 bytes), so 10,000 lines = ~10MB
@@ -505,7 +505,7 @@ node_b: &node_b
 
             # Should detect circular reference during processing
             # This might be caught during parsing or during env var substitution
-            with pytest.raises((ConfigValidationError, RecursionError)) as exc_info:
+            with pytest.raises((ConfigValidationError, RecursionError)):
                 config = loader.load_agent("circular", validate=False)
 
                 # If loading succeeds, try to access the circular structure
@@ -542,7 +542,7 @@ recursive: &loop
             loader = ConfigLoader(config_root=config_root)
 
             # Should detect self-reference
-            with pytest.raises((ConfigValidationError, RecursionError)) as exc_info:
+            with pytest.raises((ConfigValidationError, RecursionError)):
                 config = loader.load_agent("self_ref", validate=False)
 
                 # Try to serialize to trigger detection

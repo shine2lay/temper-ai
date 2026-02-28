@@ -233,7 +233,7 @@ class TestAdditionalReDoSPatterns:
         attack = "sk-ant-api" + "9" * 10 + "-" + "A" * 150 + "!"
 
         start = time.time()
-        result = detect_secret_patterns(attack)
+        detect_secret_patterns(attack)
         elapsed = time.time() - start
 
         # Should complete quickly (bounded quantifiers prevent catastrophic backtracking)
@@ -245,7 +245,7 @@ class TestAdditionalReDoSPatterns:
         attack = "ya29." + "A" * 600 + "!"
 
         start = time.time()
-        result = detect_secret_patterns(attack)
+        detect_secret_patterns(attack)
         elapsed = time.time() - start
 
         # Should complete quickly (bounded quantifiers prevent catastrophic backtracking)
@@ -299,7 +299,7 @@ class TestInputValidation:
 
         try:
             detect_secret_patterns(huge_input)
-            assert False, "Should have raised ValueError"
+            raise AssertionError("Should have raised ValueError")
         except ValueError as e:
             error_msg = str(e)
             assert "110000" in error_msg  # Actual size

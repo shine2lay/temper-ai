@@ -9,10 +9,7 @@ import pytest
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, select
 
-from temper_ai.events.constants import (
-    EVENT_STAGE_COMPLETED,
-    EVENT_WORKFLOW_COMPLETED,
-)
+from temper_ai.events.constants import EVENT_WORKFLOW_COMPLETED
 from temper_ai.events.event_bus import TemperEventBus
 from temper_ai.events.models import (
     EventLog,
@@ -108,7 +105,7 @@ class TestEmitPersistsEvent:
 
     def test_emit_multiple_events_all_persisted(self, bus, session_factory) -> None:
         bus.emit(EVENT_WORKFLOW_COMPLETED, payload={"x": 1}, source_workflow_id="wf-a")
-        bus.emit(EVENT_STAGE_COMPLETED, payload={"x": 2}, source_workflow_id="wf-a")
+        bus.emit("stage.completed", payload={"x": 2}, source_workflow_id="wf-a")
 
         all_rows = _query_event_log(session_factory)
         assert len(all_rows) == 2
@@ -218,11 +215,11 @@ class TestReplayEvents:
 
     def test_replay_filtered_by_event_type(self, bus, session_factory) -> None:
         bus.emit(EVENT_WORKFLOW_COMPLETED, payload={"x": 1})
-        bus.emit(EVENT_STAGE_COMPLETED, payload={"x": 2})
+        bus.emit("stage.completed", payload={"x": 2})
 
-        replayed = bus.replay_events(event_type=EVENT_STAGE_COMPLETED)
+        replayed = bus.replay_events(event_type="stage.completed")
         assert len(replayed) == 1
-        assert replayed[0].event_type == EVENT_STAGE_COMPLETED
+        assert replayed[0].event_type == "stage.completed"
 
 
 class TestWorkflowCompletionEmit:

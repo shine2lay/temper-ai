@@ -132,7 +132,7 @@ class TestRetryStrategyEdgeCases:
         delays = [params.calculate_delay(i) for i in range(5)]
         # Use approximate comparison for floating point
         expected = [0.1, 0.2, 0.3, 0.4, 0.5]
-        for actual, exp in zip(delays, expected):
+        for actual, exp in zip(delays, expected, strict=False):
             assert abs(actual - exp) < 0.0001
 
     def test_custom_backoff_multiplier(self):

@@ -32,4 +32,3 @@ GIT_BLOCKED_FLAGS = frozenset(
 )
 GIT_DEFAULT_TIMEOUT = 60
 GIT_MAX_DIFF_SIZE = 262144  # 256 KB  # noqa: scanner: skip-magic
-GIT_MAX_LOG_ENTRIES = 100

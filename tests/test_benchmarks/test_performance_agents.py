@@ -96,8 +96,9 @@ def test_agent_prompt_rendering(minimal_agent_config, benchmark):
         def render_prompt():
             from temper_ai.llm.prompts.engine import PromptEngine
 
-            engine = PromptEngine(minimal_agent_config.agent.prompt)
-            return engine.render({"input": "test query"})
+            engine = PromptEngine()
+            template = minimal_agent_config.agent.prompt.inline or ""
+            return engine.render(template, {"input": "test query"})
 
         result = benchmark(render_prompt)
         assert result is not None
@@ -139,9 +140,8 @@ def test_agent_factory_creation(minimal_agent_config, benchmark):
     """
 
     def create_via_factory():
-        factory = AgentFactory()
-        with patch.object(factory, "tool_registry"):
-            return factory.create_agent(minimal_agent_config)
+        with patch("temper_ai.agent.base_agent.ToolRegistry"):
+            return AgentFactory.create(minimal_agent_config)
 
     result = benchmark(create_via_factory)
     assert result is not None

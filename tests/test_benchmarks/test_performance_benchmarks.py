@@ -15,6 +15,7 @@ Compare with regression detection:
 """
 
 import time
+from datetime import UTC
 from unittest.mock import Mock, patch
 
 import pytest
@@ -159,7 +160,7 @@ def test_compiler_simple_workflow(simple_workflow_config, benchmark):
     Target: <1s
     Measures: Graph construction, node creation, state initialization
     """
-    with patch("temper_ai.workflow.langgraph_compiler.ConfigLoader"):
+    with patch("temper_ai.workflow.engines.langgraph_compiler.ConfigLoader"):
         compiler = LangGraphCompiler()
         mock_loader = Mock()
         mock_stage_config = Mock()
@@ -181,7 +182,7 @@ def test_compiler_medium_workflow(medium_workflow_config, benchmark):
     Target: <3s
     Measures: Scalability of compilation with moderate complexity
     """
-    with patch("temper_ai.workflow.langgraph_compiler.ConfigLoader"):
+    with patch("temper_ai.workflow.engines.langgraph_compiler.ConfigLoader"):
         compiler = LangGraphCompiler()
         mock_loader = Mock()
         mock_stage_config = Mock()
@@ -202,7 +203,7 @@ def test_compiler_large_workflow(large_workflow_config, benchmark):
     Target: <5s
     Measures: Scalability of compilation with large workflows
     """
-    with patch("temper_ai.workflow.langgraph_compiler.ConfigLoader"):
+    with patch("temper_ai.workflow.engines.langgraph_compiler.ConfigLoader"):
         compiler = LangGraphCompiler()
         mock_loader = Mock()
         mock_stage_config = Mock()
@@ -224,7 +225,7 @@ def test_compiler_complex_workflow(complex_workflow_config, benchmark):
     Target: <15s
     Measures: Maximum scalability of compilation
     """
-    with patch("temper_ai.workflow.langgraph_compiler.ConfigLoader"):
+    with patch("temper_ai.workflow.engines.langgraph_compiler.ConfigLoader"):
         compiler = LangGraphCompiler()
         mock_loader = Mock()
         mock_stage_config = Mock()
@@ -251,12 +252,13 @@ def test_compiler_config_loading(benchmark):
     mock_config = {
         "stage": {
             "name": "test_stage",
-            "agents": [],
+            "description": "Test stage for benchmarking",
+            "agents": ["test_agent"],
             "collaboration": {"strategy": "sequential"},
         }
     }
 
-    with patch.object(config_loader, "_load_yaml_file", return_value=mock_config):
+    with patch.object(config_loader, "_load_config_file", return_value=mock_config):
         result = benchmark(config_loader.load_stage, "mock_path.yaml")
 
     assert result is not None
@@ -282,6 +284,10 @@ def test_compiler_schema_validation(benchmark):
                     provider="ollama", model="llama2", base_url="http://localhost:11434"
                 ),
                 tools=["test_runner", "linter"],
+                error_handling={
+                    "retry_strategy": "ExponentialBackoff",
+                    "fallback": "GracefulDegradation",
+                },
             )
         )
 
@@ -324,9 +330,11 @@ def test_compiler_node_builder_creation(benchmark):
         return NodeBuilder(
             config_loader=config_loader,
             tool_registry=tool_registry,
-            sequential_executor=SequentialStageExecutor(),
-            parallel_executor=ParallelStageExecutor(),
-            adaptive_executor=AdaptiveStageExecutor(),
+            executors={
+                "sequential": SequentialStageExecutor(),
+                "parallel": ParallelStageExecutor(),
+                "adaptive": AdaptiveStageExecutor(),
+            },
         )
 
     result = benchmark(create_node_builder)
@@ -345,9 +353,10 @@ def test_compiler_stage_compilation(benchmark):
 
     stage_compiler = StageCompiler(node_builder)
 
-    stages = [{"name": "test_stage"}]
+    stages = ["test_stage"]
+    workflow_config = {"workflow": {"name": "test", "stages": [{"name": "test_stage"}]}}
 
-    result = benchmark(stage_compiler.compile_stages, stages)
+    result = benchmark(stage_compiler.compile_stages, stages, workflow_config)
     assert result is not None
 
 
@@ -358,7 +367,7 @@ def test_compiler_sequential_stage(simple_workflow_config, benchmark):
     Target: <50ms
     Measures: Sequential executor overhead
     """
-    with patch("temper_ai.workflow.langgraph_compiler.ConfigLoader"):
+    with patch("temper_ai.workflow.engines.langgraph_compiler.ConfigLoader"):
         compiler = LangGraphCompiler()
         mock_loader = Mock()
         mock_stage_config = Mock()
@@ -378,7 +387,7 @@ def test_compiler_parallel_stage(simple_workflow_config, benchmark):
     Target: <100ms
     Measures: Parallel executor and subgraph overhead
     """
-    with patch("temper_ai.workflow.langgraph_compiler.ConfigLoader"):
+    with patch("temper_ai.workflow.engines.langgraph_compiler.ConfigLoader"):
         compiler = LangGraphCompiler()
         mock_loader = Mock()
         mock_stage_config = Mock()
@@ -456,23 +465,27 @@ def test_database_complex_query(benchmark_db, benchmark):
     Target: <50ms
     Measures: Database query optimization
     """
-    # Insert test data
+    # Insert test data (use bench_ prefix to avoid ORM table conflicts)
     with benchmark_db.session() as session:
         session.execute(
-            text("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, name TEXT)")
+            text(
+                "CREATE TABLE IF NOT EXISTS bench_users (id INTEGER PRIMARY KEY, name TEXT)"
+            )
         )
         session.execute(
             text(
-                "CREATE TABLE IF NOT EXISTS orders (id INTEGER PRIMARY KEY, user_id INTEGER, amount REAL)"
+                "CREATE TABLE IF NOT EXISTS bench_orders (id INTEGER PRIMARY KEY, user_id INTEGER, amount REAL)"
             )
         )
         for i in range(100):
             session.execute(
-                text(f"INSERT OR REPLACE INTO users (id, name) VALUES ({i}, 'user{i}')")
+                text(
+                    f"INSERT OR REPLACE INTO bench_users (id, name) VALUES ({i}, 'user{i}')"
+                )
             )
             session.execute(
                 text(
-                    f"INSERT OR REPLACE INTO orders (id, user_id, amount) VALUES ({i}, {i}, {i * 10.5})"
+                    f"INSERT OR REPLACE INTO bench_orders (id, user_id, amount) VALUES ({i}, {i}, {i * 10.5})"
                 )
             )
         session.commit()
@@ -481,8 +494,8 @@ def test_database_complex_query(benchmark_db, benchmark):
         with benchmark_db.session() as session:
             result = session.execute(text("""
                 SELECT u.name, SUM(o.amount) as total
-                FROM users u
-                JOIN orders o ON u.id = o.user_id
+                FROM bench_users u
+                JOIN bench_orders o ON u.id = o.user_id
                 GROUP BY u.name
                 HAVING total > 100
                 ORDER BY total DESC
@@ -514,7 +527,9 @@ def test_database_batch_insert(clean_db, benchmark):
         with clean_db.session() as session:
             for i in range(100):
                 session.execute(
-                    text(f"INSERT INTO batch_test (id, value) VALUES ({i}, 'value{i}')")
+                    text(
+                        f"INSERT OR REPLACE INTO batch_test (id, value) VALUES ({i}, 'value{i}')"
+                    )
                 )
             session.commit()
 
@@ -555,42 +570,54 @@ def test_database_write_single(clean_db, benchmark):
 
 
 @pytest.mark.benchmark(group="observability")
-def test_observability_buffer_write(clean_db, benchmark):
+def test_observability_buffer_write(benchmark):
     """Benchmark ObservabilityBuffer write throughput.
 
     Target: >1000 ops/sec
     Measures: Buffer write performance
     """
-    buffer = ObservabilityBuffer(db_manager=clean_db, flush_interval=60)
+    from datetime import datetime
+
+    buffer = ObservabilityBuffer(flush_interval=60, auto_flush=False)
 
     def write_operations():
         for i in range(100):
-            buffer.track_workflow_start(
-                workflow_name=f"workflow_{i}",
-                workflow_version="1.0",
-                input_data={"test": i},
+            from temper_ai.observability.buffer import BufferedLifecycleEvent
+
+            event = BufferedLifecycleEvent(
+                event_type="workflow_start",
+                entity_id=f"workflow_{i}",
+                timestamp=datetime.now(UTC),
+                data={"workflow_name": f"workflow_{i}", "version": "1.0"},
             )
+            buffer.buffer_lifecycle_event(event)
 
     benchmark(write_operations)
     assert True  # Benchmark completed successfully
 
 
 @pytest.mark.benchmark(group="observability")
-def test_observability_buffer_flush(clean_db, benchmark):
+def test_observability_buffer_flush(benchmark):
     """Benchmark ObservabilityBuffer flush latency.
 
     Target: <100ms
     Measures: Batch write performance
     """
-    buffer = ObservabilityBuffer(db_manager=clean_db, flush_interval=60)
+    from datetime import datetime
+
+    from temper_ai.observability.buffer import BufferedLifecycleEvent
+
+    buffer = ObservabilityBuffer(flush_interval=60, auto_flush=False)
 
     # Pre-fill buffer
     for i in range(50):
-        buffer.track_workflow_start(
-            workflow_name=f"workflow_{i}",
-            workflow_version="1.0",
-            input_data={"test": i},
+        event = BufferedLifecycleEvent(
+            event_type="workflow_start",
+            entity_id=f"workflow_{i}",
+            timestamp=datetime.now(UTC),
+            data={"workflow_name": f"workflow_{i}", "version": "1.0"},
         )
+        buffer.buffer_lifecycle_event(event)
 
     benchmark(buffer.flush)
     # Flush returns None on success
@@ -607,7 +634,7 @@ def test_observability_tracker_record(benchmark):
     tracker = PerformanceTracker()
 
     def record_metric():
-        with tracker.track_operation("test_operation"):
+        with tracker.measure("test_operation"):
             pass  # Minimal operation
 
     benchmark(record_metric)
@@ -625,12 +652,11 @@ def test_observability_tracker_percentiles(benchmark):
 
     # Pre-fill with samples
     for _i in range(1000):
-        with tracker.track_operation("test_op"):
+        with tracker.measure("test_op"):
             time.sleep(0.001)  # 1ms operation
 
     def calculate_percentiles():
-        metrics = tracker.get_metrics()
-        return metrics.get("test_op", {})
+        return tracker.get_metrics("test_op")
 
     result = benchmark(calculate_percentiles)
     assert "p50" in result

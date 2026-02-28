@@ -22,6 +22,7 @@ def _entry_from_db(row: AgentRegistryDB) -> AgentRegistryEntry:
     """Convert a DB row to an AgentRegistryEntry schema."""
     return AgentRegistryEntry(
         id=row.id,
+        tenant_id=row.tenant_id,
         name=row.name,
         description=row.description,
         version=row.version,
@@ -72,6 +73,7 @@ class AgentRegistryStore:
         """
         row = AgentRegistryDB(
             id=entry.id,
+            tenant_id=entry.tenant_id,
             name=entry.name,
             description=entry.description,
             version=entry.version,

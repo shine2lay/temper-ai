@@ -183,7 +183,7 @@ class TestAPIReferenceExamples:
         blocks = extract_python_blocks(api_doc)
 
         mismatches = []
-        for code, line_num in blocks:
+        for code, _line_num in blocks:
             calls = parse_function_calls(code)
 
             for call in calls:
@@ -197,6 +197,10 @@ class TestAPIReferenceExamples:
         assert len(mismatches) == 0, f"Signature mismatches: {mismatches}"
 
 
+@pytest.mark.skipif(
+    not Path("docs/M4_API_REFERENCE.md").exists(),
+    reason="docs/M4_API_REFERENCE.md not present in this branch",
+)
 class TestM4APIReferenceExamples:
     """Test examples from M4_API_REFERENCE.md."""
 

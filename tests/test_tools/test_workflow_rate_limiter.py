@@ -98,7 +98,7 @@ class TestWorkflowRateLimiter:
     def test_thread_safety(self) -> None:
         limiter = WorkflowRateLimiter(max_rpm=100, block_on_limit=False)
         errors: list[str] = []
-        acquired_count = threading.atomic = 0  # noqa: we track manually
+        threading.atomic = 0  # noqa: we track manually
         lock = threading.Lock()
         count = 0
         barrier = threading.Barrier(10)

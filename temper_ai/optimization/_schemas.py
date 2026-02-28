@@ -9,8 +9,8 @@ from pydantic import BaseModel, Field
 
 from temper_ai.optimization.engine_constants import (
     DEFAULT_MAX_ITERATIONS,
+    DEFAULT_OPTIMIZATION_TIMEOUT_SECONDS,
     DEFAULT_RUNS,
-    DEFAULT_TIMEOUT_SECONDS,
     MAX_SCORE,
     MIN_SCORE,
 )
@@ -23,7 +23,7 @@ class CheckConfig(BaseModel):
     method: Literal["programmatic", "llm"] = "programmatic"
     command: str | None = None
     prompt: str | None = None
-    timeout: int = DEFAULT_TIMEOUT_SECONDS
+    timeout: int = DEFAULT_OPTIMIZATION_TIMEOUT_SECONDS
 
 
 class EvaluatorConfig(BaseModel):

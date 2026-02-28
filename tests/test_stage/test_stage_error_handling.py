@@ -132,7 +132,7 @@ class TestStageStatusComputation:
             )
 
         # All agents should be in failed status
-        for name, status in statuses.items():
+        for _name, status in statuses.items():
             assert isinstance(status, dict)
             assert status[StateKeys.STATUS] == "failed"
 

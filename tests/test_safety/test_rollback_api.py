@@ -61,7 +61,7 @@ class TestRollbackAPI:
         snap1 = rollback_manager.create_snapshot(
             action={"tool": "write_file"}, context={"workflow_id": "wf-1"}
         )
-        snap2 = rollback_manager.create_snapshot(
+        rollback_manager.create_snapshot(
             action={"tool": "write_file"}, context={"workflow_id": "wf-2"}
         )
 
@@ -75,7 +75,7 @@ class TestRollbackAPI:
         snap1 = rollback_manager.create_snapshot(
             action={"tool": "write_file"}, context={"agent_id": "agent-1"}
         )
-        snap2 = rollback_manager.create_snapshot(
+        rollback_manager.create_snapshot(
             action={"tool": "write_file"}, context={"agent_id": "agent-2"}
         )
 

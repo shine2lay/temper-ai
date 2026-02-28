@@ -3,6 +3,7 @@
 from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import UTC, datetime
+from unittest.mock import MagicMock, patch
 
 import pytest
 from sqlmodel import Session, SQLModel
@@ -21,12 +22,12 @@ from temper_ai.storage.database.models_registry import (
 
 
 def _make_entry(name: str = "test-agent", **kwargs) -> AgentRegistryEntry:
-    defaults = dict(
-        id=f"id-{name}",
-        name=name,
-        registered_at=datetime.now(UTC),
-        config_snapshot={"name": name},
-    )
+    defaults = {
+        "id": f"id-{name}",
+        "name": name,
+        "registered_at": datetime.now(UTC),
+        "config_snapshot": {"name": name},
+    }
     defaults.update(kwargs)
     return AgentRegistryEntry(**defaults)
 
@@ -172,3 +173,22 @@ class TestAgentRegistryStoreUpdateStatus:
         store = _make_store()
         result = store.update_status("ghost-agent", STATUS_ACTIVE)  # Should not raise
         assert result is None
+
+
+class TestSessionFallback:
+    """Test store._session() fallback when no session_factory provided."""
+
+    def test_fallback_to_get_session(self):
+        store = AgentRegistryStore(session_factory=None)
+        mock_session = MagicMock()
+
+        @contextmanager
+        def _fake_get_session() -> Generator[MagicMock, None, None]:
+            yield mock_session
+
+        with patch(
+            "temper_ai.storage.database.manager.get_session",
+            side_effect=_fake_get_session,
+        ):
+            with store._session() as session:
+                assert session is mock_session

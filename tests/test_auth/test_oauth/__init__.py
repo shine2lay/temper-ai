@@ -254,7 +254,7 @@ def test_oauth_import_no_exceptions():
 
         assert True  # All imports succeeded
     except Exception as e:
-        assert False, f"Import raised unexpected exception: {e}"
+        raise AssertionError(f"Import raised unexpected exception: {e}")
 
 
 def test_oauth_exception_hierarchy():

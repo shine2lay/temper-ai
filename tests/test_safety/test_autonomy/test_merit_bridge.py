@@ -25,7 +25,7 @@ class TestOnDecisionRecorded:
         bridge = MeritSafetyBridge(autonomy_manager=manager, evaluation_interval=10)
 
         session = MagicMock()
-        for i in range(9):
+        for _i in range(9):
             bridge.on_decision_recorded(session, "a", "d", "success")
 
         manager.evaluate_and_transition.assert_not_called()

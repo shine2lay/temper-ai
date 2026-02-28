@@ -63,7 +63,7 @@ class TestWorkflowMetricCreation:
         mock_result.total_cost = 0.25
         mock_result.p95_duration = 8.0
 
-        with patch("temper_ai.storage.database.models.SystemMetric") as MockMetric:
+        with patch("temper_ai.storage.database.models.SystemMetric"):
             metric_ids = creator.create_workflow_metrics(
                 mock_result, AggregationPeriod.HOUR, timestamp
             )

@@ -74,7 +74,7 @@ class TestBufferRetryLogic:
         )
 
         # Try 4 times (initial + 3 retries = retry_count reaches 4, which is > max_retries)
-        for i in range(4):
+        for _i in range(4):
             buffer.flush()
 
         assert len(buffer.retry_queue) == 0

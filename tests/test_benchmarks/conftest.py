@@ -207,11 +207,10 @@ def minimal_agent_config():
 
 @pytest.fixture
 def tool_registry():
-    """Tool registry with sample tools."""
-    mock_registry = Mock()
-    mock_registry.list_tools.return_value = []
-    mock_registry.get.return_value = None
-    return mock_registry
+    """Tool registry for benchmark tests."""
+    from temper_ai.tools.registry import ToolRegistry
+
+    return ToolRegistry()
 
 
 @pytest.fixture

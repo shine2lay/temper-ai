@@ -19,6 +19,7 @@ from temper_ai.llm.providers import (
 )
 from temper_ai.shared.utils.exceptions import (
     LLMAuthenticationError,
+    LLMError,
     LLMRateLimitError,
     LLMTimeoutError,
 )
@@ -412,12 +413,12 @@ class TestAsyncErrorPaths:
         llm.max_retries = 3
         llm.retry_delay = 0.01
 
-        # Execute: Connection error should bubble up immediately
-        with pytest.raises(httpx.ConnectError):
+        # Execute: Connection error is now wrapped in LLMError after retries
+        with pytest.raises(LLMError):
             await llm.acomplete("test prompt")
 
-        # Verify: Only 1 attempt (no retry)
-        assert mock_client_instance.post.call_count == 1
+        # Verify: Retried max_retries times (ConnectError is now retried)
+        assert mock_client_instance.post.call_count == 3
 
         await llm.aclose()
 
@@ -504,9 +505,9 @@ class TestAsyncErrorPaths:
             llm.max_retries = 1
             llm.retry_delay = 0.01
 
-            # Multiple failing requests
-            for i in range(5):
-                with pytest.raises(httpx.ConnectError):
+            # Multiple failing requests (ConnectError is now wrapped in LLMError)
+            for _i in range(5):
+                with pytest.raises(LLMError):
                     await llm.acomplete("test prompt")
 
         # Verify client still exists (lazy cleanup)
@@ -548,7 +549,6 @@ class TestAsyncErrorPaths:
         ), f"Expected httpx.AsyncClient, got {type(async_client)}"
 
         # Mock aclose() to fail
-        original_aclose = async_client.aclose
 
         async def failing_aclose():
             raise RuntimeError("aclose failed!")
@@ -591,7 +591,7 @@ class TestAsyncErrorPaths:
 
             # Make 50 concurrent failing requests (well within connection pool limit of 100)
             async def failing_request():
-                with pytest.raises(httpx.ConnectError):
+                with pytest.raises(LLMError):
                     await llm.acomplete("test prompt")
 
             # Execute concurrently
@@ -715,11 +715,11 @@ class TestAsyncErrorPaths:
 
             try:
                 await llm.acomplete("test prompt")
-            except httpx.ConnectError as e:
-                # Original error should be accessible
-                assert e is original_error
+            except LLMError as e:
+                # Original error should be accessible via __cause__
+                assert e.__cause__ is original_error
             else:
-                pytest.fail("Expected httpx.ConnectError to be raised")
+                pytest.fail("Expected LLMError to be raised")
 
         await llm.aclose()
 
@@ -796,7 +796,7 @@ class TestAsyncErrorPaths:
             mock_post1.side_effect = httpx.ConnectError("Connection refused")
 
             for _ in range(5):
-                with pytest.raises(httpx.ConnectError):
+                with pytest.raises(LLMError):
                     await llm1.acomplete("test prompt")
 
         # Verify llm2 is still functional (independent)

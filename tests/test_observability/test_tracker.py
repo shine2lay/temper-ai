@@ -115,7 +115,7 @@ class TestWorkflowTracking:
         config = {}
 
         with pytest.raises(ValueError):
-            with tracker.track_workflow("test", config) as workflow_id:
+            with tracker.track_workflow("test", config):
                 raise ValueError("Test error")
 
         # Verify error recorded
@@ -185,9 +185,7 @@ class TestStageTracking:
 
         with tracker.track_workflow("test_wf", config_wf) as workflow_id:
             with pytest.raises(RuntimeError):
-                with tracker.track_stage(
-                    "test_stage", config_st, workflow_id
-                ) as stage_id:
+                with tracker.track_stage("test_stage", config_st, workflow_id):
                     raise RuntimeError("Stage failed")
 
         # Verify error recorded

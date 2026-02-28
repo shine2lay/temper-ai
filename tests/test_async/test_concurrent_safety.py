@@ -31,7 +31,7 @@ class TestConcurrentWorkflowExecution:
             state = {"id": workflow_id, "counter": 0}
 
             # Simulate workflow execution
-            for i in range(10):
+            for _i in range(10):
                 state["counter"] += 1
                 await asyncio.sleep(0.001)
 
@@ -109,7 +109,7 @@ class TestConcurrentWorkflowExecution:
         async def cancellable_workflow(workflow_id: int):
             """Workflow that can be cancelled."""
             try:
-                for i in range(10):
+                for _i in range(10):
                     await asyncio.sleep(0.05)
                 completed["count"] += 1
             except asyncio.CancelledError:
@@ -127,7 +127,7 @@ class TestConcurrentWorkflowExecution:
             tasks[i].cancel()
 
         # Wait for all to complete or be cancelled
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        await asyncio.gather(*tasks, return_exceptions=True)
 
         # Verify 5 were cancelled
         assert (
@@ -500,7 +500,7 @@ class TestConcurrentDataAccess:
                     await writer_lock.acquire()
 
             # Read data (multiple readers concurrent)
-            value = shared_data["value"]
+            shared_data["value"]
             await asyncio.sleep(0.01)  # Simulate read time
             read_count["count"] += 1
 
@@ -548,7 +548,7 @@ class TestConcurrentDataAccess:
             """Update with optimistic concurrency control."""
             max_retries = 10  # Need more retries for high contention
 
-            for attempt in range(max_retries):
+            for _attempt in range(max_retries):
                 # Read current version
                 async with data_lock:
                     current_version = data["version"]

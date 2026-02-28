@@ -32,6 +32,12 @@ from temper_ai.tools._executor_helpers import (
     execute_batch as _execute_batch,
 )
 from temper_ai.tools._executor_helpers import (
+    get_concurrent_execution_count as _get_concurrent_execution_count,
+)
+from temper_ai.tools._executor_helpers import (
+    get_rate_limit_usage as _get_rate_limit_usage,
+)
+from temper_ai.tools._executor_helpers import (
     get_tool_info as _get_tool_info,
 )
 from temper_ai.tools._executor_helpers import (
@@ -51,12 +57,12 @@ def _build_tool_cache(cfg: ToolExecutorConfig) -> Any:
     from temper_ai.tools.tool_cache import ToolResultCache
     from temper_ai.tools.tool_cache_constants import (
         DEFAULT_CACHE_MAX_SIZE,
-        DEFAULT_CACHE_TTL_SECONDS,
+        DEFAULT_TOOL_CACHE_TTL_SECONDS,
     )
 
     return ToolResultCache(
         max_size=cfg.tool_cache_max_size or DEFAULT_CACHE_MAX_SIZE,
-        ttl_seconds=cfg.tool_cache_ttl or DEFAULT_CACHE_TTL_SECONDS,
+        ttl_seconds=cfg.tool_cache_ttl or DEFAULT_TOOL_CACHE_TTL_SECONDS,
     )
 
 
@@ -309,6 +315,18 @@ def _check_rate_limit_method(self: ToolExecutor) -> None:
     check_rate_limit(self)
 
 
+def _get_concurrent_execution_count_method(self: ToolExecutor) -> int:
+    """Get current number of concurrent executions."""
+    return _get_concurrent_execution_count(self)
+
+
+def _get_rate_limit_usage_method(self: ToolExecutor) -> dict:
+    """Get current rate limit usage."""
+    return _get_rate_limit_usage(self)
+
+
 ToolExecutor._acquire_concurrent_slot = _acquire_concurrent_slot_method  # type: ignore[attr-defined]
 ToolExecutor._release_concurrent_slot = _release_concurrent_slot_method  # type: ignore[attr-defined]
 ToolExecutor._check_rate_limit = _check_rate_limit_method  # type: ignore[attr-defined]
+ToolExecutor.get_concurrent_execution_count = _get_concurrent_execution_count_method  # type: ignore[attr-defined]
+ToolExecutor.get_rate_limit_usage = _get_rate_limit_usage_method  # type: ignore[attr-defined]

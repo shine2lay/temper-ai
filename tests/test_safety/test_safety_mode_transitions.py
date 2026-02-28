@@ -126,7 +126,7 @@ class TestSafetyModeTransitions:
         straight to require_approval.
         """
         # Start in execute mode
-        config = SafetyConfig(mode="execute")
+        SafetyConfig(mode="execute")
 
         # Critical operation detected
         critical_config = SafetyConfig(
@@ -212,7 +212,7 @@ class TestSafetyModeEdgeCases:
     def test_de_escalation_dry_run_to_execute(self):
         """Test de-escalation from dry_run to execute."""
         # Start in elevated mode
-        config = SafetyConfig(mode="dry_run", risk_level="high")
+        SafetyConfig(mode="dry_run", risk_level="high")
 
         # Risk assessment shows safe to proceed
         de_escalated = SafetyConfig(mode="execute", risk_level="low")

@@ -219,7 +219,7 @@ class TestPerfTrackerWorkflow:
     ):
         """Performance is recorded even when workflow raises."""
         with pytest.raises(ValueError):
-            with tracker_always_sample.track_workflow("err_wf", {}) as wf_id:
+            with tracker_always_sample.track_workflow("err_wf", {}):
                 raise ValueError("test error")
 
         mock_perf_tracker.record.assert_called()

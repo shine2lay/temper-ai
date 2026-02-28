@@ -424,6 +424,7 @@ class TestIntegration:
                         "model": "claude-3-5-sonnet-20241022",
                         "temperature": 0.7,
                         "max_tokens": 1000,
+                        "api_key_ref": "${env:ANTHROPIC_API_KEY}",
                     },
                     "tools": [],
                     "error_handling": {
@@ -507,7 +508,7 @@ class TestIntegration:
         }
 
         with patch(
-            "temper_ai.workflow.langgraph_compiler.LangGraphCompiler.compile"
+            "temper_ai.workflow.engines.langgraph_compiler.LangGraphCompiler.compile"
         ) as mock_compile:
             mock_graph = Mock()
             mock_compile.return_value = mock_graph

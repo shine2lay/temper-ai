@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import atexit
 import concurrent.futures
+import json
 import logging
 import os
 import sys
@@ -239,6 +240,21 @@ def execute_single_tool(
         raise TypeError(
             f"tool_call 'name' must be a string, got {type(tool_name).__name__}"
         )
+    if isinstance(tool_params, str):
+        # LLM sometimes returns arguments as a JSON string instead of a dict
+        try:
+            parsed = json.loads(tool_params)
+            if isinstance(parsed, dict):
+                tool_params = parsed
+            else:
+                tool_params = {}
+        except (json.JSONDecodeError, TypeError):
+            logger.warning(
+                "Malformed tool_params string for %s: %s",
+                tool_name,
+                tool_params[:200],
+            )
+            tool_params = {}
     if not isinstance(tool_params, dict):
         raise TypeError(
             f"tool_call 'parameters' must be a dictionary, got {type(tool_params).__name__}"

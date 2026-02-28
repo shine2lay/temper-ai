@@ -267,7 +267,7 @@ class TestCreateHierarchicalGantt:
         """Test saving chart to HTML file."""
         output_file = tmp_path / "test_chart.html"
 
-        fig = create_hierarchical_gantt(minimal_trace, output_file=str(output_file))
+        create_hierarchical_gantt(minimal_trace, output_file=str(output_file))
 
         assert output_file.exists()
         assert output_file.stat().st_size > 0

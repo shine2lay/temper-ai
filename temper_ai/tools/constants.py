@@ -55,8 +55,6 @@ MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 DEFAULT_SEARCH_TIMEOUT = 30  # seconds
 MAX_SEARCH_RESULTS = 20
 DEFAULT_SEARCH_MAX_RESULTS = 5  # Default results returned
-MAX_SEARCH_QUERY_LENGTH = 2000  # SearXNG max query length
-TAVILY_MAX_QUERY_LENGTH = 400  # Tavily API max query length
 TAVILY_RATE_LIMIT = 5  # requests per minute
 SEARXNG_RATE_LIMIT = 10  # requests per minute
 TAVILY_DEFAULT_BASE_URL = "https://api.tavily.com"
@@ -87,15 +85,6 @@ CONTEXT_KEY_AGENT_ID = "agent_id"
 # ============================================================================
 
 TOOL_ERROR_PREFIX = "Tool '"
-
-# ============================================================================
-# JSON Schema Field Names (for tool parameter definitions)
-# ============================================================================
-
-SCHEMA_FIELD_TYPE = "type"
-SCHEMA_FIELD_DESCRIPTION = "description"
-SCHEMA_FIELD_DEFAULT = "default"
-SCHEMA_TYPE_STRING = "string"
 
 # ============================================================================
 # File Operations

@@ -60,9 +60,9 @@ class TestCostAttributionOTEL:
         span attributes for cost attribution tags.
         """
         try:
-            from temper_ai.observability.backends.otel_backend import (
+            from temper_ai.observability.backends.otel_backend import (  # noqa: F401
                 OTELObservabilityBackend,
-            )  # noqa: F401
+            )
         except ImportError:
             pytest.skip("opentelemetry not installed")
 

@@ -746,7 +746,7 @@ class TestMultiTenantCacheSecurity:
         cache = LLMCache()
 
         # Generate key with security context
-        key_with_context = cache.generate_key(
+        cache.generate_key(
             model="gpt-4", prompt="Test", tenant_id="acme", user_id="user_1"
         )
 

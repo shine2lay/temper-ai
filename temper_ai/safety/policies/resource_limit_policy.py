@@ -48,12 +48,13 @@ from temper_ai.shared.constants.durations import (
 from temper_ai.shared.constants.limits import (
     DEFAULT_MAX_WORKERS,
     MAX_WORKERS,
-    MIN_POSITIVE_VALUE,
     MIN_WORKERS,
     MULTIPLIER_MEDIUM,
     PERCENT_20,
     PERCENT_80,
 )
+
+MIN_POSITIVE_VALUE = 0.001
 from temper_ai.shared.constants.probabilities import FRACTION_QUARTER, PROB_MINIMAL
 from temper_ai.shared.constants.sizes import (
     BYTES_PER_GB,

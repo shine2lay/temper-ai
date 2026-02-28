@@ -18,10 +18,17 @@ from typing import (
     TypeVar,
 )
 
-from temper_ai.shared.constants.retries import (
-    CIRCUIT_BREAKER_FAILURE_THRESHOLD,
-    CIRCUIT_BREAKER_RESET_TIMEOUT,
-)
+CIRCUIT_BREAKER_FAILURE_THRESHOLD = 5
+CIRCUIT_BREAKER_RESET_TIMEOUT = 60
+
+# Circuit breaker validation limits
+MAX_CIRCUIT_BREAKER_NAME_LENGTH = 100
+MIN_FAILURE_THRESHOLD = 1
+MAX_FAILURE_THRESHOLD = 1000
+MIN_TIMEOUT_SECONDS = 1
+MAX_TIMEOUT_SECONDS = 86400  # 24 hours
+MIN_SUCCESS_THRESHOLD = 1
+MAX_SUCCESS_THRESHOLD = 100
 
 # Helper functions extracted to reduce class method count
 from temper_ai.shared.core._circuit_breaker_helpers import (
@@ -44,15 +51,6 @@ from temper_ai.shared.core._circuit_breaker_helpers import (
 )
 from temper_ai.shared.core._circuit_breaker_helpers import (
     time_until_retry as _time_until_retry_helper,
-)
-from temper_ai.shared.core.constants import (
-    MAX_CIRCUIT_BREAKER_NAME_LENGTH,
-    MAX_FAILURE_THRESHOLD,
-    MAX_SUCCESS_THRESHOLD,
-    MAX_TIMEOUT_SECONDS,
-    MIN_FAILURE_THRESHOLD,
-    MIN_SUCCESS_THRESHOLD,
-    MIN_TIMEOUT_SECONDS,
 )
 from temper_ai.shared.utils.exceptions import FrameworkException
 

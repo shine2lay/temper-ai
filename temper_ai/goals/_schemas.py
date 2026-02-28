@@ -1,11 +1,11 @@
 """Pydantic schemas for the goal proposal system."""
 
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
 
-class GoalType(str, Enum):
+class GoalType(StrEnum):
     """Types of strategic goals the system can propose."""
 
     PERFORMANCE_OPTIMIZATION = "performance_optimization"
@@ -15,7 +15,7 @@ class GoalType(str, Enum):
     CROSS_PRODUCT_OPPORTUNITY = "cross_product_opportunity"
 
 
-class GoalStatus(str, Enum):
+class GoalStatus(StrEnum):
     """Lifecycle status for a goal proposal."""
 
     DRAFT = "draft"
@@ -29,7 +29,7 @@ class GoalStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
-class GoalRiskLevel(str, Enum):
+class GoalRiskLevel(StrEnum):
     """Risk level for a proposed change."""
 
     LOW = "low"
@@ -38,7 +38,7 @@ class GoalRiskLevel(str, Enum):
     CRITICAL = "critical"
 
 
-class EffortLevel(str, Enum):
+class EffortLevel(StrEnum):
     """Effort level for implementing a proposal."""
 
     TRIVIAL = "trivial"
@@ -94,7 +94,7 @@ class GoalProposal(BaseModel):
     source_agent_id: str | None = None  # M9: persistent agent that proposed this goal
 
 
-class GoalReviewAction(str, Enum):
+class GoalReviewAction(StrEnum):
     """Actions available during goal review."""
 
     APPROVE = "approve"

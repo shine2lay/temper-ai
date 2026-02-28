@@ -5,7 +5,6 @@ Shared utilities for configuration parsing, merging, and validation.
 """
 
 from collections.abc import Callable
-from pathlib import Path
 from typing import Any, cast
 
 # Import secrets management for detection
@@ -17,69 +16,6 @@ try:
 except ImportError:
     # Graceful fallback if secrets module not available
     pass
-
-
-def merge_configs(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
-    """
-    Deep merge two configuration dictionaries.
-
-    Args:
-        base: Base configuration
-        override: Override configuration (takes precedence)
-
-    Returns:
-        Merged configuration
-
-    Example:
-        >>> base = {"llm": {"temperature": 0.7, "model": "gpt-4"}}
-        >>> override = {"llm": {"temperature": 0.9}}
-        >>> merge_configs(base, override)
-        {"llm": {"temperature": 0.9, "model": "gpt-4"}}
-    """
-    result = base.copy()
-
-    for key, value in override.items():
-        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
-            # Recursively merge nested dicts
-            result[key] = merge_configs(result[key], value)
-        else:
-            # Override value
-            result[key] = value
-
-    return result
-
-
-def extract_required_fields(
-    config: dict[str, Any], fields: list[str], config_name: str = "config"
-) -> dict[str, Any]:
-    """
-    Extract required fields from configuration.
-
-    Args:
-        config: Configuration dictionary
-        fields: List of required field names (supports dot notation)
-        config_name: Name for error messages
-
-    Returns:
-        Dict with extracted fields
-
-    Raises:
-        ValueError: If required field is missing
-
-    Example:
-        >>> config = {"agent": {"name": "foo", "model": "gpt-4"}}
-        >>> extract_required_fields(config, ["agent.name", "agent.model"])
-        {"agent.name": "foo", "agent.model": "gpt-4"}
-    """
-    result = {}
-
-    for field in fields:
-        value = get_nested_value(config, field)
-        if value is None:
-            raise ValueError(f"Required field '{field}' missing from {config_name}")
-        result[field] = value
-
-    return result
 
 
 def get_nested_value(config: dict[str, Any], path: str, default: Any = None) -> Any:
@@ -111,53 +47,6 @@ def get_nested_value(config: dict[str, Any], path: str, default: Any = None) -> 
             return default
 
     return value
-
-
-def set_nested_value(config: dict[str, Any], path: str, value: Any) -> None:
-    """
-    Set value in nested dict using dot notation.
-
-    Args:
-        config: Configuration dictionary (modified in place)
-        path: Dot-separated path (e.g., "agent.inference.model")
-        value: Value to set
-
-    Example:
-        >>> config = {"agent": {}}
-        >>> set_nested_value(config, "agent.inference.model", "gpt-4")
-        >>> config
-        {"agent": {"inference": {"model": "gpt-4"}}}
-    """
-    keys = path.split(".")
-    current = config
-
-    # Navigate/create nested dicts
-    for key in keys[:-1]:
-        if key not in current:
-            current[key] = {}
-        current = current[key]
-
-    # Set value
-    current[keys[-1]] = value
-
-
-def validate_config_structure(
-    config: dict[str, Any], required_keys: list[str], config_name: str = "config"
-) -> None:
-    """
-    Validate that config has required top-level keys.
-
-    Args:
-        config: Configuration dictionary
-        required_keys: List of required top-level keys
-        config_name: Name for error messages
-
-    Raises:
-        ValueError: If required key is missing
-    """
-    for key in required_keys:
-        if key not in config:
-            raise ValueError(f"Invalid {config_name}: missing required key '{key}'")
 
 
 def _redact_secret_reference(value: str) -> str:
@@ -263,55 +152,3 @@ def sanitize_config_for_display(
     secret_patterns = [p.lower() for p in SECRET_KEY_NAMES + secret_keys]
 
     return cast(dict[str, Any], _sanitize_value(config, secret_patterns))
-
-
-def resolve_config_path(path: str, config_root: Path | None = None) -> Path:
-    """
-    Resolve configuration file path with security validation.
-
-    Args:
-        path: Config file path (must be relative to config_root)
-        config_root: Root directory for relative paths
-
-    Returns:
-        Resolved absolute Path (guaranteed within config_root)
-
-    Raises:
-        ValueError: If path is absolute or attempts directory traversal
-        FileNotFoundError: If path does not exist
-    """
-    if config_root is None:
-        config_root = Path.cwd() / "configs"
-
-    config_root_resolved = config_root.resolve()
-
-    # Reject null bytes (path injection)
-    if "\x00" in path:
-        raise ValueError("Config path contains null bytes")
-
-    path_obj = Path(path)
-
-    # Reject absolute paths — config paths must be relative to config_root
-    if path_obj.is_absolute():
-        raise ValueError(
-            f"Config path must be relative to config_root, "
-            f"got absolute path: {path}"
-        )
-
-    # Reject explicit traversal components
-    if ".." in path_obj.parts:
-        raise ValueError(f"Config path must not contain '..': {path}")
-
-    # Resolve relative to config_root
-    resolved = (config_root_resolved / path_obj).resolve()
-
-    # Verify resolved path stays within config_root (catches symlink escapes)
-    try:
-        resolved.relative_to(config_root_resolved)
-    except ValueError:
-        raise ValueError(f"Config path escapes config_root: {path}") from None
-
-    if not resolved.exists():
-        raise FileNotFoundError(f"Config file not found: {resolved}")
-
-    return resolved

@@ -213,7 +213,7 @@ class TestApplyLearningRecommendations:
         ]
 
         applier = FeedbackApplier(learning_store=store)
-        results = applier.apply_learning_recommendations(min_confidence=0.8)
+        applier.apply_learning_recommendations(min_confidence=0.8)
 
         # Only the high-confidence rec should be passed to the engine
         call_args = MockEngine.return_value.apply_recommendations.call_args

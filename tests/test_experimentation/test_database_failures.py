@@ -161,7 +161,7 @@ def verify_assignment_integrity(session: Session, assignment_id: str) -> None:
         # Verify metrics are valid
         if assignment.metrics:
             assert isinstance(assignment.metrics, dict)
-            for key, value in assignment.metrics.items():
+            for _key, value in assignment.metrics.items():
                 assert isinstance(
                     value, (int, float)
                 ), f"Invalid metric type: {type(value)}"
@@ -178,9 +178,9 @@ def verify_experiment_consistency(session: Session, experiment_id: str) -> None:
     ).all()
 
     # Traffic allocation matches variants
-    assert set(experiment.traffic_allocation.keys()) == set(
+    assert set(experiment.traffic_allocation.keys()) == {
         v.name for v in variants
-    ), "Traffic allocation doesn't match variant names"
+    }, "Traffic allocation doesn't match variant names"
 
     # Traffic sums to <= 1.0
     total_traffic = sum(experiment.traffic_allocation.values())
@@ -293,7 +293,7 @@ class TestConnectionFailures:
         )
         experiment_service.start_experiment(exp_id)
 
-        assignment = experiment_service.assign_variant("wf-track", exp_id)
+        experiment_service.assign_variant("wf-track", exp_id)
 
         # Simulate connection cycle
         reset_database()
@@ -370,9 +370,7 @@ class TestConnectionPoolExhaustion:
             """Attempt to assign variant."""
             try:
                 await asyncio.sleep(0.001)  # Small delay
-                assignment = service.assign_variant(
-                    workflow_id=wf_id, experiment_id=exp_id
-                )
+                service.assign_variant(workflow_id=wf_id, experiment_id=exp_id)
                 results["success"] += 1
             except Exception:
                 results["failure"] += 1
@@ -1003,7 +1001,7 @@ class TestDataIntegrity:
 
             # If foreign keys not enforced, verify we can detect orphans
             with db_manager.session() as session:
-                asn = session.get(VariantAssignment, "asn-orphan")
+                session.get(VariantAssignment, "asn-orphan")
                 with pytest.raises(AssertionError):
                     verify_assignment_integrity(session, "asn-orphan")
 

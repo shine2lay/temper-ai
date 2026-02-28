@@ -13,6 +13,8 @@ from datetime import UTC, datetime
 import pytest
 import yaml
 
+from temper_ai.shared.utils.exceptions import ConfigValidationError
+
 # ============================================================================
 # Full Workflow Execution
 # ============================================================================
@@ -609,7 +611,7 @@ workflow:
 
         loader = ConfigLoader(config_root=tmp_path)
 
-        with pytest.raises((ValueError, KeyError, yaml.YAMLError)):
+        with pytest.raises((ValueError, KeyError, ConfigValidationError)):
             loader.load_workflow("invalid")
 
     def test_missing_required_fields(self, tmp_path):
@@ -627,7 +629,7 @@ workflow:
 
         loader = ConfigLoader(config_root=tmp_path)
 
-        with pytest.raises((ValueError, KeyError)):
+        with pytest.raises((ValueError, KeyError, ConfigValidationError)):
             loader.load_workflow("incomplete")
 
 
@@ -641,10 +643,12 @@ class TestErrorHandling:
 
     def test_database_error_handling(self):
         """Database errors should be caught and handled."""
+        # Initialize with invalid URL should raise error
+        from sqlalchemy.exc import NoSuchModuleError
+
         from temper_ai.storage.database import init_database
 
-        # Initialize with invalid URL should raise error
-        with pytest.raises((ValueError, OSError)):
+        with pytest.raises((ValueError, OSError, NoSuchModuleError)):
             init_database("invalid://url")
 
     def test_config_loader_error_recovery(self, tmp_path):
@@ -659,7 +663,7 @@ class TestErrorHandling:
 
         loader = ConfigLoader(config_root=tmp_path)
 
-        with pytest.raises((ValueError, KeyError, yaml.YAMLError)):
+        with pytest.raises((ValueError, KeyError, ConfigValidationError)):
             loader.load_workflow("malformed")
 
 

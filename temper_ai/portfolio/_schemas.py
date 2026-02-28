@@ -1,6 +1,6 @@
 """Pydantic schemas for portfolio management."""
 
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -12,7 +12,7 @@ from temper_ai.portfolio.constants import (
 )
 
 
-class AllocationStrategy(str, Enum):
+class AllocationStrategy(StrEnum):
     """Resource allocation strategy for portfolio products."""
 
     EQUAL = "equal"
@@ -75,7 +75,7 @@ class ProductScorecard(BaseModel):
     composite_score: float = 0.0
 
 
-class OptimizationAction(str, Enum):
+class OptimizationAction(StrEnum):
     """Recommended action for a product."""
 
     INVEST = "invest"
@@ -94,7 +94,7 @@ class PortfolioRecommendation(BaseModel):
     suggested_weight_delta: float = 0.0
 
 
-class KGConceptType(str, Enum):
+class KGConceptType(StrEnum):
     """Types of knowledge graph concepts."""
 
     PRODUCT = "product"
@@ -104,7 +104,7 @@ class KGConceptType(str, Enum):
     OUTCOME = "outcome"
 
 
-class KGRelation(str, Enum):
+class KGRelation(StrEnum):
     """Types of knowledge graph edges."""
 
     USES = "uses"

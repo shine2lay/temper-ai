@@ -29,7 +29,7 @@ def test_workflow_compilation_time(simple_workflow_config, benchmark):
 
     Target: <1s for simple workflows
     """
-    with patch("temper_ai.workflow.langgraph_compiler.ConfigLoader"):
+    with patch("temper_ai.workflow.engines.langgraph_compiler.ConfigLoader"):
         # Setup
         compiler = LangGraphCompiler()
 
@@ -149,7 +149,7 @@ def test_large_workflow_compilation(complex_workflow_config, benchmark):
 
     Tests scalability of workflow compilation.
     """
-    with patch("temper_ai.workflow.langgraph_compiler.ConfigLoader"):
+    with patch("temper_ai.workflow.engines.langgraph_compiler.ConfigLoader"):
         # Setup
         compiler = LangGraphCompiler()
 
@@ -176,7 +176,7 @@ def test_concurrent_workflow_throughput(simple_workflow_config, benchmark):
 
     Tests parallel workflow handling.
     """
-    with patch("temper_ai.workflow.langgraph_compiler.ConfigLoader"):
+    with patch("temper_ai.workflow.engines.langgraph_compiler.ConfigLoader"):
         # Setup
         mock_loader_instance = Mock()
         mock_stage_config = Mock()

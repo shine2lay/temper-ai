@@ -119,7 +119,7 @@ class TestAtomicConcurrentSlot:
             ), f"Peak concurrent {peak_concurrent[0]} exceeded limit {max_concurrent}"
 
             # Some should have been rejected
-            rejected = [
+            [
                 r
                 for r in results
                 if not r.success and "concurrent" in (r.error or "").lower()
@@ -198,7 +198,7 @@ class TestAtomicConcurrentSlot:
         registry.register(FailingTool())
         executor = ToolExecutor(registry, max_concurrent=2)
         try:
-            result = executor.execute("failing_tool")
+            executor.execute("failing_tool")
             # Tool should have failed but slot should be released
             assert executor.get_concurrent_execution_count() == 0
         finally:

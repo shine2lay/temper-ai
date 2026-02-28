@@ -32,31 +32,31 @@ Each test file is evaluated on:
 | # | Feature | Source Files | Test Files | Status | Score | Critical Issues |
 |---|---------|-------------|------------|--------|-------|-----------------|
 | 1 | Agent | 29 | 44 | `[x] DONE` | 8.5/10 | Coverage gaps closed; 4 zero-test source files now covered; quality fixes applied |
-| 2 | LLM | 34 | 10 | `[ ] TODO` | —/10 | — |
-| 3 | Workflow | 47 | 45 | `[ ] TODO` | —/10 | — |
-| 4 | Stage | 20 | 15 | `[ ] TODO` | —/10 | — |
-| 5 | Tools | 28 | 21 | `[ ] TODO` | —/10 | — |
-| 6 | Safety | 57 | 60 | `[ ] TODO` | —/10 | — |
-| 7 | Auth | 19 | 27 | `[ ] TODO` | —/10 | — |
-| 8 | Storage | 14 | 3 | `[ ] TODO` | —/10 | — |
-| 9 | Events | 9 | 10 | `[ ] TODO` | —/10 | — |
-| 10 | Memory | 16 | 17 | `[ ] TODO` | —/10 | — |
-| 11 | Registry | 6 | 7 | `[ ] TODO` | —/10 | — |
-| 12 | Observability | 48 | 80 | `[ ] TODO` | —/10 | — |
-| 13 | Goals | 19 | 11 | `[ ] TODO` | —/10 | — |
-| 14 | Lifecycle | 12 | 10 | `[ ] TODO` | —/10 | — |
-| 15 | Learning | 17 | 10 | `[ ] TODO` | —/10 | — |
-| 16 | Autonomy | 8 | 8 | `[ ] TODO` | —/10 | — |
-| 17 | Experimentation | 14 | 24 | `[ ] TODO` | —/10 | — |
-| 18 | Portfolio | 12 | 9 | `[ ] TODO` | —/10 | — |
-| 19 | Optimization | 32 | 31 | `[ ] TODO` | —/10 | — |
-| 20 | Plugins | 11 | 10 | `[ ] TODO` | —/10 | — |
-| 21 | MCP | 8 | 6 | `[ ] TODO` | —/10 | — |
-| 22 | Interfaces | 35 | 11 | `[ ] TODO` | —/10 | — |
-| 23 | Config | 4 | 4 | `[ ] TODO` | —/10 | — |
-| 24 | Evaluation | 4 | 3 | `[ ] TODO` | —/10 | — |
-| 25 | Shared | 38 | 14 | `[ ] TODO` | —/10 | — |
-| 26 | Cross-cutting | — | ~60 | `[ ] TODO` | —/10 | — |
+| 2 | LLM | 34 | 22 | `[x] DONE` | 8.7/10 | All security-critical gaps closed; 279 tests added; 576 total LLM tests |
+| 3 | Workflow | 47 | 55 | `[x] DONE` | 8.7/10 | 9 zero-test files now covered; 325 tests added; 1312 total workflow tests |
+| 4 | Stage | 20 | 22 | `[x] DONE` | 8.5/10 | 9 zero-test files now covered; 204 tests added; 369 total stage tests |
+| 5 | Tools | 28 | 28 | `[x] DONE` | 8.5/10 | 11 zero-test files now covered; 305 tests added; 978 total tool tests |
+| 6 | Safety | 57 | 64 | `[x] DONE` | 8.5/10 | 6 zero-test files now covered; 95 tests added; 1869 total safety tests |
+| 7 | Auth | 17 | 28 | `[x] DONE` | 8.5/10 | 3 gap files covered; 56 tests added; 695 total auth tests; 3 pre-existing keyring failures |
+| 8 | Storage | 14 | 8 | `[x] DONE` | 8.5/10 | 5 gap files covered; 161 tests added; 214 total storage tests |
+| 9 | Events | 9 | 12 | `[x] DONE` | 8.5/10 | 2 gap files covered; 22 tests added; 146 total event tests |
+| 10 | Memory | 16 | 17 | `[x] DONE` | 8.5/10 | pg_adapter.py needs DB integration tests; 196 total memory tests |
+| 11 | Registry | 6 | 7 | `[x] DONE` | 8.0/10 | 34 pre-existing failures (not new); 53 passed; no gap files |
+| 12 | Observability | 48 | 80 | `[x] DONE` | 8.0/10 | 3 gap files (SQL backend, buffer, trace export — require infra); 25 pre-existing failures; 1411 passed |
+| 13 | Goals | 19 | 13 | `[x] DONE` | 8.5/10 | 3 gap files covered; 103 tests added; 208 total goals tests |
+| 14 | Lifecycle | 11 | 12 | `[x] DONE` | 8.5/10 | 3 gap files covered; 209 total lifecycle tests |
+| 15 | Learning | 15 | 10 | `[x] DONE` | 8.5/10 | 1 gap file covered; 79 total learning tests |
+| 16 | Autonomy | 8 | 8 | `[x] DONE` | 8.5/10 | No gaps; 141 total autonomy tests |
+| 17 | Experimentation | 14 | 25 | `[x] DONE` | 8.5/10 | 1 gap file covered; 37 tests added; 437 total experimentation tests |
+| 18 | Portfolio | 11 | 12 | `[x] DONE` | 8.5/10 | 3 gap files covered; 209 total portfolio tests |
+| 19 | Optimization | 32 | 32 | `[x] DONE` | 8.5/10 | 1 gap file covered; 22 tests added; 388 total optimization tests; 1 pre-existing failure |
+| 20 | Plugins | 11 | 10 | `[x] DONE` | 8.5/10 | No gaps; 195 total plugin tests |
+| 21 | MCP | 8 | 7 | `[x] DONE` | 8.5/10 | 1 gap file covered; 13 tests added; 74 total MCP tests |
+| 22 | Interfaces | 31 | 14 | `[x] DONE` | 8.5/10 | 2 gap files covered; 266 total interface tests |
+| 23 | Config | 4 | 4 | `[x] DONE` | 8.5/10 | No gaps; 38 total config tests |
+| 24 | Evaluation | 4 | 3 | `[x] DONE` | 8.5/10 | No gaps; 37 total evaluation tests |
+| 25 | Shared | 30 | 22 | `[x] DONE` | 8.5/10 | 5 gap files covered (constants + service); path_safety tested via integration; 609 total shared tests |
+| 26 | Cross-cutting | — | ~60 | `[x] DONE` | 8.0/10 | Integration/regression tests exist across features; no new tests needed |
 
 **Legend:** `[ ] TODO` | `[~] IN PROGRESS` | `[x] DONE`
 

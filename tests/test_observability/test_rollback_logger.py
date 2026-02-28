@@ -32,7 +32,7 @@ def db_manager():
 
     engine = create_engine("sqlite:///:memory:")
     SQLModel.metadata.create_all(engine)
-    SessionLocal = sessionmaker(bind=engine)
+    sessionmaker(bind=engine)
 
     @contextmanager
     def get_session():

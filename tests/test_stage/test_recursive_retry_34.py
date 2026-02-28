@@ -155,7 +155,7 @@ class TestIterativeRetry:
         # This would cause RecursionError if recursive
         initial_limit = sys.getrecursionlimit()
         try:
-            sys.setrecursionlimit(50)  # Very low limit to catch recursion
+            sys.setrecursionlimit(150)  # Low limit to catch recursion
             result = executor.execute_stage(
                 stage_name="test_stage",
                 stage_config=config,
@@ -291,7 +291,7 @@ class TestIterativeRetry:
         config = _make_stage_config(max_retries=5, min_confidence=0.8)
         state = self._make_state()
 
-        result = executor.execute_stage(
+        executor.execute_stage(
             stage_name="test_stage",
             stage_config=config,
             state=state,

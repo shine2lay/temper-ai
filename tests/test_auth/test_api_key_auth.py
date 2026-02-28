@@ -260,7 +260,7 @@ async def test_require_role_allowed(mock_lookup):
     mock_lookup.return_value = _make_valid_lookup_result(role="owner")
     check = require_role("owner", "editor")
     token = "tk_ownerkey12345"
-    req = _make_request({"Authorization": f"Bearer {token}"})
+    _make_request({"Authorization": f"Bearer {token}"})
     ctx = await check(
         ctx=AuthContext(user_id="u1", tenant_id="t1", role="owner", api_key_id="k1")
     )

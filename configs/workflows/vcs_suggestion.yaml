@@ -127,7 +127,7 @@ workflow:
       enabled: true
       provider: vllm
       model: qwen3-next
-      timeout_seconds: 30
+      timeout_seconds: 120
 
   optimization:
     enabled: false  # no pipeline optimizers yet, just per-agent evaluation

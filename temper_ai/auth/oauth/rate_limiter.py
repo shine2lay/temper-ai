@@ -14,10 +14,11 @@ from collections import defaultdict, deque
 from datetime import UTC, datetime, timedelta
 
 from temper_ai.shared.constants.durations import (
-    DURATION_INSTANT,
     SECONDS_PER_HOUR,
     SECONDS_PER_MINUTE,
 )
+
+DURATION_INSTANT = 1
 from temper_ai.shared.utils.exceptions import RateLimitError
 
 logger = logging.getLogger(__name__)

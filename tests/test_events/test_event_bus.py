@@ -10,7 +10,7 @@ import pytest
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, select
 
-from temper_ai.events.constants import EVENT_STAGE_COMPLETED, EVENT_WORKFLOW_COMPLETED
+from temper_ai.events.constants import EVENT_WORKFLOW_COMPLETED
 from temper_ai.events.event_bus import TemperEventBus
 from temper_ai.events.models import (  # noqa: F401 — table registration
     EventLog,
@@ -122,7 +122,7 @@ class TestEmit:
         assert records[0].event_type == EVENT_WORKFLOW_COMPLETED
 
     def test_emit_no_db_still_forwards(self, bus_no_db, mock_obs_bus):
-        bus_no_db.emit(EVENT_STAGE_COMPLETED)
+        bus_no_db.emit("stage.completed")
         assert mock_obs_bus.emit.called
 
     def test_emit_with_all_params(self, bus, session_factory):
@@ -184,7 +184,6 @@ class TestSubscribePersistent:
 
 class TestWaitForEvent:
     def test_wait_receives_event(self, bus):
-        received = []
 
         def emitter():
             time.sleep(0.05)  # intentional delay before emitting
@@ -202,7 +201,6 @@ class TestWaitForEvent:
         assert result is None
 
     def test_wait_with_source_filter(self, bus):
-        received = []
 
         def emitter():
             time.sleep(0.05)  # intentional delay before emitting
@@ -224,14 +222,14 @@ class TestWaitForEvent:
 class TestReplayEvents:
     def test_replay_all_events(self, bus, session_factory):
         bus.emit(EVENT_WORKFLOW_COMPLETED)
-        bus.emit(EVENT_STAGE_COMPLETED)
+        bus.emit("stage.completed")
 
         events = bus.replay_events()
         assert len(events) == 2
 
     def test_replay_filter_by_type(self, bus):
         bus.emit(EVENT_WORKFLOW_COMPLETED)
-        bus.emit(EVENT_STAGE_COMPLETED)
+        bus.emit("stage.completed")
 
         events = bus.replay_events(event_type=EVENT_WORKFLOW_COMPLETED)
         assert all(e.event_type == EVENT_WORKFLOW_COMPLETED for e in events)

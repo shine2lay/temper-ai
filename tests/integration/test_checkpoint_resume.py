@@ -18,7 +18,7 @@ from temper_ai.observability.tracker import ExecutionTracker
 from temper_ai.storage.database.manager import get_session, init_database
 from temper_ai.storage.database.models import StageExecution, WorkflowExecution
 from temper_ai.workflow.checkpoint_backends import FileCheckpointBackend
-from temper_ai.workflow.checkpoint_manager import CheckpointManager
+from temper_ai.workflow.checkpoint_manager import CheckpointLoadError, CheckpointManager
 from temper_ai.workflow.domain_state import WORKFLOW_ID_PREFIX, WorkflowDomainState
 
 
@@ -535,5 +535,5 @@ class TestCheckpointFailureRecovery:
             f.write("{ invalid json }")
 
         # VERIFICATION: Loading corrupted checkpoint raises error
-        with pytest.raises((json.JSONDecodeError, ValueError)):
+        with pytest.raises((json.JSONDecodeError, ValueError, CheckpointLoadError)):
             checkpoint_manager.load_checkpoint(workflow_id)

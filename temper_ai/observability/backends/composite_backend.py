@@ -335,6 +335,7 @@ class _CompositeReadMixin:
         limit: int = DEFAULT_WORKFLOW_LIST_LIMIT,
         offset: int = 0,
         status: str | None = None,
+        tenant_id: str | None = None,
     ) -> list[dict[str, Any]]:
         """Delegate workflow listing to primary if it supports reads."""
         if isinstance(self._primary, ReadableBackendMixin):

@@ -58,7 +58,7 @@ class TestAgentCreationPerformance:
             for i in range(100):
                 config_copy = minimal_agent_config
                 config_copy.agent.name = f"agent_{i}"
-                agent = AgentFactory.create(config_copy)
+                AgentFactory.create(config_copy)
 
             elapsed = time.time() - start
 
@@ -205,7 +205,7 @@ class TestScalability:
         # Lookup should be fast
         start = time.time()
         for _ in range(1000):
-            tool = registry.get("Calculator")
+            registry.get("Calculator")
         elapsed = time.time() - start
 
         avg_time = elapsed / 1000

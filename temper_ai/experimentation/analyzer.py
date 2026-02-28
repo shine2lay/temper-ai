@@ -19,7 +19,8 @@ from temper_ai.experimentation.models import (
     VariantAssignment,
 )
 from temper_ai.shared.constants.limits import PERCENT_50, PERCENT_95, PERCENT_99
-from temper_ai.shared.constants.probabilities import TOLERANCE_TIGHT
+
+TOLERANCE_TIGHT = 0.05
 
 
 class StatisticalAnalyzer:

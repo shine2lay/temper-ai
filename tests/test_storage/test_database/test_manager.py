@@ -128,7 +128,7 @@ class TestDatabaseManager:
         manager = DatabaseManager("sqlite:///:memory:")
 
         with pytest.raises(ValueError, match="test error"):
-            with manager.session() as session:
+            with manager.session():
                 raise ValueError("test error")
 
     def test_session_with_serializable_isolation_sqlite(self):

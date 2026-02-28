@@ -36,7 +36,7 @@ def test_e2e_simple_m2_workflow(simple_workflow_config, benchmark):
     Target: <2s
     Measures: Complete sequential workflow execution
     """
-    with patch("temper_ai.workflow.langgraph_compiler.ConfigLoader"):
+    with patch("temper_ai.workflow.engines.langgraph_compiler.ConfigLoader"):
         compiler = LangGraphCompiler()
         mock_loader = Mock()
         mock_stage_config = Mock()
@@ -62,7 +62,7 @@ def test_e2e_medium_m3_workflow_parallel(medium_workflow_config, benchmark):
     Target: <5s
     Measures: Parallel workflow execution
     """
-    with patch("temper_ai.workflow.langgraph_compiler.ConfigLoader"):
+    with patch("temper_ai.workflow.engines.langgraph_compiler.ConfigLoader"):
         compiler = LangGraphCompiler()
         mock_loader = Mock()
         mock_stage_config = Mock()
@@ -98,7 +98,7 @@ def test_e2e_workflow_with_checkpointing(simple_workflow_config, benchmark):
     Target: <3s
     Measures: Checkpoint overhead in workflow
     """
-    with patch("temper_ai.workflow.langgraph_compiler.ConfigLoader"):
+    with patch("temper_ai.workflow.engines.langgraph_compiler.ConfigLoader"):
         compiler = LangGraphCompiler()
         mock_loader = Mock()
         mock_stage_config = Mock()
@@ -108,18 +108,20 @@ def test_e2e_workflow_with_checkpointing(simple_workflow_config, benchmark):
 
         # Compile with checkpointing
         from temper_ai.workflow.checkpoint_manager import CheckpointManager
+        from temper_ai.workflow.domain_state import WorkflowDomainState
 
         checkpoint_manager = CheckpointManager()
 
         graph = compiler.compile(simple_workflow_config)
 
         def execute_with_checkpoint():
-            workflow_id = "test_workflow_123"
-            checkpoint_manager.save_checkpoint(
-                workflow_id=workflow_id, stage_name="stage1", state={"topic": "test"}
+            domain_state = WorkflowDomainState(
+                current_stage="stage1",
+                topic="test",
             )
+            checkpoint_id = checkpoint_manager.save_checkpoint(domain_state)
             result = graph.invoke({"topic": "test"})
-            checkpoint_manager.get_checkpoint(workflow_id, "stage1")
+            checkpoint_manager.load_checkpoint(domain_state.workflow_id, checkpoint_id)
             return result
 
         result = benchmark.pedantic(execute_with_checkpoint, rounds=1, iterations=1)
@@ -164,7 +166,7 @@ def test_e2e_workflow_memory_baseline(simple_workflow_config):
     Target: <100MB for workflow compilation
     Measures: Memory usage baseline
     """
-    with patch("temper_ai.workflow.langgraph_compiler.ConfigLoader"):
+    with patch("temper_ai.workflow.engines.langgraph_compiler.ConfigLoader"):
         compiler = LangGraphCompiler()
         mock_loader = Mock()
         mock_stage_config = Mock()
@@ -197,7 +199,7 @@ def test_e2e_adaptive_workflow_execution(simple_workflow_config, benchmark):
     Target: <2.5s
     Measures: Adaptive executor overhead
     """
-    with patch("temper_ai.workflow.langgraph_compiler.ConfigLoader"):
+    with patch("temper_ai.workflow.engines.langgraph_compiler.ConfigLoader"):
         compiler = LangGraphCompiler()
         mock_loader = Mock()
         mock_stage_config = Mock()

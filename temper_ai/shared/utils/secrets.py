@@ -17,48 +17,16 @@ import os
 import re
 from typing import Any
 
-from cryptography.fernet import Fernet
-
 from temper_ai.shared.constants.sizes import SIZE_10KB, SIZE_100KB
-from temper_ai.shared.utils.constants import ERROR_SECRET_PREFIX
+
+ERROR_SECRET_PREFIX = "Secret '"  # noqa: S105
 
 __all__ = [
     # Secret resolution
     "SecretReference",
     "resolve_secret",
     "detect_secret_patterns",
-    # URL masking
-    "mask_url_password",
-    # Credential obfuscation
-    "ObfuscatedCredential",
 ]
-
-
-def mask_url_password(url: str) -> str:
-    """Mask password in a URL for safe logging.
-
-    Replaces the password component in URLs of the form
-    ``scheme://user:password@host`` with ``***``.
-
-    Args:
-        url: URL string that may contain embedded credentials.
-
-    Returns:
-        URL with password replaced by ``***``, or the original
-        string unchanged if no password is found.
-
-    Example:
-        >>> mask_url_password("redis://:secret@localhost:6379/0")
-        'redis://:***@localhost:6379/0'
-        >>> mask_url_password("redis://localhost:6379/0")
-        'redis://localhost:6379/0'
-    """
-    # Match scheme://[user][:password]@host patterns
-    return re.sub(
-        r"(://[^:@]*:)[^@]+(@)",
-        r"\1***\2",
-        url,
-    )
 
 
 class SecretReference:
@@ -217,101 +185,6 @@ class SecretReference:
             raise ValueError(f"{ERROR_SECRET_PREFIX}{name}' contains null bytes")
 
 
-class ObfuscatedCredential:
-    """
-    Obfuscated credential storage in memory.
-
-    **SECURITY WARNING: This provides OBFUSCATION, not encryption!**
-
-    This class prevents accidental logging or serialization of secrets by
-    storing them in an obfuscated form and redacting them in string representations.
-    However, it does NOT provide security against memory attacks or determined
-    adversaries because:
-
-    1. The encryption key is stored in the same process memory
-    2. An attacker with memory access can extract both key and ciphertext
-    3. This is security through obscurity, not cryptographic protection
-
-    **Use Cases:**
-    - ✅ Preventing accidental logging of secrets
-    - ✅ Redacting secrets in error messages
-    - ✅ Avoiding secrets in stack traces
-    - ❌ Protecting secrets from malicious code in the same process
-    - ❌ Protecting secrets from memory dumps
-    - ❌ Compliance with encryption requirements
-
-    **For True Encryption:**
-    Use OS keyring integration (e.g., keyring package) or external secrets
-    managers (AWS Secrets Manager, HashiCorp Vault) where keys are stored
-    outside the process memory.
-
-    Example:
-        >>> cred = ObfuscatedCredential("sk-secret-api-key-123")
-        >>> str(cred)  # Safe for logging
-        '***REDACTED***'
-        >>> cred.get()  # De-obfuscate when needed
-        'sk-secret-api-key-123'
-    """
-
-    def __init__(self, value: str):
-        """
-        Initialize with plaintext value (obfuscated immediately).
-
-        **SECURITY WARNING:** This is OBFUSCATION, not secure encryption!
-        The encryption key is stored in the same memory as the encrypted data,
-        providing no protection against memory attacks or malicious code.
-
-        Args:
-            value: Plaintext credential value
-        """
-        if not value:
-            raise ValueError("Cannot create ObfuscatedCredential with empty value")
-
-        # SECURITY WARNING: Key stored in same process memory as encrypted data!
-        # This provides OBFUSCATION (prevents accidental logging) NOT security.
-        # For real encryption, use OS keyring or external secrets manager.
-        #
-        # Generate encryption key (unique per instance)
-        self._key = Fernet.generate_key()
-        self._cipher = Fernet(self._key)
-
-        # Encrypt and store
-        self._encrypted = self._cipher.encrypt(value.encode("utf-8"))
-
-        # Track access for audit trail
-        self._access_count = 0
-
-    def get(self) -> str:
-        """
-        De-obfuscate and return credential.
-
-        Returns:
-            Plaintext credential value
-        """
-        self._access_count += 1
-        return self._cipher.decrypt(self._encrypted).decode("utf-8")
-
-    def __repr__(self) -> str:
-        """
-        Redacted representation for logging/debugging.
-
-        Returns the class name to aid debugging while preventing secret exposure.
-        The actual secret is never included in the repr output.
-
-        Returns:
-            String representation with redacted value
-        """
-        return "ObfuscatedCredential(***REDACTED***)"
-
-    def __str__(self) -> str:
-        """Redacted string representation."""
-        return "***REDACTED***"
-
-    def __bool__(self) -> bool:
-        """Credential is truthy if it exists."""
-        return True
-
-
 def resolve_secret(value: Any) -> Any:
     """
     Resolve a value that might be a secret reference.
@@ -387,22 +260,17 @@ def detect_secret_patterns(text: str) -> tuple[bool, str | None]:
             "This protects against ReDoS attacks."
         )
 
-    # Import high-confidence patterns from centralized registry
-    from temper_ai.shared.utils.secret_patterns import SECRET_PATTERNS
+    # Import patterns from centralized registry
+    from temper_ai.shared.utils.secret_patterns import (
+        MEDIUM_CONFIDENCE_PATTERNS,
+        SECRET_PATTERNS,
+    )
 
     for pattern in SECRET_PATTERNS.values():
         if re.search(pattern, text):
             return True, "high"
 
-    # Medium-confidence patterns (generic secret-like strings)
-    # These are heuristic patterns not in the central registry
-    medium_confidence_patterns = [
-        r"[a-f0-9]{32}",  # MD5-like hashes
-        r"[a-f0-9]{40}",  # SHA1-like hashes
-        r"[A-Za-z0-9+/]{40,100}={0,2}",  # Base64-encoded strings
-    ]
-
-    for pattern in medium_confidence_patterns:
+    for pattern in MEDIUM_CONFIDENCE_PATTERNS.values():
         if re.search(pattern, text):
             return True, "medium"
 

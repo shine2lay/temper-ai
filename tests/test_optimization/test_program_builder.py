@@ -36,7 +36,7 @@ class TestDSPyProgramBuilder:
         )
         builder = DSPyProgramBuilder()
         with patch("temper_ai.optimization.dspy._helpers.ensure_dspy_available"):
-            result = builder.build_from_config(config)
+            builder.build_from_config(config)
         mock_dspy.Predict.assert_called_once()
         sig_arg = mock_dspy.Predict.call_args[0][0]
         assert "topic" in sig_arg
@@ -50,7 +50,7 @@ class TestDSPyProgramBuilder:
         )
         builder = DSPyProgramBuilder()
         with patch("temper_ai.optimization.dspy._helpers.ensure_dspy_available"):
-            result = builder.build_from_config(config)
+            builder.build_from_config(config)
         mock_dspy.ChainOfThought.assert_called_once()
         sig_arg = mock_dspy.ChainOfThought.call_args[0][0]
         assert "topic" in sig_arg
@@ -86,7 +86,7 @@ class TestDSPyProgramBuilder:
         )
         builder = DSPyProgramBuilder()
         with patch("temper_ai.optimization.dspy._helpers.ensure_dspy_available"):
-            result = builder.build_from_config(config)
+            builder.build_from_config(config)
         # Should use default "input" field
         sig_arg = mock_dspy.Predict.call_args[0][0]
         assert "input" in sig_arg
@@ -108,7 +108,7 @@ class TestDSPyProgramBuilder:
         )
         builder = DSPyProgramBuilder()
         with patch("temper_ai.optimization.dspy._helpers.ensure_dspy_available"):
-            result = builder.build_from_config(config)
+            builder.build_from_config(config)
         # ReAct requires class-based signature, so should auto-upgrade
         mock_dspy.ReAct.assert_called_once()
 
@@ -121,7 +121,7 @@ class TestDSPyProgramBuilder:
         )
         builder = DSPyProgramBuilder()
         with patch("temper_ai.optimization.dspy._helpers.ensure_dspy_available"):
-            result = builder.build_from_config(config)
+            builder.build_from_config(config)
         mock_dspy.ProgramOfThought.assert_called_once()
 
     def test_module_type_best_of_n_wraps_base(self, mock_dspy):
@@ -133,7 +133,7 @@ class TestDSPyProgramBuilder:
         )
         builder = DSPyProgramBuilder()
         with patch("temper_ai.optimization.dspy._helpers.ensure_dspy_available"):
-            result = builder.build_from_config(config)
+            builder.build_from_config(config)
         mock_dspy.Predict.assert_called_once()  # default base module
         mock_dspy.BestOfN.assert_called_once()
 
@@ -149,7 +149,7 @@ class TestDSPyProgramBuilder:
         )
         builder = DSPyProgramBuilder()
         with patch("temper_ai.optimization.dspy._helpers.ensure_dspy_available"):
-            result = builder.build_from_config(config)
+            builder.build_from_config(config)
         # Should use class-based signature (calls InputField/OutputField)
         mock_dspy.InputField.assert_called_once()
         mock_dspy.OutputField.assert_called_once()

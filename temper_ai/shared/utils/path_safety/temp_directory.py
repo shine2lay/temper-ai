@@ -11,7 +11,7 @@ replacing unsafe /tmp access. Features:
 
 from pathlib import Path
 
-from temper_ai.shared.utils.constants import MAX_COMPONENT_LENGTH
+from temper_ai.shared.constants.limits import MAX_COMPONENT_LENGTH
 from temper_ai.shared.utils.path_safety.exceptions import PathSafetyError
 
 # File permissions for secure temporary directory (owner-only read/write/execute)

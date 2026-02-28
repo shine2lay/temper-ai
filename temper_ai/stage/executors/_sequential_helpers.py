@@ -52,6 +52,7 @@ from temper_ai.stage.executors._sequential_retry import (  # noqa: F401
     retry_agent_with_backoff,
 )
 from temper_ai.stage.executors.state_keys import StateKeys
+from temper_ai.workflow.context_provider import ContextResolutionError
 
 logger = logging.getLogger(__name__)
 
@@ -278,6 +279,8 @@ def _prepare_sequential_input(
                 ctx.state["_context_meta"] = resolved["_context_meta"]
             resolved[StateKeys.CURRENT_STAGE_AGENTS] = dict(prior_agent_outputs)
             return dict(resolved)
+        except ContextResolutionError:
+            raise  # Let WorkflowExecutor handle required-input failures
         except Exception:
             logger.warning(
                 "Context provider resolution failed for stage '%s', "

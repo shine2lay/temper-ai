@@ -11,124 +11,103 @@ Provides base exception classes that include:
 import re
 import traceback
 from datetime import UTC, datetime
-from enum import Enum
+from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
     from temper_ai.shared.core.context import ExecutionContext
 
 
-def _sanitize_aws_keys(message: str) -> str:
-    """Sanitize AWS API keys from message."""
-    return re.sub(r"\b(AKIA|ASIA)[A-Z0-9]{16}\b", "[REDACTED-AWS-KEY]", message)
-
-
-def _sanitize_api_keys(message: str) -> str:
-    """Sanitize API keys from message."""
-    # Pattern keys (sk-*, api-*, key-*, etc.)
-    message = re.sub(
-        r"\b(sk|api|key|secret)[-_][a-zA-Z0-9\-_]{3,}\b",
-        "[REDACTED-API-KEY]",
-        message,
-        flags=re.IGNORECASE,
-    )
-    # Assignment format (api_key=*, apiKey=*, etc.)
-    message = re.sub(
-        r'(api[_-]?key|apikey)\s*[:=]\s*["\']?[a-zA-Z0-9\-_]{10,}["\']?',
-        r"\1=[REDACTED-API-KEY]",
-        message,
-        flags=re.IGNORECASE,
-    )
-    return message
-
-
-def _sanitize_jwt_tokens(message: str) -> str:
-    """Sanitize JWT tokens from message."""
-    # Bearer tokens
-    message = re.sub(r"Bearer\s+[a-zA-Z0-9._-]+", "Bearer [REDACTED-TOKEN]", message)
-    # Bare JWT tokens
-    message = re.sub(r"\beyJ[a-zA-Z0-9._-]{20,}", "[REDACTED-JWT-TOKEN]", message)
-    return message
-
-
-def _sanitize_passwords(message: str) -> str:
-    """Sanitize passwords from message."""
-    return re.sub(
-        r'(password|passwd|pwd|pass)\s*[:=]\s*["\']?[^\s"\']{3,}["\']?',
-        r"\1=[REDACTED-PASSWORD]",
-        message,
-        flags=re.IGNORECASE,
+def _build_error_sanitizers() -> list[tuple[re.Pattern[str], str]]:
+    """Build compiled sanitizers from the central secret pattern registry."""
+    from temper_ai.shared.utils.secret_patterns import (
+        GENERIC_SECRET_PATTERNS,
+        SECRET_PATTERNS,
     )
 
+    # Map pattern names to specific redaction labels
+    _LABEL_MAP: dict[str, str] = {
+        "openai_project_key": "[REDACTED-API-KEY]",
+        "openai_key": "[REDACTED-API-KEY]",
+        "anthropic_key": "[REDACTED-API-KEY]",
+        "aws_access_key": "[REDACTED-AWS-KEY]",
+        "aws_secret_key": "[REDACTED-AWS-KEY]",
+        "github_token": "[REDACTED-TOKEN]",
+        "google_api_key": "[REDACTED-API-KEY]",
+        "google_oauth": "[REDACTED-TOKEN]",
+        "slack_token": "[REDACTED-TOKEN]",
+        "stripe_key": "[REDACTED-API-KEY]",
+        "connection_string": "[REDACTED-CREDENTIALS]",
+        "jwt_token": "[REDACTED-JWT-TOKEN]",
+        "bearer_token": "[REDACTED-TOKEN]",
+        "private_key": "[REDACTED-PRIVATE-KEY]",
+        "http_auth_header": "[REDACTED-TOKEN]",
+        "url_query_secret": "[REDACTED]",
+        "api_key": "[REDACTED-API-KEY]",
+        "generic_api_key": "[REDACTED-API-KEY]",
+        "generic_secret": "[REDACTED-PASSWORD]",
+        "generic_token": "[REDACTED-TOKEN]",
+        "password_disclosure": "[REDACTED-PASSWORD]",
+        "db_credentials": "[REDACTED-CREDENTIALS]",
+    }
 
-def _sanitize_generic_tokens(message: str) -> str:
-    """Sanitize generic tokens and auth headers from message."""
-    return re.sub(
-        r'(token|auth|authorization|x-api-key)\s*[:=]\s*["\']?[a-zA-Z0-9\-_]{10,}["\']?',
-        r"\1=[REDACTED-TOKEN]",
-        message,
-        flags=re.IGNORECASE,
-    )
+    sanitizers = []
+    for name, pattern in SECRET_PATTERNS.items():
+        label = _LABEL_MAP.get(name, "[REDACTED]")
+        sanitizers.append((re.compile(pattern, re.IGNORECASE), label))
+    for name, pattern in GENERIC_SECRET_PATTERNS.items():
+        label = _LABEL_MAP.get(name, "[REDACTED]")
+        sanitizers.append((re.compile(pattern, re.IGNORECASE), label))
+
+    # Additional broad patterns for error-message sanitization.
+    # These catch shorter or dash-separated keys common in error messages.
+    extra = [
+        # sk- prefixed keys with dashes (e.g. sk-test-1234567890abcdef)
+        (r"\bsk-[a-zA-Z0-9][a-zA-Z0-9-]{6,200}\b", "[REDACTED-API-KEY]"),
+        # Partial JWT header (eyJ... without full 3-part structure)
+        (r"\beyJ[a-zA-Z0-9_-]{10,2000}(?:\.[a-zA-Z0-9_-]+)*", "[REDACTED-JWT-TOKEN]"),
+        # password/pwd/passwd=<value> with short values (>= 4 chars)
+        (
+            r"(?i)\b(?:password|passwd|pwd)\s*[:=]\s*['\"]?(\S{4,500})['\"]?",
+            "[REDACTED-PASSWORD]",
+        ),
+    ]
+    for pat, label in extra:
+        sanitizers.append((re.compile(pat, re.IGNORECASE), label))
+
+    return sanitizers
 
 
-def _sanitize_connection_strings(message: str) -> str:
-    """Sanitize database connection strings from message."""
-    # Connection string credentials
-    message = re.sub(
-        r"(mysql|postgres|postgresql|mongodb|redis)://[^:]+:[^@]+@",
-        r"\1://[REDACTED-CREDENTIALS]@",
-        message,
-        flags=re.IGNORECASE,
-    )
-    # Query param passwords
-    message = re.sub(
-        r"[?&](password|pwd|pass|token|key|secret)=[^&\s]+",
-        r"?\1=[REDACTED]",
-        message,
-        flags=re.IGNORECASE,
-    )
-    return message
+_ERROR_SANITIZERS: list[tuple[re.Pattern[str], str]] | None = None
 
 
 def sanitize_error_message(message: str) -> str:
     """Sanitize sensitive data from error messages.
 
-    Redacts the following sensitive patterns:
-    - API keys (sk-*, api-*, api_key=*, apiKey:*, etc.)
-    - AWS keys (AKIA*, ASIA*)
-    - JWT tokens (Bearer, eyJ*)
-    - Passwords (password=*, password:*, pwd=*, etc.)
-    - Generic tokens (token=*, auth=*, authorization=*, etc.)
-    - Connection strings (mysql://, postgres://, mongodb://, redis://, etc.)
+    Uses the central secret pattern registry to redact all known secret
+    patterns including vendor API keys, connection strings, JWTs, passwords,
+    auth headers, and URL query-param secrets.
 
     Args:
         message: Error message that may contain sensitive data
 
     Returns:
         Sanitized message with sensitive data redacted
-
-    Example:
-        >>> sanitize_error_message("API key sk-test-123 failed")
-        "API key [REDACTED-API-KEY] failed"
-
-        >>> sanitize_error_message("Password='secret123' invalid")
-        "Password=[REDACTED-PASSWORD] invalid"
     """
     if not message:
         return message
 
-    # Apply each sanitization helper
-    message = _sanitize_aws_keys(message)
-    message = _sanitize_api_keys(message)
-    message = _sanitize_jwt_tokens(message)
-    message = _sanitize_passwords(message)
-    message = _sanitize_generic_tokens(message)
-    message = _sanitize_connection_strings(message)
+    global _ERROR_SANITIZERS  # noqa: PLW0603
+    if _ERROR_SANITIZERS is None:
+        _ERROR_SANITIZERS = _build_error_sanitizers()
+
+    for compiled_pattern, replacement in _ERROR_SANITIZERS:
+        message = compiled_pattern.sub(replacement, message)
 
     return message
 
 
-class ErrorCode(str, Enum):
+class ErrorCode(StrEnum):
     """Standard error codes for programmatic handling.
 
     Error codes follow format: CATEGORY_SPECIFIC_ERROR
@@ -141,56 +120,45 @@ class ErrorCode(str, Enum):
     - VALIDATION_*: Validation errors
     """
 
-    # Configuration errors (1000-1099)
+    # Configuration errors
     CONFIG_NOT_FOUND = "CONFIG_NOT_FOUND"
     CONFIG_INVALID = "CONFIG_INVALID"
-    CONFIG_PARSE_ERROR = "CONFIG_PARSE_ERROR"
     CONFIG_VALIDATION_ERROR = "CONFIG_VALIDATION_ERROR"
 
-    # LLM errors (1100-1199)
+    # LLM errors
     LLM_CONNECTION_ERROR = "LLM_CONNECTION_ERROR"
     LLM_TIMEOUT = "LLM_TIMEOUT"
     LLM_RATE_LIMIT = "LLM_RATE_LIMIT"
     LLM_AUTHENTICATION_ERROR = "LLM_AUTHENTICATION_ERROR"
-    LLM_INVALID_RESPONSE = "LLM_INVALID_RESPONSE"
-    LLM_MODEL_NOT_FOUND = "LLM_MODEL_NOT_FOUND"
 
-    # Tool errors (1200-1299)
+    # Tool errors
     TOOL_NOT_FOUND = "TOOL_NOT_FOUND"
     TOOL_EXECUTION_ERROR = "TOOL_EXECUTION_ERROR"
-    TOOL_VALIDATION_ERROR = "TOOL_VALIDATION_ERROR"
     TOOL_TIMEOUT = "TOOL_TIMEOUT"
     TOOL_REGISTRY_ERROR = "TOOL_REGISTRY_ERROR"
 
-    # Agent errors (1300-1399)
-    AGENT_INITIALIZATION_ERROR = "AGENT_INITIALIZATION_ERROR"
+    # Agent errors
     AGENT_EXECUTION_ERROR = "AGENT_EXECUTION_ERROR"
     AGENT_MAX_ITERATIONS = "AGENT_MAX_ITERATIONS"
     AGENT_TIMEOUT = "AGENT_TIMEOUT"
-    AGENT_INVALID_OUTPUT = "AGENT_INVALID_OUTPUT"
 
-    # Workflow errors (1400-1499)
-    WORKFLOW_COMPILATION_ERROR = "WORKFLOW_COMPILATION_ERROR"
+    # Workflow errors
     WORKFLOW_EXECUTION_ERROR = "WORKFLOW_EXECUTION_ERROR"
     WORKFLOW_STAGE_ERROR = "WORKFLOW_STAGE_ERROR"
     WORKFLOW_TIMEOUT = "WORKFLOW_TIMEOUT"
 
-    # Safety errors (1500-1599)
+    # Safety errors
     SAFETY_VIOLATION = "SAFETY_VIOLATION"
-    SAFETY_POLICY_ERROR = "SAFETY_POLICY_ERROR"
-    SAFETY_ACTION_BLOCKED = "SAFETY_ACTION_BLOCKED"
 
-    # Validation errors (1600-1699)
+    # Validation errors
     VALIDATION_ERROR = "VALIDATION_ERROR"
-    VALIDATION_TYPE_ERROR = "VALIDATION_TYPE_ERROR"
-    VALIDATION_RANGE_ERROR = "VALIDATION_RANGE_ERROR"
 
-    # System errors (1700-1799)
+    # System errors
     SYSTEM_ERROR = "SYSTEM_ERROR"
     SYSTEM_TIMEOUT = "SYSTEM_TIMEOUT"
     SYSTEM_RESOURCE_ERROR = "SYSTEM_RESOURCE_ERROR"
 
-    # Unknown/Generic (9999)
+    # Unknown/Generic
     UNKNOWN_ERROR = "UNKNOWN_ERROR"
 
 
@@ -674,8 +642,7 @@ class SecurityError(FrameworkException):
     """Raised when a security requirement or constraint is violated.
 
     A lightweight exception for security violations across modules
-    (tools, auth, pricing, etc.). Unlike SafetyError, this does not
-    require ExecutionContext or ErrorCode.
+    (tools, auth, pricing, etc.).
 
     Inherits from FrameworkException so that a top-level
     ``except FrameworkException`` handler can catch security errors
@@ -683,135 +650,3 @@ class SecurityError(FrameworkException):
     """
 
     pass
-
-
-class SafetyError(BaseError):
-    """Base class for safety-related errors."""
-
-    def __init__(
-        self,
-        message: str,
-        error_code: ErrorCode = ErrorCode.SAFETY_VIOLATION,
-        context: Optional["ExecutionContext"] = None,
-        cause: Exception | None = None,
-        policy_name: str | None = None,
-        severity: str | None = None,
-        **kwargs: Any,
-    ) -> None:
-        extra_data = kwargs.get("extra_data", {})
-        if policy_name:
-            extra_data["policy_name"] = policy_name
-        if severity:
-            extra_data["severity"] = severity
-        kwargs["extra_data"] = extra_data
-
-        super().__init__(
-            message=message,
-            error_code=error_code,
-            context=context,
-            cause=cause,
-            **kwargs,
-        )
-
-
-# Validation Exceptions
-
-
-class FrameworkValidationError(BaseError):
-    """Base class for validation errors.
-
-    Note: Previously named ``ValidationError``. Renamed to avoid collision
-    with ``pydantic.ValidationError`` which is used extensively across
-    the codebase for schema validation.  The old name is available as a
-    backward-compatible alias that emits a ``DeprecationWarning``.
-    """
-
-    def __init__(
-        self,
-        message: str,
-        error_code: ErrorCode = ErrorCode.VALIDATION_ERROR,
-        context: Optional["ExecutionContext"] = None,
-        cause: Exception | None = None,
-        field_name: str | None = None,
-        **kwargs: Any,
-    ) -> None:
-        extra_data = kwargs.get("extra_data", {})
-        if field_name:
-            extra_data["field_name"] = field_name
-        kwargs["extra_data"] = extra_data
-
-        super().__init__(
-            message=message,
-            error_code=error_code,
-            context=context,
-            cause=cause,
-            **kwargs,
-        )
-
-
-# Utility Functions
-
-
-def wrap_exception(
-    exc: Exception,
-    message: str,
-    error_code: ErrorCode = ErrorCode.UNKNOWN_ERROR,
-    context: Optional["ExecutionContext"] = None,
-) -> BaseError:
-    """Wrap a standard exception in a BaseError with context.
-
-    Useful for converting third-party exceptions into our error format.
-
-    Args:
-        exc: Original exception
-        message: Descriptive message for the error
-        error_code: ErrorCode for categorization
-        context: ExecutionContext for tracking
-
-    Returns:
-        BaseError wrapping the original exception
-
-    Example:
-        >>> try:
-        ...     some_library_call()
-        ... except ValueError as e:
-        ...     raise wrap_exception(
-        ...         e,
-        ...         "Invalid configuration value",
-        ...         ErrorCode.CONFIG_INVALID,
-        ...         ExecutionContext(workflow_id="wf-123")
-        ...     )
-    """
-    return BaseError(message=message, error_code=error_code, context=context, cause=exc)
-
-
-def get_error_info(exc: Exception) -> dict[str, Any]:
-    """Extract error information from any exception.
-
-    If the exception is a BaseError, returns full context.
-    Otherwise, returns basic information.
-
-    Args:
-        exc: Any exception
-
-    Returns:
-        Dictionary with error information
-
-    Example:
-        >>> try:
-        ...     raise ValueError("Bad value")
-        ... except Exception as e:
-        ...     info = get_error_info(e)
-        ...     print(info['error_type'])  # "ValueError"
-    """
-    if isinstance(exc, BaseError):
-        return exc.to_dict()
-
-    return {
-        "error_type": type(exc).__name__,
-        "message": str(exc),
-        "error_code": ErrorCode.UNKNOWN_ERROR.value,
-        "context": {},
-        "timestamp": datetime.now(UTC).isoformat(),
-        "traceback": traceback.format_exc(),
-    }

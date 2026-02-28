@@ -1143,6 +1143,7 @@ class SQLDelegatedMethodsMixin:
         limit: int = DEFAULT_LIST_LIMIT,
         offset: int = 0,
         status: str | None = None,
+        tenant_id: str | None = None,
     ) -> list[dict[str, Any]]:
         """List workflow executions (summary only, no children)."""
         return read_list_workflows(limit, offset, status)

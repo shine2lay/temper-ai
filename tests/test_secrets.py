@@ -16,7 +16,6 @@ import pytest
 
 from temper_ai.shared.utils.config_helpers import sanitize_config_for_display
 from temper_ai.shared.utils.secrets import (
-    ObfuscatedCredential,
     SecretReference,
     detect_secret_patterns,
     resolve_secret,
@@ -104,65 +103,6 @@ class TestSecretReference:
         """Test backward compatibility with plain text values."""
         result = SecretReference.resolve("plain-api-key")
         assert result == "plain-api-key"
-
-
-class TestObfuscatedCredential:
-    """Tests for ObfuscatedCredential class."""
-
-    def test_create_and_retrieve(self):
-        """Test creating and retrieving obfuscated credential."""
-        cred = ObfuscatedCredential("sk-secret-123")
-        assert cred.get() == "sk-secret-123"
-
-    def test_redacted_string_representation(self):
-        """Test that credentials are redacted in string form."""
-        cred = ObfuscatedCredential("sk-secret-123")
-        assert str(cred) == "***REDACTED***"
-        assert repr(cred) == "ObfuscatedCredential(***REDACTED***)"
-
-    def test_empty_value_rejected(self):
-        """Test that empty values are rejected."""
-        with pytest.raises(ValueError, match="empty"):
-            ObfuscatedCredential("")
-
-    def test_truthy(self):
-        """Test that credential is truthy."""
-        cred = ObfuscatedCredential("sk-secret-123")
-        assert bool(cred) is True
-
-    def test_security_limitation_documented(self):
-        """Test documenting the security limitation.
-
-        SECURITY NOTE: This test demonstrates that ObfuscatedCredential provides
-        OBFUSCATION, not encryption. An attacker with access to the object
-        can extract both the key and ciphertext from memory.
-
-        This is by design - ObfuscatedCredential prevents accidental logging,
-        NOT attacks by malicious code in the same process.
-        """
-        secret_value = "sk-actual-secret-key-123"
-        cred = ObfuscatedCredential(secret_value)
-
-        # SECURITY LIMITATION: Key is accessible in same memory
-        # An attacker with access to the object can extract the key
-        assert hasattr(cred, "_key")
-        assert hasattr(cred, "_cipher")
-        assert hasattr(cred, "_encrypted")
-
-        # With both key and ciphertext, attacker can decrypt
-        extracted_key = cred._key
-        extracted_ciphertext = cred._encrypted
-        from cryptography.fernet import Fernet
-
-        attacker_cipher = Fernet(extracted_key)
-        decrypted = attacker_cipher.decrypt(extracted_ciphertext).decode("utf-8")
-
-        # Attacker successfully extracted the secret
-        assert decrypted == secret_value
-
-        # Conclusion: This is OBFUSCATION (prevents accidental logging),
-        # NOT security against determined attackers or memory dumps.
-        # For real encryption, use OS keyring or external secrets manager.
 
 
 class TestResolveSecret:
@@ -470,18 +410,6 @@ class TestSanitizeConfigForDisplay:
 
 class TestSecretNeverInLogs:
     """Integration tests to ensure secrets never appear in logs/DB."""
-
-    def test_secret_not_in_string_representation(self):
-        """Test that ObfuscatedCredential never exposes secret in string form."""
-        cred = ObfuscatedCredential("sk-very-secret-key")
-
-        # str() should not expose secret
-        assert "sk-very-secret-key" not in str(cred)
-        assert "REDACTED" in str(cred)
-
-        # repr() should not expose secret
-        assert "sk-very-secret-key" not in repr(cred)
-        assert "REDACTED" in repr(cred)
 
     def test_sanitized_config_safe_for_logging(self):
         """Test that sanitized config is safe to log."""

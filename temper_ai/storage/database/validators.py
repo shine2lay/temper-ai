@@ -52,13 +52,3 @@ def validate_json_size(
         raise
     except (TypeError, ValueError) as e:
         raise TypeError(f"Failed to serialize {field_name} to JSON: {e}") from e
-
-
-def validate_optional_json_size(
-    data: dict[str, Any] | None,
-    max_bytes: int = BYTES_PER_MB,
-    field_name: str = "JSON field",
-) -> None:
-    """Validate optional JSON field size (allows None)."""
-    if data is not None:
-        validate_json_size(data, max_bytes, field_name)

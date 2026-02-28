@@ -232,7 +232,7 @@ class TestRegisterStrategy:
 
         # Original hash strategy is consistent
         experiment.assignment_strategy = AssignmentStrategyType.HASH
-        original_result = assigner.assign_variant(experiment, variants, "workflow-same")
+        assigner.assign_variant(experiment, variants, "workflow-same")
 
         # Register new strategy
         class AlwaysControlStrategy(AssignmentStrategy):

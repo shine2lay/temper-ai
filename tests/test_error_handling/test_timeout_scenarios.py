@@ -167,7 +167,7 @@ class TestToolExecutionTimeouts:
         executor = ToolExecutor(registry, default_timeout=1, max_workers=5)
         try:
             # Trigger 5 timeouts (reduced from 10 to avoid thread accumulation)
-            for i in range(5):
+            for _i in range(5):
                 result = executor.execute("SlowTool", {}, timeout=1)
                 assert result.success is False
         finally:
@@ -625,8 +625,8 @@ class TestTimeoutErrorMessages:
         # Not ValueError
         try:
             await asyncio.wait_for(operation_that_fails(), timeout=2.0)
-            assert False, "Should have raised TimeoutError"
+            raise AssertionError("Should have raised TimeoutError")
         except TimeoutError:
             pass  # Expected
         except ValueError:
-            assert False, "Should raise TimeoutError, not ValueError"
+            raise AssertionError("Should raise TimeoutError, not ValueError")

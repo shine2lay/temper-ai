@@ -4,12 +4,12 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from temper_ai.shared.constants.convergence import (
-    DEFAULT_CONVERGENCE_MAX_ITERATIONS,
-    MAX_CONVERGENCE_ITERATIONS,
-    MIN_CONVERGENCE_ITERATIONS,
-)
 from temper_ai.shared.constants.durations import SECONDS_PER_30_MINUTES
+
+# Convergence iteration bounds
+MIN_CONVERGENCE_ITERATIONS = 2
+DEFAULT_CONVERGENCE_MAX_ITERATIONS = 5
+MAX_CONVERGENCE_ITERATIONS = 20
 from temper_ai.shared.constants.execution import DEFAULT_VERSION
 from temper_ai.shared.constants.limits import DEFAULT_MIN_ITEMS, SMALL_ITEM_LIMIT
 from temper_ai.shared.constants.probabilities import (

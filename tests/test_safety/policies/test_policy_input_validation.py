@@ -266,7 +266,7 @@ class TestErrorMessages:
         """Test that negative value errors have helpful messages."""
         try:
             ResourceLimitPolicy({"max_file_size_read": -100})
-            assert False, "Should have raised ValueError"
+            raise AssertionError("Should have raised ValueError")
         except ValueError as e:
             assert "must be >=" in str(e)
             assert "-100" in str(e)
@@ -275,7 +275,7 @@ class TestErrorMessages:
         """Test that extreme value errors have helpful messages."""
         try:
             ResourceLimitPolicy({"max_cpu_time": 10000.0})
-            assert False, "Should have raised ValueError"
+            raise AssertionError("Should have raised ValueError")
         except ValueError as e:
             assert "must be <=" in str(e)
             assert "10000" in str(e)
@@ -284,7 +284,7 @@ class TestErrorMessages:
         """Test that type errors have helpful messages."""
         try:
             ResourceLimitPolicy({"track_memory": "yes"})
-            assert False, "Should have raised ValueError"
+            raise AssertionError("Should have raised ValueError")
         except ValueError as e:
             assert "must be boolean" in str(e)
             assert "str" in str(e)

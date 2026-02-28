@@ -215,7 +215,7 @@ class TestRecordLifecycle:
         assert runs[0].portfolio_id == "my-portfolio"
 
     def test_concurrent_tracking(self, scheduler, store):
-        portfolio = PortfolioConfig(
+        PortfolioConfig(
             name="track",
             products=[
                 ProductDefinition(name="web_app", weight=1.0, max_concurrent=5),

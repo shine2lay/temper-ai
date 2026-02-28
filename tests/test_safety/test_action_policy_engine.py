@@ -461,9 +461,7 @@ class TestCaching:
         await asyncio.sleep(0.2)
 
         # Second validation - cache miss due to expiration
-        result = await engine.validate_action(
-            action={"command": "test"}, context=context
-        )
+        await engine.validate_action(action={"command": "test"}, context=context)
 
         # Should be cache miss (expired)
         metrics = engine.get_metrics()
@@ -767,9 +765,7 @@ class TestCacheKeySecurityFixes:
 
     def test_canonical_json_sorts_nested_dicts(self):
         """Test that canonical JSON sorts nested dictionary keys."""
-        engine = ActionPolicyEngine(
-            policy_registry=MagicMock(spec=PolicyRegistry), config={}
-        )
+        ActionPolicyEngine(policy_registry=MagicMock(spec=PolicyRegistry), config={})
 
         # Different key orders, same logical data
         obj1 = {"b": {"d": 1, "c": 2}, "a": 3}
@@ -785,9 +781,7 @@ class TestCacheKeySecurityFixes:
 
     def test_canonical_json_handles_lists(self):
         """Test that canonical JSON preserves list order."""
-        engine = ActionPolicyEngine(
-            policy_registry=MagicMock(spec=PolicyRegistry), config={}
-        )
+        ActionPolicyEngine(policy_registry=MagicMock(spec=PolicyRegistry), config={})
 
         obj1 = {"items": [3, 1, 2]}
         obj2 = {"items": [3, 1, 2]}
@@ -806,9 +800,7 @@ class TestCacheKeySecurityFixes:
 
     def test_canonical_json_sorts_sets(self):
         """Test that canonical JSON sorts sets for determinism."""
-        engine = ActionPolicyEngine(
-            policy_registry=MagicMock(spec=PolicyRegistry), config={}
-        )
+        ActionPolicyEngine(policy_registry=MagicMock(spec=PolicyRegistry), config={})
 
         # Sets are unordered in Python, but should serialize deterministically
         obj1 = {"tags": {3, 1, 2}}
@@ -824,9 +816,7 @@ class TestCacheKeySecurityFixes:
 
     def test_canonical_json_deeply_nested_structures(self):
         """Test canonical JSON with deeply nested structures."""
-        engine = ActionPolicyEngine(
-            policy_registry=MagicMock(spec=PolicyRegistry), config={}
-        )
+        ActionPolicyEngine(policy_registry=MagicMock(spec=PolicyRegistry), config={})
 
         obj1 = {"level1": {"level2": {"level3": {"c": 3, "b": 2, "a": 1}}}}
         obj2 = {"level1": {"level2": {"level3": {"a": 1, "b": 2, "c": 3}}}}
@@ -838,9 +828,7 @@ class TestCacheKeySecurityFixes:
 
     def test_canonical_json_mixed_types(self):
         """Test canonical JSON with mixed data types."""
-        engine = ActionPolicyEngine(
-            policy_registry=MagicMock(spec=PolicyRegistry), config={}
-        )
+        ActionPolicyEngine(policy_registry=MagicMock(spec=PolicyRegistry), config={})
 
         obj = {
             "string": "hello",
@@ -1025,9 +1013,7 @@ class TestCacheKeySecurityFixes:
 
     def test_canonical_json_handles_empty_structures(self):
         """Test canonical JSON with empty structures."""
-        engine = ActionPolicyEngine(
-            policy_registry=MagicMock(spec=PolicyRegistry), config={}
-        )
+        ActionPolicyEngine(policy_registry=MagicMock(spec=PolicyRegistry), config={})
 
         empty_dict = {}
         empty_list = []
@@ -1040,9 +1026,7 @@ class TestCacheKeySecurityFixes:
 
     def test_canonical_json_deterministic_for_complex_action(self):
         """Test canonical JSON is deterministic for complex real-world action."""
-        engine = ActionPolicyEngine(
-            policy_registry=MagicMock(spec=PolicyRegistry), config={}
-        )
+        ActionPolicyEngine(policy_registry=MagicMock(spec=PolicyRegistry), config={})
 
         # Simulate complex action with nested structures
         action = {

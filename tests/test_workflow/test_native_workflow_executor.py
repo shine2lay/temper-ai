@@ -777,7 +777,7 @@ class TestDynamicEdgeRouting:
         executor = WorkflowExecutor(builder, ConditionEvaluator())
 
         state = {"stage_outputs": {}, "current_stage": ""}
-        result = executor.run(["loop"], {}, state)
+        executor.run(["loop"], {}, state)
 
         # Initial call + DEFAULT_MAX_DYNAMIC_HOPS dynamic calls
         assert call_log.count("loop") == 1 + DEFAULT_MAX_DYNAMIC_HOPS
@@ -853,7 +853,7 @@ class TestDynamicEdgeRouting:
         executor = WorkflowExecutor(builder, ConditionEvaluator())
 
         state = {"stage_outputs": {}, "current_stage": ""}
-        result = executor.run(["analyze", "fix"], {}, state)
+        executor.run(["analyze", "fix"], {}, state)
 
         assert "analyze" in call_log
         assert "fix" in call_log
@@ -1497,7 +1497,7 @@ class TestMultiTargetDynamicRouting:
 
         # p1's parallel _next_stage should NOT be followed (only sequential)
         # _follow_sequential_signals_from checks mode == "sequential"
-        p1_dynamic_calls = [c for c in call_log if c in ("nested_a", "nested_b")]
+        [c for c in call_log if c in ("nested_a", "nested_b")]
         # nested_a and nested_b run via normal DAG walk (depth group), not fan-out
         assert "p1" in result["stage_outputs"]
         assert "p2" in result["stage_outputs"]

@@ -2,22 +2,15 @@
 
 import logging
 from datetime import datetime
-from io import StringIO
-from unittest.mock import patch
-
-import pytest
 
 from temper_ai.shared.utils.logging import (
     ConsoleFormatter,
-    LogContext,
     SecretRedactingFormatter,
     StructuredFormatter,
     _recursive_url_decode,
     _sanitize_control_characters,
     _sanitize_for_logging,
     get_logger,
-    log_function_call,
-    setup_logging,
 )
 
 
@@ -450,89 +443,6 @@ class TestConsoleFormatter:
                 assert "\033[" in result
 
 
-class TestLoggingSetup:
-    """Tests for setup_logging function."""
-
-    def test_setup_logging_default_level(self):
-        """Test setup_logging with default level."""
-        with patch.dict("os.environ", {}, clear=True):
-            setup_logging()
-
-            root_logger = logging.getLogger()
-            assert root_logger.level == logging.INFO
-
-    def test_setup_logging_custom_level(self):
-        """Test setup_logging with custom level."""
-        setup_logging(level="DEBUG")
-
-        root_logger = logging.getLogger()
-        assert root_logger.level == logging.DEBUG
-
-    def test_setup_logging_env_variable(self):
-        """Test setup_logging reads from TEMPER_LOG_LEVEL env var."""
-        with patch.dict("os.environ", {"TEMPER_LOG_LEVEL": "WARNING"}):
-            setup_logging()
-
-            root_logger = logging.getLogger()
-            assert root_logger.level == logging.WARNING
-
-    def test_setup_logging_console_format(self):
-        """Test setup_logging with console format."""
-        setup_logging(format_type="console")
-
-        root_logger = logging.getLogger()
-        assert len(root_logger.handlers) > 0
-
-        # Should have console handler
-        handler_types = [type(h).__name__ for h in root_logger.handlers]
-        assert "StreamHandler" in handler_types
-
-    def test_setup_logging_json_format(self):
-        """Test setup_logging with JSON format."""
-        setup_logging(format_type="json")
-
-        root_logger = logging.getLogger()
-        handlers = root_logger.handlers
-
-        # Should have JSON formatter
-        assert any(isinstance(h.formatter, StructuredFormatter) for h in handlers)
-
-    def test_setup_logging_both_formats(self):
-        """Test setup_logging with both console and JSON."""
-        setup_logging(format_type="both")
-
-        root_logger = logging.getLogger()
-        assert len(root_logger.handlers) >= 2
-
-    def test_setup_logging_with_file(self, tmp_path):
-        """Test setup_logging with log file."""
-        log_file = tmp_path / "test.log"
-        setup_logging(log_file=str(log_file))
-
-        root_logger = logging.getLogger()
-
-        # Should have file handler
-        handler_types = [type(h).__name__ for h in root_logger.handlers]
-        assert "FileHandler" in handler_types
-
-        # File should be created
-        assert log_file.exists()
-
-    def test_setup_logging_clears_existing_handlers(self):
-        """Test setup_logging clears existing handlers."""
-        root_logger = logging.getLogger()
-        initial_handler_count = len(root_logger.handlers)
-
-        setup_logging(format_type="console")
-        first_count = len(root_logger.handlers)
-
-        setup_logging(format_type="console")
-        second_count = len(root_logger.handlers)
-
-        # Should not accumulate handlers
-        assert first_count == second_count
-
-
 class TestGetLogger:
     """Tests for get_logger function."""
 
@@ -551,128 +461,3 @@ class TestGetLogger:
         logger1 = get_logger("test.module")
         logger2 = get_logger("test.module")
         assert logger1 is logger2
-
-
-class TestLogContext:
-    """Tests for LogContext context manager."""
-
-    def test_log_context_adds_fields(self):
-        """Test LogContext adds fields to log records."""
-        logger = get_logger("test")
-        stream = StringIO()
-        handler = logging.StreamHandler(stream)
-        handler.setFormatter(StructuredFormatter())
-        logger.addHandler(handler)
-        logger.setLevel(logging.INFO)
-
-        with LogContext(logger, user_id=123, request_id="req-456"):
-            logger.info("Test message")
-
-        output = stream.getvalue()
-        assert "user_id" in output
-        assert "123" in output
-        assert "req-456" in output
-
-    def test_log_context_restores_factory(self):
-        """Test LogContext restores original log record factory."""
-        old_factory = logging.getLogRecordFactory()
-
-        logger = get_logger("test")
-        with LogContext(logger, test_field="value"):
-            pass
-
-        new_factory = logging.getLogRecordFactory()
-        assert new_factory == old_factory
-
-    def test_log_context_nested(self):
-        """Test nested LogContext works correctly."""
-        logger = get_logger("test")
-        stream = StringIO()
-        handler = logging.StreamHandler(stream)
-        handler.setFormatter(StructuredFormatter())
-        logger.addHandler(handler)
-        logger.setLevel(logging.INFO)
-
-        with LogContext(logger, outer="value1"):
-            # Log in outer context
-            logger.info("Outer message")
-            outer_output = stream.getvalue()
-            assert "outer" in outer_output
-            assert "value1" in outer_output
-            stream.truncate(0)
-            stream.seek(0)
-
-            with LogContext(logger, inner="value2"):
-                # Log in inner context - should have both fields
-                logger.info("Inner message")
-                inner_output = stream.getvalue()
-                assert "outer" in inner_output
-                assert "value1" in inner_output
-                assert "inner" in inner_output
-                assert "value2" in inner_output
-                stream.truncate(0)
-                stream.seek(0)
-
-            # Back to outer context - should only have outer field
-            logger.info("Outer again")
-            restored_output = stream.getvalue()
-            assert "outer" in restored_output
-            assert "value1" in restored_output
-            # Inner field should not be present after exiting inner context
-            assert "inner" not in restored_output or "value2" not in restored_output
-
-
-class TestLogFunctionCall:
-    """Tests for log_function_call decorator."""
-
-    def test_decorator_logs_function_calls(self):
-        """Test decorator logs function entry and exit."""
-        logger = get_logger("test")
-
-        with patch.object(logger, "log") as mock_log:
-
-            @log_function_call(logger, level=logging.DEBUG)
-            def test_function(x, y):
-                return x + y
-
-            result = test_function(1, 2)
-
-            assert result == 3
-            assert mock_log.call_count == 2  # Entry and exit
-            assert "Entering" in mock_log.call_args_list[0][0][1]
-            assert "Exiting" in mock_log.call_args_list[1][0][1]
-
-    def test_decorator_logs_exceptions(self):
-        """Test decorator logs exceptions."""
-        logger = get_logger("test")
-
-        with patch.object(logger, "error") as mock_error:
-
-            @log_function_call(logger)
-            def failing_function():
-                raise ValueError("Test error")
-
-            with pytest.raises(ValueError):
-                failing_function()
-
-            mock_error.assert_called_once()
-            assert "Exception" in mock_error.call_args[0][0]
-
-    def test_decorator_redacts_sensitive_params(self):
-        """Test decorator redacts sensitive parameter values."""
-        logger = get_logger("test")
-
-        with patch.object(logger, "log") as mock_log:
-
-            @log_function_call(logger)
-            def secure_function(username, password="default"):
-                return f"User: {username}"
-
-            secure_function("alice", password="secret123")
-
-            # Check that password is redacted in kwargs
-            entry_call = mock_log.call_args_list[0]
-            log_message = entry_call[0][1]
-            assert "alice" in log_message
-            # Password should be redacted in kwargs
-            assert "***" in log_message or "secret123" not in log_message

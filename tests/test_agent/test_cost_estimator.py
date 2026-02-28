@@ -80,7 +80,7 @@ class TestEstimateCost:
         )
         with patch("temper_ai.llm.cost_estimator.get_pricing_manager") as mock_pm:
             mock_pm.return_value.get_cost.return_value = 0.01
-            cost = estimate_cost(response, fallback_model="default-model")
+            estimate_cost(response, fallback_model="default-model")
             mock_pm.return_value.get_cost.assert_called_once_with(
                 "default-model", 100, 50
             )
@@ -94,5 +94,5 @@ class TestEstimateCost:
         )
         with patch("temper_ai.llm.cost_estimator.get_pricing_manager") as mock_pm:
             mock_pm.return_value.get_cost.return_value = 0.02
-            cost = estimate_cost(response, fallback_model="fallback")
+            estimate_cost(response, fallback_model="fallback")
             mock_pm.return_value.get_cost.assert_called_once_with("claude-3", 100, 50)

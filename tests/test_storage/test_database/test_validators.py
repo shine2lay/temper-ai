@@ -8,7 +8,6 @@ import pytest
 from temper_ai.storage.database.validators import (
     JSONSizeError,
     validate_json_size,
-    validate_optional_json_size,
 )
 
 
@@ -102,40 +101,6 @@ class TestValidateJsonSize:
         # Should fail with 5 byte limit
         with pytest.raises(JSONSizeError):
             validate_json_size(data, max_bytes=5)
-
-
-class TestValidateOptionalJsonSize:
-    """Test validate_optional_json_size function."""
-
-    def test_none_value(self):
-        """Test that None value is allowed."""
-        # Should not raise
-        result = validate_optional_json_size(None)
-        assert result is None
-
-    def test_valid_data(self):
-        """Test with valid data."""
-        data = {"key": "value"}
-        # Should not raise
-        result = validate_optional_json_size(data)
-        assert result is None
-
-    def test_exceeds_max_size(self):
-        """Test that oversized data raises error."""
-        large_data = {"data": "x" * (2 * 1024 * 1024)}
-
-        with pytest.raises(JSONSizeError):
-            validate_optional_json_size(large_data, max_bytes=1024 * 1024)
-
-    def test_custom_params(self):
-        """Test with custom parameters."""
-        data = {"key": "value"}
-
-        # Should not raise
-        result = validate_optional_json_size(
-            data, max_bytes=100, field_name="custom_field"
-        )
-        assert result is None
 
 
 class TestJSONSizeError:

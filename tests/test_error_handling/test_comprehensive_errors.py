@@ -184,7 +184,7 @@ class TestDiskErrors:
 
         with patch("builtins.open", mock_file):
             with pytest.raises(OSError) as exc:
-                with open("/mnt/readonly/test.txt", "w") as f:
+                with open("/mnt/readonly/test.txt", "w"):
                     pass
 
             assert exc.value.errno == errno.EROFS
@@ -224,7 +224,7 @@ class TestPermissionErrors:
 
         with patch("builtins.open", mock_file):
             with pytest.raises(PermissionError) as exc:
-                with open("/root/test.txt", "w") as f:
+                with open("/root/test.txt", "w"):
                     pass
 
             assert "permission" in str(exc.value).lower()
@@ -284,7 +284,7 @@ class TestResourceExhaustion:
 
         with patch("builtins.open", mock_file):
             with pytest.raises(OSError) as exc:
-                with open("/tmp/test.txt") as f:
+                with open("/tmp/test.txt"):
                     pass
 
             assert exc.value.errno == errno.EMFILE
@@ -295,7 +295,7 @@ class TestResourceExhaustion:
             mock_thread.side_effect = RuntimeError("can't create new thread")
 
             with pytest.raises(RuntimeError) as exc:
-                t = threading.Thread(target=lambda: None)
+                threading.Thread(target=lambda: None)
 
             assert "thread" in str(exc.value).lower()
 
@@ -305,7 +305,7 @@ class TestResourceExhaustion:
             mock_list.side_effect = MemoryError("Cannot allocate memory")
 
             with pytest.raises(MemoryError):
-                large_list = list(range(10**9))
+                list(range(10**9))
 
     def test_connection_pool_exhausted(self):
         """Test handling of connection pool exhaustion."""
@@ -325,7 +325,7 @@ class TestResourceExhaustion:
             mock_sem.side_effect = OSError(errno.ENOSPC, "No space left on device")
 
             with pytest.raises(OSError):
-                sem = threading.Semaphore(1000)
+                threading.Semaphore(1000)
 
 
 class TestDatabaseErrors:
@@ -339,7 +339,7 @@ class TestDatabaseErrors:
             )
 
             with pytest.raises(sqlite3.DatabaseError) as exc:
-                conn = sqlite3.connect("/data/corrupted.db")
+                sqlite3.connect("/data/corrupted.db")
 
             assert "malformed" in str(exc.value).lower()
 
@@ -428,7 +428,7 @@ class TestFileIOErrors:
             mock_open_file.side_effect = IsADirectoryError("Is a directory")
 
             with pytest.raises(IsADirectoryError):
-                with open("/tmp/") as f:
+                with open("/tmp/"):
                     pass
 
     def test_file_too_large(self):

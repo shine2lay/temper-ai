@@ -102,6 +102,7 @@ def test_standard_agent_execute_with_tool_calls(minimal_agent_config):
             "properties": {"expression": {"type": "string"}},
             "required": ["expression"],
         }
+        mock_tool.get_result_schema.return_value = {"type": "object", "properties": {}}
         mock_tool.execute.return_value = ToolResult(
             success=True, result="42", error=None
         )
@@ -165,6 +166,7 @@ def test_standard_agent_execute_tool_not_found(minimal_agent_config):
             "type": "object",
             "properties": {},
         }
+        mock_tool.get_result_schema.return_value = None
 
         mock_registry_instance = Mock()
         mock_registry_instance.list_tools.return_value = [mock_tool]
@@ -468,14 +470,25 @@ class TestInputValidation:
     def test_execute_single_tool_rejects_non_dict_parameters(
         self, minimal_agent_config
     ):
-        """Test that execute_single_tool rejects non-dict 'parameters'."""
+        """Test that execute_single_tool handles non-dict 'parameters' safely.
+
+        String parameters are parsed as JSON if possible. Unparseable strings
+        are replaced with {} and execution proceeds (blocked without executor).
+        Non-string, non-dict types still raise TypeError.
+        """
         from temper_ai.llm._tool_execution import execute_single_tool
 
+        # Non-JSON string: gracefully handled, blocked without executor
+        result = execute_single_tool(
+            {"name": "test_tool", "parameters": "not a dict"}, None, None, None
+        )
+        assert result is not None  # Returns a blocked ToolResult
+
+        # Non-string, non-dict (e.g. list): still raises TypeError
         with pytest.raises(TypeError) as exc_info:
             execute_single_tool(
-                {"name": "test_tool", "parameters": "not a dict"}, None, None, None
+                {"name": "test_tool", "parameters": [1, 2, 3]}, None, None, None
             )
-
         assert "tool_call 'parameters' must be a dictionary" in str(exc_info.value)
 
     def test_execute_accepts_valid_input(self, minimal_agent_config):

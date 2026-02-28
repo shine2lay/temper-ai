@@ -9,6 +9,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+pytest.importorskip("opentelemetry")
+
 from temper_ai.observability.backend import (
     AgentOutputData,
     CollaborationEventData,
@@ -73,7 +75,7 @@ class TestWorkflowSpanEvents:
                 environment="prod", trigger_type="api", tags=["a", "b"]
             ),
         )
-        events = [c for c in span.add_event.call_args_list]
+        events = list(span.add_event.call_args_list)
         assert len(events) == 1
         name = events[0][0][0]
         attrs = events[0][1].get(
@@ -90,7 +92,7 @@ class TestWorkflowSpanEvents:
         backend.track_workflow_start("wf-1", "test_wf", {}, NOW)
         span.add_event.reset_mock()
         backend.track_workflow_end("wf-1", NOW, "completed")
-        events = [c for c in span.add_event.call_args_list]
+        events = list(span.add_event.call_args_list)
         assert len(events) == 1
         assert events[0][0][0] == "workflow.completed"
 
@@ -99,7 +101,7 @@ class TestWorkflowSpanEvents:
         backend.track_workflow_start("wf-1", "test_wf", {}, NOW)
         span.add_event.reset_mock()
         backend.track_workflow_end("wf-1", NOW, "failed", error_message="boom")
-        events = [c for c in span.add_event.call_args_list]
+        events = list(span.add_event.call_args_list)
         attrs = events[0][1].get(
             "attributes", events[0][0][1] if len(events[0][0]) > 1 else {}
         )
@@ -110,7 +112,7 @@ class TestWorkflowSpanEvents:
         backend.track_workflow_start("wf-1", "test_wf", {}, NOW)
         span.add_event.reset_mock()
         backend.update_workflow_metrics("wf-1", 5, 2, 1000, 0.05)
-        events = [c for c in span.add_event.call_args_list]
+        events = list(span.add_event.call_args_list)
         assert len(events) == 1
         assert events[0][0][0] == "workflow.metrics"
         attrs = events[0][1].get(
@@ -139,7 +141,7 @@ class TestStageSpanEvents:
             },
             NOW,
         )
-        events = [c for c in span.add_event.call_args_list]
+        events = list(span.add_event.call_args_list)
         assert len(events) == 1
         assert events[0][0][0] == "stage.started"
         attrs = events[0][1].get(
@@ -162,7 +164,7 @@ class TestStageSpanEvents:
             num_agents_succeeded=2,
             num_agents_failed=1,
         )
-        events = [c for c in span.add_event.call_args_list]
+        events = list(span.add_event.call_args_list)
         assert len(events) == 1
         assert events[0][0][0] == "stage.completed"
         attrs = events[0][1].get(
@@ -192,7 +194,7 @@ class TestAgentSpanEvents:
             },
             NOW,
         )
-        events = [c for c in span.add_event.call_args_list]
+        events = list(span.add_event.call_args_list)
         assert len(events) == 1
         assert events[0][0][0] == "agent.started"
         attrs = events[0][1].get(
@@ -218,7 +220,7 @@ class TestAgentSpanEvents:
                 num_llm_calls=2,
             ),
         )
-        events = [c for c in span.add_event.call_args_list]
+        events = list(span.add_event.call_args_list)
         assert len(events) == 1
         assert events[0][0][0] == "agent.output"
         attrs = events[0][1].get(
@@ -234,7 +236,7 @@ class TestAgentSpanEvents:
         backend.track_agent_start("a-1", "s-1", "optimist", {}, NOW)
         span.add_event.reset_mock()
         backend.track_agent_end("a-1", NOW, "completed")
-        events = [c for c in span.add_event.call_args_list]
+        events = list(span.add_event.call_args_list)
         assert len(events) == 1
         assert events[0][0][0] == "agent.completed"
 
@@ -254,7 +256,7 @@ class TestSafetySpanEvents:
             "action_policy",
             data=SafetyViolationData(agent_id="a-1"),
         )
-        events = [c for c in span.add_event.call_args_list]
+        events = list(span.add_event.call_args_list)
         assert len(events) == 1
         assert events[0][0][0] == "safety.violation"
         attrs = events[0][1].get(
@@ -288,7 +290,7 @@ class TestCollaborationSpanEvents:
                 confidence_score=0.85,
             ),
         )
-        events = [c for c in span.add_event.call_args_list]
+        events = list(span.add_event.call_args_list)
         assert len(events) == 1
         assert events[0][0][0] == "collaboration.synthesis"
         attrs = events[0][1].get(

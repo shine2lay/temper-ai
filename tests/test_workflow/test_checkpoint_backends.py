@@ -46,7 +46,7 @@ class TestFileCheckpointBackend:
 
     def test_backend_initialization(self, temp_dir):
         """Test backend creates checkpoint directory."""
-        backend = FileCheckpointBackend(checkpoint_dir=temp_dir)
+        FileCheckpointBackend(checkpoint_dir=temp_dir)
         assert Path(temp_dir).exists()
         assert Path(temp_dir).is_dir()
 
@@ -80,11 +80,11 @@ class TestFileCheckpointBackend:
     def test_load_latest_checkpoint(self, backend, sample_domain_state):
         """Test loading latest checkpoint without specifying ID."""
         # Save multiple checkpoints
-        checkpoint_id_1 = backend.save_checkpoint("wf-test-123", sample_domain_state)
+        backend.save_checkpoint("wf-test-123", sample_domain_state)
 
         # Modify state and save again
         sample_domain_state.set_stage_output("analysis", {"insights": ["insight1"]})
-        checkpoint_id_2 = backend.save_checkpoint("wf-test-123", sample_domain_state)
+        backend.save_checkpoint("wf-test-123", sample_domain_state)
 
         # Load latest (should be checkpoint_id_2)
         loaded_domain = backend.load_checkpoint("wf-test-123")
@@ -160,9 +160,7 @@ class TestFileCheckpointBackend:
         """Test saving checkpoint with custom metadata."""
         metadata = {"user": "test-user", "reason": "manual"}
 
-        checkpoint_id = backend.save_checkpoint(
-            "wf-test-123", sample_domain_state, metadata=metadata
-        )
+        backend.save_checkpoint("wf-test-123", sample_domain_state, metadata=metadata)
 
         # Verify metadata is stored
         checkpoints = backend.list_checkpoints("wf-test-123")
@@ -247,7 +245,7 @@ class TestFileCheckpointBackend:
         """
         # Generate multiple checkpoint IDs
         checkpoint_ids = set()
-        for i in range(100):
+        for _i in range(100):
             checkpoint_id = backend._generate_checkpoint_id()
             checkpoint_ids.add(checkpoint_id)
 
@@ -377,7 +375,7 @@ class TestFileCheckpointBackend:
     def test_resolved_path_stays_in_checkpoint_dir(self, temp_dir, sample_domain_state):
         """Resolved paths must stay within the checkpoint directory."""
         backend = FileCheckpointBackend(checkpoint_dir=temp_dir)
-        cp_id = backend.save_checkpoint("../../escape", sample_domain_state)
+        backend.save_checkpoint("../../escape", sample_domain_state)
         # The file must be inside temp_dir, not outside it
         workflow_dir = Path(temp_dir).resolve() / "______escape"
         assert workflow_dir.exists()

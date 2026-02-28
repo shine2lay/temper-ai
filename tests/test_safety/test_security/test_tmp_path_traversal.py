@@ -348,7 +348,7 @@ class TestTOCTOUMitigation:
         valid_file.write_text("legitimate")
 
         # Validate
-        validated = validator.validate_path(valid_file)
+        validator.validate_path(valid_file)
 
         # Try to use /tmp path - should fail
         tmp_file = Path("/tmp/attack.txt")

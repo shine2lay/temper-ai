@@ -7,6 +7,8 @@ from unittest.mock import patch
 import pytest
 from cryptography.fernet import Fernet
 
+pytest.importorskip("keyring")
+
 from temper_ai.auth.oauth.token_store import SecureTokenStore
 from temper_ai.shared.utils.exceptions import SecurityError
 
@@ -457,7 +459,6 @@ class TestThreadSafety:
 
         # Perform rotation while accessing tokens
         results = []
-        threads = []
 
         def rotate():
             token_store.rotate_key(new_key)

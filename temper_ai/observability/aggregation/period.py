@@ -1,9 +1,9 @@
 """Time period definitions for metric aggregation."""
 
-from enum import Enum
+from enum import StrEnum
 
 
-class AggregationPeriod(str, Enum):
+class AggregationPeriod(StrEnum):
     """Time periods for metric aggregation."""
 
     MINUTE = "minute"

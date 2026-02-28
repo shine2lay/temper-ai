@@ -75,7 +75,7 @@ class TestPerAgentRateLimiting:
         policy = RateLimitPolicy()
 
         # Consume all commit tokens (default: 10)
-        for i in range(10):
+        for _i in range(10):
             result = policy.validate(
                 action={"operation": "git_commit"}, context={"agent_id": "agent-123"}
             )
@@ -96,7 +96,7 @@ class TestPerAgentRateLimiting:
         policy = RateLimitPolicy()
 
         # Agent 1 exhausts their commits
-        for i in range(10):
+        for _i in range(10):
             policy.validate(
                 action={"operation": "git_commit"}, context={"agent_id": "agent-1"}
             )
@@ -139,7 +139,7 @@ class TestPerAgentRateLimiting:
         policy = RateLimitPolicy()
 
         # Should allow multiple tool calls (default: 100)
-        for i in range(100):
+        for _i in range(100):
             result = policy.validate(
                 action={"operation": "tool_call"}, context={"agent_id": "agent-123"}
             )
@@ -250,7 +250,7 @@ class TestViolationHandling:
         policy = RateLimitPolicy()
 
         # Exhaust limit
-        for i in range(2):
+        for _i in range(2):
             policy.validate(
                 action={"operation": "deploy"}, context={"agent_id": "agent-123"}
             )
@@ -269,7 +269,7 @@ class TestViolationHandling:
         policy = RateLimitPolicy()
 
         # Exhaust limit
-        for i in range(2):
+        for _i in range(2):
             policy.validate(
                 action={"operation": "deploy"}, context={"agent_id": "agent-123"}
             )
@@ -289,7 +289,7 @@ class TestViolationHandling:
         policy = RateLimitPolicy()
 
         # Exhaust limit
-        for i in range(2):
+        for _i in range(2):
             policy.validate(
                 action={"operation": "deploy"}, context={"agent_id": "agent-123"}
             )
@@ -305,7 +305,7 @@ class TestViolationHandling:
         policy = RateLimitPolicy()
 
         # Exhaust limit
-        for i in range(2):
+        for _i in range(2):
             policy.validate(
                 action={"operation": "deploy"}, context={"agent_id": "agent-123"}
             )
@@ -358,7 +358,7 @@ class TestStatusReporting:
         policy = RateLimitPolicy()
 
         # Use some commits
-        for i in range(3):
+        for _i in range(3):
             policy.validate(
                 action={"operation": "git_commit"}, context={"agent_id": "agent-123"}
             )
@@ -379,7 +379,7 @@ class TestResetLimits:
         policy = RateLimitPolicy()
 
         # Use commits
-        for i in range(5):
+        for _i in range(5):
             policy.validate(
                 action={"operation": "git_commit"}, context={"agent_id": "agent-123"}
             )
@@ -396,7 +396,7 @@ class TestResetLimits:
         policy = RateLimitPolicy()
 
         # Use various limits
-        for i in range(5):
+        for _i in range(5):
             policy.validate(
                 action={"operation": "git_commit"}, context={"agent_id": "agent-123"}
             )
@@ -417,7 +417,7 @@ class TestResetLimits:
         policy = RateLimitPolicy()
 
         # Use limits for multiple agents
-        for i in range(5):
+        for _i in range(5):
             policy.validate(
                 action={"operation": "git_commit"}, context={"agent_id": "agent-1"}
             )
@@ -453,7 +453,7 @@ class TestCustomConfiguration:
         policy = RateLimitPolicy(config)
 
         # Should allow 5 commits
-        for i in range(5):
+        for _i in range(5):
             result = policy.validate(
                 action={"operation": "git_commit"}, context={"agent_id": "agent-123"}
             )
@@ -499,7 +499,7 @@ class TestCustomConfiguration:
 
         # All agents should share the same limits
         # Use commits from agent-1
-        for i in range(10):
+        for _i in range(10):
             policy.validate(
                 action={"operation": "git_commit"}, context={"agent_id": "agent-1"}
             )
@@ -547,7 +547,7 @@ class TestIntegration:
         policy = RateLimitPolicy(config)
 
         # Exhaust limit
-        for i in range(2):
+        for _i in range(2):
             policy.validate(
                 action={"operation": "deploy"}, context={"agent_id": "agent-123"}
             )

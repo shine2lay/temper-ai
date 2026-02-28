@@ -56,7 +56,7 @@ class TestConcurrentStageExecution:
         async def isolated_stage(stage_id: str):
             """Stage that modifies local state."""
             local_state = {"counter": 0}
-            for i in range(10):
+            for _i in range(10):
                 local_state["counter"] += 1
                 await asyncio.sleep(0.01)
             results[stage_id] = local_state["counter"]
@@ -261,7 +261,7 @@ class TestConcurrentWorkflowExecution:
 
         # Each workflow should have 10 items and counter = 10
         assert len(workflow_states) == 5
-        for wf_id, state in workflow_states.items():
+        for _wf_id, state in workflow_states.items():
             assert len(state["items"]) == 10
             assert state["counter"] == 10
 

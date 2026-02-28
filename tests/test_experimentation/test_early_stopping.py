@@ -33,7 +33,7 @@ class TestSequentialTesting:
         """Test workflow with sequential testing for early stopping."""
 
         # Create experiment
-        experiment = Experiment(
+        Experiment(
             id="exp-early-stop",
             name="early_stop_test",
             description="Test early stopping",
@@ -47,7 +47,7 @@ class TestSequentialTesting:
             updated_at=datetime.now(UTC),
         )
 
-        variants = [
+        [
             Variant(
                 id="var-control",
                 experiment_id="exp-early-stop",
@@ -112,7 +112,7 @@ class TestBayesianAnalysis:
         """Test workflow with Bayesian analysis."""
 
         # Create simple experiment
-        experiment = Experiment(
+        Experiment(
             id="exp-bayes",
             name="bayesian_test",
             description="Test Bayesian analysis",
@@ -301,7 +301,7 @@ class TestAssignmentAndAnalysisPerformance:
         # Benchmark: 10,000 assignments
         start = time.time()
         for i in range(10000):
-            variant_id = assigner.assign_variant(
+            assigner.assign_variant(
                 experiment, variants, f"workflow-{i}", context={"hash_key": f"user-{i}"}
             )
         elapsed = time.time() - start

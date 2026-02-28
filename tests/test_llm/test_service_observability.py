@@ -99,7 +99,7 @@ class TestLLMServiceIterationEvents:
         mock_retry.return_value = (response, None)
 
         observer = MagicMock()
-        result = service.run("test prompt", observer=observer, agent_name="agent-a")
+        service.run("test prompt", observer=observer, agent_name="agent-a")
 
         assert mock_emit.call_count == 1
         call_args = mock_emit.call_args
@@ -150,7 +150,7 @@ class TestLLMServiceIterationEvents:
 
         mock_tool = MagicMock()
         mock_tool.name = "bash"
-        result = service.run("test", tools=[mock_tool], agent_name="multi-agent")
+        service.run("test", tools=[mock_tool], agent_name="multi-agent")
 
         assert mock_emit.call_count == 2
         # First iteration
@@ -230,7 +230,7 @@ class TestLLMServiceIterationEventsAsync:
 
         loop = asyncio.new_event_loop()
         try:
-            result = loop.run_until_complete(
+            loop.run_until_complete(
                 service.arun("async prompt", agent_name="async-agent")
             )
         finally:

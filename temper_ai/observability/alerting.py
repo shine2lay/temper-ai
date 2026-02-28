@@ -9,7 +9,7 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from temper_ai.observability.constants import (
@@ -29,7 +29,7 @@ CRITICAL_WORKFLOW_COST_ALERT_THRESHOLD_USD = 50.0  # $50 per workflow (critical)
 EXTREME_LATENCY_P99_THRESHOLD_MS = 600000  # 10 minutes
 
 
-class AlertSeverity(str, Enum):
+class AlertSeverity(StrEnum):
     """Alert severity levels."""
 
     INFO = "info"
@@ -38,7 +38,7 @@ class AlertSeverity(str, Enum):
     CRITICAL = "critical"
 
 
-class AlertAction(str, Enum):
+class AlertAction(StrEnum):
     """Actions to take when alert is triggered."""
 
     LOG_WARNING = "log_warning"
@@ -48,7 +48,7 @@ class AlertAction(str, Enum):
     HALT_WORKFLOW = "halt_workflow"
 
 
-class MetricType(str, Enum):
+class MetricType(StrEnum):
     """Types of metrics to monitor."""
 
     COST_USD = "cost_usd"

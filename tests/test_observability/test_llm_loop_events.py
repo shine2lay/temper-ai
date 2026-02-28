@@ -16,7 +16,6 @@ from unittest.mock import MagicMock
 import pytest
 
 from temper_ai.llm.llm_loop_events import (
-    _CACHE_KEY_PREFIX_LENGTH,
     CacheEventData,
     LLMIterationEventData,
     emit_cache_event,
@@ -182,9 +181,6 @@ class TestEmitCacheEvent:
 
         assert "Cache event=hit" in caplog.text
         assert "abc123" in caplog.text
-
-    def test_cache_key_prefix_length_constant(self) -> None:
-        assert _CACHE_KEY_PREFIX_LENGTH == 16
 
 
 class TestCacheEventIntegration:

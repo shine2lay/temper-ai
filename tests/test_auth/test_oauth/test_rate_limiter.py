@@ -43,7 +43,7 @@ def oauth_limiter():
 def test_sliding_window_allows_within_limit(rate_limiter):
     """Test requests are allowed when within limit."""
     # Should allow 5 requests
-    for i in range(5):
+    for _i in range(5):
         result = rate_limiter.check_limit(
             "test", "user1", max_requests=5, window_seconds=60
         )
@@ -57,7 +57,7 @@ def test_sliding_window_allows_within_limit(rate_limiter):
 def test_sliding_window_blocks_over_limit(rate_limiter):
     """Test request blocked when exceeding limit."""
     # Fill up limit
-    for i in range(5):
+    for _i in range(5):
         rate_limiter.check_limit("test", "user1", max_requests=5, window_seconds=60)
 
     # Next request should be blocked
@@ -71,11 +71,11 @@ def test_sliding_window_blocks_over_limit(rate_limiter):
 def test_sliding_window_independent_identifiers(rate_limiter):
     """Test different identifiers have independent limits."""
     # Fill limit for user1
-    for i in range(5):
+    for _i in range(5):
         rate_limiter.check_limit("test", "user1", max_requests=5, window_seconds=60)
 
     # user2 should still have full quota
-    for i in range(5):
+    for _i in range(5):
         rate_limiter.check_limit("test", "user2", max_requests=5, window_seconds=60)
 
     # Both users should be at limit now
@@ -89,11 +89,11 @@ def test_sliding_window_independent_identifiers(rate_limiter):
 def test_sliding_window_independent_limit_types(rate_limiter):
     """Test different limit types are independent."""
     # Fill limit for type1
-    for i in range(5):
+    for _i in range(5):
         rate_limiter.check_limit("type1", "user1", max_requests=5, window_seconds=60)
 
     # type2 should still work for same user
-    for i in range(5):
+    for _i in range(5):
         rate_limiter.check_limit("type2", "user1", max_requests=5, window_seconds=60)
 
     # Both types should be at limit
@@ -112,7 +112,7 @@ def test_sliding_window_resets_after_window(rate_limiter):
         mock_datetime.now.return_value = base_time
 
         # Fill up limit
-        for i in range(5):
+        for _i in range(5):
             rate_limiter.check_limit("test", "user1", max_requests=5, window_seconds=60)
 
         # Should be blocked
@@ -133,12 +133,12 @@ def test_sliding_window_partial_reset(rate_limiter):
     with patch("temper_ai.auth.oauth.rate_limiter.datetime") as mock_datetime:
         # Make 3 requests at T=0
         mock_datetime.now.return_value = base_time
-        for i in range(3):
+        for _i in range(3):
             rate_limiter.check_limit("test", "user1", max_requests=5, window_seconds=60)
 
         # Make 2 more requests at T=30
         mock_datetime.now.return_value = base_time + timedelta(seconds=30)
-        for i in range(2):
+        for _i in range(2):
             rate_limiter.check_limit("test", "user1", max_requests=5, window_seconds=60)
 
         # Should be at limit now
@@ -149,7 +149,7 @@ def test_sliding_window_partial_reset(rate_limiter):
         mock_datetime.now.return_value = base_time + timedelta(seconds=61)
 
         # Should allow 3 more requests (only 2 from T=30 still in window)
-        for i in range(3):
+        for _i in range(3):
             rate_limiter.check_limit("test", "user1", max_requests=5, window_seconds=60)
 
 
@@ -164,7 +164,7 @@ def test_sliding_window_retry_after_calculation(rate_limiter):
         mock_datetime.now.return_value = base_time
 
         # Fill limit
-        for i in range(5):
+        for _i in range(5):
             rate_limiter.check_limit("test", "user1", max_requests=5, window_seconds=60)
 
         # Check retry-after
@@ -183,7 +183,7 @@ def test_sliding_window_retry_after_decreases(rate_limiter):
         mock_datetime.now.return_value = base_time
 
         # Fill limit
-        for i in range(5):
+        for _i in range(5):
             rate_limiter.check_limit("test", "user1", max_requests=5, window_seconds=60)
 
         # Check retry-after at T=0
@@ -220,7 +220,7 @@ def test_get_remaining_full_quota(rate_limiter):
 def test_get_remaining_partial_quota(rate_limiter):
     """Test get_remaining after some requests."""
     # Use 3 out of 10
-    for i in range(3):
+    for _i in range(3):
         rate_limiter.check_limit("test", "user1", max_requests=10, window_seconds=60)
 
     remaining, reset_after = rate_limiter.get_remaining(
@@ -234,7 +234,7 @@ def test_get_remaining_partial_quota(rate_limiter):
 def test_get_remaining_zero_quota(rate_limiter):
     """Test get_remaining when quota exhausted."""
     # Use all 5
-    for i in range(5):
+    for _i in range(5):
         rate_limiter.check_limit("test", "user1", max_requests=5, window_seconds=60)
 
     remaining, reset_after = rate_limiter.get_remaining(
@@ -305,7 +305,7 @@ def test_concurrent_requests_thread_safe(rate_limiter):
     errors = []
 
     def make_requests():
-        for i in range(requests_per_thread):
+        for _i in range(requests_per_thread):
             try:
                 rate_limiter.check_limit(
                     "test",
@@ -336,7 +336,7 @@ def test_concurrent_different_users_independent(rate_limiter):
     errors = {f"user{i}": [] for i in range(num_users)}
 
     def make_requests(user_id):
-        for i in range(60):  # Exceed limit of 50
+        for _i in range(60):  # Exceed limit of 50
             try:
                 rate_limiter.check_limit(
                     "test", user_id, max_requests=max_requests, window_seconds=60
@@ -400,7 +400,7 @@ def test_oauth_init_global_limit(oauth_limiter):
 def test_oauth_token_exchange_ip_limit(oauth_limiter):
     """Test token exchange enforces IP limit."""
     # IP limit: 5 per minute
-    for i in range(5):
+    for _i in range(5):
         oauth_limiter.check_token_exchange("192.168.1.1")
 
     # 6th request should fail
@@ -422,7 +422,7 @@ def test_oauth_token_exchange_global_limit(oauth_limiter):
 def test_oauth_userinfo_user_limit(oauth_limiter):
     """Test userinfo enforces user limit."""
     # User limit: 60 per minute
-    for i in range(60):
+    for _i in range(60):
         oauth_limiter.check_userinfo("user1")
 
     # 61st request should fail
@@ -457,7 +457,7 @@ def test_burst_within_limit_allowed(rate_limiter):
     """Test burst of requests within limit is allowed."""
     # Rapid burst of 5 requests (within limit of 10)
     start_time = time.time()
-    for i in range(5):
+    for _i in range(5):
         rate_limiter.check_limit("test", "user1", max_requests=10, window_seconds=60)
     end_time = time.time()
 
@@ -471,7 +471,7 @@ def test_burst_exceeding_limit_blocked(rate_limiter):
     allowed = 0
     blocked = 0
 
-    for i in range(15):
+    for _i in range(15):
         try:
             rate_limiter.check_limit(
                 "test", "user1", max_requests=10, window_seconds=60
@@ -490,7 +490,7 @@ def test_burst_exceeding_limit_blocked(rate_limiter):
 def test_rate_limit_exceeded_message_format(rate_limiter):
     """Test RateLimitExceeded error message format."""
     # Fill limit
-    for i in range(5):
+    for _i in range(5):
         rate_limiter.check_limit(
             "test_type", "user1", max_requests=5, window_seconds=60
         )
@@ -511,7 +511,7 @@ def test_rate_limit_exceeded_message_format(rate_limiter):
 def test_rate_limit_exceeded_attributes(rate_limiter):
     """Test RateLimitExceeded exception attributes."""
     # Fill limit
-    for i in range(5):
+    for _i in range(5):
         rate_limiter.check_limit("test", "user1", max_requests=5, window_seconds=60)
 
     # Trigger error

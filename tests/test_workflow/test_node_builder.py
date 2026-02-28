@@ -3,14 +3,22 @@
 Verifies node creation, configuration loading, and executor delegation.
 """
 
+import logging
 from unittest.mock import Mock
 
 import pytest
 
+from temper_ai.shared.utils.exceptions import WorkflowStageError
 from temper_ai.tools.registry import ToolRegistry
 from temper_ai.workflow.config_loader import ConfigLoader
 from temper_ai.workflow.domain_state import WorkflowDomainState
-from temper_ai.workflow.node_builder import NodeBuilder
+from temper_ai.workflow.node_builder import (
+    STAGE_TIMEOUT_STATUS,
+    NodeBuilder,
+    _enforce_stage_failure_policy,
+    _extract_on_stage_failure_policy,
+    create_event_triggered_node,
+)
 
 
 class TestNodeBuilderInitialization:
@@ -307,6 +315,102 @@ class TestFindEmbeddedStage:
 
         result = builder.find_embedded_stage("research", workflow_config)
         assert result is None
+
+
+class TestExtractOnStageFailurePolicy:
+    """Test extraction of on_stage_failure policy from workflow config."""
+
+    def test_dict_config_with_error_handling(self):
+        config = {"workflow": {"error_handling": {"on_stage_failure": "skip"}}}
+        assert _extract_on_stage_failure_policy(config) == "skip"
+
+    def test_dict_config_without_error_handling(self):
+        config = {"workflow": {}}
+        assert _extract_on_stage_failure_policy(config) == "halt"
+
+    def test_empty_dict_config(self):
+        assert _extract_on_stage_failure_policy({}) == "halt"
+
+
+class TestEnforceStageFailurePolicy:
+    """Test enforcement of on_stage_failure policy."""
+
+    def test_halt_policy_raises(self):
+        with pytest.raises(WorkflowStageError):
+            _enforce_stage_failure_policy(
+                stage_name="my_stage",
+                stage_status="failed",
+                stage_output={},
+                on_stage_failure="halt",
+            )
+
+    def test_skip_policy_logs_warning(self, caplog):
+        with caplog.at_level(logging.WARNING, logger="temper_ai.workflow.node_builder"):
+            _enforce_stage_failure_policy(
+                stage_name="my_stage",
+                stage_status="failed",
+                stage_output={},
+                on_stage_failure="skip",
+            )
+        assert any("skip" in r.message for r in caplog.records)
+
+    def test_halt_degraded_raises(self):
+        with pytest.raises(WorkflowStageError):
+            _enforce_stage_failure_policy(
+                stage_name="my_stage",
+                stage_status="degraded",
+                stage_output={},
+                on_stage_failure="halt",
+            )
+
+
+class TestCreateEventTriggeredNode:
+    """Test create_event_triggered_node factory."""
+
+    def test_no_event_bus_runs_immediately(self):
+        inner_node = Mock(return_value={"result": "ok"})
+        trigger_config = Mock(event_type="test_event", timeout_seconds=30)
+        trigger_config.source_workflow = None
+
+        node = create_event_triggered_node("stage1", inner_node, None, trigger_config)
+        state = {"some": "data"}
+        result = node(state)
+
+        inner_node.assert_called_once_with(state)
+        assert result == {"result": "ok"}
+
+    def test_event_received_runs_inner(self):
+        event_data = {"type": "test_event", "payload": "data"}
+        event_bus = Mock()
+        event_bus.wait_for_event.return_value = event_data
+        inner_node = Mock(return_value={"result": "ok"})
+        trigger_config = Mock(event_type="test_event", timeout_seconds=30)
+        trigger_config.source_workflow = None
+
+        node = create_event_triggered_node(
+            "stage1", inner_node, event_bus, trigger_config
+        )
+        state = {"some": "data"}
+        node(state)
+
+        call_state = inner_node.call_args[0][0]
+        assert "trigger_event" in call_state
+        assert call_state["trigger_event"] == event_data
+
+    def test_event_timeout_sets_status(self):
+        event_bus = Mock()
+        event_bus.wait_for_event.return_value = None
+        inner_node = Mock()
+        trigger_config = Mock(event_type="test_event", timeout_seconds=5)
+        trigger_config.source_workflow = None
+
+        node = create_event_triggered_node(
+            "stage1", inner_node, event_bus, trigger_config
+        )
+        result = node({"some": "data"})
+
+        assert result["stage_status"] == STAGE_TIMEOUT_STATUS
+        inner_node.assert_not_called()
 
 
 if __name__ == "__main__":

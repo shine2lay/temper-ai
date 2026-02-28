@@ -111,17 +111,25 @@ def prepare_tracking_input(input_data: dict[str, Any]) -> dict[str, Any]:
 
 
 def build_agent_output_params(agent_id: str, response: Any) -> Any:
-    """Build AgentOutputParams from an agent response."""
+    """Build AgentOutputParams from an agent response.
+
+    Note: total_tokens and num_llm_calls are tracked incrementally by
+    update_agent_llm_metrics() during execution. We only override them
+    here when the response has a positive token count (meaning the
+    LLMService accumulated tokens correctly). Otherwise we leave them
+    as None so the DB's incremented values are preserved.
+    """
     from temper_ai.observability.metric_aggregator import AgentOutputParams
 
+    tokens = response.tokens if response.tokens else None
     return AgentOutputParams(
         agent_id=agent_id,
         output_data={StateKeys.OUTPUT: response.output},
         reasoning=response.reasoning,
-        total_tokens=response.tokens,
+        total_tokens=tokens,
         estimated_cost_usd=response.estimated_cost_usd,
-        num_llm_calls=1 if response.tokens and response.tokens > 0 else 0,
-        num_tool_calls=len(response.tool_calls) if response.tool_calls else 0,
+        num_llm_calls=None,  # already tracked by update_agent_llm_metrics
+        num_tool_calls=len(response.tool_calls) if response.tool_calls else None,
     )
 
 

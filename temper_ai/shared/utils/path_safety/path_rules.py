@@ -13,7 +13,7 @@ This module implements validation rules including:
 import unicodedata
 from pathlib import Path
 
-from temper_ai.shared.utils.constants import MAX_COMPONENT_LENGTH, MAX_PATH_LENGTH
+from temper_ai.shared.constants.limits import MAX_COMPONENT_LENGTH, MAX_PATH_LENGTH
 from temper_ai.shared.utils.path_safety.exceptions import PathSafetyError
 from temper_ai.shared.utils.path_safety.platform_detector import PlatformPathDetector
 

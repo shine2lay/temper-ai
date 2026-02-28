@@ -70,6 +70,11 @@ class VllmLLM(BaseLLM):
         if tools:
             request["tools"] = tools
 
+        # Disable thinking/reasoning mode for models that support it
+        # (e.g. Qwen3.5). Thinking wastes tokens on internal reasoning
+        # that temper-ai prompts already provide via structured prompts.
+        request["chat_template_kwargs"] = {"enable_thinking": False}
+
         # Request usage stats in streaming mode
         if stream:
             request["stream_options"] = {"include_usage": True}

@@ -14,22 +14,18 @@ from temper_ai.shared.utils.exceptions import (
     ConfigValidationError,
     ErrorCode,
     FrameworkException,
-    FrameworkValidationError,
     LLMAuthenticationError,
     LLMError,
     LLMRateLimitError,
     LLMTimeoutError,
     RateLimitError,
-    SafetyError,
     SecurityError,
     ToolError,
     ToolExecutionError,
     ToolNotFoundError,
     ToolRegistryError,
     WorkflowError,
-    get_error_info,
     sanitize_error_message,
-    wrap_exception,
 )
 
 
@@ -37,28 +33,34 @@ class TestSanitizeErrorMessage:
     """Test sanitize_error_message function."""
 
     def test_sanitize_api_key(self):
-        """Test sanitizing API keys."""
-        message = "API key sk-test-123 failed"
+        """Test sanitizing API keys (vendor-format)."""
+        message = "API key sk-proj-abc123def456ghi789jkl012 failed"
         sanitized = sanitize_error_message(message)
-        assert "sk-test-123" not in sanitized
+        assert "sk-proj-abc123def456ghi789jkl012" not in sanitized
         assert "[REDACTED-API-KEY]" in sanitized
 
     def test_sanitize_aws_key(self):
-        """Test sanitizing AWS keys."""
+        """Test sanitizing AWS keys (AKIA and ASIA prefixes)."""
         message = "AWS key AKIAIOSFODNN7EXAMPLE failed"
         sanitized = sanitize_error_message(message)
         assert "AKIAIOSFODNN7EXAMPLE" not in sanitized
         assert "[REDACTED-AWS-KEY]" in sanitized
 
+    def test_sanitize_aws_temp_key(self):
+        """Test sanitizing AWS temporary STS credentials."""
+        message = "AWS temp ASIAIOSFODNN7EXAMPLE found"
+        sanitized = sanitize_error_message(message)
+        assert "ASIAIOSFODNN7EXAMPLE" not in sanitized
+
     def test_sanitize_password(self):
         """Test sanitizing passwords."""
-        message = "Password='secret123' invalid"
+        message = "Password='secret123value' invalid"
         sanitized = sanitize_error_message(message)
-        assert "secret123" not in sanitized
+        assert "secret123value" not in sanitized
         assert "[REDACTED-PASSWORD]" in sanitized
 
     def test_sanitize_jwt_token(self):
-        """Test sanitizing JWT tokens."""
+        """Test sanitizing JWT tokens (Bearer prefix)."""
         message = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"
         sanitized = sanitize_error_message(message)
         assert "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9" not in sanitized
@@ -149,16 +151,16 @@ class TestBaseError:
 
     def test_sanitized_str(self):
         """Test that str() output is sanitized."""
-        error = BaseError("API key sk-test-123 failed")
+        error = BaseError("API key sk-proj-abc123def456ghi789jkl012 failed")
         error_str = str(error)
-        assert "sk-test-123" not in error_str
+        assert "sk-proj-abc123def456ghi789jkl012" not in error_str
         assert "[REDACTED-API-KEY]" in error_str
 
     def test_sanitized_repr(self):
         """Test that repr() output is sanitized."""
-        error = BaseError("Password='secret' invalid")
+        error = BaseError("Password='secretvalue123' invalid")
         error_repr = repr(error)
-        assert "secret" not in error_repr
+        assert "secretvalue123" not in error_repr
         assert "[REDACTED-PASSWORD]" in error_repr
 
 
@@ -288,84 +290,6 @@ class TestSecurityError:
         """Test that SecurityError inherits from FrameworkException."""
         error = SecurityError("test")
         assert isinstance(error, FrameworkException)
-
-
-class TestSafetyError:
-    """Test SafetyError class."""
-
-    def test_safety_error(self):
-        """Test SafetyError initialization."""
-        error = SafetyError("Policy violation")
-        assert error.error_code == ErrorCode.SAFETY_VIOLATION
-
-    def test_safety_error_with_policy(self):
-        """Test SafetyError with policy name and severity."""
-        error = SafetyError("Blocked", policy_name="rate_limit", severity="high")
-        assert error.extra_data["policy_name"] == "rate_limit"
-        assert error.extra_data["severity"] == "high"
-
-
-class TestFrameworkValidationError:
-    """Test FrameworkValidationError class."""
-
-    def test_framework_validation_error(self):
-        """Test FrameworkValidationError initialization."""
-        error = FrameworkValidationError("Validation failed")
-        assert error.error_code == ErrorCode.VALIDATION_ERROR
-
-    def test_validation_error_with_field(self):
-        """Test with field name."""
-        error = FrameworkValidationError("Invalid", field_name="timeout")
-        assert error.extra_data["field_name"] == "timeout"
-
-
-class TestUtilityFunctions:
-    """Test utility functions."""
-
-    def test_wrap_exception(self):
-        """Test wrapping exception in BaseError."""
-        original = ValueError("original error")
-        context = ExecutionContext(workflow_id="wf-123")
-
-        wrapped = wrap_exception(
-            original,
-            "Wrapped error",
-            error_code=ErrorCode.CONFIG_INVALID,
-            context=context,
-        )
-
-        assert isinstance(wrapped, BaseError)
-        assert wrapped.message == "Wrapped error"
-        assert wrapped.error_code == ErrorCode.CONFIG_INVALID
-        assert wrapped.cause is original
-        assert wrapped.context.workflow_id == "wf-123"
-
-    def test_get_error_info_base_error(self):
-        """Test get_error_info with BaseError."""
-        error = BaseError("test", error_code=ErrorCode.CONFIG_INVALID)
-        info = get_error_info(error)
-
-        assert info["error_type"] == "BaseError"
-        assert info["message"] == "test"
-        assert info["error_code"] == "CONFIG_INVALID"
-
-    def test_get_error_info_standard_exception(self):
-        """Test get_error_info with standard exception."""
-        error = ValueError("test error")
-        info = get_error_info(error)
-
-        assert info["error_type"] == "ValueError"
-        assert info["message"] == "test error"
-        assert info["error_code"] == "UNKNOWN_ERROR"
-        assert "timestamp" in info
-
-    def test_get_error_info_dict_format(self):
-        """Test get_error_info returns dict format."""
-        error = ValueError("test")
-        result = get_error_info(error)
-
-        assert result["error_type"] == "ValueError"
-        assert result["message"] == "test"
 
 
 class TestRateLimitError:

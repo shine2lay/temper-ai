@@ -5,8 +5,6 @@ PROVIDER_IN_MEMORY = "in_memory"
 PROVIDER_PG = "pg"
 PROVIDER_KNOWLEDGE_GRAPH = "knowledge_graph"
 
-SECONDS_PER_DAY = 86400
-
 MEMORY_TYPE_EPISODIC = "episodic"
 MEMORY_TYPE_PROCEDURAL = "procedural"
 MEMORY_TYPE_CROSS_SESSION = "cross_session"
@@ -20,8 +18,3 @@ DEFAULT_RETRIEVAL_LIMIT = 5
 MEMORY_QUERY_MAX_CHARS = 500
 TRUNCATION_SUFFIX = "..."
 TRUNCATION_SUFFIX_LEN = len(TRUNCATION_SUFFIX)
-
-# M9: cross-pollination namespaces and types
-PUBLISHED_KNOWLEDGE_NAMESPACE = "published_knowledge"
-PERFORMANCE_NAMESPACE = "agent_performance"
-MEMORY_TYPE_PUBLISHED = "published"

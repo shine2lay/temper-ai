@@ -174,7 +174,6 @@ class TestGetSchema:
         assert isinstance(schema, dict)
         assert "properties" in schema
         # Pydantic v2 uses $defs; some schemas may have definitions
-        has_defs = "$defs" in schema or "definitions" in schema
         # Not all simple schemas will have $defs, but properties is required
         assert "properties" in schema
 

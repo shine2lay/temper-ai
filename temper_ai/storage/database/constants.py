@@ -24,10 +24,6 @@ CASCADE_SIMPLE = "cascade"
 # ============================================================================
 
 FIELD_WORKFLOW_CONFIG_SNAPSHOT = "workflow_config_snapshot"
-FIELD_STAGE_CONFIG_SNAPSHOT = "stage_config_snapshot"
-FIELD_AGENT_CONFIG_SNAPSHOT = "agent_config_snapshot"
-FIELD_INPUT_DATA = "input_data"
-FIELD_OUTPUT_DATA = "output_data"
 FIELD_EXTRA_METADATA = "extra_metadata"
 
 # ============================================================================

@@ -628,7 +628,7 @@ class TestRealWorld:
         bucket = TokenBucket(limit)
 
         # Burst: consume 10 tokens rapidly
-        for i in range(10):
+        for _i in range(10):
             result = bucket.consume(1)
             assert result is True
 

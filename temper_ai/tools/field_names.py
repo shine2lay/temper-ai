@@ -13,9 +13,6 @@ class ToolResultFields:
     # Execution metadata
     DURATION_SECONDS = "duration_seconds"
     TIMEOUT = "timeout"
-    SANDBOXED = "sandboxed"
 
     # Error tracking
     ERROR = "error"
-    ERROR_TYPE = "error_type"
-    TRACEBACK = "traceback"

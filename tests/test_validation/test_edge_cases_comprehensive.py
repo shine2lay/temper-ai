@@ -243,7 +243,7 @@ class TestCollectionEdgeCases:
         # Create dict nested 100 levels deep
         nested = {}
         current = nested
-        for i in range(100):
+        for _i in range(100):
             current["level"] = {}
             current = current["level"]
         current["value"] = "deep"
@@ -493,7 +493,7 @@ class TestNullAndNoneEdgeCases:
         assert None != []
         assert None != {}
         assert None != 0
-        assert None != False
+        assert None
 
     def test_none_propagation(self):
         """Test None propagation through nested structures."""

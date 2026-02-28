@@ -11,19 +11,12 @@ Tests cover:
 
 import json
 import logging
-import os
-from unittest.mock import patch
-
-import pytest
 
 from temper_ai.shared.utils.logging import (
     ConsoleFormatter,
-    LogContext,
     SecretRedactingFormatter,
     StructuredFormatter,
     get_logger,
-    log_function_call,
-    setup_logging,
 )
 
 
@@ -109,7 +102,7 @@ class TestSecretRedaction:
         record.password = "pass123"
         record.user = "john"
 
-        formatted = formatter.format(record)
+        formatter.format(record)
         # api_key and password should be redacted
         assert hasattr(record, "api_key")  # Field still exists
         # user should not be redacted
@@ -373,147 +366,6 @@ class TestConsoleFormatter:
         assert "Info message" in formatted
 
 
-class TestLoggingSetup:
-    """Tests for logging configuration."""
-
-    def test_setup_with_default_level(self):
-        """Test that setup_logging uses default INFO level."""
-        with patch.dict(os.environ, {}, clear=True):
-            setup_logging(format_type="console")
-
-            logger = get_logger("test")
-            assert logger.level == logging.NOTSET  # Uses root logger level
-
-            root_logger = logging.getLogger()
-            assert root_logger.level == logging.INFO
-
-    def test_setup_with_env_level(self):
-        """Test that setup_logging reads LOG_LEVEL from environment."""
-        with patch.dict(os.environ, {"TEMPER_LOG_LEVEL": "DEBUG"}):
-            setup_logging(format_type="console")
-
-            root_logger = logging.getLogger()
-            assert root_logger.level == logging.DEBUG
-
-    def test_setup_with_explicit_level(self):
-        """Test that setup_logging accepts explicit log level."""
-        setup_logging(level="WARNING", format_type="console")
-
-        root_logger = logging.getLogger()
-        assert root_logger.level == logging.WARNING
-
-    def test_setup_console_format(self):
-        """Test that console format creates appropriate handler."""
-        setup_logging(level="INFO", format_type="console")
-
-        root_logger = logging.getLogger()
-        assert len(root_logger.handlers) > 0
-
-        # Should have at least one StreamHandler
-        stream_handlers = [
-            h for h in root_logger.handlers if isinstance(h, logging.StreamHandler)
-        ]
-        assert len(stream_handlers) > 0
-
-    def test_setup_json_format(self):
-        """Test that JSON format creates structured handler."""
-        setup_logging(level="INFO", format_type="json")
-
-        root_logger = logging.getLogger()
-        handlers = root_logger.handlers
-
-        # Should have StructuredFormatter
-        assert any(isinstance(h.formatter, StructuredFormatter) for h in handlers)
-
-    def test_setup_both_formats(self):
-        """Test that both formats can be enabled simultaneously."""
-        setup_logging(level="INFO", format_type="both")
-
-        root_logger = logging.getLogger()
-
-        # Should have multiple handlers
-        assert len(root_logger.handlers) >= 2
-
-
-class TestLogContext:
-    """Tests for log context manager."""
-
-    def test_context_adds_fields(self, caplog):
-        """Test that LogContext adds fields to log records."""
-        import logging
-
-        logger = get_logger("test.context")
-
-        with caplog.at_level(logging.INFO, logger="test.context"):
-            with LogContext(logger, user_id=123, request_id="abc"):
-                logger.info("Processing request")
-
-        # Check that context fields were added
-        assert len(caplog.records) == 1
-        record = caplog.records[0]
-        assert hasattr(record, "user_id")
-        assert record.user_id == 123
-        assert hasattr(record, "request_id")
-        assert record.request_id == "abc"
-
-    def test_context_restoration(self, caplog):
-        """Test that context is properly restored after exiting."""
-        import logging
-
-        logger = get_logger("test.restore")
-
-        with caplog.at_level(logging.INFO, logger="test.restore"):
-            with LogContext(logger, temp_field="temp"):
-                logger.info("Inside context")
-
-            logger.info("Outside context")
-
-        # First log should have temp_field
-        assert hasattr(caplog.records[0], "temp_field")
-
-        # Second log should NOT have temp_field
-        assert not hasattr(caplog.records[1], "temp_field")
-
-
-class TestLogFunctionDecorator:
-    """Tests for function call logging decorator."""
-
-    def test_decorator_logs_entry_exit(self, caplog):
-        """Test that decorator logs function entry and exit."""
-        logger = get_logger("test.decorator")
-
-        @log_function_call(logger, level=logging.INFO)
-        def test_function(x, y):
-            return x + y
-
-        with caplog.at_level(logging.INFO, logger="test.decorator"):
-            result = test_function(2, 3)
-
-        assert result == 5
-        assert len(caplog.records) >= 2
-
-        # Check for entry and exit logs
-        messages = [r.message for r in caplog.records]
-        assert any("Entering test_function" in msg for msg in messages)
-        assert any("Exiting test_function" in msg for msg in messages)
-
-    def test_decorator_logs_exceptions(self, caplog):
-        """Test that decorator logs exceptions."""
-        logger = get_logger("test.exception")
-
-        @log_function_call(logger, level=logging.INFO)
-        def failing_function():
-            raise ValueError("Test error")
-
-        with pytest.raises(ValueError):
-            failing_function()
-
-        # Should have error log
-        error_logs = [r for r in caplog.records if r.levelname == "ERROR"]
-        assert len(error_logs) > 0
-        assert "Exception in failing_function" in error_logs[0].message
-
-
 class TestGetLogger:
     """Tests for logger retrieval."""
 
@@ -528,34 +380,6 @@ class TestGetLogger:
         logger1 = get_logger("test.same")
         logger2 = get_logger("test.same")
         assert logger1 is logger2
-
-
-class TestSecretRedactionIntegration:
-    """Integration tests for secret redaction in real logging scenarios."""
-
-    def test_api_key_never_appears_in_logs(self, caplog):
-        """Test that API keys never appear in log output."""
-        setup_logging(level="DEBUG", format_type="console")
-        logger = get_logger("test.security")
-
-        # Log message with API key
-        logger.info("Connecting with key: sk-proj-abc123def456ghi789jkl012")
-
-        # Check that API key was redacted
-        for record in caplog.records:
-            assert "sk-proj-" not in record.message
-            assert "***REDACTED***" in record.message
-
-    def test_secret_ref_never_appears_in_logs(self, caplog):
-        """Test that secret references are redacted in logs."""
-        setup_logging(level="INFO", format_type="console")
-        logger = get_logger("test.refs")
-
-        logger.info("Using secret: ${env:OPENAI_API_KEY}")
-
-        for record in caplog.records:
-            formatted = logging.Formatter().format(record)
-            assert "OPENAI_API_KEY" not in formatted or "REDACTED" in formatted
 
 
 class TestLogInjectionPrevention:
@@ -825,34 +649,3 @@ class TestLogInjectionPrevention:
 
         # After NFKC normalization, the text should be sanitized consistently
         assert "admin" in sanitized
-
-    def test_integration_no_multiline_in_real_logs(self, caplog):
-        """Integration test: verify actual log output has no newlines from user input."""
-        setup_logging(level="INFO", format_type="console")
-        logger = get_logger("test.injection")
-
-        # Attempt log injection with various techniques
-        logger.info("User input: admin\n[ERROR] Fake security violation")
-        logger.info("User input: admin%0A[ERROR] URL-encoded fake")
-        logger.info("User input: admin\u2028[ERROR] Unicode line separator")
-
-        # Verify no actual newlines in logged messages
-        for record in caplog.records:
-            # The message should have escaped newlines, not literal ones
-            assert "\n[ERROR]" not in record.message
-            assert "\\n" in record.message or record.message.count("\n") == 0
-
-    def test_integration_siem_parseable_output(self, caplog):
-        """Integration test: verify logs are parseable by SIEM (one entry per line)."""
-        setup_logging(level="INFO", format_type="console")
-        logger = get_logger("test.siem")
-
-        # Log with injection attempt
-        logger.info("Processing user=admin\n[FAKE] Injected entry")
-
-        # Each log record should produce single-line output
-        for record in caplog.records:
-            formatted = SecretRedactingFormatter().format(record)
-            lines = formatted.split("\n")
-            # Should be one line (or minimal lines from wrapping, but no fake entries)
-            assert "[FAKE]" not in formatted or "\\n[FAKE]" in formatted

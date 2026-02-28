@@ -294,7 +294,7 @@ class TestMemoryLeaks:
         # Simple workflow task
         async def mini_workflow(workflow_id: int):
             """Minimal workflow that creates some state and completes."""
-            state = {"id": workflow_id, "data": [i for i in range(100)]}
+            state = {"id": workflow_id, "data": list(range(100))}
             await asyncio.sleep(0.001)
             return state
 

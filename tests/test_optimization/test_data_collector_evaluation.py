@@ -56,7 +56,7 @@ class TestCollectWithEvaluationName:
 
             mock_sf.side_effect = session_cm
 
-            result = collector.collect_examples(
+            collector.collect_examples(
                 agent_name="researcher",
                 evaluation_name="research_quality",
             )
@@ -85,7 +85,7 @@ class TestCollectWithEvaluationName:
 
             mock_sf.side_effect = session_cm
 
-            result = collector.collect_examples(agent_name="researcher")
+            collector.collect_examples(agent_name="researcher")
 
         mock_std.assert_called_once()
 
@@ -130,7 +130,7 @@ class TestQueryWithEvaluation:
         ) as mock_fallback:
             cutoff = datetime.now(UTC) - timedelta(hours=24)
 
-            result = collector._query_with_evaluation(
+            collector._query_with_evaluation(
                 mock_session,
                 "researcher",
                 "research_quality",

@@ -60,7 +60,7 @@ def sample_experiment():
 @pytest.fixture
 def sample_variants():
     """Create sample variants."""
-    exp_id = str(uuid.uuid4())
+    str(uuid.uuid4())
     return [
         {"name": "control", "is_control": True, "traffic": 0.5},
         {"name": "variant_a", "traffic": 0.5, "config": {"temperature": 0.9}},
@@ -485,7 +485,7 @@ class TestListExperiments:
             confidence_level=0.95,
             min_sample_size_per_variant=100,
         )
-        exp2 = Experiment(
+        Experiment(
             id=str(uuid.uuid4()),
             name="exp2",
             description="Test",

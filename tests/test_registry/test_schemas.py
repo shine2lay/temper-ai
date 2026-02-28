@@ -23,11 +23,11 @@ class TestPersistenceConfig:
 
 class TestAgentRegistryEntry:
     def _make_entry(self, **kwargs):
-        defaults = dict(
-            id="abc123",
-            name="test-agent",
-            registered_at=datetime.now(UTC),
-        )
+        defaults = {
+            "id": "abc123",
+            "name": "test-agent",
+            "registered_at": datetime.now(UTC),
+        }
         defaults.update(kwargs)
         return AgentRegistryEntry(**defaults)
 

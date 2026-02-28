@@ -84,7 +84,7 @@ def test_cache_redis_vs_inmemory_latency(benchmark):
         for i in range(100):
             inmemory_get(f"key_{i}")
 
-    result = benchmark(benchmark_inmemory)
+    benchmark(benchmark_inmemory)
     assert True  # Benchmark completed successfully
 
 
@@ -110,7 +110,7 @@ def test_cache_eviction_lru_performance(benchmark):
         for i in range(1000, 2000):
             cached_operation(i)
 
-    result = benchmark(trigger_evictions)
+    benchmark(trigger_evictions)
     assert True  # Benchmark completed successfully
 
 
@@ -149,7 +149,7 @@ def test_cache_concurrent_access_contention(benchmark):
         for thread in threads:
             thread.join()
 
-    result = benchmark(concurrent_access)
+    benchmark(concurrent_access)
     assert True  # Benchmark completed successfully
 
 
@@ -201,7 +201,7 @@ def test_cache_invalidation_propagation(benchmark):
             l1_cache.pop(key, None)
             l2_cache.pop(key, None)
 
-    result = benchmark(invalidate_cache_layers)
+    benchmark(invalidate_cache_layers)
     assert True  # Benchmark completed successfully
 
 
@@ -235,7 +235,7 @@ def test_network_http_connection_pooling(benchmark):
 
     def benchmark_pooled_requests():
         results = []
-        for i in range(100):
+        for _i in range(100):
             result = session.get("https://api.example.com/endpoint")
             results.append(result)
         return results

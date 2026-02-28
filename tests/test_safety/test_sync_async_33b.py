@@ -120,7 +120,9 @@ class TestComposerSyncAsyncConsistency:
         assert sync_result.policies_evaluated == async_result.policies_evaluated
         assert sync_result.policies_skipped == async_result.policies_skipped
         assert sync_result.execution_order == async_result.execution_order
-        for sv, av in zip(sync_result.violations, async_result.violations):
+        for sv, av in zip(
+            sync_result.violations, async_result.violations, strict=False
+        ):
             assert sv.severity == av.severity
             assert sv.message == av.message
 

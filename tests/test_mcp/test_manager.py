@@ -45,7 +45,7 @@ def _patch_manager_connect(session, tools):
     Return a context-manager patch that replaces _connect_server and
     _list_server_tools so connect_all() doesn't need the mcp SDK.
     """
-    list_result = _make_list_result(tools)
+    _make_list_result(tools)
 
     patches = [
         patch(

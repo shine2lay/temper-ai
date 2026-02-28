@@ -11,7 +11,12 @@ from datetime import datetime
 from pathlib import Path
 
 import pytest
-from sqlalchemy.exc import ArgumentError, IntegrityError, OperationalError
+from sqlalchemy.exc import (
+    ArgumentError,
+    IntegrityError,
+    NoSuchModuleError,
+    OperationalError,
+)
 
 from temper_ai.storage.database.manager import DatabaseManager
 from temper_ai.storage.database.models import (
@@ -62,7 +67,7 @@ class TestConnectionFailures:
 
     def test_connection_with_invalid_url(self):
         """Test connection with invalid database URL."""
-        with pytest.raises((ValueError, OSError)):
+        with pytest.raises((ValueError, OSError, NoSuchModuleError)):
             # Malformed URL should raise error
             DatabaseManager(database_url="invalid://url")
 

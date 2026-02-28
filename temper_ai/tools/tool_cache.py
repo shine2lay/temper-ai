@@ -19,7 +19,7 @@ from temper_ai.tools.base import ToolResult
 from temper_ai.tools.tool_cache_constants import (
     CACHE_KEY_SEPARATOR,
     DEFAULT_CACHE_MAX_SIZE,
-    DEFAULT_CACHE_TTL_SECONDS,
+    DEFAULT_TOOL_CACHE_TTL_SECONDS,
 )
 
 logger = logging.getLogger(__name__)
@@ -53,7 +53,7 @@ class ToolResultCache:
     def __init__(
         self,
         max_size: int = DEFAULT_CACHE_MAX_SIZE,
-        ttl_seconds: int = DEFAULT_CACHE_TTL_SECONDS,
+        ttl_seconds: int = DEFAULT_TOOL_CACHE_TTL_SECONDS,
     ) -> None:
         self._max_size = max_size
         self._ttl_seconds = ttl_seconds

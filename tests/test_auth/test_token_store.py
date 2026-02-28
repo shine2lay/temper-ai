@@ -560,7 +560,7 @@ class TestSecureTokenStoreKeyring:
         assert store.using_keyring is False
 
         # Should not create keyring entry
-        keyring_key = keyring.get_password(
+        keyring.get_password(
             SecureTokenStore.DEFAULT_KEYRING_SERVICE,
             SecureTokenStore.DEFAULT_KEYRING_KEY_NAME,
         )

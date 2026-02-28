@@ -430,7 +430,7 @@ class TestMeritWeightedEdgeCases:
 class TestStrategyRobustness:
     """Test strategy robustness to unusual inputs."""
 
-    def test_consensus_with_None_decision(self):
+    def test_consensus_unanimous_two_agent_vote(self):
         """Test consensus handles None decision gracefully."""
         # Note: AgentOutput should validate this, but test the behavior
         outputs = [

@@ -79,14 +79,8 @@ class TestTrackFailedLLMCall:
         assert result is None
 
 
-class TestStandardAgentFailedLLMTracking:
+class TestLLMServiceFailedCallTracking:
     """Integration tests for failed LLM tracking via LLMService."""
-
-    def test_track_failed_call_with_none_observer_returns_none(self):
-        """Verify _track_failed_call handles None observer gracefully."""
-        service = _make_llm_service()
-        result = service._track_failed_call(None, "prompt", Exception("err"), 1, 1)
-        assert result is None
 
     def test_track_failed_call_with_llm_error(self):
         """_track_failed_call works with LLMError."""

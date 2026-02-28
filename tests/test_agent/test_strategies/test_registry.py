@@ -7,6 +7,7 @@ of collaboration strategies and conflict resolvers.
 import pytest
 
 from temper_ai.agent.strategies.base import CollaborationStrategy, SynthesisResult
+from temper_ai.agent.strategies.conflict_resolution import ConflictResolutionStrategy
 from temper_ai.agent.strategies.registry import (
     ResolverMetadata,
     StrategyMetadata,
@@ -33,6 +34,16 @@ class MockStrategy(CollaborationStrategy):
             reasoning="mock",
             metadata={},
         )
+
+    def get_capabilities(self):
+        return {"test": True}
+
+
+class MockResolver(ConflictResolutionStrategy):
+    """Mock resolver for testing."""
+
+    def resolve(self, conflict, agent_outputs, config):
+        return None
 
     def get_capabilities(self):
         return {"test": True}
@@ -157,9 +168,9 @@ class TestStrategyRegistry:
         registry = StrategyRegistry()
 
         # Should be able to get debate strategy
-        if "debate" in registry.list_strategy_names():
-            strategy = registry.get_strategy("debate")
-            assert strategy is not None
+        assert "debate" in registry.list_strategy_names()
+        strategy = registry.get_strategy("debate")
+        assert strategy is not None
 
     def test_list_strategy_names(self):
         """Test listing strategy names."""
@@ -243,9 +254,9 @@ class TestResolverRegistry:
         """Test getting resolver by name."""
         registry = StrategyRegistry()
 
-        if "merit_weighted" in registry.list_resolver_names():
-            resolver = registry.get_resolver("merit_weighted")
-            assert resolver is not None
+        assert "merit_weighted" in registry.list_resolver_names()
+        resolver = registry.get_resolver("merit_weighted")
+        assert resolver is not None
 
     def test_get_resolver_unknown_name(self):
         """Test getting unknown resolver raises ValueError."""
@@ -299,9 +310,9 @@ class TestConfigBasedRetrieval:
         registry = StrategyRegistry()
 
         # Should use default strategy (consensus)
-        if "consensus" in registry.list_strategy_names():
-            strategy = get_strategy_from_config(config)
-            assert strategy is not None
+        assert "consensus" in registry.list_strategy_names()
+        strategy = get_strategy_from_config(config)
+        assert strategy is not None
 
     def test_get_resolver_from_config_default(self):
         """Test getting resolver from config with defaults."""
@@ -318,9 +329,9 @@ class TestConfigBasedRetrieval:
         registry = StrategyRegistry()
 
         # Should use default resolver
-        if "merit_weighted" in registry.list_resolver_names():
-            resolver = get_resolver_from_config(config)
-            assert resolver is not None
+        assert "merit_weighted" in registry.list_resolver_names()
+        resolver = get_resolver_from_config(config)
+        assert resolver is not None
 
 
 class TestRegistryIsolation:
@@ -373,3 +384,34 @@ class TestDebateAliases:
             registry.unregister_strategy("debate_and_synthesize")
         with pytest.raises(ValueError, match="Cannot unregister"):
             registry.unregister_strategy("llm_debate_and_synthesize")
+
+
+class TestResolverRegistration:
+    """Test resolver registration validation."""
+
+    def test_register_resolver_empty_name(self):
+        registry = StrategyRegistry()
+        with pytest.raises(ValueError, match="non-empty string"):
+            registry.register_resolver("", MockResolver)
+
+    def test_register_resolver_invalid_class(self):
+        registry = StrategyRegistry()
+
+        class NotAResolver:
+            pass
+
+        with pytest.raises(TypeError, match="inherit from ConflictResolutionStrategy"):
+            registry.register_resolver("invalid", NotAResolver)
+
+    def test_register_resolver_duplicate_name(self):
+        registry = StrategyRegistry()
+        test_name = "test_mock_resolver"
+        registry.register_resolver(test_name, MockResolver)
+        with pytest.raises(ValueError, match="already registered"):
+            registry.register_resolver(test_name, MockResolver)
+        registry.unregister_resolver(test_name)
+
+    def test_unregister_nonexistent_resolver(self):
+        registry = StrategyRegistry()
+        # Should not raise
+        registry.unregister_resolver("nonexistent_resolver_xyz")

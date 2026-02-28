@@ -90,7 +90,7 @@ class TestFormatDialogueHistory:
         result = format_dialogue_history(history)
         assert "unknown" in result
 
-    def test_none_input(self):
+    def test_empty_list_input(self):
         """format_dialogue_history should handle None gracefully via caller check."""
         assert format_dialogue_history([]) == ""
 

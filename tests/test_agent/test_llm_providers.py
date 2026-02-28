@@ -1384,55 +1384,6 @@ class TestTokenLimitEnforcement:
         request2 = llm._build_request("Test prompt", max_tokens=512)
         assert request2["options"]["num_predict"] == 512
 
-    def test_token_counting_empty_string(self):
-        """Test token counting for empty string."""
-        llm = OllamaLLM(
-            model="llama3.2:3b",
-            base_url="http://localhost:11434",
-        )
-
-        # Empty string should have minimal tokens
-        # Note: Actual implementation may not have count_tokens method
-        # This test documents expected behavior
-        prompt = ""
-        # Would call: token_count = llm.count_tokens(prompt)
-        # Expected: token_count should be 0 or 1
-        assert llm is not None
-        assert prompt == ""  # Verify test setup
-
-    def test_token_counting_short_text(self):
-        """Test token counting for short text."""
-        # Note: This test documents expected behavior
-        # Actual token counting depends on tokenizer implementation
-
-        # Examples of expected token counts (approximate):
-        test_cases = [
-            ("Hello", 1),
-            ("Hello world", 2),
-            ("This is a test", 4),
-            ("The quick brown fox", 4),
-        ]
-
-        # Each provider would implement token counting
-        # OpenAI: use tiktoken library
-        # Anthropic: use anthropic tokenizer
-        # Ollama/vLLM: use model-specific tokenizer
-        assert len(test_cases) == 4  # Verify test data
-
-    def test_token_counting_unicode_text(self):
-        """Test token counting handles Unicode correctly."""
-        # Unicode characters may encode to multiple tokens
-        test_cases = [
-            "Hello 世界",  # English + Chinese
-            "Émoji 🎉 test",  # Accents + emoji
-            "Привет мир",  # Cyrillic
-        ]
-
-        # Token counting should handle these without errors
-        # Exact counts depend on tokenizer
-        assert len(test_cases) == 3  # Verify test data
-        assert all(isinstance(tc, str) for tc in test_cases)  # All strings
-
     def test_max_tokens_zero_accepted(self):
         """Test that max_tokens=0 is currently accepted.
 

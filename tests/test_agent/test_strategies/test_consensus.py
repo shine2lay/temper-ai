@@ -307,18 +307,18 @@ class TestConsensusStrategy:
         outputs = [
             AgentOutput("agent1", "Option A", "reason1", 0.9, {}),
             AgentOutput("agent2", "Option A", "reason2", 0.8, {}),
-            AgentOutput("agent3", "Option B", "reason3", 0.7, {}),
-            AgentOutput("agent4", "Option C", "reason4", 0.6, {}),
+            AgentOutput("agent3", "Option A", "reason3", 0.7, {}),
+            AgentOutput("agent4", "Option B", "reason4", 0.6, {}),
         ]
 
         result = strategy.synthesize(outputs, {})
 
-        # Should have vote breakdown in reasoning (only in strong consensus)
-        if result.method == "consensus":
-            assert "Vote breakdown:" in result.reasoning
-            # Check that votes are represented
-            assert "Option A" in result.reasoning
-            assert "Option B" in result.reasoning
+        # 3/4 agents agree → strong consensus; vote breakdown should be present
+        assert result.method == "consensus"
+        assert "Vote breakdown:" in result.reasoning
+        # Check that votes are represented
+        assert "Option A" in result.reasoning
+        assert "Option B" in result.reasoning
 
     def test_conflict_detection(self):
         """Test that conflicts are properly detected."""

@@ -33,7 +33,7 @@ class CustomTestStrategy(CollaborationStrategy):
 class CustomTestResolver(ConflictResolutionStrategy):
     """Custom resolver for testing."""
 
-    def resolve(self, conflicts, config):
+    def resolve(self, conflict, agent_outputs, config):
         """Resolve conflicts."""
         return "custom_resolution"
 
@@ -69,8 +69,8 @@ class TestRegistryReset:
         # Check for default strategies (if they exist)
         strategy_names = registry.list_strategy_names()
         # Defaults should be present if they were imported successfully
-        if "debate" in registry._default_strategies:
-            assert "debate" in strategy_names
+        assert "debate" in registry._default_strategies
+        assert "debate" in strategy_names
 
     def test_reset_removes_custom_resolvers(self):
         """Test reset() removes custom resolvers but preserves defaults."""
@@ -86,8 +86,8 @@ class TestRegistryReset:
         # Custom removed, defaults preserved
         assert "custom_resolver" not in registry.list_resolver_names()
         # Defaults should still be there
-        if "merit_weighted" in registry._default_resolvers:
-            assert "merit_weighted" in registry.list_resolver_names()
+        assert "merit_weighted" in registry._default_resolvers
+        assert "merit_weighted" in registry.list_resolver_names()
 
     def test_reset_preserves_singleton(self):
         """Test reset() doesn't destroy singleton instance."""
@@ -123,8 +123,8 @@ class TestRegistryReset:
 
         # Should have defaults again
         registry = StrategyRegistry()
-        if "debate" in registry._default_strategies:
-            assert "debate" in registry.list_strategy_names()
+        assert "debate" in registry._default_strategies
+        assert "debate" in registry.list_strategy_names()
 
 
 class TestRegistryClear:
@@ -150,7 +150,7 @@ class TestRegistryClear:
 
     def test_clear_resets_initialized_flag(self):
         """Test clear() resets initialization flag."""
-        registry = StrategyRegistry()
+        StrategyRegistry()  # trigger initialization
         assert StrategyRegistry._initialized
 
         StrategyRegistry.clear()
@@ -398,9 +398,9 @@ class TestBackwardCompatibility:
         registry = StrategyRegistry()
 
         # Try to unregister default (should fail)
-        if "debate" in registry._default_strategies:
-            with pytest.raises(ValueError, match="Cannot unregister default"):
-                registry.unregister_strategy("debate")
+        assert "debate" in registry._default_strategies
+        with pytest.raises(ValueError, match="Cannot unregister default"):
+            registry.unregister_strategy("debate")
 
     def test_register_and_get_still_works(self):
         """Test basic register/get workflow unchanged."""

@@ -17,6 +17,8 @@ waiting, completed, failed, retry) for better observability and control.
 from typing import Any
 from unittest.mock import patch
 
+import pytest
+
 from temper_ai.agent.base_agent import AgentResponse, BaseAgent, ExecutionContext
 from temper_ai.storage.schemas.agent_config import AgentConfig
 
@@ -73,6 +75,22 @@ class MockAgent(BaseAgent):
         return {"name": self.name, "version": self.version, "tools": []}
 
 
+class FailingMockAgent(BaseAgent):
+    """Mock agent that raises configurable errors for testing error handling."""
+
+    def __init__(self, config, error_type=RuntimeError, error_msg="test error"):
+        self._error_type = error_type
+        self._error_msg = error_msg
+        with patch("temper_ai.agent.base_agent.create_llm_from_config"):
+            super().__init__(config)
+
+    def _run(self, input_data, context=None, start_time=0.0):
+        raise self._error_type(self._error_msg)
+
+    def get_capabilities(self):
+        return {"name": self.name, "version": self.version, "tools": []}
+
+
 def _make_mock_agent(config):
     """Create MockAgent with LLM creation patched out."""
     with patch("temper_ai.agent.base_agent.create_llm_from_config"):
@@ -124,7 +142,7 @@ class TestAgentExecutionFlow:
         result = agent.execute(input_data)
 
         assert isinstance(result, AgentResponse)
-        assert result.output is not None
+        assert result.output == "mock result"
         assert result.metadata["input"] == input_data
 
     def test_agent_execution_with_context(self):
@@ -175,6 +193,32 @@ class TestAgentErrorHandling:
         # Should not crash
         assert isinstance(result, AgentResponse)
         assert result.output is not None
+
+
+class TestAgentErrorHandlingReal:
+    """Test real error handling with FailingMockAgent."""
+
+    def test_value_error_handled(self):
+        config = create_mock_config(name="failing_agent")
+        agent = FailingMockAgent(config, ValueError, "bad input value")
+        result = agent.execute({"query": "test"})
+        assert isinstance(result, AgentResponse)
+        assert result.error is not None
+        assert "bad input value" in result.error
+
+    def test_runtime_error_handled(self):
+        config = create_mock_config(name="failing_agent")
+        agent = FailingMockAgent(config, RuntimeError, "runtime failure")
+        result = agent.execute({"query": "test"})
+        assert isinstance(result, AgentResponse)
+        assert result.error is not None
+        assert "runtime failure" in result.error
+
+    def test_unexpected_error_propagates(self):
+        config = create_mock_config(name="failing_agent")
+        agent = FailingMockAgent(config, SystemExit, "fatal")
+        with pytest.raises(SystemExit):
+            agent.execute({"query": "test"})
 
 
 class TestAgentStateConsistency:
@@ -290,7 +334,7 @@ class TestAgentEdgeCases:
         result = agent.execute(complex_input)
 
         assert isinstance(result, AgentResponse)
-        assert result.output is not None
+        assert result.output == "mock result"
 
     def test_agent_execution_order(self):
         """Test multiple agents can execute in sequence."""
@@ -322,35 +366,19 @@ class TestAgentEdgeCases:
         assert len(result.metadata["input"]["data"]) == 1000
 
 
-class TestAgentConcurrentExecution:
-    """Test agent behavior under concurrent execution scenarios.
+class TestAgentExecutionContextState:
+    """Test execution context and latency tracking."""
 
-    Future enhancement: Add state locking or concurrent execution guards.
-    """
+    def test_context_set_during_execute(self):
+        config = create_mock_config(name="test_agent")
+        agent = _make_mock_agent(config)
+        context = ExecutionContext(workflow_id="wf-ctx", stage_id="s1")
+        agent.execute({"query": "test"}, context)
+        assert agent._execution_context is context
+        assert agent._execution_context.workflow_id == "wf-ctx"
 
-    def test_multiple_agents_independent(self):
-        """Test multiple agent instances are independent."""
-        agent1 = _make_mock_agent(create_mock_config(name="agent1"))
-        agent2 = _make_mock_agent(create_mock_config(name="agent2"))
-
-        result1 = agent1.execute({"query": "query1"})
-        result2 = agent2.execute({"query": "query2"})
-
-        # Agents should be independent
-        assert agent1.name == "agent1"
-        assert agent2.name == "agent2"
-        assert isinstance(result1, AgentResponse)
-        assert isinstance(result2, AgentResponse)
-
-    def test_same_agent_sequential_execution(self):
-        """Test same agent instance can execute sequentially."""
-        agent = _make_mock_agent(create_mock_config(name="sequential_agent"))
-
-        results = []
-        for i in range(5):
-            result = agent.execute({"query": f"query_{i}"})
-            results.append(result)
-
-        # All executions should succeed
-        assert len(results) == 5
-        assert all(isinstance(r, AgentResponse) for r in results)
+    def test_latency_populated(self):
+        config = create_mock_config(name="test_agent")
+        agent = _make_mock_agent(config)
+        result = agent.execute({"query": "test"})
+        assert result.latency_seconds >= 0

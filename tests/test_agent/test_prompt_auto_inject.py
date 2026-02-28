@@ -157,6 +157,7 @@ class TestModeContextKeyExclusion:
         agent = _make_agent(_make_config())
         rendered = agent._build_prompt(
             {
+                "user_query": "What should we do?",
                 "mode_instruction": "You are in a DEBATE.",
                 "interaction_mode": "debate",
                 "debate_framing": "State your position.",
@@ -164,11 +165,11 @@ class TestModeContextKeyExclusion:
         )
         # These should NOT appear in the "# Input Context" section
         # (they're excluded from the string auto-inject loop)
-        if "# Input Context" in rendered:
-            input_context_section = rendered.split("# Input Context")[1]
-            assert "Mode Instruction" not in input_context_section
-            assert "Interaction Mode" not in input_context_section
-            assert "Debate Framing" not in input_context_section
+        assert "# Input Context" in rendered
+        input_context_section = rendered.split("# Input Context")[1]
+        assert "Mode Instruction" not in input_context_section
+        assert "Interaction Mode" not in input_context_section
+        assert "Debate Framing" not in input_context_section
 
 
 class TestBackwardCompat:

@@ -13,6 +13,8 @@ from temper_ai.agent.strategies.multi_round import (
     CommunicationHistory,
     CommunicationRound,
     MultiRoundStrategy,
+    _extract_stance_regex,
+    _extract_stance_via_llm,
 )
 
 # ---------------------------------------------------------------------------
@@ -356,3 +358,180 @@ class TestDataClasses:
         assert h.total_rounds == 0
         assert h.converged is False
         assert h.convergence_round == -1
+
+
+# ---------------------------------------------------------------------------
+# Extract stance regex
+# ---------------------------------------------------------------------------
+
+
+class TestExtractStanceRegex:
+
+    def test_bracket_pattern(self):
+        assert _extract_stance_regex("[STANCE: AGREE] I agree") == "AGREE"
+
+    def test_loose_pattern(self):
+        assert _extract_stance_regex("STANCE: DISAGREE because...") == "DISAGREE"
+
+    def test_case_insensitive(self):
+        assert _extract_stance_regex("[stance: partial]") == "PARTIAL"
+
+    def test_no_stance(self):
+        assert _extract_stance_regex("I think this is good") == ""
+
+    def test_empty_string(self):
+        assert _extract_stance_regex("") == ""
+
+    def test_bracket_takes_priority_over_loose(self):
+        # Both patterns present; bracket should win
+        text = "[STANCE: AGREE] and STANCE: DISAGREE elsewhere"
+        assert _extract_stance_regex(text) == "AGREE"
+
+
+# ---------------------------------------------------------------------------
+# Extract stance via LLM
+# ---------------------------------------------------------------------------
+
+
+class TestExtractStanceViaLlm:
+
+    def _mock_provider(self, content: str):
+        from unittest.mock import MagicMock
+
+        provider = MagicMock()
+        response = MagicMock()
+        response.content = content
+        provider.complete.return_value = response
+        return provider
+
+    def test_none_provider_returns_empty(self):
+        assert _extract_stance_via_llm(None, "I agree", [("agent_1", "text")]) == ""
+
+    def test_empty_text_returns_empty(self):
+        provider = self._mock_provider("AGREE")
+        assert _extract_stance_via_llm(provider, "", [("agent_1", "text")]) == ""
+
+    def test_empty_other_outputs_returns_empty(self):
+        provider = self._mock_provider("AGREE")
+        assert _extract_stance_via_llm(provider, "I agree", []) == ""
+
+    def test_valid_llm_response(self):
+        provider = self._mock_provider("AGREE")
+        result = _extract_stance_via_llm(
+            provider, "I agree", [("agent_1", "other text")]
+        )
+        assert result == "AGREE"
+
+    def test_invalid_llm_response_returns_empty(self):
+        provider = self._mock_provider("MAYBE")
+        result = _extract_stance_via_llm(provider, "I think so", [("agent_1", "text")])
+        assert result == ""
+
+
+# ---------------------------------------------------------------------------
+# Extract stances (method on MultiRoundStrategy)
+# ---------------------------------------------------------------------------
+
+
+class TestExtractStances:
+
+    def _make_tagged_outputs(self) -> list[AgentOutput]:
+        return [
+            AgentOutput(
+                agent_name="agent_0",
+                decision="[STANCE: AGREE] I fully agree",
+                reasoning="reason",
+                confidence=0.9,
+                metadata={},
+            ),
+            AgentOutput(
+                agent_name="agent_1",
+                decision="[STANCE: DISAGREE] I disagree",
+                reasoning="reason",
+                confidence=0.8,
+                metadata={},
+            ),
+        ]
+
+    def test_regex_first_pass_extracts_tagged_outputs(self):
+        s = MultiRoundStrategy(mode="debate")
+        stances = s.extract_stances(self._make_tagged_outputs())
+        assert stances["agent_0"] == "AGREE"
+        assert stances["agent_1"] == "DISAGREE"
+
+    def test_llm_fallback_for_untagged_outputs(self):
+        from unittest.mock import MagicMock
+
+        provider = MagicMock()
+        response = MagicMock()
+        response.content = "PARTIAL"
+        provider.complete.return_value = response
+
+        s = MultiRoundStrategy(mode="debate")
+        outputs = [
+            AgentOutput(
+                agent_name="agent_0",
+                decision="I partially agree with you",
+                reasoning="reason",
+                confidence=0.7,
+                metadata={},
+            ),
+            AgentOutput(
+                agent_name="agent_1",
+                decision="Completely different stance",
+                reasoning="reason",
+                confidence=0.8,
+                metadata={},
+            ),
+        ]
+        stances = s.extract_stances(outputs, llm_providers={"agent_0": provider})
+        assert stances["agent_0"] == "PARTIAL"
+
+    def test_mixed_tagged_and_untagged(self):
+        from unittest.mock import MagicMock
+
+        provider = MagicMock()
+        response = MagicMock()
+        response.content = "DISAGREE"
+        provider.complete.return_value = response
+
+        s = MultiRoundStrategy(mode="debate")
+        outputs = [
+            AgentOutput(
+                agent_name="agent_0",
+                decision="[STANCE: AGREE] I agree",
+                reasoning="reason",
+                confidence=0.9,
+                metadata={},
+            ),
+            AgentOutput(
+                agent_name="agent_1",
+                decision="I'm not so sure",
+                reasoning="reason",
+                confidence=0.6,
+                metadata={},
+            ),
+        ]
+        stances = s.extract_stances(outputs, llm_providers={"agent_1": provider})
+        assert stances["agent_0"] == "AGREE"
+        assert stances["agent_1"] == "DISAGREE"
+
+
+# ---------------------------------------------------------------------------
+# Validate config ranges
+# ---------------------------------------------------------------------------
+
+
+class TestValidateConfigRanges:
+
+    def test_min_rounds_less_than_1_raises(self):
+        with pytest.raises(ValueError, match="min_rounds must be >= 1"):
+            MultiRoundStrategy(mode="debate", min_rounds=0)
+
+    def test_cost_budget_zero_or_negative_raises(self):
+        with pytest.raises(ValueError, match="cost_budget_usd must be > 0"):
+            MultiRoundStrategy(mode="debate", cost_budget_usd=0.0)
+
+    def test_context_window_size_less_than_1_raises(self):
+        with pytest.raises(ValueError, match="context_window_size must be >= 1"):
+            MultiRoundStrategy(mode="debate", context_window_size=0)

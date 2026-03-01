@@ -230,15 +230,21 @@ class TestLLMServiceRun:
         mock_tool.get_parameters_schema.return_value = {"type": "object"}
         mock_tool.get_result_schema.return_value = None
 
-        # First response has tool calls, second has final answer
+        # First response has tool calls (native), second has final answer
         resp1 = MagicMock()
-        resp1.content = (
-            '<tool_call>\n{"name": "search", "parameters": {"q": "test"}}\n</tool_call>'
-        )
+        resp1.content = "Let me search for that."
         resp1.total_tokens = 50
+        resp1.tool_calls = [
+            {
+                "id": "call_001",
+                "type": "function",
+                "function": {"name": "search", "arguments": '{"q": "test"}'},
+            }
+        ]
         resp2 = MagicMock()
         resp2.content = "The answer is 42"
         resp2.total_tokens = 30
+        resp2.tool_calls = None
 
         call_count = 0
 
@@ -276,10 +282,17 @@ class TestLLMServiceRun:
         mock_tool.get_parameters_schema.return_value = {"type": "object"}
         mock_tool.get_result_schema.return_value = None
 
-        # Always return tool calls
+        # Always return tool calls (native path)
         resp = MagicMock()
-        resp.content = '<tool_call>\n{"name": "search", "parameters": {}}\n</tool_call>'
+        resp.content = "Searching..."
         resp.total_tokens = 10
+        resp.tool_calls = [
+            {
+                "id": "call_loop",
+                "type": "function",
+                "function": {"name": "search", "arguments": "{}"},
+            }
+        ]
 
         mock_executor = MagicMock()
         mock_result = MagicMock()
@@ -402,8 +415,15 @@ class TestLLMServiceArun:
         mock_tool.get_result_schema.return_value = None
 
         resp = MagicMock()
-        resp.content = '<tool_call>\n{"name": "tool1", "parameters": {}}\n</tool_call>'
+        resp.content = "Calling tool1"
         resp.total_tokens = 5
+        resp.tool_calls = [
+            {
+                "id": "call_t1",
+                "type": "function",
+                "function": {"name": "tool1", "arguments": "{}"},
+            }
+        ]
 
         mock_executor = MagicMock()
         mock_result = MagicMock()
@@ -530,3 +550,327 @@ class TestLLMRunResult:
     def test_with_error(self) -> None:
         r = LLMRunResult(output="", error="something went wrong")
         assert r.error == "something went wrong"
+
+
+# ---------------------------------------------------------------------------
+# Native tool calling path
+# ---------------------------------------------------------------------------
+
+
+class TestNativeToolCalling:
+    """Tests for the OpenAI messages-array native tool calling path."""
+
+    def _make_service(self, **overrides: Any) -> LLMService:
+        llm = overrides.get("llm", MagicMock())
+        config = overrides.get("config", MagicMock())
+        config.max_retries = overrides.get("max_retries", 0)
+        config.retry_delay_seconds = overrides.get("retry_delay_seconds", 0.01)
+        config.use_text_tool_schemas = overrides.get("use_text_tool_schemas", False)
+        return LLMService(llm, config)
+
+    def _make_mock_tool(self, name: str = "search") -> MagicMock:
+        mock_tool = MagicMock()
+        mock_tool.name = name
+        mock_tool.description = f"{name} tool"
+        mock_tool.get_parameters_schema.return_value = {"type": "object"}
+        mock_tool.get_result_schema.return_value = None
+        return mock_tool
+
+    def test_messages_persist_across_iterations(self) -> None:
+        """Verify s.messages is NOT None after native tool execution."""
+        svc = self._make_service()
+        mock_tool = self._make_mock_tool()
+
+        # First response: has tool_calls (native), second: final answer
+        resp1 = MagicMock()
+        resp1.content = "Let me search for that."
+        resp1.total_tokens = 50
+        resp1.tool_calls = [
+            {
+                "id": "call_001",
+                "type": "function",
+                "function": {"name": "search", "arguments": '{"q": "test"}'},
+            }
+        ]
+        resp2 = MagicMock()
+        resp2.content = "The answer is 42"
+        resp2.total_tokens = 30
+        resp2.tool_calls = None
+
+        call_count = 0
+
+        def side_effect(*a: Any, **kw: Any) -> tuple:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return resp1, None
+            return resp2, None
+
+        mock_executor = MagicMock()
+        mock_result = MagicMock()
+        mock_result.success = True
+        mock_result.result = "search results"
+        mock_result.error = None
+        mock_executor.execute.return_value = mock_result
+
+        messages_after_inject: list[Any] = []
+
+        original_inject = svc._inject_messages_native
+
+        def capture_inject(s: Any, parsed: Any, results: Any) -> None:
+            original_inject(s, parsed, results)
+            messages_after_inject.append(list(s.messages))
+
+        with (
+            patch.object(svc, "_call_with_retry_sync", side_effect=side_effect),
+            patch.object(svc, "_estimate_cost", return_value=0.001),
+            patch.object(svc, "_track_call"),
+            patch.object(svc, "_inject_messages_native", side_effect=capture_inject),
+        ):
+            result = svc.run(
+                "test prompt",
+                tools=[mock_tool],
+                tool_executor=mock_executor,
+            )
+
+        assert result.output is not None
+        assert result.iterations == 2
+        # Messages should have been preserved (not set to None)
+        assert len(messages_after_inject) == 1
+        msgs = messages_after_inject[0]
+        assert msgs is not None
+        # Should contain: user, assistant, tool
+        assert len(msgs) >= 3
+        assert msgs[0]["role"] == "user"
+
+    def test_assistant_and_tool_messages_appended(self) -> None:
+        """Verify correct OpenAI-format messages structure after injection."""
+        svc = self._make_service()
+
+        s = _RunState(
+            native_tool_defs=[{"type": "function", "function": {"name": "search"}}],
+            messages=[{"role": "user", "content": "test prompt"}],
+        )
+
+        s.llm_response = MagicMock()
+        s.llm_response.content = (
+            'Thinking...\n<tool_call>\n{"name":"search","arguments":{}}\n</tool_call>'
+        )
+
+        parsed_calls = [
+            {"name": "search", "parameters": {"q": "test"}, "tool_call_id": "call_abc"},
+        ]
+        tool_results = [
+            {
+                "name": "search",
+                "parameters": {"q": "test"},
+                "result": "found it",
+                "error": None,
+                "success": True,
+                "tool_call_id": "call_abc",
+            },
+        ]
+
+        svc._inject_messages_native(s, parsed_calls, tool_results)
+
+        assert len(s.messages) == 3  # user + assistant + tool
+
+        # Check assistant message
+        asst = s.messages[1]
+        assert asst["role"] == "assistant"
+        assert "tool_calls" in asst
+        assert len(asst["tool_calls"]) == 1
+        assert asst["tool_calls"][0]["id"] == "call_abc"
+        assert asst["tool_calls"][0]["function"]["name"] == "search"
+        # XML should be stripped from content
+        content = asst.get("content") or ""
+        assert "<tool_call>" not in content
+
+        # Check tool result message
+        tool_msg = s.messages[2]
+        assert tool_msg["role"] == "tool"
+        assert tool_msg["tool_call_id"] == "call_abc"
+        assert "found it" in tool_msg["content"]
+
+    def test_text_fallback_when_no_native_defs(self) -> None:
+        """Verify existing text path still works with use_text_tool_schemas=True."""
+        svc = self._make_service(use_text_tool_schemas=True)
+        mock_tool = self._make_mock_tool()
+
+        # Response with XML tool calls (text path)
+        resp1 = MagicMock()
+        resp1.content = (
+            '<tool_call>\n{"name": "search", "parameters": {"q": "x"}}\n</tool_call>'
+        )
+        resp1.total_tokens = 50
+        resp1.tool_calls = None  # No native tool calls
+
+        resp2 = MagicMock()
+        resp2.content = "Done"
+        resp2.total_tokens = 20
+        resp2.tool_calls = None
+
+        call_count = 0
+
+        def side_effect(*a: Any, **kw: Any) -> tuple:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return resp1, None
+            return resp2, None
+
+        mock_executor = MagicMock()
+        mock_result = MagicMock()
+        mock_result.success = True
+        mock_result.result = "result"
+        mock_result.error = None
+        mock_executor.execute.return_value = mock_result
+
+        with (
+            patch.object(svc, "_call_with_retry_sync", side_effect=side_effect),
+            patch.object(svc, "_estimate_cost", return_value=0.001),
+            patch.object(svc, "_track_call"),
+        ):
+            result = svc.run(
+                "test prompt",
+                tools=[mock_tool],
+                tool_executor=mock_executor,
+            )
+
+        assert result.output is not None
+
+    def test_parse_native_tool_calls(self) -> None:
+        """Test structured tool call extraction."""
+        tool_calls = [
+            {
+                "id": "call_123",
+                "type": "function",
+                "function": {
+                    "name": "calculator",
+                    "arguments": '{"expression": "2+2"}',
+                },
+            },
+            {
+                "id": "call_456",
+                "type": "function",
+                "function": {
+                    "name": "search",
+                    "arguments": '{"q": "hello"}',
+                },
+            },
+        ]
+
+        parsed = LLMService._parse_native_tool_calls(tool_calls)
+
+        assert len(parsed) == 2
+        assert parsed[0]["name"] == "calculator"
+        assert parsed[0]["parameters"] == {"expression": "2+2"}
+        assert parsed[0]["tool_call_id"] == "call_123"
+        assert parsed[1]["name"] == "search"
+        assert parsed[1]["parameters"] == {"q": "hello"}
+        assert parsed[1]["tool_call_id"] == "call_456"
+
+    def test_parse_native_tool_calls_malformed_args(self) -> None:
+        """Test that malformed JSON arguments default to empty dict."""
+        tool_calls = [
+            {
+                "id": "call_bad",
+                "type": "function",
+                "function": {
+                    "name": "broken",
+                    "arguments": "not valid json{{{",
+                },
+            },
+        ]
+        parsed = LLMService._parse_native_tool_calls(tool_calls)
+        assert len(parsed) == 1
+        assert parsed[0]["name"] == "broken"
+        assert parsed[0]["parameters"] == {}
+
+    def test_apply_message_window(self) -> None:
+        """Test that message window caps correctly."""
+        s = _RunState()
+        s.messages = [{"role": "user", "content": "start"}] + [
+            {"role": "assistant", "content": f"msg {i}"} for i in range(60)
+        ]
+        assert len(s.messages) == 61
+        LLMService._apply_message_window(s, max_messages=10)
+        assert len(s.messages) == 10
+        # First message preserved
+        assert s.messages[0]["role"] == "user"
+        assert s.messages[0]["content"] == "start"
+        # Last message is the most recent
+        assert "msg 59" in s.messages[-1]["content"]
+
+    def test_apply_message_window_no_op_when_under_limit(self) -> None:
+        """Test that window does nothing when under the limit."""
+        s = _RunState()
+        s.messages = [
+            {"role": "user", "content": "hello"},
+            {"role": "assistant", "content": "world"},
+        ]
+        LLMService._apply_message_window(s, max_messages=50)
+        assert len(s.messages) == 2
+
+    def test_native_path_auto_initializes_messages(self) -> None:
+        """Test that _prepare_run_state auto-inits messages for native path."""
+        svc = self._make_service()
+        mock_tool = self._make_mock_tool()
+
+        s = _RunState(tools=[mock_tool])
+        svc._prepare_run_state(s, "my prompt", None, None, None)
+
+        # native_tool_defs should be set (not text path)
+        assert s.native_tool_defs is not None
+        # messages should be auto-initialized
+        assert s.messages is not None
+        assert len(s.messages) == 1
+        assert s.messages[0] == {"role": "user", "content": "my prompt"}
+
+    def test_native_path_preserves_explicit_messages(self) -> None:
+        """Test that explicit messages param takes precedence over auto-init."""
+        svc = self._make_service()
+        mock_tool = self._make_mock_tool()
+
+        explicit_msgs = [
+            {"role": "user", "content": "explicit msg"},
+            {"role": "assistant", "content": "prior response"},
+        ]
+        s = _RunState(tools=[mock_tool])
+        svc._prepare_run_state(s, "my prompt", None, None, None, messages=explicit_msgs)
+
+        assert s.messages is not None
+        assert len(s.messages) == 2
+        assert s.messages[0]["content"] == "explicit msg"
+
+    def test_inject_messages_native_error_result(self) -> None:
+        """Verify failed tool results are formatted correctly."""
+        svc = self._make_service()
+
+        s = _RunState(
+            native_tool_defs=[{"type": "function", "function": {"name": "search"}}],
+            messages=[{"role": "user", "content": "test"}],
+        )
+        s.llm_response = MagicMock()
+        s.llm_response.content = "calling tool"
+
+        parsed_calls = [
+            {"name": "search", "parameters": {}, "tool_call_id": "call_err"},
+        ]
+        tool_results = [
+            {
+                "name": "search",
+                "parameters": {},
+                "result": None,
+                "error": "tool not found",
+                "success": False,
+                "tool_call_id": "call_err",
+            },
+        ]
+
+        svc._inject_messages_native(s, parsed_calls, tool_results)
+
+        tool_msg = s.messages[2]
+        assert tool_msg["role"] == "tool"
+        assert "Error:" in tool_msg["content"]
+        assert "tool not found" in tool_msg["content"]

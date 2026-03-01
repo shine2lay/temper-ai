@@ -10,18 +10,9 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 import httpx
-
-# Optional caching support
-try:
-    from temper_ai.llm.cache.llm_cache import LLMCache
-
-    CACHE_AVAILABLE = True
-except ImportError:
-    CACHE_AVAILABLE = False
-    LLMCache = None  # type: ignore
 
 from temper_ai.llm.constants import (
     DEFAULT_MAX_CIRCUIT_BREAKERS,
@@ -68,7 +59,7 @@ from temper_ai.shared.constants.retries import (
     DEFAULT_MAX_RETRIES,
     RETRY_JITTER_MIN,
 )
-from temper_ai.shared.core.circuit_breaker import CircuitBreaker
+from temper_ai.shared.core.circuit_breaker import CircuitBreaker, CircuitBreakerConfig
 from temper_ai.shared.core.context import ExecutionContext
 from temper_ai.shared.utils.exceptions import (
     LLMAuthenticationError,
@@ -87,8 +78,6 @@ CPU_SAMPLE_INTERVAL_SECONDS = SLEEP_VERY_SHORT
 DEFAULT_TEMPERATURE = 0.7  # Default temperature for generation
 DEFAULT_TOP_P = 0.9  # Default nucleus sampling threshold
 DEFAULT_REQUEST_TIMEOUT = 600  # Default timeout for LLM requests (10 minutes)
-DEFAULT_CACHE_TTL = 3600  # Default cache time-to-live (1 hour)
-
 # HTTP status codes
 HTTP_OK = 200  # Successful response
 HTTP_UNAUTHORIZED = 401  # Authentication failed
@@ -125,6 +114,9 @@ class LLMResponse:
     finish_reason: str | None = None
     raw_response: dict[str, Any] | None = None
 
+    # Structured tool calls (OpenAI-format, used by native tool calling path)
+    tool_calls: list[dict[str, Any]] | None = None
+
 
 @dataclass
 class LLMStreamChunk:
@@ -156,8 +148,6 @@ class LLMConfig:
     timeout: int = DEFAULT_REQUEST_TIMEOUT
     max_retries: int = DEFAULT_MAX_RETRIES
     retry_delay: float = 2.0
-    enable_cache: bool = False
-    cache_ttl: int | None = DEFAULT_CACHE_TTL
     rate_limiter: Any | None = None
 
 
@@ -177,29 +167,22 @@ class BaseLLM(LLMContextManagerMixin, ABC):
     _closed: bool
     _sync_cleanup_lock: threading.Lock
     _async_cleanup_lock: asyncio.Lock | None
-    _cache: Optional["LLMCache"]
     _circuit_breaker: CircuitBreaker
     _rate_limiter: Any | None
 
     # Callable attributes bound dynamically by _bind_callable_attributes()
     _build_bearer_auth_headers: Callable[[], dict[str, str]]
-    _check_cache: Callable[
-        ..., tuple[str | None, Optional["LLMResponse"]]
-    ]  # scanner: skip-magic
-    _cache_response: Callable[[str | None, "LLMResponse"], None]  # scanner: skip-magic
     _execute_and_parse: Callable[
-        [httpx.Response, float, str | None], "LLMResponse"
+        [httpx.Response, float], "LLMResponse"
     ]  # scanner: skip-magic
-    _make_streaming_call_impl: Callable[
-        ..., tuple[str | None, Optional["LLMResponse"]]
-    ]  # scanner: skip-magic
+    _make_streaming_call_impl: Callable[..., None]  # scanner: skip-magic
     _execute_streaming_impl: Callable[..., "LLMResponse"]  # scanner: skip-magic
     _execute_streaming_async_impl: Callable[..., Any]
 
     _MAX_CIRCUIT_BREAKERS = DEFAULT_MAX_CIRCUIT_BREAKERS
-    _circuit_breakers: collections.OrderedDict[tuple[str, str, str], CircuitBreaker] = (
-        collections.OrderedDict()
-    )
+    _circuit_breakers: collections.OrderedDict[
+        tuple[str, str, str, str | None], CircuitBreaker
+    ] = collections.OrderedDict()
     _circuit_breaker_lock = threading.Lock()
 
     _async_client_lock: asyncio.Lock | None = None
@@ -218,6 +201,8 @@ class BaseLLM(LLMContextManagerMixin, ABC):
             base_url: Base URL (required if config not provided)
             config: LLMConfig bundle (recommended for new code)
             **kwargs: Legacy individual parameters (api_key, temperature, etc.)
+                circuit_breaker_config: Optional CircuitBreakerConfig for
+                    custom circuit breaker thresholds.
 
         The config parameter takes precedence. If not provided, model/base_url
         are required and kwargs are used for other parameters.
@@ -233,8 +218,6 @@ class BaseLLM(LLMContextManagerMixin, ABC):
             self.timeout = config.timeout
             self.max_retries = config.max_retries
             self.retry_delay = config.retry_delay
-            enable_cache = config.enable_cache
-            cache_ttl = config.cache_ttl
             rate_limiter = config.rate_limiter
         else:
             if model is None or base_url is None:
@@ -250,11 +233,10 @@ class BaseLLM(LLMContextManagerMixin, ABC):
             self.timeout = kwargs.get("timeout", DEFAULT_REQUEST_TIMEOUT)
             self.max_retries = kwargs.get("max_retries", DEFAULT_MAX_RETRIES)
             self.retry_delay = kwargs.get("retry_delay", 2.0)
-            enable_cache = kwargs.get("enable_cache", False)
-            cache_ttl = kwargs.get("cache_ttl", DEFAULT_CACHE_TTL)
             rate_limiter = kwargs.get("rate_limiter")
 
-        _init_infrastructure(self, enable_cache, cache_ttl, rate_limiter)
+        circuit_breaker_config = kwargs.get("circuit_breaker_config")
+        _init_infrastructure(self, rate_limiter, circuit_breaker_config)
 
     @classmethod
     def reset_shared_circuit_breakers(cls) -> None:
@@ -397,10 +379,6 @@ class BaseLLM(LLMContextManagerMixin, ABC):
             if not allowed:
                 raise LLMRateLimitError(reason or ERROR_MSG_RATE_LIMIT_EXCEEDED)
 
-        cache_key, cached = self._check_cache(prompt, context, **kwargs)
-        if cached is not None:
-            return cached
-
         def _make_api_call() -> LLMResponse:
             for attempt in range(self.max_retries):
                 try:
@@ -411,7 +389,7 @@ class BaseLLM(LLMContextManagerMixin, ABC):
                     response = self._get_client().post(
                         endpoint, json=request_data, headers=headers
                     )
-                    return self._execute_and_parse(response, start_time, cache_key)
+                    return self._execute_and_parse(response, start_time)
                 except httpx.TimeoutException as exc:
                     if attempt == self.max_retries - 1:
                         raise LLMTimeoutError(
@@ -460,10 +438,6 @@ class BaseLLM(LLMContextManagerMixin, ABC):
             if not allowed:
                 raise LLMRateLimitError(reason or ERROR_MSG_RATE_LIMIT_EXCEEDED)
 
-        cache_key, cached = self._check_cache(prompt, context, **kwargs)
-        if cached is not None:
-            return cached
-
         async def _make_async_api_call() -> LLMResponse:
             for attempt in range(self.max_retries):
                 try:
@@ -475,7 +449,7 @@ class BaseLLM(LLMContextManagerMixin, ABC):
                     response = await client.post(
                         endpoint, json=request_data, headers=headers
                     )
-                    return self._execute_and_parse(response, start_time, cache_key)
+                    return self._execute_and_parse(response, start_time)
                 except httpx.TimeoutException as exc:
                     if attempt == self.max_retries - 1:
                         raise LLMTimeoutError(
@@ -504,9 +478,11 @@ class BaseLLM(LLMContextManagerMixin, ABC):
 
 
 def _init_infrastructure(
-    llm: BaseLLM, enable_cache: Any, cache_ttl: Any, rate_limiter: Any
+    llm: BaseLLM,
+    rate_limiter: Any,
+    circuit_breaker_config: CircuitBreakerConfig | None = None,
 ) -> None:
-    """Initialize clients, cache, circuit breaker, and rate limiter."""
+    """Initialize clients, circuit breaker, and rate limiter."""
     llm._client = None
     llm._async_client = None
 
@@ -514,25 +490,12 @@ def _init_infrastructure(
     llm._sync_cleanup_lock = threading.Lock()
     llm._async_cleanup_lock = None
 
-    llm._cache = None
-    if enable_cache:
-        if CACHE_AVAILABLE and LLMCache is not None:
-            llm._cache = LLMCache(backend="memory", ttl=cache_ttl)
-        else:
-            import warnings
-
-            warnings.warn(
-                "LLM caching requested but cache module not available. "
-                "Install with: pip install src/cache",
-                RuntimeWarning,
-                stacklevel=2,
-            )
-
     llm._circuit_breaker = _get_shared_cb(
         llm,
         BaseLLM._circuit_breakers,
         BaseLLM._circuit_breaker_lock,
         BaseLLM._MAX_CIRCUIT_BREAKERS,
+        circuit_breaker_config,
     )
 
     llm._rate_limiter = rate_limiter

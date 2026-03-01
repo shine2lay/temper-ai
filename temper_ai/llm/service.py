@@ -11,7 +11,9 @@ Usage:
 
 from __future__ import annotations
 
+import json
 import logging
+import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -20,7 +22,7 @@ from typing import Any
 from temper_ai.llm._prompt import inject_results
 from temper_ai.llm._retry import call_with_retry_async, call_with_retry_sync
 from temper_ai.llm._schemas import build_native_tool_defs, build_text_schemas
-from temper_ai.llm._tool_execution import execute_single_tool, execute_tools
+from temper_ai.llm._tool_execution import route_tool_call, route_tool_calls
 from temper_ai.llm._tracking import track_call, track_failed_call, validate_safety
 from temper_ai.llm.constants import FALLBACK_UNKNOWN_VALUE
 from temper_ai.llm.cost_estimator import estimate_cost
@@ -38,6 +40,9 @@ from temper_ai.shared.utils.exceptions import MaxIterationsError, sanitize_error
 
 logger = logging.getLogger(__name__)
 
+# Pre-compiled pattern for stripping XML tool_call tags from assistant content
+_TOOL_CALL_XML_PATTERN = re.compile(r"<tool_call>.*?</tool_call>", re.DOTALL)
+
 # ---------------------------------------------------------------------------
 # Default iteration limit when safety config doesn't specify one
 # ---------------------------------------------------------------------------
@@ -52,7 +57,7 @@ class _MessagesLLMWrapper:
     underlying LLM so that the wrapper is transparent to callers.
     """
 
-    def __init__(self, llm: Any, messages: list[dict[str, str]]) -> None:
+    def __init__(self, llm: Any, messages: list[dict[str, Any]]) -> None:
         self._llm = llm
         self._messages = messages
 
@@ -133,8 +138,8 @@ class _RunState:
     system_prompt: str = ""
     prompt: str = ""
     llm_response: Any = None
-    # Multi-turn conversation history support
-    messages: list[dict[str, str]] | None = None
+    # Multi-turn conversation history support (values may be str, list, or None)
+    messages: list[dict[str, Any]] | None = None
     user_prompt_text: str | None = None
     # Structured output: response format pass-through (R0.1)
     response_format: dict[str, Any] | None = None
@@ -248,7 +253,7 @@ class LLMService:
         max_iterations: int | None = None,
         max_execution_time: float | None = None,
         start_time: float | None = None,
-        messages: list[dict[str, str]] | None = None,
+        messages: list[dict[str, Any]] | None = None,
     ) -> LLMRunResult:
         """Execute the LLM call lifecycle (sync).
 
@@ -305,7 +310,7 @@ class LLMService:
         max_iterations: int | None = None,
         max_execution_time: float | None = None,
         start_time: float | None = None,
-        messages: list[dict[str, str]] | None = None,
+        messages: list[dict[str, Any]] | None = None,
     ) -> LLMRunResult:
         """Execute the LLM call lifecycle (async).
 
@@ -359,7 +364,7 @@ class LLMService:
         max_iterations: int | None,
         max_execution_time: float | None,
         start_time: float | None,
-        messages: list[dict[str, str]] | None = None,
+        messages: list[dict[str, Any]] | None = None,
     ) -> None:
         """Resolve settings, build tool schemas, and initialize loop state."""
         s.resolved_max_iterations = resolve_max_iterations(
@@ -393,6 +398,10 @@ class LLMService:
         s.user_prompt_text = prompt
         if messages is not None:
             s.messages = list(messages)
+        elif s.native_tool_defs is not None:
+            # Auto-initialize messages for the native tool calling path
+            # so that tool results accumulate as proper OpenAI messages
+            s.messages = [{"role": "user", "content": prompt}]
 
     def _check_iteration_guards(
         self,
@@ -468,7 +477,13 @@ class LLMService:
         s.total_cost += cost
         self._track_call(s.observer, s.prompt, resp, cost)
 
-        parsed_calls = parse_tool_calls(resp.content) if s.tools else []
+        # Native path: use structured tool_calls exclusively.
+        # Do NOT fall back to XML parsing — that would corrupt s.messages.
+        if s.native_tool_defs is not None:
+            native = getattr(resp, "tool_calls", None)
+            parsed_calls = self._parse_native_tool_calls(native) if native else []
+        else:
+            parsed_calls = parse_tool_calls(resp.content) if s.tools else []
 
         emit_llm_iteration_event(
             s.observer,
@@ -483,6 +498,38 @@ class LLMService:
         )
 
         return parsed_calls
+
+    @staticmethod
+    def _parse_native_tool_calls(
+        tool_calls: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Convert OpenAI-format tool_calls to internal format.
+
+        Each input dict has ``{id, type, function: {name, arguments}}``.
+        Returns list of ``{name, parameters, tool_call_id}``.
+        """
+        parsed: list[dict[str, Any]] = []
+        for tc in tool_calls:
+            func = tc.get("function", {})
+            args = func.get("arguments", {})
+            if isinstance(args, str):
+                try:
+                    args = json.loads(args)
+                except (json.JSONDecodeError, TypeError):
+                    logger.warning(
+                        "Malformed arguments JSON for tool '%s': %s",
+                        func.get("name", "?"),
+                        args[:200] if len(args) > 200 else args,
+                    )
+                    args = {}
+            parsed.append(
+                {
+                    ToolKeys.NAME: func.get("name", ""),
+                    ToolKeys.PARAMETERS: args if isinstance(args, dict) else {},
+                    ToolKeys.TOOL_CALL_ID: tc.get("id", ""),
+                }
+            )
+        return parsed
 
     def _build_final_result(self, s: _RunState, iteration: int) -> LLMRunResult:
         """Build final result when no tool calls are needed."""
@@ -516,6 +563,68 @@ class LLMService:
         )
         s.tool_calls_made.extend(tool_results)
 
+        if s.native_tool_defs and s.messages is not None:
+            self._inject_messages_native(s, parsed_calls, tool_results)
+        else:
+            self._inject_text_fallback(s, tool_results)
+
+    def _inject_messages_native(
+        self,
+        s: _RunState,
+        parsed_calls: list[dict[str, Any]],
+        tool_results: list[dict[str, Any]],
+    ) -> None:
+        """Append assistant + tool messages to s.messages (OpenAI protocol)."""
+        assert s.messages is not None  # Caller guarantees this
+        # Build assistant message with structured tool_calls
+        assistant_tool_calls = []
+        for pc in parsed_calls:
+            tc_id = pc.get(ToolKeys.TOOL_CALL_ID, "")
+            assistant_tool_calls.append(
+                {
+                    "id": tc_id,
+                    "type": "function",
+                    "function": {
+                        "name": pc.get(ToolKeys.NAME, ""),
+                        "arguments": json.dumps(pc.get(ToolKeys.PARAMETERS, {})),
+                    },
+                }
+            )
+
+        # Strip XML <tool_call> tags from content — redundant with structured tool_calls
+        content = s.llm_response.content or ""
+        content = _TOOL_CALL_XML_PATTERN.sub("", content).strip()
+
+        assistant_msg: dict[str, Any] = {
+            "role": "assistant",
+            "content": content if content else None,
+        }
+        if assistant_tool_calls:
+            assistant_msg["tool_calls"] = assistant_tool_calls
+        s.messages.append(assistant_msg)
+
+        # Append one tool-result message per tool call
+        for tr in tool_results:
+            tc_id = tr.get(ToolKeys.TOOL_CALL_ID, "")
+            if tr.get(ToolKeys.SUCCESS):
+                result_text = str(tr.get(ToolKeys.RESULT, ""))
+            else:
+                result_text = f"Error: {tr.get(ToolKeys.ERROR, 'unknown error')}"
+            s.messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": tc_id,
+                    "content": result_text,
+                }
+            )
+
+        # Safety valve: cap message count to prevent unbounded growth
+        self._apply_message_window(s)
+
+    def _inject_text_fallback(
+        self, s: _RunState, tool_results: list[dict[str, Any]]
+    ) -> None:
+        """Inject tool results via text prompt (legacy path)."""
         remaining_budget = None
         if s.resolved_max_iterations is not None:
             remaining_budget = s.resolved_max_iterations - len(s.tool_calls_made)
@@ -529,9 +638,20 @@ class LLMService:
             s.max_prompt_length,
             remaining_budget,
         )
-        # After first tool iteration, clear messages so subsequent
-        # iterations use the text-based inject_results prompt
+        # Text path: clear messages so retry module doesn't inject them
         s.messages = None
+
+    @staticmethod
+    def _apply_message_window(s: _RunState, max_messages: int = 50) -> None:
+        """Cap message count to prevent unbounded memory growth.
+
+        Keeps the initial system/user prefix plus the most recent messages.
+        """
+        if s.messages is None or len(s.messages) <= max_messages:
+            return
+        # Keep first message (user prompt) + most recent messages
+        keep_recent = max_messages - 1
+        s.messages = [s.messages[0]] + s.messages[-keep_recent:]
 
     def _raise_max_iterations(self, s: _RunState) -> None:
         """Raise MaxIterationsError when iteration limit is reached."""
@@ -556,7 +676,7 @@ class LLMService:
         stream_callback: Callable | None,
         native_tool_defs: list[dict[str, Any]] | None,
         observer: Any,
-        messages: list[dict[str, str]] | None = None,
+        messages: list[dict[str, Any]] | None = None,
     ) -> tuple[Any | None, Exception | None]:
         """Call LLM with retries (sync). Delegates to _retry module."""
         llm = _MessagesLLMWrapper(self.llm, messages) if messages else self.llm
@@ -576,7 +696,7 @@ class LLMService:
         stream_callback: Callable | None,
         native_tool_defs: list[dict[str, Any]] | None,
         observer: Any,
-        messages: list[dict[str, str]] | None = None,
+        messages: list[dict[str, Any]] | None = None,
     ) -> tuple[Any | None, Exception | None]:
         """Call LLM with retries (async). Delegates to _retry module."""
         llm = _MessagesLLMWrapper(self.llm, messages) if messages else self.llm
@@ -598,12 +718,12 @@ class LLMService:
         safety_config: Any,
     ) -> list[dict[str, Any]]:
         """Execute tool calls. Delegates to _tool_execution module."""
-        return execute_tools(
+        return route_tool_calls(
             tool_calls,
             tool_executor,
             observer,
             safety_config,
-            execute_single_tool,
+            route_tool_call,
         )
 
     def _build_text_schemas(self, tools: list[Any] | None) -> str | None:

@@ -9,3 +9,4 @@ class ToolKeys:
     SUCCESS = "success"
     RESULT = "result"
     ERROR = "error"
+    TOOL_CALL_ID = "tool_call_id"

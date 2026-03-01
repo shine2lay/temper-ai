@@ -121,8 +121,8 @@ class VllmLLM(BaseLLM):
         usage = response.get("usage", {})
 
         # Handle tool calls (OpenAI function calling format)
-        tool_calls = message.get("tool_calls")
-        xml = self._format_tool_calls_xml(tool_calls or [])
+        raw_tool_calls = message.get("tool_calls")
+        xml = self._format_tool_calls_xml(raw_tool_calls or [])
         if xml:
             content = content + "\n" + xml
 
@@ -136,6 +136,7 @@ class VllmLLM(BaseLLM):
             latency_ms=latency_ms,
             finish_reason=choice.get("finish_reason"),
             raw_response=response,
+            tool_calls=raw_tool_calls,
         )
 
     # ------------------------------------------------------------------
@@ -157,9 +158,7 @@ class VllmLLM(BaseLLM):
         if on_chunk is None:
             return self.complete(prompt, context, **kwargs)
 
-        cache_key, cached = self._make_streaming_call_impl(prompt, context, **kwargs)
-        if cached is not None:
-            return cached
+        self._make_streaming_call_impl(prompt, context, **kwargs)
 
         # scanner-ignore: duplicate - Circuit breaker wrapper, identical across providers by design
         def _make_streaming_call() -> LLMResponse:
@@ -174,9 +173,7 @@ class VllmLLM(BaseLLM):
             )
 
             response = client.send(request, stream=True)
-            return self._execute_streaming_impl(
-                start_time, response, on_chunk, cache_key
-            )
+            return self._execute_streaming_impl(start_time, response, on_chunk)
 
         return self._circuit_breaker.call(_make_streaming_call)
 
@@ -191,9 +188,7 @@ class VllmLLM(BaseLLM):
         if on_chunk is None:
             return await self.acomplete(prompt, context, **kwargs)
 
-        cache_key, cached = self._make_streaming_call_impl(prompt, context, **kwargs)
-        if cached is not None:
-            return cached
+        self._make_streaming_call_impl(prompt, context, **kwargs)
 
         # scanner-ignore: duplicate - Circuit breaker wrapper, identical across providers by design
         async def _make_async_streaming_call() -> LLMResponse:
@@ -211,7 +206,7 @@ class VllmLLM(BaseLLM):
             return cast(
                 LLMResponse,
                 await self._execute_streaming_async_impl(
-                    start_time, response, on_chunk, cache_key
+                    start_time, response, on_chunk
                 ),
             )
 
@@ -241,7 +236,9 @@ class VllmLLM(BaseLLM):
             idx = tc.get("index", 0)
             func = tc.get("function", {})
             if idx not in tool_call_buf:
-                tool_call_buf[idx] = {"name": "", "arguments": ""}
+                tool_call_buf[idx] = {"name": "", "arguments": "", "id": ""}
+            if tc.get("id"):
+                tool_call_buf[idx]["id"] = tc["id"]
             if "name" in func and func["name"]:
                 tool_call_buf[idx]["name"] += func["name"]
             if "arguments" in func and func["arguments"]:
@@ -282,6 +279,7 @@ class VllmLLM(BaseLLM):
         finish_reason: str | None,
     ) -> LLMResponse:
         """Convert tool call buffer to XML and build final LLMResponse."""
+        structured_tool_calls: list[dict[str, Any]] | None = None
         if tool_call_buf:
             tc_list = [
                 {"function": tool_call_buf[idx]} for idx in sorted(tool_call_buf)
@@ -289,7 +287,21 @@ class VllmLLM(BaseLLM):
             xml = self._format_tool_calls_xml(tc_list)
             if xml:
                 content_parts.append("\n" + xml)
-        return cast(
+            # Build structured OpenAI-format tool_calls for native path
+            structured_tool_calls = []
+            for idx in sorted(tool_call_buf):
+                buf = tool_call_buf[idx]
+                structured_tool_calls.append(
+                    {
+                        "id": buf.get("id", ""),
+                        "type": "function",
+                        "function": {
+                            "name": buf["name"],
+                            "arguments": buf["arguments"],
+                        },
+                    }
+                )
+        response = cast(
             LLMResponse,
             build_stream_result(
                 content_parts,
@@ -300,6 +312,8 @@ class VllmLLM(BaseLLM):
                 finish_reason,
             ),
         )
+        response.tool_calls = structured_tool_calls
+        return response
 
     def _consume_stream(
         self,

@@ -235,7 +235,7 @@ class TestLoopExecution:
                 }
             )
 
-        # test runs 3x (initial + 2 loops), fix runs 2x (fails trigger loop)
+        # test succeeds on 3rd call → fix condition is False → exit before max_loops
         assert call_counts["test"] == 3
         assert call_counts["fix"] == 2
 
@@ -291,10 +291,9 @@ class TestLoopExecution:
                 }
             )
 
-        # test: 1 initial + 2 loops = 3, fix: 1 initial + 2 loops = 3
-        # But max_loops=2 caps at 2 loop-backs from fix
-        assert call_counts["test"] == 3  # initial + 2 loop-backs
-        assert call_counts["fix"] <= 3  # max 2 loops + initial
+        # max_loops=2 means fix executes at most 2 times total
+        assert call_counts["test"] == 2  # initial + 1 loop-back
+        assert call_counts["fix"] == 2  # 2 total executions
 
 
 class TestSchemaValidation:

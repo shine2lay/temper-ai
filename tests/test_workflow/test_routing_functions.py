@@ -150,7 +150,7 @@ class TestLoopRouter:
         router = create_loop_router(ref, "after_fix", self.evaluator)
         state = {
             "stage_outputs": {"fix": {"stage_status": "failed"}},
-            "stage_loop_counts": {"fix": 4},  # gate incremented past max
+            "stage_loop_counts": {"fix": 3},  # count == max → exit
         }
         result = router(state)
         assert result == "after_fix"
@@ -175,8 +175,8 @@ class TestLoopRouter:
         result = router(state)
         assert result == END
 
-    def test_loops_when_count_equals_max(self):
-        """count == max_loops means exactly max iterations done, should exit."""
+    def test_exits_when_count_equals_max(self):
+        """count == max_loops → exit (max_loops means total executions)."""
         ref = FakeStageRef("fix", loops_back_to="test", max_loops=2)
         router = create_loop_router(ref, "after_fix", self.evaluator)
         state = {
@@ -184,19 +184,20 @@ class TestLoopRouter:
             "stage_loop_counts": {"fix": 2},
         }
         result = router(state)
-        # count=2, max=2 → 2 <= 2, condition met → loop
-        assert result == "test"
+        # count=2, max=2 → 2 >= 2 → exit
+        assert result == "after_fix"
 
-    def test_exits_when_count_exceeds_max(self):
-        """count > max_loops → exit."""
-        ref = FakeStageRef("fix", loops_back_to="test", max_loops=2)
+    def test_loops_when_count_below_max(self):
+        """count < max_loops → continue looping."""
+        ref = FakeStageRef("fix", loops_back_to="test", max_loops=3)
         router = create_loop_router(ref, "after_fix", self.evaluator)
         state = {
             "stage_outputs": {"fix": {"stage_status": "failed"}},
-            "stage_loop_counts": {"fix": 3},
+            "stage_loop_counts": {"fix": 2},
         }
         result = router(state)
-        assert result == "after_fix"
+        # count=2, max=3 → 2 < 3 → condition True → loop
+        assert result == "test"
 
     def test_missing_loop_counts_key(self):
         """State without stage_loop_counts should still work (count=0)."""

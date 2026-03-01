@@ -368,10 +368,12 @@ class WorkflowExecutor:
         node_builder: NodeBuilder,
         condition_evaluator: ConditionEvaluator,
         negotiation_config: dict[str, Any] | None = None,
+        on_depth_complete: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
         self.node_builder = node_builder
         self.condition_evaluator = condition_evaluator
         self._negotiation_config = negotiation_config or {}
+        self._on_depth_complete = on_depth_complete
 
     def run(  # noqa: long
         self,
@@ -410,6 +412,13 @@ class WorkflowExecutor:
                     state,
                     workflow_config,
                 )
+                if self._on_depth_complete is not None:
+                    try:
+                        self._on_depth_complete(state)
+                    except Exception:
+                        logger.warning(
+                            "on_depth_complete callback failed", exc_info=True
+                        )
             except WorkflowStageError as exc:
                 logger.error("Stage failed, halting workflow: %s", exc)
                 state[StateKeys.SKIP_TO_END] = exc.stage_name
@@ -455,6 +464,12 @@ class WorkflowExecutor:
         workflow_config: dict[str, Any],
     ) -> dict[str, Any]:
         """Execute a single stage with condition/loop/negotiation support."""
+        # Skip already-completed stages (resume support)
+        existing_outputs = state.get(StateKeys.STAGE_OUTPUTS, {})
+        if stage_name in existing_outputs:
+            logger.info("Skipping already-completed stage: %s (resume)", stage_name)
+            return state
+
         stage_ref = ref_lookup.get(stage_name)
 
         # Check skip_if / condition
@@ -515,9 +530,13 @@ class WorkflowExecutor:
         No barrier nodes needed — we explicitly wait for all stages at a depth
         to complete before moving to the next depth.
         """
-        # Filter out skipped stages
+        # Filter out already-completed stages (resume support) and skipped stages
+        existing_outputs = state.get(StateKeys.STAGE_OUTPUTS, {})
         runnable = []
         for name in stage_names:
+            if name in existing_outputs:
+                logger.info("Skipping already-completed stage: %s (resume)", name)
+                continue
             stage_ref = ref_lookup.get(name)
             if self._should_skip(name, stage_ref, stage_refs, state):
                 skip_to = _ref_attr(stage_ref, "skip_to")
@@ -688,7 +707,7 @@ class WorkflowExecutor:
         state: dict[str, Any],
     ) -> bool:
         """Check if loop should continue. Returns False to exit."""
-        if loop_count > loop_cfg["max"]:
+        if loop_count >= loop_cfg["max"]:
             logger.info(
                 "Stage '%s' reached max loops (%d), exiting",
                 stage_name,

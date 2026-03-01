@@ -267,8 +267,8 @@ class TestCreateLoopRouter:
 
         from temper_ai.stage.executors.state_keys import StateKeys
 
-        # count is 3, max_loops is 2, so 3 > 2 → exit
-        state = {StateKeys.STAGE_LOOP_COUNTS: {"loop_stage": 3}}
+        # count is 2, max_loops is 2, so 2 >= 2 → exit
+        state = {StateKeys.STAGE_LOOP_COUNTS: {"loop_stage": 2}}
         result = router(state)
         assert result == "exit_stage"
 

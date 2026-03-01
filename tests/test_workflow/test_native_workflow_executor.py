@@ -325,8 +325,10 @@ class TestWorkflowExecutor:
         state = {"stage_outputs": {}, "current_stage": ""}
         result = executor.run(stage_refs, {}, state)
 
-        # Should execute 1 initial + up to 2 loops = 3 total
-        assert call_count["count"] >= 2
+        # max_loops=2 means 2 loop iterations; self-loop runs stage in
+        # both the main loop body and the loop-back re-run, so total calls = 3
+        # (iter 1: execute + re-run target, iter 2: execute + break)
+        assert call_count["count"] == 3
         assert "loopy" in result["stage_outputs"]
 
     def test_merge_stage_result(self):
@@ -672,8 +674,8 @@ class TestDynamicEdgeRouting:
 
         assert "analyze" in call_log
         assert "fix" in call_log
-        # fix called twice: once via dynamic edge, once via normal DAG walk
-        assert call_log.count("fix") == 2
+        # fix called once via dynamic edge; DAG walk skips it (output exists)
+        assert call_log.count("fix") == 1
         assert "fix" in result["stage_outputs"]
 
     def test_no_signal_continues_normally(self):
@@ -1501,3 +1503,153 @@ class TestMultiTargetDynamicRouting:
         # nested_a and nested_b run via normal DAG walk (depth group), not fan-out
         assert "p1" in result["stage_outputs"]
         assert "p2" in result["stage_outputs"]
+
+
+class TestStageSkipOnResume:
+    """Tests for stage-skip logic used during resume."""
+
+    def test_skip_already_completed_stage(self):
+        """A stage with existing output in stage_outputs is skipped."""
+        call_log = []
+
+        results = {
+            "B": {
+                "stage_outputs": {"B": {"stage_status": "completed"}},
+                "current_stage": "B",
+            },
+        }
+
+        def make_fn(name):
+            def fn(state):
+                call_log.append(name)
+                return results.get(
+                    name,
+                    {
+                        "stage_outputs": {name: {"stage_status": "completed"}},
+                        "current_stage": name,
+                    },
+                )
+
+            return fn
+
+        builder = _make_mock_node_builder({})
+        builder.create_stage_node.side_effect = lambda name, cfg: make_fn(name)
+        builder.wire_dag_context = MagicMock()
+
+        executor = WorkflowExecutor(
+            node_builder=builder,
+            condition_evaluator=ConditionEvaluator(),
+        )
+        # Pre-populate stage A output to simulate a checkpoint restore
+        state = {
+            "stage_outputs": {"A": {"stage_status": "completed", "output": "cached"}},
+            "current_stage": "",
+        }
+        result = executor.run(["A", "B"], {}, state)
+
+        # A should be skipped, B should execute
+        assert "A" not in call_log
+        assert "B" in call_log
+        # A's output should still be in final state
+        assert result["stage_outputs"]["A"]["output"] == "cached"
+        assert "B" in result["stage_outputs"]
+
+    def test_skip_completed_parallel_stages(self):
+        """Already-completed stages are filtered from parallel execution."""
+        call_log = []
+
+        def make_fn(name):
+            def fn(state):
+                call_log.append(name)
+                return {
+                    "stage_outputs": {name: {"stage_status": "completed"}},
+                    "current_stage": name,
+                }
+
+            return fn
+
+        builder = _make_mock_node_builder({})
+        builder.create_stage_node.side_effect = lambda name, cfg: make_fn(name)
+        builder.wire_dag_context = MagicMock()
+
+        executor = WorkflowExecutor(
+            node_builder=builder,
+            condition_evaluator=ConditionEvaluator(),
+        )
+        # A and B are at same depth (both depend on nothing)
+        # Pre-populate A's output
+        state = {
+            "stage_outputs": {"A": {"stage_status": "completed"}},
+            "current_stage": "",
+        }
+        executor.run(["A", "B"], {}, state)
+
+        # A should be skipped, B should execute
+        assert "A" not in call_log
+        assert "B" in call_log
+
+
+class TestOnDepthCompleteCallback:
+    """Tests for on_depth_complete callback."""
+
+    def test_callback_called_after_depth_group(self):
+        """on_depth_complete fires after each depth group completes."""
+        callback_states = []
+
+        def capture_callback(state):
+            # Capture a snapshot of stage_outputs at callback time
+            callback_states.append(dict(state.get("stage_outputs", {})))
+
+        results = {
+            "A": {
+                "stage_outputs": {"A": {"stage_status": "completed"}},
+                "current_stage": "A",
+            },
+            "B": {
+                "stage_outputs": {"B": {"stage_status": "completed"}},
+                "current_stage": "B",
+            },
+        }
+
+        builder = _make_mock_node_builder(results)
+        builder.wire_dag_context = MagicMock()
+
+        executor = WorkflowExecutor(
+            node_builder=builder,
+            condition_evaluator=ConditionEvaluator(),
+            on_depth_complete=capture_callback,
+        )
+        state = {"stage_outputs": {}, "current_stage": ""}
+        executor.run(["A", "B"], {}, state)
+
+        # A and B are at same depth → single depth group → single callback
+        assert len(callback_states) >= 1
+        # Final callback should have both outputs
+        last = callback_states[-1]
+        assert "A" in last or "B" in last
+
+    def test_callback_failure_does_not_halt_workflow(self):
+        """A failing callback should not stop workflow execution."""
+
+        def bad_callback(state):
+            raise RuntimeError("callback boom")
+
+        results = {
+            "A": {
+                "stage_outputs": {"A": {"stage_status": "completed"}},
+                "current_stage": "A",
+            },
+        }
+
+        builder = _make_mock_node_builder(results)
+        builder.wire_dag_context = MagicMock()
+
+        executor = WorkflowExecutor(
+            node_builder=builder,
+            condition_evaluator=ConditionEvaluator(),
+            on_depth_complete=bad_callback,
+        )
+        state = {"stage_outputs": {}, "current_stage": ""}
+        # Should not raise
+        result = executor.run(["A"], {}, state)
+        assert "A" in result["stage_outputs"]

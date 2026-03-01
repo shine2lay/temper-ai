@@ -153,7 +153,7 @@ def create_loop_router(
         loop_counts = _get_loop_counts(state)
         current_count = loop_counts.get(source_name, 0)
 
-        if current_count > max_loops:
+        if current_count >= max_loops:
             logger.info(
                 "Stage %r reached max loops (%d), exiting", source_name, max_loops
             )

@@ -182,6 +182,7 @@ export interface WSStatus {
   connected: boolean;
   reconnectAttempt: number;
   lastHeartbeat: string | null;
+  wsError: 'auth_failed' | 'max_retries' | null;
 }
 
 /* Event log entry (stored in Zustand) */

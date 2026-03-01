@@ -341,15 +341,3 @@ class TestBaseTool:
         tool = _ConfigTool(config={"timeout": "{{ env_var }}", "retries": 3})
         result = tool.validate_config()
         assert result.valid is True
-
-    def test_get_typed_config_returns_model_instance(self):
-        tool = _ConfigTool(config={"timeout": 60, "retries": 5})
-        typed = tool.get_typed_config()
-        assert typed is not None
-        assert typed.timeout == 60
-        assert typed.retries == 5
-
-    def test_get_typed_config_none_when_no_config_model(self):
-        tool = _DummyTool()
-        result = tool.get_typed_config()
-        assert result is None

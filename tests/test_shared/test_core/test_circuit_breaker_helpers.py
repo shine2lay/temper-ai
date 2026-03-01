@@ -3,23 +3,18 @@
 Covers pure helper functions extracted from CircuitBreaker.
 """
 
-import json
 import time
 from unittest.mock import MagicMock
 
 import pytest
 
 from temper_ai.shared.core._circuit_breaker_helpers import (
-    _get_state_key,
     _should_attempt_reset,
     _should_count_failure,
     fire_callbacks,
-    load_state,
-    save_state,
     time_until_retry,
 )
 from temper_ai.shared.core.circuit_breaker import (
-    CircuitBreakerConfig,
     CircuitState,
 )
 
@@ -186,148 +181,6 @@ class TestTimeUntilRetry:
         """Never returns a negative value."""
         last = time.time() - 10000
         assert time_until_retry(last, 60) >= 0
-
-
-# ---------------------------------------------------------------------------
-# _get_state_key
-# ---------------------------------------------------------------------------
-
-
-class TestGetStateKey:
-    def test_returns_expected_format(self):
-        key = _get_state_key("my-breaker")
-        assert key == "circuit_breaker:my-breaker:state"
-
-    def test_name_included_in_key(self):
-        key = _get_state_key("production-llm")
-        assert "production-llm" in key
-
-    def test_different_names_produce_different_keys(self):
-        k1 = _get_state_key("breaker-a")
-        k2 = _get_state_key("breaker-b")
-        assert k1 != k2
-
-    def test_returns_string(self):
-        assert isinstance(_get_state_key("test"), str)
-
-
-# ---------------------------------------------------------------------------
-# save_state
-# ---------------------------------------------------------------------------
-
-
-class TestSaveState:
-    def test_no_storage_does_nothing(self):
-        """save_state with no storage is a no-op."""
-        save_state(None, "test", CircuitState.CLOSED, 0, 0, None, MagicMock())
-
-    def test_saves_to_storage(self):
-        storage = MagicMock()
-        config = CircuitBreakerConfig(
-            failure_threshold=5, success_threshold=2, timeout=60
-        )
-        save_state(storage, "test", CircuitState.CLOSED, 0, 0, None, config)
-        storage.set.assert_called_once()
-
-    def test_saved_value_is_json(self):
-        """The value stored is valid JSON."""
-        storage = MagicMock()
-        config = CircuitBreakerConfig()
-        save_state(storage, "test", CircuitState.OPEN, 3, 0, 1234567.0, config)
-
-        call_args = storage.set.call_args
-        key, value = call_args[0]
-        parsed = json.loads(value)
-        assert parsed["state"] == "open"
-        assert parsed["failure_count"] == 3
-        assert parsed["last_failure_time"] == 1234567.0
-
-    def test_key_is_correct(self):
-        storage = MagicMock()
-        config = CircuitBreakerConfig()
-        save_state(storage, "my-breaker", CircuitState.CLOSED, 0, 0, None, config)
-        key = storage.set.call_args[0][0]
-        assert "my-breaker" in key
-
-
-# ---------------------------------------------------------------------------
-# load_state
-# ---------------------------------------------------------------------------
-
-
-class TestLoadState:
-    def test_no_storage_returns_defaults(self):
-        result = load_state(None, "test")
-        assert result["state"] == CircuitState.CLOSED
-        assert result["failure_count"] == 0
-        assert result["success_count"] == 0
-
-    def test_missing_key_returns_defaults(self):
-        storage = MagicMock()
-        storage.get.return_value = None
-        result = load_state(storage, "test")
-        assert result["state"] == CircuitState.CLOSED
-
-    def test_loads_saved_state(self):
-        state_data = json.dumps(
-            {
-                "state": "open",
-                "failure_count": 4,
-                "success_count": 0,
-                "last_failure_time": 1234.5,
-                "config": {
-                    "failure_threshold": 5,
-                    "success_threshold": 2,
-                    "timeout": 60,
-                },
-            }
-        )
-        storage = MagicMock()
-        storage.get.return_value = state_data
-        result = load_state(storage, "test")
-        assert result["state"] == CircuitState.OPEN
-        assert result["failure_count"] == 4
-        assert result["last_failure_time"] == 1234.5
-
-    def test_loads_config_from_storage(self):
-        state_data = json.dumps(
-            {
-                "state": "closed",
-                "failure_count": 0,
-                "success_count": 0,
-                "last_failure_time": None,
-                "config": {
-                    "failure_threshold": 10,
-                    "success_threshold": 3,
-                    "timeout": 120,
-                },
-            }
-        )
-        storage = MagicMock()
-        storage.get.return_value = state_data
-        result = load_state(storage, "test")
-        assert isinstance(result["config"], CircuitBreakerConfig)
-        assert result["config"].failure_threshold == 10
-
-    def test_corrupt_json_returns_defaults(self):
-        storage = MagicMock()
-        storage.get.return_value = "not-valid-json"
-        result = load_state(storage, "test")
-        assert result["state"] == CircuitState.CLOSED
-
-    def test_missing_config_key_returns_none_config(self):
-        state_data = json.dumps(
-            {
-                "state": "closed",
-                "failure_count": 0,
-                "success_count": 0,
-                "last_failure_time": None,
-            }
-        )
-        storage = MagicMock()
-        storage.get.return_value = state_data
-        result = load_state(storage, "test")
-        assert result["config"] is None
 
 
 # ---------------------------------------------------------------------------

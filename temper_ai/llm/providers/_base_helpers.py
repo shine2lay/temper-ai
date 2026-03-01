@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import asyncio
 import collections
+import hashlib
 import ipaddress
-import json
 import logging
 import threading
 import time
@@ -93,20 +93,29 @@ def validate_base_url(url: str) -> str:
 
 def get_shared_circuit_breaker(
     instance: BaseLLM,
-    circuit_breakers: collections.OrderedDict[tuple[str, str, str], CircuitBreaker],
+    circuit_breakers: collections.OrderedDict[
+        tuple[str, str, str, str | None], CircuitBreaker
+    ],
     lock: threading.Lock,
     max_breakers: int,
+    config: CircuitBreakerConfig | None = None,
 ) -> CircuitBreaker:
-    """Get or create a shared circuit breaker for this provider+model+endpoint."""
+    """Get or create a shared circuit breaker for this provider+model+endpoint+api_key."""
     provider_name = instance.__class__.__name__.replace("LLM", "").lower()
-    key = (provider_name, instance.model, instance.base_url)
+    api_key_hash = (
+        hashlib.sha256(instance.api_key.encode()).hexdigest()[:16]
+        if instance.api_key
+        else None
+    )
+    key = (provider_name, instance.model, instance.base_url, api_key_hash)
 
     with lock:
         if key not in circuit_breakers:
             if len(circuit_breakers) >= max_breakers:
                 circuit_breakers.popitem(last=False)
             circuit_breakers[key] = CircuitBreaker(
-                name=f"{provider_name}:{instance.model}", config=CircuitBreakerConfig()
+                name=f"{provider_name}:{instance.model}",
+                config=config or CircuitBreakerConfig(),
             )
         else:
             circuit_breakers.move_to_end(key)
@@ -217,74 +226,6 @@ def get_or_create_async_client_sync(instance: BaseLLM) -> httpx.AsyncClient:
 
 
 # ---------------------------------------------------------------------------
-# Cache helpers
-# ---------------------------------------------------------------------------
-
-
-def check_cache(
-    instance: BaseLLM,
-    prompt: str,
-    context: ExecutionContext | None,
-    **kwargs: Any,
-) -> tuple[str | None, LLMResponse | None]:
-    """Check cache for a cached response."""
-    from temper_ai.llm.providers.base import LLMResponse as _LLMResponse
-
-    if instance._cache is None:
-        return None, None
-
-    user_id = context.user_id if context else None
-    tenant_id = (
-        context.metadata.get("tenant_id") if context and context.metadata else None
-    )
-    session_id = context.session_id if context else None
-
-    _extracted_keys = {"temperature", "max_tokens", "top_p", "system_prompt", "tools"}
-    _remaining_kwargs = {k: v for k, v in kwargs.items() if k not in _extracted_keys}
-    cache_key = instance._cache.generate_key(
-        model=instance.model,
-        prompt=prompt,
-        temperature=kwargs.get("temperature", instance.temperature),
-        max_tokens=kwargs.get("max_tokens", instance.max_tokens),
-        top_p=kwargs.get("top_p", instance.top_p),
-        user_id=user_id,
-        tenant_id=tenant_id,
-        session_id=session_id,
-        system_prompt=kwargs.get("system_prompt"),
-        tools=kwargs.get("tools"),
-        **_remaining_kwargs,
-    )
-
-    cached_response = instance._cache.get(cache_key)
-    if cached_response:
-        try:
-            cached_data = json.loads(cached_response)
-            return cache_key, _LLMResponse(**cached_data)
-        except (json.JSONDecodeError, TypeError, KeyError) as e:
-            logger.warning(f"Corrupted cache entry for key {cache_key}: {e}")
-
-    return cache_key, None
-
-
-def cache_response(
-    instance: BaseLLM, cache_key: str | None, llm_response: LLMResponse
-) -> None:
-    """Store a response in cache if caching is enabled."""
-    if instance._cache is not None and cache_key is not None:
-        cache_data = {
-            "content": llm_response.content,
-            "model": llm_response.model,
-            "provider": llm_response.provider,
-            "prompt_tokens": llm_response.prompt_tokens,
-            "completion_tokens": llm_response.completion_tokens,
-            "total_tokens": llm_response.total_tokens,
-            "latency_ms": llm_response.latency_ms,
-            "finish_reason": llm_response.finish_reason,
-        }
-        instance._cache.set(cache_key, json.dumps(cache_data))
-
-
-# ---------------------------------------------------------------------------
 # Response handling
 # ---------------------------------------------------------------------------
 
@@ -293,18 +234,15 @@ def execute_and_parse(
     instance: BaseLLM,
     response: httpx.Response,
     start_time: float,
-    cache_key: str | None,
 ) -> LLMResponse:
-    """Handle response, parse, and cache. Shared by sync/async paths."""
+    """Handle response and parse. Shared by sync/async paths."""
     latency_ms = int((time.time() - start_time) * 1000)
 
     if response.status_code != HTTP_OK:
         handle_error_response(response)
 
     response_data = response.json()
-    llm_response = instance._parse_response(response_data, latency_ms)
-    cache_response(instance, cache_key, llm_response)
-    return llm_response
+    return instance._parse_response(response_data, latency_ms)
 
 
 def handle_error_response(response: httpx.Response) -> None:
@@ -416,11 +354,11 @@ def make_streaming_call_impl(
     prompt: str,
     context: ExecutionContext | None,
     **kwargs: Any,
-) -> tuple[str | None, LLMResponse | None]:
-    """Prepare streaming call with rate limiting and cache check.
+) -> None:
+    """Prepare streaming call with rate limiting.
 
-    Returns:
-        Tuple of (cache_key, cached_response_or_none)
+    Raises:
+        LLMRateLimitError: If rate limit exceeded.
     """
     from temper_ai.llm.constants import ERROR_MSG_RATE_LIMIT_EXCEEDED
     from temper_ai.shared.utils.exceptions import (
@@ -438,22 +376,17 @@ def make_streaming_call_impl(
         if not allowed:
             raise _LLMRateLimitError(reason or ERROR_MSG_RATE_LIMIT_EXCEEDED)
 
-    # Cache check
-    cache_key, cached = check_cache(instance, prompt, context, **kwargs)
-    return cache_key, cached
-
 
 def execute_streaming_impl(
     instance: BaseLLM,
     start_time: float,
     response: Any,
     on_chunk: Any,
-    cache_key: str | None,
 ) -> LLMResponse:
     """Execute streaming request and handle response (synchronous).
 
     Returns:
-        LLMResponse with latency and cached result
+        LLMResponse with latency
     """
     try:
         if response.status_code != HTTP_OK:
@@ -466,9 +399,6 @@ def execute_streaming_impl(
 
     latency_ms = int((time.time() - start_time) * 1000)
     result.latency_ms = latency_ms
-
-    # Cache the result
-    cache_response(instance, cache_key, result)
     return result
 
 
@@ -477,12 +407,11 @@ async def execute_streaming_async_impl(
     start_time: float,
     response: Any,
     on_chunk: Any,
-    cache_key: str | None,
 ) -> LLMResponse:
     """Execute streaming request and handle response (asynchronous).
 
     Returns:
-        LLMResponse with latency and cached result
+        LLMResponse with latency
     """
     try:
         if response.status_code != HTTP_OK:
@@ -495,9 +424,6 @@ async def execute_streaming_async_impl(
 
     latency_ms = int((time.time() - start_time) * 1000)
     result.latency_ms = latency_ms
-
-    # Cache the result
-    cache_response(instance, cache_key, result)
     return result
 
 
@@ -529,16 +455,8 @@ def sync_backoff_sleep(retry_delay: float, attempt: int) -> None:
 def bind_callable_attributes(instance: BaseLLM) -> None:
     """Bind callable attributes (not methods) to reduce class method count."""
     instance._build_bearer_auth_headers = lambda: build_bearer_auth_headers(instance)
-    instance._check_cache = lambda prompt, context, **kw: check_cache(
-        instance, prompt, context, **kw
-    )
-    instance._cache_response = lambda cache_key, llm_response: cache_response(
-        instance, cache_key, llm_response
-    )
-    instance._execute_and_parse = (
-        lambda response, start_time, cache_key: execute_and_parse(
-            instance, response, start_time, cache_key
-        )
+    instance._execute_and_parse = lambda response, start_time: execute_and_parse(
+        instance, response, start_time
     )
     instance._make_streaming_call_impl = (
         lambda prompt, context=None, on_chunk=None, **kw: make_streaming_call_impl(
@@ -546,13 +464,13 @@ def bind_callable_attributes(instance: BaseLLM) -> None:
         )
     )
     instance._execute_streaming_impl = (
-        lambda start_time, response, on_chunk, cache_key: execute_streaming_impl(
-            instance, start_time, response, on_chunk, cache_key
+        lambda start_time, response, on_chunk: execute_streaming_impl(
+            instance, start_time, response, on_chunk
         )
     )
     instance._execute_streaming_async_impl = (
-        lambda start_time, response, on_chunk, cache_key: execute_streaming_async_impl(
-            instance, start_time, response, on_chunk, cache_key
+        lambda start_time, response, on_chunk: execute_streaming_async_impl(
+            instance, start_time, response, on_chunk
         )
     )
 

@@ -22,16 +22,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 from temper_ai.workflow._runtime_helpers import (
-    check_required_inputs,
     create_tracker,
-    emit_lifecycle_event,
     load_workflow_config,
-    validate_file_size,
-    validate_structure,
 )
+from temper_ai.workflow.pipeline_phases import PipelinePhaseTracker
 
 logger = logging.getLogger(__name__)
 
@@ -113,6 +108,7 @@ class RuntimeConfig:
     environment: str = "development"
     initialize_database: bool = True
     event_bus: Any | None = None
+    tenant_id: str | None = None
 
 
 @dataclass
@@ -187,13 +183,12 @@ class WorkflowRuntime:
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         """Load and validate workflow configuration.
 
-        Applies the full security pipeline: file size check, YAML parse,
-        mapping check, structure validation (depth/nodes/circular refs),
-        and Pydantic schema validation.
+        When tenant_id is set, tries ConfigLoader first (DB-first, then
+        filesystem by name).  Falls back to the file-path-based loader
+        for backward compatibility with absolute/relative paths.
 
         Args:
-            workflow_path: Path to workflow YAML (absolute or relative
-                to config_root).
+            workflow_path: Workflow name or path to workflow YAML.
             input_data: Optional pre-loaded input dict. If None, no
                 inputs are used.
 
@@ -206,6 +201,21 @@ class WorkflowRuntime:
                 or schema validation fails.
             ValueError: If workflow config is not a YAML mapping.
         """
+        # When tenant_id is set, try ConfigLoader first (DB → filesystem by name)
+        if self.config.tenant_id:
+            try:
+                from temper_ai.workflow.config_loader import ConfigLoader
+
+                loader = ConfigLoader(
+                    config_root=self.config.config_root,
+                    tenant_id=self.config.tenant_id,
+                )
+                config = loader.load_workflow(workflow_path, validate=True)
+                return config, dict(input_data) if input_data else {}
+            except Exception:
+                # Fall through to file-based loader
+                pass
+
         return load_workflow_config(
             workflow_path,
             self.config.config_root,
@@ -213,49 +223,6 @@ class WorkflowRuntime:
             self._workflow_id,
             input_data,
         )
-
-    def load_input_file(self, input_path: str) -> dict[str, Any]:
-        """Load an input YAML file with security checks.
-
-        Args:
-            input_path: Path to input YAML file.
-
-        Returns:
-            Parsed input dict (empty dict for empty files).
-
-        Raises:
-            FileNotFoundError: If input file does not exist.
-            ConfigValidationError: If file too large or structure invalid.
-        """
-        from temper_ai.shared.utils.exceptions import ConfigValidationError
-
-        path = Path(input_path)
-        if not path.exists():
-            raise FileNotFoundError(f"Input file not found: {input_path}")
-
-        validate_file_size(path)
-
-        try:
-            with open(path, encoding="utf-8") as f:
-                data = yaml.safe_load(f)
-        except yaml.YAMLError as exc:
-            raise ConfigValidationError(
-                f"YAML parsing failed for {path}: {exc}"
-            ) from exc
-
-        if data is None:
-            return {}
-
-        if not isinstance(data, dict):
-            raise ConfigValidationError(
-                f"Input file must be a YAML mapping, " f"got {type(data).__name__}"
-            )
-
-        validate_structure(data, path)
-        return data
-
-    # Keep as a static method for backward compatibility
-    check_required_inputs = staticmethod(check_required_inputs)
 
     def adapt_lifecycle(
         self,
@@ -296,16 +263,6 @@ class WorkflowRuntime:
             )
             adapted: dict[str, Any] = adapter.adapt(workflow_config, inputs)
             logger.info("Lifecycle adaptation applied")
-
-            from temper_ai.observability.constants import EVENT_LIFECYCLE_ADAPTED
-
-            emit_lifecycle_event(
-                self._event_bus,
-                self._workflow_id,
-                EVENT_LIFECYCLE_ADAPTED,
-                {"status": "adapted"},
-            )
-
             return adapted
         except ImportError:
             logger.debug("Lifecycle modules not available, skipping adaptation")
@@ -341,8 +298,11 @@ class WorkflowRuntime:
             event_bus if event_bus is not None else self.config.event_bus
         )
 
-        config_loader = ConfigLoader(config_root=self.config.config_root)
-        tool_registry = ToolRegistry(auto_discover=True)
+        config_loader = ConfigLoader(
+            config_root=self.config.config_root,
+            tenant_id=self.config.tenant_id,
+        )
+        tool_registry = ToolRegistry()
 
         tracker = create_tracker(
             self.config.tracker_backend_factory,
@@ -355,6 +315,185 @@ class WorkflowRuntime:
             tracker=tracker,
             event_bus=effective_event_bus,
         )
+
+    def validate_references(
+        self,
+        workflow_config: dict[str, Any],
+        infra: InfrastructureBundle,
+    ) -> None:
+        """Deep validation: check all config references exist.
+
+        Unlike the fast Level-A check in ExecutionService._validate_config_references
+        (which fails on the first error), this collects **all** broken references
+        and raises a single ConfigValidationError with a detailed report.
+
+        Each error is a structured ``ConfigError`` with location, fuzzy-match
+        suggestion, and list of available options.
+        """
+        from temper_ai.shared.utils.exceptions import (
+            ConfigNotFoundError,
+            ConfigValidationError,
+        )
+        from temper_ai.workflow.config_errors import (
+            ConfigError,
+            format_error_report,
+            suggest_name,
+        )
+
+        errors: list[ConfigError] = []
+        loader = infra.config_loader
+        tool_registry = infra.tool_registry
+
+        # Pre-fetch available names for suggestions
+        try:
+            available_stages = loader.list_configs("stage")
+        except Exception:
+            available_stages = []
+        try:
+            available_agents = loader.list_configs("agent")
+        except Exception:
+            available_agents = []
+        available_tools = tool_registry.list_available()
+
+        stages = workflow_config.get("workflow", {}).get("stages", [])
+        for stage_idx, stage_entry in enumerate(stages):
+            stage_ref = stage_entry.get("stage_ref") or stage_entry.get("config_path")
+            stage_name = stage_entry.get("name", stage_ref)
+            if not stage_ref:
+                continue
+
+            # Strip directory prefix and extension to get bare stage name
+            # e.g. "configs/stages/vcs_work_discovery.yaml" → "vcs_work_discovery"
+            import os.path as _osp
+
+            stage_ref_bare = _osp.splitext(_osp.basename(stage_ref))[0]
+
+            try:
+                stage_config = loader.load_stage(stage_ref_bare, validate=False)
+            except ConfigNotFoundError:
+                errors.append(
+                    ConfigError(
+                        code="stage_not_found",
+                        message=f"Stage '{stage_ref}' not found",
+                        location=f"workflow → stages[{stage_idx}]",
+                        suggestion=suggest_name(stage_ref, available_stages),
+                        available=available_stages,
+                    )
+                )
+                continue
+
+            agents = stage_config.get("stage", {}).get("agents", [])
+            for agent_idx, agent_entry in enumerate(agents):
+                agent_name = (
+                    agent_entry
+                    if isinstance(agent_entry, str)
+                    else agent_entry.get("name", agent_entry.get("agent_ref"))
+                )
+                if not agent_name:
+                    continue
+
+                try:
+                    agent_config = loader.load_agent(agent_name, validate=False)
+                except ConfigNotFoundError:
+                    errors.append(
+                        ConfigError(
+                            code="agent_not_found",
+                            message=f"Agent '{agent_name}' not found",
+                            location=(
+                                f"workflow → stage '{stage_name}' → "
+                                f"agents[{agent_idx}]"
+                            ),
+                            suggestion=suggest_name(agent_name, available_agents),
+                            available=available_agents,
+                        )
+                    )
+                    continue
+
+                agent_inner = agent_config.get("agent", {})
+
+                # Check tools
+                for tool_idx, tool_entry in enumerate(agent_inner.get("tools", [])):
+                    t_name = (
+                        tool_entry
+                        if isinstance(tool_entry, str)
+                        else tool_entry.get("name", "")
+                    )
+                    if t_name and not tool_registry.has(t_name):
+                        errors.append(
+                            ConfigError(
+                                code="tool_not_registered",
+                                message=f"Tool '{t_name}' not registered",
+                                location=(
+                                    f"workflow → stage '{stage_name}' → "
+                                    f"agent '{agent_name}' → "
+                                    f"tools[{tool_idx}]"
+                                ),
+                                suggestion=suggest_name(t_name, available_tools),
+                                available=available_tools,
+                            )
+                        )
+
+                # Check prompt template path
+                prompt_cfg = agent_inner.get("prompt", {})
+                template_path = prompt_cfg.get("template_path")
+                if template_path:
+                    try:
+                        loader.load_prompt_template(template_path)
+                    except (ConfigNotFoundError, Exception):
+                        errors.append(
+                            ConfigError(
+                                code="template_not_found",
+                                message=(
+                                    f"Prompt template '{template_path}' " f"not found"
+                                ),
+                                location=(
+                                    f"workflow → stage '{stage_name}' → "
+                                    f"agent '{agent_name}' → "
+                                    f"prompt.template_path"
+                                ),
+                                suggestion=None,
+                                available=[],
+                            )
+                        )
+
+        if errors:
+            raise ConfigValidationError(
+                message=format_error_report(errors),
+                config_errors=errors,
+            )
+
+    def validate_all(
+        self,
+        workflow_config: dict[str, Any],
+        infra: InfrastructureBundle,
+    ) -> None:
+        """Validate all configs before compilation.
+
+        Runs three checks in order:
+        1. Reference validation — do stage/agent/tool names resolve?
+        2. Schema validation — are stage/agent configs well-formed?
+        3. I/O wiring validation — do agent inputs/outputs match?
+
+        Raises ``ConfigValidationError`` with all errors collected.
+        """
+        from temper_ai.shared.utils.exceptions import ConfigValidationError
+        from temper_ai.workflow.validation import validate_agent_io, validate_schemas
+
+        # Level-B reference checks (existing)
+        self.validate_references(workflow_config, infra)
+
+        # Schema + I/O checks (extracted from engine compile())
+        errors: list[str] = []
+        validate_schemas(workflow_config, infra.config_loader, errors)
+        validate_agent_io(workflow_config, infra.config_loader, errors)
+
+        if errors:
+            raise ConfigValidationError(
+                message=(
+                    "Configuration validation failed:\n"
+                    + "\n".join(f"  - {err}" for err in errors)
+                ),
+            )
 
     def compile(
         self,
@@ -373,10 +512,6 @@ class WorkflowRuntime:
         Raises:
             ValueError: If compilation fails.
         """
-        from temper_ai.observability.constants import (
-            EVENT_WORKFLOW_COMPILED,
-            EVENT_WORKFLOW_COMPILING,
-        )
         from temper_ai.workflow.engine_registry import EngineRegistry
 
         registry = EngineRegistry()
@@ -386,22 +521,7 @@ class WorkflowRuntime:
             config_loader=infra.config_loader,
         )
 
-        engine_name = type(engine).__name__
-        emit_lifecycle_event(
-            self._event_bus,
-            self._workflow_id,
-            EVENT_WORKFLOW_COMPILING,
-            {"engine": engine_name},
-        )
-
         compiled = engine.compile(workflow_config)
-
-        emit_lifecycle_event(
-            self._event_bus,
-            self._workflow_id,
-            EVENT_WORKFLOW_COMPILED,
-            {"engine": engine_name},
-        )
 
         return engine, compiled
 
@@ -542,6 +662,7 @@ class WorkflowRuntime:
         infra: InfrastructureBundle,
         hooks: ExecutionHooks,
         opts: RunOptions,
+        phases: PipelinePhaseTracker | None = None,
     ) -> dict[str, Any]:
         """Build state, invoke hooks, and execute inside a tracker scope.
 
@@ -561,6 +682,11 @@ class WorkflowRuntime:
                 environment=self.config.environment,
             )
         ) as workflow_id:
+            # Replay buffered pre-execution phases
+            if phases is not None:
+                phases.replay_to_event_bus(infra.event_bus, workflow_id)
+                infra.tracker.record_pipeline_phases(workflow_id, phases.phases)
+
             state = self.build_state(
                 inputs,
                 infra,
@@ -633,15 +759,32 @@ class WorkflowRuntime:
 
         hooks = hooks or ExecutionHooks()
         engine = None
+        phases = PipelinePhaseTracker()
 
         try:
+            phases.start_phase("config_loading", {"path": workflow_path})
             workflow_config, inputs = self.load_config(workflow_path, input_data)
+            stages = workflow_config.get("workflow", {}).get("stages", [])
+            phases.end_phase("config_loading", {"stage_count": len(stages)})
+
+            phases.start_phase("lifecycle_adaptation")
             workflow_config = self.adapt_lifecycle(workflow_config, inputs)
+            phases.end_phase("lifecycle_adaptation")
+
             if hooks.on_config_loaded is not None:
                 workflow_config = hooks.on_config_loaded(workflow_config, inputs)
 
+            phases.start_phase("infrastructure_setup")
             infra = self.setup_infrastructure()
+            phases.end_phase("infrastructure_setup")
+
+            phases.start_phase("validation")
+            self.validate_all(workflow_config, infra)
+            phases.end_phase("validation")
+
+            phases.start_phase("compilation")
             engine, compiled = self.compile(workflow_config, infra)
+            phases.end_phase("compilation")
 
             return self._execute_in_tracker_scope(
                 compiled,
@@ -653,8 +796,10 @@ class WorkflowRuntime:
                 RunOptions(
                     workspace=workspace, run_id=run_id, show_details=show_details
                 ),
+                phases=phases,
             )
         except Exception as exc:
+            phases.fail_current(str(exc))
             if hooks.on_error is not None:
                 hooks.on_error(exc)
             raise

@@ -632,16 +632,3 @@ class TestServiceCleanup:
         mock_state_store.close.assert_called_once()
         # HTTP client should be None after close (when owned)
         assert service._http_client is None
-
-    @pytest.mark.asyncio
-    async def test_cleanup_expired_states(self, oauth_config):
-        """Should delegate to state store for cleanup."""
-        mock_state_store = Mock(spec=InMemoryStateStore)
-        mock_state_store.cleanup_expired = AsyncMock(return_value=5)
-
-        service = OAuthService(config=oauth_config, state_store=mock_state_store)
-
-        count = await service.cleanup_expired_states()
-
-        assert count == 5
-        mock_state_store.cleanup_expired.assert_called_once()

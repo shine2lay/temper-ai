@@ -25,21 +25,21 @@ stage:
 
   inputs:
     workspace_path:
-      source: vcs_git_setup.structured.worktree_path
+      type: string
       required: true
     suggestion_text:
-      source: vcs_work_discovery.output
+      type: string
       required: false
       default: ""
     coder_output:
-      source: vcs_code_execute.output
+      type: string
       required: true
     static_check_output:
-      source: vcs_static_check.output
+      type: string
       required: false
       default: ""
     design_output:
-      source: vcs_design.output
+      type: string
       required: false
       default: ""
 

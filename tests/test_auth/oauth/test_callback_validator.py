@@ -459,62 +459,6 @@ class TestURLNormalization:
         assert normalized == "https://app.example.com/callback"
 
 
-class TestValidatorHelperMethods:
-    """Test validator helper methods."""
-
-    def test_get_allowed_urls(self):
-        """Test get_allowed_urls returns sorted list."""
-        urls = [
-            "https://c.example.com/callback",
-            "https://a.example.com/callback",
-            "https://b.example.com/callback",
-        ]
-        validator = CallbackURLValidator(urls, allow_localhost=False)
-
-        allowed = validator.get_allowed_urls()
-
-        assert allowed == sorted(urls)
-
-    def test_add_allowed_url(self):
-        """Test add_allowed_url adds URL to whitelist."""
-        validator = CallbackURLValidator(
-            ["https://app.example.com/callback"], allow_localhost=False
-        )
-
-        validator.add_allowed_url("https://new.example.com/callback")
-
-        assert "https://new.example.com/callback" in validator.allowed_urls
-
-    def test_add_allowed_url_security_warning(self):
-        """Test add_allowed_url should be used with caution (security)."""
-        validator = CallbackURLValidator([], allow_localhost=False)
-
-        # Adding malicious URL should be possible but discouraged
-        validator.add_allowed_url("https://evil.com/steal")
-
-        # Verify it was added (user responsibility to validate)
-        assert "https://evil.com/steal" in validator.allowed_urls
-
-    def test_remove_allowed_url(self):
-        """Test remove_allowed_url removes URL from whitelist."""
-        validator = CallbackURLValidator(
-            ["https://app.example.com/callback"], allow_localhost=False
-        )
-
-        removed = validator.remove_allowed_url("https://app.example.com/callback")
-
-        assert removed is True
-        assert "https://app.example.com/callback" not in validator.allowed_urls
-
-    def test_remove_nonexistent_url(self):
-        """Test remove_allowed_url returns False for nonexistent URL."""
-        validator = CallbackURLValidator([], allow_localhost=False)
-
-        removed = validator.remove_allowed_url("https://nonexistent.com/callback")
-
-        assert removed is False
-
-
 class TestEdgeCases:
     """Test edge cases and error handling."""
 

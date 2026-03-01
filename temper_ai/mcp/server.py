@@ -285,16 +285,14 @@ def _get_run_status_impl(
             return json.dumps({"error": f"Run not found: {run_id}"})
         return json.dumps(result, default=str)
 
-    # Fallback: direct RunStore (standalone MCP)
+    # Fallback: direct backend query (standalone MCP)
     try:
-        from temper_ai.interfaces.server.run_store import RunStore
+        from temper_ai.observability.backends.sql_backend import SQLObservabilityBackend
 
-        store = RunStore()
-        run = store.get_run(run_id)
-        if run is None:
+        backend = SQLObservabilityBackend(buffer=False)
+        wf = backend.get_workflow(run_id)
+        if wf is None:
             return json.dumps({"error": f"Run not found: {run_id}"})
-        return json.dumps(
-            run.model_dump() if hasattr(run, "model_dump") else dict(run), default=str
-        )
+        return json.dumps(wf, default=str)
     except (ImportError, RuntimeError, ValueError) as exc:
         return json.dumps({"error": f"Could not get run status: {exc}"})

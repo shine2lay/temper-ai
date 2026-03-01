@@ -280,7 +280,7 @@ export function serializeWorkflowConfig(meta: WorkflowMeta, stages: DesignStage[
   const defaults = defaultMeta();
   const wfConfig: Record<string, unknown> = { name: meta.name, stages: stages.map(serializeStage) };
 
-  if (meta.description) wfConfig.description = meta.description;
+  wfConfig.description = meta.description || '';
   if (meta.version !== defaults.version) wfConfig.version = meta.version;
   if (meta.product_type != null) wfConfig.product_type = meta.product_type;
   if (meta.predecessor_injection !== defaults.predecessor_injection)
@@ -315,12 +315,13 @@ export function serializeWorkflowConfig(meta: WorkflowMeta, stages: DesignStage[
   if (Object.keys(planningObj).length > 0) cfgObj.planning = planningObj;
   if (Object.keys(cfgObj).length > 0) wfConfig.config = cfgObj;
 
-  const errObj: Record<string, unknown> = {};
-  if (meta.on_stage_failure !== defaults.on_stage_failure) errObj.on_stage_failure = meta.on_stage_failure;
-  if (meta.max_stage_retries !== defaults.max_stage_retries) errObj.max_stage_retries = meta.max_stage_retries;
-  if (meta.escalation_policy !== defaults.escalation_policy) errObj.escalation_policy = meta.escalation_policy;
-  if (meta.enable_rollback !== defaults.enable_rollback) errObj.enable_rollback = meta.enable_rollback;
-  if (Object.keys(errObj).length > 0) wfConfig.error_handling = errObj;
+  const errObj: Record<string, unknown> = {
+    on_stage_failure: meta.on_stage_failure,
+    max_stage_retries: meta.max_stage_retries,
+    escalation_policy: meta.escalation_policy,
+    enable_rollback: meta.enable_rollback,
+  };
+  wfConfig.error_handling = errObj;
 
   const safetyObj: Record<string, unknown> = {};
   if (meta.global_safety_mode !== defaults.global_safety_mode) safetyObj.global_mode = meta.global_safety_mode;

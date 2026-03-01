@@ -206,6 +206,11 @@ class StrategyRegistry:  # noqa: god
                 _multi_round_class,
             ),
             (
+                ["interactive"],
+                _multi_round_module,
+                _multi_round_class,
+            ),
+            (
                 ["multi_round"],
                 _multi_round_module,
                 _multi_round_class,

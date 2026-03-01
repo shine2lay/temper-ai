@@ -227,9 +227,9 @@ class DynamicExecutionEngine(ExecutionEngine):
             ),
         }
 
-        from temper_ai.workflow.context_provider import SourceResolver
+        from temper_ai.workflow.context_provider import InputMapResolver
 
-        self.context_provider = SourceResolver()
+        self.context_provider = InputMapResolver()
         self._predecessor_injection = False
 
         self.node_builder = NodeBuilder(
@@ -243,30 +243,36 @@ class DynamicExecutionEngine(ExecutionEngine):
         self.condition_evaluator = ConditionEvaluator()
 
     def _setup_predecessor_injection(self) -> None:
-        """Set up PredecessorResolver as fallback for SourceResolver.
+        """Set up PredecessorResolver as fallback for InputMapResolver.
 
         Creates a PredecessorResolver and wires it as the fallback in
-        SourceResolver. Stages without explicit inputs will receive
+        InputMapResolver. Stages without explicit inputs will receive
         outputs from DAG predecessors only (not full state).
         """
         from temper_ai.workflow.context_provider import (
+            InputMapResolver,
             PredecessorResolver,
-            SourceResolver,
         )
 
         predecessor_resolver = PredecessorResolver()
-        self.context_provider = SourceResolver(fallback=predecessor_resolver)
+        self.context_provider = InputMapResolver(fallback=predecessor_resolver)
         self._predecessor_injection = True
 
         # Re-inject context_provider into all executors
         for executor in self.executors.values():
             executor.context_provider = self.context_provider
 
-    def compile(self, workflow_config: dict[str, Any]) -> CompiledWorkflow:
+    def compile(
+        self,
+        workflow_config: dict[str, Any],
+        on_depth_complete: "Callable[[dict[str, Any]], None] | None" = None,
+    ) -> CompiledWorkflow:
         """Compile workflow configuration into dynamic executable form.
 
         Args:
             workflow_config: Workflow configuration dict
+            on_depth_complete: Optional callback invoked after each depth group
+                completes. Receives the current workflow state dict.
 
         Returns:
             DynamicCompiledWorkflow ready for execution
@@ -280,9 +286,6 @@ class DynamicExecutionEngine(ExecutionEngine):
 
         if not stages:
             raise ValueError("Workflow must have at least one stage")
-
-        # Validate all stage and agent configs (fail fast)
-        self._validate_all_configs(stages, workflow_config)
 
         # Set up predecessor injection if opted in
         if workflow.get("predecessor_injection", False):
@@ -298,11 +301,20 @@ class DynamicExecutionEngine(ExecutionEngine):
         # Extract negotiation config
         negotiation_config = workflow.get("negotiation", {})
 
+        # Extract max parallel stages from workflow config
+        config_section = workflow.get("config", {})
+        if isinstance(config_section, dict):
+            max_parallel = config_section.get("max_parallel_stages", 4)
+        else:
+            max_parallel = getattr(config_section, "max_parallel_stages", 4)
+
         # Create WorkflowExecutor
         workflow_executor = WorkflowExecutor(
             node_builder=self.node_builder,
             condition_evaluator=self.condition_evaluator,
             negotiation_config=negotiation_config,
+            on_depth_complete=on_depth_complete,
+            max_parallel_workers=max_parallel,
         )
 
         return DynamicCompiledWorkflow(
@@ -414,108 +426,3 @@ class DynamicExecutionEngine(ExecutionEngine):
             "dynamic_routing",
         }
         return feature in supported
-
-    def _validate_all_configs(
-        self,
-        stages: list[Any],
-        workflow_config: dict[str, Any],
-    ) -> None:
-        """Validate all stage and agent configs against schemas."""
-        errors: list[str] = []
-        for stage_ref in stages:
-            stage_name = self.node_builder.extract_stage_name(stage_ref)
-            stage_config = self._validate_stage_config(
-                stage_name,
-                workflow_config,
-                errors,
-            )
-            if stage_config is not None:
-                self._validate_agent_configs_for_stage(
-                    stage_config,
-                    stage_name,
-                    errors,
-                )
-
-        if errors:
-            error_msg = "Configuration validation failed:\n" + "\n".join(
-                f"  - {err}" for err in errors
-            )
-            raise ValueError(error_msg)
-
-        logger.info("Configuration validation passed for %d stages", len(stages))
-
-    def _validate_stage_config(
-        self,
-        stage_name: str,
-        workflow_config: dict[str, Any],
-        errors: list,
-    ) -> Any:
-        """Load and validate a single stage config. Returns config or None."""
-        from pydantic import ValidationError
-
-        from temper_ai.stage._schemas import StageConfig
-        from temper_ai.workflow.constants import ERROR_MSG_STAGE_PREFIX
-
-        try:
-            stage_config = self.node_builder._load_stage_config(
-                stage_name,
-                workflow_config,
-            )
-        except (FileNotFoundError, ValueError, KeyError) as e:
-            errors.append(
-                f"{ERROR_MSG_STAGE_PREFIX}{stage_name}': "
-                f"Failed to load config - {e}"
-            )
-            return None
-
-        if isinstance(stage_config, dict):
-            try:
-                StageConfig(**stage_config)
-            except ValidationError as e:
-                logger.warning(
-                    "%s%s': Config schema warnings - %s",
-                    ERROR_MSG_STAGE_PREFIX,
-                    stage_name,
-                    e,
-                )
-
-        return stage_config
-
-    def _validate_agent_configs_for_stage(
-        self,
-        stage_config: Any,
-        stage_name: str,
-        errors: list,
-    ) -> None:
-        """Validate agent configs within a stage."""
-        from pydantic import ValidationError
-
-        from temper_ai.storage.schemas.agent_config import AgentConfig
-        from temper_ai.workflow.constants import ERROR_MSG_AGENT_PREFIX
-        from temper_ai.workflow.engines.langgraph_compiler import (
-            _extract_agents_from_stage,
-        )
-
-        agents = _extract_agents_from_stage(stage_config)
-        for agent_ref in agents:
-            agent_name = self.node_builder.extract_agent_name(agent_ref)
-            try:
-                agent_config = self.config_loader.load_agent(agent_name)
-            except (FileNotFoundError, ValueError, KeyError) as e:
-                errors.append(
-                    f"{ERROR_MSG_AGENT_PREFIX}{agent_name}' in stage "
-                    f"'{stage_name}': Failed to load config - {e}"
-                )
-                continue
-
-            if isinstance(agent_config, dict):
-                try:
-                    AgentConfig(**agent_config)
-                except ValidationError as e:
-                    logger.warning(
-                        "%s%s' in stage '%s': Config schema warnings - %s",
-                        ERROR_MSG_AGENT_PREFIX,
-                        agent_name,
-                        stage_name,
-                        e,
-                    )

@@ -25,15 +25,11 @@ stage:
 
   inputs:
     suggestion_text:
-      source: vcs_work_discovery.output
+      type: string
       required: true
     workspace_path:
-      source: workflow.workspace_path
+      type: string
       required: true
-    # triage_output:  # disabled while triage stage is commented out
-    #   source: vcs_triage.output
-    #   required: false
-    #   default: ""
 
   outputs:
     design_output:

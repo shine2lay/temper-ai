@@ -92,6 +92,7 @@ class StateKeys:
     AGGREGATE_METRICS_KEY = "__aggregate_metrics__"
     SKIP_TO_END = "_skip_to_end"
     DYNAMIC_INPUTS = "_dynamic_inputs"
+    STAGE_INPUT_MAP = "_stage_input_map"
 
     # Stage-specific keys
     CURRENT_STAGE_ID = "current_stage_id"

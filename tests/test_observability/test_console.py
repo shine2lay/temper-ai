@@ -9,15 +9,12 @@ from rich.console import Console
 
 from temper_ai.observability.console import WorkflowVisualizer
 from temper_ai.observability.formatters import (
-    format_bytes,
     format_cost,
     format_duration,
-    format_percentage,
     format_timestamp,
     format_tokens,
     status_to_color,
     status_to_icon,
-    truncate_text,
 )
 from temper_ai.storage.database.models import (
     AgentExecution,
@@ -406,30 +403,6 @@ def test_status_to_icon():
     assert status_to_icon("timeout") == "⌛"
     assert status_to_icon("dry_run") == "⏸"
     assert status_to_icon("unknown") == "?"
-
-
-def test_format_percentage():
-    """Test format_percentage utility."""
-    assert format_percentage(0.856) == "85.6%"
-    assert format_percentage(0.5) == "50.0%"
-    assert format_percentage(None) == "N/A"
-
-
-def test_truncate_text():
-    """Test truncate_text utility."""
-    long_text = "This is a very long text that needs truncation"
-    assert truncate_text(long_text, 20) == "This is a very lo..."
-    assert truncate_text("Short", 20) == "Short"
-    # 30 chars minus 1 char suffix = 29 chars before suffix
-    assert truncate_text(long_text, 30, "…") == "This is a very long text that…"
-
-
-def test_format_bytes():
-    """Test format_bytes utility."""
-    assert format_bytes(1500) == "1.5 KB"
-    assert format_bytes(2500000) == "2.4 MB"
-    assert format_bytes(1073741824) == "1.0 GB"
-    assert format_bytes(None) == "N/A"
 
 
 def test_workflow_tree_structure(mock_workflow):

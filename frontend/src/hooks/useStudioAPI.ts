@@ -27,6 +27,7 @@ interface RunResponse {
 }
 
 const STUDIO_BASE = '/api/studio';
+const CONFIGS_BASE = '/api/configs';
 const RUNS_BASE = '/api/runs';
 
 async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> {
@@ -74,6 +75,68 @@ export function useSaveWorkflow() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['studio', 'configs', 'workflows'] });
+    },
+  });
+}
+
+/** Save (create or update) a workflow config via the DB API. */
+export function useSaveWorkflowDB() {
+  const queryClient = useQueryClient();
+
+  return useMutation<
+    Record<string, unknown>,
+    Error,
+    { name: string; data: Record<string, unknown>; isNew: boolean }
+  >({
+    mutationFn: async ({ name, data, isNew }) => {
+      if (isNew) {
+        return fetchJSON(`${CONFIGS_BASE}/workflow`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, config_data: data }),
+        });
+      }
+      return fetchJSON(`${CONFIGS_BASE}/workflow/${name}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ config_data: data }),
+      });
+    },
+    onSuccess: (_, { name }) => {
+      queryClient.invalidateQueries({ queryKey: ['configs', 'workflow'] });
+      queryClient.invalidateQueries({ queryKey: ['configs', 'workflow', name] });
+      queryClient.invalidateQueries({ queryKey: ['studio', 'configs', 'workflows'] });
+    },
+  });
+}
+
+/** Save (create or update) an agent config via the DB API. */
+export function useSaveAgentDB() {
+  const queryClient = useQueryClient();
+
+  return useMutation<
+    Record<string, unknown>,
+    Error,
+    { name: string; data: Record<string, unknown>; isNew: boolean }
+  >({
+    mutationFn: async ({ name, data, isNew }) => {
+      if (isNew) {
+        return fetchJSON(`${CONFIGS_BASE}/agent`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, config_data: data }),
+        });
+      }
+      return fetchJSON(`${CONFIGS_BASE}/agent/${name}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ config_data: data }),
+      });
+    },
+    onSuccess: (_, { name }) => {
+      queryClient.invalidateQueries({ queryKey: ['configs', 'agent'] });
+      queryClient.invalidateQueries({ queryKey: ['configs', 'agent', name] });
+      queryClient.invalidateQueries({ queryKey: ['studio', 'configs', 'agents'] });
     },
   });
 }

@@ -1,4 +1,4 @@
-"""Tests for GracefulShutdownManager."""
+"""Tests for GracefulShutdownManager and stuck-detection helpers."""
 
 import asyncio
 import signal
@@ -8,7 +8,10 @@ import pytest
 
 from temper_ai.interfaces.server.lifecycle import (
     DEFAULT_DRAIN_TIMEOUT_SECONDS,
+    DEFAULT_TENANT_ID,
     GracefulShutdownManager,
+    ensure_default_tenant,
+    mark_orphaned_workflows,
 )
 
 
@@ -20,6 +23,9 @@ class TestModuleConstants:
 
     def test_default_drain_timeout_value(self) -> None:
         assert DEFAULT_DRAIN_TIMEOUT_SECONDS == 30
+
+    def test_default_tenant_id_value(self) -> None:
+        assert DEFAULT_TENANT_ID == "default"
 
 
 class TestGracefulShutdownManagerInit:
@@ -165,3 +171,99 @@ class TestDrain:
         mgr = GracefulShutdownManager()
         # No service, returns immediately regardless of timeout
         await mgr.drain()
+
+
+class TestMarkOrphanedWorkflows:
+    """Tests for mark_orphaned_workflows() startup sweep."""
+
+    def test_marks_running_as_failed(self) -> None:
+        """Running workflows are marked as failed on startup."""
+        mock_wf = {"id": "wf-orphan-1"}
+
+        backend = MagicMock()
+        backend.find_stuck_workflows.return_value = [mock_wf]
+
+        mark_orphaned_workflows(backend)
+
+        backend.find_stuck_workflows.assert_called_once_with(threshold_seconds=0)
+        backend.track_workflow_end.assert_called_once()
+        call_kwargs = backend.track_workflow_end.call_args
+        assert call_kwargs[0][0] == "wf-orphan-1"
+        assert call_kwargs[1].get("status") == "failed"
+        assert "Orphaned" in call_kwargs[1].get("error_message", "")
+
+    def test_returns_count(self) -> None:
+        """Returns the number of orphaned workflows marked."""
+        mock_wfs = [{"id": f"wf-{i}"} for i in range(3)]
+
+        backend = MagicMock()
+        backend.find_stuck_workflows.return_value = mock_wfs
+
+        count = mark_orphaned_workflows(backend)
+        assert count == 3
+        assert backend.track_workflow_end.call_count == 3
+
+    def test_no_orphans(self) -> None:
+        """Returns 0 when no orphaned workflows found."""
+        backend = MagicMock()
+        backend.find_stuck_workflows.return_value = []
+
+        count = mark_orphaned_workflows(backend)
+        assert count == 0
+        backend.track_workflow_end.assert_not_called()
+
+
+class TestEnsureDefaultTenant:
+    """Tests for ensure_default_tenant() function."""
+
+    @patch("temper_ai.storage.database.manager.get_session")
+    def test_creates_tenant_when_missing(self, mock_get_session) -> None:
+        """Creates default tenant with correct fields when not found."""
+        mock_session = MagicMock()
+        mock_session.__enter__ = MagicMock(return_value=mock_session)
+        mock_session.__exit__ = MagicMock(return_value=False)
+        mock_session.exec.return_value.first.return_value = None
+        mock_get_session.return_value = mock_session
+
+        result = ensure_default_tenant()
+
+        assert result == "default"
+        mock_session.add.assert_called_once()
+        tenant = mock_session.add.call_args[0][0]
+        assert tenant.id == "default"
+        assert tenant.name == "Default Workspace"
+        assert tenant.slug == "default"
+        assert tenant.is_active is True
+        assert tenant.plan == "self-hosted"
+        assert tenant.max_workflows == 10000
+        mock_session.commit.assert_called_once()
+
+    @patch("temper_ai.storage.database.manager.get_session")
+    def test_idempotent_when_exists(self, mock_get_session) -> None:
+        """Does not create duplicate when tenant already exists."""
+        mock_session = MagicMock()
+        mock_session.__enter__ = MagicMock(return_value=mock_session)
+        mock_session.__exit__ = MagicMock(return_value=False)
+        existing_tenant = MagicMock()
+        existing_tenant.id = "default"
+        mock_session.exec.return_value.first.return_value = existing_tenant
+        mock_get_session.return_value = mock_session
+
+        result = ensure_default_tenant()
+
+        assert result == "default"
+        mock_session.add.assert_not_called()
+        mock_session.commit.assert_not_called()
+
+    @patch("temper_ai.storage.database.manager.get_session")
+    def test_returns_tenant_id(self, mock_get_session) -> None:
+        """Always returns the default tenant ID string."""
+        mock_session = MagicMock()
+        mock_session.__enter__ = MagicMock(return_value=mock_session)
+        mock_session.__exit__ = MagicMock(return_value=False)
+        mock_session.exec.return_value.first.return_value = MagicMock()
+        mock_get_session.return_value = mock_session
+
+        result = ensure_default_tenant()
+
+        assert result == DEFAULT_TENANT_ID

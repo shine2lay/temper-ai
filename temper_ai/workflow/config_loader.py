@@ -91,6 +91,7 @@ class ConfigLoader:
         cache_enabled: bool = True,
         config_deployer: Any = None,
         max_cache_size: int = DEFAULT_MAX_CACHE_SIZE,
+        tenant_id: str | None = None,
     ) -> None:
         """
         Initialize config loader.
@@ -100,7 +101,9 @@ class ConfigLoader:
             cache_enabled: Whether to cache loaded configs
             config_deployer: Optional ConfigDeployer for M5 integration (closes feedback loop)
             max_cache_size: Maximum number of cached configs (LRU eviction when exceeded)
+            tenant_id: Optional tenant ID for DB-backed config loading
         """
+        self.tenant_id = tenant_id
         self.config_deployer = config_deployer
         self._config_deployer_initialized = False  # Lazy init flag
         self._config_deployer_available = False  # Whether ConfigDeployer is available
@@ -128,11 +131,49 @@ class ConfigLoader:
         self.triggers_dir = self.config_root / "triggers"
         self.prompts_dir = self.config_root / "prompts"
 
+    def _load_from_db(
+        self, config_type: str, name: str, tenant_id: str
+    ) -> dict[str, Any] | None:
+        """Load config from DB by (tenant_id, name). Returns config_data dict or None."""
+        from temper_ai.storage.database.models_tenancy import (
+            AgentConfigDB,
+            StageConfigDB,
+            ToolConfigDB,
+            WorkflowConfigDB,
+        )
+
+        model_map = {
+            "workflow": WorkflowConfigDB,
+            "stage": StageConfigDB,
+            "agent": AgentConfigDB,
+            "tool": ToolConfigDB,
+        }
+        model = model_map.get(config_type)
+        if model is None:
+            return None
+
+        try:
+            from sqlmodel import col, select
+
+            from temper_ai.storage.database.manager import get_session
+
+            with get_session() as session:
+                row = session.exec(
+                    select(model)
+                    .where(col(model.tenant_id) == tenant_id)
+                    .where(col(model.name) == name)
+                ).first()
+                return row.config_data if row else None
+        except Exception:  # noqa: BLE001
+            return None
+
     def _load_config(
         self, config_type: str, name: str, directory: Path, validate: bool = True
     ) -> dict[str, Any]:
         """
         Generic config loading with caching, substitution, and validation.
+
+        Checks DB first (when tenant_id is set), then falls back to filesystem.
 
         Args:
             config_type: Type of config (agent, stage, workflow, tool, trigger)
@@ -147,16 +188,39 @@ class ConfigLoader:
             ConfigNotFoundError: If config not found
             ConfigValidationError: If validation fails
         """
-        cache_key = f"{config_type}:{name}"
+        cache_key = (
+            f"{self.tenant_id}:{config_type}:{name}"
+            if self.tenant_id
+            else f"{config_type}:{name}"
+        )
         if self.cache_enabled and cache_key in self._cache:
             self._cache.move_to_end(cache_key)
             return self._cache[cache_key]
 
+        # Try DB first (tenant-scoped)
+        if self.tenant_id:
+            db_config = self._load_from_db(config_type, name, self.tenant_id)
+            if db_config is not None:
+                config = self._substitute_env_vars(db_config)
+                config = self._resolve_secrets(config)
+                config = self._resolve_profiles(config, config_type)
+                if validate:
+                    self._validate_config(config_type, config)
+                if self.cache_enabled:
+                    self._cache[cache_key] = config
+                    while len(self._cache) > self._max_cache_size:
+                        self._cache.popitem(last=False)
+                return cast(dict[str, Any], config)
+
+        # Fall back to filesystem
         config = self._load_config_file(directory, name)
         config = self._substitute_env_vars(config)
 
         # Resolve secret references (${env:VAR}, ${vault:path}, ${aws:secret-id})
         config = self._resolve_secrets(config)
+
+        # Resolve profile references (name → inline config from DB)
+        config = self._resolve_profiles(config, config_type)
 
         # Validate against schemas
         if validate:
@@ -386,6 +450,106 @@ class ConfigLoader:
     def clear_cache(self) -> None:
         """Clear the configuration cache."""
         self._cache.clear()
+
+    # ── Profile Resolution ─────────────────────────────────────────────
+
+    # Maps profile_field → (target_fields, profile_db_key)
+    _PROFILE_MAP: dict[str, tuple[list[str], str]] = {
+        "llm_profile": (["inference", "context_management"], "llm"),
+        "safety_profile": (["safety", "autonomy"], "safety"),
+        "error_handling_profile": (["error_handling"], "error_handling"),
+        "observability_profile": (["observability"], "observability"),
+        "memory_profile": (["memory"], "memory"),
+        "budget_profile": (["config.budget", "config.rate_limit"], "budget"),
+    }
+
+    def _load_profile_from_db(
+        self, profile_type: str, name: str, tenant_id: str
+    ) -> dict[str, Any] | None:
+        """Load a profile's config_data from the DB."""
+        from temper_ai.storage.database.models_tenancy import PROFILE_DB_MAP
+
+        model = PROFILE_DB_MAP.get(profile_type)
+        if model is None:
+            return None
+
+        try:
+            from sqlmodel import col, select
+
+            from temper_ai.storage.database.manager import get_session
+
+            with get_session() as session:
+                row = session.exec(
+                    select(model)
+                    .where(col(model.tenant_id) == tenant_id)
+                    .where(col(model.name) == name)
+                ).first()
+                return row.config_data if row else None
+        except Exception:  # noqa: BLE001
+            return None
+
+    @staticmethod
+    def _set_nested(inner: dict[str, Any], field: str, value: Any) -> None:
+        """Set a value at a possibly dot-separated field path."""
+        if "." in field:
+            parts = field.split(".")
+            target = inner
+            for part in parts[:-1]:
+                target = target.setdefault(part, {})
+            target[parts[-1]] = value
+        else:
+            inner[field] = value
+
+    @staticmethod
+    def _apply_profile_data(
+        inner: dict[str, Any],
+        target_fields: list[str],
+        profile_data: dict[str, Any],
+    ) -> None:
+        """Apply profile config_data to target fields in inner config."""
+        if len(target_fields) == 1:
+            ConfigLoader._set_nested(inner, target_fields[0], profile_data)
+        else:
+            # Multi-target: profile_data has keys matching target_fields
+            for field in target_fields:
+                if field in profile_data:
+                    ConfigLoader._set_nested(inner, field, profile_data[field])
+
+    def _resolve_profiles(
+        self, config: dict[str, Any], config_type: str
+    ) -> dict[str, Any]:
+        """Replace profile references with actual config data from DB."""
+        if not self.tenant_id:
+            return config
+
+        inner = config.get(config_type, config)
+        if not isinstance(inner, dict):
+            return config
+
+        for profile_field, (target_fields, db_key) in self._PROFILE_MAP.items():
+            profile_name = inner.get(profile_field)
+            if not profile_name:
+                continue
+
+            profile_data = self._load_profile_from_db(
+                db_key, profile_name, self.tenant_id
+            )
+            if profile_data is None:
+                _logger = logging.getLogger(__name__)
+                _logger.warning(
+                    "Profile '%s' (%s) not found for tenant '%s'",
+                    profile_name,
+                    db_key,
+                    self.tenant_id,
+                )
+                raise ConfigValidationError(
+                    f"Profile '{profile_name}' ({db_key}) not found"
+                )
+
+            self._apply_profile_data(inner, target_fields, profile_data)
+            del inner[profile_field]
+
+        return config
 
     def _load_config_file(self, directory: Path, name: str) -> dict[str, Any]:
         """Load a configuration file (YAML or JSON). Delegates to helper."""

@@ -35,10 +35,6 @@ from temper_ai.tools.executor import ToolExecutor
 from temper_ai.tools.registry import ToolRegistry
 from temper_ai.workflow.condition_evaluator import ConditionEvaluator
 from temper_ai.workflow.config_loader import ConfigLoader
-from temper_ai.workflow.constants import (
-    ERROR_MSG_AGENT_PREFIX,
-    ERROR_MSG_STAGE_PREFIX,
-)
 from temper_ai.workflow.node_builder import NodeBuilder
 from temper_ai.workflow.stage_compiler import StageCompiler
 from temper_ai.workflow.workflow_executor import CompiledGraphRunner
@@ -228,10 +224,7 @@ class LangGraphCompiler:
         if not stages:
             raise ValueError("Workflow must have at least one stage")
 
-        # Step 3: Validate all stage and agent configs (fail fast)
-        self._validate_all_configs(stages, workflow_config)
-
-        # Step 4: Extract stage names (delegate to NodeBuilder)
+        # Step 3: Extract stage names (delegate to NodeBuilder)
         stage_names = self._extract_stage_names(stages)
 
         # Step 5: Compile to graph (delegate to StageCompiler)
@@ -347,103 +340,6 @@ class LangGraphCompiler:
             Workflow section dict
         """
         return workflow_config.get("workflow", workflow_config)  # type: ignore[no-any-return]
-
-    def _validate_all_configs(
-        self, stages: list, workflow_config: dict[str, Any]
-    ) -> None:
-        """Validate all stage and agent configs against Pydantic schemas."""
-        errors: list[str] = []
-
-        for stage_ref in stages:
-            stage_name = self.node_builder.extract_stage_name(stage_ref)
-            stage_config = self._load_and_validate_stage(
-                stage_name,
-                workflow_config,
-                errors,
-            )
-            if stage_config is None:
-                continue
-            agents = _extract_agents_from_stage(stage_config)
-            self._validate_agent_configs(agents, stage_name, errors)
-
-        if errors:
-            error_msg = "Configuration validation failed:\n" + "\n".join(
-                f"  - {err}" for err in errors
-            )
-            raise ValueError(error_msg)
-
-        logger.info(f"Configuration validation passed for {len(stages)} stages")
-
-    def _load_and_validate_stage(
-        self,
-        stage_name: str,
-        workflow_config: dict[str, Any],
-        errors: list,
-    ) -> Any:
-        """Load and validate a single stage config. Returns config or None on error."""
-        from pydantic import ValidationError
-
-        from temper_ai.stage._schemas import StageConfig
-
-        try:
-            stage_config = self.node_builder._load_stage_config(
-                stage_name, workflow_config
-            )
-        except Exception as e:
-            errors.append(
-                f"{ERROR_MSG_STAGE_PREFIX}{stage_name}': Failed to load config - {e}"
-            )
-            return None
-
-        if isinstance(stage_config, dict):
-            try:
-                StageConfig(**stage_config)
-            except ValidationError as e:
-                logger.warning(
-                    f"{ERROR_MSG_STAGE_PREFIX}{stage_name}': Config schema warnings - {e}"
-                )
-            except Exception as e:
-                logger.debug(
-                    f"{ERROR_MSG_STAGE_PREFIX}{stage_name}': Config validation skipped - {e}"
-                )
-
-        return stage_config
-
-    def _validate_agent_configs(
-        self,
-        agents: list,
-        stage_name: str,
-        errors: list,
-    ) -> None:
-        """Validate each agent config in a stage."""
-        from pydantic import ValidationError
-
-        from temper_ai.storage.schemas.agent_config import AgentConfig
-
-        for agent_ref in agents:
-            agent_name = self.node_builder.extract_agent_name(agent_ref)
-            try:
-                agent_config = self.config_loader.load_agent(agent_name)
-            except Exception as e:
-                errors.append(
-                    f"{ERROR_MSG_AGENT_PREFIX}{agent_name}' in stage "
-                    f"'{stage_name}': Failed to load config - {e}"
-                )
-                continue
-
-            if isinstance(agent_config, dict):
-                try:
-                    AgentConfig(**agent_config)
-                except ValidationError as e:
-                    logger.warning(
-                        f"{ERROR_MSG_AGENT_PREFIX}{agent_name}' in stage "
-                        f"'{stage_name}': Config schema warnings - {e}"
-                    )
-                except Exception as e:
-                    logger.debug(
-                        f"{ERROR_MSG_AGENT_PREFIX}{agent_name}': "
-                        f"Config validation skipped - {e}"
-                    )
 
     def _extract_stage_names(self, stages: list) -> list[str]:
         """Extract stage names from stage references.

@@ -122,6 +122,54 @@ class AgentFactory:
         with cls._lock:
             return cls._agent_types.copy()
 
+    @staticmethod
+    def get_interface(
+        agent_name: str,
+        config_loader: Any,
+    ) -> dict[str, Any]:
+        """Extract agent I/O interface from config without instantiation.
+
+        Loads the agent config and extracts input/output declarations.
+        No LLM connection, tool registry, or infrastructure needed.
+
+        Useful for compile-time validation and future orchestrator discovery.
+
+        Args:
+            agent_name: Agent name or config path.
+            config_loader: ConfigLoader with ``load_agent()`` method.
+
+        Returns:
+            Dict with keys: name, description, inputs, outputs.
+        """
+        from temper_ai.storage.schemas.agent_config import AgentIODeclaration
+
+        config_dict = config_loader.load_agent(agent_name)
+        agent_inner = config_dict.get("agent", config_dict)
+
+        raw_inputs = agent_inner.get("inputs") or {}
+        raw_outputs = agent_inner.get("outputs") or {}
+
+        inputs: dict[str, AgentIODeclaration] = {}
+        for name, decl in raw_inputs.items():
+            if isinstance(decl, dict):
+                inputs[name] = AgentIODeclaration(**decl)
+            elif isinstance(decl, AgentIODeclaration):
+                inputs[name] = decl
+
+        outputs: dict[str, AgentIODeclaration] = {}
+        for name, decl in raw_outputs.items():
+            if isinstance(decl, dict):
+                outputs[name] = AgentIODeclaration(**decl)
+            elif isinstance(decl, AgentIODeclaration):
+                outputs[name] = decl
+
+        return {
+            "name": agent_inner.get("name", agent_name),
+            "description": agent_inner.get("description", ""),
+            "inputs": inputs,
+            "outputs": outputs,
+        }
+
     @classmethod
     def reset_for_testing(cls) -> None:
         """Reset agent types to defaults for testing."""

@@ -8,14 +8,10 @@ Moving them here keeps the main class under the 500-line threshold.
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
-
-# Lazy-imported in emit_lifecycle_event to avoid import fan-out
-_ObservabilityEvent: type | None = None
 
 
 def validate_file_size(file_path: Path) -> None:
@@ -147,44 +143,6 @@ def create_tracker(
     return ExecutionTracker()
 
 
-def emit_lifecycle_event(
-    event_bus: Any | None,
-    workflow_id: str | None,
-    event_type: str,
-    data: dict[str, Any],
-) -> None:
-    """Emit a lifecycle event via the event bus.
-
-    These events cover pre-execution pipeline phases (config loading,
-    lifecycle adaptation, compilation) that occur before the tracker
-    opens its workflow scope.
-
-    Args:
-        event_bus: Event bus instance, or None to skip.
-        workflow_id: Workflow execution ID.
-        event_type: Event type constant from observability.constants.
-        data: Event payload dict.
-    """
-    if event_bus is None:
-        return
-
-    global _ObservabilityEvent  # noqa: PLW0603
-    if _ObservabilityEvent is None:
-        from temper_ai.observability.event_bus import (
-            ObservabilityEvent,
-        )
-
-        _ObservabilityEvent = ObservabilityEvent
-
-    event = _ObservabilityEvent(
-        event_type=event_type,
-        timestamp=datetime.now(UTC),
-        data=data,
-        workflow_id=workflow_id,
-    )
-    event_bus.emit(event)
-
-
 def load_workflow_config(
     workflow_path: str,
     config_root: str,
@@ -236,17 +194,5 @@ def load_workflow_config(
 
     validate_structure(workflow_config, workflow_file)
     validate_schema(workflow_config)
-
-    from temper_ai.observability.constants import EVENT_CONFIG_LOADED
-
-    emit_lifecycle_event(
-        event_bus,
-        workflow_id,
-        EVENT_CONFIG_LOADED,
-        {
-            "workflow_path": str(workflow_file),
-            "stage_count": len(workflow_config.get("workflow", {}).get("stages", [])),
-        },
-    )
 
     return workflow_config, dict(input_data) if input_data else {}

@@ -3,8 +3,11 @@
 Resolves declared stage inputs from workflow state, replacing the legacy
 pass-everything approach with selective context injection.
 
-Three resolver implementations:
+Four resolver implementations:
 
+- ``InputMapResolver``: Primary resolver that handles all input resolution
+  modes. Supports workflow-level ``input_map``, dynamic inputs, passthrough,
+  and backward-compatible ``source`` refs from stage configs.
 - ``SourceResolver``: Resolves ``source`` refs from stage input declarations.
   Used when a stage declares inputs with ``source`` fields.
 - ``PredecessorResolver``: DAG-based — stage gets outputs from its DAG
@@ -18,7 +21,10 @@ from typing import Any, Protocol, runtime_checkable
 
 from temper_ai.shared.utils.config_helpers import get_nested_value
 from temper_ai.stage.executors.state_keys import StateKeys
-from temper_ai.workflow.context_schemas import parse_stage_inputs
+from temper_ai.workflow.context_schemas import (
+    ContextResolutionError,
+    parse_stage_inputs,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -37,19 +43,6 @@ _INFRASTRUCTURE_KEYS: frozenset[str] = frozenset(
         StateKeys.STAGE_OUTPUTS,
     }
 )
-
-
-class ContextResolutionError(Exception):
-    """Raised when a required input cannot be resolved."""
-
-    def __init__(self, stage_name: str, input_name: str, source: str) -> None:
-        self.stage_name = stage_name
-        self.input_name = input_name
-        self.source = source
-        super().__init__(
-            f"Stage '{stage_name}': required input '{input_name}' "
-            f"could not be resolved from source '{source}'"
-        )
 
 
 @runtime_checkable
@@ -374,3 +367,165 @@ class PassthroughResolver:
         result["_context_meta"] = {"mode": "passthrough"}
 
         return result
+
+
+# State key used to pass input_map from NodeBuilder into resolver
+_STAGE_INPUT_MAP_KEY = "_stage_input_map"
+
+
+def _is_passthrough(stage_config: Any) -> bool:
+    """Check if stage opts into passthrough mode (full state access)."""
+    if isinstance(stage_config, dict):
+        inner = stage_config.get("stage", stage_config)
+        if isinstance(inner, dict):
+            return bool(inner.get("passthrough", False))
+        return False
+    if hasattr(stage_config, "stage"):
+        return bool(getattr(stage_config.stage, "passthrough", False))
+    return bool(getattr(stage_config, "passthrough", False))
+
+
+class InputMapResolver:
+    """Primary resolver that handles all input resolution modes.
+
+    Resolution priority:
+    1. ``passthrough: true`` on stage → full state (stage takes responsibility)
+    2. ``DYNAMIC_INPUTS`` in state → use directly (from ``_next_stage`` signal)
+    3. ``input_map`` from workflow config → resolve each mapping against state
+    4. ``source`` refs in stage config → backward compat (SourceResolver)
+    5. Defaults for optional inputs; error for required inputs without source
+
+    The ``input_map`` is read from ``workflow_state["_stage_input_map"]``,
+    which is set by ``NodeBuilder`` before stage execution. This avoids
+    changing the ``ContextProvider`` protocol signature.
+
+    Wraps ``SourceResolver`` for backward compatibility: when no ``input_map``
+    is present, delegates to ``SourceResolver`` which reads ``source`` from
+    stage input declarations.
+    """
+
+    def __init__(self, fallback: Any | None = None) -> None:
+        self._source_resolver = SourceResolver(fallback=fallback)
+        self._passthrough = PassthroughResolver()
+        # Expose predecessor for wire_dag_context() in NodeBuilder
+        self._predecessor: PredecessorResolver | None = (
+            fallback if isinstance(fallback, PredecessorResolver) else None
+        )
+
+    def set_dag(self, dag: Any) -> None:
+        """Forward DAG to PredecessorResolver if present."""
+        if self._predecessor is not None and hasattr(self._predecessor, "set_dag"):
+            self._predecessor.set_dag(dag)
+
+    def resolve(
+        self, stage_config: Any, workflow_state: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Resolve stage inputs from workflow state.
+
+        Reads ``_stage_input_map`` from ``workflow_state`` if present (set by
+        ``NodeBuilder``). Falls back to ``SourceResolver`` when no input_map.
+        """
+        # Passthrough: stage gets full state
+        if _is_passthrough(stage_config):
+            return self._passthrough.resolve(stage_config, workflow_state)
+
+        # Dynamic inputs take priority (set by _next_stage signal)
+        dynamic = workflow_state.get(StateKeys.DYNAMIC_INPUTS)
+        if dynamic is not None:
+            return self._resolve_from_dynamic(dynamic, workflow_state)
+
+        # Workflow-level input_map (set by NodeBuilder)
+        input_map = workflow_state.get(_STAGE_INPUT_MAP_KEY)
+        if input_map:
+            return self._resolve_from_input_map(stage_config, workflow_state, input_map)
+
+        # Backward compat: delegate to SourceResolver (reads source from stage)
+        return self._source_resolver.resolve(stage_config, workflow_state)
+
+    @staticmethod
+    def _resolve_from_dynamic(
+        dynamic: dict[str, Any],
+        workflow_state: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Resolve from dynamic inputs (set by ``_next_stage`` signal)."""
+        resolved = dict(dynamic)
+        resolved["_context_meta"] = {"mode": "dynamic"}
+        _add_infrastructure_keys(resolved, workflow_state)
+        return resolved
+
+    def _resolve_from_input_map(
+        self,
+        stage_config: Any,
+        workflow_state: dict[str, Any],
+        input_map: dict[str, str],
+    ) -> dict[str, Any]:
+        """Resolve inputs using workflow-level ``input_map``.
+
+        For each entry in ``input_map``, resolves the source reference
+        (``workflow.X`` or ``stage.Y``) against the current workflow state.
+        Falls back to stage input defaults for unresolved optional inputs.
+        """
+        stage_name = _get_stage_name(stage_config)
+        raw_inputs = _get_stage_inputs_raw(stage_config) or {}
+
+        resolved: dict[str, Any] = {}
+        defaults_used: list[str] = []
+
+        # Resolve each input_map entry
+        for input_name, source_ref in input_map.items():
+            value, found = self._source_resolver._resolve_source(
+                source_ref, workflow_state
+            )
+            if found:
+                resolved[input_name] = value
+            else:
+                default, required = _get_input_default(raw_inputs, input_name)
+                if not required:
+                    resolved[input_name] = default
+                    defaults_used.append(input_name)
+                else:
+                    raise ContextResolutionError(stage_name, input_name, source_ref)
+
+        # Apply defaults for declared inputs NOT in input_map
+        for input_name, decl in raw_inputs.items():
+            if input_name in resolved or input_name in input_map:
+                continue
+            if not isinstance(decl, dict):
+                continue
+            required = decl.get("required", True)
+            default = decl.get("default")
+            if not required or default is not None:
+                resolved[input_name] = default
+                defaults_used.append(input_name)
+            elif required:
+                raise ContextResolutionError(
+                    stage_name, input_name, "<missing from input_map>"
+                )
+
+        resolved["_context_meta"] = {
+            "mode": "input-map",
+            "input_map": dict(input_map),
+            "defaults_used": defaults_used,
+        }
+
+        _add_infrastructure_keys(resolved, workflow_state)
+        return resolved
+
+
+def _get_input_default(
+    raw_inputs: dict[str, Any],
+    input_name: str,
+) -> tuple[Any, bool]:
+    """Get default value and required flag for an input.
+
+    Returns:
+        Tuple of (default_value, is_required).
+    """
+    if input_name not in raw_inputs:
+        return None, True  # unknown input, treat as required
+    decl = raw_inputs[input_name]
+    if not isinstance(decl, dict):
+        return None, True
+    required = decl.get("required", True)
+    default = decl.get("default")
+    return default, required

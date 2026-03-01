@@ -30,52 +30,8 @@ from enum import Enum
 from typing import (
     Any,
     Protocol,
-    TypedDict,
     runtime_checkable,
 )
-
-
-class ActionDescriptor(TypedDict, total=False):
-    """Type-safe descriptor for actions being validated by safety policies.
-
-    This provides a structured contract for action data passed to SafetyPolicy.validate().
-    All fields are optional to support different action types.
-
-    Common fields:
-        tool: Tool name for tool_call actions
-        args: Tool arguments
-        operation: Operation type (read, write, etc.)
-        path: File path for file operations
-        endpoint: API endpoint
-        method: HTTP method
-        command: Shell command
-        type: Action type discriminator
-
-    Example:
-        >>> action: ActionDescriptor = {
-        ...     "type": "tool_call",
-        ...     "tool": "file_read",
-        ...     "args": {"path": "/tmp/file.txt"}
-        ... }
-    """
-
-    # Common discriminator
-    type: str
-
-    # Tool call fields
-    tool: str
-    args: dict[str, Any]
-
-    # File operation fields
-    operation: str
-    path: str
-
-    # API call fields
-    endpoint: str
-    method: str
-
-    # Command execution fields
-    command: str
 
 
 class ViolationSeverity(Enum):
@@ -212,12 +168,6 @@ class ValidationResult:
         """Check if result contains violations that should block execution."""
         return any(v.severity >= ViolationSeverity.HIGH for v in self.violations)
 
-    def get_violations_by_severity(
-        self, severity: ViolationSeverity
-    ) -> list[SafetyViolation]:
-        """Get all violations of a specific severity level."""
-        return [v for v in self.violations if v.severity == severity]
-
 
 class SafetyPolicy(ABC):
     """Abstract base class for all safety policies.
@@ -298,12 +248,11 @@ class SafetyPolicy(ABC):
         """Validate action against safety policy (synchronous).
 
         Args:
-            action: Action to validate. Should conform to ActionDescriptor structure.
-                Common patterns:
+            action: Action to validate. Common patterns:
                 - tool_call: {"type": "tool_call", "tool": "name", "args": {...}}
                 - file_operation: {"type": "file_op", "operation": "read|write", "path": "..."}
                 - api_call: {"type": "api_call", "endpoint": "...", "method": "..."}
-                See ActionDescriptor TypedDict for full structure.
+                Dict with action details (type, tool, args, path, etc.).
             context: Execution context with information about:
                 - agent: Agent name/ID
                 - stage: Current workflow stage

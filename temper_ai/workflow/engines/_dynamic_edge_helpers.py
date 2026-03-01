@@ -279,7 +279,16 @@ def _execute_convergence(
     conv_preds[conv_name] = list(branch_names)
     state["_convergence_predecessors"] = conv_preds
 
+    # Inject convergence input_map if specified
+    conv_input_map = converge.get("input_map")
+    if conv_input_map:
+        state["_stage_input_map"] = conv_input_map
+
     state = negotiate_fn(conv_name, stage_nodes, state, workflow_config)
+
+    # Clean up convergence input_map
+    state.pop("_stage_input_map", None)
+
     return state, hop_count
 
 

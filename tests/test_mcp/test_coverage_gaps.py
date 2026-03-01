@@ -713,35 +713,6 @@ class TestRegisteredToolFunctions:
         parsed = json.loads(result)
         assert "error" in parsed
 
-    def test_get_run_status_tool_not_found(self):
-        """get_run_status falls back to RunStore when no execution_service."""
-        registered = self._get_registered_tools(use_annotations=False)
-        mock_store = MagicMock()
-        mock_store.get_run.return_value = None
-
-        with patch(
-            "temper_ai.interfaces.server.run_store.RunStore",
-            return_value=mock_store,
-        ):
-            result = registered["get_run_status"](run_id="missing-run")
-
-        parsed = json.loads(result)
-        assert "error" in parsed
-
-    def test_get_run_status_tool_with_annotations_not_found(self):
-        registered = self._get_registered_tools(use_annotations=True)
-        mock_store = MagicMock()
-        mock_store.get_run.return_value = None
-
-        with patch(
-            "temper_ai.interfaces.server.run_store.RunStore",
-            return_value=mock_store,
-        ):
-            result = registered["get_run_status"](run_id="missing-run")
-
-        parsed = json.loads(result)
-        assert "error" in parsed
-
 
 # ---------------------------------------------------------------------------
 # server.py — _run_workflow_impl path traversal (line 269)
@@ -770,51 +741,6 @@ class TestRunWorkflowImplPathTraversal:
         # Should return "not found" error, not traversal error
         if "error" in parsed:
             assert "traversal" not in parsed["error"].lower()
-
-
-# ---------------------------------------------------------------------------
-# server.py — _get_run_status_impl ImportError/RuntimeError fallback (lines 299-300)
-# ---------------------------------------------------------------------------
-
-
-class TestGetRunStatusFallbackErrors:
-    def test_import_error_in_run_store_returns_error(self):
-        from temper_ai.mcp.server import _get_run_status_impl
-
-        with patch(
-            "temper_ai.interfaces.server.run_store.RunStore",
-            side_effect=ImportError("no module"),
-        ):
-            result = _get_run_status_impl("run-123")
-
-        parsed = json.loads(result)
-        assert "error" in parsed
-        assert "Could not get run status" in parsed["error"]
-
-    def test_runtime_error_in_run_store_returns_error(self):
-        from temper_ai.mcp.server import _get_run_status_impl
-
-        with patch(
-            "temper_ai.interfaces.server.run_store.RunStore",
-            side_effect=RuntimeError("db crash"),
-        ):
-            result = _get_run_status_impl("run-123")
-
-        parsed = json.loads(result)
-        assert "error" in parsed
-        assert "Could not get run status" in parsed["error"]
-
-    def test_value_error_in_run_store_returns_error(self):
-        from temper_ai.mcp.server import _get_run_status_impl
-
-        with patch(
-            "temper_ai.interfaces.server.run_store.RunStore",
-            side_effect=ValueError("bad value"),
-        ):
-            result = _get_run_status_impl("run-abc")
-
-        parsed = json.loads(result)
-        assert "error" in parsed
 
 
 # ---------------------------------------------------------------------------

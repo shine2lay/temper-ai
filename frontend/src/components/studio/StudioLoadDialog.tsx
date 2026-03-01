@@ -3,7 +3,7 @@
  */
 import { useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useStudioConfigs } from '@/hooks/useStudioAPI';
+import { useConfigs } from '@/hooks/useConfigAPI';
 import {
   Sheet,
   SheetContent,
@@ -19,7 +19,7 @@ interface StudioLoadDialogProps {
 
 export function StudioLoadDialog({ open, onOpenChange }: StudioLoadDialogProps) {
   const navigate = useNavigate();
-  const { data, isLoading, error } = useStudioConfigs('workflows');
+  const { data, isLoading, error } = useConfigs('workflow');
 
   const handleSelect = useCallback(
     (name: string) => {

@@ -10,6 +10,8 @@ workflow:
     - name: vcs_work_discovery
       stage_ref: configs/stages/vcs_work_discovery.yaml
       description: "Read VISION.md + analyze codebase to pick next work item"
+      input_map:
+        workspace_path: "workflow.workspace_path"
 
   inputs:
     required:

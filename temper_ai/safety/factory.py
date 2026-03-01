@@ -304,7 +304,7 @@ def create_policy_registry(config: dict[str, Any]) -> PolicyRegistry:
 
 
 def create_safety_stack(
-    tool_registry: ToolRegistry,
+    tool_registry: ToolRegistry | None = None,
     config_path: str | None = None,
     environment: str | None = None,
 ) -> ToolExecutor:

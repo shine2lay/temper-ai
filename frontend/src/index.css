@@ -202,7 +202,7 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--temper-panel);
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
@@ -216,7 +216,7 @@ body {
 
 /* Firefox scrollbar */
 * {
-  scrollbar-color: var(--temper-border) var(--temper-panel);
+  scrollbar-color: var(--color-temper-border) transparent;
   scrollbar-width: thin;
 }
 
@@ -251,6 +251,11 @@ body {
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
+}
+
+/* Loop-back edge dash animation */
+@keyframes dash-flow {
+  to { stroke-dashoffset: -24; }
 }
 
 /* Status transition animation */

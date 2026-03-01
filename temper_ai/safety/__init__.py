@@ -65,12 +65,6 @@ _LAZY_IMPORTS = {
         "temper_ai.safety.forbidden_operations",
         "ForbiddenOperationsPolicy",
     ),
-    # Policy composition
-    "PolicyComposer": ("temper_ai.safety.composition", "PolicyComposer"),
-    "CompositeValidationResult": (
-        "temper_ai.safety.composition",
-        "CompositeValidationResult",
-    ),
     # Approval workflow
     "ApprovalWorkflow": ("temper_ai.safety.approval", "ApprovalWorkflow"),
     "ApprovalRequest": ("temper_ai.safety.approval", "ApprovalRequest"),
@@ -98,13 +92,6 @@ _LAZY_IMPORTS = {
     "CompositeRollbackStrategy": (
         "temper_ai.safety.rollback",
         "CompositeRollbackStrategy",
-    ),
-    # Safety gates and circuit breaker manager
-    "SafetyGate": ("temper_ai.safety.circuit_breaker", "SafetyGate"),
-    "SafetyGateBlocked": ("temper_ai.safety.circuit_breaker", "SafetyGateBlocked"),
-    "CircuitBreakerManager": (
-        "temper_ai.safety.circuit_breaker",
-        "CircuitBreakerManager",
     ),
     # Token bucket rate limiting
     "TokenBucket": ("temper_ai.safety.token_bucket", "TokenBucket"),
@@ -177,9 +164,6 @@ __all__ = [
     "WindowRateLimitPolicy",
     "FileAccessPolicy",
     "ForbiddenOperationsPolicy",
-    # Policy composition
-    "PolicyComposer",
-    "CompositeValidationResult",
     # Action Policy Engine
     "ActionPolicyEngine",
     "PolicyExecutionContext",
@@ -199,10 +183,6 @@ __all__ = [
     "FileRollbackStrategy",
     "StateRollbackStrategy",
     "CompositeRollbackStrategy",
-    # Safety gates and circuit breaker manager
-    "SafetyGate",
-    "SafetyGateBlocked",
-    "CircuitBreakerManager",
     # Token bucket rate limiting
     "TokenBucket",
     "TokenBucketManager",

@@ -112,13 +112,6 @@ class TestBaseLLMInit:
         with pytest.raises(ValueError, match="model and base_url are required"):
             _TestLLM(model="test")
 
-    def test_init_with_cache_enabled(self) -> None:
-        llm = _TestLLM(
-            model="test", base_url="http://localhost:8000", enable_cache=True
-        )
-        assert llm._cache is not None
-        llm.close()
-
     def test_init_with_rate_limiter(self) -> None:
         rl = MagicMock()
         llm = _TestLLM(model="test", base_url="http://localhost:8000", rate_limiter=rl)
@@ -130,14 +123,6 @@ class TestBaseLLMInit:
         config = LLMConfig(model="m", base_url="http://localhost:8000", rate_limiter=rl)
         llm = _TestLLM(config=config)
         assert llm._rate_limiter is rl
-        llm.close()
-
-    def test_init_with_config_cache(self) -> None:
-        config = LLMConfig(
-            model="m", base_url="http://localhost:8000", enable_cache=True
-        )
-        llm = _TestLLM(config=config)
-        assert llm._cache is not None
         llm.close()
 
 
@@ -188,14 +173,6 @@ class TestBaseLLMComplete:
             mock_get.return_value = mock_client
             llm.complete("test", context=ctx)
             rl.check_and_record_rate_limit.assert_called_with("agent-1")
-        llm.close()
-
-    def test_cached_response_returned(self) -> None:
-        llm = _TestLLM(model="m", base_url="http://localhost:8000")
-        cached = LLMResponse(content="cached", model="m", provider="test")
-        with patch.object(llm, "_check_cache", return_value=("key", cached)):
-            result = llm.complete("test")
-            assert result.content == "cached"
         llm.close()
 
     def test_timeout_exhausts_retries(self) -> None:
@@ -273,15 +250,6 @@ class TestBaseLLMAcomplete:
         llm = _TestLLM(model="m", base_url="http://localhost:8000", rate_limiter=rl)
         with pytest.raises(LLMRateLimitError):
             await llm.acomplete("test")
-        llm.close()
-
-    @pytest.mark.asyncio
-    async def test_cached_response_async(self) -> None:
-        llm = _TestLLM(model="m", base_url="http://localhost:8000")
-        cached = LLMResponse(content="cached", model="m", provider="test")
-        with patch.object(llm, "_check_cache", return_value=("key", cached)):
-            result = await llm.acomplete("test")
-            assert result.content == "cached"
         llm.close()
 
     @pytest.mark.asyncio
@@ -488,7 +456,6 @@ class TestLLMConfig:
         assert config.temperature == 0.7
         assert config.max_tokens == 2048
         assert config.top_p == 0.9
-        assert config.enable_cache is False
         assert config.rate_limiter is None
 
     def test_custom(self) -> None:
@@ -496,10 +463,8 @@ class TestLLMConfig:
             model="m",
             base_url="http://localhost:8000",
             temperature=0.1,
-            enable_cache=True,
         )
         assert config.temperature == 0.1
-        assert config.enable_cache is True
 
 
 # ---------------------------------------------------------------------------

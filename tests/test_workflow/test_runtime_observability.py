@@ -1,16 +1,14 @@
 """Tests for WorkflowRuntime lifecycle observability events."""
 
-from datetime import UTC
 from unittest.mock import MagicMock, patch
 
 import pytest
 import yaml
 
 from temper_ai.observability.constants import (
-    EVENT_CONFIG_LOADED,
-    EVENT_LIFECYCLE_ADAPTED,
-    EVENT_WORKFLOW_COMPILED,
-    EVENT_WORKFLOW_COMPILING,
+    EVENT_PIPELINE_PHASE_END,
+    EVENT_PIPELINE_PHASE_FAIL,
+    EVENT_PIPELINE_PHASE_START,
 )
 from temper_ai.observability.event_bus import ObservabilityEventBus
 from temper_ai.workflow.runtime import (
@@ -58,25 +56,10 @@ def tmp_workflow(tmp_path):
 
 
 class TestLoadConfigEvents:
-    """Test lifecycle events from load_config."""
-
-    def test_emits_config_loaded(self, event_bus, captured_events, tmp_workflow):
-        """load_config emits EVENT_CONFIG_LOADED with path and stage count."""
-        rt = WorkflowRuntime(
-            event_bus=event_bus,
-            workflow_id="wf-test-123",
-        )
-        rt.load_config(tmp_workflow)
-
-        assert len(captured_events) == 1
-        evt = captured_events[0]
-        assert evt.event_type == EVENT_CONFIG_LOADED
-        assert evt.workflow_id == "wf-test-123"
-        assert evt.data["stage_count"] == 2
-        assert "test.yaml" in evt.data["workflow_path"]
+    """Test that load_config does not emit direct lifecycle events (moved to run_pipeline)."""
 
     def test_no_event_without_bus(self, tmp_workflow):
-        """No event emitted when event_bus is None."""
+        """load_config succeeds without an event bus and emits no events."""
         rt = WorkflowRuntime()
         config, inputs = rt.load_config(tmp_workflow)
 
@@ -84,100 +67,32 @@ class TestLoadConfigEvents:
         assert isinstance(config, dict)
         assert "workflow" in config
 
-    def test_event_timestamp_is_utc(self, event_bus, captured_events, tmp_workflow):
-        """Lifecycle events use UTC timestamps."""
-        rt = WorkflowRuntime(event_bus=event_bus)
+    def test_no_event_with_bus(self, event_bus, captured_events, tmp_workflow):
+        """load_config does not emit direct events; phase events come from run_pipeline."""
+        rt = WorkflowRuntime(event_bus=event_bus, workflow_id="wf-test-123")
         rt.load_config(tmp_workflow)
 
-        evt = captured_events[0]
-        assert evt.timestamp.tzinfo == UTC
+        assert len(captured_events) == 0
 
 
 class TestAdaptLifecycleEvents:
-    """Test lifecycle events from adapt_lifecycle."""
+    """Test that adapt_lifecycle does not emit direct events (moved to run_pipeline)."""
 
     def test_no_event_when_disabled(self, event_bus, captured_events):
-        """No lifecycle_adapted event when lifecycle is disabled."""
+        """adapt_lifecycle emits no events; phase events come from run_pipeline."""
         rt = WorkflowRuntime(event_bus=event_bus)
         config = {"workflow": {"name": "x", "stages": ["s"]}}
         rt.adapt_lifecycle(config, {})
 
-        lifecycle_events = [
-            e for e in captured_events if e.event_type == EVENT_LIFECYCLE_ADAPTED
-        ]
-        assert len(lifecycle_events) == 0
-
-    @patch("temper_ai.lifecycle.adapter.LifecycleAdapter")
-    @patch("temper_ai.lifecycle.classifier.ProjectClassifier")
-    @patch("temper_ai.lifecycle.profiles.ProfileRegistry")
-    @patch("temper_ai.lifecycle.store.LifecycleStore")
-    def test_emits_lifecycle_adapted(
-        self,
-        _store,
-        _registry,
-        _classifier,
-        _adapter,
-        event_bus,
-        captured_events,
-    ):
-        """adapt_lifecycle emits EVENT_LIFECYCLE_ADAPTED on success."""
-        rt = WorkflowRuntime(event_bus=event_bus, workflow_id="wf-lc")
-        config = {
-            "workflow": {
-                "name": "x",
-                "stages": ["s"],
-                "lifecycle": {"enabled": True},
-            }
-        }
-        # Mocked adapter.adapt returns a MagicMock, which triggers the event
-        rt.adapt_lifecycle(config, {"topic": "test"})
-
-        lifecycle_events = [
-            e for e in captured_events if e.event_type == EVENT_LIFECYCLE_ADAPTED
-        ]
-        assert len(lifecycle_events) == 1
-        assert lifecycle_events[0].data["status"] == "adapted"
+        assert len(captured_events) == 0
 
 
 class TestCompileEvents:
-    """Test lifecycle events from compile."""
-
-    @patch("temper_ai.workflow.engine_registry.EngineRegistry")
-    def test_emits_compiling_and_compiled(
-        self,
-        mock_registry_cls,
-        event_bus,
-        captured_events,
-    ):
-        """compile emits compiling and compiled events."""
-        mock_engine = MagicMock()
-        mock_engine.__class__.__name__ = "DynamicExecutionEngine"
-        mock_compiled = MagicMock()
-        mock_engine.compile.return_value = mock_compiled
-
-        mock_registry = MagicMock()
-        mock_registry.get_engine_from_config.return_value = mock_engine
-        mock_registry_cls.return_value = mock_registry
-
-        rt = WorkflowRuntime(event_bus=event_bus, workflow_id="wf-compile")
-        infra = InfrastructureBundle(
-            config_loader=MagicMock(),
-            tool_registry=MagicMock(),
-            tracker=MagicMock(),
-        )
-        config = {"workflow": {"stages": ["s1"]}}
-
-        engine, compiled = rt.compile(config, infra)
-
-        assert len(captured_events) == 2
-        assert captured_events[0].event_type == EVENT_WORKFLOW_COMPILING
-        assert captured_events[0].workflow_id == "wf-compile"
-        assert captured_events[1].event_type == EVENT_WORKFLOW_COMPILED
-        assert isinstance(captured_events[1].data["engine"], str)
+    """Test that compile does not emit direct events (moved to run_pipeline)."""
 
     @patch("temper_ai.workflow.engine_registry.EngineRegistry")
     def test_no_events_without_bus(self, mock_registry_cls):
-        """No events emitted when event_bus is None."""
+        """compile succeeds without a bus and emits no events."""
         mock_engine = MagicMock()
         mock_compiled = MagicMock()
         mock_engine.compile.return_value = mock_compiled
@@ -198,62 +113,77 @@ class TestCompileEvents:
         assert engine is mock_engine
         assert compiled is mock_compiled
 
+    @patch("temper_ai.workflow.engine_registry.EngineRegistry")
+    def test_no_events_with_bus(self, mock_registry_cls, event_bus, captured_events):
+        """compile emits no direct events; phase events come from run_pipeline."""
+        mock_engine = MagicMock()
+        mock_compiled = MagicMock()
+        mock_engine.compile.return_value = mock_compiled
+
+        mock_registry = MagicMock()
+        mock_registry.get_engine_from_config.return_value = mock_engine
+        mock_registry_cls.return_value = mock_registry
+
+        rt = WorkflowRuntime(event_bus=event_bus, workflow_id="wf-compile")
+        infra = InfrastructureBundle(
+            config_loader=MagicMock(),
+            tool_registry=MagicMock(),
+            tracker=MagicMock(),
+        )
+        rt.compile({"workflow": {"stages": ["s1"]}}, infra)
+
+        assert len(captured_events) == 0
+
 
 class TestEventBusIntegration:
     """Integration tests for event bus with runtime."""
 
-    def test_full_pipeline_events(self, event_bus, captured_events, tmp_workflow):
-        """Full pipeline emits config_loaded event."""
+    def test_load_config_emits_no_events(
+        self, event_bus, captured_events, tmp_workflow
+    ):
+        """load_config no longer emits direct events; phase events come from run_pipeline."""
         rt = WorkflowRuntime(event_bus=event_bus, workflow_id="wf-full")
         wf_config, inputs = rt.load_config(tmp_workflow)
 
-        assert len(captured_events) >= 1
-        types = [e.event_type for e in captured_events]
-        assert EVENT_CONFIG_LOADED in types
+        # No events from load_config directly
+        assert len(captured_events) == 0
+        # But the config was loaded correctly
+        assert wf_config["workflow"]["name"] == "test_wf"
 
-    def test_workflow_id_propagated(self, event_bus, captured_events, tmp_workflow):
-        """workflow_id is set on all emitted events."""
-        rt = WorkflowRuntime(event_bus=event_bus, workflow_id="wf-prop-test")
-        rt.load_config(tmp_workflow)
-
-        for evt in captured_events:
-            assert evt.workflow_id == "wf-prop-test"
-
-    def test_subscriber_receives_events(self, tmp_workflow):
-        """Custom subscriber receives lifecycle events."""
+    def test_subscriber_receives_phase_events_types(self, tmp_workflow):
+        """Phase event type constants are strings and can be used with subscribe."""
         bus = ObservabilityEventBus()
         received = []
         bus.subscribe(
             lambda e: received.append(e.event_type),
-            event_types={EVENT_CONFIG_LOADED},
+            event_types={EVENT_PIPELINE_PHASE_START, EVENT_PIPELINE_PHASE_END},
         )
 
+        # load_config alone doesn't trigger phase events
         rt = WorkflowRuntime(event_bus=bus, workflow_id="wf-sub")
         rt.load_config(tmp_workflow)
 
-        assert received == [EVENT_CONFIG_LOADED]
+        assert received == []
 
 
 class TestLifecycleEventConstants:
-    """Test that lifecycle event constants are defined correctly."""
+    """Test that pipeline phase event constants are defined correctly."""
 
     def test_constants_are_strings(self):
-        """All lifecycle event constants are non-empty strings."""
+        """All pipeline phase event constants are non-empty strings."""
         for const in (
-            EVENT_CONFIG_LOADED,
-            EVENT_LIFECYCLE_ADAPTED,
-            EVENT_WORKFLOW_COMPILING,
-            EVENT_WORKFLOW_COMPILED,
+            EVENT_PIPELINE_PHASE_START,
+            EVENT_PIPELINE_PHASE_END,
+            EVENT_PIPELINE_PHASE_FAIL,
         ):
             assert isinstance(const, str)
             assert len(const) > 0
 
     def test_constants_are_unique(self):
-        """All lifecycle event constants are unique."""
+        """All pipeline phase event constants are unique."""
         consts = [
-            EVENT_CONFIG_LOADED,
-            EVENT_LIFECYCLE_ADAPTED,
-            EVENT_WORKFLOW_COMPILING,
-            EVENT_WORKFLOW_COMPILED,
+            EVENT_PIPELINE_PHASE_START,
+            EVENT_PIPELINE_PHASE_END,
+            EVENT_PIPELINE_PHASE_FAIL,
         ]
         assert len(set(consts)) == len(consts)

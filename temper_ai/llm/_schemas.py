@@ -15,6 +15,67 @@ from temper_ai.llm.tool_keys import ToolKeys
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Singleton tool instances for schema building (shared, read-only)
+# ---------------------------------------------------------------------------
+_schema_instances: dict[str, Any] = {}
+_schema_instances_lock = __import__("threading").Lock()
+
+
+def _get_schema_instance(name: str) -> Any | None:
+    """Get or create a singleton tool instance for schema building.
+
+    These are default-config instances used only for reading name/description/schema.
+    """
+    if name in _schema_instances:
+        return _schema_instances[name]
+    with _schema_instances_lock:
+        if name in _schema_instances:
+            return _schema_instances[name]
+        from temper_ai.tools import TOOL_CLASSES
+
+        cls = TOOL_CLASSES.get(name)
+        if cls is None:
+            return None
+        try:
+            instance = cls()
+            _schema_instances[name] = instance
+            return instance
+        except (TypeError, ValueError, RuntimeError) as e:
+            logger.warning("Failed to create schema instance for %s: %s", name, e)
+            return None
+
+
+def get_tool_schemas(tool_names: list[str]) -> list[dict[str, Any]]:
+    """Build LLM tool schemas from tool names (no per-agent registry needed).
+
+    Uses singleton instances from TOOL_CLASSES to get name, description,
+    and parameter schema. MCP tools are not included (they use a separate path).
+
+    Returns:
+        List of OpenAI function-calling format tool definitions.
+    """
+    schemas: list[dict[str, Any]] = []
+    for name in tool_names:
+        tool = _get_schema_instance(name)
+        if tool is None:
+            logger.warning("Tool '%s' not found in TOOL_CLASSES, skipping schema", name)
+            continue
+        schema = tool.get_parameters_schema()
+        function_def: dict[str, Any] = {
+            ToolKeys.NAME: tool.name,
+            "description": tool.description,
+            ToolKeys.PARAMETERS: schema,
+        }
+        result_schema = tool.get_result_schema()
+        if result_schema:
+            function_def["description"] = (
+                f"{tool.description}\n\n"
+                f"Result schema: {json.dumps(result_schema, indent=2)}"
+            )
+        schemas.append({"type": "function", "function": function_def})
+    return schemas
+
 
 def build_text_schemas(
     tools: list[Any] | None,

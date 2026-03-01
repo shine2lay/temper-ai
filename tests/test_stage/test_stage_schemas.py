@@ -5,7 +5,6 @@ Covers:
 - StageExecutionConfig, CollaborationConfig, ConflictResolutionConfig
 - ConvergenceConfig, StageSafetyConfig, StageErrorHandlingConfig
 - QualityGatesConfig, StageConfigInner, StageConfig
-- AgentMetrics, AggregateMetrics, MultiAgentStageState
 """
 
 import pytest
@@ -15,12 +14,9 @@ from temper_ai.stage._schemas import (
     DEFAULT_CONVERGENCE_MAX_ITERATIONS,
     MAX_CONVERGENCE_ITERATIONS,
     MIN_CONVERGENCE_ITERATIONS,
-    AgentMetrics,
-    AggregateMetrics,
     CollaborationConfig,
     ConflictResolutionConfig,
     ConvergenceConfig,
-    MultiAgentStageState,
     QualityGatesConfig,
     StageConfig,
     StageConfigInner,
@@ -292,48 +288,3 @@ class TestStageConfig:
         )
         assert config.stage.name == "s"
         assert config.schema_version == "1.0"
-
-
-class TestAgentMetrics:
-    """Tests for AgentMetrics."""
-
-    def test_defaults_all_zero(self):
-        m = AgentMetrics()
-        assert m.tokens == 0
-        assert m.cost_usd == 0.0
-        assert m.duration_seconds == 0.0
-        assert m.tool_calls == 0
-        assert m.retries == 0
-
-    def test_negative_tokens_raises(self):
-        with pytest.raises(ValidationError):
-            AgentMetrics(tokens=-1)
-
-
-class TestAggregateMetrics:
-    """Tests for AggregateMetrics."""
-
-    def test_defaults(self):
-        m = AggregateMetrics()
-        assert m.total_tokens == 0
-        assert m.avg_confidence == 0.0
-        assert m.num_agents == 0
-
-    def test_avg_confidence_le_1(self):
-        with pytest.raises(ValidationError):
-            AggregateMetrics(avg_confidence=1.1)
-
-
-class TestMultiAgentStageState:
-    """Tests for MultiAgentStageState."""
-
-    def test_defaults(self):
-        state = MultiAgentStageState()
-        assert state.agent_outputs == {}
-        assert state.agent_statuses == {}
-        assert state.errors == {}
-        assert state.min_successful_agents == 1
-
-    def test_min_successful_agents_zero_raises(self):
-        with pytest.raises(ValidationError):
-            MultiAgentStageState(min_successful_agents=0)

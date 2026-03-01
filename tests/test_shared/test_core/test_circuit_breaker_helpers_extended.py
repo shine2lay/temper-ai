@@ -44,14 +44,13 @@ from temper_ai.shared.core.circuit_breaker import (
 # ---------------------------------------------------------------------------
 
 
-def _make_breaker(state=CircuitState.CLOSED, failures=0, successes=0, storage=None):
+def _make_breaker(state=CircuitState.CLOSED, failures=0, successes=0):
     """Build a real CircuitBreaker so we can test helpers against it."""
     config = CircuitBreakerConfig(failure_threshold=3, success_threshold=2, timeout=60)
     breaker = CircuitBreaker(name="test", config=config)
     breaker._state = state
     breaker._failure_count = failures
     breaker._success_count = successes
-    breaker.storage = storage
     return breaker
 
 
@@ -246,13 +245,6 @@ class TestOnCallSuccess:
         assert breaker._state == CircuitState.CLOSED
         assert breaker.success_count == 0  # reset after close
 
-    def test_success_with_storage_saves_state(self):
-        """on_call_success persists state when storage is set (line 319-328)."""
-        storage = MagicMock()
-        breaker = _make_breaker(storage=storage)
-        on_call_success(breaker)
-        storage.set.assert_called()
-
     def test_half_open_reserved_state_releases_semaphore(self):
         """Semaphore is released when reserved_state is HALF_OPEN (line 330-331)."""
         breaker = _make_breaker(state=CircuitState.CLOSED)
@@ -394,18 +386,6 @@ class TestOnCallFailure:
 
         assert breaker._state == CircuitState.OPEN
 
-    def test_failure_with_storage_saves_state(self):
-        """on_call_failure persists state when storage is set."""
-        try:
-            import httpx
-        except ImportError:
-            pytest.skip("httpx not available")
-
-        storage = MagicMock()
-        breaker = _make_breaker(storage=storage)
-        on_call_failure(breaker, httpx.ConnectError("refused"))
-        storage.set.assert_called()
-
     def test_half_open_failure_releases_semaphore(self):
         """HALF_OPEN reserved state releases semaphore on failure (line 410-411)."""
         try:
@@ -510,17 +490,6 @@ class TestReserveExecution:
 
         result = reserve_execution(breaker)
         assert result is None
-
-    def test_open_to_half_open_with_storage_saves_state(self):
-        """Transition OPEN->HALF_OPEN persists state if storage set (lines 434-437)."""
-        import time
-
-        storage = MagicMock()
-        breaker = _make_breaker(state=CircuitState.OPEN, storage=storage)
-        breaker._last_failure_time = time.time() - 300
-
-        reserve_execution(breaker)
-        storage.set.assert_called()
 
     def test_half_open_semaphore_blocked_raises_error(self):
         """If HALF_OPEN semaphore is already acquired, raises CircuitBreakerError (lines 452-455)."""

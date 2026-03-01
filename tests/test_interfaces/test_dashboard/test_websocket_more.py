@@ -72,9 +72,10 @@ class TestStreamEventsLoop:
     async def test_sends_event(self):
         ws = AsyncMock()
         queue = asyncio.Queue()
+        done = asyncio.Event()
         await queue.put({"type": "event", "data": "test"})
 
-        task = asyncio.create_task(_stream_events_loop(ws, queue))
+        task = asyncio.create_task(_stream_events_loop(ws, queue, done))
         await asyncio.sleep(0.05)
         task.cancel()
         try:
@@ -88,11 +89,12 @@ class TestStreamEventsLoop:
     async def test_sends_heartbeat_on_timeout(self):
         ws = AsyncMock()
         queue = asyncio.Queue()
+        done = asyncio.Event()
 
         with patch(
             "temper_ai.interfaces.dashboard.websocket.HEARTBEAT_TIMEOUT_SECONDS", 0.05
         ):
-            task = asyncio.create_task(_stream_events_loop(ws, queue))
+            task = asyncio.create_task(_stream_events_loop(ws, queue, done))
             await asyncio.sleep(0.1)
             task.cancel()
             try:
@@ -105,6 +107,23 @@ class TestStreamEventsLoop:
         calls = ws.send_json.call_args_list
         heartbeat_found = any(c[0][0].get("type") == "heartbeat" for c in calls if c[0])
         assert heartbeat_found
+
+    @pytest.mark.asyncio
+    async def test_exits_and_closes_on_done_event(self):
+        ws = AsyncMock()
+        queue = asyncio.Queue()
+        done = asyncio.Event()
+
+        # Set done immediately so the loop exits on first iteration
+        done.set()
+        task = asyncio.create_task(_stream_events_loop(ws, queue, done))
+        await asyncio.sleep(0.05)
+
+        assert task.done()
+        # Should have sent a close frame with the terminal code
+        ws.close.assert_called_once()
+        close_kwargs = ws.close.call_args
+        assert close_kwargs[1]["code"] == 4100
 
 
 class TestDbPollLoop:
@@ -152,6 +171,30 @@ class TestDbPollLoop:
             await asyncio.sleep(0.1)
 
         assert task.done()
+
+    @pytest.mark.asyncio
+    async def test_terminal_status_sets_done_event(self):
+        ws = AsyncMock()
+        data_service = MagicMock()
+        data_service.get_workflow_snapshot.return_value = {
+            "status": "completed",
+            "end_time": "2024-01-01",
+            "stages": [],
+        }
+        done = asyncio.Event()
+
+        with patch(
+            "temper_ai.interfaces.dashboard.websocket.DB_POLL_INTERVAL_SECONDS", 0.01
+        ):
+            task = asyncio.create_task(
+                _db_poll_loop(
+                    ws, data_service, "wf1", initial_fingerprint="", done_event=done
+                )
+            )
+            await asyncio.sleep(0.1)
+
+        assert task.done()
+        assert done.is_set()
 
     @pytest.mark.asyncio
     async def test_no_snapshot_continues(self):

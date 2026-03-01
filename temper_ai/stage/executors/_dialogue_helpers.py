@@ -112,6 +112,39 @@ class DialogueRoundsParams:
     total_cost: float
 
 
+@dataclass
+class InteractiveTurnsParams:
+    """Parameters for interactive turn-taking dialogue."""
+
+    executor: Any
+    strategy: Any
+    agents: list
+    stage_name: str
+    state: dict[str, Any]
+    config_loader: ConfigLoaderProtocol
+    tracker: Any
+    initial_outputs: list
+    total_cost: float
+    max_turns: int
+    min_cycles: int
+    extract_agent_name_fn: Callable[[Any], str]
+
+
+@dataclass
+class SingleInteractiveAgentParams:
+    """Parameters for single interactive agent invocation."""
+
+    agent_name: str
+    agent_ref: Any
+    config_loader: ConfigLoaderProtocol
+    state: dict[str, Any]
+    stage_name: str
+    conversation: list[dict[str, Any]]
+    turn_number: int
+    max_turns: int
+    strategy: Any
+
+
 # ── Agent invocation helpers ─────────────────────────────────────────
 
 
@@ -658,3 +691,230 @@ def build_final_synthesis_result(params: FinalSynthesisResultParams) -> Any:
     )
 
     return result
+
+
+# ── Interactive turn-taking ──────────────────────────────────────────
+
+
+def run_interactive_turns(params: InteractiveTurnsParams) -> tuple:
+    """Run turn-taking dialogue. One agent per turn, round-robin.
+
+    Returns:
+        (final_turn, last_outputs_per_agent, total_cost, converged, convergence_turn)
+    """
+    agents = params.agents
+    agent_count = len(agents)
+    conversation: list[dict[str, Any]] = []
+    last_output_per_agent: dict[str, Any] = {}
+    total_cost = params.total_cost
+    converged = False
+    convergence_turn = -1
+
+    # Seed conversation from initial outputs (round 0)
+    for output in params.initial_outputs:
+        agent_name = output.agent_name
+        conversation.append(
+            {
+                "agent": agent_name,
+                "turn": 0,
+                "output": output.decision,
+                "reasoning": output.reasoning,
+                "confidence": output.confidence,
+            }
+        )
+        last_output_per_agent[agent_name] = output
+
+    final_turn = 0
+    for turn in range(1, params.max_turns):
+        agent_idx = turn % agent_count
+        agent_ref = agents[agent_idx]
+        agent_name = params.extract_agent_name_fn(agent_ref)
+
+        prev_output = last_output_per_agent.get(agent_name)
+
+        output, _llm = _invoke_single_interactive_agent(
+            SingleInteractiveAgentParams(
+                agent_name=agent_name,
+                agent_ref=agent_ref,
+                config_loader=params.config_loader,
+                state=params.state,
+                stage_name=params.stage_name,
+                conversation=conversation,
+                turn_number=turn,
+                max_turns=params.max_turns,
+                strategy=params.strategy,
+            )
+        )
+
+        conversation.append(
+            {
+                "agent": agent_name,
+                "turn": turn,
+                "output": output.decision,
+                "reasoning": output.reasoning,
+                "confidence": output.confidence,
+            }
+        )
+        last_output_per_agent[agent_name] = output
+        total_cost += output.metadata.get(StateKeys.COST_USD, 0.0)
+        final_turn = turn
+
+        # Track this turn
+        _track_interactive_turn(
+            params.tracker,
+            params.strategy,
+            params.state,
+            output,
+            turn,
+            agent_name,
+        )
+
+        # Convergence: check after min_cycles complete cycles
+        cycle = turn // agent_count
+        if cycle >= params.min_cycles and prev_output is not None:
+            if _all_agents_converged(
+                last_output_per_agent,
+                conversation,
+                params.strategy,
+                agent_count,
+            ):
+                converged = True
+                convergence_turn = turn
+                break
+
+        # Budget check
+        if (
+            params.strategy.cost_budget_usd
+            and total_cost >= params.strategy.cost_budget_usd
+        ):
+            break
+
+    return (final_turn, last_output_per_agent, total_cost, converged, convergence_turn)
+
+
+def _invoke_single_interactive_agent(
+    params: SingleInteractiveAgentParams,
+) -> tuple[Any, Any]:
+    """Invoke a single agent for an interactive turn.
+
+    Returns:
+        Tuple of (AgentOutput, llm_provider)
+    """
+    from temper_ai.agent.utils.agent_factory import AgentFactory
+    from temper_ai.stage.executors._base_helpers import _build_agent_output
+    from temper_ai.storage.schemas.agent_config import AgentConfig
+
+    agent_config_dict = params.config_loader.load_agent(params.agent_name)
+    agent_config = AgentConfig(**agent_config_dict)
+    agent = AgentFactory.create(agent_config)
+
+    agent_role = _extract_agent_role(agent_config)
+    curated_history, mode_context = _curate_history_and_resolve_context(
+        params.strategy,
+        params.conversation,
+        params.turn_number,
+        params.agent_name,
+    )
+
+    # Build previous_speakers from last 3 conversation entries (not from this agent)
+    previous_speakers = [
+        entry
+        for entry in params.conversation[-3:]
+        if entry["agent"] != params.agent_name
+    ][-2:]
+
+    input_data = {
+        **params.state,
+        "conversation": curated_history,
+        "turn_number": params.turn_number,
+        "max_turns": params.max_turns,
+        "agent_role": agent_role,
+        "interaction_mode": "interactive",
+        "previous_speakers": previous_speakers,
+        **mode_context,
+    }
+
+    # Reuse the shared agent execution path
+    dialogue_params = SingleDialogueAgentParams(
+        agent_name=params.agent_name,
+        agent_ref=params.agent_ref,
+        config_loader=params.config_loader,
+        state=params.state,
+        stage_name=params.stage_name,
+        dialogue_history=params.conversation,
+        round_number=params.turn_number,
+        max_rounds=params.max_turns,
+        strategy=params.strategy,
+    )
+
+    response = _build_and_execute_dialogue_agent(
+        dialogue_params, agent, agent_config, agent_config_dict, input_data
+    )
+    output = _build_agent_output(
+        params.agent_name,
+        response,
+        role="interactive",
+        extra_metadata={"turn": params.turn_number},
+    )
+    return output, agent.llm
+
+
+def _all_agents_converged(
+    last_outputs: dict[str, Any],
+    conversation: list[dict[str, Any]],
+    strategy: Any,
+    agent_count: int,
+) -> bool:
+    """Check if all agents have converged across their last two outputs."""
+    if len(conversation) < agent_count * 2:
+        return False
+
+    for agent_name, current_output in last_outputs.items():
+        prev = _find_previous_output(conversation, agent_name)
+        if prev is None:
+            return False
+        score = strategy.calculate_convergence([current_output], [prev])
+        if score < strategy.convergence_threshold:
+            return False
+    return True
+
+
+def _find_previous_output(
+    conversation: list[dict[str, Any]],
+    agent_name: str,
+) -> Any | None:
+    """Find this agent's second-to-last output in conversation."""
+    agent_entries = [e for e in conversation if e["agent"] == agent_name]
+    if len(agent_entries) < 2:
+        return None
+    # Return second-to-last as an AgentOutput for convergence calc
+    prev = agent_entries[-2]
+    from temper_ai.agent.strategies.base import AgentOutput
+
+    return AgentOutput(
+        agent_name=agent_name,
+        decision=prev["output"],
+        reasoning=prev.get("reasoning", ""),
+        confidence=prev.get("confidence", 0.0),
+        metadata={},
+    )
+
+
+def _track_interactive_turn(
+    tracker: Any,
+    strategy: Any,
+    state: dict[str, Any],
+    output: Any,
+    turn: int,
+    agent_name: str,
+) -> None:
+    """Track a single interactive turn via collaboration event."""
+    track_params = DialogueTrackingParams(
+        tracker=tracker,
+        strategy=strategy,
+        state=state,
+        current_outputs=[output],
+        round_num=turn,
+        round_outcome="in_progress",
+    )
+    track_dialogue_round(track_params)

@@ -33,10 +33,10 @@ stage:
 
   inputs:
     suggestion_text:
-      source: workflow.suggestion_text
+      type: string
       required: true
     workspace_path:
-      source: workflow.workspace_path
+      type: string
       required: true
 
   outputs:

@@ -21,6 +21,8 @@ workflow:
     - name: demo_forward_classify
       stage_ref: configs/stages/demo_forward_classify.yaml
       description: "Classifies question and routes to appropriate specialist"
+      input_map:
+        question: "workflow.question"
 
     - name: demo_forward_code
       stage_ref: configs/stages/demo_forward_code.yaml
@@ -29,6 +31,8 @@ workflow:
         - demo_forward_classify
       conditional: true
       condition: "{{ False }}"
+      input_map:
+        question: "workflow.question"
 
     - name: demo_forward_design
       stage_ref: configs/stages/demo_forward_design.yaml
@@ -37,6 +41,8 @@ workflow:
         - demo_forward_classify
       conditional: true
       condition: "{{ False }}"
+      input_map:
+        question: "workflow.question"
 
   context_management:
     extraction:

@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 
 from temper_ai.stage.executors.state_keys import StateKeys
 from temper_ai.workflow.context_provider import (
+    InputMapResolver,
     PredecessorResolver,
     SourceResolver,
 )
@@ -332,7 +333,7 @@ class TestDynamicEnginePredecessorInjection:
         engine._setup_predecessor_injection()
 
         assert engine._predecessor_injection is True
-        assert isinstance(engine.context_provider, SourceResolver)
+        assert isinstance(engine.context_provider, InputMapResolver)
         assert isinstance(engine.context_provider._predecessor, PredecessorResolver)
 
     @patch("temper_ai.workflow.engines.dynamic_engine.create_safety_stack")

@@ -4,12 +4,10 @@ Tool registry for managing and discovering tools.
 
 import logging
 import threading
-from typing import Any, Optional
+import warnings
+from typing import Any
 
 from temper_ai.shared.utils.exceptions import ToolRegistryError
-from temper_ai.tools._registry_helpers import (
-    auto_discover as _auto_discover,
-)
 from temper_ai.tools._registry_helpers import (
     get_error_suggestion as _get_error_suggestion,
 )
@@ -39,11 +37,6 @@ from temper_ai.tools.constants import TOOL_ERROR_PREFIX
 
 logger = logging.getLogger(__name__)
 
-# Global cache for discovered tools (populated on first auto-discovery)
-_DISCOVERED_TOOLS_CACHE: dict[str, BaseTool] | None = None
-_GLOBAL_REGISTRY: Optional["ToolRegistry"] = None
-_GLOBAL_LOCK = threading.RLock()
-
 
 class ToolRegistry:
     """
@@ -58,12 +51,22 @@ class ToolRegistry:
     """
 
     def __init__(self, auto_discover: bool = False):
-        """Initialize tool registry."""
+        """Initialize tool registry.
+
+        The ``auto_discover`` parameter is deprecated and ignored.  Tools
+        are now lazily instantiated from the static ``TOOL_CLASSES`` map
+        in ``temper_ai.tools`` when first accessed via ``get()``.
+        """
         self._tools: dict[str, dict[str, BaseTool]] = {}
         self._lock = threading.Lock()
 
         if auto_discover:
-            self.auto_discover()
+            warnings.warn(
+                "auto_discover is deprecated. Tools are now lazily loaded "
+                "from TOOL_CLASSES. Pass auto_discover=False or omit it.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
 
     def register(self, tool: BaseTool, allow_override: bool = False) -> None:
         """Register a tool with version support."""
@@ -89,11 +92,6 @@ class ToolRegistry:
 
         logger.debug(f"Registered tool: {tool.name} v{version}")
 
-    def register_multiple(self, tools: list[BaseTool]) -> None:
-        """Register multiple tools at once."""
-        for tool in tools:
-            self.register(tool)
-
     def unregister(self, tool_name: str, version: str | None = None) -> None:
         """Unregister a tool or specific tool version."""
         with self._lock:
@@ -112,9 +110,22 @@ class ToolRegistry:
                     del self._tools[tool_name]
 
     def get(self, name: str, version: str | None = None) -> BaseTool | None:
-        """Get tool by name and optionally version."""
+        """Get tool by name and optionally version.
+
+        If the tool is not already registered, attempts lazy instantiation
+        from the static ``TOOL_CLASSES`` registry.  Each call that triggers
+        lazy instantiation creates a fresh instance so per-agent tool config
+        doesn't leak across agents.
+        """
         if name not in self._tools:
-            return None
+            # Lazy instantiation from static registry
+            from temper_ai.tools import TOOL_CLASSES
+
+            tool_class = TOOL_CLASSES.get(name)
+            if tool_class is None:
+                return None
+            tool = tool_class()
+            self.register(tool)
 
         tool_versions = self._tools[name]
 
@@ -128,12 +139,17 @@ class ToolRegistry:
         return tool_versions[latest_version]
 
     def has(self, name: str, version: str | None = None) -> bool:
-        """Check if tool is registered."""
-        if name not in self._tools:
+        """Check if tool exists (registered or in static registry)."""
+        if name in self._tools:
+            if version is None:
+                return len(self._tools[name]) > 0
+            return version in self._tools[name]
+        # Check static registry (without instantiation)
+        if version is not None:
             return False
-        if version is None:
-            return len(self._tools[name]) > 0
-        return version in self._tools[name]
+        from temper_ai.tools import TOOL_CLASSES
+
+        return name in TOOL_CLASSES
 
     def list_tools(self) -> list[str]:
         """List all registered tool names."""
@@ -154,32 +170,31 @@ class ToolRegistry:
                 result[name] = latest_tool
         return result
 
-    def get_tool_schema(self, name: str) -> dict[str, Any]:
-        """Get tool schema for LLM."""
-        tool = self.get(name)
-        if not tool:
-            raise ToolRegistryError(f"Tool not found: {name}")
-        return tool.to_llm_schema()
+    def list_available(self) -> list[str]:
+        """List all available tool names (static registry + manually registered)."""
+        from temper_ai.tools import TOOL_CLASSES
 
-    def get_all_tool_schemas(self) -> list[dict[str, Any]]:
-        """Get schemas for all registered tools."""
-        return [tool.to_llm_schema() for tool in self.get_all_tools().values()]
+        names = set(TOOL_CLASSES.keys())
+        names.update(self._tools.keys())
+        return sorted(names)
 
     def auto_discover(
         self, tools_package: str = "temper_ai.tools", use_cache: bool = True
     ) -> int:
-        """Auto-discover and register tools from a package."""
-        global _DISCOVERED_TOOLS_CACHE
-        return _auto_discover(
-            registry=self,
-            tools_package=tools_package,
-            use_cache=use_cache,
-            global_lock=_GLOBAL_LOCK,
-            get_cache_fn=lambda: _DISCOVERED_TOOLS_CACHE,
-            set_cache_fn=lambda tools: globals().__setitem__(
-                "_DISCOVERED_TOOLS_CACHE", tools
-            ),
+        """Deprecated.  Tools are now lazily loaded from TOOL_CLASSES.
+
+        This method is a no-op that returns the number of statically
+        known tools for backward compatibility.
+        """
+        warnings.warn(
+            "auto_discover() is deprecated. Tools are lazily loaded "
+            "from TOOL_CLASSES. Remove this call.",
+            DeprecationWarning,
+            stacklevel=2,
         )
+        from temper_ai.tools import TOOL_CLASSES
+
+        return len(TOOL_CLASSES)
 
     def clear(self) -> None:
         """Clear all registered tools."""
@@ -190,7 +205,11 @@ class ToolRegistry:
         return sum(len(versions) for versions in self._tools.values())
 
     def __contains__(self, name: str) -> bool:
-        return name in self._tools
+        if name in self._tools:
+            return True
+        from temper_ai.tools import TOOL_CLASSES
+
+        return name in TOOL_CLASSES
 
     def __repr__(self) -> str:
         return f"ToolRegistry(tools={len(self._tools)})"
@@ -205,11 +224,6 @@ class ToolRegistry:
 
 def _list(self: ToolRegistry) -> list[str]:
     """List all registered tool names (Registry Protocol method)."""
-    return self.list_tools()
-
-
-def _list_all(self: ToolRegistry) -> list[str]:
-    """DEPRECATED: Use list() instead."""
     return self.list_tools()
 
 
@@ -260,7 +274,6 @@ def _get_error_suggestion_method(self: ToolRegistry, error_msg: str) -> str | No
 
 
 ToolRegistry.list = _list  # type: ignore[attr-defined]
-ToolRegistry.list_all = _list_all  # type: ignore[attr-defined]
 ToolRegistry.count = _count  # type: ignore[attr-defined]
 ToolRegistry.get_tool_metadata = _get_tool_metadata_method  # type: ignore[attr-defined]
 ToolRegistry._validate_tool_interface = _validate_tool_interface_method  # type: ignore[attr-defined]
@@ -269,23 +282,3 @@ ToolRegistry.list_available_tools = _list_available_tools_method  # type: ignore
 ToolRegistry.get_registration_report = _get_registration_report_method  # type: ignore[attr-defined]
 ToolRegistry.load_from_config = _load_from_config_method  # type: ignore[attr-defined]
 ToolRegistry.load_all_from_configs = _load_all_from_configs_method  # type: ignore[attr-defined]
-
-
-def get_global_registry() -> ToolRegistry:
-    """Get or create global singleton tool registry with auto-discovered tools."""
-    global _GLOBAL_REGISTRY
-
-    with _GLOBAL_LOCK:
-        if _GLOBAL_REGISTRY is None:
-            _GLOBAL_REGISTRY = ToolRegistry(auto_discover=False)
-            _GLOBAL_REGISTRY.auto_discover(use_cache=True)
-
-    return _GLOBAL_REGISTRY
-
-
-def clear_global_cache() -> None:
-    """Clear global tool discovery cache and registry singleton."""
-    global _DISCOVERED_TOOLS_CACHE, _GLOBAL_REGISTRY
-    with _GLOBAL_LOCK:
-        _DISCOVERED_TOOLS_CACHE = None
-        _GLOBAL_REGISTRY = None

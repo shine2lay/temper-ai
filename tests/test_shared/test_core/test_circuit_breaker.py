@@ -16,8 +16,6 @@ from temper_ai.shared.core.circuit_breaker import (
     CircuitBreakerConfig,
     CircuitBreakerError,
     CircuitBreakerMetrics,
-    CircuitBreakerOpen,
-    CircuitBreakerState,
     CircuitState,
     _build_config,
     _validate_name,
@@ -33,14 +31,12 @@ def make_breaker(
     failure_threshold: int = 3,
     timeout_seconds: int = 60,
     success_threshold: int = 2,
-    storage=None,
 ) -> CircuitBreaker:
     return CircuitBreaker(
         name=name,
         failure_threshold=failure_threshold,
         timeout_seconds=timeout_seconds,
         success_threshold=success_threshold,
-        storage=storage,
     )
 
 
@@ -48,19 +44,6 @@ def trip_breaker(breaker: CircuitBreaker) -> None:
     """Record enough failures to open the breaker."""
     for _ in range(breaker.config.failure_threshold):
         breaker.record_failure()
-
-
-# ---------------------------------------------------------------------------
-# Aliases / compatibility
-# ---------------------------------------------------------------------------
-
-
-class TestAliases:
-    def test_circuit_breaker_state_is_alias(self):
-        assert CircuitBreakerState is CircuitState
-
-    def test_circuit_breaker_open_is_alias(self):
-        assert CircuitBreakerOpen is CircuitBreakerError
 
 
 # ---------------------------------------------------------------------------
@@ -546,59 +529,6 @@ class TestCallbacks:
         trip_breaker(breaker)
         cb1.assert_called_once()
         cb2.assert_called_once()
-
-
-# ---------------------------------------------------------------------------
-# Storage integration
-# ---------------------------------------------------------------------------
-
-
-class TestStorageIntegration:
-    def _make_storage(self) -> MagicMock:
-        storage = MagicMock()
-        storage.get.return_value = None
-        return storage
-
-    def test_state_saved_after_failure(self):
-        storage = self._make_storage()
-        breaker = make_breaker(storage=storage)
-        breaker.record_failure()
-        storage.set.assert_called()
-
-    def test_state_saved_after_success(self):
-        storage = self._make_storage()
-        breaker = make_breaker(storage=storage)
-        breaker.record_success()
-        storage.set.assert_called()
-
-    def test_state_saved_after_reset(self):
-        storage = self._make_storage()
-        breaker = make_breaker(storage=storage)
-        storage.set.reset_mock()
-        breaker.reset()
-        storage.set.assert_called()
-
-    def test_state_loaded_from_storage_on_init(self):
-        """If storage has existing state, it's loaded on construction."""
-        import json
-
-        state_data = json.dumps(
-            {
-                "state": "closed",
-                "failure_count": 2,
-                "success_count": 0,
-                "last_failure_time": None,
-                "config": {
-                    "failure_threshold": 5,
-                    "success_threshold": 2,
-                    "timeout": 60,
-                },
-            }
-        )
-        storage = MagicMock()
-        storage.get.return_value = state_data
-        breaker = CircuitBreaker(name="test", storage=storage)
-        assert breaker._failure_count == 2
 
 
 # ---------------------------------------------------------------------------

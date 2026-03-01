@@ -10,11 +10,8 @@ from unittest.mock import Mock, patch
 
 import pytest
 from sqlalchemy import text
-from sqlalchemy.exc import SQLAlchemyError
 
 from temper_ai.observability.migrations import (
-    MigrationSecurityError,
-    check_schema_version,
     create_schema,
     drop_schema,
     reset_schema,
@@ -29,20 +26,6 @@ def test_db():
     db.create_all_tables()
     assert db is not None
     yield db
-
-
-@pytest.fixture
-def mock_db_manager():
-    """Create a mock database manager."""
-    from unittest.mock import MagicMock
-
-    mock = Mock(spec=DatabaseManager)
-    mock_session = MagicMock()
-    mock_context_manager = MagicMock()
-    mock_context_manager.__enter__.return_value = mock_session
-    mock_context_manager.__exit__.return_value = None
-    mock.session.return_value = mock_context_manager
-    return mock
 
 
 class TestCreateSchema:
@@ -147,99 +130,6 @@ class TestResetSchema:
             mock_create.assert_called_once_with(None)
 
 
-class TestCheckSchemaVersion:
-    """Test check_schema_version function."""
-
-    def test_check_version_returns_latest(self, test_db):
-        """Test checking schema version returns latest version."""
-        # Create schema_version table
-        with test_db.session() as session:
-            session.execute(
-                text(
-                    "CREATE TABLE IF NOT EXISTS schema_version "
-                    "(version TEXT, applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
-                )
-            )
-            session.execute(
-                text(
-                    "INSERT INTO schema_version (version, applied_at) VALUES (:version, CURRENT_TIMESTAMP)"
-                ),
-                {"version": "1.0.0"},
-            )
-            session.commit()
-
-        version = check_schema_version(test_db)
-        assert version == "1.0.0"
-
-    def test_check_version_returns_none_if_no_versions(self, test_db):
-        """Test checking version when no versions exist."""
-        # Create empty schema_version table
-        with test_db.session() as session:
-            session.execute(
-                text(
-                    "CREATE TABLE IF NOT EXISTS schema_version "
-                    "(version TEXT, applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
-                )
-            )
-            session.commit()
-
-        version = check_schema_version(test_db)
-        assert version is None
-
-    def test_check_version_returns_none_if_table_missing(self, test_db):
-        """Test checking version when table doesn't exist."""
-        # Don't create schema_version table
-        version = check_schema_version(test_db)
-        assert version is None
-
-    def test_check_version_returns_latest_when_multiple(self, test_db):
-        """Test that check_version returns most recent version."""
-        # Create schema_version table with multiple versions using explicit timestamps
-        with test_db.session() as session:
-            session.execute(
-                text(
-                    "CREATE TABLE IF NOT EXISTS schema_version "
-                    "(version TEXT, applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
-                )
-            )
-            session.execute(
-                text(
-                    "INSERT INTO schema_version (version, applied_at) VALUES (:version, :ts)"
-                ),
-                {"version": "1.0.0", "ts": "2024-01-01 00:00:00"},
-            )
-            session.execute(
-                text(
-                    "INSERT INTO schema_version (version, applied_at) VALUES (:version, :ts)"
-                ),
-                {"version": "1.1.0", "ts": "2024-01-02 00:00:00"},
-            )
-            session.execute(
-                text(
-                    "INSERT INTO schema_version (version, applied_at) VALUES (:version, :ts)"
-                ),
-                {"version": "1.2.0", "ts": "2024-01-03 00:00:00"},
-            )
-            session.commit()
-
-        version = check_schema_version(test_db)
-        # ORDER BY applied_at DESC returns the version with the latest timestamp
-        assert version == "1.2.0"
-
-
-class TestMigrationEdgeCases:
-    """Test edge cases and error handling."""
-
-    def test_check_version_with_sql_error(self, mock_db_manager):
-        """Test check_version handles SQL errors gracefully."""
-        mock_session = mock_db_manager.session.return_value.__enter__.return_value
-        mock_session.execute.side_effect = SQLAlchemyError("Database error")
-
-        # Should return None instead of raising
-        version = check_schema_version(mock_db_manager)
-        assert version is None
-
-
 class TestDataPreservation:
     """Test that migrations preserve existing data."""
 
@@ -310,6 +200,10 @@ class TestDeprecatedFunctionsRemoved:
             mig, "_normalize_sql"
         ), "_normalize_sql was removed; use Alembic instead"
 
-    def test_migration_security_error_still_exists(self):
-        """MigrationSecurityError should still be importable for backward compat."""
-        assert MigrationSecurityError is not None
+    def test_migration_security_error_removed(self):
+        """MigrationSecurityError was removed (dead code)."""
+        import temper_ai.observability.migrations as mig
+
+        assert not hasattr(
+            mig, "MigrationSecurityError"
+        ), "MigrationSecurityError was removed"

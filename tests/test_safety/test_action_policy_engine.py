@@ -423,26 +423,6 @@ class TestCaching:
         # Second should be cache hit
         assert result2.metadata["cache_hits"] > 0
 
-        # Metrics should show cache hit
-        metrics = engine.get_metrics()
-        assert metrics["cache_hits"] > 0
-
-    @pytest.mark.asyncio
-    async def test_cache_disabled(self, registry, context):
-        """Test that caching can be disabled."""
-        policy = MockPolicy("test_policy")
-        registry.register_policy(policy, action_types=["file_write"])
-
-        engine = ActionPolicyEngine(registry, config={"enable_caching": False})
-
-        # Multiple validations
-        for _ in range(3):
-            await engine.validate_action(action={"command": "test"}, context=context)
-
-        # No cache hits
-        metrics = engine.get_metrics()
-        assert metrics["cache_hits"] == 0
-
     @pytest.mark.asyncio
     async def test_cache_expiration(self, registry, context):
         """Test that cache entries expire based on TTL."""
@@ -455,35 +435,20 @@ class TestCaching:
         )
 
         # First validation
-        await engine.validate_action(action={"command": "test"}, context=context)
+        result1 = await engine.validate_action(
+            action={"command": "test"}, context=context
+        )
 
         # Wait for expiration
         await asyncio.sleep(0.2)
 
         # Second validation - cache miss due to expiration
-        await engine.validate_action(action={"command": "test"}, context=context)
+        result2 = await engine.validate_action(
+            action={"command": "test"}, context=context
+        )
 
-        # Should be cache miss (expired)
-        metrics = engine.get_metrics()
-        assert metrics["cache_misses"] >= 2  # Both validations are misses
-
-    @pytest.mark.asyncio
-    async def test_clear_cache(self, registry, context):
-        """Test clearing cache."""
-        policy = MockPolicy("test_policy")
-        registry.register_policy(policy, action_types=["file_write"])
-
-        engine = ActionPolicyEngine(registry, config={"enable_caching": True})
-
-        # Validate to populate cache
-        await engine.validate_action(action={"command": "test"}, context=context)
-
-        assert engine.get_metrics()["cache_size"] > 0
-
-        # Clear cache
-        engine.clear_cache()
-
-        assert engine.get_metrics()["cache_size"] == 0
+        # After expiration, second result should not show cache hits
+        assert result2.metadata.get("cache_hits", 0) == 0
 
 
 # ============================================================================
@@ -547,74 +512,6 @@ class TestErrorHandling:
 
 
 # ============================================================================
-# Test Metrics
-# ============================================================================
-
-
-class TestMetrics:
-    """Test engine metrics tracking."""
-
-    @pytest.mark.asyncio
-    async def test_validation_count_tracked(self, registry, engine, context):
-        """Test that validation count is tracked."""
-        policy = MockPolicy("test_policy")
-        registry.register_policy(policy, action_types=["file_write"])
-
-        initial_count = engine.get_metrics()["validations_performed"]
-
-        await engine.validate_action(action={"command": "test"}, context=context)
-
-        assert engine.get_metrics()["validations_performed"] == initial_count + 1
-
-    @pytest.mark.asyncio
-    async def test_violation_count_tracked(self, registry, engine, context):
-        """Test that violation count is tracked."""
-        policy = MockPolicy(
-            "test_policy",
-            violations=[{"severity": ViolationSeverity.HIGH, "message": "Violation"}],
-        )
-        registry.register_policy(policy, action_types=["file_write"])
-
-        initial_count = engine.get_metrics()["violations_logged"]
-
-        await engine.validate_action(action={"command": "test"}, context=context)
-
-        assert engine.get_metrics()["violations_logged"] == initial_count + 1
-
-    @pytest.mark.asyncio
-    async def test_cache_hit_rate_calculated(self, registry, context):
-        """Test that cache hit rate is calculated."""
-        policy = MockPolicy("test_policy")
-        registry.register_policy(policy, action_types=["file_write"])
-
-        engine = ActionPolicyEngine(registry, config={"enable_caching": True})
-
-        # First validation - miss
-        await engine.validate_action(action={"command": "test"}, context=context)
-
-        # Second validation - hit
-        await engine.validate_action(action={"command": "test"}, context=context)
-
-        metrics = engine.get_metrics()
-        assert metrics["cache_hit_rate"] > 0.0
-        assert metrics["cache_hit_rate"] <= 1.0
-
-    @pytest.mark.asyncio
-    async def test_reset_metrics(self, registry, engine, context):
-        """Test resetting metrics."""
-        policy = MockPolicy("test_policy")
-        registry.register_policy(policy, action_types=["file_write"])
-
-        await engine.validate_action(action={"command": "test"}, context=context)
-
-        assert engine.get_metrics()["validations_performed"] > 0
-
-        engine.reset_metrics()
-
-        assert engine.get_metrics()["validations_performed"] == 0
-
-
-# ============================================================================
 # Test Result Helper Methods
 # ============================================================================
 
@@ -665,46 +562,6 @@ class TestEnforcementResultHelpers:
         )
 
         assert result.has_blocking_violations() is True
-
-    def test_get_violations_by_severity(self):
-        """Test filtering violations by severity."""
-        violations = [
-            SafetyViolation(
-                policy_name="p1",
-                severity=ViolationSeverity.CRITICAL,
-                message="Critical",
-                action="test",
-                context={},
-            ),
-            SafetyViolation(
-                policy_name="p2",
-                severity=ViolationSeverity.MEDIUM,
-                message="Medium",
-                action="test",
-                context={},
-            ),
-            SafetyViolation(
-                policy_name="p3",
-                severity=ViolationSeverity.CRITICAL,
-                message="Critical2",
-                action="test",
-                context={},
-            ),
-        ]
-
-        result = EnforcementResult(
-            allowed=False,
-            violations=violations,
-            policies_executed=["p1", "p2", "p3"],
-            execution_time_ms=10.0,
-            metadata={},
-        )
-
-        critical = result.get_violations_by_severity(ViolationSeverity.CRITICAL)
-        assert len(critical) == 2
-
-        medium = result.get_violations_by_severity(ViolationSeverity.MEDIUM)
-        assert len(medium) == 1
 
 
 # ============================================================================

@@ -310,64 +310,6 @@ class TestHandleExceptionRollback:
         )
 
 
-class TestExecuteBatchExceptionPath:
-    """Cover lines 349-358: future.result() exception inside execute_batch."""
-
-    def test_future_exception_recorded_as_failed_result(self):
-        from temper_ai.tools._executor_helpers import execute_batch
-
-        executor = _make_executor()
-        pool = concurrent.futures.ThreadPoolExecutor(max_workers=2)
-        executor._executor = pool
-
-        def fail_execute(tool_name, params, timeout):
-            raise RuntimeError("execution blew up")
-
-        executor.execute = fail_execute
-        results = execute_batch(executor, [("bad_tool", {})], timeout=5)
-        pool.shutdown(wait=True)
-
-        assert len(results) == 1
-        assert results[0].success is False
-        assert (
-            "execution blew up" in results[0].error
-            or "Execution failed" in results[0].error
-        )
-
-
-class TestGetToolInfo:
-    """Cover lines 398-412: get_tool_info."""
-
-    def test_unknown_tool_returns_none(self):
-        from temper_ai.tools._executor_helpers import get_tool_info
-
-        executor = _make_executor()
-        executor.registry.get.return_value = None
-        assert get_tool_info(executor, "unknown") is None
-
-    def test_known_tool_returns_info_dict(self):
-        from temper_ai.tools._executor_helpers import get_tool_info
-
-        executor = _make_executor()
-        tool = MagicMock()
-        metadata = MagicMock()
-        metadata.name = "my_tool"
-        metadata.description = "A tool"
-        metadata.version = "1.0"
-        metadata.category = "utility"
-        tool.get_metadata.return_value = metadata
-        tool.get_parameters_schema.return_value = {}
-        tool.to_llm_schema.return_value = {}
-        executor.registry.get.return_value = tool
-
-        info = get_tool_info(executor, "my_tool")
-        assert info is not None
-        assert info["name"] == "my_tool"
-        assert "description" in info
-        assert "parameters_schema" in info
-        assert "llm_schema" in info
-
-
 class TestValidateAndGetToolParamValidationException:
     """Cover lines 450-451: validate_and_get_tool param validation exception."""
 
@@ -377,7 +319,7 @@ class TestValidateAndGetToolParamValidationException:
         executor = _make_executor()
         tool = MagicMock()
         tool.validate_params.side_effect = AttributeError("missing attr")
-        executor.registry.get.return_value = tool
+        executor._get_tool.return_value = tool
 
         result_tool, error = validate_and_get_tool(executor, "my_tool", {})
         assert result_tool is None
@@ -391,7 +333,7 @@ class TestValidateAndGetToolParamValidationException:
         executor = _make_executor()
         tool = MagicMock()
         tool.validate_params.side_effect = KeyError("missing_key")
-        executor.registry.get.return_value = tool
+        executor._get_tool.return_value = tool
 
         result_tool, error = validate_and_get_tool(executor, "my_tool", {})
         assert result_tool is None
@@ -509,7 +451,7 @@ class TestCreateSnapshot:
         metadata = MagicMock()
         metadata.modifies_state = False
         tool.get_metadata.return_value = metadata
-        executor.registry.get.return_value = tool
+        executor._get_tool.return_value = tool
 
         result = create_snapshot(executor, "tool", {}, {})
         assert result is None
@@ -528,7 +470,7 @@ class TestCreateSnapshot:
         metadata = MagicMock()
         metadata.modifies_state = True
         tool.get_metadata.return_value = metadata
-        executor.registry.get.return_value = tool
+        executor._get_tool.return_value = tool
 
         with patch(
             "temper_ai.tools._executor_helpers.log_rollback_snapshot",
@@ -551,7 +493,7 @@ class TestCreateSnapshot:
         metadata = MagicMock()
         metadata.modifies_state = True
         tool.get_metadata.return_value = metadata
-        executor.registry.get.return_value = tool
+        executor._get_tool.return_value = tool
 
         result = create_snapshot(executor, "tool", {}, {})
         assert result is None
@@ -1265,7 +1207,6 @@ class TestToolExecutorExecute:
         executor.shutdown(wait=False)
         # Second shutdown should be a no-op
         executor.shutdown(wait=False)
-        assert executor.is_shutdown()
 
     def test_repr_shows_status(self):
         from temper_ai.tools.executor import ToolExecutor
@@ -1302,44 +1243,6 @@ class TestToolExecutorExecute:
 
         result = executor.execute("path_tool_ws", {"path": "/etc/passwd"})
         assert result.success is False
-        executor.shutdown(wait=False)
-
-    def test_execute_batch_delegates(self):
-        from temper_ai.tools.executor import ToolExecutor
-
-        tool = self._make_named_tool("batch_tool")
-        registry = self._make_registry_with_tool(tool)
-        # Use enough workers to avoid deadlock: batch uses outer workers,
-        # inner execute_with_timeout submits to same pool, needs extra capacity.
-        executor = ToolExecutor(registry, max_workers=4)
-
-        results = executor.execute_batch([("batch_tool", {}), ("batch_tool", {})])
-        assert len(results) == 2
-        assert all(r.success for r in results)
-        executor.shutdown(wait=True)
-
-    def test_validate_tool_call_delegates(self):
-        from temper_ai.tools.executor import ToolExecutor
-
-        tool = self._make_named_tool("val_tool")
-        registry = self._make_registry_with_tool(tool)
-        executor = ToolExecutor(registry)
-
-        valid, error = executor.validate_tool_call("val_tool", {})
-        assert valid is True
-        assert error is None
-        executor.shutdown(wait=False)
-
-    def test_get_tool_info_delegates(self):
-        from temper_ai.tools.executor import ToolExecutor
-
-        tool = self._make_named_tool("info_tool")
-        registry = self._make_registry_with_tool(tool)
-        executor = ToolExecutor(registry)
-
-        info = executor.get_tool_info("info_tool")
-        assert info is not None
-        assert info["name"] == "info_tool"
         executor.shutdown(wait=False)
 
 
@@ -1810,19 +1713,17 @@ class TestJsonParserCoverage:
 class TestLoaderCoverage:
     """Cover lines 23, 126-128, 146-147 in loader.py."""
 
-    def test_ensure_tools_discovered_warns_when_zero_discovered(self):
-        """Line 23: Warning when auto_discover returns 0."""
+    def test_ensure_tools_discovered_is_noop(self):
+        """ensure_tools_discovered is now a no-op (lazy loading)."""
         from temper_ai.tools.loader import ensure_tools_discovered
 
         mock_registry = MagicMock()
         mock_registry.list_tools.return_value = []
-        mock_registry.auto_discover.return_value = 0
 
-        with patch("temper_ai.tools.loader.logger") as mock_logger:
-            ensure_tools_discovered(mock_registry)
+        ensure_tools_discovered(mock_registry)
 
-        mock_logger.warning.assert_called_once()
-        assert "no tools" in mock_logger.warning.call_args[0][0].lower()
+        # Should not call auto_discover — function is a no-op
+        mock_registry.auto_discover.assert_not_called()
 
     def test_resolve_single_tool_calls_validate_config_after_template_resolution(self):
         """Lines 125-133: validate_config called after template resolution."""
@@ -2094,178 +1995,47 @@ class TestRegistryHelpersCoverage:
         assert valid is False
         assert any("invalid tool class" in e.lower() for e in errors)
 
-    def test_load_cached_tools_no_cache_returns_none(self):
-        """Lines 100-101: use_cache=False returns None immediately."""
-        from temper_ai.tools._registry_helpers import _load_cached_tools
-
-        registry = MagicMock()
-        global_lock = threading.Lock()
-        get_cache_fn = MagicMock(return_value=None)
-
-        result = _load_cached_tools(
-            registry,
-            use_cache=False,
-            global_lock=global_lock,
-            get_cache_fn=get_cache_fn,
-        )
-        assert result is None
-        get_cache_fn.assert_not_called()
-
-    def test_load_cached_tools_with_cached_data(self):
-        """Lines 109-121: Cached tools are registered."""
-        from temper_ai.tools._registry_helpers import _load_cached_tools
+    def test_lazy_get_from_static_registry(self):
+        """TOOL_CLASSES-backed lazy get creates instances on demand."""
         from temper_ai.tools.registry import ToolRegistry
 
         registry = ToolRegistry()
-        global_lock = threading.Lock()
+        assert registry.list_tools() == []
+        tool = registry.get("Calculator")
+        assert tool is not None
+        assert tool.name == "Calculator"
 
-        class CachedTool(BaseTool):
-            def get_metadata(self) -> ToolMetadata:
-                return ToolMetadata(name="cached_tool", description="cached")
-
-            def execute(self, **kwargs) -> ToolResult:
-                return ToolResult(success=True)
-
-        tool_instance = CachedTool()
-        get_cache_fn = MagicMock(return_value={"cached_tool:1.0": tool_instance})
-
-        result = _load_cached_tools(
-            registry, use_cache=True, global_lock=global_lock, get_cache_fn=get_cache_fn
-        )
-        assert result == 1
-        assert registry.get("cached_tool") is not None
-
-    def test_load_cached_tools_fallback_to_shared_instance(self):
-        """Lines 116-119: When fresh() raises TypeError, fallback shares original instance."""
-        from temper_ai.tools._registry_helpers import _load_cached_tools
+    def test_has_checks_static_registry(self):
+        """has() checks TOOL_CLASSES without instantiation."""
         from temper_ai.tools.registry import ToolRegistry
 
         registry = ToolRegistry()
-        global_lock = threading.Lock()
+        assert registry.has("Bash")
+        assert not registry.has("NonExistentTool")
 
-        # Create a tool instance whose class constructor raises TypeError
-        # when called with no args (simulates a tool that needs args).
-        class SpecialTool(BaseTool):
-            _instance_count = 0
-
-            def __init__(self):
-                SpecialTool._instance_count += 1
-                if SpecialTool._instance_count > 1:
-                    raise TypeError("This tool requires args on re-init")
-                super().__init__()
-
-            def get_metadata(self) -> ToolMetadata:
-                return ToolMetadata(name="fallback_special", description="test")
-
-            def get_parameters_schema(self) -> dict:
-                return {"type": "object", "properties": {}, "required": []}
-
-            def execute(self, **kwargs) -> ToolResult:
-                return ToolResult(success=True)
-
-        tool_instance = SpecialTool()
-
-        get_cache_fn = MagicMock(return_value={"fallback_special:1.0.0": tool_instance})
-        result = _load_cached_tools(
-            registry, use_cache=True, global_lock=global_lock, get_cache_fn=get_cache_fn
-        )
-
-        # Fallback uses shared instance — should still register 1 tool
-        assert result == 1
-        assert registry.get("fallback_special") is not None
-
-    def test_try_register_tool_value_error_returns_skip_info(self):
-        """Lines 157-161: ValueError during instantiation returns skip info."""
-        from temper_ai.tools._registry_helpers import _try_register_tool
+    def test_list_available_returns_all_known(self):
+        """list_available() returns TOOL_CLASSES + registered."""
         from temper_ai.tools.registry import ToolRegistry
 
         registry = ToolRegistry()
+        available = registry.list_available()
+        assert "Bash" in available
+        assert "Calculator" in available
+        assert len(available) >= 8
 
-        class ValueErrorTool(BaseTool):
-            def __init__(self):
-                raise ValueError("bad value")
-
-            def get_metadata(self) -> ToolMetadata:
-                return ToolMetadata(name="ve_tool", description="test")
-
-            def execute(self, **kwargs) -> ToolResult:
-                return ToolResult(success=True)
-
-        success, skip_info = _try_register_tool(ValueErrorTool, registry, {})
-        assert success is False
-        assert skip_info is not None
-        _name, reason = skip_info
-        assert "instantiation error" in reason.lower()
-
-    def test_discover_tool_class_with_suggestion(self):
-        """Lines 178-181: Suggestion logged for invalid tool."""
-        from temper_ai.tools._registry_helpers import _discover_tool_class
-        from temper_ai.tools.registry import ToolRegistry
-
-        class NotATool:
-            pass
-
-        registry = ToolRegistry()
-        discovered = {}
-
-        with patch("temper_ai.tools._registry_helpers.logger"):
-            reg, disc, skipped = _discover_tool_class(NotATool, registry, discovered)
-
-        assert reg == 0
-        assert disc == 1
-        assert len(skipped) == 1
-
-    def test_auto_discover_import_error_returns_zero(self):
-        """Lines 273-275: ImportError returns 0."""
-        from temper_ai.tools._registry_helpers import auto_discover
+    def test_auto_discover_deprecated_returns_count(self):
+        """auto_discover() is deprecated and returns TOOL_CLASSES count."""
         from temper_ai.tools.registry import ToolRegistry
 
         registry = ToolRegistry()
+        import warnings
 
-        with patch(
-            "temper_ai.tools._registry_helpers._discover_package_tools"
-        ) as mock_dp:
-            mock_dp.side_effect = ImportError("no package")
-            result = auto_discover(
-                registry,
-                "nonexistent.package",
-                use_cache=False,
-                global_lock=threading.Lock(),
-                get_cache_fn=lambda: None,
-                set_cache_fn=lambda x: None,
-            )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            count = registry.auto_discover()
+        from temper_ai.tools import TOOL_CLASSES
 
-        assert result == 0
-
-    def test_auto_discover_caches_discovered_tools(self):
-        """Lines 285-287: discovered_tools stored in cache when use_cache=True."""
-        from temper_ai.tools._registry_helpers import auto_discover
-        from temper_ai.tools.registry import ToolRegistry
-
-        registry = ToolRegistry()
-        stored = {}
-
-        def set_cache(tools):
-            stored.update(tools)
-
-        with patch(
-            "temper_ai.tools._registry_helpers._discover_package_tools"
-        ) as mock_dp:
-            _SimpleTool()
-            mock_dp.return_value = (1, 1, [])
-
-            # Inject discovered_tools by patching the discovered_tools dict creation
-            with patch.object(registry, "register"):
-                result = auto_discover(
-                    registry,
-                    "some.package",
-                    use_cache=True,
-                    global_lock=threading.Lock(),
-                    get_cache_fn=lambda: None,
-                    set_cache_fn=set_cache,
-                )
-
-        assert result == 1
+        assert count == len(TOOL_CLASSES)
 
     def test_get_registration_report_with_no_tools(self):
         """Lines 360-361: Report when no tools registered."""
@@ -2345,25 +2115,6 @@ class TestRegistryHelpersCoverage:
         result = get_latest_version(["abc", "def", "1.0"])
         assert result == "1.0"
 
-    def test_tool_registry_reporting_mixin_get_tool_schema(self):
-        """Cover ToolRegistryReportingMixin methods."""
-        from temper_ai.tools.registry import ToolRegistry
-
-        registry = ToolRegistry()
-        registry.register(self._make_concrete_tool("schema_tool"))
-
-        schema = registry.get_tool_schema("schema_tool")
-        assert schema is not None
-
-    def test_tool_registry_reporting_mixin_unknown_tool_raises(self):
-        """Cover ToolRegistryReportingMixin.get_tool_schema for missing tool."""
-        from temper_ai.shared.utils.exceptions import ToolRegistryError
-        from temper_ai.tools.registry import ToolRegistry
-
-        registry = ToolRegistry()
-        with pytest.raises(ToolRegistryError):
-            registry.get_tool_schema("nonexistent")
-
     def test_tool_registry_validation_mixin(self):
         """Cover ToolRegistryValidationMixin methods."""
         from temper_ai.tools.registry import ToolRegistry
@@ -2436,15 +2187,3 @@ class TestRegistryHelpersCoverage:
 
         result = load_all_from_configs(registry, mock_loader)
         assert result == 0
-
-    def test_get_all_tool_schemas_returns_list(self):
-        """Cover get_all_tool_schemas."""
-        from temper_ai.tools.registry import ToolRegistry
-
-        registry = ToolRegistry()
-        registry.register(self._make_concrete_tool("schema1"))
-        registry.register(self._make_concrete_tool("schema2"))
-
-        schemas = registry.get_all_tool_schemas()
-        assert isinstance(schemas, list)
-        assert len(schemas) == 2

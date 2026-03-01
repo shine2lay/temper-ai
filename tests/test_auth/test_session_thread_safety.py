@@ -187,10 +187,6 @@ class TestUserStoreConcurrency:
             assert user is not None
             assert user.email == f"user{i}@example.com"
 
-            user_by_email = await store.get_user_by_email(f"user{i}@example.com")
-            assert user_by_email is not None
-            assert user_by_email.user_id == f"user-{i}"
-
             user_by_oauth = await store.get_user_by_oauth("google", f"google-{i}")
             assert user_by_oauth is not None
             assert user_by_oauth.user_id == f"user-{i}"
@@ -276,11 +272,9 @@ class TestUserStoreConcurrency:
         async def reader():
             for _ in range(20):
                 for i in range(10):
-                    user = await store.get_user_by_email(f"user{i}@example.com")
-                    if user is not None and user.user_id != f"user-{i}":
-                        errors.append(
-                            f"Inconsistent: email user{i}@example.com -> user_id {user.user_id}"
-                        )
+                    user = await store.get_user_by_id(f"user-{i}")
+                    if user is not None and user.email != f"user{i}@example.com":
+                        errors.append(f"Inconsistent: user-{i} -> email {user.email}")
                 await asyncio.sleep(0)
 
         async def writer():
@@ -342,7 +336,7 @@ class TestLockIsolation:
                 provider="google",
                 oauth_subject=f"google-{idx}",
             )
-            await user_store.get_user_by_email(f"user{idx}@example.com")
+            await user_store.get_user_by_id(f"user-{idx}")
 
         # Run session and user operations concurrently
         tasks = []

@@ -145,6 +145,34 @@ class ReadableBackendMixin:
         """List workflow executions with optional filtering."""
         return []
 
+    def find_stuck_workflows(
+        self, threshold_seconds: int = 1800
+    ) -> list[dict[str, Any]]:
+        """Find workflows stuck at 'running' longer than threshold.
+
+        Args:
+            threshold_seconds: How long a workflow must be running to be
+                considered stuck. Default 30 minutes.
+
+        Returns:
+            List of workflow dicts that appear stuck.
+        """
+        return []
+
+    def update_workflow_metadata(
+        self,
+        workflow_id: str,
+        metadata: dict[str, Any],
+    ) -> None:
+        """Merge additional metadata into a workflow execution record.
+
+        Used to store pipeline phase data and other post-hoc annotations.
+
+        Args:
+            workflow_id: Workflow execution ID.
+            metadata: Dict of keys to merge into extra_metadata.
+        """
+
     def get_stage(self, stage_id: str) -> dict[str, Any] | None:
         """Get stage execution data by ID, or None if not found."""
         return None

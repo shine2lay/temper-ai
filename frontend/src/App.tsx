@@ -4,6 +4,8 @@ import { ExecutionView } from '@/pages/ExecutionView';
 import { WorkflowList } from '@/pages/WorkflowList';
 import { ComparisonView } from '@/pages/ComparisonView';
 import { StudioView } from '@/pages/StudioView';
+import { LibraryView } from '@/pages/LibraryView';
+import { EditorView } from '@/pages/EditorView';
 import { LoginPage } from '@/pages/LoginPage';
 import { Toaster } from '@/components/ui/sonner';
 
@@ -64,6 +66,9 @@ export default function App() {
           <Route path="/compare" element={<ComparisonView />} />
           <Route path="/studio" element={<StudioView />} />
           <Route path="/studio/:name" element={<StudioView />} />
+          <Route path="/library" element={<LibraryView />} />
+          <Route path="/library/:configType/:name" element={<EditorView />} />
+          <Route path="/library/profile/:profileType/:name" element={<EditorView />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/" element={<WorkflowList />} />
           <Route path="*" element={<NotFound />} />

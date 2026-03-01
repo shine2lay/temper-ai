@@ -22,14 +22,14 @@ stage:
 
   inputs:
     suggestion_text:
-      source: vcs_work_discovery.output
+      type: string
       required: false
       default: ""
     workspace_path:
-      source: workflow.workspace_path
+      type: string
       required: true
     design_output:
-      source: vcs_design.output
+      type: string
       required: true
 
   outputs:

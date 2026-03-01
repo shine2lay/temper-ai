@@ -268,21 +268,6 @@ class UserStore:
         async with self._lock:
             return self._users.get(user_id)
 
-    async def get_user_by_email(self, email: str) -> User | None:
-        """Get user by email.
-
-        Args:
-            email: User email address
-
-        Returns:
-            User if found, None otherwise
-        """
-        async with self._lock:
-            user_id = self._emails.get(email)
-            if not user_id:
-                return None
-            return self._users.get(user_id)
-
     async def get_user_by_oauth(self, provider: str, oauth_subject: str) -> User | None:
         """Get user by OAuth provider and subject ID.
 

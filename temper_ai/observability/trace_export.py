@@ -5,7 +5,6 @@ Provides hierarchical and flat trace representations suitable for
 waterfall/Gantt chart visualizations (D3.js, Plotly, Google Charts).
 """
 
-from datetime import datetime
 from typing import Any
 
 from sqlmodel import select
@@ -177,46 +176,3 @@ def export_waterfall_trace(workflow_id: str) -> dict[str, Any]:
             },
             "children": stage_children,
         }
-
-
-def flatten_for_waterfall(trace: dict[str, Any]) -> list[dict[str, Any]]:
-    """
-    Flatten hierarchical trace into flat list for waterfall charts.
-
-    Each entry has:
-    - id: unique identifier
-    - parent_id: parent for hierarchy
-    - name: display name
-    - start_offset_ms: milliseconds from workflow start
-    - duration_ms: duration in milliseconds
-    - type: node type
-    - depth: nesting depth (for visual indentation)
-    """
-    workflow_start = datetime.fromisoformat(trace["start"])
-    flat: list[dict[str, Any]] = []
-
-    def add_node(node: dict[str, Any], depth: int = 0) -> None:
-        """Recursively flatten a trace node and its children."""
-        start = datetime.fromisoformat(node["start"])
-        start_offset_ms = int((start - workflow_start).total_seconds() * 1000)
-        duration_ms = int((node["duration"] or 0) * 1000)
-
-        flat.append(
-            {
-                "id": node["id"],
-                "parent_id": node.get("parent_id"),
-                "name": node["name"],
-                "type": node["type"],
-                "start_offset_ms": start_offset_ms,
-                "duration_ms": duration_ms,
-                "depth": depth,
-                "status": node.get("status"),
-                "metadata": node.get("metadata", {}),
-            }
-        )
-
-        for child in node.get("children", []):
-            add_node(child, depth + 1)
-
-    add_node(trace)
-    return flat

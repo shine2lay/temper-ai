@@ -175,35 +175,3 @@ class CallbackURLValidator:
             return False, "Callback URL not in whitelist"
 
         return True, None
-
-    def get_allowed_urls(self) -> list[str]:
-        """Get list of allowed URLs (for display/debugging).
-
-        Returns:
-            Sorted list of allowed callback URLs
-        """
-        return sorted(self.allowed_urls)
-
-    def add_allowed_url(self, url: str) -> None:
-        """Add URL to whitelist.
-
-        SECURITY: Use with caution. Only add trusted URLs.
-
-        Args:
-            url: URL to add to whitelist
-        """
-        self.allowed_urls.add(url)
-
-    def remove_allowed_url(self, url: str) -> bool:
-        """Remove URL from whitelist.
-
-        Args:
-            url: URL to remove
-
-        Returns:
-            True if removed, False if not found
-        """
-        if url in self.allowed_urls:
-            self.allowed_urls.remove(url)
-            return True
-        return False

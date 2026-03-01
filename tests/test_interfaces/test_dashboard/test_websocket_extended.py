@@ -7,9 +7,9 @@ import pytest
 
 from temper_ai.interfaces.dashboard.websocket import (
     TERMINAL_STATUSES,
-    _authenticate_ws,
     _cancel_background_tasks,
     _create_event_callback,
+    _validate_ws_auth,
     _workflow_fingerprint,
     create_ws_endpoint,
 )
@@ -144,7 +144,7 @@ class TestWorkflowFingerprint:
         assert "failed" in TERMINAL_STATUSES
 
 
-class TestAuthenticateWs:
+class TestValidateWsAuth:
     @pytest.mark.asyncio
     @patch("temper_ai.auth.ws_tickets.validate_ws_ticket")
     async def test_valid_ticket(self, mock_validate):
@@ -152,7 +152,7 @@ class TestAuthenticateWs:
         ws = MagicMock()
         ws.query_params = {"ticket": "valid-ticket"}
 
-        result = await _authenticate_ws(ws)
+        result = await _validate_ws_auth(ws)
         assert result is True
 
     @pytest.mark.asyncio
@@ -162,9 +162,10 @@ class TestAuthenticateWs:
         ws = AsyncMock()
         ws.query_params = {"ticket": "invalid-ticket"}
 
-        result = await _authenticate_ws(ws)
+        result = await _validate_ws_auth(ws)
         assert result is False
-        ws.close.assert_called_once()
+        # _validate_ws_auth no longer closes the socket; caller is responsible
+        ws.close.assert_not_called()
 
     @pytest.mark.asyncio
     @patch("temper_ai.auth.api_key_auth.authenticate_ws_token")
@@ -173,7 +174,7 @@ class TestAuthenticateWs:
         ws = MagicMock()
         ws.query_params = {"token": "valid-token"}
 
-        result = await _authenticate_ws(ws)
+        result = await _validate_ws_auth(ws)
         assert result is True
 
     @pytest.mark.asyncio
@@ -183,7 +184,7 @@ class TestAuthenticateWs:
         ws = AsyncMock()
         ws.query_params = {"token": "invalid"}
 
-        result = await _authenticate_ws(ws)
+        result = await _validate_ws_auth(ws)
         assert result is False
 
     @pytest.mark.asyncio
@@ -191,9 +192,10 @@ class TestAuthenticateWs:
         ws = AsyncMock()
         ws.query_params = {}
 
-        result = await _authenticate_ws(ws)
+        result = await _validate_ws_auth(ws)
         assert result is False
-        ws.close.assert_called_once()
+        # _validate_ws_auth no longer closes the socket; caller is responsible
+        ws.close.assert_not_called()
 
 
 class TestCancelBackgroundTasks:

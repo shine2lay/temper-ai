@@ -24,15 +24,6 @@ from temper_ai.auth.oauth._service_helpers import (
     fetch_user_info as _fetch_user_info,
 )
 from temper_ai.auth.oauth._service_helpers import (
-    generate_code_challenge as _generate_code_challenge,
-)
-from temper_ai.auth.oauth._service_helpers import (
-    generate_code_verifier as _generate_code_verifier,
-)
-from temper_ai.auth.oauth._service_helpers import (
-    generate_state as _generate_state,
-)
-from temper_ai.auth.oauth._service_helpers import (
     refresh_token as _refresh_token,
 )
 from temper_ai.auth.oauth._service_helpers import (
@@ -189,18 +180,6 @@ class OAuthService:
         if self._state_store:
             await self._state_store.close()
 
-    def _generate_state(self) -> str:
-        """Generate cryptographically secure state token for CSRF protection."""
-        return _generate_state()
-
-    def _generate_code_verifier(self) -> str:
-        """Generate PKCE code verifier (random string)."""
-        return _generate_code_verifier()
-
-    def _generate_code_challenge(self, code_verifier: str) -> str:
-        """Generate PKCE code challenge from verifier (SHA256 hash)."""
-        return _generate_code_challenge(code_verifier)
-
     async def get_authorization_url(
         self,
         provider: str,
@@ -289,16 +268,3 @@ class OAuthService:
         """Revoke token at OAuth provider per RFC 7009."""
         client = await self._get_http_client()
         return await _revoke_at_provider(provider, tokens, self.config, client)
-
-    async def cleanup_expired_states(self) -> int:
-        """Clean up expired OAuth state tokens.
-
-        Delegates to the StateStore's cleanup_expired() method.
-
-        Returns:
-            Number of states cleaned up
-        """
-        count = await self._state_store.cleanup_expired()
-        if count > 0:
-            logger.debug(f"Cleaned up {count} expired OAuth state tokens")
-        return count

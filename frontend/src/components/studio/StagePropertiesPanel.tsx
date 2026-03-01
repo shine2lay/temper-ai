@@ -10,7 +10,7 @@
  * 4 always-open sections + 8 collapsed advanced sections.
  */
 import { useDesignStore, defaultDesignStage, type DesignStage, type AgentMode, type CollaborationStrategy } from '@/store/designStore';
-import { useStudioConfigs, useStudioConfig } from '@/hooks/useStudioAPI';
+import { useConfigs, useConfig } from '@/hooks/useConfigAPI';
 import { InlineEdit, InlineSelect, InlineToggle } from './InlineEdit';
 import {
   SectionHeader,
@@ -86,7 +86,8 @@ function accentIf(stage: DesignStage, key: StageKey): string {
 
 function RefAgentsSection({ stageRef }: { stageRef: string }) {
   const configName = stageRef.replace(/^.*\//, '').replace(/\.yaml$/, '');
-  const { data, isLoading } = useStudioConfig('stages', configName);
+  const { data: rawData, isLoading } = useConfig('stage', configName);
+  const data = rawData ? ((rawData.config_data ?? rawData) as Record<string, unknown>) : undefined;
   const selectAgent = useDesignStore((s) => s.selectAgent);
 
   if (isLoading) {
@@ -146,7 +147,7 @@ function InlineAgentsSection({
   stage: DesignStage;
   onUpdate: (partial: Partial<Omit<DesignStage, 'name'>>) => void;
 }) {
-  const { data: agentConfigs } = useStudioConfigs('agents');
+  const { data: agentConfigs } = useConfigs('agent');
   const selectAgent = useDesignStore((s) => s.selectAgent);
 
   const available = agentConfigs?.configs
@@ -236,7 +237,7 @@ export function StagePropertiesPanel() {
   const selectStage = useDesignStore((s) => s.selectStage);
   const resolvedStageInfo = useDesignStore((s) => s.resolvedStageInfo);
 
-  const { data: stageConfigs } = useStudioConfigs('stages');
+  const { data: stageConfigs } = useConfigs('stage');
 
   const stage = stages.find((s) => s.name === selectedStageName);
   if (!stage || !selectedStageName) return null;

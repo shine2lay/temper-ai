@@ -59,6 +59,20 @@ export function WorkflowHeader() {
         Connected
       </span>
     );
+  } else if (wsStatus.wsError === 'auth_failed') {
+    wsIndicator = (
+      <span className="flex items-center gap-1.5 text-xs text-red-400">
+        <span className="inline-block h-2 w-2 rounded-full bg-red-400" />
+        Auth failed
+      </span>
+    );
+  } else if (wsStatus.wsError === 'max_retries') {
+    wsIndicator = (
+      <span className="flex items-center gap-1.5 text-xs text-temper-text-muted">
+        <span className="inline-block h-2 w-2 rounded-full bg-temper-text-dim" />
+        Disconnected
+      </span>
+    );
   } else if (wsStatus.reconnectAttempt > 0) {
     wsIndicator = (
       <span className="flex items-center gap-1.5 text-xs text-yellow-400">

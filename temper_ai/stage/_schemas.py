@@ -252,6 +252,24 @@ class StageConfigInner(BaseModel):
     convergence: ConvergenceConfig | None = None
     metadata: MetadataConfig = Field(default_factory=MetadataConfig)
 
+    # Per-agent input wiring: maps agent_name → {input_name: source_reference}.
+    # Source references: "stage.<field>", "<agent>.output", "<agent>.structured.<field>".
+    # Agents without entries get full stage inputs (backward compatible).
+    agent_input_map: dict[str, dict[str, str]] | None = Field(
+        default=None,
+        description=(
+            "Per-agent input wiring. Maps agent name to "
+            "{input_name: source_reference} where source is "
+            "'stage.<field>', '<agent>.output', or '<agent>.structured.<field>'."
+        ),
+    )
+
+    # Profile references (name-based, resolved at config load time)
+    error_handling_profile: str | None = Field(
+        default=None,
+        description="Reference to a reusable error handling profile by name",
+    )
+
     @field_validator("agents")
     @classmethod
     def validate_agents(cls, v: list[str]) -> list[str]:
@@ -269,41 +287,3 @@ class StageConfig(BaseModel):
         default="1.0",
         description="Schema version for backward compatibility and migrations",
     )
-
-
-# ── Runtime State Models (M3) ──
-
-
-class AgentMetrics(BaseModel):
-    """Metrics for a single agent execution."""
-
-    tokens: int = Field(default=0, ge=0)
-    cost_usd: float = Field(default=0.0, ge=0.0)
-    duration_seconds: float = Field(default=0.0, ge=0.0)
-    tool_calls: int = Field(default=0, ge=0)
-    retries: int = Field(default=0, ge=0)
-
-
-class AggregateMetrics(BaseModel):
-    """Aggregate metrics across all agents in a stage."""
-
-    total_tokens: int = Field(default=0, ge=0)
-    total_cost_usd: float = Field(default=0.0, ge=0.0)
-    total_duration_seconds: float = Field(default=0.0, ge=0.0)
-    avg_confidence: float = Field(default=0.0, ge=0.0, le=1.0)
-    num_agents: int = Field(default=0, ge=0)
-    num_successful: int = Field(default=0, ge=0)
-    num_failed: int = Field(default=0, ge=0)
-
-
-class MultiAgentStageState(BaseModel):
-    """State tracking for multi-agent stage execution (M3)."""
-
-    agent_outputs: dict[str, dict[str, Any]] = Field(default_factory=dict)
-    agent_statuses: dict[str, Literal["success", "failed"]] = Field(
-        default_factory=dict
-    )
-    agent_metrics: dict[str, AgentMetrics] = Field(default_factory=dict)
-    aggregate_metrics: AggregateMetrics = Field(default_factory=AggregateMetrics)
-    errors: dict[str, str] = Field(default_factory=dict)
-    min_successful_agents: int = Field(default=1, gt=0)

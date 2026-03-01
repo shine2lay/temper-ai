@@ -36,7 +36,7 @@ class OllamaLLM(BaseLLM):
     Supports streaming for real-time token visibility.
     """
 
-    _make_streaming_call_impl: Callable[..., tuple[str | None, LLMResponse | None]]
+    _make_streaming_call_impl: Callable[..., None]
     _execute_streaming_impl: Callable[..., LLMResponse]
     _execute_streaming_async_impl: Callable[..., Coroutine[Any, Any, LLMResponse]]
 
@@ -168,12 +168,8 @@ class OllamaLLM(BaseLLM):
         if on_chunk is None:
             return self.complete(prompt, context, **kwargs)
 
-        # Use base class template method for rate limiting and cache check
-        cache_key, cached = self._make_streaming_call_impl(
-            prompt, context, on_chunk, **kwargs
-        )
-        if cached is not None:
-            return cached
+        # Use base class template method for rate limiting
+        self._make_streaming_call_impl(prompt, context, on_chunk, **kwargs)
 
         # scanner-ignore: duplicate - Circuit breaker wrapper, identical across providers by design
         def _make_streaming_call() -> LLMResponse:
@@ -188,10 +184,7 @@ class OllamaLLM(BaseLLM):
             )
 
             response = client.send(request, stream=True)
-            # Use base class template method for error handling and caching
-            return self._execute_streaming_impl(
-                start_time, response, on_chunk, cache_key
-            )
+            return self._execute_streaming_impl(start_time, response, on_chunk)
 
         return self._circuit_breaker.call(_make_streaming_call)
 
@@ -206,12 +199,8 @@ class OllamaLLM(BaseLLM):
         if on_chunk is None:
             return await self.acomplete(prompt, context, **kwargs)
 
-        # Use base class template method for rate limiting and cache check
-        cache_key, cached = self._make_streaming_call_impl(
-            prompt, context, on_chunk, **kwargs
-        )
-        if cached is not None:
-            return cached
+        # Use base class template method for rate limiting
+        self._make_streaming_call_impl(prompt, context, on_chunk, **kwargs)
 
         # scanner-ignore: duplicate - Circuit breaker wrapper, identical across providers by design
         async def _make_async_streaming_call() -> LLMResponse:
@@ -226,9 +215,8 @@ class OllamaLLM(BaseLLM):
             )
 
             response = await client.send(request, stream=True)
-            # Use base class template method for error handling and caching
             return await self._execute_streaming_async_impl(
-                start_time, response, on_chunk, cache_key
+                start_time, response, on_chunk
             )
 
         result: LLMResponse = await self._circuit_breaker.async_call(

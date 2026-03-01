@@ -20,12 +20,16 @@ workflow:
     - name: analyze
       stage_ref: configs/stages/analyze.yaml
       description: "Produces technical analysis (brief initially, detailed after feedback)"
+      input_map:
+        question: "workflow.question"
 
     - name: evaluate
       stage_ref: configs/stages/evaluate.yaml
       description: "Evaluates analysis quality — routes back to analyzer via dynamic edge if vague"
       depends_on:
         - analyze
+      input_map:
+        question: "workflow.question"
 
   context_management:
     extraction:

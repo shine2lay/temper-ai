@@ -46,13 +46,3 @@ def validate_ws_ticket(ticket: str) -> AuthContext | None:
     if time.monotonic() > entry.expires_at:
         return None
     return entry.ctx
-
-
-def cleanup_expired() -> int:
-    """Remove expired tickets. Returns count of removed tickets."""
-    now = time.monotonic()
-    with _lock:
-        expired = [k for k, v in _store.items() if now > v.expires_at]
-        for k in expired:
-            del _store[k]
-    return len(expired)

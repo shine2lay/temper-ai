@@ -1,8 +1,7 @@
 """Coverage tests for temper_ai/llm/pricing.py.
 
-Covers: PricingConfigNotFoundError, PricingConfigInvalidError, ModelPricing validation,
-PricingManager._validate_config_path, reload_pricing, health_check,
-get_cost auto-reload, unreasonable price validation.
+Covers: PricingConfigInvalidError, ModelPricing validation,
+PricingManager._validate_config_path, get_cost, unreasonable price validation.
 """
 
 from __future__ import annotations
@@ -15,7 +14,6 @@ from temper_ai.llm.pricing import (
     MAX_REASONABLE_PRICE_PER_MILLION,
     ModelPricing,
     PricingConfigInvalidError,
-    PricingConfigNotFoundError,
     PricingManager,
     get_pricing_manager,
 )
@@ -58,10 +56,6 @@ class TestModelPricing:
 
 
 class TestPricingConfigErrors:
-    def test_not_found_error(self) -> None:
-        err = PricingConfigNotFoundError("not found")
-        assert "not found" in str(err)
-
     def test_invalid_error(self) -> None:
         err = PricingConfigInvalidError("invalid config")
         assert "invalid" in str(err)
@@ -78,30 +72,6 @@ class TestPricingManager:
         # Unknown model should use default pricing
         cost = pm.get_cost("totally-unknown-model-xyz", 1000000, 0)
         assert cost > 0
-
-    def test_health_check(self) -> None:
-        pm = PricingManager()
-        health = pm.health_check()
-        assert "status" in health
-        assert "models_loaded" in health
-        assert "config_path" in health
-
-    def test_get_pricing_info_missing(self) -> None:
-        pm = PricingManager()
-        info = pm.get_pricing_info("nonexistent-model-xyz")
-        assert info is None
-
-    def test_list_supported_models(self) -> None:
-        pm = PricingManager()
-        models = pm.list_supported_models()
-        assert isinstance(models, list)
-        assert "_default" not in models
-
-    def test_reload_pricing(self) -> None:
-        pm = PricingManager()
-        # Should not raise
-        pm.reload_pricing()
-        assert pm._config_mtime is not None or pm.pricing
 
     def test_reset_for_testing(self) -> None:
         PricingManager()

@@ -17,6 +17,7 @@ CHUNK_BATCH_SIZE = 10  # Flush immediately when buffer reaches this size
 DB_POLL_INTERVAL_SECONDS = 2.0  # DB polling interval for cross-process updates
 TERMINAL_STATUSES = frozenset({"completed", "failed", "halted", "timeout"})
 WS_CLOSE_AUTH_FAILED = 4001
+WS_CLOSE_WORKFLOW_TERMINAL = 4100
 
 
 def _create_event_callback(
@@ -121,14 +122,17 @@ async def _flush_chunks_task(
 async def _stream_events_loop(
     websocket: WebSocket,
     event_queue: asyncio.Queue,
+    done_event: asyncio.Event,
 ) -> None:
-    """Stream events with heartbeat.
+    """Stream events with heartbeat until done_event is set.
 
     Args:
         websocket: WebSocket connection.
         event_queue: Queue of events to send.
+        done_event: Signalled by the DB poll loop when the workflow reaches
+            a terminal state.
     """
-    while True:
+    while not done_event.is_set():
         try:
             event_dict = await asyncio.wait_for(
                 event_queue.get(), timeout=HEARTBEAT_TIMEOUT_SECONDS
@@ -141,6 +145,11 @@ async def _stream_events_loop(
                     "timestamp": datetime.now(UTC).isoformat(),
                 }
             )
+    # Terminal state reached — close gracefully so the frontend stops reconnecting.
+    await websocket.close(
+        code=WS_CLOSE_WORKFLOW_TERMINAL,
+        reason="Workflow reached terminal state",
+    )
 
 
 def _workflow_fingerprint(snapshot: dict[str, Any]) -> str:
@@ -162,6 +171,7 @@ async def _db_poll_loop(
     data_service: Any,
     workflow_id: str,
     initial_fingerprint: str = "",
+    done_event: asyncio.Event | None = None,
 ) -> None:
     """Poll DB for workflow changes and push snapshots.
 
@@ -188,6 +198,8 @@ async def _db_poll_loop(
             last_fingerprint = fp
             await websocket.send_json({"type": "snapshot", "workflow": snapshot})
             if snapshot.get("status") in TERMINAL_STATUSES:
+                if done_event is not None:
+                    done_event.set()
                 break
         except (ConnectionError, OSError, RuntimeError):
             break  # WebSocket disconnected
@@ -199,10 +211,12 @@ async def _db_poll_loop(
             )
 
 
-async def _authenticate_ws(websocket: WebSocket) -> bool:
-    """Authenticate WebSocket connection via ticket or token.
+async def _validate_ws_auth(websocket: WebSocket) -> bool:
+    """Validate WebSocket authentication via ticket or token.
 
-    Returns True if auth succeeded, False if the connection was closed.
+    Returns True if auth succeeded, False otherwise.
+    Does NOT close the WebSocket — the caller is responsible for sending
+    the close frame (after ``accept()`` so the close code reaches the browser).
     """
     ticket = websocket.query_params.get("ticket")
     token = websocket.query_params.get("token")  # Backward compat
@@ -211,9 +225,6 @@ async def _authenticate_ws(websocket: WebSocket) -> bool:
 
         ctx = validate_ws_ticket(ticket)
         if ctx is None:
-            await websocket.close(
-                code=WS_CLOSE_AUTH_FAILED, reason="Invalid or expired ticket"
-            )
             return False
     elif token:
         logging.getLogger(__name__).warning(
@@ -223,12 +234,8 @@ async def _authenticate_ws(websocket: WebSocket) -> bool:
 
         ctx = await authenticate_ws_token(token)
         if ctx is None:
-            await websocket.close(
-                code=WS_CLOSE_AUTH_FAILED, reason="Invalid auth token"
-            )
             return False
     else:
-        await websocket.close(code=WS_CLOSE_AUTH_FAILED, reason="Missing auth ticket")
         return False
     return True
 
@@ -254,6 +261,7 @@ async def _run_ws_session(
     event_queue: asyncio.Queue = asyncio.Queue(maxsize=EVENT_QUEUE_MAXSIZE)
     chunk_buffer: list[dict] = []
     chunk_lock = asyncio.Lock()
+    done_event = asyncio.Event()
     loop = asyncio.get_running_loop()
 
     on_event = _create_event_callback(workflow_id, event_queue, chunk_buffer, loop)
@@ -268,6 +276,14 @@ async def _run_ws_session(
         if snapshot:
             await websocket.send_json({"type": "snapshot", "workflow": snapshot})
             initial_fp = _workflow_fingerprint(snapshot)
+            # Workflow already finished — close immediately so the frontend
+            # doesn't enter a reconnect loop for a completed workflow.
+            if snapshot.get("status") in TERMINAL_STATUSES:
+                await websocket.close(
+                    code=WS_CLOSE_WORKFLOW_TERMINAL,
+                    reason="Workflow reached terminal state",
+                )
+                return
 
         logger.info("[WebSocket] Subscribing to events for workflow %s", workflow_id)
         subscription_id = data_service.subscribe_workflow(workflow_id, on_event)
@@ -277,14 +293,18 @@ async def _run_ws_session(
             _flush_chunks_task(websocket, chunk_buffer, chunk_lock)
         )
         poll_task = asyncio.create_task(
-            _db_poll_loop(websocket, data_service, workflow_id, initial_fp)
+            _db_poll_loop(websocket, data_service, workflow_id, initial_fp, done_event)
         )
 
-        await _stream_events_loop(websocket, event_queue)
+        await _stream_events_loop(websocket, event_queue, done_event)
     except WebSocketDisconnect:
         logger.debug("WebSocket disconnected for workflow %s", workflow_id)
     except (ConnectionError, OSError, RuntimeError):
         logger.warning("WebSocket error", exc_info=True)
+    except Exception:
+        logger.exception(
+            "Unhandled error in WebSocket session for workflow %s", workflow_id
+        )
     finally:
         await _cancel_background_tasks(flush_task, poll_task)
         if subscription_id:
@@ -299,11 +319,11 @@ def create_ws_endpoint(data_service: Any, auth_enabled: bool = False) -> Callabl
 
     async def websocket_handler(websocket: WebSocket, workflow_id: str) -> None:
         """Handle WebSocket connection for real-time workflow updates."""
-        if auth_enabled:
-            if not await _authenticate_ws(websocket):
-                return
-
         await websocket.accept()
+        if auth_enabled:
+            if not await _validate_ws_auth(websocket):
+                await websocket.close(code=WS_CLOSE_AUTH_FAILED, reason="Auth failed")
+                return
         await _run_ws_session(websocket, workflow_id, data_service)
 
     return websocket_handler

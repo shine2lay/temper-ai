@@ -19,7 +19,11 @@ from sqlalchemy import (
 )
 from sqlmodel import Column, Field, Relationship, SQLModel
 
-from temper_ai.shared.constants.sizes import BYTES_PER_MB
+from temper_ai.shared.constants.sizes import (
+    BYTES_PER_MB,
+    DB_JSON_CONFIG_MAX_BYTES,
+    DB_JSON_DATA_MAX_BYTES,
+)
 from temper_ai.storage.database.constants import (
     CASCADE_ALL_DELETE_ORPHAN,
     CASCADE_SIMPLE,
@@ -200,18 +204,22 @@ class StageExecution(SQLModel, table=True):
         if "stage_config_snapshot" in data:
             validate_json_size(
                 data["stage_config_snapshot"],
-                max_bytes=BYTES_PER_MB,
+                max_bytes=DB_JSON_CONFIG_MAX_BYTES,
                 field_name="stage_config_snapshot",
             )
 
         if "input_data" in data and data["input_data"]:
             validate_json_size(
-                data["input_data"], max_bytes=BYTES_PER_MB, field_name="input_data"
+                data["input_data"],
+                max_bytes=DB_JSON_DATA_MAX_BYTES,
+                field_name="input_data",
             )
 
         if "output_data" in data and data["output_data"]:
             validate_json_size(
-                data["output_data"], max_bytes=BYTES_PER_MB, field_name="output_data"
+                data["output_data"],
+                max_bytes=DB_JSON_DATA_MAX_BYTES,
+                field_name="output_data",
             )
 
         super().__init__(**data)
@@ -302,18 +310,22 @@ class AgentExecution(SQLModel, table=True):
         if "agent_config_snapshot" in data:
             validate_json_size(
                 data["agent_config_snapshot"],
-                max_bytes=BYTES_PER_MB,
+                max_bytes=DB_JSON_CONFIG_MAX_BYTES,
                 field_name="agent_config_snapshot",
             )
 
         if "input_data" in data and data["input_data"]:
             validate_json_size(
-                data["input_data"], max_bytes=BYTES_PER_MB, field_name="input_data"
+                data["input_data"],
+                max_bytes=DB_JSON_DATA_MAX_BYTES,
+                field_name="input_data",
             )
 
         if "output_data" in data and data["output_data"]:
             validate_json_size(
-                data["output_data"], max_bytes=BYTES_PER_MB, field_name="output_data"
+                data["output_data"],
+                max_bytes=DB_JSON_DATA_MAX_BYTES,
+                field_name="output_data",
             )
 
         super().__init__(**data)

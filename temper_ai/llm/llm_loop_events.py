@@ -1,8 +1,7 @@
-"""LLM iteration and cache event data + emission helpers.
+"""LLM iteration event data + emission helpers.
 
-Provides lightweight dataclasses for per-iteration LLM loop events and
-cache hit/miss/write/eviction events, plus helper functions to emit them
-via the observer or an opt-in callback.
+Provides lightweight dataclasses for per-iteration LLM loop events,
+plus helper functions to emit them via the observer.
 
 These events are high-frequency (emitted every LLM iteration) so they
 use structured logging rather than SQL writes.
@@ -17,7 +16,6 @@ compatibility.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -35,16 +33,6 @@ class LLMIterationEventData:
     total_tokens_this_iteration: int = 0
     total_cost_this_iteration: float = 0.0
     cache_hit: bool | None = None
-
-
-@dataclass
-class CacheEventData:
-    """Data emitted on cache hit/miss/write/eviction."""
-
-    event_type: str  # "hit", "miss", "write", "eviction"
-    key_prefix: str = ""
-    model: str | None = None
-    cache_size: int | None = None
 
 
 def emit_llm_iteration_event(
@@ -81,28 +69,3 @@ def _try_emit_to_observer(
             track_fn(event_data)
     except (AttributeError, TypeError, RuntimeError) as exc:
         logger.debug("Could not emit LLM iteration event: %s", exc)
-
-
-def emit_cache_event(
-    callback: Callable[..., Any] | None,
-    event_data: CacheEventData,
-) -> None:
-    """Emit a cache event via the opt-in callback and structured log.
-
-    Args:
-        callback: Optional callable to receive the event.
-        event_data: Cache event details.
-    """
-    logger.debug(
-        "Cache event=%s key_prefix=%s model=%s size=%s",
-        event_data.event_type,
-        event_data.key_prefix,
-        event_data.model,
-        event_data.cache_size,
-    )
-    if callback is None:
-        return
-    try:
-        callback(event_data)
-    except (TypeError, RuntimeError, ValueError) as exc:
-        logger.debug("Cache event callback error: %s", exc)

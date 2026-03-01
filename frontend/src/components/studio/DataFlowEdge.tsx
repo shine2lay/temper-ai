@@ -93,6 +93,18 @@ export const DataFlowEdge: FC<EdgeProps> = ({
         strokeWidth={isLoop ? 12 : 8}
       />
 
+      {/* Animated dash for loop-back edges */}
+      {isLoop && (
+        <path
+          d={edgePath}
+          fill="none"
+          stroke="rgba(255, 167, 38, 0.4)"
+          strokeWidth={2}
+          strokeDasharray="6 6"
+          style={{ animation: 'dash-flow 1s linear infinite' }}
+        />
+      )}
+
       {/* Main edge path */}
       <BaseEdge
         id={id}

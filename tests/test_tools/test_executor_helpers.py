@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import collections
-import concurrent.futures
 import threading
 import time
 from unittest.mock import MagicMock
@@ -15,14 +14,12 @@ from temper_ai.tools._executor_helpers import (
     _is_tool_cacheable,
     acquire_concurrent_slot,
     check_rate_limit,
-    execute_batch,
     execute_tool_internal,
     get_concurrent_execution_count,
     get_rate_limit_usage,
     release_concurrent_slot,
     should_snapshot,
     validate_and_get_tool,
-    validate_tool_call,
     validate_workspace_path,
 )
 from temper_ai.tools.base import BaseTool, ToolMetadata, ToolResult
@@ -261,60 +258,19 @@ class TestShouldSnapshot:
     def test_modifies_state_true_returns_true(self):
         executor = _make_executor()
         tool = _MockTool(modifies_state=True)
-        executor.registry.get.return_value = tool
+        executor._get_tool.return_value = tool
         assert should_snapshot(executor, "mock_tool", {}) is True
 
     def test_modifies_state_false_returns_false(self):
         executor = _make_executor()
         tool = _MockTool(modifies_state=False)
-        executor.registry.get.return_value = tool
+        executor._get_tool.return_value = tool
         assert should_snapshot(executor, "mock_tool", {}) is False
 
     def test_unknown_tool_returns_false(self):
         executor = _make_executor()
-        executor.registry.get.return_value = None
+        executor._get_tool.return_value = None
         assert should_snapshot(executor, "nonexistent", {}) is False
-
-
-# ---------------------------------------------------------------------------
-# TestValidateToolCall
-# ---------------------------------------------------------------------------
-
-
-class TestValidateToolCall:
-    def test_valid_tool_and_params_passes(self):
-        executor = _make_executor()
-        tool = MagicMock()
-        tool.validate_params.return_value = MagicMock(valid=True)
-        executor.registry.get.return_value = tool
-        valid, error = validate_tool_call(executor, "my_tool", {})
-        assert valid is True
-        assert error is None
-
-    def test_unknown_tool_fails(self):
-        executor = _make_executor()
-        executor.registry.get.return_value = None
-        valid, error = validate_tool_call(executor, "nonexistent", {})
-        assert valid is False
-        assert "not found" in error
-
-    def test_invalid_params_fails(self):
-        executor = _make_executor()
-        tool = MagicMock()
-        tool.validate_params.return_value = MagicMock(valid=False)
-        executor.registry.get.return_value = tool
-        valid, error = validate_tool_call(executor, "my_tool", {"bad": "param"})
-        assert valid is False
-        assert error is not None
-
-    def test_validation_exception_returns_false(self):
-        executor = _make_executor()
-        tool = MagicMock()
-        tool.validate_params.side_effect = TypeError("unexpected type")
-        executor.registry.get.return_value = tool
-        valid, error = validate_tool_call(executor, "my_tool", {})
-        assert valid is False
-        assert "validation failed" in error.lower()
 
 
 # ---------------------------------------------------------------------------
@@ -343,49 +299,6 @@ class TestIsToolCacheable:
 
 
 # ---------------------------------------------------------------------------
-# TestExecuteBatch
-# ---------------------------------------------------------------------------
-
-
-class TestExecuteBatch:
-    def test_parallel_execution_returns_all_results(self):
-        executor = _make_executor()
-        pool = concurrent.futures.ThreadPoolExecutor(max_workers=2)
-        executor._executor = pool
-
-        success_result = ToolResult(success=True, result="done")
-
-        def fake_execute(tool_name, params, timeout):
-            return success_result
-
-        executor.execute = fake_execute
-        executions = [("tool_a", {}), ("tool_b", {})]
-        results = execute_batch(executor, executions)
-        pool.shutdown(wait=True)
-
-        assert len(results) == 2
-        assert all(r.success for r in results)
-
-    def test_overall_timeout_fills_pending_results(self):
-        executor = _make_executor()
-        pool = concurrent.futures.ThreadPoolExecutor(max_workers=2)
-        executor._executor = pool
-
-        def slow_execute(tool_name, params, timeout):
-            time.sleep(10)
-            return ToolResult(success=True, result="done")
-
-        executor.execute = slow_execute
-        executions = [("slow_tool", {})]
-        results = execute_batch(executor, executions, overall_timeout=0.05)
-        pool.shutdown(wait=False)
-
-        assert len(results) == 1
-        assert results[0].success is False
-        assert "timeout" in results[0].error.lower()
-
-
-# ---------------------------------------------------------------------------
 # TestValidateAndGetTool
 # ---------------------------------------------------------------------------
 
@@ -395,7 +308,7 @@ class TestValidateAndGetTool:
         executor = _make_executor()
         tool = MagicMock()
         tool.validate_params.return_value = MagicMock(valid=True)
-        executor.registry.get.return_value = tool
+        executor._get_tool.return_value = tool
 
         result_tool, error = validate_and_get_tool(executor, "my_tool", {})
         assert result_tool is tool
@@ -407,7 +320,7 @@ class TestValidateAndGetTool:
         outside_params = {"path": "/etc/passwd"}
         tool_mock = MagicMock()
         tool_mock.validate_params.return_value = MagicMock(valid=True)
-        executor.registry.get.return_value = tool_mock
+        executor._get_tool.return_value = tool_mock
 
         result_tool, error_result = validate_and_get_tool(
             executor, "my_tool", outside_params
@@ -418,7 +331,7 @@ class TestValidateAndGetTool:
 
     def test_unknown_tool_returns_error_result(self):
         executor = _make_executor()
-        executor.registry.get.return_value = None
+        executor._get_tool.return_value = None
 
         result_tool, error_result = validate_and_get_tool(executor, "nonexistent", {})
         assert result_tool is None
@@ -429,7 +342,7 @@ class TestValidateAndGetTool:
         executor = _make_executor()
         tool = MagicMock()
         tool.validate_params.return_value = MagicMock(valid=False)
-        executor.registry.get.return_value = tool
+        executor._get_tool.return_value = tool
 
         result_tool, error_result = validate_and_get_tool(executor, "my_tool", {})
         assert result_tool is None

@@ -84,6 +84,10 @@ class StandardAgent(BaseAgent):  # noqa: god
         super().__init__(config)
 
         self.tool_registry = self._create_tool_registry()
+        # Extract tool names and per-tool policy from config.
+        # Used for schema building via shared instances and for
+        # get_capabilities() without per-agent registry queries.
+        self._tool_names, self._tool_policy = self._extract_tool_config()
 
         # LLMService owns the LLM call lifecycle
         self.llm_service = LLMService(
@@ -189,12 +193,56 @@ class StandardAgent(BaseAgent):  # noqa: god
         )
         return prompt
 
+    def _extract_tool_config(self) -> tuple[list[str], dict[str, dict[str, Any]]]:
+        """Extract tool names and per-tool policy from agent config.
+
+        Returns:
+            (tool_names, tool_policy) where tool_policy maps tool name
+            to its config dict (e.g. allowed_commands, workspace_root).
+        """
+        from temper_ai.tools.loader import resolve_tool_spec
+
+        configured_tools = self.config.agent.tools
+        if not configured_tools:
+            return [], {}
+        names: list[str] = []
+        policy: dict[str, dict[str, Any]] = {}
+        for tool_spec in configured_tools:
+            name, config = resolve_tool_spec(tool_spec)
+            names.append(name)
+            if config:
+                policy[name] = config
+        return names, policy
+
+    def _get_tools_for_llm(self) -> list[Any] | None:
+        """Get tool instances for LLM schema building.
+
+        Uses shared schema instances from the TOOL_CLASSES singleton cache
+        for built-in tools, and includes MCP tools from the registry.
+        This avoids creating per-agent tool instances just for schema building.
+        """
+        from temper_ai.llm._schemas import _get_schema_instance
+
+        tools: list[Any] = []
+        for name in self._tool_names:
+            instance = _get_schema_instance(name)
+            if instance is not None:
+                tools.append(instance)
+
+        # Include MCP tools from registry (session-based, not in TOOL_CLASSES)
+        if self.tool_registry is not None:
+            for name, tool in self.tool_registry.get_all_tools().items():
+                if name not in self._tool_names:
+                    tools.append(tool)
+
+        return tools if tools else None
+
     def _llm_kwargs(self, prompt: str, start_time: float) -> dict[str, Any]:
         """Build kwargs shared between sync run() and async arun()."""
-        tools = list(self.tool_registry.get_all_tools().values())
+        tools = self._get_tools_for_llm()
         return {
             "prompt": prompt,
-            "tools": tools if tools else None,
+            "tools": tools,
             "tool_executor": self.tool_executor,
             "observer": self._observer,
             "stream_callback": self._make_stream_callback(),
@@ -288,10 +336,24 @@ class StandardAgent(BaseAgent):  # noqa: god
 
         Tool schemas are handled by LLMService — this only renders the
         base template with input context and dialogue context.
+
+        When ``_strategy_context`` is present in input_data (injected by the
+        executor from the collaboration strategy), it replaces the uncurated
+        ``_inject_input_context`` and ``_inject_dialogue_context`` injections.
         """
         template = self._render_template(input_data)
-        template = self._inject_input_context(template, input_data, _MODE_CONTEXT_KEYS)
-        template = self._inject_dialogue_context(template, input_data)
+
+        strategy_context = input_data.get("_strategy_context")
+        if strategy_context:
+            # Strategy-curated context replaces uncurated injections
+            template += "\n\n---\n\n" + strategy_context
+        else:
+            # Backward compatible: use existing injection methods
+            template = self._inject_input_context(
+                template, input_data, _MODE_CONTEXT_KEYS
+            )
+            template = self._inject_dialogue_context(template, input_data)
+
         template = self._inject_memory_context(template, input_data, context)
         template = self._inject_optimization_context(template)
         template = self._inject_persistent_context(template, context)
@@ -506,7 +568,6 @@ class StandardAgent(BaseAgent):  # noqa: god
 
     def get_capabilities(self) -> dict[str, Any]:
         """Get agent capabilities."""
-        tools_list = self.tool_registry.list_tools()
         return {
             "name": self.name,
             "description": self.description,
@@ -522,7 +583,7 @@ class StandardAgent(BaseAgent):  # noqa: god
                 if self.config.agent.inference
                 else "none"
             ),
-            "tools": tools_list,
+            "tools": list(self._tool_names),
             "max_tool_calls": self.config.agent.safety.max_tool_calls_per_execution,
             "supports_streaming": True,
             "supports_multimodal": False,

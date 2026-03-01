@@ -211,6 +211,14 @@ class StageExecutor(ABC):
         agents: list,
     ) -> Any:
         """Execute multi-round dialogue with agent re-invocation."""
+        from temper_ai.agent.strategies.constants import STRATEGY_NAME_INTERACTIVE
+
+        # Interactive mode: turn-taking instead of parallel rounds
+        if strategy.mode == STRATEGY_NAME_INTERACTIVE:
+            return self._run_interactive_synthesis(
+                initial_outputs, strategy, stage_name, state, config_loader, agents
+            )
+
         dialogue_history: list[dict[str, Any]] = []
         current_outputs = initial_outputs
         total_cost = record_initial_round(current_outputs, dialogue_history)
@@ -258,6 +266,75 @@ class StageExecutor(ABC):
             stage_name=stage_name,
         )
         return build_final_synthesis_result(synth_params)
+
+    def _run_interactive_synthesis(
+        self,
+        initial_outputs: list,
+        strategy: Any,
+        stage_name: str,
+        state: dict[str, Any],
+        config_loader: ConfigLoaderProtocol,
+        agents: list,
+    ) -> Any:
+        """Execute interactive turn-taking dialogue."""
+        from temper_ai.stage.executors._dialogue_helpers import (
+            InteractiveTurnsParams,
+            run_interactive_turns,
+        )
+
+        dialogue_history: list[dict[str, Any]] = []
+        total_cost = record_initial_round(initial_outputs, dialogue_history)
+        tracker = state.get(StateKeys.TRACKER)
+
+        # Track initial round
+        track_dialogue_round(
+            DialogueTrackingParams(
+                tracker=tracker,
+                strategy=strategy,
+                state=state,
+                current_outputs=initial_outputs,
+                round_num=0,
+                round_outcome="initial",
+            )
+        )
+
+        if strategy.cost_budget_usd and total_cost >= strategy.cost_budget_usd:
+            return self._budget_stop_result(
+                strategy, initial_outputs, total_cost, stage_name
+            )
+
+        final_turn, last_outputs, total_cost, converged, convergence_turn = (
+            run_interactive_turns(
+                InteractiveTurnsParams(
+                    executor=self,
+                    strategy=strategy,
+                    agents=agents,
+                    stage_name=stage_name,
+                    state=state,
+                    config_loader=config_loader,
+                    tracker=tracker,
+                    initial_outputs=initial_outputs,
+                    total_cost=total_cost,
+                    max_turns=strategy.max_rounds,
+                    min_cycles=strategy.min_rounds,
+                    extract_agent_name_fn=self._extract_agent_name,
+                )
+            )
+        )
+
+        current_outputs = list(last_outputs.values())
+        return build_final_synthesis_result(
+            FinalSynthesisResultParams(
+                strategy=strategy,
+                current_outputs=current_outputs,
+                final_round=final_turn,
+                total_cost=total_cost,
+                dialogue_history=dialogue_history,
+                converged=converged,
+                convergence_round=convergence_turn,
+                stage_name=stage_name,
+            )
+        )
 
     @staticmethod
     def _budget_stop_result(

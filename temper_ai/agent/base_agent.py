@@ -37,6 +37,32 @@ from temper_ai.tools.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Input-type checking for declared agent I/O
+# ---------------------------------------------------------------------------
+
+_TYPE_MAP: dict[str, type | tuple[type, ...]] = {
+    "string": str,
+    "list": list,
+    "dict": dict,
+    "number": (int, float),
+    "boolean": bool,
+}
+
+
+def _check_input_type(
+    value: Any,
+    declared_type: str,
+    name: str,
+    errors: list[str],
+) -> None:
+    """Append an error message if *value* doesn't match *declared_type*."""
+    expected = _TYPE_MAP.get(declared_type)
+    if expected and not isinstance(value, expected):
+        errors.append(
+            f"input '{name}' expected {declared_type}, " f"got {type(value).__name__}"
+        )
+
 
 def _register_mcp_tools(
     mcp_configs: list | None,
@@ -169,6 +195,41 @@ class BaseAgent(ABC):
         self._mcp_manager: Any = None
 
     # ------------------------------------------------------------------
+    # Interface discovery
+    # ------------------------------------------------------------------
+
+    def get_interface(self) -> dict[str, Any]:
+        """Return agent's I/O interface schema.
+
+        Similar to ``BaseTool.get_parameters_schema()`` and
+        ``BaseTool.get_result_schema()``, this exposes a discoverable
+        contract for what the agent accepts and produces.
+
+        Returns:
+            Dict with keys: name, description, inputs, outputs.
+            inputs/outputs are dicts of field name → declaration dict.
+        """
+        inputs: dict[str, Any] = {}
+        outputs: dict[str, Any] = {}
+        agent_inner = self.config.agent
+        if agent_inner.inputs:
+            inputs = {
+                name: decl.model_dump(exclude_none=True)
+                for name, decl in agent_inner.inputs.items()
+            }
+        if agent_inner.outputs:
+            outputs = {
+                name: decl.model_dump(exclude_none=True)
+                for name, decl in agent_inner.outputs.items()
+            }
+        return {
+            "name": self.name,
+            "description": self.description,
+            "inputs": inputs,
+            "outputs": outputs,
+        }
+
+    # ------------------------------------------------------------------
     # Template method: execute()
     # ------------------------------------------------------------------
 
@@ -292,7 +353,12 @@ class BaseAgent(ABC):
         input_data: Any,
         context: ExecutionContext | None = None,
     ) -> None:
-        """Validate input_data and context parameters."""
+        """Validate input_data and context parameters.
+
+        When the agent has declared ``inputs`` (via ``AgentIODeclaration``),
+        validates presence, types, and applies defaults. Legacy agents
+        without declarations get only the basic dict type check.
+        """
         if input_data is None:
             raise ValueError("input_data cannot be None")
         if not isinstance(input_data, dict):
@@ -302,6 +368,26 @@ class BaseAgent(ABC):
         if context is not None and not isinstance(context, ExecutionContext):
             raise TypeError(
                 f"context must be an ExecutionContext instance, got {type(context).__name__}"
+            )
+
+        declared = getattr(self.config.agent, "inputs", None)
+        if not declared:
+            return  # legacy agent, no declarations
+
+        errors: list[str] = []
+        for name, decl in declared.items():
+            if name not in input_data:
+                if decl.required and decl.default is None:
+                    errors.append(f"missing required input '{name}'")
+                elif decl.default is not None:
+                    input_data[name] = decl.default
+                continue
+            if decl.type != "any":
+                _check_input_type(input_data[name], decl.type, name, errors)
+
+        if errors:
+            raise ValueError(
+                f"Agent '{self.name}' input validation failed: " + "; ".join(errors)
             )
 
     def validate_config(self) -> bool:
@@ -347,14 +433,6 @@ class BaseAgent(ABC):
 
         agent_registry = getattr(self, "tool_registry", None)
         resolve_tool_config_templates(agent_registry, input_data, self.name)
-        # Sync resolved tool configs to tool_executor's registry (the safety
-        # stack has its own tool instances that lack agent-specific configs)
-        if self.tool_executor is not None and agent_registry is not None:
-            _sync_tool_configs_to_executor(
-                agent_registry,
-                self.tool_executor,
-                self.name,
-            )
 
         logger.info(
             "[%s] Starting %sexecution", self.name, "async " if async_mode else ""
@@ -535,13 +613,15 @@ class BaseAgent(ABC):
 
         Subclasses call this in __init__ if they need a tool registry.
         BaseAgent does NOT call this by default.
+
+        When ``tools`` is None (not specified in YAML), all tools from
+        the static TOOL_CLASSES registry are available via lazy loading.
+        When ``tools`` is a list, only those tools are loaded.
         """
-        registry = ToolRegistry(auto_discover=False)
+        registry = ToolRegistry()
         configured_tools = self.config.agent.tools
 
-        if configured_tools is None:
-            registry.auto_discover()
-        elif configured_tools:
+        if configured_tools is not None and configured_tools:
             load_tools_from_config(registry, configured_tools)
 
         # Register MCP tools if configured (R1a)

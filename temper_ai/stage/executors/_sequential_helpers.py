@@ -52,7 +52,7 @@ from temper_ai.stage.executors._sequential_retry import (  # noqa: F401
     retry_agent_with_backoff,
 )
 from temper_ai.stage.executors.state_keys import StateKeys
-from temper_ai.workflow.context_provider import ContextResolutionError
+from temper_ai.workflow.context_schemas import ContextResolutionError
 
 logger = logging.getLogger(__name__)
 
@@ -401,6 +401,133 @@ def _dispatch_sequential_evaluation(
     )
 
 
+def _apply_agent_input_curation(
+    agent: Any,
+    agent_name: str,
+    input_data: dict[str, Any],
+    prior_agent_outputs: dict[str, Any],
+    stage_config: Any | None,
+) -> dict[str, Any]:
+    """Apply agent_input_map curation if the agent has declared inputs.
+
+    If the stage has an ``agent_input_map`` entry for this agent AND the
+    agent declares inputs, resolves only the mapped inputs.  Otherwise
+    returns ``input_data`` unchanged (backward compatible).
+
+    Also injects strategy-curated context as ``_strategy_context`` when
+    available.
+    """
+    from temper_ai.stage.executors._agent_input_helpers import (
+        get_agent_input_map_for_agent,
+        resolve_agent_inputs,
+    )
+
+    aim = get_agent_input_map_for_agent(stage_config, agent_name)
+    if aim is None:
+        return input_data
+
+    interface = agent.get_interface()
+    if not interface.get("inputs"):
+        return input_data
+
+    try:
+        resolved = resolve_agent_inputs(
+            agent_name,
+            interface,
+            aim,
+            input_data,
+            prior_agent_outputs,
+        )
+        # Preserve infrastructure keys that agents need
+        for key in (
+            StateKeys.TRACKER,
+            StateKeys.WORKFLOW_RATE_LIMITER,
+            StateKeys.CURRENT_STAGE_AGENTS,
+            "tool_executor",
+            "_conversation_history",
+        ):
+            if key in input_data:
+                resolved[key] = input_data[key]
+        return resolved
+    except ValueError:
+        logger.warning(
+            "Agent input curation failed for '%s', using full input",
+            agent_name,
+            exc_info=True,
+        )
+        return input_data
+
+
+def _validate_and_store_agent_outputs(
+    agent: Any,
+    agent_name: str,
+    result: dict[str, Any],
+) -> None:
+    """Validate agent outputs and store extracted structured fields.
+
+    If the agent declares outputs, validates them against the actual
+    output_data and stores extracted fields as ``structured`` key in
+    output_data for downstream ``agent_input_map`` resolution.
+    """
+    try:
+        from temper_ai.stage.executors._agent_input_helpers import (
+            validate_agent_outputs,
+        )
+
+        interface = agent.get_interface()
+        if not interface.get("outputs"):
+            return
+
+        output_data = result.get(StateKeys.OUTPUT_DATA, {})
+        extracted = validate_agent_outputs(agent_name, interface, output_data)
+        if extracted:
+            output_data["structured"] = extracted
+    except Exception:
+        logger.debug(
+            "Agent output validation failed for '%s'",
+            agent_name,
+            exc_info=True,
+        )
+
+
+def _inject_strategy_context(
+    input_data: dict[str, Any],
+    agent_name: str,
+    prior_agent_outputs: dict[str, Any],
+    stage_config: Any | None,
+) -> None:
+    """Inject strategy-curated context into input_data if available."""
+    if stage_config is None:
+        return
+
+    try:
+        from temper_ai.agent.strategies.registry import get_strategy_from_config
+
+        inner = getattr(stage_config, "stage", stage_config)
+        if not getattr(inner, "collaboration", None):
+            return
+
+        # get_strategy_from_config expects a dict
+        config_dict = (
+            stage_config.model_dump()
+            if hasattr(stage_config, "model_dump")
+            else stage_config
+        )
+        strategy = get_strategy_from_config(config_dict)
+        context_text = strategy.curate_agent_context(
+            agent_name=agent_name,
+            prior_outputs=prior_agent_outputs,
+        )
+        if context_text:
+            input_data["_strategy_context"] = context_text
+    except Exception:
+        logger.debug(
+            "Strategy context injection failed for '%s'",
+            agent_name,
+            exc_info=True,
+        )
+
+
 def run_agent(  # noqa: long
     ctx: AgentExecutionContext,
     agent_name: str,
@@ -424,6 +551,20 @@ def run_agent(  # noqa: long
         stage_config=ctx.stage_config,
     )
     _wire_tool_executor(ctx, input_data)
+
+    # Apply per-agent input curation (agent_input_map) if configured
+    input_data = _apply_agent_input_curation(
+        agent,
+        agent_name,
+        input_data,
+        prior_agent_outputs,
+        ctx.stage_config,
+    )
+
+    # Inject strategy-curated context if collaboration strategy is configured
+    _inject_strategy_context(
+        input_data, agent_name, prior_agent_outputs, ctx.stage_config
+    )
 
     history_key = make_history_key(ctx.stage_name, agent_name)
     histories = ctx.state.get(StateKeys.CONVERSATION_HISTORIES, {})
@@ -458,6 +599,10 @@ def run_agent(  # noqa: long
 
     duration = time.time() - start_time
     result = _build_success_result(agent_name, response, duration)
+
+    # Validate agent outputs against declarations and store extracted fields
+    _validate_and_store_agent_outputs(agent, agent_name, result)
+
     _save_conversation_turn(ctx.state, history_key, input_data, response)
     _dispatch_sequential_evaluation(
         ctx, agent_name, context, input_data, response, agent_config_dict, duration

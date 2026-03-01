@@ -162,7 +162,7 @@ def _create_execution_context(
 
 
 MAX_TRACKING_INPUT_BYTES = (
-    900 * 1024  # scanner: skip-magic — 900KB, safely under 1MB DB limit  # noqa
+    4 * 1024 * 1024  # scanner: skip-magic — 4MB, under 5MB DB data limit  # noqa
 )
 
 
@@ -170,8 +170,8 @@ def _truncate_tracking_data(data: dict[str, Any]) -> dict[str, Any]:
     """Truncate tracking input data to fit within DB size limits.
 
     Stage outputs accumulate across pipeline stages and can exceed the
-    0.5MB input_data limit in the SQL backend. This truncates large
-    stage_outputs values to keep the tracking data within bounds.
+    1MB input_data limit in the SQL backend. This progressively truncates
+    large stage_outputs values to keep the tracking data within bounds.
     """
     import json
 
@@ -183,18 +183,42 @@ def _truncate_tracking_data(data: dict[str, Any]) -> dict[str, Any]:
     if len(serialized.encode("utf-8")) <= MAX_TRACKING_INPUT_BYTES:
         return data
 
-    # Truncate stage_outputs values (largest contributor)
+    # Progressively truncate stage_outputs with decreasing thresholds
     truncated = dict(data)
     stage_outputs = truncated.get(StateKeys.STAGE_OUTPUTS)
     if isinstance(stage_outputs, dict):
-        truncated_outputs: dict[str, Any] = {}
-        for stage_name, output in stage_outputs.items():
-            output_str = json.dumps(output, separators=(",", ":"), default=str)
-            if len(output_str) > 1024:  # noqa  # scanner: skip-magic
-                truncated_outputs[stage_name] = f"[truncated: {len(output_str)} bytes]"
-            else:
-                truncated_outputs[stage_name] = output
-        truncated[StateKeys.STAGE_OUTPUTS] = truncated_outputs
+        # scanner: skip-magic — thresholds tried from generous to aggressive
+        for threshold in (4096, 1024, 256):
+            truncated_outputs: dict[str, Any] = {}
+            for stage_name, output in stage_outputs.items():
+                output_str = json.dumps(output, separators=(",", ":"), default=str)
+                if len(output_str) > threshold:
+                    truncated_outputs[stage_name] = (
+                        f"[truncated: {len(output_str)} bytes]"
+                    )
+                else:
+                    truncated_outputs[stage_name] = output
+            truncated[StateKeys.STAGE_OUTPUTS] = truncated_outputs
+            try:
+                size = len(
+                    json.dumps(truncated, separators=(",", ":"), default=str).encode(
+                        "utf-8"
+                    )
+                )
+            except (TypeError, ValueError):
+                break
+            if size <= MAX_TRACKING_INPUT_BYTES:
+                return truncated
+
+        # Last resort: replace all stage outputs with summaries
+        truncated[StateKeys.STAGE_OUTPUTS] = {
+            name: (
+                f"[truncated: {len(json.dumps(v, separators=(',', ':'), default=str))} bytes]"
+                if not isinstance(v, str) or len(v) > 128  # noqa  # scanner: skip-magic
+                else v
+            )
+            for name, v in stage_outputs.items()
+        }
 
     return truncated
 

@@ -94,11 +94,6 @@ class TestBufferConstants:
         assert isinstance(constants.MAX_RETRY_ATTEMPTS, int)
         assert constants.MAX_RETRY_ATTEMPTS == 3
 
-    def test_retry_delay_seconds_defined(self):
-        """Test that RETRY_DELAY_SECONDS has the expected value."""
-        assert isinstance(constants.RETRY_DELAY_SECONDS, float)
-        assert constants.RETRY_DELAY_SECONDS == 1.0
-
 
 class TestAlertingConstants:
     """Tests for alerting threshold constants."""
@@ -119,41 +114,6 @@ class TestAlertingConstants:
         assert isinstance(constants.DEFAULT_ERROR_RATE_ALERT_THRESHOLD, float)
         assert 0 < constants.DEFAULT_ERROR_RATE_ALERT_THRESHOLD < 1
 
-    def test_latency_alert_multiplier_defined(self):
-        """Test that DEFAULT_LATENCY_ALERT_MULTIPLIER is defined."""
-        assert hasattr(constants, "DEFAULT_LATENCY_ALERT_MULTIPLIER")
-        assert isinstance(constants.DEFAULT_LATENCY_ALERT_MULTIPLIER, float)
-        assert constants.DEFAULT_LATENCY_ALERT_MULTIPLIER > 1
-
-
-class TestDisplayConstants:
-    """Tests for display and formatting constants."""
-
-    def test_default_trace_depth_defined(self):
-        """Test that DEFAULT_TRACE_DEPTH has the expected value."""
-        assert isinstance(constants.DEFAULT_TRACE_DEPTH, int)
-        assert constants.DEFAULT_TRACE_DEPTH == 10
-
-    def test_max_trace_display_items_defined(self):
-        """Test that MAX_TRACE_DISPLAY_ITEMS has the expected value."""
-        assert isinstance(constants.MAX_TRACE_DISPLAY_ITEMS, int)
-        assert constants.MAX_TRACE_DISPLAY_ITEMS == 50
-
-    def test_default_indent_size_defined(self):
-        """Test that DEFAULT_INDENT_SIZE has the expected value."""
-        assert isinstance(constants.DEFAULT_INDENT_SIZE, int)
-        assert constants.DEFAULT_INDENT_SIZE == 2
-
-    def test_sanitization_max_length_defined(self):
-        """Test that SANITIZATION_MAX_LENGTH has the expected value."""
-        assert isinstance(constants.SANITIZATION_MAX_LENGTH, int)
-        assert constants.SANITIZATION_MAX_LENGTH == 10000
-
-    def test_sanitization_replacement_defined(self):
-        """Test that SANITIZATION_REPLACEMENT has the expected value."""
-        assert isinstance(constants.SANITIZATION_REPLACEMENT, str)
-        assert constants.SANITIZATION_REPLACEMENT == "***"
-
 
 class TestDLQConstants:
     """Tests for dead letter queue constants."""
@@ -163,62 +123,14 @@ class TestDLQConstants:
         assert isinstance(constants.DEFAULT_DLQ_MAX_SIZE, int)
         assert constants.DEFAULT_DLQ_MAX_SIZE == 10000
 
-    def test_default_dlq_retry_interval_defined(self):
-        """Test that DEFAULT_DLQ_RETRY_INTERVAL has the expected value."""
-        assert isinstance(constants.DEFAULT_DLQ_RETRY_INTERVAL, int)
-        assert constants.DEFAULT_DLQ_RETRY_INTERVAL == 60
-
-    def test_max_dlq_retry_attempts_defined(self):
-        """Test that MAX_DLQ_RETRY_ATTEMPTS has the expected value."""
-        assert isinstance(constants.MAX_DLQ_RETRY_ATTEMPTS, int)
-        assert constants.MAX_DLQ_RETRY_ATTEMPTS == 5
-
 
 class TestMeritScoreConstants:
     """Tests for merit score service constants."""
-
-    def test_default_merit_decay_rate_defined(self):
-        """Test that DEFAULT_MERIT_DECAY_RATE has the expected value."""
-        assert isinstance(constants.DEFAULT_MERIT_DECAY_RATE, float)
-        assert constants.DEFAULT_MERIT_DECAY_RATE == 0.95
 
     def test_default_merit_window_days_defined(self):
         """Test that DEFAULT_MERIT_WINDOW_DAYS has the expected value."""
         assert isinstance(constants.DEFAULT_MERIT_WINDOW_DAYS, int)
         assert constants.DEFAULT_MERIT_WINDOW_DAYS == 30
-
-    def test_min_observations_for_merit_defined(self):
-        """Test that MIN_OBSERVATIONS_FOR_MERIT has the expected value."""
-        assert isinstance(constants.MIN_OBSERVATIONS_FOR_MERIT, int)
-        assert constants.MIN_OBSERVATIONS_FOR_MERIT == 5
-
-
-class TestDecisionTrackerConstants:
-    """Tests for decision tracker constants."""
-
-    def test_max_decision_history_defined(self):
-        """Test that MAX_DECISION_HISTORY has the expected value."""
-        assert isinstance(constants.MAX_DECISION_HISTORY, int)
-        assert constants.MAX_DECISION_HISTORY == 10000
-
-    def test_decision_context_max_length_defined(self):
-        """Test that DECISION_CONTEXT_MAX_LENGTH has the expected value."""
-        assert isinstance(constants.DECISION_CONTEXT_MAX_LENGTH, int)
-        assert constants.DECISION_CONTEXT_MAX_LENGTH == 5000
-
-
-class TestSQLBackendConstants:
-    """Tests for SQL backend constants."""
-
-    def test_default_query_limit_defined(self):
-        """Test that DEFAULT_QUERY_LIMIT has the expected value."""
-        assert isinstance(constants.DEFAULT_QUERY_LIMIT, int)
-        assert constants.DEFAULT_QUERY_LIMIT == 1000
-
-    def test_default_aggregation_interval_defined(self):
-        """Test that DEFAULT_AGGREGATION_INTERVAL_SECONDS has the expected value."""
-        assert isinstance(constants.DEFAULT_AGGREGATION_INTERVAL_SECONDS, int)
-        assert constants.DEFAULT_AGGREGATION_INTERVAL_SECONDS == 60
 
 
 class TestConstantsIntegrity:
@@ -256,8 +168,6 @@ class TestConstantsIntegrity:
 
         # Timeouts should be in reasonable ranges
         assert 0.1 <= constants.DEFAULT_BUFFER_TIMEOUT_SECONDS <= 3600
-        assert 0.1 <= constants.RETRY_DELAY_SECONDS <= 60
 
         # Retry attempts should be reasonable
         assert 1 <= constants.MAX_RETRY_ATTEMPTS <= 10
-        assert 1 <= constants.MAX_DLQ_RETRY_ATTEMPTS <= 20

@@ -29,21 +29,12 @@ from temper_ai.tools._executor_helpers import (
     validate_policy,
 )
 from temper_ai.tools._executor_helpers import (
-    execute_batch as _execute_batch,
-)
-from temper_ai.tools._executor_helpers import (
     get_concurrent_execution_count as _get_concurrent_execution_count,
 )
 from temper_ai.tools._executor_helpers import (
     get_rate_limit_usage as _get_rate_limit_usage,
 )
-from temper_ai.tools._executor_helpers import (
-    get_tool_info as _get_tool_info,
-)
-from temper_ai.tools._executor_helpers import (
-    validate_tool_call as _validate_tool_call,
-)
-from temper_ai.tools.base import ToolResult
+from temper_ai.tools.base import BaseTool, ToolResult
 from temper_ai.tools.registry import ToolRegistry
 
 # Module logger
@@ -79,7 +70,7 @@ class ToolExecutor:
 
     def __init__(  # noqa: long
         self,
-        registry: ToolRegistry,
+        registry: ToolRegistry | None = None,
         config: ToolExecutorConfig | dict[str, Any] | None = None,
         **kwargs: Any,
     ):
@@ -87,7 +78,8 @@ class ToolExecutor:
         Initialize tool executor.
 
         Args:
-            registry: ToolRegistry instance (required)
+            registry: Optional ToolRegistry (legacy). When None, executor
+                owns a lazy singleton dict from TOOL_CLASSES.
             config: Optional ToolExecutorConfig or dict with config params
             **kwargs: Individual config params (for backward compatibility)
 
@@ -111,6 +103,7 @@ class ToolExecutor:
             cfg = config
 
         self.registry = registry
+        self._tool_instances: dict[str, BaseTool] = {}
         self.default_timeout = cfg.default_timeout
         self.max_concurrent = cfg.max_concurrent
         self.rate_limit = cfg.rate_limit
@@ -158,6 +151,30 @@ class ToolExecutor:
             self.approval_workflow.on_rejected(
                 lambda req: handle_approval_rejection(self, req)
             )
+
+    def _get_tool(self, name: str) -> BaseTool | None:
+        """Get tool by name with lazy instantiation from TOOL_CLASSES.
+
+        Checks the internal singleton dict first, then falls back to the
+        legacy ToolRegistry if present.  When neither has the tool, attempts
+        lazy instantiation from the static TOOL_CLASSES map.
+        """
+        if name in self._tool_instances:
+            return self._tool_instances[name]
+        # Legacy path: try the registry
+        if self.registry is not None:
+            tool = self.registry.get(name)
+            if tool is not None:
+                return tool
+        # Lazy instantiation from static map
+        from temper_ai.tools import TOOL_CLASSES
+
+        cls = TOOL_CLASSES.get(name)
+        if cls is None:
+            return None
+        tool = cls()
+        self._tool_instances[name] = tool
+        return tool
 
     def execute(  # noqa: radon
         self,
@@ -207,25 +224,6 @@ class ToolExecutor:
                     self, snapshot, tool_name, e, resolved_context
                 )
             return ToolResult(success=False, result=None, error=str(e))
-
-    def execute_batch(
-        self,
-        executions: list[tuple[str, dict[str, Any]]],
-        timeout: int | None = None,
-        overall_timeout: int | None = None,
-    ) -> list[ToolResult]:
-        """Execute multiple tools in parallel."""
-        return _execute_batch(self, executions, timeout, overall_timeout)
-
-    def validate_tool_call(
-        self, tool_name: str, params: dict[str, Any]
-    ) -> tuple[bool, str | None]:
-        """Validate a tool call before execution."""
-        return _validate_tool_call(self, tool_name, params)
-
-    def get_tool_info(self, tool_name: str) -> dict[str, Any] | None:
-        """Get metadata about a registered tool."""
-        return _get_tool_info(self, tool_name)
 
     @staticmethod
     def _cleanup_executor(
@@ -284,10 +282,6 @@ class ToolExecutor:
                 self.shutdown(wait=False, cancel_futures=True)
         except (RuntimeError, OSError, AttributeError) as e:
             logger.error(f"Error in ToolExecutor.__del__: {e}")
-
-    def is_shutdown(self) -> bool:
-        """Return whether the executor has been shut down."""
-        return self._shutdown
 
     def __repr__(self) -> str:
         status = "shutdown" if self._shutdown else "active"

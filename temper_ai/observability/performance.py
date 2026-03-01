@@ -236,93 +236,6 @@ class PerformanceTracker:
                 f"(threshold: {metrics.slow_threshold_ms}ms) - {context}"
             )
 
-    def get_metrics(self, operation: str) -> dict[str, float]:
-        """
-        Get latency metrics for a specific operation.
-
-        Args:
-            operation: Operation name
-
-        Returns:
-            Dict with p50, p95, p99, count, min, max, mean
-        """
-        if operation not in self.metrics:
-            return {
-                "p50": 0.0,
-                "p95": 0.0,
-                "p99": 0.0,
-                "count": 0,
-                "min": 0.0,
-                "max": 0.0,
-                "mean": 0.0,
-            }
-
-        return self.metrics[operation].get_percentiles()
-
-    def get_all_metrics(self) -> dict[str, dict[str, float]]:
-        """
-        Get metrics for all tracked operations.
-
-        Returns:
-            Dict mapping operation name to metrics
-        """
-        return {
-            operation: metrics.get_percentiles()
-            for operation, metrics in self.metrics.items()
-        }
-
-    def get_slow_operations(
-        self, operation: str | None = None, limit: int = 10
-    ) -> list[dict[str, Any]]:
-        """
-        Get recent slow operations.
-
-        Args:
-            operation: Filter by operation name (optional)
-            limit: Maximum number of results
-
-        Returns:
-            List of slow operation records
-        """
-        ops = self.slow_operations
-
-        if operation:
-            ops = [op for op in ops if op.operation == operation]
-
-        # Return most recent first
-        return [op.to_dict() for op in reversed(ops[-limit:])]
-
-    def get_summary(self) -> dict[str, Any]:
-        """
-        Get performance summary across all operations.
-
-        Returns:
-            Summary with total operations, slow count, metrics per operation
-        """
-        total_operations = sum(len(m.samples) for m in self.metrics.values())
-        total_slow = len(self.slow_operations)
-
-        return {
-            "total_operations": total_operations,
-            "total_slow_operations": total_slow,
-            "slow_percentage": (
-                (total_slow / total_operations * 100) if total_operations > 0 else 0
-            ),
-            "operations": {
-                op: {
-                    **metrics.get_percentiles(),
-                    "slow_count": metrics.get_slow_count(),
-                    "slow_threshold_ms": metrics.slow_threshold_ms,
-                }
-                for op, metrics in self.metrics.items()
-            },
-        }
-
-    def reset(self) -> None:
-        """Reset all metrics and slow operation records."""
-        self.metrics.clear()
-        self.slow_operations.clear()
-
     def cleanup_expired_metrics(self, expiration_hours: int = 24) -> int:
         """
         Remove metrics that haven't been updated in the specified time period.
@@ -363,19 +276,6 @@ class PerformanceTracker:
             )
 
         return len(expired_ops)
-
-    def set_slow_threshold(self, operation: str, threshold_ms: float) -> None:
-        """
-        Set custom slow threshold for an operation.
-
-        Args:
-            operation: Operation name
-            threshold_ms: Threshold in milliseconds
-        """
-        if operation in self.metrics:
-            self.metrics[operation].slow_threshold_ms = threshold_ms
-
-        self.default_thresholds[operation] = threshold_ms
 
 
 # Global performance tracker instance (OB-06: double-check locking)

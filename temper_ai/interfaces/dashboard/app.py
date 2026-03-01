@@ -279,6 +279,222 @@ def _mount_react_app(app: FastAPI) -> None:
         return RedirectResponse(url="/app")
 
 
+def _seed_filesystem_configs(config_root: str, tenant_id: str) -> None:
+    """Seed filesystem YAML configs into the database for a given tenant.
+
+    Scans configs/{type}/*.yaml and imports any that don't already exist in
+    the DB. Runs once at startup so the Library page shows all configs.
+    """
+    from temper_ai.auth.config_sync import ConfigSyncService
+
+    sync = ConfigSyncService()
+    _type_dir_map = {
+        "workflow": "workflows",
+        "stage": "stages",
+        "agent": "agents",
+        "tool": "tools",
+    }
+    root = Path(config_root)
+    seeded = 0
+
+    for config_type, dir_name in _type_dir_map.items():
+        config_dir = root / dir_name
+        if not config_dir.exists():
+            continue
+        for f in config_dir.glob("*.yaml"):
+            name = f.stem
+            # Skip if already in DB
+            existing = sync.get_config(
+                tenant_id=tenant_id, config_type=config_type, name=name
+            )
+            if existing is not None:
+                continue
+            try:
+                yaml_content = f.read_text(encoding="utf-8")
+                sync.import_config(
+                    tenant_id=tenant_id,
+                    config_type=config_type,
+                    name=name,
+                    yaml_content=yaml_content,
+                    user_id=None,
+                )
+                seeded += 1
+            except Exception:  # noqa: BLE001
+                logger.debug(
+                    "Skipped seeding %s/%s (validation error)", config_type, name
+                )
+
+    if seeded:
+        logger.info(
+            "Seeded %d filesystem configs into DB for tenant '%s'", seeded, tenant_id
+        )
+
+
+def _register_noauth_config_routes(app: FastAPI, config_root: str) -> None:
+    """Register noauth /api/configs and /api/profiles routes for dev mode.
+
+    The frontend Library page fetches from /api/configs/{type} and
+    /api/profiles/{type}. In auth mode these are provided by config_routes
+    and profile_routes (DB-backed). In dev mode those are skipped, so we
+    register DB-backed proxies using the default tenant.
+    """
+    from starlette.requests import Request
+
+    from temper_ai.auth.config_sync import ConfigSyncService
+    from temper_ai.interfaces.server.lifecycle import DEFAULT_TENANT_ID
+
+    sync = ConfigSyncService()
+
+    # Seed filesystem configs into DB so the Library has data
+    try:
+        _seed_filesystem_configs(config_root, DEFAULT_TENANT_ID)
+    except Exception:  # noqa: BLE001
+        logger.warning("Failed to seed filesystem configs into DB", exc_info=True)
+
+    @app.get("/api/configs/templates/{config_type}")
+    def noauth_list_templates(config_type: str) -> dict:
+        """List filesystem templates for a config type (noauth)."""
+        from temper_ai.interfaces.server.config_routes import (
+            _handle_list_templates,
+        )
+
+        return _handle_list_templates(config_type, config_root)
+
+    @app.get("/api/configs/{config_type}/{name}/fork")
+    def noauth_fork_placeholder(config_type: str, name: str) -> dict:
+        """Placeholder for fork — not available in noauth mode."""
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=501, detail="Fork requires authentication")
+
+    @app.get("/api/configs/{config_type}/{name}")
+    def noauth_get_config(config_type: str, name: str) -> dict:
+        """Get a single config by type and name (noauth, DB-backed)."""
+        config = sync.get_config(
+            tenant_id=DEFAULT_TENANT_ID, config_type=config_type, name=name
+        )
+        if config is None:
+            from fastapi import HTTPException
+            from starlette.status import HTTP_404_NOT_FOUND
+
+            raise HTTPException(
+                status_code=HTTP_404_NOT_FOUND,
+                detail=f"Config '{name}' of type '{config_type}' not found.",
+            )
+        return config
+
+    @app.get("/api/configs/{config_type}")
+    def noauth_list_configs(config_type: str) -> dict:
+        """List configs by type (noauth, DB-backed with default tenant)."""
+        try:
+            configs = sync.list_configs(
+                tenant_id=DEFAULT_TENANT_ID, config_type=config_type
+            )
+            return {"configs": configs, "total": len(configs)}
+        except ValueError:
+            return {"configs": [], "total": 0}
+
+    @app.post("/api/configs/{config_type}")
+    async def noauth_create_config(config_type: str, request: Request) -> dict:
+        """Create a new config (noauth, DB-backed)."""
+        from fastapi import HTTPException
+
+        body = await request.json()
+        name = body.get("name")
+        if not name:
+            raise HTTPException(status_code=400, detail="'name' is required")
+        config_data = body.get("config_data", {})
+        description = body.get("description", "")
+        try:
+            result = sync.create_config(
+                tenant_id=DEFAULT_TENANT_ID,
+                config_type=config_type,
+                name=name,
+                config_data=config_data,
+                description=description,
+                user_id=None,
+            )
+            return result
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.put("/api/configs/{config_type}/{name}")
+    async def noauth_update_config(
+        config_type: str, name: str, request: Request
+    ) -> dict:
+        """Update an existing config (noauth, DB-backed)."""
+        from fastapi import HTTPException
+
+        body = await request.json()
+        try:
+            result = sync.update_config(
+                tenant_id=DEFAULT_TENANT_ID,
+                config_type=config_type,
+                name=name,
+                config_data=body.get("config_data"),
+                description=body.get("description"),
+                user_id=None,
+            )
+            if result is None:
+                from starlette.status import HTTP_404_NOT_FOUND
+
+                raise HTTPException(
+                    status_code=HTTP_404_NOT_FOUND,
+                    detail=f"Config '{name}' of type '{config_type}' not found.",
+                )
+            return result
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.delete("/api/configs/{config_type}/{name}")
+    def noauth_delete_config(config_type: str, name: str) -> dict:
+        """Delete a config (noauth, DB-backed)."""
+        from fastapi import HTTPException
+
+        try:
+            sync.delete_config(
+                tenant_id=DEFAULT_TENANT_ID,
+                config_type=config_type,
+                name=name,
+            )
+            return {"status": "deleted", "name": name}
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/profiles/{profile_type}")
+    def noauth_list_profiles(profile_type: str) -> dict:
+        """List profiles (noauth, DB-backed with default tenant)."""
+        try:
+            from temper_ai.interfaces.server.profile_routes import (
+                _get_profile_model,
+                _validate_profile_type,
+            )
+            from temper_ai.storage.database.manager import get_session
+
+            profile_type_norm = _validate_profile_type(profile_type)
+            model_cls = _get_profile_model(profile_type_norm)
+            with get_session() as session:
+                records = (
+                    session.query(model_cls)
+                    .filter_by(tenant_id=DEFAULT_TENANT_ID)
+                    .all()
+                )
+                profiles = [
+                    {
+                        "name": r.name,
+                        "description": getattr(r, "description", ""),
+                        "created_at": r.created_at.isoformat(),
+                        "updated_at": r.updated_at.isoformat(),
+                    }
+                    for r in records
+                ]
+            return {"profiles": profiles, "total": len(profiles)}
+        except Exception:  # noqa: BLE001
+            return {"profiles": [], "total": 0}
+
+
 def _register_auth_routes(app: FastAPI) -> None:
     """Register auth and config management routes (server mode only)."""
     try:
@@ -382,29 +598,21 @@ def _register_domain_routes(app: FastAPI, domain: str, mod_routes: Any) -> None:
 
 
 def _init_server_components(mode: str) -> tuple:
-    """Initialize server-mode components (shutdown manager, run store, jobs).
+    """Initialize server-mode components (shutdown manager, background jobs).
 
     Returns:
-        Tuple of (shutdown_mgr, run_store, mining_job, analysis_job) — each may be None.
+        Tuple of (shutdown_mgr, mining_job, analysis_job) — each may be None.
     """
     shutdown_mgr = None
-    run_store = None
     mining_job = None
     analysis_job = None
 
     if mode not in ("server", "dev"):
-        return shutdown_mgr, run_store, mining_job, analysis_job
+        return shutdown_mgr, mining_job, analysis_job
 
     from temper_ai.interfaces.server.lifecycle import GracefulShutdownManager
 
     shutdown_mgr = GracefulShutdownManager()
-
-    try:
-        from temper_ai.interfaces.server.run_store import RunStore
-
-        run_store = RunStore()
-    except Exception:  # noqa: BLE001
-        logger.warning("Failed to initialize RunStore, runs will not persist")
 
     try:
         from temper_ai.learning.background import BackgroundMiningJob
@@ -432,7 +640,7 @@ def _init_server_components(mode: str) -> tuple:
     except Exception:  # noqa: BLE001
         logger.warning("Background analysis job not available")
 
-    return shutdown_mgr, run_store, mining_job, analysis_job
+    return shutdown_mgr, mining_job, analysis_job
 
 
 def _configure_app_middleware_and_routes(  # noqa: long
@@ -470,6 +678,11 @@ def _configure_app_middleware_and_routes(  # noqa: long
 
     if auth_enabled:
         _register_auth_routes(app)
+    else:
+        try:
+            _register_noauth_config_routes(app, config_root)
+        except Exception:  # noqa: BLE001
+            logger.warning("Noauth config routes not available (DB may not be set up)")
 
 
 def create_app(  # noqa: long
@@ -496,14 +709,13 @@ def create_app(  # noqa: long
     )
 
     title = "Temper AI Server" if mode == "server" else "Temper AI (Dev)"
-    shutdown_mgr, run_store, _mining_job, _analysis_job = _init_server_components(mode)
+    shutdown_mgr, _mining_job, _analysis_job = _init_server_components(mode)
 
     execution_service = WorkflowExecutionService(
         backend=backend,
         event_bus=event_bus,
         config_root=config_root,
         max_workers=max_workers,
-        run_store=run_store,
     )
 
     # Two-phase init: inject execution_service into event bus for cross-workflow triggers

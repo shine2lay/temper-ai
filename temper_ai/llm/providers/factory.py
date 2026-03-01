@@ -8,6 +8,7 @@ from temper_ai.llm.providers.base import BaseLLM, LLMProvider
 from temper_ai.llm.providers.ollama import OllamaLLM
 from temper_ai.llm.providers.openai_provider import OpenAILLM
 from temper_ai.llm.providers.vllm_provider import VllmLLM
+from temper_ai.shared.core.circuit_breaker import CircuitBreakerConfig
 from temper_ai.shared.utils.exceptions import LLMError
 
 if TYPE_CHECKING:
@@ -110,6 +111,14 @@ def create_llm_from_config(inference_config: "InferenceConfig") -> BaseLLM:
             common_params["api_key"] = inference_config.api_key
         else:
             raise ValueError(f"No API key or api_key_ref provided for {provider_enum}")
+
+    if inference_config.circuit_breaker:
+        cb = inference_config.circuit_breaker
+        common_params["circuit_breaker_config"] = CircuitBreakerConfig(
+            failure_threshold=cb.failure_threshold,
+            success_threshold=cb.success_threshold,
+            timeout=cb.timeout_seconds,
+        )
 
     instance: BaseLLM = provider_class(**common_params)
     return instance

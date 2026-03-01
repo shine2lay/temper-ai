@@ -1,6 +1,5 @@
 """Comprehensive additional tests for real-time alerting system."""
 
-from datetime import UTC, datetime, timedelta
 from unittest.mock import Mock, patch
 
 import pytest
@@ -163,9 +162,9 @@ class TestAlertManagerAdvanced:
     def clean_manager(self):
         """Create alert manager with all rules disabled."""
         mgr = AlertManager()
-        for rule_name in list(mgr.rules.keys()):
-            mgr.disable_rule(rule_name)
-        mgr.clear_history()
+        for rule in mgr.rules.values():
+            rule.enabled = False
+        mgr.alert_history.clear()
         return mgr
 
     def test_default_rules_are_created(self):
@@ -198,33 +197,6 @@ class TestAlertManagerAdvanced:
             len([r for r in clean_manager.rules.values() if r.name == "test_rule"]) == 1
         )
         assert clean_manager.rules["test_rule"].threshold == 20.0
-
-    def test_remove_nonexistent_rule(self, clean_manager):
-        """Test removing nonexistent rule does not raise error."""
-        # Should not raise
-        initial_rules = len(clean_manager.rules)
-        clean_manager.remove_rule("nonexistent")
-        # State should be unchanged
-        assert len(clean_manager.rules) == initial_rules
-        assert "nonexistent" not in clean_manager.rules
-
-    def test_enable_nonexistent_rule(self, clean_manager):
-        """Test enabling nonexistent rule does not raise error."""
-        # Should not raise
-        initial_rules = len(clean_manager.rules)
-        clean_manager.enable_rule("nonexistent")
-        # State should be unchanged
-        assert len(clean_manager.rules) == initial_rules
-        assert "nonexistent" not in clean_manager.rules
-
-    def test_disable_nonexistent_rule(self, clean_manager):
-        """Test disabling nonexistent rule does not raise error."""
-        # Should not raise
-        initial_rules = len(clean_manager.rules)
-        clean_manager.disable_rule("nonexistent")
-        # State should be unchanged
-        assert len(clean_manager.rules) == initial_rules
-        assert "nonexistent" not in clean_manager.rules
 
     def test_check_metric_with_exact_threshold(self, clean_manager):
         """Test metric exactly at threshold does not trigger."""
@@ -362,7 +334,7 @@ class TestAlertManagerAdvanced:
         clean_manager.add_rule(rule)
 
         mock_handler = Mock()
-        clean_manager.register_webhook_handler("test", mock_handler)
+        clean_manager.webhook_handlers["test"] = mock_handler
 
         clean_manager.check_metric("cost_usd", 15.0)
 
@@ -387,7 +359,7 @@ class TestAlertManagerAdvanced:
         clean_manager.add_rule(rule)
 
         mock_handler = Mock()
-        clean_manager.register_email_handler("test", mock_handler)
+        clean_manager.email_handlers["test"] = mock_handler
 
         clean_manager.check_metric("cost_usd", 15.0)
 
@@ -395,124 +367,6 @@ class TestAlertManagerAdvanced:
         mock_handler.assert_called_once()
         assert isinstance(mock_handler.call_args[0][0], Alert)
         assert isinstance(mock_handler.call_args[0][1], AlertRule)
-
-    def test_get_recent_alerts_empty(self, clean_manager):
-        """Test get_recent_alerts with no alerts."""
-        alerts = clean_manager.get_recent_alerts(hours=24)
-        assert len(alerts) == 0
-
-    def test_get_recent_alerts_time_filtering(self, clean_manager):
-        """Test get_recent_alerts filters by time window."""
-        rule = AlertRule(
-            name="test", metric_type=MetricType.COST_USD, threshold=10.0, enabled=True
-        )
-        clean_manager.add_rule(rule)
-
-        # Create alert with old timestamp
-        old_alert = Alert(
-            rule_name="test",
-            severity=AlertSeverity.WARNING,
-            message="Old alert",
-            metric_value=15.0,
-            threshold=10.0,
-            timestamp=datetime.now(UTC) - timedelta(hours=48),
-        )
-        clean_manager.alert_history.append(old_alert)
-
-        # Create recent alert
-        clean_manager.check_metric("cost_usd", 20.0)
-
-        # Get last 24 hours
-        recent = clean_manager.get_recent_alerts(hours=24)
-        assert len(recent) == 1
-        assert recent[0].metric_value == 20.0
-
-        # Get last 72 hours
-        recent = clean_manager.get_recent_alerts(hours=72)
-        assert len(recent) == 2
-
-    def test_get_recent_alerts_severity_filtering(self, clean_manager):
-        """Test get_recent_alerts filters by severity."""
-        rule1 = AlertRule(
-            name="warning",
-            metric_type=MetricType.COST_USD,
-            threshold=10.0,
-            severity=AlertSeverity.WARNING,
-            enabled=True,
-        )
-        rule2 = AlertRule(
-            name="error",
-            metric_type=MetricType.ERROR_RATE,
-            threshold=0.1,
-            severity=AlertSeverity.ERROR,
-            enabled=True,
-        )
-        rule3 = AlertRule(
-            name="critical",
-            metric_type=MetricType.LATENCY_P99,
-            threshold=1000.0,
-            severity=AlertSeverity.CRITICAL,
-            enabled=True,
-        )
-        clean_manager.add_rule(rule1)
-        clean_manager.add_rule(rule2)
-        clean_manager.add_rule(rule3)
-
-        # Trigger all rules
-        clean_manager.check_metric("cost_usd", 15.0)
-        clean_manager.check_metric("error_rate", 0.2)
-        clean_manager.check_metric("latency_p99", 2000.0)
-
-        # Filter by WARNING
-        warnings = clean_manager.get_recent_alerts(
-            hours=24, severity=AlertSeverity.WARNING
-        )
-        assert len(warnings) == 1
-        assert all(a.severity == AlertSeverity.WARNING for a in warnings)
-
-        # Filter by ERROR
-        errors = clean_manager.get_recent_alerts(hours=24, severity=AlertSeverity.ERROR)
-        assert len(errors) == 1
-        assert all(a.severity == AlertSeverity.ERROR for a in errors)
-
-        # Filter by CRITICAL
-        criticals = clean_manager.get_recent_alerts(
-            hours=24, severity=AlertSeverity.CRITICAL
-        )
-        assert len(criticals) == 1
-        assert all(a.severity == AlertSeverity.CRITICAL for a in criticals)
-
-    def test_clear_history_removes_all(self, clean_manager):
-        """Test clear_history removes all alerts and cooldowns."""
-        # Use distinct rule names to avoid cooldown suppression
-        clean_manager.add_rule(
-            AlertRule(
-                name="test_a",
-                metric_type=MetricType.COST_USD,
-                threshold=10.0,
-                enabled=True,
-            )
-        )
-        clean_manager.add_rule(
-            AlertRule(
-                name="test_b",
-                metric_type=MetricType.ERROR_RATE,
-                threshold=0.1,
-                enabled=True,
-            )
-        )
-
-        # Generate alerts on different rules
-        clean_manager.check_metric("cost_usd", 15.0)
-        clean_manager.check_metric("error_rate", 0.2)
-
-        assert len(clean_manager.alert_history) == 2
-
-        clean_manager.clear_history()
-
-        assert len(clean_manager.alert_history) == 0
-        # Cooldown timers also cleared
-        assert len(clean_manager._last_alert_times) == 0
 
     @patch("temper_ai.observability.alerting.logger")
     def test_action_execution_continues_after_error(self, mock_logger, clean_manager):
@@ -535,7 +389,7 @@ class TestAlertManagerAdvanced:
         def failing_handler(alert, rule):
             raise Exception("Webhook failed")
 
-        clean_manager.register_webhook_handler("test", failing_handler)
+        clean_manager.webhook_handlers["test"] = failing_handler
 
         # Trigger alert
         clean_manager.check_metric("cost_usd", 15.0)

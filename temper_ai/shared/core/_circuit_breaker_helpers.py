@@ -3,10 +3,8 @@
 These are internal implementation details - use CircuitBreaker's public API.
 """
 
-import json
 import logging
 import time
-from dataclasses import asdict
 from datetime import UTC, datetime
 from typing import Any
 
@@ -109,102 +107,6 @@ def time_until_retry(last_failure_time: float | None, timeout: int) -> float:
         return 0
     elapsed = time.time() - last_failure_time
     return max(0, timeout - elapsed)
-
-
-def _get_state_key(name: str) -> str:
-    """Get storage key for a circuit breaker.
-
-    Args:
-        name: Circuit breaker name
-
-    Returns:
-        Storage key string
-    """
-    return f"circuit_breaker:{name}:state"
-
-
-def save_state(
-    storage: Any,
-    name: str,
-    state: Any,
-    failure_count: int,
-    success_count: int,
-    last_failure_time: float | None,
-    config: Any,
-) -> None:
-    """Save circuit breaker state to storage.
-
-    Args:
-        storage: StateStorage backend
-        name: Circuit breaker name
-        state: Current CircuitState
-        failure_count: Current failure count
-        success_count: Current success count
-        last_failure_time: Last failure timestamp
-        config: CircuitBreakerConfig
-    """
-    if not storage:
-        return
-
-    state_dict = {
-        "state": state.value,
-        "failure_count": failure_count,
-        "success_count": success_count,
-        "last_failure_time": last_failure_time,
-        "config": asdict(config),
-    }
-
-    key = _get_state_key(name)
-    storage.set(key, json.dumps(state_dict))
-
-
-def load_state(storage: Any, name: str) -> dict:
-    """Load circuit breaker state from storage.
-
-    Args:
-        storage: StateStorage backend
-        name: Circuit breaker name
-
-    Returns:
-        Dict with state, failure_count, success_count, last_failure_time, config
-        or default values if not found/corrupt
-    """
-    from temper_ai.shared.core.circuit_breaker import CircuitBreakerConfig, CircuitState
-
-    defaults = {
-        "state": CircuitState.CLOSED,
-        "failure_count": 0,
-        "success_count": 0,
-        "last_failure_time": None,
-        "opened_at": None,
-        "config": None,
-    }
-
-    if not storage:
-        return defaults
-
-    key = _get_state_key(name)
-    data = storage.get(key)
-
-    if data:
-        try:
-            state_dict = json.loads(data)
-            result = {
-                "state": CircuitState(state_dict["state"]),
-                "failure_count": state_dict["failure_count"],
-                "success_count": state_dict["success_count"],
-                "last_failure_time": state_dict.get("last_failure_time"),
-                "opened_at": None,
-            }
-            if "config" in state_dict:
-                result["config"] = CircuitBreakerConfig(**state_dict["config"])
-            else:
-                result["config"] = None
-            return result
-        except (json.JSONDecodeError, KeyError, ValueError):
-            return defaults
-
-    return defaults
 
 
 def fire_callbacks(
@@ -315,17 +217,6 @@ def on_call_success(breaker: Any, reserved_state: Any | None = None) -> None:
                     breaker._state = CircuitState.CLOSED
                     new_state = CircuitState.CLOSED
                     breaker.success_count = 0
-
-            if breaker.storage:
-                save_state(
-                    breaker.storage,
-                    breaker.name,
-                    breaker._state,
-                    breaker.failure_count,
-                    breaker.success_count,
-                    breaker.last_failure_time,
-                    breaker.config,
-                )
     finally:
         if reserved_state == CircuitState.HALF_OPEN:
             breaker._half_open_semaphore.release()
@@ -395,17 +286,6 @@ def on_call_failure(
             if breaker._state != prev_state:
                 old_state = prev_state
                 new_state = breaker._state
-
-            if breaker.storage:
-                save_state(
-                    breaker.storage,
-                    breaker.name,
-                    breaker._state,
-                    breaker.failure_count,
-                    breaker.success_count,
-                    breaker.last_failure_time,
-                    breaker.config,
-                )
     finally:
         if reserved_state == CircuitState.HALF_OPEN:
             breaker._half_open_semaphore.release()
@@ -433,16 +313,6 @@ def reserve_execution(breaker: Any) -> Any | None:
             if _should_attempt_reset(breaker.last_failure_time, breaker.config.timeout):
                 breaker._state = CircuitState.HALF_OPEN
                 breaker.success_count = 0
-                if breaker.storage:
-                    save_state(
-                        breaker.storage,
-                        breaker.name,
-                        breaker._state,
-                        breaker.failure_count,
-                        breaker.success_count,
-                        breaker.last_failure_time,
-                        breaker.config,
-                    )
             else:
                 return None
 

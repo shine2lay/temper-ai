@@ -288,27 +288,6 @@ class TestUserStore:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_get_user_by_email(self, sample_user):
-        """Test getting user by email."""
-        store = UserStore()
-        store._users[sample_user.user_id] = sample_user
-        store._emails[sample_user.email] = sample_user.user_id
-
-        result = await store.get_user_by_email(sample_user.email)
-
-        assert result is not None
-        assert result.email == sample_user.email
-
-    @pytest.mark.asyncio
-    async def test_get_user_by_email_not_found(self):
-        """Test getting non-existent user by email."""
-        store = UserStore()
-
-        result = await store.get_user_by_email("nonexistent@example.com")
-
-        assert result is None
-
-    @pytest.mark.asyncio
     async def test_get_user_by_oauth(self, sample_user):
         """Test getting user by OAuth credentials."""
         store = UserStore()
@@ -583,29 +562,6 @@ class TestUserStoreSecurity:
         assert len(users) == 5
         # Only one user should be created (same email)
         assert len(store._users) == 1
-
-    @pytest.mark.asyncio
-    async def test_user_email_case_sensitivity(self):
-        """Test email case handling in user lookup."""
-        store = UserStore()
-
-        # Create user with lowercase email
-        user = await store.create_or_update_user(
-            user_id="user_case",
-            email="test@example.com",
-            name="Case User",
-            provider="google",
-            oauth_subject="google_case",
-        )
-
-        # Lookup with exact case
-        found_exact = await store.get_user_by_email("test@example.com")
-        assert found_exact is not None
-        assert found_exact.user_id == user.user_id
-
-        # Lookup with different case (should not find - case-sensitive)
-        found_upper = await store.get_user_by_email("TEST@EXAMPLE.COM")
-        assert found_upper is None
 
     @pytest.mark.asyncio
     async def test_oauth_subject_uniqueness(self):

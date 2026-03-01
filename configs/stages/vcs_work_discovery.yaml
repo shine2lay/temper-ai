@@ -16,7 +16,7 @@ stage:
 
   inputs:
     workspace_path:
-      source: workflow.workspace_path
+      type: string
       required: true
 
   outputs:

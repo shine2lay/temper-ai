@@ -351,6 +351,37 @@ class ConsensusStrategy(CollaborationStrategy):
 
         return " ".join(lines)
 
+    def curate_agent_context(
+        self,
+        agent_name: str,
+        agent_role: str | None = None,
+        prior_outputs: dict[str, Any] | None = None,
+        round_number: int = 0,
+        dialogue_history: list[dict[str, Any]] | None = None,
+    ) -> str | None:
+        """Curate prior agent outputs as sequential context.
+
+        Shows each prior agent's output to the current agent so it can
+        build on or respond to their work.
+        """
+        if not prior_outputs:
+            return None
+
+        parts: list[str] = []
+        for name, output_data in prior_outputs.items():
+            output_text = ""
+            if isinstance(output_data, dict):
+                output_text = output_data.get("output", "")
+            elif isinstance(output_data, str):
+                output_text = output_data
+            if output_text:
+                parts.append(f"## {name}'s output\n{output_text}")
+
+        if not parts:
+            return None
+
+        return "# Prior Agent Outputs\n\n" + "\n\n".join(parts)
+
     def get_capabilities(self) -> dict[str, bool]:
         """Get strategy capabilities for feature detection.
 

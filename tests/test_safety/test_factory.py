@@ -48,7 +48,7 @@ class TestCreatePolicyRegistryWithMappings:
         }
         registry = create_policy_registry(config)
         assert registry.policy_count() == 1
-        assert registry.is_registered("secret_detection")
+        assert "secret_detection" in registry.list_policies()
 
     def test_registers_multiple_policies(self):
         """Multiple policies across action types are registered."""
@@ -66,10 +66,10 @@ class TestCreatePolicyRegistryWithMappings:
         }
         registry = create_policy_registry(config)
         assert registry.policy_count() == 4
-        assert registry.is_registered("secret_detection")
-        assert registry.is_registered("file_access")
-        assert registry.is_registered("blast_radius")
-        assert registry.is_registered("forbidden_operations")
+        assert "secret_detection" in registry.list_policies()
+        assert "file_access" in registry.list_policies()
+        assert "blast_radius" in registry.list_policies()
+        assert "forbidden_operations" in registry.list_policies()
 
     def test_policy_mapped_to_correct_action_types(self):
         """Policies are retrievable for their mapped action types."""
@@ -112,7 +112,7 @@ class TestGlobalPolicies:
         }
         registry = create_policy_registry(config)
         assert registry.policy_count() == 1
-        assert registry.is_registered("rate_limit")
+        assert "rate_limit" in registry.list_policies()
 
     def test_global_policy_applies_to_all_actions(self):
         """Global policies appear for any action type query."""
@@ -144,8 +144,8 @@ class TestUnknownPolicies:
         }
         registry = create_policy_registry(config)
         assert registry.policy_count() == 1
-        assert registry.is_registered("secret_detection")
-        assert not registry.is_registered("nonexistent_policy")
+        assert "secret_detection" in registry.list_policies()
+        assert "nonexistent_policy" not in registry.list_policies()
 
     def test_all_unknown_policies_result_in_empty_registry(self):
         """Config with only unknown policies results in empty registry."""
@@ -174,8 +174,7 @@ class TestPolicyConfig:
             },
         }
         registry = create_policy_registry(config)
-        policy = registry.get_policy("blast_radius")
-        assert policy is not None
+        assert "blast_radius" in registry.list_policies()
 
     def test_nested_dict_config_filtered(self):
         """Nested dicts in policy_config are filtered out for BaseSafetyPolicy."""
@@ -193,7 +192,7 @@ class TestPolicyConfig:
         # Should not raise even though config has nested dict
         registry = create_policy_registry(config)
         assert registry.policy_count() == 1
-        assert registry.is_registered("rate_limit")
+        assert "rate_limit" in registry.list_policies()
 
 
 class TestBuiltinPoliciesMapping:
@@ -230,10 +229,10 @@ class TestRealYAMLConfig:
         # Should register at least 4 policies (P0 critical ones)
         assert registry.policy_count() >= 4
         # Core security policies must be present
-        assert registry.is_registered("secret_detection")
-        assert registry.is_registered("file_access")
-        assert registry.is_registered("forbidden_operations")
-        assert registry.is_registered("blast_radius")
+        assert "secret_detection" in registry.list_policies()
+        assert "file_access" in registry.list_policies()
+        assert "forbidden_operations" in registry.list_policies()
+        assert "blast_radius" in registry.list_policies()
 
     def test_real_config_covers_file_write_actions(self):
         """Real config has policies for file_write action type."""

@@ -14,7 +14,6 @@ from enum import Enum
 from typing import (
     Any,
     Optional,
-    Protocol,
     TypeVar,
 )
 
@@ -35,9 +34,6 @@ from temper_ai.shared.core._circuit_breaker_helpers import (
     fire_callbacks as _fire_callbacks_helper,
 )
 from temper_ai.shared.core._circuit_breaker_helpers import (
-    load_state as _load_state_helper,
-)
-from temper_ai.shared.core._circuit_breaker_helpers import (
     on_call_failure as _on_call_failure_helper,
 )
 from temper_ai.shared.core._circuit_breaker_helpers import (
@@ -45,9 +41,6 @@ from temper_ai.shared.core._circuit_breaker_helpers import (
 )
 from temper_ai.shared.core._circuit_breaker_helpers import (
     reserve_execution as _reserve_execution_helper,
-)
-from temper_ai.shared.core._circuit_breaker_helpers import (
-    save_state as _save_state_helper,
 )
 from temper_ai.shared.core._circuit_breaker_helpers import (
     time_until_retry as _time_until_retry_helper,
@@ -58,32 +51,12 @@ T = TypeVar("T")
 logger = logging.getLogger(__name__)
 
 
-class StateStorage(Protocol):
-    """Protocol for state persistence storage backends."""
-
-    def get(self, key: str) -> str | None:
-        """Retrieve state by key."""
-        ...
-
-    def set(self, key: str, value: str) -> None:
-        """Store state by key."""
-        ...
-
-    def delete(self, key: str) -> None:
-        """Delete state by key."""
-        ...
-
-
 class CircuitState(Enum):
     """Circuit breaker states."""
 
     CLOSED = "closed"
     OPEN = "open"
     HALF_OPEN = "half_open"
-
-
-# Backward-compatible alias used by safety module
-CircuitBreakerState = CircuitState
 
 
 @dataclass
@@ -99,10 +72,6 @@ class CircuitBreakerError(FrameworkException):
     """Raised when circuit breaker is open (LLM module interface)."""
 
     pass
-
-
-# Backward-compatible alias used by safety module
-CircuitBreakerOpen = CircuitBreakerError
 
 
 @dataclass
@@ -146,17 +115,6 @@ class CircuitBreakerMetrics:
             "last_failure_time": lft,
             "last_state_change_time": lsct,
         }
-
-
-def _apply_loaded_state(breaker: "CircuitBreaker", loaded: dict) -> None:
-    """Apply loaded state from storage to a CircuitBreaker instance."""
-    breaker._state = loaded["state"]
-    breaker._failure_count = loaded["failure_count"]
-    breaker._success_count = loaded["success_count"]
-    breaker._last_failure_time = loaded["last_failure_time"]
-    breaker._opened_at = loaded["opened_at"]
-    if loaded["config"] is not None:
-        breaker.config = loaded["config"]
 
 
 def _validate_name(name: str) -> None:
@@ -221,23 +179,6 @@ def _build_config(  # noqa: radon
     return CircuitBreakerConfig(failure_threshold=ft, success_threshold=st, timeout=ts)
 
 
-def _init_state_from_storage(
-    storage: Optional["StateStorage"],
-    name: str,
-) -> dict:
-    """Initialize circuit breaker state from storage or defaults."""
-    if storage:
-        return _load_state_helper(storage, name)
-    return {
-        "state": CircuitState.CLOSED,
-        "failure_count": 0,
-        "success_count": 0,
-        "last_failure_time": None,
-        "opened_at": None,
-        "config": None,
-    }
-
-
 def _init_lambda_bindings(breaker: "CircuitBreaker") -> None:
     """Bind helper functions as instance lambdas for internal use."""
     breaker._on_success = lambda reserved_state=None: _on_call_success_helper(
@@ -249,18 +190,6 @@ def _init_lambda_bindings(breaker: "CircuitBreaker") -> None:
     breaker._reserve_execution = lambda: _reserve_execution_helper(breaker)
     breaker.can_execute = lambda: breaker.state != CircuitState.OPEN
     breaker.get_metrics = lambda: breaker.metrics
-    breaker._save_state = lambda: _save_state_helper(
-        breaker.storage,
-        breaker.name,
-        breaker._state,  # noqa: long
-        breaker._failure_count,
-        breaker._success_count,
-        breaker._last_failure_time,
-        breaker.config,
-    )
-    breaker._load_state = lambda: _apply_loaded_state(
-        breaker, _load_state_helper(breaker.storage, breaker.name)
-    )
 
 
 class CircuitBreaker:
@@ -281,14 +210,11 @@ class CircuitBreaker:
     _reserve_execution: Callable
     can_execute: Callable
     get_metrics: Callable
-    _save_state: Callable
-    _load_state: Callable
 
     def __init__(  # noqa: long
         self,
         name: str,
         config: CircuitBreakerConfig | None = None,
-        storage: StateStorage | None = None,
         failure_threshold: int | None = None,
         timeout_seconds: int | None = None,
         success_threshold: int | None = None,
@@ -305,7 +231,6 @@ class CircuitBreaker:
         self.success_threshold = self.config.success_threshold
         self.timeout_seconds = self.config.timeout
 
-        self.storage = storage
         self.lock = threading.Lock()
         self._half_open_semaphore = threading.Semaphore(1)
 
@@ -317,14 +242,11 @@ class CircuitBreaker:
             [observability_callback] if observability_callback is not None else []
         )
 
-        loaded = _init_state_from_storage(self.storage, self.name)
-        self._state = loaded["state"]
-        self._failure_count = loaded["failure_count"]
-        self._success_count = loaded["success_count"]
-        self._last_failure_time: float | None = loaded["last_failure_time"]
-        self._opened_at: datetime | None = loaded["opened_at"]
-        if loaded["config"] is not None:
-            self.config = loaded["config"]
+        self._state = CircuitState.CLOSED
+        self._failure_count = 0
+        self._success_count = 0
+        self._last_failure_time: float | None = None
+        self._opened_at: datetime | None = None
 
         _init_lambda_bindings(self)
 
@@ -342,23 +264,13 @@ class CircuitBreaker:
                 ):
                     pending = self._transition_to(CircuitState.HALF_OPEN)
                     self._success_count = 0
-                    if self.storage:
-                        _save_state_helper(
-                            self.storage,
-                            self.name,
-                            self._state,
-                            self._failure_count,
-                            self._success_count,
-                            self._last_failure_time,
-                            self.config,
-                        )
             current = self._state
         _fire_callbacks_helper(pending, breaker=self)
         return current
 
     @state.setter
     def state(self, value: CircuitState) -> None:
-        """Set state directly (used by persistence loader)."""
+        """Set state directly."""
         self._state = value
 
     @property
@@ -400,17 +312,6 @@ class CircuitBreaker:
                     pending = self._transition_to(CircuitState.CLOSED)
                     self._failure_count = 0
                     self._success_count = 0
-
-            if self.storage:
-                _save_state_helper(
-                    self.storage,
-                    self.name,
-                    self._state,
-                    self._failure_count,
-                    self._success_count,
-                    self._last_failure_time,
-                    self.config,
-                )
         _fire_callbacks_helper(pending, breaker=self)
 
     def record_failure(self, error: Exception | None = None) -> None:
@@ -434,17 +335,6 @@ class CircuitBreaker:
                 self._opened_at = datetime.now(UTC)
                 self._failure_count = 0
                 self._success_count = 0
-
-            if self.storage:
-                _save_state_helper(
-                    self.storage,
-                    self.name,
-                    self._state,
-                    self._failure_count,
-                    self._success_count,
-                    self._last_failure_time,
-                    self.config,
-                )
         _fire_callbacks_helper(pending, breaker=self)
 
     def call(self, func: Callable[..., T], *args: Any, **kwargs: Any) -> T:
@@ -529,16 +419,6 @@ class CircuitBreaker:
             self._success_count = 0
             self._last_failure_time = None
             self._opened_at = None
-            if self.storage:
-                _save_state_helper(
-                    self.storage,
-                    self.name,
-                    self._state,
-                    self._failure_count,
-                    self._success_count,
-                    self._last_failure_time,
-                    self.config,
-                )
         _fire_callbacks_helper(pending, breaker=self)
 
     def force_open(self) -> None:

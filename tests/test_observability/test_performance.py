@@ -5,8 +5,6 @@ Tests for performance instrumentation and metrics tracking.
 import time
 from datetime import datetime
 
-import pytest
-
 from temper_ai.observability.performance import (
     LatencyMetrics,
     PerformanceTracker,
@@ -120,10 +118,11 @@ class TestPerformanceTracker:
         with tracker.measure("test_op"):
             time.sleep(0.01)  # 10ms
 
-        metrics = tracker.get_metrics("test_op")
-        assert metrics["count"] == 1
-        assert metrics["p50"] >= 10.0  # At least 10ms
-        assert metrics["p50"] < 50.0  # But not too long
+        assert "test_op" in tracker.metrics
+        percentiles = tracker.metrics["test_op"].get_percentiles()
+        assert percentiles["count"] == 1
+        assert percentiles["p50"] >= 10.0  # At least 10ms
+        assert percentiles["p50"] < 50.0  # But not too long
 
     def test_measure_with_context(self):
         """Test measure with context data."""
@@ -132,8 +131,9 @@ class TestPerformanceTracker:
         with tracker.measure("llm_call", context={"model": "gpt-4"}):
             time.sleep(0.001)
 
-        metrics = tracker.get_metrics("llm_call")
-        assert metrics["count"] == 1
+        assert "llm_call" in tracker.metrics
+        percentiles = tracker.metrics["llm_call"].get_percentiles()
+        assert percentiles["count"] == 1
 
     def test_record_latency(self):
         """Test manual latency recording."""
@@ -143,32 +143,9 @@ class TestPerformanceTracker:
         tracker.record("test_op", 200.0)
         tracker.record("test_op", 300.0)
 
-        metrics = tracker.get_metrics("test_op")
-        assert metrics["count"] == 3
-        assert metrics["p50"] == 200.0
-
-    def test_get_metrics_nonexistent(self):
-        """Test getting metrics for non-existent operation."""
-        tracker = PerformanceTracker()
-
-        metrics = tracker.get_metrics("nonexistent")
-        assert metrics["count"] == 0
-        assert metrics["p50"] == 0.0
-
-    def test_get_all_metrics(self):
-        """Test getting all metrics."""
-        tracker = PerformanceTracker()
-
-        tracker.record("op1", 100.0)
-        tracker.record("op2", 200.0)
-        tracker.record("op1", 150.0)
-
-        all_metrics = tracker.get_all_metrics()
-
-        assert "op1" in all_metrics
-        assert "op2" in all_metrics
-        assert all_metrics["op1"]["count"] == 2
-        assert all_metrics["op2"]["count"] == 1
+        percentiles = tracker.metrics["test_op"].get_percentiles()
+        assert percentiles["count"] == 3
+        assert percentiles["p50"] == 200.0
 
     def test_slow_operation_detection(self):
         """Test slow operation detection and logging."""
@@ -195,68 +172,6 @@ class TestPerformanceTracker:
         assert len(tracker.slow_operations) == 10
         assert tracker.slow_operations[0].context["iteration"] == 10
 
-    def test_get_slow_operations(self):
-        """Test retrieving slow operations."""
-        tracker = PerformanceTracker(
-            slow_thresholds={"test_op": 100.0, "other_op": 100.0}
-        )
-
-        tracker.record("test_op", 150.0, context={"id": 1})
-        tracker.record("test_op", 200.0, context={"id": 2})
-        tracker.record("other_op", 250.0, context={"id": 3})
-
-        # Get all slow operations
-        slow_ops = tracker.get_slow_operations(limit=10)
-        assert len(slow_ops) == 3
-
-        # Get slow operations for specific operation
-        test_slow = tracker.get_slow_operations(operation="test_op", limit=10)
-        assert len(test_slow) == 2
-        assert test_slow[0]["context"]["id"] == 2  # Most recent first
-
-    def test_get_summary(self):
-        """Test performance summary."""
-        tracker = PerformanceTracker(slow_thresholds={"test_op": 100.0})
-
-        tracker.record("test_op", 50.0)
-        tracker.record("test_op", 150.0)  # Slow
-        tracker.record("other_op", 200.0)
-
-        summary = tracker.get_summary()
-
-        assert summary["total_operations"] == 3
-        assert summary["total_slow_operations"] == 1
-        assert summary["slow_percentage"] == pytest.approx(33.33, rel=0.1)
-        assert "test_op" in summary["operations"]
-        assert summary["operations"]["test_op"]["count"] == 2
-        assert summary["operations"]["test_op"]["slow_count"] == 1
-
-    def test_reset(self):
-        """Test resetting tracker."""
-        tracker = PerformanceTracker()
-
-        tracker.record("test_op", 100.0)
-        tracker.record("test_op", 200.0)
-
-        assert tracker.get_metrics("test_op")["count"] == 2
-
-        tracker.reset()
-
-        assert tracker.get_metrics("test_op")["count"] == 0
-        assert len(tracker.slow_operations) == 0
-
-    def test_set_slow_threshold(self):
-        """Test setting custom slow threshold."""
-        tracker = PerformanceTracker()
-
-        tracker.record("test_op", 100.0)
-        tracker.set_slow_threshold("test_op", 50.0)
-
-        tracker.record("test_op", 75.0)  # Should be slow now
-
-        assert len(tracker.slow_operations) == 1
-        assert tracker.slow_operations[0].latency_ms == 75.0
-
     def test_multiple_operations(self):
         """Test tracking multiple different operations."""
         tracker = PerformanceTracker()
@@ -266,9 +181,9 @@ class TestPerformanceTracker:
         tracker.record("stage_execution", 5000.0)
         tracker.record("llm_call", 1200.0)
 
-        assert tracker.get_metrics("llm_call")["count"] == 2
-        assert tracker.get_metrics("tool_execution")["count"] == 1
-        assert tracker.get_metrics("stage_execution")["count"] == 1
+        assert tracker.metrics["llm_call"].get_percentiles()["count"] == 2
+        assert tracker.metrics["tool_execution"].get_percentiles()["count"] == 1
+        assert tracker.metrics["stage_execution"].get_percentiles()["count"] == 1
 
 
 class TestSlowOperation:
@@ -316,43 +231,11 @@ class TestGlobalTracker:
 
         # Should be new instance
         assert tracker1 is not tracker2
-        assert tracker2.get_metrics("test_op")["count"] == 0
+        assert "test_op" not in tracker2.metrics
 
 
 class TestPerformanceMetrics:
     """Integration tests for performance metrics."""
-
-    def test_performance_real_world_workflow(self):
-        """Test realistic performance tracking workflow."""
-        tracker = PerformanceTracker()
-
-        # Simulate workflow with multiple operations
-        with tracker.measure("workflow_execution"):
-            for i in range(3):
-                with tracker.measure("stage_execution", context={"stage": i}):
-                    # Simulate LLM calls
-                    for j in range(2):
-                        tracker.record(
-                            "llm_call",
-                            100.0 + (i * 50),
-                            context={"model": "gpt-4", "stage": i, "call": j},
-                        )
-
-                    # Simulate tool execution
-                    tracker.record(
-                        "tool_execution",
-                        50.0,
-                        context={"tool": "calculator", "stage": i},
-                    )
-
-        summary = tracker.get_summary()
-
-        # 1 workflow + 3 stages + 6 llm + 3 tools = 13 total
-        assert summary["total_operations"] == 13
-        assert tracker.get_metrics("workflow_execution")["count"] == 1
-        assert tracker.get_metrics("stage_execution")["count"] == 3
-        assert tracker.get_metrics("llm_call")["count"] == 6
-        assert tracker.get_metrics("tool_execution")["count"] == 3
 
     def test_percentile_accuracy(self):
         """Test accuracy of percentile calculations."""
@@ -362,13 +245,13 @@ class TestPerformanceMetrics:
         for i in range(1000):
             tracker.record("test_op", float(i))
 
-        metrics = tracker.get_metrics("test_op")
+        percentiles = tracker.metrics["test_op"].get_percentiles()
 
         # p50 should be around 500
-        assert 490 <= metrics["p50"] <= 510
+        assert 490 <= percentiles["p50"] <= 510
 
         # p95 should be around 950
-        assert 940 <= metrics["p95"] <= 960
+        assert 940 <= percentiles["p95"] <= 960
 
         # p99 should be around 990
-        assert 980 <= metrics["p99"] <= 999
+        assert 980 <= percentiles["p99"] <= 999

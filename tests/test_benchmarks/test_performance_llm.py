@@ -1,10 +1,9 @@
 """LLM Provider Performance Benchmarks.
 
-This module contains 8 performance benchmarks for LLM operations:
+This module contains 6 performance benchmarks for LLM operations:
 - Mock LLM calls (fast and realistic)
 - Async LLM speedup tests
 - Provider creation and response parsing
-- Cache hit and miss performance
 
 Run with: pytest tests/test_benchmarks/test_performance_llm.py --benchmark-only
 
@@ -154,42 +153,3 @@ def test_llm_response_parsing(benchmark):
 
     result = benchmark(parse_response)
     assert result is not None
-
-
-@pytest.mark.benchmark(group="llm")
-def test_llm_cache_hit(benchmark):
-    """Benchmark LLM cache hit performance.
-
-    Target: <10ms
-    Measures: Cache lookup speed
-    """
-    try:
-        from temper_ai.llm.cache.llm_cache import LLMCache
-
-        cache = LLMCache()
-
-        # Pre-populate cache
-        cache.set("test_key", "cached_response")
-
-        result = benchmark(cache.get, "test_key")
-        assert result == "cached_response"
-    except ImportError:
-        pytest.skip("LLM cache not available")
-
-
-@pytest.mark.benchmark(group="llm")
-def test_llm_cache_miss(benchmark):
-    """Benchmark LLM cache miss performance.
-
-    Target: <5ms
-    Measures: Cache miss overhead
-    """
-    try:
-        from temper_ai.llm.cache.llm_cache import LLMCache
-
-        cache = LLMCache()
-
-        result = benchmark(cache.get, "nonexistent_key")
-        assert result is None
-    except ImportError:
-        pytest.skip("LLM cache not available")

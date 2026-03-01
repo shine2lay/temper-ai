@@ -535,3 +535,60 @@ class TestValidateConfigRanges:
     def test_context_window_size_less_than_1_raises(self):
         with pytest.raises(ValueError, match="context_window_size must be >= 1"):
             MultiRoundStrategy(mode="debate", context_window_size=0)
+
+
+# ---------------------------------------------------------------------------
+# Interactive mode
+# ---------------------------------------------------------------------------
+
+
+class TestInteractiveMode:
+
+    def test_interactive_mode_valid(self):
+        """MultiRoundStrategy(mode='interactive') succeeds."""
+        s = MultiRoundStrategy(mode="interactive")
+        assert s.mode == "interactive"
+
+    def test_interactive_mode_defaults(self):
+        """max_rounds=12, min_rounds=2, convergence=0.85."""
+        s = MultiRoundStrategy(mode="interactive")
+        assert s.max_rounds == 12
+        assert s.min_rounds == 2
+        assert s.convergence_threshold == 0.85
+
+    def test_interactive_requires_requery(self):
+        """requires_requery is True for interactive mode."""
+        assert MultiRoundStrategy(mode="interactive").requires_requery is True
+
+    def test_interactive_get_round_context_round_0(self):
+        """Returns interactive mode_instruction and initial framing."""
+        s = MultiRoundStrategy(mode="interactive")
+        ctx = s.get_round_context(0, "agent_a")
+        assert ctx["interaction_mode"] == "interactive"
+        assert "turn-taking" in ctx["mode_instruction"]
+        assert "initial perspective" in ctx["debate_framing"]
+
+    def test_interactive_get_round_context_round_1(self):
+        """Returns interactive mode_instruction and response framing."""
+        s = MultiRoundStrategy(mode="interactive")
+        ctx = s.get_round_context(1, "agent_a")
+        assert ctx["interaction_mode"] == "interactive"
+        assert "turn-taking" in ctx["mode_instruction"]
+        assert "previous speaker" in ctx["debate_framing"]
+
+    def test_interactive_registered_in_registry(self):
+        """interactive mode accessible via strategy registry."""
+        from temper_ai.agent.strategies.registry import StrategyRegistry
+
+        registry = StrategyRegistry()
+        strategy = registry.get_strategy("interactive", mode="interactive")
+        assert isinstance(strategy, MultiRoundStrategy)
+        assert strategy.mode == "interactive"
+
+    def test_interactive_synthesis(self):
+        """Synthesis works for interactive mode."""
+        s = MultiRoundStrategy(mode="interactive")
+        outputs = _make_outputs("A", "A", "B")
+        result = s.synthesize(outputs, {})
+        assert isinstance(result, SynthesisResult)
+        assert "interactive" in result.metadata["strategy"]

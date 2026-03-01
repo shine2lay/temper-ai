@@ -114,52 +114,6 @@ class TestSlidingWindowRateLimiter:
                 "type_b", "identifier_1", max_requests=5, window_seconds=60
             )
 
-    def test_get_remaining(self):
-        """Should accurately report remaining requests."""
-        limiter = SlidingWindowRateLimiter()
-
-        # No requests yet
-        remaining, reset_after = limiter.get_remaining("test", "id_1", 10, 60)
-        assert remaining == 10
-
-        # Make 3 requests
-        for _i in range(3):
-            limiter.check_limit("test", "id_1", max_requests=10, window_seconds=60)
-
-        # Should have 7 remaining
-        remaining, reset_after = limiter.get_remaining("test", "id_1", 10, 60)
-        assert remaining == 7
-        assert reset_after > 0
-
-        # Make 7 more requests
-        for _i in range(7):
-            limiter.check_limit("test", "id_1", max_requests=10, window_seconds=60)
-
-        # Should have 0 remaining
-        remaining, reset_after = limiter.get_remaining("test", "id_1", 10, 60)
-        assert remaining == 0
-
-    def test_cleanup(self):
-        """Cleanup should remove old rate limit data."""
-        limiter = SlidingWindowRateLimiter()
-
-        # Make requests with short TTL
-        for _i in range(3):
-            limiter.check_limit("test", "id_1", max_requests=10, window_seconds=1)
-
-        # Internal state should have data
-        assert "test" in limiter._windows
-        assert "id_1" in limiter._windows["test"]
-
-        # Wait for window to expire
-        time.sleep(2)
-
-        # Cleanup old data
-        limiter.cleanup(older_than_seconds=1)
-
-        # Data should be cleaned up
-        assert "id_1" not in limiter._windows.get("test", {})
-
 
 class TestOAuthRateLimiter:
     """Tests for OAuth-specific rate limiter."""

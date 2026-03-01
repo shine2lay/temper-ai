@@ -11,7 +11,7 @@ export function PropertyPanel() {
   const selectedStageName = useDesignStore((s) => s.selectedStageName);
 
   return (
-    <div className="h-full overflow-y-auto border-l border-temper-border bg-temper-bg">
+    <div className="h-full overflow-y-auto border-l border-temper-border bg-temper-bg transition-opacity duration-150">
       {selectedAgentName ? (
         <AgentPropertiesPanel />
       ) : selectedStageName ? (

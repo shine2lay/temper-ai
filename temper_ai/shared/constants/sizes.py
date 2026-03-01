@@ -25,5 +25,9 @@ TOKEN_BYTES_SESSION = 32  # Session token: 32 bytes = 256 bits entropy
 TOKEN_BYTES_STATE = 32  # OAuth state: 32 bytes = 256 bits entropy
 TOKEN_BYTES_NONCE = 64  # OAuth nonce: 64 bytes = 512 bits entropy
 
+# Database JSON field limits
+DB_JSON_DATA_MAX_BYTES = 5 * 1024 * 1024  # 5MB for input_data / output_data
+DB_JSON_CONFIG_MAX_BYTES = 1024 * 1024  # 1MB for config snapshots
+
 # ID/hash string lengths (characters)
 UUID_HEX_SHORT_LENGTH = 12  # Short UUID hex string (12 chars = 48 bits)

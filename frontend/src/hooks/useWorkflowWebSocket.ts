@@ -6,6 +6,9 @@ import {
   WS_INITIAL_DELAY_MS,
   WS_MAX_DELAY_MS,
   WS_BACKOFF_MULTIPLIER,
+  WS_MAX_RECONNECT_ATTEMPTS,
+  WS_CLOSE_AUTH_FAILED,
+  WS_CLOSE_WORKFLOW_TERMINAL,
 } from '@/lib/constants';
 
 /**
@@ -57,7 +60,7 @@ export function useWorkflowWebSocket(workflowId: string | undefined): void {
 
     ws.onopen = () => {
       delayRef.current = WS_INITIAL_DELAY_MS;
-      setWSStatus({ connected: true, reconnectAttempt: 0 });
+      setWSStatus({ connected: true, reconnectAttempt: 0, wsError: null });
     };
 
     ws.onmessage = (event) => {
@@ -81,14 +84,38 @@ export function useWorkflowWebSocket(workflowId: string | undefined): void {
       }
     };
 
-    ws.onclose = () => {
+    ws.onclose = (event) => {
       if (unmountedRef.current) return;
 
       setWSStatus({ connected: false });
-      setWSStatus({
-        reconnectAttempt:
-          useExecutionStore.getState().wsStatus.reconnectAttempt + 1,
-      });
+
+      // Don't reconnect for intentional / terminal close codes
+      if (event.code === WS_CLOSE_AUTH_FAILED) {
+        setWSStatus({ wsError: 'auth_failed', reconnectAttempt: 0 });
+        return;
+      }
+      if (event.code === WS_CLOSE_WORKFLOW_TERMINAL || event.code === 1000) {
+        setWSStatus({ reconnectAttempt: 0 });
+        return;
+      }
+
+      // Don't reconnect if the workflow is already in a terminal state
+      const wfStatus = useExecutionStore.getState().workflow?.status;
+      if (wfStatus === 'completed' || wfStatus === 'failed') {
+        setWSStatus({ reconnectAttempt: 0 });
+        return;
+      }
+
+      const attempt =
+        useExecutionStore.getState().wsStatus.reconnectAttempt + 1;
+
+      // Max reconnect attempts exceeded
+      if (attempt > WS_MAX_RECONNECT_ATTEMPTS) {
+        setWSStatus({ wsError: 'max_retries', reconnectAttempt: attempt });
+        return;
+      }
+
+      setWSStatus({ reconnectAttempt: attempt });
 
       // Schedule reconnect with exponential backoff
       const delay = delayRef.current;

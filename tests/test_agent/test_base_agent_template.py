@@ -283,3 +283,164 @@ class TestValidateInput:
         ctx = ExecutionContext(workflow_id="wf-1")
         result = agent._validate_input({"query": "test"}, ctx)
         assert result is None
+
+
+# ============================================================================
+# Declared Input Validation
+# ============================================================================
+
+
+def _make_config_with_inputs(inputs: dict) -> AgentConfig:
+    """Build AgentConfig with declared inputs for testing."""
+    return AgentConfig(
+        agent={
+            "name": "io_agent",
+            "description": "test",
+            "version": "1.0",
+            "inference": {"provider": "ollama", "model": "test-model"},
+            "prompt": {"inline": "Test prompt"},
+            "tools": [],
+            "inputs": inputs,
+            "error_handling": {
+                "retry_strategy": "ExponentialBackoff",
+                "fallback": "GracefulDegradation",
+            },
+        }
+    )
+
+
+class TestValidateInputWithDeclarations:
+    """Test _validate_input against declared AgentIODeclaration inputs."""
+
+    def test_legacy_agent_no_declarations_unchanged(self):
+        """Agent without inputs declarations behaves exactly as before."""
+        agent = RecordingAgent(_make_config())
+        # Any dict passes — no schema enforcement
+        agent._validate_input({"whatever": 42})
+
+    def test_required_input_present_passes(self):
+        cfg = _make_config_with_inputs({"query": {"type": "string", "required": True}})
+        agent = RecordingAgent(cfg)
+        agent._validate_input({"query": "hello"})
+
+    def test_required_input_missing_raises(self):
+        cfg = _make_config_with_inputs({"query": {"type": "string", "required": True}})
+        agent = RecordingAgent(cfg)
+        with pytest.raises(ValueError, match="missing required input 'query'"):
+            agent._validate_input({})
+
+    def test_multiple_missing_required_all_reported(self):
+        cfg = _make_config_with_inputs(
+            {
+                "a": {"type": "string", "required": True},
+                "b": {"type": "number", "required": True},
+            }
+        )
+        agent = RecordingAgent(cfg)
+        with pytest.raises(
+            ValueError, match="missing required input 'a'.*missing required input 'b'"
+        ):
+            agent._validate_input({})
+
+    def test_optional_input_missing_no_error(self):
+        cfg = _make_config_with_inputs({"query": {"type": "string", "required": False}})
+        agent = RecordingAgent(cfg)
+        agent._validate_input({})  # no error
+
+    def test_optional_with_default_applied(self):
+        cfg = _make_config_with_inputs(
+            {"limit": {"type": "number", "required": False, "default": 10}}
+        )
+        agent = RecordingAgent(cfg)
+        data: dict = {}
+        agent._validate_input(data)
+        assert data["limit"] == 10
+
+    def test_default_not_applied_when_key_present(self):
+        cfg = _make_config_with_inputs(
+            {"limit": {"type": "number", "required": False, "default": 10}}
+        )
+        agent = RecordingAgent(cfg)
+        data = {"limit": 5}
+        agent._validate_input(data)
+        assert data["limit"] == 5
+
+    def test_type_string_correct(self):
+        cfg = _make_config_with_inputs({"name": {"type": "string"}})
+        agent = RecordingAgent(cfg)
+        agent._validate_input({"name": "Alice"})
+
+    def test_type_string_wrong(self):
+        cfg = _make_config_with_inputs({"name": {"type": "string"}})
+        agent = RecordingAgent(cfg)
+        with pytest.raises(ValueError, match="expected string, got int"):
+            agent._validate_input({"name": 42})
+
+    def test_type_number_accepts_int(self):
+        cfg = _make_config_with_inputs({"count": {"type": "number"}})
+        agent = RecordingAgent(cfg)
+        agent._validate_input({"count": 7})
+
+    def test_type_number_accepts_float(self):
+        cfg = _make_config_with_inputs({"score": {"type": "number"}})
+        agent = RecordingAgent(cfg)
+        agent._validate_input({"score": 3.14})
+
+    def test_type_number_rejects_string(self):
+        cfg = _make_config_with_inputs({"count": {"type": "number"}})
+        agent = RecordingAgent(cfg)
+        with pytest.raises(ValueError, match="expected number, got str"):
+            agent._validate_input({"count": "seven"})
+
+    def test_type_list_correct(self):
+        cfg = _make_config_with_inputs({"items": {"type": "list"}})
+        agent = RecordingAgent(cfg)
+        agent._validate_input({"items": [1, 2, 3]})
+
+    def test_type_list_wrong(self):
+        cfg = _make_config_with_inputs({"items": {"type": "list"}})
+        agent = RecordingAgent(cfg)
+        with pytest.raises(ValueError, match="expected list, got str"):
+            agent._validate_input({"items": "not a list"})
+
+    def test_type_dict_correct(self):
+        cfg = _make_config_with_inputs({"meta": {"type": "dict"}})
+        agent = RecordingAgent(cfg)
+        agent._validate_input({"meta": {"key": "val"}})
+
+    def test_type_dict_wrong(self):
+        cfg = _make_config_with_inputs({"meta": {"type": "dict"}})
+        agent = RecordingAgent(cfg)
+        with pytest.raises(ValueError, match="expected dict, got list"):
+            agent._validate_input({"meta": [1, 2]})
+
+    def test_type_boolean_correct(self):
+        cfg = _make_config_with_inputs({"flag": {"type": "boolean"}})
+        agent = RecordingAgent(cfg)
+        agent._validate_input({"flag": True})
+
+    def test_type_boolean_wrong(self):
+        cfg = _make_config_with_inputs({"flag": {"type": "boolean"}})
+        agent = RecordingAgent(cfg)
+        with pytest.raises(ValueError, match="expected boolean, got int"):
+            agent._validate_input({"flag": 1})
+
+    def test_type_any_accepts_anything(self):
+        cfg = _make_config_with_inputs({"data": {"type": "any"}})
+        agent = RecordingAgent(cfg)
+        agent._validate_input({"data": "string"})
+        agent._validate_input({"data": 42})
+        agent._validate_input({"data": [1, 2]})
+        agent._validate_input({"data": None})
+
+    def test_extra_keys_not_rejected(self):
+        """Undeclared keys in input_data are allowed (forward-compat)."""
+        cfg = _make_config_with_inputs({"query": {"type": "string"}})
+        agent = RecordingAgent(cfg)
+        agent._validate_input({"query": "hi", "extra_key": 99})
+
+    def test_error_message_includes_agent_name(self):
+        cfg = _make_config_with_inputs({"x": {"type": "string"}})
+        agent = RecordingAgent(cfg)
+        with pytest.raises(ValueError, match="Agent 'io_agent'"):
+            agent._validate_input({"x": 123})

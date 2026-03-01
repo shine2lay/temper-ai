@@ -16,14 +16,12 @@ logger = logging.getLogger(__name__)
 
 
 def ensure_tools_discovered(registry: ToolRegistry) -> None:
-    """Auto-discover tools if registry is empty."""
-    if len(registry.list_tools()) == 0:
-        discovered_count = registry.auto_discover()
-        if discovered_count == 0:
-            logger.warning(
-                "No tools discovered via auto-discovery. "
-                "Check that src/tools/ contains valid BaseTool subclasses."
-            )
+    """No-op.  Tools are now lazily loaded from TOOL_CLASSES.
+
+    Kept for backward compatibility — callers can safely call this
+    but it does nothing since ``ToolRegistry.get()`` handles lazy
+    instantiation from the static tool map.
+    """
 
 
 def resolve_tool_spec(tool_spec: Any) -> tuple[str, dict[str, Any]]:

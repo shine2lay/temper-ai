@@ -170,7 +170,7 @@ def should_snapshot(
     executor: ToolExecutor, tool_name: str, params: dict[str, Any]
 ) -> bool:
     """Determine if snapshot should be created for this tool."""
-    tool = executor.registry.get(tool_name)
+    tool = executor._get_tool(tool_name)
     if not tool:
         return False
 
@@ -381,7 +381,7 @@ def validate_tool_call(
     executor: ToolExecutor, tool_name: str, params: dict[str, Any]
 ) -> tuple[bool, str | None]:
     """Validate a tool call without executing it."""
-    tool = executor.registry.get(tool_name)
+    tool = executor._get_tool(tool_name)
     if not tool:
         return False, f"Tool not found: {tool_name}"
 
@@ -397,7 +397,7 @@ def validate_tool_call(
 
 def get_tool_info(executor: ToolExecutor, tool_name: str) -> dict[str, Any] | None:
     """Get information about a tool."""
-    tool = executor.registry.get(tool_name)
+    tool = executor._get_tool(tool_name)
     if not tool:
         return None
 
@@ -433,7 +433,7 @@ def validate_and_get_tool(
                 except ValueError as e:
                     return None, ToolResult(success=False, result=None, error=str(e))
 
-    tool = executor.registry.get(tool_name)
+    tool = executor._get_tool(tool_name)
     if not tool:
         return None, ToolResult(
             success=False, result=None, error=f"Tool not found: {tool_name}"

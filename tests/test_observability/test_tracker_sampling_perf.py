@@ -1,11 +1,23 @@
 """Tests for sampling strategy and performance tracker integration in ExecutionTracker."""
 
 from contextlib import contextmanager
+from dataclasses import dataclass
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from temper_ai.observability.sampling import SamplingContext, SamplingDecision
+from temper_ai.observability.sampling import SamplingContext
+
+
+@dataclass
+class SamplingDecision:
+    """Minimal stand-in for the removed SamplingDecision dataclass."""
+
+    sampled: bool
+    reason: str
+    strategy_name: str
+
+
 from temper_ai.observability.tracker import ExecutionTracker
 
 # ========== Fixtures ==========

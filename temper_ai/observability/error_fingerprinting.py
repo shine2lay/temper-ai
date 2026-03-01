@@ -16,11 +16,8 @@ Output: deterministic 16-char hex string (e.g., "a3f7c9e2b1d045f8").
 
 import hashlib
 import re
-from dataclasses import dataclass, field
-from datetime import datetime
+from dataclasses import dataclass
 from enum import StrEnum
-
-from temper_ai.storage.database.datetime_utils import utcnow
 
 # ============================================================================
 # Constants
@@ -28,8 +25,6 @@ from temper_ai.storage.database.datetime_utils import utcnow
 
 FINGERPRINT_LENGTH = 16  # hex chars
 MAX_NORMALIZED_MESSAGE_LENGTH = 256
-MAX_RECENT_IDS = 10  # Cap on stored recent workflow/agent IDs
-
 # Normalization regex patterns (precompiled for performance)
 _UUID_PATTERN = re.compile(
     r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
@@ -218,23 +213,3 @@ class ErrorFingerprintResult:
     sample_message: str
     is_new: bool = False  # Set by backend after upsert
     occurrence_count: int = 1
-
-
-@dataclass
-class ErrorFingerprintRecord:
-    """Persistent record for an error fingerprint (maps to DB table)."""
-
-    fingerprint: str
-    error_type: str
-    error_code: str
-    classification: str
-    normalized_message: str
-    sample_message: str
-    occurrence_count: int = 1
-    first_seen: datetime = field(default_factory=utcnow)
-    last_seen: datetime = field(default_factory=utcnow)
-    recent_workflow_ids: list[str] = field(default_factory=list)
-    recent_agent_names: list[str] = field(default_factory=list)
-    resolved: bool = False
-    resolved_at: datetime | None = None
-    resolution_note: str | None = None

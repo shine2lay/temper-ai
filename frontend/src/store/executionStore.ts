@@ -244,7 +244,7 @@ export const useExecutionStore = create<ExecutionState>()(
     toolCalls: new Map(),
     streamingContent: new Map(),
     selection: null,
-    wsStatus: { connected: false, reconnectAttempt: 0, lastHeartbeat: null },
+    wsStatus: { connected: false, reconnectAttempt: 0, lastHeartbeat: null, wsError: null },
     eventLog: [],
     expandedStages: new Set(),
     stageDetailId: null,
@@ -435,7 +435,7 @@ export const useExecutionStore = create<ExecutionState>()(
         state.streamingContent = new Map();
         state.eventLog = [];
         state.selection = { type: 'workflow', id: '' };
-        state.wsStatus = { connected: false, reconnectAttempt: 0, lastHeartbeat: null };
+        state.wsStatus = { connected: false, reconnectAttempt: 0, lastHeartbeat: null, wsError: null };
       }),
 
     select: (type, id) =>

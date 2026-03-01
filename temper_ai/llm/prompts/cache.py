@@ -9,7 +9,7 @@ from typing import Any
 from jinja2 import Template
 from jinja2.sandbox import ImmutableSandboxedEnvironment
 
-from temper_ai.llm.cache.constants import DEFAULT_CACHE_SIZE
+from temper_ai.llm.constants import DEFAULT_CACHE_SIZE
 
 
 class TemplateCacheManager:

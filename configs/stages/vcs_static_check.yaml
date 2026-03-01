@@ -18,10 +18,10 @@ stage:
 
   inputs:
     workspace_path:
-      source: vcs_git_setup.structured.worktree_path
+      type: string
       required: true
     coder_output:
-      source: vcs_code_execute.output
+      type: string
       required: true
 
   outputs:

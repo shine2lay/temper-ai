@@ -139,11 +139,6 @@ class TestWebSearchSchema:
         schema = tool.get_parameters_schema()
         assert "max_results" in schema["properties"]
 
-    def test_config_schema_has_provider(self):
-        tool = WebSearch()
-        schema = tool.get_config_schema()
-        assert "provider" in schema["properties"]
-
     def test_llm_schema(self):
         tool = WebSearch()
         schema = tool.to_llm_schema()

@@ -120,8 +120,8 @@ class TestTruncateTrackingData:
         assert result == data
 
     def test_large_stage_outputs_are_truncated(self):
-        # Build a payload that exceeds 900 KB
-        big_value = "x" * (2000)  # per-value >1024 → truncated
+        # Build a payload that exceeds 4 MB limit
+        big_value = "x" * (10000)  # per-value >4096 → truncated at first threshold
         # Wrap in enough stage_outputs to push total over limit
         stage_outputs = {f"stage_{i}": big_value for i in range(500)}
         data = {"stage_outputs": stage_outputs, "other": "ok"}
@@ -136,11 +136,11 @@ class TestTruncateTrackingData:
         assert truncated_count > 0
 
     def test_small_stage_output_values_kept_as_is(self):
-        # Values ≤1024 bytes should survive truncation even if total is over limit
+        # Values ≤256 bytes should survive truncation even if total is over limit
         small_value = "short"
-        big_filler = "y" * 2000
+        big_filler = "y" * 10000
         stage_outputs = {"important": small_value}
-        # pad with large stages to exceed the total limit
+        # pad with large stages to exceed the 4MB total limit
         stage_outputs.update({f"big_{i}": big_filler for i in range(500)})
         data = {"stage_outputs": stage_outputs}
         result = _truncate_tracking_data(data)

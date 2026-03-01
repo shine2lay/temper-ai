@@ -159,7 +159,11 @@ def _normalize_dict_signal(signal: dict[str, Any]) -> dict[str, Any] | None:
         result: dict[str, Any] = {"targets": targets, "mode": "parallel"}
         converge = signal.get("converge")
         if isinstance(converge, dict) and converge.get("name"):
-            result["converge"] = {"name": converge["name"]}
+            conv: dict[str, Any] = {"name": converge["name"]}
+            # Preserve input_map for convergence stage wiring
+            if converge.get("input_map"):
+                conv["input_map"] = converge["input_map"]
+            result["converge"] = conv
         return result
     if signal.get("name"):
         return {
@@ -275,9 +279,10 @@ def _run_parallel_stage_batch(
     runnable: list[str],
     stage_nodes: dict[str, Callable],
     state: dict[str, Any],
+    max_parallel_workers: int = DEFAULT_MAX_STAGE_PARALLEL_WORKERS,
 ) -> dict[str, dict[str, Any]]:
     """Execute stages in parallel using ThreadPoolExecutor."""
-    max_workers = min(DEFAULT_MAX_STAGE_PARALLEL_WORKERS, len(runnable))
+    max_workers = min(max_parallel_workers, len(runnable))
     results: dict[str, dict[str, Any]] = {}
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -369,11 +374,13 @@ class WorkflowExecutor:
         condition_evaluator: ConditionEvaluator,
         negotiation_config: dict[str, Any] | None = None,
         on_depth_complete: Callable[[dict[str, Any]], None] | None = None,
+        max_parallel_workers: int = DEFAULT_MAX_STAGE_PARALLEL_WORKERS,
     ) -> None:
         self.node_builder = node_builder
         self.condition_evaluator = condition_evaluator
         self._negotiation_config = negotiation_config or {}
         self._on_depth_complete = on_depth_complete
+        self._max_parallel_workers = max_parallel_workers
 
     def run(  # noqa: long
         self,
@@ -566,7 +573,9 @@ class WorkflowExecutor:
                 workflow_config,
             )
 
-        results = _run_parallel_stage_batch(runnable, stage_nodes, state)
+        results = _run_parallel_stage_batch(
+            runnable, stage_nodes, state, self._max_parallel_workers
+        )
 
         for name in runnable:
             if name in results:

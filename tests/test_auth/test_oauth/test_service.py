@@ -347,25 +347,6 @@ class TestOAuthServiceStateManagement:
             "state123", "google", oauth_service._state_store
         )
 
-    @pytest.mark.asyncio
-    async def test_cleanup_expired_states(self, oauth_service, mock_state_store):
-        """Test cleanup_expired_states delegates to state store."""
-        mock_state_store.cleanup_expired.return_value = 10
-
-        count = await oauth_service.cleanup_expired_states()
-
-        assert count == 10
-        mock_state_store.cleanup_expired.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_cleanup_expired_states_zero(self, oauth_service, mock_state_store):
-        """Test cleanup with no expired states."""
-        mock_state_store.cleanup_expired.return_value = 0
-
-        count = await oauth_service.cleanup_expired_states()
-
-        assert count == 0
-
 
 class TestOAuthServiceResourceCleanup:
     """Test OAuth service resource cleanup."""
@@ -409,29 +390,6 @@ class TestOAuthServiceResourceCleanup:
 
 class TestOAuthServiceHelpers:
     """Test OAuth service helper methods."""
-
-    def test_generate_state(self, oauth_service):
-        """Test _generate_state generates non-empty string."""
-        state = oauth_service._generate_state()
-
-        assert isinstance(state, str)
-        assert len(state) > 0
-
-    def test_generate_code_verifier(self, oauth_service):
-        """Test _generate_code_verifier generates non-empty string."""
-        verifier = oauth_service._generate_code_verifier()
-
-        assert isinstance(verifier, str)
-        assert len(verifier) > 0
-
-    def test_generate_code_challenge(self, oauth_service):
-        """Test _generate_code_challenge generates challenge from verifier."""
-        verifier = "test_verifier_string"
-        challenge = oauth_service._generate_code_challenge(verifier)
-
-        assert isinstance(challenge, str)
-        assert len(challenge) > 0
-        assert challenge != verifier  # Challenge should be hashed
 
     @pytest.mark.asyncio
     async def test_get_http_client_creates_once(self, oauth_service):
@@ -541,24 +499,6 @@ class TestOAuthSecurityScenarios:
             )
 
         assert "mismatch" in str(exc_info.value).lower()
-
-    @pytest.mark.asyncio
-    @patch("temper_ai.auth.oauth.service._build_authorization_url")
-    async def test_pkce_code_challenge_generation(self, mock_build_url, oauth_service):
-        """Test PKCE code challenge is generated from verifier."""
-        verifier = "test_code_verifier_12345"
-        challenge = oauth_service._generate_code_challenge(verifier)
-
-        # Challenge should be different from verifier (hashed)
-        assert challenge != verifier
-        # Challenge should be URL-safe base64
-        assert all(
-            c in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
-            for c in challenge
-        )
-        # Challenge should be deterministic
-        challenge2 = oauth_service._generate_code_challenge(verifier)
-        assert challenge == challenge2
 
     @pytest.mark.asyncio
     @patch("temper_ai.auth.oauth.service._exchange_code")
@@ -775,22 +715,6 @@ class TestOAuthSecurityScenarios:
 
         # State should be created with TTL (validated in helper)
         assert state == "state123"
-
-    def test_code_verifier_entropy(self, oauth_service):
-        """Test PKCE code verifier has sufficient entropy."""
-        verifier = oauth_service._generate_code_verifier()
-
-        # Should be URL-safe base64, at least 32 bytes of entropy
-        assert len(verifier) >= 43  # base64 encoding of 32 bytes
-        assert isinstance(verifier, str)
-
-    def test_state_token_entropy(self, oauth_service):
-        """Test state token has sufficient entropy (32 bytes minimum)."""
-        state = oauth_service._generate_state()
-
-        # Should be URL-safe base64, at least 32 bytes of entropy
-        assert len(state) >= 43  # base64 encoding of 32 bytes
-        assert isinstance(state, str)
 
     @pytest.mark.asyncio
     @patch("temper_ai.auth.oauth.service._exchange_code")

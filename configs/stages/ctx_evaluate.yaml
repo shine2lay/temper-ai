@@ -15,14 +15,14 @@ stage:
 
   inputs:
     findings:
-      source: ctx_analyze.output
+      type: string
       required: true
     severity:
-      source: ctx_analyze.structured.severity
+      type: string
       required: false
       default: "unknown"
     original_text:
-      source: workflow.input_text
+      type: string
       required: false
 
   outputs:

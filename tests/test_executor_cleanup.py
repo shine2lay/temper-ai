@@ -48,20 +48,6 @@ class DummyTool(BaseTool):
 class TestExplicitShutdown:
     """Tests for explicit shutdown."""
 
-    def test_shutdown_closes_executor(self):
-        """Test that shutdown() properly closes the thread pool."""
-        registry = ToolRegistry(auto_discover=False)
-        executor = ToolExecutor(registry, max_workers=2)
-
-        # Executor should be active
-        assert not executor.is_shutdown()
-
-        # Shutdown
-        executor.shutdown(wait=True)
-
-        # Executor should be shutdown
-        assert executor.is_shutdown()
-
     def test_shutdown_waits_for_pending_tasks(self):
         """Test that shutdown waits for pending tasks when wait=True."""
         registry = ToolRegistry(auto_discover=False)
@@ -119,11 +105,9 @@ class TestExplicitShutdown:
         executor = ToolExecutor(registry)
 
         executor.shutdown()
-        assert executor.is_shutdown()
 
         # Second shutdown should not raise
         executor.shutdown()
-        assert executor.is_shutdown()
 
 
 class TestContextManager:
@@ -134,11 +118,11 @@ class TestContextManager:
         registry = ToolRegistry(auto_discover=False)
 
         with ToolExecutor(registry, max_workers=2) as executor:
-            assert not executor.is_shutdown()
             # Do work...
+            pass
 
-        # After exiting context, should be shut down
-        assert executor.is_shutdown()
+        # After exiting context, executor should be cleaned up
+        assert executor._executor._shutdown is True
 
     def test_context_manager_cleanup_on_exception(self):
         """Test that cleanup happens even if exception is raised."""
@@ -146,13 +130,12 @@ class TestContextManager:
 
         try:
             with ToolExecutor(registry, max_workers=2) as executor:
-                assert not executor.is_shutdown()
                 raise ValueError("Test error")
         except ValueError:
             pass
 
         # Should still be shut down
-        assert executor.is_shutdown()
+        assert executor._executor._shutdown is True
 
 
 class TestGarbageCollection:
@@ -163,7 +146,6 @@ class TestGarbageCollection:
         registry = ToolRegistry(auto_discover=False)
 
         executor = ToolExecutor(registry, max_workers=2)
-        assert not executor.is_shutdown()
 
         # Delete reference and force GC
         del executor
@@ -268,17 +250,6 @@ class TestThreadLeakPrevention:
 class TestExecutorState:
     """Tests for executor state tracking."""
 
-    def test_is_shutdown_reflects_state(self):
-        """Test that is_shutdown() accurately reflects executor state."""
-        registry = ToolRegistry(auto_discover=False)
-        executor = ToolExecutor(registry)
-
-        assert not executor.is_shutdown()
-
-        executor.shutdown()
-
-        assert executor.is_shutdown()
-
     def test_repr_shows_status(self):
         """Test that __repr__ includes shutdown status."""
         registry = ToolRegistry(auto_discover=False)
@@ -310,7 +281,7 @@ class TestConcurrentExecution:
             assert result.result == "test result"
 
         # Executor should be cleaned up
-        assert executor.is_shutdown()
+        assert executor._executor._shutdown is True
 
     def test_multiple_executions_with_cleanup(self):
         """Test that multiple executions work and cleanup happens."""
@@ -329,7 +300,7 @@ class TestConcurrentExecution:
             assert all(r.success for r in results)
 
         # Executor should be cleaned up
-        assert executor.is_shutdown()
+        assert executor._executor._shutdown is True
 
 
 class TestErrors:

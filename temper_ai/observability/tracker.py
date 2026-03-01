@@ -955,6 +955,24 @@ class ExecutionTracker(_TrackerAsyncMixin, TrackerCollaborationMixin):
             },
         )
 
+    def record_pipeline_phases(
+        self, workflow_id: str, phases: list[dict[str, Any]]
+    ) -> None:
+        """Persist pipeline phase data to the workflow execution metadata.
+
+        Args:
+            workflow_id: Workflow execution ID.
+            phases: Serialized phase list from PipelinePhaseTracker.phases.
+        """
+        try:
+            self.backend.update_workflow_metadata(
+                workflow_id, {"pipeline_phases": phases}
+            )
+        except Exception:  # noqa: BLE001
+            logger.warning(
+                "Failed to record pipeline phases for %s", workflow_id, exc_info=True
+            )
+
     def track_decision_outcome(self, data: DecisionTrackingData) -> str:
         """Track decision outcome.
 

@@ -110,12 +110,6 @@ class EnforcementResult:
         """Check if any blocking (HIGH or CRITICAL) violations detected."""
         return any(v.severity >= ViolationSeverity.HIGH for v in self.violations)
 
-    def get_violations_by_severity(
-        self, severity: ViolationSeverity
-    ) -> list[SafetyViolation]:
-        """Get violations of specific severity."""
-        return [v for v in self.violations if v.severity == severity]
-
 
 def _should_short_circuit_on_critical(
     short_circuit_critical: bool,
@@ -616,42 +610,6 @@ class ActionPolicyEngine:  # noqa: god
             self._sanitizer = DataSanitizer()
         await log_violations(violations, context, self._sanitizer)
         self._violations_logged += len(violations)
-
-    def get_metrics(self) -> dict[str, Any]:
-        """Get engine metrics for observability.
-
-        Returns:
-            Dictionary with engine performance metrics
-
-        Example:
-            >>> metrics = engine.get_metrics()
-            >>> print(f"Cache hit rate: {metrics['cache_hit_rate']:.2%}")
-        """
-        total_cache_requests = self._cache_hits + self._cache_misses
-        cache_hit_rate = (
-            self._cache_hits / total_cache_requests if total_cache_requests > 0 else 0.0
-        )
-
-        return {
-            "validations_performed": self._validations_performed,
-            "violations_logged": self._violations_logged,
-            "cache_size": len(self._cache),
-            "cache_hits": self._cache_hits,
-            "cache_misses": self._cache_misses,
-            "cache_hit_rate": cache_hit_rate,
-            "policies_registered": self.registry.policy_count(),
-        }
-
-    def reset_metrics(self) -> None:
-        """Reset engine metrics.
-
-        Useful for testing or periodic metrics reporting.
-        """
-        self._validations_performed = 0
-        self._violations_logged = 0
-        self._cache_hits = 0
-        self._cache_misses = 0
-        logger.debug("Engine metrics reset")
 
     def __repr__(self) -> str:
         """String representation."""

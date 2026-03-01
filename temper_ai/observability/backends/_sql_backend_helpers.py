@@ -1127,6 +1127,33 @@ def fetch_run_events(
     return events[offset : offset + limit]
 
 
+def find_stuck_workflows_sql(threshold_seconds: int = 1800) -> list[dict[str, Any]]:
+    """Find workflows stuck at 'running' longer than threshold."""
+    from temper_ai.storage.database.datetime_utils import utcnow as _utcnow
+
+    cutoff = _utcnow() - timedelta(seconds=threshold_seconds)
+    with get_session() as session:
+        stmt = (
+            select(WorkflowExecution)
+            .where(WorkflowExecution.status == _STATUS_RUNNING)
+            .where(WorkflowExecution.start_time < cutoff)
+        )
+        workflows = session.exec(stmt).all()
+        return [_workflow_to_dict(wf) for wf in workflows]
+
+
+def update_workflow_metadata_sql(workflow_id: str, metadata: dict[str, Any]) -> None:
+    """Merge additional metadata into a workflow execution record."""
+    with get_session() as session:
+        stmt = select(WorkflowExecution).where(WorkflowExecution.id == workflow_id)
+        wf = session.exec(stmt).first()
+        if wf:
+            existing = wf.extra_metadata or {}
+            existing.update(metadata)
+            wf.extra_metadata = existing
+            session.commit()
+
+
 class SQLDelegatedMethodsMixin:
     """Mixin providing read, safety, collaboration, and aggregation methods.
 
@@ -1163,6 +1190,18 @@ class SQLDelegatedMethodsMixin:
     def get_tool_call(self, tool_call_id: str) -> dict[str, Any] | None:
         """Get single tool execution with full params/output."""
         return read_get_tool_call(tool_call_id)
+
+    def find_stuck_workflows(
+        self, threshold_seconds: int = 1800
+    ) -> list[dict[str, Any]]:
+        """Find workflows stuck at 'running' longer than threshold."""
+        return find_stuck_workflows_sql(threshold_seconds)
+
+    def update_workflow_metadata(
+        self, workflow_id: str, metadata: dict[str, Any]
+    ) -> None:
+        """Merge additional metadata into a workflow execution record."""
+        update_workflow_metadata_sql(workflow_id, metadata)
 
     def track_safety_violation(
         self,

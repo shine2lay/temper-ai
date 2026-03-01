@@ -4,33 +4,18 @@ Provides sandboxed template rendering with variable substitution,
 conditional blocks, and template compilation caching.
 """
 
-import hashlib
 from pathlib import Path
 from typing import Any
 
 from jinja2 import FileSystemLoader, TemplateNotFound
 from jinja2.sandbox import ImmutableSandboxedEnvironment
 
-from temper_ai.llm.cache.constants import DEFAULT_CACHE_SIZE
+from temper_ai.llm.constants import DEFAULT_CACHE_SIZE
 from temper_ai.llm.prompts.cache import TemplateCacheManager
 from temper_ai.llm.prompts.validation import (
     PromptRenderError,
     TemplateVariableValidator,
 )
-
-# Hash length for prompt template versioning — matches error_fingerprinting.py
-_TEMPLATE_HASH_LENGTH = 16  # noqa — scanner: skip-magic
-
-
-def _compute_template_hash(template_text: str) -> str:
-    """Compute SHA-256 first-16-hex-chars hash of raw template text (pre-rendering).
-
-    The hash is computed on the raw template before variable substitution,
-    so the same template always produces the same hash regardless of variables.
-    """
-    return hashlib.sha256(template_text.encode("utf-8")).hexdigest()[
-        :_TEMPLATE_HASH_LENGTH
-    ]
 
 
 class PromptEngine:
@@ -187,82 +172,6 @@ class PromptEngine:
                 f"Failed to render template file {template_path}: {e}"
             ) from e
 
-    def render_with_metadata(
-        self,
-        template: str,
-        variables: dict[str, Any] | None = None,
-    ) -> tuple[str, str, str]:
-        """Render a template string and return metadata for prompt versioning.
-
-        Args:
-            template: Template string with {{variable}} placeholders
-            variables: Variables to substitute in template
-
-        Returns:
-            Tuple of (rendered_text, template_hash, source) where source is "inline"
-
-        Raises:
-            PromptRenderError: If rendering fails
-        """
-        rendered = self.render(template, variables)
-        template_hash = _compute_template_hash(template)
-        return rendered, template_hash, "inline"
-
-    def render_file_with_metadata(
-        self,
-        template_path: str,
-        variables: dict[str, Any] | None = None,
-    ) -> tuple[str, str, str]:
-        """Render a template from a file and return metadata for prompt versioning.
-
-        Args:
-            template_path: Relative path to template file
-            variables: Variables to substitute in template
-
-        Returns:
-            Tuple of (rendered_text, template_hash, template_path)
-
-        Raises:
-            PromptRenderError: If template not found or rendering fails
-        """
-        # Read raw template source for hashing (before variable substitution)
-        if not self.jinja_env:
-            raise PromptRenderError(
-                "Cannot load template file: templates directory not configured"
-            )
-        try:
-            raw_source, _, _ = self.jinja_env.loader.get_source(  # type: ignore[union-attr]
-                self.jinja_env,
-                template_path,
-            )
-        except TemplateNotFound:
-            raise PromptRenderError(
-                f"Template file not found: {template_path} in {self.templates_dir}"
-            ) from None
-
-        rendered = self.render_file(template_path, variables)
-        template_hash = _compute_template_hash(raw_source)
-        return rendered, template_hash, template_path
-
-    def get_cache_stats(self) -> dict[str, Any]:
-        """
-        Get template cache statistics.
-
-        Returns:
-            Dictionary with cache statistics including hits, misses, size, and hit rate.
-
-        Examples:
-            >>> engine = PromptEngine()
-            >>> engine.render("Hello {{name}}!", {"name": "Alice"})
-            >>> engine.render("Hello {{name}}!", {"name": "Bob"})
-            >>> stats = engine.get_cache_stats()
-            >>> stats["cache_hits"]
-            1
-            >>> stats["cache_hit_rate"]
-            0.5
-        """
-        return self.cache.get_cache_stats()
-
     def clear_cache(self) -> None:
         """
         Clear the template cache.
@@ -273,7 +182,7 @@ class PromptEngine:
             >>> engine = PromptEngine()
             >>> engine.render("Hello {{name}}!", {"name": "Alice"})
             >>> engine.clear_cache()
-            >>> stats = engine.get_cache_stats()
+            >>> stats = engine.cache.get_cache_stats()
             >>> stats["cache_size"]
             0
         """

@@ -15,13 +15,13 @@ stage:
 
   inputs:
     input_text:
-      source: workflow.input_text
+      type: string
       required: true
     recommendation:
-      source: ctx_evaluate.output
+      type: string
       required: true
     severity:
-      source: ctx_analyze.structured.severity
+      type: string
       required: false
       default: "unknown"
 

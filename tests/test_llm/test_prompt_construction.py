@@ -9,12 +9,8 @@ from __future__ import annotations
 import pytest
 
 from temper_ai.llm._prompt import (
-    _apply_sliding_window as apply_sliding_window,
-)
-from temper_ai.llm._prompt import (
-    _format_tool_results_text as format_tool_results_text,
-)
-from temper_ai.llm._prompt import (
+    apply_sliding_window,
+    format_tool_results_text,
     inject_results,
 )
 from temper_ai.llm.tool_keys import ToolKeys

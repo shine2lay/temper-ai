@@ -9,8 +9,7 @@ from cryptography.fernet import Fernet
 
 pytest.importorskip("keyring")
 
-from temper_ai.auth.oauth.token_store import SecureTokenStore
-from temper_ai.shared.utils.exceptions import SecurityError
+from temper_ai.auth.oauth.token_store import SecureTokenStore, SecurityError
 
 
 @pytest.fixture
@@ -285,67 +284,6 @@ class TestDeleteToken:
         assert token_store._access_log[0]["action"] == "delete"
 
 
-class TestKeyRotation:
-    """Test encryption key rotation."""
-
-    def test_rotate_key_success(self, token_store, sample_token_data, encryption_key):
-        """Test rotating encryption key."""
-        users = ["user_1", "user_2", "user_3"]
-        for user_id in users:
-            token_store.store_token(user_id, sample_token_data)
-
-        # Generate new key
-        new_key = Fernet.generate_key().decode()
-
-        # Rotate key
-        token_store.rotate_key(new_key)
-
-        # Verify all tokens can still be retrieved
-        for user_id in users:
-            retrieved = token_store.retrieve_token(user_id)
-            assert retrieved is not None
-            assert retrieved["access_token"] == sample_token_data["access_token"]
-
-    def test_rotate_key_invalid_key(self, token_store):
-        """Test rotating to invalid key."""
-        with pytest.raises(ValueError, match="Invalid new encryption key"):
-            token_store.rotate_key("invalid_key")
-
-    def test_rotate_key_creates_audit_log(self, token_store, sample_token_data):
-        """Test key rotation creates audit log entry."""
-        token_store.store_token("user_123", sample_token_data)
-        token_store._access_log.clear()
-
-        new_key = Fernet.generate_key().decode()
-        token_store.rotate_key(new_key)
-
-        assert len(token_store._access_log) == 1
-        assert token_store._access_log[0]["action"] == "rotate_key"
-        assert token_store._access_log[0]["tokens_re_encrypted"] == 1
-
-    @patch("temper_ai.auth.oauth.token_store.KEYRING_AVAILABLE", True)
-    @patch("keyring.set_password")
-    @patch("keyring.get_password")
-    def test_rotate_key_from_keyring(
-        self, mock_get_password, mock_set_password, encryption_key
-    ):
-        """Test rotating key from keyring."""
-        mock_get_password.return_value = encryption_key
-
-        store = SecureTokenStore(use_keyring=True)
-        store.store_token("user_123", {"access_token": "test"})
-
-        store.rotate_key_from_keyring()
-
-        mock_set_password.assert_called()
-        assert len(store._tokens) == 1
-
-    def test_rotate_key_from_keyring_not_using_keyring(self, token_store):
-        """Test rotating from keyring fails if not using keyring."""
-        with pytest.raises(SecurityError, match="keyring mode"):
-            token_store.rotate_key_from_keyring()
-
-
 class TestAuditLog:
     """Test audit logging."""
 
@@ -359,51 +297,6 @@ class TestAuditLog:
 
         # Audit log should be bounded
         assert len(store._access_log) == 5
-
-    def test_get_audit_log(self, token_store, sample_token_data):
-        """Test getting audit log."""
-        token_store.store_token("user_123", sample_token_data)
-        token_store.retrieve_token("user_123")
-        token_store.delete_token("user_123")
-
-        audit_log = token_store.get_audit_log()
-
-        assert len(audit_log) == 3
-        assert audit_log[0]["action"] == "store"
-        assert audit_log[1]["action"] == "retrieve"
-        assert audit_log[2]["action"] == "delete"
-
-
-class TestClearAllTokens:
-    """Test clearing all tokens."""
-
-    def test_clear_all_tokens(self, token_store, sample_token_data):
-        """Test clearing all stored tokens."""
-        users = ["user_1", "user_2", "user_3"]
-        for user_id in users:
-            token_store.store_token(user_id, sample_token_data)
-
-        count = token_store.clear_all_tokens()
-
-        assert count == 3
-        assert len(token_store._tokens) == 0
-
-    def test_clear_all_tokens_empty_store(self, token_store):
-        """Test clearing empty token store."""
-        count = token_store.clear_all_tokens()
-
-        assert count == 0
-
-    def test_clear_all_tokens_creates_audit_log(self, token_store, sample_token_data):
-        """Test clearing all tokens creates audit log entry."""
-        token_store.store_token("user_123", sample_token_data)
-        token_store._access_log.clear()
-
-        token_store.clear_all_tokens()
-
-        assert len(token_store._access_log) == 1
-        assert token_store._access_log[0]["action"] == "clear_all"
-        assert token_store._access_log[0]["tokens_deleted"] == 1
 
 
 class TestThreadSafety:
@@ -447,39 +340,6 @@ class TestThreadSafety:
         for thread in threads:
             thread.join()
 
-        assert all(results)
-
-    def test_concurrent_key_rotation(self, token_store, sample_token_data):
-        """Test key rotation is thread-safe."""
-        users = [f"user_{i}" for i in range(5)]
-        for user_id in users:
-            token_store.store_token(user_id, sample_token_data)
-
-        new_key = Fernet.generate_key().decode()
-
-        # Perform rotation while accessing tokens
-        results = []
-
-        def rotate():
-            token_store.rotate_key(new_key)
-
-        def retrieve():
-            for user_id in users:
-                result = token_store.retrieve_token(user_id)
-                results.append(result is not None)
-
-        rotation_thread = threading.Thread(target=rotate)
-        retrieve_threads = [threading.Thread(target=retrieve) for _ in range(3)]
-
-        rotation_thread.start()
-        for thread in retrieve_threads:
-            thread.start()
-
-        rotation_thread.join()
-        for thread in retrieve_threads:
-            thread.join()
-
-        # All retrievals should succeed (may have occurred before or after rotation)
         assert all(results)
 
 

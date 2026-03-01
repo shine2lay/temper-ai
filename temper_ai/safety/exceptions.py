@@ -399,30 +399,6 @@ class ForbiddenOperationViolation(SafetyViolationException):
         )
 
 
-class EmergencyStopViolation(SafetyViolationException):
-    """Exception raised when emergency stop is active.
-
-    All agent actions are blocked until the emergency stop is deactivated.
-    """
-
-    def __init__(
-        self,
-        message: str = "Emergency stop is active — all actions blocked",
-        action: str = "",
-        context: dict[str, Any] | None = None,
-        metadata: dict[str, Any] | None = None,
-    ):
-        super().__init__(
-            policy_name="EmergencyStop",
-            severity=ViolationSeverity.CRITICAL,
-            message=message,
-            action=action,
-            context=context or {},
-            remediation_hint="Deactivate emergency stop via API: POST /api/runs/{id}/resume",
-            metadata=metadata,
-        )
-
-
 class AccessDeniedViolation(SafetyViolationException):
     """Exception for access control violations.
 

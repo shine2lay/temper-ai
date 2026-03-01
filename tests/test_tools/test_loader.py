@@ -226,14 +226,15 @@ class TestResolveToolConfigTemplates:
 
 
 class TestEnsureToolsDiscovered:
-    def test_calls_auto_discover_when_registry_empty(self):
+    def test_is_noop(self):
+        """ensure_tools_discovered is now a no-op (lazy loading handles it)."""
         mock_registry = MagicMock()
         mock_registry.list_tools.return_value = []
-        mock_registry.auto_discover.return_value = 5
         ensure_tools_discovered(mock_registry)
-        mock_registry.auto_discover.assert_called_once()
+        # Should not call auto_discover — function is a no-op
+        mock_registry.auto_discover.assert_not_called()
 
-    def test_skips_auto_discover_when_tools_exist(self):
+    def test_does_not_crash_with_tools_present(self):
         mock_registry = MagicMock()
         mock_registry.list_tools.return_value = ["tool1", "tool2"]
         ensure_tools_discovered(mock_registry)

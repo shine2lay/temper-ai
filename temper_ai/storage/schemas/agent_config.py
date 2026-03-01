@@ -42,6 +42,14 @@ from temper_ai.shared.constants.retries import (
 DEFAULT_TOP_P = 0.9  # Default nucleus sampling threshold
 
 
+class LLMCircuitBreakerConfig(BaseModel):
+    """Circuit breaker settings for LLM provider calls."""
+
+    failure_threshold: int = Field(default=5, ge=1, le=1000)
+    timeout_seconds: int = Field(default=60, ge=1, le=86400)
+    success_threshold: int = Field(default=2, ge=1, le=100)
+
+
 class InferenceConfig(BaseModel):
     """LLM inference configuration."""
 
@@ -71,6 +79,10 @@ class InferenceConfig(BaseModel):
             "function calling. Enable for providers that don't support "
             "OpenAI-compatible tool_calls."
         ),
+    )
+    circuit_breaker: LLMCircuitBreakerConfig | None = Field(
+        default=None,
+        description="Circuit breaker settings for LLM calls. Defaults apply if omitted.",
     )
 
     @model_validator(mode="after")
@@ -364,6 +376,20 @@ class MetadataConfig(BaseModel):
     documentation_url: str | None = None
 
 
+class AgentIODeclaration(BaseModel):
+    """Declares a single input or output field for an agent.
+
+    Used for compile-time validation, interface discovery, and future
+    orchestrator-driven agent selection. Same type vocabulary as
+    ``StageOutputDeclaration`` from ``temper_ai.workflow.context_schemas``.
+    """
+
+    type: Literal["string", "list", "dict", "number", "boolean", "any"] = "any"
+    required: bool = True
+    default: Any = None
+    description: str | None = None
+
+
 class AgentConfigInner(BaseModel):
     """Inner agent configuration fields."""
 
@@ -379,6 +405,20 @@ class AgentConfigInner(BaseModel):
         default=None,
         gt=0,
         description="Execution timeout in seconds (used by script-type agents)",
+    )
+    inputs: dict[str, AgentIODeclaration] | None = Field(
+        default=None,
+        description=(
+            "Declared agent inputs — what data the agent needs. "
+            "Used for compile-time wiring validation and interface discovery."
+        ),
+    )
+    outputs: dict[str, AgentIODeclaration] | None = Field(
+        default=None,
+        description=(
+            "Declared agent outputs — what structured fields the agent produces. "
+            "Used for compile-time wiring validation and interface discovery."
+        ),
     )
     prompt: PromptConfig | None = None
     inference: InferenceConfig | None = None
@@ -497,6 +537,28 @@ class AgentConfigInner(BaseModel):
         default=DEFAULT_MAX_DIALOGUE_CONTEXT_CHARS,
         gt=0,
         description="Max chars for auto-injected dialogue context",
+    )
+
+    # Profile references (name-based, resolved at config load time)
+    llm_profile: str | None = Field(
+        default=None,
+        description="Reference to a reusable LLM profile by name",
+    )
+    safety_profile: str | None = Field(
+        default=None,
+        description="Reference to a reusable safety profile by name",
+    )
+    error_handling_profile: str | None = Field(
+        default=None,
+        description="Reference to a reusable error handling profile by name",
+    )
+    observability_profile: str | None = Field(
+        default=None,
+        description="Reference to a reusable observability profile by name",
+    )
+    memory_profile: str | None = Field(
+        default=None,
+        description="Reference to a reusable memory profile by name",
     )
 
     def _is_plugin_type(self) -> bool:

@@ -2,13 +2,14 @@
 Unit tests for ConfigLoader.
 
 Tests YAML/JSON loading, environment variable substitution,
-prompt template loading, and error handling.
+prompt template loading, error handling, and DB-first config loading.
 """
 
 import json
 import os
 import tempfile
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 import yaml
@@ -887,3 +888,161 @@ class TestEnvironmentVariableSecurityValidation:
 
         # Cleanup
         del os.environ["DB_NAME"]
+
+
+class TestDBFirstConfigLoading:
+    """Test DB-first config loading with filesystem fallback."""
+
+    def test_tenant_id_stored(self, temp_config_dir):
+        """ConfigLoader accepts and stores tenant_id."""
+        loader = ConfigLoader(config_root=temp_config_dir, tenant_id="test-tenant")
+        assert loader.tenant_id == "test-tenant"
+
+    def test_tenant_id_none_by_default(self, temp_config_dir):
+        """ConfigLoader defaults tenant_id to None."""
+        loader = ConfigLoader(config_root=temp_config_dir)
+        assert loader.tenant_id is None
+
+    def test_db_first_filesystem_fallback(self, temp_config_dir):
+        """DB config returned when available, skipping filesystem."""
+        db_config = {"agent": {"name": "from-db", "version": "2.0"}}
+
+        loader = ConfigLoader(config_root=temp_config_dir, tenant_id="t1")
+
+        with patch.object(loader, "_load_from_db", return_value=db_config):
+            result = loader.load_agent("my-agent", validate=False)
+
+        assert result == db_config
+        assert result["agent"]["name"] == "from-db"
+
+    def test_filesystem_when_no_tenant(self, temp_config_dir):
+        """No tenant_id means filesystem only (no DB lookup)."""
+        agent_config = {"agent": {"name": "fs-agent"}}
+        agent_path = temp_config_dir / "agents" / "fs_agent.yaml"
+        with open(agent_path, "w") as f:
+            yaml.dump(agent_config, f)
+
+        loader = ConfigLoader(config_root=temp_config_dir)
+
+        with patch.object(loader, "_load_from_db") as mock_db:
+            result = loader.load_agent("fs_agent", validate=False)
+
+        mock_db.assert_not_called()
+        assert result == agent_config
+
+    def test_db_miss_falls_to_filesystem(self, temp_config_dir):
+        """DB returns None, so filesystem is used."""
+        agent_config = {"agent": {"name": "fs-fallback"}}
+        agent_path = temp_config_dir / "agents" / "fallback.yaml"
+        with open(agent_path, "w") as f:
+            yaml.dump(agent_config, f)
+
+        loader = ConfigLoader(config_root=temp_config_dir, tenant_id="t1")
+
+        with patch.object(loader, "_load_from_db", return_value=None):
+            result = loader.load_agent("fallback", validate=False)
+
+        assert result == agent_config
+
+    def test_cache_key_includes_tenant(self, temp_config_dir):
+        """Cache keys are tenant-scoped when tenant_id is set."""
+        db_config = {"agent": {"name": "cached-db"}}
+
+        loader = ConfigLoader(config_root=temp_config_dir, tenant_id="t1")
+
+        with patch.object(loader, "_load_from_db", return_value=db_config):
+            loader.load_agent("cached", validate=False)
+
+        assert "t1:agent:cached" in loader._cache
+
+    def test_cache_key_no_tenant(self, temp_config_dir):
+        """Cache keys have no tenant prefix when tenant_id is None."""
+        agent_config = {"agent": {"name": "no-tenant"}}
+        agent_path = temp_config_dir / "agents" / "no_tenant.yaml"
+        with open(agent_path, "w") as f:
+            yaml.dump(agent_config, f)
+
+        loader = ConfigLoader(config_root=temp_config_dir)
+        loader.load_agent("no_tenant", validate=False)
+
+        assert "agent:no_tenant" in loader._cache
+
+    def test_db_exception_falls_to_filesystem(self, temp_config_dir):
+        """_load_from_db() exception returns None, falling to filesystem."""
+        agent_config = {"agent": {"name": "exception-fallback"}}
+        agent_path = temp_config_dir / "agents" / "exc_fallback.yaml"
+        with open(agent_path, "w") as f:
+            yaml.dump(agent_config, f)
+
+        loader = ConfigLoader(config_root=temp_config_dir, tenant_id="t1")
+
+        with patch.object(loader, "_load_from_db", side_effect=RuntimeError("DB down")):
+            # _load_from_db raises, but _load_config catches via the if-check
+            # Actually _load_from_db itself catches exceptions internally.
+            # Let's test the internal behavior instead.
+            pass
+
+        # Test the actual _load_from_db graceful failure
+        with patch(
+            "temper_ai.storage.database.manager.get_session",
+            side_effect=RuntimeError("DB not initialized"),
+        ):
+            result = loader._load_from_db("agent", "test", "t1")
+            assert result is None
+
+    def test_load_from_db_returns_config_data(self, temp_config_dir):
+        """_load_from_db returns config_data when row is found."""
+        mock_row = MagicMock()
+        mock_row.config_data = {"agent": {"name": "db-agent"}}
+
+        mock_session = MagicMock()
+        mock_session.__enter__ = MagicMock(return_value=mock_session)
+        mock_session.__exit__ = MagicMock(return_value=False)
+        mock_session.exec.return_value.first.return_value = mock_row
+
+        loader = ConfigLoader(config_root=temp_config_dir, tenant_id="t1")
+
+        with patch(
+            "temper_ai.storage.database.manager.get_session",
+            return_value=mock_session,
+        ):
+            result = loader._load_from_db("agent", "my-agent", "t1")
+
+        assert result == {"agent": {"name": "db-agent"}}
+
+    def test_load_from_db_returns_none_for_missing(self, temp_config_dir):
+        """_load_from_db returns None when no row found."""
+        mock_session = MagicMock()
+        mock_session.__enter__ = MagicMock(return_value=mock_session)
+        mock_session.__exit__ = MagicMock(return_value=False)
+        mock_session.exec.return_value.first.return_value = None
+
+        loader = ConfigLoader(config_root=temp_config_dir, tenant_id="t1")
+
+        with patch(
+            "temper_ai.storage.database.manager.get_session",
+            return_value=mock_session,
+        ):
+            result = loader._load_from_db("agent", "nonexistent", "t1")
+
+        assert result is None
+
+    def test_load_from_db_returns_none_for_unknown_type(self, temp_config_dir):
+        """_load_from_db returns None for unsupported config types."""
+        loader = ConfigLoader(config_root=temp_config_dir, tenant_id="t1")
+        result = loader._load_from_db("trigger", "test", "t1")
+        assert result is None
+
+    def test_db_config_gets_env_var_substitution(self, temp_config_dir):
+        """DB-loaded config goes through env var substitution."""
+        os.environ["DB_TEST_VAR"] = "substituted_value"
+
+        db_config = {"agent": {"key": "${DB_TEST_VAR}"}}
+        loader = ConfigLoader(config_root=temp_config_dir, tenant_id="t1")
+
+        with patch.object(loader, "_load_from_db", return_value=db_config):
+            result = loader.load_agent("test", validate=False)
+
+        assert result["agent"]["key"] == "substituted_value"
+
+        del os.environ["DB_TEST_VAR"]

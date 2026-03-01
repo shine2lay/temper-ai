@@ -175,6 +175,12 @@ export function WorkflowList() {
             </button>
           )}
           <Link
+            to="/library"
+            className="px-3 py-1 rounded-md text-xs font-medium bg-temper-surface text-temper-text-muted hover:text-temper-text border border-temper-border hover:border-temper-accent/30 transition-colors"
+          >
+            Library
+          </Link>
+          <Link
             to="/studio"
             className="px-3 py-1 rounded-md text-xs font-medium bg-temper-accent/20 text-temper-accent hover:bg-temper-accent/30 transition-colors"
           >

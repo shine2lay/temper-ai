@@ -37,15 +37,6 @@ DEFAULT_FALLBACK_OUTPUT_PRICE = 15.0  # USD per 1M output tokens
 FALLBACK_PRICING_YEAR = 2026  # Year for fallback pricing effective date
 
 
-class PricingConfigNotFoundError(ConfigurationError):
-    """Raised when pricing configuration file is not found."""
-
-    def __init__(self, message: str, **kwargs: Any) -> None:
-        super().__init__(
-            message=message, error_code=ErrorCode.CONFIG_NOT_FOUND, **kwargs
-        )
-
-
 class PricingConfigInvalidError(ConfigurationError):
     """Raised when pricing configuration is invalid."""
 
@@ -314,51 +305,6 @@ class PricingManager:
         output_cost = (output_tokens / TOKENS_PER_MILLION) * pricing.output_price
 
         return input_cost + output_cost
-
-    def reload_pricing(self) -> None:
-        """Reload pricing from configuration file.
-
-        Useful for runtime updates when pricing config changes.
-        Invalidates cache and reloads from disk.
-        """
-        self._config_mtime = None  # Invalidate cache
-        self._load_pricing()
-        logger.info("Pricing configuration reloaded")
-
-    def get_pricing_info(self, model: str) -> ModelPricing | None:
-        """Get pricing information for a specific model.
-
-        Args:
-            model: Model name
-
-        Returns:
-            ModelPricing object or None if not found
-        """
-        return self.pricing.get(model)
-
-    def list_supported_models(self) -> list[str]:
-        """List all models with configured pricing.
-
-        Returns:
-            List of model names (excludes '_default')
-        """
-        return [m for m in self.pricing.keys() if m != PRICING_DEFAULT_KEY]
-
-    def health_check(self) -> dict[str, Any]:
-        """Health check for monitoring systems.
-
-        Returns:
-            Dictionary with health status
-        """
-        return {
-            "status": "healthy" if self.pricing else "degraded",
-            "models_loaded": len(self.pricing)
-            - THRESHOLD_MIN_COUNT,  # Exclude _default
-            "config_path": str(self.config_path),
-            "config_exists": self.config_path.exists(),
-            "last_reload_mtime": self._config_mtime,
-            "using_fallback": not self.config_path.exists(),
-        }
 
     @classmethod
     def reset_for_testing(cls) -> None:

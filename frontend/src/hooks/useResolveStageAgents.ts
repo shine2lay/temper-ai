@@ -6,7 +6,7 @@
 import { useEffect, useRef } from 'react';
 import { useDesignStore } from '@/store/designStore';
 
-const STUDIO_BASE = '/api/studio';
+const CONFIGS_BASE = '/api/configs';
 
 /** Framework-internal template variables that should not appear as agent inputs. */
 const INTERNAL_VARS = new Set([
@@ -123,10 +123,11 @@ export function useResolveStageAgents() {
       const configName = stage.stage_ref.replace(/^.*\//, '').replace(/\.yaml$/, '');
       stageInflightRef.current.add(stage.name);
 
-      fetch(`${STUDIO_BASE}/configs/stages/${configName}`)
+      fetch(`${CONFIGS_BASE}/stage/${configName}`)
         .then((res) => (res.ok ? res.json() : null))
-        .then((data) => {
-          if (!data) return;
+        .then((json) => {
+          if (!json) return;
+          const data = (json as { config_data?: Record<string, unknown> }).config_data ?? json;
           const stageData = (data as { stage?: Record<string, unknown> }).stage ?? data;
           const inner = stageData as Record<string, unknown>;
           const agents = (inner.agents as string[]) ?? [];
@@ -234,10 +235,11 @@ export function useResolveStageAgents() {
 
       agentInflightRef.current.add(agentName);
 
-      fetch(`${STUDIO_BASE}/configs/agents/${agentName}`)
+      fetch(`${CONFIGS_BASE}/agent/${agentName}`)
         .then((res) => (res.ok ? res.json() : null))
-        .then((data) => {
-          if (!data) return;
+        .then((json) => {
+          if (!json) return;
+          const data = (json as { config_data?: Record<string, unknown> }).config_data ?? json;
           const agentData = (data as { agent?: Record<string, unknown> }).agent ?? data;
           const inner = agentData as Record<string, unknown>;
           const inference = inner.inference as Record<string, unknown> | undefined;

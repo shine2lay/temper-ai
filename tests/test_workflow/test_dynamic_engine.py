@@ -249,13 +249,6 @@ class TestEngineRegistration:
         registry = EngineRegistry()
         assert "dynamic" in registry.list_engines()
 
-    def test_native_alias_in_registry(self):
-        """Test native alias still works via registry."""
-        from temper_ai.workflow.engine_registry import EngineRegistry
-
-        registry = EngineRegistry()
-        assert "native" in registry.list_engines()
-
     def test_get_dynamic_engine(self):
         """Test creating dynamic engine via registry."""
         from temper_ai.workflow.engine_registry import EngineRegistry
@@ -266,18 +259,6 @@ class TestEngineRegistration:
         ) as mock:
             mock.return_value = MagicMock()
             engine = registry.get_engine("dynamic")
-        assert isinstance(engine, DynamicExecutionEngine)
-
-    def test_native_alias_returns_dynamic(self):
-        """Test that 'native' alias returns DynamicExecutionEngine."""
-        from temper_ai.workflow.engine_registry import EngineRegistry
-
-        registry = EngineRegistry()
-        with patch(
-            "temper_ai.workflow.engines.dynamic_engine.create_safety_stack"
-        ) as mock:
-            mock.return_value = MagicMock()
-            engine = registry.get_engine("native")
         assert isinstance(engine, DynamicExecutionEngine)
 
     def test_config_based_selection(self):

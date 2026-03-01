@@ -230,6 +230,40 @@ class LeaderCollaborationStrategy(CollaborationStrategy):
             },
         )
 
+    def curate_agent_context(
+        self,
+        agent_name: str,
+        agent_role: str | None = None,
+        prior_outputs: dict[str, Any] | None = None,
+        round_number: int = 0,
+        dialogue_history: list[dict[str, Any]] | None = None,
+    ) -> str | None:
+        """Curate context for leader strategy.
+
+        Non-leader agents get no additional context (independent perspectives).
+        Leader agent gets all team outputs via format_team_outputs().
+        """
+        if agent_name == self._leader_agent and prior_outputs:
+            # Convert prior_outputs dict to AgentOutput list for formatting
+            from temper_ai.agent.strategies.base import AgentOutput
+
+            agent_outputs = []
+            for name, data in prior_outputs.items():
+                if isinstance(data, dict):
+                    agent_outputs.append(
+                        AgentOutput(
+                            agent_name=name,
+                            decision=data.get("output", ""),
+                            reasoning=data.get("reasoning", ""),
+                            confidence=data.get("confidence", 0.0),
+                            metadata={},
+                        )
+                    )
+            if agent_outputs:
+                return "# Team Outputs\n\n" + self.format_team_outputs(agent_outputs)
+
+        return None
+
     def get_capabilities(self) -> dict[str, bool]:
         """Get strategy capabilities for feature detection."""
         return {

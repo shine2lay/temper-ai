@@ -150,14 +150,6 @@ class TestToolRegistry:
         assert len(registry) == 2
         assert set(registry.list_tools()) == {"calculator", "web_scraper"}
 
-    def test_register_multiple_batch(self):
-        """Test register_multiple method."""
-        registry = ToolRegistry()
-        tools = [MockCalculator(), MockWebScraper()]
-        registry.register_multiple(tools)
-
-        assert len(registry) == 2
-
     def test_register_duplicate_name(self):
         """Test that registering duplicate name raises error."""
         registry = ToolRegistry()
@@ -245,38 +237,6 @@ class TestToolRegistry:
         assert "calculator" in all_tools
         assert "web_scraper" in all_tools
 
-    def test_get_tool_schema(self):
-        """Test getting tool schema for LLM."""
-        registry = ToolRegistry()
-        calc = MockCalculator()
-        registry.register(calc)
-
-        schema = registry.get_tool_schema("calculator")
-        assert schema["type"] == "function"
-        assert schema["function"]["name"] == "calculator"
-        assert "description" in schema["function"]
-        assert "parameters" in schema["function"]
-
-    def test_get_schema_for_nonexistent_tool(self):
-        """Test getting schema for tool that doesn't exist."""
-        registry = ToolRegistry()
-
-        with pytest.raises(ToolRegistryError) as exc_info:
-            registry.get_tool_schema("nonexistent")
-        assert "not found" in str(exc_info.value)
-
-    def test_get_all_tool_schemas(self):
-        """Test getting schemas for all tools."""
-        registry = ToolRegistry()
-        calc = MockCalculator()
-        scraper = MockWebScraper()
-        registry.register(calc)
-        registry.register(scraper)
-
-        schemas = registry.get_all_tool_schemas()
-        assert len(schemas) == 2
-        assert all("type" in s and s["type"] == "function" for s in schemas)
-
     def test_get_tool_metadata(self):
         """Test getting tool metadata."""
         registry = ToolRegistry()
@@ -310,21 +270,20 @@ class TestToolRegistry:
         assert len(registry) == 0
         assert registry.list_tools() == []
 
-    def test_auto_discover_empty(self):
-        """Test auto-discover with no tools."""
-        from temper_ai.tools.registry import clear_global_cache
-
-        clear_global_cache()
+    def test_auto_discover_deprecated_returns_static_count(self):
+        """Test auto_discover is deprecated and returns TOOL_CLASSES count."""
         registry = ToolRegistry()
-        count = registry.auto_discover("nonexistent.package")
-        assert count == 0
+        with pytest.warns(DeprecationWarning, match="deprecated"):
+            count = registry.auto_discover("nonexistent.package", use_cache=False)
+        # Returns count of static TOOL_CLASSES, ignoring the package arg
+        from temper_ai.tools import TOOL_CLASSES
 
-    def test_auto_discover_with_init(self):
-        """Test auto-discover in constructor."""
-        # This won't find any tools in the actual package yet
-        # but tests that auto_discover is called
-        registry = ToolRegistry(auto_discover=True)
-        # Should not raise any errors
+        assert count == len(TOOL_CLASSES)
+
+    def test_auto_discover_init_deprecated(self):
+        """Test auto_discover=True in constructor emits deprecation warning."""
+        with pytest.warns(DeprecationWarning, match="deprecated"):
+            registry = ToolRegistry(auto_discover=True)
         assert isinstance(registry, ToolRegistry)
 
     def test_repr(self):
@@ -555,39 +514,26 @@ class TestEnhancedAutoDiscovery:
         # Unknown errors return None (no matching pattern)
         assert suggestion is None
 
-    def test_auto_discover_logs_success(self, caplog):
-        """Test that auto-discover logs successful tool loading."""
-        import logging
+    def test_auto_discover_deprecated_no_crash(self):
+        """Test that auto_discover (deprecated) doesn't crash."""
+        registry = ToolRegistry()
+        with pytest.warns(DeprecationWarning):
+            count = registry.auto_discover("nonexistent.package", use_cache=False)
+        assert count > 0  # Returns TOOL_CLASSES count
 
-        from temper_ai.tools.registry import clear_global_cache
-
-        caplog.set_level(logging.INFO)
-
-        # Clear global cache so previous discovery results don't interfere
-        clear_global_cache()
-
-        # Create a temporary module structure with a valid tool
-        # For this test, we'll just verify the registry doesn't crash
+    def test_lazy_get_finds_real_tools(self):
+        """Test lazy get finds real tools from TOOL_CLASSES."""
         registry = ToolRegistry()
 
-        # Auto-discover in a package that doesn't exist shouldn't crash
-        count = registry.auto_discover("nonexistent.package")
+        # Tools are available via lazy loading
+        assert registry.has("Calculator")
+        assert registry.has("FileWriter")
+        assert registry.has("WebScraper")
 
-        # Nonexistent package discovers zero tools
-        assert count == 0
-
-    def test_auto_discover_with_real_tools(self):
-        """Test auto-discover finds real tools in temper_ai.tools package."""
-        registry = ToolRegistry(auto_discover=False)
-
-        # Manually discover from temper_ai.tools
-        count = registry.auto_discover("temper_ai.tools")
-
-        # Should find at least Calculator, FileWriter, WebScraper
-        assert count >= 3
-        assert "Calculator" in registry or "calculator" in registry
-        assert "FileWriter" in registry or "file_writer" in registry
-        assert "WebScraper" in registry or "web_scraper" in registry
+        # Getting a tool creates the instance
+        calc = registry.get("Calculator")
+        assert calc is not None
+        assert calc.name == "Calculator"
 
     def test_registry_with_config_parameter(self):
         """Test that tools can be registered with config parameter."""
@@ -937,45 +883,6 @@ class TestRegistryEdgeCases:
         versions = registry.list_tool_versions("nonexistent")
         assert versions == []
 
-    @pytest.mark.timeout(30)
-    def test_global_registry_singleton(self):
-        """Test that get_global_registry returns same instance."""
-        from temper_ai.tools.registry import clear_global_cache, get_global_registry
-
-        # Clear first to ensure clean state
-        clear_global_cache()
-
-        # Get registry twice
-        registry1 = get_global_registry()
-        registry2 = get_global_registry()
-
-        # Should be same instance
-        assert registry1 is registry2
-
-        # Cleanup
-        clear_global_cache()
-
-    @pytest.mark.timeout(30)
-    def test_clear_global_cache(self):
-        """Test clearing global cache and registry."""
-        from temper_ai.tools.registry import clear_global_cache, get_global_registry
-
-        # Clear first to ensure clean state
-        clear_global_cache()
-
-        registry1 = get_global_registry()
-
-        # Clear and get new one
-        clear_global_cache()
-
-        registry2 = get_global_registry()
-
-        # Should be different instances after clear
-        assert registry1 is not registry2
-
-        # Cleanup
-        clear_global_cache()
-
     def test_registry_protocol_methods(self):
         """Test attached protocol methods work correctly."""
         registry = ToolRegistry()
@@ -988,5 +895,67 @@ class TestRegistryEdgeCases:
         # Test count() method
         assert registry.count() == 1
 
-        # Test list_all() deprecated method
-        assert "calculator" in registry.list_all()
+
+class TestStaticToolRegistry:
+    """Tests for the static TOOL_CLASSES-backed lazy loading."""
+
+    def test_get_returns_none_for_unknown(self):
+        """get() returns None for tools not in TOOL_CLASSES."""
+        registry = ToolRegistry()
+        assert registry.get("TotallyFakeTool") is None
+
+    def test_has_without_instantiation(self):
+        """has() checks TOOL_CLASSES without creating an instance."""
+        registry = ToolRegistry()
+        assert registry.has("Bash")
+        assert not registry.has("FakeTool")
+        # Not yet in _tools because has() doesn't instantiate
+        assert "Bash" not in registry.list_tools()
+
+    def test_lazy_get_instantiates(self):
+        """get() lazily creates tool from TOOL_CLASSES."""
+        registry = ToolRegistry()
+        assert registry.list_tools() == []  # Nothing registered yet
+        tool = registry.get("Calculator")
+        assert tool is not None
+        assert tool.name == "Calculator"
+        assert "Calculator" in registry.list_tools()
+
+    def test_list_available_includes_all(self):
+        """list_available() returns all TOOL_CLASSES + registered."""
+        registry = ToolRegistry()
+        available = registry.list_available()
+        assert "Bash" in available
+        assert "Calculator" in available
+        assert "WebSearch" in available
+        assert len(available) >= 8
+
+    def test_list_available_includes_manually_registered(self):
+        """list_available() includes manually registered tools too."""
+        registry = ToolRegistry()
+        calc = MockCalculator()
+        registry.register(calc)
+        available = registry.list_available()
+        assert "calculator" in available  # MockCalculator name
+        assert "Bash" in available  # From TOOL_CLASSES
+
+    def test_contains_checks_static(self):
+        """'in' operator checks TOOL_CLASSES."""
+        registry = ToolRegistry()
+        assert "Git" in registry
+        assert "NonExistent" not in registry
+
+    def test_two_gets_from_same_registry_return_same_instance(self):
+        """Two get() calls on same registry return the same cached instance."""
+        registry = ToolRegistry()
+        b1 = registry.get("Bash")
+        b2 = registry.get("Bash")
+        assert b1 is b2
+
+    def test_different_registries_get_different_instances(self):
+        """Different registries create independent tool instances."""
+        r1 = ToolRegistry()
+        r2 = ToolRegistry()
+        b1 = r1.get("Bash")
+        b2 = r2.get("Bash")
+        assert b1 is not b2

@@ -5,20 +5,20 @@
 import { useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useDesignStore } from '@/store/designStore';
-import { useStudioConfig } from '@/hooks/useStudioAPI';
+import { useConfig } from '@/hooks/useConfigAPI';
 import { StudioPage } from '@/components/studio/StudioPage';
 
 export function StudioView() {
   const { name } = useParams<{ name?: string }>();
-  const { data, isLoading, error } = useStudioConfig('workflows', name ?? null);
+  const { data, isLoading, error } = useConfig('workflow', name ?? null);
   const loadFromConfig = useDesignStore((s) => s.loadFromConfig);
   const reset = useDesignStore((s) => s.reset);
   const configName = useDesignStore((s) => s.configName);
 
-  // Load config when data arrives
+  // Load config when data arrives — unwrap config_data from ConfigDetail
   useEffect(() => {
     if (name && data) {
-      loadFromConfig(name, data);
+      loadFromConfig(name, (data.config_data ?? data) as Record<string, unknown>);
     }
   }, [name, data, loadFromConfig]);
 

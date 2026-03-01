@@ -14,7 +14,7 @@ stage:
 
   inputs:
     question:
-      source: workflow.question
+      type: string
       required: true
 
   outputs:

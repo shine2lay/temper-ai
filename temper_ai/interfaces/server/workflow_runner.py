@@ -33,6 +33,7 @@ class WorkflowRunnerConfig(BaseModel):
     show_details: bool = False
     trigger_type: str = "api"
     environment: str = "server"
+    tenant_id: str | None = None
 
 
 class WorkflowRunResult(BaseModel):
@@ -70,6 +71,7 @@ class WorkflowRunner:
         on_event: Callable | None = None,
         run_id: str | None = None,
         workspace: str | None = None,
+        restored_stage_outputs: dict[str, Any] | None = None,
     ) -> WorkflowRunResult:
         """Execute a workflow synchronously and return the result.
 
@@ -79,6 +81,9 @@ class WorkflowRunner:
             on_event: Optional callback invoked for each ObservabilityEvent.
             run_id: Optional externally-provided run ID.
             workspace: Optional workspace root to restrict file operations.
+            restored_stage_outputs: Optional stage outputs from a previous
+                checkpoint, used for resume support. Stages with existing
+                outputs will be skipped.
 
         Returns:
             WorkflowRunResult with execution outcome.
@@ -98,6 +103,7 @@ class WorkflowRunner:
                 input_data or {},
                 workspace,
                 run_id,
+                restored_stage_outputs=restored_stage_outputs,
             )
             completed_at = datetime.now(UTC)
             return self._build_result(
@@ -133,13 +139,17 @@ class WorkflowRunner:
         input_data: dict[str, Any],
         workspace: str | None,
         run_id: str | None,
+        restored_stage_outputs: dict[str, Any] | None = None,
     ) -> tuple:
         """Execute a workflow via the unified run_pipeline().
 
         Returns:
             Tuple of (result_data, workflow_name, engine=None, rt).
         """
-        from temper_ai.workflow.runtime import RuntimeConfig, WorkflowRuntime
+        from temper_ai.workflow.runtime import (
+            RuntimeConfig,
+            WorkflowRuntime,
+        )
 
         rt = WorkflowRuntime(
             config=RuntimeConfig(
@@ -148,13 +158,19 @@ class WorkflowRunner:
                 environment=self.config.environment,
                 initialize_database=False,
                 event_bus=self.event_bus,
+                tenant_id=self.config.tenant_id,
             ),
         )
+
+        hooks = None
+        if restored_stage_outputs:
+            hooks = self._build_resume_hooks(restored_stage_outputs)
 
         effective_workspace = workspace or self.config.workspace
         result_data = rt.run_pipeline(
             workflow_path=workflow_path,
             input_data=input_data,
+            hooks=hooks,
             workspace=effective_workspace,
             run_id=run_id,
             show_details=self.config.show_details,
@@ -163,6 +179,31 @@ class WorkflowRunner:
         workflow_name = result_data.get("workflow_name", Path(workflow_path).stem)
         # Engine cleanup is handled by run_pipeline internally
         return result_data, workflow_name, None, rt
+
+    @staticmethod
+    def _build_resume_hooks(
+        restored_stage_outputs: dict[str, Any],
+    ) -> "ExecutionHooks":
+        """Build ExecutionHooks that inject restored stage outputs for resume."""
+        from temper_ai.stage.executors.state_keys import StateKeys
+        from temper_ai.workflow.engines.dynamic_engine import DynamicCompiledWorkflow
+        from temper_ai.workflow.runtime import ExecutionHooks
+
+        def on_state_built(state: dict[str, Any], _infra: Any) -> None:
+            """Inject restored stage outputs into state."""
+            existing = state.get(StateKeys.STAGE_OUTPUTS, {})
+            existing.update(restored_stage_outputs)
+            state[StateKeys.STAGE_OUTPUTS] = existing
+
+        def on_before_execute(compiled: Any, _state: dict[str, Any]) -> None:
+            """Set up checkpoint save callback on workflow executor."""
+            if isinstance(compiled, DynamicCompiledWorkflow):
+                _setup_checkpoint_callback(compiled.workflow_executor)
+
+        return ExecutionHooks(
+            on_state_built=on_state_built,
+            on_before_execute=on_before_execute,
+        )
 
     def _build_result(
         self,
@@ -193,3 +234,29 @@ class WorkflowRunner:
         )
 
         return _sanitize_workflow_result(result)
+
+
+def _setup_checkpoint_callback(workflow_executor: Any) -> None:
+    """Wire a checkpoint save callback onto the workflow executor."""
+    from temper_ai.stage.executors.state_keys import StateKeys
+
+    def _save_checkpoint(state: dict[str, Any]) -> None:
+        """Save checkpoint after each depth group completes."""
+        workflow_id = state.get(StateKeys.WORKFLOW_ID)
+        if not workflow_id:
+            return
+        try:
+            from temper_ai.workflow.checkpoint_manager import CheckpointManager
+            from temper_ai.workflow.domain_state import WorkflowDomainState
+
+            domain = WorkflowDomainState(
+                workflow_id=workflow_id,
+                stage_outputs=state.get(StateKeys.STAGE_OUTPUTS, {}),
+                current_stage=state.get(StateKeys.CURRENT_STAGE, ""),
+            )
+            mgr = CheckpointManager()
+            mgr.save_checkpoint(domain)
+        except Exception:
+            logger.warning("Checkpoint save failed", exc_info=True)
+
+    workflow_executor._on_depth_complete = _save_checkpoint

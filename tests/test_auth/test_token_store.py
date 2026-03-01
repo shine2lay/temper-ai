@@ -132,39 +132,6 @@ class TestSecureTokenStore:
         assert retrieved is not None
         assert retrieved["access_token"] == "test_token"
 
-    def test_key_rotation(self, encryption_key, token_store):
-        """Should re-encrypt all tokens with new key."""
-        # Store multiple tokens
-        token_store.store_token("user_1", {"access_token": "token_1"}, expires_in=3600)
-        token_store.store_token("user_2", {"access_token": "token_2"}, expires_in=3600)
-
-        # Verify both retrievable
-        assert token_store.retrieve_token("user_1")["access_token"] == "token_1"
-        assert token_store.retrieve_token("user_2")["access_token"] == "token_2"
-
-        # Rotate key
-        new_key = Fernet.generate_key().decode()
-        token_store.rotate_key(new_key)
-
-        # Verify both still retrievable with new key
-        assert token_store.retrieve_token("user_1")["access_token"] == "token_1"
-        assert token_store.retrieve_token("user_2")["access_token"] == "token_2"
-
-    def test_key_rotation_skips_expired_tokens(self, token_store):
-        """Key rotation should skip expired tokens."""
-        # Store token with short expiry
-        token_store.store_token("user_1", {"access_token": "token_1"}, expires_in=1)
-
-        # Wait for expiry
-        time.sleep(1.1)
-
-        # Rotate key
-        new_key = Fernet.generate_key().decode()
-        token_store.rotate_key(new_key)
-
-        # Expired token should not be re-encrypted
-        assert token_store.retrieve_token("user_1") is None
-
     def test_invalid_encryption_key_raises_error(self):
         """Invalid encryption key should raise ValueError."""
         with pytest.raises(ValueError, match="Invalid encryption key"):
@@ -192,45 +159,6 @@ class TestSecureTokenStore:
 
         # Should be deleted from storage
         assert "user_123" not in token_store._tokens
-
-    def test_audit_log_tracks_operations(self, token_store):
-        """Audit log should track all operations."""
-        token_data = {"access_token": "test_token"}
-
-        # Perform operations
-        token_store.store_token("user_123", token_data, expires_in=3600)
-        token_store.retrieve_token("user_123")
-        token_store.delete_token("user_123")
-
-        # Check audit log
-        log = token_store.get_audit_log()
-        assert len(log) >= 3
-
-        # Verify log entries
-        actions = [entry["action"] for entry in log]
-        assert "store" in actions
-        assert "retrieve" in actions
-        assert "delete" in actions
-
-        # Verify user_id recorded
-        store_entry = next(e for e in log if e["action"] == "store")
-        assert store_entry["user_id"] == "user_123"
-
-    def test_clear_all_tokens(self, token_store):
-        """Should clear all tokens."""
-        # Store multiple tokens
-        token_store.store_token("user_1", {"access_token": "token_1"})
-        token_store.store_token("user_2", {"access_token": "token_2"})
-        token_store.store_token("user_3", {"access_token": "token_3"})
-
-        # Clear all
-        count = token_store.clear_all_tokens()
-        assert count == 3
-
-        # Verify all cleared
-        assert token_store.retrieve_token("user_1") is None
-        assert token_store.retrieve_token("user_2") is None
-        assert token_store.retrieve_token("user_3") is None
 
     def test_overwrite_existing_token(self, token_store):
         """Storing token for same user should overwrite."""
@@ -288,23 +216,6 @@ class TestSecureTokenStore:
         token_store.delete_token("user_1")
         assert token_store.retrieve_token("user_1") is None
         assert token_store.retrieve_token("user_2")["access_token"] == "token_2"
-
-    def test_audit_log_key_rotation(self, token_store):
-        """Audit log should track key rotation."""
-        # Store some tokens
-        token_store.store_token("user_1", {"access_token": "token_1"}, expires_in=3600)
-        token_store.store_token("user_2", {"access_token": "token_2"}, expires_in=3600)
-
-        # Rotate key
-        new_key = Fernet.generate_key().decode()
-        token_store.rotate_key(new_key)
-
-        # Check audit log
-        log = token_store.get_audit_log()
-        rotate_entry = next(e for e in log if e["action"] == "rotate_key")
-
-        assert rotate_entry["tokens_re_encrypted"] == 2
-        assert "timestamp" in rotate_entry
 
 
 class TestSecureTokenStoreEdgeCases:
@@ -486,44 +397,6 @@ class TestSecureTokenStoreKeyring:
         assert retrieved is not None
         assert retrieved["access_token"] == token_data["access_token"]
         assert retrieved["refresh_token"] == token_data["refresh_token"]
-
-    def test_rotate_key_from_keyring(self):
-        """Should rotate key from keyring and re-encrypt tokens."""
-        store = SecureTokenStore(use_keyring=True)
-
-        # Store token
-        store.store_token("user_123", {"access_token": "token_1"}, expires_in=3600)
-
-        # Get old key
-        old_key = keyring.get_password(
-            SecureTokenStore.DEFAULT_KEYRING_SERVICE,
-            SecureTokenStore.DEFAULT_KEYRING_KEY_NAME,
-        )
-
-        # Rotate key
-        store.rotate_key_from_keyring()
-
-        # Get new key
-        new_key = keyring.get_password(
-            SecureTokenStore.DEFAULT_KEYRING_SERVICE,
-            SecureTokenStore.DEFAULT_KEYRING_KEY_NAME,
-        )
-
-        # Key should change
-        assert new_key != old_key
-
-        # Token should still be retrievable
-        token = store.retrieve_token("user_123")
-        assert token is not None
-        assert token["access_token"] == "token_1"
-
-    def test_rotate_key_from_keyring_fails_without_keyring_mode(self):
-        """Should fail to rotate from keyring if not using keyring mode."""
-        key = Fernet.generate_key().decode()
-        store = SecureTokenStore(encryption_key=key)
-
-        with pytest.raises(SecurityError, match="requires keyring mode"):
-            store.rotate_key_from_keyring()
 
     def test_keyring_isolation_between_services(self):
         """Keys for different services should be isolated."""

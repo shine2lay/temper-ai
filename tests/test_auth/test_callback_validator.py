@@ -210,57 +210,6 @@ class TestCallbackURLValidator:
         # But not this
         assert validator.validate("https://evil.com/callback")[0] is False
 
-    def test_get_allowed_urls(self):
-        """Should return sorted list of allowed URLs."""
-        urls = [
-            "https://app.example.com/auth/callback",
-            "http://localhost:8000/auth/callback",
-        ]
-        validator = CallbackURLValidator(urls)
-
-        allowed = validator.get_allowed_urls()
-        assert len(allowed) == 2
-        assert "https://app.example.com/auth/callback" in allowed
-        assert "http://localhost:8000/auth/callback" in allowed
-        # Should be sorted
-        assert allowed == sorted(allowed)
-
-    def test_add_allowed_url(self):
-        """Should allow adding URLs to whitelist."""
-        validator = CallbackURLValidator(["https://app.example.com/auth/callback"])
-
-        # Initially not allowed
-        assert validator.validate("https://new.example.com/callback")[0] is False
-
-        # Add to whitelist
-        validator.add_allowed_url("https://new.example.com/callback")
-
-        # Now should be allowed
-        assert validator.validate("https://new.example.com/callback")[0] is True
-
-    def test_remove_allowed_url(self):
-        """Should allow removing URLs from whitelist."""
-        validator = CallbackURLValidator(
-            [
-                "https://app.example.com/auth/callback",
-                "https://remove-me.example.com/callback",
-            ]
-        )
-
-        # Initially allowed
-        assert validator.validate("https://remove-me.example.com/callback")[0] is True
-
-        # Remove from whitelist
-        result = validator.remove_allowed_url("https://remove-me.example.com/callback")
-        assert result is True
-
-        # Now should be rejected
-        assert validator.validate("https://remove-me.example.com/callback")[0] is False
-
-        # Removing non-existent URL returns False
-        result = validator.remove_allowed_url("https://never-existed.com/callback")
-        assert result is False
-
     def test_path_must_match_exactly(self):
         """Path must match exactly (prevent path traversal)."""
         validator = CallbackURLValidator(["https://app.example.com/auth/callback"])

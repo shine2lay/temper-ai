@@ -1,8 +1,7 @@
-"""Integration tests: LLMService emits per-iteration and cache events.
+"""Integration tests: LLMService emits per-iteration events.
 
 Verifies that LLMService.run() and LLMService.arun() emit
-LLMIterationEventData events for each loop iteration, and that
-LLMCache fires cache events through its callback.
+LLMIterationEventData events for each loop iteration.
 """
 
 from __future__ import annotations
@@ -114,7 +113,7 @@ class TestLLMServiceIterationEvents:
     @patch("temper_ai.llm.service.build_native_tool_defs", return_value=(None, None))
     @patch("temper_ai.llm.service.inject_results", return_value="injected prompt")
     @patch(
-        "temper_ai.llm.service.execute_tools",
+        "temper_ai.llm.service.route_tool_calls",
         return_value=[{"name": "bash", "result": "ok"}],
     )
     @patch("temper_ai.llm.service.parse_tool_calls")
@@ -255,98 +254,3 @@ class TestRunStateIterationNumber:
         assert state.iteration_number == 1
         state.iteration_number += 1
         assert state.iteration_number == 2
-
-
-# ---------------------------------------------------------------------------
-# Tests: LLMCache event callback
-# ---------------------------------------------------------------------------
-
-
-class TestLLMCacheEvents:
-    """Test cache event emission via on_event callback."""
-
-    def test_cache_hit_fires_event(self) -> None:
-        from temper_ai.llm.cache.llm_cache import LLMCache
-
-        received: list = []
-        cache = LLMCache(backend="memory", on_event=received.append)
-
-        # Populate via public API, then retrieve
-        cache.set("testkey", "value")
-        # Now get should fire "hit"
-        result = cache.get("testkey")
-
-        assert result == "value"
-        hit_events = [e for e in received if e.event_type == "hit"]
-        assert len(hit_events) >= 1
-        assert hit_events[0].key_prefix.startswith("testkey"[:16])
-
-    def test_cache_miss_fires_event(self) -> None:
-        from temper_ai.llm.cache.llm_cache import LLMCache
-
-        received: list = []
-        cache = LLMCache(backend="memory", on_event=received.append)
-
-        result = cache.get("nonexistent")
-
-        assert result is None
-        miss_events = [e for e in received if e.event_type == "miss"]
-        assert len(miss_events) >= 1
-
-    def test_cache_write_fires_event(self) -> None:
-        from temper_ai.llm.cache.llm_cache import LLMCache
-
-        received: list = []
-        cache = LLMCache(backend="memory", on_event=received.append)
-
-        cache.set("writekey", "some-value")
-
-        write_events = [e for e in received if e.event_type == "write"]
-        assert len(write_events) == 1
-
-    def test_cache_eviction_fires_event(self) -> None:
-        from temper_ai.llm.cache.llm_cache import LLMCache
-
-        received: list = []
-        cache = LLMCache(backend="memory", max_size=2, on_event=received.append)
-
-        # Fill cache to capacity
-        cache.set("key1", "v1")
-        cache.set("key2", "v2")
-        # This should trigger eviction of key1
-        cache.set("key3", "v3")
-
-        eviction_events = [e for e in received if e.event_type == "eviction"]
-        assert len(eviction_events) >= 1
-
-    def test_no_event_callback_no_error(self) -> None:
-        from temper_ai.llm.cache.llm_cache import LLMCache
-
-        cache = LLMCache(backend="memory")
-        cache.set("k", "v")
-        result = cache.get("k")
-        assert result == "v"
-
-    def test_event_callback_error_handled(self) -> None:
-        from temper_ai.llm.cache.llm_cache import LLMCache
-
-        def bad_callback(event: Any) -> None:
-            raise RuntimeError("boom")
-
-        cache = LLMCache(backend="memory", on_event=bad_callback)
-        # Should not raise despite callback error
-        cache.set("k", "v")
-        result = cache.get("k")
-        assert result == "v"
-
-    def test_event_includes_cache_size(self) -> None:
-        from temper_ai.llm.cache.llm_cache import LLMCache
-
-        received: list = []
-        cache = LLMCache(backend="memory", on_event=received.append)
-
-        cache.set("k1", "v1")
-        write_events = [e for e in received if e.event_type == "write"]
-        assert len(write_events) == 1
-        assert write_events[0].cache_size is not None
-        assert write_events[0].cache_size >= 1

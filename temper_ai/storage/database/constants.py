@@ -30,4 +30,6 @@ FIELD_EXTRA_METADATA = "extra_metadata"
 # Status Constraints
 # ============================================================================
 
-STATUS_CONSTRAINT = "status IN ('running', 'completed', 'failed', 'halted', 'timeout')"
+STATUS_CONSTRAINT = (
+    "status IN ('running', 'completed', 'failed', 'halted', 'timeout', 'stuck')"
+)

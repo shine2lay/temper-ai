@@ -1,5 +1,5 @@
 """
-Tests for config validation via BaseTool.validate_config() and get_typed_config().
+Tests for config validation via BaseTool.validate_config().
 
 Verifies that tools with config_model validate YAML config correctly,
 including template skipping, internal key skipping, and error detection.
@@ -92,80 +92,6 @@ class TestValidateConfig:
         tool = _ToolWithConfig(config={"timeout": 10})
         result = tool.validate_config()
         assert result.valid
-
-
-# ---------------------------------------------------------------------------
-# Tests: get_typed_config()
-# ---------------------------------------------------------------------------
-
-
-class TestGetTypedConfig:
-    """Test BaseTool.get_typed_config()."""
-
-    def test_returns_model_instance(self):
-        tool = _ToolWithConfig(config={"timeout": 60, "enabled": False})
-        typed = tool.get_typed_config()
-        assert typed is not None
-        assert isinstance(typed, _SampleConfig)
-        assert typed.timeout == 60
-        assert typed.enabled is False
-
-    def test_no_config_model_returns_none(self):
-        tool = _ToolWithoutConfig()
-        assert tool.get_typed_config() is None
-
-    def test_uses_defaults_for_missing_keys(self):
-        tool = _ToolWithConfig(config={})
-        typed = tool.get_typed_config()
-        assert typed is not None
-        assert typed.timeout == 30
-        assert typed.enabled is True
-
-    def test_skips_internal_keys(self):
-        tool = _ToolWithConfig(
-            config={"timeout": 10, "_templates": {"timeout": "{{ x }}"}}
-        )
-        typed = tool.get_typed_config()
-        assert typed is not None
-        assert typed.timeout == 10
-
-    def test_skips_jinja2_template_strings(self):
-        tool = _ToolWithConfig(config={"timeout": "{{ x }}", "enabled": True})
-        typed = tool.get_typed_config()
-        assert typed is not None
-        assert typed.enabled is True
-
-
-# ---------------------------------------------------------------------------
-# Tests: get_config_schema() auto-derivation
-# ---------------------------------------------------------------------------
-
-
-class TestGetConfigSchemaDerivation:
-    """Test that get_config_schema() auto-derives from config_model."""
-
-    def test_auto_derives_from_config_model(self):
-        tool = _ToolWithConfig()
-        schema = tool.get_config_schema()
-        assert schema["type"] == "object"
-        assert "timeout" in schema["properties"]
-        assert "enabled" in schema["properties"]
-
-    def test_no_config_model_returns_empty(self):
-        tool = _ToolWithoutConfig()
-        schema = tool.get_config_schema()
-        assert schema == {"type": "object", "properties": {}}
-
-    def test_schema_has_descriptions(self):
-        tool = _ToolWithConfig()
-        schema = tool.get_config_schema()
-        assert schema["properties"]["timeout"]["description"] == "Timeout in seconds"
-
-    def test_schema_strips_pydantic_title(self):
-        tool = _ToolWithConfig()
-        schema = tool.get_config_schema()
-        for prop in schema["properties"].values():
-            assert "title" not in prop
 
 
 # ---------------------------------------------------------------------------

@@ -17,7 +17,9 @@ from temper_ai.interfaces.server.routes import (
     _handle_health,
     _handle_list_available_workflows,
     _handle_list_runs,
+    _handle_list_stuck_runs,
     _handle_readiness,
+    _handle_resume_run,
     _handle_validate_workflow,
     create_server_router,
 )
@@ -92,14 +94,36 @@ class TestHandleCreateRun:
     async def test_success(self):
         exec_svc = AsyncMock()
         exec_svc.execute_workflow_async.return_value = "exec-123"
-        body = RunRequest(workflow="workflows/test.yaml", inputs={"key": "val"})
+        body = RunRequest(workflow="research", inputs={"key": "val"})
         result = await _handle_create_run(exec_svc, body, "/tmp/test-configs")
         assert result.execution_id == "exec-123"
 
     @pytest.mark.asyncio
-    async def test_path_traversal_raises_400(self):
+    async def test_empty_name_raises_400(self):
+        exec_svc = AsyncMock()
+        body = RunRequest(workflow="   ")
+        from fastapi import HTTPException
+
+        with pytest.raises(HTTPException) as exc_info:
+            await _handle_create_run(exec_svc, body, "/tmp/test-configs")
+        assert exc_info.value.status_code == 400
+        assert "empty" in exc_info.value.detail.lower()
+
+    @pytest.mark.asyncio
+    async def test_path_traversal_in_name_raises_400(self):
         exec_svc = AsyncMock()
         body = RunRequest(workflow="../../etc/passwd")
+        from fastapi import HTTPException
+
+        with pytest.raises(HTTPException) as exc_info:
+            await _handle_create_run(exec_svc, body, "/tmp/test-configs")
+        assert exc_info.value.status_code == 400
+        assert "Invalid workflow name" in exc_info.value.detail
+
+    @pytest.mark.asyncio
+    async def test_slash_in_name_raises_400(self):
+        exec_svc = AsyncMock()
+        body = RunRequest(workflow="workflows/test.yaml")
         from fastapi import HTTPException
 
         with pytest.raises(HTTPException) as exc_info:
@@ -110,7 +134,7 @@ class TestHandleCreateRun:
     async def test_file_not_found_raises_404(self):
         exec_svc = AsyncMock()
         exec_svc.execute_workflow_async.side_effect = FileNotFoundError("missing")
-        body = RunRequest(workflow="workflows/test.yaml")
+        body = RunRequest(workflow="nonexistent")
         from fastapi import HTTPException
 
         with pytest.raises(HTTPException) as exc_info:
@@ -121,7 +145,7 @@ class TestHandleCreateRun:
     async def test_generic_error_raises_500(self):
         exec_svc = AsyncMock()
         exec_svc.execute_workflow_async.side_effect = RuntimeError("boom")
-        body = RunRequest(workflow="workflows/test.yaml")
+        body = RunRequest(workflow="research")
         from fastapi import HTTPException
 
         with pytest.raises(HTTPException) as exc_info:
@@ -269,6 +293,58 @@ class TestHandleGetRunEvents:
         assert result["events"] == []
 
 
+class TestHandleListStuckRuns:
+    @pytest.mark.asyncio
+    async def test_returns_stuck_runs(self):
+        exec_svc = AsyncMock()
+        exec_svc.find_stuck_executions.return_value = [
+            {"execution_id": "exec-1", "status": "running"}
+        ]
+        result = await _handle_list_stuck_runs(exec_svc, threshold_minutes=60)
+        assert result["total"] == 1
+        exec_svc.find_stuck_executions.assert_called_once_with(3600)
+
+    @pytest.mark.asyncio
+    async def test_empty_result(self):
+        exec_svc = AsyncMock()
+        exec_svc.find_stuck_executions.return_value = []
+        result = await _handle_list_stuck_runs(exec_svc)
+        assert result == {"runs": [], "total": 0}
+
+
+class TestHandleResumeRun:
+    @pytest.mark.asyncio
+    async def test_resume_success(self):
+        exec_svc = AsyncMock()
+        exec_svc.resume_workflow.return_value = "exec-new-123"
+        result = await _handle_resume_run(exec_svc, "exec-old-1")
+        assert result["status"] == "resumed"
+        assert result["original_execution_id"] == "exec-old-1"
+        assert result["new_execution_id"] == "exec-new-123"
+
+    @pytest.mark.asyncio
+    async def test_resume_not_found(self):
+        exec_svc = AsyncMock()
+        exec_svc.resume_workflow.side_effect = ValueError("Run not found")
+        from fastapi import HTTPException
+
+        with pytest.raises(HTTPException) as exc_info:
+            await _handle_resume_run(exec_svc, "missing")
+        assert exc_info.value.status_code == 400
+
+    @pytest.mark.asyncio
+    async def test_resume_wrong_status(self):
+        exec_svc = AsyncMock()
+        exec_svc.resume_workflow.side_effect = ValueError(
+            "Only 'stuck' or 'failed' runs can be resumed"
+        )
+        from fastapi import HTTPException
+
+        with pytest.raises(HTTPException) as exc_info:
+            await _handle_resume_run(exec_svc, "exec-running")
+        assert exc_info.value.status_code == 400
+
+
 class TestHandleValidateWorkflow:
     def test_path_traversal(self):
         result = _handle_validate_workflow(
@@ -318,7 +394,7 @@ class TestServerRouterNoAuth:
         exec_svc = AsyncMock()
         exec_svc.execute_workflow_async.return_value = "exec-1"
         client = _make_client(exec_svc)
-        resp = client.post("/api/runs", json={"workflow": "workflows/test.yaml"})
+        resp = client.post("/api/runs", json={"workflow": "research"})
         assert resp.status_code == 200
         assert resp.json()["execution_id"] == "exec-1"
 
@@ -343,6 +419,22 @@ class TestServerRouterNoAuth:
         resp = client.post("/api/runs/r1/cancel")
         assert resp.status_code == 200
 
+    def test_list_stuck_runs(self):
+        exec_svc = AsyncMock()
+        exec_svc.find_stuck_executions.return_value = []
+        client = _make_client(exec_svc)
+        resp = client.get("/api/runs/stuck")
+        assert resp.status_code == 200
+        assert resp.json() == {"runs": [], "total": 0}
+
+    def test_resume_run(self):
+        exec_svc = AsyncMock()
+        exec_svc.resume_workflow.return_value = "exec-new-1"
+        client = _make_client(exec_svc)
+        resp = client.post("/api/runs/r1/resume")
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "resumed"
+
     def test_validate_workflow(self):
         exec_svc = MagicMock()
         client = _make_client(exec_svc)
@@ -358,12 +450,55 @@ class TestServerRouterNoAuth:
         assert resp.status_code == 200
 
 
+class TestNoauthDefaultTenant:
+    """Tests that noauth routes pass tenant_id='default' to handlers."""
+
+    def test_noauth_create_run_passes_default_tenant(self):
+        exec_svc = AsyncMock()
+        exec_svc.execute_workflow_async.return_value = "exec-1"
+        client = _make_client(exec_svc)
+        client.post("/api/runs", json={"workflow": "research"})
+        exec_svc.execute_workflow_async.assert_called_once()
+        call_kwargs = exec_svc.execute_workflow_async.call_args
+        assert call_kwargs.kwargs.get("tenant_id") == "default"
+
+    def test_noauth_list_runs_passes_default_tenant(self):
+        exec_svc = AsyncMock()
+        exec_svc.list_executions.return_value = []
+        client = _make_client(exec_svc)
+        client.get("/api/runs")
+        # list_runs logs tenant_id but doesn't filter yet — verify it was passed
+        # by checking the handler was called (list_executions was invoked)
+        exec_svc.list_executions.assert_called_once()
+
+    def test_noauth_get_run_passes_default_tenant(self):
+        exec_svc = AsyncMock()
+        exec_svc.get_execution_status.return_value = {"id": "r1", "status": "done"}
+        client = _make_client(exec_svc)
+        resp = client.get("/api/runs/r1")
+        assert resp.status_code == 200
+
+    def test_noauth_cancel_run_passes_default_tenant(self):
+        exec_svc = AsyncMock()
+        exec_svc.cancel_execution.return_value = True
+        client = _make_client(exec_svc)
+        resp = client.post("/api/runs/r1/cancel")
+        assert resp.status_code == 200
+
+    def test_noauth_resume_run_passes_default_tenant(self):
+        exec_svc = AsyncMock()
+        exec_svc.resume_workflow.return_value = "exec-new-1"
+        client = _make_client(exec_svc)
+        resp = client.post("/api/runs/r1/resume")
+        assert resp.status_code == 200
+
+
 class TestServerRouterWithAuth:
     def test_create_run_auth(self):
         exec_svc = AsyncMock()
         exec_svc.execute_workflow_async.return_value = "exec-1"
         client = _make_client(exec_svc, auth_enabled=True)
-        resp = client.post("/api/runs", json={"workflow": "workflows/test.yaml"})
+        resp = client.post("/api/runs", json={"workflow": "research"})
         assert resp.status_code == 200
 
     def test_list_runs_auth(self):

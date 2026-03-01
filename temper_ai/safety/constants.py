@@ -11,11 +11,6 @@ from temper_ai.shared.constants.durations import SECONDS_PER_DAY
 
 RATE_LIMIT_PRIORITY = 85  # Prevent resource exhaustion before other policies
 SECRET_DETECTION_PRIORITY = 95  # High priority for secrets
-AUTONOMY_POLICY_PRIORITY = 98  # Before all other policies
-FORBIDDEN_OPS_PRIORITY = 90
-FILE_ACCESS_PRIORITY = 80
-BLAST_RADIUS_PRIORITY = 70
-CONFIG_CHANGE_PRIORITY = 60
 
 # ============================================================================
 # Validation Limits
@@ -61,33 +56,10 @@ MAX_EXCLUDED_PATHS = 1000
 SECRET_DETECTION_SESSION_KEY_SIZE = 32  # bytes
 
 # ============================================================================
-# Token Bucket / Rate Limiting
-# ============================================================================
-
-DEFAULT_REFILL_PERIOD = 1.0  # seconds
-MAX_TOKEN_BUCKET_CAPACITY = 100000
-
-# ============================================================================
 # Approval Workflow
 # ============================================================================
 
 DEFAULT_APPROVAL_TIMEOUT_SECONDS = 3600  # 1 hour
-DEFAULT_REQUIRED_APPROVERS = 1
-MAX_APPROVAL_HISTORY = 1000
-
-# ============================================================================
-# File Access
-# ============================================================================
-
-DEFAULT_MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
-DEFAULT_MAX_PATH_DEPTH = 20
-
-# ============================================================================
-# Rollback
-# ============================================================================
-
-MAX_ROLLBACK_HISTORY = 100
-ROLLBACK_COOLDOWN_SECONDS = 60
 
 # ============================================================================
 # Violation Dictionary Keys
@@ -124,9 +96,6 @@ SHORT_CIRCUIT_KEY = "short_circuit"
 # ============================================================================
 
 # Rate limiting config keys
-MAX_PER_SECOND_KEY = "max_per_second"
-MAX_PER_MINUTE_KEY = "max_per_minute"
-MAX_PER_HOUR_KEY = "max_per_hour"
 MAX_TOKENS_KEY = "max_tokens"
 REFILL_RATE_KEY = "refill_rate"
 RATE_LIMITS_KEY = "rate_limits"
@@ -168,7 +137,6 @@ FIELD_KEY = "field"
 PERCENT_KEY = "percent"
 
 # Rollback keys
-ERROR_KEY = "error"
 STRATEGY_PREFIX = "strategy_"
 EXISTED_SUFFIX = "_existed"
 

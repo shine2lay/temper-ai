@@ -14,7 +14,7 @@ import { StudioCanvas } from './StudioCanvas';
 import { PropertyPanel } from './PropertyPanel';
 import { StudioLoadDialog } from './StudioLoadDialog';
 
-const LEFT_WIDTH = 200;
+const LEFT_WIDTH = 240;
 const RIGHT_WIDTH = 320;
 const COLLAPSED_WIDTH = 28;
 
@@ -149,7 +149,7 @@ function EmptyCanvasOverlay() {
     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
       <div className="text-center">
         <p className="text-sm text-temper-text-muted">
-          Drag stages from the left panel to get started
+          Drag stages from the left panel, or use the + buttons to create new ones
         </p>
         <p className="text-xs text-temper-text-dim mt-1">
           or load an existing workflow

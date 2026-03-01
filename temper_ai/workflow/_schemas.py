@@ -22,6 +22,15 @@ class WorkflowStageReference(BaseModel):
         description="Deprecated: use stage_ref instead",
     )
     depends_on: list[str] = Field(default_factory=list)
+    input_map: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Maps stage input names to data sources. "
+            "Format: 'workflow.<field>' or '<stage>.<field>' or "
+            "'<stage>.structured.<field>'. When provided, the stage's "
+            "own source refs are ignored in favor of this workflow-level wiring."
+        ),
+    )
     optional: bool = False
     skip_if: str | None = None
     conditional: bool = False
@@ -132,6 +141,12 @@ class WorkflowConfigOptions(BaseModel):
     """Workflow configuration options."""
 
     max_iterations: int = Field(default=SMALL_ITEM_LIMIT, gt=0)
+    max_parallel_stages: int = Field(
+        default=4,
+        gt=0,
+        le=32,
+        description="Max concurrent stages at the same DAG depth",
+    )
     convergence_detection: bool = False
     timeout_seconds: int = Field(default=SECONDS_PER_HOUR, gt=0)
     budget: BudgetConfig = Field(default_factory=BudgetConfig)
@@ -240,6 +255,20 @@ class WorkflowConfigInner(BaseModel):
     )
     error_handling: WorkflowErrorHandlingConfig
     metadata: MetadataConfig = Field(default_factory=MetadataConfig)
+
+    # Profile references (name-based, resolved at config load time)
+    safety_profile: str | None = Field(
+        default=None,
+        description="Reference to a reusable safety profile by name",
+    )
+    observability_profile: str | None = Field(
+        default=None,
+        description="Reference to a reusable observability profile by name",
+    )
+    budget_profile: str | None = Field(
+        default=None,
+        description="Reference to a reusable budget profile by name",
+    )
 
     @field_validator("autonomous_loop", mode="before")
     @classmethod

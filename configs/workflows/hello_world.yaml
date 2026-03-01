@@ -37,6 +37,7 @@ workflow:
   error_handling:
     on_stage_failure: halt
     max_stage_retries: 1
+    escalation_policy: LogAndContinue
 
   tags:
     - hello-world

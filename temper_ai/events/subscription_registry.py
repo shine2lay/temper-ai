@@ -4,8 +4,6 @@ import logging
 import uuid
 from typing import Any
 
-from sqlmodel import select
-
 logger = logging.getLogger(__name__)
 
 
@@ -66,90 +64,3 @@ class SubscriptionRegistry:
             session.add(subscription)
 
         return sub_id
-
-    def unregister(self, subscription_id: str) -> bool:
-        """Deactivate a subscription.
-
-        Args:
-            subscription_id: ID of the subscription to deactivate.
-
-        Returns:
-            True if found and deactivated, False otherwise.
-        """
-        from temper_ai.events.models import EventSubscription
-
-        if self._session_factory is None:
-            return False
-
-        with self._session_factory() as session:
-            sub = session.get(EventSubscription, subscription_id)
-            if sub is None:
-                return False
-            sub.active = False
-            session.add(sub)
-
-        return True
-
-    def get_for_event(
-        self,
-        event_type: str,
-        source_workflow_id: str | None = None,
-    ) -> list[Any]:
-        """Get active subscriptions matching an event type and optional source.
-
-        Args:
-            event_type: The event type to filter by.
-            source_workflow_id: Optional source workflow ID filter.
-
-        Returns:
-            List of matching EventSubscription records.
-        """
-        from temper_ai.events.models import EventSubscription
-
-        if self._session_factory is None:
-            return []
-
-        with self._session_factory() as session:
-            stmt = select(EventSubscription).where(
-                EventSubscription.event_type == event_type,
-                EventSubscription.active == True,  # noqa: E712
-            )
-            if source_workflow_id:
-                stmt = stmt.where(
-                    EventSubscription.source_workflow_filter == source_workflow_id
-                )
-            return session.exec(stmt).all()
-
-    def load_active(self) -> list[Any]:
-        """Load all currently active subscriptions.
-
-        Returns:
-            List of all active EventSubscription records.
-        """
-        from temper_ai.events.models import EventSubscription
-
-        if self._session_factory is None:
-            return []
-
-        with self._session_factory() as session:
-            stmt = select(EventSubscription).where(
-                EventSubscription.active == True  # noqa: E712
-            )
-            return session.exec(stmt).all()
-
-    def get_by_id(self, subscription_id: str) -> Any | None:
-        """Retrieve a subscription by its ID.
-
-        Args:
-            subscription_id: The subscription UUID string.
-
-        Returns:
-            EventSubscription or None.
-        """
-        from temper_ai.events.models import EventSubscription
-
-        if self._session_factory is None:
-            return None
-
-        with self._session_factory() as session:
-            return session.get(EventSubscription, subscription_id)

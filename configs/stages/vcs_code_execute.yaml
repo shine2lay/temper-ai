@@ -20,24 +20,24 @@ stage:
 
   inputs:
     workspace_path:
-      source: vcs_git_setup.structured.worktree_path
+      type: string
       required: true
     task_assignments:
-      source: vcs_task_split.output
+      type: string
       required: true
     task_specs:
-      source: vcs_task_planning.output
+      type: string
       required: true
     design_output:
-      source: vcs_design.output
+      type: string
       required: false
       default: ""
     quality_gate_output:
-      source: vcs_quality_gate.output
+      type: string
       required: false
       default: ""
     static_check_output:
-      source: vcs_static_check.output
+      type: string
       required: false
       default: ""
 

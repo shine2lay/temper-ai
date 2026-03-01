@@ -235,45 +235,6 @@ class TestValidationResult:
         )
         assert result2.has_blocking_violations() is False
 
-    def test_get_violations_by_severity(self):
-        """Test filtering violations by severity."""
-        violations = [
-            SafetyViolation(
-                policy_name="test",
-                severity=ViolationSeverity.CRITICAL,
-                message="c",
-                action="a",
-                context={},
-            ),
-            SafetyViolation(
-                policy_name="test",
-                severity=ViolationSeverity.HIGH,
-                message="h",
-                action="a",
-                context={},
-            ),
-            SafetyViolation(
-                policy_name="test",
-                severity=ViolationSeverity.HIGH,
-                message="h2",
-                action="a",
-                context={},
-            ),
-        ]
-        result = ValidationResult(
-            valid=False, violations=violations, policy_name="test"
-        )
-
-        critical = result.get_violations_by_severity(ViolationSeverity.CRITICAL)
-        assert len(critical) == 1
-        assert critical[0].message == "c"
-
-        high = result.get_violations_by_severity(ViolationSeverity.HIGH)
-        assert len(high) == 2
-
-        medium = result.get_violations_by_severity(ViolationSeverity.MEDIUM)
-        assert len(medium) == 0
-
 
 # ============================================
 # SAFETY POLICY INTERFACE TESTS

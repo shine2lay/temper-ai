@@ -27,7 +27,6 @@ def _get_pepper() -> str:
 BEARER_PREFIX = "Bearer "
 API_KEY_TOKEN_PREFIX = "tk_"
 API_KEY_RANDOM_BYTES = 24  # secrets.token_urlsafe(24) → 32 chars
-SHA256_HEX_LEN = 64
 KEY_PREFIX_DISPLAY_LEN = 8
 
 # Row indices for the _lookup_api_key SELECT result

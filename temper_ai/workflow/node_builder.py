@@ -163,6 +163,16 @@ class NodeBuilder:
             # Load stage config
             stage_config = self._load_stage_config(stage_name, workflow_config)
 
+            # Inject input_map from workflow reference into state
+            # so InputMapResolver can read it during resolution.
+            input_map = self._find_input_map(stage_name, workflow_config)
+            if input_map:
+                from temper_ai.workflow.context_provider import (
+                    _STAGE_INPUT_MAP_KEY,
+                )
+
+                state_dict[_STAGE_INPUT_MAP_KEY] = input_map
+
             # Get execution mode
             agent_mode = self.get_agent_mode(stage_config)
 
@@ -177,6 +187,9 @@ class NodeBuilder:
                 config_loader=self.config_loader,
                 tool_registry=self.tool_registry,
             )
+
+            # Clean up input_map from state
+            state_dict.pop("_stage_input_map", None)
 
             # Check stage failure and enforce on_stage_failure policy
             self._check_stage_failure(stage_name, result_dict, workflow_config)
@@ -258,6 +271,33 @@ class NodeBuilder:
                     f"Cannot load stage config: {stage_name}"
                 ) from first_err
             return stage_config
+
+    def _find_input_map(
+        self, stage_name: str, workflow_config: Any
+    ) -> dict[str, str] | None:
+        """Extract input_map from workflow stage reference for decoupled I/O.
+
+        Returns the input_map dict if the workflow reference declares one,
+        or None if no input_map is configured.
+        """
+        wf = workflow_config
+        if isinstance(wf, dict):
+            wf = wf.get("workflow", wf)
+        elif hasattr(wf, "workflow"):
+            wf = wf.workflow
+
+        stages = (
+            wf.get("stages", []) if isinstance(wf, dict) else getattr(wf, "stages", [])
+        )
+        for entry in stages:
+            if isinstance(entry, dict):
+                if entry.get("name") == stage_name:
+                    im = entry.get("input_map")
+                    return im if im else None
+            elif hasattr(entry, "name") and entry.name == stage_name:
+                im = getattr(entry, "input_map", None)
+                return im if im else None
+        return None
 
     def _find_stage_ref(self, stage_name: str, workflow_config: Any) -> str | None:
         """Extract stage config name from stage_ref in the workflow config.

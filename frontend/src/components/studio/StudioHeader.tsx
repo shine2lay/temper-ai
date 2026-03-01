@@ -6,7 +6,7 @@ import { useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useDesignStore } from '@/store/designStore';
-import { useSaveWorkflow, useValidateWorkflow, useRunWorkflow } from '@/hooks/useStudioAPI';
+import { useSaveWorkflowDB, useValidateWorkflow, useRunWorkflow } from '@/hooks/useStudioAPI';
 import { Button } from '@/components/ui/button';
 
 interface StudioHeaderProps {
@@ -25,7 +25,7 @@ export function StudioHeader({ onOpenLoadDialog }: StudioHeaderProps) {
   const canUndo = useDesignStore((s) => s.canUndo);
   const canRedo = useDesignStore((s) => s.canRedo);
 
-  const saveMutation = useSaveWorkflow();
+  const saveMutation = useSaveWorkflowDB();
   const validateMutation = useValidateWorkflow();
   const runMutation = useRunWorkflow();
 

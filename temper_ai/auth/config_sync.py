@@ -13,6 +13,7 @@ from temper_ai.storage.database.models_tenancy import (
     VALID_CONFIG_TYPES,
     AgentConfigDB,
     StageConfigDB,
+    ToolConfigDB,
     WorkflowConfigDB,
 )
 
@@ -22,6 +23,7 @@ _CONFIG_TYPE_DB_MODEL: dict[str, Any] = {
     "workflow": WorkflowConfigDB,
     "stage": StageConfigDB,
     "agent": AgentConfigDB,
+    "tool": ToolConfigDB,
 }
 
 
@@ -61,6 +63,8 @@ def _parse_yaml(yaml_content: str) -> dict[str, Any]:
 
 def _validate_with_pydantic(config_type: str, data: dict[str, Any]) -> None:
     """Validate data against the Pydantic model. Raises ValueError on failure."""
+    if config_type not in ("workflow", "stage", "agent"):
+        return  # No Pydantic model for tool configs; store as-is
     model_cls = _get_pydantic_model(config_type)
     try:
         model_cls.model_validate(data)
@@ -150,10 +154,10 @@ class ConfigSyncService:
         self,
         tenant_id: str,
         config_type: str,
-    ) -> dict:
+    ) -> list[dict[str, Any]]:
         """List all configs of the given type for the tenant.
 
-        Returns dict with 'configs' list and 'total' count.
+        Returns list of config summary dicts.
         Raises ValueError on invalid config_type.
         """
         _validate_config_type(config_type)
@@ -161,13 +165,162 @@ class ConfigSyncService:
 
         with get_session() as session:
             records = session.query(db_model_cls).filter_by(tenant_id=tenant_id).all()
-            configs: list[dict[str, Any]] = [
+            return [
                 {
                     "name": r.name,
-                    "version": r.version,
+                    "version": getattr(r, "version", None),
+                    "description": getattr(r, "description", ""),
                     "created_at": r.created_at.isoformat(),
                     "updated_at": r.updated_at.isoformat(),
                 }
                 for r in records
             ]
-        return {"configs": configs, "total": len(configs)}
+
+    def get_config(
+        self,
+        tenant_id: str,
+        config_type: str,
+        name: str,
+    ) -> dict[str, Any] | None:
+        """Get a single config by (tenant_id, config_type, name).
+
+        Returns dict with id, name, version, description, config_data, timestamps,
+        or None if not found.
+        """
+        _validate_config_type(config_type)
+        db_model_cls = _CONFIG_TYPE_DB_MODEL[config_type]
+
+        with get_session() as session:
+            record = (
+                session.query(db_model_cls)
+                .filter_by(tenant_id=tenant_id, name=name)
+                .first()
+            )
+            if record is None:
+                return None
+            return {
+                "id": record.id,
+                "name": record.name,
+                "version": getattr(record, "version", None),
+                "description": getattr(record, "description", ""),
+                "config_data": record.config_data,
+                "created_at": record.created_at.isoformat(),
+                "updated_at": record.updated_at.isoformat(),
+            }
+
+    def create_config(
+        self,
+        tenant_id: str,
+        user_id: str,
+        config_type: str,
+        name: str,
+        config_data: dict[str, Any],
+        description: str = "",
+    ) -> dict[str, Any]:
+        """Create a new config in the database.
+
+        Returns dict with id, name, version.
+        Raises ValueError on invalid config_type.
+        """
+        _validate_config_type(config_type)
+        db_model_cls = _CONFIG_TYPE_DB_MODEL[config_type]
+
+        record_id = str(uuid.uuid4())
+        record = db_model_cls(
+            id=record_id,
+            tenant_id=tenant_id,
+            name=name,
+            description=description,
+            config_data=config_data,
+            created_by=user_id,
+            updated_by=user_id,
+        )
+
+        with get_session() as session:
+            session.add(record)
+            version = getattr(record, "version", 1)
+
+        logger.info(
+            "Config created",
+            extra={"config_type": config_type, "name": name},
+        )
+        return {"id": record_id, "name": name, "version": version}
+
+    def update_config(
+        self,
+        tenant_id: str,
+        user_id: str,
+        config_type: str,
+        name: str,
+        description: str | None = None,
+        config_data: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Update an existing config.
+
+        Returns dict with id, name, version.
+        Raises KeyError if not found, ValueError on invalid config_type.
+        """
+        _validate_config_type(config_type)
+        db_model_cls = _CONFIG_TYPE_DB_MODEL[config_type]
+
+        with get_session() as session:
+            record = (
+                session.query(db_model_cls)
+                .filter_by(tenant_id=tenant_id, name=name)
+                .first()
+            )
+            if record is None:
+                raise KeyError(
+                    f"{config_type} config '{name}' not found for tenant '{tenant_id}'."
+                )
+
+            if config_data is not None:
+                record.config_data = config_data
+            if description is not None:
+                record.description = description
+            if hasattr(record, "version"):
+                record.version = record.version + 1
+            record.updated_by = user_id
+            record.updated_at = utcnow()
+            # Capture values before session closes
+            result = {
+                "id": record.id,
+                "name": record.name,
+                "version": getattr(record, "version", None),
+            }
+
+        logger.info(
+            "Config updated",
+            extra={"config_type": config_type, "name": name},
+        )
+        return result
+
+    def delete_config(
+        self,
+        tenant_id: str,
+        config_type: str,
+        name: str,
+    ) -> None:
+        """Delete a config by (tenant_id, config_type, name).
+
+        Raises KeyError if not found, ValueError on invalid config_type.
+        """
+        _validate_config_type(config_type)
+        db_model_cls = _CONFIG_TYPE_DB_MODEL[config_type]
+
+        with get_session() as session:
+            record = (
+                session.query(db_model_cls)
+                .filter_by(tenant_id=tenant_id, name=name)
+                .first()
+            )
+            if record is None:
+                raise KeyError(
+                    f"{config_type} config '{name}' not found for tenant '{tenant_id}'."
+                )
+            session.delete(record)
+
+        logger.info(
+            "Config deleted",
+            extra={"config_type": config_type, "name": name},
+        )

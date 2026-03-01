@@ -237,17 +237,17 @@ class TestNativeExecutionEngine:
 
 
 class TestEngineRegistration:
-    """Test that native engine is registered in EngineRegistry."""
+    """Test that dynamic engine is registered in EngineRegistry."""
 
-    def test_native_in_registry(self):
-        """Test native engine is available via registry."""
+    def test_dynamic_in_registry(self):
+        """Test dynamic engine is available via registry."""
         from temper_ai.workflow.engine_registry import EngineRegistry
 
         registry = EngineRegistry()
-        assert "native" in registry.list_engines()
+        assert "dynamic" in registry.list_engines()
 
-    def test_get_native_engine(self):
-        """Test creating native engine via registry."""
+    def test_get_dynamic_engine(self):
+        """Test creating dynamic engine via registry."""
         from temper_ai.workflow.engine_registry import EngineRegistry
 
         registry = EngineRegistry()
@@ -255,7 +255,7 @@ class TestEngineRegistration:
             "temper_ai.workflow.engines.dynamic_engine.create_safety_stack"
         ) as mock:
             mock.return_value = MagicMock()
-            engine = registry.get_engine("native")
+            engine = registry.get_engine("dynamic")
         assert isinstance(engine, NativeExecutionEngine)
 
     def test_config_based_selection(self):
@@ -263,7 +263,7 @@ class TestEngineRegistration:
         from temper_ai.workflow.engine_registry import EngineRegistry
 
         registry = EngineRegistry()
-        config = {"workflow": {"engine": "native", "stages": ["s1"]}}
+        config = {"workflow": {"engine": "dynamic", "stages": ["s1"]}}
 
         with patch(
             "temper_ai.workflow.engines.dynamic_engine.create_safety_stack"

@@ -9,10 +9,8 @@ import pytest
 
 from temper_ai.shared.utils.exceptions import ToolRegistryError
 from temper_ai.tools._registry_helpers import (
-    _discover_tool_class,
     _load_tool_class,
     _parse_implementation_path,
-    _try_register_tool,
     get_error_suggestion,
     get_latest_version,
     validate_tool_interface,
@@ -246,74 +244,22 @@ class TestGetLatestVersion:
 
 
 # ===========================================================================
-# TestTryRegisterTool
+# TestStaticRegistry (replaces removed auto-discovery tests)
 # ===========================================================================
 
 
-class TestTryRegisterTool:
-    def _make_registry(self):
+class TestStaticRegistryIntegration:
+    def test_lazy_get_instantiates_from_tool_classes(self):
         from temper_ai.tools.registry import ToolRegistry
 
-        return ToolRegistry()
+        registry = ToolRegistry()
+        tool = registry.get("Calculator")
+        assert tool is not None
+        assert tool.name == "Calculator"
 
-    def test_successful_registration(self):
-        registry = self._make_registry()
-        discovered: dict = {}
-        success, skip_info = _try_register_tool(ConcreteTool, registry, discovered)
-        assert success is True
-        assert skip_info is None
-        assert any("concrete" in k for k in discovered)
-
-    def test_duplicate_tool_raises_registry_error_with_skip_info(self):
-        registry = self._make_registry()
-        # First registration succeeds
-        _try_register_tool(ConcreteTool, registry, {})
-        # Second registration of the same class + version returns skip info
-        success, skip_info = _try_register_tool(ConcreteTool, registry, {})
-        assert success is False
-        assert skip_info is not None
-        tool_name, _reason = skip_info
-        assert tool_name == "ConcreteTool"
-
-    def test_constructor_requires_arguments_returns_skip_info(self):
-        registry = self._make_registry()
-        success, skip_info = _try_register_tool(RequiresArgsTool, registry, {})
-        assert success is False
-        assert skip_info is not None
-        _tool_name, reason = skip_info
-        assert (
-            "Constructor requires arguments" in reason or "requires" in reason.lower()
-        )
-
-
-# ===========================================================================
-# TestDiscoverToolClass
-# ===========================================================================
-
-
-class TestDiscoverToolClass:
-    def _make_registry(self):
+    def test_has_checks_tool_classes(self):
         from temper_ai.tools.registry import ToolRegistry
 
-        return ToolRegistry()
-
-    def test_valid_tool_registered(self):
-        registry = self._make_registry()
-        discovered: dict = {}
-        reg, disc, skipped = _discover_tool_class(ConcreteTool, registry, discovered)
-        assert reg == 1
-        assert disc == 1
-        assert skipped == []
-
-    def test_invalid_tool_not_registered_with_skip_info(self):
-        class NotATool:
-            pass
-
-        registry = self._make_registry()
-        discovered: dict = {}
-        reg, disc, skipped = _discover_tool_class(NotATool, registry, discovered)
-        assert reg == 0
-        assert disc == 1
-        assert len(skipped) == 1
-        tool_name, _reason = skipped[0]
-        assert tool_name == "NotATool"
+        registry = ToolRegistry()
+        assert registry.has("Bash")
+        assert not registry.has("NonExistent")

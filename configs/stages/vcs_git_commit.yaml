@@ -15,13 +15,13 @@ stage:
 
   inputs:
     workspace_path:
-      source: vcs_git_setup.structured.worktree_path
+      type: string
       required: true
     repo_path:
-      source: workflow.workspace_path
+      type: string
       required: true
     suggestion_text:
-      source: vcs_work_discovery.output
+      type: string
       required: false
       default: ""
 

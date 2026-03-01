@@ -12,20 +12,7 @@ stage:
 
   # Agent configuration (execute in parallel)
   agents:
-    - name: market_researcher
-      config_path: configs/agents/simple_researcher.yaml
-      role: market_analysis
-      description: "Analyzes market trends, size, growth"
-
-    - name: competitor_researcher
-      config_path: configs/agents/simple_researcher.yaml
-      role: competitor_analysis
-      description: "Analyzes competitive landscape"
-
-    - name: user_researcher
-      config_path: configs/agents/simple_researcher.yaml
-      role: user_research
-      description: "Analyzes user needs and pain points"
+    - simple_researcher
 
   # Parallel execution settings (M3)
   execution:
@@ -36,8 +23,7 @@ stage:
   # Error handling for parallel execution
   error_handling:
     min_successful_agents: 2  # Need at least 2/3 to succeed
-    on_agent_failure: continue  # Continue with successful agents
-    on_stage_failure: halt  # But halt if <2 succeed
+    on_agent_failure: continue_with_remaining  # Continue with successful agents
 
   # Collaboration configuration (M3)
   collaboration:
@@ -62,10 +48,10 @@ stage:
       - depth
 
   outputs:
-    - synthesized_decision  # Consensus output
-    - agent_outputs  # Individual outputs
-    - synthesis_metadata  # Votes, confidence, conflicts
-    - agent_metrics  # Tokens, cost, duration per agent
+    synthesized_decision: "Consensus output"
+    agent_outputs: "Individual outputs"
+    synthesis_metadata: "Votes, confidence, conflicts"
+    agent_metrics: "Tokens, cost, duration per agent"
 
   # Metadata
   tags:

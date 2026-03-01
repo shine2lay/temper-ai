@@ -23,7 +23,6 @@ DEFAULT_THRESHOLDS_MS = {
 DEFAULT_BUFFER_SIZE = 100  # Default number of records to buffer before flush
 DEFAULT_BUFFER_TIMEOUT_SECONDS = 5.0  # Flush after N seconds even if buffer not full
 MAX_RETRY_ATTEMPTS = 3  # Maximum number of retry attempts for failed operations
-RETRY_DELAY_SECONDS = 1.0  # Delay between retry attempts
 
 # ============================================================================
 # Alerting Thresholds
@@ -34,47 +33,18 @@ MAX_ALERT_HISTORY = 1000
 DEFAULT_PERSISTED_ALERTS_LIMIT = 50  # Default limit for DB alert queries
 DEFAULT_ERROR_RATE_ALERT_THRESHOLD = 0.1  # 10% error rate
 DEFAULT_ERROR_SPIKE_THRESHOLD = 10  # Same error 10+ times triggers spike alert
-DEFAULT_LATENCY_ALERT_MULTIPLIER = 2.0  # 2x normal latency
-
-# ============================================================================
-# Display & Formatting
-# ============================================================================
-
-DEFAULT_TRACE_DEPTH = 10  # Max trace depth for visualization
-MAX_TRACE_DISPLAY_ITEMS = 50
-DEFAULT_INDENT_SIZE = 2  # Spaces per indent level
-SANITIZATION_MAX_LENGTH = 10000  # Max string length before truncation
-SANITIZATION_REPLACEMENT = "***"
 
 # ============================================================================
 # Dead Letter Queue (DLQ)
 # ============================================================================
 
 DEFAULT_DLQ_MAX_SIZE = 10000
-DEFAULT_DLQ_RETRY_INTERVAL = 60  # seconds
-MAX_DLQ_RETRY_ATTEMPTS = 5
 
 # ============================================================================
 # Merit Score Service
 # ============================================================================
 
-DEFAULT_MERIT_DECAY_RATE = 0.95
 DEFAULT_MERIT_WINDOW_DAYS = 30
-MIN_OBSERVATIONS_FOR_MERIT = 5
-
-# ============================================================================
-# Decision Tracker
-# ============================================================================
-
-MAX_DECISION_HISTORY = 10000
-DECISION_CONTEXT_MAX_LENGTH = 5000
-
-# ============================================================================
-# SQL Backend
-# ============================================================================
-
-DEFAULT_QUERY_LIMIT = 1000
-DEFAULT_AGGREGATION_INTERVAL_SECONDS = 60
 
 # ============================================================================
 # Logging Separators
@@ -85,15 +55,12 @@ LOG_MESSAGE_METRICS_CREATED = " metrics created for period "
 
 
 # ============================================================================
-# Lifecycle Events (pre-execution pipeline)
+# Pipeline Phase Events (pre-execution pipeline observability)
 # ============================================================================
 
-EVENT_CONFIG_LOADED = "config_loaded"
-EVENT_LIFECYCLE_ADAPTED = "lifecycle_adapted"
-EVENT_WORKFLOW_COMPILING = "workflow_compiling"
-EVENT_WORKFLOW_COMPILED = "workflow_compiled"
-EVENT_VALIDATION_PASSED = "validation_passed"
-EVENT_VALIDATION_FAILED = "validation_failed"
+EVENT_PIPELINE_PHASE_START = "pipeline.phase_start"
+EVENT_PIPELINE_PHASE_END = "pipeline.phase_end"
+EVENT_PIPELINE_PHASE_FAIL = "pipeline.phase_fail"
 
 # ============================================================================
 # Database Field Names

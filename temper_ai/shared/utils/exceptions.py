@@ -345,8 +345,13 @@ class ConfigValidationError(ConfigurationError):
     """Raised when configuration fails validation."""
 
     def __init__(
-        self, message: str, validation_errors: list[Any] | None = None, **kwargs: Any
+        self,
+        message: str,
+        validation_errors: list[Any] | None = None,
+        config_errors: list[Any] | None = None,
+        **kwargs: Any,
     ) -> None:
+        self.config_errors = config_errors or []
         extra_data = kwargs.get("extra_data", {})
         if validation_errors:
             extra_data["validation_errors"] = validation_errors

@@ -15,7 +15,7 @@ stage:
 
   inputs:
     input_text:
-      source: workflow.input_text
+      type: string
       required: true
 
   outputs:

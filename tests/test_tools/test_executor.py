@@ -272,98 +272,6 @@ class TestToolExecutor:
         assert result.success is True
         assert result.result == 5
 
-    def test_validate_tool_call(self):
-        """Test validating tool call without executing."""
-        registry = ToolRegistry()
-        calc = CalculatorTool()
-        registry.register(calc)
-        executor = ToolExecutor(registry)
-
-        # Valid call
-        valid, error = executor.validate_tool_call(
-            "calculator", {"operation": "add", "a": 5, "b": 3}
-        )
-        assert valid is True
-        assert error is None
-
-        # Invalid call - missing parameter
-        valid, error = executor.validate_tool_call(
-            "calculator", {"operation": "add", "a": 5}
-        )
-        assert valid is False
-        assert error is not None
-
-        # Invalid call - nonexistent tool
-        valid, error = executor.validate_tool_call("nonexistent", {})
-        assert valid is False
-        assert "not found" in error.lower()
-
-    def test_get_tool_info(self):
-        """Test getting tool information."""
-        registry = ToolRegistry()
-        calc = CalculatorTool()
-        registry.register(calc)
-        executor = ToolExecutor(registry)
-
-        info = executor.get_tool_info("calculator")
-        assert info is not None
-        assert info["name"] == "calculator"
-        assert "description" in info
-        assert "parameters_schema" in info
-        assert "llm_schema" in info
-
-    def test_get_info_for_nonexistent_tool(self):
-        """Test getting info for tool that doesn't exist."""
-        registry = ToolRegistry()
-        executor = ToolExecutor(registry)
-
-        info = executor.get_tool_info("nonexistent")
-        assert info is None
-
-    def test_execute_batch(self):
-        """Test executing multiple tools in batch."""
-        registry = ToolRegistry()
-        calc = CalculatorTool()
-        fast = FastTool()
-        registry.register(calc)
-        registry.register(fast)
-        executor = ToolExecutor(registry, max_workers=10)
-
-        executions = [
-            ("calculator", {"operation": "add", "a": 1, "b": 2}),
-            ("calculator", {"operation": "multiply", "a": 3, "b": 4}),
-            ("fast_tool", {"value": "batch"}),
-        ]
-
-        results = executor.execute_batch(executions)
-        assert len(results) == 3
-        assert results[0].success is True
-        assert results[0].result == 3
-        assert results[1].success is True
-        assert results[1].result == 12
-        assert results[2].success is True
-
-    def test_execute_batch_with_failures(self):
-        """Test batch execution with some failures."""
-        registry = ToolRegistry()
-        calc = CalculatorTool()
-        failing = FailingTool()
-        registry.register(calc)
-        registry.register(failing)
-        executor = ToolExecutor(registry, max_workers=10)
-
-        executions = [
-            ("calculator", {"operation": "add", "a": 1, "b": 2}),
-            ("failing_tool", {}),
-            ("calculator", {"operation": "multiply", "a": 3, "b": 4}),
-        ]
-
-        results = executor.execute_batch(executions)
-        assert len(results) == 3
-        assert results[0].success is True
-        assert results[1].success is False
-        assert results[2].success is True
-
     def test_context_manager(self):
         """Test using executor as context manager."""
         registry = ToolRegistry()
@@ -598,38 +506,6 @@ class TestTimeoutComprehensive:
             assert "timed out" in results[2].error.lower()
         finally:
             executor.shutdown(wait=True)
-
-    @pytest.mark.timeout(30)
-    @pytest.mark.timeout(15)
-    def test_timeout_during_batch_execution(self):
-        """Test timeout handling during batch execution."""
-        registry = ToolRegistry()
-        slow = SlowTool()
-        fast = FastTool()
-        registry.register(slow)
-        registry.register(fast)
-        executor = ToolExecutor(registry, max_workers=10)
-
-        try:
-            executions = [
-                ("slow_tool", {"delay": 3}),  # Will timeout
-                ("fast_tool", {"value": "test"}),  # Will succeed
-                ("slow_tool", {"delay": 3}),  # Will timeout
-            ]
-
-            results = executor.execute_batch(executions, timeout=1)
-
-            assert len(results) == 3
-            # First should timeout
-            assert results[0].success is False
-            assert "timed out" in results[0].error.lower()
-            # Second should succeed
-            assert results[1].success is True
-            # Third should timeout
-            assert results[2].success is False
-            assert "timed out" in results[2].error.lower()
-        finally:
-            executor.shutdown(wait=True, cancel_futures=True)
 
     @pytest.mark.timeout(30)
     def test_timeout_accuracy_stress_test(self):

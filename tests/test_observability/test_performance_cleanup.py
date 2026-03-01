@@ -240,18 +240,3 @@ class TestMemoryCleanup:
 
         assert removed == 3
         assert len(tracker.metrics) == 5
-
-    def test_reset_clears_all_metrics_including_timestamps(self):
-        """Test that reset() clears all metrics."""
-        tracker = PerformanceTracker()
-
-        # Add some operations
-        tracker.record("op1", 100.0)
-        tracker.record("op2", 200.0)
-
-        assert len(tracker.metrics) == 2
-
-        # Reset should clear everything
-        tracker.reset()
-
-        assert len(tracker.metrics) == 0

@@ -4,7 +4,6 @@ Provides centralized registry for:
 - Registering policies by action type
 - Global policies (apply to all actions)
 - Priority-based policy ordering
-- Dynamic policy registration/unregistration
 
 Example:
     >>> registry = PolicyRegistry()
@@ -15,7 +14,6 @@ Example:
 
 import builtins
 import threading
-from typing import Any
 
 from temper_ai.safety.interfaces import SafetyPolicy
 
@@ -27,7 +25,6 @@ class PolicyRegistry:
     - Action-specific policies (e.g., file_write, git_commit)
     - Global policies (apply to all actions)
     - Priority-based ordering (highest priority first)
-    - Dynamic registration/unregistration
 
     Example:
         >>> registry = PolicyRegistry()
@@ -113,74 +110,6 @@ class PolicyRegistry:
         """
         return sorted(self._policy_mappings.keys())
 
-    def list(self) -> list[str]:
-        """Get names of all registered policies (Registry Protocol method).
-
-        Returns:
-            Sorted list of policy names
-        """
-        return self.list_policies()
-
-    def list_all(self) -> builtins.list[str]:
-        """DEPRECATED: Use list() instead.
-
-        Get names of all registered policies (backward compatibility).
-
-        Returns:
-            Sorted list of policy names
-        """
-        return self.list_policies()
-
-    def _remove_global_policy(self, policy_name: str) -> None:
-        """Remove a global policy by name."""
-        self._global_policies = [
-            p for p in self._global_policies if p.name != policy_name
-        ]
-
-    def _remove_action_specific_policy(
-        self, policy_name: str, action_types: set[str]
-    ) -> None:
-        """Remove an action-specific policy by name."""
-        for action_type in action_types:
-            if action_type not in self._policies:
-                continue
-
-            self._policies[action_type] = [
-                p for p in self._policies[action_type] if p.name != policy_name
-            ]
-
-            # Remove empty action type entries
-            if not self._policies[action_type]:
-                del self._policies[action_type]
-
-    def unregister_policy(self, policy_name: str) -> bool:
-        """Remove policy by name.
-
-        Args:
-            policy_name: Name of policy to remove
-
-        Returns:
-            True if policy was found and removed, False otherwise
-
-        Example:
-            >>> registry.unregister_policy("file_access_policy")
-        """
-        with self._lock:
-            # Guard clause: policy not found
-            if policy_name not in self._policy_mappings:
-                return False
-
-            action_types = self._policy_mappings[policy_name]
-
-            # Remove based on policy type
-            if not action_types:
-                self._remove_global_policy(policy_name)
-            else:
-                self._remove_action_specific_policy(policy_name, action_types)
-
-            del self._policy_mappings[policy_name]
-            return True
-
     def get_policies_for_action(self, action_type: str) -> builtins.list[SafetyPolicy]:
         """Get all policies applicable to an action type.
 
@@ -212,108 +141,10 @@ class PolicyRegistry:
 
             return policies
 
-    def get_policy(self, policy_name: str) -> SafetyPolicy | None:
-        """Get policy instance by name.
-
-        Args:
-            policy_name: Name of policy to retrieve
-
-        Returns:
-            SafetyPolicy instance if found, None otherwise
-
-        Example:
-            >>> policy = registry.get_policy("file_access_policy")
-        """
-        # Search global policies
-        for policy in self._global_policies:
-            if policy.name == policy_name:
-                return policy
-
-        # Search action-specific policies
-        for _action_type, policies in self._policies.items():
-            for policy in policies:
-                if policy.name == policy_name:
-                    return policy
-
-        return None
-
-    def get(self, name: str) -> SafetyPolicy | None:
-        """Get policy instance by name (Registry Protocol method).
-
-        This is an alias for get_policy() to satisfy the Registry Protocol.
-
-        Args:
-            name: Name of policy to retrieve
-
-        Returns:
-            SafetyPolicy instance if found, None otherwise
-        """
-        return self.get_policy(name)
-
-    def is_registered(self, policy_name: str) -> bool:
-        """Check if policy is registered.
-
-        Args:
-            policy_name: Name of policy to check
-
-        Returns:
-            True if policy is registered, False otherwise
-
-        Example:
-            >>> if registry.is_registered("file_access_policy"):
-            ...     print("Policy is active")
-        """
-        return policy_name in self._policy_mappings
-
-    def get_action_types(self) -> builtins.list[str]:
-        """Get all action types with registered policies.
-
-        Returns:
-            List of action type identifiers
-
-        Example:
-            >>> action_types = registry.get_action_types()
-            >>> print(f"Protected actions: {action_types}")
-        """
-        return list(self._policies.keys())
-
-    def get_policies_for_action_by_priority(
-        self, action_type: str
-    ) -> dict[int, builtins.list[SafetyPolicy]]:
-        """Get policies grouped by priority level.
-
-        Useful for understanding policy execution order and identifying
-        which policies have P0/P1/P2 priority.
-
-        Args:
-            action_type: Action type identifier
-
-        Returns:
-            Dictionary mapping priority level to list of policies
-
-        Example:
-            >>> by_priority = registry.get_policies_for_action_by_priority("file_write")
-            >>> for priority, policies in sorted(by_priority.items(), reverse=True):
-            ...     print(f"Priority {priority}: {[p.name for p in policies]}")
-        """
-        policies = self.get_policies_for_action(action_type)
-        grouped: dict[int, list[SafetyPolicy]] = {}
-
-        for policy in policies:
-            priority = policy.priority
-            if priority not in grouped:
-                grouped[priority] = []
-            grouped[priority].append(policy)
-
-        return grouped
-
     def clear(self) -> None:
         """Remove all registered policies.
 
         Useful for testing or complete reconfiguration.
-
-        Example:
-            >>> registry.clear()
         """
         with self._lock:
             self._policies.clear()
@@ -325,41 +156,8 @@ class PolicyRegistry:
 
         Returns:
             Total policy count (including global)
-
-        Example:
-            >>> count = registry.policy_count()
         """
         return len(self._policy_mappings)
-
-    def count(self) -> int:
-        """Get total number of registered policies (Registry Protocol method).
-
-        This is an alias for policy_count() to satisfy the Registry Protocol.
-
-        Returns:
-            Total policy count (including global)
-        """
-        return self.policy_count()
-
-    def get_statistics(self) -> dict[str, Any]:
-        """Get registry statistics.
-
-        Returns:
-            Dictionary with statistics about registered policies
-
-        Example:
-            >>> stats = registry.get_statistics()
-            >>> print(f"Total policies: {stats['total_policies']}")
-        """
-        return {
-            "total_policies": len(self._policy_mappings),
-            "global_policies": len(self._global_policies),
-            "action_types": len(self._policies),
-            "policies_by_action_type": {
-                action_type: len(policies)
-                for action_type, policies in self._policies.items()
-            },
-        }
 
     def __repr__(self) -> str:
         """String representation."""

@@ -4,7 +4,8 @@
  * and provides save/validate mutations.
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useStudioConfig, useSaveAgent, useValidateAgent } from './useStudioAPI';
+import { useValidateAgent, useSaveAgentDB } from './useStudioAPI';
+import { useConfig } from './useConfigAPI';
 
 /* ---------- Form state types ---------- */
 
@@ -660,21 +661,23 @@ export interface ValidateResult {
 }
 
 export function useAgentEditor(agentName: string | null) {
-  const { data, isLoading, error } = useStudioConfig('agents', agentName);
-  const saveMutation = useSaveAgent();
+  const { data: rawData, isLoading, error } = useConfig('agent', agentName);
+  const saveMutation = useSaveAgentDB();
   const validateMutation = useValidateAgent();
 
   const [config, setConfig] = useState<AgentFormState>(defaultFormState);
   const initialRef = useRef<string>('');
+  const isExistingRef = useRef(false);
 
-  // Populate form when server data arrives
+  // Populate form when server data arrives — unwrap config_data from ConfigDetail
   useEffect(() => {
-    if (data) {
-      const parsed = parseConfig(data);
+    if (rawData) {
+      isExistingRef.current = true;
+      const parsed = parseConfig((rawData.config_data ?? rawData) as Record<string, unknown>);
       setConfig(parsed);
       initialRef.current = JSON.stringify(parsed);
     }
-  }, [data]);
+  }, [rawData]);
 
   const isDirty = JSON.stringify(config) !== initialRef.current;
 
@@ -690,8 +693,9 @@ export function useAgentEditor(agentName: string | null) {
     await saveMutation.mutateAsync({
       name: config.name,
       data: payload,
-      isNew: false,
+      isNew: !isExistingRef.current,
     });
+    isExistingRef.current = true;
     initialRef.current = JSON.stringify(config);
   }, [config, saveMutation]);
 

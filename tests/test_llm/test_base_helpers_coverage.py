@@ -1,6 +1,6 @@
 """Extended coverage tests for temper_ai/llm/providers/_base_helpers.py.
 
-Covers: HTTP client creation (sync/async), cache helpers, response handling,
+Covers: HTTP client creation (sync/async), response handling,
 cleanup helpers, streaming helpers, context manager mixin, sync backoff,
 bind_callable_attributes.
 """
@@ -8,7 +8,6 @@ bind_callable_attributes.
 from __future__ import annotations
 
 import asyncio
-import json
 import threading
 import time
 from typing import Any
@@ -19,8 +18,6 @@ import pytest
 from temper_ai.llm.providers._base_helpers import (
     LLMContextManagerMixin,
     bind_callable_attributes,
-    cache_response,
-    check_cache,
     close_async,
     close_sync,
     execute_and_parse,
@@ -155,113 +152,6 @@ class TestGetOrCreateAsyncClientSync:
 
 
 # ---------------------------------------------------------------------------
-# check_cache
-# ---------------------------------------------------------------------------
-
-
-class TestCheckCache:
-    def test_no_cache_returns_none(self) -> None:
-        instance = _make_llm_instance(_cache=None)
-        key, resp = check_cache(instance, "hello", None)
-        assert key is None
-        assert resp is None
-
-    def test_cache_miss(self) -> None:
-        mock_cache = MagicMock()
-        mock_cache.generate_key.return_value = "test-key"
-        mock_cache.get.return_value = None
-        instance = _make_llm_instance(_cache=mock_cache)
-        key, resp = check_cache(instance, "hello", None)
-        assert key == "test-key"
-        assert resp is None
-
-    def test_cache_hit(self) -> None:
-        cached_data = json.dumps(
-            {
-                "content": "cached response",
-                "model": "test-model",
-                "provider": "test",
-                "prompt_tokens": 10,
-                "completion_tokens": 20,
-                "total_tokens": 30,
-                "latency_ms": 100,
-                "finish_reason": "stop",
-            }
-        )
-        mock_cache = MagicMock()
-        mock_cache.generate_key.return_value = "test-key"
-        mock_cache.get.return_value = cached_data
-        instance = _make_llm_instance(_cache=mock_cache)
-        key, resp = check_cache(instance, "hello", None)
-        assert key == "test-key"
-        assert resp is not None
-        assert resp.content == "cached response"
-
-    def test_cache_corrupted_entry(self) -> None:
-        mock_cache = MagicMock()
-        mock_cache.generate_key.return_value = "test-key"
-        mock_cache.get.return_value = "not-valid-json{{{{"
-        instance = _make_llm_instance(_cache=mock_cache)
-        key, resp = check_cache(instance, "hello", None)
-        assert key == "test-key"
-        assert resp is None
-
-    def test_cache_with_context(self) -> None:
-        mock_cache = MagicMock()
-        mock_cache.generate_key.return_value = "ctx-key"
-        mock_cache.get.return_value = None
-        instance = _make_llm_instance(_cache=mock_cache)
-        ctx = MagicMock()
-        ctx.user_id = "user-1"
-        ctx.session_id = "sess-1"
-        ctx.metadata = {"tenant_id": "tenant-1"}
-        key, resp = check_cache(instance, "hello", ctx)
-        assert key == "ctx-key"
-
-
-# ---------------------------------------------------------------------------
-# cache_response
-# ---------------------------------------------------------------------------
-
-
-class TestCacheResponse:
-    def test_stores_response_in_cache(self) -> None:
-        mock_cache = MagicMock()
-        instance = _make_llm_instance(_cache=mock_cache)
-        from temper_ai.llm.providers.base import LLMResponse
-
-        response = LLMResponse(
-            content="test",
-            model="m",
-            provider="p",
-            prompt_tokens=10,
-            completion_tokens=20,
-            total_tokens=30,
-            latency_ms=50,
-            finish_reason="stop",
-        )
-        cache_response(instance, "key-1", response)
-        mock_cache.set.assert_called_once()
-
-    def test_no_op_without_cache(self) -> None:
-        instance = _make_llm_instance(_cache=None)
-        from temper_ai.llm.providers.base import LLMResponse
-
-        response = LLMResponse(content="x", model="m", provider="p")
-        # Should not raise
-        cache_response(instance, "key", response)
-
-    def test_no_op_without_cache_key(self) -> None:
-        mock_cache = MagicMock()
-        instance = _make_llm_instance(_cache=mock_cache)
-        from temper_ai.llm.providers.base import LLMResponse
-
-        response = LLMResponse(content="x", model="m", provider="p")
-        cache_response(instance, None, response)
-        mock_cache.set.assert_not_called()
-
-
-# ---------------------------------------------------------------------------
 # execute_and_parse
 # ---------------------------------------------------------------------------
 
@@ -270,14 +160,14 @@ class TestExecuteAndParse:
     def test_successful_response(self) -> None:
         from temper_ai.llm.providers.base import LLMResponse
 
-        instance = _make_llm_instance(_cache=None)
+        instance = _make_llm_instance()
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {"choices": [{"message": {"content": "hi"}}]}
         instance._parse_response.return_value = LLMResponse(
             content="hi", model="m", provider="p"
         )
-        result = execute_and_parse(instance, mock_resp, time.time(), None)
+        result = execute_and_parse(instance, mock_resp, time.time())
         assert result.content == "hi"
 
     def test_error_response(self) -> None:
@@ -286,7 +176,7 @@ class TestExecuteAndParse:
         mock_resp.status_code = 500
         mock_resp.text = "Internal Server Error"
         with pytest.raises(LLMError):
-            execute_and_parse(instance, mock_resp, time.time(), None)
+            execute_and_parse(instance, mock_resp, time.time())
 
 
 # ---------------------------------------------------------------------------
@@ -366,31 +256,31 @@ class TestCloseAsync:
 
 class TestMakeStreamingCallImpl:
     def test_no_rate_limiter(self) -> None:
-        instance = _make_llm_instance(_rate_limiter=None, _cache=None)
-        key, cached = make_streaming_call_impl(instance, "prompt", None)
-        assert cached is None
+        instance = _make_llm_instance(_rate_limiter=None)
+        # Should not raise
+        make_streaming_call_impl(instance, "prompt", None)
 
     def test_rate_limiter_blocks(self) -> None:
         rl = MagicMock()
         rl.check_and_record_rate_limit.return_value = (False, "too fast")
-        instance = _make_llm_instance(_rate_limiter=rl, _cache=None)
+        instance = _make_llm_instance(_rate_limiter=rl)
         with pytest.raises(LLMRateLimitError):
             make_streaming_call_impl(instance, "prompt", None)
 
     def test_rate_limiter_allows(self) -> None:
         rl = MagicMock()
         rl.check_and_record_rate_limit.return_value = (True, None)
-        instance = _make_llm_instance(_rate_limiter=rl, _cache=None)
-        key, cached = make_streaming_call_impl(instance, "prompt", None)
-        assert cached is None
+        instance = _make_llm_instance(_rate_limiter=rl)
+        # Should not raise
+        make_streaming_call_impl(instance, "prompt", None)
 
     def test_rate_limiter_with_context_agent_id(self) -> None:
         rl = MagicMock()
         rl.check_and_record_rate_limit.return_value = (True, None)
-        instance = _make_llm_instance(_rate_limiter=rl, _cache=None)
+        instance = _make_llm_instance(_rate_limiter=rl)
         ctx = MagicMock()
         ctx.agent_id = "agent-1"
-        key, cached = make_streaming_call_impl(instance, "prompt", ctx)
+        make_streaming_call_impl(instance, "prompt", ctx)
         rl.check_and_record_rate_limit.assert_called_with("agent-1")
 
 
@@ -403,16 +293,14 @@ class TestExecuteStreamingImpl:
     def test_successful_stream(self) -> None:
         from temper_ai.llm.providers.base import LLMResponse
 
-        instance = _make_llm_instance(_cache=None)
+        instance = _make_llm_instance()
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_result = LLMResponse(content="stream result", model="m", provider="p")
         instance._consume_stream.return_value = mock_result
         on_chunk = MagicMock()
 
-        result = execute_streaming_impl(
-            instance, time.time(), mock_response, on_chunk, None
-        )
+        result = execute_streaming_impl(instance, time.time(), mock_response, on_chunk)
         assert result.content == "stream result"
         mock_response.close.assert_called_once()
 
@@ -424,7 +312,7 @@ class TestExecuteStreamingImpl:
         on_chunk = MagicMock()
 
         with pytest.raises(LLMRateLimitError):
-            execute_streaming_impl(instance, time.time(), mock_response, on_chunk, None)
+            execute_streaming_impl(instance, time.time(), mock_response, on_chunk)
         mock_response.close.assert_called_once()
 
 
@@ -438,7 +326,7 @@ class TestExecuteStreamingAsyncImpl:
     async def test_successful_async_stream(self) -> None:
         from temper_ai.llm.providers.base import LLMResponse
 
-        instance = _make_llm_instance(_cache=None)
+        instance = _make_llm_instance()
         mock_response = AsyncMock()
         mock_response.status_code = 200
         mock_result = LLMResponse(content="async stream", model="m", provider="p")
@@ -446,7 +334,7 @@ class TestExecuteStreamingAsyncImpl:
         on_chunk = MagicMock()
 
         result = await execute_streaming_async_impl(
-            instance, time.time(), mock_response, on_chunk, None
+            instance, time.time(), mock_response, on_chunk
         )
         assert result.content == "async stream"
         mock_response.aclose.assert_called_once()
@@ -461,7 +349,7 @@ class TestExecuteStreamingAsyncImpl:
 
         with pytest.raises(LLMAuthenticationError):
             await execute_streaming_async_impl(
-                instance, time.time(), mock_response, on_chunk, None
+                instance, time.time(), mock_response, on_chunk
             )
         mock_response.aclose.assert_called_once()
 
@@ -490,8 +378,6 @@ class TestBindCallableAttributes:
         bind_callable_attributes(instance)
         # After binding, these should be set on the instance
         assert hasattr(instance, "_build_bearer_auth_headers")
-        assert hasattr(instance, "_check_cache")
-        assert hasattr(instance, "_cache_response")
         assert hasattr(instance, "_execute_and_parse")
         assert hasattr(instance, "_make_streaming_call_impl")
         assert hasattr(instance, "_execute_streaming_impl")

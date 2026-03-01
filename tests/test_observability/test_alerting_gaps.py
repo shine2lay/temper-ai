@@ -3,8 +3,8 @@
 Covers features added in the observability hardening milestone:
 - Alert cooldown (duplicate suppression within DEFAULT_ALERT_COOLDOWN_SECONDS)
 - Alert history cap at MAX_ALERT_HISTORY
-- DB persistence of alerts via _persist_alert / get_persisted_alerts
-- Halt callback registration and invocation
+- DB persistence of alerts via _persist_alert
+- Halt callback invocation
 """
 
 from datetime import UTC, datetime, timedelta
@@ -37,9 +37,9 @@ def _make_manager_with_rule(
 ) -> AlertManager:
     """Return an AlertManager with defaults disabled and one custom rule."""
     mgr = AlertManager()
-    for name in list(mgr.rules.keys()):
-        mgr.disable_rule(name)
-    mgr.clear_history()
+    for rule in mgr.rules.values():
+        rule.enabled = False
+    mgr.alert_history.clear()
     mgr.add_rule(
         AlertRule(
             name=rule_name,
@@ -152,7 +152,7 @@ class TestAlertHistoryCap:
 
 
 class TestAlertPersistence:
-    """Tests for _persist_alert and get_persisted_alerts."""
+    """Tests for _persist_alert."""
 
     @patch("temper_ai.observability.alerting.logger")
     def test_persist_alert_writes_to_db(self, _mock_logger):
@@ -205,39 +205,6 @@ class TestAlertPersistence:
         assert alert.metric_value == 1.0
         assert alert.threshold == 0.5
 
-    def test_get_persisted_alerts_queries_db(self):
-        """get_persisted_alerts returns records from DB."""
-        mock_record = MagicMock()
-        mock_record.rule_name = "some_rule"
-
-        mock_query = MagicMock()
-        mock_query.order_by.return_value = mock_query
-        mock_query.limit.return_value = mock_query
-        mock_query.all.return_value = [mock_record]
-
-        mock_session = MagicMock()
-        mock_session.query.return_value = mock_query
-
-        mock_cm = MagicMock()
-        mock_cm.__enter__ = Mock(return_value=mock_session)
-        mock_cm.__exit__ = Mock(return_value=False)
-
-        with patch("temper_ai.storage.database.get_session", return_value=mock_cm):
-            results = AlertManager.get_persisted_alerts(limit=10)
-
-        assert len(results) == 1
-        assert results[0].rule_name == "some_rule"
-
-    def test_get_persisted_alerts_handles_error(self):
-        """get_persisted_alerts returns empty list on error."""
-        with patch(
-            "temper_ai.storage.database.get_session",
-            side_effect=RuntimeError("db down"),
-        ):
-            results = AlertManager.get_persisted_alerts()
-
-        assert results == []
-
 
 # ---------------------------------------------------------------------------
 # Halt callback tests
@@ -245,14 +212,7 @@ class TestAlertPersistence:
 
 
 class TestHaltCallback:
-    """Tests for halt callback registration and invocation."""
-
-    def test_register_halt_callback(self):
-        """register_halt_callback stores the callback."""
-        mgr = AlertManager()
-        cb = Mock()
-        mgr.register_halt_callback(cb)
-        assert mgr._halt_callback is cb
+    """Tests for halt callback invocation."""
 
     @patch("temper_ai.observability.alerting.logger")
     def test_halt_callback_called_on_halt_workflow(self, mock_logger):
@@ -262,7 +222,7 @@ class TestHaltCallback:
             severity=AlertSeverity.CRITICAL,
         )
         cb = Mock()
-        mgr.register_halt_callback(cb)
+        mgr._halt_callback = cb
 
         mgr.check_metric("cost_usd", 15.0, context={"workflow_id": "wf-42"})
 

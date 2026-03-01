@@ -6,10 +6,6 @@ from temper_ai.shared.constants.durations import (
     MILLISECONDS_PER_SECOND,
     SECONDS_PER_MINUTE,
 )
-from temper_ai.shared.constants.sizes import BYTES_PER_KB
-
-# Text truncation default max length
-DEFAULT_TRUNCATE_MAX_LENGTH = 50
 
 
 def format_duration(seconds: float | None) -> str:
@@ -160,78 +156,3 @@ def status_to_icon(status: str) -> str:
         "halted": "⏸",
     }
     return icon_map.get(status, "?")
-
-
-def format_percentage(value: float | None) -> str:
-    """Format float as percentage.
-
-    Args:
-        value: Float between 0 and 1
-
-    Returns:
-        Formatted percentage string
-
-    Examples:
-        >>> format_percentage(0.856)
-        '85.6%'
-        >>> format_percentage(None)
-        'N/A'
-    """
-    if value is None:
-        return "N/A"
-    return f"{value * 100:.1f}%"
-
-
-def truncate_text(
-    text: str, max_length: int = DEFAULT_TRUNCATE_MAX_LENGTH, suffix: str = "..."
-) -> str:
-    """Truncate text to maximum length.
-
-    Args:
-        text: Text to truncate
-        max_length: Maximum length
-        suffix: Suffix to add when truncated
-
-    Returns:
-        Truncated text
-
-    Examples:
-        >>> truncate_text("This is a very long text that needs truncation", 20)
-        'This is a very lo...'
-        >>> truncate_text("Short", 20)
-        'Short'
-    """
-    if len(text) <= max_length:
-        return text
-    return text[: max_length - len(suffix)] + suffix
-
-
-def format_bytes(bytes_count: int | None) -> str:
-    """Format byte count in human-readable form.
-
-    Args:
-        bytes_count: Number of bytes
-
-    Returns:
-        Formatted byte string (e.g., "1.5 KB", "2.3 MB")
-
-    Examples:
-        >>> format_bytes(1500)
-        '1.5 KB'
-        >>> format_bytes(2500000)
-        '2.4 MB'
-        >>> format_bytes(None)
-        'N/A'
-    """
-    if bytes_count is None:
-        return "N/A"
-
-    units = ["B", "KB", "MB", "GB", "TB"]
-    size = float(bytes_count)
-    unit_idx = 0
-
-    while size >= BYTES_PER_KB and unit_idx < len(units) - 1:
-        size /= BYTES_PER_KB
-        unit_idx += 1
-
-    return f"{size:.1f} {units[unit_idx]}"

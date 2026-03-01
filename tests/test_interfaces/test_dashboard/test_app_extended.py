@@ -17,38 +17,23 @@ from temper_ai.interfaces.dashboard.app import (
 class TestInitServerComponents:
     def test_non_server_mode(self):
         result = _init_server_components("test")
-        assert result == (None, None, None, None)
+        assert result == (None, None, None)
 
     @patch("temper_ai.interfaces.server.lifecycle.GracefulShutdownManager")
-    @patch("temper_ai.interfaces.server.run_store.RunStore")
-    def test_server_mode(self, mock_rs, mock_gsm):
+    def test_server_mode(self, mock_gsm):
         mock_gsm.return_value = MagicMock()
-        mock_rs.return_value = MagicMock()
 
         result = _init_server_components("server")
-        shutdown_mgr, run_store, mining, analysis = result
+        shutdown_mgr, mining, analysis = result
         assert shutdown_mgr is not None
-        assert run_store is not None
 
     @patch("temper_ai.interfaces.server.lifecycle.GracefulShutdownManager")
     def test_dev_mode(self, mock_gsm):
         mock_gsm.return_value = MagicMock()
 
         result = _init_server_components("dev")
-        shutdown_mgr, _, _, _ = result
+        shutdown_mgr, _, _ = result
         assert shutdown_mgr is not None
-
-    @patch("temper_ai.interfaces.server.lifecycle.GracefulShutdownManager")
-    @patch(
-        "temper_ai.interfaces.server.run_store.RunStore",
-        side_effect=RuntimeError("fail"),
-    )
-    def test_run_store_failure(self, mock_rs, mock_gsm):
-        mock_gsm.return_value = MagicMock()
-
-        result = _init_server_components("server")
-        _, run_store, _, _ = result
-        assert run_store is None
 
 
 class TestRegisterAuthRoutes:

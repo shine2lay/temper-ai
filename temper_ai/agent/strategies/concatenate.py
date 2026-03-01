@@ -109,6 +109,10 @@ class ConcatenateStrategy(CollaborationStrategy):
             "supports_streaming": False,
         }
 
+    def curate_agent_context(self, **kwargs: Any) -> str | None:
+        """Parallel agents work independently — no additional context."""
+        return None
+
     def get_metadata(self) -> dict[str, Any]:
         """Return strategy metadata for registry introspection."""
         return {

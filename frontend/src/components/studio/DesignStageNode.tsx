@@ -204,7 +204,7 @@ function AgentMiniCard({
           e.stopPropagation();
           onSelect();
         }}
-        className="text-left rounded border border-temper-border/50 bg-temper-surface/50 hover:border-temper-accent/40 hover:bg-temper-accent/5 transition-colors px-1.5 py-1 min-w-0"
+        className="text-left rounded border border-temper-border/50 bg-temper-surface/50 hover:border-temper-accent/40 hover:bg-temper-accent/5 transition-all duration-150 hover:shadow-md px-1.5 py-1 min-w-0"
         title={`${summary.name} — ${summary.provider}/${summary.model}`}
       >
         <div className="flex items-center gap-1 min-w-0">
@@ -236,7 +236,7 @@ function AgentMiniCard({
         e.stopPropagation();
         onSelect();
       }}
-      className="text-left rounded border border-temper-border/50 bg-temper-surface/50 hover:border-temper-accent/40 hover:bg-temper-accent/5 transition-colors p-1.5 min-w-0"
+      className="text-left rounded border border-temper-border/50 bg-temper-surface/50 hover:border-temper-accent/40 hover:bg-temper-accent/5 transition-all duration-150 hover:shadow-md p-1.5 min-w-0"
       title={`Edit agent: ${summary.name}`}
     >
       {/* Row 1: Name + type badge + version */}
@@ -788,9 +788,12 @@ export function DesignStageNode({ data }: NodeProps) {
 
   return (
     <div
-      className="rounded-lg cursor-pointer group relative"
+      className={`rounded-lg cursor-pointer group relative ${isSelected ? 'ring-2 ring-temper-accent/40 shadow-lg shadow-temper-accent/10' : ''}`}
       style={{
         border: `2px solid ${isSelected ? stageColor : 'var(--color-temper-border)'}`,
+        borderTopColor: stageColor,
+        borderTopWidth: '3px',
+        borderTopStyle: 'solid',
         backgroundColor: 'var(--color-temper-panel)',
         width: '380px',
       }}
@@ -873,12 +876,12 @@ export function DesignStageNode({ data }: NodeProps) {
       </div>
 
       {/* ---- Agents section with collaboration layout ---- */}
-      {agentCount > 0 && (
-        <NodeSection
-          title="Agents"
-          badge={`${agentCount}`}
-          defaultOpen
-        >
+      <NodeSection
+        title="Agents"
+        badge={agentCount > 0 ? `${agentCount}` : undefined}
+        defaultOpen
+      >
+        {agentCount > 0 ? (
           <CollaborationLayout
             agents={agents}
             agentSummaries={agentSummaries}
@@ -889,8 +892,14 @@ export function DesignStageNode({ data }: NodeProps) {
             isCompact={isCompact}
             selectAgent={selectAgent}
           />
-        </NodeSection>
-      )}
+        ) : (
+          <div className="border border-dashed border-temper-border/50 rounded px-2 py-1.5 text-center">
+            <span className="text-[10px] text-temper-text-dim">
+              No agents assigned — click to add
+            </span>
+          </div>
+        )}
+      </NodeSection>
 
       {/* ---- I/O section ---- */}
       {(inputEntries.length > 0 || outputs.length > 0) && (

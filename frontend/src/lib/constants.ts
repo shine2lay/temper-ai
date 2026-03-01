@@ -57,6 +57,11 @@ export const DAG_FIT_PADDING = 0.05;
 export const WS_INITIAL_DELAY_MS = 1000;
 export const WS_MAX_DELAY_MS = 30000;
 export const WS_BACKOFF_MULTIPLIER = 2;
+export const WS_MAX_RECONNECT_ATTEMPTS = 20;
+
+/* WebSocket close codes (match backend constants) */
+export const WS_CLOSE_AUTH_FAILED = 4001;
+export const WS_CLOSE_WORKFLOW_TERMINAL = 4100;
 
 /* Polling intervals */
 export const AGENT_DETAIL_REFETCH_MS = 2000;

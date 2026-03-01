@@ -9,19 +9,9 @@ _normalize_sql) have been removed. Use Alembic instead.
 
 import logging
 
-from sqlalchemy import text
-
-from temper_ai.shared.constants.limits import DEFAULT_MIN_ITEMS
-from temper_ai.shared.utils.exceptions import SecurityError
 from temper_ai.storage.database.manager import DatabaseManager, get_database
 
 logger = logging.getLogger(__name__)
-
-
-class MigrationSecurityError(SecurityError):
-    """Raised when migration validation fails security checks."""
-
-    pass
 
 
 def create_schema(database_url: str | None = None) -> None:
@@ -60,27 +50,3 @@ def reset_schema(database_url: str | None = None) -> None:
     """
     drop_schema(database_url)
     create_schema(database_url)
-
-
-def check_schema_version(db_manager: DatabaseManager) -> str | None:
-    """Check the current schema version.
-
-    Args:
-        db_manager: Database manager instance.
-
-    Returns:
-        Schema version string or None if not tracked.
-    """
-    try:
-        with db_manager.session() as session:
-            result = session.execute(
-                text(
-                    "SELECT version FROM schema_version ORDER BY applied_at DESC LIMIT :limit"
-                ),
-                {"limit": DEFAULT_MIN_ITEMS},
-            )
-            row = result.fetchone()
-            return row[0] if row else None
-    except Exception:
-        # Table doesn't exist yet
-        return None

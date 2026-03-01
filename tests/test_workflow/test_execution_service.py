@@ -15,7 +15,9 @@ from temper_ai.workflow.execution_service import (
 
 @pytest.fixture
 def mock_backend():
-    return MagicMock()
+    backend = MagicMock()
+    backend.get_workflow.return_value = None
+    return backend
 
 
 @pytest.fixture
@@ -24,22 +26,13 @@ def mock_event_bus():
 
 
 @pytest.fixture
-def mock_run_store():
-    store = MagicMock()
-    store.get_run.return_value = None
-    store.list_runs.return_value = []
-    return store
-
-
-@pytest.fixture
-def service(mock_backend, mock_event_bus, mock_run_store, tmp_path):
+def service(mock_backend, mock_event_bus, tmp_path):
     """Create a service with mocked dependencies."""
     return WorkflowExecutionService(
         backend=mock_backend,
         event_bus=mock_event_bus,
         config_root=str(tmp_path),
         max_workers=2,
-        run_store=mock_run_store,
     )
 
 
@@ -85,78 +78,57 @@ class TestGetStatusSync:
         assert result["execution_id"] == "exec-abc"
         assert result["status"] == "running"
 
-    def test_falls_back_to_run_store(self, service, mock_run_store):
-        stored = MagicMock()
-        stored.to_dict.return_value = {
-            "execution_id": "exec-xyz",
-            "status": "completed",
-        }
-        mock_run_store.get_run.return_value = stored
-
+    def test_returns_none_for_unknown_id_no_store(self, service):
         result = service.get_status_sync("exec-xyz")
-        assert result is not None
-        assert result["status"] == "completed"
+        assert result is None
 
 
 class TestSubmitWorkflow:
-    @patch("temper_ai.workflow.runtime.WorkflowRuntime")
-    def test_returns_execution_id(self, mock_rt_cls, service, tmp_path):
+    @patch("temper_ai.workflow.config_loader.ConfigLoader")
+    def test_returns_execution_id(self, mock_loader_cls, service, tmp_path):
         """submit_workflow should return an execution ID immediately."""
-        mock_rt = MagicMock()
-        mock_rt.load_config.return_value = ({"workflow": {"name": "test"}}, None)
-        mock_rt_cls.return_value = mock_rt
-
-        # Create dummy workflow file
-        wf = tmp_path / "test.yaml"
-        wf.write_text("workflow:\n  name: test\n")
+        mock_loader = MagicMock()
+        mock_loader.load_workflow.return_value = {"workflow": {"name": "test"}}
+        mock_loader_cls.return_value = mock_loader
 
         with patch.object(service, "_execute_workflow_in_runner"):
-            exec_id = service.submit_workflow("test.yaml", input_data={"a": 1})
+            exec_id = service.submit_workflow("test", input_data={"a": 1})
 
         assert exec_id.startswith("exec-")
         assert exec_id in service._executions
 
-    @patch("temper_ai.workflow.runtime.WorkflowRuntime")
-    def test_tracks_future(self, mock_rt_cls, service, tmp_path):
+    @patch("temper_ai.workflow.config_loader.ConfigLoader")
+    def test_tracks_future(self, mock_loader_cls, service, tmp_path):
         """submit_workflow should store a future for the execution."""
-        mock_rt = MagicMock()
-        mock_rt.load_config.return_value = ({"workflow": {"name": "test"}}, None)
-        mock_rt_cls.return_value = mock_rt
-
-        wf = tmp_path / "test.yaml"
-        wf.write_text("workflow:\n  name: test\n")
+        mock_loader = MagicMock()
+        mock_loader.load_workflow.return_value = {"workflow": {"name": "test"}}
+        mock_loader_cls.return_value = mock_loader
 
         with patch.object(service, "_execute_workflow_in_runner"):
-            exec_id = service.submit_workflow("test.yaml")
+            exec_id = service.submit_workflow("test")
 
         assert exec_id in service._futures
 
-    @patch("temper_ai.workflow.runtime.WorkflowRuntime")
-    def test_custom_run_id(self, mock_rt_cls, service, tmp_path):
+    @patch("temper_ai.workflow.config_loader.ConfigLoader")
+    def test_custom_run_id(self, mock_loader_cls, service, tmp_path):
         """submit_workflow with run_id should use it as prefix."""
-        mock_rt = MagicMock()
-        mock_rt.load_config.return_value = ({"workflow": {"name": "test"}}, None)
-        mock_rt_cls.return_value = mock_rt
-
-        wf = tmp_path / "test.yaml"
-        wf.write_text("workflow:\n  name: test\n")
+        mock_loader = MagicMock()
+        mock_loader.load_workflow.return_value = {"workflow": {"name": "test"}}
+        mock_loader_cls.return_value = mock_loader
 
         with patch.object(service, "_execute_workflow_in_runner"):
-            exec_id = service.submit_workflow("test.yaml", run_id="my-run")
+            exec_id = service.submit_workflow("test", run_id="my-run")
 
         assert exec_id == "exec-my-run"
 
 
 class TestExecuteWorkflowSync:
-    @patch("temper_ai.workflow.runtime.WorkflowRuntime")
-    def test_blocks_and_returns_result(self, mock_rt_cls, service, tmp_path):
+    @patch("temper_ai.workflow.config_loader.ConfigLoader")
+    def test_blocks_and_returns_result(self, mock_loader_cls, service, tmp_path):
         """execute_workflow_sync should block until completion."""
-        mock_rt = MagicMock()
-        mock_rt.load_config.return_value = ({"workflow": {"name": "test"}}, None)
-        mock_rt_cls.return_value = mock_rt
-
-        wf = tmp_path / "test.yaml"
-        wf.write_text("workflow:\n  name: test\n")
+        mock_loader = MagicMock()
+        mock_loader.load_workflow.return_value = {"workflow": {"name": "test"}}
+        mock_loader_cls.return_value = mock_loader
 
         mock_runner = MagicMock()
         mock_result = MagicMock()
@@ -169,19 +141,16 @@ class TestExecuteWorkflowSync:
             "temper_ai.interfaces.server.workflow_runner.WorkflowRunner",
             return_value=mock_runner,
         ):
-            result = service.execute_workflow_sync("test.yaml", input_data={"x": 1})
+            result = service.execute_workflow_sync("test", input_data={"x": 1})
 
         assert result["status"] == "completed"
 
-    @patch("temper_ai.workflow.runtime.WorkflowRuntime")
-    def test_failed_workflow_records_error(self, mock_rt_cls, service, tmp_path):
+    @patch("temper_ai.workflow.config_loader.ConfigLoader")
+    def test_failed_workflow_records_error(self, mock_loader_cls, service, tmp_path):
         """execute_workflow_sync should record failure status."""
-        mock_rt = MagicMock()
-        mock_rt.load_config.return_value = ({"workflow": {"name": "test"}}, None)
-        mock_rt_cls.return_value = mock_rt
-
-        wf = tmp_path / "test.yaml"
-        wf.write_text("workflow:\n  name: test\n")
+        mock_loader = MagicMock()
+        mock_loader.load_workflow.return_value = {"workflow": {"name": "test"}}
+        mock_loader_cls.return_value = mock_loader
 
         mock_runner = MagicMock()
         mock_result = MagicMock()
@@ -194,22 +163,21 @@ class TestExecuteWorkflowSync:
             "temper_ai.interfaces.server.workflow_runner.WorkflowRunner",
             return_value=mock_runner,
         ):
-            result = service.execute_workflow_sync("test.yaml")
+            result = service.execute_workflow_sync("test")
 
         assert result["status"] == "failed"
         assert "boom" in (result.get("error_message") or "").lower()
 
 
 class TestFuturesCleanup:
-    @patch("temper_ai.workflow.runtime.WorkflowRuntime")
-    def test_futures_cleaned_after_sync_execute(self, mock_rt_cls, service, tmp_path):
+    @patch("temper_ai.workflow.config_loader.ConfigLoader")
+    def test_futures_cleaned_after_sync_execute(
+        self, mock_loader_cls, service, tmp_path
+    ):
         """execute_workflow_sync should not leave futures in _futures dict."""
-        mock_rt = MagicMock()
-        mock_rt.load_config.return_value = ({"workflow": {"name": "test"}}, None)
-        mock_rt_cls.return_value = mock_rt
-
-        wf = tmp_path / "test.yaml"
-        wf.write_text("workflow:\n  name: test\n")
+        mock_loader = MagicMock()
+        mock_loader.load_workflow.return_value = {"workflow": {"name": "test"}}
+        mock_loader_cls.return_value = mock_loader
 
         mock_runner = MagicMock()
         mock_result = MagicMock()
@@ -222,7 +190,7 @@ class TestFuturesCleanup:
             "temper_ai.interfaces.server.workflow_runner.WorkflowRunner",
             return_value=mock_runner,
         ):
-            service.execute_workflow_sync("test.yaml")
+            service.execute_workflow_sync("test")
 
         assert len(service._futures) == 0
 
@@ -293,7 +261,6 @@ class TestCancelExecution:
 class TestListExecutions:
     @pytest.mark.asyncio
     async def test_list_from_memory_no_store(self, service):
-        service.run_store = None
         for i, status in enumerate(
             [WorkflowExecutionStatus.RUNNING, WorkflowExecutionStatus.COMPLETED]
         ):
@@ -310,7 +277,6 @@ class TestListExecutions:
 
     @pytest.mark.asyncio
     async def test_list_with_status_filter(self, service):
-        service.run_store = None
         for i, status in enumerate(
             [WorkflowExecutionStatus.RUNNING, WorkflowExecutionStatus.COMPLETED]
         ):
@@ -330,7 +296,6 @@ class TestListExecutions:
     async def test_list_with_offset_limit(self, service):
         from datetime import UTC, datetime
 
-        service.run_store = None
         for i in range(5):
             metadata = WorkflowExecutionMetadata(
                 execution_id=f"exec-pg-{i}",
@@ -343,6 +308,135 @@ class TestListExecutions:
 
         result = await service.list_executions(offset=1, limit=2)
         assert len(result) == 2
+
+
+class TestResumeWorkflow:
+    @pytest.mark.asyncio
+    async def test_resume_no_backend(self, service):
+        """ValueError when no backend configured."""
+        service.backend = None
+        with pytest.raises(
+            ValueError, match="Resume requires an observability backend"
+        ):
+            await service.resume_workflow("exec-123")
+
+    @pytest.mark.asyncio
+    async def test_resume_not_found(self, service, mock_backend):
+        """ValueError for missing run."""
+        mock_backend.get_workflow.return_value = None
+        with pytest.raises(ValueError, match="not found"):
+            await service.resume_workflow("exec-missing")
+
+    @pytest.mark.asyncio
+    async def test_resume_wrong_status(self, service, mock_backend):
+        """ValueError for non-resumable status."""
+        mock_backend.get_workflow.return_value = {"status": "completed"}
+        with pytest.raises(ValueError, match="Only 'stuck' or 'failed'"):
+            await service.resume_workflow("exec-completed")
+
+    @pytest.mark.asyncio
+    async def test_resume_running_status_rejected(self, service, mock_backend):
+        """Running status is not resumable."""
+        mock_backend.get_workflow.return_value = {"status": "running"}
+        with pytest.raises(ValueError, match="Only 'stuck' or 'failed'"):
+            await service.resume_workflow("exec-running")
+
+
+class TestTenantIdThreading:
+    """Tests that tenant_id is threaded through the execution pipeline."""
+
+    @patch("temper_ai.workflow.runtime.WorkflowRuntime")
+    def test_tenant_id_reaches_runner_config(self, mock_rt_cls, service, tmp_path):
+        """tenant_id should reach WorkflowRunnerConfig."""
+        mock_rt = MagicMock()
+        mock_rt.load_config.return_value = ({"workflow": {"name": "test"}}, None)
+        mock_rt_cls.return_value = mock_rt
+
+        wf = tmp_path / "test.yaml"
+        wf.write_text("workflow:\n  name: test\n")
+
+        # Register execution metadata so _execute_workflow_in_runner can find it
+        metadata = WorkflowExecutionMetadata(
+            execution_id="exec-1",
+            workflow_path=str(wf),
+            workflow_name="test",
+            status=WorkflowExecutionStatus.RUNNING,
+        )
+        service._executions["exec-1"] = metadata
+
+        mock_runner = MagicMock()
+        mock_result = MagicMock()
+        mock_result.status = "completed"
+        mock_result.result = {"output": "done"}
+        mock_result.workflow_id = "wf-1"
+        mock_runner.run.return_value = mock_result
+
+        with patch(
+            "temper_ai.interfaces.server.workflow_runner.WorkflowRunner",
+            return_value=mock_runner,
+        ):
+            with patch(
+                "temper_ai.interfaces.server.workflow_runner.WorkflowRunnerConfig",
+            ) as mock_config_cls:
+                mock_config_cls.return_value = MagicMock()
+                service._execute_workflow_in_runner(
+                    str(wf), {"x": 1}, "exec-1", tenant_id="test-tenant"
+                )
+                mock_config_cls.assert_called_once()
+                call_kwargs = mock_config_cls.call_args
+                assert call_kwargs.kwargs.get("tenant_id") == "test-tenant"
+
+    @patch("temper_ai.workflow.runtime.WorkflowRuntime")
+    def test_tenant_id_none_when_not_provided(self, mock_rt_cls, service, tmp_path):
+        """tenant_id defaults to None when not passed."""
+        mock_rt = MagicMock()
+        mock_rt.load_config.return_value = ({"workflow": {"name": "test"}}, None)
+        mock_rt_cls.return_value = mock_rt
+
+        wf = tmp_path / "test.yaml"
+        wf.write_text("workflow:\n  name: test\n")
+
+        # Register execution metadata so _execute_workflow_in_runner can find it
+        metadata = WorkflowExecutionMetadata(
+            execution_id="exec-2",
+            workflow_path=str(wf),
+            workflow_name="test",
+            status=WorkflowExecutionStatus.RUNNING,
+        )
+        service._executions["exec-2"] = metadata
+
+        mock_runner = MagicMock()
+        mock_result = MagicMock()
+        mock_result.status = "completed"
+        mock_result.result = {}
+        mock_result.workflow_id = "wf-1"
+        mock_runner.run.return_value = mock_result
+
+        with patch(
+            "temper_ai.interfaces.server.workflow_runner.WorkflowRunner",
+            return_value=mock_runner,
+        ):
+            with patch(
+                "temper_ai.interfaces.server.workflow_runner.WorkflowRunnerConfig",
+            ) as mock_config_cls:
+                mock_config_cls.return_value = MagicMock()
+                service._execute_workflow_in_runner(str(wf), {}, "exec-2")
+                call_kwargs = mock_config_cls.call_args
+                assert call_kwargs.kwargs.get("tenant_id") is None
+
+    @patch("temper_ai.workflow.config_loader.ConfigLoader")
+    def test_submit_workflow_passes_tenant_id(self, mock_loader_cls, service, tmp_path):
+        """submit_workflow should pass tenant_id to _run_workflow_with_tracking."""
+        mock_loader = MagicMock()
+        mock_loader.load_workflow.return_value = {"workflow": {"name": "test"}}
+        mock_loader_cls.return_value = mock_loader
+
+        with patch.object(service, "_execute_workflow_in_runner"):
+            exec_id = service.submit_workflow(
+                "test", input_data={"a": 1}, tenant_id="my-tenant"
+            )
+
+        assert exec_id.startswith("exec-")
 
 
 class TestShutdown:

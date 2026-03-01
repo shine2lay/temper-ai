@@ -55,7 +55,7 @@ from temper_ai.stage.executors._parallel_quality_gates import (  # noqa: F401
     validate_quality_gates,
 )
 from temper_ai.stage.executors.state_keys import StateKeys
-from temper_ai.workflow.context_provider import ContextResolutionError
+from temper_ai.workflow.context_schemas import ContextResolutionError
 
 logger = logging.getLogger(__name__)
 

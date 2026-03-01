@@ -39,13 +39,19 @@ from temper_ai.agent.strategies.constants import (
     STRATEGY_NAME_CONSENSUS,
     STRATEGY_NAME_DEBATE,
     STRATEGY_NAME_DIALOGUE,
+    STRATEGY_NAME_INTERACTIVE,
 )
 
 logger = logging.getLogger(__name__)
 
 # Valid interaction modes
 VALID_MODES = frozenset(
-    {STRATEGY_NAME_DIALOGUE, STRATEGY_NAME_DEBATE, STRATEGY_NAME_CONSENSUS}
+    {
+        STRATEGY_NAME_DIALOGUE,
+        STRATEGY_NAME_DEBATE,
+        STRATEGY_NAME_CONSENSUS,
+        STRATEGY_NAME_INTERACTIVE,
+    }
 )
 VALID_CONTEXT_STRATEGIES = frozenset({MODE_VALUE_FULL, "recent", "relevant"})
 
@@ -161,6 +167,11 @@ _MODE_DEFAULTS: dict[str, dict[str, Any]] = {
         CONFIG_KEY_CONVERGENCE_THRESHOLD: 1.0,
         CONFIG_KEY_MAX_ROUNDS: 1,
         CONFIG_KEY_MIN_ROUNDS: 1,
+    },
+    STRATEGY_NAME_INTERACTIVE: {
+        CONFIG_KEY_CONVERGENCE_THRESHOLD: 0.85,
+        CONFIG_KEY_MAX_ROUNDS: 12,
+        CONFIG_KEY_MIN_ROUNDS: 2,
     },
 }
 
@@ -374,6 +385,21 @@ class MultiRoundStrategy(CollaborationStrategy):
                     "Build on their insights, identify areas of agreement, "
                     "and refine the collective understanding."
                 )
+        elif self.mode == STRATEGY_NAME_INTERACTIVE:
+            context[CONFIG_KEY_MODE_INSTRUCTION] = (
+                "You are in a turn-taking conversation. Respond directly to what "
+                "the previous speakers said. Build on their points, ask clarifying "
+                "questions, or respectfully disagree with specific reasoning."
+            )
+            if round_number == 0:
+                context[CONFIG_KEY_DEBATE_FRAMING] = (
+                    "Share your initial perspective on the topic."
+                )
+            else:
+                context[CONFIG_KEY_DEBATE_FRAMING] = (
+                    "Address the previous speaker's points specifically. "
+                    "Build on what they said or explain why you see it differently."
+                )
         else:  # consensus
             context[CONFIG_KEY_MODE_INSTRUCTION] = (
                 "Provide your independent assessment. This is a single-round vote."
@@ -414,6 +440,36 @@ class MultiRoundStrategy(CollaborationStrategy):
         result.metadata["strategy"] = f"multi_round_{self.mode}"
         result.metadata["mode"] = self.mode
         return result
+
+    def curate_agent_context(
+        self,
+        agent_name: str,
+        agent_role: str | None = None,
+        prior_outputs: dict[str, Any] | None = None,
+        round_number: int = 0,
+        dialogue_history: list[dict[str, Any]] | None = None,
+    ) -> str | None:
+        """Curate context for multi-round modes.
+
+        - Dialogue/interactive: curated dialogue history
+        - Debate: curated history with adversarial framing
+        - Consensus: no additional context (single-round)
+        """
+        if self.mode == STRATEGY_NAME_CONSENSUS:
+            return None
+
+        if not dialogue_history:
+            return None
+
+        from temper_ai.llm.prompts.dialogue_formatter import format_dialogue_history
+
+        curated = self.curate_dialogue_history(
+            dialogue_history, round_number, agent_name
+        )
+        if not curated:
+            return None
+
+        return format_dialogue_history(curated)
 
     def curate_dialogue_history(
         self,

@@ -7,7 +7,6 @@ Covers:
 - check_required_inputs: none/present/missing
 - resolve_path: absolute/relative/not found
 - create_tracker: factory/bus/none
-- emit_lifecycle_event: None bus no-op, valid bus
 - load_workflow_config: happy path, all error paths
 """
 
@@ -19,7 +18,6 @@ from temper_ai.shared.utils.exceptions import ConfigValidationError
 from temper_ai.workflow._runtime_helpers import (
     check_required_inputs,
     create_tracker,
-    emit_lifecycle_event,
     load_workflow_config,
     resolve_path,
     validate_file_size,
@@ -223,37 +221,6 @@ class TestCreateTracker:
 
 
 # ============================================================================
-# emit_lifecycle_event
-# ============================================================================
-
-
-class TestEmitLifecycleEvent:
-    """Tests for emit_lifecycle_event — None bus no-op, valid bus emits."""
-
-    def test_none_bus_noop(self):
-        """Does nothing when event_bus is None."""
-        # Should not raise
-        emit_lifecycle_event(None, "wf-1", "config_loaded", {"key": "val"})
-
-    def test_valid_bus_emits(self):
-        """Emits ObservabilityEvent on valid bus."""
-        mock_bus = MagicMock()
-        emit_lifecycle_event(mock_bus, "wf-1", "config_loaded", {"key": "val"})
-        mock_bus.emit.assert_called_once()
-        event = mock_bus.emit.call_args[0][0]
-        assert event.event_type == "config_loaded"
-        assert event.workflow_id == "wf-1"
-
-    def test_event_data_passed(self):
-        """Event data dict is included in emitted event."""
-        mock_bus = MagicMock()
-        data = {"stage_count": 3}
-        emit_lifecycle_event(mock_bus, "wf-2", "config_loaded", data)
-        event = mock_bus.emit.call_args[0][0]
-        assert event.data["stage_count"] == 3
-
-
-# ============================================================================
 # load_workflow_config
 # ============================================================================
 
@@ -319,15 +286,6 @@ class TestLoadWorkflowConfig:
         f.write_text("- item1\n- item2\n")
         with pytest.raises(ValueError, match="must be a YAML mapping"):
             load_workflow_config("list.yaml", str(tmp_path), None, "wf-1")
-
-    def test_lifecycle_event_emitted(self, tmp_path):
-        """Emits EVENT_CONFIG_LOADED event on success."""
-        self._write_valid_workflow(tmp_path)
-        mock_bus = MagicMock()
-        load_workflow_config("test.yaml", str(tmp_path), mock_bus, "wf-1")
-        mock_bus.emit.assert_called_once()
-        event = mock_bus.emit.call_args[0][0]
-        assert "workflow_path" in event.data
 
 
 if __name__ == "__main__":

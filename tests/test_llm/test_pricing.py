@@ -1,7 +1,7 @@
 """Tests for temper_ai.llm.pricing module.
 
 Covers PricingManager singleton, path security validation, YAML loading,
-cost calculation, pricing lookups, and health check.
+and cost calculation.
 """
 
 from pathlib import Path
@@ -183,59 +183,6 @@ class TestGetCost:
         """Negative token counts raise ValueError."""
         with pytest.raises(ValueError):
             manager.get_cost("test-model", -1, 0)
-
-
-class TestGetPricingInfo:
-    """Tests for PricingManager.get_pricing_info lookup."""
-
-    @pytest.fixture
-    def manager(self, tmp_path):
-        """Provide a PricingManager loaded with valid test config."""
-        return _make_manager(tmp_path)
-
-    def test_known_model_returns_model_pricing(self, manager):
-        """Known model returns its ModelPricing object."""
-        info = manager.get_pricing_info("test-model")
-        assert isinstance(info, ModelPricing)
-        assert info.input_price == pytest.approx(1.0)
-        assert info.output_price == pytest.approx(2.0)
-
-    def test_unknown_model_returns_none(self, manager):
-        """Unknown model returns None."""
-        info = manager.get_pricing_info("unknown-xyz")
-        assert info is None
-
-
-class TestListSupportedModels:
-    """Tests for PricingManager.list_supported_models."""
-
-    def test_excludes_default_key(self, tmp_path):
-        """list_supported_models excludes '_default' and includes named models."""
-        manager = _make_manager(tmp_path)
-        models = manager.list_supported_models()
-
-        assert "_default" not in models
-        assert "test-model" in models
-
-
-class TestHealthCheck:
-    """Tests for PricingManager.health_check monitoring interface."""
-
-    def test_returns_required_keys(self, tmp_path):
-        """health_check dict contains status, models_loaded, and config_path."""
-        manager = _make_manager(tmp_path)
-        result = manager.health_check()
-
-        assert "status" in result
-        assert "models_loaded" in result
-        assert "config_path" in result
-
-    def test_healthy_when_pricing_loaded(self, tmp_path):
-        """Status is 'healthy' when pricing models are successfully loaded."""
-        manager = _make_manager(tmp_path)
-        result = manager.health_check()
-
-        assert result["status"] == "healthy"
 
 
 class TestGetPricingManagerFunction:

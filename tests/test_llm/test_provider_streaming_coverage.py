@@ -57,14 +57,6 @@ class TestOllamaStreaming:
             result = p.stream("test", on_chunk=on_chunk)
             assert "hello" in result.content
 
-    def test_stream_with_cached_response(self) -> None:
-        p = self._make_provider()
-        on_chunk = MagicMock()
-        cached = LLMResponse(content="cached", model="m", provider="p")
-        with patch.object(p, "_make_streaming_call_impl", return_value=("key", cached)):
-            result = p.stream("test", on_chunk=on_chunk)
-            assert result.content == "cached"
-
     @pytest.mark.asyncio
     async def test_astream_no_callback(self) -> None:
         p = self._make_provider()
@@ -109,15 +101,6 @@ class TestOllamaStreaming:
             result = await p.astream("test", on_chunk=on_chunk)
             assert "async_hello" in result.content
 
-    @pytest.mark.asyncio
-    async def test_astream_cached(self) -> None:
-        p = self._make_provider()
-        on_chunk = MagicMock()
-        cached = LLMResponse(content="cached", model="m", provider="p")
-        with patch.object(p, "_make_streaming_call_impl", return_value=("key", cached)):
-            result = await p.astream("test", on_chunk=on_chunk)
-            assert result.content == "cached"
-
 
 # ===========================================================================
 # OpenAILLM streaming
@@ -158,14 +141,6 @@ class TestOpenAIStreaming:
             result = p.stream("test", on_chunk=on_chunk)
             assert "hi" in result.content
 
-    def test_stream_cached(self) -> None:
-        p = self._make_provider()
-        on_chunk = MagicMock()
-        cached = LLMResponse(content="cached", model="m", provider="p")
-        with patch.object(p, "_make_streaming_call_impl", return_value=("key", cached)):
-            result = p.stream("test", on_chunk=on_chunk)
-            assert result.content == "cached"
-
     @pytest.mark.asyncio
     async def test_astream_no_callback(self) -> None:
         p = self._make_provider()
@@ -211,15 +186,6 @@ class TestOpenAIStreaming:
             result = await p.astream("test", on_chunk=on_chunk)
             assert "async" in result.content
 
-    @pytest.mark.asyncio
-    async def test_astream_cached(self) -> None:
-        p = self._make_provider()
-        on_chunk = MagicMock()
-        cached = LLMResponse(content="cached", model="m", provider="p")
-        with patch.object(p, "_make_streaming_call_impl", return_value=("key", cached)):
-            result = await p.astream("test", on_chunk=on_chunk)
-            assert result.content == "cached"
-
 
 # ===========================================================================
 # VllmLLM streaming
@@ -255,14 +221,6 @@ class TestVllmStreaming:
         with patch.object(p, "_get_client", return_value=mock_client):
             result = p.stream("test", on_chunk=on_chunk)
             assert "hello" in result.content
-
-    def test_stream_cached(self) -> None:
-        p = self._make_provider()
-        on_chunk = MagicMock()
-        cached = LLMResponse(content="cached", model="m", provider="p")
-        with patch.object(p, "_make_streaming_call_impl", return_value=("key", cached)):
-            result = p.stream("test", on_chunk=on_chunk)
-            assert result.content == "cached"
 
     @pytest.mark.asyncio
     async def test_astream_no_callback(self) -> None:
@@ -308,15 +266,6 @@ class TestVllmStreaming:
         ):
             result = await p.astream("test", on_chunk=on_chunk)
             assert "async" in result.content
-
-    @pytest.mark.asyncio
-    async def test_astream_cached(self) -> None:
-        p = self._make_provider()
-        on_chunk = MagicMock()
-        cached = LLMResponse(content="cached", model="m", provider="p")
-        with patch.object(p, "_make_streaming_call_impl", return_value=("key", cached)):
-            result = await p.astream("test", on_chunk=on_chunk)
-            assert result.content == "cached"
 
     def test_consume_stream_with_tool_calls(self) -> None:
         """Test _consume_stream when streaming tool calls accumulate."""

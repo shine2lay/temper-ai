@@ -155,32 +155,6 @@ def _count_stance_changes(
     return changes
 
 
-def emit_round_metrics(
-    tracker: Any,
-    stage_id: str,
-    metrics: RoundMetrics,
-) -> None:
-    """Emit dialogue round metrics via tracker and structured log.
-
-    Args:
-        tracker: ExecutionTracker with track_collaboration_event
-        stage_id: Current stage ID for event correlation
-        metrics: Computed round metrics
-    """
-    event_dict = asdict(metrics)
-
-    logger.info(
-        "Dialogue round metrics: round=%d agents=%d avg_conf=%.3f speed=%s",
-        metrics.round_number,
-        metrics.agent_count,
-        metrics.avg_confidence,
-        metrics.convergence_speed,
-        extra={"dialogue_metrics": EVENT_TYPE_DIALOGUE_METRICS, **event_dict},
-    )
-
-    _emit_via_tracker(tracker, stage_id, EVENT_TYPE_DIALOGUE_METRICS, event_dict)
-
-
 def build_quality_gate_details(
     violations: list[str],
     synthesis_result: Any,

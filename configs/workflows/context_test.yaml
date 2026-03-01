@@ -10,14 +10,24 @@ workflow:
   stages:
     - name: ctx_analyze
       stage_ref: configs/stages/ctx_analyze.yaml
+      input_map:
+        input_text: "workflow.input_text"
 
     - name: ctx_evaluate
       stage_ref: configs/stages/ctx_evaluate.yaml
       depends_on: [ctx_analyze]
+      input_map:
+        findings: "ctx_analyze.output"
+        severity: "ctx_analyze.structured.severity"
+        original_text: "workflow.input_text"
 
     - name: ctx_synthesize
       stage_ref: configs/stages/ctx_synthesize.yaml
       depends_on: [ctx_analyze, ctx_evaluate]
+      input_map:
+        input_text: "workflow.input_text"
+        recommendation: "ctx_evaluate.output"
+        severity: "ctx_analyze.structured.severity"
 
   inputs:
     required:

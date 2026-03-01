@@ -8,7 +8,6 @@ import temper_ai.auth.ws_tickets as ws_mod
 from temper_ai.auth.api_key_auth import AuthContext
 from temper_ai.auth.ws_tickets import (
     TICKET_PREFIX,
-    cleanup_expired,
     generate_ws_ticket,
     validate_ws_ticket,
 )
@@ -89,40 +88,3 @@ def test_validate_ws_ticket_expired():
     ws_mod._store[ticket].expires_at = time.monotonic() - 1.0
     result = validate_ws_ticket(ticket)
     assert result is None
-
-
-# --- cleanup_expired ---
-
-
-def test_cleanup_expired_removes_expired():
-    ctx = _make_ctx()
-    ticket = generate_ws_ticket(ctx)
-    ws_mod._store[ticket].expires_at = time.monotonic() - 1.0
-    count = cleanup_expired()
-    assert count == 1
-    assert ticket not in ws_mod._store
-
-
-def test_cleanup_expired_keeps_valid():
-    ctx = _make_ctx()
-    ticket = generate_ws_ticket(ctx)
-    count = cleanup_expired()
-    assert count == 0
-    assert ticket in ws_mod._store
-
-
-def test_cleanup_expired_mixed():
-    expired_ticket = generate_ws_ticket(_make_ctx("expired-user"))
-    valid_ticket = generate_ws_ticket(_make_ctx("valid-user"))
-    ws_mod._store[expired_ticket].expires_at = time.monotonic() - 1.0
-
-    count = cleanup_expired()
-
-    assert count == 1
-    assert expired_ticket not in ws_mod._store
-    assert valid_ticket in ws_mod._store
-
-
-def test_cleanup_expired_empty_store():
-    count = cleanup_expired()
-    assert count == 0

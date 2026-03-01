@@ -294,6 +294,7 @@ class TestRuntimeConfig:
         assert cfg.environment == "development"
         assert cfg.initialize_database is True
         assert cfg.event_bus is None
+        assert cfg.tenant_id is None
 
     def test_custom_values(self):
         """Test custom config values."""
@@ -314,6 +315,11 @@ class TestRuntimeConfig:
         assert cfg.environment == "server"
         assert cfg.initialize_database is False
         assert cfg.event_bus is bus
+
+    def test_accepts_tenant_id(self):
+        """RuntimeConfig accepts and stores tenant_id."""
+        cfg = RuntimeConfig(tenant_id="my-tenant")
+        assert cfg.tenant_id == "my-tenant"
 
 
 class TestTrackerBackendFactory:
@@ -396,97 +402,6 @@ class TestLoadConfigSecurity:
         wf_config, inputs = rt.load_config(str(path))
         assert wf_config["workflow"]["name"] == "test_wf"
         assert inputs == {}
-
-
-class TestLoadInputFile:
-    """Test WorkflowRuntime.load_input_file."""
-
-    def test_load_valid_input(self, tmp_path):
-        """Valid input file returns parsed dict."""
-        input_file = tmp_path / "inputs.yaml"
-        input_file.write_text(yaml.dump({"topic": "AI", "depth": 2}))
-
-        rt = WorkflowRuntime()
-        result = rt.load_input_file(str(input_file))
-        assert result == {"topic": "AI", "depth": 2}
-
-    def test_empty_file_returns_empty_dict(self, tmp_path):
-        """Empty YAML file returns empty dict."""
-        empty = tmp_path / "empty.yaml"
-        empty.write_text("")
-
-        rt = WorkflowRuntime()
-        result = rt.load_input_file(str(empty))
-        assert result == {}
-
-    def test_missing_file_raises(self):
-        """Missing file raises FileNotFoundError."""
-        rt = WorkflowRuntime()
-        with pytest.raises(FileNotFoundError):
-            rt.load_input_file("/nonexistent/inputs.yaml")
-
-    def test_non_mapping_raises(self, tmp_path):
-        """Non-mapping input raises ConfigValidationError."""
-        bad = tmp_path / "bad_input.yaml"
-        bad.write_text("- a\n- b")
-
-        rt = WorkflowRuntime()
-        with pytest.raises(ConfigValidationError, match="YAML mapping"):
-            rt.load_input_file(str(bad))
-
-    def test_oversized_input_rejected(self, tmp_path):
-        """Input files exceeding MAX_CONFIG_SIZE are rejected."""
-        big = tmp_path / "big_input.yaml"
-        big.write_text("topic: AI\n" + "x" * (11 * 1024 * 1024))
-
-        rt = WorkflowRuntime()
-        with pytest.raises(ConfigValidationError, match="too large"):
-            rt.load_input_file(str(big))
-
-
-class TestCheckRequiredInputs:
-    """Test WorkflowRuntime.check_required_inputs."""
-
-    def test_no_required_inputs(self):
-        """No required inputs means empty missing list."""
-        config = {"workflow": {"name": "test"}}
-        missing = WorkflowRuntime.check_required_inputs(config, {})
-        assert missing == []
-
-    def test_all_required_present(self):
-        """All required inputs present means empty missing list."""
-        config = {
-            "workflow": {
-                "name": "test",
-                "inputs": {"required": ["topic", "depth"]},
-            }
-        }
-        missing = WorkflowRuntime.check_required_inputs(
-            config, {"topic": "AI", "depth": 2}
-        )
-        assert missing == []
-
-    def test_missing_required_inputs(self):
-        """Missing required inputs are reported."""
-        config = {
-            "workflow": {
-                "name": "test",
-                "inputs": {"required": ["topic", "depth", "format"]},
-            }
-        }
-        missing = WorkflowRuntime.check_required_inputs(config, {"topic": "AI"})
-        assert missing == ["depth", "format"]
-
-    def test_empty_required_list(self):
-        """Empty required list means nothing missing."""
-        config = {
-            "workflow": {
-                "name": "test",
-                "inputs": {"required": []},
-            }
-        }
-        missing = WorkflowRuntime.check_required_inputs(config, {"extra": 1})
-        assert missing == []
 
 
 class TestBuildStateAutoInject:
@@ -603,6 +518,20 @@ class TestSetupInfrastructureDbInit:
         )
         bundle = rt.setup_infrastructure(event_bus=explicit_bus)
         assert bundle.event_bus is explicit_bus
+
+    def test_setup_infrastructure_passes_tenant_id_to_config_loader(self):
+        """tenant_id from RuntimeConfig reaches ConfigLoader."""
+        rt = WorkflowRuntime(
+            RuntimeConfig(initialize_database=False, tenant_id="test-tenant")
+        )
+        bundle = rt.setup_infrastructure()
+        assert bundle.config_loader.tenant_id == "test-tenant"
+
+    def test_setup_infrastructure_tenant_id_none_by_default(self):
+        """ConfigLoader.tenant_id is None when not set in RuntimeConfig."""
+        rt = WorkflowRuntime(RuntimeConfig(initialize_database=False))
+        bundle = rt.setup_infrastructure()
+        assert bundle.config_loader.tenant_id is None
 
 
 class TestCleanupCompilerFallback:

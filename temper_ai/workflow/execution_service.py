@@ -2,10 +2,11 @@
 Workflow execution service — shared infrastructure.
 
 Provides bounded-concurrency workflow execution via ThreadPoolExecutor,
-in-memory run tracking, status queries, cancellation, RunStore persistence,
-and graceful shutdown.  Used by Dashboard REST, MCP, and CrossWorkflowTrigger.
+in-memory run tracking, status queries, cancellation, and graceful shutdown.
+Used by Dashboard REST, MCP, and CrossWorkflowTrigger.
 """
 
+import functools
 import json
 import logging
 import threading
@@ -13,7 +14,6 @@ import uuid
 from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import UTC, datetime
 from enum import Enum
-from pathlib import Path
 from typing import Any, cast
 
 logger = logging.getLogger(__name__)
@@ -58,6 +58,7 @@ class WorkflowExecutionStatus(str, Enum):  # noqa: UP042
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
+    STUCK = "stuck"
 
 
 class WorkflowExecutionMetadata:
@@ -100,36 +101,6 @@ class WorkflowExecutionMetadata:
         }
 
 
-def _save_run_to_store(  # noqa: god
-    run_store: Any,
-    execution_id: str,
-    workflow_path: str,
-    workflow_name: str,
-    run_context: "tuple[dict[str, Any] | None, str | None, str | None]",
-    status: str,
-) -> None:
-    """Persist a new execution record to the run store.
-
-    run_context: (input_data, workspace, tenant_id)
-    """
-    if run_store is None:
-        return
-    from temper_ai.interfaces.server.models import ServerRun
-
-    input_data, workspace, tenant_id = run_context
-    run_store.save_run(
-        ServerRun(
-            execution_id=execution_id,
-            workflow_path=str(workflow_path),
-            workflow_name=workflow_name,
-            status=status,
-            input_data=input_data,
-            workspace=workspace,
-            tenant_id=tenant_id,
-        )
-    )
-
-
 class WorkflowExecutionService:  # noqa: god
     """Service for executing workflows with bounded concurrency and tracking.
 
@@ -143,7 +114,6 @@ class WorkflowExecutionService:  # noqa: god
         event_bus: Any,
         config_root: str = "configs",
         max_workers: int = DEFAULT_MAX_WORKFLOW_WORKERS,
-        run_store: Any = None,
     ):
         """Initialize the execution service.
 
@@ -152,12 +122,10 @@ class WorkflowExecutionService:  # noqa: god
             event_bus: ObservabilityEventBus for real-time updates
             config_root: Config directory root path
             max_workers: Max concurrent workflow executions
-            run_store: Optional RunStore for persistent run history
         """
         self.backend = backend
         self.event_bus = event_bus
         self.config_root = config_root
-        self.run_store = run_store
 
         # Thread pool for blocking workflow execution
         self._executor = ThreadPoolExecutor(max_workers=max_workers)
@@ -203,7 +171,7 @@ class WorkflowExecutionService:  # noqa: god
         """
         import asyncio
 
-        execution_id, workflow_file = self._prepare_execution(
+        execution_id, workflow_name = self._prepare_execution(
             workflow_path,
             input_data,
             workspace,
@@ -214,7 +182,11 @@ class WorkflowExecutionService:  # noqa: god
         # Schedule background execution
         asyncio.create_task(
             self._run_workflow_background(
-                execution_id, str(workflow_file), input_data or {}, workspace
+                execution_id,
+                workflow_name,
+                input_data or {},
+                workspace,
+                tenant_id=tenant_id,
             )
         )
 
@@ -226,6 +198,8 @@ class WorkflowExecutionService:  # noqa: god
         workflow_path: str,
         input_data: dict[str, Any],
         workspace: str | None = None,
+        restored_stage_outputs: dict[str, Any] | None = None,
+        tenant_id: str | None = None,
     ) -> None:
         """Run workflow in background thread (internal method).
 
@@ -244,12 +218,6 @@ class WorkflowExecutionService:  # noqa: god
             with self._lock:
                 metadata.status = WorkflowExecutionStatus.RUNNING
                 metadata.started_at = datetime.now(UTC)
-            if self.run_store is not None:
-                self.run_store.update_status(
-                    execution_id,
-                    "running",
-                    started_at=metadata.started_at,
-                )
 
             logger.info("Executing workflow in thread pool: %s", execution_id)
 
@@ -257,11 +225,15 @@ class WorkflowExecutionService:  # noqa: god
             loop = asyncio.get_running_loop()
             result = await loop.run_in_executor(
                 self._executor,
-                self._execute_workflow_in_runner,
-                workflow_path,
-                input_data,
-                execution_id,
-                workspace,
+                functools.partial(
+                    self._execute_workflow_in_runner,
+                    workflow_path,
+                    input_data,
+                    execution_id,
+                    workspace,
+                    restored_stage_outputs=restored_stage_outputs,
+                    tenant_id=tenant_id,
+                ),
             )
 
             self._record_success(execution_id, result)
@@ -278,36 +250,33 @@ class WorkflowExecutionService:  # noqa: god
         input_data: dict[str, Any] | None = None,
         workspace: str | None = None,
         run_id: str | None = None,
+        tenant_id: str | None = None,
     ) -> str:
         """Submit a workflow for background execution (sync, non-blocking).
 
         Returns execution_id immediately. Workflow runs in thread pool.
         Used by CrossWorkflowTrigger.
         """
-        execution_id, workflow_file = self._prepare_execution(
+        execution_id, workflow_name = self._prepare_execution(
             workflow_path,
             input_data,
             workspace,
             run_id,
+            tenant_id=tenant_id,
         )
 
         with self._lock:
             metadata = self._executions[execution_id]
             metadata.status = WorkflowExecutionStatus.RUNNING
             metadata.started_at = datetime.now(UTC)
-        if self.run_store is not None:
-            self.run_store.update_status(
-                execution_id,
-                "running",
-                started_at=metadata.started_at,
-            )
 
         future = self._executor.submit(
             self._run_workflow_with_tracking,
             execution_id,
-            str(workflow_file),
+            workflow_name,
             input_data or {},
             workspace,
+            tenant_id=tenant_id,
         )
         with self._lock:
             self._futures[execution_id] = future
@@ -352,10 +321,11 @@ class WorkflowExecutionService:  # noqa: god
             if metadata:
                 return metadata.to_dict()
 
-        if self.run_store is not None:
-            stored = self.run_store.get_run(execution_id)
+        # Fallback to observability backend
+        if self.backend is not None:
+            stored = self.backend.get_workflow(execution_id)
             if stored is not None:
-                return cast(dict[str, Any], stored.to_dict())
+                return cast(dict[str, Any], stored)
 
         return None
 
@@ -364,7 +334,7 @@ class WorkflowExecutionService:  # noqa: god
     async def get_execution_status(self, execution_id: str) -> dict[str, Any] | None:
         """Get execution status and metadata.
 
-        Falls back to persistent RunStore if not found in memory.
+        Falls back to observability backend if not found in memory.
 
         Args:
             execution_id: Execution ID returned from execute_workflow_async
@@ -377,11 +347,11 @@ class WorkflowExecutionService:  # noqa: god
             if metadata:
                 return metadata.to_dict()
 
-        # Fallback to persistent store
-        if self.run_store is not None:
-            stored = self.run_store.get_run(execution_id)
+        # Fallback to observability backend
+        if self.backend is not None:
+            stored = self.backend.get_workflow(execution_id)
             if stored is not None:
-                return cast(dict[str, Any], stored.to_dict())
+                return cast(dict[str, Any], stored)
 
         return None
 
@@ -393,7 +363,7 @@ class WorkflowExecutionService:  # noqa: god
     ) -> list[dict[str, Any]]:
         """List all tracked executions.
 
-        Merges in-memory active runs with persistent store data.
+        Merges in-memory active runs with backend persistent data.
 
         Args:
             status: Filter by status (optional)
@@ -403,25 +373,25 @@ class WorkflowExecutionService:  # noqa: god
         Returns:
             List of execution metadata dicts
         """
-        if self.run_store is not None:
-            results = await self._list_from_store(status, limit + offset)
+        if self.backend is not None:
+            results = await self._list_from_backend(status, limit + offset)
         else:
             results = await self._list_from_memory(status)
 
         return results[offset : offset + limit]
 
-    async def _list_from_store(
+    async def _list_from_backend(
         self,
         status: WorkflowExecutionStatus | None,
         fetch_limit: int,
     ) -> list[dict[str, Any]]:
-        """Query persistent store and merge in-memory active runs."""
+        """Query observability backend and merge in-memory active runs."""
         status_str = status.value if status else None
-        stored = self.run_store.list_runs(
-            status=status_str, limit=fetch_limit, offset=0
+        stored = self.backend.list_workflows(
+            limit=fetch_limit, offset=0, status=status_str
         )
-        stored_ids = {r.execution_id for r in stored}
-        results = [r.to_dict() for r in stored]
+        stored_ids = {r.get("id") for r in stored}
+        results = list(stored)
 
         with self._lock:
             for meta in self._executions.values():
@@ -476,6 +446,85 @@ class WorkflowExecutionService:  # noqa: god
         logger.info("Workflow execution cancelled: %s", execution_id)
         return True
 
+    async def resume_workflow(self, execution_id: str) -> str:
+        """Resume a stuck/failed workflow from its last checkpoint.
+
+        Creates a new execution that skips already-completed stages.
+        The original run is marked as superseded.
+
+        Args:
+            execution_id: Execution ID of the stuck/failed run.
+
+        Returns:
+            New execution ID for the resumed workflow.
+
+        Raises:
+            ValueError: If run not found or not resumable.
+        """
+        import asyncio
+
+        if self.backend is None:
+            raise ValueError("Resume requires an observability backend")
+
+        run = self.backend.get_workflow(execution_id)
+        if run is None:
+            raise ValueError(f"Run {execution_id} not found")
+        run_status = run.get("status", "")
+        if run_status not in ("stuck", "failed"):
+            raise ValueError("Only 'stuck' or 'failed' runs can be resumed")
+
+        # Load checkpoint
+        workflow_id = run.get("id")
+        restored_outputs: dict[str, Any] | None = None
+        if workflow_id:
+            try:
+                from temper_ai.workflow.checkpoint_manager import CheckpointManager
+
+                mgr = CheckpointManager()
+                domain_state = mgr.load_checkpoint(workflow_id)
+                restored_outputs = domain_state.stage_outputs
+            except Exception:
+                logger.warning("No checkpoint for %s, will restart fresh", workflow_id)
+
+        workflow_path = run.get("workflow_name", "")
+        input_data = run.get("input_data")
+        workspace = run.get("workspace")
+        tenant_id = run.get("tenant_id")
+
+        # Create new execution
+        new_id, workflow_name = self._prepare_execution(
+            workflow_path,
+            input_data,
+            workspace,
+            run_id=None,
+            tenant_id=tenant_id,
+        )
+
+        # Schedule background execution with restored state
+        asyncio.create_task(
+            self._run_workflow_background(
+                new_id,
+                workflow_name,
+                input_data or {},
+                workspace,
+                restored_stage_outputs=restored_outputs,
+                tenant_id=tenant_id,
+            )
+        )
+
+        return new_id
+
+    async def find_stuck_executions(
+        self, threshold_seconds: int = 1800
+    ) -> list[dict[str, Any]]:
+        """Find executions stuck at 'running' longer than threshold.
+
+        Queries the observability backend for stuck workflows.
+        """
+        if self.backend is None:
+            return []
+        return self.backend.find_stuck_workflows(threshold_seconds)
+
     def shutdown(self) -> None:
         """Shutdown the service and wait for pending executions."""
         logger.info("Shutting down WorkflowExecutionService")
@@ -490,11 +539,14 @@ class WorkflowExecutionService:  # noqa: god
         workspace: str | None,
         run_id: str | None,
         tenant_id: str | None = None,
-    ) -> tuple[str, Path]:
+    ) -> tuple[str, str]:
         """Validate workflow and register execution metadata.
 
+        The workflow_path is now a config name (not a filesystem path).
+        ConfigLoader resolves it: DB first, then filesystem fallback.
+
         Returns:
-            Tuple of (execution_id, workflow_file_path).
+            Tuple of (execution_id, workflow_name_or_path).
         """
         execution_id = (
             f"exec-{run_id}"
@@ -502,14 +554,15 @@ class WorkflowExecutionService:  # noqa: god
             else f"exec-{uuid.uuid4().hex[:EXECUTION_ID_LENGTH]}"
         )
 
-        from temper_ai.workflow.runtime import RuntimeConfig, WorkflowRuntime
+        from temper_ai.workflow.config_loader import ConfigLoader
 
-        rt = WorkflowRuntime(config=RuntimeConfig(config_root=self.config_root))
-        workflow_config, _ = rt.load_config(workflow_path)
-        workflow_file = Path(self.config_root) / workflow_path
-        workflow_name = workflow_config.get("workflow", {}).get(
-            "name", workflow_file.stem
+        loader = ConfigLoader(
+            config_root=self.config_root,
+            tenant_id=tenant_id,
         )
+        workflow_config = loader.load_workflow(workflow_path, validate=True)
+        self._validate_config_references(workflow_config, loader)
+        workflow_name = workflow_config.get("workflow", {}).get("name", workflow_path)
 
         metadata = WorkflowExecutionMetadata(
             execution_id=execution_id,
@@ -522,21 +575,79 @@ class WorkflowExecutionService:  # noqa: god
                 raise ValueError(f"Execution ID already exists: {execution_id}")
             self._executions[execution_id] = metadata
 
-        _save_run_to_store(
-            self.run_store,
-            execution_id,
-            workflow_path,
-            workflow_name,
-            (input_data, workspace, tenant_id),
-            WorkflowExecutionStatus.PENDING.value,
-        )
         logger.info(
             "Starting workflow execution: id=%s, workflow=%s, name=%s",
             execution_id,
             workflow_path,
             workflow_name,
         )
-        return execution_id, workflow_file
+        return execution_id, workflow_path
+
+    @staticmethod
+    def _validate_config_references(
+        workflow_config: dict[str, Any],
+        loader: Any,
+    ) -> None:
+        """Fast pre-run validation: check that referenced stages and agents exist.
+
+        Fails on first missing reference so the HTTP layer can return a 400
+        immediately.  Deeper (collect-all-errors) validation happens in
+        ``WorkflowRuntime.validate_references()`` during the pipeline phase.
+
+        Includes fuzzy-match suggestions when available.
+        """
+        from temper_ai.shared.utils.exceptions import ConfigNotFoundError
+        from temper_ai.workflow.config_errors import suggest_name
+
+        stages = workflow_config.get("workflow", {}).get("stages", [])
+        for stage_entry in stages:
+            stage_ref = stage_entry.get("stage_ref") or stage_entry.get("config_path")
+            if not stage_ref:
+                continue
+
+            # Strip directory prefix and extension to get bare stage name
+            # e.g. "configs/stages/vcs_work_discovery.yaml" → "vcs_work_discovery"
+            import os.path
+
+            stage_name = os.path.splitext(os.path.basename(stage_ref))[0]
+
+            try:
+                stage_config = loader.load_stage(stage_name, validate=False)
+            except ConfigNotFoundError:
+                try:
+                    available = loader.list_configs("stage")
+                except Exception:
+                    available = []
+                hint = suggest_name(stage_ref, available)
+                msg = f"Stage '{stage_ref}' not found"
+                if hint:
+                    msg += f" — {hint}"
+                raise ValueError(msg)
+
+            agents = stage_config.get("stage", {}).get("agents", [])
+            for agent_entry in agents:
+                agent_name = (
+                    agent_entry
+                    if isinstance(agent_entry, str)
+                    else agent_entry.get("name", agent_entry.get("agent_ref"))
+                )
+                if not agent_name:
+                    continue
+                try:
+                    loader.load_agent(agent_name, validate=False)
+                except ConfigNotFoundError:
+                    try:
+                        available = loader.list_configs("agent")
+                    except Exception:
+                        available = []
+                    hint = suggest_name(agent_name, available)
+                    msg = (
+                        f"Stage '{stage_ref}' references agent "
+                        f"'{agent_name}' which does not exist"
+                    )
+                    if hint:
+                        msg += f" — {hint}"
+                    raise ValueError(msg)
 
     def _execute_workflow_in_runner(
         self,
@@ -544,6 +655,8 @@ class WorkflowExecutionService:  # noqa: god
         input_data: dict[str, Any],
         execution_id: str,
         workspace: str | None = None,
+        restored_stage_outputs: dict[str, Any] | None = None,
+        tenant_id: str | None = None,
     ) -> dict[str, Any]:
         """Execute workflow synchronously via WorkflowRunner (runs in thread pool).
 
@@ -552,6 +665,9 @@ class WorkflowExecutionService:  # noqa: god
             input_data: Workflow inputs
             execution_id: Execution ID for tracking
             workspace: Optional workspace root directory
+            restored_stage_outputs: Optional stage outputs from a previous
+                checkpoint, used for resume support.
+            tenant_id: Optional tenant ID for multi-tenant isolation.
 
         Returns:
             Workflow result dictionary
@@ -567,9 +683,14 @@ class WorkflowExecutionService:  # noqa: god
         runner_config = WorkflowRunnerConfig(
             config_root=self.config_root,
             workspace=workspace,
+            tenant_id=tenant_id,
         )
         runner = WorkflowRunner(config=runner_config, event_bus=self.event_bus)
-        run_result = runner.run(workflow_path, input_data=input_data)
+        run_result = runner.run(
+            workflow_path,
+            input_data=input_data,
+            restored_stage_outputs=restored_stage_outputs,
+        )
 
         # Store workflow_id so the API can return it to the frontend
         with self._lock:
@@ -586,6 +707,7 @@ class WorkflowExecutionService:  # noqa: god
         workflow_path: str,
         input_data: dict[str, Any],
         workspace: str | None = None,
+        tenant_id: str | None = None,
     ) -> None:
         """Execute workflow with status tracking (for sync submit_workflow path)."""
         try:
@@ -594,6 +716,7 @@ class WorkflowExecutionService:  # noqa: god
                 input_data,
                 execution_id,
                 workspace,
+                tenant_id=tenant_id,
             )
             self._record_success(execution_id, result)
         except Exception as e:  # noqa: BLE001
@@ -610,14 +733,6 @@ class WorkflowExecutionService:  # noqa: god
             metadata.status = WorkflowExecutionStatus.COMPLETED
             metadata.completed_at = datetime.now(UTC)
             metadata.result = _sanitize_workflow_result(result)
-        if self.run_store is not None:
-            self.run_store.update_status(
-                execution_id,
-                "completed",
-                completed_at=metadata.completed_at,
-                workflow_id=metadata.workflow_id,
-                result_summary=metadata.result,
-            )
         logger.info("Workflow execution completed: %s", execution_id)
 
     def _record_failure(self, execution_id: str, error_message: str) -> None:
@@ -627,10 +742,3 @@ class WorkflowExecutionService:  # noqa: god
             metadata.status = WorkflowExecutionStatus.FAILED
             metadata.completed_at = datetime.now(UTC)
             metadata.error_message = error_message
-        if self.run_store is not None:
-            self.run_store.update_status(
-                execution_id,
-                "failed",
-                completed_at=metadata.completed_at,
-                error_message=metadata.error_message,
-            )

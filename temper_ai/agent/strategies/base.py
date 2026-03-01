@@ -340,6 +340,34 @@ class CollaborationStrategy(ABC):
         """
         return False
 
+    def curate_agent_context(
+        self,
+        agent_name: str,
+        agent_role: str | None = None,
+        prior_outputs: dict[str, Any] | None = None,
+        round_number: int = 0,
+        dialogue_history: list[dict[str, Any]] | None = None,
+    ) -> str | None:
+        """Curate additional context to append to an agent's prompt.
+
+        Override in subclasses to provide mode-specific context curation.
+        The returned text replaces the uncurated ``_inject_input_context()``
+        and ``_inject_dialogue_context()`` injections.
+
+        Args:
+            agent_name: Name of the agent receiving context.
+            agent_role: Optional role assigned to this agent.
+            prior_outputs: Dict of agent_name → output_data from prior agents.
+            round_number: Current dialogue/debate round (0 = first round).
+            dialogue_history: Full dialogue history (for multi-round modes).
+
+        Returns:
+            Formatted text to append to agent prompt, or None for no
+            additional context. When None, the agent's existing injection
+            methods are used as fallback (backward compatible).
+        """
+        return None
+
     def validate_inputs(self, agent_outputs: list[AgentOutput]) -> None:
         """Validate agent outputs before synthesis.
 

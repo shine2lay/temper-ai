@@ -27,7 +27,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from temper_ai.tools.base import BaseTool
+from temper_ai.tools.base import BaseTool, _pydantic_to_llm_schema
 from temper_ai.tools.registry import ToolRegistry
 
 GENERATED_HEADER = (
@@ -116,7 +116,11 @@ def render_tool_markdown(tool: BaseTool) -> str:
     """Render a single tool's documentation as markdown."""
     meta = tool.get_metadata()
     params_schema = tool.get_parameters_schema()
-    config_schema = tool.get_config_schema()
+    config_schema = (
+        _pydantic_to_llm_schema(tool.config_model)
+        if tool.config_model
+        else {"type": "object", "properties": {}}
+    )
     result_schema = tool.get_result_schema()
 
     lines: list[str] = [GENERATED_HEADER]
@@ -259,7 +263,11 @@ def build_json_dump(tools: dict[str, BaseTool]) -> dict[str, Any]:
                 "cacheable": meta.cacheable,
             },
             "parameters_schema": tool.get_parameters_schema(),
-            "config_schema": tool.get_config_schema(),
+            "config_schema": (
+                _pydantic_to_llm_schema(tool.config_model)
+                if tool.config_model
+                else {"type": "object", "properties": {}}
+            ),
             "result_schema": tool.get_result_schema(),
         }
     return {
@@ -274,9 +282,12 @@ def build_json_dump(tools: dict[str, BaseTool]) -> dict[str, Any]:
 
 
 def discover_tools() -> dict[str, BaseTool]:
-    """Auto-discover all tools via ToolRegistry."""
-    registry = ToolRegistry(auto_discover=False)
-    registry.auto_discover(use_cache=False)
+    """Discover all tools from the static TOOL_CLASSES registry."""
+    from temper_ai.tools import TOOL_CLASSES
+
+    registry = ToolRegistry()
+    for name in TOOL_CLASSES:
+        registry.get(name)  # Lazy-instantiates and registers
     return registry.get_all_tools()
 
 

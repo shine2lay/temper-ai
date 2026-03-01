@@ -13,14 +13,12 @@ from unittest.mock import Mock
 import pytest
 
 from temper_ai.observability.dialogue_metrics import (
-    EVENT_TYPE_DIALOGUE_METRICS,
     EVENT_TYPE_QUALITY_GATE_DETAIL,
     QualityGateViolationDetail,
     RoundMetrics,
     build_quality_gate_details,
     compute_round_metrics,
     emit_quality_gate_details,
-    emit_round_metrics,
 )
 
 # ── RoundMetrics dataclass ──
@@ -312,47 +310,6 @@ class TestBuildQualityGateDetails:
             quality_gates_config={},
         )
         assert details == []
-
-
-# ── emit_round_metrics ──
-
-
-class TestEmitRoundMetrics:
-    """Test emit_round_metrics emit helper."""
-
-    def test_emits_via_tracker(self):
-        tracker = Mock()
-        tracker.track_collaboration_event = Mock()
-        metrics = RoundMetrics(round_number=1, agent_count=2, avg_confidence=0.75)
-
-        emit_round_metrics(tracker, "stage-1", metrics)
-
-        tracker.track_collaboration_event.assert_called_once()
-        call_arg = tracker.track_collaboration_event.call_args[0][0]
-        assert call_arg.event_type == EVENT_TYPE_DIALOGUE_METRICS
-        assert call_arg.stage_id == "stage-1"
-        assert call_arg.event_data["round_number"] == 1
-
-    def test_logs_structured_info(self, caplog):
-        tracker = Mock()
-        tracker.track_collaboration_event = Mock()
-        metrics = RoundMetrics(round_number=0, agent_count=3, avg_confidence=0.8)
-
-        with caplog.at_level(logging.INFO):
-            emit_round_metrics(tracker, "s1", metrics)
-
-        assert any("Dialogue round metrics" in r.message for r in caplog.records)
-
-    def test_tracker_none_no_error(self):
-        metrics = RoundMetrics(round_number=0)
-        emit_round_metrics(None, "s1", metrics)
-        assert metrics.round_number == 0  # no exception raised
-
-    def test_tracker_without_method_no_error(self):
-        tracker = object()  # no track_collaboration_event
-        metrics = RoundMetrics(round_number=0)
-        emit_round_metrics(tracker, "s1", metrics)
-        assert metrics.round_number == 0  # no exception raised
 
 
 # ── emit_quality_gate_details ──

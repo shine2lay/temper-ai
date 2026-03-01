@@ -550,12 +550,6 @@ def test_load_and_use_tool_end_to_end(tool_config, config_loader):
     retrieved_tool = registry.get("TestTool")
     assert retrieved_tool == tool
 
-    # Get tool schema
-    schema = registry.get_tool_schema("TestTool")
-    assert schema is not None
-    assert "function" in schema  # LLM schema has 'function' key
-    assert schema["function"]["name"] == "TestTool"
-
     # Execute tool
     result = retrieved_tool.execute(input="test data")
     assert result.success is True

@@ -66,7 +66,6 @@ class EngineRegistry:
         from temper_ai.workflow.engines.dynamic_engine import DynamicExecutionEngine
 
         self._engines["dynamic"] = DynamicExecutionEngine
-        self._engines["native"] = DynamicExecutionEngine  # Alias for backward compat
 
     def register_engine(self, name: str, engine_class: type[ExecutionEngine]) -> None:
         """Register an execution engine (thread-safe).

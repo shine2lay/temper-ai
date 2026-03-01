@@ -15,11 +15,7 @@ from temper_ai.agent.base_agent import BaseAgent
 from temper_ai.agent.utils.agent_factory import AgentFactory
 from temper_ai.llm.pricing import PricingManager, get_pricing_manager
 from temper_ai.tools.base import BaseTool, ToolMetadata, ToolResult
-from temper_ai.tools.registry import (
-    ToolRegistry,
-    clear_global_cache,
-    get_global_registry,
-)
+from temper_ai.tools.registry import ToolRegistry
 
 # ---------- Helpers ----------
 
@@ -269,38 +265,6 @@ class TestToolRegistryThreadSafety:
         t2.join()
 
         assert not errors, f"Race condition errors: {errors}"
-
-
-# ---------- Global registry tests ----------
-
-
-class TestGlobalRegistryThreadSafety:
-    """Verify global registry singleton is thread-safe."""
-
-    @pytest.fixture(autouse=True)
-    def reset_global(self):
-        clear_global_cache()
-        yield
-        clear_global_cache()
-
-    @pytest.mark.timeout(30)
-    def test_concurrent_get_global_registry_same_instance(self):
-        """Multiple threads calling get_global_registry() get same instance."""
-        instances = []
-        barrier = threading.Barrier(10)
-
-        def get_instance():
-            barrier.wait()
-            instances.append(get_global_registry())
-
-        threads = [threading.Thread(target=get_instance) for _ in range(10)]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
-
-        assert len(instances) == 10
-        assert all(inst is instances[0] for inst in instances)
 
 
 # ---------- Service _sanitizer tests ----------

@@ -3,15 +3,12 @@
 from datetime import UTC, datetime
 
 from temper_ai.observability.formatters import (
-    format_bytes,
     format_cost,
     format_duration,
-    format_percentage,
     format_timestamp,
     format_tokens,
     status_to_color,
     status_to_icon,
-    truncate_text,
 )
 
 
@@ -185,109 +182,6 @@ class TestStatusToIcon:
         assert status_to_icon("invalid") == "?"
 
 
-class TestFormatPercentage:
-    """Test percentage formatting."""
-
-    def test_format_none(self):
-        """Test formatting None returns N/A."""
-        assert format_percentage(None) == "N/A"
-
-    def test_format_percentages(self):
-        """Test formatting various percentages."""
-        assert format_percentage(0.0) == "0.0%"
-        assert format_percentage(0.5) == "50.0%"
-        assert format_percentage(0.856) == "85.6%"
-        assert format_percentage(1.0) == "100.0%"
-
-    def test_format_precision(self):
-        """Test formatting maintains 1 decimal place."""
-        assert format_percentage(0.12345) == "12.3%"
-        assert format_percentage(0.99999) == "100.0%"
-
-    def test_format_edge_cases(self):
-        """Test edge case values."""
-        assert format_percentage(0.001) == "0.1%"
-        assert format_percentage(0.999) == "99.9%"
-
-
-class TestTruncateText:
-    """Test text truncation."""
-
-    def test_no_truncation_needed(self):
-        """Test short text is not truncated."""
-        assert truncate_text("Short", 20) == "Short"
-        assert truncate_text("Exactly 20 chars!!!!", 20) == "Exactly 20 chars!!!!"
-
-    def test_truncation_with_default_suffix(self):
-        """Test truncation adds default suffix."""
-        result = truncate_text("This is a very long text that needs truncation", 20)
-        assert result == "This is a very lo..."
-        assert len(result) == 20
-
-    def test_truncation_with_custom_suffix(self):
-        """Test truncation with custom suffix."""
-        result = truncate_text("This is too long", 10, suffix="…")
-        assert result == "This is t…"
-        assert len(result) == 10
-
-    def test_empty_string(self):
-        """Test empty string."""
-        assert truncate_text("", 20) == ""
-
-    def test_suffix_longer_than_max_length(self):
-        """Test behavior when suffix is longer than max_length."""
-        result = truncate_text("Hello", 5, suffix="...")
-        assert len(result) == 5  # "He..."
-
-    def test_exact_length(self):
-        """Test text exactly at max length."""
-        assert truncate_text("12345", 5) == "12345"
-
-
-class TestFormatBytes:
-    """Test byte count formatting."""
-
-    def test_format_none(self):
-        """Test formatting None returns N/A."""
-        assert format_bytes(None) == "N/A"
-
-    def test_format_bytes_unit(self):
-        """Test formatting in bytes."""
-        assert format_bytes(0) == "0.0 B"
-        assert format_bytes(500) == "500.0 B"
-        assert format_bytes(1023) == "1023.0 B"
-
-    def test_format_kilobytes(self):
-        """Test formatting in kilobytes."""
-        assert format_bytes(1024) == "1.0 KB"
-        assert format_bytes(1500) == "1.5 KB"
-        assert format_bytes(2048) == "2.0 KB"
-
-    def test_format_megabytes(self):
-        """Test formatting in megabytes."""
-        assert format_bytes(1048576) == "1.0 MB"  # 1024 * 1024
-        assert format_bytes(2500000) == "2.4 MB"
-        assert format_bytes(10485760) == "10.0 MB"
-
-    def test_format_gigabytes(self):
-        """Test formatting in gigabytes."""
-        assert format_bytes(1073741824) == "1.0 GB"  # 1024^3
-        assert format_bytes(2147483648) == "2.0 GB"
-
-    def test_format_terabytes(self):
-        """Test formatting in terabytes."""
-        assert format_bytes(1099511627776) == "1.0 TB"  # 1024^4
-
-    def test_format_precision(self):
-        """Test formatting maintains 1 decimal place."""
-        assert format_bytes(1536) == "1.5 KB"
-        assert format_bytes(1572864) == "1.5 MB"
-
-    def test_format_zero(self):
-        """Test formatting zero bytes."""
-        assert format_bytes(0) == "0.0 B"
-
-
 class TestIntegration:
     """Integration tests combining multiple formatters."""
 
@@ -296,12 +190,10 @@ class TestIntegration:
         duration = format_duration(125.7)
         tokens = format_tokens(150000)
         cost = format_cost(0.0123)
-        percentage = format_percentage(0.856)
 
         assert duration == "2m 5s"
         assert tokens == "150,000 tokens"
         assert cost == "$0.0123"
-        assert percentage == "85.6%"
 
     def test_status_formatting(self):
         """Test status color and icon together."""
@@ -318,5 +210,3 @@ class TestIntegration:
         assert format_timestamp(None) == "N/A"
         assert format_tokens(None) == "N/A"
         assert format_cost(None) == "$0.0000"
-        assert format_percentage(None) == "N/A"
-        assert format_bytes(None) == "N/A"

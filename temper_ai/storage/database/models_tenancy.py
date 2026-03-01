@@ -25,21 +25,33 @@ from temper_ai.storage.database.datetime_utils import utcnow
 ROLE_OWNER = "owner"
 ROLE_EDITOR = "editor"
 ROLE_VIEWER = "viewer"
-VALID_ROLES = frozenset({ROLE_OWNER, ROLE_EDITOR, ROLE_VIEWER})
-
-ROLE_CHECK = f"role IN ('{ROLE_OWNER}', '{ROLE_EDITOR}', '{ROLE_VIEWER}')"
-
-API_KEY_PREFIX = "tk_"
-API_KEY_PREFIX_DISPLAY_LEN = 8
+_ROLE_CHECK = f"role IN ('{ROLE_OWNER}', '{ROLE_EDITOR}', '{ROLE_VIEWER}')"
 
 CONFIG_TYPE_WORKFLOW = "workflow"
 CONFIG_TYPE_STAGE = "stage"
 CONFIG_TYPE_AGENT = "agent"
+CONFIG_TYPE_TOOL = "tool"
 VALID_CONFIG_TYPES = frozenset(
-    {CONFIG_TYPE_WORKFLOW, CONFIG_TYPE_STAGE, CONFIG_TYPE_AGENT}
+    {CONFIG_TYPE_WORKFLOW, CONFIG_TYPE_STAGE, CONFIG_TYPE_AGENT, CONFIG_TYPE_TOOL}
 )
 
-CONFIG_TYPE_CHECK = f"config_type IN ('{CONFIG_TYPE_WORKFLOW}', '{CONFIG_TYPE_STAGE}', '{CONFIG_TYPE_AGENT}')"
+PROFILE_TYPE_LLM = "llm"
+PROFILE_TYPE_SAFETY = "safety"
+PROFILE_TYPE_ERROR_HANDLING = "error_handling"
+PROFILE_TYPE_OBSERVABILITY = "observability"
+PROFILE_TYPE_MEMORY = "memory"
+PROFILE_TYPE_BUDGET = "budget"
+
+VALID_PROFILE_TYPES = frozenset(
+    {
+        PROFILE_TYPE_LLM,
+        PROFILE_TYPE_SAFETY,
+        PROFILE_TYPE_ERROR_HANDLING,
+        PROFILE_TYPE_OBSERVABILITY,
+        PROFILE_TYPE_MEMORY,
+        PROFILE_TYPE_BUDGET,
+    }
+)
 
 # Column length constants
 _MAX_NAME_LENGTH = 256
@@ -119,7 +131,7 @@ class TenantMembership(SQLModel, table=True):
     __tablename__ = "tenant_memberships"
     __table_args__ = (
         UniqueConstraint("tenant_id", "user_id", name="uq_membership_tenant_user"),
-        CheckConstraint(ROLE_CHECK, name="membership_valid_role"),
+        CheckConstraint(_ROLE_CHECK, name="membership_valid_role"),
     )
 
     id: str = Field(default_factory=_new_id, primary_key=True)
@@ -307,6 +319,305 @@ class AgentConfigDB(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=utcnow)
 
 
+class ToolConfigDB(SQLModel, table=True):
+    """Tool config stored as JSONB in the database."""
+
+    __tablename__ = "tool_configs"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "name", name="uq_tool_configs_tenant_name"),
+        CheckConstraint(_CHECK_VERSION_GTE_1, name="tool_configs_valid_version"),
+    )
+
+    id: str = Field(default_factory=_new_id, primary_key=True)
+    tenant_id: str = Field(
+        sa_column=Column(
+            String,
+            ForeignKey(_FK_TENANTS_ID, ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        )
+    )
+    name: str = Field(max_length=_MAX_NAME_LENGTH, index=True)
+    version: int = Field(default=1)
+    description: str = Field(default="")
+    config_data: dict[str, Any] = Field(sa_column=Column(JSON))
+    created_by: str | None = Field(
+        default=None,
+        sa_column=Column(
+            String,
+            ForeignKey(_FK_USERS_ID, ondelete=_FK_SET_NULL),
+            nullable=True,
+        ),
+    )
+    updated_by: str | None = Field(
+        default=None,
+        sa_column=Column(
+            String,
+            ForeignKey(_FK_USERS_ID, ondelete=_FK_SET_NULL),
+            nullable=True,
+        ),
+    )
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+# ── Profile Tables ───────────────────────────────────────────────────
+
+
+class LLMProfileDB(SQLModel, table=True):
+    """LLM/inference profile — provider, model, temperature, context management."""
+
+    __tablename__ = "llm_profiles"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "name", name="uq_llm_profiles_tenant_name"),
+    )
+
+    id: str = Field(default_factory=_new_id, primary_key=True)
+    tenant_id: str = Field(
+        sa_column=Column(
+            String,
+            ForeignKey(_FK_TENANTS_ID, ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        )
+    )
+    name: str = Field(max_length=_MAX_NAME_LENGTH, index=True)
+    description: str = Field(default="")
+    config_data: dict[str, Any] = Field(sa_column=Column(JSON))
+    created_by: str | None = Field(
+        default=None,
+        sa_column=Column(
+            String,
+            ForeignKey(_FK_USERS_ID, ondelete=_FK_SET_NULL),
+            nullable=True,
+        ),
+    )
+    updated_by: str | None = Field(
+        default=None,
+        sa_column=Column(
+            String,
+            ForeignKey(_FK_USERS_ID, ondelete=_FK_SET_NULL),
+            nullable=True,
+        ),
+    )
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+class SafetyProfileDB(SQLModel, table=True):
+    """Safety profile — content filters, guardrails, thresholds."""
+
+    __tablename__ = "safety_profiles"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "name", name="uq_safety_profiles_tenant_name"),
+    )
+
+    id: str = Field(default_factory=_new_id, primary_key=True)
+    tenant_id: str = Field(
+        sa_column=Column(
+            String,
+            ForeignKey(_FK_TENANTS_ID, ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        )
+    )
+    name: str = Field(max_length=_MAX_NAME_LENGTH, index=True)
+    description: str = Field(default="")
+    config_data: dict[str, Any] = Field(sa_column=Column(JSON))
+    created_by: str | None = Field(
+        default=None,
+        sa_column=Column(
+            String,
+            ForeignKey(_FK_USERS_ID, ondelete=_FK_SET_NULL),
+            nullable=True,
+        ),
+    )
+    updated_by: str | None = Field(
+        default=None,
+        sa_column=Column(
+            String,
+            ForeignKey(_FK_USERS_ID, ondelete=_FK_SET_NULL),
+            nullable=True,
+        ),
+    )
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+class ErrorHandlingProfileDB(SQLModel, table=True):
+    """Error handling profile — retry policies, fallbacks, circuit breakers."""
+
+    __tablename__ = "error_handling_profiles"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id", "name", name="uq_error_handling_profiles_tenant_name"
+        ),
+    )
+
+    id: str = Field(default_factory=_new_id, primary_key=True)
+    tenant_id: str = Field(
+        sa_column=Column(
+            String,
+            ForeignKey(_FK_TENANTS_ID, ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        )
+    )
+    name: str = Field(max_length=_MAX_NAME_LENGTH, index=True)
+    description: str = Field(default="")
+    config_data: dict[str, Any] = Field(sa_column=Column(JSON))
+    created_by: str | None = Field(
+        default=None,
+        sa_column=Column(
+            String,
+            ForeignKey(_FK_USERS_ID, ondelete=_FK_SET_NULL),
+            nullable=True,
+        ),
+    )
+    updated_by: str | None = Field(
+        default=None,
+        sa_column=Column(
+            String,
+            ForeignKey(_FK_USERS_ID, ondelete=_FK_SET_NULL),
+            nullable=True,
+        ),
+    )
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+class ObservabilityProfileDB(SQLModel, table=True):
+    """Observability profile — logging, metrics, tracing configuration."""
+
+    __tablename__ = "observability_profiles"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id", "name", name="uq_observability_profiles_tenant_name"
+        ),
+    )
+
+    id: str = Field(default_factory=_new_id, primary_key=True)
+    tenant_id: str = Field(
+        sa_column=Column(
+            String,
+            ForeignKey(_FK_TENANTS_ID, ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        )
+    )
+    name: str = Field(max_length=_MAX_NAME_LENGTH, index=True)
+    description: str = Field(default="")
+    config_data: dict[str, Any] = Field(sa_column=Column(JSON))
+    created_by: str | None = Field(
+        default=None,
+        sa_column=Column(
+            String,
+            ForeignKey(_FK_USERS_ID, ondelete=_FK_SET_NULL),
+            nullable=True,
+        ),
+    )
+    updated_by: str | None = Field(
+        default=None,
+        sa_column=Column(
+            String,
+            ForeignKey(_FK_USERS_ID, ondelete=_FK_SET_NULL),
+            nullable=True,
+        ),
+    )
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+class MemoryProfileDB(SQLModel, table=True):
+    """Memory profile — context window, history, retrieval settings."""
+
+    __tablename__ = "memory_profiles"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "name", name="uq_memory_profiles_tenant_name"),
+    )
+
+    id: str = Field(default_factory=_new_id, primary_key=True)
+    tenant_id: str = Field(
+        sa_column=Column(
+            String,
+            ForeignKey(_FK_TENANTS_ID, ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        )
+    )
+    name: str = Field(max_length=_MAX_NAME_LENGTH, index=True)
+    description: str = Field(default="")
+    config_data: dict[str, Any] = Field(sa_column=Column(JSON))
+    created_by: str | None = Field(
+        default=None,
+        sa_column=Column(
+            String,
+            ForeignKey(_FK_USERS_ID, ondelete=_FK_SET_NULL),
+            nullable=True,
+        ),
+    )
+    updated_by: str | None = Field(
+        default=None,
+        sa_column=Column(
+            String,
+            ForeignKey(_FK_USERS_ID, ondelete=_FK_SET_NULL),
+            nullable=True,
+        ),
+    )
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+class BudgetProfileDB(SQLModel, table=True):
+    """Budget profile — cost limits, token budgets, usage quotas."""
+
+    __tablename__ = "budget_profiles"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "name", name="uq_budget_profiles_tenant_name"),
+    )
+
+    id: str = Field(default_factory=_new_id, primary_key=True)
+    tenant_id: str = Field(
+        sa_column=Column(
+            String,
+            ForeignKey(_FK_TENANTS_ID, ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        )
+    )
+    name: str = Field(max_length=_MAX_NAME_LENGTH, index=True)
+    description: str = Field(default="")
+    config_data: dict[str, Any] = Field(sa_column=Column(JSON))
+    created_by: str | None = Field(
+        default=None,
+        sa_column=Column(
+            String,
+            ForeignKey(_FK_USERS_ID, ondelete=_FK_SET_NULL),
+            nullable=True,
+        ),
+    )
+    updated_by: str | None = Field(
+        default=None,
+        sa_column=Column(
+            String,
+            ForeignKey(_FK_USERS_ID, ondelete=_FK_SET_NULL),
+            nullable=True,
+        ),
+    )
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+PROFILE_DB_MAP: dict[str, type] = {
+    "llm": LLMProfileDB,
+    "safety": SafetyProfileDB,
+    "error_handling": ErrorHandlingProfileDB,
+    "observability": ObservabilityProfileDB,
+    "memory": MemoryProfileDB,
+    "budget": BudgetProfileDB,
+}
+
+
 # ── Indexes ──────────────────────────────────────────────────────────
 
 Index("idx_membership_tenant_role", TenantMembership.tenant_id, TenantMembership.role)
@@ -314,3 +625,18 @@ Index("idx_api_keys_hash_active", APIKey.key_hash, APIKey.is_active)  # type: ig
 Index("idx_workflow_configs_tenant", WorkflowConfigDB.tenant_id, WorkflowConfigDB.name)
 Index("idx_stage_configs_tenant", StageConfigDB.tenant_id, StageConfigDB.name)
 Index("idx_agent_configs_tenant", AgentConfigDB.tenant_id, AgentConfigDB.name)
+Index("idx_tool_configs_tenant", ToolConfigDB.tenant_id, ToolConfigDB.name)
+Index("idx_llm_profiles_tenant", LLMProfileDB.tenant_id, LLMProfileDB.name)
+Index("idx_safety_profiles_tenant", SafetyProfileDB.tenant_id, SafetyProfileDB.name)
+Index(
+    "idx_error_handling_profiles_tenant",
+    ErrorHandlingProfileDB.tenant_id,
+    ErrorHandlingProfileDB.name,
+)
+Index(
+    "idx_observability_profiles_tenant",
+    ObservabilityProfileDB.tenant_id,
+    ObservabilityProfileDB.name,
+)
+Index("idx_memory_profiles_tenant", MemoryProfileDB.tenant_id, MemoryProfileDB.name)
+Index("idx_budget_profiles_tenant", BudgetProfileDB.tenant_id, BudgetProfileDB.name)

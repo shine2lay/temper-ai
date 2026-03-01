@@ -256,41 +256,6 @@ class TestRunWorkflowImpl:
 
 
 class TestGetRunStatusImpl:
-    def test_run_not_found_returns_error(self):
-        mock_store = MagicMock()
-        mock_store.get_run.return_value = None
-
-        with patch(
-            "temper_ai.interfaces.server.run_store.RunStore", return_value=mock_store
-        ):
-            from temper_ai.mcp.server import _get_run_status_impl
-
-            result = _get_run_status_impl("missing-run-id")
-
-        parsed = json.loads(result)
-        assert "error" in parsed
-        assert "not found" in parsed["error"]
-
-    def test_run_found_returns_data(self):
-        mock_run = MagicMock()
-        mock_run.model_dump.return_value = {
-            "execution_id": "abc",
-            "status": "completed",
-        }
-        mock_store = MagicMock()
-        mock_store.get_run.return_value = mock_run
-
-        with patch(
-            "temper_ai.interfaces.server.run_store.RunStore", return_value=mock_store
-        ):
-            from temper_ai.mcp.server import _get_run_status_impl
-
-            result = _get_run_status_impl("abc")
-
-        parsed = json.loads(result)
-        assert parsed["status"] == "completed"
-        assert parsed["execution_id"] == "abc"
-
     def test_with_execution_service_found(self):
         """When execution_service is provided, it should be used."""
         from temper_ai.mcp.server import _get_run_status_impl

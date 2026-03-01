@@ -26,6 +26,20 @@ Example YAML::
 import re
 from typing import Any, Literal
 
+
+class ContextResolutionError(Exception):
+    """Raised when a required input cannot be resolved."""
+
+    def __init__(self, stage_name: str, input_name: str, source: str) -> None:
+        self.stage_name = stage_name
+        self.input_name = input_name
+        self.source = source
+        super().__init__(
+            f"Stage '{stage_name}': required input '{input_name}' "
+            f"could not be resolved from source '{source}'"
+        )
+
+
 from pydantic import BaseModel, field_validator
 
 # Valid source pattern: workflow.<field> or <stage>.<field> or <stage>.structured.<field>

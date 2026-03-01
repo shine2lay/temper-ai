@@ -31,6 +31,8 @@ workflow:
     - name: vcs_work_discovery
       stage_ref: configs/stages/vcs_work_discovery.yaml
       description: "Read VISION.md + analyze codebase to pick next work item"
+      input_map:
+        workspace_path: "workflow.workspace_path"
 
     - name: vcs_design
       stage_ref: configs/stages/vcs_design.yaml
@@ -39,30 +41,51 @@ workflow:
         - vcs_work_discovery
       condition: "{{ 'DECISION: APPROVE' in (stage_outputs.vcs_work_discovery.output | default('') | upper) or 'DECISION:APPROVE' in (stage_outputs.vcs_work_discovery.output | default('') | upper) }}"
       skip_to: "end"
+      input_map:
+        suggestion_text: "vcs_work_discovery.output"
+        workspace_path: "workflow.workspace_path"
 
     - name: vcs_task_planning
       stage_ref: configs/stages/vcs_task_planning.yaml
       description: "Sequential task decomposition: foundation specs then integration specs"
       depends_on:
         - vcs_design
+      input_map:
+        suggestion_text: "vcs_work_discovery.output"
+        workspace_path: "workflow.workspace_path"
+        design_output: "vcs_design.output"
 
     - name: vcs_git_setup
       stage_ref: configs/stages/vcs_git_setup.yaml
       description: "Pull latest from default branch and create feature branch"
       depends_on:
         - vcs_task_planning
+      input_map:
+        workspace_path: "workflow.workspace_path"
+        suggestion_text: "vcs_work_discovery.output"
 
     - name: vcs_task_split
       stage_ref: configs/stages/vcs_task_split.yaml
       description: "Split work into 3 groups for parallel coders"
       depends_on:
         - vcs_git_setup
+      input_map:
+        task_specs: "vcs_task_planning.output"
+        design_output: "vcs_design.output"
+        workspace_path: "vcs_git_setup.structured.worktree_path"
 
     - name: vcs_code_execute
       stage_ref: configs/stages/vcs_code_execute.yaml
       description: "3 parallel coders write assigned files"
       depends_on:
         - vcs_task_split
+      input_map:
+        workspace_path: "vcs_git_setup.structured.worktree_path"
+        task_assignments: "vcs_task_split.output"
+        task_specs: "vcs_task_planning.output"
+        design_output: "vcs_design.output"
+        quality_gate_output: "vcs_quality_gate.output"
+        static_check_output: "vcs_static_check.output"
 
     - name: vcs_static_check
       stage_ref: configs/stages/vcs_static_check.yaml
@@ -72,6 +95,9 @@ workflow:
       loops_back_to: vcs_code_execute
       max_loops: 3
       loop_condition: "{{ 'OVERALL: FAIL' in (stage_outputs.vcs_static_check.output | default('') | upper) or 'OVERALL:FAIL' in (stage_outputs.vcs_static_check.output | default('') | upper) }}"
+      input_map:
+        workspace_path: "vcs_git_setup.structured.worktree_path"
+        coder_output: "vcs_code_execute.output"
 
     - name: vcs_quality_gate
       stage_ref: configs/stages/vcs_quality_gate.yaml
@@ -81,6 +107,12 @@ workflow:
       loops_back_to: vcs_code_execute
       max_loops: 3
       loop_condition: "{{ 'OVERALL: FAIL' in (stage_outputs.vcs_quality_gate.output | default('') | upper) or 'OVERALL:FAIL' in (stage_outputs.vcs_quality_gate.output | default('') | upper) }}"
+      input_map:
+        workspace_path: "vcs_git_setup.structured.worktree_path"
+        suggestion_text: "vcs_work_discovery.output"
+        coder_output: "vcs_code_execute.output"
+        static_check_output: "vcs_static_check.output"
+        design_output: "vcs_design.output"
 
     - name: vcs_git_commit
       stage_ref: configs/stages/vcs_git_commit.yaml
@@ -88,6 +120,10 @@ workflow:
       depends_on:
         - vcs_quality_gate
       condition: "{{ 'OVERALL: PASS' in (stage_outputs.vcs_quality_gate.output | default('') | upper) or 'OVERALL:PASS' in (stage_outputs.vcs_quality_gate.output | default('') | upper) }}"
+      input_map:
+        workspace_path: "vcs_git_setup.structured.worktree_path"
+        repo_path: "workflow.workspace_path"
+        suggestion_text: "vcs_work_discovery.output"
 
   inputs:
     required:

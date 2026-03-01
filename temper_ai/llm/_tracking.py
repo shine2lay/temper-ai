@@ -83,33 +83,6 @@ def track_failed_call(
     )
 
 
-def track_llm_iteration(
-    observer: Any,
-    iteration_data: Any,
-) -> None:
-    """Emit an LLM iteration event via the observer.
-
-    Falls back to logging if the observer does not support the method.
-
-    Args:
-        observer: AgentObserver or tracker instance (may be None).
-        iteration_data: LLMIterationEventData instance.
-    """
-    if observer is None:
-        return
-    track_fn = getattr(observer, "track_llm_iteration", None)
-    if track_fn is not None:
-        try:
-            track_fn(iteration_data)
-        except (AttributeError, TypeError, RuntimeError) as exc:
-            logger.debug("Failed to emit LLM iteration event: %s", exc)
-    else:
-        logger.debug(
-            "Observer does not support track_llm_iteration; iteration=%s",
-            getattr(iteration_data, "iteration_number", "?"),
-        )
-
-
 def validate_safety(
     tool_executor: Any,
     inference_config: Any,

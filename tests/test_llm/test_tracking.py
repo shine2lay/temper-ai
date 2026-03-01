@@ -1,7 +1,7 @@
 """Tests for temper_ai.llm._tracking module.
 
 Tests observer tracking helpers and safety validation:
-track_call, track_failed_call, track_llm_iteration, validate_safety.
+track_call, track_failed_call, validate_safety.
 """
 
 from __future__ import annotations
@@ -13,7 +13,6 @@ import pytest
 from temper_ai.llm._tracking import (
     track_call,
     track_failed_call,
-    track_llm_iteration,
     validate_safety,
 )
 from temper_ai.shared.utils.exceptions import ConfigValidationError
@@ -148,43 +147,6 @@ class TestTrackFailedCall:
         call_kwargs = observer.track_llm_call.call_args.kwargs
         error_msg = call_kwargs["error_message"]
         assert "[attempt 1/3]" in error_msg
-
-
-class TestTrackLlmIteration:
-    """Tests for track_llm_iteration."""
-
-    def test_observer_none_is_noop(self) -> None:
-        """When observer is None, track_llm_iteration returns without error."""
-        iteration_data = MagicMock()
-        # Should not raise
-        track_llm_iteration(observer=None, iteration_data=iteration_data)
-
-    def test_calls_observer_track_llm_iteration(self) -> None:
-        """Calls observer.track_llm_iteration when method exists."""
-        observer = MagicMock()
-        iteration_data = MagicMock()
-
-        track_llm_iteration(observer=observer, iteration_data=iteration_data)
-
-        observer.track_llm_iteration.assert_called_once_with(iteration_data)
-
-    def test_falls_back_to_logging_when_method_missing(self) -> None:
-        """Falls back to logging when observer lacks track_llm_iteration."""
-        observer = MagicMock(spec=[])  # Empty spec — no attributes
-        iteration_data = MagicMock()
-        iteration_data.iteration_number = 3
-
-        # Should not raise even without track_llm_iteration
-        track_llm_iteration(observer=observer, iteration_data=iteration_data)
-
-    def test_catches_exception_from_track_llm_iteration(self) -> None:
-        """Catches TypeError raised by observer.track_llm_iteration gracefully."""
-        observer = MagicMock()
-        observer.track_llm_iteration.side_effect = TypeError("bad argument")
-        iteration_data = MagicMock()
-
-        # Should not propagate the TypeError
-        track_llm_iteration(observer=observer, iteration_data=iteration_data)
 
 
 class TestValidateSafety:

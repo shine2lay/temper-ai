@@ -20,6 +20,7 @@ from starlette.status import (
 
 from temper_ai.auth.api_key_auth import AuthContext, require_auth, require_role
 from temper_ai.interfaces.server.health import check_health, check_readiness
+from temper_ai.interfaces.server.lifecycle import DEFAULT_TENANT_ID
 
 logger = logging.getLogger(__name__)
 
@@ -82,20 +83,25 @@ async def _handle_create_run(
     config_root: str,
     tenant_id: str | None = None,
 ) -> RunResponse:
-    """Start a workflow execution."""
-    # Security: prevent path traversal
-    config_root_resolved = Path(config_root).resolve()
-    workflow_file = (config_root_resolved / body.workflow).resolve()
-    try:
-        workflow_file.relative_to(config_root_resolved)
-    except ValueError:
+    """Start a workflow execution by name.
+
+    The workflow field is a config name (not a filesystem path).
+    ConfigLoader resolves it: DB first, then filesystem fallback.
+    """
+    workflow_name = body.workflow.strip()
+    if not workflow_name:
         raise HTTPException(
-            status_code=HTTP_400_BAD_REQUEST, detail="Invalid workflow path"
-        ) from None
+            status_code=HTTP_400_BAD_REQUEST, detail="Workflow name must not be empty"
+        )
+    # Reject path separators and traversal patterns in the name
+    if "/" in workflow_name or "\\" in workflow_name or ".." in workflow_name:
+        raise HTTPException(
+            status_code=HTTP_400_BAD_REQUEST, detail="Invalid workflow name"
+        )
 
     try:
         execution_id = await execution_service.execute_workflow_async(
-            workflow_path=body.workflow,
+            workflow_path=workflow_name,
             input_data=body.inputs,
             workspace=body.workspace,
             run_id=body.run_id,
@@ -205,6 +211,34 @@ async def _handle_get_run_events(
         return {"events": [], "total": 0}
 
 
+async def _handle_list_stuck_runs(
+    execution_service: Any,
+    threshold_minutes: int = 30,
+) -> dict[str, Any]:
+    """List runs stuck longer than threshold."""
+    stuck = await execution_service.find_stuck_executions(threshold_minutes * 60)
+    return {"runs": stuck, "total": len(stuck)}
+
+
+async def _handle_resume_run(
+    execution_service: Any,
+    run_id: str,
+    tenant_id: str | None = None,
+) -> dict[str, Any]:
+    """Resume a stuck/failed workflow execution."""
+    if tenant_id:
+        logger.debug("resume_run called for tenant_id=%s run_id=%s", tenant_id, run_id)
+    try:
+        new_id = await execution_service.resume_workflow(run_id)
+        return {
+            "status": "resumed",
+            "original_execution_id": run_id,
+            "new_execution_id": new_id,
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=str(e)) from e
+
+
 def _handle_validate_workflow(
     config_root: str, body: ValidateRequest
 ) -> dict[str, Any]:
@@ -296,6 +330,15 @@ def _register_run_routes_auth(
             execution_service, status, limit, offset, tenant_id=ctx.tenant_id
         )
 
+    # Register /runs/stuck BEFORE /runs/{run_id} to avoid route shadowing
+    @router.get("/runs/stuck")
+    async def list_stuck_runs(
+        threshold_minutes: int = Query(30, ge=1),
+        ctx: AuthContext = Depends(require_auth),
+    ) -> dict[str, Any]:
+        """List runs stuck longer than threshold."""
+        return await _handle_list_stuck_runs(execution_service, threshold_minutes)
+
     @router.get("/runs/{run_id}")
     async def get_run(
         run_id: str, ctx: AuthContext = Depends(require_auth)
@@ -310,6 +353,16 @@ def _register_run_routes_auth(
     ) -> dict[str, Any]:
         """Cancel a running workflow execution."""
         return await _handle_cancel_run(
+            execution_service, run_id, tenant_id=ctx.tenant_id
+        )
+
+    @router.post("/runs/{run_id}/resume")
+    async def resume_run(
+        run_id: str,
+        ctx: AuthContext = Depends(require_role("owner", "editor")),
+    ) -> dict[str, Any]:
+        """Resume a stuck/failed workflow execution."""
+        return await _handle_resume_run(
             execution_service, run_id, tenant_id=ctx.tenant_id
         )
 
@@ -334,7 +387,9 @@ def _register_run_routes_noauth(
     @router.post("/runs", response_model=RunResponse)
     async def create_run(body: RunRequest = Body(...)) -> RunResponse:
         """Start a workflow execution."""
-        return await _handle_create_run(execution_service, body, config_root)
+        return await _handle_create_run(
+            execution_service, body, config_root, tenant_id=DEFAULT_TENANT_ID
+        )
 
     @router.get("/runs")
     async def list_runs(
@@ -343,17 +398,38 @@ def _register_run_routes_noauth(
         offset: int = Query(0, ge=0),
     ) -> dict[str, Any]:
         """List workflow executions."""
-        return await _handle_list_runs(execution_service, status, limit, offset)
+        return await _handle_list_runs(
+            execution_service, status, limit, offset, tenant_id=DEFAULT_TENANT_ID
+        )
+
+    # Register /runs/stuck BEFORE /runs/{run_id} to avoid route shadowing
+    @router.get("/runs/stuck")
+    async def list_stuck_runs(
+        threshold_minutes: int = Query(30, ge=1),
+    ) -> dict[str, Any]:
+        """List runs stuck longer than threshold."""
+        return await _handle_list_stuck_runs(execution_service, threshold_minutes)
 
     @router.get("/runs/{run_id}")
     async def get_run(run_id: str) -> dict[str, Any]:
         """Get execution status by ID."""
-        return await _handle_get_run(execution_service, run_id)
+        return await _handle_get_run(
+            execution_service, run_id, tenant_id=DEFAULT_TENANT_ID
+        )
 
     @router.post("/runs/{run_id}/cancel")
     async def cancel_run(run_id: str) -> dict[str, Any]:
         """Cancel a running workflow execution."""
-        return await _handle_cancel_run(execution_service, run_id)
+        return await _handle_cancel_run(
+            execution_service, run_id, tenant_id=DEFAULT_TENANT_ID
+        )
+
+    @router.post("/runs/{run_id}/resume")
+    async def resume_run(run_id: str) -> dict[str, Any]:
+        """Resume a stuck/failed workflow execution."""
+        return await _handle_resume_run(
+            execution_service, run_id, tenant_id=DEFAULT_TENANT_ID
+        )
 
     @router.get("/runs/{run_id}/events")
     async def get_run_events(

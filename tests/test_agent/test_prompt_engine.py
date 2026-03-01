@@ -243,7 +243,7 @@ class TestTemplateCaching:
         assert result1 == "Hello Alice!"
 
         # Check cache stats
-        stats = engine.get_cache_stats()
+        stats = engine.cache.get_cache_stats()
         assert stats["cache_misses"] == 1
         assert stats["cache_hits"] == 0
         assert stats["cache_size"] == 1
@@ -253,7 +253,7 @@ class TestTemplateCaching:
         assert result2 == "Hello Bob!"
 
         # Check cache hit
-        stats = engine.get_cache_stats()
+        stats = engine.cache.get_cache_stats()
         assert stats["cache_hits"] == 1
         assert stats["cache_misses"] == 1
         assert stats["cache_hit_rate"] == 0.5
@@ -266,7 +266,7 @@ class TestTemplateCaching:
         engine.render("Hello {{name}}!", {"name": "Alice"})
         engine.render("Goodbye {{name}}!", {"name": "Bob"})
 
-        stats = engine.get_cache_stats()
+        stats = engine.cache.get_cache_stats()
         assert stats["cache_size"] == 2
         assert stats["cache_misses"] == 2
         assert stats["cache_hits"] == 0
@@ -275,7 +275,7 @@ class TestTemplateCaching:
         engine.render("Hello {{name}}!", {"name": "Charlie"})
         engine.render("Goodbye {{name}}!", {"name": "David"})
 
-        stats = engine.get_cache_stats()
+        stats = engine.cache.get_cache_stats()
         assert stats["cache_size"] == 2
         assert stats["cache_hits"] == 2
         assert stats["cache_misses"] == 2
@@ -316,7 +316,7 @@ class TestTemplateCaching:
         time.time() - start
 
         # Verify cache is used deterministically via stats
-        stats = engine.get_cache_stats()
+        stats = engine.cache.get_cache_stats()
         assert (
             stats["cache_hits"] >= 9
         ), f"Expected at least 9 cache hits from 10 renders, got {stats['cache_hits']}"
@@ -331,7 +331,7 @@ class TestTemplateCaching:
         engine.render("Template 2: {{x}}", {"x": 2})
         engine.render("Template 3: {{x}}", {"x": 3})
 
-        stats = engine.get_cache_stats()
+        stats = engine.cache.get_cache_stats()
         assert stats["cache_size"] == 3
         assert stats["cache_misses"] == 3
         assert stats["cache_hits"] == 0
@@ -339,32 +339,32 @@ class TestTemplateCaching:
         # Add 4th template - should evict oldest (Template 1)
         engine.render("Template 4: {{x}}", {"x": 4})
 
-        stats = engine.get_cache_stats()
+        stats = engine.cache.get_cache_stats()
         assert stats["cache_size"] == 3  # Still only 3 in cache
         assert stats["cache_misses"] == 4  # 4th template is also a miss
 
         # Rendering Template 1 again should be cache miss (it was evicted)
-        old_misses = engine.get_cache_stats()["cache_misses"]
+        old_misses = engine.cache.get_cache_stats()["cache_misses"]
         engine.render("Template 1: {{x}}", {"x": 1})
-        assert engine.get_cache_stats()["cache_misses"] == old_misses + 1
+        assert engine.cache.get_cache_stats()["cache_misses"] == old_misses + 1
 
         # Now cache should have: Template 3, Template 4, Template 1
         # (Template 2 was evicted when Template 1 was re-added)
 
         # Template 3 should still be in cache
-        old_hits = engine.get_cache_stats()["cache_hits"]
+        old_hits = engine.cache.get_cache_stats()["cache_hits"]
         engine.render("Template 3: {{x}}", {"x": 3})
-        assert engine.get_cache_stats()["cache_hits"] == old_hits + 1
+        assert engine.cache.get_cache_stats()["cache_hits"] == old_hits + 1
 
         # Template 4 should still be in cache
-        old_hits = engine.get_cache_stats()["cache_hits"]
+        old_hits = engine.cache.get_cache_stats()["cache_hits"]
         engine.render("Template 4: {{x}}", {"x": 4})
-        assert engine.get_cache_stats()["cache_hits"] == old_hits + 1
+        assert engine.cache.get_cache_stats()["cache_hits"] == old_hits + 1
 
         # Template 2 should be evicted (cache miss)
-        old_misses = engine.get_cache_stats()["cache_misses"]
+        old_misses = engine.cache.get_cache_stats()["cache_misses"]
         engine.render("Template 2: {{x}}", {"x": 2})
-        assert engine.get_cache_stats()["cache_misses"] == old_misses + 1
+        assert engine.cache.get_cache_stats()["cache_misses"] == old_misses + 1
 
     def test_clear_cache(self):
         """Test cache clearing functionality."""
@@ -374,12 +374,12 @@ class TestTemplateCaching:
         engine.render("Hello {{name}}!", {"name": "Alice"})
         engine.render("Goodbye {{name}}!", {"name": "Bob"})
 
-        assert engine.get_cache_stats()["cache_size"] == 2
+        assert engine.cache.get_cache_stats()["cache_size"] == 2
 
         # Clear cache
         engine.clear_cache()
 
-        stats = engine.get_cache_stats()
+        stats = engine.cache.get_cache_stats()
         assert stats["cache_size"] == 0
         assert stats["cache_hits"] == 0
         assert stats["cache_misses"] == 0
@@ -393,7 +393,7 @@ class TestTemplateCaching:
         for i in range(5):
             engine.render("Test {{x}}", {"x": i})
 
-        stats = engine.get_cache_stats()
+        stats = engine.cache.get_cache_stats()
         assert stats["cache_hits"] == 4  # First is miss, next 4 are hits
         assert stats["cache_misses"] == 1
         assert stats["total_requests"] == 5
@@ -410,7 +410,7 @@ class TestTemplateCaching:
         engine.render(template, {"name": "Charlie", "age": 35})
 
         # All should use same cached template
-        stats = engine.get_cache_stats()
+        stats = engine.cache.get_cache_stats()
         assert stats["cache_misses"] == 1  # Only first is miss
         assert stats["cache_hits"] == 2  # Next 2 are hits
         assert stats["cache_size"] == 1  # Only 1 template cached
@@ -430,7 +430,7 @@ class TestTemplateCaching:
         assert result3 == "Premium user"
 
         # Should have 1 cache miss, 2 hits
-        stats = engine.get_cache_stats()
+        stats = engine.cache.get_cache_stats()
         assert stats["cache_misses"] == 1
         assert stats["cache_hits"] == 2
 
@@ -447,7 +447,7 @@ class TestTemplateCaching:
         assert result2 == "x,y,z,"
 
         # Both should use cached template
-        stats = engine.get_cache_stats()
+        stats = engine.cache.get_cache_stats()
         assert stats["cache_hits"] == 1
         assert stats["cache_misses"] == 1
 
@@ -480,7 +480,7 @@ class TestTemplateCaching:
             )
 
         # Should have 1 miss (first) and 4 hits
-        stats = engine.get_cache_stats()
+        stats = engine.cache.get_cache_stats()
         assert stats["cache_misses"] == 1
         assert stats["cache_hits"] == 4
         assert stats["cache_hit_rate"] == 0.8
@@ -489,31 +489,31 @@ class TestTemplateCaching:
         """Test that cache_size parameter is respected."""
         # Small cache
         engine_small = PromptEngine(cache_size=2)
-        assert engine_small.get_cache_stats()["cache_capacity"] == 2
+        assert engine_small.cache.get_cache_stats()["cache_capacity"] == 2
 
         # Large cache
         engine_large = PromptEngine(cache_size=1000)
-        assert engine_large.get_cache_stats()["cache_capacity"] == 1000
+        assert engine_large.cache.get_cache_stats()["cache_capacity"] == 1000
 
     def test_cache_hit_rate_calculation(self):
         """Test cache hit rate is calculated correctly."""
         engine = PromptEngine()
 
         # 0 requests - should return 0.0
-        assert engine.get_cache_stats()["cache_hit_rate"] == 0.0
+        assert engine.cache.get_cache_stats()["cache_hit_rate"] == 0.0
 
         # 1 miss, 0 hits - should return 0.0
         engine.render("Test", {})
-        assert engine.get_cache_stats()["cache_hit_rate"] == 0.0
+        assert engine.cache.get_cache_stats()["cache_hit_rate"] == 0.0
 
         # 1 miss, 1 hit - should return 0.5
         engine.render("Test", {})
-        assert engine.get_cache_stats()["cache_hit_rate"] == 0.5
+        assert engine.cache.get_cache_stats()["cache_hit_rate"] == 0.5
 
         # 1 miss, 3 hits - should return 0.75
         engine.render("Test", {})
         engine.render("Test", {})
-        assert engine.get_cache_stats()["cache_hit_rate"] == 0.75
+        assert engine.cache.get_cache_stats()["cache_hit_rate"] == 0.75
 
 
 class TestRealWorld:

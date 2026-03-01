@@ -176,6 +176,32 @@ def resolve_max_prompt_length(safety_config: Any) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Observer stream callback bridge
+# ---------------------------------------------------------------------------
+
+
+def _make_observer_stream_callback(emit_fn: Callable) -> Callable:
+    """Create a StreamCallback that emits chunks via an AgentObserver.
+
+    Bridges the LLM provider's ``on_chunk(LLMStreamChunk)`` callback to the
+    observer's ``emit_stream_chunk()`` so that streaming tokens flow to the
+    event bus and on to the dashboard WebSocket.
+    """
+
+    def _on_chunk(chunk: Any) -> None:
+        emit_fn(
+            content=chunk.content,
+            chunk_type=getattr(chunk, "chunk_type", "content"),
+            done=getattr(chunk, "done", False),
+            model=getattr(chunk, "model", None),
+            prompt_tokens=getattr(chunk, "prompt_tokens", None),
+            completion_tokens=getattr(chunk, "completion_tokens", None),
+        )
+
+    return _on_chunk
+
+
+# ---------------------------------------------------------------------------
 # LLMService
 # ---------------------------------------------------------------------------
 
@@ -343,6 +369,15 @@ class LLMService:
         s.max_prompt_length = resolve_max_prompt_length(s.safety_config)
         s.effective_start = start_time if start_time is not None else time.time()
         s.effective_timeout = max_execution_time or float("inf")
+
+        # Auto-wire streaming when observer supports it and no explicit
+        # stream_callback was provided.  This makes LLM calls use the
+        # provider's stream() method, emitting chunks to the event bus
+        # so the dashboard WebSocket receives live token output.
+        if s.stream_callback is None and s.observer is not None:
+            emit = getattr(s.observer, "emit_stream_chunk", None)
+            if callable(emit):
+                s.stream_callback = _make_observer_stream_callback(emit)
 
         text_schemas = None
         if s.tools and getattr(self.inference_config, "use_text_tool_schemas", False):

@@ -92,7 +92,7 @@ class TemperEventBus:
 
     def emit(
         self,
-        event_type: str,
+        event_type: Any,
         payload: dict[str, Any] | None = None,
         source_workflow_id: str | None = None,
         source_stage_name: str | None = None,
@@ -100,13 +100,29 @@ class TemperEventBus:
     ) -> None:
         """Emit an event, persisting and forwarding to subscribers.
 
+        Accepts either decomposed arguments (event_type string + payload dict)
+        or a single ObservabilityEvent object (as emitted by ExecutionTracker).
+
         Args:
-            event_type: The event type string.
+            event_type: The event type string, or an ObservabilityEvent object.
             payload: Optional event payload dict.
             source_workflow_id: Originating workflow ID.
             source_stage_name: Originating stage name.
             agent_id: Originating agent ID.
         """
+        # Handle ObservabilityEvent objects passed directly by ExecutionTracker
+        if hasattr(event_type, "event_type") and hasattr(event_type, "data"):
+            obs_event = event_type
+            self._obs_bus.emit(obs_event)
+            evt_str = obs_event.event_type
+            self._evaluate_subscriptions(
+                evt_str, obs_event.data, getattr(obs_event, "workflow_id", None)
+            )
+            self._notify_waiters(
+                evt_str, obs_event.data, getattr(obs_event, "workflow_id", None)
+            )
+            return
+
         if self._persist and self._session_factory is not None:
             self._persist_and_emit(
                 event_type, payload, source_workflow_id, source_stage_name, agent_id

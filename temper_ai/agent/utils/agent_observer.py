@@ -78,10 +78,16 @@ class AgentObserver:
     ) -> None:
         """Emit a streaming chunk event. Best-effort, never raises."""
         if self._tracker is None or self._agent_id is None:
+            logger.debug(
+                "emit_stream_chunk: skipped (tracker=%s, agent_id=%s)",
+                self._tracker is not None,
+                self._agent_id,
+            )
             return
         try:
             event_bus = getattr(self._tracker, "_event_bus", None)
             if event_bus is None:
+                logger.debug("emit_stream_chunk: no event_bus on tracker")
                 return
             from temper_ai.observability._tracker_helpers import (
                 StreamChunkData,
@@ -107,4 +113,4 @@ class AgentObserver:
             )
             emit_llm_stream_chunk(event_bus=event_bus, data=data)
         except Exception:  # noqa: BLE001 -- best-effort streaming event
-            pass
+            logger.warning("emit_stream_chunk failed", exc_info=True)

@@ -89,6 +89,11 @@ export function AgentDetailPanel({ agentId }: AgentDetailPanelProps) {
             {config.provider}/{config.model}
           </Badge>
         )}
+        {config?.type && config.type !== 'standard' && (
+          <Badge variant="secondary" className="text-xs">
+            {config.type}
+          </Badge>
+        )}
         {ag.role && (
           <Badge variant="secondary" className="text-xs">
             {ag.role}
@@ -197,6 +202,47 @@ export function AgentDetailPanel({ agentId }: AgentDetailPanelProps) {
       {config && (
         <CollapsibleSection title="Agent Config">
           <JsonViewer data={ag.agent_config_snapshot} />
+        </CollapsibleSection>
+      )}
+
+      {(config?.inputs || config?.outputs) && (
+        <CollapsibleSection title="Declared I/O">
+          {config?.inputs && (
+            <div className="mb-2">
+              <span className="text-[10px] font-medium text-temper-text-muted uppercase tracking-wide block mb-1">Inputs</span>
+              <div className="rounded-md border border-temper-border bg-temper-panel overflow-hidden">
+                <table className="w-full text-xs">
+                  <tbody>
+                    {Object.entries(config.inputs).map(([name, decl]) => (
+                      <tr key={name} className="border-b border-temper-border/30 last:border-b-0">
+                        <td className="px-3 py-1 text-temper-text font-medium">{name}</td>
+                        <td className="px-3 py-1 text-temper-text-muted font-mono">{decl.type}</td>
+                        <td className="px-3 py-1 text-temper-text-dim">{decl.required ? 'required' : 'optional'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+          {config?.outputs && (
+            <div>
+              <span className="text-[10px] font-medium text-temper-text-muted uppercase tracking-wide block mb-1">Outputs</span>
+              <div className="rounded-md border border-temper-border bg-temper-panel overflow-hidden">
+                <table className="w-full text-xs">
+                  <tbody>
+                    {Object.entries(config.outputs).map(([name, decl]) => (
+                      <tr key={name} className="border-b border-temper-border/30 last:border-b-0">
+                        <td className="px-3 py-1 text-temper-text font-medium">{name}</td>
+                        <td className="px-3 py-1 text-temper-text-muted font-mono">{decl.type}</td>
+                        <td className="px-3 py-1 text-temper-text-dim">{decl.description ?? ''}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </CollapsibleSection>
       )}
 

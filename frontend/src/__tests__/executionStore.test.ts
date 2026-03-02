@@ -27,7 +27,7 @@ function resetStore() {
     toolCalls: new Map(),
     streamingContent: new Map(),
     selection: null,
-    wsStatus: { connected: false, reconnectAttempt: 0, lastHeartbeat: null },
+    wsStatus: { connected: false, reconnectAttempt: 0, lastHeartbeat: null, wsError: null },
     eventLog: [],
     expandedStages: new Set(),
   });

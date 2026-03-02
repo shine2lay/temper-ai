@@ -324,7 +324,64 @@ def _execute_parallel_agent(
     _dispatch_parallel_evaluation(
         params, context, input_data, response, agent_config_dict, duration
     )
-    return _build_agent_success_result(params.agent_name, response, duration)
+    result = _build_agent_success_result(params.agent_name, response, duration)
+
+    # Validate agent outputs and persist structured data to DB
+    _persist_parallel_structured_outputs(
+        agent,
+        params.agent_name,
+        result,
+        response,
+        params.tracker,
+        context,
+    )
+
+    return result
+
+
+def _persist_parallel_structured_outputs(
+    agent: Any,
+    agent_name: str,
+    result: dict[str, Any],
+    response: Any,
+    tracker: Any | None,
+    context: Any,
+) -> None:
+    """Validate agent outputs and persist structured fields to DB for parallel agents."""
+    try:
+        from temper_ai.stage.executors._agent_input_helpers import (
+            validate_agent_outputs,
+        )
+
+        interface = agent.get_interface()
+        if not interface.get("outputs"):
+            return
+
+        agent_data = result.get(StateKeys.AGENT_OUTPUTS, {}).get(agent_name, {})
+        extracted = validate_agent_outputs(agent_name, interface, agent_data)
+        if not extracted:
+            return
+
+        agent_data["structured"] = extracted
+
+        if tracker and context.agent_id:
+            from temper_ai.observability.metric_aggregator import AgentOutputParams
+
+            tracker.set_agent_output(
+                AgentOutputParams(
+                    agent_id=context.agent_id,
+                    output_data={
+                        StateKeys.OUTPUT: response.output,
+                        "structured": extracted,
+                    },
+                )
+            )
+    except Exception:
+        logger.debug(
+            "Parallel structured output persistence failed for '%s'",
+            agent_name,
+            exc_info=True,
+        )
 
 
 def create_agent_node(

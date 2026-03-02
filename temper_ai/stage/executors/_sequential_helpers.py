@@ -603,6 +603,22 @@ def run_agent(  # noqa: long
     # Validate agent outputs against declarations and store extracted fields
     _validate_and_store_agent_outputs(agent, agent_name, result)
 
+    # Persist structured output fields to agent DB record
+    if ctx.tracker and context.agent_id:
+        structured = result.get(StateKeys.OUTPUT_DATA, {}).get("structured")
+        if structured:
+            from temper_ai.observability.metric_aggregator import AgentOutputParams
+
+            ctx.tracker.set_agent_output(
+                AgentOutputParams(
+                    agent_id=context.agent_id,
+                    output_data={
+                        StateKeys.OUTPUT: response.output,
+                        "structured": structured,
+                    },
+                )
+            )
+
     _save_conversation_turn(ctx.state, history_key, input_data, response)
     _dispatch_sequential_evaluation(
         ctx, agent_name, context, input_data, response, agent_config_dict, duration

@@ -72,6 +72,10 @@ export function accent(config: AgentFormState, section: string, key: string): st
 
 export const typeOptions = [
   { value: 'standard', label: 'standard' },
+  { value: 'llm', label: 'llm' },
+  { value: 'script', label: 'script' },
+  { value: 'script_v2', label: 'script_v2' },
+  { value: 'static_checker', label: 'static_checker' },
   { value: 'router', label: 'router' },
   { value: 'critic', label: 'critic' },
   { value: 'orchestrator', label: 'orchestrator' },

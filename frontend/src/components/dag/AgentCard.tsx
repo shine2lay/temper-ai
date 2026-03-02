@@ -30,6 +30,7 @@ export const AgentCard = memo(function AgentCard({ agentId }: AgentCardProps) {
 
   const borderColor = STATUS_COLORS[agent.status] ?? STATUS_COLORS.pending;
   const model = agent.agent_config_snapshot?.agent?.model;
+  const agentType = agent.agent_config_snapshot?.agent?.type;
   const totalTokens = agent.total_tokens ?? 0;
   const promptTokens = agent.prompt_tokens ?? 0;
   const completionTokens = agent.completion_tokens ?? 0;
@@ -55,6 +56,11 @@ export const AgentCard = memo(function AgentCard({ agentId }: AgentCardProps) {
         {model && (
           <span className="text-[10px] px-1.5 py-0.5 rounded bg-temper-surface text-temper-text-muted shrink-0">
             {model}
+          </span>
+        )}
+        {agentType && agentType !== 'standard' && (
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-temper-surface text-temper-text-muted shrink-0">
+            {agentType}
           </span>
         )}
         {agent.role && (

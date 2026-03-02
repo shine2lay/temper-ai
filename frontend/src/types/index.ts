@@ -84,6 +84,8 @@ export interface AgentExecution {
       model?: string;
       type?: string;
       provider?: string;
+      inputs?: Record<string, { type: string; required?: boolean; description?: string }>;
+      outputs?: Record<string, { type: string; description?: string }>;
     };
   };
   error_message?: string;

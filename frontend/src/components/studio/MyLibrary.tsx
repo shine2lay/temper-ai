@@ -42,7 +42,7 @@ function ResourceList({
 }) {
   const [search, setSearch] = useState('');
   const [showTemplates, setShowTemplates] = useState(false);
-  const { data, isLoading, error } = useConfigs(configType);
+  const { data, isLoading, error: _configError } = useConfigs(configType);
   const deleteMutation = useDeleteConfig(configType);
 
   const filtered = useMemo(() => {
@@ -299,7 +299,7 @@ function ProfileList({
   onEdit: (name: string) => void;
 }) {
   const [search, setSearch] = useState('');
-  const { data, isLoading, error } = useProfiles(profileType);
+  const { data, isLoading, error: _profileError } = useProfiles(profileType);
   const deleteMutation = useDeleteProfile(profileType);
 
   const filtered = useMemo(() => {

@@ -31,9 +31,9 @@ venv.bak/
 
 # Environment variables
 .env
-.env.*
 .env.local
 .env.*.local
+!.env.example
 
 # Databases
 *.db
@@ -94,23 +94,5 @@ frontend/*.db
 !frontend/src/lib/
 temper_ai/interfaces/dashboard/react-dist/
 
-# Generated data
-.meta-autonomous/
-
 # Root-level artifacts
 /*.png
-/=*
-/index.html
-
-# Local workspace artifacts (not part of temper-ai)
-/app/
-/main.py
-/suggestion.py
-/suggestions.py
-/category.py
-/seed_categories.py
-/models/
-/services/
-/templates/
-/workspace/
-/{{ workspace_path }}/

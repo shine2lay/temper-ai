@@ -262,11 +262,19 @@ export interface DesignState {
   resolvedStageInfo: Record<string, ResolvedStageInfo>;
   /** Per-agent summaries resolved from agent configs. Keyed by agent name. */
   resolvedAgentSummaries: Record<string, ResolvedAgentSummary>;
+  /** Transient: stage name whose InlineEdit should auto-focus. Not persisted or undoable. */
+  autoFocusStageName: string | null;
+  /** Edge visibility toggles (view-only, not persisted). */
+  showDepEdges: boolean;
+  showWireEdges: boolean;
 
   /** Undo/redo history stacks. */
   _historyPast: import('./designHistory').DesignSnapshot[];
   _historyFuture: import('./designHistory').DesignSnapshot[];
 
+  setAutoFocusStageName: (name: string | null) => void;
+  setShowDepEdges: (v: boolean) => void;
+  setShowWireEdges: (v: boolean) => void;
   setMeta: (partial: Partial<WorkflowMeta>) => void;
   addStage: (stage: DesignStage) => void;
   updateStage: (name: string, partial: Partial<Omit<DesignStage, 'name'>>) => void;
@@ -274,6 +282,8 @@ export interface DesignState {
   removeStage: (name: string) => void;
   addDependency: (source: string, target: string) => void;
   removeDependency: (source: string, target: string) => void;
+  addDataWire: (source: string, sourceField: string, target: string, targetField: string) => void;
+  removeDataWire: (source: string, sourceField: string, target: string, targetField: string) => void;
   setLoopBack: (source: string, target: string | null, maxLoops?: number | null) => void;
   selectStage: (name: string | null) => void;
   selectAgent: (name: string | null) => void;

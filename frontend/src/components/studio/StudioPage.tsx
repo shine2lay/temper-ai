@@ -34,11 +34,17 @@ function CollapseToggle({
     : isLeft ? '\u25C0' : '\u25B6';
   const title = collapsed ? 'Expand panel' : 'Collapse panel';
 
+  // Flat on the panel side, rounded outward. Offset by -1px so the border
+  // overlaps the panel's edge border, creating a seamless join.
+  const rounding = isLeft
+    ? 'rounded-l-none rounded-r'
+    : 'rounded-r-none rounded-l';
+
   return (
     <button
       onClick={onClick}
-      className="absolute top-1/2 -translate-y-1/2 z-20 w-5 h-10 flex items-center justify-center rounded bg-temper-surface border border-temper-border hover:bg-temper-accent/10 hover:border-temper-accent/40 transition-colors text-[10px] text-temper-text-dim hover:text-temper-text"
-      style={isLeft ? { right: -12 } : { left: -12 }}
+      className={`absolute top-1/2 -translate-y-1/2 z-20 w-5 h-10 flex items-center justify-center ${rounding} border border-temper-border bg-temper-surface/60 backdrop-blur-sm opacity-40 hover:opacity-100 hover:bg-temper-surface hover:border-temper-accent/40 transition-all text-[10px] text-temper-text-dim hover:text-temper-text`}
+      style={isLeft ? { right: -1 } : { left: -1 }}
       title={title}
       aria-label={title}
     >
@@ -149,7 +155,7 @@ function EmptyCanvasOverlay() {
     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
       <div className="text-center">
         <p className="text-sm text-temper-text-muted">
-          Drag stages from the left panel, or use the + buttons to create new ones
+          Double-click to add a stage, drag from the left panel, or use the + button below
         </p>
         <p className="text-xs text-temper-text-dim mt-1">
           or load an existing workflow

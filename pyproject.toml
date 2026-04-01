@@ -4,152 +4,82 @@ build-backend = "hatchling.build"
 
 [project]
 name = "temper-ai"
-version = "1.0.0"
-description = "Temper AI agent framework with self-improvement and full observability"
+version = "0.1.0"
+description = "Composable multi-agent workflows — experiment freely, improve visibly, ship safely."
 license = "Apache-2.0"
 requires-python = ">=3.11"
 authors = [
     { name = "Temper AI Team" },
 ]
-keywords = ["ai", "agents", "autonomous", "langgraph", "observability", "self-improvement"]
+keywords = ["ai", "agents", "multi-agent", "workflow", "orchestration", "safety", "yaml"]
 readme = "README.md"
 
 dependencies = [
-    "langgraph>=1.0,<2.0",
     "pyyaml>=6.0,<7.0",
-    "pydantic[email]>=2.0,<3.0",
-    "pydantic-settings>=2.0,<3.0",
     "jinja2>=3.1.6,<4.0",
     "sqlmodel>=0.0.14,<1.0",
     "sqlalchemy>=2.0,<3.0",
-    "alembic>=1.13,<2.0",
     "psycopg2-binary>=2.9,<3.0",
-    "click>=8.0,<9.0",
-    "rich>=13.0,<14.0",
     "httpx>=0.25,<1.0",
-    "beautifulsoup4>=4.12,<5.0",
-    "cryptography>=46.0.5,<48.0",
-    "jsonschema>=4.0,<5.0",
+    "rich>=13.0,<14.0",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.34.0",
 ]
 
 [project.optional-dependencies]
-autogen = [
-    "autogen-agentchat>=0.4",
-    "autogen-ext>=0.4",
+anthropic = [
+    "anthropic>=0.8",
 ]
-coord = []
-crewai = [
-    "crewai>=0.80",
+gemini = [
+    "google-genai>=1.0",
 ]
-dashboard = [
-    "fastapi>=0.115.0",
-    "uvicorn[standard]>=0.34.0",
+memory = [
+    "mem0ai>=1.0.0",
 ]
 dev = [
     "pytest>=7.4",
     "pytest-asyncio>=0.21",
     "pytest-cov>=4.1",
     "pytest-xdist>=3.0",
-    "pytest-benchmark>=5.0",
+    "pytest-timeout>=2.2",
+    "pytest-randomly>=3.15",
+    "pytest-benchmark>=4.0",
     "hypothesis>=6.0",
-    "psutil>=5.9",
-    "black>=23.0",
     "ruff>=0.1",
     "mypy>=1.5",
     "bandit>=1.7",
-    "radon>=6.0",
-    "pip-audit>=2.6",
-    "vulture>=2.10",
-    "pre-commit>=3.5",
-    "pytest-randomly>=3.15",
-    "pytest-rerunfailures>=13.0",
-    "pytest-timeout>=2.2",
-    "mutmut>=2.4",
-]
-dspy = [
-    "dspy>=2.5",
-]
-llm-providers = [
-    "openai>=1.0",
-    "anthropic>=0.8",
-]
-mcp = [
-    "mcp>=1.26.0",
-]
-memory = [
-    "mem0ai>=1.0.0",
-]
-openai_agents = [
-    "openai-agents>=0.1",
-]
-otel = [
-    "opentelemetry-api>=1.20",
-    "opentelemetry-sdk>=1.20",
-    "opentelemetry-exporter-otlp-proto-grpc>=1.20",
+    "types-pyyaml>=6.0.12",
 ]
 
 [project.scripts]
-temper-ai = "temper_ai.interfaces.cli.main:main"
+temper = "temper_ai.cli.main:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+timeout = 30
+asyncio_mode = "strict"
+markers = [
+    "slow: marks tests as slow",
+]
 
 [tool.ruff]
 exclude = [
     "__pycache__",
     "*.pyc",
-    "*.pyo",
-    "migrations",
+    "node_modules",
+    "old_temper_ai",
 ]
 
-[tool.ruff.format]
-docstring-code-line-length = 88
-
 [tool.ruff.lint]
-select = ["E", "W", "F", "I", "C", "N", "B", "Q", "T", "UP", "PYI"]
-ignore = ["E501", "T201", "UP042"]
-external = ["long", "god", "radon", "params"]
+select = ["E", "W", "F", "I", "B", "UP"]
+ignore = ["E501", "UP042"]
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
-"migrations/*" = ["E501"]
-"scripts/architecture_scan.py" = ["C901", "B904"]
-"scripts/checks/*.py" = ["C901"]
-"temper_ai/storage/database/models.py" = ["E402"]
-"temper_ai/stage/executors/sequential.py" = ["E402"]
-"temper_ai/auth/oauth/_service_helpers.py" = ["E402"]
-"temper_ai/auth/oauth/_token_store_helpers.py" = ["E402"]
-"temper_ai/auth/oauth/token_store.py" = ["E402"]
-"temper_ai/interfaces/server/*.py" = ["B008"]
-"temper_ai/interfaces/dashboard/*.py" = ["B008"]
-"temper_ai/auth/*.py" = ["B008"]
-"temper_ai/auth/oauth/routes.py" = ["B008"]
-"temper_ai/mcp/server.py" = ["B008"]
-"temper_ai/llm/pricing.py" = ["E402"]
-"temper_ai/llm/prompts/validation.py" = ["E402"]
-"temper_ai/safety/approval.py" = ["E402"]
-"temper_ai/safety/rate_limiter.py" = ["E402"]
-"temper_ai/workflow/_schemas.py" = ["E402"]
-"temper_ai/workflow/checkpoint_backends.py" = ["E402"]
-"temper_ai/workflow/engines/langgraph_compiler.py" = ["E402"]
-"alembic/env.py" = ["E402"]
-"tests/test_observability/test_distributed_tracking.py" = ["C901"]
-"scripts/generate_tool_docs.py" = ["E402"]
-"tests/integration/test_m2_e2e.py" = ["E402"]
-"temper_ai/auth/oauth/rate_limiter.py" = ["E402"]
-"temper_ai/llm/failover.py" = ["E402"]
-"temper_ai/safety/policies/resource_limit_policy.py" = ["E402"]
-"temper_ai/shared/core/circuit_breaker.py" = ["E402"]
-"temper_ai/shared/utils/exceptions.py" = ["E402", "N806"]
-"temper_ai/stage/_schemas.py" = ["E402"]
-"temper_ai/tools/_executor_helpers.py" = ["E402"]
-"tests/*" = ["N806", "N803", "N802", "N811", "N812", "N814", "N817", "B017", "B904", "B023", "B015", "B007", "C901", "E711"]
+"tests/*" = ["B017", "B904", "B023", "B015", "B007"]
 
 [tool.mypy]
 python_version = "3.12"
 warn_return_any = false
 warn_unused_configs = true
 ignore_missing_imports = true
-
-
-[dependency-groups]
-dev = [
-    "types-pyyaml>=6.0.12.20250915",
-]

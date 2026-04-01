@@ -1,45 +1,30 @@
-"""
-LLM provider clients for multi-provider inference support.
+"""LLM providers."""
 
-Supports Ollama, OpenAI, Anthropic, and vLLM with unified interface.
-"""
-
-from temper_ai.llm.providers.anthropic_provider import AnthropicLLM
-from temper_ai.llm.providers.base import (
-    BaseLLM,
-    LLMProvider,
-    LLMResponse,
-    LLMStreamChunk,
-)
-from temper_ai.llm.providers.factory import (
-    create_llm_client,
-    create_llm_from_config,
-)
+from temper_ai.llm.providers.base import BaseLLM, StreamCallback
+from temper_ai.llm.providers.factory import create_provider, register_provider
+from temper_ai.llm.providers.openai import OpenAILLM
+from temper_ai.llm.providers.vllm import VllmLLM
 from temper_ai.llm.providers.ollama import OllamaLLM
-from temper_ai.llm.providers.openai_provider import OpenAILLM
-from temper_ai.llm.providers.vllm_provider import VllmLLM
 
-# Re-export exceptions for convenience
-from temper_ai.shared.utils.exceptions import (
-    LLMAuthenticationError,
-    LLMError,
-    LLMRateLimitError,
-    LLMTimeoutError,
-)
+# Optional providers (require extra SDKs)
+try:
+    from temper_ai.llm.providers.anthropic import AnthropicLLM
+except ImportError:
+    AnthropicLLM = None  # type: ignore
+
+try:
+    from temper_ai.llm.providers.gemini import GeminiLLM
+except ImportError:
+    GeminiLLM = None  # type: ignore
 
 __all__ = [
+    "AnthropicLLM",
     "BaseLLM",
-    "LLMProvider",
-    "LLMResponse",
-    "LLMStreamChunk",
+    "GeminiLLM",
     "OllamaLLM",
     "OpenAILLM",
-    "AnthropicLLM",
+    "StreamCallback",
     "VllmLLM",
-    "create_llm_client",
-    "create_llm_from_config",
-    "LLMError",
-    "LLMTimeoutError",
-    "LLMRateLimitError",
-    "LLMAuthenticationError",
+    "create_provider",
+    "register_provider",
 ]

@@ -1,0 +1,14 @@
+agent:
+  name: ui_builder
+  type: llm
+  provider: vllm
+  model: qwen3-next
+  system_prompt: |
+    You are a UI developer. Take UX wireframes and build the visual
+    design with Tailwind CSS components. You receive the UX designer's
+    output and translate it into concrete component markup.
+  task_template: |
+    Task: {{ task }}
+
+    Translate the UX design into concrete UI components using Tailwind CSS.
+    Output the component markup for each screen.

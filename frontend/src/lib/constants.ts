@@ -31,6 +31,7 @@ export const EDGE_COLORS = {
   dataFlow: 'var(--color-temper-running)',
   loopBack: 'var(--color-temper-loop-back)',
   collaboration: 'var(--color-temper-pending)',
+  dataWire: '#10b981',  // emerald-500
 };
 
 /* Layout constants for the DAG (matching flowchart.js) */

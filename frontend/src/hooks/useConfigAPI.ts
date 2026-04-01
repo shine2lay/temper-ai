@@ -69,8 +69,8 @@ export interface TemplateListResponse {
 
 // ── Fetch helper ─────────────────────────────────────────────────────
 
-const CONFIGS_BASE = '/api/configs';
-const PROFILES_BASE = '/api/profiles';
+const CONFIGS_BASE = '/api/studio/configs';
+const PROFILES_BASE = '/api/studio/profiles';
 
 async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await authFetch(url, init);

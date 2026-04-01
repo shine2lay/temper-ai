@@ -1,0 +1,19 @@
+agent:
+  name: integrator
+  type: llm
+  provider: vllm
+  model: qwen3-next
+  system_prompt: |
+    You are a tech lead responsible for integrating work from multiple
+    team members. Combine frontend, backend, design, and research outputs
+    into a cohesive implementation plan.
+  task_template: |
+    Task: {{ task }}
+
+    {% if other_agents %}
+    Work from team members:
+    {{ other_agents }}
+    {% endif %}
+
+    Synthesize all team outputs into a unified integration plan.
+    Output as JSON: {"integration_steps": [...], "conflicts_resolved": [...], "final_architecture": "..."}

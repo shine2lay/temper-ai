@@ -1,42 +1,17 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { useExecutionStore } from '@/store/executionStore';
-import { getApiKey, authFetch } from '@/lib/authFetch';
 import type { WSMessage } from '@/types';
 import {
   WS_INITIAL_DELAY_MS,
   WS_MAX_DELAY_MS,
   WS_BACKOFF_MULTIPLIER,
   WS_MAX_RECONNECT_ATTEMPTS,
-  WS_CLOSE_AUTH_FAILED,
   WS_CLOSE_WORKFLOW_TERMINAL,
 } from '@/lib/constants';
 
 /**
- * Fetch a short-lived WebSocket ticket from the server.
- * Returns the ticket string, or null if no API key is configured
- * or the request fails.
- */
-async function fetchWsTicket(): Promise<string | null> {
-  const apiKey = getApiKey();
-  if (!apiKey) return null;
-  try {
-    const res = await authFetch('/api/auth/ws-ticket', { method: 'POST' });
-    if (!res.ok) return null;
-    const data = await res.json() as { ticket?: string };
-    return data.ticket ?? null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * WebSocket hook that connects to the workflow event stream.
- * Handles snapshot/event/heartbeat messages and reconnects with
- * exponential backoff on disconnection.
- *
- * Uses short-lived tickets (/api/auth/ws-ticket) instead of sending
- * API keys directly in the WebSocket query string to prevent key
- * leakage into server logs, browser history, and proxy logs.
+ * WebSocket hook — connects to the workflow event stream.
+ * No auth required in v1 — connects directly.
  */
 export function useWorkflowWebSocket(workflowId: string | undefined): void {
   const socketRef = useRef<WebSocket | null>(null);
@@ -48,13 +23,11 @@ export function useWorkflowWebSocket(workflowId: string | undefined): void {
   const applyEvent = useExecutionStore((s) => s.applyEvent);
   const setWSStatus = useExecutionStore((s) => s.setWSStatus);
 
-  const connect = useCallback(async () => {
+  const connect = useCallback(() => {
     if (unmountedRef.current || !workflowId) return;
 
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    let url = `${protocol}//${location.host}/ws/${workflowId}`;
-    const ticket = await fetchWsTicket();
-    if (ticket) url += `?ticket=${encodeURIComponent(ticket)}`;
+    const url = `${protocol}//${location.host}/ws/${workflowId}`;
     const ws = new WebSocket(url);
     socketRef.current = ws;
 
@@ -68,7 +41,7 @@ export function useWorkflowWebSocket(workflowId: string | undefined): void {
       try {
         msg = JSON.parse(event.data) as WSMessage;
       } catch {
-        return; // silently ignore malformed messages
+        return;
       }
 
       switch (msg.type) {
@@ -89,46 +62,31 @@ export function useWorkflowWebSocket(workflowId: string | undefined): void {
 
       setWSStatus({ connected: false });
 
-      // Don't reconnect for intentional / terminal close codes
-      if (event.code === WS_CLOSE_AUTH_FAILED) {
-        setWSStatus({ wsError: 'auth_failed', reconnectAttempt: 0 });
-        return;
-      }
       if (event.code === WS_CLOSE_WORKFLOW_TERMINAL || event.code === 1000) {
         setWSStatus({ reconnectAttempt: 0 });
         return;
       }
 
-      // Don't reconnect if the workflow is already in a terminal state
+      // Don't reconnect if workflow is terminal
       const wfStatus = useExecutionStore.getState().workflow?.status;
       if (wfStatus === 'completed' || wfStatus === 'failed') {
         setWSStatus({ reconnectAttempt: 0 });
         return;
       }
 
-      const attempt =
-        useExecutionStore.getState().wsStatus.reconnectAttempt + 1;
-
-      // Max reconnect attempts exceeded
+      const attempt = useExecutionStore.getState().wsStatus.reconnectAttempt + 1;
       if (attempt > WS_MAX_RECONNECT_ATTEMPTS) {
         setWSStatus({ wsError: 'max_retries', reconnectAttempt: attempt });
         return;
       }
 
       setWSStatus({ reconnectAttempt: attempt });
-
-      // Schedule reconnect with exponential backoff
       const delay = delayRef.current;
-      delayRef.current = Math.min(
-        delay * WS_BACKOFF_MULTIPLIER,
-        WS_MAX_DELAY_MS,
-      );
+      delayRef.current = Math.min(delay * WS_BACKOFF_MULTIPLIER, WS_MAX_DELAY_MS);
       timerRef.current = setTimeout(connect, delay);
     };
 
-    ws.onerror = () => {
-      // onclose fires after onerror; let onclose handle reconnect
-    };
+    ws.onerror = () => {};
   }, [workflowId, applySnapshot, applyEvent, setWSStatus]);
 
   useEffect(() => {
@@ -137,21 +95,16 @@ export function useWorkflowWebSocket(workflowId: string | undefined): void {
 
     return () => {
       unmountedRef.current = true;
-
-      // Cancel pending reconnect
       if (timerRef.current !== null) {
         clearTimeout(timerRef.current);
         timerRef.current = null;
       }
-
-      // Null out onclose before closing to prevent zombie reconnects
       const ws = socketRef.current;
       if (ws) {
         ws.onclose = null;
         ws.close();
         socketRef.current = null;
       }
-
       setWSStatus({ connected: false });
     };
   }, [connect, setWSStatus]);

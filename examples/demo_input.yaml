@@ -1,9 +1,0 @@
-# Quick decision demo input
-question: "Should we launch the product now or wait?"
-
-options:
-  - "Launch Now"
-  - "Wait 1 Month"
-  - "Beta Launch"
-
-context: "Product is 90% ready, some bugs remain, competitors are launching soon"

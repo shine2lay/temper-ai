@@ -2,9 +2,10 @@
  * Inference tab for AgentPropertiesPanel.
  */
 import type { AgentFormState, AgentFieldUpdater } from '@/hooks/useAgentEditor';
-import { InlineEdit } from './InlineEdit';
+import { InlineEdit, InlineSelect } from './InlineEdit';
 import { SectionHeader, ExpandedField } from './shared';
 import { accent } from './agentPanelHelpers';
+import { useRegistry, toOptions } from '@/hooks/useRegistry';
 
 interface Props {
   config: AgentFormState;
@@ -12,14 +13,17 @@ interface Props {
 }
 
 export function AgentInferenceTab({ config, updateField }: Props) {
+  const { data: registry } = useRegistry();
+  const providerOptions = toOptions(registry?.providers);
+
   return (
     <div className="px-3 py-2 border-b border-temper-border/30">
       <SectionHeader title="Inference" tooltip="LLM provider configuration. Controls which model is used, how it's called, and retry behavior." />
-      <ExpandedField label="Provider" tip="LLM provider: openai, anthropic, ollama, vllm, custom. Determines the API format used.">
-        <InlineEdit
+      <ExpandedField label="Provider" tip="LLM provider — populated from registered providers. Determines the API format used.">
+        <InlineSelect
           value={config.inference.provider}
+          options={providerOptions}
           onChange={(v) => updateField('inference', { ...config.inference, provider: String(v ?? '') })}
-          placeholder="openai"
           className={`w-full ${accent(config, 'inference', 'provider')}`}
         />
       </ExpandedField>

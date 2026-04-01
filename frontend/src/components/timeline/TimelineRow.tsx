@@ -1,6 +1,7 @@
+import { useState, useEffect } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { TIMELINE } from './constants';
-import { formatDuration, formatTimestamp } from '@/lib/utils';
+import { formatDuration, formatTimestamp, elapsedSeconds } from '@/lib/utils';
 import type { TimelineRow as TimelineRowData } from '@/hooks/useTimelineData';
 
 interface TimelineRowProps {
@@ -32,6 +33,28 @@ function buildTooltip(row: TimelineRowData): string {
     parts.push('Running...');
   }
   return parts.join('\n');
+}
+
+function BarDurationLabel({ row }: { row: TimelineRowData }) {
+  const [elapsed, setElapsed] = useState(0);
+  const isRunning = row.status === 'running';
+
+  useEffect(() => {
+    if (!isRunning || row.startTime === null) return;
+    const isoStr = new Date(row.startTime).toISOString();
+    setElapsed(elapsedSeconds(isoStr));
+    const id = setInterval(() => setElapsed(elapsedSeconds(isoStr)), 1000);
+    return () => clearInterval(id);
+  }, [isRunning, row.startTime]);
+
+  if (isRunning) {
+    return <span className="text-[9px] font-mono text-white/90 whitespace-nowrap px-1">{formatDuration(elapsed)}</span>;
+  }
+  if (row.endTime !== null && row.startTime !== null) {
+    const durSec = (row.endTime - row.startTime) / 1000;
+    return <span className="text-[9px] font-mono text-white/90 whitespace-nowrap px-1">{formatDuration(durSec)}</span>;
+  }
+  return null;
 }
 
 /**
@@ -111,7 +134,7 @@ export function TimelineRow({
       >
         {row.startTime !== null && (
           <div
-            className="absolute top-1/2 -translate-y-1/2 rounded-sm"
+            className="absolute top-1/2 -translate-y-1/2 rounded-sm overflow-hidden flex items-center"
             style={{
               left: barLeft,
               width: barWidth,
@@ -121,6 +144,7 @@ export function TimelineRow({
             }}
             title={buildTooltip(row)}
           >
+            {barWidth > 60 && <BarDurationLabel row={row} />}
             {/* Animated right edge for running items */}
             {isRunning && (
               <div

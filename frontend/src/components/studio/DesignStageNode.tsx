@@ -8,6 +8,8 @@ import { Handle, Position, useStore } from '@xyflow/react';
 import type { NodeProps } from '@xyflow/react';
 import { useDesignStore, type ResolvedAgentSummary } from '@/store/designStore';
 import type { DesignNodeData } from '@/hooks/useDesignElements';
+import { useConfigs } from '@/hooks/useConfigAPI';
+import { useRegistry, toOptions } from '@/hooks/useRegistry';
 import { InlineEdit, InlineSelect, InlineToggle } from './InlineEdit';
 
 /* ---------- Shared constants ---------- */
@@ -24,6 +26,7 @@ function numOrDefault(v: string | number | null, def: number): number {
 }
 
 /* ---------- Inline-edit option constants ---------- */
+// Options NOT backed by a registry (behavioral / semantic choices):
 
 const SAFETY_MODE_OPTIONS = [
   { value: 'execute', label: 'execute' },
@@ -50,12 +53,15 @@ const CONVERGENCE_METHOD_OPTIONS = [
   { value: 'levenshtein', label: 'levenshtein' },
 ];
 
+// Strategy / agent-mode options are populated from the runtime registry.
+// See useRegistry() hook — the backend returns registered topology names.
+
 /* ---------- NodeField — stopPropagation wrapper for inline edits ---------- */
 
 function NodeField({ children, label }: { children: ReactNode; label?: string }) {
   const stop = (e: React.SyntheticEvent) => e.stopPropagation();
   return (
-    <div className="flex items-center gap-1.5 min-w-0" onClick={stop} onKeyDown={stop}>
+    <div className="nopan nodrag flex items-center gap-1.5 min-w-0" onClick={stop} onKeyDown={stop}>
       {label && (
         <span className="text-[8px] text-temper-text-dim shrink-0 w-14">{label}</span>
       )}
@@ -86,7 +92,7 @@ function NodeSection({
           e.stopPropagation();
           setOpen((o) => !o);
         }}
-        className="w-full px-3 py-1.5 flex items-center gap-1.5 text-left hover:bg-white/[0.02] transition-colors"
+        className="nopan nodrag w-full px-3 py-1.5 flex items-center gap-1.5 text-left hover:bg-white/[0.02] transition-colors"
       >
         <span className="text-[10px] text-temper-text-dim w-3">
           {open ? '\u25BC' : '\u25B6'}
@@ -98,7 +104,7 @@ function NodeSection({
           <span className="text-[9px] text-temper-text-dim">{badge}</span>
         )}
       </button>
-      {open && <div className="px-3 pb-2">{children}</div>}
+      {open && <div className="nopan nodrag px-3 pb-2">{children}</div>}
     </div>
   );
 }
@@ -188,124 +194,163 @@ function AgentMiniCard({
   isLeader,
   compact,
   onSelect,
+  onRemove,
 }: {
   summary: ResolvedAgentSummary;
   isLeader: boolean;
   compact?: boolean;
   onSelect: () => void;
+  onRemove?: () => void;
 }) {
+  const [expanded, setExpanded] = useState(false);
   const visibleTools = summary.toolNames.slice(0, MAX_TOOL_NAMES_SHOWN);
   const showTemp = summary.temperature !== DEFAULT_TEMPERATURE;
 
-  if (compact) {
-    return (
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          onSelect();
-        }}
-        className="text-left rounded border border-temper-border/50 bg-temper-surface/50 hover:border-temper-accent/40 hover:bg-temper-accent/5 transition-all duration-150 hover:shadow-md px-1.5 py-1 min-w-0"
-        title={`${summary.name} — ${summary.provider}/${summary.model}`}
-      >
-        <div className="flex items-center gap-1 min-w-0">
-          {isLeader && (
-            <span className="text-[10px] text-yellow-400 shrink-0">★</span>
-          )}
-          <span className="text-[9px] font-medium text-temper-text truncate">
-            {summary.name}
-          </span>
-          {summary.type !== 'standard' && (
-            <span className="text-[7px] px-0.5 py-px rounded bg-violet-900/30 text-violet-400 shrink-0">
-              {summary.type}
-            </span>
-          )}
-        </div>
-        <div className="text-[8px] text-temper-text-dim truncate mt-0.5">
-          {summary.provider}/{summary.model}
-          {showTemp ? ` T=${summary.temperature}` : ''}
-          {summary.toolCount > 0 ? ` \u00B7 ${summary.toolCount}t` : ''}
-        </div>
-        <CapabilityChips summary={summary} compact />
-      </button>
-    );
-  }
-
-  return (
+  const removeBtn = onRemove && (
     <button
       onClick={(e) => {
         e.stopPropagation();
-        onSelect();
+        onRemove();
       }}
-      className="text-left rounded border border-temper-border/50 bg-temper-surface/50 hover:border-temper-accent/40 hover:bg-temper-accent/5 transition-all duration-150 hover:shadow-md p-1.5 min-w-0"
-      title={`Edit agent: ${summary.name}`}
+      className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-red-600 text-white text-[9px] flex items-center justify-center opacity-0 group-hover/card:opacity-100 transition-opacity z-10"
+      title={`Remove ${summary.name}`}
     >
-      {/* Row 1: Name + type badge + version */}
-      <div className="flex items-center gap-1 min-w-0">
-        {isLeader && (
-          <span className="text-[10px] text-yellow-400 shrink-0" title="Leader agent">★</span>
-        )}
-        <span className="text-[10px] font-medium text-temper-text truncate flex-1">
-          {summary.name}
-        </span>
-        {summary.type !== 'standard' && (
-          <span className="text-[8px] px-1 py-px rounded bg-violet-900/30 text-violet-400 shrink-0">
-            {summary.type}
-          </span>
-        )}
-        {summary.version && (
-          <span className="text-[8px] px-1 py-px rounded bg-temper-surface text-temper-text-dim shrink-0">
-            v{summary.version}
-          </span>
-        )}
-      </div>
-
-      {/* Row 2: Description (1 line, truncated) */}
-      {summary.description && (
-        <div className="text-[8px] text-temper-text-dim truncate mt-0.5" title={summary.description}>
-          {summary.description}
-        </div>
-      )}
-
-      {/* Row 3: Provider/model + temp + max_tokens + timeout + risk */}
-      <div className="flex items-center gap-1 mt-0.5 min-w-0 flex-wrap">
-        <span className="text-[9px] text-temper-text-dim truncate">
-          {summary.provider}/{summary.model}
-        </span>
-        {showTemp && (
-          <span className="text-[9px] text-temper-text-dim shrink-0">T={summary.temperature}</span>
-        )}
-        {summary.maxTokens > 0 && (
-          <span className="text-[9px] text-temper-text-dim shrink-0">{summary.maxTokens}tk</span>
-        )}
-        {summary.timeoutSeconds > 0 && (
-          <span className="text-[9px] text-temper-text-dim shrink-0">{summary.timeoutSeconds}s</span>
-        )}
-        {summary.riskLevel && (
-          <span className="text-[8px] px-0.5 py-px rounded bg-amber-900/30 text-amber-400 shrink-0">
-            risk:{summary.riskLevel}
-          </span>
-        )}
-      </div>
-
-      {/* Row 4: Tools */}
-      <div className="flex items-center gap-1 mt-0.5 min-w-0">
-        <span className="text-[9px] text-temper-text-dim shrink-0">
-          {summary.toolCount} tool{summary.toolCount !== 1 ? 's' : ''}
-        </span>
-        {visibleTools.length > 0 && (
-          <span className="text-[8px] text-temper-text-dim truncate">
-            {visibleTools.join(', ')}
-            {summary.toolCount > MAX_TOOL_NAMES_SHOWN ? ', \u2026' : ''}
-          </span>
-        )}
-      </div>
-
-      {/* Row 5: Capability chips */}
-      <CapabilityChips summary={summary} />
-
-      {/* Row 6: Per-agent I/O */}
-      <AgentIOSection summary={summary} />
+      &times;
     </button>
+  );
+
+  // Compact mode that can be expanded inline by clicking
+  if (compact && !expanded) {
+    return (
+      <div className="relative group/card">
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            setExpanded(true);
+          }}
+          className="text-left rounded border border-temper-border/50 bg-temper-surface/50 hover:border-temper-accent/40 hover:bg-temper-accent/5 transition-all duration-150 hover:shadow-md px-1.5 py-1 min-w-0 w-full"
+          title={`Click to expand · ${summary.provider}/${summary.model}`}
+        >
+          <div className="flex items-center gap-1 min-w-0">
+            {isLeader && (
+              <span className="text-[10px] text-yellow-400 shrink-0">★</span>
+            )}
+            <span className="text-[9px] font-medium text-temper-text truncate">
+              {summary.name}
+            </span>
+            {summary.type !== 'standard' && (
+              <span className="text-[7px] px-0.5 py-px rounded bg-violet-900/30 text-violet-400 shrink-0">
+                {summary.type}
+              </span>
+            )}
+            <span className="text-[8px] text-temper-text-dim truncate ml-auto">
+              {summary.provider}/{summary.model}
+              {summary.toolCount > 0 ? ` · ${summary.toolCount}t` : ''}
+            </span>
+          </div>
+        </button>
+        {removeBtn}
+      </div>
+    );
+  }
+
+  // Full expanded card — clicking the card body collapses it (if expandable),
+  // the "edit" link opens the right panel.
+  const handleCardClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (compact) {
+      // Was compact, now expanded — click to collapse back
+      setExpanded(false);
+    } else {
+      // Standalone full card (not inside a stage) — open right panel
+      onSelect();
+    }
+  };
+
+  return (
+    <div className="relative group/card">
+      <div
+        onClick={handleCardClick}
+        role="button"
+        tabIndex={0}
+        className="text-left rounded border border-temper-border/50 bg-temper-surface/50 hover:border-temper-accent/40 hover:bg-temper-accent/5 transition-all duration-150 hover:shadow-md p-1.5 min-w-0 w-full cursor-pointer"
+      >
+        {/* Row 1: Name + type badge + version + edit link */}
+        <div className="flex items-center gap-1 min-w-0">
+          {isLeader && (
+            <span className="text-[10px] text-yellow-400 shrink-0" title="Leader agent">★</span>
+          )}
+          <span className="text-[10px] font-medium text-temper-text truncate flex-1">
+            {summary.name}
+          </span>
+          {summary.type !== 'standard' && (
+            <span className="text-[8px] px-1 py-px rounded bg-violet-900/30 text-violet-400 shrink-0">
+              {summary.type}
+            </span>
+          )}
+          {summary.version && (
+            <span className="text-[8px] px-1 py-px rounded bg-temper-surface text-temper-text-dim shrink-0">
+              v{summary.version}
+            </span>
+          )}
+          {compact && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onSelect(); }}
+              className="text-[8px] text-temper-accent hover:underline shrink-0 ml-0.5"
+              title="Open in properties panel"
+            >edit</button>
+          )}
+        </div>
+
+        {/* Row 2: Description (1 line, truncated) */}
+        {summary.description && (
+          <div className="text-[8px] text-temper-text-dim truncate mt-0.5" title={summary.description}>
+            {summary.description}
+          </div>
+        )}
+
+        {/* Row 3: Provider/model + temp + max_tokens + timeout + risk */}
+        <div className="flex items-center gap-1 mt-0.5 min-w-0 flex-wrap">
+          <span className="text-[9px] text-temper-text-dim truncate">
+            {summary.provider}/{summary.model}
+          </span>
+          {showTemp && (
+            <span className="text-[9px] text-temper-text-dim shrink-0">T={summary.temperature}</span>
+          )}
+          {summary.maxTokens > 0 && (
+            <span className="text-[9px] text-temper-text-dim shrink-0">{summary.maxTokens}tk</span>
+          )}
+          {summary.timeoutSeconds > 0 && (
+            <span className="text-[9px] text-temper-text-dim shrink-0">{summary.timeoutSeconds}s</span>
+          )}
+          {summary.riskLevel && (
+            <span className="text-[8px] px-0.5 py-px rounded bg-amber-900/30 text-amber-400 shrink-0">
+              risk:{summary.riskLevel}
+            </span>
+          )}
+        </div>
+
+        {/* Row 4: Tools */}
+        <div className="flex items-center gap-1 mt-0.5 min-w-0">
+          <span className="text-[9px] text-temper-text-dim shrink-0">
+            {summary.toolCount} tool{summary.toolCount !== 1 ? 's' : ''}
+          </span>
+          {visibleTools.length > 0 && (
+            <span className="text-[8px] text-temper-text-dim truncate">
+              {visibleTools.join(', ')}
+              {summary.toolCount > MAX_TOOL_NAMES_SHOWN ? ', \u2026' : ''}
+            </span>
+          )}
+        </div>
+
+        {/* Row 5: Capability chips */}
+        <CapabilityChips summary={summary} />
+
+        {/* Row 6: Per-agent I/O */}
+        <AgentIOSection summary={summary} />
+      </div>
+      {removeBtn}
+    </div>
   );
 }
 
@@ -351,12 +396,14 @@ function LeaderLayout({
   agentSummaries,
   isCompact,
   selectAgent,
+  onRemoveAgent,
 }: {
   agents: string[];
   leaderAgent: string;
   agentSummaries: ResolvedAgentSummary[];
   isCompact?: boolean;
   selectAgent: (name: string) => void;
+  onRemoveAgent?: (name: string) => void;
 }) {
   const perspectives = agents.filter((n) => n !== leaderAgent);
   const leader = agentSummaries.find((s) => s.name === leaderAgent);
@@ -385,6 +432,7 @@ function LeaderLayout({
               isLeader={false}
               compact={isCompact}
               onSelect={() => selectAgent(name)}
+              onRemove={onRemoveAgent ? () => onRemoveAgent(name) : undefined}
             />
           ) : (
             <AgentSkeleton key={name} />
@@ -403,6 +451,7 @@ function LeaderLayout({
             isLeader
             compact={isCompact}
             onSelect={() => selectAgent(leaderAgent)}
+            onRemove={onRemoveAgent ? () => onRemoveAgent(leaderAgent) : undefined}
           />
         </div>
       ) : (
@@ -421,11 +470,13 @@ function SequentialLayout({
   agentSummaries,
   isCompact,
   selectAgent,
+  onRemoveAgent,
 }: {
   agents: string[];
   agentSummaries: ResolvedAgentSummary[];
   isCompact?: boolean;
   selectAgent: (name: string) => void;
+  onRemoveAgent?: (name: string) => void;
 }) {
   return (
     <div className="flex flex-col gap-0">
@@ -451,6 +502,7 @@ function SequentialLayout({
                     isLeader={false}
                     compact={isCompact}
                     onSelect={() => selectAgent(name)}
+                    onRemove={onRemoveAgent ? () => onRemoveAgent(name) : undefined}
                   />
                 ) : (
                   <AgentSkeleton />
@@ -474,12 +526,14 @@ function ConsensusLayout({
   collaborationStrategy,
   isCompact,
   selectAgent,
+  onRemoveAgent,
 }: {
   agents: string[];
   agentSummaries: ResolvedAgentSummary[];
   collaborationStrategy: string;
   isCompact?: boolean;
   selectAgent: (name: string) => void;
+  onRemoveAgent?: (name: string) => void;
 }) {
   // Determine the display label
   let label = collaborationStrategy;
@@ -516,6 +570,7 @@ function ConsensusLayout({
                 isLeader={false}
                 compact={isCompact}
                 onSelect={() => selectAgent(name)}
+                onRemove={onRemoveAgent ? () => onRemoveAgent(name) : undefined}
               />
             ) : (
               <AgentSkeleton key={name} />
@@ -549,12 +604,14 @@ function ParallelLayout({
   agentMode,
   isCompact,
   selectAgent,
+  onRemoveAgent,
 }: {
   agents: string[];
   agentSummaries: ResolvedAgentSummary[];
   agentMode: string;
   isCompact?: boolean;
   selectAgent: (name: string) => void;
+  onRemoveAgent?: (name: string) => void;
 }) {
   const isParallel = agentMode === 'parallel';
 
@@ -595,6 +652,7 @@ function ParallelLayout({
                 isLeader={false}
                 compact={isCompact}
                 onSelect={() => selectAgent(name)}
+                onRemove={onRemoveAgent ? () => onRemoveAgent(name) : undefined}
               />
             ) : (
               <AgentSkeleton key={name} />
@@ -630,6 +688,7 @@ function CollaborationLayout({
   leaderAgent,
   isCompact,
   selectAgent,
+  onRemoveAgent,
 }: {
   agents: string[];
   agentSummaries: ResolvedAgentSummary[];
@@ -639,6 +698,7 @@ function CollaborationLayout({
   leaderAgent: string | null;
   isCompact?: boolean;
   selectAgent: (name: string) => void;
+  onRemoveAgent?: (name: string) => void;
 }) {
   // If agent details haven't loaded, show skeletons in a grid
   if (!agentDetailsLoaded) {
@@ -653,6 +713,7 @@ function CollaborationLayout({
               isLeader={name === leaderAgent}
               compact={isCompact}
               onSelect={() => selectAgent(name)}
+              onRemove={onRemoveAgent ? () => onRemoveAgent(name) : undefined}
             />
           ) : (
             <AgentSkeleton key={name} />
@@ -663,7 +724,7 @@ function CollaborationLayout({
   }
 
   // Leader strategy with a known leader
-  if (leaderAgent && (collaborationStrategy === 'leader' || agents.includes(leaderAgent))) {
+  if (leaderAgent && collaborationStrategy === 'leader') {
     return (
       <LeaderLayout
         agents={agents}
@@ -671,6 +732,7 @@ function CollaborationLayout({
         agentSummaries={agentSummaries}
         isCompact={isCompact}
         selectAgent={selectAgent}
+        onRemoveAgent={onRemoveAgent}
       />
     );
   }
@@ -683,6 +745,7 @@ function CollaborationLayout({
         agentSummaries={agentSummaries}
         isCompact={isCompact}
         selectAgent={selectAgent}
+        onRemoveAgent={onRemoveAgent}
       />
     );
   }
@@ -696,6 +759,7 @@ function CollaborationLayout({
         collaborationStrategy={collaborationStrategy}
         isCompact={isCompact}
         selectAgent={selectAgent}
+        onRemoveAgent={onRemoveAgent}
       />
     );
   }
@@ -708,6 +772,7 @@ function CollaborationLayout({
       agentMode={agentMode}
       isCompact={isCompact}
       selectAgent={selectAgent}
+      onRemoveAgent={onRemoveAgent}
     />
   );
 }
@@ -737,7 +802,7 @@ export function DesignStageNode({ data }: NodeProps) {
     leaderAgent,
     agentSummaries,
     agentDetailsLoaded,
-    workflowOutputSources,
+    workflowOutputSources: _workflowOutputSources,
     // Expanded config fields
     version,
     safetyDryRunFirst,
@@ -772,9 +837,25 @@ export function DesignStageNode({ data }: NodeProps) {
   const renameStage = useDesignStore((s) => s.renameStage);
   const allStages = useDesignStore((s) => s.stages);
   const selectedStageName = useDesignStore((s) => s.selectedStageName);
+  const autoFocusStageName = useDesignStore((s) => s.autoFocusStageName);
+  const setAutoFocusStageName = useDesignStore((s) => s.setAutoFocusStageName);
   const isSelected = selectedStageName === stageName;
   const zoom = useStore((s) => s.transform[2]);
   const isCompact = zoom < 0.6;
+
+  const shouldAutoFocus = autoFocusStageName === stageName;
+
+  // Fetch available agent configs for the add-agent dropdown
+  const { data: agentConfigs } = useConfigs('agent');
+  const availableAgents = agentConfigs?.configs
+    .map((c) => c.name)
+    .filter((n) => !agents.includes(n)) ?? [];
+
+  // Dynamic options from runtime registry
+  const { data: registry } = useRegistry();
+  const strategyOptions = toOptions(registry?.strategies);
+  const agentTypeOptions = toOptions(registry?.agent_types);
+  const providerOptions = toOptions(registry?.providers);
 
   const otherStageNames = allStages
     .filter((s) => s.name !== stageName)
@@ -786,20 +867,27 @@ export function DesignStageNode({ data }: NodeProps) {
     ? stageRef.replace(/^.*\//, '').replace(/\.yaml$/, '')
     : null;
 
+  // Single-agent nodes get a distinct, compact layout
+  const isSingleAgent = agentCount === 1 && !isRef;
+  const singleAgentSummary = isSingleAgent
+    ? (agentSummaries as ResolvedAgentSummary[]).find((s) => s.name === agents[0]) ?? null
+    : null;
+
+  // Shared container for both single-agent and multi-agent nodes
   return (
     <div
       className={`rounded-lg cursor-pointer group relative ${isSelected ? 'ring-2 ring-temper-accent/40 shadow-lg shadow-temper-accent/10' : ''}`}
       style={{
         border: `2px solid ${isSelected ? stageColor : 'var(--color-temper-border)'}`,
-        borderTopColor: stageColor,
-        borderTopWidth: '3px',
-        borderTopStyle: 'solid',
+        ...(isSingleAgent
+          ? { borderLeftColor: stageColor, borderLeftWidth: '3px' }
+          : { borderTopColor: stageColor, borderTopWidth: '3px' }),
         backgroundColor: 'var(--color-temper-panel)',
         width: '380px',
       }}
       role="button"
       tabIndex={0}
-      aria-label={`Stage: ${stageName}`}
+      aria-label={isSingleAgent ? `Agent: ${stageName}` : `Stage: ${stageName}`}
       onClick={() => selectStage(stageName)}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -823,7 +911,7 @@ export function DesignStageNode({ data }: NodeProps) {
           removeStage(stageName);
         }}
         className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-600 text-white text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10"
-        aria-label={`Remove stage ${stageName}`}
+        aria-label={`Remove ${stageName}`}
       >
         &times;
       </button>
@@ -835,7 +923,7 @@ export function DesignStageNode({ data }: NodeProps) {
             className="w-2.5 h-2.5 rounded-full shrink-0"
             style={{ backgroundColor: stageColor }}
           />
-          <div className="flex-1 min-w-0" onClick={(e) => e.stopPropagation()}>
+          <div className="nopan nodrag flex-1 min-w-0" onClick={(e) => e.stopPropagation()}>
             <InlineEdit
               value={stageName}
               onChange={(v) => {
@@ -845,38 +933,58 @@ export function DesignStageNode({ data }: NodeProps) {
               readOnly={isRef}
               className="text-sm font-bold"
               placeholder="stage_name"
+              autoFocus={shouldAutoFocus}
+              onAutoFocusConsumed={() => setAutoFocusStageName(null)}
             />
           </div>
-          <span
-            className="text-[10px] text-temper-text-dim shrink-0"
-            title={isRef ? `Ref: ${stageRef}` : 'Inline stage'}
-          >
-            {isRef ? '[ref]' : '[\u270E]'}
+          <span className={`text-[8px] px-1.5 py-0.5 rounded shrink-0 font-medium ${
+            isSingleAgent
+              ? 'bg-violet-900/30 text-violet-400'
+              : 'bg-blue-900/30 text-blue-400'
+          }`}>
+            {isSingleAgent ? 'agent' : 'stage'}
           </span>
-          {version && (
-            <span className="text-[9px] text-temper-text-dim shrink-0">
-              v{version}
+          {isRef && (
+            <span className="text-[10px] text-temper-text-dim shrink-0" title={`Ref: ${stageRef}`}>
+              [ref]
             </span>
           )}
+          {version && (
+            <span className="text-[9px] text-temper-text-dim shrink-0">v{version}</span>
+          )}
         </div>
-        <div className="mt-0.5" onClick={(e) => e.stopPropagation()}>
+
+        {/* Single-agent: reuse AgentMiniCard for consistency */}
+        {isSingleAgent && (
+          <div className="mt-1.5 nopan nodrag">
+            {singleAgentSummary ? (
+              <AgentMiniCard
+                summary={singleAgentSummary}
+                isLeader={false}
+                onSelect={() => selectAgent(agents[0])}
+              />
+            ) : (
+              <AgentSkeleton />
+            )}
+          </div>
+        )}
+
+        <div className="nopan nodrag mt-0.5" onClick={(e) => e.stopPropagation()}>
           <InlineEdit
             value={description}
             onChange={(v) => updateStage(stageName, { description: String(v ?? '') })}
             className="text-[10px] text-temper-text-muted w-full"
             emptyLabel="no description"
-            placeholder="Stage description..."
+            placeholder="Description..."
           />
         </div>
         {refLabel && (
-          <div className="text-[9px] text-temper-text-dim mt-0.5">
-            ref: {refLabel}
-          </div>
+          <div className="text-[9px] text-temper-text-dim mt-0.5">ref: {refLabel}</div>
         )}
       </div>
 
-      {/* ---- Agents section with collaboration layout ---- */}
-      <NodeSection
+      {/* ---- Agents section with collaboration layout (multi-agent only) ---- */}
+      {!isSingleAgent && <NodeSection
         title="Agents"
         badge={agentCount > 0 ? `${agentCount}` : undefined}
         defaultOpen
@@ -889,66 +997,187 @@ export function DesignStageNode({ data }: NodeProps) {
             agentMode={agentMode}
             collaborationStrategy={collaborationStrategy}
             leaderAgent={leaderAgent}
-            isCompact={isCompact}
+            isCompact
             selectAgent={selectAgent}
+            onRemoveAgent={!isRef ? (name) => updateStage(stageName, { agents: agents.filter((a) => a !== name) }) : undefined}
           />
         ) : (
           <div className="border border-dashed border-temper-border/50 rounded px-2 py-1.5 text-center">
             <span className="text-[10px] text-temper-text-dim">
-              No agents assigned — click to add
+              No agents assigned
             </span>
           </div>
         )}
-      </NodeSection>
+
+        {/* Agent mode / strategy selectors (inline stages with 2+ agents) */}
+        {!isRef && agents.length > 1 && (
+          <div className="nopan nodrag flex items-center gap-2 mt-1.5">
+            <NodeField label="mode">
+              <InlineSelect
+                value={agentMode}
+                options={strategyOptions}
+                onChange={(v) => updateStage(stageName, { agent_mode: v as 'sequential' | 'parallel' | 'adaptive' })}
+              />
+            </NodeField>
+            <NodeField label="strategy">
+              <InlineSelect
+                value={collaborationStrategy}
+                options={[{ value: 'independent', label: 'independent' }, ...strategyOptions]}
+                onChange={(v) => updateStage(stageName, { collaboration_strategy: v as 'independent' | 'leader' | 'consensus' | 'debate' | 'round_robin' })}
+              />
+            </NodeField>
+          </div>
+        )}
+
+        {/* Add agent dropdown (inline stages only) */}
+        {!isRef && (
+          <NodeField>
+            <select
+              value=""
+              onChange={(e) => {
+                if (e.target.value) {
+                  updateStage(stageName, { agents: [...agents, e.target.value] });
+                }
+              }}
+              className="mt-1.5 w-full text-[10px] bg-temper-surface border border-temper-border/50 rounded px-1.5 py-1 text-temper-text-dim hover:border-temper-accent/40 transition-colors cursor-pointer"
+            >
+              <option value="">+ Add agent...</option>
+              {availableAgents.map((name) => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+            </select>
+          </NodeField>
+        )}
+      </NodeSection>}
 
       {/* ---- I/O section ---- */}
-      {(inputEntries.length > 0 || outputs.length > 0) && (
+      {(inputEntries.length > 0 || outputs.length > 0 || !isRef) && (
         <NodeSection
           title="I/O"
           badge={`${inputEntries.length} in / ${outputs.length} out`}
           defaultOpen
         >
-          {inputEntries.length > 0 && (
-            <div className="flex flex-col gap-0.5">
-              {inputEntries.map(([key, val]) => (
-                <div
-                  key={key}
-                  className="text-[9px] text-temper-text-muted truncate"
-                  title={`${key} \u2190 ${val.source}`}
-                >
-                  <span className="text-blue-400/70">IN</span>{' '}
-                  <span className="text-temper-text">{key}</span>{' '}
-                  <span className="text-temper-text-dim">&larr; {val.source}</span>
+          {/* Inputs — each row has a Handle anchored to the left edge */}
+          <div className="nopan nodrag" onClick={(e) => e.stopPropagation()}>
+            <div className="text-[9px] text-temper-text-dim mb-1">Inputs (name : source)</div>
+            <div className="flex flex-col gap-1 w-full">
+              {inputEntries.map(([k, v]) => (
+                <div key={k} className="relative flex items-center gap-1 p-1 bg-temper-surface/50 rounded border border-temper-border/50">
+                  <Handle
+                    type="target"
+                    position={Position.Left}
+                    id={`in:${k}`}
+                    className="!absolute !w-2.5 !h-2.5 !bg-emerald-400 !border-emerald-600 !transform-none !min-w-0 !min-h-0 data-wire-handle"
+                    style={{ left: '-13px', top: '50%', transform: 'translateY(-50%)' }}
+                  />
+                  <input
+                    type="text" value={k} readOnly
+                    className="w-24 px-1.5 py-0.5 text-[10px] bg-temper-surface border border-temper-border rounded text-temper-text opacity-60"
+                    placeholder="name"
+                  />
+                  <input
+                    type="text" value={v.source}
+                    onChange={(e) => {
+                      const newInputs: Record<string, { source: string }> = {};
+                      for (const [ek, ev] of inputEntries) {
+                        newInputs[ek] = ek === k ? { source: e.target.value } : ev;
+                      }
+                      updateStage(stageName, { inputs: newInputs });
+                    }}
+                    className="flex-1 px-1.5 py-0.5 text-[10px] bg-temper-surface border border-temper-border rounded text-temper-text"
+                    placeholder="source"
+                  />
+                  <button
+                    onClick={() => {
+                      const newInputs: Record<string, { source: string }> = {};
+                      for (const [ek, ev] of inputEntries) {
+                        if (ek !== k) newInputs[ek] = ev;
+                      }
+                      updateStage(stageName, { inputs: newInputs });
+                    }}
+                    className="text-[10px] text-red-400 hover:text-red-300 px-0.5 shrink-0"
+                  >&times;</button>
                 </div>
               ))}
+              <button
+                onClick={() => {
+                  const newInputs: Record<string, { source: string }> = {};
+                  for (const [k, v] of inputEntries) newInputs[k] = v;
+                  const newKey = `input_${inputEntries.length}`;
+                  newInputs[newKey] = { source: '' };
+                  updateStage(stageName, { inputs: newInputs });
+                }}
+                className="text-[9px] text-temper-accent hover:underline self-start"
+              >+ Add</button>
             </div>
-          )}
-          {outputs.length > 0 && (
-            <div className="flex flex-col gap-0.5 mt-1">
-              {outputs.map((out) => {
-                const isWfOutput = workflowOutputSources.includes(out.name);
-                return (
-                  <div
-                    key={out.name}
-                    className="text-[9px] text-temper-text-muted truncate"
-                    title={out.description || out.name}
-                  >
-                    <span className="text-emerald-400/70">OUT</span>{' '}
-                    <span className="text-temper-text">{out.name}</span>{' '}
-                    <span className="text-temper-text-dim">({out.type})</span>
-                    {out.description && (
-                      <span className="text-temper-text-dim"> &mdash; {out.description}</span>
-                    )}
-                    {isWfOutput && (
-                      <span className="text-[8px] ml-1 px-1 py-px rounded bg-emerald-900/30 text-emerald-400">
-                        WF
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
+          </div>
+
+          {/* Outputs — each row has a Handle anchored to the right edge */}
+          <div className="nopan nodrag mt-2" onClick={(e) => e.stopPropagation()}>
+            <div className="text-[9px] text-temper-text-dim mb-1">Outputs (name : type)</div>
+            <div className="flex flex-col gap-1 w-full">
+              {/* Main text output — always present */}
+              <div className="relative flex items-center gap-1 p-1 bg-emerald-900/20 rounded border border-emerald-700/30">
+                <Handle
+                  type="source"
+                  position={Position.Right}
+                  id="out:output"
+                  className="!absolute !w-2.5 !h-2.5 !bg-emerald-400 !border-emerald-600 !transform-none !min-w-0 !min-h-0 data-wire-handle"
+                  style={{ right: '-13px', top: '50%', transform: 'translateY(-50%)' }}
+                />
+                <span className="px-1.5 py-0.5 text-[10px] text-emerald-400/80 italic">output</span>
+                <span className="flex-1 px-1.5 py-0.5 text-[10px] text-temper-text-dim">text</span>
+              </div>
+              {/* Named structured outputs */}
+              {outputs.filter((o) => o.name !== 'output').map((o) => (
+                <div key={o.name} className="relative flex items-center gap-1 p-1 bg-temper-surface/50 rounded border border-temper-border/50">
+                  <Handle
+                    type="source"
+                    position={Position.Right}
+                    id={`out:${o.name}`}
+                    className="!absolute !w-2.5 !h-2.5 !bg-emerald-400 !border-emerald-600 !transform-none !min-w-0 !min-h-0 data-wire-handle"
+                    style={{ right: '-13px', top: '50%', transform: 'translateY(-50%)' }}
+                  />
+                  <input
+                    type="text" value={o.name} readOnly
+                    className="w-24 px-1.5 py-0.5 text-[10px] bg-temper-surface border border-temper-border rounded text-temper-text opacity-60"
+                    placeholder="name"
+                  />
+                  <input
+                    type="text" value={o.type}
+                    onChange={(e) => {
+                      const newOutputs: Record<string, string> = {};
+                      for (const out of outputs) {
+                        newOutputs[out.name] = out.name === o.name ? e.target.value : out.type;
+                      }
+                      updateStage(stageName, { outputs: newOutputs });
+                    }}
+                    className="flex-1 px-1.5 py-0.5 text-[10px] bg-temper-surface border border-temper-border rounded text-temper-text"
+                    placeholder="type"
+                  />
+                  <button
+                    onClick={() => {
+                      const newOutputs: Record<string, string> = {};
+                      for (const out of outputs) {
+                        if (out.name !== o.name) newOutputs[out.name] = out.type;
+                      }
+                      updateStage(stageName, { outputs: newOutputs });
+                    }}
+                    className="text-[10px] text-red-400 hover:text-red-300 px-0.5 shrink-0"
+                  >&times;</button>
+                </div>
+              ))}
+              <button
+                onClick={() => {
+                  const newOutputs: Record<string, string> = {};
+                  for (const o of outputs) newOutputs[o.name] = o.type;
+                  newOutputs[`output_${outputs.length}`] = 'string';
+                  updateStage(stageName, { outputs: newOutputs });
+                }}
+                className="text-[9px] text-temper-accent hover:underline self-start"
+              >+ Add</button>
             </div>
-          )}
+          </div>
         </NodeSection>
       )}
 
@@ -1262,7 +1491,7 @@ export function DesignStageNode({ data }: NodeProps) {
             </div>
           )}
           {/* Editable condition */}
-          <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+          <div className="nopan nodrag flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
             <span className="text-[9px] text-yellow-400 shrink-0">if:</span>
             <InlineEdit
               value={condition}
@@ -1273,7 +1502,7 @@ export function DesignStageNode({ data }: NodeProps) {
             />
           </div>
           {/* Editable loop */}
-          <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+          <div className="nopan nodrag flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
             <span className="text-[9px] text-amber-400 shrink-0">loop &rarr;</span>
             <InlineSelect
               value={loopsBackTo ?? ''}
@@ -1301,13 +1530,14 @@ export function DesignStageNode({ data }: NodeProps) {
         </div>
       )}
 
-      {/* Source handle (right) */}
+      {/* Source handle (right) — stage-level dependency */}
       <Handle
         type="source"
         position={Position.Right}
         id="right"
         className="!bg-temper-border !w-2.5 !h-2.5"
       />
+
       {/* Loop source handles (bottom) — multiple for distinct loop-back edges */}
       {[0, 1, 2].map((i) => (
         <Handle

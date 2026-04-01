@@ -66,11 +66,22 @@ export interface DesignNodeData extends Record<string, unknown> {
   conflictAutoResolveThreshold: number;
 }
 
-const NODE_WIDTH = 380;
-const NODE_HEIGHT = 220;
+const STAGE_NODE_WIDTH = 380;
+const AGENT_NODE_WIDTH = 380;
 const GAP_X = 100;
 const GAP_Y = 50;
 const START_X = 40;
+
+/** Estimate node height based on agent count + input count — avoids overlap before DOM measurement. */
+function estimateNodeHeight(stage: DesignStage): number {
+  const agentCount = stage.agents.length;
+  const inputCount = Object.keys(stage.inputs).length;
+  const ioExtra = inputCount * 30; // ~30px per input row
+  if (agentCount <= 1 && !stage.stage_ref) {
+    return 470 + ioExtra;
+  }
+  return 460 + agentCount * 80 + ioExtra;
+}
 
 /**
  * Build React Flow nodes + edges from the design store.
@@ -82,6 +93,9 @@ export function useDesignElements(): { nodes: Node[]; edges: Edge[] } {
   const resolvedStageInfo = useDesignStore((s) => s.resolvedStageInfo);
   const resolvedAgentSummaries = useDesignStore((s) => s.resolvedAgentSummaries);
   const meta = useDesignStore((s) => s.meta);
+  const selectedStageName = useDesignStore((s) => s.selectedStageName);
+  const showDepEdges = useDesignStore((s) => s.showDepEdges);
+  const showWireEdges = useDesignStore((s) => s.showWireEdges);
 
   return useMemo(() => {
     if (stages.length === 0) return { nodes: [], edges: [] };
@@ -104,27 +118,44 @@ export function useDesignElements(): { nodes: Node[]; edges: Edge[] } {
       else depthGroups.set(d, [s.name]);
     }
 
-    // Compute auto-layout positions
+    // Build stage lookup for height estimation
+    const stageLookup = new Map<string, DesignStage>();
+    for (const s of stages) stageLookup.set(s.name, s);
+
+    // Compute auto-layout positions using actual estimated heights
     const autoPositions = new Map<string, { x: number; y: number }>();
     if (hasDeps) {
       const maxDepth = Math.max(...Array.from(depthGroups.keys()), 0);
       let xCursor = START_X;
       for (let d = 0; d <= maxDepth; d++) {
         const names = depthGroups.get(d) ?? [];
-        const totalH = names.length * NODE_HEIGHT + (names.length - 1) * GAP_Y;
+        // Compute total column height using per-node estimates
+        let totalH = 0;
+        for (const name of names) {
+          const st = stageLookup.get(name);
+          totalH += st ? estimateNodeHeight(st) : 70;
+        }
+        totalH += (names.length - 1) * GAP_Y;
+
         let yCursor = -totalH / 2;
+        let maxW = 0;
         for (const name of names) {
           autoPositions.set(name, { x: xCursor, y: yCursor });
-          yCursor += NODE_HEIGHT + GAP_Y;
+          const st = stageLookup.get(name);
+          const h = st ? estimateNodeHeight(st) : 70;
+          const w = st && st.agents.length > 1 ? STAGE_NODE_WIDTH : AGENT_NODE_WIDTH;
+          maxW = Math.max(maxW, w);
+          yCursor += h + GAP_Y;
         }
-        xCursor += NODE_WIDTH + GAP_X;
+        xCursor += (maxW || STAGE_NODE_WIDTH) + GAP_X;
       }
     } else {
       // Sequential layout
       let xCursor = START_X;
       for (const s of stages) {
         autoPositions.set(s.name, { x: xCursor, y: 0 });
-        xCursor += NODE_WIDTH + GAP_X;
+        const w = s.agents.length > 1 ? STAGE_NODE_WIDTH : AGENT_NODE_WIDTH;
+        xCursor += w + GAP_X;
       }
     }
 
@@ -220,10 +251,11 @@ export function useDesignElements(): { nodes: Node[]; edges: Edge[] } {
         isRef: s.stage_ref != null,
         // Enriched fields — use merged inputs (resolved + workflow overrides)
         inputs: stageInputs,
-        description: resolved?.description ?? '',
+        description: resolved?.description ?? s.description,
         timeoutSeconds: resolved?.timeoutSeconds ?? null,
         safetyMode: resolved?.safetyMode ?? null,
-        outputs: resolved?.outputs ?? [],
+        outputs: resolved?.outputs
+          ?? Object.entries(s.outputs).map(([name, type]) => ({ name, type, description: '' })),
         errorHandling: resolved?.errorHandling ?? null,
         leaderAgent: resolved?.leaderAgent ?? null,
         agentSummaries,
@@ -320,7 +352,9 @@ export function useDesignElements(): { nodes: Node[]; edges: Edge[] } {
           }
         }
 
-        edges.push({
+        const depConnected = !selectedStageName
+          || dep === selectedStageName || s.name === selectedStageName;
+        if (showDepEdges) edges.push({
           id: `dep|${dep}|${s.name}`,
           source: dep,
           target: s.name,
@@ -328,7 +362,11 @@ export function useDesignElements(): { nodes: Node[]; edges: Edge[] } {
           targetHandle: 'left',
           type: 'dataFlow',
           data: { dataKeys, isLoop: false, loopLabel: null },
-          style: { stroke: EDGE_COLORS.dataFlow, strokeWidth: 2 },
+          style: {
+            stroke: EDGE_COLORS.dataFlow,
+            strokeWidth: 2,
+            opacity: depConnected ? 1 : 0.15,
+          },
         });
       }
 
@@ -338,6 +376,8 @@ export function useDesignElements(): { nodes: Node[]; edges: Edge[] } {
         const loopLabel = s.max_loops ? `max ${s.max_loops}` : 'loop';
         const idx = loopTargetCounters.get(s.loops_back_to) ?? 0;
         loopTargetCounters.set(s.loops_back_to, idx + 1);
+        const loopConnected = !selectedStageName
+          || s.name === selectedStageName || s.loops_back_to === selectedStageName;
         edges.push({
           id: `loop|${s.name}|${s.loops_back_to}`,
           source: s.name,
@@ -350,13 +390,49 @@ export function useDesignElements(): { nodes: Node[]; edges: Edge[] } {
             stroke: EDGE_COLORS.loopBack,
             strokeWidth: 2.5,
             strokeDasharray: '8 4',
+            opacity: loopConnected ? 1 : 0.15,
           },
         });
       }
     }
 
+    // --- Data wire edges ---
+    // Always show wires so the data flow is visible on first load.
+    for (const s of stages) {
+      const resolved = resolvedStageInfo[s.name];
+      const mergedInputs: Record<string, { source: string }> = {};
+      if (resolved?.inputs) {
+        for (const [k, v] of Object.entries(resolved.inputs)) mergedInputs[k] = v;
+      }
+      for (const [k, v] of Object.entries(s.inputs)) mergedInputs[k] = v;
+
+      for (const [inputName, inputDef] of Object.entries(mergedInputs)) {
+        const src = inputDef.source;
+        if (!src) continue;
+        const dotIdx = src.indexOf('.');
+        if (dotIdx < 0) continue;
+        const srcStage = src.slice(0, dotIdx);
+        if (srcStage === 'workflow' || !stageMap.has(srcStage)) continue;
+
+        const remainder = src.slice(dotIdx + 1);
+        const srcField = remainder.startsWith('structured.')
+          ? remainder.slice('structured.'.length)
+          : remainder;
+
+        if (showWireEdges) edges.push({
+          id: `wire|${srcStage}|${srcField}|${s.name}|${inputName}`,
+          source: srcStage,
+          target: s.name,
+          sourceHandle: `out:${srcField}`,
+          targetHandle: `in:${inputName}`,
+          type: 'dataWire',
+          style: { stroke: EDGE_COLORS.dataWire, strokeWidth: 1.5 },
+        });
+      }
+    }
+
     return { nodes, edges };
-  }, [stages, nodePositions, resolvedStageInfo, resolvedAgentSummaries, meta]);
+  }, [stages, nodePositions, resolvedStageInfo, resolvedAgentSummaries, meta, selectedStageName, showDepEdges, showWireEdges]);
 }
 
 /**
@@ -382,24 +458,38 @@ export function computeAutoPositions(
 
   const result: Record<string, { x: number; y: number }> = {};
 
+  const stageLookup = new Map<string, DesignStage>();
+  for (const s of stages) stageLookup.set(s.name, s);
+
   if (hasDeps) {
     const maxDepth = Math.max(...Array.from(depthGroups.keys()), 0);
     let xCursor = START_X;
     for (let d = 0; d <= maxDepth; d++) {
       const names = depthGroups.get(d) ?? [];
-      const totalH = names.length * NODE_HEIGHT + (names.length - 1) * GAP_Y;
+      let totalH = 0;
+      for (const name of names) {
+        const st = stageLookup.get(name);
+        totalH += st ? estimateNodeHeight(st) : 70;
+      }
+      totalH += (names.length - 1) * GAP_Y;
       let yCursor = -totalH / 2;
+      let maxW = 0;
       for (const name of names) {
         result[name] = { x: xCursor, y: yCursor };
-        yCursor += NODE_HEIGHT + GAP_Y;
+        const st = stageLookup.get(name);
+        const h = st ? estimateNodeHeight(st) : 70;
+        const w = st && st.agents.length > 1 ? STAGE_NODE_WIDTH : AGENT_NODE_WIDTH;
+        maxW = Math.max(maxW, w);
+        yCursor += h + GAP_Y;
       }
-      xCursor += NODE_WIDTH + GAP_X;
+      xCursor += (maxW || STAGE_NODE_WIDTH) + GAP_X;
     }
   } else {
     let xCursor = START_X;
     for (const s of stages) {
       result[s.name] = { x: xCursor, y: 0 };
-      xCursor += NODE_WIDTH + GAP_X;
+      const w = s.agents.length > 1 ? STAGE_NODE_WIDTH : AGENT_NODE_WIDTH;
+      xCursor += w + GAP_X;
     }
   }
 

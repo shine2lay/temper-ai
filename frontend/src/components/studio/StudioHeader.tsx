@@ -2,12 +2,13 @@
  * Top header bar for the Studio editor.
  * Contains: back arrow, undo/redo, workflow name, dirty indicator, action buttons.
  */
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useDesignStore } from '@/store/designStore';
 import { useSaveWorkflowDB, useValidateWorkflow, useRunWorkflow } from '@/hooks/useStudioAPI';
 import { Button } from '@/components/ui/button';
+import { InputFormGenerator, type InputSchema } from './InputFormGenerator';
 
 interface StudioHeaderProps {
   onOpenLoadDialog: () => void;
@@ -65,7 +66,24 @@ export function StudioHeader({ onOpenLoadDialog }: StudioHeaderProps) {
     }
   }, [saveMutation]);
 
-  const handleRun = useCallback(async () => {
+  // --- Run dialog state ---
+  const [showRunDialog, setShowRunDialog] = useState(false);
+
+  const inputSchema = useMemo<InputSchema>(() => {
+    const schema: InputSchema = {};
+    for (const name of meta.required_inputs) {
+      schema[name] = { type: 'string', required: true };
+    }
+    for (const name of meta.optional_inputs) {
+      schema[name] = { type: 'string', required: false };
+    }
+    return schema;
+  }, [meta.required_inputs, meta.optional_inputs]);
+
+  const hasInputs = meta.required_inputs.length > 0 || meta.optional_inputs.length > 0;
+
+  /** Save-if-dirty then run with given inputs. */
+  const executeRun = useCallback(async (inputs: Record<string, unknown>) => {
     const { configName: currentName, meta: currentMeta, isDirty: currentDirty, toWorkflowConfig: buildConfig } =
       useDesignStore.getState();
     const name = currentName ?? currentMeta.name;
@@ -87,15 +105,23 @@ export function StudioHeader({ onOpenLoadDialog }: StudioHeaderProps) {
       }
     }
 
-    const workflowPath = `configs/workflows/${name}.yaml`;
     try {
-      const result = await runMutation.mutateAsync({ workflow: workflowPath });
+      const result = await runMutation.mutateAsync({ workflow: name, inputs });
+      setShowRunDialog(false);
       toast.success('Workflow started');
       navigate(`/workflow/${result.execution_id}`);
     } catch (err) {
       toast.error(`Run failed: ${(err as Error).message}`);
     }
   }, [saveMutation, runMutation, navigate]);
+
+  const handleRun = useCallback(() => {
+    if (hasInputs) {
+      setShowRunDialog(true);
+    } else {
+      executeRun({});
+    }
+  }, [hasInputs, executeRun]);
 
   // Ctrl+S / Ctrl+Z / Ctrl+Shift+Z keyboard shortcuts
   useEffect(() => {
@@ -120,15 +146,6 @@ export function StudioHeader({ onOpenLoadDialog }: StudioHeaderProps) {
 
   return (
     <header className="flex items-center gap-3 bg-temper-panel px-4 py-2.5 border-b border-temper-border shrink-0 relative z-30">
-      {/* Back arrow */}
-      <button
-        onClick={() => navigate('/')}
-        className="text-temper-text-muted hover:text-temper-text transition-colors text-sm"
-        aria-label="Back to workflow list"
-      >
-        &larr;
-      </button>
-
       {/* Undo / Redo */}
       <div className="flex items-center gap-1">
         <button
@@ -196,6 +213,28 @@ export function StudioHeader({ onOpenLoadDialog }: StudioHeaderProps) {
       >
         Run
       </Button>
+
+      {/* Run dialog — collects workflow inputs before execution */}
+      {showRunDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-temper-panel border border-temper-border rounded-lg shadow-xl w-96 max-h-[80vh] overflow-y-auto">
+            <div className="px-4 py-3 border-b border-temper-border">
+              <h3 className="text-sm font-semibold text-temper-text">Run Workflow</h3>
+              <p className="text-[11px] text-temper-text-muted mt-0.5">
+                Provide inputs for &ldquo;{meta.name}&rdquo;
+              </p>
+            </div>
+            <div className="px-4 py-3">
+              <InputFormGenerator
+                schema={inputSchema}
+                onSubmit={(values) => executeRun(values)}
+                onCancel={() => setShowRunDialog(false)}
+                isSubmitting={saveMutation.isPending || runMutation.isPending}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </header>
   );
 }

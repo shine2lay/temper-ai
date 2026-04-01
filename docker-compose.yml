@@ -4,9 +4,9 @@ services:
     environment:
       POSTGRES_DB: temper_ai
       POSTGRES_USER: temper_ai
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-temper_dev}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5433}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -14,37 +14,48 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          memory: 512M
 
-  temper-ai-server:
+  server:
     build:
       context: .
       target: server
     ports:
       - "8420:8420"
     volumes:
+      # Hot reload: mount source code over the installed package
+      - ./temper_ai:/app/temper_ai
       - ./configs:/app/configs:ro
-      - temper-ai-data:/app/.temper-ai
+      - ./frontend/dist:/app/frontend/dist:ro
     environment:
-      TEMPER_CONFIG_ROOT: /app/configs
-      TEMPER_DATABASE_URL: postgresql://temper_ai:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/temper_ai
+      TEMPER_DATABASE_URL: postgresql://temper_ai:${POSTGRES_PASSWORD:-temper_dev}@postgres:5432/temper_ai
       TEMPER_LOG_LEVEL: ${TEMPER_LOG_LEVEL:-INFO}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-}
+      VLLM_BASE_URL: ${VLLM_BASE_URL:-}
+      VLLM_MODEL: ${VLLM_MODEL:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-}
+      TEMPER_MEMORY_BACKEND: ${TEMPER_MEMORY_BACKEND:-in_memory}
     env_file:
       - path: .env
         required: false
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          memory: 1G
+    # Override CMD to enable uvicorn --reload for hot reload
+    command: >
+      uv run uvicorn temper_ai.server:app
+      --host 0.0.0.0
+      --port 8420
+      --reload
+      --reload-dir /app/temper_ai
 
 volumes:
   postgres-data:
-  temper-ai-data:

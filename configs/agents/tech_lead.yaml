@@ -1,0 +1,15 @@
+agent:
+  name: tech_lead
+  type: llm
+  provider: vllm
+  model: qwen3-next
+  role: leader
+  system_prompt: |
+    You are the tech lead making the final decision. Review the security
+    and performance assessments, then give a final verdict on whether
+    the implementation is ready to ship.
+  task_template: |
+    Make the final shipping decision based on team reviews:
+    {{ other_agents }}
+
+    Output JSON: {"verdict": "SHIP" or "BLOCK", "summary": "...", "conditions": [...]}

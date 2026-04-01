@@ -155,7 +155,7 @@ export function estimateStageHeight(
   if (expanded) {
     // Expanded: header + metrics + stage I/O + collab arrows + single agent row
     const collabHeight =
-      (stage.collaboration_events ?? []).length > 0
+      false  // collaboration_events not available in v1
         ? LAYOUT.EXPANDED_COLLAB_HEIGHT
         : 0;
     return (

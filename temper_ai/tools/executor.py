@@ -1,326 +1,253 @@
+"""Tool executor — the gateway for all tool execution.
+
+Handles:
+- Tool lookup from registered instances
+- Workspace path validation (security)
+- Timeout enforcement via ThreadPoolExecutor
+- Observability event recording at every decision point
+
+Future extensibility points:
+- Safety policy validation (action_policies.yaml)
+- Rollback snapshots (for modifies_state tools)
+- Result caching (for read-only tools)
+- Rate limiting
 """
-Tool executor with safety checks and error handling.
 
-Provides robust thread pool management with guaranteed cleanup
-using weakref.finalize() to prevent thread leaks.
-"""
+import logging
+import time
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+from pathlib import Path
+from typing import Any
 
-from __future__ import annotations
-
-import threading
-import weakref
-from collections import deque
-from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Self
-
-from temper_ai.shared.constants.limits import MIN_WORKERS
-from temper_ai.shared.utils.exceptions import RateLimitError
-from temper_ai.shared.utils.logging import get_logger
-from temper_ai.tools._executor_config import ToolExecutorConfig
-from temper_ai.tools._executor_helpers import (
-    acquire_concurrent_slot,
-    check_rate_limit,
-    create_snapshot,
-    execute_with_timeout,
-    handle_approval_rejection,
-    handle_exception_rollback,
-    release_concurrent_slot,
-    validate_and_get_tool,
-    validate_policy,
-)
-from temper_ai.tools._executor_helpers import (
-    get_concurrent_execution_count as _get_concurrent_execution_count,
-)
-from temper_ai.tools._executor_helpers import (
-    get_rate_limit_usage as _get_rate_limit_usage,
-)
+from temper_ai.observability import EventType, record
 from temper_ai.tools.base import BaseTool, ToolResult
-from temper_ai.tools.registry import ToolRegistry
 
-# Module logger
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
+_DEFAULT_TIMEOUT = 30
+_MAX_TIMEOUT = 600
+_DEFAULT_WORKERS = 4
 
-def _build_tool_cache(cfg: ToolExecutorConfig) -> Any:
-    """Create ToolResultCache from config, or None if caching is disabled."""
-    if not cfg.enable_tool_cache:
-        return None
-    from temper_ai.tools.tool_cache import ToolResultCache
-    from temper_ai.tools.tool_cache_constants import (
-        DEFAULT_CACHE_MAX_SIZE,
-        DEFAULT_TOOL_CACHE_TTL_SECONDS,
-    )
-
-    return ToolResultCache(
-        max_size=cfg.tool_cache_max_size or DEFAULT_CACHE_MAX_SIZE,
-        ttl_seconds=cfg.tool_cache_ttl or DEFAULT_TOOL_CACHE_TTL_SECONDS,
-    )
+# Path parameter names to check for workspace sandboxing
+_PATH_PARAMS = {"path", "file_path", "directory", "filename", "output_path"}
 
 
 class ToolExecutor:
-    """
-    Executes tools with safety checks and error handling.
+    """Executes tools with timeout enforcement and workspace sandboxing.
 
-    Features:
-    - Parameter validation
-    - Timeout handling
-    - Error handling and reporting
-    - Structured result format
+    Records observability events for every execution, including blocks,
+    timeouts, and errors. Events use parent_id/execution_id from the
+    context dict if provided.
+
+    Usage:
+        executor = ToolExecutor(workspace_root="/home/user/project")
+        executor.register_tools({"Bash": bash_instance, "FileWriter": fw_instance})
+        result = executor.execute("Bash", {"command": "ls"})
     """
 
-    def __init__(  # noqa: long
+    def __init__(
         self,
-        registry: ToolRegistry | None = None,
-        config: ToolExecutorConfig | dict[str, Any] | None = None,
-        **kwargs: Any,
-    ):
-        """# noqa: long
-        Initialize tool executor.
+        workspace_root: str | None = None,
+        default_timeout: int = _DEFAULT_TIMEOUT,
+        max_workers: int = _DEFAULT_WORKERS,
+        policy_engine: Any | None = None,
+    ) -> None:
+        self.workspace_root = workspace_root
+        self.default_timeout = default_timeout
+        self.policy_engine = policy_engine  # SafetyPolicyEngine (optional)
+        self._tools: dict[str, BaseTool] = {}
+        self._thread_pool = ThreadPoolExecutor(max_workers=max_workers)
+        # Running cost/token totals for budget policy enforcement
+        self.run_cost_usd: float = 0.0
+        self.run_tokens: int = 0
 
-        Args:
-            registry: Optional ToolRegistry (legacy). When None, executor
-                owns a lazy singleton dict from TOOL_CLASSES.
-            config: Optional ToolExecutorConfig or dict with config params
-            **kwargs: Individual config params (for backward compatibility)
+    def track_usage(self, cost_usd: float = 0.0, tokens: int = 0) -> None:
+        """Update running cost/token totals for budget policy enforcement."""
+        self.run_cost_usd += cost_usd
+        self.run_tokens += tokens
 
-        Supported config params:
-            default_timeout: Default timeout in seconds
-            max_workers: Max concurrent tool executions
-            max_concurrent: Max total concurrent executions allowed
-            rate_limit: Max executions per rate_window
-            rate_window: Time window for rate limiting in seconds
-            rollback_manager: RollbackManager for snapshot/rollback
-            policy_engine: ActionPolicyEngine for policy validation
-            approval_workflow: ApprovalWorkflow for approval requests
-            enable_auto_rollback: Enable automatic rollback on failure
-            workspace_root: Optional workspace root directory path
-        """
-        if config is None:
-            cfg = ToolExecutorConfig(**kwargs)
-        elif isinstance(config, dict):
-            cfg = ToolExecutorConfig(**config)
-        else:
-            cfg = config
+    def get_tool(self, name: str) -> BaseTool | None:
+        """Get a registered tool by name. Returns None if not found."""
+        return self._tools.get(name)
 
-        self.registry = registry
-        self._tool_instances: dict[str, BaseTool] = {}
-        self.default_timeout = cfg.default_timeout
-        self.max_concurrent = cfg.max_concurrent
-        self.rate_limit = cfg.rate_limit
-        self.rate_window = cfg.rate_window
-        self.workspace_root = cfg.workspace_path
-        self.rollback_manager = cfg.rollback_manager
-        self.policy_engine = cfg.policy_engine
-        self.approval_workflow = cfg.approval_workflow
-        self.enable_auto_rollback = cfg.enable_auto_rollback
-        self._setup_threading(cfg)
-        self._tool_cache = _build_tool_cache(cfg)
-        self.workflow_rate_limiter: Any = None
-        self._register_finalizer_and_callbacks()
-        logger.debug(
-            f"ToolExecutor initialized with {cfg.max_workers} workers, "
-            f"max_concurrent={cfg.max_concurrent}, rate_limit={cfg.rate_limit}/{cfg.rate_window}s, "
-            f"rollback={'enabled' if cfg.rollback_manager else 'disabled'}"
-        )
+    def register_tools(self, tools: dict[str, BaseTool]) -> None:
+        """Register tool instances for this executor."""
+        self._tools.update(tools)
 
-    def _setup_threading(self, cfg: ToolExecutorConfig) -> None:
-        """Initialize thread pools and concurrency/rate-limit tracking."""
-        self._executor = ThreadPoolExecutor(
-            max_workers=cfg.max_workers,
-            thread_name_prefix="tool-exec",
-        )
-        self._approval_executor = ThreadPoolExecutor(
-            max_workers=MIN_WORKERS,
-            thread_name_prefix="tool-approval",
-        )
-        self._shutdown = False
-        self._concurrent_count = 0
-        self._concurrent_lock = threading.Lock()
-        self._execution_times: deque[float] = deque()
-        self._rate_limit_lock = threading.Lock()
-
-    def _register_finalizer_and_callbacks(self) -> None:
-        """Register cleanup finalizer and approval rejection callback."""
-        self._finalizer = weakref.finalize(
-            self,
-            self._cleanup_executor,
-            self._executor,
-            self._approval_executor,
-        )
-        if self.approval_workflow and self.rollback_manager:
-            self.approval_workflow.on_rejected(
-                lambda req: handle_approval_rejection(self, req)
-            )
-
-    def _get_tool(self, name: str) -> BaseTool | None:
-        """Get tool by name with lazy instantiation from TOOL_CLASSES.
-
-        Checks the internal singleton dict first, then falls back to the
-        legacy ToolRegistry if present.  When neither has the tool, attempts
-        lazy instantiation from the static TOOL_CLASSES map.
-        """
-        if name in self._tool_instances:
-            return self._tool_instances[name]
-        # Legacy path: try the registry
-        if self.registry is not None:
-            tool = self.registry.get(name)
-            if tool is not None:
-                return tool
-        # Lazy instantiation from static map
-        from temper_ai.tools import TOOL_CLASSES
-
-        cls = TOOL_CLASSES.get(name)
-        if cls is None:
-            return None
-        tool = cls()
-        self._tool_instances[name] = tool
-        return tool
-
-    def execute(  # noqa: radon
+    def execute(
         self,
         tool_name: str,
-        params: dict[str, Any] | None = None,
+        params: dict[str, Any],
         timeout: int | None = None,
         context: dict[str, Any] | None = None,
     ) -> ToolResult:
-        """Execute tool with parameters."""
-        # Resolve None defaults
-        resolved_params = params if params is not None else {}
-        resolved_timeout = timeout if timeout is not None else self.default_timeout
-        resolved_context = context if context is not None else {}
+        """Execute a tool by name.
 
-        try:
-            check_rate_limit(self)
-        except RateLimitError as e:
-            return ToolResult(success=False, result=None, error=str(e))
+        Args:
+            tool_name: Registered tool name.
+            params: Parameters to pass to the tool.
+            timeout: Execution timeout in seconds. Uses default if not specified.
+            context: Optional observability context with parent_id, execution_id, etc.
 
-        tool, error = validate_and_get_tool(self, tool_name, resolved_params)
-        if error is not None:
-            return error
+        Returns:
+            ToolResult with success/failure, result, and optional error.
+        """
+        ctx = context or {}
+        parent_id = ctx.get("parent_id")
+        execution_id = ctx.get("execution_id")
+
+        # Look up tool
+        tool = self._tools.get(tool_name)
         if tool is None:
-            return ToolResult(success=False, error=f"Tool '{tool_name}' not found")
-
-        policy_error = validate_policy(
-            self, tool_name, resolved_params, resolved_context
-        )
-        if policy_error is not None:
-            return policy_error
-
-        snapshot = create_snapshot(self, tool_name, resolved_params, resolved_context)
-
-        try:
-            return execute_with_timeout(
-                self,
-                tool,
-                resolved_params,
-                resolved_timeout,
-                snapshot,
-                tool_name,
-                resolved_context,
+            error = f"Unknown tool: '{tool_name}'. Available: {sorted(self._tools)}"
+            record(
+                EventType.TOOL_UNKNOWN,
+                parent_id=parent_id,
+                execution_id=execution_id,
+                status="failed",
+                data={"tool_name": tool_name, "available": sorted(self._tools)},
             )
-        except (RuntimeError, OSError, MemoryError) as e:
-            if snapshot and self.enable_auto_rollback and self.rollback_manager:
-                handle_exception_rollback(
-                    self, snapshot, tool_name, e, resolved_context
-                )
-            return ToolResult(success=False, result=None, error=str(e))
+            return ToolResult(success=False, result="", error=error)
 
-    @staticmethod
-    def _cleanup_executor(
-        executor: ThreadPoolExecutor,
-        approval_executor: ThreadPoolExecutor | None = None,
-    ) -> None:
-        """Static cleanup method for thread pools."""
-        for pool_name, pool in [
-            ("tool-exec", executor),
-            ("tool-approval", approval_executor),
-        ]:
-            if pool is None:
-                continue
-            try:
-                pool.shutdown(wait=True, cancel_futures=True)
-                logger.debug(
-                    "ThreadPoolExecutor (%s) cleaned up successfully", pool_name
+        # Safety policy evaluation
+        if self.policy_engine:
+            from temper_ai.safety.base import ActionType
+            # Inject running cost/tokens for budget policy
+            policy_ctx = {
+                **ctx,
+                "run_cost_usd": self.run_cost_usd,
+                "run_tokens": self.run_tokens,
+            }
+            decision = self.policy_engine.evaluate(
+                ActionType.TOOL_CALL,
+                {"tool_name": tool_name, "tool_params": params},
+                policy_ctx,
+            )
+            if decision.action == "deny":
+                record(
+                    EventType.SAFETY_POLICY_TRIGGERED,
+                    parent_id=parent_id,
+                    execution_id=execution_id,
+                    status="blocked",
+                    data={
+                        "tool_name": tool_name,
+                        "policy_name": decision.policy_name,
+                        "reason": decision.reason,
+                        "action": "deny",
+                    },
                 )
-            except (RuntimeError, OSError) as e:
-                logger.error("Error during thread pool cleanup (%s): %s", pool_name, e)
+                return ToolResult(
+                    success=False, result="",
+                    error=f"Blocked by safety policy '{decision.policy_name}': {decision.reason}",
+                )
 
-    def shutdown(self, wait: bool = True, cancel_futures: bool = False) -> None:
-        """Shutdown the executor and cleanup resources."""
-        if self._shutdown:
-            logger.debug("Executor already shut down, ignoring duplicate shutdown call")
-            return
+        # Validate workspace paths
+        if self.workspace_root:
+            path_error = _validate_workspace_paths(params, self.workspace_root)
+            if path_error:
+                record(
+                    EventType.TOOL_BLOCKED,
+                    parent_id=parent_id,
+                    execution_id=execution_id,
+                    status="blocked",
+                    data={
+                        "tool_name": tool_name,
+                        "reason": "workspace_violation",
+                        "error": path_error,
+                        "workspace_root": self.workspace_root,
+                    },
+                )
+                return ToolResult(success=False, result="", error=path_error)
+
+        # Execute with timeout
+        effective_timeout = min(timeout or self.default_timeout, _MAX_TIMEOUT)
+        return self._execute_with_timeout(
+            tool, tool_name, params, effective_timeout, parent_id, execution_id,
+        )
+
+    def _execute_with_timeout(
+        self,
+        tool: BaseTool,
+        tool_name: str,
+        params: dict[str, Any],
+        timeout: int,
+        parent_id: str | None,
+        execution_id: str | None,
+    ) -> ToolResult:
+        """Run tool.execute() in a thread pool with timeout and observability."""
+        start = time.monotonic()
+
         try:
-            self._executor.shutdown(wait=wait, cancel_futures=cancel_futures)
-            self._approval_executor.shutdown(wait=wait, cancel_futures=cancel_futures)
-            self._shutdown = True
-            logger.debug("ToolExecutor shutdown completed")
-        except (RuntimeError, OSError) as e:
-            logger.error(f"Error during executor shutdown: {e}")
-            raise
+            future = self._thread_pool.submit(tool.execute, **params)
+            result = future.result(timeout=timeout)
+            duration_ms = int((time.monotonic() - start) * 1000)
 
-    def __enter__(self) -> Self:
-        logger.debug("Entering ToolExecutor context")
+            # Ensure we got a ToolResult back
+            if not isinstance(result, ToolResult):
+                result = ToolResult(
+                    success=True,
+                    result=str(result) if result is not None else "",
+                )
+
+            # Normal success/failure is recorded by the LLM layer (tool_execution.py)
+            # which owns TOOL_CALL_STARTED/COMPLETED/FAILED for the standard flow.
+            # The executor only records events the LLM layer can't see:
+            # TOOL_BLOCKED, TOOL_TIMEOUT, TOOL_UNKNOWN (handled elsewhere in this class).
+            return result
+
+        except FutureTimeoutError:
+            duration_ms = int((time.monotonic() - start) * 1000)
+            error = f"Tool '{tool_name}' timed out after {timeout}s"
+            record(
+                EventType.TOOL_TIMEOUT,
+                parent_id=parent_id,
+                execution_id=execution_id,
+                status="failed",
+                data={
+                    "tool_name": tool_name,
+                    "timeout_s": timeout,
+                    "duration_ms": duration_ms,
+                },
+            )
+            return ToolResult(success=False, result="", error=error)
+
+        except Exception as e:
+            # Generic exceptions are also caught by the LLM layer.
+            # No duplicate event needed here.
+            return ToolResult(
+                success=False, result="",
+                error=f"{type(e).__name__}: {e}",
+            )
+
+    def shutdown(self, wait: bool = True) -> None:
+        """Shut down the thread pool."""
+        self._thread_pool.shutdown(wait=wait)
+
+    def __enter__(self) -> "ToolExecutor":
         return self
 
-    def __exit__(
-        self,
-        _exc_type: type[BaseException] | None,
-        _exc_val: BaseException | None,
-        _exc_tb: object,
-    ) -> None:
-        logger.debug("Exiting ToolExecutor context")
-        self.shutdown(wait=True)
+    def __exit__(self, *args: Any) -> None:
+        self.shutdown()
 
-    def __del__(self) -> None:
+
+def _validate_workspace_paths(params: dict[str, Any], workspace_root: str) -> str | None:
+    """Check that path parameters don't escape the workspace. Returns error string or None."""
+    root = Path(workspace_root).resolve()
+
+    for key in _PATH_PARAMS:
+        value = params.get(key)
+        if not value or not isinstance(value, str):
+            continue
+
         try:
-            if not self._shutdown and hasattr(self, "_executor"):
-                logger.warning(
-                    "ToolExecutor garbage collected without explicit shutdown. "
-                    "Use context manager or call shutdown() explicitly."
-                )
-                self.shutdown(wait=False, cancel_futures=True)
-        except (RuntimeError, OSError, AttributeError) as e:
-            logger.error(f"Error in ToolExecutor.__del__: {e}")
+            resolved = Path(value).resolve()
+        except (OSError, ValueError):
+            return f"Invalid path in '{key}': {value}"
 
-    def __repr__(self) -> str:
-        status = "shutdown" if self._shutdown else "active"
-        return f"ToolExecutor(registry={self.registry}, timeout={self.default_timeout}s, status={status})"
+        if "\x00" in value:
+            return f"Path in '{key}' contains null byte"
 
+        if not (resolved == root or str(resolved).startswith(str(root) + "/")):
+            return f"Path '{value}' escapes workspace root '{workspace_root}'"
 
-# --------------------------------------------------------------------------
-# Methods attached outside the class body to keep method_count under the
-# god-class threshold while preserving backward compatibility.
-# --------------------------------------------------------------------------
-
-
-def _acquire_concurrent_slot_method(self: ToolExecutor) -> bool:
-    """Acquire a concurrent slot."""
-    return acquire_concurrent_slot(self)
-
-
-def _release_concurrent_slot_method(self: ToolExecutor) -> None:
-    """Release a concurrent slot."""
-    release_concurrent_slot(self)
-
-
-def _check_rate_limit_method(self: ToolExecutor) -> None:
-    """Check rate limit."""
-    check_rate_limit(self)
-
-
-def _get_concurrent_execution_count_method(self: ToolExecutor) -> int:
-    """Get current number of concurrent executions."""
-    return _get_concurrent_execution_count(self)
-
-
-def _get_rate_limit_usage_method(self: ToolExecutor) -> dict:
-    """Get current rate limit usage."""
-    return _get_rate_limit_usage(self)
-
-
-ToolExecutor._acquire_concurrent_slot = _acquire_concurrent_slot_method  # type: ignore[attr-defined]
-ToolExecutor._release_concurrent_slot = _release_concurrent_slot_method  # type: ignore[attr-defined]
-ToolExecutor._check_rate_limit = _check_rate_limit_method  # type: ignore[attr-defined]
-ToolExecutor.get_concurrent_execution_count = _get_concurrent_execution_count_method  # type: ignore[attr-defined]
-ToolExecutor.get_rate_limit_usage = _get_rate_limit_usage_method  # type: ignore[attr-defined]
+    return None

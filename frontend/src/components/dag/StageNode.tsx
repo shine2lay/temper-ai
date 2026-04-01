@@ -4,7 +4,7 @@ import type { NodeProps } from '@xyflow/react';
 import { useExecutionStore } from '@/store/executionStore';
 import { STATUS_COLORS, STATUS_BG_COLORS } from './constants';
 import { formatDuration, formatTokens, formatCost, extractOutputPreview } from '@/lib/utils';
-import { AgentCard } from './AgentCard';
+import { AgentCardContent } from './AgentCardContent';
 import type { StageNodeData } from '@/hooks/useDagElements';
 
 const STRATEGY_DESCRIPTIONS: Record<string, string> = {
@@ -259,7 +259,7 @@ export const StageNode = memo(function StageNode({ data }: NodeProps) {
       {!collapsed && (
         <div className="px-2 pb-2 flex flex-col gap-2">
           {currentAgents.map((agent) => (
-            <AgentCard key={agent.id} agentId={agent.id} />
+            <AgentCardContent key={agent.id} agent={agent} nested />
           ))}
         </div>
       )}

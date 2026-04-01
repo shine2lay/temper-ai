@@ -4,10 +4,10 @@ import { cn } from '@/lib/utils';
 import { STATUS_ICONS } from '@/lib/constants';
 
 const STATUS_STYLES: Record<string, string> = {
-  completed: 'bg-[#66bb6a]/20 text-[#66bb6a] border-[#66bb6a]/40',
-  running: 'bg-[#4fc3f7]/20 text-[#4fc3f7] border-[#4fc3f7]/40',
-  failed: 'bg-[#ef5350]/20 text-[#ef5350] border-[#ef5350]/30',
-  pending: 'bg-[#6a7080]/20 text-[#6a7080] border-[#6a7080]/30',
+  completed: 'bg-[var(--badge-completed-bg)] text-[var(--badge-completed-text)] border-[var(--badge-completed-border)]',
+  running: 'bg-[var(--badge-running-bg)] text-[var(--badge-running-text)] border-[var(--badge-running-border)]',
+  failed: 'bg-[var(--badge-failed-bg)] text-[var(--badge-failed-text)] border-[var(--badge-failed-border)]',
+  pending: 'bg-[var(--badge-pending-bg)] text-[var(--badge-pending-text)] border-[var(--badge-pending-border)]',
 };
 
 export const StatusBadge = memo(function StatusBadge({ status, className }: { status: string; className?: string }) {

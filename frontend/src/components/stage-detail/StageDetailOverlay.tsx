@@ -80,7 +80,7 @@ export function StageDetailOverlay() {
             <SheetHeader className="shrink-0 pb-0">
               <div className="flex items-center gap-3 flex-wrap">
                 <SheetTitle className="text-lg font-bold text-temper-text">
-                  {stage.stage_name ?? stage.name ?? stageDetailId}
+                  {stage.name ?? stageDetailId}
                 </SheetTitle>
                 <StatusBadge status={stage.status} />
                 {strategy && (
@@ -88,14 +88,14 @@ export function StageDetailOverlay() {
                     {STRATEGY_LABELS[strategy] ?? strategy}
                   </Badge>
                 )}
-                {stage.stage_type && (
+                {stage.type && (
                   <Badge variant="outline" className="text-xs">
-                    {stage.stage_type}
+                    {stage.type}
                   </Badge>
                 )}
               </div>
               <SheetDescription className="sr-only">
-                Detailed view of stage {stage.stage_name}
+                Detailed view of stage {stage.name}
               </SheetDescription>
 
               {/* Summary metrics */}
@@ -104,9 +104,9 @@ export function StageDetailOverlay() {
                 <span>{formatDuration(stage.duration_seconds)}</span>
                 <span>{formatTokens(totalTokens)} tokens</span>
                 <span>{formatCost(totalCost)}</span>
-                {(stage.num_agents_failed ?? 0) > 0 && (
+                {agents.filter(a => a.status === 'failed').length > 0 && (
                   <span className="text-red-400">
-                    {stage.num_agents_failed} failed
+                    {agents.filter(a => a.status === 'failed').length} failed
                   </span>
                 )}
               </div>
@@ -172,7 +172,7 @@ export function StageDetailOverlay() {
                 <ErrorBoundary>
                   <OutputsTab
                     agents={agents}
-                    stageOutputData={stage.output_data}
+                    stageOutputData={undefined}
                     strategy={strategy}
                   />
                 </ErrorBoundary>

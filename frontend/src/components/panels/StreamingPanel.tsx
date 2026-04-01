@@ -88,6 +88,34 @@ export function StreamingPanel({ agentId }: StreamingPanelProps) {
               <CopyButton text={stream.content} />
             </div>
           )}
+          {stream.toolActivity && stream.toolActivity.length > 0 && (
+            <div className="mb-2 flex flex-col gap-1">
+              {stream.toolActivity.map((tool, i) => (
+                <div key={i} className="flex items-center gap-2 text-xs">
+                  {tool.status === 'running' ? (
+                    <span className="w-1.5 h-1.5 rounded-full bg-temper-accent animate-pulse shrink-0" />
+                  ) : tool.status === 'completed' ? (
+                    <span className="w-1.5 h-1.5 rounded-full bg-temper-completed shrink-0" />
+                  ) : (
+                    <span className="w-1.5 h-1.5 rounded-full bg-temper-failed shrink-0" />
+                  )}
+                  <span
+                    className={cn(
+                      'font-mono',
+                      tool.status === 'running' ? 'text-temper-accent' : 'text-temper-text-muted',
+                    )}
+                  >
+                    {tool.toolName}
+                  </span>
+                  {tool.durationSeconds != null && (
+                    <span className="text-temper-text-dim">
+                      {tool.durationSeconds.toFixed(1)}s
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
           {/* React auto-escapes JSX expressions — stream.content is safe */}
           <pre className="text-sm text-temper-text whitespace-pre-wrap">
             {stream.content}

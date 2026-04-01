@@ -1,9 +1,10 @@
 import { useMemo, useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
+import { AlertCircle, Inbox, SearchX } from 'lucide-react';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { EmptyState } from '@/components/shared/EmptyState';
-import { formatDuration, formatTimestamp, cn } from '@/lib/utils';
+import { formatDuration, formatRelativeTime, getDateGroup, cn } from '@/lib/utils';
 import { useDebounce } from '@/hooks/useDebounce';
 import { SEARCH_DEBOUNCE_MS } from '@/lib/constants';
 import { authFetch } from '@/lib/authFetch';
@@ -51,6 +52,58 @@ function sortWorkflows(workflows: WorkflowSummary[], sortBy: SortKey): WorkflowS
   return sorted;
 }
 
+function WorkflowRow({
+  wf,
+  selected,
+  onToggleSelect,
+  onNavigate,
+}: {
+  wf: WorkflowSummary;
+  selected: Set<string>;
+  onToggleSelect: (id: string) => void;
+  onNavigate: (path: string) => void;
+}) {
+  const shortId = wf.id.replace('wf-', '').slice(0, 8);
+  return (
+    <div
+      onClick={() => onNavigate(`/workflow/${wf.id}`)}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onNavigate(`/workflow/${wf.id}`); } }}
+      role="link"
+      tabIndex={0}
+      className="flex items-center gap-4 rounded-lg bg-temper-panel px-4 py-3 border border-temper-border hover:bg-temper-surface transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-temper-accent/50"
+    >
+      <input
+        type="checkbox"
+        checked={selected.has(wf.id)}
+        onChange={() => onToggleSelect(wf.id)}
+        onClick={(e) => e.stopPropagation()}
+        className="shrink-0 accent-temper-accent w-4 h-4 border-2 border-temper-border rounded"
+        aria-label={`Select ${wf.workflow_name} for comparison`}
+      />
+      <div className="flex-1 min-w-0">
+        <span className="text-sm font-medium text-temper-text truncate block">
+          {wf.workflow_name}
+        </span>
+        <span className="text-[10px] font-mono text-temper-text-dim">{shortId}</span>
+      </div>
+      <StatusBadge status={wf.status} />
+      <span className="text-xs text-temper-text-muted w-36">
+        {wf.start_time ? formatRelativeTime(wf.start_time) : '-'}
+      </span>
+      <span className="text-xs font-mono text-temper-text-muted w-20 text-right">
+        {formatDuration(wf.duration_seconds)}
+      </span>
+      <Link
+        to={`/studio/${wf.workflow_name}`}
+        onClick={(e) => e.stopPropagation()}
+        className="text-[10px] px-2 py-0.5 rounded bg-temper-surface text-temper-text-muted hover:text-temper-accent hover:bg-temper-accent/10 transition-colors shrink-0"
+      >
+        Studio
+      </Link>
+    </div>
+  );
+}
+
 export function WorkflowList() {
   const navigate = useNavigate();
   const { data: workflows, isLoading, error, dataUpdatedAt, refetch } = useQuery<WorkflowSummary[]>({
@@ -58,7 +111,9 @@ export function WorkflowList() {
     queryFn: async () => {
       const res = await authFetch('/api/workflows');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return res.json();
+      const data = await res.json();
+      // v1 API returns {runs: [...], total: int}
+      return data.runs ?? data;
     },
     refetchInterval: 5000,
   });
@@ -117,10 +172,27 @@ export function WorkflowList() {
     [filtered, sortBy],
   );
 
+  const grouped = useMemo(() => {
+    if (sortBy !== 'time') return null;
+    const groups: Array<{ label: string; items: WorkflowSummary[] }> = [];
+    let currentLabel = '';
+    for (const wf of sorted) {
+      const label = getDateGroup(wf.start_time);
+      if (label !== currentLabel) {
+        currentLabel = label;
+        groups.push({ label, items: [wf] });
+      } else {
+        groups[groups.length - 1].items.push(wf);
+      }
+    }
+    return groups;
+  }, [sorted, sortBy]);
+
   return (
     <div className="flex flex-col h-full bg-temper-bg">
-      <header className="flex items-center gap-4 bg-temper-panel px-6 py-4 border-b border-temper-border shrink-0 flex-wrap">
-        <h1 className="text-xl font-semibold text-temper-text">Temper AI Workflows</h1>
+      <header className="bg-temper-panel px-6 py-4 border-b border-temper-border shrink-0">
+        <div className="flex items-center gap-4 flex-wrap max-w-[1600px] mx-auto">
+        <h1 className="text-xl font-semibold text-temper-text">Workflows</h1>
         <span className="text-xs text-temper-text-muted">
           {filtered.length}/{workflows?.length ?? 0} workflows
         </span>
@@ -174,18 +246,6 @@ export function WorkflowList() {
               Clear selection
             </button>
           )}
-          <Link
-            to="/library"
-            className="px-3 py-1 rounded-md text-xs font-medium bg-temper-surface text-temper-text-muted hover:text-temper-text border border-temper-border hover:border-temper-accent/30 transition-colors"
-          >
-            Library
-          </Link>
-          <Link
-            to="/studio"
-            className="px-3 py-1 rounded-md text-xs font-medium bg-temper-accent/20 text-temper-accent hover:bg-temper-accent/30 transition-colors"
-          >
-            + New Workflow
-          </Link>
           <span className="text-xs text-temper-text-muted">Sort:</span>
           {(['time', 'name', 'status'] as const).map((s) => (
             <button
@@ -214,16 +274,17 @@ export function WorkflowList() {
             </span>
           )}
         </div>
+        </div>
       </header>
 
-      <div className="flex-1 overflow-y-auto p-6">
+      <div className="flex-1 overflow-y-auto p-6 max-w-[1600px] mx-auto w-full">
         {isLoading && (
           <EmptyState title="Loading workflows..." />
         )}
 
         {error && (
           <EmptyState
-            icon="!"
+            icon={AlertCircle}
             title="Failed to load workflows"
             subtitle={(error as Error).message}
           />
@@ -231,15 +292,20 @@ export function WorkflowList() {
 
         {workflows && workflows.length === 0 && (
           <EmptyState
-            icon="~"
+            icon={Inbox}
             title="No workflows found"
             subtitle="Run a workflow to see it here, or create one in Studio."
+            action={
+              <Link to="/studio" className="text-temper-accent hover:underline text-sm">
+                Create Workflow
+              </Link>
+            }
           />
         )}
 
         {workflows && workflows.length > 0 && sorted.length === 0 && (
           <EmptyState
-            icon="~"
+            icon={SearchX}
             title="No workflows match your filters"
             subtitle="Try adjusting your search or status filter."
           />
@@ -247,42 +313,22 @@ export function WorkflowList() {
 
         {sorted.length > 0 && (
           <div className="flex flex-col gap-2">
-            {sorted.map((wf) => (
-              <div
-                key={wf.id}
-                onClick={() => navigate(`/workflow/${wf.id}`)}
-                onKeyDown={(e) => { if (e.key === 'Enter') navigate(`/workflow/${wf.id}`); }}
-                role="link"
-                tabIndex={0}
-                className="flex items-center gap-4 rounded-lg bg-temper-panel px-4 py-3 border border-temper-border hover:bg-temper-surface transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-temper-accent/50"
-              >
-                <input
-                  type="checkbox"
-                  checked={selected.has(wf.id)}
-                  onChange={() => toggleSelect(wf.id)}
-                  onClick={(e) => e.stopPropagation()}
-                  className="shrink-0 accent-temper-accent"
-                  aria-label={`Select ${wf.workflow_name} for comparison`}
-                />
-                <span className="text-sm font-medium text-temper-text flex-1 truncate">
-                  {wf.workflow_name}
-                </span>
-                <StatusBadge status={wf.status} />
-                <span className="text-xs text-temper-text-muted w-36">
-                  {wf.start_time ? formatTimestamp(wf.start_time) : '-'}
-                </span>
-                <span className="text-xs font-mono text-temper-text-muted w-20 text-right">
-                  {formatDuration(wf.duration_seconds)}
-                </span>
-                <Link
-                  to={`/studio/${wf.workflow_name}`}
-                  onClick={(e) => e.stopPropagation()}
-                  className="text-[10px] px-2 py-0.5 rounded bg-temper-surface text-temper-text-muted hover:text-temper-accent hover:bg-temper-accent/10 transition-colors shrink-0"
-                >
-                  Studio
-                </Link>
-              </div>
-            ))}
+            {grouped ? (
+              grouped.map((group) => (
+                <div key={group.label}>
+                  <h3 className="text-xs font-medium text-temper-text-dim mb-2 mt-3 first:mt-0">{group.label}</h3>
+                  <div className="flex flex-col gap-2">
+                    {group.items.map((wf) => (
+                      <WorkflowRow key={wf.id} wf={wf} selected={selected} onToggleSelect={toggleSelect} onNavigate={navigate} />
+                    ))}
+                  </div>
+                </div>
+              ))
+            ) : (
+              sorted.map((wf) => (
+                <WorkflowRow key={wf.id} wf={wf} selected={selected} onToggleSelect={toggleSelect} onNavigate={navigate} />
+              ))
+            )}
           </div>
         )}
       </div>

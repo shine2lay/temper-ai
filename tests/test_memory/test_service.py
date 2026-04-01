@@ -1,124 +1,150 @@
-"""Tests for MemoryService."""
+"""Tests for MemoryService — the agent-facing wrapper."""
 
 import pytest
 
-from temper_ai.memory._schemas import MemoryScope
-from temper_ai.memory.constants import (
-    MEMORY_TYPE_CROSS_SESSION,
-    MEMORY_TYPE_EPISODIC,
-    MEMORY_TYPE_PROCEDURAL,
-)
+from temper_ai.memory.in_memory_store import InMemoryStore
 from temper_ai.memory.service import MemoryService
+from temper_ai.memory.base import MemoryEntry
 
 
-class TestMemoryServiceInit:
-    """Initialization tests."""
-
-    def test_init_default_provider(self, service):
-        assert service is not None
-
-    def test_init_custom_provider(self):
-        # in_memory is the only provider available without external deps
-        svc = MemoryService(provider_name="in_memory")
-        assert svc is not None
-
-    def test_unknown_provider_raises(self):
-        with pytest.raises(KeyError, match="Unknown memory provider"):
-            MemoryService(provider_name="nonexistent")
+@pytest.fixture
+def service():
+    return MemoryService(InMemoryStore())
 
 
-class TestMemoryServiceScope:
-    """Scope building tests."""
+class TestStore:
+    def test_store_returns_id(self, service):
+        mem_id = service.store("agent_a", "scope1", "test content")
+        assert isinstance(mem_id, str)
+        assert len(mem_id) > 0
 
-    def test_build_scope(self, service):
-        scope = service.build_scope(
-            tenant_id="t1",
-            workflow_name="wf1",
-            agent_name="ag1",
-        )
-        assert isinstance(scope, MemoryScope)
-        assert scope.tenant_id == "t1"
-        assert scope.workflow_name == "wf1"
-        assert scope.agent_name == "ag1"
-
-    def test_build_scope_with_namespace(self, service):
-        scope = service.build_scope(
-            tenant_id="t1",
-            workflow_name="wf1",
-            agent_name="ag1",
-            namespace="ns1",
-        )
-        assert scope.namespace == "ns1"
-        # Namespace overrides workflow_name in key
-        assert "ns1" in scope.scope_key
+    def test_store_with_metadata(self, service):
+        service.store("agent_a", "scope1", "fact", metadata={"run_id": "run-1"})
+        entries = service.recall_entries("agent_a", "scope1")
+        assert entries[0].metadata == {"run_id": "run-1"}
 
 
-class TestMemoryServiceStorage:
-    """Store and retrieve tests."""
+class TestRecall:
+    def test_recall_returns_strings(self, service):
+        service.store("agent_a", "scope1", "FastAPI project")
+        service.store("agent_a", "scope1", "Uses SQLModel")
+        memories = service.recall("agent_a", "scope1")
+        assert isinstance(memories, list)
+        assert all(isinstance(m, str) for m in memories)
+        assert "FastAPI project" in memories
+        assert "Uses SQLModel" in memories
 
-    def test_store_episodic(self, service):
-        scope = service.build_scope()
-        mid = service.store_episodic(scope, "episodic content")
-        assert isinstance(mid, str)
-        entries = service.list_memories(scope)
+    def test_recall_empty(self, service):
+        memories = service.recall("agent_a", "scope1")
+        assert memories == []
+
+    def test_recall_respects_limit(self, service):
+        for i in range(10):
+            service.store("agent_a", "scope1", f"fact {i}")
+        memories = service.recall("agent_a", "scope1", limit=3)
+        assert len(memories) == 3
+
+    def test_recall_scoped_by_agent(self, service):
+        service.store("agent_a", "scope1", "A knows this")
+        service.store("agent_b", "scope1", "B knows this")
+        assert service.recall("agent_a", "scope1") == ["A knows this"]
+        assert service.recall("agent_b", "scope1") == ["B knows this"]
+
+
+class TestRecallEntries:
+    def test_returns_memory_entry_objects(self, service):
+        service.store("agent_a", "scope1", "content")
+        entries = service.recall_entries("agent_a", "scope1")
         assert len(entries) == 1
-        assert entries[0].memory_type == MEMORY_TYPE_EPISODIC
+        assert isinstance(entries[0], MemoryEntry)
+        assert entries[0].content == "content"
+        assert entries[0].id  # has an ID
+        assert entries[0].created_at  # has a timestamp
 
-    def test_store_procedural(self, service):
-        scope = service.build_scope()
-        mid = service.store_procedural(scope, "procedural content")
-        assert isinstance(mid, str)
-        entries = service.list_memories(scope)
+
+class TestSearch:
+    def test_search_returns_strings(self, service):
+        service.store("agent_a", "scope1", "Uses FastAPI framework")
+        service.store("agent_a", "scope1", "Has PostgreSQL")
+        results = service.search("FastAPI", "agent_a", "scope1")
+        assert isinstance(results, list)
+        assert all(isinstance(r, str) for r in results)
+        assert len(results) == 1
+        assert "FastAPI" in results[0]
+
+    def test_search_entries_returns_objects(self, service):
+        service.store("agent_a", "scope1", "Uses FastAPI")
+        entries = service.search_entries("FastAPI", "agent_a", "scope1")
         assert len(entries) == 1
-        assert entries[0].memory_type == MEMORY_TYPE_PROCEDURAL
+        assert isinstance(entries[0], MemoryEntry)
 
-    def test_store_cross_session(self, service):
-        scope = service.build_scope()
-        mid = service.store_cross_session(scope, "cross content")
-        assert isinstance(mid, str)
-        entries = service.list_memories(scope)
-        assert len(entries) == 1
-        assert entries[0].memory_type == MEMORY_TYPE_CROSS_SESSION
-
-    def test_list_memories(self, service):
-        scope = service.build_scope()
-        service.store_episodic(scope, "a")
-        service.store_procedural(scope, "b")
-        entries = service.list_memories(scope)
-        assert len(entries) == 2
-
-    def test_list_memories_filtered_by_type(self, service):
-        scope = service.build_scope()
-        service.store_episodic(scope, "epi")
-        service.store_procedural(scope, "proc")
-        entries = service.list_memories(scope, memory_type=MEMORY_TYPE_EPISODIC)
-        assert len(entries) == 1
-        assert entries[0].memory_type == MEMORY_TYPE_EPISODIC
-
-    def test_clear_memories(self, service):
-        scope = service.build_scope()
-        service.store_episodic(scope, "to clear")
-        count = service.clear_memories(scope)
-        assert count == 1
-        assert len(service.list_memories(scope)) == 0
+    def test_search_no_results(self, service):
+        service.store("agent_a", "scope1", "Uses Django")
+        results = service.search("FastAPI", "agent_a", "scope1")
+        assert results == []
 
 
-class TestMemoryServiceRetrieval:
-    """Context retrieval tests."""
+class TestClear:
+    def test_clear_removes_all(self, service):
+        service.store("agent_a", "scope1", "fact 1")
+        service.store("agent_a", "scope1", "fact 2")
+        count = service.clear("agent_a", "scope1")
+        assert count == 2
+        assert service.recall("agent_a", "scope1") == []
 
-    def test_retrieve_context_empty(self, service):
-        scope = service.build_scope()
-        ctx = service.retrieve_context(scope, "anything")
-        assert ctx == ""
+    def test_clear_scoped(self, service):
+        service.store("agent_a", "scope1", "scope1 fact")
+        service.store("agent_a", "scope2", "scope2 fact")
+        service.clear("agent_a", "scope1")
+        assert service.recall("agent_a", "scope1") == []
+        assert service.recall("agent_a", "scope2") == ["scope2 fact"]
 
-    def test_retrieve_context_with_matches(self, service):
-        scope = service.build_scope()
-        service.store_episodic(scope, "important finding about testing")
-        ctx = service.retrieve_context(scope, "testing")
-        assert "testing" in ctx
 
-    def test_retrieve_context_formats_markdown(self, service):
-        scope = service.build_scope()
-        service.store_episodic(scope, "relevant content here")
-        ctx = service.retrieve_context(scope, "relevant")
-        assert ctx.startswith("# Relevant Memories")
+class TestMemoryFlow:
+    """Test the full memory flow as it would happen during agent execution."""
+
+    def test_agent_memory_lifecycle(self, service):
+        agent = "code_reviewer"
+        scope = "project:/home/user/myapp"
+
+        # Run 1: agent stores observations
+        service.store(agent, scope, "Project uses FastAPI + SQLModel",
+                      metadata={"run_id": "run-1"})
+        service.store(agent, scope, "Test coverage is 80%+",
+                      metadata={"run_id": "run-1"})
+
+        # Run 2: agent recalls previous observations
+        memories = service.recall(agent, scope)
+        assert len(memories) == 2
+        assert "FastAPI" in memories[0] or "FastAPI" in memories[1]
+
+        # Run 2: agent stores new observations
+        service.store(agent, scope, "Auth uses JWT tokens",
+                      metadata={"run_id": "run-2"})
+
+        # Run 3: agent recalls all observations
+        memories = service.recall(agent, scope)
+        assert len(memories) == 3
+
+    def test_same_agent_different_scopes(self, service):
+        """Same agent identity, different projects — separate memories."""
+        agent = "senior_engineer"
+        service.store(agent, "project:/app1", "App1 uses React")
+        service.store(agent, "project:/app2", "App2 uses Vue")
+
+        assert service.recall(agent, "project:/app1") == ["App1 uses React"]
+        assert service.recall(agent, "project:/app2") == ["App2 uses Vue"]
+
+    def test_different_agents_same_scope(self, service):
+        """Different agents working on same project — separate memories."""
+        scope = "project:/myapp"
+        service.store("security_reviewer", scope, "Found SQL injection risk")
+        service.store("quality_reviewer", scope, "Code follows PEP8")
+
+        sec_memories = service.recall("security_reviewer", scope)
+        qual_memories = service.recall("quality_reviewer", scope)
+
+        assert len(sec_memories) == 1
+        assert "SQL injection" in sec_memories[0]
+        assert len(qual_memories) == 1
+        assert "PEP8" in qual_memories[0]

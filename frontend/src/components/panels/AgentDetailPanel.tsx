@@ -1,7 +1,5 @@
 import { useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import { useExecutionStore } from '@/store/executionStore';
-import { authFetch } from '@/lib/authFetch';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { CollapsibleSection } from '@/components/shared/Collapsible';
 import { JsonViewer } from '@/components/shared/JsonViewer';
@@ -20,31 +18,17 @@ import {
   formatTokens,
   formatCost,
 } from '@/lib/utils';
-import { AGENT_DETAIL_REFETCH_MS } from '@/lib/constants';
-import type { AgentExecution } from '@/types';
+// Agent data comes from the Zustand store (updated via WebSocket + snapshot polling)
 
 interface AgentDetailPanelProps {
   agentId: string;
 }
 
 export function AgentDetailPanel({ agentId }: AgentDetailPanelProps) {
-  const agent = useExecutionStore((s) => s.agents.get(agentId));
+  const ag = useExecutionStore((s) => s.agents.get(agentId));
   const select = useExecutionStore((s) => s.select);
   const stages = useExecutionStore((s) => s.stages);
-  const isRunning = agent?.status === 'running';
-
-  const { data: detailAgent, isFetching, error: fetchError } = useQuery<AgentExecution>({
-    queryKey: ['agent-detail', agentId],
-    queryFn: async () => {
-      const res = await authFetch(`/api/agents/${agentId}`);
-      if (!res.ok) throw new Error('Failed to fetch agent detail');
-      return res.json();
-    },
-    refetchInterval: isRunning ? AGENT_DETAIL_REFETCH_MS : false,
-    enabled: !!agentId,
-  });
-
-  const ag = detailAgent ?? agent;
+  const isRunning = ag?.status === 'running';
 
   if (!ag) {
     return <EmptyState title="Agent not found" />;
@@ -99,17 +83,7 @@ export function AgentDetailPanel({ agentId }: AgentDetailPanelProps) {
             {ag.role}
           </Badge>
         )}
-        {isFetching && (
-          <div className="text-[10px] text-temper-accent animate-pulse">Refreshing...</div>
-        )}
       </div>
-
-      {/* Refetch error */}
-      {fetchError && (
-        <div className="text-xs text-red-400 bg-red-950/30 rounded px-2 py-1">
-          Failed to refresh: {(fetchError as Error).message}
-        </div>
-      )}
 
       {/* Metrics grid — short values */}
       <div className="grid grid-cols-3 gap-2">
@@ -216,8 +190,8 @@ export function AgentDetailPanel({ agentId }: AgentDetailPanelProps) {
                     {Object.entries(config.inputs).map(([name, decl]) => (
                       <tr key={name} className="border-b border-temper-border/30 last:border-b-0">
                         <td className="px-3 py-1 text-temper-text font-medium">{name}</td>
-                        <td className="px-3 py-1 text-temper-text-muted font-mono">{decl.type}</td>
-                        <td className="px-3 py-1 text-temper-text-dim">{decl.required ? 'required' : 'optional'}</td>
+                        <td className="px-3 py-1 text-temper-text-muted font-mono">{(decl as Record<string, unknown>)?.type as string}</td>
+                        <td className="px-3 py-1 text-temper-text-dim">{(decl as Record<string, unknown>)?.required ? 'required' : 'optional'}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -234,8 +208,8 @@ export function AgentDetailPanel({ agentId }: AgentDetailPanelProps) {
                     {Object.entries(config.outputs).map(([name, decl]) => (
                       <tr key={name} className="border-b border-temper-border/30 last:border-b-0">
                         <td className="px-3 py-1 text-temper-text font-medium">{name}</td>
-                        <td className="px-3 py-1 text-temper-text-muted font-mono">{decl.type}</td>
-                        <td className="px-3 py-1 text-temper-text-dim">{decl.description ?? ''}</td>
+                        <td className="px-3 py-1 text-temper-text-muted font-mono">{(decl as Record<string, unknown>)?.type as string}</td>
+                        <td className="px-3 py-1 text-temper-text-dim">{((decl as Record<string, unknown>)?.description ?? '') as string}</td>
                       </tr>
                     ))}
                   </tbody>

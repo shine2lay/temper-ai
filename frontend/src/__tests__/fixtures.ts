@@ -80,11 +80,15 @@ export const MOCK_AGENT_2: AgentExecution = {
 
 export const MOCK_STAGE: StageExecution = {
   id: 'stage-001',
+  name: 'decision',
   stage_name: 'decision',
+  type: 'stage',
   status: 'running',
   start_time: '2026-02-18T04:10:00Z',
   end_time: null,
   duration_seconds: null,
+  cost_usd: 0.01,
+  total_tokens: 450,
   agents: [MOCK_AGENT, MOCK_AGENT_2],
   num_agents_executed: 2,
   num_agents_succeeded: 1,
@@ -104,16 +108,10 @@ export const MOCK_WORKFLOW: WorkflowExecution = {
   start_time: '2026-02-18T04:10:00Z',
   end_time: null,
   duration_seconds: null,
+  nodes: [MOCK_STAGE],
   stages: [MOCK_STAGE],
   total_tokens: 450,
   total_cost_usd: 0.01,
-  workflow_config: {
-    workflow: {
-      stages: [
-        { name: 'decision', depends_on: [] },
-      ],
-    },
-  },
 };
 
 export const COMPLETED_WORKFLOW: WorkflowExecution = {
@@ -121,6 +119,16 @@ export const COMPLETED_WORKFLOW: WorkflowExecution = {
   status: 'completed',
   end_time: '2026-02-18T04:11:00Z',
   duration_seconds: 60,
+  nodes: [{
+    ...MOCK_STAGE,
+    status: 'completed',
+    end_time: '2026-02-18T04:11:00Z',
+    duration_seconds: 60,
+    agents: [
+      { ...MOCK_AGENT, status: 'completed' },
+      { ...MOCK_AGENT_2, status: 'completed', end_time: '2026-02-18T04:11:00Z', duration_seconds: 60 },
+    ],
+  }],
   stages: [{
     ...MOCK_STAGE,
     status: 'completed',

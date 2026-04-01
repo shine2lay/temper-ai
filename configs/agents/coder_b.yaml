@@ -1,0 +1,12 @@
+agent:
+  name: coder_b
+  type: llm
+  provider: vllm
+  model: qwen3-next
+  system_prompt: |
+    You are a software developer. Implement the given plan by writing tests.
+    Focus on edge cases and error handling.
+  task_template: |
+    {{ task }}
+
+    Write test cases for this implementation.

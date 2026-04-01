@@ -410,15 +410,12 @@ export function MyLibrary() {
   return (
     <div className="h-full flex flex-col bg-temper-bg">
       {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-temper-border">
+      <div className="flex items-center justify-between px-6 py-4 border-b border-temper-border max-w-[1600px] mx-auto w-full">
         <h1 className="text-lg font-semibold text-temper-text">My Library</h1>
-        <Button size="sm" variant="outline" onClick={() => navigate('/')}>
-          Back to Dashboard
-        </Button>
       </div>
 
       {/* Tabbed content */}
-      <div className="flex-1 overflow-y-auto px-6 py-4">
+      <div className="flex-1 overflow-y-auto px-6 py-4 max-w-[1600px] mx-auto w-full">
         <Tabs defaultValue="workflow">
           <TabsList variant="line" className="mb-4">
             {CONFIG_TABS.map((tab) => (

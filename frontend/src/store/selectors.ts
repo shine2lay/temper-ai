@@ -1,22 +1,23 @@
 /**
  * Derived state selectors for the execution store.
+ * Adapted for v1 composable graph model.
  */
-import type { StageExecution, StageConfig } from '@/types';
+import type { NodeExecution } from '@/types';
 import { useExecutionStore } from './executionStore';
 
-/** Group stage executions by stage_name (for collapsed DAG with iteration badges). */
+/** Group node executions by name (for collapsed DAG with iteration badges). */
 export function selectStageGroups(
-  stages: Map<string, StageExecution>,
-): Map<string, StageExecution[]> {
-  const groups = new Map<string, StageExecution[]>();
-  for (const [, stage] of stages) {
-    if (!stage.id) continue;
-    const name = stage.stage_name ?? stage.name ?? stage.id;
+  stages: Map<string, NodeExecution>,
+): Map<string, NodeExecution[]> {
+  const groups = new Map<string, NodeExecution[]>();
+  for (const [, node] of stages) {
+    if (!node.id) continue;
+    const name = node.name ?? node.id;
     const group = groups.get(name);
     if (group) {
-      group.push(stage);
+      group.push(node);
     } else {
-      groups.set(name, [stage]);
+      groups.set(name, [node]);
     }
   }
   // Sort each group by start_time
@@ -37,9 +38,12 @@ export interface DagInfo {
   hasDeps: boolean;
 }
 
-/** Extract depends_on, loops_back_to, and max_loops from workflow config. */
+/** Extract DAG info from workflow execution nodes.
+ * v1 includes depends_on, loop_to, max_loops in each node's execution data.
+ */
 export function selectDagInfo(): DagInfo {
   const workflow = useExecutionStore.getState().workflow;
+  const stages = useExecutionStore.getState().stages;
   const result: DagInfo = {
     depMap: new Map(),
     loopsBackTo: new Map(),
@@ -48,25 +52,17 @@ export function selectDagInfo(): DagInfo {
   };
   if (!workflow) return result;
 
-  const configSnap = workflow.workflow_config ?? workflow.workflow_config_snapshot;
-  if (!configSnap) return result;
-
-  const wfConfig =
-    'workflow' in configSnap ? configSnap.workflow : configSnap;
-  const configStages: StageConfig[] =
-    (wfConfig as { stages?: StageConfig[] })?.stages ?? [];
-
-  for (const cs of configStages) {
-    const name = cs.name;
-    if (!name) continue;
-    const deps = cs.depends_on ?? [];
+  for (const [, node] of stages) {
+    const name = node.name ?? node.id;
+    const deps = node.depends_on ?? [];
     result.depMap.set(name, deps);
     if (deps.length > 0) result.hasDeps = true;
-    if (cs.loops_back_to) {
-      result.loopsBackTo.set(name, cs.loops_back_to);
+
+    if (node.loop_to) {
+      result.loopsBackTo.set(name, node.loop_to);
     }
-    if (cs.max_loops != null) {
-      result.maxLoops.set(name, cs.max_loops);
+    if (node.max_loops != null) {
+      result.maxLoops.set(name, node.max_loops);
     }
   }
 

@@ -1,800 +1,380 @@
-"""LLMService — self-contained LLM call lifecycle.
+"""LLM service — the tool-calling loop with full observability.
 
-Consolidates the full LLM interaction loop (tool calling, retry, tracking,
-cost estimation, sliding window, tool schema building) into a reusable class
-that is independent of any specific agent implementation.
-
-Usage:
-    service = LLMService(llm, inference_config)
-    result = service.run(prompt, tools=[...], tool_executor=executor, ...)
+Orchestrates: call LLM -> parse tool calls -> execute tools -> inject results -> repeat.
+Records events at every level: LLM calls, tool calls, and iteration summaries.
 """
-
-from __future__ import annotations
 
 import json
 import logging
-import re
 import time
-from collections.abc import Callable
-from dataclasses import dataclass, field
 from typing import Any
 
-from temper_ai.llm._prompt import inject_results
-from temper_ai.llm._retry import call_with_retry_async, call_with_retry_sync
-from temper_ai.llm._schemas import build_native_tool_defs, build_text_schemas
-from temper_ai.llm._tool_execution import route_tool_call, route_tool_calls
-from temper_ai.llm._tracking import track_call, track_failed_call, validate_safety
-from temper_ai.llm.constants import FALLBACK_UNKNOWN_VALUE
-from temper_ai.llm.cost_estimator import estimate_cost
-from temper_ai.llm.llm_loop_events import (
-    LLMIterationEventData,
-    emit_llm_iteration_event,
-)
-from temper_ai.llm.response_parser import (
-    extract_final_answer,
-    extract_reasoning,
-    parse_tool_calls,
-)
-from temper_ai.llm.tool_keys import ToolKeys
-from temper_ai.shared.utils.exceptions import MaxIterationsError, sanitize_error_message
+from temper_ai.llm.models import CallContext, LLMResponse, LLMRunResult
+from temper_ai.llm.pricing import estimate_cost
+from temper_ai.llm.providers.base import BaseLLM, StreamCallback
+from temper_ai.llm.response_parser import extract_final_answer, parse_tool_calls
+from temper_ai.llm.tool_execution import ToolExecutorFn, execute_tool_calls
+from temper_ai.observability import EventType, record
 
 logger = logging.getLogger(__name__)
 
-# Pre-compiled pattern for stripping XML tool_call tags from assistant content
-_TOOL_CALL_XML_PATTERN = re.compile(r"<tool_call>.*?</tool_call>", re.DOTALL)
-
-# ---------------------------------------------------------------------------
-# Default iteration limit when safety config doesn't specify one
-# ---------------------------------------------------------------------------
-_DEFAULT_MAX_ITERATIONS = 10  # scanner: skip-magic
-
-
-class _MessagesLLMWrapper:
-    """Thin proxy that injects ``messages`` kwarg into every LLM call.
-
-    Used to thread conversation history through the retry module without
-    changing its signature.  Delegates all attribute access to the
-    underlying LLM so that the wrapper is transparent to callers.
-    """
-
-    def __init__(self, llm: Any, messages: list[dict[str, Any]]) -> None:
-        self._llm = llm
-        self._messages = messages
-
-    def complete(self, prompt: str, **kwargs: Any) -> Any:
-        """Delegate to wrapped LLM with messages injected."""
-        kwargs.setdefault("messages", self._messages)
-        return self._llm.complete(prompt, **kwargs)
-
-    async def acomplete(self, prompt: str, **kwargs: Any) -> Any:
-        """Async delegate to wrapped LLM with messages injected."""
-        kwargs.setdefault("messages", self._messages)
-        return await self._llm.acomplete(prompt, **kwargs)
-
-    def stream(self, prompt: str, **kwargs: Any) -> Any:
-        """Streaming delegate to wrapped LLM with messages injected."""
-        kwargs.setdefault("messages", self._messages)
-        return self._llm.stream(prompt, **kwargs)
-
-    async def astream(self, prompt: str, **kwargs: Any) -> Any:
-        """Async streaming delegate to wrapped LLM with messages injected."""
-        kwargs.setdefault("messages", self._messages)
-        return await self._llm.astream(prompt, **kwargs)
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._llm, name)
-
-
-# ---------------------------------------------------------------------------
-# LLMRunResult
-# ---------------------------------------------------------------------------
-
-
-@dataclass
-class LLMRunResult:
-    """Result of an LLMService.run() / .arun() call."""
-
-    output: str
-    reasoning: str | None = None
-    tool_calls: list[dict[str, Any]] = field(default_factory=list)
-    tokens: int = 0
-    cost: float = 0.0
-    iterations: int = 0
-    error: str | None = None
-    raw_response: Any | None = None
-    # Conversation history support: the user/assistant texts for this turn
-    user_message: str | None = None
-    assistant_message: str | None = None
-
-
-# ---------------------------------------------------------------------------
-# Internal loop state
-# ---------------------------------------------------------------------------
-
-
-@dataclass
-class _RunState:
-    """Mutable state for an LLM iteration loop."""
-
-    # Configuration (set once during init)
-    tools: list[Any] | None = None
-    tool_executor: Any = None
-    observer: Any = None
-    safety_config: Any = None
-    agent_name: str = "unknown"
-    stream_callback: Any | None = None
-    resolved_max_iterations: int = _DEFAULT_MAX_ITERATIONS
-    max_tool_result_size: int = 10000  # scanner: skip-magic
-    max_prompt_length: int = 32000  # scanner: skip-magic
-    effective_start: float = 0.0
-    effective_timeout: float = field(default_factory=lambda: float("inf"))
-    native_tool_defs: list[dict[str, Any]] | None = None
-    # Mutable state (changes per iteration)
-    iteration_number: int = 0
-    tool_calls_made: list[dict[str, Any]] = field(default_factory=list)
-    total_tokens: int = 0
-    total_cost: float = 0.0
-    conversation_turns: list[str] = field(default_factory=list)
-    system_prompt: str = ""
-    prompt: str = ""
-    llm_response: Any = None
-    # Multi-turn conversation history support (values may be str, list, or None)
-    messages: list[dict[str, Any]] | None = None
-    user_prompt_text: str | None = None
-    # Structured output: response format pass-through (R0.1)
-    response_format: dict[str, Any] | None = None
-
-
-# ---------------------------------------------------------------------------
-# Limit resolution helpers (module-level, consumed by LLMService)
-# ---------------------------------------------------------------------------
-
-
-def resolve_max_iterations(
-    explicit: int | None,
-    safety_config: Any,
-) -> int:
-    """Resolve max iterations from explicit param or safety config."""
-    if explicit is not None:
-        return explicit
-    if safety_config is not None:
-        return getattr(
-            safety_config, "max_tool_calls_per_execution", _DEFAULT_MAX_ITERATIONS
-        )
-    return _DEFAULT_MAX_ITERATIONS
-
-
-def resolve_max_tool_result_size(safety_config: Any) -> int:
-    """Resolve max tool result size from safety config."""
-    if safety_config is not None:
-        return getattr(
-            safety_config, "max_tool_result_size", 10000
-        )  # scanner: skip-magic
-    return 10000  # scanner: skip-magic
-
-
-def resolve_max_prompt_length(safety_config: Any) -> int:
-    """Resolve max prompt length from safety config."""
-    if safety_config is not None:
-        return getattr(safety_config, "max_prompt_length", 32000)  # scanner: skip-magic
-    return 32000  # scanner: skip-magic
-
-
-# ---------------------------------------------------------------------------
-# Observer stream callback bridge
-# ---------------------------------------------------------------------------
-
-
-def _make_observer_stream_callback(emit_fn: Callable) -> Callable:
-    """Create a StreamCallback that emits chunks via an AgentObserver.
-
-    Bridges the LLM provider's ``on_chunk(LLMStreamChunk)`` callback to the
-    observer's ``emit_stream_chunk()`` so that streaming tokens flow to the
-    event bus and on to the dashboard WebSocket.
-    """
-
-    def _on_chunk(chunk: Any) -> None:
-        emit_fn(
-            content=chunk.content,
-            chunk_type=getattr(chunk, "chunk_type", "content"),
-            done=getattr(chunk, "done", False),
-            model=getattr(chunk, "model", None),
-            prompt_tokens=getattr(chunk, "prompt_tokens", None),
-            completion_tokens=getattr(chunk, "completion_tokens", None),
-        )
-
-    return _on_chunk
-
-
-# ---------------------------------------------------------------------------
-# LLMService
-# ---------------------------------------------------------------------------
+DEFAULT_MAX_ITERATIONS = 10
+DEFAULT_MAX_MESSAGES = 50
 
 
 class LLMService:
-    """Self-contained LLM call lifecycle manager.
+    """Orchestrates the LLM tool-calling loop.
 
-    Args:
-        llm: BaseLLM provider instance
-        inference_config: InferenceConfig with provider/model/retries/etc.
-        pre_call_hooks: Optional list of callables invoked before each LLM call.
-            If any hook returns a non-None value, the call is blocked.
+    Calls the provider, parses tool calls, executes tools, injects results,
+    and repeats until the LLM produces a final response or max iterations hit.
+    Records observability events at every step.
     """
 
     def __init__(
         self,
-        llm: Any,
-        inference_config: Any,
-        pre_call_hooks: list[Callable] | None = None,
+        provider: BaseLLM,
+        max_iterations: int = DEFAULT_MAX_ITERATIONS,
+        max_messages: int = DEFAULT_MAX_MESSAGES,
+        total_timeout: float = 300.0,
     ) -> None:
-        self.llm = llm
-        self.inference_config = inference_config
-        self.pre_call_hooks = pre_call_hooks or []
-        # Cached tool schemas (persists across run() calls)
-        self._cached_text_schemas: str | None = None
-        self._cached_text_schemas_hash: str | None = None
-        self._cached_native_defs: list[dict[str, Any]] | None = None
-        self._cached_native_defs_hash: str | None = None
+        self.provider = provider
+        self.max_iterations = max_iterations
+        self.max_messages = max_messages
+        self.total_timeout = total_timeout  # Overall timeout for the entire run loop
 
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
-
-    def run(  # noqa: params
+    def run(
         self,
-        prompt: str,
+        messages: list[dict[str, Any]],
         *,
-        tools: list[Any] | None = None,
-        tool_executor: Any = None,
-        observer: Any = None,
-        stream_callback: Callable | None = None,
-        safety_config: Any = None,
-        agent_name: str = "unknown",
-        max_iterations: int | None = None,
-        max_execution_time: float | None = None,
-        start_time: float | None = None,
-        messages: list[dict[str, Any]] | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        execute_tool: ToolExecutorFn | None = None,
+        context: CallContext | None = None,
+        stream_callback: StreamCallback | None = None,
     ) -> LLMRunResult:
-        """Execute the LLM call lifecycle (sync).
+        """Run the LLM tool-calling loop.
 
-        If *tools* is None or empty, performs a single LLM call.
-        If *tools* is a list of BaseTool instances, enters the tool-calling loop.
+        Args:
+            messages: Initial conversation messages (OpenAI format).
+            tools: Tool definitions (OpenAI function calling format).
+            execute_tool: Function to execute a tool: (name, params) -> result.
+            context: Caller identity for observability.
+            stream_callback: Optional callback for streaming chunks.
+
+        Returns:
+            LLMRunResult with final output, tool calls made, tokens, cost, iterations.
         """
-        s = _RunState(
-            tools=tools,
-            tool_executor=tool_executor,
-            observer=observer,
-            stream_callback=stream_callback,
-            safety_config=safety_config,
-            agent_name=agent_name,
-        )
-        self._prepare_run_state(
-            s, prompt, max_iterations, max_execution_time, start_time, messages
-        )
+        ctx = context or CallContext()
+        self._record = ctx.event_recorder or record
+        all_tool_calls: list[dict[str, Any]] = []
+        total_tokens = 0
+        total_cost = 0.0
+        response: LLMResponse | None = None
+        run_start = time.monotonic()
 
-        for iteration in range(s.resolved_max_iterations):
-            guard = self._check_iteration_guards(s, iteration)
-            if guard is not None:
-                return guard
-
-            s.llm_response, last_error = self._call_with_retry_sync(
-                s.prompt,
-                s.stream_callback,
-                s.native_tool_defs,
-                s.observer,
-                messages=s.messages,
-            )
-            if s.llm_response is None:
-                return self._handle_llm_failure(last_error, s, iteration)
-
-            s.iteration_number += 1
-            parsed_calls = self._track_and_parse(s)
-            if not parsed_calls:
-                return self._build_final_result(s, iteration)
-
-            self._execute_and_inject(s, parsed_calls)
-
-        self._raise_max_iterations(s)
-        raise AssertionError("unreachable")  # help mypy see NoReturn
-
-    async def arun(  # noqa: params
-        self,
-        prompt: str,
-        *,
-        tools: list[Any] | None = None,
-        tool_executor: Any = None,
-        observer: Any = None,
-        stream_callback: Callable | None = None,
-        safety_config: Any = None,
-        agent_name: str = "unknown",
-        max_iterations: int | None = None,
-        max_execution_time: float | None = None,
-        start_time: float | None = None,
-        messages: list[dict[str, Any]] | None = None,
-    ) -> LLMRunResult:
-        """Execute the LLM call lifecycle (async).
-
-        Async counterpart to run(). Same interface and behavior.
-        """
-        s = _RunState(
-            tools=tools,
-            tool_executor=tool_executor,
-            observer=observer,
-            stream_callback=stream_callback,
-            safety_config=safety_config,
-            agent_name=agent_name,
-        )
-        self._prepare_run_state(
-            s, prompt, max_iterations, max_execution_time, start_time, messages
-        )
-
-        for iteration in range(s.resolved_max_iterations):
-            guard = self._check_iteration_guards(s, iteration)
-            if guard is not None:
-                return guard
-
-            s.llm_response, last_error = await self._call_with_retry_async(
-                s.prompt,
-                s.stream_callback,
-                s.native_tool_defs,
-                s.observer,
-                messages=s.messages,
-            )
-            if s.llm_response is None:
-                return self._handle_llm_failure(last_error, s, iteration)
-
-            s.iteration_number += 1
-            parsed_calls = self._track_and_parse(s)
-            if not parsed_calls:
-                return self._build_final_result(s, iteration)
-
-            self._execute_and_inject(s, parsed_calls)
-
-        self._raise_max_iterations(s)
-        raise AssertionError("unreachable")  # help mypy see NoReturn
-
-    # ------------------------------------------------------------------
-    # Loop helpers (shared by run/arun)
-    # ------------------------------------------------------------------
-
-    def _prepare_run_state(
-        self,
-        s: _RunState,
-        prompt: str,
-        max_iterations: int | None,
-        max_execution_time: float | None,
-        start_time: float | None,
-        messages: list[dict[str, Any]] | None = None,
-    ) -> None:
-        """Resolve settings, build tool schemas, and initialize loop state."""
-        s.resolved_max_iterations = resolve_max_iterations(
-            max_iterations, s.safety_config
-        )
-        s.max_tool_result_size = resolve_max_tool_result_size(s.safety_config)
-        s.max_prompt_length = resolve_max_prompt_length(s.safety_config)
-        s.effective_start = start_time if start_time is not None else time.time()
-        s.effective_timeout = max_execution_time or float("inf")
-
-        # Auto-wire streaming when observer supports it and no explicit
-        # stream_callback was provided.  This makes LLM calls use the
-        # provider's stream() method, emitting chunks to the event bus
-        # so the dashboard WebSocket receives live token output.
-        if s.stream_callback is None and s.observer is not None:
-            emit = getattr(s.observer, "emit_stream_chunk", None)
-            if callable(emit):
-                s.stream_callback = _make_observer_stream_callback(emit)
-
-        text_schemas = None
-        if s.tools and getattr(self.inference_config, "use_text_tool_schemas", False):
-            text_schemas = self._build_text_schemas(s.tools)
-            s.native_tool_defs = None
-        else:
-            s.native_tool_defs = (
-                self._build_native_tool_defs(s.tools) if s.tools else None
+        for iteration in range(1, self.max_iterations + 1):
+            # Check overall timeout
+            elapsed = time.monotonic() - run_start
+            if elapsed > self.total_timeout:
+                logger.warning(
+                    "LLM run timeout after %.0fs (%d iterations) for agent '%s'",
+                    elapsed, iteration - 1, ctx.agent_name,
+                )
+                return LLMRunResult(
+                    output="",
+                    tool_calls=all_tool_calls,
+                    tokens=total_tokens,
+                    cost=round(total_cost, 6),
+                    iterations=iteration - 1,
+                    error=f"LLM run timed out after {elapsed:.0f}s",
+                )
+            # -- Call LLM with observability --
+            llm_event_id, response, iter_cost = self._call_llm(
+                messages=messages,
+                tools=tools,
+                context=ctx,
+                iteration=iteration,
+                stream_callback=stream_callback,
             )
 
-        s.system_prompt = prompt
-        s.prompt = prompt + text_schemas if text_schemas else prompt
-        s.user_prompt_text = prompt
-        if messages is not None:
-            s.messages = list(messages)
-        elif s.native_tool_defs is not None:
-            # Auto-initialize messages for the native tool calling path
-            # so that tool results accumulate as proper OpenAI messages
-            s.messages = [{"role": "user", "content": prompt}]
+            # -- Accumulate tokens and cost --
+            total_tokens += response.total_tokens or 0
+            total_cost += iter_cost
 
-    def _check_iteration_guards(
-        self,
-        s: _RunState,
-        iteration: int,
-    ) -> LLMRunResult | None:
-        """Check timeout, pre-call hooks, and safety. Returns result if blocked."""
-        if time.time() - s.effective_start >= s.effective_timeout:
-            return LLMRunResult(
-                output="",
-                tool_calls=s.tool_calls_made,
-                tokens=s.total_tokens,
-                cost=s.total_cost,
-                iterations=iteration,
-                error=f"Execution time limit exceeded ({s.effective_timeout}s)",
-            )
+            # -- Parse tool calls --
+            tool_calls = parse_tool_calls(response)
 
-        blocked = self._run_pre_call_hooks(s.prompt)
-        if blocked is not None:
-            return LLMRunResult(
-                output="",
-                tool_calls=s.tool_calls_made,
-                tokens=s.total_tokens,
-                cost=s.total_cost,
-                iterations=iteration,
-                error=f"LLM call blocked by pre-call hook: {blocked}",
-            )
+            if not tool_calls:
+                # Final response — LLM is done
+                self._record_iteration(
+                    ctx, iteration, "final_response",
+                    tool_count=0, total_tokens=total_tokens,
+                )
+                return LLMRunResult(
+                    output=extract_final_answer(response),
+                    tool_calls=all_tool_calls,
+                    tokens=total_tokens,
+                    cost=round(total_cost, 6),
+                    iterations=iteration,
+                )
 
-        safety_error = validate_safety(
-            s.tool_executor, self.inference_config, s.prompt, s.agent_name
-        )
-        if safety_error is not None:
-            return LLMRunResult(
-                output="",
-                tool_calls=s.tool_calls_made,
-                tokens=s.total_tokens,
-                cost=s.total_cost,
-                iterations=iteration,
-                error=safety_error,
-            )
-        return None
-
-    def _handle_llm_failure(
-        self,
-        last_error: Exception | None,
-        s: _RunState,
-        iteration: int,
-    ) -> LLMRunResult:
-        """Build error result when LLM call fails after retries."""
-        max_attempts = self.inference_config.max_retries + 1
-        error_msg = f"LLM call failed after {max_attempts} attempts"
-        if last_error:
-            error_msg += f": {sanitize_error_message(str(last_error))}"
-        return LLMRunResult(
-            output="",
-            tool_calls=s.tool_calls_made,
-            tokens=s.total_tokens,
-            cost=s.total_cost,
-            iterations=iteration + 1,
-            error=error_msg,
-        )
-
-    def _track_and_parse(self, s: _RunState) -> list[dict[str, Any]]:
-        """Track response metrics and return parsed tool calls."""
-        resp = s.llm_response
-        logger.info(
-            "[%s] LLM responded (%s tokens)", s.agent_name, resp.total_tokens or "?"
-        )
-        iter_tokens = resp.total_tokens or 0
-        if iter_tokens:
-            s.total_tokens += iter_tokens
-        cost = self._estimate_cost(resp)
-        s.total_cost += cost
-        self._track_call(s.observer, s.prompt, resp, cost)
-
-        # Native path: use structured tool_calls exclusively.
-        # Do NOT fall back to XML parsing — that would corrupt s.messages.
-        if s.native_tool_defs is not None:
-            native = getattr(resp, "tool_calls", None)
-            parsed_calls = self._parse_native_tool_calls(native) if native else []
-        else:
-            parsed_calls = parse_tool_calls(resp.content) if s.tools else []
-
-        emit_llm_iteration_event(
-            s.observer,
-            LLMIterationEventData(
-                iteration_number=s.iteration_number,
-                agent_name=s.agent_name,
-                conversation_turns_count=len(s.conversation_turns),
-                tool_calls_this_iteration=len(parsed_calls),
-                total_tokens_this_iteration=iter_tokens,
-                total_cost_this_iteration=cost,
-            ),
-        )
-
-        return parsed_calls
-
-    @staticmethod
-    def _parse_native_tool_calls(
-        tool_calls: list[dict[str, Any]],
-    ) -> list[dict[str, Any]]:
-        """Convert OpenAI-format tool_calls to internal format.
-
-        Each input dict has ``{id, type, function: {name, arguments}}``.
-        Returns list of ``{name, parameters, tool_call_id}``.
-        """
-        parsed: list[dict[str, Any]] = []
-        for tc in tool_calls:
-            func = tc.get("function", {})
-            args = func.get("arguments", {})
-            if isinstance(args, str):
-                try:
-                    args = json.loads(args)
-                except (json.JSONDecodeError, TypeError):
-                    logger.warning(
-                        "Malformed arguments JSON for tool '%s': %s",
-                        func.get("name", "?"),
-                        args[:200] if len(args) > 200 else args,
-                    )
-                    args = {}
-            parsed.append(
-                {
-                    ToolKeys.NAME: func.get("name", ""),
-                    ToolKeys.PARAMETERS: args if isinstance(args, dict) else {},
-                    ToolKeys.TOOL_CALL_ID: tc.get("id", ""),
-                }
-            )
-        return parsed
-
-    def _build_final_result(self, s: _RunState, iteration: int) -> LLMRunResult:
-        """Build final result when no tool calls are needed."""
-        output = extract_final_answer(s.llm_response.content)
-        return LLMRunResult(
-            output=output,
-            reasoning=extract_reasoning(s.llm_response.content),
-            tool_calls=s.tool_calls_made,
-            tokens=s.total_tokens,
-            cost=s.total_cost,
-            iterations=iteration + 1,
-            raw_response=s.llm_response,
-            user_message=s.user_prompt_text,
-            assistant_message=output,
-        )
-
-    def _execute_and_inject(
-        self, s: _RunState, parsed_calls: list[dict[str, Any]]
-    ) -> None:
-        """Execute tool calls and inject results into prompt."""
-        tool_names = ", ".join(tc.get(ToolKeys.NAME, "?") for tc in parsed_calls)
-        logger.info(
-            "[%s] Calling %d tool(s): %s", s.agent_name, len(parsed_calls), tool_names
-        )
-
-        tool_results = self._execute_tools(
-            parsed_calls,
-            s.tool_executor,
-            s.observer,
-            s.safety_config,
-        )
-        s.tool_calls_made.extend(tool_results)
-
-        if s.native_tool_defs and s.messages is not None:
-            self._inject_messages_native(s, parsed_calls, tool_results)
-        else:
-            self._inject_text_fallback(s, tool_results)
-
-    def _inject_messages_native(
-        self,
-        s: _RunState,
-        parsed_calls: list[dict[str, Any]],
-        tool_results: list[dict[str, Any]],
-    ) -> None:
-        """Append assistant + tool messages to s.messages (OpenAI protocol)."""
-        assert s.messages is not None  # Caller guarantees this
-        # Build assistant message with structured tool_calls
-        assistant_tool_calls = []
-        for pc in parsed_calls:
-            tc_id = pc.get(ToolKeys.TOOL_CALL_ID, "")
-            assistant_tool_calls.append(
-                {
-                    "id": tc_id,
-                    "type": "function",
-                    "function": {
-                        "name": pc.get(ToolKeys.NAME, ""),
-                        "arguments": json.dumps(pc.get(ToolKeys.PARAMETERS, {})),
+            # -- Execute tools --
+            if execute_tool is None:
+                logger.error(
+                    "LLM returned %d tool calls but no execute_tool provided",
+                    len(tool_calls),
+                )
+                self._record(
+                    EventType.LLM_NO_EXECUTOR,
+                    parent_id=ctx.agent_event_id,
+                    execution_id=ctx.execution_id,
+                    status="failed",
+                    data={
+                        "agent_name": ctx.agent_name,
+                        "iteration": iteration,
+                        "tool_calls_requested": [tc["name"] for tc in tool_calls],
                     },
-                }
+                )
+                return LLMRunResult(
+                    output="",
+                    tool_calls=all_tool_calls,
+                    tokens=total_tokens,
+                    cost=round(total_cost, 6),
+                    iterations=iteration,
+                    error="Tool calls requested but no tool executor available",
+                )
+
+            tool_results = execute_tool_calls(
+                tool_calls=tool_calls,
+                execute_tool=execute_tool,
+                context=ctx,
+                llm_call_event_id=llm_event_id,
             )
 
-        # Strip XML <tool_call> tags from content — redundant with structured tool_calls
-        content = s.llm_response.content or ""
-        content = _TOOL_CALL_XML_PATTERN.sub("", content).strip()
+            # -- Track tool calls for the final result --
+            for tc, tr in zip(tool_calls, tool_results):
+                all_tool_calls.append({
+                    "name": tc["name"],
+                    "arguments": tc["arguments"],
+                    "result": tr["result"],
+                    "success": tr["success"],
+                })
 
-        assistant_msg: dict[str, Any] = {
-            "role": "assistant",
-            "content": content if content else None,
-        }
-        if assistant_tool_calls:
-            assistant_msg["tool_calls"] = assistant_tool_calls
-        s.messages.append(assistant_msg)
+            # -- Inject tool results into messages --
+            _inject_tool_results(messages, response, tool_calls, tool_results)
 
-        # Append one tool-result message per tool call
-        for tr in tool_results:
-            tc_id = tr.get(ToolKeys.TOOL_CALL_ID, "")
-            if tr.get(ToolKeys.SUCCESS):
-                result_text = str(tr.get(ToolKeys.RESULT, ""))
-            else:
-                result_text = f"Error: {tr.get(ToolKeys.ERROR, 'unknown error')}"
-            s.messages.append(
-                {
-                    "role": "tool",
-                    "tool_call_id": tc_id,
-                    "content": result_text,
-                }
+            # -- Apply message window to prevent unbounded growth --
+            _apply_message_window(messages, self.max_messages)
+
+            self._record_iteration(
+                ctx, iteration, "tool_calls",
+                tool_count=len(tool_calls), total_tokens=total_tokens,
             )
 
-        # Safety valve: cap message count to prevent unbounded growth
-        self._apply_message_window(s)
-
-    def _inject_text_fallback(
-        self, s: _RunState, tool_results: list[dict[str, Any]]
-    ) -> None:
-        """Inject tool results via text prompt (legacy path)."""
-        remaining_budget = None
-        if s.resolved_max_iterations is not None:
-            remaining_budget = s.resolved_max_iterations - len(s.tool_calls_made)
-
-        s.prompt = inject_results(
-            s.system_prompt,
-            s.llm_response.content,
-            tool_results,
-            s.conversation_turns,
-            s.max_tool_result_size,
-            s.max_prompt_length,
-            remaining_budget,
+        # Hit max iterations without a final response
+        logger.warning(
+            "Hit max iterations (%d) for agent '%s'",
+            self.max_iterations, ctx.agent_name,
         )
-        # Text path: clear messages so retry module doesn't inject them
-        s.messages = None
+        self._record(
+            EventType.LLM_MAX_ITERATIONS,
+            parent_id=ctx.agent_event_id,
+            execution_id=ctx.execution_id,
+            status="failed",
+            data={
+                "agent_name": ctx.agent_name,
+                "node_path": ctx.node_path,
+                "max_iterations": self.max_iterations,
+                "total_tokens": total_tokens,
+                "total_cost": round(total_cost, 6),
+                "tool_calls_made": len(all_tool_calls),
+            },
+        )
+        return LLMRunResult(
+            output=extract_final_answer(response) if response else "",
+            tool_calls=all_tool_calls,
+            tokens=total_tokens,
+            cost=round(total_cost, 6),
+            iterations=self.max_iterations,
+            error=f"Reached max iterations ({self.max_iterations})",
+        )
 
-    @staticmethod
-    def _apply_message_window(s: _RunState, max_messages: int = 50) -> None:
-        """Cap message count to prevent unbounded memory growth.
+    def _call_llm(
+        self,
+        messages: list[dict],
+        tools: list[dict] | None,
+        context: CallContext,
+        iteration: int,
+        stream_callback: StreamCallback | None,
+    ) -> tuple[str, LLMResponse, float]:
+        """Call the LLM provider and record start/completed/failed events.
 
-        Keeps the initial system/user prefix plus the most recent messages.
+        Returns (event_id, response, cost_usd).
         """
-        if s.messages is None or len(s.messages) <= max_messages:
-            return
-        # Keep first message (user prompt) + most recent messages
-        keep_recent = max_messages - 1
-        s.messages = [s.messages[0]] + s.messages[-keep_recent:]
-
-    def _raise_max_iterations(self, s: _RunState) -> None:
-        """Raise MaxIterationsError when iteration limit is reached."""
-        raise MaxIterationsError(
-            iterations=s.resolved_max_iterations or 0,
-            tool_calls=s.tool_calls_made,
-            tokens=s.total_tokens,
-            cost=s.total_cost,
-            last_output=s.llm_response.content if s.llm_response else "",
-            last_reasoning=(
-                extract_reasoning(s.llm_response.content) if s.llm_response else None
-            ),
+        event_id = self._record(
+            EventType.LLM_CALL_STARTED,
+            parent_id=context.agent_event_id,
+            execution_id=context.execution_id,
+            status="running",
+            data={
+                "agent_name": context.agent_name,
+                "node_path": context.node_path,
+                "model": self.provider.model,
+                "provider": self.provider.provider_name,
+                "temperature": self.provider.temperature,
+                "max_tokens": self.provider.max_tokens,
+                "iteration": iteration,
+                "message_count": len(messages),
+                "messages": messages,
+                "tools_available": len(tools) if tools else 0,
+                "streaming": stream_callback is not None,
+            },
         )
 
-    # ------------------------------------------------------------------
-    # Delegation to sub-modules
-    # ------------------------------------------------------------------
+        try:
+            kwargs: dict[str, Any] = {}
+            if tools:
+                kwargs["tools"] = tools
 
-    def _call_with_retry_sync(
+            if stream_callback:
+                response = self.provider.stream(
+                    messages, on_chunk=stream_callback, **kwargs,
+                )
+            else:
+                response = self.provider.complete(messages, **kwargs)
+
+            cost = estimate_cost(
+                response.model,
+                response.prompt_tokens,
+                response.completion_tokens,
+                response.total_tokens,
+            )
+
+            self._record(
+                EventType.LLM_CALL_COMPLETED,
+                parent_id=context.agent_event_id,
+                execution_id=context.execution_id,
+                status="completed",
+                data={
+                    "model": response.model,
+                    "prompt_tokens": response.prompt_tokens,
+                    "completion_tokens": response.completion_tokens,
+                    "total_tokens": response.total_tokens,
+                    "latency_ms": response.latency_ms,
+                    "finish_reason": response.finish_reason,
+                    "cost_usd": cost,
+                    "has_tool_calls": bool(response.tool_calls),
+                    "tool_calls_requested": [
+                        {"name": tc.get("name"), "id": tc.get("id")}
+                        for tc in (response.tool_calls or [])
+                    ] or None,
+                    "iteration": iteration,
+                    "response_content": response.content,
+                    "reasoning": response.reasoning,
+                },
+            )
+
+            return event_id, response, cost
+
+        except Exception as e:
+            self._record(
+                EventType.LLM_CALL_FAILED,
+                parent_id=context.agent_event_id,
+                execution_id=context.execution_id,
+                status="failed",
+                data={
+                    "model": self.provider.model,
+                    "provider": self.provider.provider_name,
+                    "iteration": iteration,
+                    "error_type": type(e).__name__,
+                    "error": str(e)[:500],
+                    "agent_name": context.agent_name,
+                },
+            )
+            raise
+
+    def _record_iteration(
         self,
-        prompt: str,
-        stream_callback: Callable | None,
-        native_tool_defs: list[dict[str, Any]] | None,
-        observer: Any,
-        messages: list[dict[str, Any]] | None = None,
-    ) -> tuple[Any | None, Exception | None]:
-        """Call LLM with retries (sync). Delegates to _retry module."""
-        llm = _MessagesLLMWrapper(self.llm, messages) if messages else self.llm
-        return call_with_retry_sync(
-            llm,
-            self.inference_config,
-            prompt,
-            stream_callback,
-            native_tool_defs,
-            observer,
-            self._track_failed_call,
-        )
-
-    async def _call_with_retry_async(
-        self,
-        prompt: str,
-        stream_callback: Callable | None,
-        native_tool_defs: list[dict[str, Any]] | None,
-        observer: Any,
-        messages: list[dict[str, Any]] | None = None,
-    ) -> tuple[Any | None, Exception | None]:
-        """Call LLM with retries (async). Delegates to _retry module."""
-        llm = _MessagesLLMWrapper(self.llm, messages) if messages else self.llm
-        return await call_with_retry_async(
-            llm,
-            self.inference_config,
-            prompt,
-            stream_callback,
-            native_tool_defs,
-            observer,
-            self._track_failed_call,
-        )
-
-    def _execute_tools(
-        self,
-        tool_calls: list[dict[str, Any]],
-        tool_executor: Any,
-        observer: Any,
-        safety_config: Any,
-    ) -> list[dict[str, Any]]:
-        """Execute tool calls. Delegates to _tool_execution module."""
-        return route_tool_calls(
-            tool_calls,
-            tool_executor,
-            observer,
-            safety_config,
-            route_tool_call,
-        )
-
-    def _build_text_schemas(self, tools: list[Any] | None) -> str | None:
-        """Build text-based tool schemas. Delegates to _schemas module."""
-        schemas, hash_val = build_text_schemas(
-            tools,
-            self._cached_text_schemas,
-            self._cached_text_schemas_hash,
-        )
-        self._cached_text_schemas = schemas
-        self._cached_text_schemas_hash = hash_val
-        return schemas
-
-    def _build_native_tool_defs(
-        self, tools: list[Any] | None
-    ) -> list[dict[str, Any]] | None:
-        """Build native tool definitions. Delegates to _schemas module."""
-        defs, hash_val = build_native_tool_defs(
-            tools,
-            self._cached_native_defs,
-            self._cached_native_defs_hash,
-        )
-        self._cached_native_defs = defs
-        self._cached_native_defs_hash = hash_val
-        return defs
-
-    def _estimate_cost(self, llm_response: Any) -> float:
-        """Estimate cost for an LLM response."""
-        return estimate_cost(
-            llm_response,
-            fallback_model=getattr(self.llm, "model", FALLBACK_UNKNOWN_VALUE),
-        )
-
-    def _track_call(
-        self,
-        observer: Any,
-        prompt: str,
-        llm_response: Any,
-        cost: float,
+        context: CallContext,
+        iteration: int,
+        action: str,
+        tool_count: int,
+        total_tokens: int,
     ) -> None:
-        """Track a successful LLM call."""
-        track_call(observer, self.inference_config, prompt, llm_response, cost)
-
-    def _track_failed_call(
-        self,
-        observer: Any,
-        prompt: str,
-        error: Exception,
-        attempt: int,
-        max_attempts: int,
-    ) -> None:
-        """Track a failed LLM call."""
-        track_failed_call(
-            observer, self.inference_config, prompt, error, attempt, max_attempts
+        """Record an iteration summary event."""
+        self._record(
+            EventType.LLM_ITERATION,
+            parent_id=context.agent_event_id,
+            execution_id=context.execution_id,
+            data={
+                "agent_name": context.agent_name,
+                "node_path": context.node_path,
+                "iteration": iteration,
+                "action": action,
+                "tool_count": tool_count,
+                "total_tokens_so_far": total_tokens,
+            },
         )
 
-    # ------------------------------------------------------------------
-    # Pre-call hooks
-    # ------------------------------------------------------------------
 
-    def _run_pre_call_hooks(self, prompt: str) -> str | None:
-        """Run pre-call hooks. Returns blocking reason or None."""
-        for hook in self.pre_call_hooks:
-            try:
-                result = hook(prompt)
-                if result is not None:
-                    return str(result)
-            except (ValueError, RuntimeError, TypeError) as e:
-                return f"Pre-call hook error: {e}"
-        return None
+def _inject_tool_results(
+    messages: list[dict],
+    response: LLMResponse,
+    tool_calls: list[dict],
+    tool_results: list[dict],
+) -> None:
+    """Append the assistant's tool-call message and tool result messages."""
+    # Assistant message with tool calls (OpenAI format)
+    assistant_msg: dict[str, Any] = {
+        "role": "assistant",
+        "tool_calls": [
+            {
+                "id": tc["id"],
+                "type": "function",
+                "function": {
+                    "name": tc["name"],
+                    "arguments": (
+                        json.dumps(tc["arguments"])
+                        if isinstance(tc["arguments"], dict)
+                        else str(tc["arguments"])
+                    ),
+                },
+            }
+            for tc in tool_calls
+        ],
+    }
+    # Only include content when present — some APIs reject "content": null
+    if response.content is not None:
+        assistant_msg["content"] = response.content
+    messages.append(assistant_msg)
 
-    # ------------------------------------------------------------------
-    # Limit resolution helpers (delegated to module-level functions)
-    # ------------------------------------------------------------------
+    # One tool-result message per tool call
+    for tr in tool_results:
+        messages.append({
+            "role": "tool",
+            "tool_call_id": tr["tool_call_id"],
+            "content": tr["result"],
+        })
+
+
+def _apply_message_window(messages: list[dict], max_messages: int) -> None:
+    """Keep the first message (system prompt) and the most recent messages.
+
+    Prevents unbounded message growth in long tool-calling loops.
+    Ensures tool-call pairs (assistant + tool results) are never split,
+    which would cause the API to reject orphaned tool_call_ids.
+    """
+    if len(messages) <= max_messages:
+        return
+
+    # Keep first message + most recent (max_messages - 1)
+    tail = messages[-(max_messages - 1):]
+
+    # If tail starts with orphaned tool result messages, skip them
+    # to find a clean turn boundary
+    start = 0
+    while start < len(tail) and tail[start].get("role") == "tool":
+        start += 1
+
+    keep = messages[:1] + tail[start:]
+    messages.clear()
+    messages.extend(keep)

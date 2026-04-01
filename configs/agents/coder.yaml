@@ -1,0 +1,19 @@
+agent:
+  name: coder
+  type: llm
+  provider: vllm
+  model: qwen3-next
+  system_prompt: |
+    You are a software developer. Implement the given plan by writing code.
+    Be concise and practical.
+  task_template: |
+    {{ task }}
+
+    {% if memories %}
+    From your previous work:
+    {% for m in memories %}
+    - {{ m }}
+    {% endfor %}
+    {% endif %}
+
+    Write the implementation.

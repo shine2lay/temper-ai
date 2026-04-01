@@ -1,50 +1,48 @@
-"""Agent execution infrastructure.
+"""Agent creation and type registry.
 
-Provides the agent base class, standard agent implementation,
-agent factory, and prompt engine.
+Usage:
+    from temper_ai.agent import create_agent
+    agent = create_agent(config)
 
-LLM providers are available via ``temper_ai.llm.providers``.
-
-Imports are lazy to avoid circular dependency:
-  temper_ai.llm.providers.base -> temper_ai.agent.utils.constants
-  -> temper_ai.agent.__init__ -> temper_ai.agent.base_agent
-  -> temper_ai.llm.providers.factory -> temper_ai.llm.providers.base (circular)
+To register a custom agent type:
+    from temper_ai.agent import register_agent_type
+    register_agent_type("api", APIAgent)
 """
 
-from typing import Any
+from temper_ai.agent.base import AgentABC
+from temper_ai.agent.llm_agent import LLMAgent
+from temper_ai.agent.script_agent import ScriptAgent
 
-_LAZY_IMPORTS = {
-    "AgentFactory": "temper_ai.agent.utils.agent_factory",
-    "AgentResponse": "temper_ai.agent.models.response",
-    "ToolCallRecord": "temper_ai.agent.models.response",
-    "BaseAgent": "temper_ai.agent.base_agent",
-    "ExecutionContext": "temper_ai.agent.base_agent",
-    "StandardAgent": "temper_ai.agent.standard_agent",
-    "PromptEngine": "temper_ai.llm.prompts.engine",
-    "PromptRenderError": "temper_ai.llm.prompts.engine",
+AGENT_TYPES: dict[str, type[AgentABC]] = {
+    "llm": LLMAgent,
+    "script": ScriptAgent,
 }
 
 
-def __getattr__(name: str) -> Any:
-    module_path = _LAZY_IMPORTS.get(name)
-    if module_path is not None:
-        import importlib
+def create_agent(config: dict) -> AgentABC:
+    """Create an agent from YAML config.
 
-        module = importlib.import_module(module_path)
-        value = getattr(module, name)
-        globals()[name] = value
-        return value
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    Agent type determined by config["type"] (default: "llm").
+    """
+    agent_type = config.get("type", "llm")
+    if agent_type not in AGENT_TYPES:
+        raise ValueError(
+            f"Unknown agent type: '{agent_type}'. "
+            f"Available: {list(AGENT_TYPES.keys())}"
+        )
+    return AGENT_TYPES[agent_type](config)
+
+
+def register_agent_type(name: str, agent_class: type[AgentABC]):
+    """Register a custom agent type."""
+    AGENT_TYPES[name] = agent_class
 
 
 __all__ = [
-    # Agent classes
-    "BaseAgent",
-    "AgentResponse",
-    "ExecutionContext",
-    "StandardAgent",
-    "AgentFactory",
-    # Prompt engine
-    "PromptEngine",
-    "PromptRenderError",
+    "AgentABC",
+    "LLMAgent",
+    "ScriptAgent",
+    "AGENT_TYPES",
+    "create_agent",
+    "register_agent_type",
 ]

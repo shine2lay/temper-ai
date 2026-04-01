@@ -5,6 +5,7 @@ import type { AgentFormState, AgentFieldUpdater } from '@/hooks/useAgentEditor';
 import { InlineSelect } from './InlineEdit';
 import { SectionHeader, ExpandedField } from './shared';
 import { toolModeOptions } from './agentPanelHelpers';
+import { useRegistry } from '@/hooks/useRegistry';
 
 interface Props {
   config: AgentFormState;
@@ -12,6 +13,9 @@ interface Props {
 }
 
 export function AgentToolsTab({ config, updateField }: Props) {
+  const { data: registry } = useRegistry();
+  const registeredTools = registry?.tools ?? [];
+
   return (
     <div className="px-3 py-2 border-b border-temper-border/30">
       <SectionHeader title="Tools" tooltip="Tools available to this agent. Auto: discover tools from environment. None: no tool access. Explicit: only the listed tools." />
@@ -31,8 +35,7 @@ export function AgentToolsTab({ config, updateField }: Props) {
           {config.tools.entries.map((entry, i) => (
             <div key={i} className="flex flex-col gap-1 p-1.5 bg-temper-surface/50 rounded border border-temper-border/50">
               <div className="flex items-center gap-1">
-                <input
-                  type="text"
+                <select
                   value={entry.name}
                   onChange={(e) => {
                     const entries = [...config.tools.entries];
@@ -40,8 +43,12 @@ export function AgentToolsTab({ config, updateField }: Props) {
                     updateField('tools', { ...config.tools, entries });
                   }}
                   className="flex-1 px-2 py-1 text-xs bg-temper-surface border border-temper-border rounded text-temper-text"
-                  placeholder="Tool name"
-                />
+                >
+                  <option value="">Select tool...</option>
+                  {registeredTools.map((t) => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
                 <button
                   onClick={() => updateField('tools', {
                     ...config.tools,

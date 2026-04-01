@@ -1,167 +1,97 @@
-"""Factory functions for creating LLM provider instances."""
+"""Provider factory — create a provider instance from config parameters."""
 
-from typing import TYPE_CHECKING, Any
+import logging
+import os
+from typing import Any
 
-from temper_ai.llm.constants import ERROR_MSG_VALID_PROVIDERS_SUFFIX
-from temper_ai.llm.providers.anthropic_provider import AnthropicLLM
-from temper_ai.llm.providers.base import BaseLLM, LLMProvider
+from temper_ai.llm.providers.base import BaseLLM
+from temper_ai.llm.providers.openai import OpenAILLM
+from temper_ai.llm.providers.vllm import VllmLLM
 from temper_ai.llm.providers.ollama import OllamaLLM
-from temper_ai.llm.providers.openai_provider import OpenAILLM
-from temper_ai.llm.providers.vllm_provider import VllmLLM
-from temper_ai.shared.core.circuit_breaker import CircuitBreakerConfig
-from temper_ai.shared.utils.exceptions import LLMError
 
-if TYPE_CHECKING:
-    from temper_ai.storage.schemas.agent_config import InferenceConfig
+logger = logging.getLogger(__name__)
 
-# Default port numbers for LLM providers
-OLLAMA_DEFAULT_PORT = 11434
-
-# Map of provider enums to their implementation classes
-_PROVIDER_CLASSES = {
-    LLMProvider.OLLAMA: OllamaLLM,
-    LLMProvider.OPENAI: OpenAILLM,
-    LLMProvider.ANTHROPIC: AnthropicLLM,
-    LLMProvider.VLLM: VllmLLM,
+_PROVIDER_MAP: dict[str, type[BaseLLM]] = {
+    "openai": OpenAILLM,
+    "vllm": VllmLLM,
+    "ollama": OllamaLLM,
 }
 
-# Default base URLs for providers that have well-known endpoints
-_DEFAULT_BASE_URLS = {
-    LLMProvider.OLLAMA: f"http://localhost:{OLLAMA_DEFAULT_PORT}",
-    LLMProvider.OPENAI: "https://api.openai.com/v1",
-    LLMProvider.ANTHROPIC: "https://api.anthropic.com/v1",
+_DEFAULT_BASE_URLS: dict[str, str] = {
+    "openai": "https://api.openai.com",
+    "vllm": "http://localhost:8000",
+    "ollama": "http://localhost:11434",
+    "anthropic": "https://api.anthropic.com",
+    "gemini": "https://generativelanguage.googleapis.com",
 }
 
 
-def _resolve_provider_enum(provider_str: str) -> LLMProvider:
-    """Resolve a provider string to an LLMProvider enum value.
-
-    Args:
-        provider_str: Provider name (case-insensitive).
-
-    Returns:
-        Matching LLMProvider enum value.
-
-    Raises:
-        LLMError: If provider_str does not match any known provider.
-    """
+def _register_optional_providers():
+    """Register providers with optional SDK dependencies (lazy import)."""
     try:
-        return LLMProvider(provider_str.lower())
-    except ValueError as exc:
-        valid = [p.value for p in LLMProvider]
-        raise LLMError(
-            f"Unknown LLM provider '{provider_str}{ERROR_MSG_VALID_PROVIDERS_SUFFIX}{valid}"
-        ) from exc
+        from temper_ai.llm.providers.anthropic import AnthropicLLM
+        _PROVIDER_MAP["anthropic"] = AnthropicLLM
+    except ImportError:
+        pass
+    try:
+        from temper_ai.llm.providers.gemini import GeminiLLM
+        _PROVIDER_MAP["gemini"] = GeminiLLM
+    except ImportError:
+        pass
 
 
-def create_llm_from_config(inference_config: "InferenceConfig") -> BaseLLM:
-    """Create LLM provider from an InferenceConfig object.
+_register_optional_providers()
 
-    This is the preferred factory for creating LLM providers from a full
-    inference configuration (e.g. parsed from YAML workflow configs).
+
+def register_provider(name: str, cls: type[BaseLLM], default_base_url: str | None = None) -> None:
+    """Register a custom LLM provider.
 
     Args:
-        inference_config: Inference configuration with provider, model,
-            base_url, temperature, max_tokens, top_p, timeout_seconds,
-            max_retries, retry_delay_seconds, and api_key attributes.
-
-    Returns:
-        Initialized LLM provider instance.
-
-    Raises:
-        LLMError: If provider type is unknown or unsupported.
+        name: Provider name (e.g., "my_provider").
+        cls: Provider class (must subclass BaseLLM).
+        default_base_url: Default API URL for this provider.
     """
-    provider_enum = _resolve_provider_enum(inference_config.provider)
-
-    if provider_enum not in _PROVIDER_CLASSES:
-        valid = [p.value for p in LLMProvider]
-        raise LLMError(
-            f"Unsupported LLM provider '{provider_enum.value}{ERROR_MSG_VALID_PROVIDERS_SUFFIX}{valid}"
-        )
-
-    provider_class = _PROVIDER_CLASSES[provider_enum]
-    base_url = inference_config.base_url or _DEFAULT_BASE_URLS.get(provider_enum, "")
-
-    common_params: dict[str, Any] = {
-        "model": inference_config.model,
-        "base_url": base_url,
-        "temperature": inference_config.temperature,
-        "max_tokens": inference_config.max_tokens,
-        "top_p": inference_config.top_p,
-        "timeout": inference_config.timeout_seconds,
-        "max_retries": inference_config.max_retries,
-        "retry_delay": float(inference_config.retry_delay_seconds),
-    }
-
-    if provider_enum in (LLMProvider.OPENAI, LLMProvider.ANTHROPIC):
-        # Schema-level validation (InferenceConfig) catches missing api_key_ref;
-        # here we resolve the actual env-var value.
-        if inference_config.api_key_ref:
-            # Secret resolution from environment variable matching the ref name
-            import os
-
-            api_key = os.getenv(inference_config.api_key_ref)
-            if not api_key:
-                raise ValueError(
-                    f"API key reference '{inference_config.api_key_ref}' not found in environment"
-                )
-            common_params["api_key"] = api_key
-        elif inference_config.api_key:
-            # Fallback to deprecated direct api_key
-            common_params["api_key"] = inference_config.api_key
-        else:
-            raise ValueError(f"No API key or api_key_ref provided for {provider_enum}")
-
-    if inference_config.circuit_breaker:
-        cb = inference_config.circuit_breaker
-        common_params["circuit_breaker_config"] = CircuitBreakerConfig(
-            failure_threshold=cb.failure_threshold,
-            success_threshold=cb.success_threshold,
-            timeout=cb.timeout_seconds,
-        )
-
-    instance: BaseLLM = provider_class(**common_params)
-    return instance
+    _PROVIDER_MAP[name] = cls
+    if default_base_url:
+        _DEFAULT_BASE_URLS[name] = default_base_url
 
 
-def create_llm_client(
+def create_provider(
     provider: str,
     model: str,
-    base_url: str,
+    base_url: str | None = None,
     api_key: str | None = None,
+    api_key_env: str | None = None,
     **kwargs: Any,
 ) -> BaseLLM:
-    """Factory function to create LLM client based on provider.
-
-    Use this when you have individual parameters (provider name, model, URL)
-    rather than a full InferenceConfig object.
+    """Create an LLM provider instance.
 
     Args:
-        provider: Provider name (ollama, openai, anthropic, vllm).
-        model: Model identifier.
-        base_url: Base URL for API.
-        api_key: API key (optional for local models).
-        **kwargs: Additional parameters passed to LLM client.
-
-    Returns:
-        Configured LLM client instance.
-
-    Raises:
-        LLMError: If provider is unknown.
+        provider: Provider name ("openai", "vllm").
+        model: Model identifier (e.g., "gpt-4o", "qwen3-next").
+        base_url: API base URL. Uses provider default if not specified.
+        api_key: API key directly. Takes precedence over api_key_env.
+        api_key_env: Environment variable name holding the API key.
+        **kwargs: Passed to provider (temperature, max_tokens, timeout, etc.).
     """
-    provider_enum = _resolve_provider_enum(provider)
-    llm_class = _PROVIDER_CLASSES.get(provider_enum)
-
-    if not llm_class:
-        valid = [p.value for p in LLMProvider]
-        raise LLMError(
-            f"Unknown provider '{provider}{ERROR_MSG_VALID_PROVIDERS_SUFFIX}{valid}"
+    provider_cls = _PROVIDER_MAP.get(provider)
+    if provider_cls is None:
+        raise ValueError(
+            f"Unknown provider '{provider}'. Available: {sorted(_PROVIDER_MAP)}"
         )
 
-    instance: BaseLLM = llm_class(
+    # Resolve API key: explicit > env var
+    resolved_key = api_key
+    if not resolved_key and api_key_env:
+        resolved_key = os.environ.get(api_key_env)
+        if not resolved_key:
+            logger.warning("API key env var '%s' is not set", api_key_env)
+
+    resolved_url = base_url or _DEFAULT_BASE_URLS.get(provider, "http://localhost:8000")
+
+    return provider_cls(
         model=model,
-        base_url=base_url,
-        api_key=api_key,
+        base_url=resolved_url,
+        api_key=resolved_key,
         **kwargs,
     )
-    return instance

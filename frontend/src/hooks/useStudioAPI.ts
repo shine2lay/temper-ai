@@ -27,7 +27,7 @@ interface RunResponse {
 }
 
 const STUDIO_BASE = '/api/studio';
-const CONFIGS_BASE = '/api/configs';
+const CONFIGS_BASE = '/api/studio/configs';
 const RUNS_BASE = '/api/runs';
 
 async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> {
@@ -89,17 +89,15 @@ export function useSaveWorkflowDB() {
     { name: string; data: Record<string, unknown>; isNew: boolean }
   >({
     mutationFn: async ({ name, data, isNew }) => {
-      if (isNew) {
-        return fetchJSON(`${CONFIGS_BASE}/workflow`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name, config_data: data }),
-        });
-      }
-      return fetchJSON(`${CONFIGS_BASE}/workflow/${name}`, {
-        method: 'PUT',
+      // v1 API expects { config: {...} }, not { config_data: {...} }
+      const url = isNew
+        ? `${CONFIGS_BASE}/workflow/${name}`
+        : `${CONFIGS_BASE}/workflow/${name}`;
+      const method = isNew ? 'POST' : 'PUT';
+      return fetchJSON(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ config_data: data }),
+        body: JSON.stringify({ config: data }),
       });
     },
     onSuccess: (_, { name }) => {
@@ -120,17 +118,14 @@ export function useSaveAgentDB() {
     { name: string; data: Record<string, unknown>; isNew: boolean }
   >({
     mutationFn: async ({ name, data, isNew }) => {
-      if (isNew) {
-        return fetchJSON(`${CONFIGS_BASE}/agent`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name, config_data: data }),
-        });
-      }
-      return fetchJSON(`${CONFIGS_BASE}/agent/${name}`, {
-        method: 'PUT',
+      const url = isNew
+        ? `${CONFIGS_BASE}/agent/${name}`
+        : `${CONFIGS_BASE}/agent/${name}`;
+      const method = isNew ? 'POST' : 'PUT';
+      return fetchJSON(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ config_data: data }),
+        body: JSON.stringify({ config: data }),
       });
     },
     onSuccess: (_, { name }) => {
@@ -145,10 +140,10 @@ export function useSaveAgentDB() {
 export function useValidateWorkflow() {
   return useMutation<ValidationResult, Error, Record<string, unknown>>({
     mutationFn: async (data) => {
-      return fetchJSON(`${STUDIO_BASE}/validate/workflows`, {
+      return fetchJSON(`${STUDIO_BASE}/validate/workflow`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
+        body: JSON.stringify({ config: data }),
       });
     },
   });

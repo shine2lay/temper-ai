@@ -90,6 +90,41 @@ export function extractOutputPreview(outputData?: Record<string, unknown>, agent
   return '';
 }
 
+/** Format an ISO timestamp as a relative time string */
+export function formatRelativeTime(isoTs: string | null | undefined): string {
+  if (!isoTs) return '-';
+  const d = new Date(ensureUTC(isoTs));
+  const now = new Date();
+  const diffMs = now.getTime() - d.getTime();
+  const diffMin = Math.floor(diffMs / 60_000);
+
+  if (diffMin < 1) return 'Just now';
+  if (diffMin < 60) return `${diffMin} min ago`;
+
+  const isToday = d.toDateString() === now.toDateString();
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const isYesterday = d.toDateString() === yesterday.toDateString();
+  const timeStr = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+
+  if (isToday) return `Today ${timeStr}`;
+  if (isYesterday) return `Yesterday ${timeStr}`;
+  const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return `${dateStr} ${timeStr}`;
+}
+
+/** Get a date group label for grouping workflow rows */
+export function getDateGroup(isoTs: string | null | undefined): string {
+  if (!isoTs) return 'Unknown';
+  const d = new Date(ensureUTC(isoTs));
+  const now = new Date();
+  if (d.toDateString() === now.toDateString()) return 'Today';
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
+  return d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+}
+
 /** Format byte size as human-readable string */
 export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;

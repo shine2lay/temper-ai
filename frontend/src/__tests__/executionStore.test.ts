@@ -173,8 +173,8 @@ describe('executionStore', () => {
       useExecutionStore.getState().applyEvent(makeStageStartEvent());
       const { workflow } = useExecutionStore.getState();
 
-      expect(workflow!.stages.length).toBe(2);
-      expect(workflow!.stages[1].stage_name).toBe('review');
+      expect(workflow!.nodes.length).toBe(2);
+      expect((workflow!.nodes[1] as any).name || (workflow!.nodes[1] as any).stage_name).toBe('review');
     });
 
     it('stage_end updates existing stage', () => {
@@ -207,7 +207,7 @@ describe('executionStore', () => {
 
       // Should be linked to parent stage
       const parentStage = stages.get('stage-001')!;
-      const linkedAgent = parentStage.agents.find((a) => a.id === 'agent-003');
+      const linkedAgent = parentStage.agents?.find((a) => a.id === 'agent-003');
       expect(linkedAgent).toBeDefined();
     });
 

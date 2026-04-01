@@ -12,7 +12,7 @@ import {
   SectionHeader,
   ExpandedField,
 } from './shared';
-import { typeOptions } from './agentPanelHelpers';
+import { useRegistry, toOptions } from '@/hooks/useRegistry';
 import { AgentPromptTab } from './AgentPromptTab';
 import { AgentInferenceTab } from './AgentInferenceTab';
 import { AgentToolsTab } from './AgentToolsTab';
@@ -23,6 +23,8 @@ import { AgentMetaTab } from './AgentMetaTab';
 export function AgentPropertiesPanel() {
   const selectedAgentName = useDesignStore((s) => s.selectedAgentName);
   const selectAgent = useDesignStore((s) => s.selectAgent);
+  const { data: registry } = useRegistry();
+  const typeOptions = toOptions(registry?.agent_types);
   const {
     config,
     isDirty,

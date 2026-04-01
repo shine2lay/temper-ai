@@ -1,502 +1,187 @@
-"""Base LLM provider: abstract class, response types, and provider enum."""
+"""Base LLM provider — abstract HTTP client for LLM APIs.
 
-import asyncio
-import collections
+Subclasses implement provider-specific request building, response parsing,
+and stream consumption. Retry with exponential backoff is built in.
+"""
+
 import logging
 import random
-import threading
 import time
 from abc import ABC, abstractmethod
-from collections.abc import Callable
-from dataclasses import dataclass
-from enum import Enum
-from typing import Any
+from typing import Any, Callable
 
 import httpx
 
-from temper_ai.llm.constants import (
-    DEFAULT_MAX_CIRCUIT_BREAKERS,
-    ERROR_MSG_RATE_LIMIT_EXCEEDED,
-)
-
-# Helper functions extracted to reduce class size
-from temper_ai.llm.providers._base_helpers import (
-    LLMContextManagerMixin,
-)
-from temper_ai.llm.providers._base_helpers import (
-    bind_callable_attributes as _bind_callable_attributes,
-)
-from temper_ai.llm.providers._base_helpers import (
-    close_async as _close_async,
-)
-from temper_ai.llm.providers._base_helpers import (
-    close_sync as _close_sync,
-)
-from temper_ai.llm.providers._base_helpers import (
-    get_or_create_async_client_safe as _get_async_client_safe,
-)
-from temper_ai.llm.providers._base_helpers import (  # noqa: F401
-    get_or_create_async_client_sync as _get_async_client_sync,
-)
-from temper_ai.llm.providers._base_helpers import (
-    get_or_create_sync_client as _get_sync_client,
-)
-from temper_ai.llm.providers._base_helpers import (
-    get_shared_circuit_breaker as _get_shared_cb,
-)
-from temper_ai.llm.providers._base_helpers import (
-    reset_shared_circuit_breakers as _reset_shared_cbs,
-)
-from temper_ai.llm.providers._base_helpers import (
-    sync_backoff_sleep as _sync_backoff_sleep,
-)
-from temper_ai.llm.providers._base_helpers import (
-    validate_base_url as _validate_base_url,
-)
-from temper_ai.shared.constants.durations import SLEEP_VERY_SHORT
-from temper_ai.shared.constants.retries import (
-    DEFAULT_BACKOFF_MULTIPLIER,
-    DEFAULT_MAX_RETRIES,
-    RETRY_JITTER_MIN,
-)
-from temper_ai.shared.core.circuit_breaker import CircuitBreaker, CircuitBreakerConfig
-from temper_ai.shared.core.context import ExecutionContext
-from temper_ai.shared.utils.exceptions import (
-    LLMAuthenticationError,
-    LLMError,
-    LLMRateLimitError,
-    LLMTimeoutError,
-)
+from temper_ai.llm.models import LLMResponse, LLMStreamChunk
+from temper_ai.observability import EventType, record
 
 logger = logging.getLogger(__name__)
 
-# Timeout and retry constants
-DEFAULT_BACKOFF_FACTOR = DEFAULT_BACKOFF_MULTIPLIER
-CPU_SAMPLE_INTERVAL_SECONDS = SLEEP_VERY_SHORT
-
-# Default LLM parameter values
-DEFAULT_TEMPERATURE = 0.7  # Default temperature for generation
-DEFAULT_TOP_P = 0.9  # Default nucleus sampling threshold
-DEFAULT_REQUEST_TIMEOUT = 600  # Default timeout for LLM requests (10 minutes)
-# HTTP status codes
-HTTP_OK = 200  # Successful response
-HTTP_UNAUTHORIZED = 401  # Authentication failed
-HTTP_RATE_LIMIT = 429  # Rate limit exceeded
-HTTP_SERVER_ERROR = 500  # Server error threshold
-
-
-class LLMProvider(str, Enum):  # noqa: UP042
-    """Supported LLM providers."""
-
-    OLLAMA = "ollama"
-    OPENAI = "openai"
-    ANTHROPIC = "anthropic"
-    VLLM = "vllm"
-
-
-@dataclass
-class LLMResponse:
-    """Standardized LLM response."""
-
-    content: str
-    model: str
-    provider: str
-
-    # Token usage
-    prompt_tokens: int | None = None
-    completion_tokens: int | None = None
-    total_tokens: int | None = None
-
-    # Timing
-    latency_ms: int | None = None
-
-    # Metadata
-    finish_reason: str | None = None
-    raw_response: dict[str, Any] | None = None
-
-    # Structured tool calls (OpenAI-format, used by native tool calling path)
-    tool_calls: list[dict[str, Any]] | None = None
-
-
-@dataclass
-class LLMStreamChunk:
-    """Chunk from streaming response."""
-
-    content: str
-    chunk_type: str = "content"  # "thinking" | "content"
-    finish_reason: str | None = None
-    done: bool = False
-    model: str | None = None
-    prompt_tokens: int | None = None  # final chunk only
-    completion_tokens: int | None = None  # final chunk only
-
-
-@dataclass
-class LLMConfig:
-    """Configuration bundle for LLM initialization.
-
-    Groups the 12 parameters into a single config object to reduce
-    parameter count and improve maintainability.
-    """
-
-    model: str
-    base_url: str
-    api_key: str | None = None
-    temperature: float = DEFAULT_TEMPERATURE
-    max_tokens: int = 2048
-    top_p: float = DEFAULT_TOP_P
-    timeout: int = DEFAULT_REQUEST_TIMEOUT
-    max_retries: int = DEFAULT_MAX_RETRIES
-    retry_delay: float = 2.0
-    rate_limiter: Any | None = None
-
-
-# Callback type for streaming: called with each chunk as it arrives
 StreamCallback = Callable[[LLMStreamChunk], None]
 
+# Retryable HTTP status codes
+_RETRYABLE_STATUS_CODES = {429, 500, 502, 503}
 
-class BaseLLM(LLMContextManagerMixin, ABC):
-    """Abstract base class for LLM providers.
 
-    See _base_helpers.py for extracted internal logic.
+class BaseLLM(ABC):
+    """Abstract base for LLM providers.
+
+    Provides retry logic and httpx client management. Subclasses implement
+    the four abstract methods for provider-specific behavior.
     """
-
-    # Instance attributes set by _init_infrastructure()
-    _client: httpx.Client | None
-    _async_client: httpx.AsyncClient | None
-    _closed: bool
-    _sync_cleanup_lock: threading.Lock
-    _async_cleanup_lock: asyncio.Lock | None
-    _circuit_breaker: CircuitBreaker
-    _rate_limiter: Any | None
-
-    # Callable attributes bound dynamically by _bind_callable_attributes()
-    _build_bearer_auth_headers: Callable[[], dict[str, str]]
-    _execute_and_parse: Callable[
-        [httpx.Response, float], "LLMResponse"
-    ]  # scanner: skip-magic
-    _make_streaming_call_impl: Callable[..., None]  # scanner: skip-magic
-    _execute_streaming_impl: Callable[..., "LLMResponse"]  # scanner: skip-magic
-    _execute_streaming_async_impl: Callable[..., Any]
-
-    _MAX_CIRCUIT_BREAKERS = DEFAULT_MAX_CIRCUIT_BREAKERS
-    _circuit_breakers: collections.OrderedDict[
-        tuple[str, str, str, str | None], CircuitBreaker
-    ] = collections.OrderedDict()
-    _circuit_breaker_lock = threading.Lock()
-
-    _async_client_lock: asyncio.Lock | None = None
 
     def __init__(
         self,
-        model: str | None = None,
-        base_url: str | None = None,
-        config: LLMConfig | None = None,
+        model: str,
+        base_url: str,
+        api_key: str | None = None,
+        temperature: float = 0.7,
+        max_tokens: int = 4096,
+        timeout: int = 120,
+        max_retries: int = 3,
         **kwargs: Any,
-    ):
-        """Initialize LLM provider.
+    ) -> None:
+        self.model = model
+        self.base_url = base_url.rstrip("/")
+        self.api_key = api_key
+        self.temperature = temperature
+        self.max_tokens = max_tokens
+        self.timeout = timeout
+        self.max_retries = max_retries
+        self.extra_kwargs = kwargs
+        self._http_client: httpx.Client | None = None
 
-        Args:
-            model: Model name (required if config not provided)
-            base_url: Base URL (required if config not provided)
-            config: LLMConfig bundle (recommended for new code)
-            **kwargs: Legacy individual parameters (api_key, temperature, etc.)
-                circuit_breaker_config: Optional CircuitBreakerConfig for
-                    custom circuit breaker thresholds.
+    # Subclasses should override with a semantic name (e.g., "openai", "vllm")
+    PROVIDER_NAME: str = "unknown"
 
-        The config parameter takes precedence. If not provided, model/base_url
-        are required and kwargs are used for other parameters.
-        """
-        # Extract params from config or kwargs
-        if config is not None:
-            self.model = config.model
-            self.base_url = _validate_base_url(config.base_url.rstrip("/"))
-            self.api_key = config.api_key
-            self.temperature = config.temperature
-            self.max_tokens = config.max_tokens
-            self.top_p = config.top_p
-            self.timeout = config.timeout
-            self.max_retries = config.max_retries
-            self.retry_delay = config.retry_delay
-            rate_limiter = config.rate_limiter
-        else:
-            if model is None or base_url is None:
-                raise ValueError(
-                    "model and base_url are required when config is not provided"
-                )
-            self.model = model
-            self.base_url = _validate_base_url(base_url.rstrip("/"))
-            self.api_key = kwargs.get("api_key")
-            self.temperature = kwargs.get("temperature", DEFAULT_TEMPERATURE)
-            self.max_tokens = kwargs.get("max_tokens", 2048)
-            self.top_p = kwargs.get("top_p", DEFAULT_TOP_P)
-            self.timeout = kwargs.get("timeout", DEFAULT_REQUEST_TIMEOUT)
-            self.max_retries = kwargs.get("max_retries", DEFAULT_MAX_RETRIES)
-            self.retry_delay = kwargs.get("retry_delay", 2.0)
-            rate_limiter = kwargs.get("rate_limiter")
-
-        circuit_breaker_config = kwargs.get("circuit_breaker_config")
-        _init_infrastructure(self, rate_limiter, circuit_breaker_config)
-
-    @classmethod
-    def reset_shared_circuit_breakers(cls) -> None:
-        """Reset all shared circuit breakers."""
-        _reset_shared_cbs(cls._circuit_breakers, cls._circuit_breaker_lock)
+    @property
+    def provider_name(self) -> str:
+        return self.PROVIDER_NAME
 
     def _get_client(self) -> httpx.Client:
-        """Get or create HTTPx client with lazy initialization."""
-        return _get_sync_client(self)
-
-    async def _get_async_client_safe(self) -> httpx.AsyncClient:
-        """Get or create async HTTPx client with proper async locking (M-19)."""
-        return await _get_async_client_safe(self)
-
-    def _get_async_client(self) -> httpx.AsyncClient:
-        """Get or create async HTTPx client (sync accessor, backward compat)."""
-        return _get_async_client_sync(self)
-
-    def close(self) -> None:
-        """Close sync resources and release references (H-06)."""
-        _close_sync(self)
-
-    async def aclose(self) -> None:
-        """Async close for HTTPx clients and release resources."""
-        await _close_async(self)
-
-    def __del__(self) -> None:
-        """Warn about improper cleanup - DO NOT attempt cleanup in finalizer."""
-        if not hasattr(self, "_closed"):
-            return
-
-        if not self._closed and (
-            self._client is not None or self._async_client is not None
-        ):
-            import warnings
-
-            warnings.warn(
-                f"{self.__class__.__name__} was not properly closed. "
-                f"Use 'async with' or 'with' context manager to avoid resource leaks. "
-                f"Leaked clients will be reclaimed by OS on process exit.",
-                ResourceWarning,
-                stacklevel=2,
+        if self._http_client is None:
+            self._http_client = httpx.Client(
+                base_url=self.base_url,
+                timeout=httpx.Timeout(
+                    connect=10.0,
+                    read=float(self.timeout),
+                    write=30.0,
+                    pool=10.0,
+                ),
+                headers=self._get_headers(),
             )
+        return self._http_client
 
-    @abstractmethod
-    def _build_request(self, prompt: str, **kwargs: Any) -> dict[str, Any]:
-        """Build provider-specific request payload."""
-        pass
-
-    @abstractmethod
-    def _parse_response(self, response: dict[str, Any], latency_ms: int) -> LLMResponse:
-        """Parse provider-specific response into standardized format."""
-        pass
-
-    @abstractmethod
-    def _get_headers(self) -> dict[str, str]:
-        """Get provider-specific HTTP headers."""
-        pass
-
-    @abstractmethod
-    def _get_endpoint(self) -> str:
-        """Get provider-specific API endpoint path."""
-        pass
-
-    def _consume_stream(
-        self,
-        response: httpx.Response,
-        on_chunk: StreamCallback,
-    ) -> LLMResponse:
-        """Consume streaming response synchronously (provider-specific).
-
-        Args:
-            response: HTTPx response object with streaming enabled
-            on_chunk: Callback invoked for each chunk
-
-        Returns:
-            LLMResponse with aggregated content and metadata
-        """
-        raise NotImplementedError(
-            "Subclass must implement _consume_stream for streaming support"
-        )
-
-    async def _aconsume_stream(
-        self,
-        response: httpx.Response,
-        on_chunk: StreamCallback,
-    ) -> LLMResponse:
-        """Consume streaming response asynchronously (provider-specific).
-
-        Args:
-            response: HTTPx response object with streaming enabled
-            on_chunk: Callback invoked for each chunk
-
-        Returns:
-            LLMResponse with aggregated content and metadata
-        """
-        raise NotImplementedError(
-            "Subclass must implement _aconsume_stream for streaming support"
-        )
+    def complete(self, messages: list[dict], **kwargs: Any) -> LLMResponse:
+        """Send a completion request with retry on transient failures."""
+        request = self._build_request(messages, **kwargs)
+        return self._execute_with_retry(request, stream=False)
 
     def stream(
         self,
-        prompt: str,
-        context: ExecutionContext | None = None,
+        messages: list[dict],
         on_chunk: StreamCallback | None = None,
         **kwargs: Any,
     ) -> LLMResponse:
-        """Generate completion with streaming. Default: fallback to complete().
+        """Send a streaming request with retry on transient failures."""
+        request = self._build_request(messages, stream=True, **kwargs)
+        return self._execute_with_retry(request, stream=True, on_chunk=on_chunk)
 
-        Subclasses override this to provide real streaming. The default
-        implementation simply calls complete() and ignores on_chunk.
-        """
-        return self.complete(prompt, context, **kwargs)
-
-    async def astream(
+    def _execute_with_retry(
         self,
-        prompt: str,
-        context: ExecutionContext | None = None,
+        request: dict,
+        stream: bool = False,
         on_chunk: StreamCallback | None = None,
-        **kwargs: Any,
     ) -> LLMResponse:
-        """Async streaming completion. Default: fallback to acomplete().
+        last_error: Exception | None = None
+        client = self._get_client()
+        endpoint = self._get_endpoint()
 
-        Subclasses override this to provide real streaming. The default
-        implementation simply calls acomplete() and ignores on_chunk.
-        """
-        return await self.acomplete(prompt, context, **kwargs)
+        for attempt in range(self.max_retries):
+            try:
+                start = time.monotonic()
 
-    def complete(  # noqa: C901
-        self, prompt: str, context: ExecutionContext | None = None, **kwargs: Any
+                if stream:
+                    with client.stream("POST", endpoint, json=request) as response:
+                        response.raise_for_status()
+                        result = self._consume_stream(response, on_chunk)
+                        result.latency_ms = int((time.monotonic() - start) * 1000)
+                        return result
+                else:
+                    response = client.post(endpoint, json=request)
+                    response.raise_for_status()
+                    latency_ms = int((time.monotonic() - start) * 1000)
+                    return self._parse_response(response.json(), latency_ms)
+
+            except httpx.HTTPStatusError as e:
+                last_error = e
+                if e.response.status_code not in _RETRYABLE_STATUS_CODES:
+                    raise  # 4xx (except 429) — don't retry
+            except (httpx.TimeoutException, httpx.ConnectError) as e:
+                last_error = e
+
+            if attempt < self.max_retries - 1:
+                delay = min(2**attempt + random.random(), 30)
+                logger.warning(
+                    "LLM call failed (attempt %d/%d): %s. Retrying in %.1fs",
+                    attempt + 1,
+                    self.max_retries,
+                    last_error,
+                    delay,
+                )
+                error_code = None
+                if isinstance(last_error, httpx.HTTPStatusError):
+                    error_code = last_error.response.status_code
+                record(
+                    EventType.LLM_RETRY,
+                    data={
+                        "model": self.model,
+                        "provider": self.provider_name,
+                        "attempt": attempt + 1,
+                        "max_retries": self.max_retries,
+                        "error_type": type(last_error).__name__,
+                        "error": str(last_error)[:500],
+                        "error_code": error_code,
+                        "retry_delay_s": round(delay, 1),
+                    },
+                )
+                time.sleep(delay)
+
+        raise last_error  # type: ignore[misc]
+
+    def close(self) -> None:
+        if self._http_client is not None:
+            self._http_client.close()
+            self._http_client = None
+
+    def __enter__(self) -> "BaseLLM":
+        return self
+
+    def __exit__(self, *args: Any) -> None:
+        self.close()
+
+    # -- Abstract methods (subclasses implement these) --
+
+    @abstractmethod
+    def _build_request(self, messages: list[dict], **kwargs: Any) -> dict:
+        """Build the provider-specific request payload."""
+
+    @abstractmethod
+    def _parse_response(self, response: dict, latency_ms: int) -> LLMResponse:
+        """Parse provider response into LLMResponse."""
+
+    @abstractmethod
+    def _get_headers(self) -> dict[str, str]:
+        """Return provider-specific headers."""
+
+    @abstractmethod
+    def _get_endpoint(self) -> str:
+        """Return the API endpoint path (e.g., '/v1/chat/completions')."""
+
+    @abstractmethod
+    def _consume_stream(
+        self,
+        response: httpx.Response,
+        on_chunk: StreamCallback | None,
     ) -> LLMResponse:
-        """Generate completion for prompt."""
-        if self._rate_limiter is not None:
-            entity_id = (
-                context.agent_id
-                if context and hasattr(context, "agent_id")
-                else self.model
-            )
-            allowed, reason = self._rate_limiter.check_and_record_rate_limit(entity_id)
-            if not allowed:
-                raise LLMRateLimitError(reason or ERROR_MSG_RATE_LIMIT_EXCEEDED)
-
-        def _make_api_call() -> LLMResponse:
-            for attempt in range(self.max_retries):
-                try:
-                    start_time = time.time()
-                    request_data = self._build_request(prompt, **kwargs)
-                    headers = self._get_headers()
-                    endpoint = f"{self.base_url}{self._get_endpoint()}"
-                    response = self._get_client().post(
-                        endpoint, json=request_data, headers=headers
-                    )
-                    return self._execute_and_parse(response, start_time)
-                except httpx.TimeoutException as exc:
-                    if attempt == self.max_retries - 1:
-                        raise LLMTimeoutError(
-                            f"Request timed out after {self.timeout}s (attempt {attempt + 1}/{self.max_retries})"
-                        ) from exc
-                    _sync_backoff_sleep(self.retry_delay, attempt)
-                except LLMRateLimitError:
-                    if attempt == self.max_retries - 1:
-                        raise
-                    _sync_backoff_sleep(self.retry_delay, attempt)
-                except httpx.ConnectError as exc:
-                    if attempt == self.max_retries - 1:
-                        raise LLMError(
-                            f"Connection failed to {self.base_url} after "
-                            f"{self.max_retries} attempts: {exc}"
-                        ) from exc
-                    _sync_backoff_sleep(self.retry_delay, attempt)
-                except (LLMAuthenticationError, httpx.HTTPStatusError):
-                    raise
-            raise LLMError(f"Failed after {self.max_retries} attempts")
-
-        return self._circuit_breaker.call(_make_api_call)
-
-    async def _async_backoff_sleep(self, attempt: int) -> None:
-        """Async exponential backoff with jitter for retry loops."""
-        delay = (
-            self.retry_delay
-            * (DEFAULT_BACKOFF_FACTOR**attempt)
-            * (
-                RETRY_JITTER_MIN + random.random()
-            )  # noqa: S311 -- jitter/backoff, not crypto
-        )
-        await asyncio.sleep(delay)
-
-    async def acomplete(  # noqa: C901 long
-        self, prompt: str, context: ExecutionContext | None = None, **kwargs: Any
-    ) -> LLMResponse:
-        """Async version: Generate completion for prompt."""
-        if self._rate_limiter is not None:
-            entity_id = (
-                context.agent_id
-                if context and hasattr(context, "agent_id")
-                else self.model
-            )
-            allowed, reason = self._rate_limiter.check_and_record_rate_limit(entity_id)
-            if not allowed:
-                raise LLMRateLimitError(reason or ERROR_MSG_RATE_LIMIT_EXCEEDED)
-
-        async def _make_async_api_call() -> LLMResponse:
-            for attempt in range(self.max_retries):
-                try:
-                    start_time = time.time()
-                    request_data = self._build_request(prompt, **kwargs)
-                    headers = self._get_headers()
-                    endpoint = f"{self.base_url}{self._get_endpoint()}"
-                    client = await self._get_async_client_safe()
-                    response = await client.post(
-                        endpoint, json=request_data, headers=headers
-                    )
-                    return self._execute_and_parse(response, start_time)
-                except httpx.TimeoutException as exc:
-                    if attempt == self.max_retries - 1:
-                        raise LLMTimeoutError(
-                            f"Request timed out after {self.timeout}s (attempt {attempt + 1}/{self.max_retries})"
-                        ) from exc
-                    await self._async_backoff_sleep(attempt)
-                except LLMRateLimitError:
-                    if attempt == self.max_retries - 1:
-                        raise
-                    await self._async_backoff_sleep(attempt)
-                except httpx.ConnectError as exc:
-                    if attempt == self.max_retries - 1:
-                        raise LLMError(
-                            f"Connection failed to {self.base_url} after "
-                            f"{self.max_retries} attempts: {exc}"
-                        ) from exc
-                    await self._async_backoff_sleep(attempt)
-                except (LLMAuthenticationError, httpx.HTTPStatusError):
-                    raise
-            raise LLMError(f"Failed after {self.max_retries} attempts")
-
-        result: LLMResponse = await self._circuit_breaker.async_call(
-            _make_async_api_call
-        )
-        return result
-
-
-def _init_infrastructure(
-    llm: BaseLLM,
-    rate_limiter: Any,
-    circuit_breaker_config: CircuitBreakerConfig | None = None,
-) -> None:
-    """Initialize clients, circuit breaker, and rate limiter."""
-    llm._client = None
-    llm._async_client = None
-
-    llm._closed = False
-    llm._sync_cleanup_lock = threading.Lock()
-    llm._async_cleanup_lock = None
-
-    llm._circuit_breaker = _get_shared_cb(
-        llm,
-        BaseLLM._circuit_breakers,
-        BaseLLM._circuit_breaker_lock,
-        BaseLLM._MAX_CIRCUIT_BREAKERS,
-        circuit_breaker_config,
-    )
-
-    llm._rate_limiter = rate_limiter
-    _bind_callable_attributes(llm)
+        """Consume a streaming response, calling on_chunk for each delta."""

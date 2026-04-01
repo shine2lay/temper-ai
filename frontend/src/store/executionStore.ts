@@ -1,6 +1,6 @@
 /**
  * Zustand store for workflow execution state.
- * Port of the vanilla JS DataStore with flat Maps for O(1) lookups.
+ * Adapted for v1 composable graph model: nodes instead of stages.
  */
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
@@ -8,22 +8,27 @@ import { enableMapSet } from 'immer';
 import { MAX_EVENT_LOG_SIZE } from '@/lib/constants';
 import type {
   WorkflowExecution,
-  StageExecution,
+  NodeExecution,
   AgentExecution,
   LLMCall,
   ToolCall,
+  ToolActivity,
   StreamEntry,
   Selection,
   WSStatus,
   WSEvent,
   EventLogEntry,
 } from '@/types';
+// getNodeAgents available from types if needed
 
 enableMapSet();
 
+// Re-export StageExecution as NodeExecution for backward compat
+export type StageExecution = NodeExecution;
+
 interface ExecutionState {
   workflow: WorkflowExecution | null;
-  stages: Map<string, StageExecution>;
+  stages: Map<string, NodeExecution>;  // keep name 'stages' for component compat
   agents: Map<string, AgentExecution>;
   llmCalls: Map<string, LLMCall>;
   toolCalls: Map<string, ToolCall>;
@@ -45,10 +50,13 @@ interface ExecutionState {
   closeStageDetail: () => void;
 }
 
-/**
- * Build a full chronological event log from a completed workflow snapshot.
- * Used on first load from REST API when no prior diff state exists.
- */
+/** Extract all agents from a node (handles both agent and stage nodes). */
+function _nodeAgents(node: NodeExecution): AgentExecution[] {
+  if (node.type === 'agent' && node.agent) return [node.agent];
+  return node.agents || [];
+}
+
+/** Build a full chronological event log from a workflow snapshot. */
 function _buildSnapshotEvents(workflow: WorkflowExecution): EventLogEntry[] {
   const events: EventLogEntry[] = [];
 
@@ -57,23 +65,23 @@ function _buildSnapshotEvents(workflow: WorkflowExecution): EventLogEntry[] {
       timestamp: workflow.start_time,
       event_type: 'workflow_start',
       label: workflow.workflow_name,
-      data: { workflow_id: workflow.id, status: workflow.status },
+      data: { execution_id: workflow.id, status: workflow.status },
     });
   }
 
-  for (const stage of workflow.stages ?? []) {
-    const stageLabel = stage.stage_name ?? stage.name ?? stage.id;
+  for (const node of workflow.nodes ?? []) {
+    const nodeLabel = node.name || node.id;
 
-    if (stage.start_time) {
+    if (node.start_time) {
       events.push({
-        timestamp: stage.start_time,
+        timestamp: node.start_time,
         event_type: 'stage_start',
-        label: stageLabel,
-        data: { stage_id: stage.id, status: stage.status },
+        label: nodeLabel,
+        data: { stage_id: node.id, status: node.status },
       });
     }
 
-    for (const agent of stage.agents ?? []) {
+    for (const agent of _nodeAgents(node)) {
       const agentLabel = agent.agent_name ?? agent.name ?? agent.id;
 
       if (agent.start_time) {
@@ -81,7 +89,7 @@ function _buildSnapshotEvents(workflow: WorkflowExecution): EventLogEntry[] {
           timestamp: agent.start_time,
           event_type: 'agent_start',
           label: agentLabel,
-          data: { agent_id: agent.id, stage_id: stage.id, status: agent.status },
+          data: { agent_id: agent.id, stage_id: node.id, status: agent.status },
         });
       }
 
@@ -112,17 +120,17 @@ function _buildSnapshotEvents(workflow: WorkflowExecution): EventLogEntry[] {
           timestamp: agent.end_time,
           event_type: 'agent_end',
           label: agentLabel,
-          data: { agent_id: agent.id, stage_id: stage.id, status: agent.status },
+          data: { agent_id: agent.id, stage_id: node.id, status: agent.status },
         });
       }
     }
 
-    if (stage.end_time) {
+    if (node.end_time) {
       events.push({
-        timestamp: stage.end_time,
+        timestamp: node.end_time,
         event_type: 'stage_end',
-        label: stageLabel,
-        data: { stage_id: stage.id, status: stage.status },
+        label: nodeLabel,
+        data: { stage_id: node.id, status: node.status },
       });
     }
   }
@@ -132,106 +140,11 @@ function _buildSnapshotEvents(workflow: WorkflowExecution): EventLogEntry[] {
       timestamp: workflow.end_time,
       event_type: 'workflow_end',
       label: workflow.workflow_name,
-      data: { workflow_id: workflow.id, status: workflow.status },
+      data: { execution_id: workflow.id, status: workflow.status },
     });
   }
 
   events.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-  return events;
-}
-
-/**
- * Generate synthetic event log entries by diffing old state against a new snapshot.
- * Enables event log population for DB-polled (cross-process) workflows.
- */
-function _diffSnapshotEvents(
-  oldWorkflow: WorkflowExecution | null,
-  oldStages: Map<string, StageExecution>,
-  oldAgents: Map<string, AgentExecution>,
-  newWorkflow: WorkflowExecution,
-  oldLlmCalls: Map<string, LLMCall>,
-  oldToolCalls: Map<string, ToolCall>,
-): EventLogEntry[] {
-  const now = new Date().toISOString();
-  const events: EventLogEntry[] = [];
-
-  // Workflow status change
-  if (oldWorkflow && oldWorkflow.status !== newWorkflow.status) {
-    const eventType = newWorkflow.status === 'running' ? 'workflow_start' : 'workflow_end';
-    events.push({
-      timestamp: now,
-      event_type: eventType,
-      label: `${newWorkflow.workflow_name} — ${newWorkflow.status}`,
-      data: { workflow_id: newWorkflow.id, status: newWorkflow.status },
-    });
-  }
-
-  // Stage changes
-  for (const stage of newWorkflow.stages ?? []) {
-    const oldStage = oldStages.get(stage.id);
-    if (!oldStage) {
-      events.push({
-        timestamp: now,
-        event_type: 'stage_start',
-        label: stage.stage_name ?? stage.name ?? stage.id,
-        data: { stage_id: stage.id, status: stage.status },
-      });
-    } else if (oldStage.status !== stage.status) {
-      const eventType = stage.status === 'running' ? 'stage_start' : 'stage_end';
-      events.push({
-        timestamp: now,
-        event_type: eventType,
-        label: stage.stage_name ?? stage.name ?? stage.id,
-        data: { stage_id: stage.id, status: stage.status },
-      });
-    }
-
-    // Agent changes
-    for (const agent of stage.agents ?? []) {
-      const oldAgent = oldAgents.get(agent.id);
-      if (!oldAgent) {
-        events.push({
-          timestamp: now,
-          event_type: 'agent_start',
-          label: agent.agent_name ?? agent.name ?? agent.id,
-          data: { agent_id: agent.id, stage_id: stage.id, status: agent.status },
-        });
-      } else if (oldAgent.status !== agent.status) {
-        const eventType = agent.status === 'running' ? 'agent_start' : 'agent_end';
-        events.push({
-          timestamp: now,
-          event_type: eventType,
-          label: agent.agent_name ?? agent.name ?? agent.id,
-          data: { agent_id: agent.id, stage_id: stage.id, status: agent.status },
-        });
-      }
-
-      // LLM call changes
-      for (const llm of agent.llm_calls ?? []) {
-        if (!oldLlmCalls.has(llm.id)) {
-          events.push({
-            timestamp: now,
-            event_type: 'llm_call',
-            label: llm.model ?? llm.provider ?? '',
-            data: { llm_call_id: llm.id, agent_id: agent.id },
-          });
-        }
-      }
-
-      // Tool call changes
-      for (const tool of agent.tool_calls ?? []) {
-        if (!oldToolCalls.has(tool.id)) {
-          events.push({
-            timestamp: now,
-            event_type: 'tool_call',
-            label: tool.tool_name ?? '',
-            data: { tool_execution_id: tool.id, agent_id: agent.id },
-          });
-        }
-      }
-    }
-  }
-
   return events;
 }
 
@@ -251,23 +164,9 @@ export const useExecutionStore = create<ExecutionState>()(
 
     applySnapshot: (workflow) =>
       set((state) => {
-        // Clear selection when a new workflow loads to avoid stale selection state
         state.selection = null;
 
-        // Generate synthetic events from snapshot diff (for DB-polled workflows)
-        if (state.workflow) {
-          const syntheticEvents = _diffSnapshotEvents(
-            state.workflow, state.stages, state.agents, workflow,
-            state.llmCalls, state.toolCalls,
-          );
-          for (const evt of syntheticEvents) {
-            state.eventLog.push(evt);
-          }
-          if (state.eventLog.length > MAX_EVENT_LOG_SIZE) {
-            state.eventLog = state.eventLog.slice(-MAX_EVENT_LOG_SIZE);
-          }
-        } else {
-          // First load from REST API — build full event log from snapshot
+        if (!state.workflow) {
           const snapshotEvents = _buildSnapshotEvents(workflow);
           for (const evt of snapshotEvents) {
             state.eventLog.push(evt);
@@ -283,11 +182,24 @@ export const useExecutionStore = create<ExecutionState>()(
         state.llmCalls = new Map();
         state.toolCalls = new Map();
 
-        for (const stage of workflow.stages ?? []) {
-          state.stages.set(stage.id, stage);
-          for (const agent of stage.agents ?? []) {
+        for (const node of workflow.nodes ?? []) {
+          // Normalize: ensure .agents is always an array (for agent-type nodes, move .agent into .agents)
+          const normalizedNode = { ...node };
+          if (node.type === 'agent' && node.agent && (!node.agents || node.agents.length === 0)) {
+            normalizedNode.agents = [node.agent];
+          }
+          normalizedNode.stage_name = normalizedNode.stage_name ?? normalizedNode.name;
+          // Preserve DAG metadata for dependency arrows
+          normalizedNode.depends_on = normalizedNode.depends_on ?? [];
+          normalizedNode.loop_to = normalizedNode.loop_to ?? undefined;
+          normalizedNode.max_loops = normalizedNode.max_loops ?? undefined;
+          // Store in stages map (backward compat with components)
+          state.stages.set(normalizedNode.id, normalizedNode);
+          for (const agent of _nodeAgents(normalizedNode)) {
             state.agents.set(agent.id, agent);
             for (const llm of agent.llm_calls ?? []) {
+              llm.agent_id = agent.id;
+              llm.agent_execution_id = agent.id;
               state.llmCalls.set(llm.id, llm);
             }
             for (const tool of agent.tool_calls ?? []) {
@@ -308,7 +220,6 @@ export const useExecutionStore = create<ExecutionState>()(
           data,
         });
 
-        // Evict oldest entries when log exceeds size limit
         if (state.eventLog.length > MAX_EVENT_LOG_SIZE) {
           state.eventLog = state.eventLog.slice(-MAX_EVENT_LOG_SIZE);
         }
@@ -316,58 +227,77 @@ export const useExecutionStore = create<ExecutionState>()(
         switch (msg.event_type) {
           case 'workflow_start':
           case 'workflow_end':
+          case 'workflow.started':
+          case 'workflow.completed':
+          case 'workflow.failed':
             if (state.workflow) {
               Object.assign(state.workflow, data);
-            } else if (msg.event_type === 'workflow_start') {
+            } else if (msg.event_type.includes('start')) {
               state.workflow = {
-                id: (data.workflow_id ?? msg.workflow_id) as string,
+                id: (data.execution_id ?? msg.execution_id) as string,
                 ...data,
-                stages: [],
+                nodes: [],
               } as unknown as WorkflowExecution;
             }
             break;
 
-          case 'stage_start': {
-            const stageId = (data.stage_id ?? msg.stage_id) as string;
-            const stageData = { ...data, id: data.id ?? stageId } as unknown as StageExecution;
+          case 'stage_start':
+          case 'stage.started': {
+            const stageId = (data.stage_id ?? data.event_id ?? msg.stage_id) as string;
+            const nodeData = {
+              ...data,
+              id: data.id ?? stageId,
+              name: data.name ?? '',
+              type: data.type ?? 'agent',
+            } as unknown as NodeExecution;
             const existing = state.stages.get(stageId);
             if (existing) {
-              Object.assign(existing, stageData);
+              Object.assign(existing, nodeData);
             } else {
-              if (!stageData.agents) stageData.agents = [];
-              state.stages.set(stageId, stageData);
+              state.stages.set(stageId, nodeData);
               if (state.workflow) {
-                if (!state.workflow.stages) state.workflow.stages = [];
-                state.workflow.stages.push(stageData);
+                if (!state.workflow.nodes) state.workflow.nodes = [];
+                state.workflow.nodes.push(nodeData);
               }
             }
             break;
           }
 
-          case 'stage_end': {
-            const sid = (data.stage_id ?? msg.stage_id) as string;
+          case 'stage_end':
+          case 'stage.completed':
+          case 'stage.failed': {
+            const sid = (data.stage_id ?? data.event_id ?? msg.stage_id) as string;
             const stage = state.stages.get(sid);
             if (stage) Object.assign(stage, data);
             break;
           }
 
-          case 'agent_start': {
-            const agentId = (data.agent_id ?? msg.agent_id) as string;
-            const agentData = { ...data, id: data.id ?? agentId } as unknown as AgentExecution;
+          case 'agent_start':
+          case 'agent.started': {
+            const agentId = (data.agent_id ?? data.event_id ?? msg.agent_id) as string;
+            const agentData = {
+              ...data,
+              id: data.id ?? agentId,
+              llm_calls: [],
+              tool_calls: [],
+            } as unknown as AgentExecution;
             const existingAgent = state.agents.get(agentId);
             if (existingAgent) {
               Object.assign(existingAgent, agentData);
             } else {
-              if (!agentData.llm_calls) agentData.llm_calls = [];
-              if (!agentData.tool_calls) agentData.tool_calls = [];
               state.agents.set(agentId, agentData);
+              // Try to add to parent node
               const parentStageId = data.stage_id as string | undefined;
               if (parentStageId) {
                 const parentStage = state.stages.get(parentStageId);
                 if (parentStage) {
-                  if (!parentStage.agents) parentStage.agents = [];
-                  const exists = parentStage.agents.some((a) => a.id === agentId);
-                  if (!exists) parentStage.agents.push(agentData);
+                  if (parentStage.type === 'agent') {
+                    parentStage.agent = agentData;
+                  } else {
+                    if (!parentStage.agents) parentStage.agents = [];
+                    const exists = parentStage.agents.some((a) => a.id === agentId);
+                    if (!exists) parentStage.agents.push(agentData);
+                  }
                 }
               }
             }
@@ -375,31 +305,68 @@ export const useExecutionStore = create<ExecutionState>()(
           }
 
           case 'agent_end':
-          case 'agent_output': {
-            const aid = (data.agent_id ?? msg.agent_id) as string;
+          case 'agent_output':
+          case 'agent.completed':
+          case 'agent.failed': {
+            const aid = (data.agent_id ?? data.event_id ?? msg.agent_id) as string;
             const agent = state.agents.get(aid);
             if (agent) Object.assign(agent, data);
-            // Evict streaming content on agent completion
-            if (msg.event_type === 'agent_end') {
+            if (msg.event_type.includes('end') || msg.event_type.includes('completed') || msg.event_type.includes('failed')) {
               state.streamingContent.delete(aid);
             }
             break;
           }
 
-          case 'llm_call': {
-            const llmId = data.llm_call_id as string;
-            state.llmCalls.set(llmId, data as unknown as LLMCall);
+          case 'llm_call':
+          case 'llm.call.completed': {
+            const llmId = (data.llm_call_id ?? data.event_id) as string;
+            if (llmId) state.llmCalls.set(llmId, data as unknown as LLMCall);
             break;
           }
 
-          case 'tool_call': {
-            const toolId = data.tool_execution_id as string;
-            state.toolCalls.set(toolId, data as unknown as ToolCall);
+          case 'tool_call_start':
+          case 'tool.call.started': {
+            const agId = (data.agent_id ?? msg.agent_id) as string;
+            if (!agId) break;
+            let entry = state.streamingContent.get(agId);
+            if (!entry) {
+              entry = { content: '', thinking: '', done: false, toolActivity: [] };
+              state.streamingContent.set(agId, entry);
+            }
+            entry.toolActivity.push({
+              toolName: data.tool_name as string,
+              status: 'running',
+              startedAt: msg.timestamp ?? new Date().toISOString(),
+            } satisfies ToolActivity);
             break;
           }
 
-          case 'llm_stream_batch': {
-            const chunks = (data.chunks ?? []) as Array<{
+          case 'tool_call':
+          case 'tool.call.completed':
+          case 'tool.call.failed': {
+            const toolId = (data.tool_execution_id ?? data.event_id) as string;
+            if (toolId) state.toolCalls.set(toolId, data as unknown as ToolCall);
+            const agId = (data.agent_id ?? msg.agent_id) as string;
+            if (agId) {
+              const entry = state.streamingContent.get(agId);
+              if (entry?.toolActivity) {
+                const toolName = data.tool_name as string;
+                const running = [...entry.toolActivity]
+                  .reverse()
+                  .find((t) => t.toolName === toolName && t.status === 'running');
+                if (running) {
+                  running.status = (data.status as string) === 'success' ? 'completed' : 'failed';
+                  running.completedAt = msg.timestamp ?? new Date().toISOString();
+                  running.durationSeconds = data.duration_seconds as number | undefined;
+                }
+              }
+            }
+            break;
+          }
+
+          case 'llm_stream_batch':
+          case 'llm.stream.chunk': {
+            const chunks = (data.chunks ?? [data]) as Array<{
               agent_id?: string;
               chunk_type?: string;
               content: string;
@@ -410,7 +377,7 @@ export const useExecutionStore = create<ExecutionState>()(
               if (!agId) continue;
               let entry = state.streamingContent.get(agId);
               if (!entry) {
-                entry = { content: '', thinking: '', done: false };
+                entry = { content: '', thinking: '', done: false, toolActivity: [] };
                 state.streamingContent.set(agId, entry);
               }
               if (chunk.chunk_type === 'thinking') {
@@ -477,16 +444,16 @@ export const useExecutionStore = create<ExecutionState>()(
 /** Extract a human-readable label from a WS event. */
 function _eventLabel(msg: WSEvent): string {
   const data = msg.data ?? {};
-  if (msg.event_type.startsWith('stage_')) {
-    return (data.stage_name ?? data.name ?? msg.stage_id ?? '') as string;
+  if (msg.event_type.includes('stage') || msg.event_type.includes('node')) {
+    return (data.name ?? data.stage_name ?? msg.stage_id ?? '') as string;
   }
-  if (msg.event_type.startsWith('agent_')) {
+  if (msg.event_type.includes('agent')) {
     return (data.agent_name ?? data.name ?? msg.agent_id ?? '') as string;
   }
-  if (msg.event_type === 'llm_call') {
+  if (msg.event_type.includes('llm')) {
     return (data.model ?? data.provider ?? msg.event_type) as string;
   }
-  if (msg.event_type === 'tool_call') {
+  if (msg.event_type.includes('tool')) {
     return (data.tool_name ?? msg.event_type) as string;
   }
   return msg.event_type;

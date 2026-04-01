@@ -1,4 +1,4 @@
-/* TypeScript interfaces matching the Python backend exactly (snake_case). */
+/* TypeScript interfaces matching the v1 Python backend (snake_case). */
 
 export interface WorkflowExecution {
   id: string;
@@ -7,9 +7,9 @@ export interface WorkflowExecution {
   start_time: string | null;
   end_time: string | null;
   duration_seconds: number | null;
-  workflow_config?: { workflow?: { stages?: StageConfig[] }; stages?: StageConfig[] };
-  workflow_config_snapshot?: { workflow?: { stages?: StageConfig[] }; stages?: StageConfig[] };
-  stages: StageExecution[];
+  nodes: NodeExecution[];
+  // Backward compat alias — components that reference .stages get the same data
+  stages?: NodeExecution[];
   total_tokens?: number;
   total_cost_usd?: number;
   total_llm_calls?: number;
@@ -17,6 +17,50 @@ export interface WorkflowExecution {
   input_data?: Record<string, unknown>;
   output_data?: Record<string, unknown>;
   error_message?: string;
+  workflow_config?: Record<string, unknown>;
+  workflow_config_snapshot?: Record<string, unknown>;
+}
+
+export interface NodeExecution {
+  id: string;
+  name: string;
+  type: 'agent' | 'stage';
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
+  start_time: string | null;
+  end_time: string | null;
+  duration_seconds: number | null;
+  cost_usd: number;
+  total_tokens: number;
+  total_llm_calls?: number;
+  total_tool_calls?: number;
+  // For agent nodes (type='agent'):
+  agent?: AgentExecution;
+  // For stage nodes (type='stage'):
+  agents?: AgentExecution[];
+  child_nodes?: NodeExecution[];
+  strategy?: string;
+  error_message?: string;
+  // Backward compat fields — old components reference these
+  stage_name?: string;
+  stage_id?: string;
+  stage_type?: string;
+  num_agents_executed?: number;
+  num_agents_succeeded?: number;
+  num_agents_failed?: number;
+  input_data?: Record<string, unknown>;
+  output_data?: Record<string, unknown>;
+  // DAG metadata (from executor event data)
+  depends_on?: string[];
+  loop_to?: string;
+  max_loops?: number;
+  // Backward compat
+  collaboration_events?: CollaborationEvent[];
+  stage_config_snapshot?: {
+    stage?: {
+      collaboration?: { strategy?: string };
+      execution?: { agent_mode?: string };
+    };
+  };
 }
 
 export interface StageConfig {
@@ -28,41 +72,14 @@ export interface StageConfig {
   collaboration?: { strategy?: string };
 }
 
-export interface StageExecution {
-  id: string;
-  stage_name: string;
-  name?: string;
-  status: 'pending' | 'running' | 'completed' | 'failed';
-  stage_id?: string;
-  start_time: string | null;
-  end_time: string | null;
-  duration_seconds: number | null;
-  stage_type?: string;
-  agents: AgentExecution[];
-  num_agents_executed?: number;
-  num_agents_succeeded?: number;
-  num_agents_failed?: number;
-  input_data?: Record<string, unknown>;
-  output_data?: Record<string, unknown>;
-  collaboration_events?: CollaborationEvent[];
-  stage_config_snapshot?: {
-    stage: {
-      collaboration?: { strategy?: string };
-      execution?: { agent_mode?: string };
-    };
-  };
-  error_message?: string;
-}
+// Backward compat alias — many components still reference StageExecution
+export type StageExecution = NodeExecution;
 
 export interface AgentExecution {
   id: string;
   agent_name: string;
   name?: string;
   status: 'pending' | 'running' | 'completed' | 'failed';
-  agent_id?: string;
-  stage_id?: string;
-  stage_execution_id?: string;
-  role?: string;
   start_time: string | null;
   end_time: string | null;
   duration_seconds: number | null;
@@ -70,32 +87,42 @@ export interface AgentExecution {
   completion_tokens: number;
   total_tokens: number;
   estimated_cost_usd: number;
-  confidence_score: number | null;
+  confidence_score?: number | null;
   total_llm_calls: number;
   total_tool_calls: number;
   llm_calls: LLMCall[];
   tool_calls: ToolCall[];
-  input_data?: Record<string, unknown>;
-  output_data?: Record<string, unknown>;
   output?: string;
   reasoning?: string;
+  error_message?: string;
+  // Backward compat
+  agent_id?: string;
+  stage_id?: string;
+  stage_execution_id?: string;
+  role?: string;
+  input_data?: Record<string, unknown>;
+  output_data?: Record<string, unknown>;
   agent_config_snapshot?: {
-    agent: {
+    agent?: {
       model?: string;
       type?: string;
       provider?: string;
-      inputs?: Record<string, { type: string; required?: boolean; description?: string }>;
-      outputs?: Record<string, { type: string; description?: string }>;
+      temperature?: number;
+      max_tokens?: number;
+      token_budget?: number;
+      max_iterations?: number;
+      system_prompt?: string;
+      task_template?: string;
+      tools?: string[];
+      memory?: Record<string, unknown>;
+      inputs?: Record<string, unknown>;
+      outputs?: Record<string, unknown>;
     };
   };
-  error_message?: string;
 }
 
 export interface LLMCall {
   id: string;
-  llm_call_id?: string;
-  agent_id?: string;
-  agent_execution_id?: string;
   provider?: string;
   model?: string;
   status: 'pending' | 'running' | 'completed' | 'failed';
@@ -110,14 +137,15 @@ export interface LLMCall {
   prompt?: unknown;
   response?: string;
   error_message?: string;
+  // Backward compat
+  llm_call_id?: string;
+  agent_id?: string;
+  agent_execution_id?: string;
   tool_calls_made?: number;
 }
 
 export interface ToolCall {
   id: string;
-  tool_execution_id?: string;
-  agent_id?: string;
-  agent_execution_id?: string;
   tool_name: string;
   status: 'pending' | 'running' | 'completed' | 'failed';
   start_time: string | null;
@@ -125,9 +153,13 @@ export interface ToolCall {
   duration_seconds: number | null;
   input_params?: Record<string, unknown>;
   output_data?: unknown;
-  safety_checks_applied?: unknown;
   approval_required?: boolean;
   error_message?: string;
+  // Backward compat
+  tool_execution_id?: string;
+  agent_id?: string;
+  agent_execution_id?: string;
+  safety_checks_applied?: unknown;
 }
 
 export interface CollaborationEvent {
@@ -139,10 +171,19 @@ export interface CollaborationEvent {
   data?: Record<string, unknown>;
 }
 
+export interface ToolActivity {
+  toolName: string;
+  status: 'running' | 'completed' | 'failed';
+  startedAt: string;
+  completedAt?: string;
+  durationSeconds?: number;
+}
+
 export interface StreamEntry {
   content: string;
   thinking: string;
   done: boolean;
+  toolActivity: ToolActivity[];
 }
 
 /* WebSocket message types */
@@ -155,7 +196,7 @@ export interface WSSnapshot {
 export interface WSEvent {
   type: 'event';
   event_type: string;
-  workflow_id?: string;
+  execution_id?: string;
   stage_id?: string;
   agent_id?: string;
   data: Record<string, unknown>;
@@ -194,4 +235,22 @@ export interface EventLogEntry {
   event_type: string;
   label: string;
   data?: Record<string, unknown>;
+}
+
+/* Helper: get all agents from a node (works for both agent and stage nodes) */
+export function getNodeAgents(node: NodeExecution): AgentExecution[] {
+  if (node.type === 'agent' && node.agent) {
+    return [node.agent];
+  }
+  return node.agents || [];
+}
+
+/* Helper: get node display name */
+export function getNodeDisplayName(node: NodeExecution): string {
+  return node.name;
+}
+
+/* Helper: adapt WorkflowExecution to old stages-based format for backward compat */
+export function getStages(workflow: WorkflowExecution): NodeExecution[] {
+  return workflow.nodes || [];
 }

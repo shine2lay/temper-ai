@@ -24,6 +24,10 @@ interface InlineEditProps {
   step?: number;
   /** When true, display as read-only text with dimmed styling (no click-to-edit). */
   readOnly?: boolean;
+  /** When true and not readOnly, auto-enter edit mode on mount. */
+  autoFocus?: boolean;
+  /** Called after autoFocus has been consumed (edit mode entered). */
+  onAutoFocusConsumed?: () => void;
 }
 
 export function InlineEdit({
@@ -38,16 +42,28 @@ export function InlineEdit({
   max,
   step,
   readOnly,
+  autoFocus,
+  onAutoFocusConsumed,
 }: InlineEditProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
   const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
+  const autoFocusHandled = useRef(false);
 
   const startEdit = useCallback(() => {
     if (readOnly) return;
     setDraft(value != null ? String(value) : '');
     setEditing(true);
   }, [value, readOnly]);
+
+  // Auto-enter edit mode on mount when autoFocus is true
+  useEffect(() => {
+    if (autoFocus && !readOnly && !autoFocusHandled.current) {
+      autoFocusHandled.current = true;
+      startEdit();
+      onAutoFocusConsumed?.();
+    }
+  }, [autoFocus, readOnly, startEdit, onAutoFocusConsumed]);
 
   useEffect(() => {
     if (editing && inputRef.current) {

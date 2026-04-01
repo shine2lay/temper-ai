@@ -122,11 +122,58 @@ export function parseWorkflowMeta(name: string, config: Record<string, unknown>)
   };
 }
 
+/**
+ * Parse stage inputs from either `inputs` (nested) or `input_map` (flat) format.
+ * `input_map: { key: "source_ref" }` → `{ key: { source: "source_ref" } }`
+ * `inputs: { key: { source: "ref" } }` used as-is.
+ * `input_map` takes precedence when both are present.
+ */
+function parseStageInputs(rs: Record<string, unknown>): Record<string, { source: string }> {
+  const inputMap = rs.input_map as Record<string, string> | undefined;
+  if (inputMap && typeof inputMap === 'object') {
+    const result: Record<string, { source: string }> = {};
+    for (const [k, v] of Object.entries(inputMap)) {
+      if (typeof v === 'string') result[k] = { source: v };
+    }
+    return result;
+  }
+  const explicit = (rs.inputs as Record<string, { source: string }>) ?? {};
+  if (Object.keys(explicit).length > 0) return explicit;
+
+  // Auto-generate inputs from depends_on so the Studio shows implicit data flow.
+  // At runtime the executor injects upstream outputs as `other_agents`; mirror that here.
+  const deps = (rs.depends_on as string[]) ?? [];
+  if (deps.length > 0) {
+    const result: Record<string, { source: string }> = {};
+    for (const dep of deps) {
+      result[`${dep}_output`] = { source: `${dep}.output` };
+    }
+    return result;
+  }
+  return {};
+}
+
+/** Normalize agents — handles plain strings, {agent, task_template} objects, and singular `agent` field. */
+function normalizeAgentNames(agentsRaw: unknown, agentSingular?: unknown): string[] {
+  if (Array.isArray(agentsRaw) && agentsRaw.length > 0) {
+    return agentsRaw.map((item) => {
+      if (typeof item === 'string') return item;
+      if (typeof item === 'object' && item !== null) {
+        return (item as Record<string, unknown>).agent as string ?? (item as Record<string, unknown>).name as string ?? '';
+      }
+      return String(item);
+    }).filter(Boolean);
+  }
+  // Singular agent field (type: agent nodes)
+  if (typeof agentSingular === 'string' && agentSingular) return [agentSingular];
+  return [];
+}
+
 /** Parse raw stage entries from a workflow config. */
 export function parseWorkflowStages(config: Record<string, unknown>): DesignStage[] {
   const wf = (config as { workflow?: Record<string, unknown> }).workflow ?? config;
   const inner = wf as Record<string, unknown>;
-  const rawStages = (inner.stages as Array<Record<string, unknown>>) ?? [];
+  const rawStages = (inner.stages ?? inner.nodes) as Array<Record<string, unknown>> ?? [];
 
   return rawStages.map((rs) => {
     const def = defaultDesignStage();
@@ -152,15 +199,15 @@ export function parseWorkflowStages(config: Record<string, unknown>): DesignStag
 
     return {
       name: (rs.name as string) ?? '',
-      stage_ref: (rs.stage_ref as string | null) ?? (rs.stage as string | null) ?? null,
+      stage_ref: (rs.stage_ref as string | null) ?? (rs.ref as string | null) ?? (rs.stage as string | null) ?? null,
       depends_on: (rs.depends_on as string[]) ?? [],
-      loops_back_to: (rs.loops_back_to as string | null) ?? null,
+      loops_back_to: (rs.loops_back_to as string | null) ?? (rs.loop_to as string | null) ?? null,
       max_loops: (rs.max_loops as number | null) ?? null,
       condition: (rs.condition as string | null) ?? null,
-      inputs: (rs.inputs as Record<string, { source: string }>) ?? {},
-      agents: (rs.agents as string[]) ?? [],
-      agent_mode: (stageExec?.agent_mode as AgentMode) ?? def.agent_mode,
-      collaboration_strategy: (collab?.strategy as CollaborationStrategy) ?? def.collaboration_strategy,
+      inputs: parseStageInputs(rs),
+      agents: normalizeAgentNames(rs.agents, rs.agent),
+      agent_mode: (stageExec?.agent_mode as AgentMode) ?? (rs.strategy as AgentMode) ?? def.agent_mode,
+      collaboration_strategy: (collab?.strategy as CollaborationStrategy) ?? (rs.strategy === 'leader' ? 'leader' as CollaborationStrategy : def.collaboration_strategy),
       timeout_seconds: (stageExec?.timeout_seconds as number) ?? def.timeout_seconds,
       collaboration_max_rounds: (collabCfg?.max_rounds as number) ?? def.collaboration_max_rounds,
       collaboration_convergence_threshold: (collabCfg?.convergence_threshold as number) ?? def.collaboration_convergence_threshold,
@@ -202,34 +249,46 @@ export function parseWorkflowStages(config: Record<string, unknown>): DesignStag
 function serializeStage(s: DesignStage): Record<string, unknown> {
   const def = defaultDesignStage();
   const entry: Record<string, unknown> = { name: s.name };
-  if (s.stage_ref) entry.stage_ref = s.stage_ref;
+
+  // v1 format: single-agent = {type: "agent", agent: "name"},
+  // multi-agent = {type: "stage", strategy: "parallel", agents: [...]}
+  const isSingleAgent = !s.stage_ref && s.agents.length === 1;
+  const isMultiAgent = !s.stage_ref && s.agents.length > 1;
+
+  if (isSingleAgent) {
+    entry.type = 'agent';
+    entry.agent = s.agents[0];
+  } else if (isMultiAgent) {
+    entry.type = 'stage';
+    // v1 uses top-level strategy field (parallel/sequential/leader)
+    const strategy = s.collaboration_strategy !== 'independent'
+      ? s.collaboration_strategy  // leader, consensus, etc.
+      : s.agent_mode;            // parallel, sequential
+    entry.strategy = strategy;
+    entry.agents = s.agents.map((a) => ({ agent: a }));
+  }
+
+  if (s.stage_ref) entry.ref = s.stage_ref;
   if (s.depends_on.length > 0) entry.depends_on = s.depends_on;
-  if (s.loops_back_to) entry.loops_back_to = s.loops_back_to;
-  if (s.max_loops != null) entry.max_loops = s.max_loops;
+  if (s.loops_back_to) entry.loop_to = s.loops_back_to;
+  if (s.max_loops != null && s.max_loops > 1) entry.max_loops = s.max_loops;
   if (s.condition) entry.condition = s.condition;
-  if (Object.keys(s.inputs).length > 0) entry.inputs = s.inputs;
+  // Write input_map, but skip auto-generated entries (dep_output → dep.output)
+  // that were synthesized from depends_on for Studio display only.
+  const deps = new Set(s.depends_on);
+  const manualInputs: Record<string, string> = {};
+  for (const [k, v] of Object.entries(s.inputs)) {
+    const isAutoGenerated = deps.has(k.replace(/_output$/, '')) && v.source === `${k.replace(/_output$/, '')}.output`;
+    if (!isAutoGenerated) {
+      manualInputs[k] = v.source;
+    }
+  }
+  if (Object.keys(manualInputs).length > 0) {
+    entry.input_map = manualInputs;
+  }
   if (s.description) entry.description = s.description;
   if (s.version !== def.version) entry.version = s.version;
-  if (!s.stage_ref && s.agents.length > 0) entry.agents = s.agents;
-
-  const execObj: Record<string, unknown> = {};
-  if (!s.stage_ref && s.agents.length > 0 && s.agent_mode !== def.agent_mode) execObj.agent_mode = s.agent_mode;
-  if (s.timeout_seconds !== def.timeout_seconds) execObj.timeout_seconds = s.timeout_seconds;
-  if (Object.keys(execObj).length > 0) entry.execution = execObj;
-
-  if (!s.stage_ref && s.agents.length > 0 && s.collaboration_strategy !== def.collaboration_strategy) {
-    const collabObj: Record<string, unknown> = { strategy: s.collaboration_strategy };
-    const cfgObj: Record<string, unknown> = {};
-    if (s.collaboration_max_rounds !== def.collaboration_max_rounds) cfgObj.max_rounds = s.collaboration_max_rounds;
-    if (s.collaboration_convergence_threshold !== def.collaboration_convergence_threshold) cfgObj.convergence_threshold = s.collaboration_convergence_threshold;
-    if (s.collaboration_dialogue_mode !== def.collaboration_dialogue_mode) cfgObj.dialogue_mode = s.collaboration_dialogue_mode;
-    if (Object.keys(s.collaboration_roles).length > 0) cfgObj.roles = s.collaboration_roles;
-    if (s.collaboration_round_budget_usd != null) cfgObj.round_budget_usd = s.collaboration_round_budget_usd;
-    if (s.collaboration_max_dialogue_rounds !== def.collaboration_max_dialogue_rounds) cfgObj.max_dialogue_rounds = s.collaboration_max_dialogue_rounds;
-    if (s.collaboration_context_window_rounds !== def.collaboration_context_window_rounds) cfgObj.context_window_rounds = s.collaboration_context_window_rounds;
-    if (Object.keys(cfgObj).length > 0) collabObj.config = cfgObj;
-    entry.collaboration = collabObj;
-  }
+  if (s.outputs && Object.keys(s.outputs).length > 0) entry.outputs = s.outputs;
 
   const conflictObj: Record<string, unknown> = {};
   if (s.conflict_strategy) conflictObj.strategy = s.conflict_strategy;
@@ -270,15 +329,13 @@ function serializeStage(s: DesignStage): Record<string, unknown> {
   if (s.convergence_method !== def.convergence_method) convObj.method = s.convergence_method;
   if (Object.keys(convObj).length > 0) entry.convergence = convObj;
 
-  if (Object.keys(s.outputs).length > 0) entry.outputs = s.outputs;
-
   return entry;
 }
 
 /** Serialize the complete workflow meta + stages into a workflow config object. */
 export function serializeWorkflowConfig(meta: WorkflowMeta, stages: DesignStage[]): Record<string, unknown> {
   const defaults = defaultMeta();
-  const wfConfig: Record<string, unknown> = { name: meta.name, stages: stages.map(serializeStage) };
+  const wfConfig: Record<string, unknown> = { name: meta.name, nodes: stages.map(serializeStage) };
 
   wfConfig.description = meta.description || '';
   if (meta.version !== defaults.version) wfConfig.version = meta.version;

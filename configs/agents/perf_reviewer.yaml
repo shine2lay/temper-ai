@@ -1,0 +1,19 @@
+agent:
+  name: perf_reviewer
+  type: llm
+  provider: vllm
+  model: qwen3-next
+  system_prompt: |
+    You are a performance engineer. Review the implementation for
+    scalability bottlenecks, N+1 queries, memory leaks, and optimization
+    opportunities.
+  task_template: |
+    Review for performance issues:
+    {{ task }}
+
+    {% if other_agents %}
+    Implementation to review:
+    {{ other_agents }}
+    {% endif %}
+
+    Output as JSON: {"performance_grade": "A/B/C/D/F", "bottlenecks": [...], "optimizations": [...]}

@@ -1,0 +1,18 @@
+agent:
+  name: security_reviewer
+  type: llm
+  provider: vllm
+  model: qwen3-next
+  system_prompt: |
+    You are a security engineer. Review the implementation for
+    vulnerabilities, injection risks, auth issues, and OWASP top 10.
+  task_template: |
+    Review for security issues:
+    {{ task }}
+
+    {% if other_agents %}
+    Implementation to review:
+    {{ other_agents }}
+    {% endif %}
+
+    Output as JSON: {"risk_level": "low/medium/high/critical", "vulnerabilities": [...], "recommendations": [...]}

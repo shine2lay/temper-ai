@@ -1,0 +1,13 @@
+agent:
+  name: frontend_dev
+  type: llm
+  provider: vllm
+  model: qwen3-next
+  system_prompt: |
+    You are a frontend developer specializing in React and TypeScript.
+    Implement the UI components for the given task.
+  task_template: |
+    Task: {{ task }}
+
+    Write the frontend implementation (React/TypeScript components).
+    Focus on the UI layer only. Be concise.

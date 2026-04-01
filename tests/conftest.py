@@ -1,27 +1,14 @@
-"""Root pytest configuration.
-
-Provides automatic global state isolation between tests.
-"""
+"""Shared test fixtures."""
 
 import pytest
 
-# Register shared fixture plugins
-pytest_plugins = [
-    "tests.fixtures.database_fixtures",
-    "tests.fixtures.mock_helpers",
-    "tests.fixtures.auth_fixtures",
-]
+from temper_ai.database import init_database, reset_database
 
 
 @pytest.fixture(autouse=True)
-def _reset_globals_after_test():
-    """Auto-reset all global singletons after each test.
-
-    This prevents test pollution where one test's global state
-    leaks into subsequent tests. Uses lazy imports so it only
-    resets modules that were actually loaded.
-    """
+def _test_db():
+    """Initialize an in-memory SQLite database for each test."""
+    reset_database()
+    init_database("sqlite:///:memory:")
     yield
-    from temper_ai.shared.core.test_support import reset_all_globals
-
-    reset_all_globals()
+    reset_database()

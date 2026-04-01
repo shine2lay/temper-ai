@@ -2,11 +2,14 @@ import { Component, type ReactNode, type ErrorInfo } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { ExecutionView } from '@/pages/ExecutionView';
 import { WorkflowList } from '@/pages/WorkflowList';
-import { ComparisonView } from '@/pages/ComparisonView';
+import ComparisonView from '@/pages/ComparisonView';
 import { StudioView } from '@/pages/StudioView';
 import { LibraryView } from '@/pages/LibraryView';
 import { EditorView } from '@/pages/EditorView';
-import { LoginPage } from '@/pages/LoginPage';
+// Deferred pages (uncomment when backend endpoints are ready):
+// import { LoginPage } from '@/pages/LoginPage';
+// import { DocsPage } from '@/pages/DocsPage';
+// import { AppLayout } from '@/components/layout/AppLayout';
 import { Toaster } from '@/components/ui/sonner';
 
 interface ErrorBoundaryState {
@@ -62,19 +65,17 @@ export default function App() {
     <BrowserRouter basename="/app">
       <ErrorBoundary>
         <Routes>
+          <Route path="/" element={<WorkflowList />} />
           <Route path="/workflow/:workflowId" element={<ExecutionView />} />
           <Route path="/compare" element={<ComparisonView />} />
           <Route path="/studio" element={<StudioView />} />
           <Route path="/studio/:name" element={<StudioView />} />
           <Route path="/library" element={<LibraryView />} />
           <Route path="/library/:configType/:name" element={<EditorView />} />
-          <Route path="/library/profile/:profileType/:name" element={<EditorView />} />
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/" element={<WorkflowList />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </ErrorBoundary>
-      <Toaster />
+      <Toaster position="bottom-right" richColors />
     </BrowserRouter>
   );
 }

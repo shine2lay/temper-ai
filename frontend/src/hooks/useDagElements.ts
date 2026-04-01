@@ -3,9 +3,10 @@ import { useExecutionStore } from '@/store/executionStore';
 import { selectStageGroups, selectDagInfo } from '@/store/selectors';
 import { computeStagePositions } from '@/lib/dagLayout';
 import { STAGE_PALETTE, EDGE_COLORS } from '@/lib/constants';
-import type { Node, Edge } from '@xyflow/react';
+import type { Node, Edge, MarkerType } from '@xyflow/react';
 import type { StageExecution, AgentExecution } from '@/types';
 import type { DagInfo } from '@/store/selectors';
+import type { StagePosition } from '@/lib/dagLayout';
 
 /** Agents and metrics for a single iteration of a stage. */
 export interface IterationData {
@@ -16,6 +17,7 @@ export interface IterationData {
   durationSeconds: number;
 }
 
+/** Data for a stage-type node (composite, has multiple agents). */
 export interface StageNodeData extends Record<string, unknown> {
   stage: StageExecution;
   iterations: IterationData[];
@@ -29,10 +31,22 @@ export interface StageNodeData extends Record<string, unknown> {
   expanded: boolean;
 }
 
+/** Data for an agent-type node (leaf, single agent). */
+export interface AgentNodeData extends Record<string, unknown> {
+  agent: AgentExecution | null;
+  stage: StageExecution;
+  stageColor: string;
+  totalTokens: number;
+  totalCost: number;
+  durationSeconds: number;
+}
+
 /**
  * Transforms store state into React Flow nodes and edges.
- * Groups stages by name, computes DAG positions, and generates
- * data_flow / loop_back / sequential edges.
+ *
+ * Renders differently based on node type:
+ * - type='agent': renders as AgentNodeComponent (compact card)
+ * - type='stage': renders as StageNode (container with agents inside)
  */
 export function useDagElements(): { nodes: Node[]; edges: Edge[] } {
   const workflow = useExecutionStore((s) => s.workflow);
@@ -58,69 +72,236 @@ export function useDagElements(): { nodes: Node[]; edges: Edge[] } {
       const pos = positions.get(stageName);
       if (!pos) continue;
 
-      // Build per-iteration data
-      const iterations: IterationData[] = executions.map((exec) => {
-        const iterAgents = (exec.agents ?? []).map(
-          (a) => agents.get(a.id) ?? a,
-        );
-        let iterTokens = 0;
-        let iterCost = 0;
-        for (const a of iterAgents) {
-          iterTokens += a.total_tokens ?? 0;
-          iterCost += a.estimated_cost_usd ?? 0;
-        }
-        return {
-          stage: exec,
-          agents: iterAgents,
-          totalTokens: iterTokens,
-          totalCost: iterCost,
-          durationSeconds: exec.duration_seconds ?? 0,
-        };
-      });
-
-      // Aggregate totals across all iterations
-      let totalTokens = 0;
-      let totalCost = 0;
-      let durationSeconds = 0;
-      for (const iter of iterations) {
-        totalTokens += iter.totalTokens;
-        totalCost += iter.totalCost;
-        durationSeconds += iter.durationSeconds;
-      }
-
-      // Determine strategy from config snapshot
-      const strategy =
-        latest.stage_config_snapshot?.stage?.collaboration?.strategy ??
-        latest.stage_config_snapshot?.stage?.execution?.agent_mode;
-
-      const stageColor =
-        STAGE_PALETTE[colorIndex % STAGE_PALETTE.length];
+      const stageColor = STAGE_PALETTE[colorIndex % STAGE_PALETTE.length];
       colorIndex++;
 
-      const data: StageNodeData = {
-        stage: latest,
-        iterations,
-        iterationCount: executions.length,
-        stageColor,
-        strategy,
-        totalTokens,
-        totalCost,
-        durationSeconds,
-        dagInfo,
-        expanded: expandedStages.has(stageName),
-      };
+      // Determine if this is an agent-type or stage-type node
+      const nodeType = latest.type ?? 'agent';
+      const nodeAgents = latest.agents ?? [];
 
-      nodes.push({
-        id: stageName,
-        type: 'stage',
-        position: { x: pos.x, y: pos.y },
-        data,
-      });
+      if (nodeType === 'agent') {
+        // Agent node: render as compact agent card
+        const agent = nodeAgents.length > 0
+          ? (agents.get(nodeAgents[0].id) ?? nodeAgents[0])
+          : null;
+
+        const totalTokens = agent?.total_tokens ?? 0;
+        const totalCost = agent?.estimated_cost_usd ?? 0;
+        const durationSeconds = latest.duration_seconds ?? 0;
+
+        const data: AgentNodeData = {
+          agent,
+          stage: latest,
+          stageColor,
+          totalTokens,
+          totalCost,
+          durationSeconds,
+        };
+
+        nodes.push({
+          id: stageName,
+          type: 'agentNode',
+          position: { x: pos.x, y: pos.y },
+          data,
+        });
+      } else {
+        // Stage node: render as group container with child agent nodes inside
+        const nodeAgents = (latest.agents ?? []).map(
+          (a) => agents.get(a.id) ?? a,
+        );
+
+        let totalTokens = 0;
+        let totalCost = 0;
+        for (const a of nodeAgents) {
+          totalTokens += a.total_tokens ?? 0;
+          totalCost += a.estimated_cost_usd ?? 0;
+        }
+        const durationSeconds = latest.duration_seconds ?? 0;
+        const strategy = latest.strategy;
+
+        // Layout constants
+        const cardW = 280;
+        const cardH = 200;
+        const hdrH = 75;
+        const pad = 28;
+        const gap = 30;
+
+        const iterations: IterationData[] = [{
+          stage: latest,
+          agents: nodeAgents,
+          totalTokens,
+          totalCost,
+          durationSeconds,
+        }];
+
+        const data: StageNodeData = {
+          stage: latest,
+          iterations,
+          iterationCount: executions.length,
+          stageColor,
+          strategy,
+          totalTokens,
+          totalCost,
+          durationSeconds,
+          dagInfo,
+          expanded: true,
+        };
+
+        // Identify leader agent (if leader strategy)
+        const isLeader = strategy === 'leader';
+        const isSequential = strategy === 'sequential';
+        const leaderAgent = isLeader
+          ? nodeAgents.find((a) => a.role === 'leader') ?? nodeAgents[nodeAgents.length - 1]
+          : null;
+        const workerAgents = isLeader
+          ? nodeAgents.filter((a) => a !== leaderAgent)
+          : nodeAgents;
+
+        // Calculate container size based on strategy
+        let containerW: number;
+        let containerH: number;
+
+        if (isSequential) {
+          // Horizontal chain
+          containerW = pad * 2 + nodeAgents.length * cardW + (nodeAgents.length - 1) * gap;
+          containerH = hdrH + pad + cardH + pad;
+        } else if (isLeader) {
+          // Workers stacked vertically on left, leader on right
+          const workersH = workerAgents.length * cardH + (workerAgents.length - 1) * gap;
+          containerW = pad * 3 + cardW * 2 + gap;
+          containerH = hdrH + pad + Math.max(workersH, cardH) + pad;
+        } else {
+          // Parallel: vertical stack
+          containerW = pad * 2 + cardW;
+          containerH = hdrH + pad + nodeAgents.length * cardH + (nodeAgents.length - 1) * gap + pad;
+        }
+
+        // Parent group node
+        nodes.push({
+          id: stageName,
+          type: 'stageGroup',
+          position: { x: pos.x, y: pos.y },
+          data,
+          style: {
+            width: Math.max(containerW, 350),
+            height: Math.max(containerH, 200),
+          },
+        });
+
+        // Position child nodes based on strategy
+        if (isLeader && leaderAgent) {
+          // Workers: vertical stack on left
+          workerAgents.forEach((agent, i) => {
+            nodes.push({
+              id: `${stageName}__${agent.agent_name ?? agent.id}`,
+              type: 'agentNode',
+              position: { x: pad, y: hdrH + pad + i * (cardH + gap) },
+              parentId: stageName,
+              extent: 'parent' as const,
+              data: {
+                agent, stage: latest, stageColor,
+                totalTokens: agent.total_tokens ?? 0,
+                totalCost: agent.estimated_cost_usd ?? 0,
+                durationSeconds: agent.duration_seconds ?? 0,
+              } as AgentNodeData,
+            });
+          });
+
+          // Leader: positioned to the right, vertically centered
+          const workersH = workerAgents.length * cardH + (workerAgents.length - 1) * gap;
+          const leaderY = hdrH + pad + Math.max(0, (workersH - cardH) / 2);
+          nodes.push({
+            id: `${stageName}__${leaderAgent.agent_name ?? leaderAgent.id}`,
+            type: 'agentNode',
+            position: { x: pad + cardW + gap, y: leaderY },
+            parentId: stageName,
+            extent: 'parent' as const,
+            data: {
+              agent: leaderAgent, stage: latest, stageColor,
+              totalTokens: leaderAgent.total_tokens ?? 0,
+              totalCost: leaderAgent.estimated_cost_usd ?? 0,
+              durationSeconds: leaderAgent.duration_seconds ?? 0,
+            } as AgentNodeData,
+          });
+
+          // Edges: each worker → leader
+          for (const worker of workerAgents) {
+            edges.push({
+              id: `inner-${stageName}-${worker.agent_name ?? worker.id}-to-leader`,
+              source: `${stageName}__${worker.agent_name ?? worker.id}`,
+              target: `${stageName}__${leaderAgent.agent_name ?? leaderAgent.id}`,
+              sourceHandle: 'right',
+              targetHandle: 'left',
+              type: 'default',
+              markerEnd: {
+                type: 'arrowclosed' as MarkerType,
+                color: stageColor,
+                width: 14,
+                height: 14,
+              },
+              style: { stroke: stageColor, strokeWidth: 2 },
+              animated: latest.status === 'running',
+            });
+          }
+        } else {
+          // Sequential or Parallel: position agents
+          nodeAgents.forEach((agent, i) => {
+            const childX = isSequential ? pad + i * (cardW + gap) : pad;
+            const childY = isSequential ? hdrH + pad : hdrH + pad + i * (cardH + gap);
+
+            nodes.push({
+              id: `${stageName}__${agent.agent_name ?? agent.id}`,
+              type: 'agentNode',
+              position: { x: childX, y: childY },
+              parentId: stageName,
+              extent: 'parent' as const,
+              data: {
+                agent, stage: latest, stageColor,
+                totalTokens: agent.total_tokens ?? 0,
+                totalCost: agent.estimated_cost_usd ?? 0,
+                durationSeconds: agent.duration_seconds ?? 0,
+              } as AgentNodeData,
+            });
+          });
+
+          // Sequential edges (horizontal arrows)
+          if (isSequential && nodeAgents.length > 1) {
+            for (let i = 0; i < nodeAgents.length - 1; i++) {
+              const src = nodeAgents[i];
+              const tgt = nodeAgents[i + 1];
+              edges.push({
+                id: `inner-${stageName}-${i}`,
+                source: `${stageName}__${src.agent_name ?? src.id}`,
+                target: `${stageName}__${tgt.agent_name ?? tgt.id}`,
+                sourceHandle: 'right',
+                targetHandle: 'left',
+                type: 'default',
+                markerEnd: {
+                  type: 'arrowclosed' as MarkerType,
+                  color: stageColor,
+                  width: 14,
+                  height: 14,
+                },
+                style: { stroke: stageColor, strokeWidth: 2 },
+                animated: latest.status === 'running',
+              });
+            }
+          }
+          // No inner edges for parallel
+        }
+      }
     }
 
-    // Build edges
+    // Arrowhead marker for dependency edges
+    const depMarker = {
+      type: 'arrowclosed' as MarkerType,
+      color: EDGE_COLORS.dataFlow,
+      width: 16,
+      height: 16,
+    };
+
+    // Build edges with smart handle selection based on node positions
     if (dagInfo.hasDeps) {
-      // Forward dependency edges (right → left)
       for (const [target, deps] of dagInfo.depMap) {
         for (const source of deps) {
           const sourceStage = stageGroups.get(source);
@@ -128,20 +309,24 @@ export function useDagElements(): { nodes: Node[]; edges: Edge[] } {
             ? sourceStage[sourceStage.length - 1].status
             : undefined;
 
+          const srcPos = positions.get(source);
+          const tgtPos = positions.get(target);
+          const handles = _pickHandles(srcPos, tgtPos);
+
           edges.push({
             id: `dep-${source}-${target}`,
             source,
             target,
-            sourceHandle: 'right',
-            targetHandle: 'left',
-            type: 'smoothstep',
+            sourceHandle: handles.sourceHandle,
+            targetHandle: handles.targetHandle,
+            type: 'default',
+            markerEnd: depMarker,
             style: { stroke: EDGE_COLORS.dataFlow, strokeWidth: 2 },
             animated: sourceStatus === 'running',
           });
         }
       }
 
-      // Loop-back edges (bottom → top, routed below the DAG)
       for (const [source, target] of dagInfo.loopsBackTo) {
         const sourceExecs = stageGroups.get(source);
         const targetExecs = stageGroups.get(target);
@@ -152,7 +337,6 @@ export function useDagElements(): { nodes: Node[]; edges: Edge[] } {
           : undefined;
         const isActive = sourceStatus === 'failed' || sourceStatus === 'running';
 
-        // Build label: "on fail → retry (2/3)"
         const iterLabel = maxLoops
           ? `${iterCount}/${maxLoops}`
           : `x${iterCount}`;
@@ -194,7 +378,8 @@ export function useDagElements(): { nodes: Node[]; edges: Edge[] } {
           target,
           sourceHandle: 'right',
           targetHandle: 'left',
-          type: 'smoothstep',
+          type: 'default',
+          markerEnd: depMarker,
           style: { stroke: EDGE_COLORS.dataFlow, strokeWidth: 2 },
           animated: sourceStatus === 'running',
         });
@@ -203,4 +388,38 @@ export function useDagElements(): { nodes: Node[]; edges: Edge[] } {
 
     return { nodes, edges };
   }, [workflow, stages, agents, expandedStages]);
+}
+
+/**
+ * Pick source/target handles based on relative node positions.
+ * - Same column (small x delta): use bottom→top
+ * - Target to the right: use right→left (default L→R flow)
+ * - Target to the left: use left→right (backflow)
+ */
+function _pickHandles(
+  srcPos: StagePosition | undefined,
+  tgtPos: StagePosition | undefined,
+): { sourceHandle: string; targetHandle: string } {
+  if (!srcPos || !tgtPos) {
+    return { sourceHandle: 'right', targetHandle: 'left' };
+  }
+
+  const dx = tgtPos.x - srcPos.x;
+  const dy = tgtPos.y - srcPos.y;
+
+  // If target is roughly in the same column (small horizontal gap),
+  // route vertically to avoid crossing
+  if (Math.abs(dx) < 80) {
+    return dy > 0
+      ? { sourceHandle: 'bottom', targetHandle: 'left' }
+      : { sourceHandle: 'right', targetHandle: 'bottom' };
+  }
+
+  // Normal left-to-right flow
+  if (dx > 0) {
+    return { sourceHandle: 'right', targetHandle: 'left' };
+  }
+
+  // Backflow (target is to the left)
+  return { sourceHandle: 'left', targetHandle: 'right' };
 }

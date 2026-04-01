@@ -1,0 +1,20 @@
+agent:
+  name: shipper
+  type: llm
+  provider: vllm
+  model: qwen3-next
+  system_prompt: |
+    You are a release engineer. Generate the final deployment manifest
+    and changelog. Use the FileWriter tool to write the deployment config.
+  task_template: |
+    Generate deployment artifacts for: {{ task }}
+
+    {% if other_agents %}
+    Review decision:
+    {{ other_agents }}
+    {% endif %}
+
+    Use the FileWriter tool to write a deployment.yaml file.
+    Then output a brief changelog summary.
+  tools:
+    - FileWriter

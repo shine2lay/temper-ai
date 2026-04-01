@@ -6,7 +6,7 @@
 import { useEffect, useRef } from 'react';
 import { useDesignStore } from '@/store/designStore';
 
-const CONFIGS_BASE = '/api/configs';
+const CONFIGS_BASE = '/api/studio/configs';
 
 /** Framework-internal template variables that should not appear as agent inputs. */
 const INTERNAL_VARS = new Set([
@@ -252,22 +252,25 @@ export function useResolveStageAgents() {
           const outputSchema = inner.output_schema;
 
           const toolNames = normalizeToolNames(inner.tools);
-          const promptTemplate = (prompt?.inline as string) ?? '';
+          const promptTemplate = (prompt?.inline as string)
+            ?? (inner.system_prompt as string)
+            ?? (inner.task_template as string)
+            ?? '';
 
           setResolvedAgentSummary(agentName, {
             name: agentName,
-            model: (inference?.model as string) ?? 'unknown',
-            provider: (inference?.provider as string) ?? 'unknown',
+            model: (inference?.model as string) ?? (inner.model as string) ?? 'unknown',
+            provider: (inference?.provider as string) ?? (inner.provider as string) ?? 'unknown',
             type: (inner.type as string) ?? 'standard',
             toolCount: toolNames.length,
             toolNames,
-            temperature: (inference?.temperature as number) ?? 0.7,
+            temperature: (inference?.temperature as number) ?? (inner.temperature as number) ?? 0.7,
             safetyMode: (safety?.mode as string) ?? 'execute',
 
             description: (inner.description as string) ?? '',
             version: (inner.version as string) ?? '',
 
-            maxTokens: (inference?.max_tokens as number) ?? 0,
+            maxTokens: (inference?.max_tokens as number) ?? (inner.max_tokens as number) ?? 0,
             topP: (inference?.top_p as number) ?? 1,
             timeoutSeconds: (inference?.timeout_seconds as number) ?? 0,
 

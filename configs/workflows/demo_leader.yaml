@@ -1,0 +1,23 @@
+workflow:
+  name: demo_leader
+  description: "Plan → Review (leader: security + quality → decider) → Ship"
+  version: "1.0"
+  nodes:
+    - name: plan
+      type: agent
+      agent: planner
+
+    - name: review
+      type: stage
+      strategy: leader
+      depends_on: [plan]
+      agents:
+        - reviewer
+        - coder_b
+        - agent: reviewer
+          name: decider
+          role: leader
+          task_template: |
+            Synthesize the reviews below and give a final verdict.
+            {{ other_agents }}
+            Output JSON: {"verdict": "PASS" or "FAIL", "summary": "..."}

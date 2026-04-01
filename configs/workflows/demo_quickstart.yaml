@@ -1,0 +1,30 @@
+workflow:
+  name: demo_quickstart
+  description: "Plan → Code → Review: a simple 3-stage AI workflow"
+  version: "1.0"
+  safety:
+    policies:
+      - type: file_access
+        denied_paths: [".env", "credentials", "/etc/", "/root/"]
+      - type: forbidden_ops
+      - type: budget
+        max_cost_usd: 5.00
+        max_tokens: 500000
+  nodes:
+    - name: plan
+      type: agent
+      agent: planner
+
+    - name: code
+      type: agent
+      agent: coder
+      depends_on: [plan]
+      input_map:
+        task: plan.output
+
+    - name: review
+      type: agent
+      agent: reviewer
+      depends_on: [code]
+      input_map:
+        task: code.output

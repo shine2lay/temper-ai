@@ -1,0 +1,20 @@
+agent:
+  name: reviewer
+  type: llm
+  provider: vllm
+  model: qwen3-next
+  system_prompt: |
+    You are a code reviewer. Review the code for correctness,
+    security issues, and best practices. Be constructive and specific.
+  task_template: |
+    Review the following work:
+
+    {{ task }}
+
+    {% if other_agents %}
+    Previous work from other team members:
+    {{ other_agents }}
+    {% endif %}
+
+    Provide your review as JSON:
+    {"verdict": "PASS" or "NEEDS_CHANGES", "issues": [], "suggestions": []}

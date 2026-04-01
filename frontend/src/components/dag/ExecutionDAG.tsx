@@ -16,9 +16,15 @@ import { useDagElements } from '@/hooks/useDagElements';
 import { computeStagePositions } from '@/lib/dagLayout';
 import { DAG_FIT_PADDING } from '@/lib/constants';
 import { StageNode } from './StageNode';
+import { AgentNodeComponent } from './AgentNodeComponent';
+import { StageGroupNode } from './StageGroupNode';
 import { LoopBackEdge } from './LoopBackEdge';
 
-const nodeTypes = { stage: StageNode };
+const nodeTypes = {
+  stage: StageNode,
+  agentNode: AgentNodeComponent,
+  stageGroup: StageGroupNode,
+};
 const edgeTypes = { loopBack: LoopBackEdge };
 const RELAYOUT_DELAY_MS = 150;
 
@@ -86,15 +92,51 @@ export function ExecutionDAG() {
       measuredSizes,
     );
 
-    // Check if positions actually changed to avoid unnecessary updates
+    // Auto-resize group containers based on actual child measurements
+    const containerUpdates = new Map<string, { width: number; height: number }>();
+    for (const node of rfNodes) {
+      if (node.type === 'stageGroup') {
+        const children = rfNodes.filter((n) => n.parentId === node.id);
+        if (children.length > 0 && children.every((c) => c.measured?.width && c.measured?.height)) {
+          let maxRight = 0;
+          let maxBottom = 0;
+          for (const child of children) {
+            maxRight = Math.max(maxRight, child.position.x + (child.measured?.width ?? 0));
+            maxBottom = Math.max(maxBottom, child.position.y + (child.measured?.height ?? 0));
+          }
+          const pad = 28;
+          containerUpdates.set(node.id, {
+            width: Math.max(maxRight + pad, 350),
+            height: Math.max(maxBottom + pad, 200),
+          });
+        }
+      }
+    }
+
+    // Check if positions or sizes changed to avoid unnecessary updates
     let changed = false;
     const updatedNodes = rfNodes.map((node) => {
+      const containerSize = containerUpdates.get(node.id);
       const pos = newPositions.get(node.id);
+      let updated = node;
+
+      // Resize group containers
+      if (containerSize) {
+        const currentW = typeof node.style?.width === 'number' ? node.style.width : 0;
+        const currentH = typeof node.style?.height === 'number' ? node.style.height : 0;
+        if (Math.abs(containerSize.width - currentW) > 5 || Math.abs(containerSize.height - currentH) > 5) {
+          changed = true;
+          updated = { ...updated, style: { ...updated.style, width: containerSize.width, height: containerSize.height } };
+        }
+      }
+
+      // Reposition
       if (pos && (Math.abs(node.position.x - pos.x) > 1 || Math.abs(node.position.y - pos.y) > 1)) {
         changed = true;
-        return { ...node, position: { x: pos.x, y: pos.y } };
+        updated = { ...updated, position: { x: pos.x, y: pos.y } };
       }
-      return node;
+
+      return updated;
     });
 
     if (changed) {

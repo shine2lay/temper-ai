@@ -52,12 +52,22 @@ export const useDesignStore = create<DesignState>()(
     validation: { status: 'idle', errors: [] },
     resolvedStageInfo: {},
     resolvedAgentSummaries: {},
+    autoFocusStageName: null,
+    showDepEdges: true,
+    showWireEdges: true,
 
     _historyPast: [],
     _historyFuture: [],
 
     canUndo: false,
     canRedo: false,
+
+    setAutoFocusStageName: (name) =>
+      set((state) => {
+        state.autoFocusStageName = name;
+      }),
+    setShowDepEdges: (v) => set((state) => { state.showDepEdges = v; }),
+    setShowWireEdges: (v) => set((state) => { state.showWireEdges = v; }),
 
     setMeta: (partial) =>
       set((state) => {
@@ -126,9 +136,16 @@ export const useDesignStore = create<DesignState>()(
         state.canRedo = false;
         stage.name = newName;
         // Update references in other stages
+        const oldPrefix = `${oldName}.`;
         for (const s of state.stages) {
           s.depends_on = s.depends_on.map((d) => (d === oldName ? newName : d));
           if (s.loops_back_to === oldName) s.loops_back_to = newName;
+          // Rewrite input source references from "oldName.field" to "newName.field"
+          for (const key of Object.keys(s.inputs)) {
+            if (s.inputs[key].source.startsWith(oldPrefix)) {
+              s.inputs[key].source = `${newName}.${s.inputs[key].source.slice(oldPrefix.length)}`;
+            }
+          }
         }
         // Update node positions
         if (state.nodePositions[oldName]) {
@@ -153,9 +170,16 @@ export const useDesignStore = create<DesignState>()(
         state.canUndo = result.past.length > 0;
         state.canRedo = false;
         state.stages = state.stages.filter((s) => s.name !== name);
+        const prefix = `${name}.`;
         for (const s of state.stages) {
           s.depends_on = s.depends_on.filter((d) => d !== name);
           if (s.loops_back_to === name) s.loops_back_to = null;
+          // Clean up inputs sourced from the removed stage
+          for (const key of Object.keys(s.inputs)) {
+            if (s.inputs[key].source.startsWith(prefix)) {
+              delete s.inputs[key];
+            }
+          }
         }
         delete state.nodePositions[name];
         if (state.selectedStageName === name) {
@@ -196,6 +220,55 @@ export const useDesignStore = create<DesignState>()(
         state.canUndo = result.past.length > 0;
         state.canRedo = false;
         targetStage.depends_on = targetStage.depends_on.filter((d) => d !== source);
+        // Also remove data wires sourced from this dependency
+        const prefix = `${source}.`;
+        for (const key of Object.keys(targetStage.inputs)) {
+          if (targetStage.inputs[key].source.startsWith(prefix)) {
+            delete targetStage.inputs[key];
+          }
+        }
+        state.isDirty = true;
+      }),
+
+    addDataWire: (source, sourceField, target, targetField) =>
+      set((state) => {
+        const targetStage = state.stages.find((s) => s.name === target);
+        if (!targetStage) return;
+        const snap = captureSnapshot(state as unknown as DesignState);
+        const result = pushSnapshot(
+          { past: state._historyPast, future: state._historyFuture },
+          snap,
+        );
+        state._historyPast = result.past;
+        state._historyFuture = result.future;
+        state.canUndo = result.past.length > 0;
+        state.canRedo = false;
+        // Compute source ref: "source.output" for main output, "source.structured.field" for named outputs
+        const sourceRef = sourceField === 'output'
+          ? `${source}.output`
+          : `${source}.structured.${sourceField}`;
+        targetStage.inputs[targetField] = { source: sourceRef };
+        // Ensure dependency exists
+        if (!targetStage.depends_on.includes(source)) {
+          targetStage.depends_on.push(source);
+        }
+        state.isDirty = true;
+      }),
+
+    removeDataWire: (_source, _sourceField, target, targetField) =>
+      set((state) => {
+        const targetStage = state.stages.find((s) => s.name === target);
+        if (!targetStage) return;
+        const snap = captureSnapshot(state as unknown as DesignState);
+        const result = pushSnapshot(
+          { past: state._historyPast, future: state._historyFuture },
+          snap,
+        );
+        state._historyPast = result.past;
+        state._historyFuture = result.future;
+        state.canUndo = result.past.length > 0;
+        state.canRedo = false;
+        delete targetStage.inputs[targetField];
         state.isDirty = true;
       }),
 
@@ -264,6 +337,7 @@ export const useDesignStore = create<DesignState>()(
         state.validation = { status: 'idle', errors: [] };
         state.resolvedStageInfo = {};
         state.resolvedAgentSummaries = {};
+        state.autoFocusStageName = null;
         state.meta = parseWorkflowMeta(name, config);
         state.stages = parseWorkflowStages(config);
         // Clear history on load — fresh baseline
@@ -285,6 +359,7 @@ export const useDesignStore = create<DesignState>()(
         state.validation = { status: 'idle', errors: [] };
         state.resolvedStageInfo = {};
         state.resolvedAgentSummaries = {};
+        state.autoFocusStageName = null;
         state._historyPast = [];
         state._historyFuture = [];
         state.canUndo = false;

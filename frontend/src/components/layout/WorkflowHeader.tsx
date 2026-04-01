@@ -1,11 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Info, Pencil } from 'lucide-react';
 import { useExecutionStore } from '@/store/executionStore';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { formatDuration, elapsedSeconds, cn } from '@/lib/utils';
 import { DURATION_TICK_MS } from '@/lib/constants';
-import { getActiveTheme, toggleTheme } from '@/lib/theme';
 
 export function WorkflowHeader() {
   const navigate = useNavigate();
@@ -17,12 +16,6 @@ export function WorkflowHeader() {
 
   const [elapsed, setElapsed] = useState(0);
   const [errorExpanded, setErrorExpanded] = useState(false);
-  const [theme, setTheme] = useState<'light' | 'dark'>(getActiveTheme);
-
-  function handleThemeToggle() {
-    const next = toggleTheme();
-    setTheme(next);
-  }
 
   const isRunning = workflow?.status === 'running';
 
@@ -51,7 +44,7 @@ export function WorkflowHeader() {
   });
 
   // WS status indicator
-  let wsIndicator: React.ReactNode;
+  let wsIndicator: ReactNode;
   if (wsStatus.connected) {
     wsIndicator = (
       <span className="flex items-center gap-1.5 text-xs text-temper-text-muted">
@@ -149,16 +142,7 @@ export function WorkflowHeader() {
           </Link>
         )}
 
-        <button
-          onClick={handleThemeToggle}
-          className="text-temper-text-muted hover:text-temper-text transition-colors shrink-0 ml-auto text-base leading-none"
-          aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-          title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-        >
-          {theme === 'dark' ? '☀' : '🌙'}
-        </button>
-
-        <div>{wsIndicator}</div>
+        <div className="ml-auto">{wsIndicator}</div>
       </header>
       {workflow?.status === 'failed' && workflow?.error_message && (
         <div

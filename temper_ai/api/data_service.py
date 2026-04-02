@@ -223,6 +223,7 @@ def _build_agent_execution(agent_event: dict, all_events: list[dict]) -> dict:
         "tool_calls": tool_calls,
         "output": data.get("output"),
         "structured_output": data.get("structured_output"),
+        "output_data": data.get("structured_output"),
         "role": data.get("role"),
         "error_message": data.get("error"),
         # Agent config and input data for context engineering visibility

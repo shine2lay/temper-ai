@@ -121,6 +121,20 @@
   --color-temper-token-prompt: #2563eb;
   --color-temper-token-completion: #16a34a;
 
+  /* Semantic accent colors — dark enough for white backgrounds */
+  --temper-emerald: #047857;       /* emerald-700 — json badges, output, costs */
+  --temper-emerald-bg: #d1fae5;    /* emerald-100 */
+  --temper-blue: #1d4ed8;          /* blue-700 — source tags, flow edges */
+  --temper-blue-bg: #dbeafe;       /* blue-100 */
+  --temper-amber: #b45309;         /* amber-700 — tools, warnings */
+  --temper-amber-bg: #fef3c7;      /* amber-100 */
+  --temper-violet: #6d28d9;        /* violet-700 — agent type badges */
+  --temper-violet-bg: #ede9fe;     /* violet-100 */
+  --temper-red: #b91c1c;           /* red-700 — errors */
+  --temper-red-bg: #fee2e2;        /* red-100 */
+  --temper-yellow: #a16207;        /* yellow-700 — conditions */
+  --temper-cyan: #0e7490;          /* cyan-700 — running state */
+
   --temper-bg-completed: #e8f5e9;
   --temper-bg-running: #e3f2fd;
   --temper-bg-failed: #fce4e4;
@@ -412,5 +426,97 @@ body {
   }
   body {
     @apply bg-background text-foreground;
+  }
+}
+
+/* ============================================================
+   Light mode contrast fixes
+   Override Tailwind dark-mode-only color classes to use
+   darker variants that are readable on white/light backgrounds.
+   ============================================================ */
+:root[data-theme="light"] {
+  /* Emerald (costs, json badges, output bars, completion tokens) */
+  .text-emerald-400 { color: var(--temper-emerald) !important; }
+  .bg-emerald-400 { background-color: #34d399 !important; }
+  .bg-emerald-500\/10, .bg-emerald-500\/15 { background-color: var(--temper-emerald-bg) !important; }
+  .bg-emerald-900\/20 { background-color: #d1fae5 !important; }
+  .border-emerald-700\/30 { border-color: #6ee7b7 !important; }
+  .text-emerald-400\/80 { color: var(--temper-emerald) !important; }
+
+  /* Blue (source tags, flow edges, prompt tokens, accent) */
+  .text-blue-400 { color: var(--temper-blue) !important; }
+  .bg-blue-500\/10, .bg-blue-500\/15 { background-color: var(--temper-blue-bg) !important; }
+  .bg-blue-900\/30 { background-color: #dbeafe !important; }
+
+  /* Amber (tools, warnings, loop indicators) */
+  .text-amber-400 { color: var(--temper-amber) !important; }
+  .bg-amber-500\/10, .bg-amber-500\/15 { background-color: var(--temper-amber-bg) !important; }
+  .bg-amber-900\/30 { background-color: #fef3c7 !important; }
+
+  /* Violet (agent type badges, keywords) */
+  .text-violet-400 { color: var(--temper-violet) !important; }
+  .bg-violet-500\/10, .bg-violet-500\/15 { background-color: var(--temper-violet-bg) !important; }
+  .bg-violet-900\/30 { background-color: #ede9fe !important; }
+
+  /* Red (errors, failed states) */
+  .text-red-400 { color: var(--temper-red) !important; }
+  .bg-red-500\/10, .bg-red-500\/15 { background-color: var(--temper-red-bg) !important; }
+  .bg-red-950\/10 { background-color: #fee2e2 !important; }
+  .bg-red-500\/20 { border-color: #fca5a5 !important; }
+
+  /* Yellow (conditions, warnings) */
+  .text-yellow-400 { color: var(--temper-yellow) !important; }
+  .bg-yellow-500\/20 { background-color: #fef9c3 !important; }
+  .border-yellow-500\/30 { border-color: #fde68a !important; }
+
+  /* Sky (JSON string values in viewers) */
+  .text-sky-400 { color: #0369a1 !important; }
+
+  /* Purple (JSON keys in viewers) */
+  .text-purple-400 { color: #7c3aed !important; }
+
+  /* Cyan (running state) */
+  .text-cyan-400 { color: var(--temper-cyan) !important; }
+
+  /* Token colors in text */
+  .text-temper-token-prompt { color: var(--color-temper-token-prompt) !important; }
+  .text-temper-token-completion { color: var(--color-temper-token-completion) !important; }
+
+  /* Surface backgrounds — slightly more contrast */
+  .bg-temper-surface\/50 { background-color: #e5e7eb !important; }
+  .bg-temper-surface\/30 { background-color: #edf0f5 !important; }
+
+  /* ReactFlow node borders and handles in light mode */
+  .react-flow__node { border-color: #d1d5db !important; }
+  .react-flow__edge path { opacity: 0.85; }
+
+  /* Handles — use medium gray instead of dark navy */
+  .react-flow__handle.\!bg-temper-border,
+  .\!bg-temper-border { background-color: #9ca3af !important; }
+
+  /* Agent card backgrounds inside stages */
+  .bg-temper-surface\/50 { background-color: #f3f4f6 !important; }
+
+  /* Faint labels that need more contrast */
+  .text-temper-text-dim { color: #4b5563 !important; }
+  .text-temper-text-muted { color: #374151 !important; }
+
+  /* SmartContent panels */
+  .bg-temper-panel { background-color: #ffffff !important; }
+
+  /* Input/output row backgrounds */
+  .bg-temper-surface { background-color: #f3f4f6 !important; }
+  .border-temper-border\/50 { border-color: #d1d5db !important; }
+  .border-temper-border\/30 { border-color: #e5e7eb !important; }
+
+  /* Green edge lines — slightly darker for light backgrounds */
+  .react-flow__edge .react-flow__edge-path[style*="emerald"],
+  .react-flow__edge .react-flow__edge-path[style*="10b981"] {
+    stroke: #059669 !important;
+  }
+
+  /* Blue edge lines */
+  .react-flow__edge .react-flow__edge-path[style*="3b82f6"] {
+    stroke: #2563eb !important;
   }
 }

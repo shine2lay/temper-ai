@@ -74,12 +74,14 @@ function OutlineItem({
       }`}
     >
       <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
-      <span className="truncate flex-1">{stage.name}</span>
-      <span className={`text-[9px] px-1 py-px rounded shrink-0 ${
-        isSingleAgent ? 'bg-violet-900/30 text-violet-400' : 'bg-blue-900/30 text-blue-400'
-      }`}>
-        {isSingleAgent ? 'agent' : stage.agents.length === 0 ? 'empty' : `${stage.agents.length}a`}
-      </span>
+      <span className="truncate flex-1">{isSingleAgent ? stage.agents[0] : stage.name}</span>
+      {!isSingleAgent && (
+        <span className={`text-[9px] px-1 py-px rounded shrink-0 ${
+          stage.agents.length === 0 ? 'bg-temper-surface text-temper-text-dim' : 'bg-blue-900/30 text-blue-400'
+        }`}>
+          {stage.agents.length === 0 ? 'empty' : `${stage.agents.length} agents`}
+        </span>
+      )}
     </button>
   );
 }
@@ -136,6 +138,7 @@ export function StagePalette() {
   const stages = useDesignStore((s) => s.stages);
   const selectedStageName = useDesignStore((s) => s.selectedStageName);
   const selectStage = useDesignStore((s) => s.selectStage);
+  const selectAgent = useDesignStore((s) => s.selectAgent);
   const addStage = useDesignStore((s) => s.addStage);
   const updateStage = useDesignStore((s) => s.updateStage);
   const setAutoFocusStageName = useDesignStore((s) => s.setAutoFocusStageName);
@@ -166,7 +169,7 @@ export function StagePalette() {
           updateStage(selectedStageName, { agents: [...selectedStage.agents, agentName] });
         }
       } else {
-        // No stage selected — create a new single-agent node
+        // No stage selected — add agent to canvas as a standalone node
         const existing = new Set(stages.map((s) => s.name));
         let name = agentName;
         if (existing.has(name)) {
@@ -177,6 +180,8 @@ export function StagePalette() {
         const newStage: DesignStage = { ...defaultDesignStage(name), agents: [agentName] };
         addStage(newStage);
         selectStage(name);
+        // Open the agent properties panel directly
+        selectAgent(agentName);
       }
     },
     [selectedStageName, selectedStage, stages, addStage, selectStage, updateStage],

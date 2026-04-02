@@ -53,8 +53,17 @@ export const AgentCardContent = memo(function AgentCardContent({
   const statusColor = STATUS_COLORS[agent.status] ?? STATUS_COLORS.pending;
   const isStreaming = streaming && !streaming.done;
   const textOutput = isStreaming ? streaming.content : agent.output ?? '';
-  const hasOutputData = agent.output_data != null && Object.keys(agent.output_data).length > 0;
-  const output = textOutput || (hasOutputData ? JSON.stringify(agent.output_data, null, 2) : '');
+  // Derive structured output from text if API doesn't provide it
+  const derivedOutputData = useMemo(() => {
+    if (agent.output_data && Object.keys(agent.output_data).length > 0) return agent.output_data;
+    if (!textOutput) return null;
+    try {
+      const parsed = JSON.parse(textOutput.trim());
+      return typeof parsed === 'object' && parsed !== null ? parsed : null;
+    } catch { return null; }
+  }, [agent.output_data, textOutput]);
+  const hasOutputData = derivedOutputData != null;
+  const output = textOutput || (hasOutputData ? JSON.stringify(derivedOutputData, null, 2) : '');
   const hasOutput = output.length > 0;
   const agentName = agent.agent_name ?? agent.name ?? 'agent';
 

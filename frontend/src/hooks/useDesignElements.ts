@@ -72,15 +72,26 @@ const GAP_X = 100;
 const GAP_Y = 50;
 const START_X = 40;
 
-/** Estimate node height based on agent count + input count — avoids overlap before DOM measurement. */
+/** Estimate node height based on content — avoids overlap before DOM measurement. */
 function estimateNodeHeight(stage: DesignStage): number {
   const agentCount = stage.agents.length;
   const inputCount = Object.keys(stage.inputs).length;
-  const ioExtra = inputCount * 30; // ~30px per input row
+  const outputCount = Object.keys(stage.outputs).length;
+  const hasCondition = stage.condition != null;
+  const hasDeps = stage.depends_on.length > 0;
+
+  const ioExtra = inputCount * 30;
+  // Default output bar (~35px) + named outputs (~30px each) + header (~20px)
+  const outputExtra = 55 + outputCount * 30;
+  // Footer with deps/condition (~40px)
+  const footerExtra = (hasDeps || hasCondition) ? 45 : 0;
+
   if (agentCount <= 1 && !stage.stage_ref) {
-    return 220 + ioExtra;
+    // Single-agent: header + provider line + I/O section + outputs + footer
+    return 160 + ioExtra + outputExtra + footerExtra;
   }
-  return 220 + agentCount * 60 + ioExtra;
+  // Multi-agent: header + agent cards + mode/strategy + I/O + outputs + footer
+  return 200 + agentCount * 40 + 60 + ioExtra + outputExtra + footerExtra;
 }
 
 /**
@@ -415,15 +426,23 @@ export function useDesignElements(): { nodes: Node[]; edges: Edge[] } {
         if (srcStage === 'workflow' || !stageMap.has(srcStage)) continue;
 
         const remainder = src.slice(dotIdx + 1);
-        const srcField = remainder.startsWith('structured.')
+        const isStructured = remainder.startsWith('structured.');
+        const srcField = isStructured
           ? remainder.slice('structured.'.length)
           : remainder;
+        // For structured references, check if the source stage has a named output
+        // handle matching the field. If yes, use it; otherwise fall back to out:output.
+        const srcStageData = stageMap.get(srcStage);
+        const srcHasNamedOutput = srcStageData && srcStageData.outputs
+          ? Object.keys(srcStageData.outputs).includes(srcField)
+          : false;
+        const sourceHandle = isStructured && !srcHasNamedOutput ? 'out:output' : `out:${srcField}`;
 
         if (showWireEdges) edges.push({
           id: `wire|${srcStage}|${srcField}|${s.name}|${inputName}`,
           source: srcStage,
           target: s.name,
-          sourceHandle: `out:${srcField}`,
+          sourceHandle,
           targetHandle: `in:${inputName}`,
           type: 'dataWire',
           style: { stroke: EDGE_COLORS.dataWire, strokeWidth: 1.5, strokeDasharray: '6 3' },

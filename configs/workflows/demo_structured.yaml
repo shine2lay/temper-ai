@@ -1,0 +1,76 @@
+workflow:
+  name: demo_structured
+  description: |
+    Demonstrates structured output, conditional branching, and field-level wiring.
+    analyze → decision (branches based on structured.verdict) → implement OR simplify → review
+  defaults:
+    provider: vllm
+    model: qwen3-next
+  nodes:
+    # Step 1: Analyze the task and produce structured JSON
+    - name: analyze
+      type: agent
+      agent: planner
+      outputs:
+        verdict: string
+        components: list
+        approach: string
+        estimated_effort: string
+      task_template: |
+        Analyze this task: {{ task }}
+
+        Produce a JSON response with these exact fields:
+        {
+          "verdict": "complex" or "simple",
+          "components": ["list", "of", "components"],
+          "estimated_effort": "high" or "medium" or "low",
+          "approach": "description of approach"
+        }
+
+    # Step 2a: Only runs if verdict is "complex"
+    - name: implement
+      type: stage
+      strategy: parallel
+      depends_on: [analyze]
+      condition:
+        source: analyze.structured.verdict
+        operator: equals
+        value: complex
+      input_map:
+        components: analyze.structured.components
+        approach: analyze.structured.approach
+      agents:
+        - agent: frontend_dev
+          task_template: |
+            Build frontend for these components: {{ components }}
+            Approach: {{ approach }}
+            Write concise React code.
+        - agent: backend_dev
+          task_template: |
+            Build backend for these components: {{ components }}
+            Approach: {{ approach }}
+            Write concise Python/FastAPI code.
+
+    # Step 2b: Only runs if verdict is "simple"
+    - name: simplify
+      type: agent
+      agent: coder
+      depends_on: [analyze]
+      condition:
+        source: analyze.structured.verdict
+        operator: equals
+        value: simple
+      input_map:
+        components: analyze.structured.components
+        approach: analyze.structured.approach
+
+    # Step 3: Review — runs after whichever branch completed
+    - name: review
+      type: agent
+      agent: reviewer
+      depends_on: [implement, simplify]
+      input_map:
+        implementation: implement.output
+        simple_impl: simplify.output
+        original_verdict: analyze.structured.verdict
+        effort: analyze.structured.estimated_effort

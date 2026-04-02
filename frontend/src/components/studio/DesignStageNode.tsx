@@ -1128,20 +1128,11 @@ export function DesignStageNode({ data }: NodeProps) {
             </div>
           </div>
 
-          {/* Outputs — hidden when only the default output:text exists */}
-          {/* Keep the Handle for edge connections even when output section is hidden */}
-          <Handle
-            type="source"
-            position={Position.Right}
-            id="out:output"
-            className="!absolute !w-2.5 !h-2.5 !bg-emerald-400 !border-emerald-600 !transform-none !min-w-0 !min-h-0 data-wire-handle"
-            style={{ right: '-5px', top: '50%', transform: 'translateY(-50%)', opacity: outputs.filter(o => o.name !== 'output').length > 0 ? 0 : 1 }}
-          />
-          {outputs.filter(o => o.name !== 'output').length > 0 && (
+          {/* Output anchor — always visible so edges have a clean connection point */}
           <div className="nopan nodrag mt-2" onClick={(e) => e.stopPropagation()}>
-            <div className="text-[9px] text-temper-text-dim mb-1">Outputs (name : type)</div>
+            <div className="text-[9px] text-temper-text-dim mb-1">Outputs</div>
             <div className="flex flex-col gap-1 w-full">
-              {/* Main text output — always present */}
+              {/* Default output — always present, serves as edge anchor */}
               <div className="relative flex items-center gap-1 p-1 bg-emerald-900/20 rounded border border-emerald-700/30">
                 <Handle
                   type="source"
@@ -1151,7 +1142,7 @@ export function DesignStageNode({ data }: NodeProps) {
                   style={{ right: '-13px', top: '50%', transform: 'translateY(-50%)' }}
                 />
                 <span className="px-1.5 py-0.5 text-[10px] text-emerald-400/80 italic">output</span>
-                <span className="flex-1 px-1.5 py-0.5 text-[10px] text-temper-text-dim">text</span>
+                <span className="flex-1 px-1.5 py-0.5 text-[10px] text-temper-text-dim">full response (default)</span>
               </div>
               {/* Named structured outputs */}
               {outputs.filter((o) => o.name !== 'output').map((o) => (
@@ -1203,7 +1194,6 @@ export function DesignStageNode({ data }: NodeProps) {
               >+ Add</button>
             </div>
           </div>
-          )}
         </NodeSection>
       )}
 
@@ -1226,18 +1216,28 @@ export function DesignStageNode({ data }: NodeProps) {
               ))}
             </div>
           )}
-          {/* Editable condition */}
+          {/* Condition — only show when set or when editing (selected) */}
+          {(condition != null || isSelected) && (
           <div className="nopan nodrag flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
             <span className="text-[9px] text-yellow-400 shrink-0">if:</span>
-            <InlineEdit
-              value={condition}
-              onChange={(v) => updateStage(stageName, { condition: v != null && String(v) !== '' ? String(v) : null })}
-              emptyLabel="always run"
-              placeholder="{{ condition }}"
-              className="text-[9px] text-yellow-400 flex-1"
-            />
+            {typeof condition === 'object' && condition !== null ? (
+              /* Structured condition — show as readable summary */
+              <span className="text-[9px] text-yellow-400 truncate" title={JSON.stringify(condition, null, 2)}>
+                {(condition as Record<string, unknown>).source as string ?? '?'} {(condition as Record<string, unknown>).operator as string ?? '?'} {String((condition as Record<string, unknown>).value ?? '?')}
+              </span>
+            ) : (
+              <InlineEdit
+                value={condition as string}
+                onChange={(v) => updateStage(stageName, { condition: v != null && String(v) !== '' ? String(v) : null })}
+                emptyLabel="always run"
+                placeholder="{{ condition }}"
+                className="text-[9px] text-yellow-400 flex-1"
+              />
+            )}
           </div>
-          {/* Editable loop */}
+          )}
+          {/* Loop — only show when set or when editing (selected) */}
+          {(loopsBackTo || isSelected) && (
           <div className="nopan nodrag flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
             <span className="text-[9px] text-amber-400 shrink-0">loop &rarr;</span>
             <InlineSelect
@@ -1263,6 +1263,7 @@ export function DesignStageNode({ data }: NodeProps) {
               </>
             )}
           </div>
+          )}
         </div>
       )}
 

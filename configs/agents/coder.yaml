@@ -1,0 +1,15 @@
+agent:
+  name: coder
+  type: llm
+  max_iterations: 5
+  token_budget: 8000
+  system_prompt: |
+    You are a full-stack developer. Implement the given task concisely.
+    Write working code with brief explanations.
+  task_template: |
+    Build this: {{ task }}
+
+    Components: {{ components }}
+    Approach: {{ approach }}
+
+    Write concise, working code.

@@ -1,4 +1,5 @@
 import { useExecutionStore } from '@/store/executionStore';
+import { SmartContent } from '@/components/shared/SmartContent';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { CollapsibleSection } from '@/components/shared/Collapsible';
 import { MetricCell } from '@/components/shared/MetricCell';
@@ -28,18 +29,15 @@ function PromptDisplay({ prompt }: { prompt: unknown }) {
             typeof msg === 'object' && msg !== null
               ? (msg as Record<string, unknown>).content
               : String(msg);
+          const contentStr = typeof content === 'string' ? content : JSON.stringify(content, null, 2);
           return (
-            <div key={i} className="rounded-md bg-temper-panel p-2">
+            <div key={i} className="rounded-md overflow-hidden">
               {role != null && (
-                <span className="mb-1 block text-xs font-medium text-temper-accent">
+                <div className="px-2 py-1 bg-temper-accent/10 text-xs font-medium text-temper-accent">
                   {String(role)}
-                </span>
+                </div>
               )}
-              <pre className="text-xs text-temper-text whitespace-pre-wrap">
-                {typeof content === 'string'
-                  ? content
-                  : JSON.stringify(content, null, 2)}
-              </pre>
+              <SmartContent content={contentStr} maxHeight={300} />
             </div>
           );
         })}
@@ -47,11 +45,8 @@ function PromptDisplay({ prompt }: { prompt: unknown }) {
     );
   }
 
-  return (
-    <pre className="mt-1 max-h-64 overflow-auto rounded-md bg-temper-panel p-3 text-xs text-temper-text whitespace-pre-wrap">
-      {typeof prompt === 'string' ? prompt : JSON.stringify(prompt, null, 2)}
-    </pre>
-  );
+  const str = typeof prompt === 'string' ? prompt : JSON.stringify(prompt, null, 2);
+  return <SmartContent content={str} maxHeight={300} className="mt-1" />;
 }
 
 function promptToString(prompt: unknown): string {

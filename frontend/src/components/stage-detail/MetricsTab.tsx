@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { formatDuration, formatTokens, formatCost } from '@/lib/utils';
 import { STATUS_COLORS } from '@/lib/constants';
+import { useExecutionStore } from '@/store/executionStore';
 import type { AgentExecution } from '@/types';
 
 interface MetricsTabProps {
@@ -26,6 +27,7 @@ interface AgentMetric {
  * Stage-level rollup at top.
  */
 export function MetricsTab({ agents, stageDurationSeconds }: MetricsTabProps) {
+  const select = useExecutionStore((s) => s.select);
   const { metrics, totals, maxTokens, maxDuration } = useMemo(() => {
     const agentMetrics: AgentMetric[] = agents.map((a) => ({
       agent: a,
@@ -119,7 +121,8 @@ export function MetricsTab({ agents, stageDurationSeconds }: MetricsTabProps) {
           return (
             <div
               key={m.agent.id}
-              className="grid grid-cols-[1fr_120px_80px_80px_60px_60px] gap-2 px-3 py-2 items-center hover:bg-temper-surface/30 rounded transition-colors"
+              className="grid grid-cols-[1fr_120px_80px_80px_60px_60px] gap-2 px-3 py-2 items-center hover:bg-temper-surface/50 rounded transition-colors cursor-pointer"
+              onClick={() => select('agent', m.agent.id)}
             >
               {/* Agent name + status */}
               <div className="flex items-center gap-2 min-w-0">

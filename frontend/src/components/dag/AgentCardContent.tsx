@@ -2,6 +2,7 @@ import { memo, useState, useMemo } from 'react';
 import { useExecutionStore } from '@/store/executionStore';
 import { STATUS_COLORS, deriveTokenBreakdown } from './constants';
 import { cn, formatDuration, formatTokens, formatCost } from '@/lib/utils';
+import { SmartContent } from '@/components/shared/SmartContent';
 import type { AgentExecution } from '@/types';
 
 /**
@@ -278,12 +279,11 @@ function InputSection({ data, expanded }: { data: Record<string, unknown>; expan
           </span>
         )}
       </div>
-      {/* Expanded: full JSON dump */}
+      {/* Expanded: smart formatted view */}
       {expanded && (
-        <pre className="text-[9px] text-temper-text-dim whitespace-pre-wrap break-words font-mono leading-tight max-h-[160px] overflow-y-auto bg-temper-surface/50 rounded p-1.5 mt-0.5">
-          {(() => { try { return JSON.stringify(data, null, 2).slice(0, 3000); } catch { return String(data); } })()}
-          {JSON.stringify(data).length > 3000 && <span className="text-temper-accent"> ...truncated</span>}
-        </pre>
+        <div className="mt-0.5">
+          <SmartContent content={(() => { try { return JSON.stringify(data, null, 2); } catch { return String(data); } })()} maxHeight={160} compact />
+        </div>
       )}
     </div>
   );
@@ -291,6 +291,15 @@ function InputSection({ data, expanded }: { data: Record<string, unknown>; expan
 
 /** Output section — smart preview based on output type. */
 function OutputSection({ output, error, expanded }: { output: string; error?: string | null; expanded: boolean }) {
+  const [copied, setCopied] = useState(false);
+
+  function handleCopy(e: React.MouseEvent) {
+    e.stopPropagation();
+    navigator.clipboard.writeText(output).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  }
   const trimmed = output.trim();
   const isJson = trimmed.startsWith('{') || trimmed.startsWith('[');
   const isCode = trimmed.startsWith('```') || trimmed.startsWith('import ') || trimmed.startsWith('def ') || trimmed.startsWith('function ');
@@ -355,13 +364,21 @@ function OutputSection({ output, error, expanded }: { output: string; error?: st
         {!expanded && preview && (
           <span className="text-[9px] text-temper-text-dim truncate font-mono">{preview}</span>
         )}
+        {!expanded && (
+          <span
+            className="ml-auto text-[9px] text-temper-text-dim hover:text-temper-text cursor-pointer shrink-0 select-none"
+            title="Copy output"
+            onClick={handleCopy}
+          >
+            {copied ? '✓' : '📋'}
+          </span>
+        )}
       </div>
-      {/* Expanded: formatted output */}
+      {/* Expanded: smart formatted view */}
       {expanded && (
-        <pre className="text-[9px] text-temper-text-dim whitespace-pre-wrap break-words font-mono leading-tight max-h-[200px] overflow-y-auto bg-temper-surface/50 rounded p-1.5 mt-0.5">
-          {output.slice(0, 3000)}
-          {output.length > 3000 && <span className="text-temper-accent"> ...truncated ({sizeLabel} total)</span>}
-        </pre>
+        <div className="mt-0.5">
+          <SmartContent content={output.slice(0, 5000)} maxHeight={200} compact />
+        </div>
       )}
     </div>
   );

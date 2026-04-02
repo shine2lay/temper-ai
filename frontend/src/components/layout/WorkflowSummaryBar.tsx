@@ -67,6 +67,16 @@ export function WorkflowSummaryBar() {
     return result;
   }, [stages]);
 
+  const slowestStage = useMemo(() => {
+    return pipeline.reduce<{ name: string; dur: number }>(
+      (max, s) => {
+        const dur = stages.get(s.name)?.duration_seconds ?? 0;
+        return dur > max.dur ? { name: s.name, dur } : max;
+      },
+      { name: '', dur: 0 },
+    );
+  }, [pipeline, stages]);
+
   if (!workflow) return null;
 
   const stagesFailed = counts.failedStages > 0 ? ` (${counts.failedStages} failed)` : '';
@@ -135,16 +145,36 @@ export function WorkflowSummaryBar() {
       })()}
       {pipeline.length > 0 && (
         <div className="flex items-center gap-0.5 ml-2 border-l border-temper-border/30 pl-3" title="Stage pipeline">
-          {pipeline.map((s, i) => (
-            <div key={s.name} className="flex items-center">
-              {i > 0 && <div className="w-2 h-px bg-temper-border/40" />}
-              <div
-                className="w-1.5 h-1.5 rounded-full shrink-0"
-                style={{ backgroundColor: pipelineColor(s.status) }}
-                title={`${s.name}: ${s.status}`}
-              />
-            </div>
-          ))}
+          {pipeline.map((s, i) => {
+            const isSlowest = slowestStage.dur > 0 && s.name === slowestStage.name;
+            const stageDur = stages.get(s.name)?.duration_seconds;
+            const dotTitle = isSlowest
+              ? `${s.name}: ${s.status} — bottleneck (${formatDuration(stageDur)})`
+              : `${s.name}: ${s.status}${stageDur != null ? ` (${formatDuration(stageDur)})` : ''}`;
+            return (
+              <div key={s.name} className="flex items-center">
+                {i > 0 && <div className="w-2 h-px bg-temper-border/40" />}
+                <div
+                  className={
+                    isSlowest
+                      ? 'rounded-full shrink-0 ring-2 ring-yellow-400/70 ring-offset-1 ring-offset-temper-panel'
+                      : 'rounded-full shrink-0'
+                  }
+                  style={{
+                    backgroundColor: pipelineColor(s.status),
+                    width: isSlowest ? 8 : 6,
+                    height: isSlowest ? 8 : 6,
+                  }}
+                  title={dotTitle}
+                />
+                {isSlowest && (
+                  <span className="ml-1 text-[9px] font-medium text-yellow-400/80 leading-none">
+                    slow
+                  </span>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

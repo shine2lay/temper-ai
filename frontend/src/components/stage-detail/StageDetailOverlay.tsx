@@ -172,7 +172,7 @@ export function StageDetailOverlay() {
                 <ErrorBoundary>
                   <OutputsTab
                     agents={agents}
-                    stageOutputData={undefined}
+                    stageOutputData={stage.output_data ?? undefined}
                     strategy={strategy}
                   />
                 </ErrorBoundary>

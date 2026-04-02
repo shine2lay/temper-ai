@@ -7,6 +7,7 @@ import { MetricCell } from '@/components/shared/MetricCell';
 import { MarkdownDisplay } from '@/components/shared/MarkdownDisplay';
 import { CopyButton } from '@/components/shared/CopyButton';
 import { ErrorDisplay } from '@/components/shared/ErrorDisplay';
+import { SmartContent } from '@/components/shared/SmartContent';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { StreamingPanel } from '@/components/panels/StreamingPanel';
 import { Badge } from '@/components/ui/badge';
@@ -37,7 +38,8 @@ export function AgentDetailPanel({ agentId }: AgentDetailPanelProps) {
 
   const config = ag.agent_config_snapshot?.agent;
   const { prompt: promptTokens, completion: completionTokens } = deriveTokenBreakdown(ag);
-  const totalTokens = Math.max(ag.total_tokens ?? 0, 1);
+  const totalDisplay = (ag.total_tokens ?? 0) > 0 ? ag.total_tokens : (promptTokens + completionTokens);
+  const totalTokens = Math.max(totalDisplay ?? 0, 1);
   const promptPct = (promptTokens / totalTokens) * 100;
   const completionPct = (completionTokens / totalTokens) * 100;
 
@@ -96,7 +98,7 @@ export function AgentDetailPanel({ agentId }: AgentDetailPanelProps) {
       <div className="grid grid-cols-3 gap-2">
         <MetricCell label="Prompt Tokens" value={formatTokens(promptTokens)} compact />
         <MetricCell label="Completion Tokens" value={formatTokens(completionTokens)} compact />
-        <MetricCell label="Total Tokens" value={formatTokens(ag.total_tokens)} compact />
+        <MetricCell label="Total Tokens" value={formatTokens(totalDisplay)} compact />
         <MetricCell label="Cost" value={formatCost(cost)} compact />
         <MetricCell label="Duration" value={formatDuration(ag.duration_seconds)} compact />
         <MetricCell label="LLM Calls" value={String(ag.total_llm_calls)} compact />
@@ -160,20 +162,14 @@ export function AgentDetailPanel({ agentId }: AgentDetailPanelProps) {
       {/* System Prompt — the most important context for understanding agent behavior */}
       {config?.system_prompt && (
         <CollapsibleSection title="System Prompt" defaultOpen>
-          <pre className="mt-1 text-xs text-temper-text whitespace-pre-wrap bg-temper-surface rounded p-2 max-h-48 overflow-auto border border-temper-border/30">
-            {config.system_prompt}
-          </pre>
-          <CopyButton text={config.system_prompt} className="mt-1" />
+          <SmartContent content={config.system_prompt} maxHeight={200} className="mt-1" />
         </CollapsibleSection>
       )}
 
       {/* Task Template — what the agent was actually told to do */}
       {config?.task_template && (
         <CollapsibleSection title="Task Template" defaultOpen>
-          <pre className="mt-1 text-xs text-temper-text whitespace-pre-wrap bg-temper-surface rounded p-2 max-h-48 overflow-auto border border-temper-border/30">
-            {config.task_template}
-          </pre>
-          <CopyButton text={config.task_template} className="mt-1" />
+          <SmartContent content={config.task_template} maxHeight={200} className="mt-1" />
         </CollapsibleSection>
       )}
 
@@ -184,15 +180,12 @@ export function AgentDetailPanel({ agentId }: AgentDetailPanelProps) {
 
       <CollapsibleSection title="Output">
         {ag.output && (
-          <>
-            <MarkdownDisplay content={ag.output} className="mt-1 max-h-64 overflow-auto" />
-            <CopyButton text={ag.output} className="mt-1" />
-          </>
+          <SmartContent content={ag.output} maxHeight={400} className="mt-1" />
         )}
         {ag.output_data && Object.keys(ag.output_data).length > 0 && (
           <div className={ag.output ? 'mt-3 pt-3 border-t border-temper-border/30' : ''}>
-            <span className="text-[10px] text-temper-text-muted uppercase tracking-wide">Structured Output</span>
-            <JsonViewer data={ag.output_data} />
+            <span className="text-[10px] text-temper-text-muted uppercase tracking-wide block mb-1">Structured Output</span>
+            <SmartContent content={JSON.stringify(ag.output_data, null, 2)} maxHeight={400} />
           </div>
         )}
         {!ag.output && (!ag.output_data || Object.keys(ag.output_data).length === 0) && (

@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useRef, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import {
   ReactFlow,
   Controls,
   MiniMap,
   Background,
   BackgroundVariant,
+  Panel,
   useReactFlow,
   type OnInit,
   type NodeChange,
@@ -42,10 +43,77 @@ export function ExecutionDAG() {
   const prevNodeCountRef = useRef(0);
   const expandedStages = useExecutionStore((s) => s.expandedStages);
   const stages = useExecutionStore((s) => s.stages);
+  const agents = useExecutionStore((s) => s.agents);
   const select = useExecutionStore((s) => s.select);
   const clearSelection = useExecutionStore((s) => s.clearSelection);
   const relayoutTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const focusedNodeIndexRef = useRef<number>(-1);
+  const [search, setSearch] = useState('');
+
+  // Compute which agent IDs match the current search term.
+  // Agent-type nodes use a stage name as their node id; stage-type nodes
+  // are identified by their child agent ids. We track matching node ids
+  // (stage names) so we can dim non-matching nodes.
+  const matchingNodeIds = useCallback((): Set<string> | null => {
+    const term = search.trim().toLowerCase();
+    if (!term) return null;
+
+    const matched = new Set<string>();
+
+    // Check each agent
+    for (const [, agent] of agents) {
+      const haystack = [
+        agent.output ?? '',
+        JSON.stringify(agent.output_data ?? ''),
+      ].join(' ').toLowerCase();
+
+      if (haystack.includes(term)) {
+        matched.add(agent.id);
+      }
+    }
+
+    // Build a set of node ids (stage names) that contain a matching agent
+    const matchedNodeIds = new Set<string>();
+    for (const [nodeId, stage] of stages) {
+      const nodeAgents = stage.agents ?? (stage.agent ? [stage.agent] : []);
+      const hasMatch = nodeAgents.some((a) => matched.has(a.id));
+      if (hasMatch) matchedNodeIds.add(nodeId);
+    }
+
+    return matchedNodeIds;
+  }, [search, agents, stages]);
+
+  // Apply opacity to ReactFlow nodes based on search matches.
+  useEffect(() => {
+    const matchIds = matchingNodeIds();
+    if (matchIds === null) {
+      // No active search — restore full opacity on all nodes
+      setNodes((prev) =>
+        prev.map((n) => {
+          if (n.style?.opacity === 1 || n.style?.opacity === undefined) return n;
+          const { opacity: _removed, ...rest } = n.style ?? {};
+          return { ...n, style: rest };
+        }),
+      );
+      return;
+    }
+
+    setNodes((prev) =>
+      prev.map((n) => {
+        // For child nodes (parentId set), match based on parent stage
+        const matchId = n.parentId ?? n.id;
+        const isMatch = matchIds.has(matchId);
+        const targetOpacity = isMatch ? 1 : 0.25;
+        if (n.style?.opacity === targetOpacity) return n;
+        return { ...n, style: { ...n.style, opacity: targetOpacity } };
+      }),
+    );
+  }, [search, matchingNodeIds, setNodes]);
+
+  const matchCount = useCallback((): number => {
+    const ids = matchingNodeIds();
+    return ids ? ids.size : 0;
+  }, [matchingNodeIds]);
 
   const onInit: OnInit = useCallback(() => {
     setTimeout(() => fitView({ padding: DAG_FIT_PADDING }), 50);
@@ -242,6 +310,23 @@ export function ExecutionDAG() {
           style={{ width: 120, height: 80, opacity: 0.25 }}
           className="hover:!opacity-100 transition-opacity duration-200"
         />
+        <Panel position="top-right">
+          <div className="flex items-center gap-1.5">
+            <input
+              type="search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search outputs..."
+              aria-label="Search agent outputs"
+              className="px-2 py-1 text-xs bg-temper-surface border border-temper-border rounded text-temper-text placeholder:text-temper-text-dim w-48 focus:outline-none focus:border-temper-accent"
+            />
+            {search.trim() && (
+              <span className="text-[10px] text-temper-text-muted whitespace-nowrap">
+                {matchCount()} {matchCount() === 1 ? 'match' : 'matches'}
+              </span>
+            )}
+          </div>
+        </Panel>
       </ReactFlow>
     </div>
   );

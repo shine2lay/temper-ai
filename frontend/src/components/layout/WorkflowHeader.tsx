@@ -1,9 +1,9 @@
-import { useState, useEffect, type ReactNode } from 'react';
+import { useState, useEffect, useCallback, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Info, Pencil } from 'lucide-react';
+import { ArrowLeft, Info, Pencil, Download } from 'lucide-react';
 import { useExecutionStore } from '@/store/executionStore';
 import { StatusBadge } from '@/components/shared/StatusBadge';
-import { formatDuration, elapsedSeconds, cn } from '@/lib/utils';
+import { formatDuration, formatTokens, formatCost, elapsedSeconds, cn } from '@/lib/utils';
 import { DURATION_TICK_MS } from '@/lib/constants';
 import { ThemeToggle } from '@/components/shared/ThemeToggle';
 
@@ -13,6 +13,8 @@ export function WorkflowHeader() {
   const wsStatus = useExecutionStore((s) => s.wsStatus);
   const streamingContent = useExecutionStore((s) => s.streamingContent);
   const agents = useExecutionStore((s) => s.agents);
+  const stages = useExecutionStore((s) => s.stages);
+  const llmCalls = useExecutionStore((s) => s.llmCalls);
   const select = useExecutionStore((s) => s.select);
 
   const [elapsed, setElapsed] = useState(0);
@@ -83,6 +85,114 @@ export function WorkflowHeader() {
     );
   }
 
+  const taskInput = workflow?.input_data;
+  const taskPreview = (() => {
+    if (!taskInput) return null;
+    const raw = taskInput.task ?? taskInput.input ?? taskInput.prompt ?? Object.values(taskInput)[0];
+    if (!raw) return null;
+    const str = typeof raw === 'string' ? raw : JSON.stringify(raw);
+    return str.length > 120 ? str.slice(0, 120) + '…' : str;
+  })();
+
+  const exportReport = useCallback(() => {
+    if (!workflow) return;
+
+    const TRUNC = 2000;
+    const trunc = (s: string) => (s.length > TRUNC ? s.slice(0, TRUNC) + '\n…(truncated)' : s);
+
+    const lines: string[] = [];
+
+    lines.push(`# Workflow Report: ${workflow.workflow_name}`);
+    lines.push('');
+    lines.push(`| Field | Value |`);
+    lines.push(`|---|---|`);
+    lines.push(`| Status | ${workflow.status} |`);
+    lines.push(`| Duration | ${formatDuration(workflow.duration_seconds)} |`);
+    lines.push(`| Total Tokens | ${formatTokens(workflow.total_tokens)} |`);
+    lines.push(`| Total Cost | ${formatCost(workflow.total_cost_usd)} |`);
+    lines.push(`| LLM Calls | ${workflow.total_llm_calls ?? 0} |`);
+    lines.push(`| Tool Calls | ${workflow.total_tool_calls ?? 0} |`);
+    if (workflow.start_time) lines.push(`| Started | ${workflow.start_time} |`);
+    if (workflow.end_time) lines.push(`| Ended | ${workflow.end_time} |`);
+    lines.push('');
+
+    if (workflow.input_data) {
+      lines.push('## Input');
+      lines.push('```json');
+      lines.push(trunc(JSON.stringify(workflow.input_data, null, 2)));
+      lines.push('```');
+      lines.push('');
+    }
+
+    lines.push('## Stages');
+    lines.push('');
+
+    for (const [, stage] of stages) {
+      const stageName = stage.stage_name ?? stage.name ?? stage.id;
+      lines.push(`### Stage: ${stageName}`);
+      lines.push('');
+      lines.push(`- **Status:** ${stage.status}`);
+      lines.push(`- **Duration:** ${formatDuration(stage.duration_seconds)}`);
+      if (stage.error_message) lines.push(`- **Error:** ${stage.error_message}`);
+      lines.push('');
+
+      const nodeAgents = stage.agents ?? (stage.agent ? [stage.agent] : []);
+      for (const agentRef of nodeAgents) {
+        const agent = agents.get(agentRef.id) ?? agentRef;
+        const agentName = agent.agent_name ?? agent.name ?? agent.id;
+        lines.push(`#### Agent: ${agentName}`);
+        lines.push('');
+        lines.push(`- **Status:** ${agent.status}`);
+        lines.push(`- **Duration:** ${formatDuration(agent.duration_seconds)}`);
+        lines.push(`- **Tokens:** ${formatTokens(agent.total_tokens)} | **Cost:** ${formatCost(agent.estimated_cost_usd)}`);
+        lines.push(`- **LLM Calls:** ${agent.total_llm_calls} | **Tool Calls:** ${agent.total_tool_calls}`);
+
+        if (agent.output) {
+          lines.push('');
+          lines.push('**Output:**');
+          lines.push('');
+          lines.push(trunc(agent.output));
+        } else if (agent.output_data) {
+          lines.push('');
+          lines.push('**Output Data:**');
+          lines.push('```json');
+          lines.push(trunc(JSON.stringify(agent.output_data, null, 2)));
+          lines.push('```');
+        }
+
+        if (agent.error_message) {
+          lines.push('');
+          lines.push(`**Error:** ${agent.error_message}`);
+        }
+        lines.push('');
+      }
+    }
+
+    if (llmCalls.size > 0) {
+      lines.push('## LLM Call Summary');
+      lines.push('');
+      lines.push('| Model | Tokens | Cost | Duration | Status |');
+      lines.push('|---|---|---|---|---|');
+      for (const [, call] of llmCalls) {
+        const model = call.model ?? call.provider ?? 'unknown';
+        lines.push(
+          `| ${model} | ${formatTokens(call.total_tokens)} | ${formatCost(call.estimated_cost_usd)} | ${formatDuration(call.duration_seconds)} | ${call.status} |`,
+        );
+      }
+      lines.push('');
+    }
+
+    const markdown = lines.join('\n');
+    const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    const safeName = workflow.workflow_name.replace(/[^a-z0-9_-]/gi, '_');
+    anchor.href = url;
+    anchor.download = `${safeName}_report.md`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }, [workflow, stages, agents, llmCalls]);
+
   return (
     <>
       <header className="flex items-center gap-4 bg-temper-panel px-4 py-3 border-b border-temper-border shrink-0">
@@ -142,9 +252,24 @@ export function WorkflowHeader() {
             Edit in Studio
           </Link>
         )}
+        {workflow && (
+          <button
+            onClick={exportReport}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-temper-surface text-temper-text-muted hover:text-temper-accent hover:bg-temper-accent/10 border border-temper-border transition-colors shrink-0"
+            aria-label="Export run as Markdown report"
+          >
+            <Download className="w-3 h-3" />
+            Export
+          </button>
+        )}
 
         <div className="ml-auto flex items-center gap-2"><ThemeToggle />{wsIndicator}</div>
       </header>
+      {taskPreview && (
+        <div className="px-4 py-1 bg-temper-surface/30 border-b border-temper-border/20 text-xs text-temper-text-dim truncate shrink-0">
+          <span className="text-temper-text-muted mr-1">Task:</span>{taskPreview}
+        </div>
+      )}
       {workflow?.status === 'failed' && workflow?.error_message && (
         <div
           onClick={() => setErrorExpanded(!errorExpanded)}

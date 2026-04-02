@@ -107,6 +107,7 @@ class LLMAgent(AgentABC):
                     "output": result.output[:5000] if result.output else "",
                     "output_length": len(result.output),
                     "has_structured_output": result.structured_output is not None,
+                    "structured_output": result.structured_output,
                     "tokens": result.tokens.total_tokens,
                     "cost_usd": result.cost_usd,
                     "llm_calls": result.llm_calls,

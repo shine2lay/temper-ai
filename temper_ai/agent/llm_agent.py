@@ -300,7 +300,7 @@ class LLMAgent(AgentABC):
                     chunk_type=chunk_type,
                     done=done,
                 )
-            except Exception:
+            except Exception: # noqa
                 pass  # Best-effort — never block LLM streaming  # noqa: B110
 
         return on_chunk

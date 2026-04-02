@@ -94,7 +94,7 @@ def _cmd_run(args) -> None:
         for yaml_file in sorted(config_dir.rglob("*.yaml")):
             try:
                 import_yaml(str(yaml_file), store)
-            except Exception:
+            except Exception: # noqa
                 pass  # noqa: B110
 
     # Load workflow
@@ -283,7 +283,7 @@ def _cmd_validate(args) -> None:
         for yaml_file in sorted(config_dir.rglob("*.yaml")):
             try:
                 import_yaml(str(yaml_file), store)
-            except Exception:
+            except Exception: # noqa
                 pass  # noqa: B110
 
     from temper_ai.stage.loader import GraphLoader

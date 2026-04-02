@@ -28,6 +28,12 @@ class BanditRule(ExternalToolRule):
             return []
 
         for item in data.get("results", []):
+            # Skip findings on lines with # noqa or # nosec
+            line_no = item.get("line_number", 0)
+            filename = item.get("filename", "")
+            if _line_has_suppression(filename, line_no):
+                continue
+
             sev = item.get("issue_severity", "").lower()
             severity = {
                 "high": Severity.HIGH,
@@ -35,7 +41,6 @@ class BanditRule(ExternalToolRule):
                 "low": Severity.LOW,
             }.get(sev, Severity.MEDIUM)
 
-            filename = item.get("filename", "")
             try:
                 rel = str(filename).split(str(ctx.src_dir.name) + "/", 1)[-1]
             except (IndexError, ValueError):
@@ -45,7 +50,7 @@ class BanditRule(ExternalToolRule):
                 rule=f"{self.key}_{sev}" if sev in ("high", "medium") else self.key,
                 message=f"[{item.get('test_id', '')}] {item.get('issue_text', '')}",
                 file=rel,
-                line=item.get("line_number", 0),
+                line=line_no,
                 severity=severity,
             ))
 
@@ -179,3 +184,15 @@ class PipAuditRule(ExternalToolRule):
                 ))
 
         return findings
+
+
+def _line_has_suppression(filepath: str, line_no: int) -> bool:
+    """Check if a source line has # noqa or # nosec."""
+    try:
+        with open(filepath) as f:
+            for i, line in enumerate(f, 1):
+                if i == line_no:
+                    return "# noqa" in line or "# nosec" in line
+    except (OSError, UnicodeDecodeError):
+        pass
+    return False

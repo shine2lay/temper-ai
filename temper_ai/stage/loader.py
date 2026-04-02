@@ -129,7 +129,7 @@ class GraphLoader:
 
         # Resolve each agent ref to a full config dict
         agent_configs = []
-        assert nc.agents is not None  # guaranteed by caller check
+        assert nc.agents is not None  # guaranteed by caller check # noqa: B101
         for agent_ref in nc.agents:
             if isinstance(agent_ref, str):
                 agent_config = {**self._defaults, **self._load_agent_config(agent_ref)}
@@ -163,7 +163,7 @@ class GraphLoader:
 
     def _resolve_explicit_stage(self, nc: NodeConfig) -> StageNode:
         """Resolve a stage with explicit child nodes."""
-        assert nc.nodes is not None  # guaranteed by caller check
+        assert nc.nodes is not None  # guaranteed by caller check # noqa: B101
         child_nodes = self._resolve_nodes(nc.nodes)
         return StageNode(nc, child_nodes)
 
@@ -173,7 +173,7 @@ class GraphLoader:
         Only fields explicitly set on the node (not defaults) override the ref.
         We detect this by comparing against a fresh default NodeConfig.
         """
-        assert nc.ref is not None  # guaranteed by caller
+        assert nc.ref is not None  # guaranteed by caller # noqa: B101
         ref_config = self._load_config(nc.ref, "stage")
         merged_data = dict(ref_config)
 

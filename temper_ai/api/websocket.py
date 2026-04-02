@@ -219,7 +219,7 @@ class WebSocketManager:
         """Send JSON message to a WebSocket."""
         try:
             await websocket.send_json(data)
-        except Exception:
+        except Exception: # noqa
             pass  # Connection might be closing  # noqa: B110
 
     def _disconnect(self, websocket: WebSocket, execution_id: str):

@@ -2,51 +2,39 @@ agent:
   name: sdlc_plan
   type: llm
   system_prompt: |
-    You are a senior software architect planning a code change.
-    Your job is to analyze the codebase and create a clear, actionable implementation plan.
+    You are a senior software architect. Create a focused implementation plan.
+
+    BE EFFICIENT: Read only the files you need (2-3 max), then output the plan.
+    Do NOT explore the entire codebase. The task is usually a single endpoint
+    or UI change — you only need to read the file you'll modify.
   task_template: |
-    ## Workspace
-    The repo is at: {{ workspace_path }}
+    Workspace: {{ workspace_path }}
 
-    ## Task
-    {{ task_description }}
+    Task: {{ task_description }}
 
-    ## Steps
-    1. Explore the project structure: run `ls -la {{ workspace_path }}` and `find {{ workspace_path }} -type f -name "*.py" -o -name "*.ts" -o -name "*.tsx" -o -name "*.js"` to understand the layout
-    2. Read the key files relevant to the task using `cat`
-    3. Understand how the existing code is organized (router prefixes, imports, patterns)
-    4. Create a clear, actionable implementation plan
+    Quick steps:
+    1. Run `ls {{ workspace_path }}/server/` to see backend files
+    2. Read the main routes file: `cat {{ workspace_path }}/server/routes.py`
+    3. Output your plan immediately
 
-    {% if static_check_output and 'OVERALL: FAIL' in static_check_output %}
-    ## STATIC CHECK FAILURES — FIX REQUIRED
-    The previous implementation failed static checks. Diagnose and plan fixes:
+    {% if static_check_output %}
+    STATIC CHECK FAILURES (fix these):
     {{ static_check_output }}
     {% endif %}
-
-    {% if quality_review_output and 'OVERALL: FAIL' in quality_review_output %}
-    ## QUALITY REVIEW FAILURES — FIX REQUIRED
-    The previous implementation was rejected by code review. Diagnose and plan fixes:
+    {% if quality_review_output %}
+    QUALITY REVIEW FAILURES (fix these):
     {{ quality_review_output }}
     {% endif %}
-
-    {% if test_runner_output and 'OVERALL: FAIL' in test_runner_output %}
-    ## TEST FAILURES — FIX REQUIRED
-    The previous implementation failed tests. Diagnose and plan fixes:
+    {% if test_runner_output %}
+    TEST FAILURES (fix these):
     {{ test_runner_output }}
     {% endif %}
-
-    {% if deploy_errors and deploy_errors | length > 5 %}
-    ## DEPLOY FAILURE — FIX REQUIRED
-    The code was pushed but Heroku deployment failed. The build errors are below.
-    If a log file path is mentioned, read it with `cat` for the full build output.
-    Common causes: TypeScript errors, unused imports, missing dependencies,
-    syntax errors not caught by local checks.
-
+    {% if deploy_errors %}
+    DEPLOY FAILURE (fix these):
     {{ deploy_errors }}
     {% endif %}
 
-    ## Output Format
     Output as JSON:
-    {"implementation_plan": "detailed step-by-step plan with exact file paths, what to change, and how", "commit_message": "short conventional commit message, e.g. feat: add version endpoint"}
-  max_iterations: 20
+    {"implementation_plan": "step-by-step with exact file paths and changes", "commit_message": "feat: ..."}
+  max_iterations: 10
   tools: [Bash]

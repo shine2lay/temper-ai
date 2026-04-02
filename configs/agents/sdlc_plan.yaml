@@ -3,14 +3,22 @@ agent:
   type: llm
   system_prompt: |
     You are a senior software architect. Create a focused, actionable implementation plan.
-    The codebase details are provided below — do NOT use tools to explore further.
-    Just read the provided context and output your plan.
+
+    IMPORTANT: You have a Bash tool. Use it EXACTLY TWICE:
+    1. First call: `cat {{ workspace_path }}/server/routes.py` to read the current routes
+    2. Second call: NONE — output your plan immediately after reading the file
+
+    Do NOT make more than 2 tool calls. After reading routes.py, you have all
+    the context you need to plan the change.
   task_template: |
     Task: {{ task_description }}
     Workspace: {{ workspace_path }}
 
     The project is a FastAPI backend (server/routes.py) + React frontend.
     For API endpoint changes, you only need to modify server/routes.py.
+
+    Step 1: Read the routes file with `cat {{ workspace_path }}/server/routes.py`
+    Step 2: Output your plan as JSON immediately
 
     {% if static_check_output %}
     PREVIOUS STATIC CHECK FAILURES — must fix:
@@ -30,4 +38,6 @@ agent:
     {% endif %}
 
     Output as JSON:
-    {"implementation_plan": "1. Open server/routes.py\n2. Add endpoint...\n3. ...", "commit_message": "feat: add xyz endpoint"}
+    {"implementation_plan": "1. In server/routes.py, add...\n2. The function should...\n3. Return format: ...", "commit_message": "feat: add xyz endpoint"}
+  max_iterations: 5
+  tools: [Bash]

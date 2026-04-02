@@ -80,21 +80,29 @@ def create_mcp_tools_from_agents(
     tools: dict[str, MCPTool] = {}
     configured_servers = set(mcp_manager.get_configured_servers())
 
-    if agent_configs:
-        # Scan agent configs for MCP tool references
-        for agent_cfg in agent_configs:
-            inner = agent_cfg.get("agent", agent_cfg)
-            for tool_ref in inner.get("tools", []):
-                if "." in tool_ref:
-                    server_name, tool_name = tool_ref.split(".", 1)
-                    if server_name in configured_servers and tool_ref not in tools:
-                        tools[tool_ref] = MCPTool(
-                            server_name=server_name,
-                            tool_name=tool_name,
-                            description=f"MCP tool from {server_name} server",
-                            input_schema={"type": "object", "properties": {}},
-                            mcp_manager=mcp_manager,
-                            event_loop=mcp_manager.event_loop,
-                        )
+    if not agent_configs:
+        return tools
+
+    for agent_cfg in agent_configs:
+        for tool_ref in _extract_mcp_tool_refs(agent_cfg):
+            if tool_ref in tools:
+                continue
+            server_name, tool_name = tool_ref.split(".", 1)
+            if server_name not in configured_servers:
+                continue
+            tools[tool_ref] = MCPTool(
+                server_name=server_name,
+                tool_name=tool_name,
+                description=f"MCP tool from {server_name} server",
+                input_schema={"type": "object", "properties": {}},
+                mcp_manager=mcp_manager,
+                event_loop=mcp_manager.event_loop,
+            )
 
     return tools
+
+
+def _extract_mcp_tool_refs(agent_config: dict) -> list[str]:
+    """Return all dotted tool references from a single agent config."""
+    inner = agent_config.get("agent", agent_config)
+    return [ref for ref in inner.get("tools", []) if "." in ref]

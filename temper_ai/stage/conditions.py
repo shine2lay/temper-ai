@@ -66,50 +66,61 @@ def _resolve_source(source: str, node_outputs: dict[str, NodeResult]) -> object:
     result = node_outputs[node_name]
     field = parts[1]
 
-    if field == "output":
-        return result.output
-    elif field == "status":
-        return result.status
-    elif field == "structured" and len(parts) >= 3:
-        if result.structured_output is None:
+    if field == "structured":
+        return _resolve_structured_field(result, parts[2:])
+
+    simple_fields = {
+        "output": result.output,
+        "status": result.status,
+        "cost_usd": result.cost_usd,
+        "total_tokens": result.total_tokens,
+        "error": result.error,
+    }
+    if field in simple_fields:
+        return simple_fields[field]
+
+    raise KeyError(f"Unknown field '{field}' on NodeResult")
+
+
+def _resolve_structured_field(result: NodeResult, subkeys: list[str]) -> object:
+    """Traverse structured_output using a list of nested keys."""
+    if not subkeys or result.structured_output is None:
+        return None
+    value: object = result.structured_output
+    for key in subkeys:
+        if isinstance(value, dict):
+            value = value.get(key)
+        else:
             return None
-        # Traverse nested fields: structured.verdict, structured.issues.count
-        value: object = result.structured_output
-        for key in parts[2:]:
-            if isinstance(value, dict):
-                value = value.get(key)
-            else:
-                return None
-        return value
-    elif field == "cost_usd":
-        return result.cost_usd
-    elif field == "total_tokens":
-        return result.total_tokens
-    elif field == "error":
-        return result.error
-    else:
-        raise KeyError(f"Unknown field '{field}' on NodeResult")
+    return value
 
 
 def _apply_operator(actual: object, operator: str, expected: object) -> bool:
-    """Apply comparison operator."""
-    if operator == "equals":
-        return actual == expected
-    elif operator == "not_equals":
-        return actual != expected
-    elif operator == "contains":
-        if isinstance(actual, str):
-            return str(expected) in actual
-        if isinstance(actual, (list, dict)):
-            return expected in actual
-        return False
-    elif operator == "in":
-        if isinstance(expected, (list, tuple)):
-            return actual in expected
-        return False
-    elif operator == "exists":
-        return actual is not None
-    elif operator == "not_exists":
-        return actual is None
-    else:
+    """Apply comparison operator using a dispatch table."""
+    dispatch = {
+        "equals": lambda a, e: a == e,
+        "not_equals": lambda a, e: a != e,
+        "exists": lambda a, e: a is not None,
+        "not_exists": lambda a, e: a is None,
+        "contains": _op_contains,
+        "in": _op_in,
+    }
+    if operator not in dispatch:
         raise ConditionError(f"Unknown operator '{operator}'")
+    return dispatch[operator](actual, expected)
+
+
+def _op_contains(actual: object, expected: object) -> bool:
+    """Implements 'contains' operator."""
+    if isinstance(actual, str):
+        return str(expected) in actual
+    if isinstance(actual, (list, dict)):
+        return expected in actual
+    return False
+
+
+def _op_in(actual: object, expected: object) -> bool:
+    """Implements 'in' operator."""
+    if isinstance(expected, (list, tuple)):
+        return actual in expected
+    return False

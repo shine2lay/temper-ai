@@ -68,161 +68,31 @@ def _cmd_run(args) -> None:
         format="%(message)s",
     )
 
-    # Parse inputs
-    inputs = {}
-    for item in args.input:
-        if "=" not in item:
-            print(f"Error: invalid input format '{item}' (expected key=value)", file=sys.stderr)
-            sys.exit(1)
-        key, value = item.split("=", 1)
-        inputs[key] = value
+    inputs = _parse_inputs(args.input)
 
-    # Initialize database — always needed for config store,
-    # --no-db only skips event persistence
     os.environ.setdefault("DATABASE_URL", "sqlite:///data/dev.db")
     from temper_ai.database import init_database
     init_database()
 
-    # Import config loader and load YAML configs into DB
-    from pathlib import Path
-    from temper_ai.config import ConfigStore
-    from temper_ai.config.importer import import_yaml
+    _load_configs(args.config_dir)
 
-    config_dir = Path(args.config_dir)
-    if config_dir.is_dir():
-        store = ConfigStore()
-        for yaml_file in sorted(config_dir.rglob("*.yaml")):
-            try:
-                import_yaml(str(yaml_file), store)
-            except Exception: # noqa
-                pass  # noqa: B110
+    nodes, config = _load_workflow(args.workflow)
 
-    # Load workflow
-    from temper_ai.stage.loader import GraphLoader
-
-    store = ConfigStore()
-    loader = GraphLoader(store)
-
-    try:
-        nodes, config = loader.load_workflow(args.workflow)
-    except Exception as exc:  # noqa: broad-except
-        print(f"Error loading workflow '{args.workflow}': {exc}", file=sys.stderr)
-        sys.exit(1)
-
-    # Initialize LLM providers
     from temper_ai.server import _init_llm_providers
-
     llm_providers = _init_llm_providers()
 
-    # Initialize memory
     from temper_ai.memory import InMemoryStore, MemoryService
     memory_service = MemoryService(InMemoryStore())
 
-    # Safety policies
-    policy_engine = None
-    if config.safety:
-        from temper_ai.safety import PolicyEngine
-        policy_engine = PolicyEngine.from_config(config.safety)
+    tool_executor = _build_tool_executor(args, config, nodes)
 
-    # Tool executor
-    from temper_ai.tools import TOOL_CLASSES
-    from temper_ai.tools.executor import ToolExecutor
-
-    tool_executor = ToolExecutor(
-        workspace_root=args.workspace,
-        policy_engine=policy_engine,
-    )
-    tool_executor.register_tools({name: cls() for name, cls in TOOL_CLASSES.items()})
-
-    # MCP tools (lazy connect — configured from YAML or env)
-    _mcp_loop = None
-    _mcp_thread = None
-    try:
-        import asyncio
-        import threading
-        from temper_ai.tools.mcp_client import MCPClientManager
-        from temper_ai.tools.mcp_tool import create_mcp_tools_from_agents
-
-        mcp_manager = MCPClientManager()
-
-        # Background event loop for MCP (stays alive for lazy connections)
-        _mcp_loop = asyncio.new_event_loop()
-        _mcp_thread = threading.Thread(target=_mcp_loop.run_forever, daemon=True)
-        _mcp_thread.start()
-
-        mcp_manager._event_loop = _mcp_loop
-        future = asyncio.run_coroutine_threadsafe(
-            mcp_manager.start(config_dir=args.config_dir), _mcp_loop
-        )
-        future.result(timeout=10)
-
-        # Scan loaded nodes for MCP tool references
-        agent_configs = []
-        for node in nodes:
-            if hasattr(node, "agent_config"):
-                agent_configs.append(node.agent_config)
-
-        mcp_tools = create_mcp_tools_from_agents(mcp_manager, agent_configs)
-        if mcp_tools:
-            tool_executor.register_tools(dict(mcp_tools))
-            # Pre-connect servers this workflow needs
-            errors = []
-            server_names = {t._server_name for t in mcp_tools.values()}
-            for name in server_names:
-                try:
-                    f = asyncio.run_coroutine_threadsafe(
-                        mcp_manager.ensure_connected(name), _mcp_loop
-                    )
-                    f.result(timeout=30)
-                except Exception as e:
-                    errors.append(f"MCP server '{name}': {e}")
-            if errors:
-                print("Error: Required MCP servers failed to connect:", file=sys.stderr)
-                for err in errors:
-                    print(f"  {err}", file=sys.stderr)
-                sys.exit(1)
-    except ImportError:
-        pass  # mcp package not installed — skip
-
-    # CLI printer + event recorder
-    from temper_ai.cli.printer import CLIPrinter
-    from temper_ai.observability.event_recorder import EventRecorder
-    from temper_ai.shared.types import ExecutionContext
-
-    execution_id = str(uuid.uuid4())
-    printer = CLIPrinter(verbosity=args.verbose)
-    recorder = EventRecorder(
-        execution_id,
-        notifier=printer,
-        persist=not args.no_db,
+    printer, recorder, context = _build_execution_context(
+        args, config, nodes, llm_providers, memory_service, tool_executor,
     )
 
-    # Build context
-    context = ExecutionContext(
-        run_id=execution_id,
-        workflow_name=config.name,
-        node_path="",
-        agent_name="",
-        event_recorder=recorder,
-        tool_executor=tool_executor,
-        memory_service=memory_service,
-        llm_providers=llm_providers,
-        workspace_path=args.workspace,
-    )
+    _print_workflow_header(printer, config)
 
-    # Print header
-    defaults = config.defaults or {}
-    printer.print_header(
-        workflow_name=config.name,
-        provider=defaults.get("provider", ""),
-        model=defaults.get("model", ""),
-        budget=str(config.safety.get("policies", [{}])[0].get("max_cost_usd", ""))
-        if config.safety else "",
-    )
-
-    # Execute
     from temper_ai.stage.executor import execute_graph
-
     try:
         result = execute_graph(
             nodes, inputs, context,
@@ -238,7 +108,6 @@ def _cmd_run(args) -> None:
     finally:
         tool_executor.shutdown(wait=False)
 
-    # Print final output if verbose
     if args.verbose >= 1 and result.output:
         from rich.console import Console
         from rich.panel import Panel
@@ -247,6 +116,159 @@ def _cmd_run(args) -> None:
         console.print(Panel(result.output[:2000], title="Final Output", border_style="green"))
 
     sys.exit(0 if result.status == "completed" else 1)
+
+
+def _parse_inputs(input_args: list) -> dict:
+    """Parse key=value input arguments into a dict."""
+    inputs = {}
+    for item in input_args:
+        if "=" not in item:
+            print(f"Error: invalid input format '{item}' (expected key=value)", file=sys.stderr)
+            sys.exit(1)
+        key, value = item.split("=", 1)
+        inputs[key] = value
+    return inputs
+
+
+def _load_configs(config_dir_path: str) -> None:
+    """Load YAML configs from a directory into the ConfigStore."""
+    from pathlib import Path
+    from temper_ai.config import ConfigStore
+    from temper_ai.config.importer import import_yaml
+
+    config_dir = Path(config_dir_path)
+    if config_dir.is_dir():
+        store = ConfigStore()
+        for yaml_file in sorted(config_dir.rglob("*.yaml")):
+            try:
+                import_yaml(str(yaml_file), store)
+            except Exception:  # noqa
+                pass  # noqa: B110
+
+
+def _load_workflow(workflow_name: str):
+    """Load a workflow by name. Exits on failure."""
+    from temper_ai.config import ConfigStore
+    from temper_ai.stage.loader import GraphLoader
+
+    store = ConfigStore()
+    loader = GraphLoader(store)
+    try:
+        return loader.load_workflow(workflow_name)
+    except Exception as exc:  # noqa: broad-except
+        print(f"Error loading workflow '{workflow_name}': {exc}", file=sys.stderr)
+        sys.exit(1)
+
+
+def _build_tool_executor(args, config, nodes):
+    """Build the ToolExecutor with safety policies and MCP tools wired in."""
+    from temper_ai.tools import TOOL_CLASSES
+    from temper_ai.tools.executor import ToolExecutor
+
+    policy_engine = None
+    if config.safety:
+        from temper_ai.safety import PolicyEngine
+        policy_engine = PolicyEngine.from_config(config.safety)
+
+    tool_executor = ToolExecutor(
+        workspace_root=args.workspace,
+        policy_engine=policy_engine,
+    )
+    tool_executor.register_tools({name: cls() for name, cls in TOOL_CLASSES.items()})
+
+    _init_mcp_tools(tool_executor, nodes, args.config_dir)
+    return tool_executor
+
+
+def _init_mcp_tools(tool_executor, nodes, config_dir: str) -> None:
+    """Initialize MCP tools and pre-connect required servers. No-op if mcp not installed."""
+    try:
+        import asyncio
+        import threading
+        from temper_ai.tools.mcp_client import MCPClientManager
+        from temper_ai.tools.mcp_tool import create_mcp_tools_from_agents
+    except ImportError:
+        return
+
+    mcp_manager = MCPClientManager()
+    mcp_loop = asyncio.new_event_loop()
+    mcp_thread = threading.Thread(target=mcp_loop.run_forever, daemon=True)
+    mcp_thread.start()
+
+    mcp_manager._event_loop = mcp_loop
+    future = asyncio.run_coroutine_threadsafe(
+        mcp_manager.start(config_dir=config_dir), mcp_loop
+    )
+    future.result(timeout=10)
+
+    agent_configs = [node.agent_config for node in nodes if hasattr(node, "agent_config")]
+    mcp_tools = create_mcp_tools_from_agents(mcp_manager, agent_configs)
+    if not mcp_tools:
+        return
+
+    tool_executor.register_tools(dict(mcp_tools))
+    _preconnect_mcp_servers(mcp_tools, mcp_manager, mcp_loop)
+
+
+def _preconnect_mcp_servers(mcp_tools, mcp_manager, mcp_loop) -> None:
+    """Pre-connect all MCP servers referenced by the loaded tools. Exits on failure."""
+    import asyncio
+
+    errors = []
+    server_names = {t._server_name for t in mcp_tools.values()}
+    for name in server_names:
+        try:
+            f = asyncio.run_coroutine_threadsafe(
+                mcp_manager.ensure_connected(name), mcp_loop
+            )
+            f.result(timeout=30)
+        except Exception as e:  # noqa: broad-except
+            errors.append(f"MCP server '{name}': {e}")
+
+    if errors:
+        print("Error: Required MCP servers failed to connect:", file=sys.stderr)
+        for err in errors:
+            print(f"  {err}", file=sys.stderr)
+        sys.exit(1)
+
+
+def _build_execution_context(args, config, nodes, llm_providers, memory_service, tool_executor):
+    """Create the CLI printer, event recorder, and ExecutionContext."""
+    from temper_ai.cli.printer import CLIPrinter
+    from temper_ai.observability.event_recorder import EventRecorder
+    from temper_ai.shared.types import ExecutionContext
+
+    execution_id = str(uuid.uuid4())
+    printer = CLIPrinter(verbosity=args.verbose)
+    recorder = EventRecorder(
+        execution_id,
+        notifier=printer,
+        persist=not args.no_db,
+    )
+    context = ExecutionContext(
+        run_id=execution_id,
+        workflow_name=config.name,
+        node_path="",
+        agent_name="",
+        event_recorder=recorder,
+        tool_executor=tool_executor,
+        memory_service=memory_service,
+        llm_providers=llm_providers,
+        workspace_path=args.workspace,
+    )
+    return printer, recorder, context
+
+
+def _print_workflow_header(printer, config) -> None:
+    """Print the workflow header with provider/model/budget details."""
+    defaults = config.defaults or {}
+    printer.print_header(
+        workflow_name=config.name,
+        provider=defaults.get("provider", ""),
+        model=defaults.get("model", ""),
+        budget=str(config.safety.get("policies", [{}])[0].get("max_cost_usd", ""))
+        if config.safety else "",
+    )
 
 
 def _cmd_serve(args) -> None:

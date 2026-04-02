@@ -72,18 +72,17 @@ class CLIPrinter:
 
     def notify_event(self, execution_id: str, event_type: str, data: dict) -> None:
         """Handle an event from the recorder."""
-        if event_type == "stage.started":
-            self._on_stage_started(data)
-        elif event_type == "agent.started":
-            self._on_agent_started(data)
-        elif event_type == "agent.completed":
-            self._on_agent_completed(data)
-        elif event_type == "agent.failed":
-            self._on_agent_failed(data)
-        elif event_type == "workflow.completed":
-            self._on_workflow_completed(data)
-        elif event_type == "workflow.failed":
-            self._on_workflow_failed(data)
+        dispatch = {
+            "stage.started": self._on_stage_started,
+            "agent.started": self._on_agent_started,
+            "agent.completed": self._on_agent_completed,
+            "agent.failed": self._on_agent_failed,
+            "workflow.completed": self._on_workflow_completed,
+            "workflow.failed": self._on_workflow_failed,
+        }
+        handler = dispatch.get(event_type)
+        if handler:
+            handler(data)
         # Other events (llm.call.*, tool.call.*) ignored in default/verbose mode
 
     def notify_stream_chunk(

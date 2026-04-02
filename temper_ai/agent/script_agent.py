@@ -34,27 +34,13 @@ class ScriptAgent(AgentABC):
         3. Return AgentResult with stdout as output
         """
         start = time.monotonic()
-
-        # Record agent start
         _record = context.event_recorder.record if context.event_recorder else _default_record
-        agent_event_id = _record(
-            EventType.AGENT_STARTED,
-            parent_id=context.parent_event_id,
-            execution_id=context.run_id,
-            status="running",
-            data={
-                "agent_name": self.name,
-                "node_path": context.node_path,
-                "type": "script",
-            },
-        )
+        agent_event_id = self._record_script_started(_record, context)
 
         try:
-            # 1. Render script template
             template = self.env.from_string(self.config["script_template"])
             script = template.render(**input_data)
 
-            # 2. Execute via tool_executor
             timeout = self.config.get("timeout_seconds", 30)
             tool_result = context.tool_executor.execute(
                 "Bash",
@@ -69,20 +55,7 @@ class ScriptAgent(AgentABC):
             duration = round(time.monotonic() - start, 3)
             status = Status.COMPLETED if tool_result.success else Status.FAILED
             output = str(tool_result.result) if tool_result.result else ""
-
-            # Record agent completion
-            _record(
-                EventType.AGENT_COMPLETED if tool_result.success else EventType.AGENT_FAILED,
-                parent_id=agent_event_id,
-                execution_id=context.run_id,
-                status=status.value,
-                data={
-                    "agent_name": self.name,
-                    "output_length": len(output),
-                    "duration_seconds": duration,
-                    "error": tool_result.error,
-                },
-            )
+            self._record_script_completed(_record, tool_result, output, duration, agent_event_id, context, status)
 
             return AgentResult(
                 status=status,
@@ -111,6 +84,36 @@ class ScriptAgent(AgentABC):
                 error=str(e),
                 duration_seconds=duration,
             )
+
+    def _record_script_started(self, _record, context: ExecutionContext) -> str:
+        """Emit AGENT_STARTED event and return the event id."""
+        return _record(
+            EventType.AGENT_STARTED,
+            parent_id=context.parent_event_id,
+            execution_id=context.run_id,
+            status="running",
+            data={
+                "agent_name": self.name,
+                "node_path": context.node_path,
+                "type": "script",
+            },
+        )
+
+    def _record_script_completed(self, _record, tool_result, output: str, duration: float,
+                                 agent_event_id: str, context: ExecutionContext, status) -> None:
+        """Emit AGENT_COMPLETED or AGENT_FAILED event after script execution."""
+        _record(
+            EventType.AGENT_COMPLETED if tool_result.success else EventType.AGENT_FAILED,
+            parent_id=agent_event_id,
+            execution_id=context.run_id,
+            status=status.value,
+            data={
+                "agent_name": self.name,
+                "output_length": len(output),
+                "duration_seconds": duration,
+                "error": tool_result.error,
+            },
+        )
 
     def validate_config(self) -> list[str]:
         errors = super().validate_config()

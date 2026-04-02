@@ -7,6 +7,7 @@
  * 3. Tools    — reference list of registered tools
  */
 import { useState, useCallback, type DragEvent, type KeyboardEvent as KBEvent } from 'react';
+import { useReactFlow } from '@xyflow/react';
 import { useDesignStore, defaultDesignStage, type DesignStage } from '@/store/designStore';
 import { useConfigs } from '@/hooks/useConfigAPI';
 import { useRegistry } from '@/hooks/useRegistry';
@@ -53,12 +54,19 @@ function OutlineItem({
   isSelected: boolean;
 }) {
   const selectStage = useDesignStore((s) => s.selectStage);
+  const { fitView } = useReactFlow();
   const color = STAGE_PALETTE[colorIndex % STAGE_PALETTE.length];
   const isSingleAgent = stage.agents.length === 1 && !stage.stage_ref;
 
+  const handleClick = () => {
+    selectStage(stage.name);
+    // Pan canvas to center the selected node
+    setTimeout(() => fitView({ nodes: [{ id: stage.name }], duration: 300, padding: 0.5 }), 50);
+  };
+
   return (
     <button
-      onClick={() => selectStage(stage.name)}
+      onClick={handleClick}
       className={`w-full text-left px-2 py-1 rounded flex items-center gap-2 transition-colors text-[11px] ${
         isSelected
           ? 'bg-temper-accent/15 text-temper-text'
@@ -70,7 +78,7 @@ function OutlineItem({
       <span className={`text-[9px] px-1 py-px rounded shrink-0 ${
         isSingleAgent ? 'bg-violet-900/30 text-violet-400' : 'bg-blue-900/30 text-blue-400'
       }`}>
-        {isSingleAgent ? 'agent' : `${stage.agents.length}a`}
+        {isSingleAgent ? 'agent' : stage.agents.length === 0 ? 'empty' : `${stage.agents.length}a`}
       </span>
     </button>
   );
@@ -82,11 +90,13 @@ function AgentTile({
   name,
   isAssigned,
   isUsed,
+  usedInStages,
   onAdd,
 }: {
   name: string;
   isAssigned: boolean;
   isUsed?: boolean;
+  usedInStages?: string;
   onAdd: () => void;
 }) {
   const onDragStart = (e: DragEvent) => {
@@ -112,7 +122,7 @@ function AgentTile({
       }`}
     >
       {isUsed && !isAssigned && (
-        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" title="Used in workflow" />
+        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" title={usedInStages ?? 'Used in workflow'} />
       )}
       <span className="truncate">{name}</span>
       {isAssigned && <span className="text-[9px] text-temper-text-dim ml-auto shrink-0">(in stage)</span>}
@@ -128,6 +138,8 @@ export function StagePalette() {
   const selectStage = useDesignStore((s) => s.selectStage);
   const addStage = useDesignStore((s) => s.addStage);
   const updateStage = useDesignStore((s) => s.updateStage);
+  const setAutoFocusStageName = useDesignStore((s) => s.setAutoFocusStageName);
+  const { fitView, screenToFlowPosition } = useReactFlow();
 
   const { data: agentData } = useConfigs('agent');
   const { data: registry } = useRegistry();
@@ -170,7 +182,7 @@ export function StagePalette() {
     [selectedStageName, selectedStage, stages, addStage, selectStage, updateStage],
   );
 
-  // Add a blank stage node
+  // Add a blank stage node — position at viewport center with auto-focus on name
   const handleAddBlankStage = useCallback(() => {
     const existing = new Set(stages.map((s) => s.name));
     let name = 'new_stage';
@@ -178,7 +190,9 @@ export function StagePalette() {
     while (existing.has(name)) { name = `new_stage_${n}`; n++; }
     addStage({ ...defaultDesignStage(name) });
     selectStage(name);
-  }, [stages, addStage, selectStage]);
+    setAutoFocusStageName(name);
+    setTimeout(() => fitView({ nodes: [{ id: name }], duration: 300, padding: 0.5 }), 100);
+  }, [stages, addStage, selectStage, setAutoFocusStageName, fitView]);
 
   const tools = registry?.tools ?? [];
   const strategies = registry?.strategies ?? [];
@@ -227,15 +241,19 @@ export function StagePalette() {
           </p>
         )}
         <div className="flex flex-col gap-px max-h-[300px] overflow-y-auto">
-          {filteredAgents.map((name) => (
+          {filteredAgents.map((agentName) => {
+            const stagesUsing = stages.filter(s => s.agents.includes(agentName)).map(s => s.name);
+            return (
             <AgentTile
-              key={name}
-              name={name}
-              isAssigned={assignedAgents.has(name)}
-              isUsed={usedInWorkflow.has(name)}
-              onAdd={() => handleAddAgent(name)}
+              key={agentName}
+              name={agentName}
+              isAssigned={assignedAgents.has(agentName)}
+              isUsed={usedInWorkflow.has(agentName)}
+              usedInStages={stagesUsing.length > 0 ? `Used in: ${stagesUsing.join(', ')}` : undefined}
+              onAdd={() => handleAddAgent(agentName)}
             />
-          ))}
+          );
+          })}
           {filteredAgents.length === 0 && (
             <p className="text-[10px] text-temper-text-dim px-1">
               {allAgents.length === 0 ? 'No agent configs found' : 'No matches'}

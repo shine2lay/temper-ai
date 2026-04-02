@@ -114,7 +114,9 @@ class AnthropicLLM(BaseLLM):
         final = stream.get_final_message()
         return _parse_response(final, self.model)
 
-    # Override base class methods that use httpx directly
+    # The Anthropic and Gemini providers use their SDK clients directly
+    # (via complete()/stream()) rather than the httpx-based base class methods.
+    # These stubs satisfy the abstract interface but are never called in practice.
     def _get_headers(self) -> dict[str, str]:
         return {}
 
@@ -125,13 +127,15 @@ class AnthropicLLM(BaseLLM):
         return {}
 
     def _parse_response(self, response: dict, latency_ms: int = 0) -> LLMResponse:
+        # Not used — SDK-based providers override complete()/stream() directly.
         return LLMResponse(content="", model=self.model, provider=self.PROVIDER_NAME)
 
-    def _consume_stream(
+    def _consume_stream(  # noqa: duplicate
         self,
         response: Any,
         on_chunk: StreamCallback | None,
     ) -> LLMResponse:
+        # Not used — streaming is handled in stream() via the Anthropic SDK client.
         return LLMResponse(content="", model=self.model, provider=self.PROVIDER_NAME)
 
 

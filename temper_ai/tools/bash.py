@@ -55,64 +55,51 @@ class Bash(BaseTool):
         if not command or not command.strip():
             return ToolResult(success=False, result="", error="Empty command")
 
-        # Validate against allowlist if configured
         allowed = self.config.get("allowed_commands", _DEFAULT_ALLOWED_COMMANDS)
-        base_cmd = command.strip().split()[0]
-        # Strip path prefixes (e.g., /usr/bin/python3 -> python3)
-        base_cmd_name = os.path.basename(base_cmd)
+        base_cmd_name = os.path.basename(command.strip().split()[0])
         if allowed and base_cmd_name not in allowed:
             return ToolResult(
                 success=False, result="",
                 error=f"Command '{base_cmd_name}' not in allowed list: {allowed}",
             )
 
-        # Determine working directory
         cwd = self.config.get("workspace_root")
+        return _run_subprocess(command, timeout, cwd)
 
-        try:
-            result = subprocess.run(
-                command,
-                shell=True,  # noqa: B602
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                cwd=cwd,
-                env=_safe_env(),
-            )
 
-            stdout = result.stdout
-            stderr = result.stderr
+def _run_subprocess(command: str, timeout: int, cwd: str | None) -> "ToolResult":
+    """Execute a shell command in a subprocess and return a ToolResult."""
+    try:
+        result = subprocess.run(
+            command,
+            shell=True,  # noqa: B602
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            cwd=cwd,
+            env=_safe_env(),
+        )
 
-            # Truncate large output
-            if len(stdout) > _MAX_OUTPUT_SIZE:
-                stdout = stdout[:_MAX_OUTPUT_SIZE] + "\n... (truncated)"
-            if len(stderr) > _MAX_OUTPUT_SIZE:
-                stderr = stderr[:_MAX_OUTPUT_SIZE] + "\n... (truncated)"
+        stdout = result.stdout[:_MAX_OUTPUT_SIZE] + "\n... (truncated)" if len(result.stdout) > _MAX_OUTPUT_SIZE else result.stdout
+        stderr = result.stderr[:_MAX_OUTPUT_SIZE] + "\n... (truncated)" if len(result.stderr) > _MAX_OUTPUT_SIZE else result.stderr
 
-            output = stdout
-            if stderr:
-                output = f"{stdout}\nSTDERR:\n{stderr}" if stdout else f"STDERR:\n{stderr}"
+        output = stdout
+        if stderr:
+            output = f"{stdout}\nSTDERR:\n{stderr}" if stdout else f"STDERR:\n{stderr}"
 
-            if result.returncode != 0:
-                return ToolResult(
-                    success=False,
-                    result=output,
-                    error=f"Command exited with code {result.returncode}",
-                    metadata={"exit_code": result.returncode},
-                )
-
-            return ToolResult(success=True, result=output)
-
-        except subprocess.TimeoutExpired:
+        if result.returncode != 0:
             return ToolResult(
-                success=False, result="",
-                error=f"Command timed out after {timeout}s",
+                success=False,
+                result=output,
+                error=f"Command exited with code {result.returncode}",
+                metadata={"exit_code": result.returncode},
             )
-        except Exception as e:
-            return ToolResult(
-                success=False, result="",
-                error=f"{type(e).__name__}: {e}",
-            )
+        return ToolResult(success=True, result=output)
+
+    except subprocess.TimeoutExpired:
+        return ToolResult(success=False, result="", error=f"Command timed out after {timeout}s")
+    except Exception as e:
+        return ToolResult(success=False, result="", error=f"{type(e).__name__}: {e}")
 
 
 def _safe_env() -> dict[str, str]:

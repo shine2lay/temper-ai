@@ -23,6 +23,16 @@ StreamCallback = Callable[[LLMStreamChunk], None]
 _RETRYABLE_STATUS_CODES = {429, 500, 502, 503}
 
 
+def _should_retry(exc: httpx.HTTPStatusError) -> bool:
+    """Return True if an HTTP status error is retryable."""
+    return exc.response.status_code in _RETRYABLE_STATUS_CODES
+
+
+def _compute_backoff(attempt: int) -> float:
+    """Return exponential backoff delay with jitter, capped at 30s."""
+    return min(2**attempt + random.random(), 30)  # noqa: B311
+
+
 class BaseLLM(ABC):
     """Abstract base for LLM providers.
 
@@ -100,7 +110,6 @@ class BaseLLM(ABC):
         for attempt in range(self.max_retries):
             try:
                 start = time.monotonic()
-
                 if stream:
                     with client.stream("POST", endpoint, json=request) as response:
                         response.raise_for_status()
@@ -115,39 +124,40 @@ class BaseLLM(ABC):
 
             except httpx.HTTPStatusError as e:
                 last_error = e
-                if e.response.status_code not in _RETRYABLE_STATUS_CODES:
-                    raise  # 4xx (except 429) — don't retry
+                if not _should_retry(e):
+                    raise
             except (httpx.TimeoutException, httpx.ConnectError) as e:
                 last_error = e
 
             if attempt < self.max_retries - 1:
-                delay = min(2**attempt + random.random(), 30)  # noqa: B311
-                logger.warning(
-                    "LLM call failed (attempt %d/%d): %s. Retrying in %.1fs",
-                    attempt + 1,
-                    self.max_retries,
-                    last_error,
-                    delay,
-                )
-                error_code = None
-                if isinstance(last_error, httpx.HTTPStatusError):
-                    error_code = last_error.response.status_code
-                record(
-                    EventType.LLM_RETRY,
-                    data={
-                        "model": self.model,
-                        "provider": self.provider_name,
-                        "attempt": attempt + 1,
-                        "max_retries": self.max_retries,
-                        "error_type": type(last_error).__name__,
-                        "error": str(last_error)[:500],
-                        "error_code": error_code,
-                        "retry_delay_s": round(delay, 1),
-                    },
-                )
+                delay = _compute_backoff(attempt)
+                self._record_retry(last_error, attempt, delay)
                 time.sleep(delay)
 
         raise last_error  # type: ignore[misc]
+
+    def _record_retry(self, last_error: Exception | None, attempt: int, delay: float) -> None:
+        """Log and record a retry event."""
+        logger.warning(
+            "LLM call failed (attempt %d/%d): %s. Retrying in %.1fs",
+            attempt + 1, self.max_retries, last_error, delay,
+        )
+        error_code = None
+        if isinstance(last_error, httpx.HTTPStatusError):
+            error_code = last_error.response.status_code
+        record(
+            EventType.LLM_RETRY,
+            data={
+                "model": self.model,
+                "provider": self.provider_name,
+                "attempt": attempt + 1,
+                "max_retries": self.max_retries,
+                "error_type": type(last_error).__name__,
+                "error": str(last_error)[:500],
+                "error_code": error_code,
+                "retry_delay_s": round(delay, 1),
+            },
+        )
 
     def close(self) -> None:
         if self._http_client is not None:

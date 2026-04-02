@@ -96,74 +96,91 @@ class ToolExecutor:
         parent_id = ctx.get("parent_id")
         execution_id = ctx.get("execution_id")
 
-        # Look up tool
         tool = self._tools.get(tool_name)
         if tool is None:
             error = f"Unknown tool: '{tool_name}'. Available: {sorted(self._tools)}"
-            record(
-                EventType.TOOL_UNKNOWN,
-                parent_id=parent_id,
-                execution_id=execution_id,
-                status="failed",
-                data={"tool_name": tool_name, "available": sorted(self._tools)},
-            )
+            record(EventType.TOOL_UNKNOWN, parent_id=parent_id, execution_id=execution_id,
+                   status="failed", data={"tool_name": tool_name, "available": sorted(self._tools)})
             return ToolResult(success=False, result="", error=error)
 
-        # Safety policy evaluation
-        if self.policy_engine:
-            from temper_ai.safety.base import ActionType
-            # Inject running cost/tokens for budget policy
-            policy_ctx = {
-                **ctx,
-                "run_cost_usd": self.run_cost_usd,
-                "run_tokens": self.run_tokens,
-            }
-            decision = self.policy_engine.evaluate(
-                ActionType.TOOL_CALL,
-                {"tool_name": tool_name, "tool_params": params},
-                policy_ctx,
-            )
-            if decision.action == "deny":
-                record(
-                    EventType.SAFETY_POLICY_TRIGGERED,
-                    parent_id=parent_id,
-                    execution_id=execution_id,
-                    status="blocked",
-                    data={
-                        "tool_name": tool_name,
-                        "policy_name": decision.policy_name,
-                        "reason": decision.reason,
-                        "action": "deny",
-                    },
-                )
-                return ToolResult(
-                    success=False, result="",
-                    error=f"Blocked by safety policy '{decision.policy_name}': {decision.reason}",
-                )
+        policy_block = self._evaluate_safety_policies(tool_name, params, ctx, parent_id, execution_id)
+        if policy_block is not None:
+            return policy_block
 
-        # Validate workspace paths
-        if self.workspace_root:
-            path_error = _validate_workspace_paths(params, self.workspace_root)
-            if path_error:
-                record(
-                    EventType.TOOL_BLOCKED,
-                    parent_id=parent_id,
-                    execution_id=execution_id,
-                    status="blocked",
-                    data={
-                        "tool_name": tool_name,
-                        "reason": "workspace_violation",
-                        "error": path_error,
-                        "workspace_root": self.workspace_root,
-                    },
-                )
-                return ToolResult(success=False, result="", error=path_error)
+        workspace_block = self._validate_workspace_paths(tool_name, params, parent_id, execution_id)
+        if workspace_block is not None:
+            return workspace_block
 
-        # Execute with timeout
         effective_timeout = min(timeout or self.default_timeout, _MAX_TIMEOUT)
-        return self._execute_with_timeout(
-            tool, tool_name, params, effective_timeout, parent_id, execution_id,
+        return self._execute_with_timeout(tool, tool_name, params, effective_timeout, parent_id, execution_id)
+
+    def _evaluate_safety_policies(
+        self,
+        tool_name: str,
+        params: dict[str, Any],
+        ctx: dict[str, Any],
+        parent_id: str | None,
+        execution_id: str | None,
+    ) -> ToolResult | None:
+        """Check safety policies. Returns a blocking ToolResult if denied, else None."""
+        if not self.policy_engine:
+            return None
+
+        from temper_ai.safety.base import ActionType
+        policy_ctx = {**ctx, "run_cost_usd": self.run_cost_usd, "run_tokens": self.run_tokens}
+        decision = self.policy_engine.evaluate(
+            ActionType.TOOL_CALL,
+            {"tool_name": tool_name, "tool_params": params},
+            policy_ctx,
         )
+        if decision.action != "deny":
+            return None
+
+        record(
+            EventType.SAFETY_POLICY_TRIGGERED,
+            parent_id=parent_id,
+            execution_id=execution_id,
+            status="blocked",
+            data={
+                "tool_name": tool_name,
+                "policy_name": decision.policy_name,
+                "reason": decision.reason,
+                "action": "deny",
+            },
+        )
+        return ToolResult(
+            success=False, result="",
+            error=f"Blocked by safety policy '{decision.policy_name}': {decision.reason}",
+        )
+
+    def _validate_workspace_paths(
+        self,
+        tool_name: str,
+        params: dict[str, Any],
+        parent_id: str | None,
+        execution_id: str | None,
+    ) -> ToolResult | None:
+        """Check that path params stay within the workspace. Returns blocking ToolResult or None."""
+        if not self.workspace_root:
+            return None
+
+        path_error = _validate_workspace_paths(params, self.workspace_root)
+        if not path_error:
+            return None
+
+        record(
+            EventType.TOOL_BLOCKED,
+            parent_id=parent_id,
+            execution_id=execution_id,
+            status="blocked",
+            data={
+                "tool_name": tool_name,
+                "reason": "workspace_violation",
+                "error": path_error,
+                "workspace_root": self.workspace_root,
+            },
+        )
+        return ToolResult(success=False, result="", error=path_error)
 
     def _execute_with_timeout(
         self,

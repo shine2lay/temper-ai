@@ -1,12 +1,6 @@
-"""Graph executor — the ONE execution engine.
-
-Used for top-level workflows AND nested stages. The executor doesn't know
-whether it's running a workflow or a sub-graph. It just iterates nodes in
-topological order, evaluates conditions, handles loops, resolves inputs,
-and calls node.run().
-
-Independent nodes at the same topological level run concurrently via
-ThreadPoolExecutor.
+"""Graph executor — iterates nodes in topological order, evaluates conditions,
+handles loops, resolves inputs, and calls node.run(). Independent nodes at
+the same topological level run concurrently via ThreadPoolExecutor.
 """
 
 from __future__ import annotations
@@ -25,7 +19,6 @@ from temper_ai.stage.node import Node
 
 logger = logging.getLogger(__name__)
 
-
 def execute_graph(
     nodes: list[Node],
     input_data: dict,
@@ -33,32 +26,14 @@ def execute_graph(
     graph_name: str = "",
     is_workflow: bool = False,
 ) -> NodeResult:
-    """Execute a graph of nodes.
-
-    Args:
-        nodes: List of Node instances (AgentNode or StageNode).
-        input_data: Input data for this graph.
-        context: Execution context with infrastructure.
-        graph_name: Name for event recording.
-        is_workflow: If True, emit WORKFLOW_START/END. Otherwise STAGE_START/END.
-
-    Returns:
-        NodeResult with aggregated results from all nodes.
-    """
+    """Execute a graph of nodes in topological order, concurrently where possible."""
     start_event = EventType.WORKFLOW_STARTED if is_workflow else EventType.STAGE_STARTED
-
     node_map = {node.name: node for node in nodes}
     batches = topological_sort(nodes)
-
     node_outputs: dict[str, NodeResult] = {}
-    all_agent_results = []
+    loop_counts: dict[str, int] = defaultdict(int)
     start = time.monotonic()
 
-    # Track loop iterations per node
-    loop_counts: dict[str, int] = defaultdict(int)
-
-    # Record graph/workflow start
-    # For nested stages, link to the parent node's event ID
     graph_event_id = context.event_recorder.record(
         start_event,
         data={"name": graph_name, "node_count": len(nodes)},
@@ -68,67 +43,8 @@ def execute_graph(
     )
 
     try:
-        batch_idx = 0
-        while batch_idx < len(batches):
-            batch = batches[batch_idx]
-
-            if len(batch) == 1:
-                node = batch[0]
-                result = _execute_single_node(
-                    node, input_data, node_outputs, context, graph_event_id
-                )
-                node_outputs[node.name] = result
-                all_agent_results.extend(result.agent_results)
-
-                # Handle loop
-                rewind = _handle_loop(
-                    node, result, node_outputs, loop_counts, batches, node_map
-                )
-                if rewind is not None:
-                    batch_idx = rewind
-                    continue
-            else:
-                # Parallel execution for independent nodes
-                results = _execute_parallel_batch(
-                    batch, input_data, node_outputs, context, graph_event_id
-                )
-                for node, result in results:
-                    node_outputs[node.name] = result
-                    all_agent_results.extend(result.agent_results)
-
-            batch_idx += 1
-
-        # Success — rebuild agent_results from final node_outputs (avoids loop duplicates)
-        all_agent_results = []
-        for node in nodes:
-            nr = node_outputs.get(node.name)
-            if nr:
-                all_agent_results.extend(nr.agent_results)
-
-        duration = time.monotonic() - start
-        total_cost = sum(r.cost_usd for r in node_outputs.values())
-        total_tokens = sum(r.total_tokens for r in node_outputs.values())
-
-        # Graph output = last non-skipped node's output
-        last_output = _get_final_output(nodes, node_outputs)
-
-        context.event_recorder.update_event(
-            graph_event_id,
-            status="completed",
-            data={"cost_usd": total_cost, "total_tokens": total_tokens,
-                  "duration_seconds": duration},
-        )
-
-        return NodeResult(
-            status=Status.COMPLETED,
-            output=last_output.output if last_output else "",
-            structured_output=last_output.structured_output if last_output else None,
-            agent_results=all_agent_results,
-            node_results=node_outputs,
-            cost_usd=total_cost,
-            total_tokens=total_tokens,
-            duration_seconds=duration,
-        )
+        _run_batches(batches, node_map, input_data, node_outputs, loop_counts, context, graph_event_id)
+        return _build_final_result(nodes, node_outputs, start, graph_event_id, context)
 
     except Exception as exc:
         duration = time.monotonic() - start
@@ -140,11 +56,73 @@ def execute_graph(
         return NodeResult(
             status=Status.FAILED,
             error=str(exc),
-            agent_results=all_agent_results,
+            agent_results=[r for nr in node_outputs.values() for r in nr.agent_results],
             node_results=node_outputs,
             duration_seconds=duration,
         )
 
+def _run_batches(
+    batches: list[list[Node]],
+    node_map: dict[str, Node],
+    input_data: dict,
+    node_outputs: dict[str, NodeResult],
+    loop_counts: dict[str, int],
+    context: ExecutionContext,
+    graph_event_id: str,
+) -> None:
+    """Iterate through topological batches, handling single-node loops and parallel execution."""
+    batch_idx = 0
+    while batch_idx < len(batches):
+        batch = batches[batch_idx]
+        if len(batch) == 1:
+            node = batch[0]
+            result = _execute_single_node(node, input_data, node_outputs, context, graph_event_id)
+            node_outputs[node.name] = result
+            rewind = _handle_loop(node, result, node_outputs, loop_counts, batches, node_map)
+            if rewind is not None:
+                batch_idx = rewind
+                continue
+        else:
+            results = _execute_parallel_batch(batch, input_data, node_outputs, context, graph_event_id)
+            for node, result in results:
+                node_outputs[node.name] = result
+        batch_idx += 1
+
+def _build_final_result(
+    nodes: list[Node],
+    node_outputs: dict[str, NodeResult],
+    start: float,
+    graph_event_id: str,
+    context: ExecutionContext,
+) -> NodeResult:
+    """Assemble the final NodeResult after all batches complete successfully."""
+    # Rebuild from final outputs to avoid duplicates from loop reruns
+    all_agent_results = [
+        r for node in nodes
+        for r in (node_outputs[node.name].agent_results if node.name in node_outputs else [])
+    ]
+
+    duration = time.monotonic() - start
+    total_cost = sum(r.cost_usd for r in node_outputs.values())
+    total_tokens = sum(r.total_tokens for r in node_outputs.values())
+    last_output = _get_final_output(nodes, node_outputs)
+
+    context.event_recorder.update_event(
+        graph_event_id,
+        status="completed",
+        data={"cost_usd": total_cost, "total_tokens": total_tokens, "duration_seconds": duration},
+    )
+
+    return NodeResult(
+        status=Status.COMPLETED,
+        output=last_output.output if last_output else "",
+        structured_output=last_output.structured_output if last_output else None,
+        agent_results=all_agent_results,
+        node_results=node_outputs,
+        cost_usd=total_cost,
+        total_tokens=total_tokens,
+        duration_seconds=duration,
+    )
 
 def _execute_single_node(
     node: Node,
@@ -154,20 +132,10 @@ def _execute_single_node(
     parent_event_id: str,
 ) -> NodeResult:
     """Execute one node with condition checking and input resolution."""
-    # Dependency check — skip if any dependency failed
-    for dep_name in node.depends_on:
-        dep_result = node_outputs.get(dep_name)
-        if dep_result and dep_result.status == Status.FAILED:
-            logger.warning(
-                "Node '%s' skipped — dependency '%s' failed",
-                node.name, dep_name,
-            )
-            return NodeResult(
-                status=Status.SKIPPED,
-                error=f"Dependency '{dep_name}' failed",
-            )
+    skip = _check_dependency_failures(node, node_outputs)
+    if skip is not None:
+        return skip
 
-    # Condition check
     if node.condition:
         try:
             if not evaluate_condition(node.condition, node_outputs):
@@ -177,32 +145,54 @@ def _execute_single_node(
             logger.warning("Condition evaluation failed for '%s': %s", node.name, exc)
             return NodeResult(status=Status.SKIPPED, error=str(exc))
 
-    # Resolve inputs
     resolved = _resolve_inputs(node, input_data, node_outputs)
-
-    # Inject strategy context for leader pattern
     resolved = _inject_strategy_context(node, resolved, node_outputs)
 
-    # Record node start (include DAG metadata for frontend dependency arrows)
-    node_event_data: dict[str, Any] = {
+    node_event_id = context.event_recorder.record(
+        EventType.STAGE_STARTED,
+        data=_build_node_event_data(node),
+        parent_id=parent_event_id,
+        execution_id=context.run_id,
+        status="running",
+    )
+
+    return _run_node_with_events(node, resolved, context, node_event_id)
+
+
+def _check_dependency_failures(
+    node: Node,
+    node_outputs: dict[str, NodeResult],
+) -> NodeResult | None:
+    """Return a SKIPPED NodeResult if any dependency failed, else None."""
+    for dep_name in node.depends_on:
+        dep_result = node_outputs.get(dep_name)
+        if dep_result and dep_result.status == Status.FAILED:
+            logger.warning("Node '%s' skipped — dependency '%s' failed", node.name, dep_name)
+            return NodeResult(status=Status.SKIPPED, error=f"Dependency '{dep_name}' failed")
+    return None
+
+
+def _build_node_event_data(node: Node) -> dict[str, Any]:
+    """Build the event data dict for a node-start event."""
+    data: dict[str, Any] = {
         "name": node.name,
         "type": node.config.type,
         "depends_on": node.config.depends_on or [],
         "strategy": node.config.strategy,
     }
     if node.config.loop_to:
-        node_event_data["loop_to"] = node.config.loop_to
-        node_event_data["max_loops"] = node.config.max_loops
+        data["loop_to"] = node.config.loop_to
+        data["max_loops"] = node.config.max_loops
+    return data
 
-    node_event_id = context.event_recorder.record(
-        EventType.STAGE_STARTED,
-        data=node_event_data,
-        parent_id=parent_event_id,
-        execution_id=context.run_id,
-        status="running",
-    )
 
-    # Pass node event ID to context so agents link their events to this node
+def _run_node_with_events(
+    node: Node,
+    resolved: dict,
+    context: ExecutionContext,
+    node_event_id: str,
+) -> NodeResult:
+    """Run a node and record completed/failed events around it."""
     from dataclasses import replace as dc_replace
     node_context = dc_replace(context, parent_event_id=node_event_id)
 
@@ -211,17 +201,11 @@ def _execute_single_node(
         result = node.run(resolved, node_context)
         duration = time.monotonic() - start
         result.duration_seconds = duration
-
         context.event_recorder.update_event(
             node_event_id,
             status=result.status.value,
-            data={
-                "cost_usd": result.cost_usd,
-                "total_tokens": result.total_tokens,
-                "duration_seconds": duration,
-            },
+            data={"cost_usd": result.cost_usd, "total_tokens": result.total_tokens, "duration_seconds": duration},
         )
-
         return result
 
     except Exception as exc:
@@ -231,11 +215,7 @@ def _execute_single_node(
             status="failed",
             data={"error": str(exc), "duration_seconds": duration},
         )
-        return NodeResult(
-            status=Status.FAILED,
-            error=str(exc),
-            duration_seconds=duration,
-        )
+        return NodeResult(status=Status.FAILED, error=str(exc), duration_seconds=duration)
 
 
 def _execute_parallel_batch(
@@ -328,62 +308,67 @@ def _resolve_inputs(
     input_map = node.config.input_map
     if not input_map:
         resolved = dict(input_data)
-        # Auto-inject dependency outputs so agents get upstream context
         deps = node.config.depends_on or []
-        dep_outputs = []
-        for dep_name in deps:
-            if dep_name in node_outputs:
-                dep_result = node_outputs[dep_name]
-                if dep_result.output:
-                    dep_outputs.append(f"[{dep_name}]:\n{dep_result.output}")
+        dep_outputs = [
+            f"[{dep_name}]:\n{node_outputs[dep_name].output}"
+            for dep_name in deps
+            if dep_name in node_outputs and node_outputs[dep_name].output
+        ]
         if dep_outputs:
             resolved["other_agents"] = "\n\n".join(dep_outputs)
         return resolved
 
-    resolved = {}
-    for local_name, source in input_map.items():
-        parts = source.split(".")
-        if len(parts) < 2:
-            resolved[local_name] = input_data.get(source)
-            continue
+    return {
+        local_name: _resolve_single_input(node.name, local_name, source, input_data, node_outputs)
+        for local_name, source in input_map.items()
+    }
 
-        source_node = parts[0]
 
-        # Input from workflow/parent graph
-        if source_node in ("workflow", "input"):
-            field = parts[1]
-            resolved[local_name] = input_data.get(field)
-        # Input from another node's output
-        elif source_node in node_outputs:
-            result = node_outputs[source_node]
-            field = parts[1]
-            if field == "output":
-                resolved[local_name] = result.output
-            elif field == "structured" and len(parts) >= 3:
-                if result.structured_output:
-                    value: Any = result.structured_output
-                    for key in parts[2:]:
-                        value = value.get(key) if isinstance(value, dict) else None
-                    resolved[local_name] = value
-                else:
-                    resolved[local_name] = None
-            elif field == "status":
-                resolved[local_name] = result.status
-            else:
-                logger.warning(
-                    "Node '%s' input_map '%s': unknown field '%s' on source '%s' "
-                    "(expected 'output', 'structured', or 'status')",
-                    node.name, local_name, field, source_node,
-                )
-                resolved[local_name] = None
-        else:
-            logger.warning(
-                "Node '%s' input_map '%s': source node '%s' has not produced output yet",
-                node.name, local_name, source_node,
-            )
-            resolved[local_name] = None
+def _resolve_single_input(
+    node_name: str,
+    local_name: str,
+    source: str,
+    input_data: dict,
+    node_outputs: dict[str, NodeResult],
+) -> Any:
+    """Resolve a single input_map entry from its source reference."""
+    parts = source.split(".")
+    if len(parts) < 2:
+        return input_data.get(source)
 
-    return resolved
+    source_node = parts[0]
+    field = parts[1]
+
+    if source_node in ("workflow", "input"):
+        return input_data.get(field)
+
+    if source_node not in node_outputs:
+        logger.warning(
+            "Node '%s' input_map '%s': source node '%s' has not produced output yet",
+            node_name, local_name, source_node,
+        )
+        return None
+
+    result = node_outputs[source_node]
+
+    if field == "output":
+        return result.output
+    if field == "status":
+        return result.status
+    if field == "structured" and len(parts) >= 3:
+        if not result.structured_output:
+            return None
+        value: Any = result.structured_output
+        for key in parts[2:]:
+            value = value.get(key) if isinstance(value, dict) else None
+        return value
+
+    logger.warning(
+        "Node '%s' input_map '%s': unknown field '%s' on source '%s' "
+        "(expected 'output', 'structured', or 'status')",
+        node_name, local_name, field, source_node,
+    )
+    return None
 
 
 def _inject_strategy_context(
@@ -416,10 +401,7 @@ def _inject_strategy_context(
 
 
 def topological_sort(nodes: list[Node]) -> list[list[Node]]:
-    """Kahn's algorithm returning batches of parallelizable nodes.
-
-    Returns list of batches. Each batch contains nodes with no
-    unresolved dependencies — they can run concurrently.
+    """Kahn's algorithm — returns batches of parallelizable nodes.
 
     Raises:
         CyclicDependencyError: If graph has circular dependencies.
@@ -434,38 +416,41 @@ def topological_sort(nodes: list[Node]) -> list[list[Node]]:
                 in_degree[node.name] += 1
                 dependents[dep].append(node.name)
 
-    # Start with nodes that have no dependencies
-    queue: deque[str] = deque(
-        name for name, degree in in_degree.items() if degree == 0
-    )
+    queue: deque[str] = deque(name for name, deg in in_degree.items() if deg == 0)
     batches: list[list[Node]] = []
-
     processed = 0
+
     while queue:
-        # All nodes currently in queue can run concurrently (same batch)
-        batch = []
-        next_queue: deque[str] = deque()
-
-        while queue:
-            name = queue.popleft()
-            batch.append(node_map[name])
-            processed += 1
-
-            for dependent in dependents[name]:
-                in_degree[dependent] -= 1
-                if in_degree[dependent] == 0:
-                    next_queue.append(dependent)
-
+        batch, next_queue, processed = _drain_batch(queue, node_map, dependents, in_degree, processed)
         batches.append(batch)
         queue = next_queue
 
     if processed != len(nodes):
         remaining = [n for n in node_map if in_degree.get(n, 0) > 0]
-        raise CyclicDependencyError(
-            f"Cyclic dependency detected involving nodes: {remaining}"
-        )
+        raise CyclicDependencyError(f"Cyclic dependency detected involving nodes: {remaining}")
 
     return batches
+
+
+def _drain_batch(
+    queue: deque[str],
+    node_map: dict[str, Node],
+    dependents: dict[str, list[str]],
+    in_degree: dict[str, int],
+    processed: int,
+) -> tuple[list[Node], deque[str], int]:
+    """Drain the current queue into a batch, returning (batch, next_queue, processed_count)."""
+    batch: list[Node] = []
+    next_queue: deque[str] = deque()
+    while queue:
+        name = queue.popleft()
+        batch.append(node_map[name])
+        processed += 1
+        for dependent in dependents[name]:
+            in_degree[dependent] -= 1
+            if in_degree[dependent] == 0:
+                next_queue.append(dependent)
+    return batch, next_queue, processed
 
 
 def _get_final_output(

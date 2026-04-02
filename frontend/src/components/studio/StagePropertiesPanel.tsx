@@ -429,8 +429,8 @@ export function StagePropertiesPanel() {
                   <span className="flex-1 text-[10px] text-temper-text-muted truncate">
                     {val.source}
                   </span>
-                  <span className="text-[8px] px-1 py-px rounded bg-temper-surface text-temper-text-dim shrink-0">
-                    cfg
+                  <span className="text-[8px] px-1 py-px rounded bg-temper-surface text-temper-text-dim shrink-0" title="Defined in referenced config file">
+                    from config
                   </span>
                 </div>
               ))}
@@ -482,7 +482,7 @@ export function StagePropertiesPanel() {
               min={1}
             />
           </ExpandedField>
-          <ExpandedField label="Conv. thr" labelWidth="w-20" tip="Convergence threshold (0-1). Collaboration stops early when agents' outputs are this similar. Higher = stricter convergence requirements.">
+          <ExpandedField label="Convergence" labelWidth="w-20" tip="Convergence threshold (0-1). Collaboration stops early when agents' outputs are this similar. Higher = stricter convergence requirements.">
             <InlineEdit
               value={stage.collaboration_convergence_threshold}
               onChange={(v) => onUpdate({ collaboration_convergence_threshold: Number(v) || STAGE_DEFAULTS.collaboration_convergence_threshold })}
@@ -511,7 +511,7 @@ export function StagePropertiesPanel() {
               readOnlyKeys={ro}
             />
           </ExpandedField>
-          <ExpandedField label="Budget/rnd" labelWidth="w-20" tip="Maximum LLM cost per collaboration round in USD. Prevents runaway costs in long debates.">
+          <ExpandedField label="Budget/round" labelWidth="w-20" tip="Maximum LLM cost per collaboration round in USD. Prevents runaway costs in long debates.">
             <InlineEdit
               value={stage.collaboration_round_budget_usd}
               onChange={(v) => onUpdate({ collaboration_round_budget_usd: v != null && v !== '' ? Number(v) : null })}
@@ -523,7 +523,7 @@ export function StagePropertiesPanel() {
               step={0.01}
             />
           </ExpandedField>
-          <ExpandedField label="Dlg rounds" labelWidth="w-20" tip="Max dialogue rounds (within a single collaboration round). Controls how many back-and-forth exchanges agents can have.">
+          <ExpandedField label="Dialogue rnds" labelWidth="w-20" tip="Max dialogue rounds (within a single collaboration round). Controls how many back-and-forth exchanges agents can have.">
             <InlineEdit
               value={stage.collaboration_max_dialogue_rounds}
               onChange={(v) => onUpdate({ collaboration_max_dialogue_rounds: Number(v) || STAGE_DEFAULTS.collaboration_max_dialogue_rounds })}
@@ -533,7 +533,7 @@ export function StagePropertiesPanel() {
               min={1}
             />
           </ExpandedField>
-          <ExpandedField label="Ctx window" labelWidth="w-20" tip="How many previous collaboration rounds are included in each agent's context. Lower values reduce prompt size but agents lose historical context.">
+          <ExpandedField label="Context rnds" labelWidth="w-20" tip="How many previous collaboration rounds are included in each agent's context. Lower values reduce prompt size but agents lose historical context.">
             <InlineEdit
               value={stage.collaboration_context_window_rounds}
               onChange={(v) => onUpdate({ collaboration_context_window_rounds: Number(v) || STAGE_DEFAULTS.collaboration_context_window_rounds })}
@@ -547,13 +547,18 @@ export function StagePropertiesPanel() {
 
         {/* Conflict Resolution */}
         <CollapsibleSection title="Conflict Resolution" tooltip="How to resolve conflicting outputs when multiple agents produce different results. Strategy determines the resolution algorithm, metrics determine what to optimize.">
-          <ExpandedField label="Strategy" tip="Algorithm for resolving conflicts. Leave empty for default. Options: confidence_weighted, voting, llm_judge, merit_based.">
-            <InlineEdit
+          <ExpandedField label="Strategy" tip="Algorithm for resolving conflicts. Leave empty for default.">
+            <InlineSelect
               value={stage.conflict_strategy}
-              onChange={(v) => onUpdate({ conflict_strategy: String(v ?? '') })}
-              emptyLabel="default"
+              options={[
+                { value: '', label: 'default' },
+                { value: 'confidence_weighted', label: 'confidence_weighted' },
+                { value: 'voting', label: 'voting' },
+                { value: 'llm_judge', label: 'llm_judge' },
+                { value: 'merit_based', label: 'merit_based' },
+              ]}
+              onChange={(v) => onUpdate({ conflict_strategy: v })}
               className={accentIf(stage, 'conflict_strategy')}
-              readOnly={ro}
             />
           </ExpandedField>
           <ExpandedField label="Metrics" tip="Which metrics to use for conflict resolution scoring. Agents are ranked by these metrics. Common: confidence, quality, relevance.">
@@ -584,7 +589,7 @@ export function StagePropertiesPanel() {
               step={0.05}
             />
           </ExpandedField>
-          <ExpandedField label="Esc. thr" labelWidth="w-20" tip="Escalation threshold (0-1). When all agents score below this, the conflict is escalated to a human reviewer or fallback policy.">
+          <ExpandedField label="Escalation" labelWidth="w-20" tip="Escalation threshold (0-1). When all agents score below this, the conflict is escalated to a human reviewer or fallback policy.">
             <InlineEdit
               value={stage.conflict_escalation_threshold}
               onChange={(v) => onUpdate({ conflict_escalation_threshold: Number(v) || STAGE_DEFAULTS.conflict_escalation_threshold })}
@@ -638,7 +643,7 @@ export function StagePropertiesPanel() {
               className={accentIf(stage, 'error_on_agent_failure')}
             />
           </ExpandedField>
-          <ExpandedField label="Min ok" tip="Minimum number of agents that must succeed for the stage to be considered successful. If fewer succeed, the stage fails.">
+          <ExpandedField label="Min success" tip="Minimum number of agents that must succeed for the stage to be considered successful. If fewer succeed, the stage fails.">
             <InlineEdit
               value={stage.error_min_successful_agents}
               onChange={(v) => onUpdate({ error_min_successful_agents: Number(v) || STAGE_DEFAULTS.error_min_successful_agents })}
@@ -680,7 +685,7 @@ export function StagePropertiesPanel() {
           </ExpandedField>
           {stage.quality_gates_enabled && (
             <>
-              <ExpandedField label="Min conf" labelWidth="w-20" tip="Minimum confidence score (0-1) required for stage output to pass. Agents report confidence in their structured output.">
+              <ExpandedField label="Min confidence" labelWidth="w-20" tip="Minimum confidence score (0-1) required for stage output to pass. Agents report confidence in their structured output.">
                 <InlineEdit
                   value={stage.quality_gates_min_confidence}
                   onChange={(v) => onUpdate({ quality_gates_min_confidence: Number(v) || STAGE_DEFAULTS.quality_gates_min_confidence })}
@@ -692,7 +697,7 @@ export function StagePropertiesPanel() {
                   step={0.05}
                 />
               </ExpandedField>
-              <ExpandedField label="Min finds" labelWidth="w-20" tip="Minimum number of findings/items in the output. Useful for analysis stages where you expect a certain level of detail.">
+              <ExpandedField label="Min findings" labelWidth="w-20" tip="Minimum number of findings/items in the output. Useful for analysis stages where you expect a certain level of detail.">
                 <InlineEdit
                   value={stage.quality_gates_min_findings}
                   onChange={(v) => onUpdate({ quality_gates_min_findings: Number(v) || STAGE_DEFAULTS.quality_gates_min_findings })}
@@ -755,7 +760,7 @@ export function StagePropertiesPanel() {
                   min={1}
                 />
               </ExpandedField>
-              <ExpandedField label="Sim. thr" labelWidth="w-20" tip="Similarity threshold (0-1). Outputs are considered converged when similarity exceeds this value. Higher = stricter.">
+              <ExpandedField label="Similarity" labelWidth="w-20" tip="Similarity threshold (0-1). Outputs are considered converged when similarity exceeds this value. Higher = stricter.">
                 <InlineEdit
                   value={stage.convergence_similarity_threshold}
                   onChange={(v) => onUpdate({ convergence_similarity_threshold: Number(v) || STAGE_DEFAULTS.convergence_similarity_threshold })}

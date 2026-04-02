@@ -149,7 +149,7 @@ export function StudioHeader({ onOpenLoadDialog }: StudioHeaderProps) {
     <header className="flex items-center gap-3 bg-temper-panel px-4 py-2.5 border-b border-temper-border shrink-0 relative z-30">
       {/* Back to home */}
       <button
-        onClick={() => navigate('/app')}
+        onClick={() => navigate('/')}
         className="w-7 h-7 flex items-center justify-center rounded text-sm text-temper-text-muted hover:text-temper-text hover:bg-temper-surface transition-colors"
         title="Back to workflows"
         aria-label="Back to workflows"

@@ -244,7 +244,7 @@ function AgentMiniCard({
               </span>
             )}
             <span className="text-[8px] text-temper-text-dim truncate ml-auto">
-              {summary.provider}/{summary.model}
+              {(summary.provider && summary.model) ? `${summary.provider}/${summary.model}` : (summary.provider || summary.model || 'default')}
               {summary.toolCount > 0 ? ` · ${summary.toolCount}t` : ''}
             </span>
           </div>
@@ -312,7 +312,7 @@ function AgentMiniCard({
         {/* Row 3: Provider/model + temp + max_tokens + timeout + risk */}
         <div className="flex items-center gap-1 mt-0.5 min-w-0 flex-wrap">
           <span className="text-[9px] text-temper-text-dim truncate">
-            {summary.provider}/{summary.model}
+            {(summary.provider && summary.model) ? `${summary.provider}/${summary.model}` : (summary.provider || summary.model || 'default')}
           </span>
           {showTemp && (
             <span className="text-[9px] text-temper-text-dim shrink-0">T={summary.temperature}</span>
@@ -896,13 +896,15 @@ export function DesignStageNode({ data }: NodeProps) {
         }
       }}
     >
-      {/* Target handle (left) */}
-      <Handle
-        type="target"
-        position={Position.Left}
-        id="left"
-        className="!bg-temper-border !w-2.5 !h-2.5"
-      />
+      {/* Target handle (left) — incoming dependency */}
+      <div title="Drag here to create a dependency from another stage">
+        <Handle
+          type="target"
+          position={Position.Left}
+          id="left"
+          className="!bg-temper-border !w-2.5 !h-2.5"
+        />
+      </div>
 
       {/* Delete button — visible on hover */}
       <button
@@ -1252,13 +1254,16 @@ export function DesignStageNode({ data }: NodeProps) {
         </div>
       )}
 
-      {/* Source handle (right) — stage-level dependency */}
-      <Handle
-        type="source"
-        position={Position.Right}
-        id="right"
-        className="!bg-temper-border !w-2.5 !h-2.5"
-      />
+      {/* Source handle (right) — stage-level dependency, offset upward to avoid overlapping out:output */}
+      <div title="Drag to create a dependency to another stage">
+        <Handle
+          type="source"
+          position={Position.Right}
+          id="right"
+          className="!bg-temper-border !w-2.5 !h-2.5"
+          style={{ top: '35%' }}
+        />
+      </div>
 
       {/* Loop source handles (bottom) — multiple for distinct loop-back edges */}
       {[0, 1, 2].map((i) => (

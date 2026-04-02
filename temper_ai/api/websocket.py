@@ -126,47 +126,48 @@ class WebSocketManager:
         Called from executor threads for each LLM token. Chunks are accumulated
         and flushed as a single 'llm_stream_batch' message to reduce WebSocket overhead.
         """
-        chunk = {
-            "agent_id": agent_id,
-            "content": content,
-            "chunk_type": chunk_type,
-            "done": done,
-        }
+        chunk = {"agent_id": agent_id, "content": content, "chunk_type": chunk_type, "done": done}
+        buffer_size = self._buffer_chunk(execution_id, chunk)
 
-        with self._chunk_lock:
-            self._chunk_buffers[execution_id].append(chunk)
-            buffer_size = len(self._chunk_buffers[execution_id])
-
-        # Flush immediately if buffer is full or stream is done
         if buffer_size >= CHUNK_BATCH_SIZE or done:
             self._flush_chunks(execution_id)
         elif execution_id not in self._flush_scheduled:
-            # Schedule a delayed flush — use call_soon_threadsafe from executor thread
-            self._flush_scheduled.add(execution_id)
-            try:
-                loop = asyncio.get_running_loop()
-            except RuntimeError:
-                loop = None
-            if loop and loop.is_running():
-                loop.call_later(
+            self._schedule_flush(execution_id)
+
+    def _buffer_chunk(self, execution_id: str, chunk: dict) -> int:
+        """Append chunk to the buffer under lock. Returns the new buffer size."""
+        with self._chunk_lock:
+            self._chunk_buffers[execution_id].append(chunk)
+            return len(self._chunk_buffers[execution_id])
+
+    def _schedule_flush(self, execution_id: str) -> None:
+        """Schedule a delayed flush on the event loop (sync-safe)."""
+        self._flush_scheduled.add(execution_id)
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop and loop.is_running():
+            loop.call_later(CHUNK_FLUSH_MS / 1000, self._flush_chunks, execution_id)
+            return
+
+        self._schedule_flush_threadsafe(execution_id)
+
+    def _schedule_flush_threadsafe(self, execution_id: str) -> None:
+        """Schedule a delayed flush via call_soon_threadsafe (from a non-async thread)."""
+        main_loop = getattr(self, '_main_loop', None)
+        try:
+            if main_loop and main_loop.is_running():
+                main_loop.call_soon_threadsafe(
+                    main_loop.call_later,
                     CHUNK_FLUSH_MS / 1000,
                     self._flush_chunks, execution_id,
                 )
             else:
-                # Not on async thread — schedule via call_soon_threadsafe
-                try:
-                    # Get the uvicorn event loop (stored at module import time)
-                    main_loop = getattr(self, '_main_loop', None)
-                    if main_loop and main_loop.is_running():
-                        main_loop.call_soon_threadsafe(
-                            main_loop.call_later,
-                            CHUNK_FLUSH_MS / 1000,
-                            self._flush_chunks, execution_id,
-                        )
-                    else:
-                        self._flush_chunks(execution_id)
-                except Exception:  # noqa: broad-except
-                    self._flush_chunks(execution_id)
+                self._flush_chunks(execution_id)
+        except Exception:  # noqa: broad-except
+            self._flush_chunks(execution_id)
 
     def _flush_chunks(self, execution_id: str):
         """Flush buffered chunks as a single batch message."""

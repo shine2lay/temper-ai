@@ -59,10 +59,39 @@ class LLMAgent(AgentABC):
         7. Return AgentResult with all tracking data
         """
         start = time.monotonic()
-
-        # Record agent start (parent_event_id links to the node event in the graph)
         _record = context.event_recorder.record if context.event_recorder else _default_record
-        agent_event_id = _record(
+        agent_event_id = self._record_agent_started(_record, input_data, context)
+
+        try:
+            result = self._execute(input_data, context, agent_event_id)
+            result.duration_seconds = round(time.monotonic() - start, 3)
+            self._record_agent_completed(_record, result, agent_event_id, context)
+            return result
+
+        except Exception as e:  # noqa: broad-except
+            duration = round(time.monotonic() - start, 3)
+            _record(
+                EventType.AGENT_FAILED,
+                parent_id=agent_event_id,
+                execution_id=context.run_id,
+                status="failed",
+                data={
+                    "agent_name": self.name,
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                    "duration_seconds": duration,
+                },
+            )
+            return AgentResult(
+                status=Status.FAILED,
+                output="",
+                error=str(e),
+                duration_seconds=duration,
+            )
+
+    def _record_agent_started(self, _record, input_data: dict, context: ExecutionContext) -> str:
+        """Emit AGENT_STARTED event and return the event id."""
+        return _record(
             EventType.AGENT_STARTED,
             parent_id=context.parent_event_id,
             execution_id=context.run_id,
@@ -91,52 +120,26 @@ class LLMAgent(AgentABC):
             },
         )
 
-        try:
-            result = self._execute(input_data, context, agent_event_id)
-
-            # Record agent completion
-            duration = time.monotonic() - start
-            result.duration_seconds = round(duration, 3)
-            _record(
-                EventType.AGENT_COMPLETED,
-                parent_id=agent_event_id,
-                execution_id=context.run_id,
-                status="completed",
-                data={
-                    "agent_name": self.name,
-                    "output": result.output[:5000] if result.output else "",
-                    "output_length": len(result.output),
-                    "has_structured_output": result.structured_output is not None,
-                    "structured_output": result.structured_output,
-                    "tokens": result.tokens.total_tokens,
-                    "cost_usd": result.cost_usd,
-                    "llm_calls": result.llm_calls,
-                    "tool_calls": result.tool_calls,
-                    "duration_seconds": result.duration_seconds,
-                },
-            )
-            return result
-
-        except Exception as e:  # noqa: broad-except
-            duration = time.monotonic() - start
-            _record(
-                EventType.AGENT_FAILED,
-                parent_id=agent_event_id,
-                execution_id=context.run_id,
-                status="failed",
-                data={
-                    "agent_name": self.name,
-                    "error": str(e),
-                    "error_type": type(e).__name__,
-                    "duration_seconds": round(duration, 3),
-                },
-            )
-            return AgentResult(
-                status=Status.FAILED,
-                output="",
-                error=str(e),
-                duration_seconds=round(duration, 3),
-            )
+    def _record_agent_completed(self, _record, result, agent_event_id: str, context: ExecutionContext) -> None:
+        """Emit AGENT_COMPLETED event."""
+        _record(
+            EventType.AGENT_COMPLETED,
+            parent_id=agent_event_id,
+            execution_id=context.run_id,
+            status="completed",
+            data={
+                "agent_name": self.name,
+                "output": result.output[:5000] if result.output else "",
+                "output_length": len(result.output),
+                "has_structured_output": result.structured_output is not None,
+                "structured_output": result.structured_output,
+                "tokens": result.tokens.total_tokens,
+                "cost_usd": result.cost_usd,
+                "llm_calls": result.llm_calls,
+                "tool_calls": result.tool_calls,
+                "duration_seconds": result.duration_seconds,
+            },
+        )
 
     def _execute(
         self,
@@ -145,10 +148,8 @@ class LLMAgent(AgentABC):
         agent_event_id: str,
     ) -> AgentResult:
         """Core execution logic, separated for clean error handling."""
-        # 1. Recall memories
         memories = self._recall_memories(context)
 
-        # 2. Render prompt
         messages = self.prompt_renderer.render(
             agent_config=self.config,
             input_data=input_data,
@@ -157,29 +158,12 @@ class LLMAgent(AgentABC):
             token_budget=self.token_budget,
         )
 
-        # 3. Get LLM from context
-        llm = context.get_llm(self.provider)
-
-        # 4. LLM call with tool loop
-        llm_service = LLMService(
-            provider=llm,
-            max_iterations=self.max_iterations,
-        )
-
-        call_context = CallContext(
-            execution_id=context.run_id,
-            agent_event_id=agent_event_id,
-            agent_name=self.name,
-            node_path=context.node_path,
-            event_recorder=(
-                context.event_recorder.record if context.event_recorder else None
-            ),
-        )
+        llm_service = self._build_llm_service(context)
+        call_context = self._build_call_context(context, agent_event_id)
 
         tools = self._get_tools(context)
         execute_tool = self._make_tool_executor(context) if tools else None
 
-        # Wire stream callback: broadcast LLM tokens via WebSocket in real-time
         stream_cb = context.stream_callback
         if not stream_cb and hasattr(context.event_recorder, 'broadcast_stream_chunk'):
             stream_cb = self._make_stream_callback(context, agent_event_id)
@@ -192,20 +176,15 @@ class LLMAgent(AgentABC):
             stream_callback=stream_cb,
         )
 
-        # 5. Track usage for budget policy enforcement
         if context.tool_executor and hasattr(context.tool_executor, 'track_usage'):
             context.tool_executor.track_usage(
                 cost_usd=llm_result.cost,
                 tokens=llm_result.tokens,
             )
 
-        # 6. Extract structured output (best-effort)
         structured = _extract_structured_output(llm_result.output)
-
-        # 6. Store to memory
         memories_formed = self._store_memories(llm_result.output, context)
 
-        # 7. Build AgentResult
         return AgentResult(
             status=Status.FAILED if llm_result.error else Status.COMPLETED,
             output=llm_result.output,
@@ -216,6 +195,26 @@ class LLMAgent(AgentABC):
             error=llm_result.error,
             llm_calls=llm_result.iterations,
             tool_calls=len(llm_result.tool_calls),
+        )
+
+    def _build_llm_service(self, context: ExecutionContext) -> LLMService:
+        """Instantiate the LLMService for this agent's provider."""
+        llm = context.get_llm(self.provider)
+        return LLMService(
+            provider=llm,
+            max_iterations=self.max_iterations,
+        )
+
+    def _build_call_context(self, context: ExecutionContext, agent_event_id: str) -> CallContext:
+        """Build the CallContext for LLMService observability."""
+        return CallContext(
+            execution_id=context.run_id,
+            agent_event_id=agent_event_id,
+            agent_name=self.name,
+            node_path=context.node_path,
+            event_recorder=(
+                context.event_recorder.record if context.event_recorder else None
+            ),
         )
 
     def _recall_memories(self, context: ExecutionContext) -> list[str]:
@@ -367,42 +366,56 @@ def _extract_structured_output(text: str) -> dict | None:
     if not text:
         return None
 
-    # Try 1: Full text is valid JSON
+    parsed = _try_parse_json(text)
+    if parsed is not None:
+        return parsed
+
+    parsed = _try_parse_code_block(text)
+    if parsed is not None:
+        return parsed
+
+    return _try_parse_first_brace(text)
+
+
+def _try_parse_json(text: str) -> dict | None:
+    """Try parsing the entire text as JSON dict."""
     try:
         parsed = json.loads(text)
         if isinstance(parsed, dict):
             return parsed
     except (json.JSONDecodeError, TypeError):
         pass
+    return None
 
-    # Try 2: Extract from markdown code blocks
+
+def _try_parse_code_block(text: str) -> dict | None:
+    """Try extracting JSON from a markdown ```json ... ``` code block."""
     code_block = re.search(r"```(?:json)?\s*\n?(.*?)\n?\s*```", text, re.DOTALL)
-    if code_block:
-        try:
-            parsed = json.loads(code_block.group(1))
-            if isinstance(parsed, dict):
-                return parsed
-        except (json.JSONDecodeError, TypeError):
-            pass
+    if not code_block:
+        return None
+    try:
+        parsed = json.loads(code_block.group(1))
+        if isinstance(parsed, dict):
+            return parsed
+    except (json.JSONDecodeError, TypeError):
+        pass
+    return None
 
-    # Try 3: Find first {...} in text
+
+def _try_parse_first_brace(text: str) -> dict | None:
+    """Try extracting the first balanced {...} substring and parsing it as JSON."""
     brace_start = text.find("{")
-    if brace_start >= 0:
-        # Find matching closing brace
-        depth = 0
-        for i in range(brace_start, len(text)):
-            if text[i] == "{":
-                depth += 1
-            elif text[i] == "}":
-                depth -= 1
-                if depth == 0:
-                    try:
-                        parsed = json.loads(text[brace_start : i + 1])
-                        if isinstance(parsed, dict):
-                            return parsed
-                    except (json.JSONDecodeError, TypeError):
-                        pass
-                    break
+    if brace_start < 0:
+        return None
+
+    depth = 0
+    for i in range(brace_start, len(text)):
+        if text[i] == "{":
+            depth += 1
+        elif text[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return _try_parse_json(text[brace_start : i + 1])
 
     return None
 

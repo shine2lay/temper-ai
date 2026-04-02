@@ -97,87 +97,86 @@ class OpenAILLM(BaseLLM):
         for line in response.iter_lines():
             if not line.startswith("data: "):
                 continue
-
             data = line[6:]
             if data == "[DONE]":
                 break
-
             try:
                 chunk = json.loads(data)
             except json.JSONDecodeError:
                 continue
 
-            choices = chunk.get("choices", [])
-            choice = choices[0] if choices else {}
-            delta = choice.get("delta", {})
-            model = chunk.get("model", model)
+            model, finish_reason, prompt_tokens, completion_tokens = self._process_stream_chunk(
+                chunk, on_chunk,
+                content_parts, reasoning_parts, tool_call_buffer,
+                model, finish_reason, prompt_tokens, completion_tokens,
+            )
 
-            # Reasoning / thinking tokens (models like Qwen, DeepSeek)
-            # vLLM uses "reasoning", DeepSeek/others may use "reasoning_content"
-            reasoning_text = delta.get("reasoning_content") or delta.get("reasoning")
-            if reasoning_text:
-                reasoning_parts.append(reasoning_text)
-                if on_chunk:
-                    on_chunk(LLMStreamChunk(
-                        content=reasoning_text,
-                        done=False,
-                        chunk_type="thinking",
-                        model=model,
-                    ))
+        return self._finalize_stream_response(
+            on_chunk, content_parts, reasoning_parts, tool_call_buffer,
+            finish_reason, model, prompt_tokens, completion_tokens,
+        )
 
-            # Content tokens
-            if delta.get("content"):
-                content_parts.append(delta["content"])
-                if on_chunk:
-                    on_chunk(LLMStreamChunk(
-                        content=delta["content"],
-                        done=False,
-                        model=model,
-                    ))
+    def _process_stream_chunk(
+        self,
+        chunk: dict,
+        on_chunk: StreamCallback | None,
+        content_parts: list[str],
+        reasoning_parts: list[str],
+        tool_call_buffer: dict[int, dict],
+        model: str,
+        finish_reason: str | None,
+        prompt_tokens: int | None,
+        completion_tokens: int | None,
+    ) -> tuple:
+        """Process a single SSE chunk. Returns updated (model, finish_reason, prompt_tokens, completion_tokens)."""
+        choices = chunk.get("choices", [])
+        choice = choices[0] if choices else {}
+        delta = choice.get("delta", {})
+        model = chunk.get("model", model)
 
-            # Tool calls (streamed as fragments across multiple chunks)
-            if delta.get("tool_calls"):
-                for tc_delta in delta["tool_calls"]:
-                    idx = tc_delta["index"]
-                    if idx not in tool_call_buffer:
-                        tool_call_buffer[idx] = {
-                            "id": tc_delta.get("id", ""),
-                            "name": "",
-                            "arguments": "",
-                        }
-                    buf = tool_call_buffer[idx]
-                    if tc_delta.get("id"):
-                        buf["id"] = tc_delta["id"]
-                    fn = tc_delta.get("function", {})
-                    if fn.get("name"):
-                        buf["name"] += fn["name"]
-                    if fn.get("arguments"):
-                        buf["arguments"] += fn["arguments"]
+        reasoning_text = delta.get("reasoning_content") or delta.get("reasoning")
+        if reasoning_text:
+            reasoning_parts.append(reasoning_text)
+            if on_chunk:
+                on_chunk(LLMStreamChunk(content=reasoning_text, done=False, chunk_type="thinking", model=model))
 
-            if choice.get("finish_reason"):
-                finish_reason = choice["finish_reason"]
+        if delta.get("content"):
+            content_parts.append(delta["content"])
+            if on_chunk:
+                on_chunk(LLMStreamChunk(content=delta["content"], done=False, model=model))
 
-            # Usage (usually in the final chunk)
-            usage = chunk.get("usage")
-            if usage:
-                prompt_tokens = usage.get("prompt_tokens")
-                completion_tokens = usage.get("completion_tokens")
+        if delta.get("tool_calls"):
+            _accumulate_tool_calls(delta["tool_calls"], tool_call_buffer)
 
-        # Signal stream end
+        if choice.get("finish_reason"):
+            finish_reason = choice["finish_reason"]
+
+        usage = chunk.get("usage")
+        if usage:
+            prompt_tokens = usage.get("prompt_tokens")
+            completion_tokens = usage.get("completion_tokens")
+
+        return model, finish_reason, prompt_tokens, completion_tokens
+
+    def _finalize_stream_response(
+        self,
+        on_chunk: StreamCallback | None,
+        content_parts: list[str],
+        reasoning_parts: list[str],
+        tool_call_buffer: dict[int, dict],
+        finish_reason: str | None,
+        model: str,
+        prompt_tokens: int | None,
+        completion_tokens: int | None,
+    ) -> LLMResponse:
+        """Signal stream end and assemble the final LLMResponse."""
         if on_chunk:
-            on_chunk(LLMStreamChunk(
-                content="",
-                done=True,
-                finish_reason=finish_reason,
-            ))
+            on_chunk(LLMStreamChunk(content="", done=True, finish_reason=finish_reason))
 
-        tool_calls = None
-        if tool_call_buffer:
-            tool_calls = [tool_call_buffer[i] for i in sorted(tool_call_buffer)]
-
-        total = None
-        if prompt_tokens is not None or completion_tokens is not None:
-            total = (prompt_tokens or 0) + (completion_tokens or 0)
+        tool_calls = [tool_call_buffer[i] for i in sorted(tool_call_buffer)] if tool_call_buffer else None
+        total = (prompt_tokens or 0) + (completion_tokens or 0) if (
+            prompt_tokens is not None or completion_tokens is not None
+        ) else None
 
         return LLMResponse(
             content="".join(content_parts) or None,
@@ -190,3 +189,19 @@ class OpenAILLM(BaseLLM):
             reasoning="".join(reasoning_parts) or None,
             tool_calls=tool_calls,
         )
+
+
+def _accumulate_tool_calls(tc_deltas: list, tool_call_buffer: dict[int, dict]) -> None:
+    """Merge streamed tool call fragments into the buffer."""
+    for tc_delta in tc_deltas:
+        idx = tc_delta["index"]
+        if idx not in tool_call_buffer:
+            tool_call_buffer[idx] = {"id": tc_delta.get("id", ""), "name": "", "arguments": ""}
+        buf = tool_call_buffer[idx]
+        if tc_delta.get("id"):
+            buf["id"] = tc_delta["id"]
+        fn = tc_delta.get("function", {})
+        if fn.get("name"):
+            buf["name"] += fn["name"]
+        if fn.get("arguments"):
+            buf["arguments"] += fn["arguments"]

@@ -157,45 +157,62 @@ def _convert_messages(messages: list[dict]) -> tuple[str, list]:
 
     for msg in messages:
         role = msg.get("role", "")
-        content = msg.get("content", "")
 
         if role == "system":
-            system = content
-        elif role == "user":
-            contents.append(types.Content(
-                role="user",
-                parts=[types.Part.from_text(text=content)],
-            ))
-        elif role == "assistant":
-            parts = []
-            if content:
-                parts.append(types.Part.from_text(text=content))
-            # Handle tool calls in assistant messages
-            if msg.get("tool_calls"):
-                for tc in msg["tool_calls"]:
-                    func = tc.get("function", tc)
-                    args = func.get("arguments", {})
-                    if isinstance(args, str):
-                        try:
-                            args = json.loads(args)
-                        except json.JSONDecodeError:
-                            args = {"raw": args}
-                    parts.append(types.Part.from_function_call(
-                        name=func.get("name", ""),
-                        args=args,
-                    ))
-            contents.append(types.Content(role="model", parts=parts))
-        elif role == "tool":
-            # Tool result
-            contents.append(types.Content(
-                role="user",
-                parts=[types.Part.from_function_response(
-                    name=msg.get("name", ""),
-                    response={"result": content},
-                )],
-            ))
+            system = msg.get("content", "")
+            continue
+
+        content_item = _convert_message(msg, role, types)
+        if content_item is not None:
+            contents.append(content_item)
 
     return system, contents
+
+
+def _convert_message(msg: dict, role: str, types) -> object | None:
+    """Convert a single non-system message to a Gemini Content object."""
+    content = msg.get("content", "")
+
+    if role == "user":
+        return types.Content(role="user", parts=[types.Part.from_text(text=content)])
+
+    if role == "assistant":
+        return _convert_assistant_message(msg, content, types)
+
+    if role == "tool":
+        return types.Content(
+            role="user",
+            parts=[types.Part.from_function_response(
+                name=msg.get("name", ""),
+                response={"result": content},
+            )],
+        )
+
+    return None
+
+
+def _convert_assistant_message(msg: dict, content: str, types) -> object:
+    """Convert an assistant message (with optional tool calls) to Gemini format."""
+    parts = []
+    if content:
+        parts.append(types.Part.from_text(text=content))
+
+    for tc in msg.get("tool_calls", []):
+        parts.append(_convert_tool_call_part(tc, types))
+
+    return types.Content(role="model", parts=parts)
+
+
+def _convert_tool_call_part(tc: dict, types) -> object:
+    """Convert a single tool call to a Gemini FunctionCall Part."""
+    func = tc.get("function", tc)
+    args = func.get("arguments", {})
+    if isinstance(args, str):
+        try:
+            args = json.loads(args)
+        except json.JSONDecodeError:
+            args = {"raw": args}
+    return types.Part.from_function_call(name=func.get("name", ""), args=args)
 
 
 def _convert_tools(tools: list[dict]) -> Any:

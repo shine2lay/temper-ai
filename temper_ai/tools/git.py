@@ -63,23 +63,14 @@ class Git(BaseTool):
             return ToolResult(success=False, result="", error="Empty git command")
 
         subcommand = parts[0]
+        validation_error = _validate_git_command(subcommand, parts)
+        if validation_error:
+            return ToolResult(success=False, result="", error=validation_error)
 
-        # Block dangerous subcommands
-        if subcommand in _BLOCKED_SUBCOMMANDS:
-            return ToolResult(
-                success=False, result="",
-                error=f"Git subcommand '{subcommand}' is not allowed",
-            )
+        return self._run_git(["git"] + parts, subcommand)
 
-        # Block --force on push
-        if subcommand == "push" and ("--force" in parts or "-f" in parts):
-            return ToolResult(
-                success=False, result="",
-                error="Force push is not allowed",
-            )
-
-        full_command = ["git"] + parts
-
+    def _run_git(self, full_command: list[str], subcommand: str) -> ToolResult:
+        """Run a validated git command and return a ToolResult."""
         try:
             result = subprocess.run(  # noqa: B603
                 full_command,
@@ -93,7 +84,6 @@ class Git(BaseTool):
             if result.stderr:
                 output += f"\n{result.stderr}" if output else result.stderr
 
-            # Truncate large output
             if len(output) > _MAX_OUTPUT_SIZE:
                 output = output[:_MAX_OUTPUT_SIZE] + f"\n... [truncated, {len(output)} chars total]"
 
@@ -107,17 +97,17 @@ class Git(BaseTool):
             return ToolResult(success=True, result=output)
 
         except subprocess.TimeoutExpired:
-            return ToolResult(
-                success=False, result="",
-                error=f"git {subcommand} timed out after {self.timeout}s",
-            )
+            return ToolResult(success=False, result="", error=f"git {subcommand} timed out after {self.timeout}s")
         except FileNotFoundError:
-            return ToolResult(
-                success=False, result="",
-                error="git is not installed or not in PATH",
-            )
+            return ToolResult(success=False, result="", error="git is not installed or not in PATH")
         except Exception as e:
-            return ToolResult(
-                success=False, result="",
-                error=f"git {subcommand} error: {e}",
-            )
+            return ToolResult(success=False, result="", error=f"git {subcommand} error: {e}")
+
+
+def _validate_git_command(subcommand: str, parts: list[str]) -> str | None:
+    """Validate git subcommand safety. Returns an error string or None if allowed."""
+    if subcommand in _BLOCKED_SUBCOMMANDS:
+        return f"Git subcommand '{subcommand}' is not allowed"
+    if subcommand == "push" and ("--force" in parts or "-f" in parts):
+        return "Force push is not allowed"
+    return None

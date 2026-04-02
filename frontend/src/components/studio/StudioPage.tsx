@@ -104,7 +104,7 @@ export function StudioPage() {
                   className="text-[10px] text-temper-text-dim"
                   style={{ writingMode: 'vertical-rl', textOrientation: 'mixed' }}
                 >
-                  Stages
+                  Library
                 </span>
               </div>
             ) : (

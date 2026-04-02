@@ -46,80 +46,66 @@ def _init_llm_providers() -> dict:
 
     providers: dict[str, BaseLLM] = {}
 
-    # OpenAI (if API key is set)
     openai_key = os.environ.get("OPENAI_API_KEY")
     if openai_key:
-        try:
+        def _make_openai():
             from temper_ai.llm.providers.openai import OpenAILLM
-            providers["openai"] = OpenAILLM(
+            return OpenAILLM(
                 model=os.environ.get("OPENAI_MODEL", "gpt-4o-mini"),
                 base_url=os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1"),
                 api_key=openai_key,
             )
-            logger.info("OpenAI provider initialized")
-        except Exception as exc:
-            logger.warning("Failed to init OpenAI provider: %s", exc)
+        _try_init_provider(providers, "openai", _make_openai, "OpenAI provider initialized")
 
-    # vLLM (if base URL is set)
     vllm_url = os.environ.get("VLLM_BASE_URL")
     if vllm_url:
-        try:
+        def _make_vllm():
             from temper_ai.llm.providers.vllm import VllmLLM
-            providers["vllm"] = VllmLLM(
-                model=os.environ.get("VLLM_MODEL", "default"),
-                base_url=vllm_url,
-            )
-            logger.info("vLLM provider initialized at %s", vllm_url)
-        except Exception as exc:
-            logger.warning("Failed to init vLLM provider: %s", exc)
+            return VllmLLM(model=os.environ.get("VLLM_MODEL", "default"), base_url=vllm_url)
+        _try_init_provider(providers, "vllm", _make_vllm, f"vLLM provider initialized at {vllm_url}")
 
-    # Ollama (if base URL is set)
     ollama_url = os.environ.get("OLLAMA_BASE_URL")
     if ollama_url:
-        try:
+        def _make_ollama():
             from temper_ai.llm.providers.ollama import OllamaLLM
-            providers["ollama"] = OllamaLLM(
-                model=os.environ.get("OLLAMA_MODEL", "llama3.2"),
-                base_url=ollama_url,
-            )
-            logger.info("Ollama provider initialized at %s", ollama_url)
-        except Exception as exc:
-            logger.warning("Failed to init Ollama provider: %s", exc)
+            return OllamaLLM(model=os.environ.get("OLLAMA_MODEL", "llama3.2"), base_url=ollama_url)
+        _try_init_provider(providers, "ollama", _make_ollama, f"Ollama provider initialized at {ollama_url}")
 
-    # Anthropic (if API key is set)
     anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
     if anthropic_key:
-        try:
+        def _make_anthropic():
             from temper_ai.llm.providers.anthropic import AnthropicLLM
-            providers["anthropic"] = AnthropicLLM(
+            return AnthropicLLM(
                 model=os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-20250514"),
                 api_key=anthropic_key,
             )
-            logger.info("Anthropic provider initialized")
-        except ImportError:
-            logger.warning("anthropic SDK not installed. Install with: pip install anthropic")
-        except Exception as exc:
-            logger.warning("Failed to init Anthropic provider: %s", exc)
+        _try_init_provider(providers, "anthropic", _make_anthropic, "Anthropic provider initialized")
 
-    # Gemini (if API key is set)
     gemini_key = os.environ.get("GEMINI_API_KEY")
     if gemini_key:
-        try:
+        def _make_gemini():
             from temper_ai.llm.providers.gemini import GeminiLLM
-            providers["gemini"] = GeminiLLM(
+            return GeminiLLM(
                 model=os.environ.get("GEMINI_MODEL", "gemini-2.5-flash"),
                 api_key=gemini_key,
             )
-            logger.info("Gemini provider initialized")
-        except ImportError:
-            logger.warning("google-genai SDK not installed. Install with: pip install google-genai")
-        except Exception as exc:
-            logger.warning("Failed to init Gemini provider: %s", exc)
+        _try_init_provider(providers, "gemini", _make_gemini, "Gemini provider initialized")
 
     if not providers:
         logger.warning("No LLM providers configured. Set OPENAI_API_KEY, VLLM_BASE_URL, or OLLAMA_BASE_URL.")
 
     return providers
+
+
+def _try_init_provider(providers: dict, name: str, factory, success_msg: str) -> None:
+    """Try to initialize an LLM provider via factory(). Log success or warning on failure."""
+    try:
+        providers[name] = factory()
+        logger.info(success_msg)
+    except ImportError as exc:
+        logger.warning("SDK not installed for provider '%s': %s", name, exc)
+    except Exception as exc:
+        logger.warning("Failed to init '%s' provider: %s", name, exc)
 
 
 def _init_memory_service() -> MemoryService:

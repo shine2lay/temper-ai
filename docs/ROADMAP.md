@@ -178,6 +178,37 @@ workflow:
 
 ---
 
+### Checkpoint / Resume — Save and Resume Workflow State
+**What:** Save the execution state at any point during a workflow run. Resume from that checkpoint later — same inputs, same partial results, continue from where it stopped.
+
+**Why:** Long-running workflows (SDLC pipelines, multi-stage research) can fail midway through. Without checkpoints, you restart from scratch — wasting all the LLM calls and tool executions that already succeeded. With checkpoints, you resume from the last successful node.
+
+**How it could work:**
+```bash
+# Workflow fails at node 8 of 11
+temper run sdlc_deploy_test --input task="Add auth"
+# → Nodes 1-7 completed, node 8 failed
+
+# Resume from checkpoint
+temper resume <execution_id>
+# → Skips nodes 1-7, re-runs from node 8
+```
+
+**Implementation:** The events table already stores all node results. A resume would:
+1. Load the execution's events
+2. Reconstruct `node_outputs` from completed node events
+3. Re-run `execute_graph()` starting from the failed batch
+4. The executor already skips nodes with existing outputs
+
+**Integration point:** Stage executor — add a `resume_from` parameter that pre-populates `node_outputs`.
+
+**Also enables:**
+- Human-in-the-loop: pause before a sensitive node (like git push), let user approve, then resume
+- Debugging: re-run a single failed node with modified inputs
+- Cost savings: don't re-run expensive LLM calls that already succeeded
+
+---
+
 ## P3 — Advanced Features (Future)
 
 These features exist in the main codebase. They're potential improvements, not core requirements. Each is self-contained and can be added independently.

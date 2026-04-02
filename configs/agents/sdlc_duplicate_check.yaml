@@ -23,6 +23,9 @@ agent:
     {{ recent_runs | default('No recent runs available') }}
 
     ## Output
+    - duplicate_check: "PASS" = suggestion is OK to proceed (not a duplicate). "FAIL" = suggestion IS a duplicate, STOP the pipeline.
+    - If is_duplicate is false, duplicate_check MUST be "PASS"
+
     Output as JSON:
     {"duplicate_check": "PASS" or "FAIL", "is_duplicate": true or false, "reason": "...", "similar_run_id": "..." or "none"}
   tools: []

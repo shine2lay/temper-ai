@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_MAX_ITERATIONS = 10
 DEFAULT_MAX_MESSAGES = 50
+MAX_TOOL_RESULT_CHARS = 20_000  # ~5k tokens — prevents context overflow from large tool outputs
 
 
 class LLMService:
@@ -347,12 +348,15 @@ def _inject_tool_results(
         assistant_msg["content"] = response.content
     messages.append(assistant_msg)
 
-    # One tool-result message per tool call
+    # One tool-result message per tool call (truncate large results)
     for tr in tool_results:
+        content = tr["result"]
+        if len(content) > MAX_TOOL_RESULT_CHARS:
+            content = content[:MAX_TOOL_RESULT_CHARS] + f"\n\n... [truncated from {len(tr['result'])} chars]"
         messages.append({
             "role": "tool",
             "tool_call_id": tr["tool_call_id"],
-            "content": tr["result"],
+            "content": content,
         })
 
 

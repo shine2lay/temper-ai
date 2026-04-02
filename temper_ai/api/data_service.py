@@ -199,7 +199,7 @@ def _build_agent_execution(agent_event: dict, all_events: list[dict]) -> dict:
     if not tool_events:
         for llm_event in llm_events:
             tool_events.extend(_find_children(all_events, llm_event["id"], "tool.call."))
-    tool_calls = [_build_tool_call(te) for te in tool_events]
+    tool_calls = [_build_tool_call(te, all_events) for te in tool_events]
 
     # Aggregate from completion event data
     total_tokens = data.get("tokens", 0)
@@ -289,18 +289,43 @@ def _build_llm_call(event: dict, all_events: list[dict]) -> dict:
     }
 
 
-def _build_tool_call(event: dict) -> dict:
-    """Build a tool call dict from an event."""
-    data = event.get("data", {})
+def _build_tool_call(event: dict, all_events: list[dict] | None = None) -> dict:
+    """Build a tool call dict from a started event, merging completed/failed data."""
+    data = dict(event.get("data", {}))
+    status = _resolve_status(event)
+    end_time = None
+    tool_name = data.get("tool_name", "")
+
+    # Find the corresponding completed/failed event by matching tool_name
+    # Tool completed/failed events share the same parent_id (the LLM call)
+    if all_events and status == "running":
+        start_id = event["id"]
+        parent_id = event.get("parent_id")
+        for e in all_events:
+            e_type = e.get("type", "")
+            e_data = e.get("data", {})
+            # Match by: same parent, same tool_name, completed/failed type
+            if (e_type.startswith("tool") and
+                (e_type.endswith(".completed") or e_type.endswith(".failed")) and
+                e_data.get("tool_name") == tool_name and
+                (e.get("parent_id") == parent_id or e.get("parent_id") == start_id)):
+                status = e.get("status", status)
+                end_time = e.get("timestamp")
+                data.update(e_data)
+                break
+
+    duration_ms = data.get("duration_ms")
+    duration_seconds = duration_ms / 1000.0 if duration_ms else data.get("duration_seconds")
+
     return {
         "id": event["id"],
-        "tool_name": data.get("tool_name", ""),
-        "status": _resolve_status(event),
+        "tool_name": tool_name,
+        "status": status,
         "start_time": event.get("timestamp"),
-        "end_time": None,
-        "duration_seconds": data.get("duration_seconds"),
-        "input_params": data.get("params"),
-        "output_data": data.get("result"),
+        "end_time": end_time,
+        "duration_seconds": duration_seconds,
+        "input_data": data.get("input_params") or data.get("params"),
+        "output_data": data.get("output") or data.get("result"),
         "error_message": data.get("error"),
     }
 

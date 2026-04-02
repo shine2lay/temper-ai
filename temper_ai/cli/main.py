@@ -134,6 +134,32 @@ def _cmd_run(args) -> None:
     )
     tool_executor.register_tools({name: cls() for name, cls in TOOL_CLASSES.items()})
 
+    # MCP tools (if configured)
+    _mcp_loop = None
+    _mcp_thread = None
+    try:
+        import asyncio
+        import threading
+        from temper_ai.tools.mcp_client import MCPClientManager
+        from temper_ai.tools.mcp_tool import create_mcp_tools
+
+        if os.environ.get("MCP_SERVERS"):
+            # Background event loop for MCP (stays alive for tool calls)
+            _mcp_loop = asyncio.new_event_loop()
+            _mcp_thread = threading.Thread(target=_mcp_loop.run_forever, daemon=True)
+            _mcp_thread.start()
+
+            mcp_manager = MCPClientManager()
+            mcp_manager._event_loop = _mcp_loop
+            future = asyncio.run_coroutine_threadsafe(mcp_manager.start(), _mcp_loop)
+            future.result(timeout=60)
+
+            mcp_tools = create_mcp_tools(mcp_manager)
+            if mcp_tools:
+                tool_executor.register_tools(mcp_tools)
+    except Exception as e:
+        logger.warning("MCP setup failed: %s", e)
+
     # CLI printer + event recorder
     from temper_ai.cli.printer import CLIPrinter
     from temper_ai.observability.event_recorder import EventRecorder

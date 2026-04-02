@@ -183,9 +183,27 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Load default configs
     _load_default_configs(ConfigStore())
 
+    # MCP servers (if configured)
+    mcp_tools_count = 0
+    try:
+        from temper_ai.tools.mcp_client import mcp_manager
+        await mcp_manager.start()
+        mcp_tools_count = len(mcp_manager.get_all_tool_definitions())
+        if mcp_tools_count:
+            logger.info("MCP: %d tools from %d servers",
+                        mcp_tools_count, len(mcp_manager.get_all_connections()))
+    except Exception as e:
+        logger.warning("MCP setup failed (non-fatal): %s", e)
+
     logger.info("Temper AI server ready")
     yield
 
+    # Shutdown
+    try:
+        from temper_ai.tools.mcp_client import mcp_manager
+        await mcp_manager.stop()
+    except Exception:
+        pass
     reset_database()
     logger.info("Server shutdown")
 

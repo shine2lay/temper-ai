@@ -110,8 +110,18 @@ def start_run(body: RunRequest):
         workspace_root=body.workspace_path,
         policy_engine=policy_engine,
     )
-    # Copy registered tools from the shared executor
+    # Register built-in tools
     run_tool_executor.register_tools({name: cls() for name, cls in TOOL_CLASSES.items()})
+
+    # Register MCP tools (if connected)
+    try:
+        from temper_ai.tools.mcp_client import mcp_manager
+        from temper_ai.tools.mcp_tool import create_mcp_tools
+        mcp_tools = create_mcp_tools(mcp_manager)
+        if mcp_tools:
+            run_tool_executor.register_tools(mcp_tools)
+    except Exception:
+        pass  # MCP is optional
 
     recorder = EventRecorder(execution_id, notifier=ws_manager)
     context = ExecutionContext(

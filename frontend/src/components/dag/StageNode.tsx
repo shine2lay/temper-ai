@@ -65,11 +65,11 @@ export const StageNode = memo(function StageNode({ data }: NodeProps) {
       role="button"
       tabIndex={0}
       aria-label={`Stage: ${stageName}, status: ${currentStage.status}`}
-      onClick={() => select('stage', currentStage.id)}
+      onClick={() => openStageDetail(currentStage.id)}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
-          select('stage', currentStage.id);
+          openStageDetail(currentStage.id);
         }
       }}
     >

@@ -9,7 +9,7 @@ import type { AgentNodeData } from '@/hooks/useDagElements';
  * Wraps AgentCardContent with ReactFlow handles for edge connections.
  */
 export const AgentNodeComponent = memo(function AgentNodeComponent({ data }: NodeProps) {
-  const { agent, stageColor } = data as AgentNodeData;
+  const { agent, stage, stageColor } = data as AgentNodeData;
 
   if (!agent) return null;
 

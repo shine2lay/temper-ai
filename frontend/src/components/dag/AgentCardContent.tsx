@@ -1,8 +1,29 @@
-import { memo, useState } from 'react';
+import { memo, useState, useMemo } from 'react';
 import { useExecutionStore } from '@/store/executionStore';
 import { STATUS_COLORS, deriveTokenBreakdown } from './constants';
 import { cn, formatDuration, formatTokens, formatCost } from '@/lib/utils';
 import type { AgentExecution } from '@/types';
+
+/**
+ * Build a map of stage name → primary agent name for single-agent stages.
+ * Used to show agent names in source tags instead of confusing stage names.
+ */
+function useStageToAgentMap(): Map<string, string> {
+  const stages = useExecutionStore((s) => s.stages);
+  return useMemo(() => {
+    const map = new Map<string, string>();
+    for (const [, stage] of stages) {
+      const agents = stage.agents ?? [];
+      if (agents.length === 1 && agents[0]) {
+        const agentName = agents[0].agent_name ?? agents[0].name ?? '';
+        if (agentName && stage.name && stage.name !== agentName) {
+          map.set(stage.name, agentName);
+        }
+      }
+    }
+    return map;
+  }, [stages]);
+}
 
 interface AgentCardContentProps {
   agent: AgentExecution;
@@ -30,7 +51,9 @@ export const AgentCardContent = memo(function AgentCardContent({
 
   const statusColor = STATUS_COLORS[agent.status] ?? STATUS_COLORS.pending;
   const isStreaming = streaming && !streaming.done;
-  const output = isStreaming ? streaming.content : agent.output ?? '';
+  const textOutput = isStreaming ? streaming.content : agent.output ?? '';
+  const hasOutputData = agent.output_data != null && Object.keys(agent.output_data).length > 0;
+  const output = textOutput || (hasOutputData ? JSON.stringify(agent.output_data, null, 2) : '');
   const hasOutput = output.length > 0;
   const agentName = agent.agent_name ?? agent.name ?? 'agent';
 
@@ -172,65 +195,102 @@ export const AgentCardContent = memo(function AgentCardContent({
 });
 
 
-/** Parse input data into source tags and a preview string. */
+/** Parse upstream sources from other_agents string into name→preview pairs. */
+function parseSourcePreviews(otherAgents: string): Array<{ name: string; preview: string }> {
+  const results: Array<{ name: string; preview: string }> = [];
+  // Split on [name]: markers
+  const regex = /\[([^\]]+)\]:\s*/g;
+  const markers: Array<{ name: string; start: number }> = [];
+  let match;
+  while ((match = regex.exec(otherAgents)) !== null) {
+    markers.push({ name: match[1], start: match.index + match[0].length });
+  }
+  for (let i = 0; i < markers.length; i++) {
+    const end = i + 1 < markers.length ? markers[i + 1].start - markers[i + 1].name.length - 3 : otherAgents.length;
+    const content = otherAgents.slice(markers[i].start, end).trim();
+    // Smart preview: detect JSON keys or first meaningful line
+    let preview = '';
+    const trimmed = content.trim();
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+          preview = `{${Object.keys(parsed).join(', ')}}`;
+        } else if (Array.isArray(parsed)) {
+          preview = `[${parsed.length} items]`;
+        }
+      } catch { /* not valid JSON, use text preview */ }
+    }
+    if (!preview) {
+      const firstLine = trimmed.split('\n').find(l => l.trim().length > 2 && l.trim() !== '{') ?? '';
+      preview = firstLine.slice(0, 60);
+      if (firstLine.length > 60) preview += '...';
+    }
+    results.push({ name: markers[i].name, preview });
+  }
+  return results;
+}
+
+/** Input section — show per-source previews so you can see what each upstream produced. */
 function InputSection({ data, expanded }: { data: Record<string, unknown>; expanded: boolean }) {
-  // Extract source info from input keys
-  const sources: string[] = [];
+  const stageToAgent = useStageToAgentMap();
   const otherAgents = data.other_agents;
   const prevOutput = data.previous_output;
   const task = data.task;
 
-  if (otherAgents && typeof otherAgents === 'string') {
-    // Extract source names from "[source_name]:" markers
-    const matches = otherAgents.match(/\[([^\]]+)\]:/g);
-    if (matches) {
-      for (const m of matches) sources.push(m.slice(1, -2));
-    }
-  }
-  if (prevOutput != null) sources.push('prev agent');
-  if (task && sources.length === 0) sources.push('workflow input');
-
-  // Build preview: task first line, then a hint about other_agents
-  let preview = '';
-  if (task && typeof task === 'string') {
-    preview = task.length > 80 ? task.slice(0, 80) + '...' : task;
-  }
-
-  if (expanded) {
-    try {
-      preview = JSON.stringify(data, null, 2).slice(0, 2000);
-    } catch {
-      preview = String(data);
-    }
-  }
+  // Parse per-source previews from other_agents
+  const sourcePreviews = otherAgents && typeof otherAgents === 'string'
+    ? parseSourcePreviews(otherAgents)
+    : [];
+  const hasPrev = prevOutput != null;
+  const isWorkflowOnly = sourcePreviews.length === 0 && !hasPrev && task;
 
   return (
     <div className="flex flex-col gap-0.5">
-      {/* Source tags */}
-      <div className="flex items-center gap-1 flex-wrap">
-        <span className="text-[9px] font-semibold text-temper-text-muted">IN</span>
-        {sources.map((s) => (
-          <span key={s} className="text-[8px] px-1 py-px rounded bg-blue-500/10 text-blue-400 font-mono">
-            ← {s}
+      {/* Source tags with previews */}
+      <div className="flex items-start gap-1 flex-wrap">
+        <span className="text-[9px] font-semibold text-temper-text-muted shrink-0 mt-0.5">IN</span>
+        {isWorkflowOnly && (
+          <span className="text-[8px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400 font-medium">
+            ← workflow input
           </span>
-        ))}
+        )}
+        {sourcePreviews.map((s) => {
+          // Resolve stage name to agent name for single-agent stages
+          const agentName = stageToAgent.get(s.name);
+          const displayName = agentName ?? s.name;
+          return (
+          <span key={s.name} className="inline-flex flex-col gap-px max-w-full">
+            <span className="text-[8px] px-1.5 py-0.5 rounded-t bg-blue-500/15 text-blue-400 font-medium">
+              ← {displayName}
+            </span>
+            {s.preview && (
+              <span className="text-[8px] px-1.5 py-0.5 rounded-b bg-temper-surface/50 text-temper-text-dim font-mono truncate">
+                {s.preview}
+              </span>
+            )}
+          </span>
+        );
+        })}
+        {hasPrev && (
+          <span className="text-[8px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 font-medium">
+            ← prev agent
+          </span>
+        )}
       </div>
-      {/* Preview */}
-      {preview && (
-        <pre className={cn(
-          'text-[9px] text-temper-text-dim whitespace-pre-wrap break-words font-mono leading-tight',
-          expanded ? 'max-h-[160px] overflow-y-auto' : 'max-h-[20px] overflow-hidden',
-        )}>
-          {preview}
+      {/* Expanded: full JSON dump */}
+      {expanded && (
+        <pre className="text-[9px] text-temper-text-dim whitespace-pre-wrap break-words font-mono leading-tight max-h-[160px] overflow-y-auto bg-temper-surface/50 rounded p-1.5 mt-0.5">
+          {(() => { try { return JSON.stringify(data, null, 2).slice(0, 3000); } catch { return String(data); } })()}
+          {JSON.stringify(data).length > 3000 && <span className="text-temper-accent"> ...truncated</span>}
         </pre>
       )}
     </div>
   );
 }
 
-/** Output section with type signal and preview. */
+/** Output section — smart preview based on output type. */
 function OutputSection({ output, error, expanded }: { output: string; error?: string | null; expanded: boolean }) {
-  // Detect output type
   const trimmed = output.trim();
   const isJson = trimmed.startsWith('{') || trimmed.startsWith('[');
   const isCode = trimmed.startsWith('```') || trimmed.startsWith('import ') || trimmed.startsWith('def ') || trimmed.startsWith('function ');
@@ -239,9 +299,33 @@ function OutputSection({ output, error, expanded }: { output: string; error?: st
     ? `${(output.length / 1000).toFixed(1)}K`
     : `${output.length}`;
 
-  // First meaningful line for preview
-  const firstLine = trimmed.split('\n').find((l) => l.trim().length > 0) ?? '';
-  const preview = firstLine.length > 100 ? firstLine.slice(0, 100) + '...' : firstLine;
+  // Smart preview: for JSON show top-level keys, for text/code show first meaningful line
+  let preview = '';
+  if (!expanded) {
+    if (isJson) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+          const keys = Object.keys(parsed);
+          preview = `{${keys.join(', ')}}`;
+        } else if (Array.isArray(parsed)) {
+          preview = `[${parsed.length} items]`;
+        } else {
+          preview = trimmed.slice(0, 100);
+        }
+      } catch {
+        preview = trimmed.slice(0, 100);
+      }
+    } else {
+      // For text/code, find first non-empty line that isn't just a bracket or backticks
+      const lines = trimmed.split('\n');
+      const meaningful = lines.find((l) => {
+        const t = l.trim();
+        return t.length > 2 && t !== '```' && t !== '{' && t !== '[';
+      }) ?? lines[0] ?? '';
+      preview = meaningful.length > 100 ? meaningful.slice(0, 100) + '...' : meaningful;
+    }
+  }
 
   if (error && !output) {
     return (
@@ -256,26 +340,29 @@ function OutputSection({ output, error, expanded }: { output: string; error?: st
 
   return (
     <div className="flex flex-col gap-0.5">
-      {/* Type + size signal */}
-      <div className="flex items-center gap-1">
-        <span className="text-[9px] font-semibold text-temper-text-muted">OUT</span>
+      {/* Type badge + key summary or preview */}
+      <div className="flex items-center gap-1 min-w-0">
+        <span className="text-[9px] font-semibold text-temper-text-muted shrink-0">OUT</span>
         <span className={cn(
-          'text-[8px] px-1 py-px rounded font-mono',
-          isJson ? 'bg-emerald-500/10 text-emerald-400' :
-          isCode ? 'bg-violet-500/10 text-violet-400' :
+          'text-[8px] px-1 py-px rounded font-mono shrink-0',
+          isJson ? 'bg-emerald-500/15 text-emerald-400' :
+          isCode ? 'bg-violet-500/15 text-violet-400' :
           'bg-temper-surface text-temper-text-dim',
         )}>
           {typeLabel}
         </span>
-        <span className="text-[8px] text-temper-text-dim font-mono">{sizeLabel} chars</span>
+        <span className="text-[8px] text-temper-text-dim font-mono shrink-0">{sizeLabel}</span>
+        {!expanded && preview && (
+          <span className="text-[9px] text-temper-text-dim truncate font-mono">{preview}</span>
+        )}
       </div>
-      {/* Preview */}
-      <pre className={cn(
-        'text-[9px] text-temper-text-dim whitespace-pre-wrap break-words font-mono leading-tight',
-        expanded ? 'max-h-[200px] overflow-y-auto' : 'max-h-[20px] overflow-hidden',
-      )}>
-        {expanded ? output.slice(0, 2000) : preview}
-      </pre>
+      {/* Expanded: formatted output */}
+      {expanded && (
+        <pre className="text-[9px] text-temper-text-dim whitespace-pre-wrap break-words font-mono leading-tight max-h-[200px] overflow-y-auto bg-temper-surface/50 rounded p-1.5 mt-0.5">
+          {output.slice(0, 3000)}
+          {output.length > 3000 && <span className="text-temper-accent"> ...truncated ({sizeLabel} total)</span>}
+        </pre>
+      )}
     </div>
   );
 }

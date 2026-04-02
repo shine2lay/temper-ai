@@ -146,25 +146,26 @@ export function StudioCanvas() {
     [removeDependency, removeDataWire, setLoopBack],
   );
 
-  // Handle all node changes: position, selection, etc.
+  // Handle all node changes: position, selection, deletion, etc.
+  const removeStage = useDesignStore((s) => s.removeStage);
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
-      // Apply all changes to controlled state (position, selection, dimensions, etc.)
       setRfNodes((nds) => applyNodeChanges(changes, nds));
 
       for (const change of changes) {
         if (change.type === 'position' && change.position && change.dragging === false) {
           setNodePosition(change.id, change.position.x, change.position.y);
         }
-        // Sync selection to our store
-        if (change.type === 'select') {
-          if (change.selected) {
-            selectStage(change.id);
-          }
+        if (change.type === 'select' && change.selected) {
+          selectStage(change.id);
+        }
+        // Sync node deletion to the design store
+        if (change.type === 'remove') {
+          removeStage(change.id);
         }
       }
     },
-    [setNodePosition, selectStage],
+    [setNodePosition, selectStage, removeStage],
   );
 
   // Handle drag-over from palette

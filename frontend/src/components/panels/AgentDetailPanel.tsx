@@ -157,19 +157,46 @@ export function AgentDetailPanel({ agentId }: AgentDetailPanelProps) {
 
       <Separator />
 
+      {/* System Prompt — the most important context for understanding agent behavior */}
+      {config?.system_prompt && (
+        <CollapsibleSection title="System Prompt" defaultOpen>
+          <pre className="mt-1 text-xs text-temper-text whitespace-pre-wrap bg-temper-surface rounded p-2 max-h-48 overflow-auto border border-temper-border/30">
+            {config.system_prompt}
+          </pre>
+          <CopyButton text={config.system_prompt} className="mt-1" />
+        </CollapsibleSection>
+      )}
+
+      {/* Task Template — what the agent was actually told to do */}
+      {config?.task_template && (
+        <CollapsibleSection title="Task Template" defaultOpen>
+          <pre className="mt-1 text-xs text-temper-text whitespace-pre-wrap bg-temper-surface rounded p-2 max-h-48 overflow-auto border border-temper-border/30">
+            {config.task_template}
+          </pre>
+          <CopyButton text={config.task_template} className="mt-1" />
+        </CollapsibleSection>
+      )}
+
       {/* Collapsible sections */}
       <CollapsibleSection title="Input Data">
         <JsonViewer data={ag.input_data} />
       </CollapsibleSection>
 
       <CollapsibleSection title="Output">
-        {ag.output ? (
+        {ag.output && (
           <>
             <MarkdownDisplay content={ag.output} className="mt-1 max-h-64 overflow-auto" />
             <CopyButton text={ag.output} className="mt-1" />
           </>
-        ) : (
-          <JsonViewer data={ag.output_data} />
+        )}
+        {ag.output_data && Object.keys(ag.output_data).length > 0 && (
+          <div className={ag.output ? 'mt-3 pt-3 border-t border-temper-border/30' : ''}>
+            <span className="text-[10px] text-temper-text-muted uppercase tracking-wide">Structured Output</span>
+            <JsonViewer data={ag.output_data} />
+          </div>
+        )}
+        {!ag.output && (!ag.output_data || Object.keys(ag.output_data).length === 0) && (
+          <span className="text-xs text-temper-text-dim">No output</span>
         )}
       </CollapsibleSection>
 
@@ -235,18 +262,30 @@ export function AgentDetailPanel({ agentId }: AgentDetailPanelProps) {
           <span className="text-sm font-medium text-temper-text-muted">
             LLM Calls
           </span>
-          {ag.llm_calls.map((llm) => (
+          {ag.llm_calls.map((llm, idx) => (
             <Button
               key={llm.id}
               variant="ghost"
               size="sm"
-              className="justify-between text-left"
+              className="justify-between text-left h-auto py-1.5"
               onClick={() => select('llmCall', llm.id)}
             >
-              <span className="flex items-center gap-2 text-temper-text">
-                <span className="truncate text-xs">
-                  {llm.model ?? llm.llm_call_id ?? llm.id}
+              <span className="flex items-center gap-2 text-temper-text min-w-0">
+                <span className="text-[10px] text-temper-text-dim shrink-0 w-4">#{idx + 1}</span>
+                <span className="truncate text-xs">{llm.model ?? 'llm'}</span>
+                <span className="text-[10px] text-temper-text-dim shrink-0 font-mono">
+                  {formatTokens(llm.total_tokens)} tok
                 </span>
+                {(llm.estimated_cost_usd ?? 0) > 0 && (
+                  <span className="text-[10px] text-emerald-400 shrink-0 font-mono">
+                    {formatCost(llm.estimated_cost_usd)}
+                  </span>
+                )}
+                {llm.duration_seconds != null && (
+                  <span className="text-[10px] text-temper-text-dim shrink-0">
+                    {formatDuration(llm.duration_seconds)}
+                  </span>
+                )}
               </span>
               <StatusBadge status={llm.status} />
             </Button>
@@ -265,10 +304,22 @@ export function AgentDetailPanel({ agentId }: AgentDetailPanelProps) {
               key={tool.id}
               variant="ghost"
               size="sm"
-              className="justify-between text-left"
+              className="justify-between text-left h-auto py-1.5"
               onClick={() => select('toolCall', tool.id)}
             >
-              <span className="text-xs text-temper-text">{tool.tool_name}</span>
+              <span className="flex items-center gap-2 text-temper-text min-w-0">
+                <span className="text-xs font-medium text-amber-400">{tool.tool_name}</span>
+                {tool.duration_seconds != null && (
+                  <span className="text-[10px] text-temper-text-dim shrink-0">
+                    {formatDuration(tool.duration_seconds)}
+                  </span>
+                )}
+                {tool.input_data && (
+                  <span className="text-[10px] text-temper-text-dim truncate max-w-[150px]">
+                    {JSON.stringify(tool.input_data).slice(0, 50)}
+                  </span>
+                )}
+              </span>
               <StatusBadge status={tool.status} />
             </Button>
           ))}

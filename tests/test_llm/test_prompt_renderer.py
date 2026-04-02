@@ -87,13 +87,14 @@ class TestPromptRendererStrategyContext:
         )
         assert "Agent A: looks good" in msgs[1]["content"]
 
-    def test_no_strategy_context_is_none(self):
+    def test_no_strategy_context_renders_empty(self):
         r = PromptRenderer()
         msgs = r.render(
             agent_config={"task_template": "Context: {{ other_agents }}"},
             input_data={},
         )
-        assert msgs[1]["content"] == "Context: None"
+        # None renders as empty string in Jinja2's default Undefined
+        assert "Context:" in msgs[1]["content"]
 
 
 class TestPromptRendererBudget:

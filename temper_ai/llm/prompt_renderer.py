@@ -59,8 +59,11 @@ class PromptRenderer:
         template_vars = {
             **_filter_safe_values(input_data),
             "memories": memories or [],
-            "other_agents": strategy_context,
         }
+        # Only override other_agents when strategy_context is explicitly provided;
+        # otherwise keep the value from input_data (injected by the executor).
+        if strategy_context is not None:
+            template_vars["other_agents"] = strategy_context
 
         user_content = self._render_template(task_template, template_vars)
         messages = [

@@ -58,10 +58,6 @@ agent:
        - PASS: professional, neutral, technical suggestions
 
     ## Output
-    <answer>
-    content_verdict: PASS | FAIL
-    reason: <one-line explanation>
-    concerns:
-    - <any concern, even if passing>
-    </answer>
+    Output as JSON:
+    {"content_verdict": "PASS" or "FAIL", "reason": "...", "concerns": ["..."]}
   tools: []

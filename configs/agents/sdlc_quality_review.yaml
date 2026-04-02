@@ -41,14 +41,6 @@ agent:
          language, hardcoded inappropriate text, or controversial content
 
     ## Output Format
-    Provide your review in <answer> tags:
-    <answer>
-    OVERALL: PASS or FAIL
-
-    FINDINGS:
-    - <list each finding with severity (CRITICAL/WARNING/INFO) and description>
-
-    FIX_INSTRUCTIONS:
-    - <if FAIL, provide specific instructions on what to fix>
-    </answer>
+    Output as JSON:
+    {"OVERALL": "PASS" or "FAIL", "FINDINGS": ["severity: description, ..."], "FIX_INSTRUCTIONS": ["specific instructions on what to fix, or empty if PASS"]}
   tools: [Bash]

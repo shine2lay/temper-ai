@@ -33,9 +33,6 @@ agent:
     2. Make changes using the tools described above
     3. Verify your changes by reading the files back
 
-    After making changes, provide a summary in <answer> tags:
-    <answer>
-    files_changed: <comma-separated list of files changed>
-    change_summary: <one-line description of what you implemented>
-    </answer>
+    After making changes, output a summary as JSON:
+    {"files_changed": "comma-separated list of files changed", "change_summary": "one-line description of what you implemented"}
   tools: [Bash, FileWriter]

@@ -49,11 +49,6 @@ agent:
     to a public Heroku app with no human review.
 
     ## Output
-    <answer>
-    safety_verdict: PASS | FAIL
-    risk_level: none | low | medium | high | critical
-    reason: <one-line explanation>
-    threats_detected:
-    - <specific threat, or "none">
-    </answer>
+    Output as JSON:
+    {"safety_verdict": "PASS" or "FAIL", "risk_level": "none" or "low" or "medium" or "high" or "critical", "reason": "...", "threats_detected": ["..."]}
   tools: []

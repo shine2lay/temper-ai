@@ -46,10 +46,6 @@ agent:
     {% endif %}
 
     ## Output Format
-    Provide your plan in <answer> tags. IMPORTANT: put commit_message AFTER the plan.
-    <answer>
-    implementation_plan: <detailed step-by-step plan with exact file paths, what to change, and how>
-    ---
-    commit_message: <short conventional commit message, e.g. "feat: add version endpoint">
-    </answer>
+    Output as JSON:
+    {"implementation_plan": "detailed step-by-step plan with exact file paths, what to change, and how", "commit_message": "short conventional commit message, e.g. feat: add version endpoint"}
   tools: [Bash]

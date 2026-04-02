@@ -17,13 +17,6 @@ agent:
     ## Team Assessments
     {{ team_outputs }}
 
-    ## Output
-    <answer>
-    validation_result: ACCEPT | REJECT
-    reason: <clear one-line explanation for the user>
-    content_ok: true | false
-    safety_ok: true | false
-    warnings:
-    - <any warnings, even if accepting>
-    </answer>
+    Output as JSON:
+    {"validation_result": "ACCEPT" or "REJECT", "reason": "...", "content_ok": true/false, "safety_ok": true/false, "warnings": ["..."]}
   tools: []

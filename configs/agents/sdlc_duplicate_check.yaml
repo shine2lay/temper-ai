@@ -23,10 +23,6 @@ agent:
     {{ recent_runs | default('No recent runs available') }}
 
     ## Output
-    <answer>
-    duplicate_check: PASS | FAIL
-    is_duplicate: true | false
-    reason: <one-line explanation>
-    similar_run_id: <id of the similar run, or "none">
-    </answer>
+    Output as JSON:
+    {"duplicate_check": "PASS" or "FAIL", "is_duplicate": true or false, "reason": "...", "similar_run_id": "..." or "none"}
   tools: []

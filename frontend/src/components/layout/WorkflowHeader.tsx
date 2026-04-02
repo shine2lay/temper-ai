@@ -255,7 +255,7 @@ export function WorkflowHeader() {
         {workflow && (
           <button
             onClick={exportReport}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-temper-surface text-temper-text-muted hover:text-temper-accent hover:bg-temper-accent/10 border border-temper-border transition-colors shrink-0"
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-temper-surface text-temper-text-muted hover:text-temper-accent hover:bg-temper-accent/10 border border-temper-border transition-colors shrink-0 cursor-pointer"
             aria-label="Export run as Markdown report"
           >
             <Download className="w-3 h-3" />

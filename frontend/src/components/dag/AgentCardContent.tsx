@@ -244,13 +244,21 @@ function InputSection({ data, expanded }: { data: Record<string, unknown>; expan
     ? parseSourcePreviews(otherAgents)
     : [];
   const hasPrev = prevOutput != null;
-  const isWorkflowOnly = sourcePreviews.length === 0 && !hasPrev && task;
+
+  // Detect non-standard input keys as sources (when no other_agents string)
+  const knownKeys = new Set(['task', 'other_agents', 'previous_output', 'workspace_path']);
+  const extraSources = sourcePreviews.length === 0 && !hasPrev
+    ? Object.keys(data).filter(k => !knownKeys.has(k))
+    : [];
+  const isWorkflowOnly = sourcePreviews.length === 0 && !hasPrev && extraSources.length === 0 && task;
 
   return (
     <div className="flex flex-col gap-0.5">
       {/* Source tags with previews */}
       <div className="flex items-start gap-1 flex-wrap">
-        <span className="text-[9px] font-semibold text-temper-text-muted shrink-0 mt-0.5">IN</span>
+        <span className="text-[9px] font-semibold text-temper-text-muted shrink-0 mt-0.5">
+          {expanded ? '\u25BE' : '\u25B8'} IN
+        </span>
         {isWorkflowOnly && (
           <span className="text-[8px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400 font-medium">
             ← workflow input
@@ -278,6 +286,14 @@ function InputSection({ data, expanded }: { data: Record<string, unknown>; expan
             ← prev agent
           </span>
         )}
+        {extraSources.map((key) => {
+          const agentName = stageToAgent.get(key.replace(/_output$/, ''));
+          return (
+            <span key={key} className="text-[8px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400 font-medium">
+              ← {agentName ?? key}
+            </span>
+          );
+        })}
       </div>
       {/* Expanded: smart formatted view */}
       {expanded && (
@@ -351,7 +367,7 @@ function OutputSection({ output, error, expanded }: { output: string; error?: st
     <div className="flex flex-col gap-0.5">
       {/* Type badge + key summary or preview */}
       <div className="flex items-center gap-1 min-w-0">
-        <span className="text-[9px] font-semibold text-temper-text-muted shrink-0">OUT</span>
+        <span className="text-[9px] font-semibold text-temper-text-muted shrink-0">{expanded ? '\u25BE' : '\u25B8'} OUT</span>
         <span className={cn(
           'text-[8px] px-1 py-px rounded font-mono shrink-0',
           isJson ? 'bg-emerald-500/15 text-emerald-400' :
@@ -365,13 +381,13 @@ function OutputSection({ output, error, expanded }: { output: string; error?: st
           <span className="text-[9px] text-temper-text-dim truncate font-mono">{preview}</span>
         )}
         {!expanded && (
-          <span
-            className="ml-auto text-[9px] text-temper-text-dim hover:text-temper-text cursor-pointer shrink-0 select-none"
+          <button
+            className="ml-auto w-5 h-5 flex items-center justify-center rounded text-[10px] text-temper-text-dim hover:text-temper-text hover:bg-temper-surface shrink-0 transition-colors"
             title="Copy output"
             onClick={handleCopy}
           >
-            {copied ? '✓' : '📋'}
-          </span>
+            {copied ? '\u2713' : '\u2398'}
+          </button>
         )}
       </div>
       {/* Expanded: smart formatted view */}

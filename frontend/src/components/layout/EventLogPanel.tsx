@@ -75,8 +75,15 @@ export function EventLogPanel() {
     if (atBottom) setNewEvents(0);
   }, []);
 
-  // Auto-scroll only when user has scrolled to the bottom themselves
+  // Auto-scroll to bottom on first load, then only when user is already at bottom
+  const initialScrollDone = useRef(false);
   useEffect(() => {
+    if (!initialScrollDone.current && eventLog.length > 0) {
+      initialScrollDone.current = true;
+      bottomRef.current?.scrollIntoView();
+      setIsAtBottom(true);
+      return;
+    }
     if (isAtBottom) {
       bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
     } else {

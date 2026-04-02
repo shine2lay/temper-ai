@@ -117,18 +117,33 @@ class ExternalToolRule(Rule):
 
     needs_ast = False
 
+    def _find_tool(self) -> str | None:
+        """Find the tool binary, preferring the project venv over system."""
+        import shutil
+        from pathlib import Path
+
+        # Check project venv first
+        venv_bin = Path(__file__).resolve().parent.parent.parent / ".venv" / "bin" / self.tool_name
+        if venv_bin.is_file():
+            return str(venv_bin)
+
+        return shutil.which(self.tool_name)
+
     def scan(self, ctx: ScanContext) -> list[Finding]:
         """Run the external tool and convert output to Findings."""
-        import shutil
         import subprocess
 
-        if not shutil.which(self.tool_name):
+        tool_path = self._find_tool()
+        if not tool_path:
             logger.info("Tool '%s' not installed, skipping rule '%s'", self.tool_name, self.key)
             return []
 
         try:
+            cmd = self.build_command(ctx)
+            # Replace the tool name with the resolved path
+            cmd[0] = tool_path
             result = subprocess.run(
-                self.build_command(ctx),
+                cmd,
                 capture_output=True,
                 text=True,
                 timeout=self.timeout,

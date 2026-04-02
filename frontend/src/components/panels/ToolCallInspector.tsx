@@ -108,10 +108,10 @@ export function ToolCallInspector({ toolCallId }: ToolCallInspectorProps) {
 
       {/* Input Parameters */}
       <CollapsibleSection title="Input Parameters" defaultOpen>
-        {toolCall.input_params ? (
+        {(toolCall.input_data ?? toolCall.input_params) ? (
           <>
-            <JsonViewer data={toolCall.input_params} />
-            <CopyButton text={JSON.stringify(toolCall.input_params, null, 2)} className="mt-1" />
+            <JsonViewer data={toolCall.input_data ?? toolCall.input_params} />
+            <CopyButton text={JSON.stringify(toolCall.input_data ?? toolCall.input_params, null, 2)} className="mt-1" />
           </>
         ) : (
           <p className="mt-1 text-xs text-temper-text-dim">No input parameters</p>

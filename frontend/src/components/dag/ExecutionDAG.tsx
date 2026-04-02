@@ -72,12 +72,13 @@ export function ExecutionDAG() {
       }
     }
 
-    // Build a set of node ids (stage names) that contain a matching agent
+    // Build a set of node ids (stage names) that contain a matching agent.
+    // Note: stages map keys are execution UUIDs, but ReactFlow node IDs use stage.name.
     const matchedNodeIds = new Set<string>();
-    for (const [nodeId, stage] of stages) {
+    for (const [, stage] of stages) {
       const nodeAgents = stage.agents ?? (stage.agent ? [stage.agent] : []);
-      const hasMatch = nodeAgents.some((a) => matched.has(a.id));
-      if (hasMatch) matchedNodeIds.add(nodeId);
+      const hasMatch = nodeAgents.some((a: { id: string }) => matched.has(a.id));
+      if (hasMatch && stage.name) matchedNodeIds.add(stage.name);
     }
 
     return matchedNodeIds;
@@ -307,7 +308,7 @@ export function ExecutionDAG() {
           nodeColor="#1e2a4a"
           maskColor="rgba(15, 23, 41, 0.7)"
           position="bottom-right"
-          style={{ width: 120, height: 80, opacity: 0.25 }}
+          style={{ width: 120, height: 80, opacity: 0.4 }}
           className="hover:!opacity-100 transition-opacity duration-200"
         />
         <Panel position="top-right">

@@ -37,24 +37,25 @@ function detectType(content: string): ContentType {
 }
 
 export function SmartContent({ content, maxHeight = 200, compact = false, className }: SmartContentProps) {
-  const type = useMemo(() => detectType(content), [content]);
+  const safeContent = content ?? '';
+  const type = useMemo(() => detectType(safeContent), [safeContent]);
   const textSize = compact ? 'text-[10px]' : 'text-xs';
 
   return (
-    <div className={cn('rounded border border-temper-border/30 overflow-hidden', className)}>
+    <div className={cn('rounded border border-temper-border/50 overflow-hidden bg-temper-panel', className)}>
       {/* Type indicator + copy */}
-      <div className="flex items-center justify-between px-2 py-0.5 bg-temper-surface/30 border-b border-temper-border/20">
+      <div className="flex items-center justify-between px-2 py-0.5 bg-temper-surface/50 border-b border-temper-border/30">
         <span className={cn('font-mono uppercase tracking-wider text-temper-text-dim', compact ? 'text-[8px]' : 'text-[9px]')}>
           {type}
         </span>
-        <CopyButton text={content} />
+        <CopyButton text={safeContent} />
       </div>
       {/* Content */}
       <div className={cn('overflow-auto', textSize)} style={{ maxHeight }}>
-        {type === 'json' && <JsonContent content={content} compact={compact} />}
-        {type === 'markdown' && <MarkdownContent content={content} compact={compact} />}
-        {type === 'code' && <CodeContent content={content} />}
-        {type === 'text' && <TextContent content={content} />}
+        {type === 'json' && <JsonContent content={safeContent} compact={compact} />}
+        {type === 'markdown' && <MarkdownContent content={safeContent} compact={compact} />}
+        {type === 'code' && <CodeContent content={safeContent} />}
+        {type === 'text' && <TextContent content={safeContent} />}
       </div>
     </div>
   );
@@ -235,5 +236,19 @@ function highlightCodeLine(line: string): React.ReactNode {
       .replace(/<cmt>/g, '<span class="text-temper-text-dim italic">')
       .replace(/<\/cmt>/g, '</span>')
     }} />
+  );
+}
+
+/* --- Plain Text --- */
+
+function TextContent({ content }: { content: string }) {
+  // Split into paragraphs on double newlines, render with spacing
+  const paragraphs = content.split(/\n{2,}/);
+  return (
+    <div className="p-2 text-xs text-temper-text leading-relaxed space-y-2">
+      {paragraphs.map((p, i) => (
+        <p key={i} className="whitespace-pre-wrap break-words">{p}</p>
+      ))}
+    </div>
   );
 }

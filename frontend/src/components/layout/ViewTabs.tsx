@@ -53,16 +53,16 @@ export function ViewTabs({
     <Tabs value={activeTab} onValueChange={handleChange} className="flex-1 flex flex-col min-h-0">
       <TabsList className="mx-4 mt-2">
         <TabsTrigger value="dag">
-          DAG <CountBadge count={stageCount} /> <span className="ml-1 text-[10px] opacity-50 hidden sm:inline">1</span>
+          DAG <CountBadge count={stageCount} />
         </TabsTrigger>
         <TabsTrigger value="timeline">
-          Timeline <span className="ml-1 text-[10px] opacity-50 hidden sm:inline">2</span>
+          Timeline
         </TabsTrigger>
         <TabsTrigger value="eventlog">
-          Event Log <CountBadge count={eventCount} /> <span className="ml-1 text-[10px] opacity-50 hidden sm:inline">3</span>
+          Event Log <CountBadge count={eventCount} />
         </TabsTrigger>
         <TabsTrigger value="llmcalls">
-          LLM Calls <CountBadge count={llmCallCount} /> <span className="ml-1 text-[10px] opacity-50 hidden sm:inline">4</span>
+          LLM Calls <CountBadge count={llmCallCount} />
         </TabsTrigger>
       </TabsList>
 

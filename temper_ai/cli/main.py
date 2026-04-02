@@ -177,7 +177,7 @@ def _cmd_run(args) -> None:
                 except Exception as e:
                     errors.append(f"MCP server '{name}': {e}")
             if errors:
-                print(f"Error: Required MCP servers failed to connect:", file=sys.stderr)
+                print("Error: Required MCP servers failed to connect:", file=sys.stderr)
                 for err in errors:
                     print(f"  {err}", file=sys.stderr)
                 sys.exit(1)

@@ -77,11 +77,11 @@
     --temper-surface: #f5f7fa;
     --temper-border: #d0d7e3;
     --temper-border-light: #b8c2d4;
-    --temper-text: #1a1a2e;
-    --temper-text-muted: #5a6070;
-    --temper-text-dim: #8a90a0;
-    --temper-accent: #1976d2;
-    --temper-accent-dim: #1565c0;
+    --temper-text: #111827;
+    --temper-text-muted: #374151;
+    --temper-text-dim: #6b7280;
+    --temper-accent: #2563eb;
+    --temper-accent-dim: #1d4ed8;
 
     --temper-bg-completed: #e8f5e9;
     --temper-bg-running: #e3f2fd;
@@ -106,17 +106,20 @@
 
 /* Light mode — explicit data-theme attribute */
 :root[data-theme="light"] {
+  color-scheme: light;
   --temper-bg: #f0f2f5;
   --temper-panel: #ffffff;
   --temper-panel-light: #e8ecf2;
-  --temper-surface: #f5f7fa;
-  --temper-border: #d0d7e3;
-  --temper-border-light: #b8c2d4;
-  --temper-text: #1a1a2e;
-  --temper-text-muted: #5a6070;
-  --temper-text-dim: #8a90a0;
-  --temper-accent: #1976d2;
-  --temper-accent-dim: #1565c0;
+  --temper-surface: #edf0f5;
+  --temper-border: #c8cfe0;
+  --temper-border-light: #b0bace;
+  --temper-text: #111827;
+  --temper-text-muted: #374151;
+  --temper-text-dim: #6b7280;
+  --temper-accent: #2563eb;
+  --temper-accent-dim: #1d4ed8;
+  --color-temper-token-prompt: #2563eb;
+  --color-temper-token-completion: #16a34a;
 
   --temper-bg-completed: #e8f5e9;
   --temper-bg-running: #e3f2fd;

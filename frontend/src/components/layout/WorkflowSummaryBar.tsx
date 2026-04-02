@@ -136,7 +136,7 @@ export function WorkflowSummaryBar() {
             <div className="flex items-end gap-1 h-4">
               {stageCosts.slice(0, 5).map(s => (
                 <div key={s.name} className="flex flex-col items-center" title={`${s.name}: ${formatCost(s.cost)}`}>
-                  <div className="w-3 bg-temper-accent/60 rounded-t-sm" style={{ height: Math.max((s.cost / maxCost) * 16, 2) }} />
+                  <div className="w-4 bg-temper-accent/60 rounded-t-sm" style={{ height: Math.max((s.cost / maxCost) * 20, 4) }} />
                 </div>
               ))}
             </div>

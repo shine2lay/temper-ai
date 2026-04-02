@@ -29,15 +29,36 @@ function PromptDisplay({ prompt }: { prompt: unknown }) {
             typeof msg === 'object' && msg !== null
               ? (msg as Record<string, unknown>).content
               : String(msg);
-          const contentStr = typeof content === 'string' ? content : JSON.stringify(content, null, 2);
+          const toolCalls = typeof msg === 'object' && msg !== null
+            ? (msg as Record<string, unknown>).tool_calls as Array<Record<string, unknown>> | undefined
+            : undefined;
+          // Guard against null/undefined content (tool-call assistant messages have no text)
+          const contentStr = content == null
+            ? (toolCalls ? `[Tool calls: ${toolCalls.map(tc => (tc as Record<string, unknown>).function ? ((tc as Record<string, unknown>).function as Record<string, unknown>).name : tc.name).join(', ')}]` : '')
+            : (typeof content === 'string' ? content : (JSON.stringify(content, null, 2) ?? ''));
           return (
             <div key={i} className="rounded-md overflow-hidden">
               {role != null && (
                 <div className="px-2 py-1 bg-temper-accent/10 text-xs font-medium text-temper-accent">
                   {String(role)}
+                  {toolCalls && <span className="ml-2 text-amber-400 font-normal">{toolCalls.length} tool call{toolCalls.length !== 1 ? 's' : ''}</span>}
                 </div>
               )}
-              <SmartContent content={contentStr} maxHeight={300} />
+              {contentStr && <SmartContent content={contentStr} maxHeight={300} />}
+              {toolCalls && (
+                <div className="px-2 py-1.5 bg-amber-500/5 border-t border-temper-border/20">
+                  {toolCalls.map((tc, j) => {
+                    const fn = (tc as Record<string, unknown>).function as Record<string, unknown> | undefined;
+                    const name = fn?.name ?? tc.name ?? 'unknown';
+                    const args = fn?.arguments ?? tc.arguments;
+                    return (
+                      <div key={j} className="text-[10px] font-mono text-amber-400 mb-0.5">
+                        {String(name)}({typeof args === 'string' ? args.slice(0, 80) : JSON.stringify(args)?.slice(0, 80)})
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           );
         })}
@@ -240,7 +261,11 @@ export function LLMCallInspector({ llmCallId }: LLMCallInspectorProps) {
             <CopyButton text={llmCall.response} className="mt-1" />
           </>
         ) : (
-          <p className="mt-1 text-xs text-temper-text-dim">No response data</p>
+          <p className="mt-1 text-xs text-temper-text-dim">
+            {(llmCall.completion_tokens ?? 0) > 0
+              ? 'No text response — model issued tool calls'
+              : 'No response data'}
+          </p>
         )}
       </CollapsibleSection>
     </div>

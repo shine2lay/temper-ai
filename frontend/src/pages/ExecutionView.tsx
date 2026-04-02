@@ -46,10 +46,13 @@ export function ExecutionView() {
   const eventLog = useExecutionStore((s) => s.eventLog);
   const llmCalls = useExecutionStore((s) => s.llmCalls);
   const prevStatus = useRef(workflow?.status);
-  const [activeTab, setActiveTab] = useState(() => {
-    return localStorage.getItem('temper-active-tab') ?? 'dag';
-  });
+  const [activeTab, setActiveTab] = useState('dag');
   const [showShortcutHelp, setShowShortcutHelp] = useState(false);
+
+  // Reset to DAG tab when navigating to a different workflow
+  useEffect(() => {
+    setActiveTab('dag');
+  }, [workflowId]);
 
   const filteredEventCount = useMemo(
     () => eventLog.filter((e) => e.event_type !== 'llm_stream_batch').length,

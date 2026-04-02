@@ -32,8 +32,14 @@ export function DetailSheet() {
         side="right"
         className="w-full sm:w-[70vw] overflow-y-auto sm:max-w-[70vw]"
         onOpenAutoFocus={(e) => {
+          // Focus inside the sheet, not the trigger
           const firstButton = (e.target as HTMLElement).querySelector('button, [tabindex]');
           if (firstButton) (firstButton as HTMLElement).focus();
+        }}
+        onCloseAutoFocus={(e) => {
+          // Prevent Radix from restoring focus to the trigger element,
+          // which can interfere with Tabs focus management and reset the active tab.
+          e.preventDefault();
         }}
       >
         <SheetHeader>

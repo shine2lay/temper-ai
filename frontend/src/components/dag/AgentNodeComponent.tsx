@@ -20,10 +20,11 @@ export const AgentNodeComponent = memo(function AgentNodeComponent({ data }: Nod
         className="!w-2 !h-2 !bg-temper-border !border-temper-bg" />
       <Handle type="source" position={Position.Right} id="right"
         className="!w-2 !h-2 !bg-temper-border !border-temper-bg" />
+      {/* Bottom handles only rendered when needed — hidden by default to reduce visual noise */}
       <Handle type="source" position={Position.Bottom} id="bottom"
-        className="!w-2 !h-2 !bg-temper-border !border-temper-bg" />
+        className="!w-0 !h-0 !bg-transparent !border-none" />
       <Handle type="target" position={Position.Bottom} id="bottom-target"
-        className="!w-2 !h-2 !bg-temper-border !border-temper-bg !left-[70%]" />
+        className="!w-0 !h-0 !bg-transparent !border-none !left-[70%]" />
 
       <AgentCardContent agent={agent} borderColor={stageColor} />
     </div>

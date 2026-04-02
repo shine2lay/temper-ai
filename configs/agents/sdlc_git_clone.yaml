@@ -1,0 +1,15 @@
+agent:
+  name: sdlc_git_clone
+  type: script
+  script_template: |
+    set -e
+
+    REPO_URL={{ repo_url }}
+
+    # Clone to temp dir
+    WORKDIR=$(mktemp -d /tmp/sdlc-run-XXXXXX)
+    git clone "$REPO_URL" "$WORKDIR/repo"
+    REPO_DIR="$WORKDIR/repo"
+
+    echo '{"workspace_path": "'$REPO_DIR'", "clone_status": "success"}'
+  timeout_seconds: 120

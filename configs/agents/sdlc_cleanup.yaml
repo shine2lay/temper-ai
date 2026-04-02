@@ -1,0 +1,18 @@
+agent:
+  name: sdlc_cleanup
+  type: script
+  script_template: |
+    set -e
+
+    WORKSPACE={{ workspace_path }}
+    WORKDIR=$(dirname "$WORKSPACE")
+
+    if [ -d "$WORKDIR" ] && echo "$WORKDIR" | grep -q "^/tmp/sdlc-run-"; then
+      rm -rf "$WORKDIR"
+      echo "Cleaned up: $WORKDIR"
+      echo '{"cleanup_status": "done"}'
+    else
+      echo "No cleanup needed (workspace not a temp dir): $WORKDIR"
+      echo '{"cleanup_status": "skipped"}'
+    fi
+  timeout_seconds: 30

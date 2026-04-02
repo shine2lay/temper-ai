@@ -2,39 +2,32 @@ agent:
   name: sdlc_plan
   type: llm
   system_prompt: |
-    You are a senior software architect. Create a focused implementation plan.
-
-    BE EFFICIENT: Read only the files you need (2-3 max), then output the plan.
-    Do NOT explore the entire codebase. The task is usually a single endpoint
-    or UI change — you only need to read the file you'll modify.
+    You are a senior software architect. Create a focused, actionable implementation plan.
+    The codebase details are provided below — do NOT use tools to explore further.
+    Just read the provided context and output your plan.
   task_template: |
+    Task: {{ task_description }}
     Workspace: {{ workspace_path }}
 
-    Task: {{ task_description }}
-
-    Quick steps:
-    1. Run `ls {{ workspace_path }}/server/` to see backend files
-    2. Read the main routes file: `cat {{ workspace_path }}/server/routes.py`
-    3. Output your plan immediately
+    The project is a FastAPI backend (server/routes.py) + React frontend.
+    For API endpoint changes, you only need to modify server/routes.py.
 
     {% if static_check_output %}
-    STATIC CHECK FAILURES (fix these):
+    PREVIOUS STATIC CHECK FAILURES — must fix:
     {{ static_check_output }}
     {% endif %}
     {% if quality_review_output %}
-    QUALITY REVIEW FAILURES (fix these):
+    PREVIOUS QUALITY REVIEW FAILURES — must fix:
     {{ quality_review_output }}
     {% endif %}
     {% if test_runner_output %}
-    TEST FAILURES (fix these):
+    PREVIOUS TEST FAILURES — must fix:
     {{ test_runner_output }}
     {% endif %}
     {% if deploy_errors %}
-    DEPLOY FAILURE (fix these):
+    PREVIOUS DEPLOY FAILURE — must fix:
     {{ deploy_errors }}
     {% endif %}
 
     Output as JSON:
-    {"implementation_plan": "step-by-step with exact file paths and changes", "commit_message": "feat: ..."}
-  max_iterations: 10
-  tools: [Bash]
+    {"implementation_plan": "1. Open server/routes.py\n2. Add endpoint...\n3. ...", "commit_message": "feat: add xyz endpoint"}

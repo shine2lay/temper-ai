@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect, useRef } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
 import * as Dialog from '@radix-ui/react-dialog';
 import { AlertCircle, Inbox, SearchX, X, Play } from 'lucide-react';
@@ -149,8 +149,10 @@ function WorkflowRow({
   const stale = isStaleRun(wf);
   const instant = isInstantFailure(wf);
 
+  const queryClient = useQueryClient();
   const cancelMutation = useMutation<void, Error, string>({
     mutationFn: cancelRun,
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['workflows'] }); },
   });
 
   const hasTokenInfo =

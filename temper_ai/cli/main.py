@@ -110,7 +110,6 @@ def _cmd_run(args) -> None:
         sys.exit(1)
 
     # Initialize LLM providers
-    from temper_ai.llm.providers.factory import create_provider
     from temper_ai.server import _init_llm_providers
 
     llm_providers = _init_llm_providers()

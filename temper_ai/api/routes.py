@@ -157,12 +157,33 @@ def get_workflow(execution_id: str):
 
 @router.post("/api/runs/{execution_id}/cancel")
 def cancel_run(execution_id: str):
-    """Cancel a running workflow execution."""
+    """Cancel a running workflow execution.
+
+    If the execution is actively running in this server, sets the cancel event.
+    If it's an orphaned run (stale from a server restart), marks it as cancelled
+    directly in the event store.
+    """
     cancel_event = _running.get(execution_id)
-    if cancel_event is None:
-        raise HTTPException(status_code=404, detail=f"No running execution '{execution_id}'")
-    cancel_event.set()
-    return {"status": "cancelling", "execution_id": execution_id}
+    if cancel_event is not None:
+        cancel_event.set()
+        return {"status": "cancelling", "execution_id": execution_id}
+
+    # Not in _running — could be an orphaned stale run. Check if it exists in DB.
+    result = get_workflow_execution(execution_id)
+    if not result:
+        raise HTTPException(status_code=404, detail=f"Execution '{execution_id}' not found")
+
+    if result.get("status") != "running":
+        return {"status": result.get("status"), "execution_id": execution_id}
+
+    # Orphaned running workflow — update the workflow.started event status directly
+    # so the list query picks up the new status.
+    from temper_ai.observability.recorder import get_events, update_event
+    start_events = get_events(event_type="workflow.started", execution_id=execution_id, limit=1)
+    if start_events:
+        update_event(start_events[0]["id"], status="cancelled", data={"cancelled_reason": "Stale run cancelled by user"})
+        logger.info("Marked stale execution %s as cancelled", execution_id)
+    return {"status": "cancelled", "execution_id": execution_id}
 
 
 @router.get("/api/runtime-config")

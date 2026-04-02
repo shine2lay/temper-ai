@@ -12,7 +12,7 @@ Notifier protocol (duck-typed):
 
 import logging
 import uuid
-from typing import Any, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 logger = logging.getLogger(__name__)
 

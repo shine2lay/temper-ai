@@ -90,7 +90,7 @@ def list_workflow_executions(
         # Status comes from the event's own status field (updated in-place by executor)
         run_status = event.get("status", "running")
         # Normalize: the executor sets "completed"/"failed" on the start event
-        if run_status not in ("completed", "failed", "running"):
+        if run_status not in ("completed", "failed", "running", "cancelled"):
             run_status = "running"
 
         if status and run_status != status:

@@ -35,4 +35,5 @@ agent:
 
     After making changes, output a summary as JSON:
     {"files_changed": "comma-separated list of files changed", "change_summary": "one-line description of what you implemented"}
+  max_iterations: 25
   tools: [Bash, FileWriter]

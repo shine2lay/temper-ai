@@ -166,6 +166,7 @@ def _cmd_run(args) -> None:
         if mcp_tools:
             tool_executor.register_tools(mcp_tools)
             # Pre-connect servers this workflow needs
+            errors = []
             server_names = {t._server_name for t in mcp_tools.values()}
             for name in server_names:
                 try:
@@ -174,9 +175,14 @@ def _cmd_run(args) -> None:
                     )
                     f.result(timeout=30)
                 except Exception as e:
-                    logger.warning("MCP pre-connect '%s' failed: %s", name, e)
-    except Exception as e:
-        logger.warning("MCP setup failed: %s", e)
+                    errors.append(f"MCP server '{name}': {e}")
+            if errors:
+                print(f"Error: Required MCP servers failed to connect:", file=sys.stderr)
+                for err in errors:
+                    print(f"  {err}", file=sys.stderr)
+                sys.exit(1)
+    except ImportError:
+        pass  # mcp package not installed — skip
 
     # CLI printer + event recorder
     from temper_ai.cli.printer import CLIPrinter

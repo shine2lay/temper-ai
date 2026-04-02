@@ -114,20 +114,16 @@ def start_run(body: RunRequest):
     run_tool_executor.register_tools({name: cls() for name, cls in TOOL_CLASSES.items()})
 
     # Register MCP tools and pre-connect needed servers
-    try:
-        from temper_ai.tools.mcp_client import mcp_manager
-        from temper_ai.tools.mcp_tool import create_mcp_tools_from_agents
+    from temper_ai.tools.mcp_client import mcp_manager
+    from temper_ai.tools.mcp_tool import create_mcp_tools_from_agents
 
-        agent_configs = [
-            node.agent_config for node in nodes if hasattr(node, "agent_config")
-        ]
-        mcp_tools = create_mcp_tools_from_agents(mcp_manager, agent_configs)
-        if mcp_tools:
-            run_tool_executor.register_tools(mcp_tools)
-            # Pre-connect servers this workflow needs (avoid delay during execution)
-            _preconnect_mcp_servers(mcp_manager, mcp_tools)
-    except Exception:
-        pass  # MCP is optional
+    agent_configs = [
+        node.agent_config for node in nodes if hasattr(node, "agent_config")
+    ]
+    mcp_tools = create_mcp_tools_from_agents(mcp_manager, agent_configs)
+    if mcp_tools:
+        run_tool_executor.register_tools(mcp_tools)
+        _preconnect_mcp_servers(mcp_manager, mcp_tools)  # raises on failure
 
     recorder = EventRecorder(execution_id, notifier=ws_manager)
     context = ExecutionContext(
@@ -214,18 +210,23 @@ def _preconnect_mcp_servers(mcp_manager, mcp_tools: dict) -> None:
     if not server_names:
         return
 
+    errors = []
+
     async def connect_all():
         for name in server_names:
             try:
                 await mcp_manager.ensure_connected(name)
             except Exception as e:
-                logger.warning("MCP pre-connect failed for '%s': %s", name, e)
+                errors.append(f"MCP server '{name}': {e}")
 
-    try:
-        future = asyncio.run_coroutine_threadsafe(connect_all(), mcp_manager.event_loop)
-        future.result(timeout=30)
-    except Exception as e:
-        logger.warning("MCP pre-connect failed: %s", e)
+    future = asyncio.run_coroutine_threadsafe(connect_all(), mcp_manager.event_loop)
+    future.result(timeout=30)
+
+    if errors:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Required MCP servers failed to connect: {'; '.join(errors)}",
+        )
 
 
 @router.get("/api/runtime-config")

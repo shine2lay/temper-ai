@@ -134,7 +134,7 @@ def _init_memory_service() -> MemoryService:
 
 def _load_default_configs(config_store: ConfigStore):
     """Load demo workflow configs from configs/ directory on startup."""
-    configs_dir = Path(__file__).parent.parent / "configs"
+    configs_dir = Path(os.environ.get("TEMPER_CONFIG_DIR", Path(__file__).parent.parent / "configs"))
     if not configs_dir.exists():
         logger.info("No configs/ directory found, skipping default config loading")
         return

@@ -121,7 +121,7 @@ class BaseLLM(ABC):
                 last_error = e
 
             if attempt < self.max_retries - 1:
-                delay = min(2**attempt + random.random(), 30)
+                delay = min(2**attempt + random.random(), 30)  # noqa: B311
                 logger.warning(
                     "LLM call failed (attempt %d/%d): %s. Retrying in %.1fs",
                     attempt + 1,

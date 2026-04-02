@@ -122,7 +122,7 @@ def start_run(body: RunRequest):
     ]
     mcp_tools = create_mcp_tools_from_agents(mcp_manager, agent_configs)
     if mcp_tools:
-        run_tool_executor.register_tools(mcp_tools)
+        run_tool_executor.register_tools(dict(mcp_tools))
         _preconnect_mcp_servers(mcp_manager, mcp_tools)  # raises on failure
 
     recorder = EventRecorder(execution_id, notifier=ws_manager)
@@ -191,7 +191,8 @@ def cancel_run(execution_id: str):
     # Orphaned running workflow — update the workflow.started event status directly
     # so the list query picks up the new status.
     from temper_ai.observability.recorder import get_events, update_event
-    start_events = get_events(event_type="workflow.started", execution_id=execution_id, limit=1)
+    from temper_ai.observability.event_types import EventType
+    start_events = get_events(event_type=EventType("workflow.started"), execution_id=execution_id, limit=1)
     if start_events:
         update_event(start_events[0]["id"], status="cancelled", data={"cancelled_reason": "Stale run cancelled by user"})
         logger.info("Marked stale execution %s as cancelled", execution_id)
@@ -232,7 +233,7 @@ def _preconnect_mcp_servers(mcp_manager, mcp_tools: dict) -> None:
 @router.get("/api/runtime-config")
 def get_runtime_config():
     """Runtime config for the frontend (auth tokens, feature flags, etc.)."""
-    return {"dashboard_token": None}
+    return {"dashboard_token": None}  # noqa: B105
 
 
 @router.websocket("/ws/{execution_id}")

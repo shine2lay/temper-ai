@@ -120,7 +120,7 @@ def _resolve_output_field(result: NodeResult, source: str) -> object:
     elif parts[0] == "structured" and len(parts) >= 2:
         if result.structured_output is None:
             return None
-        value = result.structured_output
+        value: object = result.structured_output
         for key in parts[1:]:
             if isinstance(value, dict):
                 value = value.get(key)

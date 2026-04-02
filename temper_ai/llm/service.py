@@ -276,7 +276,7 @@ class LLMService:
 
             return event_id, response, cost
 
-        except Exception as e:
+        except Exception as e:  # noqa: broad-except
             self._record(
                 EventType.LLM_CALL_FAILED,
                 parent_id=context.agent_event_id,

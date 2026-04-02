@@ -124,11 +124,15 @@ class AnthropicLLM(BaseLLM):
     def _build_request(self, messages: list[dict], **kwargs: Any) -> dict:
         return {}
 
-    def _parse_response(self, response: dict) -> LLMResponse:
+    def _parse_response(self, response: dict, latency_ms: int = 0) -> LLMResponse:
         return LLMResponse(content="", model=self.model, provider=self.PROVIDER_NAME)
 
-    def _parse_stream_chunk(self, chunk: dict) -> LLMStreamChunk | None:
-        return None
+    def _consume_stream(
+        self,
+        response: Any,
+        on_chunk: StreamCallback | None,
+    ) -> LLMResponse:
+        return LLMResponse(content="", model=self.model, provider=self.PROVIDER_NAME)
 
 
 def _extract_system(messages: list[dict]) -> tuple[str, list[dict]]:

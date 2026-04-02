@@ -165,7 +165,7 @@ class WebSocketManager:
                         )
                     else:
                         self._flush_chunks(execution_id)
-                except Exception:
+                except Exception:  # noqa: broad-except
                     self._flush_chunks(execution_id)
 
     def _flush_chunks(self, execution_id: str):
@@ -220,7 +220,7 @@ class WebSocketManager:
         try:
             await websocket.send_json(data)
         except Exception:
-            pass  # Connection might be closing
+            pass  # Connection might be closing  # noqa: B110
 
     def _disconnect(self, websocket: WebSocket, execution_id: str):
         """Remove a disconnected WebSocket."""

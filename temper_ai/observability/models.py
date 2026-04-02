@@ -35,5 +35,5 @@ class Event(SQLModel, table=True):
     )
 
 
-Index("idx_events_execution_type", Event.execution_id, Event.type)
-Index("idx_events_execution_timestamp", Event.execution_id, Event.timestamp)
+Index("idx_events_execution_type", Event.execution_id, Event.type)  # type: ignore[arg-type]
+Index("idx_events_execution_timestamp", Event.execution_id, Event.timestamp)  # type: ignore[arg-type]

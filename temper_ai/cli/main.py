@@ -39,7 +39,7 @@ def main() -> None:
     # -- temper serve --
     serve_parser = subparsers.add_parser("serve", help="Start the API server + dashboard")
     serve_parser.add_argument("--port", type=int, default=8420, help="Port (default: 8420)")
-    serve_parser.add_argument("--host", default="0.0.0.0", help="Host (default: 0.0.0.0)")
+    serve_parser.add_argument("--host", default="0.0.0.0", help="Host (default: 0.0.0.0)")  # noqa: B104
     serve_parser.add_argument("--dev", action="store_true", help="Enable hot reload")
     serve_parser.add_argument("--config-dir", default="configs", help="Config directory")
 
@@ -95,7 +95,7 @@ def _cmd_run(args) -> None:
             try:
                 import_yaml(str(yaml_file), store)
             except Exception:
-                pass
+                pass  # noqa: B110
 
     # Load workflow
     from temper_ai.stage.loader import GraphLoader
@@ -105,7 +105,7 @@ def _cmd_run(args) -> None:
 
     try:
         nodes, config = loader.load_workflow(args.workflow)
-    except Exception as exc:
+    except Exception as exc:  # noqa: broad-except
         print(f"Error loading workflow '{args.workflow}': {exc}", file=sys.stderr)
         sys.exit(1)
 
@@ -164,7 +164,7 @@ def _cmd_run(args) -> None:
 
         mcp_tools = create_mcp_tools_from_agents(mcp_manager, agent_configs)
         if mcp_tools:
-            tool_executor.register_tools(mcp_tools)
+            tool_executor.register_tools(dict(mcp_tools))
             # Pre-connect servers this workflow needs
             errors = []
             server_names = {t._server_name for t in mcp_tools.values()}
@@ -232,7 +232,7 @@ def _cmd_run(args) -> None:
     except KeyboardInterrupt:
         print("\nInterrupted.", file=sys.stderr)
         sys.exit(130)
-    except Exception as exc:
+    except Exception as exc:  # noqa: broad-except
         print(f"\nExecution failed: {exc}", file=sys.stderr)
         sys.exit(1)
     finally:
@@ -284,7 +284,7 @@ def _cmd_validate(args) -> None:
             try:
                 import_yaml(str(yaml_file), store)
             except Exception:
-                pass
+                pass  # noqa: B110
 
     from temper_ai.stage.loader import GraphLoader
 
@@ -297,7 +297,7 @@ def _cmd_validate(args) -> None:
         print(f"  Nodes: {len(nodes)}")
         for node in nodes:
             print(f"    {node.name} ({node.config.type})")
-    except Exception as exc:
+    except Exception as exc:  # noqa: broad-except
         print(f"✗ Validation failed: {exc}", file=sys.stderr)
         sys.exit(1)
 

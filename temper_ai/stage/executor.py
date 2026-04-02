@@ -15,6 +15,7 @@ import logging
 import time
 from collections import defaultdict, deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Any
 
 from temper_ai.observability.event_types import EventType
 from temper_ai.shared.types import ExecutionContext, NodeResult, Status
@@ -183,7 +184,7 @@ def _execute_single_node(
     resolved = _inject_strategy_context(node, resolved, node_outputs)
 
     # Record node start (include DAG metadata for frontend dependency arrows)
-    node_event_data = {
+    node_event_data: dict[str, Any] = {
         "name": node.name,
         "type": node.config.type,
         "depends_on": node.config.depends_on or [],
@@ -360,7 +361,7 @@ def _resolve_inputs(
                 resolved[local_name] = result.output
             elif field == "structured" and len(parts) >= 3:
                 if result.structured_output:
-                    value = result.structured_output
+                    value: Any = result.structured_output
                     for key in parts[2:]:
                         value = value.get(key) if isinstance(value, dict) else None
                     resolved[local_name] = value

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 from temper_ai.observability import get_events
+from temper_ai.observability.event_types import EventType
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +76,7 @@ def list_workflow_executions(
     Returns: {"runs": [...], "total": int}
     """
     # Get all workflow start events
-    all_events = get_events(event_type="workflow.started", limit=1000)
+    all_events = get_events(event_type=EventType("workflow.started"), limit=1000)
 
     # For each, build a summary
     runs = []

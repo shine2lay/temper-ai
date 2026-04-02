@@ -97,7 +97,7 @@ def _execute_single(
             "duration_ms": duration_ms,
         }
 
-    except Exception as e:
+    except Exception as e:  # noqa: broad-except
         duration_ms = int((time.monotonic() - start) * 1000)
         error_msg = f"{type(e).__name__}: {e}"
 

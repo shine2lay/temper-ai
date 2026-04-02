@@ -31,6 +31,7 @@ from temper_ai.api.studio import router as studio_router
 from temper_ai.config import ConfigStore
 from temper_ai.database import init_database, reset_database
 from temper_ai.memory import InMemoryStore, MemoryService
+from temper_ai.memory.base import MemoryStoreBase
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +42,9 @@ def _init_llm_providers() -> dict:
     Server-level config — shared across all workflows.
     Agents reference providers by name (e.g., provider: "openai").
     """
-    providers = {}
+    from temper_ai.llm.providers.base import BaseLLM
+
+    providers: dict[str, BaseLLM] = {}
 
     # OpenAI (if API key is set)
     openai_key = os.environ.get("OPENAI_API_KEY")
@@ -127,6 +130,7 @@ def _init_memory_service() -> MemoryService:
     """
     backend = os.environ.get("TEMPER_MEMORY_BACKEND", "in_memory")
 
+    store: MemoryStoreBase
     if backend == "mem0":
         try:
             from temper_ai.memory.mem0_store import Mem0Store
@@ -205,7 +209,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         from temper_ai.tools.mcp_client import mcp_manager
         await mcp_manager.stop()
     except Exception:
-        pass
+        pass  # noqa: B110
     reset_database()
     logger.info("Server shutdown")
 

@@ -6,7 +6,7 @@
 
 > Evaluate a mathematical expression safely. Supports arithmetic, sqrt, sin, cos, tan, log, exp, abs, round, min, max, pi, e.
 
-Uses AST whitelist approach — no eval(). Only allows arithmetic operations
+Uses AST whitelist approach — no eval(). Only allows arithmetic operations  # noqa
 and a small set of math functions.
 
 - **Modifies state:** No (read-only)

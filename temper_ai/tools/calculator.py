@@ -1,17 +1,17 @@
 """Calculator tool — safe math evaluation.
 
-Uses AST whitelist approach — no eval(). Only allows arithmetic operations
+Uses AST whitelist approach — no eval(). Only allows arithmetic operations  # noqa
 and a small set of math functions.
 """
 
 import ast
 import math
 import operator
-from typing import Any
+from typing import Any, Callable
 
 from temper_ai.tools.base import BaseTool, ToolResult
 
-_ALLOWED_OPERATORS = {
+_ALLOWED_OPERATORS: dict[type, Callable[..., Any]] = {
     ast.Add: operator.add,
     ast.Sub: operator.sub,
     ast.Mult: operator.mul,
@@ -23,7 +23,7 @@ _ALLOWED_OPERATORS = {
     ast.UAdd: operator.pos,
 }
 
-_ALLOWED_FUNCTIONS = {
+_ALLOWED_FUNCTIONS: dict[str, Callable[..., Any]] = {
     "sqrt": math.sqrt,
     "abs": abs,
     "round": round,

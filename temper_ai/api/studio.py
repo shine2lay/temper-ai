@@ -114,7 +114,7 @@ def validate_config(config_type: str, body: ConfigBody):
             # Temporarily store config for validation
             _config_store.put("__validate_temp", config_type, body.config)
             loader.load_workflow("__validate_temp")
-        except Exception as exc:
+        except Exception as exc:  # noqa: broad-except
             errors.append(str(exc))
         finally:
             _config_store.delete("__validate_temp", config_type)

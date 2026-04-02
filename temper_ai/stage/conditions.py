@@ -74,7 +74,7 @@ def _resolve_source(source: str, node_outputs: dict[str, NodeResult]) -> object:
         if result.structured_output is None:
             return None
         # Traverse nested fields: structured.verdict, structured.issues.count
-        value = result.structured_output
+        value: object = result.structured_output
         for key in parts[2:]:
             if isinstance(value, dict):
                 value = value.get(key)

@@ -117,7 +117,7 @@ class LLMAgent(AgentABC):
             )
             return result
 
-        except Exception as e:
+        except Exception as e:  # noqa: broad-except
             duration = time.monotonic() - start
             _record(
                 EventType.AGENT_FAILED,
@@ -301,7 +301,7 @@ class LLMAgent(AgentABC):
                     done=done,
                 )
             except Exception:
-                pass  # Best-effort — never block LLM streaming
+                pass  # Best-effort — never block LLM streaming  # noqa: B110
 
         return on_chunk
 
@@ -407,13 +407,13 @@ def _extract_structured_output(text: str) -> dict | None:
     return None
 
 
-def _truncate_input_data(input_data: dict, max_value_len: int = 500) -> dict:
+def _truncate_input_data(input_data: dict[str, Any], max_value_len: int = 500) -> dict[str, Any]:
     """Truncate input data values for event storage.
 
     Keeps keys and structure but truncates long string values.
     Strips internal fields (prefixed with _).
     """
-    truncated = {}
+    truncated: dict[str, Any] = {}
     for key, value in input_data.items():
         if key.startswith("_"):
             continue

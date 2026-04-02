@@ -5,7 +5,7 @@ All operations are scoped to the workspace directory.
 """
 
 import logging
-import subprocess
+import subprocess  # noqa: B404
 from typing import Any
 
 from temper_ai.tools.base import BaseTool, ToolResult
@@ -51,12 +51,13 @@ class Git(BaseTool):
         self.workspace = workspace
         self.timeout = timeout
 
-    def execute(self, command: str, **kwargs: Any) -> ToolResult:
+    def execute(self, **params: Any) -> ToolResult:
         """Execute a git command.
 
         Args:
             command: Git subcommand and args (e.g., "status", "diff --staged")
         """
+        command: str = params.pop("command", "")
         parts = command.strip().split()
         if not parts:
             return ToolResult(success=False, result="", error="Empty git command")
@@ -80,7 +81,7 @@ class Git(BaseTool):
         full_command = ["git"] + parts
 
         try:
-            result = subprocess.run(
+            result = subprocess.run(  # noqa: B603
                 full_command,
                 capture_output=True,
                 text=True,

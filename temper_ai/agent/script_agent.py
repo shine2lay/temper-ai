@@ -24,7 +24,7 @@ class ScriptAgent(AgentABC):
 
     def __init__(self, config: dict):
         super().__init__(config)
-        self.env = Environment(loader=BaseLoader())
+        self.env = Environment(loader=BaseLoader())  # noqa: B701
 
     def run(self, input_data: dict, context: ExecutionContext) -> AgentResult:
         """Execute the script agent pipeline.
@@ -91,7 +91,7 @@ class ScriptAgent(AgentABC):
                 duration_seconds=duration,
             )
 
-        except Exception as e:
+        except Exception as e:  # noqa: broad-except
             duration = round(time.monotonic() - start, 3)
             _record(
                 EventType.AGENT_FAILED,

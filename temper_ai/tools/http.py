@@ -55,14 +55,7 @@ class Http(BaseTool):
         self.timeout = timeout
         self.allowed_domains = allowed_domains  # None = allow all
 
-    def execute(
-        self,
-        method: str,
-        url: str,
-        headers: dict[str, str] | None = None,
-        body: str | None = None,
-        **kwargs: Any,
-    ) -> ToolResult:
+    def execute(self, **params: Any) -> ToolResult:
         """Execute an HTTP request.
 
         Args:
@@ -71,6 +64,11 @@ class Http(BaseTool):
             headers: Optional headers dict
             body: Optional request body string
         """
+        method: str = params.get("method", "GET")
+        url: str = params.get("url", "")
+        headers: dict[str, str] | None = params.get("headers")
+        body: str | None = params.get("body")
+
         # Domain allowlist check
         if self.allowed_domains:
             from urllib.parse import urlparse

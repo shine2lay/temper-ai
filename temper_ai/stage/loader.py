@@ -129,13 +129,14 @@ class GraphLoader:
 
         # Resolve each agent ref to a full config dict
         agent_configs = []
+        assert nc.agents is not None  # guaranteed by caller check
         for agent_ref in nc.agents:
             if isinstance(agent_ref, str):
                 agent_config = {**self._defaults, **self._load_agent_config(agent_ref)}
             elif isinstance(agent_ref, dict):
                 # Inline agent config or ref with overrides
                 if "agent" in agent_ref or "ref" in agent_ref:
-                    ref = agent_ref.get("agent") or agent_ref.get("ref")
+                    ref = agent_ref.get("agent") or agent_ref.get("ref") or ""
                     base = self._load_agent_config(ref)
                     overrides = {
                         k: v for k, v in agent_ref.items()
@@ -157,11 +158,12 @@ class GraphLoader:
             agent_configs.append(agent_config)
 
         # Generate topology from strategy
-        child_nodes = build_topology(nc.strategy, agent_configs, nc.strategy_config)
+        child_nodes: list[Node] = list(build_topology(nc.strategy, agent_configs, nc.strategy_config))
         return StageNode(nc, child_nodes)
 
     def _resolve_explicit_stage(self, nc: NodeConfig) -> StageNode:
         """Resolve a stage with explicit child nodes."""
+        assert nc.nodes is not None  # guaranteed by caller check
         child_nodes = self._resolve_nodes(nc.nodes)
         return StageNode(nc, child_nodes)
 
@@ -171,6 +173,7 @@ class GraphLoader:
         Only fields explicitly set on the node (not defaults) override the ref.
         We detect this by comparing against a fresh default NodeConfig.
         """
+        assert nc.ref is not None  # guaranteed by caller
         ref_config = self._load_config(nc.ref, "stage")
         merged_data = dict(ref_config)
 

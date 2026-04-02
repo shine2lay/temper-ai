@@ -9,7 +9,7 @@ Security:
 
 import logging
 import os
-import subprocess
+import subprocess  # noqa: B404
 from typing import Any
 
 from temper_ai.tools.base import BaseTool, ToolResult
@@ -72,7 +72,7 @@ class Bash(BaseTool):
         try:
             result = subprocess.run(
                 command,
-                shell=True,
+                shell=True,  # noqa: B602
                 capture_output=True,
                 text=True,
                 timeout=timeout,

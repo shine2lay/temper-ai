@@ -33,7 +33,7 @@ class PromptRenderer:
         self,
         token_counter: Callable[[list[dict[str, str]]], int] | None = None,
     ):
-        self.env = Environment(loader=BaseLoader(), undefined=Undefined)
+        self.env = Environment(loader=BaseLoader(), undefined=Undefined)  # noqa: B701
         self.token_counter = token_counter
 
     def render(
@@ -100,7 +100,7 @@ class PromptRenderer:
         2. Truncate input_data values (keep structure, trim long content)
         3. Raise PromptBudgetError (system_prompt + minimal input doesn't fit)
         """
-        assert self.token_counter is not None
+        assert self.token_counter is not None  # noqa: B101
 
         token_count = self.token_counter(messages)
         if token_count <= budget:
@@ -185,7 +185,7 @@ def validate_prompt_config(
 
     # Template syntax validation
     try:
-        env = Environment(loader=BaseLoader())
+        env = Environment(loader=BaseLoader())  # noqa: B701
         env.parse(template)
     except TemplateSyntaxError as e:
         errors.append(

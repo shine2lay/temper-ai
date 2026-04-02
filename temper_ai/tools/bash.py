@@ -55,9 +55,11 @@ class Bash(BaseTool):
         if not command or not command.strip():
             return ToolResult(success=False, result="", error="Empty command")
 
+        # Skip allowlist for multi-line scripts (developer-defined, not LLM-generated)
+        is_script = "\n" in command.strip()
         allowed = self.config.get("allowed_commands", _DEFAULT_ALLOWED_COMMANDS)
         base_cmd_name = os.path.basename(command.strip().split()[0])
-        if allowed and base_cmd_name not in allowed:
+        if allowed and not is_script and base_cmd_name not in allowed:
             return ToolResult(
                 success=False, result="",
                 error=f"Command '{base_cmd_name}' not in allowed list: {allowed}",

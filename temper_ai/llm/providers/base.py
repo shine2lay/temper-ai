@@ -47,7 +47,7 @@ class BaseLLM(ABC):
         api_key: str | None = None,
         temperature: float = 0.7,
         max_tokens: int = 4096,
-        timeout: int = 120,
+        timeout: int = 600,
         max_retries: int = 3,
         **kwargs: Any,
     ) -> None:

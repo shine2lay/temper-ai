@@ -21,7 +21,7 @@ Works with OpenAI, Azure OpenAI, and any OpenAI-compatible API.
 | `api_key` | str | None | None | API authentication key |
 | `temperature` | float | 0.7 | Sampling temperature (0.0-2.0) |
 | `max_tokens` | int | 4096 | Maximum tokens in response |
-| `timeout` | int | 120 | Request timeout in seconds |
+| `timeout` | int | 600 | Request timeout in seconds |
 | `max_retries` | int | 3 | Max retry attempts on transient failures |
 
 ## Provider Interface

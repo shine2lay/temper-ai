@@ -153,6 +153,19 @@ def _execute_single_node(
     parent_event_id: str,
 ) -> NodeResult:
     """Execute one node with condition checking and input resolution."""
+    # Dependency check — skip if any dependency failed
+    for dep_name in node.depends_on:
+        dep_result = node_outputs.get(dep_name)
+        if dep_result and dep_result.status == Status.FAILED:
+            logger.warning(
+                "Node '%s' skipped — dependency '%s' failed",
+                node.name, dep_name,
+            )
+            return NodeResult(
+                status=Status.SKIPPED,
+                error=f"Dependency '{dep_name}' failed",
+            )
+
     # Condition check
     if node.condition:
         try:

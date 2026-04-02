@@ -1,0 +1,5 @@
+mcp_server:
+  name: git
+  transport: stdio
+  command: uvx
+  args: ["mcp-server-git", "--repository", "${GIT_WORKSPACE:/workspace}"]

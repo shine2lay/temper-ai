@@ -64,18 +64,38 @@ class MCPClientManager:
             self._event_loop = asyncio.get_running_loop()
         return self._event_loop
 
-    async def start(self) -> None:
-        """Connect to all MCP servers defined in MCP_SERVERS env var."""
+    async def start(self, config_dir: str | None = None) -> None:
+        """Connect to all configured MCP servers.
+
+        Loads from two sources (both optional, merged):
+        1. YAML files in configs/mcp_servers/*.yaml
+        2. MCP_SERVERS env var (JSON array, for backwards compat)
+        """
         self._event_loop = asyncio.get_running_loop()
-        servers_json = os.environ.get("MCP_SERVERS", "[]")
+        servers: list[dict] = []
 
+        # Source 1: YAML config files
+        servers.extend(_load_mcp_configs(config_dir))
+
+        # Source 2: env var (backwards compat)
+        env_json = os.environ.get("MCP_SERVERS", "[]")
         try:
-            servers = json.loads(servers_json)
+            env_servers = json.loads(env_json)
+            if env_servers:
+                servers.extend(env_servers)
         except json.JSONDecodeError:
-            logger.warning("Invalid MCP_SERVERS JSON, skipping MCP setup")
-            return
+            logger.warning("Invalid MCP_SERVERS JSON, skipping env config")
 
-        for server_config in servers:
+        # Deduplicate by name (YAML takes priority)
+        seen: set[str] = set()
+        unique: list[dict] = []
+        for s in servers:
+            name = s.get("name", "unnamed")
+            if name not in seen:
+                seen.add(name)
+                unique.append(s)
+
+        for server_config in unique:
             name = server_config.get("name", "unnamed")
             try:
                 await self._connect_server(server_config)
@@ -159,6 +179,45 @@ class MCPClientManager:
                     "inputSchema": tool["inputSchema"],
                 })
         return all_tools
+
+
+def _load_mcp_configs(config_dir: str | None = None) -> list[dict]:
+    """Load MCP server configs from configs/mcp_servers/*.yaml files."""
+    from pathlib import Path
+
+    import yaml
+
+    from temper_ai.config.helpers import substitute_env_vars
+
+    if config_dir:
+        mcp_dir = Path(config_dir) / "mcp_servers"
+    else:
+        # Default: look relative to project root
+        mcp_dir = Path(__file__).parent.parent.parent / "configs" / "mcp_servers"
+
+    if not mcp_dir.is_dir():
+        return []
+
+    servers = []
+    for yaml_file in sorted(mcp_dir.glob("*.yaml")):
+        try:
+            with open(yaml_file) as f:
+                raw = yaml.safe_load(f)
+            if not raw:
+                continue
+
+            # Unwrap the mcp_server: key if present
+            config = raw.get("mcp_server", raw)
+
+            # Resolve env vars (${VAR} and ${VAR:default})
+            config = substitute_env_vars(config)
+
+            servers.append(config)
+            logger.debug("Loaded MCP config: %s", yaml_file.name)
+        except Exception as e:
+            logger.warning("Failed to load MCP config %s: %s", yaml_file, e)
+
+    return servers
 
 
 # Singleton — initialized in server lifespan

@@ -1,0 +1,5 @@
+mcp_server:
+  name: puppeteer
+  transport: stdio
+  command: npx
+  args: ["-y", "@modelcontextprotocol/server-puppeteer"]

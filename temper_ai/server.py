@@ -153,6 +153,9 @@ def _load_default_configs(config_store: ConfigStore):
 
     loaded = 0
     for yaml_file in sorted(configs_dir.rglob("*.yaml")):
+        # Skip MCP server configs — loaded separately by mcp_client
+        if "mcp_servers" in yaml_file.parts:
+            continue
         try:
             import_yaml(str(yaml_file), config_store)
             loaded += 1

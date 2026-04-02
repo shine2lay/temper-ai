@@ -83,7 +83,7 @@ function EdgeToggle({ label, checked, onChange }: { label: string; checked: bool
 }
 
 export function WorkflowSettingsOverlay() {
-  const [expanded, setExpanded] = useState(false);
+  const [mode, setMode] = useState<'minimized' | 'compact' | 'expanded'>('compact');
   const meta = useDesignStore((s) => s.meta);
   const setMeta = useDesignStore((s) => s.setMeta);
   const showDepEdges = useDesignStore((s) => s.showDepEdges);
@@ -101,11 +101,26 @@ export function WorkflowSettingsOverlay() {
   const inputCount = meta.required_inputs.length + meta.optional_inputs.length;
   const outputCount = meta.outputs.length;
 
+  // Minimized: just a gear icon
+  if (mode === 'minimized') {
+    return (
+      <button
+        onPointerDown={handlePointerDown}
+        onMouseDown={handleMouseDown}
+        onClick={() => setMode('compact')}
+        className="w-8 h-8 rounded-lg border border-temper-border bg-temper-panel shadow-lg flex items-center justify-center text-temper-text-muted hover:text-temper-text hover:bg-temper-surface transition-colors"
+        title="Open workflow settings"
+      >
+        <span className="text-sm">{'\u2699'}</span>
+      </button>
+    );
+  }
+
   return (
     <div
       onPointerDown={handlePointerDown}
       onMouseDown={handleMouseDown}
-      className={`${expanded ? 'w-[440px]' : 'w-[280px]'} rounded-lg border border-temper-border bg-temper-panel shadow-xl`}
+      className={`${mode === 'expanded' ? 'w-[440px]' : 'w-[280px]'} rounded-lg border border-temper-border bg-temper-panel shadow-xl`}
     >
       {/* Header */}
       <div className="px-3 py-2 border-b border-temper-border/50 flex items-center gap-2">
@@ -113,15 +128,22 @@ export function WorkflowSettingsOverlay() {
         <EdgeToggle label="Flow" checked={showDepEdges} onChange={setShowDepEdges} />
         <EdgeToggle label="I/O" checked={showWireEdges} onChange={setShowWireEdges} />
         <button
-          onClick={() => setExpanded((v) => !v)}
+          onClick={() => setMode(mode === 'expanded' ? 'compact' : 'expanded')}
           className="w-5 h-5 flex items-center justify-center rounded text-temper-text-muted hover:text-temper-text hover:bg-temper-surface transition-colors text-[10px]"
-          title={expanded ? 'Collapse' : 'Expand'}
+          title={mode === 'expanded' ? 'Collapse' : 'Expand'}
         >
-          {expanded ? '\u25B2' : '\u25BC'}
+          {mode === 'expanded' ? '\u25B2' : '\u25BC'}
+        </button>
+        <button
+          onClick={() => setMode('minimized')}
+          className="w-5 h-5 flex items-center justify-center rounded text-temper-text-muted hover:text-temper-text hover:bg-temper-surface transition-colors text-[10px]"
+          title="Minimize"
+        >
+          &times;
         </button>
       </div>
 
-      {expanded ? (
+      {mode === 'expanded' ? (
         <ExpandedView meta={meta} setMeta={setMeta} />
       ) : (
         <CompactView meta={meta} setMeta={setMeta} inputCount={inputCount} outputCount={outputCount} />

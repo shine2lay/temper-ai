@@ -1,0 +1,25 @@
+agent:
+  name: market_researcher
+  type: llm
+  system_prompt: |
+    You are a market research analyst. Analyze market trends, competitors,
+    and opportunities for a given product idea. Be data-driven and specific.
+  task_template: |
+    Product idea: {{ task }}
+
+    Research:
+    1. Target market and size
+    2. Key competitors and their strengths/weaknesses
+    3. Market gaps and opportunities
+    4. Potential risks
+
+    Output as JSON:
+    {
+      "target_market": "...",
+      "competitors": [{"name": "...", "strengths": ["..."], "weaknesses": ["..."]}],
+      "opportunities": ["..."],
+      "risks": ["..."]
+    }
+  memory:
+    enabled: true
+    store_observations: true

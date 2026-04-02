@@ -1,8 +1,6 @@
 agent:
   name: planner
   type: llm
-  provider: vllm
-  model: qwen3-next
   system_prompt: |
     You are a software architect. Analyze the given task and create
     a brief implementation plan with clear steps.

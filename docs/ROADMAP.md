@@ -19,22 +19,11 @@ v1 is a clean rewrite focused on the core engine: composable graph execution, co
 
 ---
 
-## P0 — Blocking for Public Release
-
-### CLI Interface
-The only way to run v1 is via `uvicorn`. Need a proper CLI:
-- `temper serve` — start the server
-- `temper run <workflow> --input key=value` — execute a workflow from terminal
-- `temper validate <workflow>` — check configs without running
-- `temper config list/import` — manage configs
+## P0 — Next Up
 
 ### CI/CD Pipeline
-- GitHub Actions for: lint (ruff), type check (mypy), tests, scanner score gate
-- Pre-commit hooks (already have doc generation hook)
-
----
-
-## P1 — Important for Usability
+- GitHub Actions for: lint (ruff), type check (mypy), tests, quality check
+- Add when going public — 30 min of YAML, structure mirrors main codebase
 
 ### Config Management API
 Full CRUD for configs via REST:
@@ -50,9 +39,146 @@ Full CRUD for configs via REST:
 - POST /api/runs/{id}/cancel — graceful workflow cancellation
 - Already has threading.Event plumbing, needs the route + executor integration
 
+### MCP Tool Integration
+**What:** Agents can use any MCP server as a tool source. The MCP ecosystem (11,000+ servers) becomes Temper's tool library — web search, database access, browser automation, and more — without building each tool natively.
+
+**How:** A single `MCPToolBridge` class wraps any MCP tool as a `BaseTool`. MCP tools use JSON Schema for parameters — same as our tools. The bridge translates between the two. Agents don't know or care whether a tool is native or MCP.
+
+```yaml
+# Agent references MCP tools alongside built-in tools
+agent:
+  name: researcher
+  tools: [Calculator]                                  # built-in
+  mcp_tools: [exa.web_search, firecrawl.scrape]        # from MCP servers
+```
+
+**Server config (infrastructure-level, not in workflow YAML):**
+MCP servers are configured at the server level like LLM providers. API keys live in `.env`, never in workflow YAML. The `substitute_env_vars()` pipeline handles resolution.
+
+**What stays the same:**
+- Safety policies still gate every MCP tool call
+- Events still recorded in the same event stream
+- Observable in dashboard and CLI
+- Token budgets still enforced
+
+**Effort:** Medium. Needs MCP client library, server lifecycle management, and the bridge class. The tool interface already matches MCP's — the mapping is nearly 1:1.
+
+**High-value MCP servers to support first:**
+- Exa (semantic web search) — researchers get real search
+- Firecrawl (web crawling) — agents can read web pages
+- DBHub (database access) — agents can query data
+- Fetch (simple URL fetching) — free, no API key
+
 ---
 
-## P2 — Advanced Features (Future)
+## P2 — Agentic Capabilities
+
+Move Temper from a workflow engine (code decides the path) toward an agentic system (model decides the path). The goal: **structured autonomy** — the developer defines the possible paths, the model chooses which one at runtime, and every decision is observable.
+
+### Dynamic Routing — Model Decides Next Step
+**What:** A node's structured output determines which node executes next. Instead of binary conditions (run or skip), the model can route to any of several predefined paths.
+
+```yaml
+- name: review
+  type: agent
+  agent: reviewer
+  routes:
+    source: review.structured.next_action
+    paths:
+      approve: ship
+      revise: code              # loop back
+      escalate: human_review    # different path
+```
+
+**Why:** Today, the graph is fixed at config time. With dynamic routing, the reviewer's judgment drives the workflow. The YAML still defines the possible paths (observable, safe), but the model picks the path (agentic).
+
+**What exists today:** `condition` (binary skip/execute) and `loop_to` (fixed loop target). Dynamic routing extends these into multi-path branching.
+
+**Integration point:** Stage executor — after a node completes, check `routes` config, resolve the structured output field, match to a path, execute that node next.
+
+---
+
+### Delegate Tool — Agent Calls Sub-Agent
+**What:** A `delegate` tool that lets an agent call another agent inline and get the result back. The parent agent decides when to delegate and what context to pass.
+
+```yaml
+agent:
+  name: tech_lead
+  tools: [delegate]    # can call other agents
+  system_prompt: |
+    You can delegate tasks to specialists. Available agents:
+    - security_reviewer: reviews code for vulnerabilities
+    - performance_analyst: identifies performance bottlenecks
+```
+
+The LLM decides at runtime: "I should get a security review on this code" → tool call → sub-agent runs → result returns as tool response → parent continues.
+
+**Why:** This is how Claude Code, CrewAI, and smolagents implement multi-agent coordination. The model decides when to delegate — not the YAML config. Industry standard pattern: sub-agents are tools in the parent's tool list.
+
+**Context model (push + pull):**
+- **Push:** The parent provides task + explicit context in the tool call (like `input_map` but decided by the model at runtime)
+- **Pull:** The sub-agent can query shared run context if it needs more (see Shared Run Context below)
+
+**Integration point:** A new tool that wraps `create_agent()` + `agent.run()`. Uses the same ExecutionContext, same safety policies, same event recorder.
+
+---
+
+### Shared Run Context — Push + Pull Knowledge Base
+**What:** A run-scoped shared context that any agent in the workflow can write to and query from. Agents receive explicit inputs via `input_map` (push), but can also search shared context when they need more information (pull).
+
+**Push (what agent receives automatically):**
+```yaml
+input_map:
+  task: plan.output           # explicit, developer-wired
+  code: coder.output          # explicit, developer-wired
+```
+
+**Pull (agent queries when it decides it needs more):**
+```
+Agent thinking: "I need to know what the security reviewer flagged"
+Tool call: query_context(query="security constraints and findings")
+→ Returns relevant entries from shared run context
+```
+
+**Why:** Mirrors how humans work — you get briefed on your task (push), but you can check shared docs when you discover you need more (pull). Avoids token explosion from injecting everything into every agent's prompt.
+
+**Implementation:** Run-scoped memory using the existing mem0/InMemory backend. Same semantic search, just scoped to the current `execution_id`. Agents with `store_observations: true` write to it; agents with `query_context` tool can read from it.
+
+```yaml
+workflow:
+  context:
+    shared: true
+
+agent:
+  name: researcher
+  tools: [query_context]        # can pull from shared context
+  memory:
+    store_observations: true    # writes findings to shared context
+```
+
+**What exists today:** Memory service already supports scoped recall. The `query_context` tool would be `memory_service.recall()` scoped to `run:{execution_id}` instead of `project:{workspace}`.
+
+---
+
+### Swappable Execution Engines
+**What:** Add `engine:` field to workflow config. The YAML stays the same; the compiler translates it to the selected engine. Native engine (current) or LangGraph (future).
+
+```yaml
+workflow:
+  engine: native              # or "langgraph" 
+  engine_config:
+    langgraph:
+      checkpointer: sqlite
+      interrupt_before: [review]
+```
+
+**Why:** Users who prefer LangGraph's execution model (checkpointing, human-in-the-loop interrupts, time travel) can use it without rewriting their workflows.
+
+**What exists today:** `execute_graph()` is already isolated — wrapping it in an engine class and adding a registry is straightforward. Validation would split into shared (loader) and engine-specific layers.
+
+---
+
+## P3 — Advanced Features (Future)
 
 These features exist in the main codebase. They're potential improvements, not core requirements. Each is self-contained and can be added independently.
 
@@ -125,7 +251,7 @@ These features exist in the main codebase. They're potential improvements, not c
 
 ---
 
-## P3 — Nice-to-Have
+## P4 — Nice-to-Have
 
 ### Additional Scanner Rules
 - Import density (fan-out/fan-in analysis)

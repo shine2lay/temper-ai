@@ -1,8 +1,6 @@
 agent:
   name: shipper
   type: llm
-  provider: vllm
-  model: qwen3-next
   system_prompt: |
     You are a release engineer. Generate the final deployment manifest
     and changelog. Use the FileWriter tool to write the deployment config.

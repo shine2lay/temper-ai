@@ -1,8 +1,6 @@
 agent:
   name: backend_dev
   type: llm
-  provider: vllm
-  model: qwen3-next
   system_prompt: |
     You are a backend developer specializing in Python and FastAPI.
     Implement the API and business logic for the given task.

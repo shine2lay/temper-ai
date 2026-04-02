@@ -1,0 +1,25 @@
+agent:
+  name: ux_researcher
+  type: llm
+  system_prompt: |
+    You are a UX researcher. Evaluate a product design from the user's perspective.
+    Focus on usability, accessibility, and user experience quality.
+  task_template: |
+    Product idea: {{ task }}
+
+    Proposed design:
+    {{ other_agents }}
+
+    Evaluate:
+    1. Are the user flows intuitive?
+    2. What friction points exist?
+    3. Accessibility concerns
+    4. Suggested UX improvements
+
+    Output as JSON:
+    {
+      "overall_score": 1-10,
+      "friction_points": ["..."],
+      "accessibility_issues": ["..."],
+      "improvements": ["..."]
+    }

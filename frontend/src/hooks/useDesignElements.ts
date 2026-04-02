@@ -78,9 +78,9 @@ function estimateNodeHeight(stage: DesignStage): number {
   const inputCount = Object.keys(stage.inputs).length;
   const ioExtra = inputCount * 30; // ~30px per input row
   if (agentCount <= 1 && !stage.stage_ref) {
-    return 470 + ioExtra;
+    return 220 + ioExtra;
   }
-  return 460 + agentCount * 80 + ioExtra;
+  return 220 + agentCount * 60 + ioExtra;
 }
 
 /**
@@ -426,7 +426,7 @@ export function useDesignElements(): { nodes: Node[]; edges: Edge[] } {
           sourceHandle: `out:${srcField}`,
           targetHandle: `in:${inputName}`,
           type: 'dataWire',
-          style: { stroke: EDGE_COLORS.dataWire, strokeWidth: 1.5 },
+          style: { stroke: EDGE_COLORS.dataWire, strokeWidth: 1.5, strokeDasharray: '6 3' },
         });
       }
     }

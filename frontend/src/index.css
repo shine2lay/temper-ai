@@ -211,6 +211,10 @@ body {
 
 .react-flow__minimap {
   background-color: var(--temper-panel) !important;
+  transition: opacity 0.2s ease !important;
+}
+.react-flow__minimap:hover {
+  opacity: 1 !important;
 }
 
 .react-flow__controls button {

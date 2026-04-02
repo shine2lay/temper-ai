@@ -46,6 +46,43 @@ function SortHeader({
   );
 }
 
+/** Compact horizontal bar chart showing token distribution by agent. */
+function TokenDistribution({ rows }: { rows: EnrichedLLMCall[] }) {
+  const dist = useMemo(() => {
+    const map = new Map<string, { prompt: number; completion: number }>();
+    for (const r of rows) {
+      const entry = map.get(r.agentName) ?? { prompt: 0, completion: 0 };
+      entry.prompt += r.prompt_tokens ?? 0;
+      entry.completion += r.completion_tokens ?? 0;
+      map.set(r.agentName, entry);
+    }
+    const arr = Array.from(map.entries())
+      .map(([name, t]) => ({ name, ...t, total: t.prompt + t.completion }))
+      .sort((a, b) => b.total - a.total);
+    const max = arr[0]?.total || 1;
+    return { agents: arr, max };
+  }, [rows]);
+
+  if (dist.agents.length === 0) return null;
+
+  return (
+    <div className="px-4 py-1.5 border-b border-temper-border/30 shrink-0">
+      <div className="flex flex-col gap-0.5">
+        {dist.agents.map((a) => (
+          <div key={a.name} className="flex items-center gap-2 h-4">
+            <span className="text-[9px] text-temper-text-muted w-24 truncate text-right shrink-0">{a.name}</span>
+            <div className="flex-1 flex h-2.5 rounded-sm overflow-hidden bg-temper-surface/50" title={`${formatTokens(a.prompt)}p + ${formatTokens(a.completion)}c = ${formatTokens(a.total)} total`}>
+              <div className="h-full bg-temper-token-prompt" style={{ width: `${(a.prompt / dist.max) * 100}%` }} />
+              <div className="h-full bg-temper-token-completion" style={{ width: `${(a.completion / dist.max) * 100}%` }} />
+            </div>
+            <span className="text-[9px] text-temper-text-dim w-12 shrink-0 font-mono">{formatTokens(a.total)}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function LLMCallsTable() {
   const llmCalls = useExecutionStore((s) => s.llmCalls);
   const agents = useExecutionStore((s) => s.agents);
@@ -82,7 +119,7 @@ export function LLMCallsTable() {
     return map;
   }, [stages]);
 
-  // Enrich LLM calls with resolved names
+  // Enrich LLM calls with resolved names + derived latency
   const enriched = useMemo((): EnrichedLLMCall[] => {
     const result: EnrichedLLMCall[] = [];
     for (const [, call] of llmCalls) {
@@ -92,7 +129,16 @@ export function LLMCallsTable() {
       const stageId = agentStageMap.get(agentId) ?? '';
       const stage = stages.get(stageId);
       const stageName = stage?.stage_name ?? stage?.name ?? stageId;
-      result.push({ ...call, agentName, stageName });
+
+      // Derive duration from timestamps when not set
+      let duration = call.duration_seconds;
+      if (duration == null && call.start_time && call.end_time) {
+        duration = (new Date(call.end_time).getTime() - new Date(call.start_time).getTime()) / 1000;
+      } else if (duration == null && call.latency_ms) {
+        duration = call.latency_ms / 1000;
+      }
+
+      result.push({ ...call, duration_seconds: duration, agentName, stageName });
     }
     return result;
   }, [llmCalls, agents, stages, agentStageMap]);
@@ -217,6 +263,9 @@ export function LLMCallsTable() {
           {rows.length}/{enriched.length} calls
         </span>
       </div>
+
+      {/* Token distribution by agent */}
+      <TokenDistribution rows={rows} />
 
       {/* Table */}
       <div className="flex-1 overflow-auto min-h-0 px-4 py-2">

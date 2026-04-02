@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import { useDesignStore } from '@/store/designStore';
 import { useSaveWorkflowDB, useValidateWorkflow, useRunWorkflow } from '@/hooks/useStudioAPI';
 import { Button } from '@/components/ui/button';
+import { ThemeToggle } from '@/components/shared/ThemeToggle';
 import { InputFormGenerator, type InputSchema } from './InputFormGenerator';
 
 interface StudioHeaderProps {
@@ -146,6 +147,16 @@ export function StudioHeader({ onOpenLoadDialog }: StudioHeaderProps) {
 
   return (
     <header className="flex items-center gap-3 bg-temper-panel px-4 py-2.5 border-b border-temper-border shrink-0 relative z-30">
+      {/* Back to home */}
+      <button
+        onClick={() => navigate('/app')}
+        className="w-7 h-7 flex items-center justify-center rounded text-sm text-temper-text-muted hover:text-temper-text hover:bg-temper-surface transition-colors"
+        title="Back to workflows"
+        aria-label="Back to workflows"
+      >
+        &larr;
+      </button>
+
       {/* Undo / Redo */}
       <div className="flex items-center gap-1">
         <button
@@ -186,6 +197,7 @@ export function StudioHeader({ onOpenLoadDialog }: StudioHeaderProps) {
       <div className="flex-1" />
 
       {/* Action buttons */}
+      <ThemeToggle />
       <Button variant="ghost" size="sm" onClick={onOpenLoadDialog}>
         Load
       </Button>

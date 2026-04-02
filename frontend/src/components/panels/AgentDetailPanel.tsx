@@ -18,6 +18,7 @@ import {
   formatTokens,
   formatCost,
 } from '@/lib/utils';
+import { deriveTokenBreakdown } from '@/components/dag/constants';
 // Agent data comes from the Zustand store (updated via WebSocket + snapshot polling)
 
 interface AgentDetailPanelProps {
@@ -35,9 +36,15 @@ export function AgentDetailPanel({ agentId }: AgentDetailPanelProps) {
   }
 
   const config = ag.agent_config_snapshot?.agent;
-  const totalTokens = Math.max(ag.total_tokens, 1);
-  const promptPct = (ag.prompt_tokens / totalTokens) * 100;
-  const completionPct = (ag.completion_tokens / totalTokens) * 100;
+  const { prompt: promptTokens, completion: completionTokens } = deriveTokenBreakdown(ag);
+  const totalTokens = Math.max(ag.total_tokens ?? 0, 1);
+  const promptPct = (promptTokens / totalTokens) * 100;
+  const completionPct = (completionTokens / totalTokens) * 100;
+
+  // Derive cost from llm_calls when top-level is 0
+  const cost = ag.estimated_cost_usd > 0
+    ? ag.estimated_cost_usd
+    : (ag.llm_calls ?? []).reduce((sum: number, c: { estimated_cost_usd?: number }) => sum + (c.estimated_cost_usd ?? 0), 0);
 
   const resolvedStageId = useMemo(() => {
     const direct = ag.stage_execution_id ?? ag.stage_id;
@@ -87,10 +94,10 @@ export function AgentDetailPanel({ agentId }: AgentDetailPanelProps) {
 
       {/* Metrics grid — short values */}
       <div className="grid grid-cols-3 gap-2">
-        <MetricCell label="Prompt Tokens" value={formatTokens(ag.prompt_tokens)} compact />
-        <MetricCell label="Completion Tokens" value={formatTokens(ag.completion_tokens)} compact />
+        <MetricCell label="Prompt Tokens" value={formatTokens(promptTokens)} compact />
+        <MetricCell label="Completion Tokens" value={formatTokens(completionTokens)} compact />
         <MetricCell label="Total Tokens" value={formatTokens(ag.total_tokens)} compact />
-        <MetricCell label="Cost" value={formatCost(ag.estimated_cost_usd)} compact />
+        <MetricCell label="Cost" value={formatCost(cost)} compact />
         <MetricCell label="Duration" value={formatDuration(ag.duration_seconds)} compact />
         <MetricCell label="LLM Calls" value={String(ag.total_llm_calls)} compact />
         <MetricCell label="Tool Calls" value={String(ag.total_tool_calls)} compact />
@@ -122,11 +129,11 @@ export function AgentDetailPanel({ agentId }: AgentDetailPanelProps) {
           <div className="flex gap-3 text-xs text-temper-text-dim">
             <span className="flex items-center gap-1">
               <span className="inline-block size-2 rounded-full bg-temper-token-prompt" />
-              Prompt {formatTokens(ag.prompt_tokens)}
+              Prompt {formatTokens(promptTokens)}
             </span>
             <span className="flex items-center gap-1">
               <span className="inline-block size-2 rounded-full bg-temper-token-completion" />
-              Completion {formatTokens(ag.completion_tokens)}
+              Completion {formatTokens(completionTokens)}
             </span>
           </div>
         </div>

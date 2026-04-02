@@ -92,17 +92,32 @@ export function WorkflowSummaryBar() {
     { label: 'Tool Calls', value: String(workflow.total_tool_calls ?? 0), suffix: '', hasFailed: false },
   ];
 
+  const Stat = ({ label, value, suffix }: { label: string; value: string; suffix?: string }) => (
+    <div className="flex items-center gap-1.5 text-xs">
+      <span className="text-temper-text-muted">{label}</span>
+      <span className="font-mono font-medium text-temper-text">
+        {value}
+        {suffix && <span className="text-red-400">{suffix}</span>}
+      </span>
+    </div>
+  );
+
   return (
-    <div className="flex items-center gap-4 flex-wrap bg-temper-panel/50 px-4 py-2 border-b border-temper-border shrink-0">
-      {stats.map((s) => (
-        <div key={s.label} className="flex items-center gap-1.5 text-xs">
-          <span className="text-temper-text-muted">{s.label}</span>
-          <span className="font-mono font-medium text-temper-text">
-            {s.value}
-            {s.suffix && <span className="text-red-400">{s.suffix}</span>}
-          </span>
-        </div>
-      ))}
+    <div className="flex items-center gap-3 flex-wrap bg-temper-panel/50 px-4 py-2 border-b border-temper-border shrink-0">
+      {/* Progress */}
+      <div className="flex items-center gap-3">
+        {stats.slice(0, 2).map((s) => <Stat key={s.label} {...s} />)}
+      </div>
+      <div className="w-px h-4 bg-temper-border/40" />
+      {/* Performance */}
+      <div className="flex items-center gap-3">
+        {stats.slice(2, 6).map((s) => <Stat key={s.label} {...s} />)}
+      </div>
+      <div className="w-px h-4 bg-temper-border/40" />
+      {/* Cost + tool calls */}
+      <div className="flex items-center gap-3">
+        {stats.slice(6).map((s) => <Stat key={s.label} {...s} />)}
+      </div>
       {stageCosts.length > 0 && (() => {
         const maxCost = Math.max(...stageCosts.map(s => s.cost), 0.001);
         return (

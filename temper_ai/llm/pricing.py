@@ -5,29 +5,61 @@ then by prefix. Falls back to a conservative default.
 """
 
 # Pricing per 1M tokens: (input_cost, output_cost)
+# Uses API pricing to show equivalent cost even for self-hosted models.
 _MODEL_PRICING: dict[str, tuple[float, float]] = {
-    # OpenAI
-    "gpt-4": (30.0, 60.0),
-    "gpt-4-turbo": (10.0, 30.0),
-    "gpt-4o": (2.50, 10.0),
-    "gpt-4o-mini": (0.15, 0.60),
+    # --- OpenAI ---
+    "gpt-4.5": (75.0, 150.0),
     "gpt-4.1": (2.00, 8.00),
     "gpt-4.1-mini": (0.40, 1.60),
     "gpt-4.1-nano": (0.10, 0.40),
+    "gpt-4o": (2.50, 10.0),
+    "gpt-4o-mini": (0.15, 0.60),
+    "gpt-4-turbo": (10.0, 30.0),
+    "gpt-4": (30.0, 60.0),
+    "o4-mini": (1.10, 4.40),
+    "o3": (10.0, 40.0),
     "o3-mini": (1.10, 4.40),
-    # Anthropic
-    "claude-sonnet-4": (3.00, 15.0),
+    # --- Anthropic ---
     "claude-opus-4": (15.0, 75.0),
+    "claude-sonnet-4": (3.00, 15.0),
     "claude-haiku-4": (0.80, 4.0),
-    # Gemini
+    "claude-haiku-3": (0.25, 1.25),
+    # --- Google Gemini ---
     "gemini-2.5-pro": (1.25, 10.0),
     "gemini-2.5-flash": (0.15, 0.60),
     "gemini-2.0-flash": (0.10, 0.40),
-    # Local / self-hosted — typically free
-    "qwen": (0.0, 0.0),
-    "llama": (0.0, 0.0),
-    "mistral": (0.0, 0.0),
-    # Default fallback
+    # --- DeepSeek ---
+    "deepseek-r1": (0.55, 2.19),
+    "deepseek-v3": (0.27, 1.10),
+    "deepseek-chat": (0.27, 1.10),
+    "deepseek": (0.27, 1.10),
+    # --- Mistral (API) ---
+    "mistral-large": (2.00, 6.00),
+    "mistral-small": (0.10, 0.30),
+    "codestral": (0.30, 0.90),
+    "mistral": (0.30, 0.90),
+    # --- xAI ---
+    "grok-3": (3.00, 15.0),
+    "grok-3-mini": (0.30, 0.50),
+    "grok-2": (2.00, 10.0),
+    "grok": (2.00, 10.0),
+    # --- Cohere ---
+    "command-r-plus": (2.50, 10.0),
+    "command-r": (0.15, 0.60),
+    "command": (0.15, 0.60),
+    # --- Open-weight models (API-hosted pricing via Together/Fireworks) ---
+    # Qwen
+    "qwen3": (0.90, 0.90),       # ~72B+ class hosted API
+    "qwen2.5": (0.90, 0.90),
+    "qwen": (0.90, 0.90),
+    # Llama
+    "llama-4": (0.27, 0.85),     # Llama 4 Maverick class
+    "llama-3.1-405b": (3.50, 3.50),
+    "llama-3.1-70b": (0.88, 0.88),
+    "llama-3.1-8b": (0.18, 0.18),
+    "llama-3": (0.88, 0.88),     # Default to 70B class
+    "llama": (0.88, 0.88),
+    # --- Default fallback (mid-tier model) ---
     "_default": (3.0, 15.0),
 }
 

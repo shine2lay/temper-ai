@@ -1,0 +1,30 @@
+workflow:
+  name: blog_writer
+  description: |
+    Simple 3-agent pipeline: research → draft → edit.
+    Demonstrates sequential data flow and input_map wiring.
+  defaults:
+    provider: vllm          # change to match your .env (openai, ollama, etc.)
+    model: qwen3-next       # change to your model
+  safety:
+    policies:
+      - type: budget
+        max_cost_usd: 3.00
+  nodes:
+    - name: research
+      type: agent
+      agent: topic_researcher
+
+    - name: draft
+      type: agent
+      agent: blog_drafter
+      depends_on: [research]
+      input_map:
+        research: research.output
+
+    - name: edit
+      type: agent
+      agent: editor
+      depends_on: [draft]
+      input_map:
+        draft: draft.output

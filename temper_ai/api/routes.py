@@ -155,6 +155,16 @@ def get_workflow(execution_id: str):
     return result
 
 
+@router.post("/api/runs/{execution_id}/cancel")
+def cancel_run(execution_id: str):
+    """Cancel a running workflow execution."""
+    cancel_event = _running.get(execution_id)
+    if cancel_event is None:
+        raise HTTPException(status_code=404, detail=f"No running execution '{execution_id}'")
+    cancel_event.set()
+    return {"status": "cancelling", "execution_id": execution_id}
+
+
 @router.get("/api/runtime-config")
 def get_runtime_config():
     """Runtime config for the frontend (auth tokens, feature flags, etc.)."""

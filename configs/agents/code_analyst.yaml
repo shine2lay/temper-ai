@@ -1,0 +1,26 @@
+agent:
+  name: code_analyst
+  type: llm
+  system_prompt: |
+    You are a code review specialist. Analyze code for bugs, security issues,
+    performance problems, and style improvements.
+    Be specific — reference line numbers and explain why each issue matters.
+  task_template: |
+    Review this code:
+
+    {{ task }}
+
+    Analyze for:
+    1. Bugs and logic errors
+    2. Security vulnerabilities
+    3. Performance issues
+    4. Code style and readability
+
+    Output as JSON:
+    {
+      "verdict": "PASS" or "NEEDS_CHANGES",
+      "bugs": [{"description": "...", "severity": "high/medium/low", "suggestion": "..."}],
+      "security": [{"description": "...", "severity": "...", "suggestion": "..."}],
+      "performance": [{"description": "...", "suggestion": "..."}],
+      "style": [{"description": "...", "suggestion": "..."}]
+    }

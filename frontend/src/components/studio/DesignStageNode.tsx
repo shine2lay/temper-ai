@@ -969,15 +969,17 @@ export function DesignStageNode({ data }: NodeProps) {
           </div>
         )}
 
-        <div className="nopan nodrag mt-0.5" onClick={(e) => e.stopPropagation()}>
-          <InlineEdit
-            value={description}
-            onChange={(v) => updateStage(stageName, { description: String(v ?? '') })}
-            className="text-[10px] text-temper-text-muted w-full"
-            emptyLabel="no description"
-            placeholder="Description..."
-          />
-        </div>
+        {(description || isSelected) && (
+          <div className="nopan nodrag mt-0.5" onClick={(e) => e.stopPropagation()}>
+            <InlineEdit
+              value={description}
+              onChange={(v) => updateStage(stageName, { description: String(v ?? '') })}
+              className="text-[10px] text-temper-text-muted w-full"
+              emptyLabel="no description"
+              placeholder="Description..."
+            />
+          </div>
+        )}
         {refLabel && (
           <div className="text-[9px] text-temper-text-dim mt-0.5">ref: {refLabel}</div>
         )}
@@ -1112,7 +1114,16 @@ export function DesignStageNode({ data }: NodeProps) {
             </div>
           </div>
 
-          {/* Outputs — each row has a Handle anchored to the right edge */}
+          {/* Outputs — hidden when only the default output:text exists */}
+          {/* Keep the Handle for edge connections even when output section is hidden */}
+          <Handle
+            type="source"
+            position={Position.Right}
+            id="out:output"
+            className="!absolute !w-2.5 !h-2.5 !bg-emerald-400 !border-emerald-600 !transform-none !min-w-0 !min-h-0 data-wire-handle"
+            style={{ right: '-5px', top: '50%', transform: 'translateY(-50%)', opacity: outputs.filter(o => o.name !== 'output').length > 0 ? 0 : 1 }}
+          />
+          {outputs.filter(o => o.name !== 'output').length > 0 && (
           <div className="nopan nodrag mt-2" onClick={(e) => e.stopPropagation()}>
             <div className="text-[9px] text-temper-text-dim mb-1">Outputs (name : type)</div>
             <div className="flex flex-col gap-1 w-full">
@@ -1178,302 +1189,13 @@ export function DesignStageNode({ data }: NodeProps) {
               >+ Add</button>
             </div>
           </div>
+          )}
         </NodeSection>
       )}
 
-      {/* ---- Config section (collapsed by default) — inline editable ---- */}
-      <NodeSection title="Config" defaultOpen={false}>
-        <div className="flex flex-col gap-1.5">
-          {/* Row 1: timeout + safety mode */}
-          <div className="flex items-center gap-3">
-            <NodeField label="timeout">
-              <InlineEdit
-                value={timeoutSeconds}
-                onChange={(v) => updateStage(stageName, { timeout_seconds: numOrDefault(v, 600) })}
-                type="number"
-                className="text-[10px] w-12"
-                min={0}
-              />
-              <span className="text-[8px] text-temper-text-dim ml-0.5">s</span>
-            </NodeField>
-            <NodeField label="safety">
-              <InlineSelect
-                value={safetyMode ?? 'execute'}
-                options={SAFETY_MODE_OPTIONS}
-                onChange={(v) => updateStage(stageName, { safety_mode: v })}
-                className="text-[10px]"
-              />
-            </NodeField>
-          </div>
-          {/* Row 2: dry-run + approval */}
-          <div className="flex items-center gap-3">
-            <NodeField label="dry-run">
-              <InlineToggle
-                value={safetyDryRunFirst}
-                onChange={(v) => updateStage(stageName, { safety_dry_run_first: v })}
-                className="text-[10px]"
-              />
-            </NodeField>
-            <NodeField label="approval">
-              <InlineToggle
-                value={safetyRequireApproval}
-                onChange={(v) => updateStage(stageName, { safety_require_approval: v })}
-                className="text-[10px]"
-              />
-            </NodeField>
-          </div>
-          {/* Row 3: error handling */}
-          <div className="flex items-center gap-3">
-            <NodeField label="on_fail">
-              <InlineSelect
-                value={errorHandling?.onAgentFailure ?? 'continue_with_remaining'}
-                options={AGENT_FAILURE_OPTIONS}
-                onChange={(v) => updateStage(stageName, { error_on_agent_failure: v })}
-                className="text-[10px]"
-              />
-            </NodeField>
-            <NodeField label="min ok">
-              <InlineEdit
-                value={errorMinSuccessful}
-                onChange={(v) => updateStage(stageName, { error_min_successful_agents: numOrDefault(v, 1) })}
-                type="number"
-                className="text-[10px] w-8"
-                min={0}
-              />
-            </NodeField>
-          </div>
-          <div className="flex items-center gap-3">
-            <NodeField label="retry">
-              <InlineToggle
-                value={errorRetryFailed}
-                onChange={(v) => updateStage(stageName, { error_retry_failed_agents: v })}
-                className="text-[10px]"
-              />
-            </NodeField>
-            {errorRetryFailed && (
-              <NodeField label="x">
-                <InlineEdit
-                  value={errorMaxRetries}
-                  onChange={(v) => updateStage(stageName, { error_max_agent_retries: numOrDefault(v, 0) })}
-                  type="number"
-                  className="text-[10px] w-8"
-                  min={0}
-                />
-              </NodeField>
-            )}
-          </div>
-        </div>
-      </NodeSection>
-
-      {/* ---- Quality Gates (collapsed, conditional) ---- */}
-      {(qualityGatesEnabled || !isRef) && (
-        <NodeSection
-          title="Quality Gates"
-          badge={qualityGatesEnabled ? '\u2713' : undefined}
-          defaultOpen={false}
-        >
-          <div className="flex flex-col gap-1.5">
-            {!isRef && (
-              <NodeField label="enabled">
-                <InlineToggle
-                  value={qualityGatesEnabled}
-                  onChange={(v) => updateStage(stageName, { quality_gates_enabled: v })}
-                  className="text-[10px]"
-                />
-              </NodeField>
-            )}
-            {qualityGatesEnabled && (
-              <>
-                <div className="flex items-center gap-3">
-                  <NodeField label="conf \u2265">
-                    <InlineEdit
-                      value={qualityGatesMinConfidence}
-                      onChange={(v) => updateStage(stageName, { quality_gates_min_confidence: numOrDefault(v, 0.7) })}
-                      type="number"
-                      className="text-[10px] w-10"
-                      min={0} max={1} step={0.05}
-                    />
-                  </NodeField>
-                  <NodeField label="finds \u2265">
-                    <InlineEdit
-                      value={qualityGatesMinFindings}
-                      onChange={(v) => updateStage(stageName, { quality_gates_min_findings: numOrDefault(v, 0) })}
-                      type="number"
-                      className="text-[10px] w-8"
-                      min={0}
-                    />
-                  </NodeField>
-                </div>
-                <div className="flex items-center gap-3">
-                  <NodeField label="citations">
-                    <InlineToggle
-                      value={qualityGatesRequireCitations}
-                      onChange={(v) => updateStage(stageName, { quality_gates_require_citations: v })}
-                      className="text-[10px]"
-                    />
-                  </NodeField>
-                  <NodeField label="on_fail">
-                    <InlineSelect
-                      value={qualityGatesOnFailure}
-                      options={GATE_FAILURE_OPTIONS}
-                      onChange={(v) => updateStage(stageName, { quality_gates_on_failure: v })}
-                      className="text-[10px]"
-                    />
-                  </NodeField>
-                </div>
-                <NodeField label="retries">
-                  <InlineEdit
-                    value={qualityGatesMaxRetries}
-                    onChange={(v) => updateStage(stageName, { quality_gates_max_retries: numOrDefault(v, 0) })}
-                    type="number"
-                    className="text-[10px] w-8"
-                    min={0}
-                  />
-                </NodeField>
-              </>
-            )}
-          </div>
-        </NodeSection>
-      )}
-
-      {/* ---- Convergence (collapsed, conditional) ---- */}
-      {(convergenceEnabled || !isRef) && (
-        <NodeSection
-          title="Convergence"
-          badge={convergenceEnabled ? '\u2713' : undefined}
-          defaultOpen={false}
-        >
-          <div className="flex flex-col gap-1.5">
-            {!isRef && (
-              <NodeField label="enabled">
-                <InlineToggle
-                  value={convergenceEnabled}
-                  onChange={(v) => updateStage(stageName, { convergence_enabled: v })}
-                  className="text-[10px]"
-                />
-              </NodeField>
-            )}
-            {convergenceEnabled && (
-              <>
-                <div className="flex items-center gap-3">
-                  <NodeField label="method">
-                    <InlineSelect
-                      value={convergenceMethod}
-                      options={CONVERGENCE_METHOD_OPTIONS}
-                      onChange={(v) => updateStage(stageName, { convergence_method: v })}
-                      className="text-[10px]"
-                    />
-                  </NodeField>
-                  <NodeField label="max iter">
-                    <InlineEdit
-                      value={convergenceMaxIterations}
-                      onChange={(v) => updateStage(stageName, { convergence_max_iterations: numOrDefault(v, 5) })}
-                      type="number"
-                      className="text-[10px] w-8"
-                      min={1}
-                    />
-                  </NodeField>
-                </div>
-                <NodeField label="sim \u2265">
-                  <InlineEdit
-                    value={convergenceSimilarityThreshold}
-                    onChange={(v) => updateStage(stageName, { convergence_similarity_threshold: numOrDefault(v, 0.95) })}
-                    type="number"
-                    className="text-[10px] w-10"
-                    min={0} max={1} step={0.01}
-                  />
-                </NodeField>
-              </>
-            )}
-          </div>
-        </NodeSection>
-      )}
-
-      {/* ---- Collaboration Details (collapsed, multi-agent only) ---- */}
-      {agentCount > 1 && (
-        <NodeSection title="Collaboration" defaultOpen={false}>
-          <div className="flex flex-col gap-1.5">
-            <div className="flex items-center gap-3">
-              <NodeField label="rounds">
-                <InlineEdit
-                  value={collaborationMaxRounds}
-                  onChange={(v) => updateStage(stageName, { collaboration_max_rounds: numOrDefault(v, 3) })}
-                  type="number"
-                  className="text-[10px] w-8"
-                  min={1}
-                />
-              </NodeField>
-              <NodeField label="conv thr">
-                <InlineEdit
-                  value={collaborationConvergenceThreshold}
-                  onChange={(v) => updateStage(stageName, { collaboration_convergence_threshold: numOrDefault(v, 0.8) })}
-                  type="number"
-                  className="text-[10px] w-10"
-                  min={0} max={1} step={0.05}
-                />
-              </NodeField>
-            </div>
-            <div className="flex items-center gap-3">
-              <NodeField label="dialogue">
-                <InlineToggle
-                  value={collaborationDialogueMode}
-                  onChange={(v) => updateStage(stageName, { collaboration_dialogue_mode: v })}
-                  className="text-[10px]"
-                />
-              </NodeField>
-              <NodeField label="ctx rnds">
-                <InlineEdit
-                  value={collaborationContextWindowRounds}
-                  onChange={(v) => updateStage(stageName, { collaboration_context_window_rounds: numOrDefault(v, 2) })}
-                  type="number"
-                  className="text-[10px] w-8"
-                  min={0}
-                />
-              </NodeField>
-            </div>
-            <NodeField label="budget $">
-              <InlineEdit
-                value={collaborationRoundBudget}
-                onChange={(v) => updateStage(stageName, { collaboration_round_budget_usd: v != null && v !== '' ? Number(v) : null })}
-                type="number"
-                emptyLabel="none"
-                className="text-[10px] w-14"
-                min={0} step={0.01}
-              />
-            </NodeField>
-          </div>
-        </NodeSection>
-      )}
-
-      {/* ---- Conflict Resolution (collapsed, conditional) ---- */}
-      {(conflictStrategy || !isRef) && (
-        <NodeSection title="Conflict" defaultOpen={false}>
-          <div className="flex flex-col gap-1.5">
-            <NodeField label="strategy">
-              <InlineEdit
-                value={conflictStrategy}
-                onChange={(v) => updateStage(stageName, { conflict_strategy: String(v ?? '') })}
-                emptyLabel="default"
-                className="text-[10px]"
-              />
-            </NodeField>
-            <NodeField label="auto \u2265">
-              <InlineEdit
-                value={conflictAutoResolveThreshold}
-                onChange={(v) => updateStage(stageName, { conflict_auto_resolve_threshold: numOrDefault(v, 0.85) })}
-                type="number"
-                className="text-[10px] w-10"
-                min={0} max={1} step={0.05}
-              />
-            </NodeField>
-            {conflictMetrics.length > 0 && (
-              <div className="text-[9px] text-temper-text-dim truncate">
-                metrics: {conflictMetrics.join(', ')}
-              </div>
-            )}
-          </div>
-        </NodeSection>
-      )}
+      {/* Config, Quality Gates, Convergence, Collaboration, Conflict sections
+         are intentionally omitted from the canvas node to keep it compact.
+         Edit these via the right-side Stage Properties panel. */}
 
       {/* ---- Footer: dependencies + condition + loop ---- */}
       {(dependsOn.length > 0 || condition != null || loopsBackTo || !isRef) && (

@@ -1,8 +1,6 @@
 agent:
   name: security_reviewer
   type: llm
-  provider: vllm
-  model: qwen3-next
   system_prompt: |
     You are a security engineer. Review the implementation for
     vulnerabilities, injection risks, auth issues, and OWASP top 10.

@@ -39,10 +39,10 @@ class TestEstimateCost:
         cost = estimate_cost("gpt-4o", prompt_tokens=0, completion_tokens=0)
         assert cost == 0.0
 
-    def test_local_model_free(self):
-        # "qwen" prefix models are priced at $0
+    def test_local_model_uses_api_equivalent_pricing(self):
+        # Self-hosted models still show estimated API-equivalent cost
         cost = estimate_cost("qwen3-next", prompt_tokens=100000, completion_tokens=50000)
-        assert cost == 0.0
+        assert cost > 0  # priced based on qwen3 prefix match
 
     def test_prompt_and_completion_takes_precedence(self):
         # If both specific and total are provided, specific wins

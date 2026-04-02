@@ -141,9 +141,10 @@ export function ExecutionDAG() {
 
     if (changed) {
       setNodes(updatedNodes);
-      setTimeout(() => fitView({ padding: DAG_FIT_PADDING, duration: 300 }), 50);
+      // Don't fitView here — preserve the user's current zoom/pan.
+      // Only reposition nodes to avoid overlap.
     }
-  }, [getNodes, stages, expandedStages, setNodes, fitView]);
+  }, [getNodes, stages, expandedStages, setNodes]);
 
   // Listen for dimension changes from React Flow and trigger re-layout
   const onNodesChange = useCallback(
@@ -167,14 +168,13 @@ export function ExecutionDAG() {
     }
   }, [computed.nodes.length, fitView]);
 
-  // Re-fit + re-layout when stages are expanded or collapsed
+  // Re-layout when stages are expanded or collapsed — but keep current viewport.
   useEffect(() => {
     const timer = setTimeout(() => {
       relayoutFromMeasurements();
-      fitView({ padding: DAG_FIT_PADDING, duration: 300 });
     }, RELAYOUT_DELAY_MS);
     return () => clearTimeout(timer);
-  }, [expandedStages, fitView, relayoutFromMeasurements]);
+  }, [expandedStages, relayoutFromMeasurements]);
 
   /**
    * Keyboard navigation for the DAG container.
@@ -239,6 +239,8 @@ export function ExecutionDAG() {
           nodeColor="#1e2a4a"
           maskColor="rgba(15, 23, 41, 0.7)"
           position="bottom-right"
+          style={{ width: 120, height: 80, opacity: 0.25 }}
+          className="hover:!opacity-100 transition-opacity duration-200"
         />
       </ReactFlow>
     </div>

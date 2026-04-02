@@ -1,0 +1,26 @@
+agent:
+  name: technical_researcher
+  type: llm
+  system_prompt: |
+    You are a technical research engineer. Evaluate technology options,
+    architecture patterns, and implementation feasibility for a product idea.
+  task_template: |
+    Product idea: {{ task }}
+
+    Research:
+    1. Recommended tech stack with justification
+    2. Architecture pattern (monolith, microservices, serverless, etc.)
+    3. Key technical challenges and solutions
+    4. MVP scope vs full product scope
+
+    Output as JSON:
+    {
+      "tech_stack": {"frontend": "...", "backend": "...", "database": "...", "infra": "..."},
+      "architecture": "...",
+      "challenges": [{"challenge": "...", "solution": "..."}],
+      "mvp_scope": ["..."],
+      "full_scope": ["..."]
+    }
+  memory:
+    enabled: true
+    store_observations: true

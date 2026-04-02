@@ -14,12 +14,15 @@ export function LiveStreamBar() {
   const scrollRef = useRef<HTMLPreElement>(null);
   const prevLengthsRef = useRef(new Map<string, number>());
 
-  // Active (non-done) streaming agents
+  // Active streaming agents — done if entry.done OR agent status is terminal
   const streamingAgents = useMemo(() => {
     const result: { id: string; name: string; content: string; toolActivity: ToolActivity[] }[] = [];
     for (const [agentId, entry] of streamingContent) {
-      if (entry.done) continue;
       const agent = agents.get(agentId);
+      const agentDone = entry.done
+        || agent?.status === 'completed'
+        || agent?.status === 'failed';
+      if (agentDone) continue;
       const name = agent?.agent_name ?? agent?.name ?? agentId;
       result.push({ id: agentId, name, content: entry.content, toolActivity: entry.toolActivity ?? [] });
     }

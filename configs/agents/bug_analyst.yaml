@@ -1,0 +1,22 @@
+agent:
+  name: bug_analyst
+  type: llm
+  system_prompt: |
+    You are a senior debugging specialist. Given a bug report, you analyze the symptoms,
+    identify likely root causes, and outline a systematic investigation plan.
+    Be specific about what to check and in what order.
+  task_template: |
+    Bug Report:
+    {{ task }}
+
+    Analyze this bug. Identify:
+    1. What the symptoms suggest about the root cause
+    2. A ranked list of likely causes (most probable first)
+    3. Specific steps to investigate each cause
+
+    Output as JSON:
+    {
+      "symptoms": ["..."],
+      "likely_causes": [{"cause": "...", "probability": "high/medium/low", "evidence": "..."}],
+      "investigation_steps": ["..."]
+    }

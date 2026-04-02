@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useExecutionStore } from '@/store/executionStore';
-import { STATUS_COLORS, confidenceBadgeClass } from './constants';
+import { STATUS_COLORS, confidenceBadgeClass, deriveTokenBreakdown } from './constants';
 import { cn, formatDuration, formatTokens, formatCost } from '@/lib/utils';
 import { CollapsibleSection } from '@/components/shared/Collapsible';
 import { JsonViewer } from '@/components/shared/JsonViewer';
@@ -34,8 +34,7 @@ export function ExpandedAgentCard({ agentId }: ExpandedAgentCardProps) {
   const borderColor = STATUS_COLORS[agent.status] ?? STATUS_COLORS.pending;
   const model = agent.agent_config_snapshot?.agent?.model;
   const totalTokens = agent.total_tokens ?? 0;
-  const promptTokens = agent.prompt_tokens ?? 0;
-  const completionTokens = agent.completion_tokens ?? 0;
+  const { prompt: promptTokens, completion: completionTokens } = deriveTokenBreakdown(agent);
   const promptPct = totalTokens > 0 ? (promptTokens / totalTokens) * 100 : 0;
   const completionPct =
     totalTokens > 0 ? (completionTokens / totalTokens) * 100 : 0;
@@ -102,6 +101,8 @@ export function ExpandedAgentCard({ agentId }: ExpandedAgentCardProps) {
       {/* Metrics */}
       <div className="flex items-center gap-3 text-[10px] text-temper-text-muted mb-1">
         <span>{formatDuration(agent.duration_seconds)}</span>
+        <span title="Prompt tokens" className="text-temper-token-prompt">{formatTokens(promptTokens)}p</span>
+        <span title="Completion tokens" className="text-temper-token-completion">{formatTokens(completionTokens)}c</span>
         <span>{formatTokens(totalTokens)} tok</span>
         {agent.estimated_cost_usd > 0 && (
           <span className="text-emerald-400">{formatCost(agent.estimated_cost_usd)}</span>

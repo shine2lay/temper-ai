@@ -5,7 +5,7 @@ import { MetricCell } from '@/components/shared/MetricCell';
 import { MarkdownDisplay } from '@/components/shared/MarkdownDisplay';
 import { CopyButton } from '@/components/shared/CopyButton';
 import { Separator } from '@/components/ui/separator';
-import { formatTimestamp, formatTokens, formatCost, formatBytes, categorizeError } from '@/lib/utils';
+import { formatTimestamp, formatTokens, formatCost, formatBytes, formatDuration, categorizeError } from '@/lib/utils';
 
 interface LLMCallInspectorProps {
   llmCallId: string;
@@ -118,10 +118,17 @@ export function LLMCallInspector({ llmCallId }: LLMCallInspectorProps) {
   const parentStageId = parentAgent?.stage_execution_id ?? parentAgent?.stage_id;
   const parentStage = parentStageId ? stages.get(parentStageId) : undefined;
 
+  // Derive latency from timestamps when not directly available
+  let derivedDuration = llmCall.duration_seconds;
+  if (derivedDuration == null && llmCall.start_time && llmCall.end_time) {
+    derivedDuration = (new Date(llmCall.end_time).getTime() - new Date(llmCall.start_time).getTime()) / 1000;
+  } else if (derivedDuration == null && llmCall.latency_ms != null) {
+    derivedDuration = llmCall.latency_ms / 1000;
+  }
   const latencyDisplay = llmCall.latency_ms != null
     ? `${llmCall.latency_ms}ms`
-    : llmCall.duration_seconds != null
-      ? `${(llmCall.duration_seconds * 1000).toFixed(0)}ms`
+    : derivedDuration != null
+      ? formatDuration(derivedDuration)
       : '-';
 
   return (

@@ -194,7 +194,7 @@ export function EventLogPanel() {
               key={idx}
               className={cn(
                 'flex items-center gap-3 py-1 text-sm border-b border-temper-border/30 last:border-0',
-                sel && 'cursor-pointer hover:bg-temper-surface/50',
+                sel && 'cursor-pointer hover:bg-temper-accent/10 hover:border-temper-accent/20 transition-colors',
               )}
               onClick={sel ? () => handleClick(entry.event_type, entry.data) : undefined}
               onKeyDown={sel ? (e) => handleKeyActivate(e, entry.event_type, entry.data) : undefined}
@@ -207,7 +207,8 @@ export function EventLogPanel() {
               <Badge variant="outline" className={`text-xs shrink-0 ${eventStyle(entry.event_type)}`}>
                 {entry.event_type}
               </Badge>
-              <span className="text-temper-text truncate">{entry.label}</span>
+              <span className={cn('truncate', sel ? 'text-temper-text hover:text-temper-accent' : 'text-temper-text')}>{entry.label}</span>
+              {sel && <span className="text-temper-text-dim text-[10px] shrink-0 ml-auto">&rarr;</span>}
             </div>
           );
         })}

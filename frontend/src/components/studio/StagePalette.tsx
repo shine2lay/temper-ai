@@ -81,10 +81,12 @@ function OutlineItem({
 function AgentTile({
   name,
   isAssigned,
+  isUsed,
   onAdd,
 }: {
   name: string;
   isAssigned: boolean;
+  isUsed?: boolean;
   onAdd: () => void;
 }) {
   const onDragStart = (e: DragEvent) => {
@@ -103,14 +105,17 @@ function AgentTile({
       onKeyDown={(e: KBEvent) => {
         if (!isAssigned && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onAdd(); }
       }}
-      className={`w-full text-left px-2 py-1.5 rounded text-[11px] transition-colors cursor-grab active:cursor-grabbing ${
+      className={`w-full text-left px-2 py-1.5 rounded text-[11px] transition-colors cursor-grab active:cursor-grabbing flex items-center gap-1 ${
         isAssigned
           ? 'text-temper-text-dim opacity-50'
           : 'text-temper-text hover:bg-temper-accent/10'
       }`}
     >
+      {isUsed && !isAssigned && (
+        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" title="Used in workflow" />
+      )}
       <span className="truncate">{name}</span>
-      {isAssigned && <span className="text-[9px] text-temper-text-dim ml-1">(in stage)</span>}
+      {isAssigned && <span className="text-[9px] text-temper-text-dim ml-auto shrink-0">(in stage)</span>}
     </div>
   );
 }
@@ -137,6 +142,9 @@ export function StagePalette() {
   // Which agents are assigned to the selected stage
   const selectedStage = stages.find((s) => s.name === selectedStageName);
   const assignedAgents = new Set(selectedStage?.agents ?? []);
+
+  // Agents used anywhere in the workflow
+  const usedInWorkflow = new Set(stages.flatMap((s) => s.agents));
 
   // Add agent to selected stage, or create a new single-agent node
   const handleAddAgent = useCallback(
@@ -224,6 +232,7 @@ export function StagePalette() {
               key={name}
               name={name}
               isAssigned={assignedAgents.has(name)}
+              isUsed={usedInWorkflow.has(name)}
               onAdd={() => handleAddAgent(name)}
             />
           ))}

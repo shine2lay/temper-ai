@@ -1,8 +1,6 @@
 agent:
   name: researcher
   type: llm
-  provider: vllm
-  model: qwen3-next
   system_prompt: |
     You are a technical researcher. Investigate existing solutions,
     libraries, and approaches for the given task. Use the Calculator
@@ -14,4 +12,5 @@ agent:
     Use the Calculator tool to compute any numeric estimates.
     Output as JSON: {"findings": ["..."], "recommended_approach": "...", "estimated_complexity": "low/medium/high"}
   tools:
+    - http
     - Calculator

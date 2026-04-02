@@ -1,6 +1,6 @@
 import { memo, useState } from 'react';
 import { useExecutionStore } from '@/store/executionStore';
-import { STATUS_COLORS } from './constants';
+import { STATUS_COLORS, deriveTokenBreakdown } from './constants';
 import { cn, formatDuration, formatTokens, formatCost } from '@/lib/utils';
 import type { AgentExecution } from '@/types';
 
@@ -37,6 +37,7 @@ export const AgentCardContent = memo(function AgentCardContent({
   const totalTokens = agent.total_tokens ?? 0;
   const cost = agent.estimated_cost_usd ?? 0;
   const duration = agent.duration_seconds ?? 0;
+  const { prompt: promptTokens, completion: completionTokens } = deriveTokenBreakdown(agent);
   const configSnapshot = agent.agent_config_snapshot?.agent;
   const model = configSnapshot?.model;
   const provider = configSnapshot?.provider;
@@ -96,6 +97,12 @@ export const AgentCardContent = memo(function AgentCardContent({
 
       {/* Dense metrics + config row */}
       <div className="flex items-center gap-1.5 px-2.5 py-1 text-[10px] text-temper-text-muted flex-wrap">
+        {promptTokens > 0 && (
+          <span className="font-mono" style={{ color: 'var(--color-temper-token-prompt)' }}>{formatTokens(promptTokens)}p</span>
+        )}
+        {completionTokens > 0 && (
+          <span className="font-mono" style={{ color: 'var(--color-temper-token-completion)' }}>{formatTokens(completionTokens)}c</span>
+        )}
         <span className="font-mono font-medium text-temper-text">{formatTokens(totalTokens)}<span className="text-temper-text-dim"> tok</span></span>
         <span className="text-temper-border/40">|</span>
         <span>{formatDuration(duration)}</span>
@@ -127,6 +134,19 @@ export const AgentCardContent = memo(function AgentCardContent({
         )}
         {hasMem && <span title="Memory enabled" className="text-[9px]">🧠</span>}
       </div>
+
+      {/* Token breakdown bar */}
+      {totalTokens > 0 && promptTokens > 0 && (
+        <div className="px-2.5 pb-1">
+          <div
+            className="h-1 w-full rounded-full bg-temper-surface overflow-hidden flex"
+            title={`Prompt: ${formatTokens(promptTokens)} | Completion: ${formatTokens(completionTokens)}`}
+          >
+            <div className="h-full bg-temper-token-prompt" style={{ width: `${(promptTokens / totalTokens) * 100}%` }} />
+            <div className="h-full bg-temper-token-completion" style={{ width: `${(completionTokens / totalTokens) * 100}%` }} />
+          </div>
+        </div>
+      )}
 
       {/* Input: source tags + preview */}
       {agent.input_data && Object.keys(agent.input_data).length > 0 && (

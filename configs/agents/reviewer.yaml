@@ -1,8 +1,6 @@
 agent:
   name: reviewer
   type: llm
-  provider: vllm
-  model: qwen3-next
   system_prompt: |
     You are a code reviewer. Review the code for correctness,
     security issues, and best practices. Be constructive and specific.

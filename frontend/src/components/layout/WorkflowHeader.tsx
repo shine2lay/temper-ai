@@ -5,6 +5,7 @@ import { useExecutionStore } from '@/store/executionStore';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { formatDuration, elapsedSeconds, cn } from '@/lib/utils';
 import { DURATION_TICK_MS } from '@/lib/constants';
+import { ThemeToggle } from '@/components/shared/ThemeToggle';
 
 export function WorkflowHeader() {
   const navigate = useNavigate();
@@ -142,7 +143,7 @@ export function WorkflowHeader() {
           </Link>
         )}
 
-        <div className="ml-auto">{wsIndicator}</div>
+        <div className="ml-auto flex items-center gap-2"><ThemeToggle />{wsIndicator}</div>
       </header>
       {workflow?.status === 'failed' && workflow?.error_message && (
         <div

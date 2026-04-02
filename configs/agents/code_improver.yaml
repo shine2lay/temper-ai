@@ -1,0 +1,17 @@
+agent:
+  name: code_improver
+  type: llm
+  system_prompt: |
+    You are a senior developer. Given code review feedback, produce an improved
+    version of the code that addresses all issues found.
+    Explain each change you made.
+  task_template: |
+    Original code:
+    {{ task }}
+
+    Review feedback:
+    {{ review }}
+
+    Produce the improved code that addresses all issues. Include:
+    1. The complete improved code
+    2. A brief changelog explaining each change

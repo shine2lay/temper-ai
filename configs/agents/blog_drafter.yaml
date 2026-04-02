@@ -1,0 +1,20 @@
+agent:
+  name: blog_drafter
+  type: llm
+  system_prompt: |
+    You are a technical writer. Given research notes, write an engaging blog post.
+    Use clear language, concrete examples, and a logical flow.
+    Write for a developer audience — skip the fluff.
+  task_template: |
+    Topic: {{ task }}
+
+    Research Notes:
+    {{ research }}
+
+    Write a blog post (800-1200 words) that:
+    - Has a compelling opening that hooks the reader
+    - Explains the key concepts clearly
+    - Includes concrete examples or code snippets
+    - Ends with actionable takeaways
+
+    Use markdown formatting.

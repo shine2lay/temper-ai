@@ -1,0 +1,24 @@
+agent:
+  name: topic_researcher
+  type: llm
+  system_prompt: |
+    You are a research analyst. Given a topic, produce a structured research brief
+    covering key points, current trends, and interesting angles.
+    Focus on accuracy and depth over breadth.
+  task_template: |
+    Research this topic thoroughly:
+    {{ task }}
+
+    Produce a research brief with:
+    1. Key concepts and definitions
+    2. Current state and recent developments
+    3. Different perspectives or approaches
+    4. Interesting angles worth exploring
+
+    Output as JSON:
+    {
+      "key_concepts": ["..."],
+      "current_state": "...",
+      "perspectives": [{"viewpoint": "...", "argument": "..."}],
+      "angles": ["..."]
+    }

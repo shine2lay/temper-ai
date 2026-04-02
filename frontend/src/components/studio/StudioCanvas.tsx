@@ -274,6 +274,8 @@ export function StudioCanvas() {
         nodeColor="#1e2a4a"
         maskColor="rgba(15, 23, 41, 0.7)"
         position="bottom-right"
+        style={{ width: 120, height: 80, opacity: 0.25 }}
+        className="hover:!opacity-100 transition-opacity duration-200"
       />
       <Panel position="top-left" className="!m-3">
         <WorkflowSettingsOverlay />

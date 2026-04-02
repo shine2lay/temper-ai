@@ -1,8 +1,6 @@
 agent:
   name: ux_designer
   type: llm
-  provider: vllm
-  model: qwen3-next
   system_prompt: |
     You are a UX designer. Create user flows and wireframe descriptions
     for the given task. Focus on usability and accessibility.

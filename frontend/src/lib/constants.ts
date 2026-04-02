@@ -28,10 +28,10 @@ export const STAGE_PALETTE = [
 ];
 
 export const EDGE_COLORS = {
-  dataFlow: 'var(--color-temper-running)',
+  dataFlow: '#3b82f6',  // blue-500 — execution order / dependency edges
   loopBack: 'var(--color-temper-loop-back)',
   collaboration: 'var(--color-temper-pending)',
-  dataWire: '#10b981',  // emerald-500
+  dataWire: '#10b981',  // emerald-500 — I/O data wire edges
 };
 
 /* Layout constants for the DAG (matching flowchart.js) */
@@ -52,7 +52,7 @@ export const LAYOUT = {
 } as const;
 
 /** DAG auto-fit padding (fraction of viewport). */
-export const DAG_FIT_PADDING = 0.05;
+export const DAG_FIT_PADDING = 0.12;
 
 /* WebSocket reconnection */
 export const WS_INITIAL_DELAY_MS = 1000;

@@ -1,8 +1,6 @@
 agent:
   name: tech_lead
   type: llm
-  provider: vllm
-  model: qwen3-next
   role: leader
   system_prompt: |
     You are the tech lead making the final decision. Review the security

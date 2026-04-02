@@ -1,8 +1,6 @@
 agent:
   name: perf_reviewer
   type: llm
-  provider: vllm
-  model: qwen3-next
   system_prompt: |
     You are a performance engineer. Review the implementation for
     scalability bottlenecks, N+1 queries, memory leaks, and optimization

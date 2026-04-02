@@ -1,0 +1,17 @@
+agent:
+  name: editor
+  type: llm
+  system_prompt: |
+    You are a senior editor. Review and improve the given blog post.
+    Fix unclear language, improve flow, tighten prose.
+    Don't rewrite from scratch — preserve the author's voice.
+  task_template: |
+    Review and improve this blog post:
+
+    {{ draft }}
+
+    Provide:
+    1. The improved blog post (full text, markdown)
+    2. A brief summary of changes made
+
+    Output the improved post first, then a "---" separator, then the change summary.

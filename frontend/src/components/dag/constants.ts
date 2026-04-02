@@ -19,6 +19,26 @@ export function confidenceBadgeClass(score: number): string {
   return CONFIDENCE_STYLES.low.className;
 }
 
+/**
+ * Derive prompt/completion tokens from llm_calls when the top-level
+ * fields are 0 (backend doesn't always aggregate them).
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function deriveTokenBreakdown(agent: any): { prompt: number; completion: number } {
+  const prompt = agent.prompt_tokens ?? 0;
+  const completion = agent.completion_tokens ?? 0;
+  if (prompt > 0 || completion > 0) return { prompt, completion };
+
+  // Aggregate from llm_calls
+  const calls = agent.llm_calls ?? [];
+  let p = 0, c = 0;
+  for (const call of calls) {
+    p += call.prompt_tokens ?? 0;
+    c += call.completion_tokens ?? 0;
+  }
+  return { prompt: p, completion: c };
+}
+
 /** Colors used by the LoopBackEdge label */
 export const LOOP_LABEL_COLORS = {
   background: 'var(--color-temper-panel)',

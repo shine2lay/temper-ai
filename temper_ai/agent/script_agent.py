@@ -6,6 +6,7 @@ executes via tool_executor (Bash tool), returns stdout as output.
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 
@@ -57,9 +58,13 @@ class ScriptAgent(AgentABC):
             output = str(tool_result.result) if tool_result.result else ""
             self._record_script_completed(tool_result, output, duration, agent_event_id, context, status)
 
+            # Extract structured output from script's JSON output (if any)
+            structured = _extract_json(output)
+
             return AgentResult(
                 status=status,
                 output=output,
+                structured_output=structured,
                 error=tool_result.error,
                 duration_seconds=duration,
             )
@@ -121,3 +126,20 @@ class ScriptAgent(AgentABC):
         if not self.config.get("script_template"):
             errors.append("ScriptAgent requires 'script_template' in config")
         return errors
+
+
+def _extract_json(text: str) -> dict | None:
+    """Extract JSON from the last line of script output."""
+    if not text:
+        return None
+    # Try last line first (scripts typically output JSON as the final line)
+    for line in reversed(text.strip().split("\n")):
+        line = line.strip()
+        if line.startswith("{"):
+            try:
+                parsed = json.loads(line)
+                if isinstance(parsed, dict):
+                    return parsed
+            except json.JSONDecodeError:
+                continue
+    return None

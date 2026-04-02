@@ -134,16 +134,21 @@ def _execute_single_node(
     """Execute one node with condition checking and input resolution."""
     skip = _check_dependency_failures(node, node_outputs)
     if skip is not None:
+        _record_skipped_node(node, context, parent_event_id, skip.error or "dependency failed")
         return skip
 
     if node.condition:
         try:
             if not evaluate_condition(node.condition, node_outputs):
                 logger.info("Node '%s' skipped — condition not met", node.name)
-                return NodeResult(status=Status.SKIPPED)
+                result = NodeResult(status=Status.SKIPPED)
+                _record_skipped_node(node, context, parent_event_id, "condition not met")
+                return result
         except Exception as exc:
             logger.warning("Condition evaluation failed for '%s': %s", node.name, exc)
-            return NodeResult(status=Status.SKIPPED, error=str(exc))
+            result = NodeResult(status=Status.SKIPPED, error=str(exc))
+            _record_skipped_node(node, context, parent_event_id, str(exc))
+            return result
 
     resolved = _resolve_inputs(node, input_data, node_outputs)
     resolved = _inject_strategy_context(node, resolved, node_outputs)
@@ -170,6 +175,22 @@ def _check_dependency_failures(
             logger.warning("Node '%s' skipped — dependency '%s' failed", node.name, dep_name)
             return NodeResult(status=Status.SKIPPED, error=f"Dependency '{dep_name}' failed")
     return None
+
+
+def _record_skipped_node(
+    node: Node,
+    context: ExecutionContext,
+    parent_event_id: str,
+    reason: str,
+) -> None:
+    """Record a stage event for a skipped node so the DAG can show it."""
+    context.event_recorder.record(
+        EventType.STAGE_STARTED,
+        data={**_build_node_event_data(node), "skip_reason": reason},
+        parent_id=parent_event_id,
+        execution_id=context.run_id,
+        status="skipped",
+    )
 
 
 def _build_node_event_data(node: Node) -> dict[str, Any]:

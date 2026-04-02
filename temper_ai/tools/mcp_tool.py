@@ -1,9 +1,12 @@
 """MCP tool bridge — wraps an MCP server tool as a Temper BaseTool.
 
 Agents see MCP tools the same as native tools. The bridge handles:
-- Schema translation (MCP inputSchema → OpenAI function format)
+- Lazy connection (server connects on first tool call, not at startup)
 - Sync→async execution (agent runs sync, MCP SDK is async)
 - Result extraction (MCP content blocks → string)
+
+MCPTool does NOT hold a connection reference. It calls mcp_manager.call_tool()
+which handles connect-on-demand.
 """
 
 import asyncio
@@ -18,11 +21,11 @@ logger = logging.getLogger(__name__)
 class MCPTool(BaseTool):
     """Wraps a single MCP tool as a Temper BaseTool.
 
-    Created by MCPClientManager for each tool discovered on connected servers.
-    The agent sees it as a regular tool — same schema, same execute() interface.
+    The tool knows its server name and tool name. On execute(), it asks
+    the MCPClientManager to connect (if needed) and call the tool.
     """
 
-    modifies_state = False  # Conservative default — MCP tools are read-only unless stated
+    modifies_state = False
 
     def __init__(
         self,
@@ -30,27 +33,23 @@ class MCPTool(BaseTool):
         tool_name: str,
         description: str,
         input_schema: dict,
-        mcp_connection: Any,  # MCPServerConnection
+        mcp_manager: Any,  # MCPClientManager
         event_loop: asyncio.AbstractEventLoop,
     ):
         super().__init__()
         self.name = f"{server_name}.{tool_name}"
         self.description = description
         self.parameters = input_schema
-        self._tool_name = tool_name  # raw name on the MCP server
-        self._connection = mcp_connection
+        self._server_name = server_name
+        self._tool_name = tool_name
+        self._manager = mcp_manager
         self._event_loop = event_loop
 
     def execute(self, **params: Any) -> ToolResult:
-        """Execute the MCP tool synchronously.
-
-        Bridges to async MCP SDK via run_coroutine_threadsafe.
-        This works because agents run in ThreadPoolExecutor threads
-        while the event loop runs on the main thread.
-        """
+        """Execute the MCP tool. Connects to server on first call."""
         try:
             future = asyncio.run_coroutine_threadsafe(
-                self._connection.call_tool(self._tool_name, params),
+                self._manager.call_tool(self._server_name, self._tool_name, params),
                 self._event_loop,
             )
             result_text = future.result(timeout=30)
@@ -65,23 +64,37 @@ class MCPTool(BaseTool):
             return ToolResult(success=False, result="", error=error)
 
 
-def create_mcp_tools(mcp_manager: Any) -> dict[str, MCPTool]:
-    """Create MCPTool instances for all tools across all connected MCP servers.
+def create_mcp_tools_from_agents(
+    mcp_manager: Any,
+    agent_configs: list[dict] | None = None,
+) -> dict[str, MCPTool]:
+    """Create MCPTool instances for MCP tools referenced in agent configs.
 
-    Returns a dict of {full_name: MCPTool} ready to register with ToolExecutor.
+    Scans agent configs for tools with dots (e.g., "searxng.web_search").
+    Creates a placeholder MCPTool for each — no server connection made.
+    The connection happens lazily on first execute().
+
+    If no agent_configs provided, creates tools for all configured servers
+    by connecting briefly to discover their tools (fallback behavior).
     """
     tools: dict[str, MCPTool] = {}
+    configured_servers = set(mcp_manager.get_configured_servers())
 
-    for server_name, connection in mcp_manager.get_all_connections().items():
-        for tool_def in connection.tools:
-            full_name = f"{server_name}.{tool_def['name']}"
-            tools[full_name] = MCPTool(
-                server_name=server_name,
-                tool_name=tool_def["name"],
-                description=tool_def["description"],
-                input_schema=tool_def["inputSchema"],
-                mcp_connection=connection,
-                event_loop=mcp_manager.event_loop,
-            )
+    if agent_configs:
+        # Scan agent configs for MCP tool references
+        for agent_cfg in agent_configs:
+            inner = agent_cfg.get("agent", agent_cfg)
+            for tool_ref in inner.get("tools", []):
+                if "." in tool_ref:
+                    server_name, tool_name = tool_ref.split(".", 1)
+                    if server_name in configured_servers and tool_ref not in tools:
+                        tools[tool_ref] = MCPTool(
+                            server_name=server_name,
+                            tool_name=tool_name,
+                            description=f"MCP tool from {server_name} server",
+                            input_schema={"type": "object", "properties": {}},
+                            mcp_manager=mcp_manager,
+                            event_loop=mcp_manager.event_loop,
+                        )
 
     return tools

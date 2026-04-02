@@ -113,11 +113,18 @@ def start_run(body: RunRequest):
     # Register built-in tools
     run_tool_executor.register_tools({name: cls() for name, cls in TOOL_CLASSES.items()})
 
-    # Register MCP tools (if connected)
+    # Register MCP tools (lazy — connects on first call)
     try:
         from temper_ai.tools.mcp_client import mcp_manager
-        from temper_ai.tools.mcp_tool import create_mcp_tools
-        mcp_tools = create_mcp_tools(mcp_manager)
+        from temper_ai.tools.mcp_tool import create_mcp_tools_from_agents
+
+        # Scan agent configs used in this workflow to find MCP tool references
+        agent_configs = []
+        for node in nodes:
+            if hasattr(node, "agent_config"):
+                agent_configs.append(node.agent_config)
+
+        mcp_tools = create_mcp_tools_from_agents(mcp_manager, agent_configs)
         if mcp_tools:
             run_tool_executor.register_tools(mcp_tools)
     except Exception:

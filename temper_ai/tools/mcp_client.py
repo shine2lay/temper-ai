@@ -1,14 +1,19 @@
-"""MCP client manager — connects to MCP servers and exposes their tools.
+"""MCP client manager — lazy-connecting MCP server manager.
 
-Manages MCP server connections using AsyncExitStack. Opened in FastAPI lifespan,
-persists for server lifetime. Each connected server's tools become available
-to agents via MCPTool bridge instances.
+Servers are configured via YAML files in configs/mcp_servers/.
+Connections are NOT made at startup — only when an agent first calls
+a tool from that server. This means 100 configured servers = 0 subprocesses
+until tools are actually used.
 
-Configuration via environment:
-    MCP_SERVERS='[
-      {"name": "searxng", "transport": "stdio", "command": "npx", "args": ["-y", "mcp-searxng"], "env": {"SEARXNG_URL": "http://localhost:8888"}},
-      {"name": "fetch", "transport": "stdio", "command": "uvx", "args": ["mcp-server-fetch"]}
-    ]'
+Config format:
+    configs/mcp_servers/searxng.yaml:
+        mcp_server:
+          name: searxng
+          transport: stdio
+          command: npx
+          args: ["-y", "mcp-searxng"]
+          env:
+            SEARXNG_URL: ${SEARXNG_URL:http://localhost:8888}
 """
 
 import asyncio
@@ -25,17 +30,15 @@ logger = logging.getLogger(__name__)
 
 
 class MCPServerConnection:
-    """A single connected MCP server with its session and tool definitions."""
+    """A single connected MCP server with its session."""
 
-    def __init__(self, name: str, session: ClientSession, tools: list[dict]):
+    def __init__(self, name: str, session: ClientSession):
         self.name = name
         self.session = session
-        self.tools = tools  # [{name, description, inputSchema}]
 
     async def call_tool(self, tool_name: str, arguments: dict) -> str:
         """Call a tool on this server. Returns text result."""
         result = await self.session.call_tool(tool_name, arguments=arguments)
-        # Extract text from content blocks
         parts = []
         for block in result.content:
             if hasattr(block, "text"):
@@ -44,19 +47,19 @@ class MCPServerConnection:
 
 
 class MCPClientManager:
-    """Manages connections to multiple MCP servers.
+    """Manages MCP server configs and lazy connections.
 
-    Usage:
-        manager = MCPClientManager()
-        await manager.start()          # connects to all configured servers
-        tools = manager.get_all_tools() # returns MCPTool instances
-        await manager.stop()           # closes all connections
+    At startup: loads configs from YAML files (no connections made).
+    On first tool call: connects to the server, then executes.
+    Subsequent calls: reuses the existing connection.
     """
 
     def __init__(self):
         self._exit_stack = AsyncExitStack()
-        self._connections: dict[str, MCPServerConnection] = {}
+        self._server_configs: dict[str, dict] = {}  # name -> config dict
+        self._connections: dict[str, MCPServerConnection] = {}  # name -> live connection
         self._event_loop: asyncio.AbstractEventLoop | None = None
+        self._connect_locks: dict[str, asyncio.Lock] = {}  # prevent concurrent connects
 
     @property
     def event_loop(self) -> asyncio.AbstractEventLoop:
@@ -65,77 +68,78 @@ class MCPClientManager:
         return self._event_loop
 
     async def start(self, config_dir: str | None = None) -> None:
-        """Connect to all configured MCP servers.
+        """Load MCP server configs (no connections made).
 
-        Loads from two sources (both optional, merged):
+        Loads from:
         1. YAML files in configs/mcp_servers/*.yaml
-        2. MCP_SERVERS env var (JSON array, for backwards compat)
+        2. MCP_SERVERS env var (JSON array, backwards compat)
         """
         self._event_loop = asyncio.get_running_loop()
         servers: list[dict] = []
 
-        # Source 1: YAML config files
         servers.extend(_load_mcp_configs(config_dir))
 
-        # Source 2: env var (backwards compat)
         env_json = os.environ.get("MCP_SERVERS", "[]")
         try:
             env_servers = json.loads(env_json)
             if env_servers:
                 servers.extend(env_servers)
         except json.JSONDecodeError:
-            logger.warning("Invalid MCP_SERVERS JSON, skipping env config")
+            pass
 
-        # Deduplicate by name (YAML takes priority)
-        seen: set[str] = set()
-        unique: list[dict] = []
-        for s in servers:
-            name = s.get("name", "unnamed")
-            if name not in seen:
-                seen.add(name)
-                unique.append(s)
+        for config in servers:
+            name = config.get("name", "unnamed")
+            if name not in self._server_configs:
+                self._server_configs[name] = config
+                self._connect_locks[name] = asyncio.Lock()
 
-        for server_config in unique:
-            name = server_config.get("name", "unnamed")
-            try:
-                await self._connect_server(server_config)
-                logger.info("MCP server '%s' connected (%d tools)",
-                            name, len(self._connections[name].tools))
-            except Exception as e:
-                logger.warning("Failed to connect MCP server '%s': %s", name, e)
+        if self._server_configs:
+            logger.info("MCP: %d servers configured (lazy connect)",
+                        len(self._server_configs))
 
     async def stop(self) -> None:
-        """Close all MCP server connections."""
+        """Close all active MCP server connections."""
         await self._exit_stack.aclose()
         self._connections.clear()
 
-    async def _connect_server(self, config: dict) -> None:
-        """Connect to a single MCP server."""
-        name = config["name"]
-        transport = config.get("transport", "stdio")
+    async def ensure_connected(self, server_name: str) -> MCPServerConnection:
+        """Connect to a server if not already connected. Returns the connection."""
+        if server_name in self._connections:
+            return self._connections[server_name]
 
-        if transport == "stdio":
-            session = await self._connect_stdio(config)
-        elif transport in ("http", "streamable_http"):
-            session = await self._connect_http(config)
-        else:
-            raise ValueError(f"Unknown MCP transport: {transport}")
+        if server_name not in self._server_configs:
+            raise ValueError(
+                f"MCP server '{server_name}' not configured. "
+                f"Available: {sorted(self._server_configs.keys())}"
+            )
 
-        # List available tools
-        tools_result = await session.list_tools()
-        tools = [
-            {
-                "name": tool.name,
-                "description": tool.description or "",
-                "inputSchema": tool.inputSchema,
-            }
-            for tool in tools_result.tools
-        ]
+        lock = self._connect_locks[server_name]
+        async with lock:
+            # Double-check after acquiring lock
+            if server_name in self._connections:
+                return self._connections[server_name]
 
-        self._connections[name] = MCPServerConnection(name, session, tools)
+            config = self._server_configs[server_name]
+            transport = config.get("transport", "stdio")
+
+            if transport == "stdio":
+                session = await self._connect_stdio(config)
+            elif transport in ("http", "streamable_http"):
+                session = await self._connect_http(config)
+            else:
+                raise ValueError(f"Unknown MCP transport: {transport}")
+
+            connection = MCPServerConnection(server_name, session)
+            self._connections[server_name] = connection
+            logger.info("MCP server '%s' connected on first use", server_name)
+            return connection
+
+    async def call_tool(self, server_name: str, tool_name: str, arguments: dict) -> str:
+        """Connect if needed, then call a tool. The main entry point for MCPTool."""
+        connection = await self.ensure_connected(server_name)
+        return await connection.call_tool(tool_name, arguments)
 
     async def _connect_stdio(self, config: dict) -> ClientSession:
-        """Connect via stdio transport (launches subprocess)."""
         params = StdioServerParameters(
             command=config["command"],
             args=config.get("args", []),
@@ -147,7 +151,6 @@ class MCPClientManager:
         return session
 
     async def _connect_http(self, config: dict) -> ClientSession:
-        """Connect via streamable HTTP transport."""
         from mcp.client.streamable_http import streamable_http_client
 
         url = config["url"]
@@ -158,27 +161,13 @@ class MCPClientManager:
         await asyncio.wait_for(session.initialize(), timeout=30)
         return session
 
-    def get_connection(self, server_name: str) -> MCPServerConnection | None:
-        """Get a connected server by name."""
-        return self._connections.get(server_name)
+    def get_configured_servers(self) -> list[str]:
+        """List all configured server names (connected or not)."""
+        return sorted(self._server_configs.keys())
 
-    def get_all_connections(self) -> dict[str, MCPServerConnection]:
-        """Get all connected servers."""
+    def get_active_connections(self) -> dict[str, MCPServerConnection]:
+        """List only currently connected servers."""
         return dict(self._connections)
-
-    def get_all_tool_definitions(self) -> list[dict]:
-        """Get all tools across all servers, prefixed with server name."""
-        all_tools = []
-        for server_name, conn in self._connections.items():
-            for tool in conn.tools:
-                all_tools.append({
-                    "server": server_name,
-                    "name": tool["name"],
-                    "full_name": f"{server_name}.{tool['name']}",
-                    "description": tool["description"],
-                    "inputSchema": tool["inputSchema"],
-                })
-        return all_tools
 
 
 def _load_mcp_configs(config_dir: str | None = None) -> list[dict]:
@@ -192,7 +181,6 @@ def _load_mcp_configs(config_dir: str | None = None) -> list[dict]:
     if config_dir:
         mcp_dir = Path(config_dir) / "mcp_servers"
     else:
-        # Default: look relative to project root
         mcp_dir = Path(__file__).parent.parent.parent / "configs" / "mcp_servers"
 
     if not mcp_dir.is_dir():
@@ -205,20 +193,14 @@ def _load_mcp_configs(config_dir: str | None = None) -> list[dict]:
                 raw = yaml.safe_load(f)
             if not raw:
                 continue
-
-            # Unwrap the mcp_server: key if present
             config = raw.get("mcp_server", raw)
-
-            # Resolve env vars (${VAR} and ${VAR:default})
             config = substitute_env_vars(config)
-
             servers.append(config)
-            logger.debug("Loaded MCP config: %s", yaml_file.name)
         except Exception as e:
             logger.warning("Failed to load MCP config %s: %s", yaml_file, e)
 
     return servers
 
 
-# Singleton — initialized in server lifespan
+# Singleton
 mcp_manager = MCPClientManager()

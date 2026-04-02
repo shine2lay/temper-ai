@@ -6,12 +6,26 @@ Works with OpenAI, Azure OpenAI, and any OpenAI-compatible API.
 
 import json
 import logging
+from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
 
 from temper_ai.llm.models import LLMResponse, LLMStreamChunk
 from temper_ai.llm.providers.base import BaseLLM, StreamCallback
+
+
+@dataclass
+class _StreamState:
+    """Mutable state accumulated during SSE streaming."""
+
+    content_parts: list[str] = field(default_factory=list)
+    reasoning_parts: list[str] = field(default_factory=list)
+    tool_call_buffer: dict[int, dict[str, str]] = field(default_factory=dict)
+    finish_reason: str | None = None
+    model: str = ""
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
 
 logger = logging.getLogger(__name__)
 
@@ -86,13 +100,7 @@ class OpenAILLM(BaseLLM):
         response: httpx.Response,
         on_chunk: StreamCallback | None,
     ) -> LLMResponse:
-        content_parts: list[str] = []
-        reasoning_parts: list[str] = []
-        tool_call_buffer: dict[int, dict[str, str]] = {}
-        finish_reason: str | None = None
-        model = self.model
-        prompt_tokens: int | None = None
-        completion_tokens: int | None = None
+        state = _StreamState(model=self.model)
 
         for line in response.iter_lines():
             if not line.startswith("data: "):
@@ -104,89 +112,58 @@ class OpenAILLM(BaseLLM):
                 chunk = json.loads(data)
             except json.JSONDecodeError:
                 continue
+            self._process_stream_chunk(chunk, on_chunk, state)
 
-            model, finish_reason, prompt_tokens, completion_tokens = self._process_stream_chunk(
-                chunk, on_chunk,
-                content_parts, reasoning_parts, tool_call_buffer,
-                model, finish_reason, prompt_tokens, completion_tokens,
-            )
+        return self._finalize_stream_response(on_chunk, state)
 
-        return self._finalize_stream_response(
-            on_chunk, content_parts, reasoning_parts, tool_call_buffer,
-            finish_reason, model, prompt_tokens, completion_tokens,
-        )
-
-    def _process_stream_chunk(
-        self,
-        chunk: dict,
-        on_chunk: StreamCallback | None,
-        content_parts: list[str],
-        reasoning_parts: list[str],
-        tool_call_buffer: dict[int, dict],
-        model: str,
-        finish_reason: str | None,
-        prompt_tokens: int | None,
-        completion_tokens: int | None,
-    ) -> tuple:
-        """Process a single SSE chunk. Returns updated (model, finish_reason, prompt_tokens, completion_tokens)."""
+    def _process_stream_chunk(self, chunk: dict, on_chunk: StreamCallback | None, s: _StreamState) -> None:
+        """Process a single SSE chunk, updating state in place."""
         choices = chunk.get("choices", [])
         choice = choices[0] if choices else {}
         delta = choice.get("delta", {})
-        model = chunk.get("model", model)
+        s.model = chunk.get("model", s.model)
 
         reasoning_text = delta.get("reasoning_content") or delta.get("reasoning")
         if reasoning_text:
-            reasoning_parts.append(reasoning_text)
+            s.reasoning_parts.append(reasoning_text)
             if on_chunk:
-                on_chunk(LLMStreamChunk(content=reasoning_text, done=False, chunk_type="thinking", model=model))
+                on_chunk(LLMStreamChunk(content=reasoning_text, done=False, chunk_type="thinking", model=s.model))
 
         if delta.get("content"):
-            content_parts.append(delta["content"])
+            s.content_parts.append(delta["content"])
             if on_chunk:
-                on_chunk(LLMStreamChunk(content=delta["content"], done=False, model=model))
+                on_chunk(LLMStreamChunk(content=delta["content"], done=False, model=s.model))
 
         if delta.get("tool_calls"):
-            _accumulate_tool_calls(delta["tool_calls"], tool_call_buffer)
+            _accumulate_tool_calls(delta["tool_calls"], s.tool_call_buffer)
 
         if choice.get("finish_reason"):
-            finish_reason = choice["finish_reason"]
+            s.finish_reason = choice["finish_reason"]
 
         usage = chunk.get("usage")
         if usage:
-            prompt_tokens = usage.get("prompt_tokens")
-            completion_tokens = usage.get("completion_tokens")
+            s.prompt_tokens = usage.get("prompt_tokens")
+            s.completion_tokens = usage.get("completion_tokens")
 
-        return model, finish_reason, prompt_tokens, completion_tokens
-
-    def _finalize_stream_response(
-        self,
-        on_chunk: StreamCallback | None,
-        content_parts: list[str],
-        reasoning_parts: list[str],
-        tool_call_buffer: dict[int, dict],
-        finish_reason: str | None,
-        model: str,
-        prompt_tokens: int | None,
-        completion_tokens: int | None,
-    ) -> LLMResponse:
+    def _finalize_stream_response(self, on_chunk: StreamCallback | None, s: _StreamState) -> LLMResponse:
         """Signal stream end and assemble the final LLMResponse."""
         if on_chunk:
-            on_chunk(LLMStreamChunk(content="", done=True, finish_reason=finish_reason))
+            on_chunk(LLMStreamChunk(content="", done=True, finish_reason=s.finish_reason))
 
-        tool_calls = [tool_call_buffer[i] for i in sorted(tool_call_buffer)] if tool_call_buffer else None
-        total = (prompt_tokens or 0) + (completion_tokens or 0) if (
-            prompt_tokens is not None or completion_tokens is not None
+        tool_calls = [s.tool_call_buffer[i] for i in sorted(s.tool_call_buffer)] if s.tool_call_buffer else None
+        total = (s.prompt_tokens or 0) + (s.completion_tokens or 0) if (
+            s.prompt_tokens is not None or s.completion_tokens is not None
         ) else None
 
         return LLMResponse(
-            content="".join(content_parts) or None,
-            model=model,
+            content="".join(s.content_parts) or None,
+            model=s.model,
             provider=self.provider_name,
-            prompt_tokens=prompt_tokens,
-            completion_tokens=completion_tokens,
+            prompt_tokens=s.prompt_tokens,
+            completion_tokens=s.completion_tokens,
             total_tokens=total,
-            finish_reason=finish_reason,
-            reasoning="".join(reasoning_parts) or None,
+            finish_reason=s.finish_reason,
+            reasoning="".join(s.reasoning_parts) or None,
             tool_calls=tool_calls,
         )
 

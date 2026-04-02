@@ -27,15 +27,26 @@ export function AgentPromptTab({ config, updateField }: Props) {
         />
       </ExpandedField>
       {config.prompt.mode === 'inline' ? (
-        <div className="mb-1.5">
-          <textarea
-            value={config.prompt.inline}
-            onChange={(e) => updateField('prompt', { ...config.prompt, inline: e.target.value })}
-            className={textareaClass}
-            rows={8}
-            placeholder="System prompt with {{ variables }}..."
-          />
-        </div>
+        <>
+          <ExpandedField label="System" tip="The system prompt that defines this agent's persona and behavior. This is the 'role' message sent to the LLM.">
+            <textarea
+              value={config.prompt.inline}
+              onChange={(e) => updateField('prompt', { ...config.prompt, inline: e.target.value })}
+              className={textareaClass}
+              rows={4}
+              placeholder="You are a helpful assistant..."
+            />
+          </ExpandedField>
+          <ExpandedField label="Task" tip="The task template with {{ variables }} — this is the 'user' message. Use {{ task }} for the workflow input, {{ other_agents }} for upstream outputs, {{ memories }} for recalled memories.">
+            <textarea
+              value={config.prompt.taskTemplate ?? ''}
+              onChange={(e) => updateField('prompt', { ...config.prompt, taskTemplate: e.target.value })}
+              className={textareaClass}
+              rows={4}
+              placeholder="Task: {{ task }}&#10;{{ other_agents }}&#10;Output as JSON: {}"
+            />
+          </ExpandedField>
+        </>
       ) : (
         <ExpandedField label="File" tip="Path to a Jinja2 template file (.j2 or .txt). Resolved relative to the configs directory.">
           <InlineEdit

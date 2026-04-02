@@ -174,7 +174,7 @@ function defaultFormState(): AgentFormState {
     description: '',
     version: '1.0',
     type: 'standard',
-    prompt: { mode: 'inline', inline: '', template: '', variables: {} },
+    prompt: { mode: 'inline', inline: '', template: '', taskTemplate: '', variables: {} },
     inference: {
       provider: '',
       model: '',
@@ -304,9 +304,18 @@ function parseConfig(data: AnyRecord): AgentFormState {
   const dialogueObj = agent.dialogue as AnyRecord | undefined;
   const metadataObj = agent.metadata as AnyRecord | undefined;
 
+  // Read top-level prompt fields (backend format) as fallback for nested format
+  const topLevelSystemPrompt = agent.system_prompt as string | undefined;
+  const topLevelTaskTemplate = agent.task_template as string | undefined;
+  const topLevelProvider = agent.provider as string | undefined;
+  const topLevelModel = agent.model as string | undefined;
+  const topLevelTemperature = agent.temperature as number | undefined;
+  const topLevelMaxTokens = agent.max_tokens as number | undefined;
+
   // Determine prompt mode
   const hasInline = typeof prompt?.inline === 'string' && prompt.inline !== '';
   const hasTemplate = typeof prompt?.template === 'string' && prompt.template !== '';
+  const hasTopLevelPrompt = !!topLevelSystemPrompt;
 
   // Determine tools mode
   let toolsMode: 'auto' | 'none' | 'explicit' = 'auto';
@@ -341,18 +350,19 @@ function parseConfig(data: AnyRecord): AgentFormState {
     version: (agent.version as string) ?? '1.0',
     type: (agent.type as string) ?? 'standard',
     prompt: {
-      mode: hasTemplate && !hasInline ? 'template' : 'inline',
-      inline: (prompt?.inline as string) ?? '',
+      mode: hasTemplate && !hasInline && !hasTopLevelPrompt ? 'template' : 'inline',
+      inline: (prompt?.inline as string) || topLevelSystemPrompt || '',
       template: (prompt?.template as string) ?? '',
+      taskTemplate: topLevelTaskTemplate ?? '',
       variables,
     },
     inference: {
-      provider: (inference?.provider as string) ?? '',
-      model: (inference?.model as string) ?? '',
+      provider: (inference?.provider as string) || topLevelProvider || '',
+      model: (inference?.model as string) || topLevelModel || '',
       base_url: (inference?.base_url as string) ?? '',
       api_key_ref: (inference?.api_key_ref as string) ?? '',
-      temperature: (inference?.temperature as number) ?? DEFAULT_TEMPERATURE,
-      max_tokens: (inference?.max_tokens as number) ?? DEFAULT_MAX_TOKENS,
+      temperature: (inference?.temperature as number) ?? topLevelTemperature ?? DEFAULT_TEMPERATURE,
+      max_tokens: (inference?.max_tokens as number) ?? topLevelMaxTokens ?? DEFAULT_MAX_TOKENS,
       top_p: (inference?.top_p as number) ?? DEFAULT_TOP_P,
       timeout_seconds: (inference?.timeout_seconds as number) ?? DEFAULT_TIMEOUT,
       max_retries: (inference?.max_retries as number) ?? DEFAULT_INFERENCE_MAX_RETRIES,
@@ -477,7 +487,17 @@ function toAgentConfig(form: AgentFormState): AnyRecord {
     type: form.type,
   };
 
-  // Prompt
+  // Prompt — backend reads system_prompt and task_template at the TOP LEVEL,
+  // not nested under prompt.inline. Write both for compat.
+  if (form.prompt.mode === 'inline' && form.prompt.inline) {
+    // Split on first blank line or treat entire text as system_prompt
+    const text = form.prompt.inline;
+    agent.system_prompt = text;
+    agent.task_template = form.prompt.taskTemplate ?? '{{ task }}';
+  } else if (form.prompt.template) {
+    agent.prompt = { template: form.prompt.template };
+  }
+  // Also write nested prompt for forward-compat with future backends
   const promptObj: AnyRecord = {};
   if (form.prompt.mode === 'inline') {
     promptObj.inline = form.prompt.inline;
@@ -489,20 +509,19 @@ function toAgentConfig(form: AgentFormState): AnyRecord {
   }
   agent.prompt = promptObj;
 
-  // Inference
+  // Inference — backend reads provider, model, temperature, max_tokens at TOP LEVEL.
+  // Write both top-level and nested for compatibility.
+  if (form.inference.provider) agent.provider = form.inference.provider;
+  if (form.inference.model) agent.model = form.inference.model;
+  if (form.inference.temperature != null) agent.temperature = form.inference.temperature;
+  if (form.inference.max_tokens != null) agent.max_tokens = form.inference.max_tokens;
+
+  // Also write nested inference for forward-compat
   const inf: AnyRecord = {};
   if (form.inference.provider) inf.provider = form.inference.provider;
   if (form.inference.model) inf.model = form.inference.model;
-  if (form.inference.base_url) inf.base_url = form.inference.base_url;
-  if (form.inference.api_key_ref) inf.api_key_ref = form.inference.api_key_ref;
   inf.temperature = form.inference.temperature;
   inf.max_tokens = form.inference.max_tokens;
-  if (form.inference.top_p !== DEFAULT_TOP_P) inf.top_p = form.inference.top_p;
-  if (form.inference.timeout_seconds !== DEFAULT_TIMEOUT) {
-    inf.timeout_seconds = form.inference.timeout_seconds;
-  }
-  if (form.inference.max_retries !== DEFAULT_INFERENCE_MAX_RETRIES) inf.max_retries = form.inference.max_retries;
-  if (form.inference.retry_delay_seconds !== DEFAULT_INFERENCE_RETRY_DELAY) inf.retry_delay_seconds = form.inference.retry_delay_seconds;
   agent.inference = inf;
 
   // Tools
@@ -523,16 +542,11 @@ function toAgentConfig(form: AgentFormState): AnyRecord {
   }
   // mode === 'auto' → omit tools key entirely
 
-  // Safety
-  agent.safety = {
-    mode: form.safety.mode,
-    risk_level: form.safety.risk_level,
-    max_tool_calls_per_execution: form.safety.max_tool_calls_per_execution,
-    max_execution_time_seconds: form.safety.max_execution_time_seconds,
-  };
-  if (form.safety.require_approval_for_tools.length > 0) (agent.safety as AnyRecord).require_approval_for_tools = form.safety.require_approval_for_tools;
-  if (form.safety.max_prompt_length !== DEFAULT_MAX_PROMPT_LENGTH) (agent.safety as AnyRecord).max_prompt_length = form.safety.max_prompt_length;
-  if (form.safety.max_tool_result_size !== DEFAULT_MAX_TOOL_RESULT_SIZE) (agent.safety as AnyRecord).max_tool_result_size = form.safety.max_tool_result_size;
+  // Safety — agent-level safety is phantom (safety is workflow-level only).
+  // Only write if non-default for forward-compatibility.
+  if (form.safety.mode !== 'standard') {
+    agent.safety = { mode: form.safety.mode };
+  }
 
   // Memory
   agent.memory = { enabled: form.memory.enabled };
@@ -542,7 +556,8 @@ function toAgentConfig(form: AgentFormState): AnyRecord {
     if (form.memory.provider) (agent.memory as AnyRecord).provider = form.memory.provider;
     if (form.memory.namespace) (agent.memory as AnyRecord).namespace = form.memory.namespace;
     if (form.memory.tenant_id) (agent.memory as AnyRecord).tenant_id = form.memory.tenant_id;
-    if (form.memory.retrieval_k !== DEFAULT_RETRIEVAL_K) (agent.memory as AnyRecord).retrieval_k = form.memory.retrieval_k;
+    // Backend reads 'recall_limit', not 'retrieval_k'
+    if (form.memory.retrieval_k !== DEFAULT_RETRIEVAL_K) (agent.memory as AnyRecord).recall_limit = form.memory.retrieval_k;
     if (form.memory.relevance_threshold !== DEFAULT_RELEVANCE_THRESHOLD) (agent.memory as AnyRecord).relevance_threshold = form.memory.relevance_threshold;
     if (form.memory.embedding_model) (agent.memory as AnyRecord).embedding_model = form.memory.embedding_model;
     if (form.memory.max_episodes !== DEFAULT_MAX_EPISODES) (agent.memory as AnyRecord).max_episodes = form.memory.max_episodes;
@@ -551,97 +566,25 @@ function toAgentConfig(form: AgentFormState): AnyRecord {
     if (form.memory.shared_namespace) (agent.memory as AnyRecord).shared_namespace = form.memory.shared_namespace;
   }
 
-  // Error handling
-  agent.error_handling = {
-    retry_strategy: form.error_handling.retry_strategy,
-    max_retries: form.error_handling.max_retries,
-    fallback: form.error_handling.fallback,
-  };
-  if (form.error_handling.escalate_to_human_after !== DEFAULT_ESCALATE_AFTER) (agent.error_handling as AnyRecord).escalate_to_human_after = form.error_handling.escalate_to_human_after;
-  if (form.error_handling.retry_initial_delay !== DEFAULT_RETRY_INITIAL_DELAY) (agent.error_handling as AnyRecord).retry_initial_delay = form.error_handling.retry_initial_delay;
-  if (form.error_handling.retry_max_delay !== DEFAULT_RETRY_MAX_DELAY) (agent.error_handling as AnyRecord).retry_max_delay = form.error_handling.retry_max_delay;
-  if (form.error_handling.retry_exponential_base !== DEFAULT_RETRY_EXP_BASE) (agent.error_handling as AnyRecord).retry_exponential_base = form.error_handling.retry_exponential_base;
-
-  // Reasoning (only include if enabled)
-  if (form.reasoning.enabled) {
-    agent.reasoning = {
-      enabled: true,
-      planning_prompt: form.reasoning.planning_prompt,
-      inject_as: form.reasoning.inject_as,
-      max_planning_tokens: form.reasoning.max_planning_tokens,
+  // Error handling — backend uses server-level retry; keep minimal for forward-compat
+  if (form.error_handling.max_retries !== 2 || form.error_handling.retry_strategy !== 'ExponentialBackoff') {
+    agent.error_handling = {
+      retry_strategy: form.error_handling.retry_strategy,
+      max_retries: form.error_handling.max_retries,
+      fallback: form.error_handling.fallback,
     };
-    if (form.reasoning.temperature != null) (agent.reasoning as AnyRecord).temperature = form.reasoning.temperature;
   }
 
-  // Observability
-  agent.observability = {
-    log_inputs: form.observability.log_inputs,
-    log_outputs: form.observability.log_outputs,
-    log_reasoning: form.observability.log_reasoning,
-    track_latency: form.observability.track_latency,
-    track_token_usage: form.observability.track_token_usage,
-  };
-  if (form.observability.log_full_llm_responses) (agent.observability as AnyRecord).log_full_llm_responses = form.observability.log_full_llm_responses;
+  // Backend-used fields that need top-level placement:
+  // max_iterations — controls tool-calling loop cap
+  if ((form as AnyRecord).max_iterations) agent.max_iterations = (form as AnyRecord).max_iterations;
+  // token_budget — controls prompt truncation
+  if ((form as AnyRecord).token_budget) agent.token_budget = (form as AnyRecord).token_budget;
 
-  // Context Management
-  if (form.context_management.enabled) {
-    const ctx: AnyRecord = { enabled: true, strategy: form.context_management.strategy };
-    if (form.context_management.max_context_tokens != null) ctx.max_context_tokens = form.context_management.max_context_tokens;
-    if (form.context_management.reserved_output_tokens !== DEFAULT_RESERVED_OUTPUT_TOKENS) ctx.reserved_output_tokens = form.context_management.reserved_output_tokens;
-    if (form.context_management.token_counter !== 'approximate') ctx.token_counter = form.context_management.token_counter;
-    agent.context_management = ctx;
-  }
-
-  // Output Schema
-  if (form.output_schema.json_schema.trim()) {
-    const os: AnyRecord = {};
-    try { os.json_schema = JSON.parse(form.output_schema.json_schema); } catch { os.json_schema = form.output_schema.json_schema; }
-    if (form.output_schema.enforce_mode !== 'validate_only') os.enforce_mode = form.output_schema.enforce_mode;
-    if (form.output_schema.max_retries !== DEFAULT_OUTPUT_SCHEMA_RETRIES) os.max_retries = form.output_schema.max_retries;
-    if (form.output_schema.strict) os.strict = form.output_schema.strict;
-    agent.output_schema = os;
-  }
-
-  // Output Guardrails
-  if (form.output_guardrails.enabled) {
-    const og: AnyRecord = { enabled: true };
-    if (form.output_guardrails.checks.length > 0) og.checks = form.output_guardrails.checks;
-    if (form.output_guardrails.max_retries !== DEFAULT_GUARDRAIL_RETRIES) og.max_retries = form.output_guardrails.max_retries;
-    if (!form.output_guardrails.inject_feedback) og.inject_feedback = false;
-    agent.output_guardrails = og;
-  }
-
-  // Pre-Commands
-  if (form.pre_commands.length > 0) {
-    agent.pre_commands = form.pre_commands.map((pc) => {
-      const entry: AnyRecord = { name: pc.name, command: pc.command };
-      if (pc.timeout_seconds !== 30) entry.timeout_seconds = pc.timeout_seconds;
-      return entry;
-    });
-  }
-
-  // Merit
-  const meritDef = defaultFormState().merit;
-  const meritSer: AnyRecord = {};
-  if (form.merit.enabled !== meritDef.enabled) meritSer.enabled = form.merit.enabled;
-  if (form.merit.track_outcomes !== meritDef.track_outcomes) meritSer.track_outcomes = form.merit.track_outcomes;
-  if (form.merit.domain_expertise.length > 0) meritSer.domain_expertise = form.merit.domain_expertise;
-  if (form.merit.decay_enabled !== meritDef.decay_enabled) meritSer.decay_enabled = form.merit.decay_enabled;
-  if (form.merit.half_life_days !== DEFAULT_HALF_LIFE_DAYS) meritSer.half_life_days = form.merit.half_life_days;
-  if (Object.keys(meritSer).length > 0) agent.merit = meritSer;
-
-  // Persistent
-  if (form.persistent.persistent) {
-    agent.persistent = true;
-    if (form.persistent.agent_id) agent.agent_id = form.persistent.agent_id;
-  }
-
-  // Dialogue
-  const dlgDef = defaultFormState().dialogue;
-  const dlgSer: AnyRecord = {};
-  if (form.dialogue.dialogue_aware !== dlgDef.dialogue_aware) dlgSer.dialogue_aware = form.dialogue.dialogue_aware;
-  if (form.dialogue.max_dialogue_context_chars !== DEFAULT_MAX_DIALOGUE_CHARS) dlgSer.max_dialogue_context_chars = form.dialogue.max_dialogue_context_chars;
-  if (Object.keys(dlgSer).length > 0) agent.dialogue = dlgSer;
+  // Phantom sections removed from serialization:
+  // reasoning, observability, context_management, output_schema,
+  // output_guardrails, pre_commands, merit, persistent, dialogue
+  // — these features are not implemented in the backend yet.
 
   // Metadata
   const metaSer: AnyRecord = {};

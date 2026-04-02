@@ -925,27 +925,44 @@ export function DesignStageNode({ data }: NodeProps) {
             className="w-2.5 h-2.5 rounded-full shrink-0"
             style={{ backgroundColor: stageColor }}
           />
-          <div className="nopan nodrag flex-1 min-w-0" onClick={(e) => e.stopPropagation()}>
-            <InlineEdit
-              value={stageName}
-              onChange={(v) => {
-                const newName = String(v ?? '').replace(/[^a-zA-Z0-9_-]/g, '');
-                if (newName && newName !== stageName) renameStage(stageName, newName);
-              }}
-              readOnly={isRef}
-              className="text-sm font-bold"
-              placeholder="stage_name"
-              autoFocus={shouldAutoFocus}
-              onAutoFocusConsumed={() => setAutoFocusStageName(null)}
-            />
-          </div>
-          <span className={`text-[8px] px-1.5 py-0.5 rounded shrink-0 font-medium ${
-            isSingleAgent
-              ? 'bg-violet-900/30 text-violet-400'
-              : 'bg-blue-900/30 text-blue-400'
-          }`}>
-            {isSingleAgent ? 'agent' : 'stage'}
-          </span>
+          {isSingleAgent ? (
+            /* Single-agent: looks like a standalone agent, no stage abstraction visible */
+            <div className="nopan nodrag flex-1 min-w-0" onClick={(e) => e.stopPropagation()}>
+              <InlineEdit
+                value={stageName}
+                onChange={(v) => {
+                  const newName = String(v ?? '').replace(/[^a-zA-Z0-9_-]/g, '');
+                  if (newName && newName !== stageName) renameStage(stageName, newName);
+                }}
+                readOnly={isRef}
+                className="text-sm font-bold"
+                placeholder="agent_name"
+                autoFocus={shouldAutoFocus}
+                onAutoFocusConsumed={() => setAutoFocusStageName(null)}
+              />
+            </div>
+          ) : (
+            /* Multi-agent: show stage name as primary */
+            <div className="nopan nodrag flex-1 min-w-0" onClick={(e) => e.stopPropagation()}>
+              <InlineEdit
+                value={stageName}
+                onChange={(v) => {
+                  const newName = String(v ?? '').replace(/[^a-zA-Z0-9_-]/g, '');
+                  if (newName && newName !== stageName) renameStage(stageName, newName);
+                }}
+                readOnly={isRef}
+                className="text-sm font-bold"
+                placeholder="stage_name"
+                autoFocus={shouldAutoFocus}
+                onAutoFocusConsumed={() => setAutoFocusStageName(null)}
+              />
+            </div>
+          )}
+          {!isSingleAgent && (
+            <span className="text-[8px] px-1.5 py-0.5 rounded shrink-0 font-medium bg-blue-900/30 text-blue-400">
+              stage
+            </span>
+          )}
           {isRef && (
             <span className="text-[10px] text-temper-text-dim shrink-0" title={`Ref: ${stageRef}`}>
               [ref]
@@ -956,18 +973,13 @@ export function DesignStageNode({ data }: NodeProps) {
           )}
         </div>
 
-        {/* Single-agent: reuse AgentMiniCard for consistency */}
-        {isSingleAgent && (
-          <div className="mt-1.5 nopan nodrag">
-            {singleAgentSummary ? (
-              <AgentMiniCard
-                summary={singleAgentSummary}
-                isLeader={false}
-                onSelect={() => selectAgent(agents[0])}
-              />
-            ) : (
-              <AgentSkeleton />
-            )}
+        {/* Single-agent: show compact provider/model + tools info */}
+        {isSingleAgent && singleAgentSummary && (
+          <div className="mt-0.5 text-[9px] text-temper-text-dim">
+            {(singleAgentSummary.provider && singleAgentSummary.model)
+              ? `${singleAgentSummary.provider}/${singleAgentSummary.model}`
+              : (singleAgentSummary.provider || singleAgentSummary.model || '')}
+            {singleAgentSummary.toolCount > 0 && ` · ${singleAgentSummary.toolCount} tools`}
           </div>
         )}
 

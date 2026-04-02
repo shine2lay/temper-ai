@@ -40,7 +40,7 @@ class BaseLLM(ABC):
     the four abstract methods for provider-specific behavior.
     """
 
-    def __init__(
+    def __init__(  # noqa: params
         self,
         model: str,
         base_url: str,

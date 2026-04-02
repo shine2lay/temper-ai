@@ -259,8 +259,8 @@ export function useResolveStageAgents() {
 
           setResolvedAgentSummary(agentName, {
             name: agentName,
-            model: (inference?.model as string) ?? (inner.model as string) ?? 'unknown',
-            provider: (inference?.provider as string) ?? (inner.provider as string) ?? 'unknown',
+            model: (inference?.model as string) ?? (inner.model as string) ?? '',
+            provider: (inference?.provider as string) ?? (inner.provider as string) ?? '',
             type: (inner.type as string) ?? 'standard',
             toolCount: toolNames.length,
             toolNames,

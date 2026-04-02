@@ -55,7 +55,7 @@ class ScriptAgent(AgentABC):
             duration = round(time.monotonic() - start, 3)
             status = Status.COMPLETED if tool_result.success else Status.FAILED
             output = str(tool_result.result) if tool_result.result else ""
-            self._record_script_completed(_record, tool_result, output, duration, agent_event_id, context, status)
+            self._record_script_completed(tool_result, output, duration, agent_event_id, context, status)
 
             return AgentResult(
                 status=status,
@@ -99,9 +99,10 @@ class ScriptAgent(AgentABC):
             },
         )
 
-    def _record_script_completed(self, _record, tool_result, output: str, duration: float,
+    def _record_script_completed(self, tool_result, output: str, duration: float,
                                  agent_event_id: str, context: ExecutionContext, status) -> None:
         """Emit AGENT_COMPLETED or AGENT_FAILED event after script execution."""
+        _record = context.event_recorder.record if context.event_recorder else _default_record
         _record(
             EventType.AGENT_COMPLETED if tool_result.success else EventType.AGENT_FAILED,
             parent_id=agent_event_id,

@@ -52,267 +52,163 @@ class LLMService:
         context: CallContext | None = None,
         stream_callback: StreamCallback | None = None,
     ) -> LLMRunResult:
-        """Run the LLM tool-calling loop.
-
-        Args:
-            messages: Initial conversation messages (OpenAI format).
-            tools: Tool definitions (OpenAI function calling format).
-            execute_tool: Function to execute a tool: (name, params) -> result.
-            context: Caller identity for observability.
-            stream_callback: Optional callback for streaming chunks.
-
-        Returns:
-            LLMRunResult with final output, tool calls made, tokens, cost, iterations.
-        """
-        ctx = context or CallContext()
-        self._record = ctx.event_recorder or record
-        all_tool_calls: list[dict[str, Any]] = []
-        total_tokens = 0
-        total_cost = 0.0
-        response: LLMResponse | None = None
-        run_start = time.monotonic()
+        """Run the LLM tool-calling loop."""
+        # Store per-run state so helpers don't need many parameters
+        self._ctx = context or CallContext()
+        self._record = self._ctx.event_recorder or record
+        self._messages = messages
+        self._tools = tools
+        self._execute_tool = execute_tool
+        self._stream_callback = stream_callback
+        self._all_tool_calls: list[dict[str, Any]] = []
+        self._total_tokens = 0
+        self._total_cost = 0.0
+        self._response: LLMResponse | None = None
+        self._run_start = time.monotonic()
 
         for iteration in range(1, self.max_iterations + 1):
-            # Check overall timeout
-            elapsed = time.monotonic() - run_start
-            if elapsed > self.total_timeout:
-                logger.warning(
-                    "LLM run timeout after %.0fs (%d iterations) for agent '%s'",
-                    elapsed, iteration - 1, ctx.agent_name,
-                )
-                return LLMRunResult(
-                    output="",
-                    tool_calls=all_tool_calls,
-                    tokens=total_tokens,
-                    cost=round(total_cost, 6),
-                    iterations=iteration - 1,
-                    error=f"LLM run timed out after {elapsed:.0f}s",
-                )
-            # -- Call LLM with observability --
-            llm_event_id, response, iter_cost = self._call_llm(
-                messages=messages,
-                tools=tools,
-                context=ctx,
-                iteration=iteration,
-                stream_callback=stream_callback,
-            )
+            result = self._run_iteration(iteration)
+            if result is not None:
+                return result
 
-            # -- Accumulate tokens and cost --
-            total_tokens += response.total_tokens or 0
-            total_cost += iter_cost
+        return self._build_max_iterations_result()
 
-            # -- Parse tool calls --
-            tool_calls = parse_tool_calls(response)
+    def _run_iteration(self, iteration: int) -> LLMRunResult | None:
+        """Run one iteration of the tool-calling loop. Returns result if done, None to continue."""
+        elapsed = time.monotonic() - self._run_start
+        if elapsed > self.total_timeout:
+            logger.warning("LLM run timeout after %.0fs for '%s'", elapsed, self._ctx.agent_name)
+            return self._build_result(iteration - 1, error=f"LLM run timed out after {elapsed:.0f}s")
 
-            if not tool_calls:
-                # Final response — LLM is done
-                self._record_iteration(
-                    ctx, iteration, "final_response",
-                    tool_count=0, total_tokens=total_tokens,
-                )
-                return LLMRunResult(
-                    output=extract_final_answer(response),
-                    tool_calls=all_tool_calls,
-                    tokens=total_tokens,
-                    cost=round(total_cost, 6),
-                    iterations=iteration,
-                )
+        llm_event_id, self._response, iter_cost = self._call_llm(iteration)
+        self._total_tokens += self._response.total_tokens or 0
+        self._total_cost += iter_cost
 
-            # -- Execute tools --
-            if execute_tool is None:
-                logger.error(
-                    "LLM returned %d tool calls but no execute_tool provided",
-                    len(tool_calls),
-                )
-                self._record(
-                    EventType.LLM_NO_EXECUTOR,
-                    parent_id=ctx.agent_event_id,
-                    execution_id=ctx.execution_id,
-                    status="failed",
-                    data={
-                        "agent_name": ctx.agent_name,
-                        "iteration": iteration,
-                        "tool_calls_requested": [tc["name"] for tc in tool_calls],
-                    },
-                )
-                return LLMRunResult(
-                    output="",
-                    tool_calls=all_tool_calls,
-                    tokens=total_tokens,
-                    cost=round(total_cost, 6),
-                    iterations=iteration,
-                    error="Tool calls requested but no tool executor available",
-                )
+        tool_calls = parse_tool_calls(self._response)
+        if not tool_calls:
+            self._record_iteration(iteration, "final_response", 0)
+            return self._build_result(iteration, output=extract_final_answer(self._response))
 
-            tool_results = execute_tool_calls(
-                tool_calls=tool_calls,
-                execute_tool=execute_tool,
-                context=ctx,
-                llm_call_event_id=llm_event_id,
-            )
+        if self._execute_tool is None:
+            return self._handle_no_executor(iteration, tool_calls)
 
-            # -- Track tool calls for the final result --
-            for tc, tr in zip(tool_calls, tool_results):
-                all_tool_calls.append({
-                    "name": tc["name"],
-                    "arguments": tc["arguments"],
-                    "result": tr["result"],
-                    "success": tr["success"],
-                })
+        self._execute_and_inject_tools(tool_calls, llm_event_id)
+        self._record_iteration(iteration, "tool_calls", len(tool_calls))
+        return None  # continue loop
 
-            # -- Inject tool results into messages --
-            _inject_tool_results(messages, response, tool_calls, tool_results)
-
-            # -- Apply message window to prevent unbounded growth --
-            _apply_message_window(messages, self.max_messages)
-
-            self._record_iteration(
-                ctx, iteration, "tool_calls",
-                tool_count=len(tool_calls), total_tokens=total_tokens,
-            )
-
-        # Hit max iterations without a final response
-        logger.warning(
-            "Hit max iterations (%d) for agent '%s'",
-            self.max_iterations, ctx.agent_name,
-        )
-        self._record(
-            EventType.LLM_MAX_ITERATIONS,
-            parent_id=ctx.agent_event_id,
-            execution_id=ctx.execution_id,
-            status="failed",
-            data={
-                "agent_name": ctx.agent_name,
-                "node_path": ctx.node_path,
-                "max_iterations": self.max_iterations,
-                "total_tokens": total_tokens,
-                "total_cost": round(total_cost, 6),
-                "tool_calls_made": len(all_tool_calls),
-            },
-        )
-        return LLMRunResult(
-            output=extract_final_answer(response) if response else "",
-            tool_calls=all_tool_calls,
-            tokens=total_tokens,
-            cost=round(total_cost, 6),
-            iterations=self.max_iterations,
-            error=f"Reached max iterations ({self.max_iterations})",
-        )
-
-    def _call_llm(
-        self,
-        messages: list[dict],
-        tools: list[dict] | None,
-        context: CallContext,
-        iteration: int,
-        stream_callback: StreamCallback | None,
-    ) -> tuple[str, LLMResponse, float]:
-        """Call the LLM provider and record start/completed/failed events.
-
-        Returns (event_id, response, cost_usd).
-        """
-        event_id = self._record(
-            EventType.LLM_CALL_STARTED,
-            parent_id=context.agent_event_id,
-            execution_id=context.execution_id,
-            status="running",
-            data={
-                "agent_name": context.agent_name,
-                "node_path": context.node_path,
-                "model": self.provider.model,
-                "provider": self.provider.provider_name,
-                "temperature": self.provider.temperature,
-                "max_tokens": self.provider.max_tokens,
-                "iteration": iteration,
-                "message_count": len(messages),
-                "messages": messages,
-                "tools_available": len(tools) if tools else 0,
-                "streaming": stream_callback is not None,
-            },
-        )
-
+    def _call_llm(self, iteration: int) -> tuple[str, LLMResponse, float]:
+        """Call the LLM provider and record events. Returns (event_id, response, cost)."""
+        event_id = self._record_llm_started(iteration)
         try:
-            kwargs: dict[str, Any] = {}
-            if tools:
-                kwargs["tools"] = tools
-
-            if stream_callback:
-                response = self.provider.stream(
-                    messages, on_chunk=stream_callback, **kwargs,
-                )
-            else:
-                response = self.provider.complete(messages, **kwargs)
-
-            cost = estimate_cost(
-                response.model,
-                response.prompt_tokens,
-                response.completion_tokens,
-                response.total_tokens,
-            )
-
-            self._record(
-                EventType.LLM_CALL_COMPLETED,
-                parent_id=context.agent_event_id,
-                execution_id=context.execution_id,
-                status="completed",
-                data={
-                    "model": response.model,
-                    "prompt_tokens": response.prompt_tokens,
-                    "completion_tokens": response.completion_tokens,
-                    "total_tokens": response.total_tokens,
-                    "latency_ms": response.latency_ms,
-                    "finish_reason": response.finish_reason,
-                    "cost_usd": cost,
-                    "has_tool_calls": bool(response.tool_calls),
-                    "tool_calls_requested": [
-                        {"name": tc.get("name"), "id": tc.get("id")}
-                        for tc in (response.tool_calls or [])
-                    ] or None,
-                    "iteration": iteration,
-                    "response_content": response.content,
-                    "reasoning": response.reasoning,
-                },
-            )
-
+            response = self._invoke_provider()
+            cost = estimate_cost(response.model, response.prompt_tokens,
+                                 response.completion_tokens, response.total_tokens)
+            self._record_llm_completed(event_id, response, cost, iteration)
             return event_id, response, cost
-
         except Exception as e:  # noqa: broad-except
-            self._record(
-                EventType.LLM_CALL_FAILED,
-                parent_id=context.agent_event_id,
-                execution_id=context.execution_id,
-                status="failed",
-                data={
-                    "model": self.provider.model,
-                    "provider": self.provider.provider_name,
-                    "iteration": iteration,
-                    "error_type": type(e).__name__,
-                    "error": str(e)[:500],
-                    "agent_name": context.agent_name,
-                },
-            )
+            self._record_llm_failed(iteration, e)
             raise
+
+    def _invoke_provider(self) -> LLMResponse:
+        """Call the LLM provider (stream or complete)."""
+        kwargs: dict[str, Any] = {}
+        if self._tools:
+            kwargs["tools"] = self._tools
+        if self._stream_callback:
+            return self.provider.stream(self._messages, on_chunk=self._stream_callback, **kwargs)
+        return self.provider.complete(self._messages, **kwargs)
+
+    def _execute_and_inject_tools(self, tool_calls: list[dict], llm_event_id: str) -> None:
+        """Execute tools, track results, inject into messages."""
+        assert self._execute_tool is not None  # noqa: B101
+        assert self._response is not None  # noqa: B101
+        tool_results = execute_tool_calls(
+            tool_calls=tool_calls, execute_tool=self._execute_tool,
+            context=self._ctx, llm_call_event_id=llm_event_id,
+        )
+        for tc, tr in zip(tool_calls, tool_results):
+            self._all_tool_calls.append({
+                "name": tc["name"], "arguments": tc["arguments"],
+                "result": tr["result"], "success": tr["success"],
+            })
+        _inject_tool_results(self._messages, self._response, tool_calls, tool_results)
+        _apply_message_window(self._messages, self.max_messages)
+
+    def _handle_no_executor(self, iteration: int, tool_calls: list[dict]) -> LLMRunResult:
+        """Handle case where LLM requests tools but no executor is available."""
+        logger.error("LLM returned %d tool calls but no execute_tool provided", len(tool_calls))
+        self._record(EventType.LLM_NO_EXECUTOR, parent_id=self._ctx.agent_event_id,
+                     execution_id=self._ctx.execution_id, status="failed",
+                     data={"agent_name": self._ctx.agent_name, "iteration": iteration,
+                           "tool_calls_requested": [tc["name"] for tc in tool_calls]})
+        return self._build_result(iteration, error="Tool calls requested but no tool executor available")
+
+    def _build_result(self, iterations: int, output: str = "", error: str | None = None) -> LLMRunResult:
+        return LLMRunResult(output=output, tool_calls=self._all_tool_calls,
+                            tokens=self._total_tokens, cost=round(self._total_cost, 6),
+                            iterations=iterations, error=error)
+
+    def _build_max_iterations_result(self) -> LLMRunResult:
+        logger.warning("Hit max iterations (%d) for '%s'", self.max_iterations, self._ctx.agent_name)
+        self._record(EventType.LLM_MAX_ITERATIONS, parent_id=self._ctx.agent_event_id,
+                     execution_id=self._ctx.execution_id, status="failed",
+                     data={"agent_name": self._ctx.agent_name, "max_iterations": self.max_iterations,
+                           "total_tokens": self._total_tokens, "total_cost": round(self._total_cost, 6)})
+        output = extract_final_answer(self._response) if self._response else ""
+        return self._build_result(self.max_iterations, output=output,
+                                  error=f"Reached max iterations ({self.max_iterations})")
+
+    def _record_llm_started(self, iteration: int) -> str:
+        return self._record(
+            EventType.LLM_CALL_STARTED, parent_id=self._ctx.agent_event_id,
+            execution_id=self._ctx.execution_id, status="running",
+            data={"agent_name": self._ctx.agent_name, "node_path": self._ctx.node_path,
+                  "model": self.provider.model, "provider": self.provider.provider_name,
+                  "temperature": self.provider.temperature, "max_tokens": self.provider.max_tokens,
+                  "iteration": iteration, "message_count": len(self._messages),
+                  "messages": self._messages,
+                  "tools_available": len(self._tools) if self._tools else 0,
+                  "streaming": self._stream_callback is not None})
+
+    def _record_llm_completed(self, event_id: str, response: LLMResponse, cost: float, iteration: int) -> None:
+        self._record(
+            EventType.LLM_CALL_COMPLETED, parent_id=self._ctx.agent_event_id,
+            execution_id=self._ctx.execution_id, status="completed",
+            data={"model": response.model, "prompt_tokens": response.prompt_tokens,
+                  "completion_tokens": response.completion_tokens, "total_tokens": response.total_tokens,
+                  "latency_ms": response.latency_ms, "finish_reason": response.finish_reason,
+                  "cost_usd": cost, "has_tool_calls": bool(response.tool_calls),
+                  "tool_calls_requested": [{"name": tc.get("name"), "id": tc.get("id")}
+                                           for tc in (response.tool_calls or [])] or None,
+                  "iteration": iteration, "response_content": response.content,
+                  "reasoning": response.reasoning})
+
+    def _record_llm_failed(self, iteration: int, exc: Exception) -> None:
+        self._record(
+            EventType.LLM_CALL_FAILED, parent_id=self._ctx.agent_event_id,
+            execution_id=self._ctx.execution_id, status="failed",
+            data={"model": self.provider.model, "provider": self.provider.provider_name,
+                  "iteration": iteration, "error_type": type(exc).__name__,
+                  "error": str(exc)[:500], "agent_name": self._ctx.agent_name})
 
     def _record_iteration(
         self,
-        context: CallContext,
         iteration: int,
         action: str,
         tool_count: int,
-        total_tokens: int,
     ) -> None:
         """Record an iteration summary event."""
         self._record(
             EventType.LLM_ITERATION,
-            parent_id=context.agent_event_id,
-            execution_id=context.execution_id,
+            parent_id=self._ctx.agent_event_id,
+            execution_id=self._ctx.execution_id,
             data={
-                "agent_name": context.agent_name,
-                "node_path": context.node_path,
+                "agent_name": self._ctx.agent_name,
+                "node_path": self._ctx.node_path,
                 "iteration": iteration,
                 "action": action,
                 "tool_count": tool_count,
-                "total_tokens_so_far": total_tokens,
+                "total_tokens_so_far": self._total_tokens,
             },
         )
 

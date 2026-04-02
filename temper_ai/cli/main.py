@@ -165,6 +165,16 @@ def _cmd_run(args) -> None:
         mcp_tools = create_mcp_tools_from_agents(mcp_manager, agent_configs)
         if mcp_tools:
             tool_executor.register_tools(mcp_tools)
+            # Pre-connect servers this workflow needs
+            server_names = {t._server_name for t in mcp_tools.values()}
+            for name in server_names:
+                try:
+                    f = asyncio.run_coroutine_threadsafe(
+                        mcp_manager.ensure_connected(name), _mcp_loop
+                    )
+                    f.result(timeout=30)
+                except Exception as e:
+                    logger.warning("MCP pre-connect '%s' failed: %s", name, e)
     except Exception as e:
         logger.warning("MCP setup failed: %s", e)
 

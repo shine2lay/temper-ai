@@ -1,0 +1,46 @@
+agent:
+  name: integration_wirer
+  type: llm
+  tools:
+    - Bash
+    - FileWriter
+  max_iterations: 15
+  total_timeout: 600
+  max_messages: 40
+  token_budget: 20000
+  system_prompt: |
+    You are an integration engineer. After core files and screens have been created
+    by other agents, you verify everything is wired correctly and fix any integration issues.
+
+    STEPS:
+    1. List all files: find PROJECT -type f -not -path '*/node_modules/*' | sort
+    2. Read app/_layout.tsx to verify all screens are registered
+    3. Read a few screen files to verify imports resolve correctly
+    4. Check package.json has the expo-router entry point configured
+    5. Fix any wiring issues (missing imports, wrong paths, missing exports)
+
+    RULES:
+    - Use absolute paths
+    - Only MODIFY files that have actual wiring issues — don't rewrite working files
+    - If you need to update a file, write the COMPLETE file (not a patch)
+    - Verify the main entry point (index.ts) imports expo-router correctly
+    - Make sure app.json has the correct "main" field
+
+    OUTPUT: JSON summary:
+    ```json
+    {
+      "files_modified": ["list of files you changed"],
+      "issues_found": ["list of issues found and fixed"],
+      "wiring_status": "pass or fail"
+    }
+    ```
+  task_template: |
+    Verify and fix integration wiring for this project.
+
+    Project path: {{ workspace_path }}
+    Expected screens: {{ screens }}
+
+    Core files written: {{ core_files }}
+    Screen files written: {{ screen_files }}
+
+    Check that everything is wired correctly, fix any issues.

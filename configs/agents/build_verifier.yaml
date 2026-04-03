@@ -1,0 +1,24 @@
+agent:
+  name: build_verifier
+  type: script
+  script_template: |
+    #!/bin/bash
+    set -e
+
+    PROJECT="{{ workspace_path }}"
+    cd "$PROJECT"
+
+    echo "Running TypeScript check..."
+    TSC_OUTPUT=$(npx tsc --noEmit 2>&1) || true
+    TSC_EXIT=$?
+
+    if [ $TSC_EXIT -eq 0 ]; then
+      echo '{"build_result": "PASS", "errors": [], "error_count": 0}'
+    else
+      ERROR_COUNT=$(echo "$TSC_OUTPUT" | grep -c "error TS" || true)
+      ERRORS=$(echo "$TSC_OUTPUT" | grep "error TS" | head -20)
+      # Escape JSON
+      ERRORS_JSON=$(echo "$ERRORS" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read().strip().split('\n')))")
+      echo "{\"build_result\": \"FAIL\", \"errors\": $ERRORS_JSON, \"error_count\": $ERROR_COUNT}"
+    fi
+  timeout_seconds: 120

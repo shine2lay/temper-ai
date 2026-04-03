@@ -1,0 +1,172 @@
+workflow:
+  name: mobile_app_builder
+  description: |
+    Builds a complete Expo React Native mobile app from a plain-English description.
+    Multi-agent pipeline: requirements → architecture → scaffold → plan → implement → verify.
+  defaults:
+    provider: vllm
+    model: qwen3-next
+  safety:
+    policies:
+      - type: budget
+        max_tokens: 1000000
+
+  nodes:
+    # ── Phase 1: Requirements ───────────────────────────────────────
+    - name: requirements
+      type: agent
+      agent: app_requirements_analyst
+
+    # ── Phase 2: Architecture Design (leader pattern) ───────────────
+    - name: architecture
+      type: stage
+      strategy: leader
+      depends_on: [requirements]
+      input_map:
+        requirements: requirements.output
+      agents:
+        - agent: tech_stack_advisor
+          task_template: |
+            Requirements:
+            {{ requirements }}
+            Recommend a tech stack. Output valid JSON only.
+        - agent: ux_designer
+          task_template: |
+            Requirements:
+            {{ requirements }}
+            Design the screens and navigation. Output valid JSON only.
+        - agent: data_modeler
+          task_template: |
+            Requirements:
+            {{ requirements }}
+            Design the TypeScript data model. Output valid JSON only.
+        - agent: arch_decider
+          role: leader
+          task_template: |
+            Requirements:
+            {{ requirements }}
+
+            Specialist inputs:
+            {{ other_agents }}
+
+            Synthesize into a single architecture decision. Output valid JSON only.
+
+    # ── Phase 3: Scaffold ───────────────────────────────────────────
+    - name: scaffold
+      type: agent
+      agent: scaffold_executor
+      depends_on: [architecture]
+      input_map:
+        workspace_path: workflow.workspace_path
+        app_name: workflow.app_name
+        tech_stack: architecture.structured.tech_stack
+        project_structure: architecture.structured.project_structure
+        data_types_file: architecture.structured.data_types_file
+
+    # ── Phase 4: Plan ───────────────────────────────────────────────
+    - name: plan
+      type: agent
+      agent: app_component_planner
+      depends_on: [scaffold]
+      input_map:
+        workspace_path: scaffold.structured.workspace_path
+        screens: architecture.structured.screens
+        shared_components: architecture.structured.shared_components
+        tech_stack: architecture.structured.tech_stack
+        architecture_notes: architecture.structured.architecture_notes
+
+    # ── Phase 5: Implement (parallel — core + screens) ──────────────
+    - name: implement
+      type: stage
+      strategy: parallel
+      depends_on: [plan]
+      agents:
+        - agent: core_implementer
+          task_template: |
+            Implement CORE files only (contexts, stores, shared components, config).
+
+            Project path: {{ workspace_path }}
+            Architecture notes: {{ architecture_notes }}
+
+            Your tasks (core files only):
+            {{ core_tasks }}
+
+            {% if build_errors %}
+            PREVIOUS BUILD ERRORS (fix only YOUR files):
+            {{ build_errors }}
+            {% endif %}
+
+            Write each file completely. Output JSON summary when done.
+        - agent: screen_implementer
+          task_template: |
+            Implement SCREEN files and the root layout.
+
+            Project path: {{ workspace_path }}
+            Architecture notes: {{ architecture_notes }}
+
+            Your tasks (screens and layout only):
+            {{ screen_tasks }}
+
+            {% if build_errors %}
+            PREVIOUS BUILD ERRORS (fix only YOUR files):
+            {{ build_errors }}
+            {% endif %}
+
+            Write each file completely. Output JSON summary when done.
+      input_map:
+        workspace_path: scaffold.structured.workspace_path
+        architecture_notes: architecture.structured.architecture_notes
+        core_tasks: plan.structured.core_tasks
+        screen_tasks: plan.structured.screen_tasks
+        build_errors: build_verifier.structured.errors
+
+    # ── Phase 6: Integration ────────────────────────────────────────
+    - name: integration
+      type: agent
+      agent: integration_wirer
+      depends_on: [implement]
+      input_map:
+        workspace_path: scaffold.structured.workspace_path
+        screens: architecture.structured.screens
+        core_files: implement.output
+        screen_files: implement.output
+
+    # ── Phase 7: Build Verification ─────────────────────────────────
+    - name: build_verifier
+      type: agent
+      agent: build_verifier
+      depends_on: [integration]
+      input_map:
+        workspace_path: scaffold.structured.workspace_path
+      loop_to: implement
+      max_loops: 2
+      loop_condition:
+        source: build_verifier.structured.build_result
+        operator: equals
+        value: FAIL
+
+    # ── Phase 8: Test ───────────────────────────────────────────────
+    - name: test_runner
+      type: agent
+      agent: app_test_runner
+      depends_on: [build_verifier]
+      condition:
+        source: build_verifier.structured.build_result
+        operator: equals
+        value: PASS
+      input_map:
+        workspace_path: scaffold.structured.workspace_path
+
+    # ── Phase 9: Summary ────────────────────────────────────────────
+    - name: summary
+      type: agent
+      agent: summary_reporter
+      depends_on: [build_verifier, test_runner]
+      input_map:
+        workspace_path: scaffold.structured.workspace_path
+        app_name: workflow.app_name
+        requirements: requirements.output
+        screens: architecture.structured.screens
+        tech_stack: architecture.structured.tech_stack
+        build_result: build_verifier.structured.build_result
+        test_result: test_runner.structured.test_result

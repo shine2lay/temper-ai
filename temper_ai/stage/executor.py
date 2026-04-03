@@ -171,12 +171,15 @@ def _check_dependency_failures(
     node: Node,
     node_outputs: dict[str, NodeResult],
 ) -> NodeResult | None:
-    """Return a SKIPPED NodeResult if any dependency failed, else None."""
+    """Return a SKIPPED NodeResult if any dependency failed or was skipped, else None."""
     for dep_name in node.depends_on:
         dep_result = node_outputs.get(dep_name)
         if dep_result and dep_result.status == Status.FAILED:
             logger.warning("Node '%s' skipped — dependency '%s' failed", node.name, dep_name)
             return NodeResult(status=Status.SKIPPED, error=f"Dependency '{dep_name}' failed")
+        if dep_result and dep_result.status == Status.SKIPPED:
+            logger.warning("Node '%s' skipped — dependency '%s' was skipped", node.name, dep_name)
+            return NodeResult(status=Status.SKIPPED, error=f"Dependency '{dep_name}' was skipped")
     return None
 
 

@@ -154,6 +154,7 @@ workflow:
       agents:
         - sdlc_health_checker
         - sdlc_smoke_tester
+        - sdlc_visual_verifier
       input_map:
         app_url: workflow.app_url
         new_endpoint: plan.structured.new_endpoint

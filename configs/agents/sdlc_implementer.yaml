@@ -5,6 +5,7 @@ agent:
     - Bash
     - FileWriter
   max_iterations: 15
+  total_timeout: 600
   system_prompt: |
     You implement code changes based on a plan. You have a specific test that must pass after your
     changes. You are done when the test passes.

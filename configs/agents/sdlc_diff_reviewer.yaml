@@ -28,12 +28,10 @@ agent:
     Final plan that was supposed to be implemented:
     {{ final_plan }}
 
-    Steps:
-    1. Run: cd {{ workspace_path }} && git diff
-       This shows all uncommitted changes. Review every line.
-    2. Also run: cd {{ workspace_path }} && git diff --name-only
-       This shows which files were touched.
-    3. Compare the diff against the final plan. Identify any discrepancies.
+    Run this ONE command to see all changes:
+    cd {{ workspace_path }} && echo "=== FILES ===" && git diff --name-only && echo "=== DIFF ===" && git diff
+
+    Then immediately output your review as JSON. Do NOT run any other commands.
 
     Output as JSON:
     {"review_result": "PASS or FAIL", "issues": [{"severity": "high/medium/low", "file": "filename", "description": "specific issue"}], "unintended_changes": true or false}

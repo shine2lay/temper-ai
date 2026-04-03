@@ -94,5 +94,8 @@ frontend/*.db
 !frontend/src/lib/
 temper_ai/interfaces/dashboard/react-dist/
 
+# Planning docs (local only)
+plans/
+
 # Root-level artifacts
 /*.png

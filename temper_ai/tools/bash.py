@@ -17,9 +17,18 @@ from temper_ai.tools.base import BaseTool, ToolResult
 logger = logging.getLogger(__name__)
 
 _DEFAULT_ALLOWED_COMMANDS = [
+    # File operations
     "ls", "cat", "find", "mkdir", "pwd", "head", "tail", "wc",
     "grep", "sort", "uniq", "diff", "echo", "cp", "mv", "rm",
-    "touch", "python3", "pip", "node", "npm", "npx", "git",
+    "touch", "chmod", "tee",
+    # Text processing
+    "sed", "awk", "tr", "cut", "xargs",
+    # Path utilities
+    "basename", "dirname", "realpath", "readlink", "which",
+    # Shell built-ins / safe utilities
+    "cd", "test", "true", "false", "sleep", "date", "whoami", "env",
+    # Dev tools
+    "python3", "pip", "node", "npm", "npx", "git", "curl",
 ]
 
 _DEFAULT_TIMEOUT = 30

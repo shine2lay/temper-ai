@@ -3,7 +3,7 @@ agent:
   type: llm
   tools:
     - Bash
-  max_iterations: 3
+  max_iterations: 5
   system_prompt: |
     You review the git diff of changes made by an AI implementer. You are an INDEPENDENT reviewer —
     you did NOT write this code.

@@ -29,3 +29,7 @@ class CyclicDependencyError(LoaderError):
 
 class ValidationError(LoaderError):
     """Graph config validation failed."""
+
+
+class CancellationError(StageError):
+    """Workflow was cancelled by the user."""

@@ -32,6 +32,10 @@ export function defaultMeta(): WorkflowMeta {
     version: '1.0',
     product_type: null,
 
+    // Defaults
+    default_provider: '',
+    default_model: '',
+
     // Execution
     timeout_seconds: DEFAULT_TIMEOUT,
     max_iterations: 100,

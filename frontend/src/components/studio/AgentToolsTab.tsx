@@ -14,11 +14,12 @@ interface Props {
 
 export function AgentToolsTab({ config, updateField }: Props) {
   const { data: registry } = useRegistry();
-  const registeredTools = registry?.tools ?? [];
+  const builtinTools = registry?.tools ?? [];
+  const mcpServers = registry?.mcp_servers ?? [];
 
   return (
     <div className="px-3 py-2 border-b border-temper-border/30">
-      <SectionHeader title="Tools" tooltip="Tools available to this agent. Auto: discover tools from environment. None: no tool access. Explicit: only the listed tools." />
+      <SectionHeader title="Tools" tooltip="Tools available to this agent. Auto: discover tools from environment. None: no tool access. Explicit: only the listed tools. MCP tools use dotted names: server.tool_name" />
       <ExpandedField label="Mode" tip="Auto-discover: agent gets all registered tools. No tools: agent cannot call any tools. Explicit: only the tools listed below.">
         <InlineSelect
           value={config.tools.mode}
@@ -45,10 +46,33 @@ export function AgentToolsTab({ config, updateField }: Props) {
                   className="flex-1 px-2 py-1 text-xs bg-temper-surface border border-temper-border rounded text-temper-text"
                 >
                   <option value="">Select tool...</option>
-                  {registeredTools.map((t) => (
-                    <option key={t} value={t}>{t}</option>
-                  ))}
+                  <optgroup label="Built-in Tools">
+                    {builtinTools.map((t) => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </optgroup>
+                  {mcpServers.length > 0 && (
+                    <optgroup label="MCP Servers">
+                      {mcpServers.map((s) => (
+                        <option key={s} value={s}>{s} (all tools)</option>
+                      ))}
+                    </optgroup>
+                  )}
                 </select>
+                {/* Free-text input for MCP tool names like searxng.web_search */}
+                {entry.name === '' || entry.name.includes('.') || mcpServers.includes(entry.name) ? (
+                  <input
+                    type="text"
+                    value={entry.name}
+                    onChange={(e) => {
+                      const entries = [...config.tools.entries];
+                      entries[i] = { ...entries[i], name: e.target.value };
+                      updateField('tools', { ...config.tools, entries });
+                    }}
+                    className="flex-1 px-2 py-1 text-xs bg-temper-surface border border-temper-border rounded text-temper-text font-mono"
+                    placeholder="server.tool_name"
+                  />
+                ) : null}
                 <button
                   onClick={() => updateField('tools', {
                     ...config.tools,

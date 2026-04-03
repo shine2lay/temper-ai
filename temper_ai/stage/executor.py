@@ -14,7 +14,7 @@ from typing import Any
 from temper_ai.observability.event_types import EventType
 from temper_ai.shared.types import ExecutionContext, NodeResult, Status
 from temper_ai.stage.conditions import evaluate_condition
-from temper_ai.stage.exceptions import CyclicDependencyError
+from temper_ai.stage.exceptions import CancellationError, CyclicDependencyError
 from temper_ai.stage.node import Node
 
 logger = logging.getLogger(__name__)
@@ -72,18 +72,20 @@ def _run_batches(
 ) -> None:
     """Iterate through topological batches, handling single-node loops and parallel execution."""
     batch_idx = 0
+    loop_feedback: dict[str, NodeResult] = {}
     while batch_idx < len(batches):
+        _check_cancelled(context)
         batch = batches[batch_idx]
         if len(batch) == 1:
             node = batch[0]
-            result = _execute_single_node(node, input_data, node_outputs, context, graph_event_id)
+            result = _execute_single_node(node, input_data, node_outputs, context, graph_event_id, loop_feedback)
             node_outputs[node.name] = result
-            rewind = _handle_loop(node, result, node_outputs, loop_counts, batches, node_map)
+            rewind = _handle_loop(node, result, node_outputs, loop_counts, loop_feedback, batches, node_map)
             if rewind is not None:
                 batch_idx = rewind
                 continue
         else:
-            results = _execute_parallel_batch(batch, input_data, node_outputs, context, graph_event_id)
+            results = _execute_parallel_batch(batch, input_data, node_outputs, context, graph_event_id, loop_feedback)
             for node, result in results:
                 node_outputs[node.name] = result
         batch_idx += 1
@@ -130,6 +132,7 @@ def _execute_single_node(
     node_outputs: dict[str, NodeResult],
     context: ExecutionContext,
     parent_event_id: str,
+    loop_feedback: dict[str, NodeResult] | None = None,
 ) -> NodeResult:
     """Execute one node with condition checking and input resolution."""
     skip = _check_dependency_failures(node, node_outputs)
@@ -150,7 +153,7 @@ def _execute_single_node(
             _record_skipped_node(node, context, parent_event_id, str(exc))
             return result
 
-    resolved = _resolve_inputs(node, input_data, node_outputs)
+    resolved = _resolve_inputs(node, input_data, node_outputs, loop_feedback)
     resolved = _inject_strategy_context(node, resolved, node_outputs)
 
     node_event_id = context.event_recorder.record(
@@ -245,6 +248,7 @@ def _execute_parallel_batch(
     node_outputs: dict[str, NodeResult],
     context: ExecutionContext,
     parent_event_id: str,
+    loop_feedback: dict[str, NodeResult] | None = None,
 ) -> list[tuple[Node, NodeResult]]:
     """Execute a batch of independent nodes concurrently."""
     results = []
@@ -253,7 +257,7 @@ def _execute_parallel_batch(
         future_to_node = {
             pool.submit(
                 _execute_single_node, node, input_data, node_outputs,
-                context, parent_event_id
+                context, parent_event_id, loop_feedback
             ): node
             for node in batch
         }
@@ -273,13 +277,38 @@ def _handle_loop(
     result: NodeResult,
     node_outputs: dict[str, NodeResult],
     loop_counts: dict[str, int],
+    loop_feedback: dict[str, NodeResult],
     batches: list[list[Node]],
     node_map: dict[str, Node],
 ) -> int | None:
-    """Handle loop_to logic. Returns batch index to rewind to, or None."""
+    """Handle loop_to logic. Returns batch index to rewind to, or None.
+
+    Triggers a loop rewind when:
+    - The node FAILED (original behavior), OR
+    - The node COMPLETED but has a loop_condition that evaluates to True
+      (e.g., structured.check_result == "FAIL")
+
+    Before clearing node_outputs for the rewind, preserves the triggering
+    node's result in loop_feedback so the loop target can access it via
+    _loop_feedback_<node_name> in its input_data.
+    """
     if not node.loop_to:
         return None
-    if result.status != Status.FAILED:
+
+    # Determine if a loop should fire
+    should_loop = False
+
+    if result.status == Status.FAILED:
+        should_loop = True
+    elif node.loop_condition and result.status == Status.COMPLETED:
+        try:
+            should_loop = evaluate_condition(node.loop_condition, node_outputs)
+        except Exception as exc:
+            logger.warning(
+                "Loop condition evaluation failed for '%s': %s", node.name, exc,
+            )
+
+    if not should_loop:
         return None
 
     loop_key = f"{node.name}->{node.loop_to}"
@@ -296,6 +325,9 @@ def _handle_loop(
         "Loop %s iteration %d/%d — rewinding to '%s'",
         loop_key, loop_counts[loop_key], node.max_loops, node.loop_to,
     )
+
+    # Preserve the triggering node's output so the loop target can read it
+    loop_feedback[node.name] = result
 
     # Find which batch contains the target node
     for idx, batch in enumerate(batches):
@@ -314,6 +346,7 @@ def _resolve_inputs(
     node: Node,
     input_data: dict,
     node_outputs: dict[str, NodeResult],
+    loop_feedback: dict[str, NodeResult] | None = None,
 ) -> dict:
     """Resolve input_map for a node.
 
@@ -325,22 +358,30 @@ def _resolve_inputs(
     - "workflow.field" or "input.field" → input_data[field]
     - "node_name.output" → node_outputs[node_name].output
     - "node_name.structured.field" → node_outputs[node_name].structured_output[field]
+
+    Loop feedback: when a node triggered a loop rewind, its result is
+    preserved in loop_feedback. Source references can resolve from
+    loop_feedback when the node is not in node_outputs (cleared by rewind).
     """
+    # Merge node_outputs with loop_feedback — node_outputs takes priority
+    effective_outputs = dict(loop_feedback) if loop_feedback else {}
+    effective_outputs.update(node_outputs)
+
     input_map = node.config.input_map
     if not input_map:
         resolved = dict(input_data)
         deps = node.config.depends_on or []
         dep_outputs = [
-            f"[{dep_name}]:\n{node_outputs[dep_name].output}"
+            f"[{dep_name}]:\n{effective_outputs[dep_name].output}"
             for dep_name in deps
-            if dep_name in node_outputs and node_outputs[dep_name].output
+            if dep_name in effective_outputs and effective_outputs[dep_name].output
         ]
         if dep_outputs:
             resolved["other_agents"] = "\n\n".join(dep_outputs)
         return resolved
 
     return {
-        local_name: _resolve_single_input(node.name, local_name, source, input_data, node_outputs)
+        local_name: _resolve_single_input(node.name, local_name, source, input_data, effective_outputs)
         for local_name, source in input_map.items()
     }
 
@@ -472,6 +513,12 @@ def _drain_batch(
             if in_degree[dependent] == 0:
                 next_queue.append(dependent)
     return batch, next_queue, processed
+
+
+def _check_cancelled(context: ExecutionContext) -> None:
+    """Raise CancellationError if the workflow has been cancelled."""
+    if context.cancel_event and context.cancel_event.is_set():
+        raise CancellationError("Workflow cancelled by user")
 
 
 def _get_final_output(

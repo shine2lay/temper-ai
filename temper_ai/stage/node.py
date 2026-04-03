@@ -49,3 +49,8 @@ class Node(ABC):
     def max_loops(self) -> int:
         """Maximum loop iterations (only relevant if loop_to is set)."""
         return self.config.max_loops
+
+    @property
+    def loop_condition(self) -> dict | None:
+        """Optional condition that triggers a loop rewind when met (on COMPLETED nodes)."""
+        return self.config.loop_condition

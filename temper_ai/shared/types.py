@@ -102,6 +102,7 @@ class ExecutionContext:
     stream_callback: Callable | None = None
     workspace_path: str | None = None
     parent_event_id: str | None = None  # Node event ID for agent event hierarchy
+    cancel_event: Any = None  # threading.Event — set to cancel the workflow
 
     def get_llm(self, provider: str) -> Any:
         """Get LLM provider by name. Raises KeyError if not found."""

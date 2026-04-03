@@ -1,0 +1,69 @@
+agent:
+  name: sdlc_push
+  type: script
+  script_template: |
+    #!/bin/bash
+    WORKSPACE={{ workspace_path }}
+    HINT="{{ commit_message }}"
+    HEROKU_URL="{{ heroku_git_url }}"
+
+    # Validate workspace
+    if [ -z "$WORKSPACE" ] || [ ! -d "$WORKSPACE" ]; then
+      echo '{"push_status": "failed", "commit_hash": "none", "error": "workspace_path is empty or does not exist"}'
+      exit 1
+    fi
+
+    if [ ! -d "$WORKSPACE/.git" ]; then
+      echo '{"push_status": "failed", "commit_hash": "none", "error": "workspace is not a git repo"}'
+      exit 1
+    fi
+
+    # Stage all changes
+    git -C "$WORKSPACE" add -A
+
+    # Check if there is anything to commit
+    CHANGES=$(git -C "$WORKSPACE" diff --cached --stat)
+    if [ -z "$CHANGES" ]; then
+      echo '{"push_status": "skipped", "commit_hash": "none", "error": "no changes to commit"}'
+      exit 0
+    fi
+
+    # Build commit message
+    if [ -n "$HINT" ] && echo "$HINT" | grep -qE "^(feat|fix|refactor|chore|docs):"; then
+      COMMIT_MSG="$HINT"
+    else
+      FILES=$(git -C "$WORKSPACE" diff --cached --name-only | head -5 | tr '\n' ', ' | sed 's/,$//')
+      COMMIT_MSG="feat: update $FILES via agentic-sdlc pipeline"
+    fi
+
+    # Commit
+    if ! git -C "$WORKSPACE" commit -m "$COMMIT_MSG" 2>/tmp/sdlc_commit_err; then
+      ERR=$(cat /tmp/sdlc_commit_err 2>/dev/null)
+      echo '{"push_status": "failed", "commit_hash": "none", "error": "git commit failed: '"$ERR"'"}'
+      exit 1
+    fi
+
+    HASH=$(git -C "$WORKSPACE" rev-parse --short HEAD)
+
+    # Push to GitHub (origin)
+    if ! git -C "$WORKSPACE" push origin main 2>/tmp/sdlc_push_err; then
+      ERR=$(cat /tmp/sdlc_push_err 2>/dev/null)
+      echo '{"push_status": "failed", "commit_hash": "'"$HASH"'", "error": "git push to origin failed: '"$ERR"'"}'
+      exit 1
+    fi
+
+    # Push to Heroku if URL provided
+    HEROKU_STATUS="skipped"
+    if [ -n "$HEROKU_URL" ]; then
+      git -C "$WORKSPACE" remote add heroku "$HEROKU_URL" 2>/dev/null
+      git -C "$WORKSPACE" remote set-url heroku "$HEROKU_URL" 2>/dev/null
+      if git -C "$WORKSPACE" push heroku main 2>/tmp/sdlc_heroku_err; then
+        HEROKU_STATUS="success"
+      else
+        ERR=$(cat /tmp/sdlc_heroku_err 2>/dev/null | head -c 200)
+        HEROKU_STATUS="failed: $ERR"
+      fi
+    fi
+
+    echo '{"push_status": "success", "commit_hash": "'"$HASH"'", "heroku_push": "'"$HEROKU_STATUS"'"}'
+  timeout_seconds: 120

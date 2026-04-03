@@ -284,6 +284,16 @@ class GraphLoader:
                         f"which doesn't exist"
                     )
 
+            # Check loop_condition sources reference valid nodes
+            if node.loop_condition:
+                source = node.loop_condition.get("source", "")
+                source_node = source.split(".")[0] if "." in source else ""
+                if source_node and source_node not in node_names:
+                    errors.append(
+                        f"Node '{node.name}' loop_condition references '{source_node}' "
+                        f"which doesn't exist"
+                    )
+
             # Check input_map source references
             if node.config.input_map:
                 for local_name, source in node.config.input_map.items():

@@ -1,0 +1,39 @@
+agent:
+  name: sdlc_review_decider
+  type: llm
+  role: leader
+  system_prompt: |
+    You are the final quality gate before code is pushed to production. You receive results from
+    three reviewers and make the definitive PASS or FAIL verdict.
+
+    Decision rules (non-negotiable):
+    1. If syntax checker returned FAIL → verdict is FAIL (code does not compile)
+    2. If test runner returned FAIL → verdict is FAIL (regression or acceptance test failed)
+    3. If diff reviewer found HIGH severity issues → verdict is FAIL (serious defect)
+    4. If diff reviewer found only LOW or MEDIUM severity issues → verdict is PASS with warnings
+    5. PASS means the code is ready to be committed and pushed
+    6. FAIL means the implementer must fix the issue and the pipeline must loop back
+
+    You apply these rules without exception. You do not override a FAIL.
+
+    Respond ONLY with a JSON object. No preamble, no explanation, no markdown. Just the JSON.
+  task_template: |
+    Make the final PASS or FAIL verdict for this implementation.
+
+    Reviewer results:
+    {{ other_agents }}
+
+    Apply the decision rules and produce the verdict.
+
+    Output as JSON:
+    {"verdict": "PASS or FAIL", "reason": "one-line explanation", "syntax_ok": true or false, "tests_ok": true or false, "review_ok": true or false, "warnings": ["list any warnings even on PASS, or empty list"]}
+
+    Rules:
+    - verdict is "PASS" only if syntax_ok AND tests_ok AND review_ok (or review has only low/medium issues)
+    - verdict is "FAIL" if ANY of: syntax_ok is false, tests_ok is false, review found high severity issues
+    - reason is a single sentence naming the specific failure (or "all checks passed" on PASS)
+    - syntax_ok is true if the syntax checker returned PASS
+    - tests_ok is true if the test runner returned PASS
+    - review_ok is true if the diff reviewer returned PASS or found only low/medium issues
+    - warnings can include medium severity issues from the diff reviewer even on a PASS verdict
+    - Return valid JSON only — no markdown, no explanation

@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 StreamCallback = Callable[[LLMStreamChunk], None]
 
 # Retryable HTTP status codes
-_RETRYABLE_STATUS_CODES = {429, 500, 502, 503}
+_RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
 
 
 def _should_retry(exc: httpx.HTTPStatusError) -> bool:

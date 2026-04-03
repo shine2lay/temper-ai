@@ -286,6 +286,16 @@ export function StagePalette() {
               ))}
             </div>
           </div>
+          {registry?.mcp_servers && registry.mcp_servers.length > 0 && (
+            <div>
+              <div className="text-[9px] text-temper-text-dim uppercase tracking-wider mb-1">MCP Servers</div>
+              <div className="flex flex-wrap gap-1">
+                {registry.mcp_servers.map((s) => (
+                  <span key={s} className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-900/30 text-cyan-400">{s}</span>
+                ))}
+              </div>
+            </div>
+          )}
           {registry?.providers && (
             <div>
               <div className="text-[9px] text-temper-text-dim uppercase tracking-wider mb-1">Providers</div>

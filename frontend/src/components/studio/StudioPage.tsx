@@ -13,6 +13,7 @@ import { StagePalette } from './StagePalette';
 import { StudioCanvas } from './StudioCanvas';
 import { PropertyPanel } from './PropertyPanel';
 import { StudioLoadDialog } from './StudioLoadDialog';
+import { YamlPreview } from './YamlPreview';
 
 const LEFT_WIDTH = 240;
 const RIGHT_WIDTH = 320;
@@ -82,6 +83,7 @@ export function StudioPage() {
     return () => window.removeEventListener('beforeunload', handler);
   }, [isDirty]);
 
+  const [yamlPreviewOpen, setYamlPreviewOpen] = useState(false);
   const onOpenLoadDialog = useCallback(() => setLoadDialogOpen(true), []);
   const toggleLeft = useCallback(() => setLeftCollapsed((c) => !c), []);
   const toggleRight = useCallback(() => setRightCollapsed((c) => !c), []);
@@ -89,7 +91,7 @@ export function StudioPage() {
   return (
     <ReactFlowProvider>
       <div className="flex flex-col h-full bg-temper-bg">
-        <StudioHeader onOpenLoadDialog={onOpenLoadDialog} />
+        <StudioHeader onOpenLoadDialog={onOpenLoadDialog} onOpenYaml={() => setYamlPreviewOpen(true)} />
         <ValidationBanner />
 
         <div className="flex-1 flex min-h-0">
@@ -141,6 +143,7 @@ export function StudioPage() {
         </div>
 
         <StudioLoadDialog open={loadDialogOpen} onOpenChange={setLoadDialogOpen} />
+        <YamlPreview open={yamlPreviewOpen} onClose={() => setYamlPreviewOpen(false)} />
       </div>
     </ReactFlowProvider>
   );

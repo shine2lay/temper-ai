@@ -21,6 +21,7 @@ export function parseWorkflowMeta(name: string, config: Record<string, unknown>)
   const autoLoop = (inner.autonomous_loop ?? {}) as Record<string, unknown>;
   const lifecycle = (inner.lifecycle ?? {}) as Record<string, unknown>;
   const metadata = (inner.metadata ?? {}) as Record<string, unknown>;
+  const wfDefaults = (inner.defaults ?? {}) as Record<string, unknown>;
 
   const inputsObj = (inner.inputs ?? {}) as Record<string, unknown>;
   const reqInputs =
@@ -38,6 +39,9 @@ export function parseWorkflowMeta(name: string, config: Record<string, unknown>)
     description: (inner.description as string) ?? '',
     version: (inner.version as string) ?? defaults.version,
     product_type: (inner.product_type as string | null) ?? defaults.product_type,
+
+    default_provider: (wfDefaults.provider as string) ?? defaults.default_provider,
+    default_model: (wfDefaults.model as string) ?? defaults.default_model,
 
     timeout_seconds:
       pick<number>(inner.timeout_seconds, exec.timeout_seconds, cfg.timeout_seconds) ?? defaults.timeout_seconds,
@@ -335,11 +339,23 @@ function serializeStage(s: DesignStage): Record<string, unknown> {
 /** Serialize the complete workflow meta + stages into a workflow config object. */
 export function serializeWorkflowConfig(meta: WorkflowMeta, stages: DesignStage[]): Record<string, unknown> {
   const defaults = defaultMeta();
-  const wfConfig: Record<string, unknown> = { name: meta.name, nodes: stages.map(serializeStage) };
+  // Build in display order: name, description, defaults, nodes, then config sections
+  const wfConfig: Record<string, unknown> = { name: meta.name };
 
   wfConfig.description = meta.description || '';
   if (meta.version !== defaults.version) wfConfig.version = meta.version;
   if (meta.product_type != null) wfConfig.product_type = meta.product_type;
+
+  // Defaults — provider/model inherited by all agents (before nodes for readability)
+  if (meta.default_provider || meta.default_model) {
+    const dfObj: Record<string, string> = {};
+    if (meta.default_provider) dfObj.provider = meta.default_provider;
+    if (meta.default_model) dfObj.model = meta.default_model;
+    wfConfig.defaults = dfObj;
+  }
+
+  // Nodes come after defaults
+  wfConfig.nodes = stages.map(serializeStage);
   if (meta.predecessor_injection !== defaults.predecessor_injection)
     wfConfig.predecessor_injection = meta.predecessor_injection;
 

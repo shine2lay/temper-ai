@@ -83,6 +83,10 @@ export interface WorkflowMeta {
   version: string;
   product_type: string | null;
 
+  // --- Defaults (inherited by all agents that don't specify their own) ---
+  default_provider: string;
+  default_model: string;
+
   // --- Execution ---
   timeout_seconds: number;
   max_iterations: number;

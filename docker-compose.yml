@@ -1,6 +1,7 @@
 services:
   postgres:
     image: pgvector/pgvector:pg16
+    restart: unless-stopped
     environment:
       POSTGRES_DB: temper_ai
       POSTGRES_USER: temper_ai
@@ -14,11 +15,17 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "5"
 
   server:
     build:
       context: .
       target: server
+    restart: unless-stopped
     ports:
       - "8420:8420"
     volumes:
@@ -27,6 +34,7 @@ services:
       - ./configs:/app/configs:ro
       - ./frontend/dist:/app/frontend/dist:ro
     environment:
+      PYTHONDONTWRITEBYTECODE: "1"
       TEMPER_DATABASE_URL: postgresql://temper_ai:${POSTGRES_PASSWORD:-temper_dev}@postgres:5432/temper_ai
       TEMPER_LOG_LEVEL: ${TEMPER_LOG_LEVEL:-INFO}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
@@ -49,13 +57,15 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    # Override CMD to enable uvicorn --reload for hot reload
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "5"
     command: >
-      uv run uvicorn temper_ai.server:app
+      .venv/bin/python -m uvicorn temper_ai.server:app
       --host 0.0.0.0
       --port 8420
-      --reload
-      --reload-dir /app/temper_ai
 
 volumes:
   postgres-data:

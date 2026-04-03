@@ -126,6 +126,10 @@ def start_run(body: RunRequest):
         _preconnect_mcp_servers(mcp_manager, mcp_tools)  # raises on failure
 
     recorder = EventRecorder(execution_id, notifier=ws_manager)
+    # Start execution in background thread
+    cancel_event = threading.Event()
+    _running[execution_id] = cancel_event
+
     context = ExecutionContext(
         run_id=execution_id,
         workflow_name=config.name,
@@ -136,11 +140,8 @@ def start_run(body: RunRequest):
         memory_service=_memory_service,
         llm_providers=_llm_providers,
         workspace_path=body.workspace_path,
+        cancel_event=cancel_event,
     )
-
-    # Start execution in background thread
-    cancel_event = threading.Event()
-    _running[execution_id] = cancel_event
 
     thread = threading.Thread(
         target=_run_workflow,
@@ -228,6 +229,22 @@ def _preconnect_mcp_servers(mcp_manager, mcp_tools: dict) -> None:
             status_code=503,
             detail=f"Required MCP servers failed to connect: {'; '.join(errors)}",
         )
+
+
+@router.get("/api/mcp-servers")
+def list_mcp_servers():
+    """List configured MCP server names from config files."""
+    import pathlib
+    servers = []
+    for candidate in [
+        pathlib.Path("/app/configs/mcp_servers"),
+        pathlib.Path(__file__).resolve().parents[2] / "configs" / "mcp_servers",
+        pathlib.Path("configs/mcp_servers"),
+    ]:
+        if candidate.is_dir():
+            servers = sorted(f.stem for f in candidate.glob("*.yaml"))
+            break
+    return {"mcp_servers": servers}
 
 
 @router.get("/api/runtime-config")

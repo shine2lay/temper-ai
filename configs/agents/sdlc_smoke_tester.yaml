@@ -1,0 +1,21 @@
+agent:
+  name: sdlc_smoke_tester
+  type: script
+  script_template: |
+    #!/bin/bash
+    APP_URL={{ app_url }}
+    ENDPOINT={{ new_endpoint }}
+
+    # Wait for the deploy to complete
+    sleep 30
+
+    RESPONSE=$(curl -s -w "\n%{http_code}" "$APP_URL$ENDPOINT" 2>/dev/null)
+    STATUS=$(echo "$RESPONSE" | tail -1)
+    BODY=$(echo "$RESPONSE" | head -n -1)
+
+    if [ "$STATUS" = "200" ]; then
+      echo '{"smoke_test": "PASS", "status_code": '$STATUS', "response_preview": "'"$(echo $BODY | head -c 200)"'"}'
+    else
+      echo '{"smoke_test": "FAIL", "status_code": '$STATUS', "error": "Endpoint returned '$STATUS'"}'
+    fi
+  timeout_seconds: 120

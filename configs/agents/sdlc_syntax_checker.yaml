@@ -1,0 +1,36 @@
+agent:
+  name: sdlc_syntax_checker
+  type: script
+  script_template: |
+    #!/bin/bash
+    WORKSPACE={{ workspace_path }}
+    FAILURES=""
+    PASS_COUNT=0
+    FAIL_COUNT=0
+
+    # Python syntax check on all server .py files
+    for f in $(find "$WORKSPACE/server" -name "*.py" 2>/dev/null); do
+      REL=$(echo "$f" | sed "s|$WORKSPACE/||")
+      if python3 -m py_compile "$f" 2>/tmp/sdlc_err; then
+        PASS_COUNT=$((PASS_COUNT + 1))
+      else
+        FAILURES="$FAILURES Syntax: $REL - $(cat /tmp/sdlc_err)"
+        FAIL_COUNT=$((FAIL_COUNT + 1))
+      fi
+    done
+
+    # Import check — verify the server module loads cleanly
+    cd "$WORKSPACE"
+    if python3 -c "import server.app" 2>/tmp/sdlc_err; then
+      PASS_COUNT=$((PASS_COUNT + 1))
+    else
+      FAILURES="$FAILURES Import: $(cat /tmp/sdlc_err)"
+      FAIL_COUNT=$((FAIL_COUNT + 1))
+    fi
+
+    if [ $FAIL_COUNT -gt 0 ]; then
+      echo '{"check_result": "FAIL", "passed": '$PASS_COUNT', "failed": '$FAIL_COUNT', "details": "'"$(echo $FAILURES | head -c 500)"'"}'
+    else
+      echo '{"check_result": "PASS", "passed": '$PASS_COUNT', "failed": 0, "details": "All checks passed"}'
+    fi
+  timeout_seconds: 60

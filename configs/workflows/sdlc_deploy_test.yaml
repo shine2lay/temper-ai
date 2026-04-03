@@ -1,182 +1,167 @@
-# SDLC Deploy Pipeline — Validate, Plan, Code, Verify, Push
+# SDLC Deploy Pipeline v2 — Multi-perspective, Test-First
 #
-# Pipeline (10 nodes):
-#   sdlc_validate → sdlc_duplicate_check → sdlc_git_clone → sdlc_plan → sdlc_code
-#   → sdlc_static_checks → sdlc_quality_review → sdlc_test_runner → sdlc_git_push
-#   → sdlc_verify_deploy → sdlc_cleanup
+# 11 stages, 19 agents, 3 strategies (leader, parallel, sequential)
 #
-#   Pre-checkout gates (no workspace needed):
-#     sdlc_validate: collaborative stage (content + safety agents → decider) — halts on REJECT
-#     sdlc_duplicate_check: checks against recent runs — halts on FAIL
-#   Checks loop back to sdlc_plan on FAIL (max 3 iterations)
-#   git_push only runs if test_runner passes; cleanup always runs
+# Gate 1: validate (leader: feasibility + safety → decider)
+# Gate 2: plan (leader: architect + critic → decider)
+# Gate 3: review (leader: syntax + tests + diff → decider)
 #
-# Usage:
-#   curl -X POST localhost:8420/api/runs -H "Content-Type: application/json" \
-#     -d '{"workflow": "configs/workflows/sdlc_deploy_test.yaml", "inputs": {"repo_url": "git@github.com:shine2lay/agentic-sdlc-demo.git", "task_description": "...", "recent_runs": "..."}}'
+# Pipeline:
+#   validate → dedup → clone → analyze(parallel) → plan(leader) → build(sequential) → review(leader)
+#                                                                    ↑                        |
+#                                                                    └────── loop_to ─────────┘
+#   → push → verify_deploy(parallel) → cleanup
 
 workflow:
   name: sdlc_deploy_test
-  description: "Validate → Dedup → Clone → Plan → Code → Static Checks → Quality Review → Test → Push"
-
+  description: |
+    Multi-perspective SDLC pipeline with test-first development.
+    Three quality gates with independent reviewers at each stage.
   defaults:
     provider: vllm
     model: qwen3-next
-
   safety:
     policies:
       - type: budget
         max_cost_usd: 10.00
 
   nodes:
-    - name: sdlc_validate
+    # ═══ GATE 1: Should we build this? ═══
+    - name: validate
       type: stage
       strategy: leader
-      agents: [sdlc_validate_content, sdlc_validate_safety, sdlc_validate_decider]
-      input_map:
-        task_description: workflow.task_description
+      agents:
+        - sdlc_feasibility_analyst
+        - sdlc_safety_reviewer
+        - agent: sdlc_product_decider
+          role: leader
 
-    - name: sdlc_duplicate_check
+    - name: dedup
       type: agent
-      agent: sdlc_duplicate_check
-      depends_on: [sdlc_validate]
+      agent: sdlc_dedup_checker
+      depends_on: [validate]
       condition:
-        source: sdlc_validate.structured.validation_result
+        source: validate.structured.validation_result
         operator: equals
         value: ACCEPT
       input_map:
         task_description: workflow.task_description
         recent_runs: workflow.recent_runs
 
-    - name: sdlc_git_clone
+    # ═══ PREPARE: Understand the codebase ═══
+    - name: clone
       type: agent
-      agent: sdlc_git_clone
-      depends_on: [sdlc_duplicate_check]
+      agent: sdlc_clone
+      depends_on: [dedup]
       condition:
-        source: sdlc_duplicate_check.structured.duplicate_check
+        source: dedup.structured.duplicate_check
         operator: equals
         value: PASS
       input_map:
         repo_url: workflow.repo_url
 
-    - name: sdlc_plan
-      type: agent
-      agent: sdlc_plan
-      depends_on: [sdlc_git_clone]
+    - name: analyze
+      type: stage
+      strategy: parallel
+      depends_on: [clone]
       condition:
-        source: sdlc_duplicate_check.structured.duplicate_check
+        source: dedup.structured.duplicate_check
         operator: equals
         value: PASS
+      agents:
+        - sdlc_code_analyzer
+        - sdlc_test_analyzer
+
+    # ═══ GATE 2: Is the plan sound? ═══
+    - name: plan
+      type: stage
+      strategy: leader
+      depends_on: [analyze]
+      condition:
+        source: dedup.structured.duplicate_check
+        operator: equals
+        value: PASS
+      agents:
+        - sdlc_architect
+        - sdlc_plan_critic
+        - agent: sdlc_plan_decider
+          role: leader
       input_map:
-        workspace_path: sdlc_git_clone.structured.workspace_path
         task_description: workflow.task_description
-        static_check_output: sdlc_static_checks.structured.check_details
-        quality_review_output: sdlc_quality_review.output
-        test_runner_output: sdlc_test_runner.structured.test_details
-        deploy_errors: sdlc_verify_deploy.structured.deploy_errors
+        code_analysis: analyze.output
+        workspace_path: clone.structured.workspace_path
 
-    - name: sdlc_code
-      type: agent
-      agent: sdlc_code
-      depends_on: [sdlc_plan]
+    # ═══ BUILD: Test-first, then implement ═══
+    - name: build
+      type: stage
+      strategy: sequential
+      depends_on: [plan]
       condition:
-        source: sdlc_duplicate_check.structured.duplicate_check
+        source: dedup.structured.duplicate_check
         operator: equals
         value: PASS
+      agents:
+        - sdlc_test_writer
+        - sdlc_implementer
       input_map:
-        workspace_path: sdlc_git_clone.structured.workspace_path
-        implementation_plan: sdlc_plan.output
+        workspace_path: clone.structured.workspace_path
+        final_plan: plan.output
 
-    - name: sdlc_static_checks
-      type: agent
-      agent: sdlc_static_checks
-      depends_on: [sdlc_code]
+    # ═══ GATE 3: Did we build it right? ═══
+    - name: review
+      type: stage
+      strategy: leader
+      depends_on: [build]
       condition:
-        source: sdlc_duplicate_check.structured.duplicate_check
+        source: dedup.structured.duplicate_check
         operator: equals
         value: PASS
-      loop_to: sdlc_plan
+      agents:
+        - sdlc_syntax_checker
+        - sdlc_test_runner_agent
+        - sdlc_diff_reviewer
+        - agent: sdlc_review_decider
+          role: leader
+      loop_to: build
       max_loops: 3
-      loop_condition:
-        source: sdlc_static_checks.structured.check_result
-        operator: equals
-        value: FAIL
       input_map:
-        workspace_path: sdlc_git_clone.structured.workspace_path
+        workspace_path: clone.structured.workspace_path
+        final_plan: plan.output
+        test_file: build.structured.test_file
 
-    - name: sdlc_quality_review
+    # ═══ SHIP: Deploy and verify ═══
+    - name: push
       type: agent
-      agent: sdlc_quality_review
-      depends_on: [sdlc_static_checks]
+      agent: sdlc_push
+      depends_on: [review]
       condition:
-        source: sdlc_static_checks.structured.check_result
-        operator: equals
-        value: PASS
-      loop_to: sdlc_plan
-      max_loops: 3
-      loop_condition:
-        source: sdlc_quality_review.output
-        operator: contains
-        value: "OVERALL: FAIL"
-      input_map:
-        workspace_path: sdlc_git_clone.structured.workspace_path
-        task_description: workflow.task_description
-        implementation_plan: sdlc_plan.output
-
-    - name: sdlc_test_runner
-      type: agent
-      agent: sdlc_test_runner
-      depends_on: [sdlc_quality_review]
-      condition:
-        source: sdlc_static_checks.structured.check_result
-        operator: equals
-        value: PASS
-      loop_to: sdlc_plan
-      max_loops: 3
-      loop_condition:
-        source: sdlc_test_runner.structured.test_result
-        operator: equals
-        value: FAIL
-      input_map:
-        workspace_path: sdlc_git_clone.structured.workspace_path
-
-    - name: sdlc_git_push
-      type: agent
-      agent: sdlc_git_push
-      depends_on: [sdlc_test_runner]
-      condition:
-        source: sdlc_test_runner.structured.test_result
+        source: review.structured.verdict
         operator: equals
         value: PASS
       input_map:
-        workspace_path: sdlc_git_clone.structured.workspace_path
-        commit_message: sdlc_plan.structured.commit_message
+        workspace_path: clone.structured.workspace_path
+        commit_message: plan.structured.commit_message
         heroku_git_url: workflow.heroku_git_url
 
-    - name: sdlc_verify_deploy
-      type: agent
-      agent: sdlc_verify_deploy
-      depends_on: [sdlc_git_push]
+    - name: verify_deploy
+      type: stage
+      strategy: parallel
+      depends_on: [push]
       condition:
-        source: sdlc_git_push.structured.push_status
+        source: review.structured.verdict
         operator: equals
-        value: success
-      loop_to: sdlc_plan
-      max_loops: 2
-      loop_condition:
-        source: sdlc_verify_deploy.structured.verify_result
-        operator: equals
-        value: FAIL
+        value: PASS
+      agents:
+        - sdlc_health_checker
+        - sdlc_smoke_tester
       input_map:
         app_url: workflow.app_url
-        heroku_api_key: workflow.heroku_api_key
-        heroku_app_name: workflow.heroku_app_name
-        commit_hash: sdlc_git_push.structured.commit_hash
-        workspace_path: sdlc_git_clone.structured.workspace_path
+        new_endpoint: plan.structured.new_endpoint
 
-    - name: sdlc_cleanup
+    # ═══ CLEANUP: Always runs ═══
+    - name: cleanup
       type: agent
       agent: sdlc_cleanup
-      depends_on: [sdlc_verify_deploy]
+      depends_on: [verify_deploy]
       input_map:
-        workspace_path: sdlc_git_clone.structured.workspace_path
+        workspace_path: clone.structured.workspace_path

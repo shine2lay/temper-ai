@@ -167,6 +167,31 @@ function CompactView({
 }) {
   return (
     <>
+      {/* Default LLM provider/model — most important settings */}
+      <div className="px-3 py-2 grid grid-cols-2 gap-x-4 gap-y-1.5 border-b border-temper-border/30">
+        <CompactField label="provider">
+          <InlineEdit
+            value={meta.default_provider}
+            onChange={(v) => setMeta({ default_provider: String(v ?? '') })}
+            emptyLabel="not set"
+            placeholder="vllm"
+            tooltip="Default LLM provider for all agents (e.g., vllm, openai, anthropic)"
+            className={meta.default_provider ? 'text-temper-accent font-medium' : ''}
+          />
+        </CompactField>
+
+        <CompactField label="model">
+          <InlineEdit
+            value={meta.default_model}
+            onChange={(v) => setMeta({ default_model: String(v ?? '') })}
+            emptyLabel="not set"
+            placeholder="qwen3-next"
+            tooltip="Default model for all agents (agents can override individually)"
+            className={meta.default_model ? 'text-temper-accent font-medium' : ''}
+          />
+        </CompactField>
+      </div>
+
       <div className="px-3 py-2 grid grid-cols-2 gap-x-4 gap-y-1.5">
         <CompactField label="timeout">
           <InlineEdit

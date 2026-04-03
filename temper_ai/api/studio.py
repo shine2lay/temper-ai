@@ -142,13 +142,53 @@ def get_registry():
     from temper_ai.tools import TOOL_CLASSES
     from temper_ai.safety.engine import POLICY_REGISTRY
 
+    # Collect MCP server names — tools are referenced as "server.tool_name"
+    mcp_servers: list[str] = []
+    try:
+        from temper_ai.tools.mcp_client import mcp_manager
+        mcp_servers = sorted(mcp_manager.get_configured_servers())
+    except Exception:
+        pass
+    # Fallback: read server names from config filenames on disk
+    if not mcp_servers:
+        try:
+            import pathlib
+            for candidate in [
+                pathlib.Path("/app/configs/mcp_servers"),
+                pathlib.Path(__file__).resolve().parents[2] / "configs" / "mcp_servers",
+                pathlib.Path("configs/mcp_servers"),
+            ]:
+                if candidate.is_dir():
+                    mcp_servers = sorted(f.stem for f in candidate.glob("*.yaml"))
+                    if mcp_servers:
+                        break
+        except Exception:
+            pass
+
     return {
         "strategies": sorted(_GENERATORS.keys()),
         "agent_types": sorted(AGENT_TYPES.keys()),
         "providers": sorted(_PROVIDER_MAP.keys()),
         "tools": sorted(TOOL_CLASSES.keys()),
+        "mcp_servers": mcp_servers,
         "safety_policies": sorted(POLICY_REGISTRY.keys()),
         "condition_operators": [
             "equals", "not_equals", "contains", "in", "exists", "not_exists",
         ],
     }
+
+
+@router.get("/mcp-servers")
+def list_mcp_servers():
+    """List configured MCP server names from config files on disk."""
+    import pathlib
+    servers = []
+    for candidate in [
+        pathlib.Path("/app/configs/mcp_servers"),
+        pathlib.Path(__file__).resolve().parents[2] / "configs" / "mcp_servers",
+        pathlib.Path("configs/mcp_servers"),
+    ]:
+        if candidate.is_dir():
+            servers = sorted(f.stem for f in candidate.glob("*.yaml"))
+            break
+    return {"mcp_servers": servers}

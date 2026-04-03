@@ -13,9 +13,10 @@ import { InputFormGenerator, type InputSchema } from './InputFormGenerator';
 
 interface StudioHeaderProps {
   onOpenLoadDialog: () => void;
+  onOpenYaml?: () => void;
 }
 
-export function StudioHeader({ onOpenLoadDialog }: StudioHeaderProps) {
+export function StudioHeader({ onOpenLoadDialog, onOpenYaml }: StudioHeaderProps) {
   const navigate = useNavigate();
   const isDirty = useDesignStore((s) => s.isDirty);
   const meta = useDesignStore((s) => s.meta);
@@ -198,6 +199,11 @@ export function StudioHeader({ onOpenLoadDialog }: StudioHeaderProps) {
 
       {/* Action buttons */}
       <ThemeToggle />
+      {onOpenYaml && (
+        <Button variant="ghost" size="sm" onClick={onOpenYaml}>
+          YAML
+        </Button>
+      )}
       <Button variant="ghost" size="sm" onClick={onOpenLoadDialog}>
         Load
       </Button>

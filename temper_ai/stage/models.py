@@ -47,6 +47,7 @@ class NodeConfig:
     condition: dict | None = None  # {"source": "x.y", "operator": "equals", "value": "z"}
     loop_to: str | None = None  # Re-execute target node on failure
     max_loops: int = 1
+    loop_condition: dict | None = None  # {"source": "x.structured.y", "operator": "equals", "value": "FAIL"}
 
     # Input/output mapping
     input_map: dict[str, str] | None = None  # {"local_name": "source_node.field"}
@@ -71,9 +72,9 @@ class NodeConfig:
     _KNOWN_FIELDS: frozenset = frozenset({
         "name", "type", "agent", "strategy", "strategy_config", "agents",
         "nodes", "ref", "depends_on", "condition", "loop_to", "max_loops",
-        "input_map", "inputs", "outputs", "task_template", "system_prompt",
-        "role", "model", "provider", "temperature", "max_tokens",
-        "token_budget", "tools", "memory",
+        "loop_condition", "input_map", "inputs", "outputs", "task_template",
+        "system_prompt", "role", "model", "provider", "temperature",
+        "max_tokens", "token_budget", "tools", "memory",
     })
 
     @classmethod
@@ -107,6 +108,7 @@ class NodeConfig:
             condition=data.get("condition"),
             loop_to=data.get("loop_to"),
             max_loops=data.get("max_loops", 1),
+            loop_condition=data.get("loop_condition"),
             input_map=data.get("input_map"),
             inputs=data.get("inputs"),
             outputs=data.get("outputs"),

@@ -153,14 +153,8 @@ export const DataFlowEdge: FC<EdgeProps> = ({
               transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY + 14}px)`,
             }}
           >
-            <span
-              className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
-              style={{
-                backgroundColor: 'rgba(26, 18, 37, 0.92)',
-                color: '#ffa726',
-                border: '1px solid rgba(255, 167, 38, 0.3)',
-              }}
-            >
+            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-temper-panel text-amber-400 border border-amber-400/30 shadow-sm">
+
               {loopLabel}
             </span>
           </div>
@@ -176,14 +170,10 @@ export const DataFlowEdge: FC<EdgeProps> = ({
             }}
           >
             <div
-              className="flex items-center gap-1 px-2 py-1 rounded-md"
-              style={{
-                backgroundColor: 'rgba(15, 23, 42, 0.92)',
-                border: '1px solid rgba(100, 116, 139, 0.25)',
-                maxWidth: '220px',
-              }}
+              className="flex items-center gap-1 px-2 py-1 rounded-md bg-temper-panel border border-temper-border/40 shadow-sm"
+              style={{ maxWidth: '220px' }}
             >
-              <span className="text-[9px] text-blue-400/70 shrink-0">{dataKeys.length}x</span>
+              <span className="text-[9px] text-temper-accent shrink-0">{dataKeys.length}x</span>
               <span className="text-[9px] text-temper-text-muted truncate">
                 {visibleKeys.join(', ')}
                 {overflowCount > 0 ? `, +${overflowCount}` : ''}
@@ -201,14 +191,7 @@ export const DataFlowEdge: FC<EdgeProps> = ({
               transform: `translate(-50%, -100%) translate(${labelX}px, ${labelY - 4}px)`,
             }}
           >
-            <span
-              className="text-[8px] px-1.5 py-0.5 rounded"
-              style={{
-                backgroundColor: 'rgba(15, 23, 42, 0.85)',
-                color: 'rgba(148, 163, 184, 0.5)',
-                border: '1px solid rgba(100, 116, 139, 0.15)',
-              }}
-            >
+            <span className="text-[8px] px-1.5 py-0.5 rounded bg-temper-panel border border-temper-border/30 text-temper-text-dim shadow-sm">
               stage_outputs
             </span>
           </div>

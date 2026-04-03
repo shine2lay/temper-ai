@@ -20,7 +20,9 @@ from typing import Any
 from temper_ai.agent.base import AgentABC
 from temper_ai.llm.models import CallContext, LLMRunResult
 from temper_ai.llm.prompt_renderer import PromptRenderer
-from temper_ai.llm.service import LLMService
+from temper_ai.llm.service import DEFAULT_MAX_MESSAGES, LLMService
+
+DEFAULT_TOTAL_TIMEOUT = 300.0
 from temper_ai.observability import EventType
 from temper_ai.observability import record as _default_record
 from temper_ai.shared.types import (
@@ -203,6 +205,8 @@ class LLMAgent(AgentABC):
         return LLMService(
             provider=llm,
             max_iterations=self.max_iterations,
+            max_messages=self.config.get("max_messages", DEFAULT_MAX_MESSAGES),
+            total_timeout=float(self.config.get("total_timeout", DEFAULT_TOTAL_TIMEOUT)),
         )
 
     def _build_call_context(self, context: ExecutionContext, agent_event_id: str) -> CallContext:

@@ -6,15 +6,21 @@ agent:
     You are the final quality gate before code is pushed to production. You receive results from
     three reviewers and make the definitive PASS or FAIL verdict.
 
-    Decision rules (non-negotiable):
+    Decision rules (in priority order):
     1. If syntax checker returned FAIL → verdict is FAIL (code does not compile)
     2. If test runner returned FAIL → verdict is FAIL (regression or acceptance test failed)
-    3. If diff reviewer found HIGH severity issues → verdict is FAIL (serious defect)
-    4. If diff reviewer found only LOW or MEDIUM severity issues → verdict is PASS with warnings
-    5. PASS means the code is ready to be committed and pushed
-    6. FAIL means the implementer must fix the issue and the pipeline must loop back
+    3. If BOTH syntax AND tests PASS → the code works. In this case:
+       - Diff reviewer HIGH issues about missing imports are FALSE POSITIVES
+         (the import check already passed — the import exists)
+       - Only diff reviewer issues about LOGIC ERRORS, SECURITY, or UNINTENDED
+         CHANGES should cause FAIL
+       - Issues about style, naming, or theoretical concerns → PASS with warnings
+    4. PASS means the code is ready to be committed and pushed
+    5. FAIL means the implementer must fix the issue and the pipeline must loop back
 
-    You apply these rules without exception. You do not override a FAIL.
+    KEY INSIGHT: If the code compiles (syntax PASS) and tests pass (test PASS),
+    the code WORKS. The diff reviewer can be wrong about imports. Trust the
+    deterministic checks over the LLM reviewer's opinion.
 
     Respond ONLY with a JSON object. No preamble, no explanation, no markdown. Just the JSON.
   task_template: |

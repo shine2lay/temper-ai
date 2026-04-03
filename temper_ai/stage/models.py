@@ -49,6 +49,11 @@ class NodeConfig:
     max_loops: int = 1
     loop_condition: dict | None = None  # {"source": "x.structured.y", "operator": "equals", "value": "FAIL"}
 
+    # Timeout and gates
+    timeout_seconds: int | None = None  # Wall-clock timeout for this node (default: no limit)
+    gate: bool = False  # If True, pause before executing and wait for human approval
+
+
     # Input/output mapping
     input_map: dict[str, str] | None = None  # {"local_name": "source_node.field"}
 
@@ -72,7 +77,9 @@ class NodeConfig:
     _KNOWN_FIELDS: frozenset = frozenset({
         "name", "type", "agent", "strategy", "strategy_config", "agents",
         "nodes", "ref", "depends_on", "condition", "loop_to", "max_loops",
-        "loop_condition", "input_map", "inputs", "outputs", "task_template",
+        "loop_condition", "timeout_seconds", "gate",
+        "input_map", "inputs", "outputs",
+        "task_template",
         "system_prompt", "role", "model", "provider", "temperature",
         "max_tokens", "token_budget", "tools", "memory",
     })
@@ -109,6 +116,8 @@ class NodeConfig:
             loop_to=data.get("loop_to"),
             max_loops=data.get("max_loops", 1),
             loop_condition=data.get("loop_condition"),
+            timeout_seconds=data.get("timeout_seconds"),
+            gate=data.get("gate", False),
             input_map=data.get("input_map"),
             inputs=data.get("inputs"),
             outputs=data.get("outputs"),

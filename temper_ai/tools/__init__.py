@@ -3,6 +3,7 @@
 from temper_ai.tools.base import BaseTool, ToolResult
 from temper_ai.tools.bash import Bash
 from temper_ai.tools.calculator import Calculator
+from temper_ai.tools.delegate import Delegate
 from temper_ai.tools.executor import ToolExecutor
 from temper_ai.tools.file_writer import FileWriter
 from temper_ai.tools.git import Git
@@ -14,6 +15,7 @@ from temper_ai.tools.loader import load_tools
 TOOL_CLASSES: dict[str, type[BaseTool]] = {
     "Bash": Bash,
     "Calculator": Calculator,
+    "Delegate": Delegate,
     "FileWriter": FileWriter,
     "git": Git,
     "http": Http,

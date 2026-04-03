@@ -134,9 +134,22 @@ class MCPClientManager:
             return connection
 
     async def call_tool(self, server_name: str, tool_name: str, arguments: dict) -> str:
-        """Connect if needed, then call a tool. The main entry point for MCPTool."""
+        """Connect if needed, then call a tool. The main entry point for MCPTool.
+
+        On connection failure (stale subprocess, broken pipe), evicts the dead
+        connection and reconnects once before raising.
+        """
         connection = await self.ensure_connected(server_name)
-        return await connection.call_tool(tool_name, arguments)
+        try:
+            return await connection.call_tool(tool_name, arguments)
+        except (BrokenPipeError, EOFError, ConnectionError, OSError) as exc:
+            logger.warning(
+                "MCP server '%s' connection failed: %s. Reconnecting...",
+                server_name, exc,
+            )
+            self._connections.pop(server_name, None)
+            connection = await self.ensure_connected(server_name)
+            return await connection.call_tool(tool_name, arguments)
 
     async def _connect_stdio(self, config: dict) -> ClientSession:
         params = StdioServerParameters(

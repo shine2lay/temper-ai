@@ -9,7 +9,7 @@ import type { AgentNodeData } from '@/hooks/useDagElements';
  * Wraps AgentCardContent with ReactFlow handles for edge connections.
  */
 export const AgentNodeComponent = memo(function AgentNodeComponent({ data }: NodeProps) {
-  const { agent, stage, stageColor } = data as AgentNodeData;
+  const { agent, stage, stageColor, isDelegate, delegatedBy } = data as AgentNodeData;
 
   // No agent (skipped/empty stages): return null
   if (!agent) {
@@ -36,7 +36,7 @@ export const AgentNodeComponent = memo(function AgentNodeComponent({ data }: Nod
   }
 
   return (
-    <div className="min-w-[250px] max-w-[350px] w-[280px]">
+    <div className={`min-w-[250px] max-w-[350px] w-[280px] ${isDelegate ? 'relative' : ''}`}>
       {/* Handles for edges */}
       <Handle type="target" position={Position.Left} id="left"
         className="!w-2 !h-2 !bg-temper-border !border-temper-bg" />
@@ -48,7 +48,25 @@ export const AgentNodeComponent = memo(function AgentNodeComponent({ data }: Nod
       <Handle type="target" position={Position.Bottom} id="bottom-target"
         className="!w-0 !h-0 !bg-transparent !border-none !left-[70%]" />
 
-      <AgentCardContent agent={agent} borderColor={stageColor} />
+      {/* Delegate badge */}
+      {isDelegate && (
+        <div className="absolute -top-3 left-2 z-10 flex items-center gap-1">
+          <span className="text-[9px] px-1.5 py-0.5 rounded-sm bg-violet-500/20 text-violet-400 border border-violet-500/30 font-medium">
+            sub-agent
+          </span>
+          {delegatedBy && (
+            <span className="text-[8px] text-temper-text-dim">
+              via {delegatedBy}
+            </span>
+          )}
+        </div>
+      )}
+
+      <AgentCardContent
+        agent={agent}
+        borderColor={stageColor}
+        borderStyle={isDelegate ? 'dashed' : undefined}
+      />
     </div>
   );
 });

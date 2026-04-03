@@ -59,6 +59,9 @@ def execute_graph(
         status="running",
     )
 
+    # Store graph event ID on context so Delegate tool can parent child nodes to the DAG
+    context.graph_event_id = graph_event_id
+
     try:
         _run_batches(batches, node_map, input_data, node_outputs, loop_counts, context, graph_event_id)
         return _build_final_result(nodes, node_outputs, start, graph_event_id, context)
@@ -96,7 +99,9 @@ def _run_batches(
         _check_cancelled(context)
         batch = batches[batch_idx]
 
-        # Skip batches where all nodes are already checkpointed (resume path)
+        # Skip batches where all nodes are already checkpointed (resume/fork path).
+        # Events for these nodes are already in the DB — either from the original run
+        # (resume) or copied by copy_events_for_fork (fork).
         remaining = [n for n in batch if n.name not in node_outputs]
         if not remaining:
             batch_idx += 1
@@ -105,6 +110,7 @@ def _run_batches(
         if len(remaining) == 1 and len(batch) == 1:
             node = batch[0]
             result = _execute_single_node(node, input_data, node_outputs, context, graph_event_id, loop_feedback)
+            # Handle dynamic spawning if the node produced _spawn
             node_outputs[node.name] = result
             if cp:
                 cp.save_node_completed(node.name, result)
@@ -157,6 +163,60 @@ def _build_final_result(
         duration_seconds=duration,
     )
 
+def _emit_restored_node(node: Node, result: NodeResult, context: ExecutionContext, graph_event_id: str) -> None:
+    """Emit events for a node restored from checkpoint so the frontend shows prior state.
+
+    Uses update_event on the started event (same pattern as live execution)
+    so the data service correctly resolves status from the event's own status field.
+    """
+    recorder = context.event_recorder
+    status_str = result.status.value if result.status != Status.COMPLETED else "completed"
+
+    # Stage event — record started then immediately update to final status
+    node_event_id = recorder.record(
+        EventType.STAGE_STARTED,
+        parent_id=graph_event_id,
+        execution_id=context.run_id,
+        status=status_str,
+        data={
+            **_build_node_event_data(node),
+            "restored_from_checkpoint": True,
+            "duration_seconds": result.duration_seconds,
+            "cost_usd": result.cost_usd,
+            "total_tokens": result.total_tokens,
+            "output": (result.output or "")[:5000],
+            "structured_output": result.structured_output,
+            "error": result.error,
+        },
+    )
+
+    # Emit agent events so the frontend shows agent cards.
+    # For StageNodes use child node names; for AgentNodes use node name.
+    from temper_ai.stage.stage_node import StageNode
+    if isinstance(node, StageNode) and node.child_nodes:
+        agent_names = [cn.name for cn in node.child_nodes]
+    else:
+        agent_names = [node.name]
+
+    for agent_name in agent_names:
+        agent_event_id = recorder.record(
+            EventType.AGENT_STARTED,
+            parent_id=node_event_id,
+            execution_id=context.run_id,
+            status=status_str,
+            data={
+                "agent_name": agent_name,
+                "node_path": node.name,
+                "restored_from_checkpoint": True,
+                "output": (result.output or "")[:5000],
+                "structured_output": result.structured_output,
+                "duration_seconds": result.duration_seconds,
+                "total_tokens": result.total_tokens,
+                "cost_usd": result.cost_usd,
+            },
+        )
+
+
 def _execute_single_node(
     node: Node,
     input_data: dict,
@@ -186,6 +246,10 @@ def _execute_single_node(
 
     resolved = _resolve_inputs(node, input_data, node_outputs, loop_feedback)
     resolved = _inject_strategy_context(node, resolved, node_outputs)
+
+    # Gate: pause and wait for human approval before executing
+    if node.config.gate:
+        _wait_for_gate(node, context, parent_event_id)
 
     node_event_id = context.event_recorder.record(
         EventType.STAGE_STARTED,
@@ -250,13 +314,20 @@ def _run_node_with_events(
     context: ExecutionContext,
     node_event_id: str,
 ) -> NodeResult:
-    """Run a node and record completed/failed events around it."""
+    """Run a node and record completed/failed events around it.
+
+    Enforces per-node timeout if configured via node.config.timeout_seconds.
+    """
     from dataclasses import replace as dc_replace
     node_context = dc_replace(context, parent_event_id=node_event_id)
 
+    timeout = node.config.timeout_seconds
     start = time.monotonic()
     try:
-        result = node.run(resolved, node_context)
+        if timeout:
+            result = _run_with_timeout(node, resolved, node_context, timeout)
+        else:
+            result = node.run(resolved, node_context)
         duration = time.monotonic() - start
         result.duration_seconds = duration
         context.event_recorder.update_event(
@@ -274,6 +345,21 @@ def _run_node_with_events(
             data={"error": str(exc), "duration_seconds": duration},
         )
         return NodeResult(status=Status.FAILED, error=str(exc), duration_seconds=duration)
+
+
+def _run_with_timeout(node: Node, resolved: dict, context: ExecutionContext, timeout: int) -> NodeResult:
+    """Run a node with a wall-clock timeout. Returns FAILED if timeout exceeded."""
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(node.run, resolved, context)
+        try:
+            return future.result(timeout=timeout)
+        except TimeoutError:
+            logger.warning("Node '%s' timed out after %ds", node.name, timeout)
+            return NodeResult(
+                status=Status.FAILED,
+                error=f"Node timed out after {timeout}s",
+                duration_seconds=float(timeout),
+            )
 
 
 def _execute_parallel_batch(
@@ -473,9 +559,28 @@ def _resolve_single_input(
             value = value.get(key) if isinstance(value, dict) else None
         return value
 
+    # Child node reference: "stage.child_node.output" or "stage.child_node.structured.field"
+    if result.node_results and field in result.node_results:
+        child = result.node_results[field]
+        if len(parts) < 3:
+            return child.output
+        child_field = parts[2]
+        if child_field == "output":
+            return child.output
+        if child_field == "status":
+            return child.status
+        if child_field == "structured" and len(parts) >= 4:
+            if not child.structured_output:
+                return None
+            value = child.structured_output
+            for key in parts[3:]:
+                value = value.get(key) if isinstance(value, dict) else None
+            return value
+        return child.output
+
     logger.warning(
         "Node '%s' input_map '%s': unknown field '%s' on source '%s' "
-        "(expected 'output', 'structured', or 'status')",
+        "(expected 'output', 'structured', 'status', or a child node name)",
         node_name, local_name, field, source_node,
     )
     return None
@@ -561,6 +666,53 @@ def _drain_batch(
             if in_degree[dependent] == 0:
                 next_queue.append(dependent)
     return batch, next_queue, processed
+
+
+def _wait_for_gate(node: Node, context: ExecutionContext, parent_event_id: str) -> None:
+    """Pause execution and wait for human approval at a gate node.
+
+    Emits a 'gate.waiting' event, then blocks until the gate is approved
+    via the API (which sets the threading.Event) or the workflow is cancelled.
+    """
+    import threading
+
+    gate_registry = context.gate_registry
+    if gate_registry is None:
+        logger.warning("Node '%s' has gate=true but no gate_registry on context — skipping gate", node.name)
+        return
+
+    gate_key = f"{context.run_id}:{node.name}"
+    gate_event = threading.Event()
+    gate_registry[gate_key] = gate_event
+
+    # Record waiting event so the UI can show the gate
+    context.event_recorder.record(
+        EventType.STAGE_STARTED,
+        data={**_build_node_event_data(node), "gate": True, "gate_status": "waiting"},
+        parent_id=parent_event_id,
+        execution_id=context.run_id,
+        status="waiting",
+    )
+
+    # Save checkpoint before waiting (so the run can resume if server crashes while waiting)
+    if context.checkpoint_service:
+        from temper_ai.shared.types import NodeResult, Status
+        context.checkpoint_service._save(
+            event_type="gate_waiting",
+            node_name=node.name,
+            status="waiting",
+        )
+
+    logger.info("Gate: waiting for approval on node '%s' (execution: %s)", node.name, context.run_id)
+
+    # Block until approved or cancelled
+    while not gate_event.is_set():
+        _check_cancelled(context)
+        gate_event.wait(timeout=5.0)  # Check cancellation every 5s
+
+    # Clean up
+    gate_registry.pop(gate_key, None)
+    logger.info("Gate: node '%s' approved, continuing", node.name)
 
 
 def _check_cancelled(context: ExecutionContext) -> None:

@@ -48,9 +48,6 @@ export function AgentDetailPanel({ agentId }: AgentDetailPanelProps) {
     ? ag.estimated_cost_usd
     : (ag.llm_calls ?? []).reduce((sum: number, c: { estimated_cost_usd?: number }) => sum + (c.estimated_cost_usd ?? 0), 0);
 
-  // Detect script agents
-  const isScript = config?.type === 'script'
-    || (!config?.model && !config?.provider && (ag.total_tokens ?? 0) === 0 && (ag.total_llm_calls ?? 0) === 0 && (ag.duration_seconds ?? 0) > 0 && ag.status !== 'running');
 
   const resolvedStageId = useMemo(() => {
     const direct = ag.stage_execution_id ?? ag.stage_id;

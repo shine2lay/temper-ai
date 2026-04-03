@@ -32,6 +32,8 @@ interface AgentCardContentProps {
   borderColor?: string;
   /** Whether this is inside a stage container (slightly different styling). */
   nested?: boolean;
+  /** Override border style (e.g., 'dashed' for delegate nodes). */
+  borderStyle?: string;
 }
 
 /**
@@ -44,6 +46,7 @@ export const AgentCardContent = memo(function AgentCardContent({
   agent,
   borderColor,
   nested = false,
+  borderStyle,
 }: AgentCardContentProps) {
   const select = useExecutionStore((s) => s.select);
   const streaming = useExecutionStore((s) => s.streamingContent.get(agent.id));
@@ -99,6 +102,7 @@ export const AgentCardContent = memo(function AgentCardContent({
       )}
       style={!nested ? {
         borderColor: isFailed ? '#ef4444' : borderColor,
+        ...(borderStyle ? { borderStyle } : {}),
         ...(isRunning && borderColor ? { '--glow-color': borderColor } as React.CSSProperties : {}),
       } : undefined}
       onClick={() => select('agent', agent.id)}

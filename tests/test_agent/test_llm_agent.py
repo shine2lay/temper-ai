@@ -148,7 +148,7 @@ class TestLLMAgentRun:
         agent.run({"task": "x"}, ctx)
 
         # LLMService was initialized with the correct provider
-        MockLLMService.assert_called_once_with(provider=mock_llm, max_iterations=10, max_messages=50, total_timeout=300.0)
+        MockLLMService.assert_called_once_with(provider=mock_llm, max_iterations=10, max_messages=50, total_timeout=300.0, max_context_tokens=120000)
 
     @patch("temper_ai.agent.llm_agent.LLMService")
     def test_tools_passed_to_llm_service(self, MockLLMService):

@@ -8,6 +8,7 @@ interface ViewTabsProps {
   timelineContent: React.ReactNode;
   eventLogContent: React.ReactNode;
   llmCallsContent: React.ReactNode;
+  checkpointContent?: React.ReactNode;
   activeTab?: string;
   onTabChange?: (tab: string) => void;
   stageCount?: number;
@@ -25,6 +26,7 @@ export function ViewTabs({
   timelineContent,
   eventLogContent,
   llmCallsContent,
+  checkpointContent,
   activeTab: controlledTab,
   onTabChange,
   stageCount,
@@ -64,6 +66,11 @@ export function ViewTabs({
         <TabsTrigger value="llmcalls">
           LLM Calls <CountBadge count={llmCallCount} />
         </TabsTrigger>
+        {checkpointContent && (
+          <TabsTrigger value="checkpoints">
+            Checkpoints
+          </TabsTrigger>
+        )}
       </TabsList>
 
       <TabsContent value="dag" className="flex-1 min-h-0">
@@ -81,6 +88,12 @@ export function ViewTabs({
       <TabsContent value="llmcalls" className="flex-1 min-h-0">
         {llmCallsContent}
       </TabsContent>
+
+      {checkpointContent && (
+        <TabsContent value="checkpoints" className="flex-1 min-h-0">
+          {checkpointContent}
+        </TabsContent>
+      )}
     </Tabs>
   );
 }

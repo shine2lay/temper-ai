@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 HEARTBEAT_INTERVAL = 30  # seconds
 CHUNK_BATCH_SIZE = 10  # flush after this many buffered chunks
 CHUNK_FLUSH_MS = 50  # flush interval in milliseconds
+MAX_EVENT_BUFFER_SIZE = 5000  # max events kept per execution for late-connecting clients
 
 
 class WebSocketManager:
@@ -109,7 +110,11 @@ class WebSocketManager:
         # Buffer for late-connecting clients (skip stream chunks — they're transient)
         if execution_id not in self._event_buffers:
             self._event_buffers[execution_id] = []
-        self._event_buffers[execution_id].append(message)
+        buf = self._event_buffers[execution_id]
+        buf.append(message)
+        # Cap buffer to prevent unbounded growth on long runs
+        if len(buf) > MAX_EVENT_BUFFER_SIZE:
+            self._event_buffers[execution_id] = buf[-MAX_EVENT_BUFFER_SIZE:]
 
         self._broadcast(execution_id, message)
 

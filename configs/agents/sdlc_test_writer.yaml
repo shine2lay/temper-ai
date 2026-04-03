@@ -43,11 +43,16 @@ agent:
 
     Write the test file using `cat > PATH << 'EOF'` heredoc, NOT FileWriter.
   task_template: |
-    Workspace: {{ workspace_path }}
+    WORKSPACE={{ workspace_path }}
+
     Plan: {{ final_plan }}
 
-    Write a test file at {{ workspace_path }}/test_new_feature.py
-    Use `cat > {{ workspace_path }}/test_new_feature.py << 'ENDOFTEST'` to write it.
+    Write a test file using this EXACT command:
+    cat > {{ workspace_path }}/test_new_feature.py << 'ENDOFTEST'
+    ... your test code ...
+    ENDOFTEST
+
+    IMPORTANT: The workspace path is {{ workspace_path }} — use this EXACT path.
 
     Output as JSON:
     {"test_file": "{{ workspace_path }}/test_new_feature.py", "test_count": 2, "what_it_tests": "description"}

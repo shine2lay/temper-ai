@@ -11,35 +11,19 @@ agent:
 
     echo "Scaffolding $APP_NAME in $WORKSPACE..."
 
-    # Create workspace if needed
     mkdir -p "$WORKSPACE"
 
-    # Scaffold Expo project
     cd "$WORKSPACE"
     npx create-expo-app@latest "$APP_NAME" --template blank-typescript 2>&1
 
     cd "$PROJECT_DIR"
 
-    # Install expo-router and dependencies
     npx expo install expo-router expo-linking expo-constants expo-status-bar react-native-safe-area-context react-native-screens 2>&1
 
-    # Create directory structure
     mkdir -p src/types src/store src/contexts src/components app
 
-    # Write types file if provided
-    TYPES_CONTENT='{{ data_types_file | default("// Types will be added by the planner") }}'
-    if [ -n "$TYPES_CONTENT" ]; then
-      echo "$TYPES_CONTENT" > src/types/index.ts
-    fi
+    node -e "const fs=require('fs'),p=require('./package.json');p.main='expo-router/entry';fs.writeFileSync('package.json',JSON.stringify(p,null,2))"
 
-    # Update package.json main field for expo-router
-    node -e "
-    const pkg = require('./package.json');
-    pkg.main = 'expo-router/entry';
-    require('fs').writeFileSync('package.json', JSON.stringify(pkg, null, 2));
-    "
-
-    # Verify
     echo "Project structure:"
     find . -type f -not -path '*/node_modules/*' -not -path './.git/*' | sort
 

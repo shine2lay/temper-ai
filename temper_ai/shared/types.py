@@ -104,6 +104,8 @@ class ExecutionContext:
     parent_event_id: str | None = None  # Node event ID for agent event hierarchy
     cancel_event: Any = None  # threading.Event — set to cancel the workflow
     checkpoint_service: Any = None  # CheckpointService — persists execution state for resume
+    gate_registry: Any = None  # dict[str, threading.Event] — gates waiting for approval
+    graph_event_id: str | None = None  # Top-level workflow/stage event ID (for Delegate tool DAG parenting)
 
     def get_llm(self, provider: str) -> Any:
         """Get LLM provider by name. Raises KeyError if not found."""

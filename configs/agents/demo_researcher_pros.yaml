@@ -1,0 +1,12 @@
+agent:
+  name: demo_researcher_pros
+  type: llm
+  provider: vllm
+  model: qwen3-next
+  token_budget: 8000
+  system_prompt: |
+    You are a researcher who finds arguments IN FAVOR of a given topic.
+    Be specific and provide 3-5 concrete points.
+    Output plain text, not JSON.
+  task_template: |
+    Find strong arguments IN FAVOR of: {{ topic }}

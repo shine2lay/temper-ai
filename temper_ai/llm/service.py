@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_MAX_ITERATIONS = 10
 DEFAULT_MAX_MESSAGES = 50
+DEFAULT_MAX_CONTEXT_TOKENS = 120_000  # Conservative default — most models handle at least 128k
 MAX_TOOL_RESULT_CHARS = 20_000  # ~5k tokens — prevents context overflow from large tool outputs
 
 
@@ -37,11 +38,13 @@ class LLMService:
         max_iterations: int = DEFAULT_MAX_ITERATIONS,
         max_messages: int = DEFAULT_MAX_MESSAGES,
         total_timeout: float = 300.0,
+        max_context_tokens: int = DEFAULT_MAX_CONTEXT_TOKENS,
     ) -> None:
         self.provider = provider
         self.max_iterations = max_iterations
         self.max_messages = max_messages
         self.total_timeout = total_timeout  # Overall timeout for the entire run loop
+        self.max_context_tokens = max_context_tokens
 
     def run(
         self,
@@ -110,7 +113,13 @@ class LLMService:
             raise
 
     def _invoke_provider(self) -> LLMResponse:
-        """Call the LLM provider (stream or complete)."""
+        """Call the LLM provider (stream or complete).
+
+        Checks estimated context size before calling. If over the limit,
+        aggressively trims tool results and old messages to fit.
+        """
+        _enforce_context_limit(self._messages, self.max_context_tokens, self.max_messages)
+
         kwargs: dict[str, Any] = {}
         if self._tools:
             kwargs["tools"] = self._tools
@@ -254,6 +263,74 @@ def _inject_tool_results(
             "tool_call_id": tr["tool_call_id"],
             "content": content,
         })
+
+
+def _estimate_messages_tokens(messages: list[dict]) -> int:
+    """Rough token estimate for a message list (~4 chars per token)."""
+    total = 0
+    for msg in messages:
+        content = msg.get("content", "")
+        if content:
+            total += len(content) // 4
+        # Tool calls in assistant messages
+        for tc in msg.get("tool_calls", []):
+            fn = tc.get("function", {})
+            total += len(fn.get("name", "")) // 4
+            total += len(str(fn.get("arguments", ""))) // 4
+    return total
+
+
+def _enforce_context_limit(messages: list[dict], max_tokens: int, max_messages: int) -> None:
+    """Trim messages to stay under the context token limit.
+
+    Strategy (in order):
+    1. Apply message window (keep system + recent N)
+    2. Truncate large tool results to 5000 chars
+    3. If still over, truncate tool results to 2000 chars
+    4. If still over, apply tighter message window (keep system + last 10)
+    """
+    est = _estimate_messages_tokens(messages)
+    if est <= max_tokens:
+        return
+
+    # Step 1: apply normal message window
+    _apply_message_window(messages, max_messages)
+    est = _estimate_messages_tokens(messages)
+    if est <= max_tokens:
+        return
+
+    # Step 2: truncate large tool results
+    _truncate_tool_results(messages, 5000)
+    est = _estimate_messages_tokens(messages)
+    if est <= max_tokens:
+        return
+
+    # Step 3: more aggressive truncation
+    _truncate_tool_results(messages, 2000)
+    est = _estimate_messages_tokens(messages)
+    if est <= max_tokens:
+        return
+
+    # Step 4: tight message window
+    _apply_message_window(messages, 10)
+    _truncate_tool_results(messages, 1000)
+
+    est = _estimate_messages_tokens(messages)
+    if est > max_tokens:
+        logger.warning(
+            "Context still exceeds limit after all trimming: ~%d tokens (limit %d). "
+            "Proceeding anyway — provider may reject.",
+            est, max_tokens,
+        )
+
+
+def _truncate_tool_results(messages: list[dict], max_chars: int) -> None:
+    """Truncate tool result message content to max_chars."""
+    for msg in messages:
+        if msg.get("role") == "tool" and msg.get("content"):
+            content = msg["content"]
+            if len(content) > max_chars:
+                msg["content"] = content[:max_chars] + f"\n\n... [truncated from {len(content)} chars]"
 
 
 def _apply_message_window(messages: list[dict], max_messages: int) -> None:

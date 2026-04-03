@@ -1,0 +1,12 @@
+workflow:
+  name: demo_delegate
+  description: |
+    Demo: coordinator delegates to two researchers via the Delegate tool,
+    then synthesizes their results.
+  defaults:
+    provider: vllm
+    model: qwen3-next
+  nodes:
+    - name: coordinate
+      type: agent
+      agent: demo_coordinator

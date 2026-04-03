@@ -44,6 +44,9 @@ export function useKeyboardShortcuts(actions: ShortcutActions = {}) {
         case '4':
           actionsRef.current.onSwitchTab?.('llmcalls');
           break;
+        case '5':
+          actionsRef.current.onSwitchTab?.('checkpoints');
+          break;
         case '?':
           actionsRef.current.onShowHelp?.();
           break;

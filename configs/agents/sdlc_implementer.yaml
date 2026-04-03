@@ -25,18 +25,28 @@ agent:
     - Use absolute paths for everything
     - Do NOT start uvicorn — just write the file and run the test directly
   task_template: |
-    Workspace: {{ workspace_path }}
+    WORKSPACE={{ workspace_path }}
+    TARGET=$WORKSPACE/server/routes.py
+    TEST=$WORKSPACE/test_new_feature.py
 
     Plan:
     {{ final_plan }}
 
-    Test file: {{ test_file }}
+    STEP 1: Read the current file:
+    cat {{ workspace_path }}/server/routes.py
 
-    Step 1: `cat {{ workspace_path }}/server/routes.py` to read current code
-    Step 2: Write the full modified routes.py with your new endpoint added
-    Step 3: Verify the file was written: `head -5 {{ workspace_path }}/server/routes.py`
-    Step 4: Run test: `cd {{ workspace_path }} && python3 test_new_feature.py`
-    Step 5: If test fails, read the error, fix, rewrite, repeat
+    STEP 2: Write the COMPLETE modified file (with new endpoint added at the end):
+    cat > {{ workspace_path }}/server/routes.py << 'ENDOFFILE'
+    ... paste ALL existing code + your new endpoint here ...
+    ENDOFFILE
+
+    STEP 3: Verify file was written:
+    head -5 {{ workspace_path }}/server/routes.py
+
+    STEP 4: Run test:
+    cd {{ workspace_path }} && python3 test_new_feature.py
+
+    IMPORTANT: The workspace path is {{ workspace_path }} — use this EXACT path for ALL file operations. Do NOT use /server/routes.py or any other path.
 
     Output as JSON when done:
     {"files_changed": ["server/routes.py"], "change_summary": "what you did", "test_result": "pass or fail"}

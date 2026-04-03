@@ -43,6 +43,9 @@ _memory_service = MemoryService(InMemoryStore())
 # Track running workflows for cancellation
 _running: dict[str, threading.Event] = {}
 
+# Gate registry — gates waiting for human approval (key: "execution_id:node_name")
+_gates: dict[str, threading.Event] = {}
+
 # LLM providers — populated by server.py at startup
 _llm_providers: dict[str, Any] = {}
 
@@ -145,7 +148,11 @@ def start_run(body: RunRequest):
         workspace_path=body.workspace_path,
         cancel_event=cancel_event,
         checkpoint_service=checkpoint_svc,
+        gate_registry=_gates,
     )
+
+    # Bind execution context to Delegate tool so it can create sub-agents
+    _bind_delegate_tool(run_tool_executor, context)
 
     thread = threading.Thread(
         target=_run_workflow,
@@ -261,7 +268,7 @@ def resume_run(execution_id: str, body: ResumeRequest | None = None):
     # Rebuild context
     from temper_ai.api.websocket import ws_manager
 
-    workspace = body.workspace_path or result.get("input_data", {}).get("workspace_path")
+    workspace = body.workspace_path or (result.get("input_data") or {}).get("workspace_path")
 
     policy_engine = None
     if config.safety:
@@ -287,10 +294,13 @@ def resume_run(execution_id: str, body: ResumeRequest | None = None):
         workspace_path=workspace,
         cancel_event=cancel_event,
         checkpoint_service=checkpoint_svc,
+        gate_registry=_gates,
     )
 
+    _bind_delegate_tool(run_tool_executor, context)
+
     # Reconstruct original inputs from the first run
-    original_inputs = result.get("input_data", {})
+    original_inputs = result.get("input_data") or {}
 
     thread = threading.Thread(
         target=_run_workflow_with_checkpoints,
@@ -360,7 +370,39 @@ def fork_run(body: ForkRequest):
         workspace_path=body.workspace_path,
         cancel_event=cancel_event,
         checkpoint_service=fork_svc,
+        gate_registry=_gates,
     )
+
+    _bind_delegate_tool(run_tool_executor, context)
+
+    # Record fork metadata so the data service can link back to the source.
+    # Determine top-level node names that were restored.
+    from temper_ai.stage.stage_node import StageNode as _StageNode
+    restored_keys = set(restored_outputs.keys())
+    restored_top_level: set[str] = set()
+    for node in nodes:
+        if node.name in restored_keys:
+            restored_top_level.add(node.name)
+        if isinstance(node, _StageNode) and node.child_nodes:
+            if any(cn.name in restored_keys for cn in node.child_nodes):
+                restored_top_level.add(node.name)
+
+    # Store fork metadata as an event so the data service can link to the source.
+    from temper_ai.observability.models import Event as _Event
+    from temper_ai.observability.recorder import _db_write_with_retry
+    import uuid as _uuid
+    fork_event = _Event(
+        id=str(_uuid.uuid4()),
+        type="fork.metadata",
+        execution_id=new_execution_id,
+        status="completed",
+        data={
+            "source_execution_id": body.source_execution_id,
+            "fork_sequence": body.sequence,
+            "restored_node_names": sorted(restored_top_level),
+        },
+    )
+    _db_write_with_retry(lambda s: s.add(fork_event))
 
     inputs = body.inputs or {}
     thread = threading.Thread(
@@ -373,12 +415,49 @@ def fork_run(body: ForkRequest):
     return RunResponse(execution_id=new_execution_id, status="running")
 
 
+@router.post("/api/runs/{execution_id}/approve/{node_name}")
+def approve_gate(execution_id: str, node_name: str):
+    """Approve a gate node, allowing the workflow to continue.
+
+    The gate node must be in a 'waiting' state. Once approved, the
+    executor thread unblocks and the node executes.
+    """
+    gate_key = f"{execution_id}:{node_name}"
+    gate_event = _gates.get(gate_key)
+    if gate_event is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No gate waiting for node '{node_name}' in execution '{execution_id}'",
+        )
+    gate_event.set()
+    return {"status": "approved", "execution_id": execution_id, "node_name": node_name}
+
+
+@router.get("/api/runs/{execution_id}/gates")
+def list_gates(execution_id: str):
+    """List all gates currently waiting for approval in an execution."""
+    prefix = f"{execution_id}:"
+    waiting = [
+        {"node_name": key.split(":", 1)[1], "status": "waiting"}
+        for key in _gates
+        if key.startswith(prefix) and not _gates[key].is_set()
+    ]
+    return {"execution_id": execution_id, "gates": waiting}
+
+
 @router.get("/api/runs/{execution_id}/checkpoints")
 def get_checkpoints(execution_id: str):
     """Get checkpoint history for an execution."""
     svc = CheckpointService(execution_id)
     history = svc.get_history()
     return {"execution_id": execution_id, "checkpoints": history, "total": len(history)}
+
+
+def _bind_delegate_tool(tool_executor: ToolExecutor, context) -> None:
+    """Bind execution context to the Delegate tool if registered."""
+    delegate = tool_executor.get_tool("Delegate")
+    if delegate and hasattr(delegate, "bind_context"):
+        delegate.bind_context(context)
 
 
 def _preconnect_mcp_servers(mcp_manager, mcp_tools: dict) -> None:

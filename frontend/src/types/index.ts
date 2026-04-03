@@ -24,7 +24,7 @@ export interface WorkflowExecution {
 export interface NodeExecution {
   id: string;
   name: string;
-  type: 'agent' | 'stage';
+  type: 'agent' | 'stage' | 'delegate';
   status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
   start_time: string | null;
   end_time: string | null;

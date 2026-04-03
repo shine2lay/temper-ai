@@ -166,6 +166,8 @@ class CheckpointService:
         """Recursively load parent checkpoint history."""
         with get_session() as session:
             parent = session.get(Checkpoint, parent_id)
+            if parent:
+                session.expunge(parent)
 
         if parent is None:
             logger.warning("Parent checkpoint '%s' not found", parent_id)
@@ -206,11 +208,15 @@ class CheckpointService:
 
     @staticmethod
     def _replay(history: list[Checkpoint]) -> dict[str, NodeResult]:
-        """Replay checkpoint history to reconstruct node_outputs."""
+        """Replay checkpoint history to reconstruct node_outputs.
+
+        Only restores successfully completed nodes — failed and skipped
+        nodes are excluded so they re-run on resume.
+        """
         node_outputs: dict[str, NodeResult] = {}
 
         for cp in history:
-            if cp.event_type == "node_completed":
+            if cp.event_type == "node_completed" and cp.status == "completed":
                 node_outputs[cp.node_name] = _checkpoint_to_node_result(cp)
 
             elif cp.event_type == "loop_rewind":
@@ -247,6 +253,8 @@ class CheckpointService:
                 .where(Checkpoint.execution_id == source_execution_id)
                 .where(Checkpoint.sequence == sequence)
             ).first()
+            if fork_point:
+                session.expunge(fork_point)
 
         if fork_point is None:
             raise ValueError(

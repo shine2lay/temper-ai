@@ -26,7 +26,9 @@ export function ScriptAgentDetailPanel({ agentId }: ScriptAgentDetailPanelProps)
     return <EmptyState title="Agent not found" />;
   }
 
-  const config = ag.agent_config_snapshot?.agent;
+  const configOuter = ag.agent_config_snapshot?.agent;
+  // Config may be double-nested: agent.agent.script_template
+  const config = (configOuter?.agent ?? configOuter) as Record<string, unknown> | undefined;
   const scriptTemplate = config?.script_template as string | undefined;
   const timeout = config?.timeout_seconds as number | undefined;
 
@@ -86,28 +88,28 @@ export function ScriptAgentDetailPanel({ agentId }: ScriptAgentDetailPanelProps)
 
       <Separator />
 
-      {/* Script Template */}
+      {/* Output (stdout) — show first since this is what matters most for scripts */}
+      <CollapsibleSection title="Output (stdout)" defaultOpen>
+        {ag.output ? (
+          <SmartContent content={ag.output} maxHeight={500} />
+        ) : (
+          <span className="text-xs text-temper-text-dim">No output captured</span>
+        )}
+      </CollapsibleSection>
+
+      {/* Script Template — the actual commands that were executed */}
       {scriptTemplate && (
-        <CollapsibleSection title="Script Template" defaultOpen>
-          <SmartContent content={scriptTemplate} maxHeight={300} />
+        <CollapsibleSection title="Script (executed)" defaultOpen>
+          <SmartContent content={scriptTemplate} maxHeight={400} />
         </CollapsibleSection>
       )}
 
-      {/* Input Data */}
-      <CollapsibleSection title="Input Data">
+      {/* Input Data (variables injected into the script template) */}
+      <CollapsibleSection title="Input Variables">
         {ag.input_data && Object.keys(ag.input_data).length > 0 ? (
           <SmartContent content={JSON.stringify(ag.input_data, null, 2)} maxHeight={300} />
         ) : (
           <span className="text-xs text-temper-text-dim">No input data</span>
-        )}
-      </CollapsibleSection>
-
-      {/* Output (stdout) */}
-      <CollapsibleSection title="Output (stdout)" defaultOpen={!!ag.output}>
-        {ag.output ? (
-          <SmartContent content={ag.output} maxHeight={400} />
-        ) : (
-          <span className="text-xs text-temper-text-dim">No output</span>
         )}
       </CollapsibleSection>
 

@@ -36,7 +36,7 @@ class ScriptAgent(AgentABC):
         """
         start = time.monotonic()
         _record = context.event_recorder.record if context.event_recorder else _default_record
-        agent_event_id = self._record_script_started(_record, context)
+        agent_event_id = self._record_script_started(_record, input_data, context)
 
         try:
             template = self.env.from_string(self.config["script_template"])
@@ -90,7 +90,7 @@ class ScriptAgent(AgentABC):
                 duration_seconds=duration,
             )
 
-    def _record_script_started(self, _record, context: ExecutionContext) -> str:
+    def _record_script_started(self, _record, input_data: dict, context: ExecutionContext) -> str:
         """Emit AGENT_STARTED event and return the event id."""
         return _record(
             EventType.AGENT_STARTED,
@@ -101,6 +101,15 @@ class ScriptAgent(AgentABC):
                 "agent_name": self.name,
                 "node_path": context.node_path,
                 "type": "script",
+                "input_data": input_data,
+                "agent_config": {
+                    "agent": {
+                        "type": "script",
+                        "name": self.name,
+                        "script_template": self.config.get("script_template", "")[:2000],
+                        "timeout_seconds": self.config.get("timeout_seconds", 30),
+                    }
+                },
             },
         )
 
@@ -108,6 +117,7 @@ class ScriptAgent(AgentABC):
                                  agent_event_id: str, context: ExecutionContext, status) -> None:
         """Emit AGENT_COMPLETED or AGENT_FAILED event after script execution."""
         _record = context.event_recorder.record if context.event_recorder else _default_record
+        structured = _extract_json(output)
         _record(
             EventType.AGENT_COMPLETED if tool_result.success else EventType.AGENT_FAILED,
             parent_id=agent_event_id,
@@ -115,7 +125,10 @@ class ScriptAgent(AgentABC):
             status=status.value,
             data={
                 "agent_name": self.name,
+                "output": output[:20000] if output else "",  # Script output is the primary artifact — allow more
                 "output_length": len(output),
+                "structured_output": structured,
+                "has_structured_output": structured is not None,
                 "duration_seconds": duration,
                 "error": tool_result.error,
             },

@@ -38,6 +38,8 @@ interface ExecutionState {
   eventLog: EventLogEntry[];
   expandedStages: Set<string>;
   stageDetailId: string | null;
+  /** When set, the DAG highlights state at this checkpoint sequence. null = show current/live state. */
+  checkpointPreview: { sequence: number; completedNodes: Set<string>; failedNodes: Set<string> } | null;
 
   applySnapshot: (workflow: WorkflowExecution) => void;
   applyEvent: (msg: WSEvent) => void;
@@ -48,6 +50,7 @@ interface ExecutionState {
   toggleStageExpanded: (stageName: string) => void;
   openStageDetail: (stageId: string) => void;
   closeStageDetail: () => void;
+  setCheckpointPreview: (preview: { sequence: number; completedNodes: Set<string>; failedNodes: Set<string> } | null) => void;
 }
 
 /** Extract all agents from a node (handles both agent and stage nodes). */
@@ -161,6 +164,7 @@ export const useExecutionStore = create<ExecutionState>()(
     eventLog: [],
     expandedStages: new Set(),
     stageDetailId: null,
+    checkpointPreview: null,
 
     applySnapshot: (workflow) =>
       set((state) => {
@@ -437,6 +441,11 @@ export const useExecutionStore = create<ExecutionState>()(
     closeStageDetail: () =>
       set((state) => {
         state.stageDetailId = null;
+      }),
+
+    setCheckpointPreview: (preview) =>
+      set((state) => {
+        state.checkpointPreview = preview;
       }),
   })),
 );

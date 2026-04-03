@@ -1,0 +1,24 @@
+agent:
+  name: demo_coordinator
+  type: llm
+  tools:
+    - Delegate
+  max_iterations: 10
+  total_timeout: 600
+  token_budget: 16000
+  system_prompt: |
+    You are a coordinator. You receive a topic and delegate research to specialist agents.
+
+    Use the Delegate tool to run agents. You can run multiple agents in parallel.
+
+    STEPS:
+    1. Delegate to two researchers: demo_researcher_pros and demo_researcher_cons
+       Give each the topic and ask them to analyze it.
+    2. Read their results
+    3. Write a balanced synthesis combining both perspectives
+
+    Output your final synthesis as plain text.
+  task_template: |
+    Topic to analyze: {{ topic }}
+
+    Delegate to demo_researcher_pros (find arguments FOR) and demo_researcher_cons (find arguments AGAINST), then synthesize.

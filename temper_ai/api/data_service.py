@@ -31,15 +31,36 @@ def get_workflow_execution(execution_id: str) -> dict | None:
     if not events:
         return None
 
-    # Index events by ID for parent lookups
     # Find workflow event
     workflow_event = _find_event_by_type(events, "workflow.")
     if not workflow_event:
         return None
 
+    # Check for fork metadata — if present, merge source execution's nodes
+    fork_meta = next(
+        (e for e in events if e.get("type") == "fork.metadata"),
+        None,
+    )
+
     # Build node executions (children of workflow event)
     node_events = _find_children(events, workflow_event["id"], "stage.")
     nodes = [_build_node_execution(e, events) for e in node_events]
+    current_node_names = {n.get("name") for n in nodes if n.get("name")}
+
+    # For forked runs: fetch restored nodes from the source execution
+    if fork_meta:
+        fork_data = fork_meta.get("data", {})
+        source_id = fork_data.get("source_execution_id")
+        restored_names = set(fork_data.get("restored_node_names", []))
+
+        if source_id and restored_names:
+            source = get_workflow_execution(source_id)
+            if source:
+                for src_node in source.get("nodes", []):
+                    src_name = src_node.get("name", "")
+                    if src_name in restored_names and src_name not in current_node_names:
+                        src_node["restored_from_fork"] = True
+                        nodes.insert(0, src_node)
 
     # Calculate aggregates
     total_cost = sum(n.get("cost_usd", 0) for n in nodes)
@@ -63,6 +84,7 @@ def get_workflow_execution(execution_id: str) -> dict | None:
         "input_data": wf_data.get("input_data"),
         "output_data": wf_data.get("output_data"),
         "error_message": wf_data.get("error"),
+        "fork_source": fork_data.get("source_execution_id") if fork_meta else None,
     }
 
 

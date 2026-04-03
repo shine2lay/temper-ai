@@ -111,6 +111,33 @@ export function ExecutionDAG() {
     );
   }, [search, matchingNodeIds, setNodes]);
 
+  // Apply checkpoint preview overlay — dim nodes not yet reached, highlight completed/failed
+  const checkpointPreview = useExecutionStore((s) => s.checkpointPreview);
+  const setCheckpointPreview = useExecutionStore((s) => s.setCheckpointPreview);
+  useEffect(() => {
+    if (!checkpointPreview) return; // let search dimming handle normal state
+    const { completedNodes, failedNodes } = checkpointPreview;
+
+    setNodes((prev) =>
+      prev.map((n) => {
+        // Use the top-level node id (stage name) — child nodes inherit parent
+        const nodeId = n.parentId ?? n.id;
+        const isCompleted = completedNodes.has(nodeId);
+        const isFailed = failedNodes.has(nodeId);
+        const targetOpacity = isCompleted || isFailed ? 1 : 0.2;
+        if (n.style?.opacity === targetOpacity) return n;
+        return { ...n, style: { ...n.style, opacity: targetOpacity } };
+      }),
+    );
+  }, [checkpointPreview, setNodes]);
+
+  // Clear checkpoint preview when leaving the DAG (cleanup)
+  useEffect(() => {
+    return () => {
+      // Don't clear on every unmount — only matters if component is destroyed
+    };
+  }, []);
+
   const matchCount = useCallback((): number => {
     const ids = matchingNodeIds();
     return ids ? ids.size : 0;
@@ -322,20 +349,38 @@ export function ExecutionDAG() {
           className="hover:!opacity-100 transition-opacity duration-200"
         />
         <Panel position="top-right">
-          <div className="flex items-center gap-1.5">
-            <input
-              type="search"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search outputs..."
-              aria-label="Search agent outputs"
-              className="px-2 py-1 text-xs bg-temper-surface border border-temper-border rounded text-temper-text placeholder:text-temper-text-dim w-48 focus:outline-none focus:border-temper-accent"
-            />
-            {search.trim() && (
-              <span className="text-[10px] text-temper-text-muted whitespace-nowrap">
-                {matchCount()} {matchCount() === 1 ? 'match' : 'matches'}
-              </span>
+          <div className="flex flex-col items-end gap-1.5">
+            {checkpointPreview && (
+              <div className="flex items-center gap-2 px-2.5 py-1.5 bg-amber-500/15 border border-amber-500/30 rounded text-amber-400 text-xs">
+                <span>Checkpoint #{checkpointPreview.sequence}</span>
+                <span className="text-[10px] text-amber-400/70">
+                  {checkpointPreview.completedNodes.size} completed
+                  {checkpointPreview.failedNodes.size > 0 && `, ${checkpointPreview.failedNodes.size} failed`}
+                </span>
+                <button
+                  onClick={() => setCheckpointPreview(null)}
+                  className="ml-1 text-amber-400/60 hover:text-amber-400 transition-colors"
+                  aria-label="Clear checkpoint preview"
+                >
+                  ✕
+                </button>
+              </div>
             )}
+            <div className="flex items-center gap-1.5">
+              <input
+                type="search"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search outputs..."
+                aria-label="Search agent outputs"
+                className="px-2 py-1 text-xs bg-temper-surface border border-temper-border rounded text-temper-text placeholder:text-temper-text-dim w-48 focus:outline-none focus:border-temper-accent"
+              />
+              {search.trim() && (
+                <span className="text-[10px] text-temper-text-muted whitespace-nowrap">
+                  {matchCount()} {matchCount() === 1 ? 'match' : 'matches'}
+                </span>
+              )}
+            </div>
           </div>
         </Panel>
       </ReactFlow>

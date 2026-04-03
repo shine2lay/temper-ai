@@ -16,6 +16,7 @@ import { LiveStreamBar } from '@/components/dag/LiveStreamBar';
 import { TimelineChart } from '@/components/timeline/TimelineChart';
 import { DetailSheet } from '@/components/panels/DetailSheet';
 import { StageDetailOverlay } from '@/components/stage-detail';
+import { CheckpointPanel } from '@/components/layout/CheckpointPanel';
 import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
 
 function LoadingSkeleton() {
@@ -99,6 +100,7 @@ export function ExecutionView() {
           timelineContent={<ErrorBoundary><TimelineChart /></ErrorBoundary>}
           eventLogContent={<ErrorBoundary><EventLogPanel /></ErrorBoundary>}
           llmCallsContent={<ErrorBoundary><LLMCallsTable /></ErrorBoundary>}
+          checkpointContent={<ErrorBoundary><CheckpointPanel onSwitchTab={setActiveTab} /></ErrorBoundary>}
         />
         <DetailSheet />
         <StageDetailOverlay />
@@ -112,6 +114,7 @@ export function ExecutionView() {
                 <div className="flex justify-between"><span>Timeline view</span><kbd className="px-2 py-0.5 bg-temper-surface rounded text-xs">2</kbd></div>
                 <div className="flex justify-between"><span>Event log</span><kbd className="px-2 py-0.5 bg-temper-surface rounded text-xs">3</kbd></div>
                 <div className="flex justify-between"><span>LLM calls</span><kbd className="px-2 py-0.5 bg-temper-surface rounded text-xs">4</kbd></div>
+                <div className="flex justify-between"><span>Checkpoints</span><kbd className="px-2 py-0.5 bg-temper-surface rounded text-xs">5</kbd></div>
                 <div className="flex justify-between"><span>This help</span><kbd className="px-2 py-0.5 bg-temper-surface rounded text-xs">?</kbd></div>
               </div>
             </div>

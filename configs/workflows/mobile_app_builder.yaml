@@ -59,9 +59,6 @@ workflow:
       input_map:
         workspace_path: workflow.workspace_path
         app_name: workflow.app_name
-        tech_stack: architecture.structured.tech_stack
-        project_structure: architecture.structured.project_structure
-        data_types_file: architecture.structured.data_types_file
 
     # ── Phase 4: Plan ───────────────────────────────────────────────
     - name: plan
@@ -84,6 +81,8 @@ workflow:
         - agent: core_implementer
           task_template: |
             Implement CORE files only (contexts, stores, shared components, config).
+            FIRST: Write the types file to src/types/index.ts with this content:
+            {{ data_types_file }}
 
             Project path: {{ workspace_path }}
             Architecture notes: {{ architecture_notes }}
@@ -116,6 +115,7 @@ workflow:
       input_map:
         workspace_path: scaffold.structured.workspace_path
         architecture_notes: architecture.structured.architecture_notes
+        data_types_file: architecture.structured.data_types_file
         core_tasks: plan.structured.core_tasks
         screen_tasks: plan.structured.screen_tasks
         build_errors: build_verifier.structured.errors
@@ -128,8 +128,8 @@ workflow:
       input_map:
         workspace_path: scaffold.structured.workspace_path
         screens: architecture.structured.screens
-        core_files: implement.output
-        screen_files: implement.output
+        core_files: implement.core_implementer.output
+        screen_files: implement.screen_implementer.output
 
     # ── Phase 7: Build Verification ─────────────────────────────────
     - name: build_verifier

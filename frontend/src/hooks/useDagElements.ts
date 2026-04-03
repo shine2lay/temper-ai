@@ -39,6 +39,8 @@ export interface AgentNodeData extends Record<string, unknown> {
   totalTokens: number;
   totalCost: number;
   durationSeconds: number;
+  isDelegate?: boolean;
+  delegatedBy?: string;
 }
 
 /**
@@ -78,6 +80,7 @@ export function useDagElements(): { nodes: Node[]; edges: Edge[] } {
 
       // Determine if this is an agent-type or stage-type node
       const nodeType = latest.type ?? 'agent';
+      const isDelegate = nodeType === 'delegate';
       const nodeAgents = latest.agents ?? [];
       const isSkipped = latest.status === 'skipped' && nodeAgents.length === 0;
 
@@ -88,7 +91,7 @@ export function useDagElements(): { nodes: Node[]; edges: Edge[] } {
       }
       renderedStages.add(stageName);
 
-      if (nodeType === 'agent') {
+      if (nodeType === 'agent' || isDelegate) {
         // Agent node: render as compact agent card
         const agent = nodeAgents.length > 0
           ? (agents.get(nodeAgents[0].id) ?? nodeAgents[0])
@@ -105,6 +108,8 @@ export function useDagElements(): { nodes: Node[]; edges: Edge[] } {
           totalTokens,
           totalCost,
           durationSeconds,
+          isDelegate,
+          delegatedBy: isDelegate ? (latest as any).delegated_by : undefined,
         };
 
         nodes.push({

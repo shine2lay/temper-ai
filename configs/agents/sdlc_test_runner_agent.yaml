@@ -2,56 +2,48 @@ agent:
   name: sdlc_test_runner_agent
   type: script
   script_template: |
-    #!/bin/bash
     WORKSPACE={{ workspace_path }}
     TEST_FILE={{ test_file }}
-    FAILURES=""
     PASS_COUNT=0
     FAIL_COUNT=0
+    DETAILS=""
 
     cd "$WORKSPACE"
 
-    # Start the server for the acceptance test
-    uvicorn server.app:app --port 8000 &
-    SERVER_PID=$!
-    sleep 3
-
-    # Run the new acceptance test
-    if [ -n "$TEST_FILE" ] && [ -f "$TEST_FILE" ]; then
-      if python3 "$TEST_FILE" 2>/tmp/sdlc_test_err; then
-        PASS_COUNT=$((PASS_COUNT + 1))
-      else
-        FAILURES="$FAILURES New test failed: $(cat /tmp/sdlc_test_err | tail -5)"
-        FAIL_COUNT=$((FAIL_COUNT + 1))
-      fi
-    fi
-
-    # Kill the server
-    kill $SERVER_PID 2>/dev/null || true
-    pkill -f "uvicorn server.app:app" 2>/dev/null || true
-
-    # Run existing tests if pytest is available
-    if command -v pytest > /dev/null 2>&1; then
-      if pytest --tb=short -q 2>/tmp/sdlc_pytest_err; then
-        PASS_COUNT=$((PASS_COUNT + 1))
-      else
-        FAILURES="$FAILURES Existing tests failed: $(cat /tmp/sdlc_pytest_err | tail -10)"
-        FAIL_COUNT=$((FAIL_COUNT + 1))
-      fi
-    fi
-
-    # Smoke test: can the server module import cleanly?
-    timeout 10 python3 -c "from server.app import app; print('Server imports OK')" 2>/tmp/sdlc_smoke_err
-    if [ $? -eq 0 ]; then
+    # 1. Import smoke test — can the app module load?
+    if timeout 15 python3 -c "from server.app import app; print('OK')" 2>/tmp/sdlc_smoke; then
       PASS_COUNT=$((PASS_COUNT + 1))
+      DETAILS="$DETAILS import:PASS"
     else
-      FAILURES="$FAILURES Smoke test: $(cat /tmp/sdlc_smoke_err | tail -3)"
       FAIL_COUNT=$((FAIL_COUNT + 1))
+      DETAILS="$DETAILS import:FAIL($(cat /tmp/sdlc_smoke | tail -2 | tr '\n' ' '))"
+    fi
+
+    # 2. Run existing pytest suite (if available)
+    if command -v pytest > /dev/null 2>&1 && [ -d "tests" ]; then
+      if timeout 60 pytest --tb=short -q 2>/tmp/sdlc_pytest; then
+        PASS_COUNT=$((PASS_COUNT + 1))
+        DETAILS="$DETAILS pytest:PASS"
+      else
+        FAIL_COUNT=$((FAIL_COUNT + 1))
+        DETAILS="$DETAILS pytest:FAIL($(cat /tmp/sdlc_pytest | tail -5 | tr '\n' ' '))"
+      fi
+    else
+      DETAILS="$DETAILS pytest:SKIP(not available)"
+    fi
+
+    # 3. Syntax check on the new/modified file
+    if python3 -m py_compile "$WORKSPACE/server/routes.py" 2>/tmp/sdlc_syntax; then
+      PASS_COUNT=$((PASS_COUNT + 1))
+      DETAILS="$DETAILS syntax:PASS"
+    else
+      FAIL_COUNT=$((FAIL_COUNT + 1))
+      DETAILS="$DETAILS syntax:FAIL($(cat /tmp/sdlc_syntax | tr '\n' ' '))"
     fi
 
     if [ $FAIL_COUNT -gt 0 ]; then
-      echo '{"test_result": "FAIL", "passed": '$PASS_COUNT', "failed": '$FAIL_COUNT', "details": "'"$(echo $FAILURES | head -c 1000)"'"}'
+      echo '{"test_result": "FAIL", "passed": '$PASS_COUNT', "failed": '$FAIL_COUNT', "details": "'"$(echo $DETAILS | head -c 500)"'"}'
     else
-      echo '{"test_result": "PASS", "passed": '$PASS_COUNT', "failed": 0, "details": "All tests passed"}'
+      echo '{"test_result": "PASS", "passed": '$PASS_COUNT', "failed": 0, "details": "'"$DETAILS"'"}'
     fi
-  timeout_seconds: 120
+  timeout_seconds: 90

@@ -17,6 +17,7 @@ from fastapi import APIRouter, HTTPException, WebSocket
 from pydantic import BaseModel
 
 from temper_ai.api.data_service import get_workflow_execution, list_workflow_executions
+from temper_ai.checkpoint.service import CheckpointService
 from temper_ai.api.websocket import ws_manager
 from temper_ai.config import ConfigStore
 from temper_ai.memory import InMemoryStore, MemoryService
@@ -130,6 +131,8 @@ def start_run(body: RunRequest):
     cancel_event = threading.Event()
     _running[execution_id] = cancel_event
 
+    checkpoint_svc = CheckpointService(execution_id)
+
     context = ExecutionContext(
         run_id=execution_id,
         workflow_name=config.name,
@@ -141,6 +144,7 @@ def start_run(body: RunRequest):
         llm_providers=_llm_providers,
         workspace_path=body.workspace_path,
         cancel_event=cancel_event,
+        checkpoint_service=checkpoint_svc,
     )
 
     thread = threading.Thread(
@@ -198,6 +202,183 @@ def cancel_run(execution_id: str):
         update_event(start_events[0]["id"], status="cancelled", data={"cancelled_reason": "Stale run cancelled by user"})
         logger.info("Marked stale execution %s as cancelled", execution_id)
     return {"status": "cancelled", "execution_id": execution_id}
+
+
+class ResumeRequest(BaseModel):
+    """Request to resume a workflow from checkpoints."""
+
+    workflow: str | None = None  # Override workflow config (default: use original)
+    workspace_path: str | None = None
+
+
+class ForkRequest(BaseModel):
+    """Request to fork a workflow from a specific checkpoint."""
+
+    workflow: str  # Workflow config to use for the fork
+    source_execution_id: str
+    sequence: int  # Checkpoint sequence to fork from
+    inputs: dict = {}
+    workspace_path: str | None = None
+
+
+@router.post("/api/runs/{execution_id}/resume", response_model=RunResponse)
+def resume_run(execution_id: str, body: ResumeRequest | None = None):
+    """Resume a workflow from its last checkpoint.
+
+    Loads all checkpoints for the execution, reconstructs node_outputs,
+    and continues from where it left off. Uses current agent/workflow
+    configs (not the configs at crash time).
+    """
+    body = body or ResumeRequest()
+
+    # Find the original workflow name from events
+    result = get_workflow_execution(execution_id)
+    if not result:
+        raise HTTPException(status_code=404, detail=f"Execution '{execution_id}' not found")
+
+    workflow_name = body.workflow or result.get("workflow_name")
+    if not workflow_name:
+        raise HTTPException(status_code=400, detail="Cannot determine workflow name. Provide 'workflow' in request body.")
+
+    # Load current workflow config
+    try:
+        nodes, config = _graph_loader.load_workflow(workflow_name)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # Reconstruct state from checkpoints
+    checkpoint_svc = CheckpointService(execution_id)
+    restored_outputs = checkpoint_svc.reconstruct()
+
+    if not restored_outputs:
+        raise HTTPException(status_code=400, detail="No checkpoints found — nothing to resume from")
+
+    logger.info(
+        "Resuming execution '%s' with %d checkpointed nodes: %s",
+        execution_id, len(restored_outputs), list(restored_outputs.keys()),
+    )
+
+    # Rebuild context
+    from temper_ai.api.websocket import ws_manager
+
+    workspace = body.workspace_path or result.get("input_data", {}).get("workspace_path")
+
+    policy_engine = None
+    if config.safety:
+        from temper_ai.safety import PolicyEngine
+        policy_engine = PolicyEngine.from_config(config.safety)
+
+    run_tool_executor = ToolExecutor(workspace_root=workspace, policy_engine=policy_engine)
+    run_tool_executor.register_tools({name: cls() for name, cls in TOOL_CLASSES.items()})
+
+    recorder = EventRecorder(execution_id, notifier=ws_manager)
+    cancel_event = threading.Event()
+    _running[execution_id] = cancel_event
+
+    context = ExecutionContext(
+        run_id=execution_id,
+        workflow_name=config.name,
+        node_path="",
+        agent_name="",
+        event_recorder=recorder,
+        tool_executor=run_tool_executor,
+        memory_service=_memory_service,
+        llm_providers=_llm_providers,
+        workspace_path=workspace,
+        cancel_event=cancel_event,
+        checkpoint_service=checkpoint_svc,
+    )
+
+    # Reconstruct original inputs from the first run
+    original_inputs = result.get("input_data", {})
+
+    thread = threading.Thread(
+        target=_run_workflow_with_checkpoints,
+        args=(nodes, original_inputs, context, config.name, execution_id, restored_outputs),
+        daemon=True,
+    )
+    thread.start()
+
+    return RunResponse(execution_id=execution_id, status="resuming")
+
+
+@router.post("/api/runs/fork", response_model=RunResponse)
+def fork_run(body: ForkRequest):
+    """Fork a new execution from a specific checkpoint in another execution.
+
+    Creates a new execution_id that shares history with the source up to
+    the fork point, then continues independently.
+    """
+    new_execution_id = str(uuid.uuid4())
+
+    try:
+        fork_svc = CheckpointService.fork(
+            source_execution_id=body.source_execution_id,
+            sequence=body.sequence,
+            new_execution_id=new_execution_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # Reconstruct state at the fork point
+    restored_outputs = fork_svc.reconstruct()
+
+    # Load workflow
+    try:
+        nodes, config = _graph_loader.load_workflow(body.workflow)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    logger.info(
+        "Forking execution '%s' at sequence %d → new execution '%s' with %d nodes restored",
+        body.source_execution_id, body.sequence, new_execution_id, len(restored_outputs),
+    )
+
+    from temper_ai.api.websocket import ws_manager
+
+    policy_engine = None
+    if config.safety:
+        from temper_ai.safety import PolicyEngine
+        policy_engine = PolicyEngine.from_config(config.safety)
+
+    run_tool_executor = ToolExecutor(workspace_root=body.workspace_path, policy_engine=policy_engine)
+    run_tool_executor.register_tools({name: cls() for name, cls in TOOL_CLASSES.items()})
+
+    recorder = EventRecorder(new_execution_id, notifier=ws_manager)
+    cancel_event = threading.Event()
+    _running[new_execution_id] = cancel_event
+
+    context = ExecutionContext(
+        run_id=new_execution_id,
+        workflow_name=config.name,
+        node_path="",
+        agent_name="",
+        event_recorder=recorder,
+        tool_executor=run_tool_executor,
+        memory_service=_memory_service,
+        llm_providers=_llm_providers,
+        workspace_path=body.workspace_path,
+        cancel_event=cancel_event,
+        checkpoint_service=fork_svc,
+    )
+
+    inputs = body.inputs or {}
+    thread = threading.Thread(
+        target=_run_workflow_with_checkpoints,
+        args=(nodes, inputs, context, config.name, new_execution_id, restored_outputs),
+        daemon=True,
+    )
+    thread.start()
+
+    return RunResponse(execution_id=new_execution_id, status="running")
+
+
+@router.get("/api/runs/{execution_id}/checkpoints")
+def get_checkpoints(execution_id: str):
+    """Get checkpoint history for an execution."""
+    svc = CheckpointService(execution_id)
+    history = svc.get_history()
+    return {"execution_id": execution_id, "checkpoints": history, "total": len(history)}
 
 
 def _preconnect_mcp_servers(mcp_manager, mcp_tools: dict) -> None:
@@ -284,5 +465,30 @@ def _run_workflow(nodes, inputs, context, workflow_name, execution_id):
             context.tool_executor.shutdown(wait=False)
 
 
-    # _EventBroadcastRecorder replaced by shared EventRecorder
-    # from temper_ai.observability.event_recorder
+def _run_workflow_with_checkpoints(nodes, inputs, context, workflow_name, execution_id, restored_outputs):
+    """Run a workflow with pre-populated node_outputs from checkpoints."""
+    try:
+        logger.info(
+            "Resuming workflow '%s' (execution: %s) — %d nodes pre-loaded",
+            workflow_name, execution_id, len(restored_outputs),
+        )
+        # The executor's _run_batches will skip nodes already in node_outputs
+        # We inject restored_outputs by pre-populating them in the execute_graph call
+        from temper_ai.stage.executor import execute_graph_with_state
+        result = execute_graph_with_state(
+            nodes, inputs, context,
+            graph_name=workflow_name,
+            is_workflow=True,
+            initial_outputs=restored_outputs,
+        )
+        logger.info(
+            "Workflow '%s' resumed and completed: status=%s, cost=$%.4f, tokens=%d",
+            workflow_name, result.status, result.cost_usd, result.total_tokens,
+        )
+    except Exception as exc:
+        logger.error("Workflow '%s' resume failed: %s", workflow_name, exc, exc_info=True)
+    finally:
+        _running.pop(execution_id, None)
+        ws_manager.cleanup(execution_id)
+        if hasattr(context, 'tool_executor') and context.tool_executor:
+            context.tool_executor.shutdown(wait=False)

@@ -66,6 +66,7 @@ export function useDagElements(): { nodes: Node[]; edges: Edge[] } {
 
     let colorIndex = 0;
     const stageNames = Array.from(stageGroups.keys());
+    const renderedStages = new Set<string>(); // Track which stages actually render
 
     for (const [stageName, executions] of stageGroups) {
       const latest = executions[executions.length - 1];
@@ -78,6 +79,14 @@ export function useDagElements(): { nodes: Node[]; edges: Edge[] } {
       // Determine if this is an agent-type or stage-type node
       const nodeType = latest.type ?? 'agent';
       const nodeAgents = latest.agents ?? [];
+      const isSkipped = latest.status === 'skipped' && nodeAgents.length === 0;
+
+      // Skipped stages: don't render — they add visual noise without useful information
+      if (isSkipped) {
+        colorIndex++;
+        continue;
+      }
+      renderedStages.add(stageName);
 
       if (nodeType === 'agent') {
         // Agent node: render as compact agent card
@@ -303,7 +312,9 @@ export function useDagElements(): { nodes: Node[]; edges: Edge[] } {
     // Build edges with smart handle selection based on node positions
     if (dagInfo.hasDeps) {
       for (const [target, deps] of dagInfo.depMap) {
+        if (!renderedStages.has(target)) continue; // Skip edges to non-rendered stages
         for (const source of deps) {
+          if (!renderedStages.has(source)) continue; // Skip edges from non-rendered stages
           const sourceStage = stageGroups.get(source);
           const sourceStatus = sourceStage
             ? sourceStage[sourceStage.length - 1].status

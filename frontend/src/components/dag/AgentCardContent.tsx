@@ -83,6 +83,9 @@ export const AgentCardContent = memo(function AgentCardContent({
 
   const isFailed = agent.status === 'failed';
   const isRunning = agent.status === 'running';
+  // Detect script agents: check config snapshot type, or infer when no LLM activity at all
+  const isScript = configSnapshot?.type === 'script'
+    || (!model && !provider && totalTokens === 0 && llmCalls === 0 && duration > 0 && !isRunning);
 
   return (
     <div
@@ -119,57 +122,87 @@ export const AgentCardContent = memo(function AgentCardContent({
           <span className="text-[9px] px-1 py-px rounded bg-blue-500/15 text-blue-400 font-medium shrink-0 animate-pulse">streaming</span>
         )}
         <span className="ml-auto flex items-center gap-1 shrink-0">
-          {model && (
+          {isScript ? (
+            <span className="text-[8px] px-1 py-px rounded bg-amber-500/15 text-amber-400 font-medium">script</span>
+          ) : model ? (
             <span className="text-[8px] px-1 py-px rounded bg-temper-surface text-temper-text-dim font-mono"
                   title={provider ? `${provider}/${model}` : model}>
               {provider ? `${provider}` : ''}{provider && model ? '/' : ''}{model}
             </span>
-          )}
+          ) : null}
         </span>
       </div>
 
-      {/* Dense metrics + config row */}
+      {/* Dense metrics + config row — different for script vs LLM agents */}
       <div className="flex items-center gap-1.5 px-2.5 py-1 text-[10px] text-temper-text-muted flex-wrap">
-        {promptTokens > 0 && (
-          <span className="font-mono" style={{ color: 'var(--color-temper-token-prompt)' }}>{formatTokens(promptTokens)}p</span>
-        )}
-        {completionTokens > 0 && (
-          <span className="font-mono" style={{ color: 'var(--color-temper-token-completion)' }}>{formatTokens(completionTokens)}c</span>
-        )}
-        <span className="font-mono font-medium text-temper-text">{formatTokens(totalTokens)}<span className="text-temper-text-dim"> tok</span></span>
-        <span className="text-temper-border/40">|</span>
-        <span>{formatDuration(duration)}</span>
-        {showCost && (
+        {isScript ? (
           <>
+            {/* Script agent: duration + exit status, no tokens */}
+            <span className="font-mono font-medium text-temper-text">{formatDuration(duration)}</span>
+            {isFailed && agent.error_message && (
+              <>
+                <span className="text-temper-border/40">|</span>
+                <span className="text-red-400 truncate max-w-[150px]">{agent.error_message.slice(0, 60)}</span>
+              </>
+            )}
+            {!isFailed && (
+              <>
+                <span className="text-temper-border/40">|</span>
+                <span className="text-emerald-400">exit 0</span>
+              </>
+            )}
+            {configSnapshot?.timeout_seconds && (
+              <>
+                <span className="text-temper-border/40">|</span>
+                <span>timeout {configSnapshot.timeout_seconds}s</span>
+              </>
+            )}
+          </>
+        ) : (
+          <>
+            {/* LLM agent: tokens + cost + llm/tool calls */}
+            {promptTokens > 0 && (
+              <span className="font-mono" style={{ color: 'var(--color-temper-token-prompt)' }}>{formatTokens(promptTokens)}p</span>
+            )}
+            {completionTokens > 0 && (
+              <span className="font-mono" style={{ color: 'var(--color-temper-token-completion)' }}>{formatTokens(completionTokens)}c</span>
+            )}
+            <span className="font-mono font-medium text-temper-text">{formatTokens(totalTokens)}<span className="text-temper-text-dim"> tok</span></span>
             <span className="text-temper-border/40">|</span>
-            <span className="text-emerald-400">{formatCost(cost)}</span>
+            <span>{formatDuration(duration)}</span>
+            {showCost && (
+              <>
+                <span className="text-temper-border/40">|</span>
+                <span className="text-emerald-400">{formatCost(cost)}</span>
+              </>
+            )}
+            {llmCalls > 0 && (
+              <>
+                <span className="text-temper-border/40">|</span>
+                <span>{llmCalls} llm</span>
+              </>
+            )}
+            {toolCalls > 0 && (
+              <>
+                <span className="text-temper-border/40">|</span>
+                <span className="text-amber-400">{toolCalls} tools</span>
+              </>
+            )}
+            {tools && tools.length > 0 && (
+              <>
+                <span className="text-temper-border/40">|</span>
+                {tools.map((t) => (
+                  <span key={t} className="px-1 py-px rounded bg-amber-500/10 text-amber-400 text-[8px] font-mono">{t}</span>
+                ))}
+              </>
+            )}
+            {hasMem && <span title="Memory enabled" className="text-[9px]">🧠</span>}
           </>
         )}
-        {llmCalls > 0 && (
-          <>
-            <span className="text-temper-border/40">|</span>
-            <span>{llmCalls} llm</span>
-          </>
-        )}
-        {toolCalls > 0 && (
-          <>
-            <span className="text-temper-border/40">|</span>
-            <span className="text-amber-400">{toolCalls} tools</span>
-          </>
-        )}
-        {tools && tools.length > 0 && (
-          <>
-            <span className="text-temper-border/40">|</span>
-            {tools.map((t) => (
-              <span key={t} className="px-1 py-px rounded bg-amber-500/10 text-amber-400 text-[8px] font-mono">{t}</span>
-            ))}
-          </>
-        )}
-        {hasMem && <span title="Memory enabled" className="text-[9px]">🧠</span>}
       </div>
 
-      {/* Token breakdown bar */}
-      {totalTokens > 0 && promptTokens > 0 && (
+      {/* Token breakdown bar — LLM agents only */}
+      {!isScript && totalTokens > 0 && promptTokens > 0 && (
         <div className="px-2.5 pb-1">
           <div
             className="h-1 w-full rounded-full bg-temper-surface overflow-hidden flex"

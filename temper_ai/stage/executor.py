@@ -19,18 +19,35 @@ from temper_ai.stage.node import Node
 
 logger = logging.getLogger(__name__)
 
+def execute_graph_with_state(
+    nodes: list[Node],
+    input_data: dict,
+    context: ExecutionContext,
+    graph_name: str = "",
+    is_workflow: bool = False,
+    initial_outputs: dict[str, NodeResult] | None = None,
+) -> NodeResult:
+    """Execute a graph with pre-populated node_outputs (for resume from checkpoints)."""
+    return execute_graph(
+        nodes, input_data, context,
+        graph_name=graph_name, is_workflow=is_workflow,
+        initial_outputs=initial_outputs,
+    )
+
+
 def execute_graph(
     nodes: list[Node],
     input_data: dict,
     context: ExecutionContext,
     graph_name: str = "",
     is_workflow: bool = False,
+    initial_outputs: dict[str, NodeResult] | None = None,
 ) -> NodeResult:
     """Execute a graph of nodes in topological order, concurrently where possible."""
     start_event = EventType.WORKFLOW_STARTED if is_workflow else EventType.STAGE_STARTED
     node_map = {node.name: node for node in nodes}
     batches = topological_sort(nodes)
-    node_outputs: dict[str, NodeResult] = {}
+    node_outputs: dict[str, NodeResult] = dict(initial_outputs) if initial_outputs else {}
     loop_counts: dict[str, int] = defaultdict(int)
     start = time.monotonic()
 
@@ -73,21 +90,35 @@ def _run_batches(
     """Iterate through topological batches, handling single-node loops and parallel execution."""
     batch_idx = 0
     loop_feedback: dict[str, NodeResult] = {}
+    cp = context.checkpoint_service  # may be None
+
     while batch_idx < len(batches):
         _check_cancelled(context)
         batch = batches[batch_idx]
-        if len(batch) == 1:
+
+        # Skip batches where all nodes are already checkpointed (resume path)
+        remaining = [n for n in batch if n.name not in node_outputs]
+        if not remaining:
+            batch_idx += 1
+            continue
+
+        if len(remaining) == 1 and len(batch) == 1:
             node = batch[0]
             result = _execute_single_node(node, input_data, node_outputs, context, graph_event_id, loop_feedback)
             node_outputs[node.name] = result
-            rewind = _handle_loop(node, result, node_outputs, loop_counts, loop_feedback, batches, node_map)
+            if cp:
+                cp.save_node_completed(node.name, result)
+            rewind = _handle_loop(node, result, node_outputs, loop_counts, loop_feedback, batches, node_map, cp)
             if rewind is not None:
                 batch_idx = rewind
                 continue
         else:
-            results = _execute_parallel_batch(batch, input_data, node_outputs, context, graph_event_id, loop_feedback)
+            # For parallel batches, only run nodes not already checkpointed
+            results = _execute_parallel_batch(remaining, input_data, node_outputs, context, graph_event_id, loop_feedback)
             for node, result in results:
                 node_outputs[node.name] = result
+                if cp:
+                    cp.save_node_completed(node.name, result)
         batch_idx += 1
 
 def _build_final_result(
@@ -283,6 +314,7 @@ def _handle_loop(
     loop_feedback: dict[str, NodeResult],
     batches: list[list[Node]],
     node_map: dict[str, Node],
+    checkpoint_service: Any = None,
 ) -> int | None:
     """Handle loop_to logic. Returns batch index to rewind to, or None.
 
@@ -335,10 +367,23 @@ def _handle_loop(
     # Find which batch contains the target node
     for idx, batch in enumerate(batches):
         if any(n.name == node.loop_to for n in batch):
+            # Collect names of nodes that will be cleared
+            cleared_nodes = [
+                n.name
+                for subsequent_batch in batches[idx:]
+                for n in subsequent_batch
+            ]
+            # Record the rewind in checkpoint history
+            if checkpoint_service:
+                checkpoint_service.save_loop_rewind(
+                    trigger_node=node.name,
+                    target_node=node.loop_to,
+                    cleared_nodes=cleared_nodes,
+                    trigger_result=result,
+                )
             # Clear outputs for nodes from target onwards (they'll re-run)
-            for subsequent_batch in batches[idx:]:
-                for n in subsequent_batch:
-                    node_outputs.pop(n.name, None)
+            for name in cleared_nodes:
+                node_outputs.pop(name, None)
             return idx
 
     logger.warning("Loop target '%s' not found in graph", node.loop_to)

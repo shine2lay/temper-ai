@@ -9,6 +9,7 @@ import {
 import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
 import { StageDetailPanel } from '@/components/panels/StageDetailPanel';
 import { AgentDetailPanel } from '@/components/panels/AgentDetailPanel';
+import { ScriptAgentDetailPanel } from '@/components/panels/ScriptAgentDetailPanel';
 import { LLMCallInspector } from '@/components/panels/LLMCallInspector';
 import { ToolCallInspector } from '@/components/panels/ToolCallInspector';
 import { WorkflowDetailPanel } from '@/components/panels/WorkflowDetailPanel';
@@ -68,7 +69,7 @@ export function DetailSheet() {
         )}
         {selection?.type === 'agent' && (
           <ErrorBoundary>
-            <AgentDetailPanel agentId={selection.id} />
+            <AgentDetailRouter agentId={selection.id} />
           </ErrorBoundary>
         )}
         {selection?.type === 'stage' && (
@@ -79,4 +80,20 @@ export function DetailSheet() {
       </SheetContent>
     </Sheet>
   );
+}
+
+/** Routes to the correct agent detail panel based on agent type. */
+function AgentDetailRouter({ agentId }: { agentId: string }) {
+  const agent = useExecutionStore((s) => s.agents.get(agentId));
+  if (!agent) return <AgentDetailPanel agentId={agentId} />;
+
+  const config = agent.agent_config_snapshot?.agent;
+  const isScript = config?.type === 'script'
+    || (!config?.model && !config?.provider && (agent.total_tokens ?? 0) === 0
+        && (agent.total_llm_calls ?? 0) === 0 && (agent.duration_seconds ?? 0) > 0
+        && agent.status !== 'running');
+
+  return isScript
+    ? <ScriptAgentDetailPanel agentId={agentId} />
+    : <AgentDetailPanel agentId={agentId} />;
 }

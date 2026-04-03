@@ -89,7 +89,15 @@ export function computeStagePositions(
     xCursor += (maxW || LAYOUT.AGENT_WIDTH + 2 * LAYOUT.STAGE_PAD_X) + LAYOUT.STAGE_GAP_X;
   }
 
-  // Assign X from depth, Y centered within each depth group
+  // Find the tallest column to use as global vertical reference
+  let maxColumnHeight = 0;
+  for (const [, names] of depthGroups) {
+    const heights = names.map((name) => getHeight(name));
+    const totalH = heights.reduce((a, b) => a + b, 0) + (names.length - 1) * LAYOUT.STAGE_GAP_Y;
+    maxColumnHeight = Math.max(maxColumnHeight, totalH);
+  }
+
+  // Assign X from depth, Y centered using the global max height so all columns align
   for (const [depth, names] of depthGroups) {
     const x = colXOffsets.get(depth) ?? 0;
     const heights = names.map((name) => getHeight(name));
@@ -97,7 +105,8 @@ export function computeStagePositions(
     const totalH =
       heights.reduce((a, b) => a + b, 0) +
       (names.length - 1) * LAYOUT.STAGE_GAP_Y;
-    let yCursor = -totalH / 2;
+    // Center this column relative to the tallest column
+    let yCursor = -maxColumnHeight / 2 + (maxColumnHeight - totalH) / 2;
     for (let i = 0; i < names.length; i++) {
       positions.set(names[i], {
         x,
@@ -168,8 +177,13 @@ export function estimateStageHeight(
       LAYOUT.AGENT_GAP_Y
     );
   }
+  // Skipped stages with no agents: minimal height
+  const agentList = stage.agents ?? [];
+  if (agentList.length === 0 && stage.status === 'skipped') {
+    return 50; // Compact "skipped" placeholder
+  }
   // Compact: agents stacked vertically
-  const agentCount = Math.max((stage.agents ?? []).length, 1);
+  const agentCount = Math.max(agentList.length, 1);
   return (
     LAYOUT.STAGE_PAD_Y +
     LAYOUT.STAGE_HEADER_HEIGHT +

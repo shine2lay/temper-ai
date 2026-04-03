@@ -243,7 +243,8 @@ class TestInjectToolResults:
 
         assert messages[0]["content"] == "Let me check"
 
-    def test_omits_content_when_none(self):
+    def test_includes_empty_content_when_none(self):
+        """Content should always be present (empty string) to prevent tool-calling loops."""
         messages = []
         response = LLMResponse(
             content=None, model="gpt-4", provider="test",
@@ -254,7 +255,7 @@ class TestInjectToolResults:
 
         _inject_tool_results(messages, response, tool_calls, tool_results)
 
-        assert "content" not in messages[0]  # key should be absent, not null
+        assert messages[0]["content"] == ""  # always present, empty string
         assert messages[0]["role"] == "assistant"
         assert "tool_calls" in messages[0]
 

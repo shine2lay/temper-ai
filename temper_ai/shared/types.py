@@ -103,6 +103,7 @@ class ExecutionContext:
     workspace_path: str | None = None
     parent_event_id: str | None = None  # Node event ID for agent event hierarchy
     cancel_event: Any = None  # threading.Event — set to cancel the workflow
+    checkpoint_service: Any = None  # CheckpointService — persists execution state for resume
 
     def get_llm(self, provider: str) -> Any:
         """Get LLM provider by name. Raises KeyError if not found."""

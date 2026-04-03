@@ -31,6 +31,15 @@ The current default `InMemoryStore` is useless — it resets on every restart so
 - [ ] Human-in-the-loop gates (pause execution at designated nodes, wait for human approval/input before continuing)
 - [ ] Budget pacing & mid-run alerts (track spend rate vs progress, warn when budget consumption outpaces completion)
 
+### DAG Layout (P1 — currently breaks with complex workflows)
+The execution DAG layout uses static height estimates that break for multi-agent stages and stages with varying content. Needs a "measure-first, layout-second" approach.
+
+- [ ] Render nodes off-screen first, measure actual DOM dimensions, then compute layout
+- [ ] Propagate tall stage heights to adjacent depth columns to prevent vertical overlap
+- [ ] Handle empty/skipped stages (0-height nodes) without wasting space
+- [ ] Account for I/O sections, source tags, and output previews in height calculations
+- [ ] Same approach for Studio canvas layout (currently uses `estimateNodeHeight`)
+
 ### Studio UX
 - [ ] Undo granularity — batch rapid text edits into single undo entries
 - [ ] Input wiring autocomplete — suggest valid source paths from upstream stages

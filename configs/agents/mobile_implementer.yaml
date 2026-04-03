@@ -4,7 +4,7 @@ agent:
   tools:
     - Bash
     - FileWriter
-  max_iterations: 50
+  max_iterations: 100
   total_timeout: 1800
   max_messages: 80
   token_budget: 20000

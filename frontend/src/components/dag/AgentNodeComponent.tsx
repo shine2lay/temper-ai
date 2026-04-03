@@ -11,7 +11,29 @@ import type { AgentNodeData } from '@/hooks/useDagElements';
 export const AgentNodeComponent = memo(function AgentNodeComponent({ data }: NodeProps) {
   const { agent, stage, stageColor } = data as AgentNodeData;
 
-  if (!agent) return null;
+  // No agent (skipped/empty stages): return null
+  if (!agent) {
+    const name = stage?.name ?? 'skipped';
+    const borderColor = stageColor ?? '#6b7280';
+    return (
+      <div className="w-[200px]">
+        <Handle type="target" position={Position.Left} id="left"
+          className="!w-2 !h-2 !bg-temper-border !border-temper-bg" />
+        <Handle type="source" position={Position.Right} id="right"
+          className="!w-2 !h-2 !bg-temper-border !border-temper-bg" />
+        <div
+          className="rounded-lg px-3 py-2 border-2 border-dashed opacity-50"
+          style={{ borderColor }}
+        >
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: borderColor }} />
+            <span className="text-xs font-medium text-temper-text-dim">{name}</span>
+            <span className="text-[8px] px-1 py-px rounded bg-temper-surface text-temper-text-dim">skipped</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-w-[250px] max-w-[350px] w-[280px]">

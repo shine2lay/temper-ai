@@ -239,9 +239,9 @@ def _inject_tool_results(
             for tc in tool_calls
         ],
     }
-    # Only include content when present — some APIs reject "content": null
-    if response.content is not None:
-        assistant_msg["content"] = response.content
+    # Always include content field — some models (Qwen3, Kimi K2) mishandle
+    # tool-call messages without an explicit content field, causing tool-calling loops.
+    assistant_msg["content"] = response.content or ""
     messages.append(assistant_msg)
 
     # One tool-result message per tool call (truncate large results)

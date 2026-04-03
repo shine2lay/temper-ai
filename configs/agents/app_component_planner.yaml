@@ -3,7 +3,7 @@ agent:
   type: llm
   tools:
     - Bash
-  max_iterations: 15
+  max_iterations: 100
   total_timeout: 600
   token_budget: 16000
   system_prompt: |

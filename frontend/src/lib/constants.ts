@@ -37,10 +37,10 @@ export const EDGE_COLORS = {
 /* Layout constants for the DAG (matching flowchart.js) */
 export const LAYOUT = {
   AGENT_WIDTH: 220,
-  AGENT_HEIGHT: 100,
-  AGENT_GAP_Y: 12,
+  AGENT_HEIGHT: 160,  // Increased — cards include IN/OUT sections, source tags, output previews
+  AGENT_GAP_Y: 16,
   STAGE_GAP_X: 120,
-  STAGE_GAP_Y: 40,
+  STAGE_GAP_Y: 60,  // Increased to prevent overlap between stages at same depth
   STAGE_PAD_X: 20,
   STAGE_PAD_Y: 60,
   STAGE_HEADER_HEIGHT: 48,

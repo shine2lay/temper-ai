@@ -124,6 +124,10 @@ workflow:
           role: leader
       loop_to: build
       max_loops: 3
+      loop_condition:
+        source: review.structured.verdict
+        operator: equals
+        value: FAIL
       input_map:
         workspace_path: clone.structured.workspace_path
         final_plan: plan.output
@@ -159,10 +163,10 @@ workflow:
         app_url: workflow.app_url
         new_endpoint: plan.structured.new_endpoint
 
-    # ═══ CLEANUP: Always runs ═══
+    # ═══ CLEANUP: Always runs after build ═══
     - name: cleanup
       type: agent
       agent: sdlc_cleanup
-      depends_on: [verify_deploy]
+      depends_on: [review]
       input_map:
         workspace_path: clone.structured.workspace_path

@@ -3,54 +3,51 @@ agent:
   type: llm
   tools:
     - Bash
-    - FileWriter
   max_iterations: 5
   system_prompt: |
-    You write acceptance tests for new features BEFORE they are implemented. The test should FAIL
-    initially because the feature does not exist yet. This test becomes the acceptance criterion
-    for the implementer.
+    You write acceptance tests for new features BEFORE they are implemented.
+    The test should FAIL initially because the feature doesn't exist yet.
 
-    The project uses Python/FastAPI. Write tests using the requests library to call the live server,
-    or use httpx if requests is unavailable. Keep tests simple and focused.
+    IMPORTANT: Use FastAPI's TestClient — do NOT use requests or httpx.
+    TestClient doesn't need a running server.
 
-    Test file requirements:
-    - Put the test file in the workspace root (e.g., WORKSPACE/test_new_feature.py)
-    - The test must be runnable with: python test_new_feature.py
-    - Do NOT use pytest — use plain Python with sys.exit(1) on failure
-    - Include a positive test (happy path) and one error/edge case test
-    - Print clear PASS/FAIL messages so the implementer knows what succeeded
+    Test template:
+    ```python
+    import sys
+    from fastapi.testclient import TestClient
+    from server.app import app
 
-    Test structure:
-    - Import requests or httpx
-    - Set BASE_URL = "http://localhost:8000" (the implementer will start the server)
-    - Write 2 test functions, call them both, exit(1) if any fail
+    client = TestClient(app)
 
-    You are writing a test that DEFINES the expected behavior. Be precise about:
-    - The exact endpoint path (from the plan)
-    - The exact HTTP method
-    - The expected status code
-    - The expected response fields (not exact values — shapes)
+    def test_happy_path():
+        response = client.get("/api/new-endpoint?param=value")
+        assert response.status_code == 200
+        data = response.json()
+        assert "expected_field" in data
+        print("PASS: happy path")
+
+    def test_error_case():
+        response = client.get("/api/new-endpoint")  # missing param
+        assert response.status_code in (400, 422)
+        print("PASS: error case")
+
+    if __name__ == "__main__":
+        try:
+            test_happy_path()
+            test_error_case()
+            print("ALL TESTS PASSED")
+        except Exception as e:
+            print(f"FAIL: {e}")
+            sys.exit(1)
+    ```
+
+    Write the test file using `cat > PATH << 'EOF'` heredoc, NOT FileWriter.
   task_template: |
-    Write an acceptance test for the following feature.
+    Workspace: {{ workspace_path }}
+    Plan: {{ final_plan }}
 
-    Workspace path: {{ workspace_path }}
-
-    Final implementation plan:
-    {{ final_plan }}
-
-    Steps:
-    1. Read the plan carefully. Identify the endpoint path, HTTP method, request shape, and expected response shape.
-    2. Write a test file at {{ workspace_path }}/test_new_feature.py using FileWriter.
-       The test must call the new endpoint and verify the response shape.
-       Include: one positive test (happy path) and one error case (e.g., missing field, bad input).
-       The test should FAIL right now because the endpoint does not exist yet.
-    3. Output the result.
+    Write a test file at {{ workspace_path }}/test_new_feature.py
+    Use `cat > {{ workspace_path }}/test_new_feature.py << 'ENDOFTEST'` to write it.
 
     Output as JSON:
-    {"test_file": "absolute path to test file", "test_count": 2, "what_it_tests": "one sentence description of what the tests verify"}
-
-    Rules:
-    - Use absolute path for test_file
-    - test_count is always 2 (positive + error case)
-    - what_it_tests describes the endpoint and behavior being tested
-    - Return valid JSON only — no markdown, no explanation
+    {"test_file": "{{ workspace_path }}/test_new_feature.py", "test_count": 2, "what_it_tests": "description"}

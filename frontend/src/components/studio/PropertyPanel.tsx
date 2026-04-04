@@ -2,7 +2,6 @@
  * Right panel router: shows agent or stage properties based on selection.
  * Workflow settings live on the canvas overlay.
  */
-import { useEffect } from 'react';
 import { useDesignStore } from '@/store/designStore';
 import { StagePropertiesPanel } from './StagePropertiesPanel';
 import { AgentPropertiesPanel } from './AgentPropertiesPanel';
@@ -10,17 +9,9 @@ import { AgentPropertiesPanel } from './AgentPropertiesPanel';
 export function PropertyPanel() {
   const selectedAgentName = useDesignStore((s) => s.selectedAgentName);
   const selectedStageName = useDesignStore((s) => s.selectedStageName);
-  const selectAgent = useDesignStore((s) => s.selectAgent);
-  const stages = useDesignStore((s) => s.stages);
 
-  // For single-agent stages, auto-select the agent so the agent panel shows directly
-  const selectedStage = selectedStageName ? stages.find(s => s.name === selectedStageName) : null;
-  const isSingleAgent = selectedStage && selectedStage.agents.length === 1 && !selectedStage.stage_ref;
-  useEffect(() => {
-    if (isSingleAgent && !selectedAgentName) {
-      selectAgent(selectedStage!.agents[0]);
-    }
-  }, [isSingleAgent, selectedAgentName, selectedStage, selectAgent]);
+  // No auto-selection for single-agent stages — stage panel shows first
+  // so users can access dependencies. Click the agent to edit agent props.
 
   return (
     <div className="h-full overflow-y-auto border-l border-temper-border bg-temper-bg transition-opacity duration-150">

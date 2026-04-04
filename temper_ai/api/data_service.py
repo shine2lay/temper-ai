@@ -192,6 +192,8 @@ def _build_node_execution(node_event: dict, all_events: list[dict]) -> dict:
         "loop_to": data.get("loop_to"),
         "max_loops": data.get("max_loops"),
         "error_message": data.get("error"),
+        "delegated_by": data.get("delegated_by"),
+        "delegate_source": data.get("delegate_source"),
     }
 
 

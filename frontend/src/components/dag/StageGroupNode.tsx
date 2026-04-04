@@ -10,6 +10,7 @@ const STRATEGY_LABELS: Record<string, string> = {
   parallel: '⚡ parallel',
   sequential: '→ sequential',
   leader: '👑 leader',
+  delegate: '🔀 delegated',
 };
 
 /**
@@ -25,6 +26,7 @@ export const StageGroupNode = memo(function StageGroupNode({ data }: NodeProps) 
     totalTokens,
     totalCost,
     durationSeconds,
+    delegateCount,
   } = data as StageNodeData;
 
   const select = useExecutionStore((s) => s.select);
@@ -33,6 +35,9 @@ export const StageGroupNode = memo(function StageGroupNode({ data }: NodeProps) 
   const agents = stage.agents ?? [];
 
   const showCost = totalCost > 0;
+  const agentLabel = delegateCount
+    ? `${agents.length} agent + ${delegateCount} sub-agent${delegateCount > 1 ? 's' : ''}`
+    : `${agents.length} agents`;
   const isRunning = stage.status === 'running';
 
   return (
@@ -96,7 +101,7 @@ export const StageGroupNode = memo(function StageGroupNode({ data }: NodeProps) 
 
       {/* Metrics row */}
       <div className="px-3 py-1 flex items-center gap-2 text-[10px] text-temper-text-muted border-b border-temper-border/10">
-        <span>{agents.length} agents</span>
+        <span>{agentLabel}</span>
         <span className="text-temper-border/40">|</span>
         <span>{formatTokens(totalTokens)} tok</span>
         {showCost && (

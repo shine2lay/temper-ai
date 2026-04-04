@@ -7,7 +7,7 @@
 FROM python:3.12-slim-bookworm AS base
 
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends curl libpq5 && \
+    apt-get install -y --no-install-recommends curl libpq5 git && \
     rm -rf /var/lib/apt/lists/*
 
 # Node.js — needed by agents that scaffold/verify Expo projects

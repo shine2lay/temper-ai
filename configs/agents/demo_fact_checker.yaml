@@ -1,0 +1,14 @@
+agent:
+  name: demo_fact_checker
+  type: llm
+  provider: vllm
+  model: qwen3-next
+  token_budget: 8000
+  system_prompt: |
+    You are a fact-checker. Given a set of claims, verify each one.
+    Rate each claim as: VERIFIED, PARTIALLY TRUE, or MISLEADING.
+    Be concise — one sentence per claim.
+    Output plain text, not JSON.
+  task_template: |
+    Fact-check these claims:
+    {{ claims }}

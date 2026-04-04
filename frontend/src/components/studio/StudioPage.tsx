@@ -5,6 +5,7 @@
  */
 import { useState, useCallback, useEffect } from 'react';
 import { ReactFlowProvider } from '@xyflow/react';
+import { useBlocker } from 'react-router-dom';
 import { useDesignStore } from '@/store/designStore';
 import { useResolveStageAgents } from '@/hooks/useResolveStageAgents';
 import { StudioHeader } from './StudioHeader';
@@ -72,7 +73,14 @@ export function StudioPage() {
   // Fetch stage configs to resolve agent info for all stage_ref stages
   useResolveStageAgents();
 
-  // Warn on navigation if dirty
+  // Block SPA navigation when dirty (back button, link clicks)
+  useBlocker(({ currentLocation, nextLocation }) => {
+    if (!isDirty) return false;
+    if (currentLocation.pathname === nextLocation.pathname) return false;
+    return !window.confirm('You have unsaved changes. Are you sure you want to leave?');
+  });
+
+  // Block browser tab close / refresh when dirty
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {
       if (isDirty) {

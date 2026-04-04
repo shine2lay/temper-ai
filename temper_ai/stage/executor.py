@@ -246,9 +246,6 @@ def _execute_single_node(
 
     resolved = _resolve_inputs(node, input_data, node_outputs, loop_feedback)
     resolved = _inject_strategy_context(node, resolved, node_outputs)
-    if resolved and node.name in ("build", "review"):
-        logger.info("Node '%s' resolved inputs: %s", node.name,
-                     {k: repr(v)[:80] for k, v in resolved.items()})
 
     # Gate: pause and wait for human approval before executing
     if node.config.gate:

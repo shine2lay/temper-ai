@@ -6,7 +6,9 @@
 
 Linear chain. Each agent depends on the previous.
 
-Agent B receives Agent A's output via input_map: previous_output.
+Each agent receives the full parent input_data plus an auto-injected
+``other_agents`` field containing its predecessor's output. No input_map
+is set so that parent-level fields (e.g. workspace_path) flow through.
 
 ## YAML Example
 

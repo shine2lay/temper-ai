@@ -36,6 +36,7 @@ class Delegate(BaseTool):
     """Invoke other agents as sub-tasks within the current workflow."""
 
     name = "Delegate"
+    manages_own_timeout = True  # Sub-agents have their own timeouts; skip executor wrapper
     description = (
         "Run one or more agents as sub-tasks. Each task specifies an agent name "
         "and inputs. Results are returned as JSON. Use this to delegate work to "

@@ -1,46 +1,49 @@
 agent:
   name: integration_wirer
-  type: llm
-  tools:
-    - Bash
-    - FileWriter
-  max_iterations: 100
-  total_timeout: 600
-  max_messages: 40
-  token_budget: 20000
-  system_prompt: |
-    You are an integration engineer. After core files and screens have been created
-    by other agents, you verify everything is wired correctly and fix any integration issues.
+  type: script
+  script_template: |
+    #!/bin/bash
+    set -e
 
-    STEPS:
-    1. List all files: find PROJECT -type f -not -path '*/node_modules/*' | sort
-    2. Read app/_layout.tsx to verify all screens are registered
-    3. Read a few screen files to verify imports resolve correctly
-    4. Check package.json has the expo-router entry point configured
-    5. Fix any wiring issues (missing imports, wrong paths, missing exports)
+    PROJECT="{{ workspace_path }}"
+    cd "$PROJECT"
 
-    RULES:
-    - Use absolute paths
-    - Only MODIFY files that have actual wiring issues — don't rewrite working files
-    - If you need to update a file, write the COMPLETE file (not a patch)
-    - Verify the main entry point (index.ts) imports expo-router correctly
-    - Make sure app.json has the correct "main" field
+    echo "Checking integration wiring..."
 
-    OUTPUT: JSON summary:
-    ```json
-    {
-      "files_modified": ["list of files you changed"],
-      "issues_found": ["list of issues found and fixed"],
-      "wiring_status": "pass or fail"
-    }
-    ```
-  task_template: |
-    Verify and fix integration wiring for this project.
+    # 1. Ensure expo-router entry point
+    if ! grep -q "expo-router/entry" package.json 2>/dev/null; then
+      echo "Fixing: package.json main field"
+      node -e "const fs=require('fs'),p=require('./package.json');p.main='expo-router/entry';fs.writeFileSync('package.json',JSON.stringify(p,null,2))"
+    fi
 
-    Project path: {{ workspace_path }}
-    Expected screens: {{ screens }}
+    # 2. Check app/_layout.tsx exists
+    if [ ! -f "app/_layout.tsx" ] && [ ! -f "src/app/_layout.tsx" ]; then
+      APP_DIR=$(find . -path "*/app/_layout.tsx" -not -path "*/node_modules/*" | head -1)
+      if [ -z "$APP_DIR" ]; then
+        echo "WARNING: No app/_layout.tsx found"
+      fi
+    fi
 
-    Core files written: {{ core_files }}
-    Screen files written: {{ screen_files }}
+    # 3. List all app files for verification
+    echo "App files:"
+    find . -path "*/app/*.tsx" -not -path "*/node_modules/*" | sort
 
-    Check that everything is wired correctly, fix any issues.
+    echo "Component files:"
+    find . -path "*/components/*.tsx" -not -path "*/node_modules/*" | sort
+
+    echo "Store files:"
+    find . -path "*/store/*" -not -path "*/node_modules/*" | sort
+
+    # 4. Quick TypeScript check (just count errors, don't fail)
+    echo "Running tsc --noEmit..."
+    TSC_OUTPUT=$(npx tsc --noEmit 2>&1) || true
+    ERROR_COUNT=$(echo "$TSC_OUTPUT" | grep -c "error TS" || true)
+    echo "TypeScript errors: $ERROR_COUNT"
+
+    if [ "$ERROR_COUNT" -eq "0" ]; then
+      echo '{"wiring_status": "pass", "error_count": 0, "issues_found": []}'
+    else
+      ERRORS=$(echo "$TSC_OUTPUT" | grep "error TS" | head -10)
+      echo '{"wiring_status": "needs_fix", "error_count": '"$ERROR_COUNT"', "issues_found": ["'"$(echo "$ERRORS" | head -5 | tr '\n' '; ')"'"]}'
+    fi
+  timeout_seconds: 120

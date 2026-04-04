@@ -128,8 +128,6 @@ workflow:
       input_map:
         workspace_path: scaffold.structured.workspace_path
         screens: architecture.structured.screens
-        core_files: implement.core_implementer.output
-        screen_files: implement.screen_implementer.output
 
     # ── Phase 7: Build Verification ─────────────────────────────────
     - name: build_verifier

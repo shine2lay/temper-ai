@@ -71,20 +71,17 @@ def _parallel_topology(agent_configs: list[dict], config: dict) -> list[AgentNod
 def _sequential_topology(agent_configs: list[dict], config: dict) -> list[AgentNode]:
     """Linear chain. Each agent depends on the previous.
 
-    Agent B receives Agent A's output via input_map: previous_output.
+    Each agent receives the full parent input_data plus an auto-injected
+    ``other_agents`` field containing its predecessor's output. No input_map
+    is set so that parent-level fields (e.g. workspace_path) flow through.
     """
     nodes = []
     for i, conf in enumerate(agent_configs):
         deps = [agent_configs[i - 1]["name"]] if i > 0 else []
-        input_map = None
-        if i > 0:
-            input_map = {"previous_output": f"{agent_configs[i - 1]['name']}.output"}
-
         node_config = NodeConfig(
             name=conf["name"],
             type="agent",
             depends_on=deps,
-            input_map=input_map,
         )
         nodes.append(AgentNode(node_config, conf))
     return nodes

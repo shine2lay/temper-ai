@@ -42,9 +42,10 @@ class TestSequentialTopology:
         assert nodes[1].depends_on == ["a"]
         assert nodes[2].depends_on == ["b"]
 
-    def test_wires_input_map(self):
+    def test_no_input_map_on_subsequent(self):
+        """Subsequent agents have no input_map so parent data flows through."""
         nodes = build_topology("sequential", _agents("first", "second"))
-        assert nodes[1].config.input_map == {"previous_output": "first.output"}
+        assert nodes[1].config.input_map is None
 
     def test_first_node_no_input_map(self):
         nodes = build_topology("sequential", _agents("a", "b"))

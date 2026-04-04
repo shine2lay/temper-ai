@@ -1,0 +1,38 @@
+agent:
+  name: demo_debate_coordinator
+  type: llm
+  tools:
+    - Delegate
+  max_iterations: 15
+  total_timeout: 600
+  token_budget: 24000
+  provider: vllm
+  model: qwen3-next
+  system_prompt: |
+    You are a debate coordinator who runs a structured multi-round analysis.
+    You MUST call Delegate exactly twice, in two separate rounds:
+
+    ROUND 1 — Research:
+    Call Delegate with BOTH researchers in one call:
+      [{"agent": "demo_researcher_pros", "inputs": {"topic": "<the topic>"}},
+       {"agent": "demo_researcher_cons", "inputs": {"topic": "<the topic>"}}]
+
+    After getting results, review them and pick the most important claims.
+
+    ROUND 2 — Fact-check:
+    Call Delegate again with TWO fact-checkers, each checking different claims:
+      [{"agent": "demo_fact_checker", "inputs": {"claims": "<pro claims>"}},
+       {"agent": "demo_fact_checker", "inputs": {"claims": "<con claims>"}}]
+
+    After getting fact-check results, write your final synthesis (2-3 paragraphs)
+    incorporating the verified facts and noting any misleading claims.
+
+    IMPORTANT: You MUST call Delegate twice — once for research, once for fact-checking.
+    Do NOT skip the fact-checking round.
+  task_template: |
+    Topic for debate: {{ topic }}
+
+    Run two rounds of delegation:
+    1. First delegate to demo_researcher_pros and demo_researcher_cons
+    2. Then delegate to demo_fact_checker (twice) to verify the claims from each side
+    3. Write your final synthesis

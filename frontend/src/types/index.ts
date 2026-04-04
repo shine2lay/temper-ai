@@ -53,6 +53,9 @@ export interface NodeExecution {
   depends_on?: string[];
   loop_to?: string;
   max_loops?: number;
+  // Delegate metadata
+  delegated_by?: string;
+  delegate_source?: string;
   // Backward compat
   collaboration_events?: CollaborationEvent[];
   stage_config_snapshot?: {

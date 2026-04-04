@@ -1,12 +1,19 @@
 workflow:
   name: demo_delegate
   description: |
-    Demo: coordinator delegates to two researchers via the Delegate tool,
-    then synthesizes their results.
+    Demo: coordinator delegates to researchers (mid-agent), then the
+    workflow continues to a summarizer that receives the coordinator's output.
   defaults:
     provider: vllm
     model: qwen3-next
   nodes:
-    - name: coordinate
+    - name: research
       type: agent
       agent: demo_coordinator
+
+    - name: summarize
+      type: agent
+      agent: demo_summarizer
+      depends_on: [research]
+      input_map:
+        synthesis: research.output

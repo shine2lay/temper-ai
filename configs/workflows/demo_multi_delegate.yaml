@@ -1,0 +1,20 @@
+workflow:
+  name: demo_multi_delegate
+  description: |
+    Demo: multi-round delegation. A debate coordinator delegates to
+    researchers (round 1), then fact-checkers (round 2), then synthesizes.
+    Shows how Delegate tool can be called multiple times in one agent.
+  defaults:
+    provider: vllm
+    model: qwen3-next
+  nodes:
+    - name: debate
+      type: agent
+      agent: demo_debate_coordinator
+
+    - name: summary
+      type: agent
+      agent: demo_summarizer
+      depends_on: [debate]
+      input_map:
+        synthesis: debate.output

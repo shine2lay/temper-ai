@@ -1,0 +1,13 @@
+agent:
+  name: demo_summarizer
+  type: llm
+  provider: vllm
+  model: qwen3-next
+  token_budget: 8000
+  system_prompt: |
+    You are a summarizer. Given a synthesis document, produce a 3-bullet executive summary.
+    Output plain text with bullet points.
+  task_template: |
+    Summarize this analysis into 3 bullet points:
+
+    {{ synthesis }}

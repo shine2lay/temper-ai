@@ -111,6 +111,11 @@ class ToolExecutor:
         if workspace_block is not None:
             return workspace_block
 
+        # Tools that manage their own execution (e.g., Delegate runs sub-agents)
+        # skip the timeout wrapper — they handle timeouts internally.
+        if getattr(tool, 'manages_own_timeout', False):
+            return self._execute_direct(tool, tool_name, params, parent_id, execution_id)
+
         effective_timeout = min(timeout or self.default_timeout, _MAX_TIMEOUT)
         return self._execute_with_timeout(tool, tool_name, params, effective_timeout, parent_id, execution_id)
 
@@ -181,6 +186,23 @@ class ToolExecutor:
             },
         )
         return ToolResult(success=False, result="", error=path_error)
+
+    def _execute_direct(
+        self,
+        tool: BaseTool,
+        tool_name: str,
+        params: dict[str, Any],
+        parent_id: str | None,
+        execution_id: str | None,
+    ) -> ToolResult:
+        """Run tool.execute() directly without timeout wrapper."""
+        try:
+            result = tool.execute(**params)
+            if not isinstance(result, ToolResult):
+                result = ToolResult(success=True, result=str(result) if result is not None else "")
+            return result
+        except Exception as exc:
+            return ToolResult(success=False, result="", error=f"{type(exc).__name__}: {exc}")
 
     def _execute_with_timeout(
         self,

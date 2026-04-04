@@ -29,6 +29,7 @@ export interface StageNodeData extends Record<string, unknown> {
   durationSeconds: number;
   dagInfo: DagInfo;
   expanded: boolean;
+  delegateCount?: number;
 }
 
 /** Data for an agent-type node (leaf, single agent). */
@@ -70,6 +71,24 @@ export function useDagElements(): { nodes: Node[]; edges: Edge[] } {
     const stageNames = Array.from(stageGroups.keys());
     const renderedStages = new Set<string>(); // Track which stages actually render
 
+    // Pre-pass: group delegate nodes by their parent (delegate_source)
+    const delegatesByParent = new Map<string, string[]>();
+    for (const [stageName, executions] of stageGroups) {
+      const latest = executions[executions.length - 1];
+      if (latest.type === 'delegate') {
+        const parent = latest.delegate_source;
+        if (parent) {
+          const list = delegatesByParent.get(parent) ?? [];
+          list.push(stageName);
+          delegatesByParent.set(parent, list);
+        }
+      }
+    }
+    // Set of delegate stage names (to skip when rendering top-level)
+    const delegateStageNames = new Set(
+      Array.from(delegatesByParent.values()).flat(),
+    );
+
     for (const [stageName, executions] of stageGroups) {
       const latest = executions[executions.length - 1];
       const pos = positions.get(stageName);
@@ -84,15 +103,25 @@ export function useDagElements(): { nodes: Node[]; edges: Edge[] } {
       const nodeAgents = latest.agents ?? [];
       const isSkipped = latest.status === 'skipped' && nodeAgents.length === 0;
 
-      // Skipped stages: don't render — they add visual noise without useful information
+      // Skipped stages: don't render
       if (isSkipped) {
         colorIndex++;
         continue;
       }
+
+      // Delegate nodes are rendered inside their parent — skip top-level
+      if (delegateStageNames.has(stageName)) {
+        renderedStages.add(stageName); // still mark as rendered for edge routing
+        continue;
+      }
+
       renderedStages.add(stageName);
 
-      if (nodeType === 'agent' || isDelegate) {
-        // Agent node: render as compact agent card
+      // Check if this agent has delegate children
+      const delegateNames = delegatesByParent.get(stageName);
+
+      if ((nodeType === 'agent' || isDelegate) && !delegateNames) {
+        // Simple agent node: render as compact agent card
         const agent = nodeAgents.length > 0
           ? (agents.get(nodeAgents[0].id) ?? nodeAgents[0])
           : null;
@@ -109,7 +138,7 @@ export function useDagElements(): { nodes: Node[]; edges: Edge[] } {
           totalCost,
           durationSeconds,
           isDelegate,
-          delegatedBy: isDelegate ? (latest as any).delegated_by : undefined,
+          delegatedBy: isDelegate ? latest.delegated_by : undefined,
         };
 
         nodes.push({
@@ -117,6 +146,148 @@ export function useDagElements(): { nodes: Node[]; edges: Edge[] } {
           type: 'agentNode',
           position: { x: pos.x, y: pos.y },
           data,
+        });
+      } else if (nodeType === 'agent' && delegateNames) {
+        // Agent with delegates: render as a group container
+        // Parent agent card at top, delegate cards below
+        const parentAgent = nodeAgents.length > 0
+          ? (agents.get(nodeAgents[0].id) ?? nodeAgents[0])
+          : null;
+
+        const cardW = 280;
+        const cardH = 200;
+        const hdrH = 75;
+        const pad = 28;
+        const gap = 20;
+
+        // Collect delegate agents
+        const delegateAgents: { name: string; agent: AgentExecution | null; stage: StageExecution }[] = [];
+        for (const dName of delegateNames) {
+          const dExecs = stageGroups.get(dName);
+          if (!dExecs) continue;
+          const dLatest = dExecs[dExecs.length - 1];
+          const dAgents = dLatest.agents ?? [];
+          const dAgent = dAgents.length > 0
+            ? (agents.get(dAgents[0].id) ?? dAgents[0])
+            : null;
+          delegateAgents.push({ name: dName, agent: dAgent, stage: dLatest });
+        }
+
+        // Calculate totals
+        let totalTokens = parentAgent?.total_tokens ?? 0;
+        let totalCost = parentAgent?.estimated_cost_usd ?? 0;
+        for (const d of delegateAgents) {
+          totalTokens += d.agent?.total_tokens ?? 0;
+          totalCost += d.agent?.estimated_cost_usd ?? 0;
+        }
+        const durationSeconds = latest.duration_seconds ?? 0;
+
+        // Horizontal layout: parent on left, delegates stacked vertically on right
+        const delegatesH = delegateAgents.length * cardH + (delegateAgents.length - 1) * gap;
+        const contentH = Math.max(cardH, delegatesH);
+        const maxCardW = 350; // AgentNodeComponent max-w-[350px]
+        const containerW = pad * 3 + maxCardW * 2 + gap;
+        const containerH = hdrH + pad + contentH + pad;
+
+        const iterations: IterationData[] = [{
+          stage: latest,
+          agents: nodeAgents,
+          totalTokens,
+          totalCost,
+          durationSeconds,
+        }];
+
+        const data: StageNodeData = {
+          stage: latest,
+          iterations,
+          iterationCount: 1,
+          stageColor,
+          strategy: 'delegate',
+          totalTokens,
+          totalCost,
+          durationSeconds,
+          dagInfo,
+          expanded: true,
+          delegateCount: delegateAgents.length,
+        };
+
+        nodes.push({
+          id: stageName,
+          type: 'stageGroup',
+          position: { x: pos.x, y: pos.y },
+          data,
+          style: {
+            width: Math.max(containerW, 350),
+            height: Math.max(containerH, 200),
+          },
+        });
+
+        // Parent agent card on the left, aligned to top of content area
+        const parentY = hdrH + pad;
+        if (parentAgent) {
+          nodes.push({
+            id: `${stageName}__${parentAgent.agent_name ?? parentAgent.id}`,
+            type: 'agentNode',
+            position: { x: pad, y: parentY },
+            parentId: stageName,
+            extent: 'parent' as const,
+            data: {
+              agent: parentAgent,
+              stage: latest,
+              stageColor,
+              totalTokens: parentAgent.total_tokens ?? 0,
+              totalCost: parentAgent.estimated_cost_usd ?? 0,
+              durationSeconds: parentAgent.duration_seconds ?? 0,
+            } as AgentNodeData,
+          });
+        }
+
+        // Delegate agent cards stacked vertically on the right
+        const delegateColor = '#8b5cf6'; // violet
+        const delegateX = pad + maxCardW + gap;
+        delegateAgents.forEach((d, i) => {
+          const childY = hdrH + pad + i * (cardH + gap);
+          // Clean up display name: strip "delegate:" prefix and trailing "_N"
+          const displayName = d.name
+            .replace(/^delegate:/, '')
+            .replace(/_\d+$/, '');
+
+          nodes.push({
+            id: d.name,
+            type: 'agentNode',
+            position: { x: delegateX, y: childY },
+            parentId: stageName,
+            extent: 'parent' as const,
+            data: {
+              agent: d.agent,
+              stage: { ...d.stage, name: displayName },
+              stageColor: delegateColor,
+              totalTokens: d.agent?.total_tokens ?? 0,
+              totalCost: d.agent?.estimated_cost_usd ?? 0,
+              durationSeconds: d.agent?.duration_seconds ?? 0,
+              isDelegate: true,
+              delegatedBy: parentAgent?.agent_name,
+            } as AgentNodeData,
+          });
+
+          // Edge from parent agent → delegate (horizontal arrow)
+          if (parentAgent) {
+            edges.push({
+              id: `delegate-${stageName}-${d.name}`,
+              source: `${stageName}__${parentAgent.agent_name ?? parentAgent.id}`,
+              target: d.name,
+              sourceHandle: 'right',
+              targetHandle: 'left',
+              type: 'default',
+              markerEnd: {
+                type: 'arrowclosed' as MarkerType,
+                color: delegateColor,
+                width: 12,
+                height: 12,
+              },
+              style: { stroke: delegateColor, strokeWidth: 1.5, strokeDasharray: '6 3' },
+            });
+          }
         });
       } else {
         // Stage node: render as group container with child agent nodes inside
@@ -318,8 +489,11 @@ export function useDagElements(): { nodes: Node[]; edges: Edge[] } {
     if (dagInfo.hasDeps) {
       for (const [target, deps] of dagInfo.depMap) {
         if (!renderedStages.has(target)) continue; // Skip edges to non-rendered stages
+        // Skip edges to/from delegate nodes (they're rendered inside parent containers)
+        if (delegateStageNames.has(target)) continue;
         for (const source of deps) {
           if (!renderedStages.has(source)) continue; // Skip edges from non-rendered stages
+          if (delegateStageNames.has(source)) continue;
           const sourceStage = stageGroups.get(source);
           const sourceStatus = sourceStage
             ? sourceStage[sourceStage.length - 1].status

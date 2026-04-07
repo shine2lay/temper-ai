@@ -1,28 +1,38 @@
 [Home](../index.md) | [Tools](../tools/index.md) | **LLM Providers** | [Agent Types](../agents/index.md) | [Safety Policies](../policies/index.md) | [Topology Strategies](../strategies/index.md)
 
-# `openai` Provider
+# `claude_code` Provider
 
 [Back to Providers](index.md)
 
-Provider for OpenAI and OpenAI-compatible APIs.
+Provider that shells out to the Claude Code CLI.
 
-Handles both completion and streaming via the /v1/chat/completions endpoint.
-Works with OpenAI, Azure OpenAI, and any OpenAI-compatible API.
+Uses the `claude` CLI in headless mode (-p). Claude Code manages its own
+tool-calling loop (Bash, file ops, search, web) so `complete()` returns the
+final result with no tool_calls for the LLMService to chase.
 
-- **Default base URL:** `https://api.openai.com`
+Runs on your Max plan by default — no API key needed.
+
+Usage in agent YAML:
+    agent:
+      name: my_coder
+      provider: claude_code
+      model: haiku          # sonnet (default), opus, haiku
+
+- **Default base URL:** `—`
 - **Type:** HTTP-based (with automatic retry)
 
 ## Configuration
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `model` | str | — | Model identifier |
-| `base_url` | str | — | API base URL |
+| `model` | str | 'sonnet' | Model identifier |
+| `allowed_tools` | list[str] | None | None |  |
+| `max_budget_usd` | float | None | None |  |
+| `timeout` | int | 300 | Request timeout in seconds |
+| `cwd` | str | None | None |  |
+| `mcp_config` | str | None | None |  |
+| `base_url` | str | '' | API base URL |
 | `api_key` | str | None | None | API authentication key |
-| `temperature` | float | 0.7 | Sampling temperature (0.0-2.0) |
-| `max_tokens` | int | 32768 | Maximum tokens in response |
-| `timeout` | int | 7200 | Request timeout in seconds |
-| `max_retries` | int | 3 | Max retry attempts on transient failures |
 
 ## Provider Interface
 
@@ -53,12 +63,12 @@ Consume a streaming response, calling on_chunk for each delta.
 ```yaml
 # In workflow defaults:
 defaults:
-  provider: "openai"
+  provider: "claude_code"
   model: "your-model-name"
 
 # Or per-agent override:
 agent:
-  provider: "openai"
+  provider: "claude_code"
   model: "your-model-name"
 ```
 

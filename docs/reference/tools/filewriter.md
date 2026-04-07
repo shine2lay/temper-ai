@@ -21,6 +21,7 @@ Security:
 |-----------|------|----------|-------------|
 | `file_path` | string | Yes | Path to the file to write |
 | `content` | string | Yes | Content to write to the file |
+| `description` | string | No | Brief one-line description of what this file contains/does. Will be embedded as metadata in the file header. |
 | `overwrite` | boolean | No | Whether to overwrite if file exists (default true) |
 
 ## Usage

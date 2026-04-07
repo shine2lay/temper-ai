@@ -40,6 +40,10 @@ class FileWriter(BaseTool):
                 "type": "string",
                 "description": "Content to write to the file",
             },
+            "description": {
+                "type": "string",
+                "description": "Brief one-line description of what this file contains/does. Will be embedded as metadata in the file header.",
+            },
             "overwrite": {
                 "type": "boolean",
                 "description": "Whether to overwrite if file exists (default true)",
@@ -53,7 +57,12 @@ class FileWriter(BaseTool):
         # Normalize LLM parameter aliases
         file_path = params.get("file_path") or params.get("path", "")
         content = params.get("content") or params.get("contents", "")
+        description = params.get("description", "")
         overwrite = params.get("overwrite", True)
+
+        # Inject description as file header if provided
+        if description:
+            content = _inject_description(file_path, content, description)
 
         if not file_path:
             return ToolResult(success=False, result="", error="file_path is required")
@@ -93,26 +102,47 @@ class FileWriter(BaseTool):
             )
 
 
+def _inject_description(file_path: str, content: str, description: str) -> str:
+    """Inject a description header into file content based on file type."""
+    ext = Path(file_path).suffix.lower()
+    desc = description.strip().replace("\n", " ")
+
+    # Markdown: YAML frontmatter
+    if ext in (".md", ".mdx"):
+        if content.startswith("---"):
+            # Already has frontmatter — inject description into it
+            end = content.index("---", 3)
+            frontmatter = content[3:end]
+            if "description:" not in frontmatter:
+                frontmatter = f"description: {desc}\n{frontmatter}"
+            return f"---\n{frontmatter}---{content[end + 3:]}"
+        return f"---\ndescription: {desc}\n---\n\n{content}"
+
+    # TypeScript / JavaScript: JSDoc header
+    if ext in (".ts", ".tsx", ".js", ".jsx"):
+        if content.startswith("/**"):
+            return content  # already has a doc comment, don't duplicate
+        return f"/** @description {desc} */\n{content}"
+
+    # Python: module docstring
+    if ext == ".py":
+        if content.startswith('"""') or content.startswith("'"):
+            return content
+        return f'"""{desc}"""\n{content}'
+
+    # YAML: comment header
+    if ext in (".yaml", ".yml"):
+        return f"# @description {desc}\n{content}"
+
+    # JSON: can't add comments, skip
+    if ext == ".json":
+        return content
+
+    # Default: comment header
+    return f"# @description {desc}\n{content}"
+
+
 def _validate_path(file_path: str, allowed_root: str | None) -> Path:
     """Validate and resolve a file path. Raises ValueError on violations."""
-    # Null byte check
-    if "\x00" in file_path:
-        raise ValueError("Path contains null byte")
-
-    resolved = Path(file_path).resolve()
-
-    # Forbidden system paths
-    resolved_str = str(resolved)
-    for prefix in _FORBIDDEN_PREFIXES:
-        if resolved_str.startswith(prefix):
-            raise ValueError(f"Writing to {prefix} is forbidden")
-
-    # Allowed root constraint
-    if allowed_root:
-        root = Path(allowed_root).resolve()
-        if not resolved_str.startswith(str(root)):
-            raise ValueError(
-                f"Path '{resolved}' is outside allowed root '{root}'"
-            )
-
-    return resolved
+    from temper_ai.tools._path_utils import validate_file_path
+    return validate_file_path(file_path, allowed_root)

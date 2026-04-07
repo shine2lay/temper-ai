@@ -64,15 +64,24 @@ class Bash(BaseTool):
         if not command or not command.strip():
             return ToolResult(success=False, result="", error="Empty command")
 
-        # Skip allowlist for multi-line scripts (developer-defined, not LLM-generated)
-        is_script = "\n" in command.strip()
+        # Check ALL lines against the allowlist (not just the first command)
         allowed = self.config.get("allowed_commands", _DEFAULT_ALLOWED_COMMANDS)
-        base_cmd_name = os.path.basename(command.strip().split()[0])
-        if allowed and not is_script and base_cmd_name not in allowed:
-            return ToolResult(
-                success=False, result="",
-                error=f"Command '{base_cmd_name}' not in allowed list: {allowed}",
-            )
+        if allowed:
+            for line in command.strip().splitlines():
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                # Handle chained commands: &&, ||, ;, |
+                for segment in line.replace("&&", ";").replace("||", ";").replace("|", ";").split(";"):
+                    segment = segment.strip()
+                    if not segment:
+                        continue
+                    base_cmd_name = os.path.basename(segment.split()[0])
+                    if base_cmd_name not in allowed:
+                        return ToolResult(
+                            success=False, result="",
+                            error=f"Command '{base_cmd_name}' not in allowed list: {allowed}",
+                        )
 
         cwd = self.config.get("workspace_root")
         return _run_subprocess(command, timeout, cwd)
@@ -114,10 +123,24 @@ def _run_subprocess(command: str, timeout: int, cwd: str | None) -> "ToolResult"
 
 
 def _safe_env() -> dict[str, str]:
-    """Build a restricted environment for subprocess execution."""
+    """Build a restricted environment for subprocess execution.
+
+    Strips secrets, API keys, and tokens to prevent LLM agents from
+    exfiltrating credentials via commands like `env | grep KEY`.
+    """
     env = os.environ.copy()
-    # Remove potentially dangerous vars
-    for key in ["SUDO_ASKPASS", "SSH_AUTH_SOCK", "AWS_ACCESS_KEY_ID",
-                "AWS_SECRET_ACCESS_KEY", "DATABASE_URL"]:
+    # Remove keys matching sensitive patterns
+    sensitive_suffixes = ("_API_KEY", "_SECRET", "_SECRET_KEY", "_TOKEN", "_PASSWORD")
+    sensitive_exact = {
+        "SUDO_ASKPASS", "SSH_AUTH_SOCK", "DATABASE_URL", "TEMPER_DATABASE_URL",
+        "TEMPER_DASHBOARD_TOKEN", "CLAUDE_CONFIG_DIR",
+    }
+    to_remove = set()
+    for key in env:
+        if key in sensitive_exact:
+            to_remove.add(key)
+        elif any(key.endswith(s) for s in sensitive_suffixes):
+            to_remove.add(key)
+    for key in to_remove:
         env.pop(key, None)
     return env

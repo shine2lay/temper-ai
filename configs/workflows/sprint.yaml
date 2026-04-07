@@ -1,0 +1,72 @@
+workflow:
+  name: sprint
+  description: |
+    Agile sprint loop — iteratively builds toward a goal.
+
+    Each sprint: scan workspace → plan → execute → review → [fix loop] → record → update → check done → loop
+
+    Works for any domain: coding, research, writing, analysis.
+    Define your goal, point it at a workspace, and let it build sprint by sprint.
+  defaults:
+    provider: anthropic
+    model: claude-sonnet-4-6
+
+  nodes:
+    # Scan workspace and build file manifest
+    - name: build_context
+      type: agent
+      agent: context_scanner
+
+    # Decide what to build next
+    - name: plan_sprint
+      type: agent
+      agent: sprint_planner
+      depends_on: [build_context]
+
+    # Do the work
+    - name: execute
+      type: agent
+      agent: sprint_worker
+      depends_on: [plan_sprint]
+
+    # Independent quality review
+    - name: review
+      type: agent
+      agent: sprint_reviewer
+      depends_on: [execute]
+
+    # Fix loop — if reviewer says NEEDS_WORK, retry
+    - name: review_gate
+      type: agent
+      agent: review_gate
+      depends_on: [review]
+      loop_to: execute
+      max_loops: 2
+      loop_condition:
+        source: review_gate.structured.verdict
+        operator: equals
+        value: needs_work
+
+    # Record sprint results
+    - name: record_sprint
+      type: agent
+      agent: sprint_recorder
+      depends_on: [review_gate]
+
+    # Update workspace manifest
+    - name: update_context
+      type: agent
+      agent: context_scanner
+      depends_on: [record_sprint]
+
+    # Check if goal is met — loop or stop
+    - name: check_done
+      type: agent
+      agent: goal_checker
+      depends_on: [update_context]
+      loop_to: plan_sprint
+      max_loops: 20
+      loop_condition:
+        source: check_done.structured.status
+        operator: equals
+        value: in_progress

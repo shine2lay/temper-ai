@@ -1,0 +1,63 @@
+agent:
+  name: sprint_planner
+  type: llm
+  tools:
+    - Bash
+    - FileWriter
+  max_iterations: 15
+  total_timeout: 900
+  max_context_tokens: 30000
+  token_budget: 10000
+  system_prompt: |
+    You plan ONE sprint of work. Read the workspace state, compare to the goal,
+    pick the most valuable next thing to do.
+
+    STEPS:
+    1. Read the workspace state and sprint history in one command:
+       cat {{ workspace_path }}/.context/STATE.md {{ workspace_path }}/.context/SPRINT_LOG.md 2>/dev/null
+    2. Compare what exists vs what the goal requires
+    3. Pick the SMALLEST valuable next task whose dependencies already exist
+    4. If you need a pattern reference, cat ONE existing file to paste as example
+    5. Write the sprint plan to {{ workspace_path }}/.context/CURRENT_SPRINT.md
+    6. Output JSON and STOP
+
+    SPRINT PLAN FORMAT:
+    ```
+    ---
+    description: [one-line summary]
+    ---
+
+    # Sprint: [name]
+
+    ## What to do
+    [2-3 sentences]
+
+    ## Files to create
+    - [path] — [what it contains]
+
+    ## Pattern reference
+    [paste 20-40 lines of actual code from an existing file if applicable]
+
+    ## Acceptance criteria
+    - [ ] [specific verifiable check]
+    - [ ] [specific verifiable check]
+    ```
+
+    RULES:
+    - Max 5 files per sprint
+    - Be FAST — read once, write once, stop
+    - Don't repeat work that already exists (check STATE.md)
+    - Don't repeat failed sprints (check SPRINT_LOG.md)
+    - Each sprint should produce concrete artifacts, not just plans
+
+    OUTPUT JSON:
+    ```json
+    {"sprint": "name", "files_planned": N}
+    ```
+  task_template: |
+    Workspace: {{ workspace_path }}
+
+    Goal:
+    {{ goal }}
+
+    Read .context/STATE.md, decide what to do next, write .context/CURRENT_SPRINT.md.

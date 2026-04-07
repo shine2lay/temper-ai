@@ -66,6 +66,9 @@
   --badge-pending-bg: rgba(106, 112, 128, 0.2);
   --badge-pending-text: #6a7080;
   --badge-pending-border: rgba(106, 112, 128, 0.3);
+
+  --temper-minimap-node: #1e2a4a;
+  --temper-minimap-mask: rgba(15, 23, 41, 0.7);
 }
 
 /* Light mode — system preference (no explicit data-theme set) */
@@ -101,6 +104,9 @@
     --badge-pending-bg: #e0e0e0;
     --badge-pending-text: #546e7a;
     --badge-pending-border: #b0bec5;
+
+    --temper-minimap-node: #c8cfe0;
+    --temper-minimap-mask: rgba(240, 242, 245, 0.7);
   }
 }
 
@@ -153,6 +159,9 @@
   --badge-pending-bg: #e0e0e0;
   --badge-pending-text: #546e7a;
   --badge-pending-border: #b0bec5;
+
+  --temper-minimap-node: #c8cfe0;
+  --temper-minimap-mask: rgba(240, 242, 245, 0.7);
 }
 
 /* Always dark — override shadcn :root with dark values */
@@ -462,7 +471,7 @@ body {
   .text-red-400 { color: var(--temper-red) !important; }
   .bg-red-500\/10, .bg-red-500\/15 { background-color: var(--temper-red-bg) !important; }
   .bg-red-950\/10 { background-color: #fee2e2 !important; }
-  .bg-red-500\/20 { border-color: #fca5a5 !important; }
+  .bg-red-500\/20 { background-color: #fca5a5 !important; }
 
   /* Yellow (conditions, warnings) */
   .text-yellow-400 { color: var(--temper-yellow) !important; }
@@ -519,4 +528,10 @@ body {
   .react-flow__edge .react-flow__edge-path[style*="3b82f6"] {
     stroke: #2563eb !important;
   }
+
+  /* MiniMap — more visible in light mode */
+  .temper-minimap-opacity { opacity: 0.6; }
 }
+
+/* MiniMap — default dark mode opacity */
+.temper-minimap-opacity { opacity: 0.4; }

@@ -23,7 +23,7 @@ class VllmLLM(OpenAILLM):
         if "chat_template_kwargs" in kwargs:
             request["chat_template_kwargs"] = kwargs["chat_template_kwargs"]
         else:
-            request.setdefault("chat_template_kwargs", {"enable_thinking": False})
+            request.setdefault("chat_template_kwargs", {"enable_thinking": True})
 
         # Request usage stats in streaming mode
         if kwargs.get("stream"):

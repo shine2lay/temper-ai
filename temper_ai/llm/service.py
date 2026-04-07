@@ -119,6 +119,13 @@ class LLMService:
         aggressively trims tool results and old messages to fit.
         """
         _enforce_context_limit(self._messages, self.max_context_tokens, self.max_messages)
+        # Debug: verify user message survived trimming
+        roles = [m.get("role") for m in self._messages]
+        if "user" not in roles:
+            logger.error(
+                "BUG: No user message after context trimming! Roles: %s (total: %d msgs)",
+                roles[:10], len(self._messages),
+            )
 
         kwargs: dict[str, Any] = {}
         if self._tools:
@@ -266,17 +273,21 @@ def _inject_tool_results(
 
 
 def _estimate_messages_tokens(messages: list[dict]) -> int:
-    """Rough token estimate for a message list (~4 chars per token)."""
+    """Rough token estimate for a message list (~3 chars per token).
+
+    Uses 3 chars/token (conservative) to avoid underestimating and
+    hitting model context limits.
+    """
     total = 0
     for msg in messages:
         content = msg.get("content", "")
         if content:
-            total += len(content) // 4
+            total += len(content) // 3 + 4  # message overhead
         # Tool calls in assistant messages
         for tc in msg.get("tool_calls", []):
             fn = tc.get("function", {})
-            total += len(fn.get("name", "")) // 4
-            total += len(str(fn.get("arguments", ""))) // 4
+            total += len(fn.get("name", "")) // 3
+            total += len(str(fn.get("arguments", ""))) // 3
     return total
 
 
@@ -343,8 +354,13 @@ def _apply_message_window(messages: list[dict], max_messages: int) -> None:
     if len(messages) <= max_messages:
         return
 
-    # Keep first message + most recent (max_messages - 1)
-    tail = messages[-(max_messages - 1):]
+    # Keep system + first user message (required by chat templates) + recent tail
+    # Find the first user message index
+    first_user_idx = next((i for i, m in enumerate(messages) if m.get("role") == "user"), None)
+    prefix_end = (first_user_idx + 1) if first_user_idx is not None else 1
+    prefix = messages[:prefix_end]
+
+    tail = messages[-(max_messages - prefix_end):]
 
     # If tail starts with orphaned tool result messages, skip them
     # to find a clean turn boundary
@@ -352,6 +368,6 @@ def _apply_message_window(messages: list[dict], max_messages: int) -> None:
     while start < len(tail) and tail[start].get("role") == "tool":
         start += 1
 
-    keep = messages[:1] + tail[start:]
+    keep = prefix + tail[start:]
     messages.clear()
     messages.extend(keep)

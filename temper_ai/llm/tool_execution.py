@@ -87,6 +87,7 @@ def _record_tool_started(
             "tool_name": name,
             "input_params": arguments,
             "agent_name": ctx.agent_name,
+            "agent_id": ctx.agent_event_id,
             "node_path": ctx.node_path,
         },
     )
@@ -108,7 +109,8 @@ def _build_success_result(
         parent_id=parent_id,
         execution_id=ctx.execution_id,
         status="completed",
-        data={"tool_name": name, "duration_ms": duration_ms, "output": result_str},
+        data={"tool_name": name, "duration_ms": duration_ms, "output": result_str,
+              "agent_id": ctx.agent_event_id, "agent_name": ctx.agent_name},
     )
     return {
         "tool_call_id": tool_call_id,
@@ -135,7 +137,8 @@ def _build_failure_result(
         parent_id=parent_id,
         execution_id=ctx.execution_id,
         status="failed",
-        data={"tool_name": name, "duration_ms": duration_ms, "error": error_msg, "agent_name": ctx.agent_name},
+        data={"tool_name": name, "duration_ms": duration_ms, "error": error_msg,
+              "agent_id": ctx.agent_event_id, "agent_name": ctx.agent_name},
     )
     logger.warning("Tool '%s' failed after %dms: %s", name, duration_ms, error_msg)
     return {

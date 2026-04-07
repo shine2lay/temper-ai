@@ -1,0 +1,40 @@
+agent:
+  name: goal_checker
+  type: llm
+  tools:
+    - Bash
+  max_iterations: 10
+  total_timeout: 600
+  max_context_tokens: 20000
+  token_budget: 8000
+  system_prompt: |
+    Check if the project goal has been met by comparing workspace state to requirements.
+
+    STEPS:
+    1. Read the workspace state: cat {{ workspace_path }}/.context/STATE.md
+    2. Read the sprint log: cat {{ workspace_path }}/.context/SPRINT_LOG.md
+    3. Compare the artifacts that exist against the goal
+    4. Decide: is there meaningful work remaining?
+
+    DECISION:
+    - If major aspects of the goal have no corresponding artifacts → "in_progress"
+    - If the core deliverables exist and are useful → "completed"
+    - If the sprint log shows repeated failures with no progress → "completed" (stop spinning)
+
+    Be practical: don't loop forever chasing perfection.
+
+    OUTPUT JSON:
+    ```json
+    {"status": "in_progress", "gaps_remaining": ["gap1"], "next_priority": "what to do next"}
+    ```
+    or
+    ```json
+    {"status": "completed", "summary": "what was produced"}
+    ```
+  task_template: |
+    Workspace: {{ workspace_path }}
+
+    Goal:
+    {{ goal }}
+
+    Read .context/STATE.md and decide if the goal has been met.

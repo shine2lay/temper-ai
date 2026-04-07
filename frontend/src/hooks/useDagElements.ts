@@ -42,6 +42,8 @@ export interface AgentNodeData extends Record<string, unknown> {
   durationSeconds: number;
   isDelegate?: boolean;
   delegatedBy?: string;
+  /** All iterations for this node (when loop/retry produces multiple runs). */
+  iterations?: { agent: AgentExecution | null; stage: StageExecution }[];
 }
 
 /**
@@ -130,6 +132,17 @@ export function useDagElements(): { nodes: Node[]; edges: Edge[] } {
         const totalCost = agent?.estimated_cost_usd ?? 0;
         const durationSeconds = latest.duration_seconds ?? 0;
 
+        // Build iterations for multi-run nodes (loops/retries)
+        const iters = executions.length > 1
+          ? executions.map((exec) => {
+              const execAgents = exec.agents ?? [];
+              const execAgent = execAgents.length > 0
+                ? (agents.get(execAgents[0].id) ?? execAgents[0])
+                : null;
+              return { agent: execAgent, stage: exec };
+            })
+          : undefined;
+
         const data: AgentNodeData = {
           agent,
           stage: latest,
@@ -139,6 +152,7 @@ export function useDagElements(): { nodes: Node[]; edges: Edge[] } {
           durationSeconds,
           isDelegate,
           delegatedBy: isDelegate ? latest.delegated_by : undefined,
+          iterations: iters,
         };
 
         nodes.push({

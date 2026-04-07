@@ -139,6 +139,8 @@ export interface LLMCall {
   estimated_cost_usd: number;
   prompt?: unknown;
   response?: string;
+  thinking?: string;
+  tool_calls?: { name: string; id?: string }[];
   error_message?: string;
   // Backward compat
   llm_call_id?: string;
@@ -180,11 +182,14 @@ export interface ToolActivity {
   startedAt: string;
   completedAt?: string;
   durationSeconds?: number;
+  args?: Record<string, unknown>;
 }
 
 export interface StreamEntry {
   content: string;
   thinking: string;
+  /** Currently streaming tool call (name + arguments as they arrive). */
+  activeToolCall: string;
   done: boolean;
   toolActivity: ToolActivity[];
 }

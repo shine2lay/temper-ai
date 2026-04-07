@@ -19,8 +19,8 @@ export function SchemaSection({ section, depth = 0 }: SchemaSectionProps) {
       </HeadingTag>
 
       {section.description && (
-        <p className="mt-1 mb-3 text-sm text-temper-muted leading-relaxed">
-          {section.description}
+        <p className="mt-1 mb-3 text-sm text-temper-text-muted leading-relaxed whitespace-pre-line">
+          {section.description.trim()}
         </p>
       )}
 

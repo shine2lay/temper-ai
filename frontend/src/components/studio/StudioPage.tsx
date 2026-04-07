@@ -165,10 +165,10 @@ function EmptyCanvasOverlay() {
   return (
     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
       <div className="text-center">
-        <p className="text-sm text-temper-text-muted">
+        <p className="text-sm text-temper-text-muted/80">
           Double-click to add a stage, drag from the left panel, or use the + button below
         </p>
-        <p className="text-xs text-temper-text-dim mt-1">
+        <p className="text-xs text-temper-text-muted/60 mt-1">
           or load an existing workflow
         </p>
       </div>

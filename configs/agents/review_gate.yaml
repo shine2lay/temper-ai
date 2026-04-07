@@ -1,0 +1,23 @@
+# @description Reads review verdict — pass or needs_work
+agent:
+  name: review_gate
+  type: script
+  script_template: |
+    #!/bin/bash
+    set -e
+
+    WORKSPACE="{{ workspace_path }}"
+    REVIEW="$WORKSPACE/.context/REVIEW.md"
+
+    if [ ! -f "$REVIEW" ]; then
+      echo '{"verdict": "pass", "reason": "no review file found"}'
+      exit 0
+    fi
+
+    # Check for NEEDS_WORK verdict
+    if grep -qi "NEEDS_WORK" "$REVIEW" 2>/dev/null; then
+      echo '{"verdict": "needs_work", "reason": "reviewer flagged issues to fix"}'
+    else
+      echo '{"verdict": "pass"}'
+    fi
+  timeout_seconds: 10

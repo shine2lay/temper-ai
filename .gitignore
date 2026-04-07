@@ -97,5 +97,11 @@ temper_ai/interfaces/dashboard/react-dist/
 # Planning docs (local only)
 plans/
 
+# Local experimental
+temper_ai/agent/claude_code_agent.py
+temper_ai/llm/providers/claude_code.py
+
 # Root-level artifacts
 /*.png
+configs/workflows/local/
+configs/agents/local/

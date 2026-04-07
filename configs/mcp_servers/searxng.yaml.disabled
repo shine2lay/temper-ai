@@ -1,0 +1,32 @@
+mcp_server:
+  name: searxng
+  transport: stdio
+  command: npx
+  args: ["-y", "mcp-searxng"]
+  env:
+    SEARXNG_URL: ${SEARXNG_URL:http://172.17.0.1:8888}
+  tools:
+    searxng_web_search:
+      description: "Search the web using SearXNG. Returns search results with titles, URLs, and snippets."
+      input_schema:
+        type: object
+        properties:
+          query:
+            type: string
+            description: "Search query string"
+          categories:
+            type: string
+            description: "Comma-separated categories (general, news, images, videos, science, files, it, map, music, social_media)"
+          max_results:
+            type: number
+            description: "Maximum number of results to return (default 10)"
+        required: ["query"]
+    web_url_read:
+      description: "Fetch and read the content of a web URL."
+      input_schema:
+        type: object
+        properties:
+          url:
+            type: string
+            description: "URL to fetch and read"
+        required: ["url"]

@@ -4,8 +4,8 @@ workflow:
     Demonstrates structured output, conditional branching, and field-level wiring.
     analyze → decision (branches based on structured.verdict) → implement OR simplify → review
   defaults:
-    provider: vllm
-    model: qwen3-next
+    provider: openai         # change to: anthropic, ollama, vllm
+    model: gpt-4o-mini      # change to match your provider's model
   nodes:
     # Step 1: Analyze the task and produce structured JSON
     - name: analyze

@@ -8,6 +8,10 @@ import { toast } from 'sonner';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import {
+  AlertDialog, AlertDialogTrigger, AlertDialogContent,
+  AlertDialogTitle, AlertDialogDescription, AlertDialogAction, AlertDialogCancel,
+} from '@/components/ui/alert-dialog';
+import {
   useConfigs,
   useDeleteConfig,
   useTemplates,
@@ -58,7 +62,6 @@ function ResourceList({
 
   const handleDelete = useCallback(
     (name: string) => {
-      if (!confirm(`Delete "${name}"?`)) return;
       deleteMutation.mutate(name, {
         onSuccess: () => toast.success(`Deleted "${name}"`),
         onError: (err) => toast.error(err.message),
@@ -165,9 +168,19 @@ function ConfigItem({
         <Button size="xs" variant="outline" onClick={onEdit}>
           Edit
         </Button>
-        <Button size="xs" variant="destructive" onClick={onDelete}>
-          Delete
-        </Button>
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button size="xs" variant="destructive">Delete</Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogTitle>Delete &ldquo;{config.name}&rdquo;?</AlertDialogTitle>
+            <AlertDialogDescription>This action cannot be undone.</AlertDialogDescription>
+            <div className="flex justify-end gap-2 mt-4">
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={onDelete}>Delete</AlertDialogAction>
+            </div>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </div>
   );
@@ -315,7 +328,6 @@ function ProfileList({
 
   const handleDelete = useCallback(
     (name: string) => {
-      if (!confirm(`Delete profile "${name}"?`)) return;
       deleteMutation.mutate(name, {
         onSuccess: () => toast.success(`Deleted profile "${name}"`),
         onError: (err: Error) => toast.error(err.message),
@@ -362,13 +374,19 @@ function ProfileList({
             <Button size="xs" variant="outline" onClick={() => onEdit(p.name)}>
               Edit
             </Button>
-            <Button
-              size="xs"
-              variant="destructive"
-              onClick={() => handleDelete(p.name)}
-            >
-              Delete
-            </Button>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button size="xs" variant="destructive">Delete</Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogTitle>Delete profile &ldquo;{p.name}&rdquo;?</AlertDialogTitle>
+                <AlertDialogDescription>This action cannot be undone.</AlertDialogDescription>
+                <div className="flex justify-end gap-2 mt-4">
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={() => handleDelete(p.name)}>Delete</AlertDialogAction>
+                </div>
+              </AlertDialogContent>
+            </AlertDialog>
           </div>
         </div>
       ))}
@@ -383,6 +401,13 @@ function ProfileList({
 }
 
 // ── Main export ──────────────────────────────────────────────────────
+
+function TabCount({ configType }: { configType: string }) {
+  const { data } = useConfigs(configType);
+  const count = data?.total ?? data?.configs?.length;
+  if (count == null) return null;
+  return <span className="ml-1 text-[10px] opacity-80 tabular-nums">({count})</span>;
+}
 
 export function MyLibrary() {
   const navigate = useNavigate();
@@ -420,7 +445,7 @@ export function MyLibrary() {
           <TabsList variant="line" className="mb-4">
             {CONFIG_TABS.map((tab) => (
               <TabsTrigger key={tab} value={tab}>
-                {TAB_LABELS[tab]}
+                {TAB_LABELS[tab]}<TabCount configType={tab} />
               </TabsTrigger>
             ))}
             <TabsTrigger value="profiles">Profiles</TabsTrigger>

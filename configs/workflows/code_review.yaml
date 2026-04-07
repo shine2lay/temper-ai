@@ -5,8 +5,8 @@ workflow:
     Demonstrates: parallel strategy, leader pattern, structured output.
     Two reviewers analyze independently → leader decides verdict → improver fixes issues.
   defaults:
-    provider: vllm          # change to match your .env (openai, ollama, etc.)
-    model: qwen3-next       # change to your model
+    provider: openai         # change to: anthropic, ollama, vllm
+    model: gpt-4o-mini      # change to match your provider's model
   safety:
     policies:
       - type: budget

@@ -1,0 +1,63 @@
+# @description Records sprint result with review details to .context/SPRINT_LOG.md
+agent:
+  name: sprint_recorder
+  type: script
+  script_template: |
+    #!/bin/bash
+    set -e
+
+    WORKSPACE="{{ workspace_path }}"
+    cd "$WORKSPACE"
+
+    LOG=".context/SPRINT_LOG.md"
+    SPRINT_PLAN=".context/CURRENT_SPRINT.md"
+    REVIEW=".context/REVIEW.md"
+    TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+    # Extract sprint name
+    SPRINT_NAME="unknown"
+    if [ -f "$SPRINT_PLAN" ]; then
+      SPRINT_NAME=$(grep '^# Sprint:' "$SPRINT_PLAN" | sed 's/# Sprint: //' || echo "unknown")
+    fi
+
+    # Extract review verdict and score
+    VERDICT="no review"
+    SCORE="N/A"
+    if [ -f "$REVIEW" ]; then
+      if grep -qi "NEEDS_WORK" "$REVIEW"; then
+        VERDICT="NEEDS_WORK"
+      elif grep -qi "PASS" "$REVIEW"; then
+        VERDICT="PASS"
+      fi
+      SCORE=$(grep -o '[0-9]*/10' "$REVIEW" | head -1 || echo "N/A")
+    fi
+
+    # Extract key issues from review
+    ISSUES=""
+    if [ -f "$REVIEW" ] && grep -q "Issues:" "$REVIEW"; then
+      ISSUES=$(sed -n '/Issues:/,/^##/p' "$REVIEW" | grep '^\s*-' | head -3 | sed 's/^[[:space:]]*/  /')
+    fi
+
+    # Count new files (exclude noise)
+    FILES_CREATED=$(find . -newer "$LOG" -type f -not -path '*/.context/*' -not -path '*/.git/*' -not -path '*/node_modules/*' -not -name '.*' | wc -l)
+
+    # List new files
+    NEW_FILES=$(find . -newer "$LOG" -type f -not -path '*/.context/*' -not -path '*/.git/*' -not -path '*/node_modules/*' -not -name '.*' | sort | head -10)
+
+    # Append to log
+    echo "" >> "$LOG"
+    echo "## $TIMESTAMP — $SPRINT_NAME" >> "$LOG"
+    echo "- Review: **$VERDICT** ($SCORE)" >> "$LOG"
+    echo "- Files: $FILES_CREATED" >> "$LOG"
+    if [ -n "$NEW_FILES" ]; then
+      echo "$NEW_FILES" | while read -r f; do
+        echo "  - $f" >> "$LOG"
+      done
+    fi
+    if [ -n "$ISSUES" ] && [ "$VERDICT" != "no review" ]; then
+      echo "- Issues noted:" >> "$LOG"
+      echo "$ISSUES" >> "$LOG"
+    fi
+
+    echo '{"recorded": true, "sprint": "'"$SPRINT_NAME"'", "verdict": "'"$VERDICT"'", "score": "'"$SCORE"'"}'
+  timeout_seconds: 30

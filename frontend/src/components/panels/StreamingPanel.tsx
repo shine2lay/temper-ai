@@ -7,6 +7,7 @@ import {
 } from '@/components/ui/collapsible';
 import { CopyButton } from '@/components/shared/CopyButton';
 import { MarkdownDisplay } from '@/components/shared/MarkdownDisplay';
+import { ThinkingContent } from '@/components/shared/ThinkingContent';
 import { ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -34,7 +35,7 @@ export function StreamingPanel({ agentId }: StreamingPanelProps) {
 
   useEffect(() => {
     if (isAtBottom) scrollToBottom();
-  }, [stream?.content, stream?.thinking, isAtBottom, scrollToBottom]);
+  }, [stream?.content, stream?.thinking, stream?.activeToolCall, isAtBottom, scrollToBottom]);
 
   if (!stream) {
     return (
@@ -116,11 +117,27 @@ export function StreamingPanel({ agentId }: StreamingPanelProps) {
               ))}
             </div>
           )}
-          {/* React auto-escapes JSX expressions — stream.content is safe */}
-          <pre className="text-sm text-temper-text whitespace-pre-wrap">
-            {stream.content}
-            <span className="animate-pulse-streaming text-temper-accent">|</span>
-          </pre>
+          {/* Stream content with thinking tag handling */}
+          <div className="text-sm text-temper-text">
+            {stream.content.includes('<think>') ? (
+              <ThinkingContent
+                content={stream.content}
+                renderContent={(text) => <pre className="whitespace-pre-wrap">{text}</pre>}
+              />
+            ) : (
+              <pre className="whitespace-pre-wrap">{stream.content}</pre>
+            )}
+            {/* Active tool call */}
+            {stream.activeToolCall && (
+              <div className="mt-2 px-2 py-1.5 rounded bg-amber-500/10 border-l-2 border-amber-500/40">
+                <span className="text-[9px] text-amber-400 font-medium block mb-0.5">tool call</span>
+                <pre className="text-amber-300/90 whitespace-pre-wrap break-all text-xs">{stream.activeToolCall}</pre>
+              </div>
+            )}
+            {!stream.activeToolCall && (
+              <span className="animate-pulse-streaming text-temper-accent">|</span>
+            )}
+          </div>
           {!isAtBottom && (
             <button
               onClick={() => {

@@ -38,6 +38,11 @@ def _register_optional_providers():
         _PROVIDER_MAP["gemini"] = GeminiLLM
     except ImportError:
         pass
+    try:
+        from temper_ai.llm.providers.claude_code import ClaudeCodeLLM
+        _PROVIDER_MAP["claude_code"] = ClaudeCodeLLM
+    except ImportError:
+        pass
 
 
 _register_optional_providers()

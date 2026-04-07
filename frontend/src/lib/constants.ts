@@ -52,7 +52,7 @@ export const LAYOUT = {
 } as const;
 
 /** DAG auto-fit padding (fraction of viewport). */
-export const DAG_FIT_PADDING = 0.12;
+export const DAG_FIT_PADDING = 0.08;
 
 /* WebSocket reconnection */
 export const WS_INITIAL_DELAY_MS = 1000;
@@ -80,4 +80,5 @@ export const STATUS_ICONS: Record<string, string> = {
   running: '\u25B6',   // play triangle
   failed: '\u2717',    // cross
   pending: '\u25CB',   // circle
+  cancelled: '\u25A0', // square stop
 };

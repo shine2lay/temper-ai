@@ -2,8 +2,10 @@
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11+-green.svg)](https://python.org)
-[![Tests](https://img.shields.io/badge/Tests-554_passing-brightgreen.svg)](#contributing)
+[![CI](https://github.com/shine2lay/temper-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/shine2lay/temper-ai/actions/workflows/ci.yml)
 [![Version](https://img.shields.io/badge/Version-0.1.0-orange.svg)](pyproject.toml)
+
+> **Early Access (v0.1.0)** — Temper AI is under active development and not production-ready. It is designed for **local development and self-hosted use only**. Do not expose to the public internet. See [Security Note](#security-note) for details.
 
 **Multi-agent workflows through YAML. No framework to build. Just define and run.**
 
@@ -50,7 +52,7 @@ Multi-agent workflows are hard to debug because you can't see what's happening i
 
 Watch your workflow execute as a live DAG. Click any node to inspect its inputs, outputs, LLM calls, tool invocations, and token usage. Trace how context flows from one agent to the next.
 
-<!-- TODO: screenshot of execution view with DAG visualization -->
+![DAG Execution View](docs/images/dag-execution.png)
 
 ### CLI — Structured Terminal Output
 
@@ -58,7 +60,7 @@ Watch your workflow execute as a live DAG. Click any node to inspect its inputs,
 $ temper run code_review --input task="Build a REST API" -v
 
 ╭──────────────────────── code_review ─────────────────────────╮
-│ vllm/qwen3-next | budget: $5.00                              │
+│ openai/gpt-4o-mini | budget: $5.00                            │
 ╰──────────────────────────────────────────────────────────────╯
 
 ━━━━━━━━━━━━━━━━ plan ━━━━━━━━━━━━━━━━
@@ -88,7 +90,7 @@ Every event is queryable: `GET /api/workflows/{id}` returns the full execution t
 
 Build and edit workflows visually. Drag agents, connect stages, configure strategies — all synced to the underlying YAML.
 
-<!-- TODO: screenshot of studio view -->
+![Studio Workflow Designer](docs/images/studio.png)
 
 ---
 
@@ -106,20 +108,24 @@ Dashboard at **http://localhost:8420/app/**
 ### `.env` — pick one provider
 
 ```bash
-# OpenAI
+# Quickest: OpenAI (most developers have this)
 OPENAI_API_KEY=sk-...
 OPENAI_MODEL=gpt-4o-mini
 
-# Or vLLM (local)
-VLLM_BASE_URL=http://host.docker.internal:8000
-VLLM_MODEL=qwen3-next
-
-# Or Ollama (local)
-OLLAMA_BASE_URL=http://host.docker.internal:11434
-OLLAMA_MODEL=llama3.2
+# Or Anthropic
+# ANTHROPIC_API_KEY=sk-ant-...
+# ANTHROPIC_MODEL=claude-sonnet-4-20250514
 ```
 
-See [LLM Providers](docs/reference/providers/index.md) for all 5 providers (including Anthropic and Gemini).
+> **No API key?** Use Ollama — it's free and runs locally:
+> ```bash
+> brew install ollama && ollama pull llama3.2
+> # Then in .env:
+> OLLAMA_BASE_URL=http://host.docker.internal:11434
+> OLLAMA_MODEL=llama3.2
+> ```
+
+See [LLM Providers](docs/reference/providers/index.md) for all 5 providers (including vLLM and Gemini).
 
 ### Without Docker
 
@@ -127,6 +133,8 @@ See [LLM Providers](docs/reference/providers/index.md) for all 5 providers (incl
 pip install -e .
 temper serve --port 8420
 ```
+
+> **Note:** The server uses PostgreSQL by default (via Docker Compose). Without Docker, set `TEMPER_DATABASE_URL=sqlite:///data/dev.db` in `.env` to use SQLite instead.
 
 ---
 
@@ -189,8 +197,8 @@ See [Agent Types Reference](docs/reference/agents/index.md) for all configuratio
 workflow:
   name: my_workflow
   defaults:
-    provider: vllm
-    model: qwen3-next
+    provider: openai       # or: anthropic, ollama, vllm
+    model: gpt-4o-mini     # change to match your provider
   safety:
     policies:
       - type: budget
@@ -229,9 +237,9 @@ curl -X POST http://localhost:8420/api/runs \
 ## CLI
 
 ```bash
-temper run <workflow> --input key=value [-v] [-vv] [--no-db]
-temper serve [--port 8420] [--dev]
-temper validate <workflow>
+temper run <workflow> --input key=value [-v] [-vv] [--no-db] [--debug]
+temper serve [--port 8420] [--dev] [--debug]
+temper validate <workflow> [--debug]
 ```
 
 | Flag | Description |
@@ -240,6 +248,7 @@ temper validate <workflow>
 | `-vv` | Full dump (no truncation) |
 | `--no-db` | Ephemeral run, no event persistence |
 | `--dev` | Hot reload for server mode |
+| `--debug` | Enable debug logging (config loading, provider init, LLM requests) |
 
 ---
 
@@ -266,8 +275,12 @@ See [Safety Policies Reference](docs/reference/policies/index.md).
 
 | Tool | Description |
 |------|-------------|
-| `Bash` | Execute shell commands |
+| `Bash` | Execute shell commands (env sanitized, command allowlist) |
 | `FileWriter` | Write files with path protection |
+| `FileEdit` | Replace exact text in files (path protected) |
+| `FileAppend` | Append to existing files (path protected) |
+| `Delegate` | Spawn sub-agents as visible DAG nodes |
+| `WebSearch` | Search the web via SearXNG |
 | `Calculator` | Safe math evaluation |
 | `git` | Git operations in workspace |
 | `http` | HTTP requests with domain allowlist |
@@ -329,6 +342,28 @@ python -m scripts.code_quality_check.runner temper_ai   # quality report
 ```
 
 Docs auto-regenerate on commit when source files change. See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+---
+
+## What Temper AI is NOT
+
+- **Not a code framework** like LangChain or LangGraph — no Python classes to write. Agents are YAML configs.
+- **Not a role-based DSL** like CrewAI — no "Researcher" or "Manager" abstractions. You define exact prompts and wiring.
+- **Not a no-code platform** — you write YAML, not drag-and-drop (though the Studio provides a visual editor that generates YAML).
+- **Not a hosted service** — you run it on your own infrastructure with your own API keys.
+
+## Security Note
+
+Temper AI v0.1.0 is designed for **local development and self-hosted use only**. It is not production-ready.
+
+**Current limitations:**
+- **No API authentication** — all endpoints are open. Anyone with network access can start workflows and consume your LLM API credits.
+- **No rate limiting** — the API can be called without restriction.
+- **LLM agents execute real commands** — agents use Bash, file operations, and HTTP requests. Always use `safety:` policies in your workflow configs to set budget limits and restrict file access.
+
+**Do not expose port 8420 to the public internet.**
+
+For local use, these limitations are acceptable — you are the only user. Production hardening (authentication, rate limiting, sandboxing) is on the [Roadmap](docs/ROADMAP.md).
 
 ---
 

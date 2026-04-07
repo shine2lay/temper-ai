@@ -46,8 +46,8 @@ class BaseLLM(ABC):
         base_url: str,
         api_key: str | None = None,
         temperature: float = 0.7,
-        max_tokens: int = 4096,
-        timeout: int = 600,
+        max_tokens: int = 32768,
+        timeout: int = 7200,
         max_retries: int = 3,
         **kwargs: Any,
     ) -> None:
@@ -112,7 +112,10 @@ class BaseLLM(ABC):
                 start = time.monotonic()
                 if stream:
                     with client.stream("POST", endpoint, json=request) as response:
-                        response.raise_for_status()
+                        if response.status_code >= 400:
+                            # Read error body before the stream context closes
+                            error_body = response.read().decode(errors="replace")
+                            response.raise_for_status()
                         result = self._consume_stream(response, on_chunk)
                         result.latency_ms = int((time.monotonic() - start) * 1000)
                         return result
@@ -124,7 +127,18 @@ class BaseLLM(ABC):
 
             except httpx.HTTPStatusError as e:
                 last_error = e
-                if not _should_retry(e):
+                # On 400, likely context overflow — halve max_tokens and retry
+                if e.response.status_code == 400:
+                    body = error_body if stream and 'error_body' in dir() else e.response.text
+                    logger.warning("Got 400 from LLM. Body: %s", body[:300])
+                    # Only halve max_tokens for context overflow errors
+                    if "context length" in body or "maximum" in body:
+                        current = request.get("max_tokens", self.max_tokens)
+                        halved = max(1024, current // 2)
+                        logger.warning("Context overflow — reducing max_tokens %d -> %d", current, halved)
+                        request["max_tokens"] = halved
+                    error_body = ""  # reset for next attempt
+                elif not _should_retry(e):
                     raise
             except (httpx.TimeoutException, httpx.ConnectError) as e:
                 last_error = e

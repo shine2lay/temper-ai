@@ -50,7 +50,10 @@ export const StageGroupNode = memo(function StageGroupNode({ data }: NodeProps) 
         borderColor: isRunning ? 'transparent' : stageColor,
         backgroundColor: `color-mix(in srgb, ${stageColor} 4%, transparent)`,
       }}
+      role="button"
+      tabIndex={0}
       onClick={() => select('stage', stage.id)}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); select('stage', stage.id); } }}
     >
       {/* Handles */}
       <Handle type="target" position={Position.Left} id="left"

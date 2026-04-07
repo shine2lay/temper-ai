@@ -3,6 +3,57 @@ import { useExecutionStore } from '@/store/executionStore';
 import { cn } from '@/lib/utils';
 import type { ToolActivity } from '@/types';
 
+/**
+ * Parse content into segments of plain text, thinking blocks, and tool call blocks.
+ * Handles <think>...</think> tags and 🔧 tool call markers.
+ */
+function parseStreamContent(content: string): Array<{ type: 'text' | 'thinking' | 'tool_call'; content: string }> {
+  const segments: Array<{ type: 'text' | 'thinking' | 'tool_call'; content: string }> = [];
+  let i = 0;
+  let current = '';
+  let inThink = false;
+
+  while (i < content.length) {
+    // Check for <think> open tag
+    if (!inThink && content.startsWith('<think>', i)) {
+      if (current) { segments.push({ type: 'text', content: current }); current = ''; }
+      inThink = true;
+      i += 7; // skip "<think>"
+      continue;
+    }
+    // Check for </think> close tag
+    if (inThink && content.startsWith('</think>', i)) {
+      if (current) { segments.push({ type: 'thinking', content: current }); current = ''; }
+      inThink = false;
+      i += 8; // skip "</think>"
+      continue;
+    }
+    // Check for 🔧 tool call line (at start of line)
+    if (!inThink && content.startsWith('\n🔧', i)) {
+      if (current) { segments.push({ type: 'text', content: current }); current = ''; }
+      // Collect until next newline
+      const lineEnd = content.indexOf('\n', i + 1);
+      const line = lineEnd === -1 ? content.slice(i) : content.slice(i, lineEnd);
+      segments.push({ type: 'tool_call', content: line.trim() });
+      i = lineEnd === -1 ? content.length : lineEnd;
+      continue;
+    }
+    current += content[i];
+    i++;
+  }
+
+  // Flush remaining — if still inside <think>, it's an unclosed thinking block (streaming)
+  if (current) {
+    segments.push({ type: inThink ? 'thinking' : 'text', content: current });
+  }
+
+  if (segments.length === 0 && content) {
+    segments.push({ type: 'text', content });
+  }
+
+  return segments;
+}
+
 export function LiveStreamBar() {
   const streamingContent = useExecutionStore((s) => s.streamingContent);
   const agents = useExecutionStore((s) => s.agents);
@@ -16,7 +67,7 @@ export function LiveStreamBar() {
 
   // Active streaming agents — done if entry.done OR agent status is terminal
   const streamingAgents = useMemo(() => {
-    const result: { id: string; name: string; content: string; toolActivity: ToolActivity[] }[] = [];
+    const result: { id: string; name: string; content: string; activeToolCall: string; toolActivity: ToolActivity[] }[] = [];
     for (const [agentId, entry] of streamingContent) {
       const agent = agents.get(agentId);
       const agentDone = entry.done
@@ -24,7 +75,7 @@ export function LiveStreamBar() {
         || agent?.status === 'failed';
       if (agentDone) continue;
       const name = agent?.agent_name ?? agent?.name ?? agentId;
-      result.push({ id: agentId, name, content: entry.content, toolActivity: entry.toolActivity ?? [] });
+      result.push({ id: agentId, name, content: entry.content, activeToolCall: entry.activeToolCall ?? '', toolActivity: entry.toolActivity ?? [] });
     }
     return result;
   }, [streamingContent, agents]);
@@ -67,12 +118,14 @@ export function LiveStreamBar() {
   }, [streamingAgents, activeAgentId]);
 
   // Auto-scroll only when content changes (not every render)
-  const activeContent = streamingAgents.find((sa) => sa.id === activeAgentId)?.content ?? '';
+  const activeStream = streamingAgents.find((sa) => sa.id === activeAgentId);
+  const activeContent = activeStream?.content ?? '';
+  const activeToolCallContent = activeStream?.activeToolCall ?? '';
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [activeContent]);
+  }, [activeContent, activeToolCallContent]);
 
   const handleOpenDetail = useCallback(() => {
     if (activeAgentId) select('agent', activeAgentId);
@@ -80,9 +133,8 @@ export function LiveStreamBar() {
 
   if (!isStreaming || dismissed) return null;
 
-  const activeStream = streamingAgents.find((sa) => sa.id === activeAgentId);
   const displayContent = activeStream?.content ?? '';
-  const compactLines = displayContent.split('\n').slice(-3).join('\n');
+  const segments = parseStreamContent(expanded ? displayContent : displayContent.split('\n').slice(-6).join('\n'));
 
   return (
     <div className="absolute bottom-0 left-0 right-0 z-20 bg-temper-panel/95 backdrop-blur-sm border-t border-temper-border shadow-lg">
@@ -139,17 +191,42 @@ export function LiveStreamBar() {
       </div>
 
       {/* Content */}
-      <pre
+      <div
         ref={scrollRef}
         className={cn(
-          'px-3 py-2 text-xs text-temper-text font-mono whitespace-pre-wrap overflow-auto select-text',
-          expanded ? 'max-h-56' : 'max-h-16',
+          'px-3 py-2 text-xs font-mono overflow-auto select-text',
+          expanded ? 'max-h-56' : 'max-h-20',
         )}
       >
         <ToolActivityIndicator activities={activeStream?.toolActivity ?? []} />
-        {expanded ? displayContent : compactLines}
-        <span className="animate-pulse text-temper-accent">&#x2588;</span>
-      </pre>
+        {segments.map((seg, i) => {
+          if (seg.type === 'thinking') {
+            return (
+              <div key={i} className="my-1 px-2 py-1 rounded bg-violet-500/10 border-l-2 border-violet-500/40">
+                <span className="text-[9px] text-violet-400 font-medium block mb-0.5">thinking</span>
+                <span className="text-violet-300/70 whitespace-pre-wrap">{seg.content}</span>
+              </div>
+            );
+          }
+          if (seg.type === 'tool_call') {
+            return (
+              <div key={i} className="my-0.5 text-amber-400 whitespace-pre-wrap">
+                {seg.content}
+              </div>
+            );
+          }
+          return <span key={i} className="text-temper-text whitespace-pre-wrap">{seg.content}</span>;
+        })}
+        {/* Active tool call being streamed — shown separately with distinct styling */}
+        {activeToolCallContent && (
+          <div className="mt-1 px-2 py-1.5 rounded bg-amber-500/10 border-l-2 border-amber-500/40">
+            <span className="text-[9px] text-amber-400 font-medium block mb-0.5">tool call</span>
+            <span className="text-amber-300/90 whitespace-pre-wrap break-all">{activeToolCallContent}</span>
+            <span className="animate-pulse text-amber-400">&#x2588;</span>
+          </div>
+        )}
+        {!activeToolCallContent && <span className="animate-pulse text-temper-accent">&#x2588;</span>}
+      </div>
     </div>
   );
 }
@@ -159,17 +236,27 @@ function ToolActivityIndicator({ activities }: { activities: ToolActivity[] }) {
   const running = activities.filter((t) => t.status === 'running');
   const completed = activities.filter((t) => t.status !== 'running');
   return (
-    <div className="flex flex-col gap-0.5 mb-1">
+    <div className="flex flex-col gap-1 mb-1">
       {completed.length > 0 && (
         <span className="text-[10px] text-temper-text-dim">
           {completed.length} tool{completed.length !== 1 ? 's' : ''} completed
         </span>
       )}
       {running.map((t, i) => (
-        <span key={i} className="text-[10px] text-temper-accent flex items-center gap-1">
-          <span className="w-1.5 h-1.5 rounded-full bg-temper-accent animate-pulse" />
-          Calling {t.toolName}...
-        </span>
+        <div key={i} className="text-[10px]">
+          <span className="flex items-center gap-1 text-temper-accent">
+            <span className="w-1.5 h-1.5 rounded-full bg-temper-accent animate-pulse shrink-0" />
+            <span className="font-medium">{t.toolName}</span>
+          </span>
+          {t.args && Object.keys(t.args).length > 0 && (
+            <pre className="pl-3 mt-0.5 text-temper-text-dim font-mono whitespace-pre-wrap break-all">
+              {Object.entries(t.args).map(([k, v]) => {
+                const val = typeof v === 'string' ? v : JSON.stringify(v, null, 2);
+                return `${k}: ${val}`;
+              }).join('\n')}
+            </pre>
+          )}
+        </div>
       ))}
     </div>
   );

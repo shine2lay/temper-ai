@@ -8,6 +8,7 @@ Key differences from OpenAI:
 - Response has content[] array with text and tool_use blocks
 """
 
+import json
 import logging
 from typing import Any
 
@@ -160,11 +161,18 @@ def _extract_system(messages: list[dict]) -> tuple[str, list[dict]]:
             if content:
                 content_blocks.append({"type": "text", "text": content})
             for tc in msg["tool_calls"]:
+                raw_args = tc.get("function", {}).get("arguments", tc.get("arguments", {}))
+                # Anthropic requires input as dict; _inject_tool_results may serialize to JSON string
+                if isinstance(raw_args, str):
+                    try:
+                        raw_args = json.loads(raw_args)
+                    except (json.JSONDecodeError, TypeError):
+                        raw_args = {}
                 content_blocks.append({
                     "type": "tool_use",
                     "id": tc.get("id", ""),
                     "name": tc.get("function", {}).get("name", tc.get("name", "")),
-                    "input": tc.get("function", {}).get("arguments", tc.get("arguments", {})),
+                    "input": raw_args,
                 })
             claude_messages.append({"role": "assistant", "content": content_blocks})
         elif role == "tool":
@@ -184,9 +192,17 @@ def _extract_system(messages: list[dict]) -> tuple[str, list[dict]]:
 
 
 def _convert_tools(tools: list[dict]) -> list[dict]:
-    """Convert OpenAI tool format to Anthropic tool format."""
+    """Convert OpenAI tool format to Anthropic tool format.
+
+    Passes through Anthropic-native server tools (e.g. web_search) as-is.
+    """
     anthropic_tools = []
     for tool in tools:
+        # Server tools (web_search, code_execution, etc.) have a "type" field
+        # like "web_search_20250305" — pass through without conversion.
+        if tool.get("type", "").startswith(("web_search", "code_execution")):
+            anthropic_tools.append(tool)
+            continue
         func = tool.get("function", tool)
         anthropic_tools.append({
             "name": func.get("name", ""),
@@ -207,12 +223,13 @@ def _parse_response(response: Any, model: str) -> LLMResponse:
         elif block.type == "tool_use":
             tool_calls.append({
                 "id": block.id,
-                "type": "function",
-                "function": {
-                    "name": block.name,
-                    "arguments": block.input,
-                },
+                "name": block.name,
+                "arguments": block.input,
             })
+        # Server-side tool blocks (web_search, code_execution) — handled by
+        # Anthropic, not our agent loop. Just skip them; text blocks carry the results.
+        elif block.type in ("server_tool_use", "web_search_tool_result", "code_execution_tool_result"):
+            pass
 
     return LLMResponse(
         content=content_text,

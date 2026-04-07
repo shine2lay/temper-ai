@@ -134,8 +134,10 @@ class WebSocketManager:
         chunk = {"agent_id": agent_id, "content": content, "chunk_type": chunk_type, "done": done}
         buffer_size = self._buffer_chunk(execution_id, chunk)
 
-        if buffer_size >= CHUNK_BATCH_SIZE or done:
-            self._flush_chunks(execution_id)
+        # Tool call chunks are infrequent but large — flush immediately so
+        # the UI shows file writes / commands as they stream in.
+        if buffer_size >= CHUNK_BATCH_SIZE or done or chunk_type == "tool_call":
+            self._schedule_flush_immediate(execution_id)
         elif execution_id not in self._flush_scheduled:
             self._schedule_flush(execution_id)
 
@@ -158,6 +160,14 @@ class WebSocketManager:
             return
 
         self._schedule_flush_threadsafe(execution_id)
+
+    def _schedule_flush_immediate(self, execution_id: str) -> None:
+        """Flush as soon as possible — schedule on the event loop from any thread."""
+        main_loop = getattr(self, '_main_loop', None)
+        if main_loop and main_loop.is_running():
+            main_loop.call_soon_threadsafe(self._flush_chunks, execution_id)
+        else:
+            self._flush_chunks(execution_id)
 
     def _schedule_flush_threadsafe(self, execution_id: str) -> None:
         """Schedule a delayed flush via call_soon_threadsafe (from a non-async thread)."""

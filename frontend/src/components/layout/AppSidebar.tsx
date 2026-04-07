@@ -54,7 +54,7 @@ export function AppSidebar() {
       </div>
 
       {/* Nav links */}
-      <nav className="flex flex-col gap-1 px-2 py-3 flex-1">
+      <nav className="flex flex-col gap-1 px-2 py-3 flex-1" aria-label="Main navigation">
         {NAV_ITEMS.map((item) => {
           const active = item.match(location.pathname);
           return (

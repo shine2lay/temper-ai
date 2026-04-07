@@ -14,6 +14,7 @@ import {
   cn,
   ensureUTC,
 } from '@/lib/utils';
+import { toast } from 'sonner';
 import { useDebounce } from '@/hooks/useDebounce';
 import { SEARCH_DEBOUNCE_MS } from '@/lib/constants';
 import { authFetch } from '@/lib/authFetch';
@@ -139,11 +140,13 @@ function WorkflowRow({
   selected,
   onToggleSelect,
   onNavigate,
+  runNumber,
 }: {
   wf: WorkflowSummary;
   selected: Set<string>;
   onToggleSelect: (id: string) => void;
   onNavigate: (path: string) => void;
+  runNumber?: number;
 }) {
   const shortId = wf.id.replace('wf-', '').slice(0, 8);
   const stale = isStaleRun(wf);
@@ -188,10 +191,13 @@ function WorkflowRow({
         aria-label={`Select ${wf.workflow_name} for comparison`}
       />
 
-      {/* Name + ID */}
+      {/* Name + run number */}
       <div className="flex-1 min-w-0">
         <span className="text-sm font-medium text-temper-text truncate block">
           {wf.workflow_name}
+          {runNumber != null && (
+            <span className="text-temper-text-muted font-normal ml-1.5">#{runNumber}</span>
+          )}
         </span>
         <span className="text-[10px] font-mono text-temper-text-dim">{shortId}</span>
       </div>
@@ -201,16 +207,16 @@ function WorkflowRow({
         <StatusBadge status={wf.status} />
         {instant && (
           <span
-            className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/15 text-red-400 border border-red-500/20 font-medium"
-            title="Run completed with 0 tokens — all agents likely failed"
+            className="text-[10px] px-1.5 py-0.5 rounded bg-temper-surface text-temper-text-dim border border-temper-border font-medium"
+            title="Run completed with 0 tokens — no LLM calls were made"
           >
             0 tok
           </span>
         )}
         {stale && (
           <span
-            className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 font-medium"
-            title="This run has been running for over 30 minutes"
+            className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 font-medium cursor-help"
+            title="This run has been running for over 30 minutes without progress. It may be stuck — consider cancelling."
           >
             stale?
           </span>
@@ -568,6 +574,8 @@ export function WorkflowList() {
         next.delete(id);
       } else if (next.size < 3) {
         next.add(id);
+      } else {
+        toast.info('Maximum 3 workflows can be compared');
       }
       return next;
     });
@@ -604,6 +612,23 @@ export function WorkflowList() {
     [filtered, sortBy],
   );
 
+  // Compute human-readable run numbers: group by workflow_name, sort by time, assign #1, #2, ...
+  const runNumbers = useMemo(() => {
+    if (!workflows) return new Map<string, number>();
+    const byName = new Map<string, WorkflowSummary[]>();
+    for (const wf of workflows) {
+      const list = byName.get(wf.workflow_name) ?? [];
+      list.push(wf);
+      byName.set(wf.workflow_name, list);
+    }
+    const result = new Map<string, number>();
+    for (const [, list] of byName) {
+      list.sort((a, b) => (a.start_time ?? '').localeCompare(b.start_time ?? ''));
+      list.forEach((wf, i) => result.set(wf.id, i + 1));
+    }
+    return result;
+  }, [workflows]);
+
   const grouped = useMemo(() => {
     if (sortBy !== 'time') return null;
     const groups: Array<{ label: string; items: WorkflowSummary[] }> = [];
@@ -622,72 +647,77 @@ export function WorkflowList() {
 
   return (
     <div className="flex flex-col h-full bg-temper-bg">
-      <header className="bg-temper-panel px-6 py-4 border-b border-temper-border shrink-0">
-        <div className="flex items-center gap-4 flex-wrap max-w-[1600px] mx-auto">
-          <h1 className="text-xl font-semibold text-temper-text">Workflows</h1>
-          <span className="text-xs text-temper-text-muted">
-            {filtered.length}/{workflows?.length ?? 0} workflows
-          </span>
+      <header className="bg-temper-panel px-6 py-3 border-b border-temper-border shrink-0">
+        <div className="max-w-[1600px] mx-auto flex flex-col gap-2">
+          {/* Row 1: Title + Search + Primary Actions */}
+          <div className="flex items-center gap-4">
+            <h1 className="text-xl font-semibold text-temper-text">Workflows</h1>
+            <span className="text-xs text-temper-text-muted">
+              {filtered.length}/{workflows?.length ?? 0} workflows
+            </span>
 
-          <input
-            type="text"
-            placeholder="Search workflows..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="px-3 py-1.5 rounded-md bg-temper-surface border border-temper-border text-sm text-temper-text placeholder:text-temper-text-dim focus:outline-none focus:ring-1 focus:ring-temper-accent w-64"
-            aria-label="Search workflows by name"
-          />
+            <input
+              type="text"
+              placeholder="Search workflows..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="px-3 py-1.5 rounded-md bg-temper-surface border border-temper-border text-sm text-temper-text placeholder:text-temper-text-dim focus:outline-none focus:ring-1 focus:ring-temper-accent w-64"
+              aria-label="Search workflows by name"
+            />
 
-          <div className="flex items-center gap-2" role="group" aria-label="Filter by status">
-            {(['all', 'running', 'completed', 'failed'] as const).map((s) => (
+            <div className="ml-auto flex items-center gap-2">
               <button
-                key={s}
-                onClick={() => setStatusFilter(s === 'all' ? null : s)}
-                className={cn(
-                  'px-2 py-0.5 rounded text-xs transition-colors',
-                  (statusFilter === s || (s === 'all' && !statusFilter))
-                    ? 'bg-temper-accent/20 text-temper-accent'
-                    : 'text-temper-text-muted hover:text-temper-text',
-                )}
-                aria-pressed={statusFilter === s || (s === 'all' && !statusFilter)}
+                onClick={() => setNewRunOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium bg-temper-accent text-white hover:opacity-90 transition-colors focus:outline-none focus:ring-2 focus:ring-temper-accent/50"
+                aria-label="Start a new workflow run"
               >
-                {s}
+                <Play className="w-3 h-3" />
+                New Run
               </button>
-            ))}
+
+              {selected.size >= 2 && (
+                <button
+                  onClick={() => {
+                    toast.info('Run comparison coming in v1.1');
+                  }}
+                  className="px-3 py-1 rounded-md text-xs font-medium bg-temper-accent text-white hover:opacity-90 transition-colors"
+                >
+                  Compare ({selected.size})
+                </button>
+              )}
+              {selected.size > 0 && (
+                <button
+                  onClick={() => setSelected(new Set())}
+                  className="text-xs text-temper-text-muted hover:text-temper-text transition-colors"
+                >
+                  Clear selection
+                </button>
+              )}
+            </div>
           </div>
 
-          <div className="ml-auto flex items-center gap-2">
-            {/* New Run button */}
-            <button
-              onClick={() => setNewRunOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium bg-temper-accent text-white hover:opacity-90 transition-colors focus:outline-none focus:ring-2 focus:ring-temper-accent/50"
-              aria-label="Start a new workflow run"
-            >
-              <Play className="w-3 h-3" />
-              New Run
-            </button>
+          {/* Row 2: Filters + Sort + Refresh */}
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2" role="group" aria-label="Filter by status">
+              {(['all', 'running', 'completed', 'failed', 'pending'] as const).map((s) => (
+                <button
+                  key={s}
+                  onClick={() => setStatusFilter(s === 'all' ? null : s)}
+                  className={cn(
+                    'px-2 py-0.5 rounded text-xs transition-colors',
+                    (statusFilter === s || (s === 'all' && !statusFilter))
+                      ? 'bg-temper-accent/20 text-temper-accent'
+                      : 'text-temper-text-muted hover:text-temper-text',
+                  )}
+                  aria-pressed={statusFilter === s || (s === 'all' && !statusFilter)}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
 
-            {selected.size >= 2 && (
-              <button
-                onClick={() => {
-                  const ids = [...selected];
-                  const params = new URLSearchParams({ a: ids[0], b: ids[1] });
-                  if (ids[2]) params.set('c', ids[2]);
-                  navigate(`/compare?${params}`);
-                }}
-                className="px-3 py-1 rounded-md text-xs font-medium bg-temper-accent text-white hover:opacity-90 transition-colors"
-              >
-                Compare ({selected.size})
-              </button>
-            )}
-            {selected.size > 0 && (
-              <button
-                onClick={() => setSelected(new Set())}
-                className="text-xs text-temper-text-muted hover:text-temper-text transition-colors"
-              >
-                Clear selection
-              </button>
-            )}
+            <div className="h-4 w-px bg-temper-border" />
+
             <span className="text-xs text-temper-text-muted">Sort:</span>
             {(['time', 'name', 'status'] as const).map((s) => (
               <button
@@ -704,17 +734,20 @@ export function WorkflowList() {
                 {s}
               </button>
             ))}
-            <button
-              onClick={() => refetch()}
-              className="px-2 py-1 rounded text-xs bg-temper-surface text-temper-text-muted hover:text-temper-text transition-colors"
-            >
-              Refresh
-            </button>
-            {dataUpdatedAt > 0 && (
-              <span className="text-[10px] text-temper-text-dim">
-                Updated {new Date(dataUpdatedAt).toLocaleTimeString()}
-              </span>
-            )}
+
+            <div className="ml-auto flex items-center gap-2">
+              <button
+                onClick={() => refetch()}
+                className="px-2 py-1 rounded text-xs bg-temper-surface text-temper-text-muted hover:text-temper-text transition-colors"
+              >
+                Refresh
+              </button>
+              {dataUpdatedAt > 0 && (
+                <span className="text-[10px] text-temper-text-dim">
+                  Updated {new Date(dataUpdatedAt).toLocaleTimeString()}
+                </span>
+              )}
+            </div>
           </div>
         </div>
       </header>
@@ -784,6 +817,7 @@ export function WorkflowList() {
                         selected={selected}
                         onToggleSelect={toggleSelect}
                         onNavigate={navigate}
+                        runNumber={runNumbers.get(wf.id)}
                       />
                     ))}
                   </div>
@@ -810,7 +844,7 @@ export function WorkflowList() {
         onClose={() => setNewRunOpen(false)}
         onSuccess={(executionId) => {
           setNewRunOpen(false);
-          navigate(`/app/workflow/${executionId}`);
+          navigate(`/workflow/${executionId}`);
         }}
       />
     </div>

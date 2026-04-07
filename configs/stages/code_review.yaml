@@ -1,0 +1,8 @@
+# Example stage: parallel code review with leader synthesis
+stage:
+  name: code_review
+  strategy: leader
+  agents:
+    - code_analyst
+    - security_reviewer
+    - reviewer          # leader — synthesizes other agents' outputs

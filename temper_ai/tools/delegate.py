@@ -29,7 +29,7 @@ from temper_ai.tools.base import BaseTool, ToolResult
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_MAX_CONCURRENCY = 3
+_DEFAULT_MAX_CONCURRENCY = 10
 
 
 class Delegate(BaseTool):

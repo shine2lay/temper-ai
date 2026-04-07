@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useId, useRef } from 'react';
 import type { CollaborationEvent, AgentExecution } from '@/types';
 
 interface CollaborationSectionProps {
@@ -23,6 +23,7 @@ const ARROW_AREA_HEIGHT = 48;
  * similar to how the main DAG shows stage dependency arrows.
  */
 export function CollaborationSection({ events, agents }: CollaborationSectionProps) {
+  const markerId = useId();
   const containerRef = useRef<HTMLDivElement>(null);
 
   if (events.length === 0 || agents.length === 0) return null;
@@ -80,7 +81,7 @@ export function CollaborationSection({ events, agents }: CollaborationSectionPro
         >
           <defs>
             <marker
-              id="collab-arrowhead"
+              id={`collab-arrowhead-${markerId}`}
               markerWidth="8"
               markerHeight="6"
               refX="7"
@@ -110,7 +111,7 @@ export function CollaborationSection({ events, agents }: CollaborationSectionPro
                   fill="none"
                   stroke="var(--color-temper-accent, #60a5fa)"
                   strokeWidth="1.5"
-                  markerEnd="url(#collab-arrowhead)"
+                  markerEnd={`url(#collab-arrowhead-${markerId})`}
                   opacity="0.7"
                 />
                 <text

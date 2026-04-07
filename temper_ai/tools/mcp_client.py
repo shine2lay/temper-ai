@@ -177,6 +177,10 @@ class MCPClientManager:
         """List all configured server names (connected or not)."""
         return sorted(self._server_configs.keys())
 
+    def get_server_config(self, server_name: str) -> dict:
+        """Get the raw config dict for a server."""
+        return self._server_configs.get(server_name, {})
+
     def get_active_connections(self) -> dict[str, MCPServerConnection]:
         """List only currently connected servers."""
         return dict(self._connections)

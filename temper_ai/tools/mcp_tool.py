@@ -47,6 +47,21 @@ class MCPTool(BaseTool):
 
     def execute(self, **params: Any) -> ToolResult:
         """Execute the MCP tool. Connects to server on first call."""
+        # Handle _raw fallback from malformed JSON parsing
+        if "_raw" in params and len(params) == 1:
+            import json as _json
+            try:
+                raw = params["_raw"]
+                # Try to parse the raw string as JSON
+                if not raw.startswith("{"):
+                    raw = "{" + raw
+                if not raw.endswith("}"):
+                    raw = raw + "}"
+                params = _json.loads(raw)
+            except Exception:
+                logger.warning("MCP tool '%s': could not recover _raw args: %s", self.name, params["_raw"][:100])
+
+        logger.debug("MCP tool '%s' called with params: %s", self.name, {k: str(v)[:50] for k, v in params.items()})
         try:
             future = asyncio.run_coroutine_threadsafe(
                 self._manager.call_tool(self._server_name, self._tool_name, params),
@@ -90,11 +105,17 @@ def create_mcp_tools_from_agents(
             server_name, tool_name = tool_ref.split(".", 1)
             if server_name not in configured_servers:
                 continue
+            # Try to get schema from MCP server config
+            server_cfg = mcp_manager.get_server_config(server_name) if hasattr(mcp_manager, 'get_server_config') else {}
+            tool_meta = (server_cfg.get("tools") or {}).get(tool_name, {})
+            description = tool_meta.get("description", f"MCP tool from {server_name} server")
+            input_schema = tool_meta.get("input_schema", {"type": "object", "properties": {}})
+
             tools[tool_ref] = MCPTool(
                 server_name=server_name,
                 tool_name=tool_name,
-                description=f"MCP tool from {server_name} server",
-                input_schema={"type": "object", "properties": {}},
+                description=description,
+                input_schema=input_schema,
                 mcp_manager=mcp_manager,
                 event_loop=mcp_manager.event_loop,
             )

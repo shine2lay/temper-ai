@@ -312,6 +312,8 @@ def _build_llm_call(event: dict, all_events: list[dict]) -> dict:
         "estimated_cost_usd": data.get("cost_usd", 0),
         "prompt": data.get("messages"),
         "response": data.get("response_content"),
+        "thinking": data.get("reasoning"),
+        "tool_calls": data.get("tool_calls"),
         "error_message": data.get("error"),
     }
 

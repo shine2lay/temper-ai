@@ -33,10 +33,18 @@ services:
       - ./temper_ai:/app/temper_ai
       - ./configs:/app/configs:ro
       - ./frontend/dist:/app/frontend/dist:ro
+      - ${WORKSPACE_DIR:-./workspaces}:/app/workspaces
+      # Claude Code CLI — binary + credentials from host (optional, for claude_code provider)
+      # Set CLAUDE_VERSIONS_DIR and CLAUDE_CONFIG_HOST in .env if using claude_code provider
+      - ${CLAUDE_VERSIONS_DIR:-/dev/null}:/opt/claude/versions:ro
+      - ${CLAUDE_CONFIG_HOST:-/dev/null}:/app/.claude-host:ro
     environment:
+      HOME: /app
+      CLAUDE_CONFIG_DIR: /app/.claude-host
       PYTHONDONTWRITEBYTECODE: "1"
       TEMPER_DATABASE_URL: postgresql://temper_ai:${POSTGRES_PASSWORD:-temper_dev}@postgres:5432/temper_ai
       TEMPER_LOG_LEVEL: ${TEMPER_LOG_LEVEL:-INFO}
+      CLAUDE_CODE_MODEL: ${CLAUDE_CODE_MODEL:-opus}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-}

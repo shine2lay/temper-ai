@@ -1,0 +1,100 @@
+# @description Scans workspace, extracts file descriptions, builds .context/STATE.md
+agent:
+  name: context_scanner
+  type: script
+  script_template: |
+    #!/bin/bash
+    set -e
+
+    WORKSPACE="{{ workspace_path }}"
+    mkdir -p "$WORKSPACE"
+    mkdir -p "$WORKSPACE/.context"
+    cd "$WORKSPACE"
+
+    STATE=".context/STATE.md"
+
+    echo "---" > "$STATE"
+    echo "description: Auto-generated workspace state" >> "$STATE"
+    echo "---" >> "$STATE"
+    echo "" >> "$STATE"
+    echo "# Workspace State" >> "$STATE"
+    echo "Generated: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$STATE"
+    echo "" >> "$STATE"
+
+    # Build exclude args from .contextignore (gitignore syntax)
+    EXCLUDE_ARGS="-not -path '*/.context/*' -not -path '*/node_modules/*'"
+    if [ -f ".contextignore" ]; then
+      while IFS= read -r pat || [ -n "$pat" ]; do
+        # Skip comments and empty lines
+        case "$pat" in
+          \#*|"") continue ;;
+        esac
+        # Convert gitignore patterns to find -not -path
+        # Dir patterns (ending with /)
+        case "$pat" in
+          */) EXCLUDE_ARGS="$EXCLUDE_ARGS -not -path '*/$pat*'" ;;
+          \*.*) EXCLUDE_ARGS="$EXCLUDE_ARGS -not -name '$pat'" ;;
+          *) EXCLUDE_ARGS="$EXCLUDE_ARGS -not -path '*/$pat' -not -path '*/$pat/*'" ;;
+        esac
+      done < ".contextignore"
+    fi
+
+    # Count files (using eval to expand EXCLUDE_ARGS)
+    TOTAL=$(eval "find . -type f $EXCLUDE_ARGS" | wc -l)
+    echo "## Summary" >> "$STATE"
+    echo "- Total files: $TOTAL" >> "$STATE"
+    echo "" >> "$STATE"
+
+    # Extract descriptions from all text files
+    echo "## Files" >> "$STATE"
+    echo "" >> "$STATE"
+
+    eval "find . -type f $EXCLUDE_ARGS" \
+      | sort | while read -r filepath; do
+
+      DESC=""
+
+      # Check for YAML frontmatter description
+      if head -1 "$filepath" 2>/dev/null | grep -q '^---'; then
+        DESC=$(head -10 "$filepath" | grep '^description:' | sed 's/description: //')
+      fi
+
+      # Check for JSDoc @description
+      if [ -z "$DESC" ] && head -3 "$filepath" 2>/dev/null | grep -q '@description'; then
+        DESC=$(head -3 "$filepath" | grep -o '@description .*' | sed 's/@description //')
+      fi
+
+      # Check for comment header
+      if [ -z "$DESC" ] && head -1 "$filepath" 2>/dev/null | grep -q '^# @description'; then
+        DESC=$(head -1 "$filepath" | sed 's/^# @description //')
+      fi
+
+      # Check for markdown title as fallback
+      if [ -z "$DESC" ] && echo "$filepath" | grep -q '\.md$'; then
+        DESC=$(head -5 "$filepath" 2>/dev/null | grep '^# ' | head -1 | sed 's/^# //')
+      fi
+
+      if [ -z "$DESC" ]; then
+        DESC="(no description)"
+      fi
+
+      echo "- \`$filepath\` — $DESC" >> "$STATE"
+    done
+
+    echo "" >> "$STATE"
+
+    # Sprint log
+    if [ ! -f ".context/SPRINT_LOG.md" ]; then
+      echo "# Sprint Log" > ".context/SPRINT_LOG.md"
+    fi
+
+    echo "## Recent Sprints" >> "$STATE"
+    tail -20 .context/SPRINT_LOG.md >> "$STATE"
+    echo "" >> "$STATE"
+
+    UNDESCRIBED=$(grep -c '(no description)' "$STATE" || true)
+    echo "## Health" >> "$STATE"
+    echo "- Files without description: $UNDESCRIBED" >> "$STATE"
+
+    echo '{"files_scanned": '"$TOTAL"', "undescribed": '"$UNDESCRIBED"'}'
+  timeout_seconds: 60

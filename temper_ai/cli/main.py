@@ -20,11 +20,12 @@ def main() -> None:
         prog="temper",
         description="Temper AI — composable multi-agent workflows",
     )
+    parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     subparsers = parser.add_subparsers(dest="command")
 
     # -- temper run --
     run_parser = subparsers.add_parser("run", help="Run a workflow in the terminal")
-    run_parser.add_argument("workflow", help="Workflow config name (e.g., demo_quickstart)")
+    run_parser.add_argument("workflow", help="Workflow config name (e.g., blog_writer)")
     run_parser.add_argument(
         "--input", "-i", action="append", default=[],
         help="Input key=value pairs (repeatable)",
@@ -35,6 +36,7 @@ def main() -> None:
     run_parser.add_argument("--workspace", help="Workspace path for tools")
     run_parser.add_argument("--config-dir", default="configs", help="Config directory (default: configs)")
     run_parser.add_argument("--no-db", action="store_true", help="Skip database (ephemeral run)")
+    run_parser.add_argument("--debug", action="store_true", help="Enable debug logging")
 
     # -- temper serve --
     serve_parser = subparsers.add_parser("serve", help="Start the API server + dashboard")
@@ -42,13 +44,22 @@ def main() -> None:
     serve_parser.add_argument("--host", default="0.0.0.0", help="Host (default: 0.0.0.0)")  # noqa: B104
     serve_parser.add_argument("--dev", action="store_true", help="Enable hot reload")
     serve_parser.add_argument("--config-dir", default="configs", help="Config directory")
+    serve_parser.add_argument("--debug", action="store_true", help="Enable debug logging")
 
     # -- temper validate --
     validate_parser = subparsers.add_parser("validate", help="Validate a workflow config")
     validate_parser.add_argument("workflow", help="Workflow config name")
     validate_parser.add_argument("--config-dir", default="configs", help="Config directory")
+    validate_parser.add_argument("--debug", action="store_true", help="Enable debug logging")
 
     args = parser.parse_args()
+
+    # F28: --debug flag sets logging to DEBUG
+    log_level = logging.DEBUG if getattr(args, 'debug', False) else logging.WARNING
+    logging.basicConfig(level=log_level, format="%(levelname)s %(name)s: %(message)s" if log_level == logging.DEBUG else "%(message)s")
+
+    # F17: auto-load .env file if present
+    _load_dotenv()
 
     if args.command == "run":
         _cmd_run(args)
@@ -61,13 +72,37 @@ def main() -> None:
         sys.exit(1)
 
 
+def _load_dotenv() -> None:
+    """Load .env file if present. Falls back to manual parsing if python-dotenv not installed."""
+    from pathlib import Path
+
+    env_file = Path(".env")
+    if not env_file.exists():
+        return
+
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+        return
+    except ImportError:
+        pass
+
+    # Minimal .env parser fallback
+    for line in env_file.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
 def _cmd_run(args) -> None:
     """Run a workflow directly in the terminal."""
-    logging.basicConfig(
-        level=logging.WARNING,
-        format="%(message)s",
-    )
-
     inputs = _parse_inputs(args.input)
 
     os.environ.setdefault("DATABASE_URL", "sqlite:///data/dev.db")
@@ -142,8 +177,9 @@ def _load_configs(config_dir_path: str) -> None:
         for yaml_file in sorted(config_dir.rglob("*.yaml")):
             try:
                 import_yaml(str(yaml_file), store)
-            except Exception:  # noqa
-                pass  # noqa: B110
+            except Exception as exc:
+                # F16: log config loading errors instead of silently swallowing
+                logger.warning("Failed to load config %s: %s", yaml_file, exc)
 
 
 def _load_workflow(workflow_name: str):
@@ -284,7 +320,7 @@ def _cmd_serve(args) -> None:
         port=args.port,
         reload=args.dev,
         reload_dirs=["temper_ai"] if args.dev else None,
-        log_level="info",
+        log_level="debug" if args.debug else "info",
     )
 
 
@@ -299,18 +335,18 @@ def _cmd_validate(args) -> None:
 
     init_database()
 
+    # F27: use a single ConfigStore — don't create a second one
     config_dir = Path(args.config_dir)
     store = ConfigStore()
     if config_dir.is_dir():
         for yaml_file in sorted(config_dir.rglob("*.yaml")):
             try:
                 import_yaml(str(yaml_file), store)
-            except Exception: # noqa
-                pass  # noqa: B110
+            except Exception as exc:
+                logger.warning("Failed to load config %s: %s", yaml_file, exc)
 
     from temper_ai.stage.loader import GraphLoader
 
-    store = ConfigStore()
     loader = GraphLoader(store)
 
     try:
@@ -319,6 +355,15 @@ def _cmd_validate(args) -> None:
         print(f"  Nodes: {len(nodes)}")
         for node in nodes:
             print(f"    {node.name} ({node.config.type})")
+
+        # F24: Check that the workflow's provider is available
+        from temper_ai.server import _init_llm_providers
+        providers = _init_llm_providers()
+        default_provider = (config.defaults or {}).get("provider")
+        if default_provider and default_provider not in providers:
+            print(f"\n⚠ Warning: provider '{default_provider}' is not configured.")
+            print(f"  Available providers: {list(providers.keys()) or ['none — set API keys in .env']}")
+            print(f"  Set the appropriate API key in .env or change the workflow's defaults.provider")
     except Exception as exc:  # noqa: broad-except
         print(f"✗ Validation failed: {exc}", file=sys.stderr)
         sys.exit(1)

@@ -178,7 +178,7 @@ export const StageNode = memo(function StageNode({ data }: NodeProps) {
                       backgroundColor: dotColor,
                       width: i === safeIndex ? 8 : 6,
                       height: i === safeIndex ? 8 : 6,
-                      outline: i === safeIndex ? '2px solid rgba(255,255,255,0.3)' : 'none',
+                      outline: i === safeIndex ? '2px solid var(--temper-accent)' : 'none',
                       outlineOffset: '1px',
                     }}
                   />

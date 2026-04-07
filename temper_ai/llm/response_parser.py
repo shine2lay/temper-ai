@@ -40,12 +40,28 @@ def parse_tool_calls(response: LLMResponse) -> list[dict[str, Any]]:
             try:
                 args = json.loads(args)
             except json.JSONDecodeError:
-                logger.warning(
-                    "Failed to parse tool call arguments for '%s': %s",
-                    tc_name,
-                    args[:200],
-                )
-                args = {"_raw": args}
+                # Common model issue: missing opening brace
+                if not args.startswith("{") and ":" in args:
+                    try:
+                        args = json.loads("{" + args)
+                        logger.debug(
+                            "Recovered tool call args for '%s' by prepending '{'",
+                            tc_name,
+                        )
+                    except json.JSONDecodeError:
+                        logger.warning(
+                            "Failed to parse tool call arguments for '%s': %s",
+                            tc_name,
+                            args[:200],
+                        )
+                        args = {"_raw": args}
+                else:
+                    logger.warning(
+                        "Failed to parse tool call arguments for '%s': %s",
+                        tc_name,
+                        args[:200],
+                    )
+                    args = {"_raw": args}
 
         parsed.append({
             "id": tc_id,

@@ -7,15 +7,14 @@ interface RegistryTableProps {
 }
 
 function RegistryTable({ title, entries }: RegistryTableProps) {
+  if (entries.length === 0) return null;
+
   return (
     <div className="mb-8">
       <h3 className="text-base font-semibold text-temper-text mb-3">{title}</h3>
-      {entries.length === 0 ? (
-        <p className="text-sm text-temper-muted">No entries registered.</p>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm border-collapse">
-            <thead>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm border-collapse">
+          <thead>
               <tr className="border-b border-temper-border text-left">
                 <th className="py-2 pr-4 font-medium text-temper-muted whitespace-nowrap">Name</th>
                 <th className="py-2 pr-4 font-medium text-temper-muted">Description</th>
@@ -48,8 +47,7 @@ function RegistryTable({ title, entries }: RegistryTableProps) {
               ))}
             </tbody>
           </table>
-        </div>
-      )}
+      </div>
     </div>
   );
 }

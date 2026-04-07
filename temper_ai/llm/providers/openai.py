@@ -44,12 +44,43 @@ class OpenAILLM(BaseLLM):
     def _get_endpoint(self) -> str:
         return "/v1/chat/completions"
 
+    # Model context window limits (total input + output tokens)
+    MODEL_CONTEXT_LIMIT: int = 262144
+
+    def _estimate_message_tokens(self, messages: list[dict]) -> int:
+        """Rough token estimate: ~4 chars per token, plus overhead per message."""
+        total = 0
+        for msg in messages:
+            content = msg.get("content") or ""
+            if isinstance(content, list):
+                content = " ".join(
+                    p.get("text", "") for p in content if isinstance(p, dict)
+                )
+            total += len(str(content)) // 3 + 4  # ~3 chars/token, 4 tokens overhead
+            for tc in msg.get("tool_calls", []):
+                total += len(str(tc.get("function", {}).get("arguments", ""))) // 3
+            # Tool results in content (assistant messages with tool_call_id)
+            if msg.get("role") == "tool":
+                total += 10  # tool response framing overhead
+        return total
+
     def _build_request(self, messages: list[dict], **kwargs: Any) -> dict:
+        # Dynamically cap max_tokens so input + output <= context limit
+        estimated_input = self._estimate_message_tokens(messages)
+        headroom = 512  # safety margin
+        available = self.MODEL_CONTEXT_LIMIT - estimated_input - headroom
+        effective_max_tokens = max(1024, min(self.max_tokens, available))
+        if effective_max_tokens < self.max_tokens:
+            logger.info(
+                "Capping max_tokens %d -> %d (estimated input: %d tokens)",
+                self.max_tokens, effective_max_tokens, estimated_input,
+            )
+
         request: dict[str, Any] = {
             "model": self.model,
             "messages": messages,
             "temperature": self.temperature,
-            "max_tokens": self.max_tokens,
+            "max_tokens": effective_max_tokens,
         }
 
         if kwargs.get("stream"):
@@ -136,6 +167,8 @@ class OpenAILLM(BaseLLM):
 
         if delta.get("tool_calls"):
             _accumulate_tool_calls(delta["tool_calls"], s.tool_call_buffer)
+            if on_chunk:
+                _stream_tool_call_deltas(delta["tool_calls"], s.tool_call_buffer, on_chunk, s.model)
 
         if choice.get("finish_reason"):
             s.finish_reason = choice["finish_reason"]
@@ -166,6 +199,23 @@ class OpenAILLM(BaseLLM):
             reasoning="".join(s.reasoning_parts) or None,
             tool_calls=tool_calls,
         )
+
+
+def _stream_tool_call_deltas(
+    tc_deltas: list, tool_call_buffer: dict[int, dict],
+    on_chunk: StreamCallback, model: str,
+) -> None:
+    """Stream tool call fragments to the frontend as they arrive."""
+    for tc_delta in tc_deltas:
+        idx = tc_delta["index"]
+        buf = tool_call_buffer.get(idx, {})
+        fn = tc_delta.get("function", {})
+        name_part = fn.get("name", "")
+        args_part = fn.get("arguments", "")
+        if name_part:
+            on_chunk(LLMStreamChunk(content=f"\n🔧 {name_part}(", done=False, chunk_type="tool_call", model=model))
+        if args_part:
+            on_chunk(LLMStreamChunk(content=args_part, done=False, chunk_type="tool_call", model=model))
 
 
 def _accumulate_tool_calls(tc_deltas: list, tool_call_buffer: dict[int, dict]) -> None:

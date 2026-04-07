@@ -1,5 +1,6 @@
 import { useExecutionStore } from '@/store/executionStore';
 import { SmartContent } from '@/components/shared/SmartContent';
+import { ThinkingContent } from '@/components/shared/ThinkingContent';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { CollapsibleSection } from '@/components/shared/Collapsible';
 import { MetricCell } from '@/components/shared/MetricCell';
@@ -44,7 +45,16 @@ function PromptDisplay({ prompt }: { prompt: unknown }) {
                   {toolCalls && <span className="ml-2 text-amber-400 font-normal">{toolCalls.length} tool call{toolCalls.length !== 1 ? 's' : ''}</span>}
                 </div>
               )}
-              {contentStr && <SmartContent content={contentStr} maxHeight={300} />}
+              {contentStr && (
+                contentStr.includes('<think>') ? (
+                  <ThinkingContent
+                    content={contentStr}
+                    renderContent={(text, key) => <SmartContent key={key} content={text} maxHeight={300} />}
+                  />
+                ) : (
+                  <SmartContent content={contentStr} maxHeight={300} />
+                )
+              )}
               {toolCalls && (
                 <div className="px-2 py-1.5 bg-amber-500/5 border-t border-temper-border/20">
                   {toolCalls.map((tc, j) => {
@@ -253,19 +263,47 @@ export function LLMCallInspector({ llmCallId }: LLMCallInspectorProps) {
         <CopyButton text={promptToString(llmCall.prompt)} className="mt-1" />
       </CollapsibleSection>
 
+      {/* Thinking / Reasoning */}
+      {llmCall.thinking && (
+        <CollapsibleSection title="Thinking" defaultOpen={false}>
+          <div className="mt-1 p-2 rounded bg-violet-500/5 border border-violet-500/20 max-h-96 overflow-auto">
+            <MarkdownDisplay content={llmCall.thinking} className="text-violet-300/80" />
+          </div>
+          <CopyButton text={llmCall.thinking} className="mt-1" />
+        </CollapsibleSection>
+      )}
+
       {/* Response */}
       <CollapsibleSection title="Response" defaultOpen>
         {llmCall.response ? (
-          <>
-            <MarkdownDisplay content={llmCall.response} className="mt-1 max-h-96 overflow-auto" />
-            <CopyButton text={llmCall.response} className="mt-1" />
-          </>
+          llmCall.response.includes('<think>') ? (
+            <>
+              <ThinkingContent
+                content={llmCall.response}
+                className="mt-1 max-h-96 overflow-auto"
+                renderContent={(text, key) => <MarkdownDisplay key={key} content={text} />}
+              />
+              <CopyButton text={llmCall.response} className="mt-1" />
+            </>
+          ) : (
+            <>
+              <MarkdownDisplay content={llmCall.response} className="mt-1 max-h-96 overflow-auto" />
+              <CopyButton text={llmCall.response} className="mt-1" />
+            </>
+          )
+        ) : llmCall.tool_calls && llmCall.tool_calls.length > 0 ? (
+          <div className="mt-1">
+            <p className="text-[10px] text-temper-text-dim mb-1.5">Model issued tool calls instead of text response:</p>
+            <div className="flex flex-col gap-1">
+              {llmCall.tool_calls.map((tc, i) => (
+                <div key={i} className="flex items-center gap-1.5 px-2 py-1 rounded bg-amber-500/10 border border-amber-500/20">
+                  <span className="text-[10px] font-mono text-amber-400">{tc.name}</span>
+                </div>
+              ))}
+            </div>
+          </div>
         ) : (
-          <p className="mt-1 text-xs text-temper-text-dim">
-            {(llmCall.completion_tokens ?? 0) > 0
-              ? 'No text response — model issued tool calls'
-              : 'No response data'}
-          </p>
+          <p className="mt-1 text-xs text-temper-text-dim">No response data</p>
         )}
       </CollapsibleSection>
     </div>

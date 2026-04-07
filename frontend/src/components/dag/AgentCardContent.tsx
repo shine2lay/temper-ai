@@ -54,7 +54,8 @@ export const AgentCardContent = memo(function AgentCardContent({
   const [inputExpanded, setInputExpanded] = useState(false);
 
   const statusColor = STATUS_COLORS[agent.status] ?? STATUS_COLORS.pending;
-  const isStreaming = streaming && !streaming.done;
+  const agentDone = agent.status === 'completed' || agent.status === 'failed';
+  const isStreaming = streaming && !streaming.done && !agentDone;
   const textOutput = isStreaming ? streaming.content : agent.output ?? '';
   // Derive structured output from text if API doesn't provide it
   const derivedOutputData = useMemo(() => {
@@ -127,9 +128,9 @@ export const AgentCardContent = memo(function AgentCardContent({
         )}
         <span className="ml-auto flex items-center gap-1 shrink-0">
           {isScript ? (
-            <span className="text-[8px] px-1 py-px rounded bg-amber-500/15 text-amber-400 font-medium">script</span>
+            <span className="text-[9px] px-1 py-px rounded bg-amber-500/15 text-amber-400 font-medium">script</span>
           ) : model ? (
-            <span className="text-[8px] px-1 py-px rounded bg-temper-surface text-temper-text-dim font-mono"
+            <span className="text-[9px] px-1 py-px rounded bg-temper-surface text-temper-text-dim font-mono"
                   title={provider ? `${provider}/${model}` : model}>
               {provider ? `${provider}` : ''}{provider && model ? '/' : ''}{model}
             </span>
@@ -196,7 +197,7 @@ export const AgentCardContent = memo(function AgentCardContent({
               <>
                 <span className="text-temper-border/40">|</span>
                 {tools.map((t) => (
-                  <span key={t} className="px-1 py-px rounded bg-amber-500/10 text-amber-400 text-[8px] font-mono">{t}</span>
+                  <span key={t} className="px-1 py-px rounded bg-amber-500/10 text-amber-400 text-[9px] font-mono">{t}</span>
                 ))}
               </>
             )}
@@ -306,7 +307,7 @@ function InputSection({ data, expanded }: { data: Record<string, unknown>; expan
           {expanded ? '\u25BE' : '\u25B8'} IN
         </span>
         {isWorkflowOnly && (
-          <span className="text-[8px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400 font-medium">
+          <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400 font-medium">
             ← workflow input
           </span>
         )}
@@ -316,11 +317,11 @@ function InputSection({ data, expanded }: { data: Record<string, unknown>; expan
           const displayName = agentName ?? s.name;
           return (
           <span key={s.name} className="inline-flex flex-col gap-px max-w-full">
-            <span className="text-[8px] px-1.5 py-0.5 rounded-t bg-blue-500/15 text-blue-400 font-medium">
+            <span className="text-[9px] px-1.5 py-0.5 rounded-t bg-blue-500/15 text-blue-400 font-medium">
               ← {displayName}
             </span>
             {s.preview && (
-              <span className="text-[8px] px-1.5 py-0.5 rounded-b bg-temper-surface/50 text-temper-text-dim font-mono truncate">
+              <span className="text-[9px] px-1.5 py-0.5 rounded-b bg-temper-surface/50 text-temper-text-dim font-mono truncate">
                 {s.preview}
               </span>
             )}
@@ -328,14 +329,14 @@ function InputSection({ data, expanded }: { data: Record<string, unknown>; expan
         );
         })}
         {hasPrev && (
-          <span className="text-[8px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 font-medium">
+          <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 font-medium">
             ← prev agent
           </span>
         )}
         {extraSources.map((key) => {
           const agentName = stageToAgent.get(key.replace(/_output$/, ''));
           return (
-            <span key={key} className="text-[8px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400 font-medium">
+            <span key={key} className="text-[9px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400 font-medium">
               ← {agentName ?? key}
             </span>
           );
@@ -415,14 +416,14 @@ function OutputSection({ output, error, expanded }: { output: string; error?: st
       <div className="flex items-center gap-1 min-w-0">
         <span className="text-[9px] font-semibold text-temper-text-muted shrink-0">{expanded ? '\u25BE' : '\u25B8'} OUT</span>
         <span className={cn(
-          'text-[8px] px-1 py-px rounded font-mono shrink-0',
+          'text-[9px] px-1 py-px rounded font-mono shrink-0',
           isJson ? 'bg-emerald-500/15 text-emerald-400' :
           isCode ? 'bg-violet-500/15 text-violet-400' :
           'bg-temper-surface text-temper-text-dim',
         )}>
           {typeLabel}
         </span>
-        <span className="text-[8px] text-temper-text-dim font-mono shrink-0">{sizeLabel}</span>
+        <span className="text-[9px] text-temper-text-dim font-mono shrink-0">{sizeLabel}</span>
         {!expanded && preview && (
           <span className="text-[9px] text-temper-text-dim truncate font-mono">{preview}</span>
         )}

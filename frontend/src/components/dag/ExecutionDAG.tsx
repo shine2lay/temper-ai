@@ -319,9 +319,10 @@ export function ExecutionDAG() {
   );
 
   return (
-    // eslint-disable-next-line jsx-a11y/no-static-element-interactions
     <div
       className="w-full h-full"
+      role="group"
+      tabIndex={0}
       onKeyDown={onContainerKeyDown}
       aria-label="Workflow execution DAG. Use Tab to cycle through stages, Enter to select, Escape to deselect."
     >
@@ -341,12 +342,28 @@ export function ExecutionDAG() {
       >
         <Background variant={BackgroundVariant.Dots} gap={24} size={1} />
         <Controls position="bottom-left" />
+        <Panel position="bottom-left" className="!bottom-28 !left-2">
+          <div className="flex flex-col gap-1 px-2 py-1.5 rounded bg-temper-panel/90 border border-temper-border/50 text-[10px] text-temper-text-muted">
+            <span className="font-medium text-temper-text-dim mb-0.5">Node border = status</span>
+            {[
+              ['border-[var(--color-temper-completed)]', 'Completed'],
+              ['border-[var(--color-temper-running)]', 'Running'],
+              ['border-[var(--color-temper-failed)]', 'Failed'],
+              ['border-[var(--color-temper-pending)]', 'Pending'],
+            ].map(([border, label]) => (
+              <div key={label} className="flex items-center gap-1.5">
+                <span className={`inline-block w-3 h-2.5 rounded-sm border-2 ${border} bg-temper-surface`} />
+                <span>{label}</span>
+              </div>
+            ))}
+          </div>
+        </Panel>
         <MiniMap
-          nodeColor="#1e2a4a"
-          maskColor="rgba(15, 23, 41, 0.7)"
+          nodeColor="var(--temper-minimap-node, #1e2a4a)"
+          maskColor="var(--temper-minimap-mask, rgba(15, 23, 41, 0.7))"
           position="bottom-right"
-          style={{ width: 120, height: 80, opacity: 0.4 }}
-          className="hover:!opacity-100 transition-opacity duration-200"
+          style={{ width: 120, height: 80 }}
+          className="temper-minimap-opacity hover:!opacity-100 transition-opacity duration-200"
         />
         <Panel position="top-right">
           <div className="flex flex-col items-end gap-1.5">

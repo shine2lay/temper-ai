@@ -1,11 +1,13 @@
 import { useState, useEffect, useCallback, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Info, Pencil, Download } from 'lucide-react';
+import { ArrowLeft, Info, Pencil, Download, RotateCcw } from 'lucide-react';
+import { toast } from 'sonner';
 import { useExecutionStore } from '@/store/executionStore';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { formatDuration, formatTokens, formatCost, elapsedSeconds, cn } from '@/lib/utils';
 import { DURATION_TICK_MS } from '@/lib/constants';
 import { ThemeToggle } from '@/components/shared/ThemeToggle';
+import { authFetch } from '@/lib/authFetch';
 
 export function WorkflowHeader() {
   const navigate = useNavigate();
@@ -37,11 +39,12 @@ export function WorkflowHeader() {
     ? formatDuration(elapsed)
     : formatDuration(workflow?.duration_seconds);
 
-  // Streaming agents (not done)
+  // Streaming agents (not done and not terminal)
   const streamingAgents: Array<{ id: string; name: string }> = [];
   streamingContent.forEach((entry, agentId) => {
-    if (!entry.done) {
-      const agent = agents.get(agentId);
+    const agent = agents.get(agentId);
+    const agentDone = agent?.status === 'completed' || agent?.status === 'failed';
+    if (!entry.done && !agentDone) {
       streamingAgents.push({ id: agentId, name: agent?.agent_name ?? agentId });
     }
   });
@@ -193,6 +196,31 @@ export function WorkflowHeader() {
     URL.revokeObjectURL(url);
   }, [workflow, stages, agents, llmCalls]);
 
+  const [rerunning, setRerunning] = useState(false);
+
+  const handleRerun = useCallback(async () => {
+    if (!workflow || rerunning) return;
+    setRerunning(true);
+    try {
+      const res = await authFetch('/api/runs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workflow: `workflows/${workflow.workflow_name}`,
+          inputs: workflow.input_data ?? {},
+        }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      toast.success('New run started');
+      navigate(`/workflow/${data.execution_id}`);
+    } catch (err) {
+      toast.error(`Re-run failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    } finally {
+      setRerunning(false);
+    }
+  }, [workflow, rerunning, navigate]);
+
   return (
     <>
       <header className="flex items-center gap-4 bg-temper-panel px-4 py-3 border-b border-temper-border shrink-0">
@@ -260,6 +288,17 @@ export function WorkflowHeader() {
           >
             <Download className="w-3 h-3" />
             Export
+          </button>
+        )}
+        {workflow && !isRunning && (
+          <button
+            onClick={handleRerun}
+            disabled={rerunning}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-temper-surface text-temper-text-muted hover:text-temper-accent hover:bg-temper-accent/10 border border-temper-border transition-colors shrink-0 cursor-pointer disabled:opacity-50"
+            aria-label="Re-run this workflow with the same inputs"
+          >
+            <RotateCcw className="w-3 h-3" />
+            Re-run
           </button>
         )}
 

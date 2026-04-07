@@ -8,6 +8,7 @@ import { MarkdownDisplay } from '@/components/shared/MarkdownDisplay';
 import { CopyButton } from '@/components/shared/CopyButton';
 import { ErrorDisplay } from '@/components/shared/ErrorDisplay';
 import { SmartContent } from '@/components/shared/SmartContent';
+import { ThinkingContent } from '@/components/shared/ThinkingContent';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { StreamingPanel } from '@/components/panels/StreamingPanel';
 import { Badge } from '@/components/ui/badge';
@@ -18,6 +19,7 @@ import {
   formatTimestamp,
   formatTokens,
   formatCost,
+  cn,
 } from '@/lib/utils';
 import { deriveTokenBreakdown } from '@/components/dag/constants';
 // Agent data comes from the Zustand store (updated via WebSocket + snapshot polling)
@@ -60,6 +62,46 @@ export function AgentDetailPanel({ agentId }: AgentDetailPanelProps) {
     return undefined;
   }, [ag.stage_execution_id, ag.stage_id, stages, agentId]);
 
+  // Find sibling iterations: stages with the same name that have an agent with the same agent_name
+  const iterations = useMemo(() => {
+    const parentStage = resolvedStageId ? stages.get(resolvedStageId) : null;
+    if (!parentStage) return [];
+    const stageName = parentStage.name ?? parentStage.stage_name;
+    if (!stageName) return [];
+    const agentName = ag.agent_name ?? ag.name;
+
+    const siblings: { agentId: string; stageId: string; status: string; index: number }[] = [];
+    let idx = 0;
+    for (const [stageId, stage] of stages) {
+      const sName = stage.name ?? stage.stage_name;
+      if (sName !== stageName) continue;
+      const matchingAgent = (stage.agents ?? []).find(
+        (a) => (a.agent_name ?? a.name) === agentName,
+      ) ?? (stage.agent && (stage.agent.agent_name ?? stage.agent.name) === agentName ? stage.agent : null);
+      if (matchingAgent) {
+        siblings.push({ agentId: matchingAgent.id, stageId, status: matchingAgent.status, index: idx });
+        idx++;
+      }
+    }
+    // Sort by start_time
+    siblings.sort((a, b) => {
+      const sa = stages.get(a.stageId)?.start_time ?? '';
+      const sb = stages.get(b.stageId)?.start_time ?? '';
+      return sa < sb ? -1 : sa > sb ? 1 : 0;
+    });
+    return siblings;
+  }, [ag, agentId, resolvedStageId, stages]);
+
+  const currentIterIndex = iterations.findIndex((it) => it.agentId === agentId);
+  const hasMultipleRuns = iterations.length > 1;
+
+  const STATUS_DOT: Record<string, string> = {
+    completed: 'bg-emerald-400',
+    running: 'bg-temper-accent animate-pulse',
+    failed: 'bg-red-400',
+    pending: 'bg-gray-500',
+  };
+
   return (
     <div className="flex flex-col gap-4 p-4">
       {/* Breadcrumb */}
@@ -70,6 +112,28 @@ export function AgentDetailPanel({ agentId }: AgentDetailPanelProps) {
         >
           &larr; Back to Stage
         </button>
+      )}
+
+      {/* Iteration timeline strip */}
+      {hasMultipleRuns && (
+        <div className="flex items-center gap-1 p-2 bg-temper-surface/50 rounded-lg border border-temper-border/30">
+          <span className="text-[10px] text-temper-text-dim mr-1 shrink-0">Runs:</span>
+          {iterations.map((it, i) => (
+            <button
+              key={it.agentId}
+              onClick={() => select('agent', it.agentId)}
+              className={cn(
+                'flex items-center gap-1.5 px-2 py-1 rounded text-[10px] transition-colors',
+                it.agentId === agentId
+                  ? 'bg-temper-accent/20 text-temper-accent ring-1 ring-temper-accent/40'
+                  : 'text-temper-text-muted hover:text-temper-text hover:bg-temper-surface',
+              )}
+            >
+              <span className={cn('w-2 h-2 rounded-full shrink-0', STATUS_DOT[it.status] ?? STATUS_DOT.pending)} />
+              <span>#{i + 1}</span>
+            </button>
+          ))}
+        </div>
       )}
 
       {/* Header */}
@@ -181,7 +245,15 @@ export function AgentDetailPanel({ agentId }: AgentDetailPanelProps) {
 
       <CollapsibleSection title="Output">
         {ag.output && (
-          <SmartContent content={ag.output} maxHeight={400} className="mt-1" />
+          ag.output.includes('<think>') ? (
+            <ThinkingContent
+              content={ag.output}
+              className="mt-1 max-h-[400px] overflow-auto"
+              renderContent={(text, key) => <SmartContent key={key} content={text} maxHeight={400} />}
+            />
+          ) : (
+            <SmartContent content={ag.output} maxHeight={400} className="mt-1" />
+          )
         )}
         {ag.output_data && Object.keys(ag.output_data).length > 0 && (
           <div className={ag.output ? 'mt-3 pt-3 border-t border-temper-border/30' : ''}>
@@ -256,34 +328,48 @@ export function AgentDetailPanel({ agentId }: AgentDetailPanelProps) {
           <span className="text-sm font-medium text-temper-text-muted">
             LLM Calls
           </span>
-          {ag.llm_calls.map((llm, idx) => (
-            <Button
-              key={llm.id}
-              variant="ghost"
-              size="sm"
-              className="justify-between text-left h-auto py-1.5"
-              onClick={() => select('llmCall', llm.id)}
-            >
-              <span className="flex items-center gap-2 text-temper-text min-w-0">
-                <span className="text-[10px] text-temper-text-dim shrink-0 w-4">#{idx + 1}</span>
-                <span className="truncate text-xs">{llm.model ?? 'llm'}</span>
-                <span className="text-[10px] text-temper-text-dim shrink-0 font-mono">
-                  {formatTokens(llm.total_tokens)} tok
+          {ag.llm_calls.map((llm, idx) => {
+            const hasToolCalls = llm.tool_calls && llm.tool_calls.length > 0;
+            const hasThinking = !!llm.thinking;
+            return (
+              <Button
+                key={llm.id}
+                variant="ghost"
+                size="sm"
+                className="justify-between text-left h-auto py-1.5"
+                onClick={() => select('llmCall', llm.id)}
+              >
+                <span className="flex items-center gap-2 text-temper-text min-w-0">
+                  <span className="text-[10px] text-temper-text-dim shrink-0 w-4">#{idx + 1}</span>
+                  <span className="truncate text-xs">{llm.model ?? 'llm'}</span>
+                  {hasToolCalls && (
+                    <span className="text-[9px] px-1 py-px rounded bg-amber-500/15 text-amber-400 shrink-0">
+                      {llm.tool_calls!.length} tool{llm.tool_calls!.length > 1 ? 's' : ''}
+                    </span>
+                  )}
+                  {hasThinking && (
+                    <span className="text-[9px] px-1 py-px rounded bg-violet-500/15 text-violet-400 shrink-0">
+                      thinking
+                    </span>
+                  )}
+                  <span className="text-[10px] text-temper-text-dim shrink-0 font-mono">
+                    {formatTokens(llm.total_tokens)} tok
+                  </span>
+                  {(llm.estimated_cost_usd ?? 0) > 0 && (
+                    <span className="text-[10px] text-emerald-400 shrink-0 font-mono">
+                      {formatCost(llm.estimated_cost_usd)}
+                    </span>
+                  )}
+                  {llm.duration_seconds != null && (
+                    <span className="text-[10px] text-temper-text-dim shrink-0">
+                      {formatDuration(llm.duration_seconds)}
+                    </span>
+                  )}
                 </span>
-                {(llm.estimated_cost_usd ?? 0) > 0 && (
-                  <span className="text-[10px] text-emerald-400 shrink-0 font-mono">
-                    {formatCost(llm.estimated_cost_usd)}
-                  </span>
-                )}
-                {llm.duration_seconds != null && (
-                  <span className="text-[10px] text-temper-text-dim shrink-0">
-                    {formatDuration(llm.duration_seconds)}
-                  </span>
-                )}
-              </span>
-              <StatusBadge status={llm.status} />
-            </Button>
-          ))}
+                <StatusBadge status={llm.status} />
+              </Button>
+            );
+          })}
         </div>
       )}
 

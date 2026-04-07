@@ -38,11 +38,11 @@ def create_app_engine(
     url = database_url or get_database_url()
 
     if url.startswith("sqlite"):
-        if "pytest" not in sys.modules:
-            raise ValueError(
-                "SQLite is not supported for production use. "
-                "Set TEMPER_DATABASE_URL to a PostgreSQL connection string."
-            )
+        logger.warning(
+            "Using SQLite database (%s). SQLite is suitable for local development "
+            "and testing only — use PostgreSQL for production.",
+            url,
+        )
         return _create_sqlite_engine(url)
 
     return _create_pg_engine(url, pool_size)

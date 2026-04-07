@@ -15,8 +15,7 @@ agent:
     3. Different perspectives or approaches
     4. Interesting angles worth exploring
 
-    Use the searxng.searxng_web_search tool to find current information.
-    Use the searxng.web_url_read tool to read specific pages for details.
+    Use WebSearch to find current information on the topic.
 
     Output as JSON:
     {
@@ -26,5 +25,4 @@ agent:
       "angles": ["..."]
     }
   tools:
-    - searxng.searxng_web_search
-    - searxng.web_url_read
+    - WebSearch

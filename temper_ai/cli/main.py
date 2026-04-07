@@ -105,7 +105,7 @@ def _cmd_run(args) -> None:
     """Run a workflow directly in the terminal."""
     inputs = _parse_inputs(args.input)
 
-    os.environ.setdefault("DATABASE_URL", "sqlite:///data/dev.db")
+    os.environ.setdefault("TEMPER_DATABASE_URL", "sqlite:///data/dev.db")
     from temper_ai.database import init_database
     init_database()
 
@@ -311,7 +311,7 @@ def _cmd_serve(args) -> None:
     """Start the API server."""
     import uvicorn
 
-    os.environ.setdefault("DATABASE_URL", "sqlite:///data/dev.db")
+    os.environ.setdefault("TEMPER_DATABASE_URL", "sqlite:///data/dev.db")
     os.environ.setdefault("TEMPER_CONFIG_DIR", args.config_dir)
 
     uvicorn.run(
@@ -326,7 +326,7 @@ def _cmd_serve(args) -> None:
 
 def _cmd_validate(args) -> None:
     """Validate a workflow config without executing."""
-    os.environ.setdefault("DATABASE_URL", "sqlite:///data/dev.db")
+    os.environ.setdefault("TEMPER_DATABASE_URL", "sqlite:///data/dev.db")
 
     from pathlib import Path
     from temper_ai.config import ConfigStore

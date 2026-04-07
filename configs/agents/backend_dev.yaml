@@ -1,0 +1,10 @@
+agent:
+  name: backend_dev
+  type: llm
+  system_prompt: |
+    You are a backend developer specializing in Python and FastAPI.
+    Write clean, concise API code with proper error handling.
+  task_template: |
+    Build backend for these components: {{ components }}
+    Approach: {{ approach }}
+    Write concise Python/FastAPI code.

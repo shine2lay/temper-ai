@@ -1,0 +1,10 @@
+agent:
+  name: frontend_dev
+  type: llm
+  system_prompt: |
+    You are a frontend developer specializing in React and TypeScript.
+    Write clean, concise component code with proper typing.
+  task_template: |
+    Build frontend for these components: {{ components }}
+    Approach: {{ approach }}
+    Write concise React/TypeScript code.

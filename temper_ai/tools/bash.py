@@ -21,6 +21,9 @@ _DEFAULT_ALLOWED_COMMANDS = [
     "ls", "cat", "find", "mkdir", "pwd", "head", "tail", "wc",
     "grep", "sort", "uniq", "diff", "echo", "cp", "mv", "rm",
     "touch", "chmod", "tee",
+    # Shell built-ins (used in scripts)
+    "set", "export", "source", "cd", "test", "[", "true", "false",
+    "read", "printf", "local", "return", "exit",
     # Text processing
     "sed", "awk", "tr", "cut", "xargs",
     # Path utilities
@@ -64,9 +67,11 @@ class Bash(BaseTool):
         if not command or not command.strip():
             return ToolResult(success=False, result="", error="Empty command")
 
-        # Check ALL lines against the allowlist (not just the first command)
+        # Check commands against the allowlist
+        # Script agents pass _skip_allowlist=True since their scripts are author-defined, not LLM-generated
+        skip_allowlist = params.get("_skip_allowlist", False)
         allowed = self.config.get("allowed_commands", _DEFAULT_ALLOWED_COMMANDS)
-        if allowed:
+        if allowed and not skip_allowlist:
             for line in command.strip().splitlines():
                 line = line.strip()
                 if not line or line.startswith("#"):
@@ -76,7 +81,14 @@ class Bash(BaseTool):
                     segment = segment.strip()
                     if not segment:
                         continue
-                    base_cmd_name = os.path.basename(segment.split()[0])
+                    first_word = segment.split()[0]
+                    # Skip variable assignments (VAR=value, VAR="value")
+                    if "=" in first_word and not first_word.startswith("="):
+                        continue
+                    # Skip shell syntax tokens
+                    if first_word in ("then", "else", "fi", "do", "done", "esac", "}", "{", ")", "(", ";;"):
+                        continue
+                    base_cmd_name = os.path.basename(first_word)
                     if base_cmd_name not in allowed:
                         return ToolResult(
                             success=False, result="",

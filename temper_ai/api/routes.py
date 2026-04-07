@@ -16,15 +16,14 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, WebSocket
 from pydantic import BaseModel
 
+from temper_ai.api.app_state import AppState
 from temper_ai.api.data_service import get_workflow_execution, list_workflow_executions
 from temper_ai.checkpoint.service import CheckpointService
 from temper_ai.api.websocket import ws_manager
-from temper_ai.config import ConfigStore
-from temper_ai.memory import InMemoryStore, MemoryService
+from temper_ai.memory import MemoryService
 from temper_ai.observability.event_recorder import EventRecorder
 from temper_ai.shared.types import ExecutionContext
 from temper_ai.stage.executor import execute_graph
-from temper_ai.stage.loader import GraphLoader
 from temper_ai.tools import TOOL_CLASSES
 from temper_ai.tools.executor import ToolExecutor
 
@@ -32,34 +31,22 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# Shared infrastructure (initialized once)
-_config_store = ConfigStore()
-_graph_loader = GraphLoader(_config_store)
-_tool_executor = ToolExecutor()
-# Register all built-in tools so agents can reference them by name
-_tool_executor.register_tools({name: cls() for name, cls in TOOL_CLASSES.items()})
-_memory_service = MemoryService(InMemoryStore())
-
-# Track running workflows for cancellation
-_running: dict[str, threading.Event] = {}
-
-# Gate registry — gates waiting for human approval (key: "execution_id:node_name")
-_gates: dict[str, threading.Event] = {}
-
-# LLM providers — populated by server.py at startup
-_llm_providers: dict[str, Any] = {}
+# Shared state — initialized by server.py lifespan, accessed by all routes.
+# This replaces the old module-level singletons and global statements.
+_app_state: AppState | None = None
 
 
-def set_llm_providers(providers: dict[str, Any]):
-    """Called by server.py to inject LLM provider instances."""
-    global _llm_providers
-    _llm_providers = providers
+def init_app_state(state: AppState) -> None:
+    """Called by server.py lifespan to inject shared state."""
+    global _app_state
+    _app_state = state
 
 
-def set_memory_service(service: MemoryService):
-    """Called by server.py to inject a configured memory service."""
-    global _memory_service
-    _memory_service = service
+def _state() -> AppState:
+    """Get the shared app state. Raises if server hasn't started."""
+    if _app_state is None:
+        raise RuntimeError("App state not initialized — server lifespan hasn't run yet")
+    return _app_state
 
 
 # --- Request/Response models ---
@@ -92,7 +79,7 @@ def start_run(body: RunRequest):
 
     # Validate workflow exists before starting
     try:
-        nodes, config = _graph_loader.load_workflow(body.workflow)
+        nodes, config = _state().graph_loader.load_workflow(body.workflow)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -132,7 +119,7 @@ def start_run(body: RunRequest):
     recorder = EventRecorder(execution_id, notifier=ws_manager)
     # Start execution in background thread
     cancel_event = threading.Event()
-    _running[execution_id] = cancel_event
+    _state().running[execution_id] = cancel_event
 
     checkpoint_svc = CheckpointService(execution_id)
 
@@ -143,12 +130,12 @@ def start_run(body: RunRequest):
         agent_name="",
         event_recorder=recorder,
         tool_executor=run_tool_executor,
-        memory_service=_memory_service,
-        llm_providers=_llm_providers,
+        memory_service=_state().memory_service,
+        llm_providers=_state().llm_providers,
         workspace_path=body.workspace_path,
         cancel_event=cancel_event,
         checkpoint_service=checkpoint_svc,
-        gate_registry=_gates,
+        gate_registry=_state().gates,
     )
 
     # Bind execution context to Delegate tool so it can create sub-agents
@@ -187,12 +174,12 @@ def cancel_run(execution_id: str):
     If it's an orphaned run (stale from a server restart), marks it as cancelled
     directly in the event store.
     """
-    cancel_event = _running.get(execution_id)
+    cancel_event = _state().running.get(execution_id)
     if cancel_event is not None:
         cancel_event.set()
         return {"status": "cancelling", "execution_id": execution_id}
 
-    # Not in _running — could be an orphaned stale run. Check if it exists in DB.
+    # Not in running dict — could be an orphaned stale run. Check if it exists in DB.
     result = get_workflow_execution(execution_id)
     if not result:
         raise HTTPException(status_code=404, detail=f"Execution '{execution_id}' not found")
@@ -249,7 +236,7 @@ def resume_run(execution_id: str, body: ResumeRequest | None = None):
 
     # Load current workflow config
     try:
-        nodes, config = _graph_loader.load_workflow(workflow_name)
+        nodes, config = _state().graph_loader.load_workflow(workflow_name)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -280,7 +267,7 @@ def resume_run(execution_id: str, body: ResumeRequest | None = None):
 
     recorder = EventRecorder(execution_id, notifier=ws_manager)
     cancel_event = threading.Event()
-    _running[execution_id] = cancel_event
+    _state().running[execution_id] = cancel_event
 
     context = ExecutionContext(
         run_id=execution_id,
@@ -289,12 +276,12 @@ def resume_run(execution_id: str, body: ResumeRequest | None = None):
         agent_name="",
         event_recorder=recorder,
         tool_executor=run_tool_executor,
-        memory_service=_memory_service,
-        llm_providers=_llm_providers,
+        memory_service=_state().memory_service,
+        llm_providers=_state().llm_providers,
         workspace_path=workspace,
         cancel_event=cancel_event,
         checkpoint_service=checkpoint_svc,
-        gate_registry=_gates,
+        gate_registry=_state().gates,
     )
 
     _bind_delegate_tool(run_tool_executor, context)
@@ -335,7 +322,7 @@ def fork_run(body: ForkRequest):
 
     # Load workflow
     try:
-        nodes, config = _graph_loader.load_workflow(body.workflow)
+        nodes, config = _state().graph_loader.load_workflow(body.workflow)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -356,7 +343,7 @@ def fork_run(body: ForkRequest):
 
     recorder = EventRecorder(new_execution_id, notifier=ws_manager)
     cancel_event = threading.Event()
-    _running[new_execution_id] = cancel_event
+    _state().running[new_execution_id] = cancel_event
 
     context = ExecutionContext(
         run_id=new_execution_id,
@@ -365,12 +352,12 @@ def fork_run(body: ForkRequest):
         agent_name="",
         event_recorder=recorder,
         tool_executor=run_tool_executor,
-        memory_service=_memory_service,
-        llm_providers=_llm_providers,
+        memory_service=_state().memory_service,
+        llm_providers=_state().llm_providers,
         workspace_path=body.workspace_path,
         cancel_event=cancel_event,
         checkpoint_service=fork_svc,
-        gate_registry=_gates,
+        gate_registry=_state().gates,
     )
 
     _bind_delegate_tool(run_tool_executor, context)
@@ -423,7 +410,7 @@ def approve_gate(execution_id: str, node_name: str):
     executor thread unblocks and the node executes.
     """
     gate_key = f"{execution_id}:{node_name}"
-    gate_event = _gates.get(gate_key)
+    gate_event = _state().gates.get(gate_key)
     if gate_event is None:
         raise HTTPException(
             status_code=404,
@@ -439,8 +426,8 @@ def list_gates(execution_id: str):
     prefix = f"{execution_id}:"
     waiting = [
         {"node_name": key.split(":", 1)[1], "status": "waiting"}
-        for key in _gates
-        if key.startswith(prefix) and not _gates[key].is_set()
+        for key in _state().gates
+        if key.startswith(prefix) and not _state().gates[key].is_set()
     ]
     return {"execution_id": execution_id, "gates": waiting}
 
@@ -537,7 +524,7 @@ def _run_workflow(nodes, inputs, context, workflow_name, execution_id):
     except Exception as exc:
         logger.error("Workflow '%s' failed: %s", workflow_name, exc, exc_info=True)
     finally:
-        _running.pop(execution_id, None)
+        _state().running.pop(execution_id, None)
         ws_manager.cleanup(execution_id)
         # Clean up per-run tool executor thread pool
         if hasattr(context, 'tool_executor') and context.tool_executor:
@@ -567,7 +554,7 @@ def _run_workflow_with_checkpoints(nodes, inputs, context, workflow_name, execut
     except Exception as exc:
         logger.error("Workflow '%s' resume failed: %s", workflow_name, exc, exc_info=True)
     finally:
-        _running.pop(execution_id, None)
+        _state().running.pop(execution_id, None)
         ws_manager.cleanup(execution_id)
         if hasattr(context, 'tool_executor') and context.tool_executor:
             context.tool_executor.shutdown(wait=False)

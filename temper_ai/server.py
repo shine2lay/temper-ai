@@ -26,7 +26,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 
-from temper_ai.api.routes import router as api_router, set_llm_providers, set_memory_service
+from temper_ai.api.app_state import AppState
+from temper_ai.api.routes import router as api_router, init_app_state
 from temper_ai.api.studio import router as studio_router
 from temper_ai.api.docs import router as docs_router
 from temper_ai.config import ConfigStore
@@ -219,14 +220,26 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # LLM providers
     providers = _init_llm_providers()
-    set_llm_providers(providers)
 
     # Memory
     memory = _init_memory_service()
-    set_memory_service(memory)
+
+    # Shared config store
+    from temper_ai.stage.loader import GraphLoader
+    config_store = ConfigStore()
+    graph_loader = GraphLoader(config_store)
+
+    # Initialize shared app state
+    state = AppState(
+        config_store=config_store,
+        graph_loader=graph_loader,
+        llm_providers=providers,
+        memory_service=memory,
+    )
+    init_app_state(state)
 
     # Load default configs
-    _load_default_configs(ConfigStore())
+    _load_default_configs(config_store)
 
     # MCP servers (load configs only — connections are lazy)
     try:

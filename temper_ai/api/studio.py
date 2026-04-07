@@ -24,7 +24,15 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/studio")
 
-_config_store = ConfigStore()
+
+def _store() -> ConfigStore:
+    """Get the shared ConfigStore from AppState, or create a standalone one."""
+    try:
+        from temper_ai.api.routes import _state
+        return _state().config_store
+    except (RuntimeError, ImportError):
+        # Fallback for standalone usage (tests, CLI)
+        return ConfigStore()
 
 
 class ConfigBody(BaseModel):
@@ -38,7 +46,7 @@ class ConfigBody(BaseModel):
 def list_configs(config_type: str):
     """List all configs of a type."""
     try:
-        configs = _config_store.list(config_type=config_type)
+        configs = _store().list(config_type=config_type)
         return {"configs": configs, "total": len(configs)}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -48,7 +56,7 @@ def list_configs(config_type: str):
 def get_config(config_type: str, name: str):
     """Get a single config by type and name."""
     try:
-        return _config_store.get(name, config_type)
+        return _store().get(name, config_type)
     except ConfigNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
@@ -59,7 +67,7 @@ def get_config(config_type: str, name: str):
 def create_config(config_type: str, name: str, body: ConfigBody):
     """Create a new config."""
     try:
-        config_id = _config_store.put(
+        config_id = _store().put(
             name=name,
             config_type=config_type,
             config=body.config,
@@ -74,7 +82,7 @@ def create_config(config_type: str, name: str, body: ConfigBody):
 def update_config(config_type: str, name: str, body: ConfigBody):
     """Update an existing config."""
     try:
-        config_id = _config_store.put(
+        config_id = _store().put(
             name=name,
             config_type=config_type,
             config=body.config,
@@ -89,7 +97,7 @@ def update_config(config_type: str, name: str, body: ConfigBody):
 def delete_config(config_type: str, name: str):
     """Delete a config."""
     try:
-        deleted = _config_store.delete(name, config_type)
+        deleted = _store().delete(name, config_type)
         if not deleted:
             raise HTTPException(status_code=404, detail=f"{config_type} '{name}' not found")
         return {"deleted": True}
@@ -109,15 +117,15 @@ def validate_config(config_type: str, body: ConfigBody):
 
     if config_type == "workflow":
         from temper_ai.stage.loader import GraphLoader
-        loader = GraphLoader(_config_store)
+        loader = GraphLoader(_store())
         try:
             # Temporarily store config for validation
-            _config_store.put("__validate_temp", config_type, body.config)
+            _store().put("__validate_temp", config_type, body.config)
             loader.load_workflow("__validate_temp")
         except Exception as exc:  # noqa: broad-except
             errors.append(str(exc))
         finally:
-            _config_store.delete("__validate_temp", config_type)
+            _store().delete("__validate_temp", config_type)
 
     elif config_type == "agent":
         config = body.config

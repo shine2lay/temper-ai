@@ -105,3 +105,4 @@ temper_ai/llm/providers/claude_code.py
 /*.png
 configs/workflows/local/
 configs/agents/local/
+configs/mcp_servers/puppeteer-claude.json

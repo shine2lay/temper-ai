@@ -110,7 +110,7 @@ def _init_llm_providers() -> dict:
             mcp_config=mcp_config,
             allowed_tools=allowed,
         )
-    _try_init_provider(providers, "claude_code", _make_claude_code, "Claude Code CLI provider initialized")
+    _try_init_provider(providers, "claude", _make_claude_code, "Claude provider initialized (via Claude Code CLI)")
 
     if not providers:
         logger.warning("No LLM providers configured. Set OPENAI_API_KEY, VLLM_BASE_URL, or OLLAMA_BASE_URL.")

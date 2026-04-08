@@ -40,7 +40,7 @@ def _register_optional_providers():
         pass
     try:
         from temper_ai.llm.providers.claude_code import ClaudeCodeLLM
-        _PROVIDER_MAP["claude_code"] = ClaudeCodeLLM
+        _PROVIDER_MAP["claude"] = ClaudeCodeLLM
     except ImportError:
         pass
 

@@ -9,7 +9,7 @@ Temper AI supports **6 LLM providers**. Set the provider in your [agent config](
 | Name | Description |
 |------|-------------|
 | [`anthropic`](anthropic.md) | Provider for Anthropic Claude models. |
-| [`claude_code`](claude_code.md) | Provider that shells out to the Claude Code CLI. |
+| [`claude`](claude.md) | Provider that shells out to the Claude Code CLI. |
 | [`gemini`](gemini.md) | Provider for Google Gemini models. |
 | [`ollama`](ollama.md) | Provider for Ollama (local models via OpenAI-compatible API). |
 | [`openai`](openai.md) | Provider for OpenAI and OpenAI-compatible APIs. |

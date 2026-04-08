@@ -9,7 +9,7 @@ Runs on your Max plan by default — no API key needed.
 Usage in agent YAML:
     agent:
       name: my_coder
-      provider: claude_code
+      provider: claude
       model: haiku          # sonnet (default), opus, haiku
 """
 
@@ -35,7 +35,7 @@ _DEFAULT_ALLOWED_TOOLS = [
 class ClaudeCodeLLM(BaseLLM):
     """Provider that shells out to the Claude Code CLI."""
 
-    PROVIDER_NAME = "claude_code"
+    PROVIDER_NAME = "claude"
 
     def __init__(
         self,
@@ -86,7 +86,7 @@ class ClaudeCodeLLM(BaseLLM):
 
         cwd = kwargs.get("cwd") or self.cwd
 
-        logger.info("claude_code: model=%s tools=%s mcp=%s cwd=%s", self.model, self.allowed_tools, self.mcp_config, cwd)
+        logger.info("claude: model=%s tools=%s mcp=%s cwd=%s", self.model, self.allowed_tools, self.mcp_config, cwd)
 
         # Build env: inherit current env, ensure OAuth token is passed through
         import os
@@ -278,7 +278,7 @@ def _parse_cli_output(raw: str, model: str) -> LLMResponse:
     try:
         data = json.loads(raw)
     except json.JSONDecodeError:
-        return LLMResponse(content=raw.strip(), model=model, provider="claude_code")
+        return LLMResponse(content=raw.strip(), model=model, provider="claude")
 
     return _parse_cli_result(data, model)
 
@@ -298,7 +298,7 @@ def _parse_cli_result(data: dict, model: str) -> LLMResponse:
     return LLMResponse(
         content=data.get("result", ""),
         model=actual_model,
-        provider="claude_code",
+        provider="claude",
         prompt_tokens=input_tokens + cache_read + cache_create,
         completion_tokens=output_tokens,
         total_tokens=input_tokens + output_tokens + cache_read + cache_create,

@@ -82,7 +82,7 @@ def _load_dotenv() -> None:
 
     try:
         from dotenv import load_dotenv
-        load_dotenv()
+        load_dotenv(dotenv_path=env_file, override=False)
         return
     except ImportError:
         pass

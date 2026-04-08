@@ -68,11 +68,11 @@ class TestGitModifications:
 
 
 class TestGitSafety:
-    def test_blocks_force_push(self, git_repo):
+    def test_blocks_push(self, git_repo):
         git = Git(workspace=git_repo)
-        result = git.execute(command="push --force origin main")
+        result = git.execute(command="push origin main")
         assert not result.success
-        assert "Force push" in result.error
+        assert "not allowed" in result.error
 
     def test_blocks_force_push_short_flag(self, git_repo):
         git = Git(workspace=git_repo)

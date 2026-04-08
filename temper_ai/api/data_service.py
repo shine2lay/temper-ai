@@ -31,9 +31,13 @@ def get_workflow_execution(execution_id: str) -> dict | None:
     if not events:
         return None
 
+    # Build children index for O(1) lookups (cleared at end of function)
+    _set_children_index(events)
+
     # Find workflow event
     workflow_event = _find_event_by_type(events, "workflow.")
     if not workflow_event:
+        _clear_children_index()
         return None
 
     # Check for fork metadata — if present, merge source execution's nodes
@@ -69,7 +73,7 @@ def get_workflow_execution(execution_id: str) -> dict | None:
     total_tool_calls = sum(n.get("total_tool_calls", 0) for n in nodes)
 
     wf_data = workflow_event.get("data", {})
-    return {
+    result = {
         "id": execution_id,
         "workflow_name": wf_data.get("name", ""),
         "status": _resolve_status(workflow_event),
@@ -86,6 +90,8 @@ def get_workflow_execution(execution_id: str) -> dict | None:
         "error_message": wf_data.get("error"),
         "fork_source": fork_data.get("source_execution_id") if fork_meta else None,
     }
+    _clear_children_index()
+    return result
 
 
 def list_workflow_executions(
@@ -369,14 +375,45 @@ def _find_event_by_type(events: list[dict], type_prefix: str) -> dict | None:
     return None
 
 
+import threading as _threading
+
+_children_index_local = _threading.local()
+
+
+def _build_children_index(events: list[dict]) -> dict[str, list[dict]]:
+    """Build a parent_id → [children] index for O(1) lookups."""
+    index: dict[str, list[dict]] = {}
+    for e in events:
+        pid = e.get("parent_id")
+        if pid:
+            index.setdefault(pid, []).append(e)
+    return index
+
+
+def _set_children_index(events: list[dict]) -> None:
+    """Build and cache the children index for the current request."""
+    _children_index_local.index = _build_children_index(events)
+
+
+def _clear_children_index() -> None:
+    """Clear the cached children index."""
+    _children_index_local.index = None
+
+
 def _find_children(events: list[dict], parent_id: str, type_prefix: str) -> list[dict]:
     """Find events that are children of a given parent and match a type prefix.
     Only returns 'started' events to avoid duplicates.
+    Uses thread-local cached index for O(1) lookup instead of O(N) scan.
     """
+    index = getattr(_children_index_local, "index", None)
+    if index is None:
+        # Fallback: build inline (for callers that don't set up the index)
+        index = _build_children_index(events)
+
+    candidates = index.get(parent_id, [])
     return [
-        e for e in events
-        if e.get("parent_id") == parent_id
-        and e.get("type", "").startswith(type_prefix)
+        e for e in candidates
+        if e.get("type", "").startswith(type_prefix)
         and e.get("type", "").endswith(".started")
     ]
 

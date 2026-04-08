@@ -152,10 +152,17 @@ class MCPClientManager:
             return await connection.call_tool(tool_name, arguments)
 
     async def _connect_stdio(self, config: dict) -> ClientSession:
+        # Sanitize env — block dangerous vars that could be injected via MCP YAML config
+        raw_env = config.get("env")
+        if raw_env and isinstance(raw_env, dict):
+            blocked = {"LD_PRELOAD", "LD_LIBRARY_PATH", "DYLD_INSERT_LIBRARIES", "PYTHONPATH"}
+            sanitized_env = {k: v for k, v in raw_env.items() if k not in blocked}
+        else:
+            sanitized_env = raw_env
         params = StdioServerParameters(
             command=config["command"],
             args=config.get("args", []),
-            env=config.get("env"),
+            env=sanitized_env,
         )
         read, write = await self._exit_stack.enter_async_context(stdio_client(params))
         session = await self._exit_stack.enter_async_context(ClientSession(read, write))

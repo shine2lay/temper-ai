@@ -7,15 +7,21 @@ v1 is a clean rewrite focused on the core engine: composable graph execution, co
 **What's shipped:**
 - Composable graph model (AgentNode + StageNode, recursive)
 - One execution engine with topological sort + parallel batching
-- 5 LLM providers (OpenAI, vLLM, Ollama, Anthropic, Gemini)
-- 5 tools (Bash, Calculator, FileWriter, Git, Http)
+- 6 LLM providers (OpenAI, vLLM, Ollama, Anthropic, Gemini, Claude Code)
+- 9 tools (Bash, Calculator, FileWriter, FileEdit, FileAppend, Git, Http, WebSearch, Delegate)
 - 3 topology strategies (parallel, sequential, leader)
 - 3 safety policies (file access, forbidden ops, budget)
 - Memory system (mem0 + InMemory backends)
 - Jinja2 template prompts with token budget guard
-- Dashboard with DAG visualization
+- Dashboard with DAG visualization, Studio editor, Library, Docs
+- Checkpoint/resume/fork system
+- Delegate tool for mid-agent sub-task spawning
+- MCP tool integration (connect to external MCP servers)
+- Loop conditions with structured output evaluation
+- Sprint workflow (domain-agnostic iterative execution)
 - Auto-generated reference docs
-- Architecture scanner with extensible rule system
+- CI pipeline (lint, typecheck, test with Python 3.11+3.12)
+- 725+ tests
 
 ---
 

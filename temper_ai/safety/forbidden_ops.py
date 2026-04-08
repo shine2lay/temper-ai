@@ -47,7 +47,7 @@ class ForbiddenOpsPolicy(BasePolicy):
         tool_params = action_data.get("tool_params", {})
 
         # Only check bash/shell tools
-        if tool_name.lower() not in ("bash",):
+        if tool_name.lower() not in ("bash", "git"):
             return PolicyDecision(
                 action="allow", reason="Not a shell tool", policy_name=self.name,
             )

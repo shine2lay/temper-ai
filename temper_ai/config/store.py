@@ -77,10 +77,12 @@ class ConfigStore:
         self._validate_type(config_type)
 
         with get_session() as session:
+            # Use select-for-update to prevent race condition between concurrent put() calls
             existing = session.exec(
                 select(Config)
                 .where(Config.type == config_type)
                 .where(Config.name == name)
+                .with_for_update()
             ).first()
 
             if existing is not None:

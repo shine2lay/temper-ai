@@ -186,17 +186,4 @@ def get_registry():
     }
 
 
-@router.get("/mcp-servers")
-def list_mcp_servers():
-    """List configured MCP server names from config files on disk."""
-    import pathlib
-    servers = []
-    for candidate in [
-        pathlib.Path("/app/configs/mcp_servers"),
-        pathlib.Path(__file__).resolve().parents[2] / "configs" / "mcp_servers",
-        pathlib.Path("configs/mcp_servers"),
-    ]:
-        if candidate.is_dir():
-            servers = sorted(f.stem for f in candidate.glob("*.yaml"))
-            break
-    return {"mcp_servers": servers}
+# MCP servers endpoint removed — use /api/mcp-servers from routes.py instead

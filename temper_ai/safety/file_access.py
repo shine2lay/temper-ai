@@ -42,7 +42,7 @@ class FileAccessPolicy(BasePolicy):
         tool_params = action_data.get("tool_params", {})
 
         # Only check file-related tools
-        if tool_name.lower() not in ("bash", "file_writer", "filewriter"):
+        if tool_name.lower() not in ("bash", "file_writer", "filewriter", "fileedit", "file_edit", "fileappend", "file_append", "git"):
             return PolicyDecision(
                 action="allow", reason="Not a file tool", policy_name=self.name,
             )

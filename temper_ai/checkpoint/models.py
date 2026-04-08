@@ -58,4 +58,4 @@ class Checkpoint(SQLModel, table=True):
     )
 
 
-Index("idx_checkpoints_exec_seq", Checkpoint.execution_id, Checkpoint.sequence)
+Index("idx_checkpoints_exec_seq", Checkpoint.execution_id, Checkpoint.sequence, unique=True)

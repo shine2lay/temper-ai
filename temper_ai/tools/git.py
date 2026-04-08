@@ -15,18 +15,13 @@ logger = logging.getLogger(__name__)
 _DEFAULT_TIMEOUT = 30
 _MAX_OUTPUT_SIZE = 128_000
 
-# Git subcommands that are safe to execute
+# Git subcommands that are safe to execute (allowlist — anything not listed is blocked)
 _ALLOWED_SUBCOMMANDS = {
     "status", "diff", "log", "show", "blame",
     "add", "commit", "checkout", "branch",
-    "pull", "push", "fetch", "merge", "rebase",
-    "stash", "tag", "remote", "rev-parse",
-    "ls-files", "ls-tree",
-}
-
-# Subcommands that should never be used
-_BLOCKED_SUBCOMMANDS = {
-    "filter-branch", "reflog", "fsck", "gc",
+    "merge", "rebase", "stash", "tag",
+    "rev-parse", "ls-files", "ls-tree",
+    # pull/fetch allowed for reading, push/remote removed to prevent exfiltration
 }
 
 
@@ -106,8 +101,6 @@ class Git(BaseTool):
 
 def _validate_git_command(subcommand: str, parts: list[str]) -> str | None:
     """Validate git subcommand safety. Returns an error string or None if allowed."""
-    if subcommand in _BLOCKED_SUBCOMMANDS:
-        return f"Git subcommand '{subcommand}' is not allowed"
-    if subcommand == "push" and ("--force" in parts or "-f" in parts):
-        return "Force push is not allowed"
+    if subcommand not in _ALLOWED_SUBCOMMANDS:
+        return f"Git subcommand '{subcommand}' is not allowed. Allowed: {sorted(_ALLOWED_SUBCOMMANDS)}"
     return None

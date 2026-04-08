@@ -7,14 +7,32 @@ Thanks for your interest in contributing. This guide covers how to set up, devel
 ```bash
 git clone https://github.com/shine2lay/temper-ai.git
 cd temper-ai
+
+# Option A: uv (recommended — matches lock file)
+uv sync --all-extras
+
+# Option B: pip
 pip install -e ".[dev]"
+```
+
+### Pre-commit hook
+
+The repo includes a pre-commit hook that auto-regenerates reference docs when source files change. Install it after cloning:
+
+```bash
+# The hook is already in .git/hooks/pre-commit after clone
+# To regenerate docs manually:
+python scripts/generate_docs.py
 ```
 
 ## Running Tests
 
 ```bash
-# Full suite (554 tests, ~25s)
+# Full suite (725+ tests, ~25s)
 pytest
+
+# Or via Makefile
+make test
 
 # Specific module
 pytest tests/test_stage/
@@ -28,17 +46,42 @@ pytest tests/test_stage/test_executor.py::TestExecuteGraph -v
 ```bash
 # Lint
 ruff check temper_ai/
+# or: make lint
 
 # Type check
-mypy temper_ai/
+mypy temper_ai/ --ignore-missing-imports
+# or: make typecheck
 
 # Quality report (anti-patterns, complexity, dead code, etc.)
 python -m scripts.code_quality_check.runner temper_ai
 ```
 
+## Frontend Development
+
+The dashboard is a React + TypeScript + Vite app in `frontend/`.
+
+```bash
+cd frontend
+npm install
+npm run dev      # Dev server at http://localhost:5173 (proxied to backend)
+```
+
+To build for production:
+
+```bash
+npm run build    # Outputs to frontend/dist/
+# or from repo root: make build
+```
+
+The backend serves `frontend/dist/` as static files at `/app/*`.
+
+**Stack:** React 19, TypeScript 5.9, Tailwind CSS 4.1, Shadcn/ui, React Flow, Zustand, TanStack React Query.
+
+See `frontend/README.md` for directory structure.
+
 ## Documentation
 
-Reference docs auto-generate from code introspection. A pre-commit hook regenerates them when source files change.
+Reference docs auto-generate from code introspection. The pre-commit hook regenerates them when source files change.
 
 To regenerate manually:
 
@@ -51,9 +94,9 @@ Docs live in `docs/reference/` — don't edit them manually.
 ## Project Structure
 
 ```
-temper_ai/        Core package (12 modules)
-tests/            Mirrors package structure
-configs/          Demo workflow + agent YAML configs
+temper_ai/        Core package (14 modules)
+tests/            Mirrors package structure (725+ tests)
+configs/          Workflow, agent, stage, tool YAML configs
 scripts/          Doc generator + code quality checker
 docs/             Auto-generated reference docs + roadmap
 frontend/         React + Vite + TypeScript dashboard

@@ -262,8 +262,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         from temper_ai.tools.mcp_client import mcp_manager
         await mcp_manager.stop()
-    except Exception: # noqa
-        pass  # noqa: B110
+    except Exception:
+        logger.debug("MCP shutdown failed (non-fatal)", exc_info=True)
     reset_database()
     logger.info("Server shutdown")
 

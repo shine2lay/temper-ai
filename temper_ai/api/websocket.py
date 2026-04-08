@@ -207,11 +207,12 @@ class WebSocketManager:
         connections = self._connections.get(execution_id, [])
         for ws in connections:
             try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
+                try:
+                    loop = asyncio.get_running_loop()
                     asyncio.ensure_future(self._send_json(ws, message))
-                else:
-                    loop.run_until_complete(self._send_json(ws, message))
+                except RuntimeError:
+                    # No running event loop — create one
+                    asyncio.run(self._send_json(ws, message))
             except Exception:
                 logger.debug("Failed to send to WebSocket", exc_info=True)
 

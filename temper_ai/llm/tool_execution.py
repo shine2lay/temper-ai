@@ -148,9 +148,3 @@ def _build_failure_result(
         "success": False,
         "duration_ms": duration_ms,
     }
-
-
-def _truncate(text: str, max_length: int) -> str:
-    if len(text) <= max_length:
-        return text
-    return text[:max_length] + "..."

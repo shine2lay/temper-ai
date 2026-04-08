@@ -88,13 +88,11 @@ class ClaudeCodeLLM(BaseLLM):
 
         logger.info("claude_code: model=%s tools=%s mcp=%s cwd=%s", self.model, self.allowed_tools, self.mcp_config, cwd)
 
-        # Build env: inherit current env but strip ANTHROPIC_API_KEY to force Max plan auth
+        # Build env: inherit current env, ensure OAuth token is passed through
         import os
-        env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
-        # Use CLAUDE_CONFIG_DIR if set (for Docker with mounted credentials)
-        config_dir = os.environ.get("CLAUDE_CONFIG_DIR")
-        if config_dir:
-            env["CLAUDE_CONFIG_DIR"] = config_dir
+        env = os.environ.copy()
+        # Strip ANTHROPIC_API_KEY to prevent falling back to API credits
+        env.pop("ANTHROPIC_API_KEY", None)
 
         proc = subprocess.run(
             cmd,
@@ -147,12 +145,11 @@ class ClaudeCodeLLM(BaseLLM):
 
         cwd = kwargs.get("cwd") or self.cwd
 
-        # Strip ANTHROPIC_API_KEY to force Max plan auth
+        # Build env: inherit current env, ensure OAuth token is passed through
         import os
-        env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
-        config_dir = os.environ.get("CLAUDE_CONFIG_DIR")
-        if config_dir:
-            env["CLAUDE_CONFIG_DIR"] = config_dir
+        env = os.environ.copy()
+        # Strip ANTHROPIC_API_KEY to prevent falling back to API credits
+        env.pop("ANTHROPIC_API_KEY", None)
 
         proc = subprocess.Popen(
             cmd,

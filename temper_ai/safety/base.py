@@ -26,6 +26,7 @@ class ActionType(StrEnum):
     """
 
     TOOL_CALL = "tool_call"
+    LLM_CALL = "llm_call"
     WORKFLOW_START = "workflow_start"
     WORKFLOW_END = "workflow_end"
     AGENT_OUTPUT = "agent_output"

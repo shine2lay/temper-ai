@@ -14,7 +14,7 @@ Config:
     max_cost_usd: 1.00     # max total cost for the run
     max_tokens: 100000     # max total tokens for the run
 
-- **Evaluates on:** `tool_call`, `workflow_start`
+- **Evaluates on:** `tool_call`, `llm_call`, `workflow_start`
 
 Tracks cumulative cost across all [LLM provider](../providers/index.md) calls in a run.
 

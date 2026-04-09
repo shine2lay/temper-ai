@@ -23,7 +23,7 @@ class BudgetPolicy(BasePolicy):
         max_tokens: 100000     # max total tokens for the run
     """
 
-    action_types = [ActionType.TOOL_CALL, ActionType.WORKFLOW_START]
+    action_types = [ActionType.TOOL_CALL, ActionType.LLM_CALL, ActionType.WORKFLOW_START]
 
     @classmethod
     def validate_config(cls, config: dict) -> list[str]:

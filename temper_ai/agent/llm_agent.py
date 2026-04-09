@@ -170,12 +170,30 @@ class LLMAgent(AgentABC):
         if not stream_cb and hasattr(context.event_recorder, 'broadcast_stream_chunk'):
             stream_cb = self._make_stream_callback(context, agent_event_id)
 
+        # Build budget check callback so LLM service can check before each iteration
+        budget_check = None
+        te = context.tool_executor
+        if te and hasattr(te, 'policy_engine') and te.policy_engine:
+            def _check_budget():
+                from temper_ai.safety.base import ActionType
+                ctx = {"run_cost_usd": te.run_cost_usd, "run_tokens": te.run_tokens}
+                decision = te.policy_engine.evaluate(
+                    ActionType.LLM_CALL, {"agent_name": self.config.get("name", "")}, ctx,
+                )
+                return decision.reason if decision.action == "deny" else None
+            budget_check = _check_budget
+
+        # Wire usage tracker so budget stays current between LLM iterations
+        if budget_check and te:
+            llm_service._usage_tracker = lambda cost, tokens: te.track_usage(cost, tokens)
+
         llm_result: LLMRunResult = llm_service.run(
             messages=messages,
             tools=tools or None,
             execute_tool=execute_tool,
             context=call_context,
             stream_callback=stream_cb,
+            budget_check=budget_check,
         )
 
         if context.tool_executor and hasattr(context.tool_executor, 'track_usage'):

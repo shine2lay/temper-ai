@@ -54,6 +54,7 @@ class LLMService:
         execute_tool: ToolExecutorFn | None = None,
         context: CallContext | None = None,
         stream_callback: StreamCallback | None = None,
+        budget_check: Any | None = None,
     ) -> LLMRunResult:
         """Run the LLM tool-calling loop."""
         # Store per-run state so helpers don't need many parameters
@@ -68,8 +69,19 @@ class LLMService:
         self._total_cost = 0.0
         self._response: LLMResponse | None = None
         self._run_start = time.monotonic()
+        self._budget_check = budget_check
+        self._usage_tracker = None
 
         for iteration in range(1, self.max_iterations + 1):
+            # Check budget before each LLM call
+            if self._budget_check:
+                denial = self._budget_check()
+                if denial:
+                    return self._build_result(
+                        iteration - 1,
+                        error=f"Budget exceeded: {denial}",
+                    )
+
             result = self._run_iteration(iteration)
             if result is not None:
                 return result
@@ -86,6 +98,10 @@ class LLMService:
         llm_event_id, self._response, iter_cost = self._call_llm(iteration)
         self._total_tokens += self._response.total_tokens or 0
         self._total_cost += iter_cost
+
+        # Report usage so budget tracking stays current between iterations
+        if self._budget_check and hasattr(self, '_usage_tracker') and self._usage_tracker:
+            self._usage_tracker(iter_cost, self._response.total_tokens or 0)
 
         tool_calls = parse_tool_calls(self._response)
         if not tool_calls:

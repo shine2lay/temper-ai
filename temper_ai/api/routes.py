@@ -143,7 +143,7 @@ def start_run(body: RunRequest):
 
     thread = threading.Thread(
         target=_run_workflow,
-        args=(nodes, body.inputs, context, config.name, execution_id),
+        args=(nodes, body.inputs, context, config.name, execution_id, config.outputs),
         daemon=True,
     )
     thread.start()
@@ -508,7 +508,7 @@ async def websocket_endpoint(websocket: WebSocket, execution_id: str):
 
 # --- Background execution ---
 
-def _run_workflow(nodes, inputs, context, workflow_name, execution_id):
+def _run_workflow(nodes, inputs, context, workflow_name, execution_id, workflow_outputs=None):
     """Run a workflow in a background thread."""
     try:
         logger.info("Starting workflow '%s' (execution: %s)", workflow_name, execution_id)
@@ -516,6 +516,7 @@ def _run_workflow(nodes, inputs, context, workflow_name, execution_id):
             nodes, inputs, context,
             graph_name=workflow_name,
             is_workflow=True,
+            workflow_outputs=workflow_outputs,
         )
         logger.info(
             "Workflow '%s' completed: status=%s, cost=$%.4f, tokens=%d",

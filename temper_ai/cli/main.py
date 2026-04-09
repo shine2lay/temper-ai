@@ -133,6 +133,7 @@ def _cmd_run(args) -> None:
             nodes, inputs, context,
             graph_name=config.name,
             is_workflow=True,
+            workflow_outputs=config.outputs,
         )
     except KeyboardInterrupt:
         print("\nInterrupted.", file=sys.stderr)

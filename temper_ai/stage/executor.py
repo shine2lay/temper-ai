@@ -42,6 +42,7 @@ def execute_graph(
     graph_name: str = "",
     is_workflow: bool = False,
     initial_outputs: dict[str, NodeResult] | None = None,
+    workflow_outputs: dict[str, str] | None = None,
 ) -> NodeResult:
     """Execute a graph of nodes in topological order, concurrently where possible."""
     start_event = EventType.WORKFLOW_STARTED if is_workflow else EventType.STAGE_STARTED
@@ -64,7 +65,7 @@ def execute_graph(
 
     try:
         _run_batches(batches, node_map, input_data, node_outputs, loop_counts, context, graph_event_id)
-        return _build_final_result(nodes, node_outputs, start, graph_event_id, context)
+        return _build_final_result(nodes, node_outputs, input_data, start, graph_event_id, context, workflow_outputs)
 
     except Exception as exc:
         duration = time.monotonic() - start
@@ -130,9 +131,11 @@ def _run_batches(
 def _build_final_result(
     nodes: list[Node],
     node_outputs: dict[str, NodeResult],
+    input_data: dict,
     start: float,
     graph_event_id: str,
     context: ExecutionContext,
+    workflow_outputs: dict[str, str] | None = None,
 ) -> NodeResult:
     """Assemble the final NodeResult after all batches complete successfully."""
     # Rebuild from final outputs to avoid duplicates from loop reruns
@@ -146,16 +149,41 @@ def _build_final_result(
     total_tokens = sum(r.total_tokens for r in node_outputs.values())
     last_output = _get_final_output(nodes, node_outputs)
 
+    # Resolve workflow-level outputs from node results
+    resolved_outputs = None
+    if workflow_outputs:
+        resolved_outputs = {}
+        for key, source in workflow_outputs.items():
+            try:
+                resolved_outputs[key] = _resolve_single_input(
+                    "__workflow__", key, source, input_data, node_outputs,
+                )
+            except Exception:
+                resolved_outputs[key] = None
+
+    event_data: dict = {
+        "cost_usd": total_cost,
+        "total_tokens": total_tokens,
+        "duration_seconds": duration,
+    }
+    if resolved_outputs:
+        event_data["workflow_output"] = resolved_outputs
+
     context.event_recorder.update_event(
         graph_event_id,
         status="completed",
-        data={"cost_usd": total_cost, "total_tokens": total_tokens, "duration_seconds": duration},
+        data=event_data,
+    )
+
+    # Use workflow outputs as structured_output if available, otherwise fall back to last node
+    final_structured = resolved_outputs if resolved_outputs else (
+        last_output.structured_output if last_output else None
     )
 
     return NodeResult(
         status=Status.COMPLETED,
         output=last_output.output if last_output else "",
-        structured_output=last_output.structured_output if last_output else None,
+        structured_output=final_structured,
         agent_results=all_agent_results,
         node_results=node_outputs,
         cost_usd=total_cost,

@@ -87,6 +87,7 @@ def get_workflow_execution(execution_id: str) -> dict | None:
         "total_tool_calls": total_tool_calls,
         "input_data": wf_data.get("input_data"),
         "output_data": wf_data.get("output_data"),
+        "workflow_output": wf_data.get("workflow_output"),
         "error_message": wf_data.get("error"),
         "fork_source": fork_data.get("source_execution_id") if fork_meta else None,
     }

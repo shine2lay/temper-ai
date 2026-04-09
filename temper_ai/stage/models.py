@@ -149,13 +149,14 @@ class WorkflowConfig:
 
     # Workflow-level declarations
     inputs: dict | None = None  # Workflow input schema
+    outputs: dict[str, str] | None = None  # Workflow output mapping (key → source ref)
     safety: dict | None = None  # Safety policy config
     memory: dict | None = None  # Memory config
     defaults: dict | None = None  # Default model, provider, etc.
 
     _KNOWN_FIELDS: frozenset = frozenset({
         "name", "description", "version", "nodes",
-        "inputs", "safety", "memory", "defaults",
+        "inputs", "outputs", "safety", "memory", "defaults",
     })
 
     @classmethod
@@ -179,6 +180,7 @@ class WorkflowConfig:
             version=data.get("version", "1.0"),
             nodes=nodes,
             inputs=data.get("inputs"),
+            outputs=data.get("outputs"),
             safety=data.get("safety"),
             memory=data.get("memory"),
             defaults=data.get("defaults"),

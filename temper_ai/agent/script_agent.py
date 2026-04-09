@@ -50,6 +50,7 @@ class ScriptAgent(AgentABC):
                 context={
                     "parent_id": agent_event_id,
                     "execution_id": context.run_id,
+                    "skip_policies": context.skip_policies,
                 },
             )
 

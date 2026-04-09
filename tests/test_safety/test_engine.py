@@ -79,6 +79,53 @@ class TestPolicyEngine:
         decision = engine.evaluate(ActionType.TOOL_CALL, {}, {})
         assert decision.action == "allow"
 
+    def test_skip_types_bypasses_matching_policy(self):
+        """Policies whose config type is in skip_types should be skipped."""
+        class DenyBudget(BasePolicy):
+            action_types = [ActionType.TOOL_CALL]
+            @classmethod
+            def validate_config(cls, config):
+                return []
+            def evaluate(self, action_type, action_data, context):
+                return PolicyDecision(action="deny", reason="over budget", policy_name="budget")
+
+        engine = PolicyEngine([DenyBudget({"type": "budget"})])
+        # Without skip_types — should deny
+        decision = engine.evaluate(ActionType.TOOL_CALL, {}, {})
+        assert decision.action == "deny"
+        # With skip_types — should allow (budget policy skipped)
+        decision = engine.evaluate(ActionType.TOOL_CALL, {}, {}, skip_types={"budget"})
+        assert decision.action == "allow"
+
+    def test_skip_types_only_skips_matching(self):
+        """skip_types only affects policies with matching type, others still run."""
+        class DenyFileAccess(BasePolicy):
+            action_types = [ActionType.TOOL_CALL]
+            @classmethod
+            def validate_config(cls, config):
+                return []
+            def evaluate(self, action_type, action_data, context):
+                return PolicyDecision(action="deny", reason="blocked", policy_name="file_access")
+
+        engine = PolicyEngine([DenyFileAccess({"type": "file_access"})])
+        # Skipping "budget" should NOT skip "file_access"
+        decision = engine.evaluate(ActionType.TOOL_CALL, {}, {}, skip_types={"budget"})
+        assert decision.action == "deny"
+        assert decision.policy_name == "file_access"
+
+    def test_skip_types_empty_set_skips_nothing(self):
+        class DenyAll(BasePolicy):
+            action_types = [ActionType.TOOL_CALL]
+            @classmethod
+            def validate_config(cls, config):
+                return []
+            def evaluate(self, action_type, action_data, context):
+                return PolicyDecision(action="deny", reason="no", policy_name="test")
+
+        engine = PolicyEngine([DenyAll({"type": "test"})])
+        decision = engine.evaluate(ActionType.TOOL_CALL, {}, {}, skip_types=set())
+        assert decision.action == "deny"
+
     def test_add_policy(self):
         engine = PolicyEngine()
         assert len(engine.policies) == 0

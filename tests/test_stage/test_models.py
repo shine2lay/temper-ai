@@ -102,6 +102,18 @@ class TestNodeConfig:
         assert nc.inputs == {"code_output": "code.output"}
         assert nc.outputs == {"verdict": "structured.verdict"}
 
+    def test_from_dict_skip_policies(self):
+        nc = NodeConfig.from_dict({
+            "name": "cleanup",
+            "type": "agent",
+            "skip_policies": ["budget"],
+        })
+        assert nc.skip_policies == ["budget"]
+
+    def test_from_dict_skip_policies_default_none(self):
+        nc = NodeConfig.from_dict({"name": "x"})
+        assert nc.skip_policies is None
+
     def test_from_dict_defaults(self):
         nc = NodeConfig.from_dict({"name": "x"})
         assert nc.type == "agent"

@@ -142,3 +142,63 @@ class TestWorkspaceSandbox:
         executor.register_tools({"Calculator": Calculator()})
         result = executor.execute("Calculator", {"expression": "1"})
         assert result.success is True
+
+
+class TestSkipPolicies:
+    """Test that skip_policies in execution context bypasses matching policies."""
+
+    def _make_budget_engine(self):
+        """Create a policy engine with a budget policy that always denies."""
+        from temper_ai.safety.engine import PolicyEngine
+        return PolicyEngine.from_config({
+            "policies": [{"type": "budget", "max_cost_usd": 0.001}],
+        })
+
+    def test_budget_blocks_without_skip(self):
+        """Budget policy should block when cost exceeds limit."""
+        from temper_ai.tools.calculator import Calculator
+        engine = self._make_budget_engine()
+        executor = ToolExecutor(policy_engine=engine)
+        executor.register_tools({"Calculator": Calculator()})
+        executor.run_cost_usd = 1.0  # Over the 0.001 limit
+
+        result = executor.execute("Calculator", {"expression": "1+1"})
+        assert result.success is False
+        assert "budget" in result.error.lower() or "policy" in result.error.lower()
+
+    def test_skip_policies_bypasses_budget(self):
+        """With skip_policies=['budget'], budget policy should be skipped."""
+        from temper_ai.tools.calculator import Calculator
+        engine = self._make_budget_engine()
+        executor = ToolExecutor(policy_engine=engine)
+        executor.register_tools({"Calculator": Calculator()})
+        executor.run_cost_usd = 1.0  # Over the limit
+
+        result = executor.execute(
+            "Calculator", {"expression": "1+1"},
+            context={"skip_policies": ["budget"]},
+        )
+        assert result.success is True
+        assert result.result == "2"
+
+    def test_skip_policies_only_skips_matching(self):
+        """Skipping 'budget' should not skip other policies like file_access."""
+        from temper_ai.safety.engine import PolicyEngine
+        from temper_ai.tools.file_writer import FileWriter
+
+        engine = PolicyEngine.from_config({
+            "policies": [
+                {"type": "budget", "max_cost_usd": 0.001},
+                {"type": "file_access", "denied_paths": ["/etc"]},
+            ],
+        })
+        executor = ToolExecutor(policy_engine=engine, workspace_root="/tmp")
+        executor.register_tools({"FileWriter": FileWriter()})
+        executor.run_cost_usd = 1.0  # Over budget
+
+        # Skip budget, but file_access should still block /etc paths
+        result = executor.execute(
+            "FileWriter", {"file_path": "/etc/passwd", "content": "x"},
+            context={"skip_policies": ["budget"]},
+        )
+        assert result.success is False

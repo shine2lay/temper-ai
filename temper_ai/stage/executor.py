@@ -347,7 +347,11 @@ def _run_node_with_events(
     Enforces per-node timeout if configured via node.config.timeout_seconds.
     """
     from dataclasses import replace as dc_replace
-    node_context = dc_replace(context, parent_event_id=node_event_id)
+    node_context = dc_replace(
+        context,
+        parent_event_id=node_event_id,
+        skip_policies=node.config.skip_policies,
+    )
 
     timeout = node.config.timeout_seconds
     start = time.monotonic()

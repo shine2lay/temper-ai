@@ -127,16 +127,24 @@ class ToolExecutor:
         parent_id: str | None,
         execution_id: str | None,
     ) -> ToolResult | None:
-        """Check safety policies. Returns a blocking ToolResult if denied, else None."""
+        """Check safety policies. Returns a blocking ToolResult if denied, else None.
+
+        Respects ``skip_policies`` from the execution context — policy types
+        listed there are temporarily disabled for this evaluation.
+        """
         if not self.policy_engine:
             return None
 
         from temper_ai.safety.base import ActionType
+
+        skip = set(ctx.get("skip_policies") or [])
+
         policy_ctx = {**ctx, "run_cost_usd": self.run_cost_usd, "run_tokens": self.run_tokens}
         decision = self.policy_engine.evaluate(
             ActionType.TOOL_CALL,
             {"tool_name": tool_name, "tool_params": params},
             policy_ctx,
+            skip_types=skip,
         )
         if decision.action != "deny":
             return None

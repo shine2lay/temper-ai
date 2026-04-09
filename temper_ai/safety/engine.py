@@ -40,6 +40,7 @@ class PolicyEngine:
         action_type: ActionType,
         action_data: dict[str, Any],
         context: dict[str, Any],
+        skip_types: set[str] | None = None,
     ) -> PolicyDecision:
         """Run all applicable policies. First deny wins.
 
@@ -47,6 +48,7 @@ class PolicyEngine:
             action_type: What kind of action is being evaluated.
             action_data: Action-specific data.
             context: Execution context (run_id, accumulated cost, etc.)
+            skip_types: Policy type names to skip (e.g., {"budget"}).
 
         Returns:
             PolicyDecision — allow if all pass, deny on first failure.
@@ -55,6 +57,8 @@ class PolicyEngine:
             if not policy.enabled:
                 continue
             if action_type not in policy.action_types:
+                continue
+            if skip_types and policy.config.get("type") in skip_types:
                 continue
 
             decision = policy.evaluate(action_type, action_data, context)

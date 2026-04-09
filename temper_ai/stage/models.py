@@ -49,9 +49,10 @@ class NodeConfig:
     max_loops: int = 1
     loop_condition: dict | None = None  # {"source": "x.structured.y", "operator": "equals", "value": "FAIL"}
 
-    # Timeout and gates
+    # Timeout, gates, and policy overrides
     timeout_seconds: int | None = None  # Wall-clock timeout for this node (default: no limit)
     gate: bool = False  # If True, pause before executing and wait for human approval
+    skip_policies: list[str] | None = None  # Policy types to skip for this node (e.g., ["budget"])
 
 
     # Input/output mapping
@@ -77,7 +78,7 @@ class NodeConfig:
     _KNOWN_FIELDS: frozenset = frozenset({
         "name", "type", "agent", "strategy", "strategy_config", "agents",
         "nodes", "ref", "depends_on", "condition", "loop_to", "max_loops",
-        "loop_condition", "timeout_seconds", "gate",
+        "loop_condition", "timeout_seconds", "gate", "skip_policies",
         "input_map", "inputs", "outputs",
         "task_template",
         "system_prompt", "role", "model", "provider", "temperature",
@@ -118,6 +119,7 @@ class NodeConfig:
             loop_condition=data.get("loop_condition"),
             timeout_seconds=data.get("timeout_seconds"),
             gate=data.get("gate", False),
+            skip_policies=data.get("skip_policies"),
             input_map=data.get("input_map"),
             inputs=data.get("inputs"),
             outputs=data.get("outputs"),

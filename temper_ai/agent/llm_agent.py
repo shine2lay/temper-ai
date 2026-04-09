@@ -171,9 +171,11 @@ class LLMAgent(AgentABC):
             stream_cb = self._make_stream_callback(context, agent_event_id)
 
         # Build budget check callback so LLM service can check before each iteration
+        # Respects skip_policies on the current node (e.g., script cleanup stages)
         budget_check = None
         te = context.tool_executor
-        if te and hasattr(te, 'policy_engine') and te.policy_engine:
+        skip = set(context.skip_policies or [])
+        if te and hasattr(te, 'policy_engine') and te.policy_engine and 'budget' not in skip:
             def _check_budget():
                 from temper_ai.safety.base import ActionType
                 ctx = {"run_cost_usd": te.run_cost_usd, "run_tokens": te.run_tokens}
@@ -365,6 +367,7 @@ class LLMAgent(AgentABC):
                 context={
                     "parent_id": None,
                     "execution_id": context.run_id,
+                    "skip_policies": context.skip_policies,
                 },
             )
             return result.result if result.success else f"Error: {result.error}"

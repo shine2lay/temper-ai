@@ -146,6 +146,8 @@ class LLMService:
         kwargs: dict[str, Any] = {}
         if self._tools:
             kwargs["tools"] = self._tools
+        if self._ctx.cwd:
+            kwargs["cwd"] = self._ctx.cwd
         if self._stream_callback:
             return self.provider.stream(self._messages, on_chunk=self._stream_callback, **kwargs)
         return self.provider.complete(self._messages, **kwargs)

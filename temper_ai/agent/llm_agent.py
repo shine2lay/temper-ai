@@ -161,7 +161,7 @@ class LLMAgent(AgentABC):
         )
 
         llm_service = self._build_llm_service(context)
-        call_context = self._build_call_context(context, agent_event_id)
+        call_context = self._build_call_context(context, agent_event_id, input_data)
 
         tools = self._get_tools(context)
         execute_tool = self._make_tool_executor(context) if tools else None
@@ -230,8 +230,12 @@ class LLMAgent(AgentABC):
             max_context_tokens=self.config.get("max_context_tokens", DEFAULT_MAX_CONTEXT_TOKENS),
         )
 
-    def _build_call_context(self, context: ExecutionContext, agent_event_id: str) -> CallContext:
+    def _build_call_context(
+        self, context: ExecutionContext, agent_event_id: str, input_data: dict | None = None,
+    ) -> CallContext:
         """Build the CallContext for LLMService observability."""
+        # Use workspace_path from input_data as cwd for providers that need it (Claude Code)
+        cwd = (input_data or {}).get("workspace_path") or context.workspace_path
         return CallContext(
             execution_id=context.run_id,
             agent_event_id=agent_event_id,
@@ -240,6 +244,7 @@ class LLMAgent(AgentABC):
             event_recorder=(
                 context.event_recorder.record if context.event_recorder else None
             ),
+            cwd=cwd,
         )
 
     def _recall_memories(self, context: ExecutionContext) -> list[str]:

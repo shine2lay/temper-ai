@@ -45,7 +45,7 @@ class ScriptAgent(AgentABC):
             timeout = self.config.get("timeout_seconds", 30)
             tool_result = context.tool_executor.execute(
                 "Bash",
-                {"command": script, "_skip_allowlist": True},
+                {"command": script, "_skip_allowlist": True, "timeout": timeout},
                 timeout=timeout,
                 context={
                     "parent_id": agent_event_id,

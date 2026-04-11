@@ -181,7 +181,8 @@ class WebSocketManager:
                 )
             else:
                 self._flush_chunks(execution_id)
-        except Exception:  # noqa: broad-except
+        except Exception as e:  # noqa: broad-except
+            logger.debug("Threadsafe flush scheduling failed, flushing synchronously: %s", e)
             self._flush_chunks(execution_id)
 
     def _flush_chunks(self, execution_id: str):
@@ -236,8 +237,8 @@ class WebSocketManager:
         """Send JSON message to a WebSocket."""
         try:
             await websocket.send_json(data)
-        except Exception: # noqa
-            pass  # Connection might be closing  # noqa: B110
+        except Exception as e:  # noqa: broad-except
+            logger.debug("WebSocket send failed (connection likely closing): %s", e)
 
     def _disconnect(self, websocket: WebSocket, execution_id: str):
         """Remove a disconnected WebSocket."""

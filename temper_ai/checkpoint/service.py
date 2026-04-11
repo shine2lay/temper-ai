@@ -50,6 +50,10 @@ class CheckpointService:
                 if result is not None:
                     self._sequence = result + 1
         except Exception:
+            logger.error(
+                "Failed to load max checkpoint sequence for execution '%s'; starting at 0",
+                self.execution_id, exc_info=True,
+            )
             self._sequence = 0
 
     def _next_seq(self) -> int:
@@ -124,8 +128,8 @@ class CheckpointService:
             with get_session() as session:
                 session.add(checkpoint)
         except Exception:
-            logger.warning(
-                "Failed to save checkpoint for '%s' seq=%d",
+            logger.error(
+                "Failed to save checkpoint for '%s' seq=%d — execution resume may be incomplete",
                 self.execution_id, checkpoint.sequence, exc_info=True,
             )
 

@@ -8,9 +8,11 @@ from __future__ import annotations
 
 import json
 import logging
+import shlex
 import time
 
-from jinja2 import BaseLoader, Environment
+from jinja2 import BaseLoader
+from jinja2.sandbox import SandboxedEnvironment
 
 from temper_ai.agent.base import AgentABC
 from temper_ai.observability import EventType
@@ -25,7 +27,7 @@ class ScriptAgent(AgentABC):
 
     def __init__(self, config: dict):
         super().__init__(config)
-        self.env = Environment(loader=BaseLoader())  # noqa: B701
+        self.env = SandboxedEnvironment(loader=BaseLoader())
 
     def run(self, input_data: dict, context: ExecutionContext) -> AgentResult:
         """Execute the script agent pipeline.
@@ -40,7 +42,8 @@ class ScriptAgent(AgentABC):
 
         try:
             template = self.env.from_string(self.config["script_template"])
-            script = template.render(**input_data)
+            escaped = {k: shlex.quote(str(v)) if isinstance(v, str) else v for k, v in input_data.items()}
+            script = template.render(**escaped)
 
             timeout = self.config.get("timeout_seconds", 30)
             tool_result = context.tool_executor.execute(

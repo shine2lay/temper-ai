@@ -202,12 +202,11 @@ export const useExecutionStore = create<ExecutionState>()(
           for (const agent of _nodeAgents(normalizedNode)) {
             state.agents.set(agent.id, agent);
             for (const llm of agent.llm_calls ?? []) {
-              llm.agent_id = agent.id;
-              llm.agent_execution_id = agent.id;
-              state.llmCalls.set(llm.id, llm);
+              const llmCopy = { ...llm, agent_id: agent.id, agent_execution_id: agent.id };
+              state.llmCalls.set(llmCopy.id, llmCopy);
             }
             for (const tool of agent.tool_calls ?? []) {
-              state.toolCalls.set(tool.id, tool);
+              state.toolCalls.set(tool.id, { ...tool });
             }
           }
         }

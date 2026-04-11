@@ -127,17 +127,20 @@ class BaseLLM(ABC):
 
             except httpx.HTTPStatusError as e:
                 last_error = e
-                # On 400, likely context overflow — halve max_tokens and retry
+                # On 400, check for context overflow and retry with reduced max_tokens.
+                # Any other 400 is a client error — raise immediately without retrying.
                 if e.response.status_code == 400:
                     body = error_body if stream and 'error_body' in dir() else e.response.text
                     logger.warning("Got 400 from LLM. Body: %s", body[:300])
-                    # Only halve max_tokens for context overflow errors
                     if "context length" in body or "maximum" in body:
+                        # Context overflow — halve max_tokens and retry
                         current = request.get("max_tokens", self.max_tokens)
                         halved = max(1024, current // 2)
                         logger.warning("Context overflow — reducing max_tokens %d -> %d", current, halved)
                         request["max_tokens"] = halved
-                    error_body = ""  # reset for next attempt
+                        error_body = ""  # reset for next attempt
+                    else:
+                        raise
                 elif not _should_retry(e):
                     raise
             except (httpx.TimeoutException, httpx.ConnectError) as e:

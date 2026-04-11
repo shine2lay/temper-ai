@@ -77,13 +77,16 @@ class ConfigStore:
         self._validate_type(config_type)
 
         with get_session() as session:
-            # Use select-for-update to prevent race condition between concurrent put() calls
-            existing = session.exec(
+            # Use select-for-update to prevent race condition between concurrent put() calls.
+            # SQLite does not support SELECT FOR UPDATE, so skip the lock on SQLite.
+            query = (
                 select(Config)
                 .where(Config.type == config_type)
                 .where(Config.name == name)
-                .with_for_update()
-            ).first()
+            )
+            if session.bind.dialect.name != "sqlite":
+                query = query.with_for_update()
+            existing = session.exec(query).first()
 
             if existing is not None:
                 existing.config = config

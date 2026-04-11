@@ -125,7 +125,7 @@ OPENAI_MODEL=gpt-4o-mini
 > OLLAMA_MODEL=llama3.2
 > ```
 
-See [LLM Providers](docs/reference/providers/index.md) for all 5 providers (including vLLM and Gemini).
+See [LLM Providers](docs/reference/providers/index.md) for all 6 providers (including vLLM and Gemini).
 
 ### Without Docker
 
@@ -319,7 +319,7 @@ temper_ai/
   cli/           CLI + Rich terminal output
   config/        DB-backed config store + YAML importer
   database/      SQLModel engine + sessions
-  llm/           Tool-calling loop + 5 providers + prompt renderer
+  llm/           Tool-calling loop + 6 providers + prompt renderer
   memory/        mem0 + InMemory backends
   observability/ Event recording
   safety/        Policy engine + 3 policies

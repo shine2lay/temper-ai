@@ -16,7 +16,7 @@ import { cn } from '@/lib/utils';
 const STORAGE_KEY = 'temper-sidebar-collapsed';
 
 const NAV_ITEMS = [
-  { label: 'Workflows', icon: LayoutDashboard, to: '/', match: (p: string) => p === '/' || p.startsWith('/workflow/') || p.startsWith('/compare') },
+  { label: 'Workflows', icon: LayoutDashboard, to: '/', match: (p: string) => p === '/' || p.startsWith('/workflow/') },
   { label: 'Studio', icon: PenTool, to: '/studio', match: (p: string) => p.startsWith('/studio') },
   { label: 'Library', icon: BookOpen, to: '/library', match: (p: string) => p.startsWith('/library') },
   { label: 'Docs', icon: FileText, to: '/docs', match: (p: string) => p.startsWith('/docs') },

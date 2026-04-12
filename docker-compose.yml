@@ -34,6 +34,10 @@ services:
       - ./configs:/app/configs:ro
       - ./frontend/dist:/app/frontend/dist:ro
       - ${WORKSPACE_DIR:-./workspaces}:/app/workspaces
+      # Full repo (read-only) for audit/analysis sprints
+      - .:/app/repo:ro
+      - ${SDLC_DEMO_PATH:-../agentic-sdlc-demo}:/app/sdlc-demo:ro
+      - ${COMMAND_CENTER_PATH:-../command-center}:/app/command-center
     environment:
       HOME: /app
       PYTHONDONTWRITEBYTECODE: "1"

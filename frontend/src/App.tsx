@@ -1,7 +1,6 @@
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import { ExecutionView } from '@/pages/ExecutionView';
 import { WorkflowList } from '@/pages/WorkflowList';
-import ComparisonView from '@/pages/ComparisonView';
 import { StudioView } from '@/pages/StudioView';
 import { LibraryView } from '@/pages/LibraryView';
 import { EditorView } from '@/pages/EditorView';
@@ -28,7 +27,6 @@ const router = createBrowserRouter(
       children: [
         { path: '/', element: <WorkflowList /> },
         { path: '/workflow/:workflowId', element: <ExecutionView /> },
-        { path: '/compare', element: <ComparisonView /> },
         { path: '/studio', element: <StudioView /> },
         { path: '/studio/:name', element: <StudioView /> },
         { path: '/library', element: <LibraryView /> },

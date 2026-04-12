@@ -161,3 +161,67 @@ class TestCheckSchemaVersion:
     def test_unsupported_version(self):
         with pytest.raises(SchemaVersionError, match="not supported"):
             check_schema_version({"schema_version": "2.0"})
+
+
+class TestSubstituteEnvVarsEdgeCases:
+    def test_plain_string_no_substitution(self):
+        """A string with no ${} markers passes through unchanged."""
+        result = substitute_env_vars("plain string no vars")
+        assert result == "plain string no vars"
+
+    def test_none_passthrough(self):
+        result = substitute_env_vars(None)
+        assert result is None
+
+    def test_integer_passthrough(self):
+        result = substitute_env_vars(42)
+        assert result == 42
+
+    def test_float_passthrough(self):
+        result = substitute_env_vars(3.14)
+        assert result == 3.14
+
+    def test_bool_passthrough(self):
+        assert substitute_env_vars(False) is False
+        assert substitute_env_vars(True) is True
+
+    def test_empty_string_passthrough(self):
+        result = substitute_env_vars("")
+        assert result == ""
+
+    def test_deeply_nested_substitution(self, monkeypatch):
+        monkeypatch.setenv("DEEP_VAR", "deep_value")
+        config = {"level1": {"level2": {"level3": "${DEEP_VAR}"}}}
+        result = substitute_env_vars(config)
+        assert result["level1"]["level2"]["level3"] == "deep_value"
+
+    def test_list_of_dicts_substitution(self, monkeypatch):
+        monkeypatch.setenv("LIST_VAR", "list_value")
+        config = [{"key": "${LIST_VAR}"}, {"key": "static"}]
+        result = substitute_env_vars(config)
+        assert result[0]["key"] == "list_value"
+        assert result[1]["key"] == "static"
+
+    def test_mixed_var_and_literal_in_string(self, monkeypatch):
+        monkeypatch.setenv("PREFIX_VAR", "api")
+        result = substitute_env_vars("${PREFIX_VAR}-key-suffix")
+        assert result == "api-key-suffix"
+
+
+class TestDetectConfigTypePriority:
+    def test_workflow_takes_priority_over_stage(self):
+        # If both 'workflow' and 'stage' keys are present, 'workflow' wins
+        result = detect_config_type({"workflow": {}, "stage": {}})
+        assert result == "workflow"
+
+    def test_stage_takes_priority_over_agent(self):
+        result = detect_config_type({"stage": {}, "agent": {}})
+        assert result == "stage"
+
+    def test_empty_dict_raises(self):
+        with pytest.raises(ConfigValidationError):
+            detect_config_type({})
+
+    def test_keys_listed_in_error_message(self):
+        with pytest.raises(ConfigValidationError, match="foo"):
+            detect_config_type({"foo": "bar"})

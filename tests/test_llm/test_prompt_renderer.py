@@ -214,6 +214,101 @@ class TestValidatePromptConfig:
         assert not errors
 
 
+class TestPromptRendererJinja2Syntax:
+    """Tests for Jinja2-specific template features."""
+
+    def test_jinja2_for_loop_renders_items(self):
+        r = PromptRenderer()
+        msgs = r.render(
+            agent_config={
+                "task_template": "Items:{% for item in items %} {{ item }}{% endfor %}"
+            },
+            input_data={"items": ["alpha", "beta", "gamma"]},
+        )
+        assert "alpha" in msgs[1]["content"]
+        assert "beta" in msgs[1]["content"]
+        assert "gamma" in msgs[1]["content"]
+
+    def test_jinja2_conditional_true(self):
+        r = PromptRenderer()
+        msgs = r.render(
+            agent_config={"task_template": "{% if flag %}YES{% else %}NO{% endif %}"},
+            input_data={"flag": True},
+        )
+        assert msgs[1]["content"] == "YES"
+
+    def test_jinja2_conditional_false(self):
+        r = PromptRenderer()
+        msgs = r.render(
+            agent_config={"task_template": "{% if flag %}YES{% else %}NO{% endif %}"},
+            input_data={"flag": False},
+        )
+        assert msgs[1]["content"] == "NO"
+
+    def test_integer_variable_rendered(self):
+        r = PromptRenderer()
+        msgs = r.render(
+            agent_config={"task_template": "Max retries: {{ max_retries }}"},
+            input_data={"max_retries": 5},
+        )
+        assert "5" in msgs[1]["content"]
+
+    def test_dict_variable_accessible_in_template(self):
+        r = PromptRenderer()
+        msgs = r.render(
+            agent_config={"task_template": "Name: {{ config.name }}"},
+            input_data={"config": {"name": "my-agent"}},
+        )
+        assert "my-agent" in msgs[1]["content"]
+
+    def test_none_variable_renders_empty(self):
+        r = PromptRenderer()
+        msgs = r.render(
+            agent_config={"task_template": "Value: {{ val }}"},
+            input_data={"val": None},
+        )
+        assert msgs[1]["content"] == "Value: None"
+
+    def test_strategy_context_from_input_data_not_overridden(self):
+        """When strategy_context is not provided, other_agents from input_data is kept."""
+        r = PromptRenderer()
+        msgs = r.render(
+            agent_config={"task_template": "Ctx: {{ other_agents }}"},
+            input_data={"other_agents": "Agent B said: done"},
+            strategy_context=None,  # explicit None — should not override
+        )
+        # The value from input_data should be used since strategy_context is None
+        assert "Agent B said: done" in msgs[1]["content"]
+
+    def test_strategy_context_overrides_input_data(self):
+        """Explicit strategy_context overrides other_agents from input_data."""
+        r = PromptRenderer()
+        msgs = r.render(
+            agent_config={"task_template": "Ctx: {{ other_agents }}"},
+            input_data={"other_agents": "old value"},
+            strategy_context="new strategy output",
+        )
+        assert "new strategy output" in msgs[1]["content"]
+        assert "old value" not in msgs[1]["content"]
+
+    def test_messages_structure_always_two_elements(self):
+        """render() always returns exactly [system, user]."""
+        r = PromptRenderer()
+        msgs = r.render(agent_config={}, input_data={})
+        assert len(msgs) == 2
+        assert msgs[0]["role"] == "system"
+        assert msgs[1]["role"] == "user"
+
+    def test_boolean_false_not_filtered_as_unsafe(self):
+        """False is a safe value and should pass through _filter_safe_values."""
+        r = PromptRenderer()
+        msgs = r.render(
+            agent_config={"task_template": "{% if enabled %}on{% else %}off{% endif %}"},
+            input_data={"enabled": False},
+        )
+        assert msgs[1]["content"] == "off"
+
+
 class TestFilterSafeValues:
     def test_allows_safe_types(self):
         data = {

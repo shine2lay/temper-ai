@@ -110,3 +110,4 @@ temper_ai/llm/providers/claude_code.py
 
 # Root-level artifacts
 /*.png
+workspaces/

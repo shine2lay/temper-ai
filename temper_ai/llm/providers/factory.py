@@ -94,9 +94,7 @@ def create_provider(
 
     resolved_url = base_url or _DEFAULT_BASE_URLS.get(provider, "http://localhost:8000")
 
-    return provider_cls(
-        model=model,
-        base_url=resolved_url,
-        api_key=resolved_key,
-        **kwargs,
-    )
+    init_kwargs: dict[str, Any] = {"model": model, "base_url": resolved_url, **kwargs}
+    if resolved_key is not None:
+        init_kwargs["api_key"] = resolved_key
+    return provider_cls(**init_kwargs)

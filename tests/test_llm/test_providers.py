@@ -334,7 +334,7 @@ class TestVllmProvider:
     def test_adds_chat_template_kwargs(self):
         p = VllmLLM(model="qwen3-next", base_url="http://localhost:8000")
         req = p._build_request([{"role": "user", "content": "Hi"}])
-        assert req["chat_template_kwargs"] == {"enable_thinking": False}
+        assert req["chat_template_kwargs"] == {"enable_thinking": True}
 
     def test_adds_stream_options(self):
         p = VllmLLM(model="qwen3-next", base_url="http://localhost:8000")
@@ -359,16 +359,16 @@ class TestVllmProvider:
         """Per-call kwargs override the constructor default."""
         p = VllmLLM(model="qwen3-next", base_url="http://localhost:8000")
 
-        # Default: thinking disabled
+        # Default: thinking enabled
         req1 = p._build_request([{"role": "user", "content": "Hi"}])
-        assert req1["chat_template_kwargs"] == {"enable_thinking": False}
+        assert req1["chat_template_kwargs"] == {"enable_thinking": True}
 
-        # Per-call: enable thinking
+        # Per-call: disable thinking
         req2 = p._build_request(
             [{"role": "user", "content": "Hi"}],
-            chat_template_kwargs={"enable_thinking": True},
+            chat_template_kwargs={"enable_thinking": False},
         )
-        assert req2["chat_template_kwargs"] == {"enable_thinking": True}
+        assert req2["chat_template_kwargs"] == {"enable_thinking": False}
 
     def test_provider_name(self):
         p = VllmLLM(model="qwen3-next", base_url="http://localhost:8000")

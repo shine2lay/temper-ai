@@ -101,15 +101,11 @@ class TestCreateProviderOllama:
         assert p.base_url == "http://gpu-box:11434"
         p.close()
 
-    def test_factory_ollama_raises_due_to_api_key_conflict(self):
-        """create_provider passes api_key=None which clashes with OllamaLLM's hardcoded key.
-
-        This is a known incompatibility: OllamaLLM should be constructed directly,
-        not via create_provider, until the factory is updated to omit api_key for
-        providers that don't accept it as a kwarg.
-        """
-        with pytest.raises(TypeError, match="multiple values for keyword argument 'api_key'"):
-            create_provider("ollama", model="llama3.2")
+    def test_factory_ollama_works_without_explicit_api_key(self):
+        """Factory omits api_key when None, so Ollama's hardcoded default takes effect."""
+        provider = create_provider("ollama", model="llama3.2")
+        assert provider.model == "llama3.2"
+        assert provider.api_key == "ollama"  # Ollama's hardcoded default
 
 
 class TestCreateProviderErrors:

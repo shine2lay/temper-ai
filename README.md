@@ -329,7 +329,7 @@ temper_ai/
   safety/        Policy engine + 3 policies
   shared/        Cross-module types
   stage/         Graph executor + topology generators + loader
-  tools/         5 tools + executor with sandbox
+  tools/         9 tools + executor with sandbox
 ```
 
 ---

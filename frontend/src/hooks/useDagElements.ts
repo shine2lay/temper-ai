@@ -168,7 +168,6 @@ export function useDagElements(): { nodes: Node[]; edges: Edge[] } {
           ? (agents.get(nodeAgents[0].id) ?? nodeAgents[0])
           : null;
 
-        const cardW = 280;
         const cardH = 200;
         const hdrH = 75;
         const pad = 28;

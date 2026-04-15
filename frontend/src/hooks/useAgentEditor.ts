@@ -577,9 +577,9 @@ function toAgentConfig(form: AgentFormState): AnyRecord {
 
   // Backend-used fields that need top-level placement:
   // max_iterations — controls tool-calling loop cap
-  if ((form as AnyRecord).max_iterations) agent.max_iterations = (form as AnyRecord).max_iterations;
+  if ((form as unknown as AnyRecord).max_iterations) agent.max_iterations = (form as unknown as AnyRecord).max_iterations;
   // token_budget — controls prompt truncation
-  if ((form as AnyRecord).token_budget) agent.token_budget = (form as AnyRecord).token_budget;
+  if ((form as unknown as AnyRecord).token_budget) agent.token_budget = (form as unknown as AnyRecord).token_budget;
 
   // Phantom sections removed from serialization:
   // reasoning, observability, context_management, output_schema,

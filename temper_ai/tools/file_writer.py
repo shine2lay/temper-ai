@@ -67,6 +67,11 @@ class FileWriter(BaseTool):
         if not file_path:
             return ToolResult(success=False, result="", error="file_path is required")
 
+        # Resolve relative paths against workspace_root
+        workspace_root = self.config.get("workspace_root")
+        if workspace_root and not file_path.startswith("/"):
+            file_path = str(Path(workspace_root) / file_path)
+
         # Content size check
         if len(content) > _MAX_CONTENT_SIZE:
             return ToolResult(

@@ -72,6 +72,11 @@ class ToolExecutor:
 
     def register_tools(self, tools: dict[str, BaseTool]) -> None:
         """Register tool instances for this executor."""
+        # Inject workspace_root into each tool's config so they can resolve relative paths
+        if self.workspace_root:
+            for tool in tools.values():
+                if hasattr(tool, 'config') and isinstance(tool.config, dict):
+                    tool.config["workspace_root"] = self.workspace_root
         self._tools.update(tools)
 
     def execute(

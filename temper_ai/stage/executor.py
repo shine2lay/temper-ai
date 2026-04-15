@@ -301,8 +301,16 @@ def _check_dependency_failures(
             logger.warning("Node '%s' skipped — dependency '%s' failed", node.name, dep_name)
             return NodeResult(status=Status.SKIPPED, error=f"Dependency '{dep_name}' failed")
         if dep_result and dep_result.status == Status.SKIPPED:
-            logger.warning("Node '%s' skipped — dependency '%s' was skipped", node.name, dep_name)
-            return NodeResult(status=Status.SKIPPED, error=f"Dependency '{dep_name}' was skipped")
+            # Don't cascade skip when the dependency (or its ancestor) was
+            # intentionally skipped via a condition. Only cascade when the
+            # skip was caused by an actual failure upstream.
+            skip_reason = dep_result.error or ""
+            if "failed" in skip_reason:
+                logger.warning("Node '%s' skipped — dependency '%s' was skipped due to failure", node.name, dep_name)
+                return NodeResult(status=Status.SKIPPED, error=f"Dependency '{dep_name}' was skipped")
+            # Condition-based skip or cascade from condition skip — proceed
+            logger.info("Node '%s' — dependency '%s' was conditionally skipped, proceeding", node.name, dep_name)
+            continue
     return None
 
 

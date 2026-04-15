@@ -95,7 +95,7 @@ class Bash(BaseTool):
                             error=f"Command '{base_cmd_name}' not in allowed list: {allowed}",
                         )
 
-        cwd = self.config.get("workspace_root")
+        cwd = self.config.get("workspace_root") or self.config.get("cwd")
         return _run_subprocess(command, timeout, cwd)
 
 

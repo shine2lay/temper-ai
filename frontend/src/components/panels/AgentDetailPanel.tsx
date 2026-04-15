@@ -92,7 +92,6 @@ export function AgentDetailPanel({ agentId }: AgentDetailPanelProps) {
     return siblings;
   }, [ag, agentId, resolvedStageId, stages]);
 
-  const currentIterIndex = iterations.findIndex((it) => it.agentId === agentId);
   const hasMultipleRuns = iterations.length > 1;
 
   const STATUS_DOT: Record<string, string> = {

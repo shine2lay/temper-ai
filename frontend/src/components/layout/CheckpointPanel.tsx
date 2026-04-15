@@ -141,7 +141,7 @@ export function CheckpointPanel({ onSwitchTab }: CheckpointPanelProps) {
   const checkpoints = data?.checkpoints ?? [];
   const isTerminal = workflow?.status !== 'running';
   const hasFailed = checkpoints.some((cp) => cp.status === 'failed');
-  const canResume = (workflow?.status === 'failed' || workflow?.status === 'cancelled') ||
+  const canResume = (workflow?.status === 'failed' || (workflow?.status as string) === 'cancelled') ||
     (isTerminal && hasFailed);
   const hasCheckpoints = checkpoints.length > 0;
   const isPreviewActive = checkpointPreview !== null;

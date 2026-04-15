@@ -40,7 +40,6 @@ export const AgentNodeComponent = memo(function AgentNodeComponent({ data }: Nod
 
   // Resolve which agent/stage to display based on selected iteration
   const displayAgent = iterations ? (iterations[iterIndex]?.agent ?? agent) : agent;
-  const displayStage = iterations ? (iterations[iterIndex]?.stage ?? stage) : stage;
   const hasIterations = iterations && iterations.length > 1;
 
   return (

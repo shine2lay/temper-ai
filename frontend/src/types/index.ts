@@ -157,6 +157,7 @@ export interface ToolCall {
   end_time: string | null;
   duration_seconds: number | null;
   input_params?: Record<string, unknown>;
+  input_data?: Record<string, unknown>;
   output_data?: unknown;
   approval_required?: boolean;
   error_message?: string;

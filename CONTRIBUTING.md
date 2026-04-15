@@ -28,7 +28,7 @@ python scripts/generate_docs.py
 ## Running Tests
 
 ```bash
-# Full suite (725+ tests, ~25s)
+# Full suite (900+ tests, ~25s)
 pytest
 
 # Or via Makefile

@@ -4,13 +4,13 @@
  * collaboration patterns, and execution strategy at a glance.
  */
 import { useState, type ReactNode } from 'react';
-import { Handle, Position, useStore } from '@xyflow/react';
+import { Handle, Position } from '@xyflow/react';
 import type { NodeProps } from '@xyflow/react';
 import { useDesignStore, type ResolvedAgentSummary } from '@/store/designStore';
 import type { DesignNodeData } from '@/hooks/useDesignElements';
 import { useConfigs } from '@/hooks/useConfigAPI';
 import { useRegistry, toOptions } from '@/hooks/useRegistry';
-import { InlineEdit, InlineSelect, InlineToggle } from './InlineEdit';
+import { InlineEdit, InlineSelect } from './InlineEdit';
 
 /* ---------- Shared constants ---------- */
 
@@ -18,40 +18,7 @@ const MAX_TOOL_NAMES_SHOWN = 3;
 const DEFAULT_TEMPERATURE = 0.7;
 const MAX_PROMPT_INPUTS_SHOWN = 4;
 
-/** Parse numeric value — returns `def` only for null/empty/NaN, NOT for 0. */
-function numOrDefault(v: string | number | null, def: number): number {
-  if (v == null || v === '') return def;
-  const n = Number(v);
-  return isNaN(n) ? def : n;
-}
-
 /* ---------- Inline-edit option constants ---------- */
-// Options NOT backed by a registry (behavioral / semantic choices):
-
-const SAFETY_MODE_OPTIONS = [
-  { value: 'execute', label: 'execute' },
-  { value: 'monitor', label: 'monitor' },
-  { value: 'audit', label: 'audit' },
-];
-
-const AGENT_FAILURE_OPTIONS = [
-  { value: 'continue_with_remaining', label: 'continue' },
-  { value: 'halt', label: 'halt' },
-  { value: 'retry', label: 'retry' },
-];
-
-const GATE_FAILURE_OPTIONS = [
-  { value: 'retry_stage', label: 'retry' },
-  { value: 'halt', label: 'halt' },
-  { value: 'skip', label: 'skip' },
-  { value: 'continue', label: 'continue' },
-];
-
-const CONVERGENCE_METHOD_OPTIONS = [
-  { value: 'exact_hash', label: 'exact_hash' },
-  { value: 'cosine_similarity', label: 'cosine' },
-  { value: 'levenshtein', label: 'levenshtein' },
-];
 
 // Strategy / agent-mode options are populated from the runtime registry.
 // See useRegistry() hook — the backend returns registered topology names.
@@ -795,39 +762,11 @@ export function DesignStageNode({ data }: NodeProps) {
     isRef,
     inputs,
     description,
-    timeoutSeconds,
-    safetyMode,
     outputs,
-    errorHandling,
     leaderAgent,
     agentSummaries,
     agentDetailsLoaded,
-    workflowOutputSources: _workflowOutputSources,
-    // Expanded config fields
     version,
-    safetyDryRunFirst,
-    safetyRequireApproval,
-    errorMinSuccessful,
-    errorRetryFailed,
-    errorMaxRetries,
-    qualityGatesEnabled,
-    qualityGatesMinConfidence,
-    qualityGatesMinFindings,
-    qualityGatesRequireCitations,
-    qualityGatesOnFailure,
-    qualityGatesMaxRetries,
-    convergenceEnabled,
-    convergenceMaxIterations,
-    convergenceSimilarityThreshold,
-    convergenceMethod,
-    collaborationMaxRounds,
-    collaborationConvergenceThreshold,
-    collaborationDialogueMode,
-    collaborationRoundBudget,
-    collaborationContextWindowRounds,
-    conflictStrategy,
-    conflictMetrics,
-    conflictAutoResolveThreshold,
   } = data as DesignNodeData;
 
   const selectStage = useDesignStore((s) => s.selectStage);
@@ -840,8 +779,6 @@ export function DesignStageNode({ data }: NodeProps) {
   const autoFocusStageName = useDesignStore((s) => s.autoFocusStageName);
   const setAutoFocusStageName = useDesignStore((s) => s.setAutoFocusStageName);
   const isSelected = selectedStageName === stageName;
-  const zoom = useStore((s) => s.transform[2]);
-  const isCompact = zoom < 0.6;
 
   const shouldAutoFocus = autoFocusStageName === stageName;
 
@@ -854,8 +791,6 @@ export function DesignStageNode({ data }: NodeProps) {
   // Dynamic options from runtime registry
   const { data: registry } = useRegistry();
   const strategyOptions = toOptions(registry?.strategies);
-  const agentTypeOptions = toOptions(registry?.agent_types);
-  const providerOptions = toOptions(registry?.providers);
 
   const otherStageNames = allStages
     .filter((s) => s.name !== stageName)

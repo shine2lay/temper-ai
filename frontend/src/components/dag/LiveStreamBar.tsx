@@ -62,7 +62,7 @@ export function LiveStreamBar() {
   const [expanded, setExpanded] = useState(false);
   const [dismissed, setDismissed] = useState(false);
   const [activeAgentId, setActiveAgentId] = useState<string | null>(null);
-  const scrollRef = useRef<HTMLPreElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const prevLengthsRef = useRef(new Map<string, number>());
 
   // Active streaming agents — done if entry.done OR agent status is terminal

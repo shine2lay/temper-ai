@@ -131,10 +131,14 @@ See [LLM Providers](docs/reference/providers/index.md) for all 5 providers (incl
 
 ```bash
 pip install -e .
+
+# Build the dashboard (requires Node.js)
+cd frontend && npm install && npx vite build && cd ..
+
 temper serve --port 8420
 ```
 
-> **Note:** The server uses PostgreSQL by default (via Docker Compose). Without Docker, set `TEMPER_DATABASE_URL=sqlite:///data/dev.db` in `.env` to use SQLite instead.
+> **Note:** Without Docker, the server defaults to SQLite — no database setup needed. Set `TEMPER_DATABASE_URL` in `.env` to use PostgreSQL instead.
 
 ---
 
@@ -336,7 +340,7 @@ temper_ai/
 git clone https://github.com/shine2lay/temper-ai.git
 cd temper-ai
 pip install -e ".[dev]"
-pytest                                                 # 554 tests
+pytest                                                 # 900+ tests
 ruff check temper_ai/                                  # lint
 python -m scripts.code_quality_check.runner temper_ai   # quality report
 ```

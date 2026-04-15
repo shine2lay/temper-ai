@@ -174,7 +174,7 @@ function defaultFormState(): AgentFormState {
     description: '',
     version: '1.0',
     type: 'standard',
-    prompt: { mode: 'inline', inline: '', template: '', taskTemplate: '', variables: {} },
+    prompt: { mode: 'inline', inline: '', template: '', variables: {} },
     inference: {
       provider: '',
       model: '',
@@ -352,8 +352,7 @@ function parseConfig(data: AnyRecord): AgentFormState {
     prompt: {
       mode: hasTemplate && !hasInline && !hasTopLevelPrompt ? 'template' : 'inline',
       inline: (prompt?.inline as string) || topLevelSystemPrompt || '',
-      template: (prompt?.template as string) ?? '',
-      taskTemplate: topLevelTaskTemplate ?? '',
+      template: (prompt?.template as string) || topLevelTaskTemplate || '',
       variables,
     },
     inference: {
@@ -493,7 +492,7 @@ function toAgentConfig(form: AgentFormState): AnyRecord {
     // Split on first blank line or treat entire text as system_prompt
     const text = form.prompt.inline;
     agent.system_prompt = text;
-    agent.task_template = form.prompt.taskTemplate ?? '{{ task }}';
+    agent.task_template = form.prompt.template ?? '{{ task }}';
   } else if (form.prompt.template) {
     agent.prompt = { template: form.prompt.template };
   }

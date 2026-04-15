@@ -142,7 +142,7 @@ export function StagePalette() {
   const addStage = useDesignStore((s) => s.addStage);
   const updateStage = useDesignStore((s) => s.updateStage);
   const setAutoFocusStageName = useDesignStore((s) => s.setAutoFocusStageName);
-  const { fitView, screenToFlowPosition } = useReactFlow();
+  const { fitView } = useReactFlow();
 
   const { data: agentData } = useConfigs('agent');
   const { data: registry } = useRegistry();

@@ -28,7 +28,7 @@ export function ScriptAgentDetailPanel({ agentId }: ScriptAgentDetailPanelProps)
 
   const configOuter = ag.agent_config_snapshot?.agent;
   // Config may be double-nested: agent.agent.script_template
-  const config = (configOuter?.agent ?? configOuter) as Record<string, unknown> | undefined;
+  const config = ((configOuter as Record<string, unknown>)?.agent ?? configOuter) as Record<string, unknown> | undefined;
   const scriptTemplate = config?.script_template as string | undefined;
   const timeout = config?.timeout_seconds as number | undefined;
 

@@ -11,7 +11,7 @@
  */
 import { useDesignStore, defaultDesignStage, type DesignStage, type AgentMode, type CollaborationStrategy } from '@/store/designStore';
 import { useConfigs, useConfig } from '@/hooks/useConfigAPI';
-import { InlineEdit, InlineSelect, InlineToggle } from './InlineEdit';
+import { InlineEdit, InlineSelect } from './InlineEdit';
 import {
   SectionHeader,
   CollapsibleSection,

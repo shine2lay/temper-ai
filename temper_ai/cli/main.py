@@ -176,11 +176,14 @@ def _load_configs(config_dir_path: str) -> None:
     if config_dir.is_dir():
         store = ConfigStore()
         for yaml_file in sorted(config_dir.rglob("*.yaml")):
+            # Skip non-config YAMLs (MCP servers, tool definitions)
+            if "mcp_servers" in yaml_file.parts or "tools" in yaml_file.parts:
+                continue
             try:
                 import_yaml(str(yaml_file), store)
             except Exception as exc:
                 # F16: log config loading errors instead of silently swallowing
-                logger.warning("Failed to load config %s: %s", yaml_file, exc)
+                logger.debug("Skipped config %s: %s", yaml_file, exc)
 
 
 def _load_workflow(workflow_name: str):
@@ -341,10 +344,12 @@ def _cmd_validate(args) -> None:
     store = ConfigStore()
     if config_dir.is_dir():
         for yaml_file in sorted(config_dir.rglob("*.yaml")):
+            if "mcp_servers" in yaml_file.parts or "tools" in yaml_file.parts:
+                continue
             try:
                 import_yaml(str(yaml_file), store)
             except Exception as exc:
-                logger.warning("Failed to load config %s: %s", yaml_file, exc)
+                logger.debug("Skipped config %s: %s", yaml_file, exc)
 
     from temper_ai.stage.loader import GraphLoader
 

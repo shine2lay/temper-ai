@@ -159,14 +159,14 @@ def _load_default_configs(config_store: ConfigStore):
 
     loaded = 0
     for yaml_file in sorted(configs_dir.rglob("*.yaml")):
-        # Skip MCP server configs — loaded separately by mcp_client
-        if "mcp_servers" in yaml_file.parts:
+        # Skip non-config YAMLs (MCP servers, tool definitions)
+        if "mcp_servers" in yaml_file.parts or "tools" in yaml_file.parts:
             continue
         try:
             import_yaml(str(yaml_file), config_store)
             loaded += 1
         except Exception as exc:
-            logger.warning("Failed to load config %s: %s", yaml_file, exc)
+            logger.debug("Skipped config %s: %s", yaml_file, exc)
 
     if loaded:
         logger.info("Loaded %d configs from %s", loaded, configs_dir)

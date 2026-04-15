@@ -5,7 +5,6 @@
  */
 import { useState, useCallback } from 'react';
 import { useDesignStore, defaultMeta, type WorkflowMeta } from '@/store/designStore';
-import type { DesignState } from '@/store/designTypes';
 import { InlineEdit, InlineSelect, InlineToggle } from './InlineEdit';
 import {
   SectionHeader,

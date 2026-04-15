@@ -39,8 +39,8 @@ export function AgentPromptTab({ config, updateField }: Props) {
           </ExpandedField>
           <ExpandedField label="Task" tip="The task template with {{ variables }} — this is the 'user' message. Use {{ task }} for the workflow input, {{ other_agents }} for upstream outputs, {{ memories }} for recalled memories.">
             <textarea
-              value={config.prompt.taskTemplate ?? ''}
-              onChange={(e) => updateField('prompt', { ...config.prompt, taskTemplate: e.target.value })}
+              value={config.prompt.template ?? ''}
+              onChange={(e) => updateField('prompt', { ...config.prompt, template: e.target.value })}
               className={textareaClass}
               rows={4}
               placeholder="Task: {{ task }}&#10;{{ other_agents }}&#10;Output as JSON: {}"

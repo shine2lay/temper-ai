@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils"
 const AlertDialog = AlertDialogPrimitive.Root
 const AlertDialogTrigger = AlertDialogPrimitive.Trigger
 
-function AlertDialogPortal({ ...props }: AlertDialogPrimitive.PortalProps) {
+function AlertDialogPortal({ ...props }: React.ComponentProps<typeof AlertDialogPrimitive.Portal>) {
   return <AlertDialogPrimitive.Portal {...props} />
 }
 

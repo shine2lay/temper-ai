@@ -156,10 +156,10 @@ export const AgentCardContent = memo(function AgentCardContent({
                 <span className="text-emerald-400">exit 0</span>
               </>
             )}
-            {configSnapshot?.timeout_seconds && (
+            {(configSnapshot as Record<string, unknown>)?.timeout_seconds && (
               <>
                 <span className="text-temper-border/40">|</span>
-                <span>timeout {configSnapshot.timeout_seconds}s</span>
+                <span>timeout {String((configSnapshot as Record<string, unknown>).timeout_seconds)}s</span>
               </>
             )}
           </>
@@ -297,7 +297,7 @@ function InputSection({ data, expanded }: { data: Record<string, unknown>; expan
   const extraSources = sourcePreviews.length === 0 && !hasPrev
     ? Object.keys(data).filter(k => !knownKeys.has(k))
     : [];
-  const isWorkflowOnly = sourcePreviews.length === 0 && !hasPrev && extraSources.length === 0 && task;
+  const isWorkflowOnly = sourcePreviews.length === 0 && !hasPrev && extraSources.length === 0 && !!task;
 
   return (
     <div className="flex flex-col gap-0.5">

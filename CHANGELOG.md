@@ -59,8 +59,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Workflow engine** — DAG-based execution with topological batching, parallel stages, and conditional branching
-- **Agent types** — LLM agents, Script agents, and Claude Code agents
-- **5 LLM providers** — OpenAI, Anthropic, vLLM, Ollama, Claude Code CLI
+- **Agent types** — LLM agents and Script agents
+- **5 LLM providers** — OpenAI, Anthropic, vLLM, Ollama, Gemini
 - **YAML configuration** — Define agents, workflows, safety policies, and strategies in YAML
 - **Tool system** — Bash, FileWriter, FileEdit, FileAppend, Http, Git, WebSearch, Calculator, Delegate
 - **Delegate tool** — Agents can spawn sub-agents as visible DAG nodes

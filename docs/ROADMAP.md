@@ -7,7 +7,7 @@ v1 is a clean rewrite focused on the core engine: composable graph execution, co
 **What's shipped:**
 - Composable graph model (AgentNode + StageNode, recursive)
 - One execution engine with topological sort + parallel batching
-- 6 LLM providers (OpenAI, vLLM, Ollama, Anthropic, Gemini, Claude Code)
+- 5 LLM providers (OpenAI, vLLM, Ollama, Anthropic, Gemini)
 - 9 tools (Bash, Calculator, FileWriter, FileEdit, FileAppend, Git, Http, WebSearch, Delegate)
 - 3 topology strategies (parallel, sequential, leader)
 - 3 safety policies (file access, forbidden ops, budget)

@@ -93,24 +93,19 @@ def _init_llm_providers() -> dict:
             )
         _try_init_provider(providers, "gemini", _make_gemini, "Gemini provider initialized")
 
-    # Claude Code CLI — no API key needed (uses Max plan credentials)
-    def _make_claude_code():
-        import shutil
-        if not shutil.which("claude") and not shutil.which("npx"):
-            raise FileNotFoundError("Neither claude CLI nor npx found in PATH")
-        from temper_ai.llm.providers.claude_code import ClaudeCodeLLM
-        mcp_config = os.environ.get("CLAUDE_MCP_CONFIG")
-        extra_tools = os.environ.get("CLAUDE_EXTRA_TOOLS", "").split(",") if os.environ.get("CLAUDE_EXTRA_TOOLS") else []
-        allowed = None
-        if extra_tools:
-            from temper_ai.llm.providers.claude_code import _DEFAULT_ALLOWED_TOOLS
-            allowed = _DEFAULT_ALLOWED_TOOLS + [t.strip() for t in extra_tools if t.strip()]
-        return ClaudeCodeLLM(
-            model=os.environ.get("CLAUDE_CODE_MODEL", "sonnet"),
-            mcp_config=mcp_config,
-            allowed_tools=allowed,
-        )
-    _try_init_provider(providers, "claude", _make_claude_code, "Claude provider initialized (via Claude Code CLI)")
+    # Claude Code CLI — optional, only available when local provider is symlinked
+    try:
+        def _make_claude_code():
+            import shutil
+            if not shutil.which("claude") and not shutil.which("npx"):
+                raise FileNotFoundError("Neither claude CLI nor npx found in PATH")
+            from temper_ai.llm.providers.claude_code import ClaudeCodeLLM
+            return ClaudeCodeLLM(
+                model=os.environ.get("CLAUDE_CODE_MODEL", "sonnet"),
+            )
+        _try_init_provider(providers, "claude", _make_claude_code, "Claude provider initialized (via Claude Code CLI)")
+    except ImportError:
+        pass
 
     if not providers:
         logger.warning("No LLM providers configured. Set OPENAI_API_KEY, VLLM_BASE_URL, or OLLAMA_BASE_URL.")

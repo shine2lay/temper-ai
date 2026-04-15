@@ -93,21 +93,19 @@ def _init_llm_providers() -> dict:
             )
         _try_init_provider(providers, "gemini", _make_gemini, "Gemini provider initialized")
 
-    # Claude Code CLI — optional, only available when local provider is symlinked
-    try:
-        from temper_ai.llm.providers.claude_code import ClaudeCodeLLM  # noqa: F401
-
-        def _make_claude_code():
-            import shutil
-            if not shutil.which("claude") and not shutil.which("npx"):
-                raise FileNotFoundError("Neither claude CLI nor npx found in PATH")
-            from temper_ai.llm.providers.claude_code import ClaudeCodeLLM
-            return ClaudeCodeLLM(
-                model=os.environ.get("CLAUDE_CODE_MODEL", "sonnet"),
-            )
-        _try_init_provider(providers, "claude", _make_claude_code, "Claude provider initialized (via Claude Code CLI)")
-    except ImportError:
-        pass
+    # Local-only providers — registered via local/register_providers.py (see factory.py).
+    # They self-register their classes; here we try to create instances for any
+    # that appeared in the factory but weren't initialized above.
+    from temper_ai.llm.providers.factory import _PROVIDER_MAP
+    for name, cls in _PROVIDER_MAP.items():
+        if name not in providers and hasattr(cls, 'create_from_env'):
+            try:
+                instance = cls.create_from_env()
+                if instance:
+                    providers[name] = instance
+                    logger.info("Provider '%s' initialized (via local plugin)", name)
+            except Exception:
+                pass
 
     if not providers:
         logger.warning("No LLM providers configured. Set OPENAI_API_KEY, VLLM_BASE_URL, or OLLAMA_BASE_URL.")

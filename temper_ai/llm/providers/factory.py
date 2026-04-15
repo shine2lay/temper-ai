@@ -38,9 +38,12 @@ def _register_optional_providers():
         _PROVIDER_MAP["gemini"] = GeminiLLM
     except ImportError:
         pass
+
+    # Local-only providers (not shipped with the public repo).
+    # Place a register_providers.py in local/ to register custom providers.
     try:
-        from temper_ai.llm.providers.claude_code import ClaudeCodeLLM
-        _PROVIDER_MAP["claude"] = ClaudeCodeLLM
+        from local.register_providers import register as _register_local
+        _register_local(_PROVIDER_MAP)
     except ImportError:
         pass
 

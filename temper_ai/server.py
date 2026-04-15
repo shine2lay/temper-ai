@@ -95,6 +95,8 @@ def _init_llm_providers() -> dict:
 
     # Claude Code CLI — optional, only available when local provider is symlinked
     try:
+        from temper_ai.llm.providers.claude_code import ClaudeCodeLLM  # noqa: F401
+
         def _make_claude_code():
             import shutil
             if not shutil.which("claude") and not shutil.which("npx"):

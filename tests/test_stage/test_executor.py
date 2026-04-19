@@ -965,6 +965,312 @@ class TestDispatchObservabilityEvents:
         assert "dispatch.cap_exceeded" not in types_
 
 
+class TestDispatchModifyingExistingDAG:
+    """Dispatcher targets nodes that ALREADY EXIST in the DAG:
+      - remove a pre-existing pending node (downstream cascades)
+      - replace a pre-existing node (remove + add with same name preserves
+        the downstream contract)
+      - add alongside pre-existing nodes (both the original and the new
+        siblings run)
+    These are the realistic patterns for an agent that rewrites part of
+    an originally-declared workflow based on runtime info.
+    """
+
+    def test_remove_existing_pending_node_leaves_skipped_tombstone(self):
+        """Dispatcher removes a pending node — it's marked SKIPPED and
+        never executes. Downstream still runs (with the SKIPPED node's
+        empty output resolving via input_map); cascade-skip is not a
+        v1 feature but the SKIPPED tombstone is the correct signal for
+        downstream to detect the removal if it wants to."""
+        dispatch_block = [{"op": "remove", "target": "doomed"}]
+        dispatcher = _make_dispatcher_node("planner", dispatch_block)
+
+        doomed = _make_agent_node("doomed", depends_on=["planner"], output="never")
+        downstream = _make_agent_node(
+            "downstream",
+            depends_on=["doomed"],
+            input_map={"x": "doomed.output"},
+            output="downstream-ran",
+        )
+
+        ctx = _make_context()
+        ctx.graph_loader = _StubGraphLoader({})
+
+        execute_graph([dispatcher, doomed, downstream], {}, ctx, graph_name="test")
+
+        # Removed node didn't run, left SKIPPED tombstone
+        assert not doomed.run.called
+        assert ctx.run_state["doomed"].status == Status.SKIPPED
+        # Downstream DOES run (today's semantics) — with empty input from SKIPPED
+        # source. Documented: if a user wants cascade-skip, they can check
+        # upstream .status == SKIPPED in their agent.
+        assert downstream.run.called
+
+    def test_replace_via_remove_plus_add_same_name(self):
+        """v1's replace semantics: compose `remove target=X` + `add node.name=X`
+        in the same dispatch. Downstream that wired to `X.output` keeps working
+        because the new X produces a real output."""
+        dispatch_block = [
+            {"op": "remove", "target": "placeholder"},
+            {
+                "op": "add",
+                "node": {
+                    "name": "placeholder",
+                    "type": "agent",
+                    "agent": "real_researcher",
+                    "input_map": {},
+                },
+            },
+        ]
+        dispatcher = _make_dispatcher_node("planner", dispatch_block)
+
+        # Existing pending node
+        original_placeholder = _make_agent_node(
+            "placeholder", depends_on=["planner"], output="placeholder-data",
+        )
+        # The replacement — what the loader returns for name="placeholder"
+        replacement = _make_agent_node("placeholder", output="real-data")
+
+        downstream = _make_agent_node(
+            "downstream",
+            depends_on=["placeholder"],
+            input_map={"data": "placeholder.output"},
+            output="downstream-ran",
+        )
+
+        ctx = _make_context()
+        ctx.graph_loader = _StubGraphLoader({"placeholder": replacement})
+
+        execute_graph([dispatcher, original_placeholder, downstream], {}, ctx, graph_name="test")
+
+        # Original was removed (didn't run); replacement ran
+        assert not original_placeholder.run.called
+        assert replacement.run.called
+        # Downstream ran against the REPLACEMENT's output
+        assert downstream.run.called
+        assert ctx.run_state["placeholder"].output == "real-data"
+
+    def test_add_alongside_pre_existing_nodes(self):
+        """Pre-existing node survives untouched when dispatcher only adds
+        NEW nodes (doesn't target the pre-existing one)."""
+        dispatch_block = [
+            {"op": "add", "node": {"name": "extra", "agent": "x"}}
+        ]
+        dispatcher = _make_dispatcher_node("planner", dispatch_block)
+        pre_existing = _make_agent_node(
+            "pre_existing", depends_on=["planner"], output="survived",
+        )
+        extra = _make_agent_node("extra", output="extra-ran")
+
+        ctx = _make_context()
+        ctx.graph_loader = _StubGraphLoader({"extra": extra})
+
+        execute_graph([dispatcher, pre_existing], {}, ctx, graph_name="test")
+
+        assert pre_existing.run.called
+        assert extra.run.called
+        assert ctx.run_state["pre_existing"].output == "survived"
+        assert ctx.run_state["extra"].output == "extra-ran"
+
+    def test_mixed_add_remove_in_single_dispatch(self):
+        """One dispatcher emits add AND remove ops; both apply atomically."""
+        dispatch_block = [
+            {"op": "remove", "target": "drop_me"},
+            {"op": "add", "node": {"name": "new_a", "agent": "x"}},
+            {"op": "add", "node": {"name": "new_b", "agent": "x"}},
+        ]
+        dispatcher = _make_dispatcher_node("planner", dispatch_block)
+        drop_me = _make_agent_node("drop_me", depends_on=["planner"])
+        new_a = _make_agent_node("new_a")
+        new_b = _make_agent_node("new_b")
+
+        ctx = _make_context()
+        ctx.graph_loader = _StubGraphLoader({"new_a": new_a, "new_b": new_b})
+
+        execute_graph([dispatcher, drop_me], {}, ctx, graph_name="test")
+
+        assert not drop_me.run.called
+        assert new_a.run.called
+        assert new_b.run.called
+        assert ctx.run_state["drop_me"].status == Status.SKIPPED
+
+
+class TestScriptAgentDispatch:
+    """A dispatch block works on ANY AgentNode — including ones wrapping a
+    script agent that never calls an LLM. Proves the dispatch mechanism
+    doesn't couple to LLM provider output; it just reads the agent_config
+    dict and renders the template against agent input + structured output
+    (whatever source those happen to come from)."""
+
+    def _make_script_dispatcher(self, name, dispatch_block, input_structured=None):
+        """AgentNode with type=script-ish config (dispatch key but no
+        provider/model). The mocked run() simulates a script producing a
+        structured output (or not)."""
+        nc = NodeConfig(name=name)
+        agent_config = {"name": name, "type": "script", "dispatch": dispatch_block}
+        node = AgentNode(nc, agent_config)
+        result = NodeResult(
+            status=Status.COMPLETED,
+            output="scripted planner: ran",
+            structured_output=input_structured,
+            agent_results=[AgentResult(
+                status=Status.COMPLETED,
+                output="scripted planner: ran",
+                structured_output=input_structured,
+                tokens=TokenUsage(total_tokens=0),
+            )],
+        )
+        node.run = MagicMock(return_value=result)
+        return node
+
+    def test_script_agent_fans_out_from_input(self):
+        """Script dispatcher reads `input.cities` and spawns one lane per
+        city — no LLM output involved anywhere in the dispatch decision."""
+        dispatch_block = [{
+            "op": "add",
+            "for_each": "input.cities",
+            "as": "city",
+            "node": {
+                "name": "research_{{ city.name }}",
+                "type": "agent",
+                "agent": "researcher",
+                "input_map": {
+                    "topic": "{{ city.name }}",
+                    "brief": "Research {{ city.name }}",
+                },
+            },
+        }]
+        planner = self._make_script_dispatcher("planner", dispatch_block)
+        tokyo = _make_agent_node("research_Tokyo", output="tokyo-data")
+        kyoto = _make_agent_node("research_Kyoto", output="kyoto-data")
+
+        ctx = _make_context()
+        ctx.graph_loader = _StubGraphLoader({
+            "research_Tokyo": tokyo, "research_Kyoto": kyoto,
+        })
+
+        execute_graph(
+            [planner],
+            {"cities": [{"name": "Tokyo"}, {"name": "Kyoto"}]},
+            ctx, graph_name="test",
+        )
+
+        # Deterministic: same input → same dispatched lanes
+        assert tokyo.run.called
+        assert kyoto.run.called
+        # The dispatcher itself ran with 0 tokens (it's a script, no LLM call)
+        assert planner.run.called
+        assert ctx.run_state["planner"].agent_results[0].tokens.total_tokens == 0
+
+    def test_script_agent_zero_tokens_on_planner(self):
+        """Confirms the cost model: script dispatcher contributes 0 tokens
+        even when dispatching many children. LLM cost only accrues on the
+        dispatched LLM-agent lanes."""
+        dispatch_block = [{
+            "op": "add",
+            "for_each": "input.items",
+            "node": {"name": "item_{{ item }}", "agent": "x"},
+        }]
+        planner = self._make_script_dispatcher("planner", dispatch_block)
+
+        ctx = _make_context()
+        ctx.graph_loader = _StubGraphLoader({
+            f"item_{i}": _make_agent_node(f"item_{i}") for i in range(5)
+        })
+
+        execute_graph(
+            [planner], {"items": list(range(5))}, ctx, graph_name="test",
+        )
+
+        # Planner ran — 0 tokens, 0 cost
+        planner_result = ctx.run_state["planner"]
+        assert planner_result.agent_results[0].tokens.total_tokens == 0
+        assert planner_result.agent_results[0].cost_usd == 0
+
+
+class TestDispatchStageType:
+    """Dispatched nodes can be `type: stage` (not just `type: agent`).
+    A dispatched stage spins up multiple agents running in parallel /
+    sequential / leader topology, same as a static stage node."""
+
+    def _make_stage_node(self, name, child_agents, output="stage-out"):
+        """Build a real StageNode (not mocked) wrapping mock child AgentNodes."""
+        from temper_ai.stage.stage_node import StageNode
+
+        nc = NodeConfig(name=name)
+        children = [
+            _make_agent_node(f"{name}__{a}", output=f"{a}-ran") for a in child_agents
+        ]
+        stage = StageNode(nc, children)
+        return stage, children
+
+    def test_dispatched_stage_runs_all_child_agents(self):
+        """Dispatcher emits `type: stage` with a list of agents. The stage
+        materializes as a StageNode whose child agents run in parallel."""
+        dispatch_block = [{
+            "op": "add",
+            "node": {
+                "name": "review_stage",
+                "type": "stage",
+                "strategy": "parallel",
+                "agents": ["reviewer_a", "reviewer_b"],
+            },
+        }]
+        dispatcher = _make_dispatcher_node("planner", dispatch_block)
+        stage_node, child_agents = self._make_stage_node(
+            "review_stage", ["reviewer_a", "reviewer_b"],
+        )
+
+        ctx = _make_context()
+        ctx.graph_loader = _StubGraphLoader({"review_stage": stage_node})
+
+        execute_graph([dispatcher], {}, ctx, graph_name="test")
+
+        # The stage itself ran; its children (accessed via child_agents)
+        # each ran too
+        assert "review_stage" in ctx.run_state
+        for child in child_agents:
+            assert child.run.called, (
+                f"Child {child.name} inside dispatched stage didn't run"
+            )
+
+    def test_dispatched_stage_fan_out_per_for_each(self):
+        """`for_each` over a list, each iteration dispatching a stage
+        (not an agent). Common pattern when each item needs multiple
+        agents working together."""
+        dispatch_block = [{
+            "op": "add",
+            "for_each": ["tokyo", "kyoto"],
+            "node": {
+                "name": "city_{{ item }}_stage",
+                "type": "stage",
+                "strategy": "parallel",
+                "agents": ["researcher", "critic"],
+            },
+        }]
+        dispatcher = _make_dispatcher_node("planner", dispatch_block)
+        tokyo_stage, tokyo_children = self._make_stage_node(
+            "city_tokyo_stage", ["researcher", "critic"],
+        )
+        kyoto_stage, kyoto_children = self._make_stage_node(
+            "city_kyoto_stage", ["researcher", "critic"],
+        )
+
+        ctx = _make_context()
+        ctx.graph_loader = _StubGraphLoader({
+            "city_tokyo_stage": tokyo_stage,
+            "city_kyoto_stage": kyoto_stage,
+        })
+
+        execute_graph([dispatcher], {}, ctx, graph_name="test")
+
+        # Both cities' stages ran; each has two child agents that ran
+        for child in tokyo_children + kyoto_children:
+            assert child.run.called, f"{child.name} didn't run"
+        assert "city_tokyo_stage" in ctx.run_state
+        assert "city_kyoto_stage" in ctx.run_state
+
+
 class TestExecuteGraphCore:
     """Condition, cost, and event tests that historically lived inline in
     TestExecuteGraph. Split into their own class so the dispatch/caps tests

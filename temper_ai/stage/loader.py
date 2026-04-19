@@ -47,6 +47,14 @@ def _agent_defaults(defaults: dict) -> dict:
     return {k: v for k, v in defaults.items() if k not in _WORKFLOW_ONLY_DEFAULTS}
 
 
+def _is_valid_node_ref_head(head: str) -> bool:
+    """True if `head` parses as a Python-identifier-shaped node name — the
+    shape the executor's resolver treats as a real node ref. Must mirror
+    `executor._looks_like_node_ref`."""
+    import re
+    return bool(re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", head))
+
+
 class GraphLoader:
     """Load and resolve graph configs into executable node trees."""
 
@@ -326,15 +334,24 @@ class GraphLoader:
                         f"which doesn't exist"
                     )
 
-            # Check input_map source references
+            # Check input_map source references. Strings that don't look
+            # like identifier-shaped refs (sentences, bare literals,
+            # non-strings) are treated as literal values — matches the
+            # executor's _resolve_single_input behavior. Only flag as
+            # errors sources whose head IS identifier-shaped but doesn't
+            # match a real node name.
             if node.config.input_map:
                 for local_name, source in node.config.input_map.items():
+                    if not isinstance(source, str):
+                        continue  # non-string literal — fine
                     parts = source.split(".")
+                    head = parts[0] if parts else ""
+                    if not _is_valid_node_ref_head(head):
+                        continue  # literal like "placeholder" or "a sentence"
                     if len(parts) < 2:
-                        errors.append(
-                            f"Node '{node.name}' input_map '{local_name}' has invalid "
-                            f"source '{source}' (expected 'node_name.field')"
-                        )
+                        # Bare identifier that happens to be identifier-shaped
+                        # — could be a workflow input or just a literal. Don't
+                        # flag — resolver handles both at runtime.
                         continue
                     source_node = parts[0]
                     if source_node not in ("workflow", "input") and source_node not in node_names:

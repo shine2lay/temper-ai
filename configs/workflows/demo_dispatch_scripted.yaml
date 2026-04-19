@@ -1,0 +1,38 @@
+workflow:
+  name: demo_dispatch_scripted
+  description: |
+    Zero-LLM dispatch: the dispatcher is a SCRIPT agent (bash). It reads
+    `input.cities` from the workflow input and fans out one research
+    agent per city — deterministic, no LLM call on the dispatcher side.
+
+    Same dispatch engine, different driver:
+      - demo_dispatch        (LLM agent dispatches via structured output)
+      - demo_dispatch_scripted   (script agent dispatches via workflow input)
+
+    Usage:
+      POST /api/runs
+      {
+        "workflow": "demo_dispatch_scripted",
+        "inputs": {
+          "cities": [
+            {"name": "Tokyo"},
+            {"name": "Kyoto"},
+            {"name": "Osaka"}
+          ]
+        }
+      }
+
+    Dispatched researchers use Claude (they're LLMs) but the dispatcher
+    itself doesn't — so per-run planner cost is $0.
+
+  defaults:
+    provider: claude
+    model: opus
+    dispatch:
+      max_children_per_dispatch: 20
+      max_dynamic_nodes: 50
+
+  nodes:
+    - name: planner
+      type: agent
+      agent: demo_dispatch_scripted_planner

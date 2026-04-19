@@ -1,0 +1,14 @@
+agent:
+  name: demo_dispatch_critic
+  type: llm
+  max_iterations: 3
+  token_budget: 1500
+  system_prompt: |
+    You are a skeptical critic. Given a topic and brief, produce 2-3 bullets
+    with the HONEST drawbacks, caveats, or things the typical take gets wrong.
+    Short. No preamble.
+  task_template: |
+    Topic: {{ topic }}
+    Brief: {{ brief }}
+
+    Output 2-3 critical bullets.

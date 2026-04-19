@@ -52,6 +52,12 @@ def get_workflow_execution(execution_id: str) -> dict | None:
     nodes = [_build_node_execution(e, events) for e in node_events]
     current_node_names = {n.get("name") for n in nodes if n.get("name")}
 
+    # Annotate nodes with dispatch relationships. `dispatch.applied` events
+    # list each dispatcher's added children + removed targets. Frontend
+    # uses these fields to show "dispatcher" badges on parents and
+    # "dispatched by X" / "removed by X" badges on children.
+    _annotate_dispatch_relationships(nodes, events)
+
     # For forked runs: fetch restored nodes from the source execution
     if fork_meta:
         fork_data = fork_meta.get("data", {})
@@ -375,6 +381,47 @@ def _find_event_by_type(events: list[dict], type_prefix: str) -> dict | None:
         if e.get("type", "").startswith(type_prefix):
             return e
     return None
+
+
+def _annotate_dispatch_relationships(nodes: list[dict], events: list[dict]) -> None:
+    """Stamp each node with dispatch metadata derived from dispatch.applied events.
+
+    Adds (when applicable) to each node:
+      - dispatched_by:     dispatcher node name (for nodes ADDED via dispatch)
+      - dispatched_children: list[str] names (for dispatcher nodes)
+      - removed_children:    list[str] names (targets the dispatcher removed)
+
+    The frontend reads these to render "dispatcher"/"dispatched" badges on
+    the DAG and to draw dispatched-edge labels. Removed-child names that
+    aren't in `nodes` are still listed on the dispatcher so the timeline
+    can show "removed X" even when X never materialized as a node.
+    """
+    nodes_by_name: dict[str, dict] = {n["name"]: n for n in nodes if n.get("name")}
+
+    for event in events:
+        if event.get("type") != "dispatch.applied":
+            continue
+        data = event.get("data") or {}
+        dispatcher = data.get("dispatcher")
+        if not isinstance(dispatcher, str):
+            continue  # malformed event — skip rather than crash
+        added: list[str] = [n for n in (data.get("added") or []) if isinstance(n, str)]
+        removed: list[str] = [n for n in (data.get("removed") or []) if isinstance(n, str)]
+
+        dispatcher_node = nodes_by_name.get(dispatcher)
+        if dispatcher_node is not None:
+            # Accumulate across multiple dispatch events from the same dispatcher
+            existing_added = dispatcher_node.setdefault("dispatched_children", [])
+            existing_removed = dispatcher_node.setdefault("removed_children", [])
+            existing_added.extend(n for n in added if n not in existing_added)
+            existing_removed.extend(n for n in removed if n not in existing_removed)
+
+        # Tag each child with its dispatcher so the frontend can render
+        # "dispatched by <dispatcher>" on that node.
+        for child_name in added:
+            child_node = nodes_by_name.get(child_name)
+            if child_node is not None:
+                child_node["dispatched_by"] = dispatcher
 
 
 import threading as _threading  # noqa: E402  (below helper defs for locality)

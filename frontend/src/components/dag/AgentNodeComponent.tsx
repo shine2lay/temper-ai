@@ -11,8 +11,14 @@ import { cn } from '@/lib/utils';
  * Shows an iteration picker when the node has multiple runs (loop/retry).
  */
 export const AgentNodeComponent = memo(function AgentNodeComponent({ data }: NodeProps) {
-  const { agent, stage, stageColor, isDelegate, delegatedBy, iterations } = data as AgentNodeData;
+  const {
+    agent, stage, stageColor, isDelegate, delegatedBy, iterations,
+    dispatchedBy, dispatchedChildren, removedChildren,
+  } = data as AgentNodeData;
   const [iterIndex, setIterIndex] = useState(iterations ? iterations.length - 1 : 0);
+  const hasDispatchedChildren = !!(dispatchedChildren && dispatchedChildren.length > 0);
+  const hasRemovedChildren = !!(removedChildren && removedChildren.length > 0);
+  const isDispatcher = hasDispatchedChildren || hasRemovedChildren;
 
   // No agent (skipped/empty stages): return null
   if (!agent) {
@@ -68,10 +74,39 @@ export const AgentNodeComponent = memo(function AgentNodeComponent({ data }: Nod
         </div>
       )}
 
+      {/* Dispatched-node badge (this node was added at runtime by a dispatcher) */}
+      {dispatchedBy && (
+        <div className="absolute -top-3 left-2 right-2 z-10 flex items-center justify-between gap-2">
+          <span className="text-[10px] px-2 py-0.5 rounded-sm bg-amber-500/30 text-amber-300 border border-amber-400/50 font-bold uppercase tracking-wide shadow">
+            ⚡ dispatched
+          </span>
+          <span className="text-[10px] text-amber-300/90 bg-temper-bg/80 px-1.5 rounded-sm border border-amber-400/30">
+            by {dispatchedBy}
+          </span>
+        </div>
+      )}
+
+      {/* Dispatcher badge (this node added/removed children at runtime) */}
+      {isDispatcher && (
+        <div className="absolute -bottom-3 left-2 right-2 z-10 flex items-center gap-2 flex-wrap">
+          {hasDispatchedChildren && (
+            <span className="text-[10px] px-2 py-0.5 rounded-sm bg-sky-500/30 text-sky-200 border border-sky-400/50 font-bold uppercase tracking-wide shadow">
+              + dispatched {dispatchedChildren!.length}
+            </span>
+          )}
+          {hasRemovedChildren && (
+            <span className="text-[10px] px-2 py-0.5 rounded-sm bg-rose-500/30 text-rose-200 border border-rose-400/50 font-bold uppercase tracking-wide shadow">
+              − removed {removedChildren!.length}
+            </span>
+          )}
+        </div>
+      )}
+
       <AgentCardContent
         agent={displayAgent}
-        borderColor={stageColor}
-        borderStyle={isDelegate ? 'dashed' : undefined}
+        borderColor={dispatchedBy ? '#f59e0b' : stageColor}
+        borderStyle={isDelegate ? 'dashed' : (dispatchedBy ? 'solid' : undefined)}
+        namePrefix={dispatchedBy ? '⚡' : undefined}
       />
 
       {/* Iteration picker */}

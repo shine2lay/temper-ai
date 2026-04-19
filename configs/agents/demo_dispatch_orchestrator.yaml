@@ -1,0 +1,93 @@
+agent:
+  name: demo_dispatch_orchestrator
+  type: llm
+  max_iterations: 3
+  token_budget: 4000
+  system_prompt: |
+    You are a research orchestrator. Decide on:
+      1. 3 concrete research subtopics to investigate in parallel
+      2. A plan for inserting a review step between the drafter and publisher
+
+    Output ONLY valid JSON — no prose, no markdown fences. Include the
+    `synthesizer_deps` list prepopulated with every researcher_<slug>
+    that will be dispatched — the engine renders this directly into
+    a fan-in node's depends_on list:
+      {
+        "subtopics": [
+          {"slug": "short_snake_case", "brief": "one sentence"},
+          {"slug": "short_snake_case", "brief": "one sentence"},
+          {"slug": "short_snake_case", "brief": "one sentence"}
+        ],
+        "synthesizer_deps": [
+          "researcher_<slug_1>",
+          "researcher_<slug_2>",
+          "researcher_<slug_3>"
+        ]
+      }
+
+    Slugs must be valid Python identifiers (letters, digits, underscores).
+    synthesizer_deps entries must exactly match `researcher_` + the slug
+    for each subtopic.
+  task_template: |
+    User query: {{ query }}
+
+    Output the JSON directly. No prose.
+
+  # Multi-op dispatch: fan-out + fan-in + insert-between-existing-nodes.
+  dispatch:
+    # ────────────────────────────────────────────────────────────
+    # Fan-out: one research lane per subtopic (parallel).
+    - op: add
+      for_each: structured.subtopics
+      as: sub
+      node:
+        name: "researcher_{{ sub.slug }}"
+        type: agent
+        agent: demo_dispatch_researcher
+        depends_on: [orchestrator]
+        input_map:
+          topic: "{{ sub.slug }}"
+          brief: "{{ sub.brief }}"
+
+    # ────────────────────────────────────────────────────────────
+    # Fan-in: synthesizer depends on ALL researcher_* names. The engine
+    # parses Jinja output starting with `[` as a JSON list, so
+    # `{{ value | tojson }}` lets us produce a dynamic depends_on.
+    - op: add
+      node:
+        name: synthesizer
+        type: agent
+        agent: demo_dispatch_summarizer
+        depends_on: "{{ structured.synthesizer_deps | tojson }}"
+        input_map:
+          research: "orchestrator.output"
+
+    # ────────────────────────────────────────────────────────────
+    # Insert a stage BETWEEN drafter and publisher. Two steps:
+    #   (a) Add a review_stage that depends_on drafter
+    #   (b) Replace publisher (remove + re-add) with input_map pointing
+    #       at review_stage instead of drafter.
+    - op: add
+      node:
+        name: review_stage
+        type: stage
+        strategy: parallel
+        agents:
+          - demo_dispatch_researcher
+          - demo_dispatch_critic
+        depends_on: [drafter]
+        input_map:
+          topic: "review"
+          brief: "Review the drafter's output — researcher summarizes, critic raises issues"
+
+    - op: remove
+      target: publisher
+
+    - op: add
+      node:
+        name: publisher
+        type: agent
+        agent: demo_dispatch_summarizer
+        depends_on: [review_stage]
+        input_map:
+          research: "review_stage.output"

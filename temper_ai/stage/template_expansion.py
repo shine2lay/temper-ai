@@ -118,6 +118,12 @@ def _render_strings(value: Any, ctx: dict[str, Any]) -> Any:
 
     Non-string leaves (int, float, bool, None) pass through untouched.
     Dicts and lists are traversed recursively and returned as fresh objects.
+
+    If a rendered string starts with `[`/`{` and parses as valid JSON, it's
+    returned as the parsed list/dict rather than the raw string. This lets
+    dispatch YAML use `depends_on: "{{ structured.names | tojson }}"` to
+    produce a proper list from Jinja (rather than a string that NodeConfig
+    would reject). Failed JSON parses fall back to the raw string.
     """
     if isinstance(value, str):
         # Fast path: no Jinja markers means no render needed.
@@ -125,11 +131,22 @@ def _render_strings(value: Any, ctx: dict[str, Any]) -> Any:
             return value
         try:
             template = _JINJA_ENV.from_string(value)
-            return template.render(**ctx)
+            rendered = template.render(**ctx)
         except jinja2.TemplateError as exc:
             raise TemplateExpansionError(
                 f"Jinja error rendering {value!r}: {exc}"
             ) from exc
+        # If the render produced what looks like JSON for a list or dict,
+        # coerce it. Opt-in by leading char so scalar Jinja (agent names,
+        # sentences) keeps its str type.
+        stripped = rendered.lstrip()
+        if stripped and stripped[0] in ("[", "{"):
+            import json
+            try:
+                return json.loads(rendered)
+            except (json.JSONDecodeError, ValueError):
+                pass
+        return rendered
     if isinstance(value, dict):
         return {k: _render_strings(v, ctx) for k, v in value.items()}
     if isinstance(value, list):

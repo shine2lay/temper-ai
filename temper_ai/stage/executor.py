@@ -478,7 +478,12 @@ def _apply_declarative_dispatch(
     # Imports inside function to avoid circular deps with loader/agent_node
     from temper_ai.stage.agent_node import AgentNode
     from temper_ai.stage.dispatch import DispatchRenderError, render_dispatch
-    from temper_ai.stage.models import NodeConfig
+    from temper_ai.stage.dispatch_limits import (
+        DispatchCapExceeded,
+        DispatchLimits,
+        DispatchRunState,
+        fingerprint_node,
+    )
 
     if not isinstance(node, AgentNode):
         return
@@ -495,6 +500,12 @@ def _apply_declarative_dispatch(
             node.name,
         )
         return
+
+    # Safety caps — lazily seed limits and run-state on first dispatch
+    limits: DispatchLimits = getattr(context, "dispatch_limits", None) or DispatchLimits()
+    state: DispatchRunState = getattr(context, "dispatch_state", None) or DispatchRunState()
+    context.dispatch_limits = limits
+    context.dispatch_state = state
 
     # Gather the agent's produced data to feed the Jinja scope
     agent_result = result.agent_results[0] if result.agent_results else None
@@ -517,26 +528,39 @@ def _apply_declarative_dispatch(
     if not ops:
         return
 
+    # Per-dispatch fan-out cap — count ADDED nodes across the ops batch
+    total_added = sum(len(op.all_added_nodes()) for op in ops)
+    if total_added > limits.max_children_per_dispatch:
+        raise DispatchCapExceeded(
+            f"Dispatch from '{node.name}' emitted {total_added} add-node(s), "
+            f"exceeding max_children_per_dispatch={limits.max_children_per_dispatch}"
+        )
+
+    # Dispatcher's own depth — originals are 0, dispatched nodes are tracked.
+    dispatcher_depth = state.depths.get(node.name, 0)
+    # Ensure dispatcher has a fingerprint recorded so cycle walks work even
+    # when the dispatcher is an original workflow node.
+    if node.name not in state.fingerprints:
+        state.fingerprints[node.name] = fingerprint_node(
+            agent_config.get("name", node.name),
+            input_data,
+        )
+
     new_nodes: list[Node] = []
     for op in ops:
         if op.op == "add":
             for node_dict in op.all_added_nodes():
-                try:
-                    nc = NodeConfig.from_dict(node_dict)
-                    built = loader._resolve_node(nc)
-                except Exception as exc:
-                    raise DispatchRenderError(
-                        f"dispatch from '{node.name}' produced node "
-                        f"{node_dict.get('name', '<unnamed>')!r} that failed to "
-                        f"build: {exc}"
-                    ) from exc
-                if built.name in node_map or built.name in node_outputs:
-                    raise DispatchRenderError(
-                        f"dispatch from '{node.name}' produced node "
-                        f"{built.name!r} which already exists in the DAG"
-                    )
-                node_map[built.name] = built
-                new_nodes.append(built)
+                _enforce_caps_and_build(
+                    op_dict=node_dict,
+                    dispatcher_name=node.name,
+                    dispatcher_depth=dispatcher_depth,
+                    loader=loader,
+                    limits=limits,
+                    state=state,
+                    node_map=node_map,
+                    node_outputs=node_outputs,
+                    new_nodes=new_nodes,
+                )
         elif op.op == "remove":
             target = op.target or ""
             if target in node_outputs:
@@ -557,6 +581,87 @@ def _apply_declarative_dispatch(
             node.name, len(new_nodes), len(new_batches),
             [n.name for n in new_nodes],
         )
+
+
+def _enforce_caps_and_build(
+    *,
+    op_dict: dict[str, Any],
+    dispatcher_name: str,
+    dispatcher_depth: int,
+    loader: Any,
+    limits: Any,
+    state: Any,
+    node_map: dict[str, Node],
+    node_outputs: dict[str, NodeResult],
+    new_nodes: list[Node],
+) -> None:
+    """Validate safety caps, build a Node, and append it to `new_nodes`.
+
+    Split from _apply_declarative_dispatch for readability — the caller is
+    already carrying 10+ locals. All failures raise (either DispatchCapExceeded
+    for policy breaches or DispatchRenderError for structural issues) — caller
+    doesn't branch on success/failure.
+    """
+    from temper_ai.stage.dispatch import DispatchRenderError
+    from temper_ai.stage.dispatch_limits import (
+        DispatchCapExceeded,
+        check_cycle,
+        fingerprint_node,
+    )
+    from temper_ai.stage.models import NodeConfig
+
+    # Depth cap — would-be depth of this new node
+    new_depth = dispatcher_depth + 1
+    if new_depth > limits.max_dispatch_depth:
+        raise DispatchCapExceeded(
+            f"Dispatch from '{dispatcher_name}' would create a node at "
+            f"depth {new_depth}, exceeding max_dispatch_depth="
+            f"{limits.max_dispatch_depth}"
+        )
+
+    # Run-wide cap — this add would put us over the total
+    if state.dispatched_count + 1 > limits.max_dynamic_nodes:
+        raise DispatchCapExceeded(
+            f"Dispatch from '{dispatcher_name}' would bring run-wide "
+            f"dispatched-node count to {state.dispatched_count + 1}, "
+            f"exceeding max_dynamic_nodes={limits.max_dynamic_nodes}"
+        )
+
+    # Cycle detection — fingerprint this would-be node and walk ancestors
+    agent_ref = op_dict.get("agent") or op_dict.get("name") or ""
+    child_fp = fingerprint_node(agent_ref, op_dict.get("input_map") or {})
+    if limits.cycle_detection:
+        ancestor = check_cycle(state, dispatcher_name, child_fp)
+        if ancestor is not None:
+            raise DispatchCapExceeded(
+                f"Dispatch from '{dispatcher_name}' produces a cycle: node "
+                f"with fingerprint {child_fp} matches ancestor "
+                f"{ancestor!r}"
+            )
+
+    # Build the node
+    try:
+        nc = NodeConfig.from_dict(op_dict)
+        built = loader._resolve_node(nc)
+    except Exception as exc:
+        raise DispatchRenderError(
+            f"dispatch from '{dispatcher_name}' produced node "
+            f"{op_dict.get('name', '<unnamed>')!r} that failed to "
+            f"build: {exc}"
+        ) from exc
+    if built.name in node_map or built.name in node_outputs:
+        raise DispatchRenderError(
+            f"dispatch from '{dispatcher_name}' produced node "
+            f"{built.name!r} which already exists in the DAG"
+        )
+
+    # All caps satisfied — commit state updates
+    node_map[built.name] = built
+    new_nodes.append(built)
+    state.depths[built.name] = new_depth
+    state.parents[built.name] = dispatcher_name
+    state.fingerprints[built.name] = child_fp
+    state.dispatched_count += 1
 
 
 def _handle_loop(

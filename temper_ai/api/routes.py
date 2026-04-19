@@ -138,6 +138,7 @@ def start_run(body: RunRequest):
         checkpoint_service=checkpoint_svc,
         gate_registry=_state().gates,
         graph_loader=_state().graph_loader,
+        dispatch_limits=_build_dispatch_limits(config),
     )
 
     # Bind execution context to Delegate tool so it can create sub-agents
@@ -285,6 +286,7 @@ def resume_run(execution_id: str, body: ResumeRequest | None = None):
         checkpoint_service=checkpoint_svc,
         gate_registry=_state().gates,
         graph_loader=_state().graph_loader,
+        dispatch_limits=_build_dispatch_limits(config),
     )
 
     _bind_delegate_tool(run_tool_executor, context)
@@ -362,6 +364,7 @@ def fork_run(body: ForkRequest):
         checkpoint_service=fork_svc,
         gate_registry=_state().gates,
         graph_loader=_state().graph_loader,
+        dispatch_limits=_build_dispatch_limits(config),
     )
 
     _bind_delegate_tool(run_tool_executor, context)
@@ -450,6 +453,16 @@ def _bind_delegate_tool(tool_executor: ToolExecutor, context) -> None:
     delegate = tool_executor.get_tool("Delegate")
     if delegate and hasattr(delegate, "bind_context"):
         delegate.bind_context(context)
+
+
+def _build_dispatch_limits(config):
+    """Resolve DispatchLimits from the workflow's `defaults.dispatch` section.
+
+    Split out so all three ExecutionContext build-sites share one formula;
+    keeps route handlers from repeating the import + lookup boilerplate.
+    """
+    from temper_ai.stage.dispatch_limits import DispatchLimits
+    return DispatchLimits.from_defaults(getattr(config, "defaults", None))
 
 
 def _preconnect_mcp_servers(mcp_manager, mcp_tools: dict) -> None:

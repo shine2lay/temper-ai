@@ -280,6 +280,7 @@ def _build_execution_context(args, config, nodes, llm_providers, memory_service,
     from temper_ai.config import ConfigStore
     from temper_ai.observability.event_recorder import EventRecorder
     from temper_ai.shared.types import ExecutionContext
+    from temper_ai.stage.dispatch_limits import DispatchLimits
     from temper_ai.stage.loader import GraphLoader
 
     execution_id = str(uuid.uuid4())
@@ -304,6 +305,7 @@ def _build_execution_context(args, config, nodes, llm_providers, memory_service,
         llm_providers=llm_providers,
         workspace_path=args.workspace,
         graph_loader=graph_loader,
+        dispatch_limits=DispatchLimits.from_defaults(getattr(config, "defaults", None)),
     )
     return printer, recorder, context
 

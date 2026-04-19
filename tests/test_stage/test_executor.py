@@ -449,6 +449,164 @@ class TestDeclarativeDispatch:
         assert followup.run.called
         assert ctx.run_state["followup"].output == "f-ran"
 
+
+class TestDispatchSafetyCaps:
+    """Integration tests for dispatch safety caps — thread the limits from
+    ExecutionContext through the executor and assert they actually fail the run.
+    """
+
+    def _make_many_children_dispatcher(self, count: int):
+        """Build an agent node whose dispatch block fans out `count` children."""
+        block = [{
+            "op": "add",
+            "for_each": list(range(count)),
+            "node": {"name": "c_{{ item }}", "agent": "x"},
+        }]
+        return _make_dispatcher_node("parent", block)
+
+    def test_max_children_per_dispatch_triggers(self):
+        """Dispatcher emits more children than the configured cap — run fails."""
+        from temper_ai.stage.dispatch_limits import DispatchLimits
+
+        dispatcher = self._make_many_children_dispatcher(5)
+        ctx = _make_context()
+        ctx.graph_loader = _StubGraphLoader({f"c_{i}": _make_agent_node(f"c_{i}") for i in range(5)})
+        ctx.dispatch_limits = DispatchLimits(max_children_per_dispatch=3)
+
+        result = execute_graph([dispatcher], {}, ctx, graph_name="test")
+        assert result.status == Status.FAILED
+        assert "max_children_per_dispatch" in (result.error or "")
+
+    def test_max_children_per_dispatch_allows_equal(self):
+        """Exactly at the cap is allowed — cap is `> N` not `>= N`."""
+        from temper_ai.stage.dispatch_limits import DispatchLimits
+
+        dispatcher = self._make_many_children_dispatcher(3)
+        ctx = _make_context()
+        ctx.graph_loader = _StubGraphLoader({f"c_{i}": _make_agent_node(f"c_{i}") for i in range(3)})
+        ctx.dispatch_limits = DispatchLimits(max_children_per_dispatch=3)
+
+        result = execute_graph([dispatcher], {}, ctx, graph_name="test")
+        assert result.status == Status.COMPLETED
+
+    def test_max_dynamic_nodes_triggers(self):
+        """Run-wide cap — two dispatchers together exceed max_dynamic_nodes."""
+        from temper_ai.stage.dispatch_limits import DispatchLimits
+
+        # Each dispatcher adds 2 children; cap is 3 → second dispatcher's 4th
+        # node breaches the run-wide cap.
+        d1 = _make_dispatcher_node("d1", [{
+            "op": "add", "for_each": [1, 2],
+            "node": {"name": "n1_{{ item }}", "agent": "x"},
+        }])
+        d2 = _make_dispatcher_node("d2", [{
+            "op": "add", "for_each": [3, 4],
+            "node": {"name": "n2_{{ item }}", "agent": "x"},
+        }])
+        # d2 runs after d1
+        d2.config.depends_on = ["d1"]
+        ctx = _make_context()
+        ctx.graph_loader = _StubGraphLoader({
+            "n1_1": _make_agent_node("n1_1"),
+            "n1_2": _make_agent_node("n1_2"),
+            "n2_3": _make_agent_node("n2_3"),
+            "n2_4": _make_agent_node("n2_4"),
+        })
+        ctx.dispatch_limits = DispatchLimits(max_dynamic_nodes=3)
+
+        result = execute_graph([d1, d2], {}, ctx, graph_name="test")
+        assert result.status == Status.FAILED
+        assert "max_dynamic_nodes" in (result.error or "")
+
+    def test_max_dispatch_depth_triggers(self):
+        """A node dispatched BY a dispatched node is depth-2; cap at 1 fails."""
+        from temper_ai.stage.dispatch_limits import DispatchLimits
+
+        # Grandchild has its OWN dispatch block — so when it runs it will try
+        # to dispatch again, reaching depth 2.
+        grandchild_block = [{"op": "add", "node": {"name": "great_grandchild", "agent": "x"}}]
+        grandchild = _make_dispatcher_node("grandchild", grandchild_block, output="gc-ran")
+
+        # Parent dispatches grandchild.
+        parent_block = [{"op": "add", "node": {"name": "grandchild", "agent": "x"}}]
+        parent = _make_dispatcher_node("parent", parent_block, output="p-ran")
+
+        great_grandchild = _make_agent_node("great_grandchild")
+        ctx = _make_context()
+        ctx.graph_loader = _StubGraphLoader({
+            "grandchild": grandchild,
+            "great_grandchild": great_grandchild,
+        })
+        ctx.dispatch_limits = DispatchLimits(max_dispatch_depth=1)
+
+        result = execute_graph([parent], {}, ctx, graph_name="test")
+        # Depth-2 dispatch rejected → run fails
+        assert result.status == Status.FAILED
+        assert "max_dispatch_depth" in (result.error or "")
+
+    def test_cycle_detection_triggers(self):
+        """Dispatcher emits a node with same (agent_ref, input_map) as itself."""
+        from temper_ai.stage.dispatch_limits import DispatchLimits
+
+        block = [{
+            "op": "add",
+            "node": {
+                "name": "self_clone",
+                "agent": "parent",   # same agent ref as dispatcher's own config name
+                "input_map": {},     # same (empty) input as dispatcher
+            },
+        }]
+        # Dispatcher's agent_config has name="parent" (matching the agent ref
+        # the child tries to use) — this sets up fingerprint collision.
+        dispatcher = _make_dispatcher_node("parent", block)
+        ctx = _make_context()
+        ctx.graph_loader = _StubGraphLoader({"self_clone": _make_agent_node("self_clone")})
+        ctx.dispatch_limits = DispatchLimits(cycle_detection=True)
+
+        result = execute_graph([dispatcher], {}, ctx, graph_name="test")
+        assert result.status == Status.FAILED
+        assert "cycle" in (result.error or "").lower()
+
+    def test_cycle_detection_disabled_allows_repeat(self):
+        """With cycle_detection=False, a self-clone is permitted."""
+        from temper_ai.stage.dispatch_limits import DispatchLimits
+
+        block = [{
+            "op": "add",
+            "node": {"name": "self_clone", "agent": "parent", "input_map": {}},
+        }]
+        dispatcher = _make_dispatcher_node("parent", block)
+        ctx = _make_context()
+        ctx.graph_loader = _StubGraphLoader({"self_clone": _make_agent_node("self_clone")})
+        ctx.dispatch_limits = DispatchLimits(cycle_detection=False)
+
+        result = execute_graph([dispatcher], {}, ctx, graph_name="test")
+        assert result.status == Status.COMPLETED
+
+    def test_defaults_applied_when_no_limits_on_context(self):
+        """Missing dispatch_limits on context → module defaults used (lenient)."""
+        from temper_ai.stage.dispatch_limits import (
+            DEFAULT_MAX_CHILDREN_PER_DISPATCH,
+        )
+
+        # Under the default cap — should work fine
+        dispatcher = self._make_many_children_dispatcher(DEFAULT_MAX_CHILDREN_PER_DISPATCH - 1)
+        ctx = _make_context()
+        ctx.graph_loader = _StubGraphLoader({
+            f"c_{i}": _make_agent_node(f"c_{i}")
+            for i in range(DEFAULT_MAX_CHILDREN_PER_DISPATCH - 1)
+        })
+        # Deliberately don't set ctx.dispatch_limits — should default
+
+        result = execute_graph([dispatcher], {}, ctx, graph_name="test")
+        assert result.status == Status.COMPLETED
+
+
+class TestExecuteGraphCore:
+    """Condition, cost, and event tests that historically lived inline in
+    TestExecuteGraph. Split into their own class so the dispatch/caps tests
+    above don't swallow them."""
+
     def test_condition_skip(self):
         a = _make_agent_node(
             "a",

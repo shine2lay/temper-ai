@@ -1,5 +1,6 @@
 """Tool system — built-in tools, executor, and loader."""
 
+from temper_ai.tools.add_node import AddNode
 from temper_ai.tools.base import BaseTool, ToolResult
 from temper_ai.tools.bash import Bash
 from temper_ai.tools.calculator import Calculator
@@ -12,11 +13,13 @@ from temper_ai.tools.git import Git
 from temper_ai.tools.http import Http
 from temper_ai.tools.loader import load_tools
 from temper_ai.tools.query_run_state import QueryRunState
+from temper_ai.tools.remove_node import RemoveNode
 from temper_ai.tools.web_search import WebSearch
 
 # Static registry of all available tool classes.
 # Adding a new tool: implement BaseTool, add it here.
 TOOL_CLASSES: dict[str, type[BaseTool]] = {
+    "AddNode": AddNode,
     "Bash": Bash,
     "Calculator": Calculator,
     "Delegate": Delegate,
@@ -26,6 +29,7 @@ TOOL_CLASSES: dict[str, type[BaseTool]] = {
     "git": Git,
     "http": Http,
     "QueryRunState": QueryRunState,
+    "RemoveNode": RemoveNode,
     "WebSearch": WebSearch,
 }
 

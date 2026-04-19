@@ -135,6 +135,11 @@ class DispatchRunState:
     depths: dict[str, int] = field(default_factory=dict)
     parents: dict[str, str] = field(default_factory=dict)
     fingerprints: dict[str, tuple[str, str]] = field(default_factory=dict)
+    # Tier 2 tool-call buffer — ops accumulated by AddNode / RemoveNode
+    # tools during an agent's run. Keyed by the agent's node_path so parallel
+    # agents' ops stay separate. Drained by the executor after the agent
+    # completes and merged with the agent's declarative dispatch (tier 1).
+    pending_ops: dict[str, list[Any]] = field(default_factory=dict)
 
 
 def fingerprint_node(agent_name: str, input_data: dict[str, Any] | None) -> tuple[str, str]:

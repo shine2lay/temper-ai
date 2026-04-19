@@ -116,12 +116,34 @@ class LLMService:
         return None  # continue loop
 
     def _call_llm(self, iteration: int) -> tuple[str, LLMResponse, float]:
-        """Call the LLM provider and record events. Returns (event_id, response, cost)."""
+        """Call the LLM provider and record events. Returns (event_id, response, cost).
+
+        Cost precedence:
+          1. Provider's authoritative `raw_response.total_cost_usd` if present
+             (e.g. Claude Code reports the actual Anthropic-billed cost with
+             cache-read / cache-write discounts applied).
+          2. Fallback to `estimate_cost()` which multiplies prompt_tokens by
+             the full input rate — over-estimates when cache hits are common,
+             but is the best we can do when the provider doesn't report cost.
+        """
         event_id = self._record_llm_started(iteration)
         try:
             response = self._invoke_provider()
-            cost = estimate_cost(response.model, response.prompt_tokens,
-                                 response.completion_tokens, response.total_tokens)
+            raw = response.raw_response or {}
+            provider_cost = raw.get("total_cost_usd")
+            if provider_cost is not None:
+                try:
+                    cost = float(provider_cost)
+                except (TypeError, ValueError):
+                    cost = estimate_cost(
+                        response.model, response.prompt_tokens,
+                        response.completion_tokens, response.total_tokens,
+                    )
+            else:
+                cost = estimate_cost(
+                    response.model, response.prompt_tokens,
+                    response.completion_tokens, response.total_tokens,
+                )
             self._record_llm_completed(event_id, response, cost, iteration)
             return event_id, response, cost
         except Exception as e:  # noqa: broad-except
@@ -148,6 +170,8 @@ class LLMService:
             kwargs["tools"] = self._tools
         if self._ctx.cwd:
             kwargs["cwd"] = self._ctx.cwd
+        if self._ctx.model:
+            kwargs["model"] = self._ctx.model
         if self._stream_callback:
             return self.provider.stream(self._messages, on_chunk=self._stream_callback, **kwargs)
         return self.provider.complete(self._messages, **kwargs)

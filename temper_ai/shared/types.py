@@ -110,6 +110,8 @@ class ExecutionContext:
     skip_policies: list[str] | None = None  # Policy types to skip for the current node
     run_state: dict[str, Any] | None = None  # Live node_outputs dict (name -> NodeResult). Set by executor for introspection tools (QueryRunState, future dispatch).
     graph_loader: Any = None  # GraphLoader — used by dispatch to materialize dispatched node dicts into Node instances. Set by routes/CLI before execute_graph.
+    dispatch_limits: Any = None  # DispatchLimits — per-workflow safety caps. Resolved from workflow defaults by routes/CLI; None means use module defaults.
+    dispatch_state: Any = None  # DispatchRunState — per-run bookkeeping for cap enforcement. Seeded by executor on first dispatch.
 
     def get_llm(self, provider: str) -> Any:
         """Get LLM provider by name. Raises KeyError if not found."""

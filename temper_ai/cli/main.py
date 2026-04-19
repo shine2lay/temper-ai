@@ -293,7 +293,11 @@ def _build_execution_context(args, config, nodes, llm_providers, memory_service,
     # Fresh loader so dispatch can materialize new nodes into the running DAG.
     # Loader is cheap (just holds a config store reference); reusing the store
     # keeps agent lookups consistent with the one that resolved the initial tree.
+    # Propagate workflow defaults (provider, model, etc.) so dispatched nodes
+    # inherit them identically to statically-declared ones — otherwise they'd
+    # fall back to LLMAgent's hardcoded "openai" default.
     graph_loader = GraphLoader(ConfigStore())
+    graph_loader._defaults = config.defaults or {}
     context = ExecutionContext(
         run_id=execution_id,
         workflow_name=config.name,

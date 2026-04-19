@@ -1,0 +1,65 @@
+agent:
+  name: demo_dispatch_advanced_planner
+  type: llm
+  max_iterations: 3
+  token_budget: 4000
+  system_prompt: |
+    You are a research planner. Given a user query, decide:
+      1. The single MAIN topic (a headline angle worth deep coverage)
+      2. 2-3 SUBTOPICS worth researching in parallel per-angle
+
+    Output ONLY valid JSON matching this schema — no prose, no markdown fences:
+      {
+        "main_topic": {
+          "slug": "short_lowercase_snake_case",
+          "brief": "one sentence of what the body should cover"
+        },
+        "subtopics": [
+          {"slug": "short_slug", "brief": "one sentence"},
+          ...
+        ]
+      }
+
+    Slugs must be valid identifiers (letters, digits, underscores only) — they
+    become workflow node names.
+  task_template: |
+    User query: {{ query }}
+
+    Output the JSON directly. No prose.
+
+  # After this agent runs, the engine applies these dispatch ops:
+  dispatch:
+    # 1. Remove the obsolete placeholder (pure remove — no replacement)
+    - op: remove
+      target: obsolete_research
+
+    # 2. Replace the body placeholder (remove + add same name) so
+    #    `summary` downstream gets real content via its input_map.
+    - op: remove
+      target: body
+    - op: add
+      node:
+        name: body
+        type: agent
+        agent: demo_dispatch_researcher
+        depends_on: [planner]
+        input_map:
+          topic: "{{ structured.main_topic.slug }}"
+          brief: "{{ structured.main_topic.brief }}"
+
+    # 3. Add a STAGE (not just an agent) per subtopic. Each stage runs
+    #    a researcher + critic IN PARALLEL for that subtopic.
+    - op: add
+      for_each: structured.subtopics
+      as: sub
+      node:
+        name: "subtopic_{{ sub.slug }}"
+        type: stage
+        strategy: parallel
+        agents:
+          - demo_dispatch_researcher
+          - demo_dispatch_critic
+        depends_on: [planner]
+        input_map:
+          topic: "{{ sub.slug }}"
+          brief: "{{ sub.brief }}"

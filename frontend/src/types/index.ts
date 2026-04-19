@@ -56,6 +56,11 @@ export interface NodeExecution {
   // Delegate metadata
   delegated_by?: string;
   delegate_source?: string;
+  // Dispatch metadata (runtime DAG mutation — see stage/dispatch.py)
+  // Populated by api/data_service.py._annotate_dispatch_relationships.
+  dispatched_by?: string;            // dispatcher node that ADDED this node
+  dispatched_children?: string[];    // (this node is a dispatcher) names it added
+  removed_children?: string[];       // (this node is a dispatcher) names it removed
   // Backward compat
   collaboration_events?: CollaborationEvent[];
   stage_config_snapshot?: {

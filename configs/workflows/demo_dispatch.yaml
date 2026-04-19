@@ -1,0 +1,45 @@
+workflow:
+  name: demo_dispatch
+  description: |
+    Demo: a scout agent decides at runtime how many research lanes to spawn
+    based on its own reasoning about the input. Each lane is a dispatched
+    agent that wasn't in the static workflow — the DAG grows during the run.
+
+    What this demonstrates:
+      - Dispatcher agent producing structured output with a list
+      - `dispatch:` block with `for_each` over that list
+      - One research node spawned per list item, added to the live DAG
+      - `DISPATCH_APPLIED` event visible in the dashboard timeline
+
+    Run:
+      temper run demo_dispatch --input query="Japan spring trip research"
+
+    Open the dashboard (http://127.0.0.1:8420/app) to watch the lanes
+    appear mid-run.
+
+    See the dispatch block on the `demo_dispatch_scout` agent for the
+    full example.
+  defaults:
+    # Tested end-to-end with claude/opus — produces clean structured output
+    # that the dispatcher can fan out from. Other providers work too, but
+    # models that ignore JSON-only instructions (some local vLLM deployments
+    # add a reasoning prefix) will fail the render step. Override via
+    # workflow YAML or provider-config if using a different provider.
+    provider: claude
+    model: opus
+    dispatch:
+      max_children_per_dispatch: 10
+      max_dynamic_nodes: 50
+      max_dispatch_depth: 2
+
+  nodes:
+    # Scout reads the user's query, decides which topics to research, and
+    # dispatches one researcher agent per topic. The topics aren't known
+    # until the scout runs — only a static `for_each` against user input
+    # (the tier-1 template-expansion mechanism) would otherwise work, and
+    # it can't adapt to the scout's reasoning.
+    - name: scout
+      type: agent
+      agent: demo_dispatch_scout
+      input_map:
+        query: input.query

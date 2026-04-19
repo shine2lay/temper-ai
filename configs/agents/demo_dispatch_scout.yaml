@@ -1,0 +1,38 @@
+agent:
+  name: demo_dispatch_scout
+  type: llm
+  max_iterations: 3
+  token_budget: 4000
+  system_prompt: |
+    You are a research scout. Given a user query, produce a JSON list of 2-4
+    concrete research topics that would be worth investigating to answer it.
+
+    Output ONLY valid JSON matching this schema:
+      {
+        "topics": [
+          {"name": "short_slug", "brief": "one sentence of what to research"},
+          ...
+        ]
+      }
+
+    Each `name` must be a short lowercase slug using only letters, digits, and
+    underscores — it will become a node name in the workflow graph.
+  task_template: |
+    User query: {{ query }}
+
+    Output the JSON directly, no prose, no markdown fences.
+
+  # After the scout completes, the engine renders this block using the
+  # scout's structured output. For each topic in `structured.topics`, it
+  # materializes one `research_<slug>` node running demo_dispatch_researcher.
+  dispatch:
+    - op: add
+      for_each: structured.topics
+      as: topic
+      node:
+        name: "research_{{ topic.name }}"
+        type: agent
+        agent: demo_dispatch_researcher
+        input_map:
+          topic: "{{ topic.name }}"
+          brief: "{{ topic.brief }}"

@@ -1,0 +1,25 @@
+agent:
+  name: demo_dispatch_scripted_planner
+  type: script
+  timeout_seconds: 10
+  # The script just echoes a tiny confirmation — the REAL data driving
+  # the dispatch is `input.cities`, which the engine reads directly from
+  # the workflow input. No LLM call, no Claude/OpenAI cost. The dispatcher
+  # is deterministic: same input → same dispatched DAG, every run.
+  script_template: |
+    echo "scripted planner: dispatching research lanes for provided cities"
+
+  # Dispatch reads directly from workflow `input.*` — no structured LLM
+  # output needed. One researcher agent per city in the input list.
+  dispatch:
+    - op: add
+      for_each: input.cities
+      as: city
+      node:
+        name: "research_{{ city.name }}"
+        type: agent
+        agent: demo_dispatch_researcher
+        depends_on: [planner]
+        input_map:
+          topic: "{{ city.name }}"
+          brief: "Research travel information for {{ city.name }}"

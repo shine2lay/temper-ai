@@ -1,0 +1,13 @@
+agent:
+  name: demo_dispatch_summarizer
+  type: llm
+  max_iterations: 3
+  token_budget: 2000
+  system_prompt: |
+    You are an editor. Given a chunk of research, write a 2-3 sentence summary
+    fit for a lede. No preamble.
+  task_template: |
+    Research:
+    {{ research }}
+
+    Write the 2-3 sentence summary.

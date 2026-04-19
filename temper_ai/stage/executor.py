@@ -6,6 +6,7 @@ the same topological level run concurrently via ThreadPoolExecutor.
 from __future__ import annotations
 
 import logging
+import re
 import time
 from collections import defaultdict, deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -542,50 +543,98 @@ def _apply_declarative_dispatch(
     if not ops:
         return
 
-    # Per-dispatch fan-out cap — count ADDED nodes across the ops batch
-    total_added = sum(len(op.all_added_nodes()) for op in ops)
-    if total_added > limits.max_children_per_dispatch:
-        raise DispatchCapExceeded(
-            f"Dispatch from '{node.name}' emitted {total_added} add-node(s), "
-            f"exceeding max_children_per_dispatch={limits.max_children_per_dispatch}"
-        )
-
-    # Dispatcher's own depth — originals are 0, dispatched nodes are tracked.
-    dispatcher_depth = state.depths.get(node.name, 0)
-    # Ensure dispatcher has a fingerprint recorded so cycle walks work even
-    # when the dispatcher is an original workflow node.
-    if node.name not in state.fingerprints:
-        state.fingerprints[node.name] = fingerprint_node(
-            agent_config.get("name", node.name),
-            input_data,
-        )
-
     new_nodes: list[Node] = []
-    for op in ops:
-        if op.op == "add":
-            for node_dict in op.all_added_nodes():
-                _enforce_caps_and_build(
-                    op_dict=node_dict,
-                    dispatcher_name=node.name,
-                    dispatcher_depth=dispatcher_depth,
-                    loader=loader,
-                    limits=limits,
-                    state=state,
-                    node_map=node_map,
-                    node_outputs=node_outputs,
-                    new_nodes=new_nodes,
-                )
-        elif op.op == "remove":
-            target = op.target or ""
-            if target in node_outputs:
-                # Already run or already marked — nothing to do
-                continue
-            # Mark as skipped so downstream cascades via unresolved input_map
-            node_outputs[target] = NodeResult(
-                status=Status.SKIPPED,
-                error=f"removed by dispatch from '{node.name}'",
+    added_node_dicts: list[dict[str, Any]] = []
+    removed_targets: list[str] = []
+    dispatcher_depth = state.depths.get(node.name, 0)
+
+    try:
+        # Per-dispatch fan-out cap — count ADDED nodes across the ops batch
+        total_added = sum(len(op.all_added_nodes()) for op in ops)
+        if total_added > limits.max_children_per_dispatch:
+            raise DispatchCapExceeded(
+                f"Dispatch from '{node.name}' emitted {total_added} add-node(s), "
+                f"exceeding max_children_per_dispatch={limits.max_children_per_dispatch}"
             )
-            logger.info("Dispatch from '%s' removed pending node %r", node.name, target)
+
+        # Ensure dispatcher has a fingerprint recorded so cycle walks work even
+        # when the dispatcher is an original workflow node.
+        if node.name not in state.fingerprints:
+            state.fingerprints[node.name] = fingerprint_node(
+                agent_config.get("name", node.name),
+                input_data,
+            )
+
+        # Two-pass: figure out which removed names will be re-added
+        # ("replace" pattern) so we can tombstone non-replaced removes while
+        # freeing replaced slots completely. This prevents the batches loop
+        # from running either the original-being-replaced OR the replacement
+        # by making the name's status unambiguous per dispatch.
+        add_names: set[str] = set()
+        for op in ops:
+            if op.op == "add":
+                for nd in op.all_added_nodes():
+                    name = nd.get("name")
+                    if isinstance(name, str) and name:
+                        add_names.add(name)
+
+        for op in ops:
+            if op.op == "remove":
+                target = op.target or ""
+                if target in node_outputs and node_outputs[target].status != Status.PENDING:
+                    # Already ran (completed/failed) or already tombstoned
+                    continue
+                # Clear from node_map + batches so the original doesn't run.
+                # Nodes are only equal if same instance — filter by name.
+                node_map.pop(target, None)
+                for batch in batches:
+                    batch[:] = [n for n in batch if n.name != target]
+                if target in add_names:
+                    # Replace path — a subsequent add will take this slot.
+                    # Clear any stale output (shouldn't be there, defensive)
+                    # so add's _enforce_caps_and_build sees a clean slot.
+                    node_outputs.pop(target, None)
+                else:
+                    # Standalone remove — tombstone so downstream that resolves
+                    # `target.output` sees SKIPPED.
+                    node_outputs[target] = NodeResult(
+                        status=Status.SKIPPED,
+                        error=f"removed by dispatch from '{node.name}'",
+                    )
+                removed_targets.append(target)
+                logger.info("Dispatch from '%s' removed pending node %r", node.name, target)
+            elif op.op == "add":
+                for node_dict in op.all_added_nodes():
+                    _enforce_caps_and_build(
+                        op_dict=node_dict,
+                        dispatcher_name=node.name,
+                        dispatcher_depth=dispatcher_depth,
+                        loader=loader,
+                        limits=limits,
+                        state=state,
+                        node_map=node_map,
+                        node_outputs=node_outputs,
+                        new_nodes=new_nodes,
+                    )
+                    added_node_dicts.append(node_dict)
+    except DispatchCapExceeded as exc:
+        # Record the cap breach before letting it propagate — the dispatcher's
+        # node will fail, but the timeline needs to show WHY.
+        recorder = getattr(context, "event_recorder", None)
+        if recorder is not None:
+            recorder.record(
+                EventType.DISPATCH_CAP_EXCEEDED,
+                parent_id=getattr(context, "graph_event_id", None),
+                execution_id=context.run_id,
+                status="failed",
+                data={
+                    "dispatcher": node.name,
+                    "reason": str(exc),
+                    "depth": dispatcher_depth,
+                    "dispatched_count_total": state.dispatched_count,
+                },
+            )
+        raise
 
     if new_nodes:
         new_batches = topological_sort(new_nodes)
@@ -595,6 +644,41 @@ def _apply_declarative_dispatch(
             node.name, len(new_nodes), len(new_batches),
             [n.name for n in new_nodes],
         )
+
+    # Persist dispatch outcome so resume can rebuild the DAG + RunState.
+    # Skip when no actual mutation happened (no adds, no removes) — no need
+    # to pollute the checkpoint log.
+    if added_node_dicts or removed_targets:
+        cp = getattr(context, "checkpoint_service", None)
+        if cp is not None:
+            cp.save_dispatch_applied(
+                dispatcher_name=node.name,
+                added_nodes=added_node_dicts,
+                removed_targets=removed_targets,
+                dispatcher_depth=dispatcher_depth,
+                dispatcher_fingerprint=state.fingerprints[node.name],
+                dispatched_count_delta=len(added_node_dicts),
+            )
+
+        # Emit an observability event so the dashboard timeline shows the
+        # dispatcher caused these children (or removed the target). Parent
+        # event id points at the graph so the event attaches at the workflow
+        # level rather than nesting under the dispatcher's own completion.
+        recorder = getattr(context, "event_recorder", None)
+        if recorder is not None:
+            recorder.record(
+                EventType.DISPATCH_APPLIED,
+                parent_id=getattr(context, "graph_event_id", None),
+                execution_id=context.run_id,
+                status="completed",
+                data={
+                    "dispatcher": node.name,
+                    "added": [n.get("name") for n in added_node_dicts],
+                    "removed": list(removed_targets),
+                    "depth": dispatcher_depth,
+                    "dispatched_count_total": state.dispatched_count,
+                },
+            )
 
 
 def _has_pending_tool_call_ops(state: Any, context: ExecutionContext, node: Node) -> bool:
@@ -697,6 +781,10 @@ def _enforce_caps_and_build(
             f"{op_dict.get('name', '<unnamed>')!r} that failed to "
             f"build: {exc}"
         ) from exc
+    # Name collision. _apply_declarative_dispatch's remove-pass clears
+    # node_map + node_outputs for "being replaced" names before adds run,
+    # so a genuine collision here means the agent emitted an add that
+    # shadows an existing (non-being-removed) node.
     if built.name in node_map or built.name in node_outputs:
         raise DispatchRenderError(
             f"dispatch from '{dispatcher_name}' produced node "
@@ -845,20 +933,57 @@ def _resolve_inputs(
     return resolved
 
 
+_NODE_REF_HEAD = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _looks_like_node_ref(source: str) -> bool:
+    """True if `source` parses as a node-ref path `node.field[.sub...]`.
+
+    Node refs must lead with a Python-identifier-shaped segment (matches the
+    pattern of legal YAML agent/node names) followed by a dot. Strings that
+    don't fit this shape — most notably Jinja-rendered literals like
+    "Research hiking trails in Japan" — are treated as literal values so
+    the resolver doesn't spuriously warn and return None.
+    """
+    head = source.split(".", 1)[0]
+    return bool(_NODE_REF_HEAD.match(head))
+
+
 def _resolve_single_input(
     node_name: str,
     local_name: str,
-    source: str,
+    source: Any,
     input_data: dict,
     node_outputs: dict[str, NodeResult],
 ) -> Any:
-    """Resolve a single input_map entry from its source reference."""
+    """Resolve a single input_map entry from its source reference.
+
+    Source shapes supported (in order of precedence):
+      node.output / node.structured.path / node.status  — node ref
+      workflow.field / input.field                       — workflow input
+      any other string                                   — literal passed through
+
+    Non-string sources (numbers, bools, lists) are literals by definition.
+    """
+    if not isinstance(source, str):
+        return source
     parts = source.split(".")
     if len(parts) < 2:
-        return input_data.get(source)
+        # Bare identifier — resolve against workflow inputs if present,
+        # else treat as a literal. Literal fallback lets dispatched
+        # input_maps with Jinja-rendered scalars ("Tokyo") work.
+        if source in input_data:
+            return input_data[source]
+        return source
 
     source_node = parts[0]
     field = parts[1]
+
+    # Strings whose head doesn't parse as a node identifier (spaces,
+    # punctuation, sentence text) are literals — not refs that failed to
+    # resolve. Skip the node-outputs lookup and return as-is.
+    if not _looks_like_node_ref(source):
+        return source
 
     if source_node in ("workflow", "input"):
         # Support nested paths (input.foo.bar.0.baz) walking dicts + lists,

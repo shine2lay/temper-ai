@@ -294,6 +294,16 @@ def resume_run(execution_id: str, body: ResumeRequest | None = None):
     # Reconstruct original inputs from the first run
     original_inputs = result.get("input_data") or {}
 
+    # Replay any dispatch_applied checkpoints — materialize dispatched nodes
+    # into the loaded workflow and rebuild DispatchRunState so caps still
+    # enforce correctly against the pre-crash history.
+    _apply_dispatch_history_on_resume(
+        checkpoint_svc=checkpoint_svc,
+        graph_loader=_state().graph_loader,
+        nodes=nodes,
+        context=context,
+    )
+
     thread = threading.Thread(
         target=_run_workflow_with_checkpoints,
         args=(nodes, original_inputs, context, config.name, execution_id, restored_outputs),
@@ -463,6 +473,87 @@ def _build_dispatch_limits(config):
     """
     from temper_ai.stage.dispatch_limits import DispatchLimits
     return DispatchLimits.from_defaults(getattr(config, "defaults", None))
+
+
+def _apply_dispatch_history_on_resume(
+    checkpoint_svc, graph_loader, nodes, context,
+) -> None:
+    """Rebuild the DAG + DispatchRunState from saved dispatch_applied events.
+
+    Called before executor restart during resume. For each persisted dispatch:
+      - materialize every added node via GraphLoader._resolve_node and insert
+        it into `nodes` so the executor sees it alongside the original YAML
+      - re-populate DispatchRunState (depths, parents, fingerprints,
+        dispatched_count) so post-resume dispatches still respect caps
+
+    op=remove targets are already handled by reconstruct() which marks them
+    SKIPPED in the restored node_outputs.
+    """
+    from temper_ai.stage.dispatch_limits import DispatchRunState
+    from temper_ai.stage.models import NodeConfig
+
+    history = checkpoint_svc.reconstruct_dispatch_history()
+    if not history:
+        return
+
+    # Seed the state if the context doesn't have one yet — on resume, no
+    # dispatch has fired in this executor process, so state starts empty.
+    if context.dispatch_state is None:
+        context.dispatch_state = DispatchRunState()
+    state = context.dispatch_state
+
+    existing_names = {n.name for n in nodes}
+    for event in history:
+        dispatcher_name = event["dispatcher_name"]
+        # Record dispatcher's own fingerprint + depth so cycle/depth walks
+        # work on post-resume dispatches.
+        state.fingerprints.setdefault(
+            dispatcher_name,
+            event["dispatcher_fingerprint"],
+        )
+        dispatcher_depth = event["dispatcher_depth"]
+
+        for node_dict in event["added_nodes"]:
+            name = node_dict.get("name")
+            if not isinstance(name, str):
+                logger.warning(
+                    "dispatch_applied entry for '%s' has a node without a "
+                    "name — skipping restore of that node", dispatcher_name,
+                )
+                continue
+            if name in existing_names:
+                # Name already in DAG (shouldn't happen, but be defensive)
+                continue
+            try:
+                nc = NodeConfig.from_dict(node_dict)
+                built = graph_loader._resolve_node(nc)
+            except Exception as exc:  # noqa: BLE001
+                logger.error(
+                    "Resume: failed to re-materialize dispatched node '%s' "
+                    "(from dispatcher '%s'): %s",
+                    name, dispatcher_name, exc,
+                )
+                continue
+            nodes.append(built)
+            existing_names.add(name)
+            # Rebuild state so future dispatches from this node see correct depth etc.
+            new_depth = dispatcher_depth + 1
+            state.depths[name] = new_depth
+            state.parents[name] = dispatcher_name
+            # Compute the restored child's fingerprint identically to how
+            # the original run did — see _enforce_caps_and_build.
+            from temper_ai.stage.dispatch_limits import fingerprint_node
+            agent_ref = node_dict.get("agent") or name
+            state.fingerprints[name] = fingerprint_node(
+                agent_ref, node_dict.get("input_map") or {},
+            )
+        state.dispatched_count += event["dispatched_count_delta"]
+
+    logger.info(
+        "Resume: replayed %d dispatch_applied event(s); DAG now has %d nodes, "
+        "dispatched_count=%d",
+        len(history), len(nodes), state.dispatched_count,
+    )
 
 
 def _preconnect_mcp_servers(mcp_manager, mcp_tools: dict) -> None:

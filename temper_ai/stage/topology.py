@@ -12,7 +12,7 @@ Usage:
 
 from __future__ import annotations
 
-from typing import Callable
+from collections.abc import Callable
 
 from temper_ai.stage.agent_node import AgentNode
 from temper_ai.stage.exceptions import TopologyError, ValidationError

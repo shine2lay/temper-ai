@@ -6,14 +6,11 @@ and database). All side-effectful functions (_cmd_run, _cmd_serve,
 _cmd_validate) are patched out.
 """
 
-import argparse
-import sys
 from unittest.mock import patch
 
 import pytest
 
 from temper_ai.cli.main import _parse_inputs, main
-
 
 # ---------------------------------------------------------------------------
 # _parse_inputs — unit tests (no subprocess, no mocking needed)

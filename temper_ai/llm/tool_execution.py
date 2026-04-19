@@ -6,7 +6,8 @@ with timing, inputs, and outputs.
 
 import logging
 import time
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from temper_ai.llm.models import CallContext
 from temper_ai.observability import EventType, record
@@ -65,7 +66,7 @@ def _execute_single(
         duration_ms = int((time.monotonic() - start) * 1000)
         return _build_success_result(_record, tool_call_id, name, output, duration_ms, ctx, parent_id)
 
-    except Exception as e:  # noqa: broad-except
+    except Exception as e:  # noqa: BLE001
         duration_ms = int((time.monotonic() - start) * 1000)
         return _build_failure_result(_record, tool_call_id, name, e, duration_ms, ctx, parent_id)
 

@@ -19,6 +19,7 @@ import logging
 import threading
 from collections import defaultdict
 from datetime import UTC, datetime
+
 from fastapi import WebSocket, WebSocketDisconnect
 
 from temper_ai.api.data_service import get_workflow_execution
@@ -80,7 +81,7 @@ class WebSocketManager:
                         websocket.receive_text(),
                         timeout=HEARTBEAT_INTERVAL,
                     )
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     # Send heartbeat
                     await self._send_json(websocket, {
                         "type": "heartbeat",
@@ -181,7 +182,7 @@ class WebSocketManager:
                 )
             else:
                 self._flush_chunks(execution_id)
-        except Exception as e:  # noqa: broad-except
+        except Exception as e:  # noqa: BLE001
             logger.debug("Threadsafe flush scheduling failed, flushing synchronously: %s", e)
             self._flush_chunks(execution_id)
 
@@ -209,7 +210,7 @@ class WebSocketManager:
         for ws in connections:
             try:
                 try:
-                    loop = asyncio.get_running_loop()
+                    asyncio.get_running_loop()
                     asyncio.ensure_future(self._send_json(ws, message))
                 except RuntimeError:
                     # No running event loop — create one
@@ -237,7 +238,7 @@ class WebSocketManager:
         """Send JSON message to a WebSocket."""
         try:
             await websocket.send_json(data)
-        except Exception as e:  # noqa: broad-except
+        except Exception as e:  # noqa: BLE001
             logger.debug("WebSocket send failed (connection likely closing): %s", e)
 
     def _disconnect(self, websocket: WebSocket, execution_id: str):

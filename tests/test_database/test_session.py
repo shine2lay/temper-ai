@@ -3,7 +3,10 @@
 import pytest
 
 from temper_ai.database.session import (
-    init_database, get_database, get_session, reset_database,
+    get_database,
+    get_session,
+    init_database,
+    reset_database,
 )
 
 

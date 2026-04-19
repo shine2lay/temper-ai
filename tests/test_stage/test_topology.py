@@ -2,14 +2,11 @@
 
 import pytest
 
+from temper_ai.stage.exceptions import TopologyError, ValidationError
 from temper_ai.stage.topology import (
     build_topology,
     register_topology,
-    _validate_parallel,
-    _validate_sequential,
-    _validate_leader,
 )
-from temper_ai.stage.exceptions import TopologyError, ValidationError
 
 
 def _agents(*names):

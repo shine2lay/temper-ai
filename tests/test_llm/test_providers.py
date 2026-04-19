@@ -7,11 +7,9 @@ from unittest.mock import MagicMock, patch
 import httpx
 import pytest
 
-from temper_ai.llm.models import LLMStreamChunk
 from temper_ai.llm.providers.factory import create_provider
 from temper_ai.llm.providers.openai import OpenAILLM
 from temper_ai.llm.providers.vllm import VllmLLM
-
 
 # -- OpenAI: request building --
 

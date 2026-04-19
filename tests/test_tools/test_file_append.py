@@ -1,6 +1,5 @@
 """Tests for FileAppend tool."""
 
-import os
 
 import pytest
 

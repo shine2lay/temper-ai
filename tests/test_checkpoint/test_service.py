@@ -45,7 +45,7 @@ class TestCheckpointSaveAndReconstruct:
     def test_reconstruct_with_limit(self, svc):
         svc.save_node_completed("a", NodeResult(status=Status.COMPLETED, output="a"))
         svc.save_node_completed("b", NodeResult(status=Status.COMPLETED, output="b"))
-        seq = svc.get_latest_sequence()
+        svc.get_latest_sequence()
         # Reconstruct up to first checkpoint only
         partial = svc.reconstruct(up_to_sequence=0)
         assert len(partial) <= len(svc.reconstruct())

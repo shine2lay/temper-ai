@@ -146,7 +146,7 @@ class LLMService:
                 )
             self._record_llm_completed(event_id, response, cost, iteration)
             return event_id, response, cost
-        except Exception as e:  # noqa: broad-except
+        except Exception as e:  # noqa: BLE001
             self._record_llm_failed(iteration, e)
             raise
 
@@ -184,7 +184,7 @@ class LLMService:
             tool_calls=tool_calls, execute_tool=self._execute_tool,
             context=self._ctx, llm_call_event_id=llm_event_id,
         )
-        for tc, tr in zip(tool_calls, tool_results):
+        for tc, tr in zip(tool_calls, tool_results, strict=False):
             self._all_tool_calls.append({
                 "name": tc["name"], "arguments": tc["arguments"],
                 "result": tr["result"], "success": tr["success"],

@@ -8,6 +8,7 @@ that the frontend expects: WorkflowExecution → NodeExecution → AgentExecutio
 from __future__ import annotations
 
 import logging
+
 from temper_ai.observability import get_events
 from temper_ai.observability.event_types import EventType
 
@@ -376,7 +377,7 @@ def _find_event_by_type(events: list[dict], type_prefix: str) -> dict | None:
     return None
 
 
-import threading as _threading
+import threading as _threading  # noqa: E402  (below helper defs for locality)
 
 _children_index_local = _threading.local()
 

@@ -1,14 +1,17 @@
 """Tests for agent module — base class, factory, and LLMAgent."""
 
+
 import pytest
-from unittest.mock import MagicMock, patch
 
-from temper_ai.agent import create_agent, register_agent_type, AGENT_TYPES
+from temper_ai.agent import AGENT_TYPES, create_agent, register_agent_type
 from temper_ai.agent.base import AgentABC
-from temper_ai.agent.llm_agent import LLMAgent, _extract_structured_output, _truncate_input_data
+from temper_ai.agent.llm_agent import (
+    LLMAgent,
+    _extract_structured_output,
+    _truncate_input_data,
+)
 from temper_ai.agent.script_agent import ScriptAgent
-from temper_ai.shared.types import AgentResult, ExecutionContext, Status
-
+from temper_ai.shared.types import AgentResult, Status
 
 # --- Factory ---
 

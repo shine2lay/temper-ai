@@ -7,7 +7,12 @@ Gracefully skips if the tool isn't installed.
 import json
 import subprocess
 
-from scripts.code_quality_check.base import ExternalToolRule, Finding, ScanContext, Severity
+from scripts.code_quality_check.base import (
+    ExternalToolRule,
+    Finding,
+    ScanContext,
+    Severity,
+)
 
 
 class BanditRule(ExternalToolRule):

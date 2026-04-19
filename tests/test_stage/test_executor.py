@@ -1,7 +1,8 @@
 """Tests for stage/executor.py — the graph execution engine."""
 
+from unittest.mock import MagicMock
+
 import pytest
-from unittest.mock import MagicMock, patch
 
 from temper_ai.shared.types import (
     AgentResult,
@@ -11,16 +12,15 @@ from temper_ai.shared.types import (
     TokenUsage,
 )
 from temper_ai.stage.agent_node import AgentNode
+from temper_ai.stage.exceptions import CyclicDependencyError
 from temper_ai.stage.executor import (
+    _get_final_output,
+    _inject_strategy_context,
+    _resolve_inputs,
     execute_graph,
     topological_sort,
-    _resolve_inputs,
-    _inject_strategy_context,
-    _get_final_output,
 )
-from temper_ai.stage.exceptions import CyclicDependencyError
 from temper_ai.stage.models import NodeConfig
-from temper_ai.stage.node import Node
 
 
 def _make_context(**overrides):

@@ -1,8 +1,6 @@
 """Tests for Delegate tool."""
 
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import MagicMock
 
 from temper_ai.tools.delegate import Delegate
 

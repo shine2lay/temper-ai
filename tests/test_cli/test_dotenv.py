@@ -2,8 +2,6 @@
 
 import os
 
-import pytest
-
 from temper_ai.cli.main import _load_dotenv
 
 

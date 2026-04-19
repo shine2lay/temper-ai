@@ -535,3 +535,11 @@ body {
 
 /* MiniMap — default dark mode opacity */
 .temper-minimap-opacity { opacity: 0.4; }
+
+/* Dispatch edge label must render above any node it passes over, so the
+   "⚡ dispatched" pill stays readable on long edges that curve past other
+   nodes in the layout. Scoped to the dispatch-label class we set in
+   DispatchEdge to avoid bumping every edge label. */
+.react-flow__edgelabel-renderer .dispatch-edge-label {
+  z-index: 1000;
+}

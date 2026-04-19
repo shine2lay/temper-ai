@@ -517,6 +517,15 @@ export function useDagElements(): { nodes: Node[]; edges: Edge[] } {
       height: 16,
     };
 
+    // Amber marker for dispatch edges (dispatcher → dispatched node)
+    const DISPATCH_COLOR = '#f59e0b';
+    const dispatchMarker = {
+      type: 'arrowclosed' as MarkerType,
+      color: DISPATCH_COLOR,
+      width: 16,
+      height: 16,
+    };
+
     // Build edges with smart handle selection based on node positions
     if (dagInfo.hasDeps) {
       for (const [target, deps] of dagInfo.depMap) {
@@ -535,15 +544,24 @@ export function useDagElements(): { nodes: Node[]; edges: Edge[] } {
           const tgtPos = positions.get(target);
           const handles = _pickHandles(srcPos, tgtPos);
 
+          // Detect dispatch edges: target was added at runtime by source.
+          const targetStage = stageGroups.get(target);
+          const targetDispatchedBy = targetStage
+            ? targetStage[targetStage.length - 1].dispatched_by
+            : undefined;
+          const isDispatchEdge = targetDispatchedBy === source;
+
           edges.push({
             id: `dep-${source}-${target}`,
             source,
             target,
             sourceHandle: handles.sourceHandle,
             targetHandle: handles.targetHandle,
-            type: 'default',
-            markerEnd: depMarker,
-            style: { stroke: EDGE_COLORS.dataFlow, strokeWidth: 2 },
+            type: isDispatchEdge ? 'dispatch' : 'default',
+            markerEnd: isDispatchEdge ? dispatchMarker : depMarker,
+            style: isDispatchEdge
+              ? undefined
+              : { stroke: EDGE_COLORS.dataFlow, strokeWidth: 2 },
             animated: sourceStatus === 'running',
           });
         }
@@ -585,10 +603,19 @@ export function useDagElements(): { nodes: Node[]; edges: Edge[] } {
         });
       }
     } else {
-      // Fallback: sequential edges in stage order
+      // Fallback: sequential edges in stage order. Skip when the target was
+      // dispatched at runtime — the dispatch-edge pass below will draw an
+      // explicit amber edge from dispatcher→target instead, and stacking a
+      // blue seq edge underneath would just muddle the view.
       for (let i = 0; i < stageNames.length - 1; i++) {
         const source = stageNames[i];
         const target = stageNames[i + 1];
+        const targetExecs = stageGroups.get(target);
+        const targetDispatchedBy = targetExecs
+          ? targetExecs[targetExecs.length - 1].dispatched_by
+          : undefined;
+        if (targetDispatchedBy) continue;
+
         const sourceStage = stageGroups.get(source);
         const sourceStatus = sourceStage
           ? sourceStage[sourceStage.length - 1].status
@@ -606,6 +633,44 @@ export function useDagElements(): { nodes: Node[]; edges: Edge[] } {
           animated: sourceStatus === 'running',
         });
       }
+    }
+
+    // Dispatch edges for dispatched nodes. Use the same smart handle
+    // selection as normal dep edges (right→left by default) so the flow
+    // stays left-to-right; the custom DispatchEdge component raises the
+    // label z-index so it stays readable even when the edge passes over
+    // another node.
+    const existingEdgeIds = new Set(edges.map((e) => e.id));
+    for (const [target, execs] of stageGroups) {
+      if (!renderedStages.has(target)) continue;
+      if (delegateStageNames.has(target)) continue;
+      const latest = execs[execs.length - 1];
+      const dispatcher = latest.dispatched_by;
+      if (!dispatcher) continue;
+      if (!renderedStages.has(dispatcher)) continue;
+      if (delegateStageNames.has(dispatcher)) continue;
+      const edgeId = `dep-${dispatcher}-${target}`;
+      if (existingEdgeIds.has(edgeId)) continue;
+
+      const srcPos = positions.get(dispatcher);
+      const tgtPos = positions.get(target);
+      const handles = _pickHandles(srcPos, tgtPos);
+      const sourceStage = stageGroups.get(dispatcher);
+      const sourceStatus = sourceStage
+        ? sourceStage[sourceStage.length - 1].status
+        : undefined;
+
+      edges.push({
+        id: edgeId,
+        source: dispatcher,
+        target,
+        sourceHandle: handles.sourceHandle,
+        targetHandle: handles.targetHandle,
+        type: 'dispatch',
+        markerEnd: dispatchMarker,
+        animated: sourceStatus === 'running',
+        zIndex: 1000,
+      });
     }
 
     return { nodes, edges };

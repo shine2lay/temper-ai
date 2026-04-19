@@ -1,4 +1,4 @@
-.PHONY: test lint typecheck serve dev build clean help
+.PHONY: test lint typecheck serve dev build clean help docker docker-down frontend-sync
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-15s\033[0m %s\n", $$1, $$2}'
@@ -23,6 +23,16 @@ dev: ## Start server with hot reload
 
 build: ## Build frontend
 	cd frontend && npm ci && npx vite build
+
+frontend-sync: ## Build frontend and push into running docker container (dev loop)
+	cd frontend && npx vite build
+	@container=$$(docker compose ps -q server 2>/dev/null); \
+	if [ -z "$$container" ]; then \
+	  echo "No running server container — start it with 'docker compose up -d server' first."; \
+	  exit 1; \
+	fi; \
+	docker cp frontend/dist/. $$container:/app/frontend/dist/ && \
+	echo "✓ Synced frontend/dist into $$container — hard-refresh the browser."
 
 validate: ## Validate a workflow (usage: make validate WF=blog_writer)
 	temper validate $(WF)

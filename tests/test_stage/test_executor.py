@@ -241,6 +241,35 @@ class TestExecuteGraph:
         assert result.cost_usd == pytest.approx(0.03)
         assert result.total_tokens == 300
 
+    def test_run_state_populated_on_context(self):
+        """Executor exposes live node_outputs on context.run_state for
+        introspection tools (QueryRunState, future dispatch)."""
+        a = _make_agent_node("a", output="done-a")
+        b = _make_agent_node("b", depends_on=["a"], output="done-b")
+
+        ctx = _make_context()
+        assert ctx.run_state is None  # unset before the run
+        execute_graph([a, b], {}, ctx, graph_name="test")
+
+        # After the run, context.run_state contains both nodes
+        assert ctx.run_state is not None
+        assert set(ctx.run_state.keys()) == {"a", "b"}
+        assert ctx.run_state["a"].output == "done-a"
+        assert ctx.run_state["b"].output == "done-b"
+
+    def test_run_state_preserved_for_nested_stage(self):
+        """Nested stage executions don't overwrite the parent's run_state —
+        a sub-stage's tools should see the whole run, not just the sub-stage."""
+        parent_state = {"outer_node": NodeResult(status=Status.COMPLETED, output="outer")}
+        ctx = _make_context()
+        ctx.run_state = parent_state
+
+        a = _make_agent_node("a", output="inner")
+        execute_graph([a], {}, ctx, graph_name="nested")
+
+        # Parent reference is unchanged; sub-run did not clobber it
+        assert ctx.run_state is parent_state
+
     def test_condition_skip(self):
         a = _make_agent_node(
             "a",

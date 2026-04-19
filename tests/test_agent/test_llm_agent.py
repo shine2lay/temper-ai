@@ -317,3 +317,55 @@ class TestTruncateInputData:
         data = {"items": list(range(50))}
         result = _truncate_input_data(data)
         assert len(result["items"]) == 10
+
+
+class TestToolContextBinding:
+    """Verify _make_tool_executor binds ExecutionContext on every tool that
+    declares bind_context — not just Delegate (was hardcoded previously)."""
+
+    def _ctx_with_tools(self, tools: dict):
+        """Build an ExecutionContext whose tool_executor returns the given tools by name."""
+        ctx = _make_context()
+        ctx.tool_executor.get_tool = MagicMock(side_effect=lambda name: tools.get(name))
+        return ctx
+
+    def test_binds_each_listed_tool_that_has_bind_context(self):
+        delegate = MagicMock()
+        query = MagicMock()
+        plain = MagicMock(spec=[])  # no bind_context attribute
+        ctx = self._ctx_with_tools({"Delegate": delegate, "QueryRunState": query, "Bash": plain})
+
+        agent = _make_agent({"tools": ["Delegate", "QueryRunState", "Bash"]})
+        agent._make_tool_executor(ctx)
+
+        delegate.bind_context.assert_called_once_with(ctx)
+        query.bind_context.assert_called_once_with(ctx)
+        # Bash has no bind_context — no attempt to call
+
+    def test_skips_tools_not_in_agent_config(self):
+        delegate = MagicMock()
+        query = MagicMock()
+        ctx = self._ctx_with_tools({"Delegate": delegate, "QueryRunState": query})
+
+        # Agent only lists Delegate — QueryRunState should not be bound
+        agent = _make_agent({"tools": ["Delegate"]})
+        agent._make_tool_executor(ctx)
+
+        delegate.bind_context.assert_called_once_with(ctx)
+        query.bind_context.assert_not_called()
+
+    def test_no_tools_config_binds_nothing(self):
+        delegate = MagicMock()
+        ctx = self._ctx_with_tools({"Delegate": delegate})
+
+        agent = _make_agent({})  # no tools list
+        agent._make_tool_executor(ctx)
+
+        delegate.bind_context.assert_not_called()
+
+    def test_unregistered_tool_is_skipped_silently(self):
+        """Agent lists a tool that isn't registered — don't crash."""
+        ctx = self._ctx_with_tools({})
+        agent = _make_agent({"tools": ["GhostTool"]})
+        # Should not raise
+        agent._make_tool_executor(ctx)

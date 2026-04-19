@@ -61,6 +61,7 @@ class GraphLoader:
     def __init__(self, config_store: ConfigStore | None = None):
         self.config_store = config_store
         self._defaults: dict = {}  # Workflow-level defaults (provider, model, etc.)
+        self._overrides: dict = {}  # Top-precedence overrides (e.g. CLI --provider/--model)
 
     def load_workflow(
         self,
@@ -170,7 +171,7 @@ class GraphLoader:
         defaults = _agent_defaults(self._defaults)
         for agent_ref in nc.agents:
             if isinstance(agent_ref, str):
-                agent_config = {**defaults, **self._load_agent_config(agent_ref)}
+                agent_config = {**defaults, **self._load_agent_config(agent_ref), **self._overrides}
             elif isinstance(agent_ref, dict):
                 # Inline agent config or ref with overrides
                 if "agent" in agent_ref or "ref" in agent_ref:
@@ -180,9 +181,9 @@ class GraphLoader:
                         k: v for k, v in agent_ref.items()
                         if k not in ("agent", "ref")
                     }
-                    agent_config = {**defaults, **base, **overrides}
+                    agent_config = {**defaults, **base, **overrides, **self._overrides}
                 else:
-                    agent_config = {**defaults, **agent_ref}
+                    agent_config = {**defaults, **agent_ref, **self._overrides}
             else:
                 raise LoaderError(
                     f"Invalid agent entry in stage '{nc.name}': {agent_ref}"
@@ -254,7 +255,7 @@ class GraphLoader:
         # Merge: workflow defaults (lowest) → agent config → node overrides (highest).
         # Workflow-scoped keys (`dispatch`, `safety`) are filtered out — see
         # _WORKFLOW_ONLY_DEFAULTS for why.
-        merged = {**_agent_defaults(self._defaults), **base, **overrides}
+        merged = {**_agent_defaults(self._defaults), **base, **overrides, **self._overrides}
 
         # Ensure name
         if "name" not in merged:

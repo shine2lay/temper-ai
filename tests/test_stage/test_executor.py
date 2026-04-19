@@ -602,6 +602,146 @@ class TestDispatchSafetyCaps:
         assert result.status == Status.COMPLETED
 
 
+class TestToolCallDispatch:
+    """Integration tests for tier 2 imperative dispatch — AddNode / RemoveNode
+    tools buffer ops that the executor drains after the agent completes.
+
+    We simulate the tool call by directly appending to dispatch_state.pending_ops
+    — the tool's execute() does the same thing, tested in tests/test_tools/.
+    What we verify here is that the executor picks up those ops, runs them
+    through cap enforcement, and applies them to the live DAG.
+    """
+
+    def _prime_pending_ops(self, ctx, node_path: str, ops: list):
+        """Pretend the agent just called AddNode/RemoveNode during its run."""
+        from temper_ai.stage.dispatch_limits import DispatchRunState
+        if ctx.dispatch_state is None:
+            ctx.dispatch_state = DispatchRunState()
+        ctx.dispatch_state.pending_ops[node_path] = list(ops)
+
+    def test_add_op_from_tool_call_runs(self):
+        """Agent queues an AddNode op via the tool — executor applies it."""
+        from temper_ai.stage.dispatch import DispatchOp
+
+        parent = _make_agent_node("parent", output="done")
+        spawned = _make_agent_node("spawned", output="spawned-ran")
+
+        ctx = _make_context()
+        ctx.graph_loader = _StubGraphLoader({"spawned": spawned})
+        self._prime_pending_ops(ctx, "parent", [
+            DispatchOp(op="add", node={"name": "spawned", "type": "agent", "agent": "x"}),
+        ])
+
+        result = execute_graph([parent], {}, ctx, graph_name="test")
+        assert result.status == Status.COMPLETED
+        assert spawned.run.called
+        assert ctx.run_state["spawned"].output == "spawned-ran"
+        # Buffer drained
+        assert "parent" not in (ctx.dispatch_state.pending_ops if ctx.dispatch_state else {})
+
+    def test_remove_op_from_tool_call_skips_target(self):
+        from temper_ai.stage.dispatch import DispatchOp
+
+        parent = _make_agent_node("parent", output="done")
+        placeholder = _make_agent_node("placeholder", output="should-not-run")
+        placeholder.config.depends_on = ["parent"]
+
+        ctx = _make_context()
+        ctx.graph_loader = _StubGraphLoader({})
+        self._prime_pending_ops(ctx, "parent", [
+            DispatchOp(op="remove", target="placeholder"),
+        ])
+
+        execute_graph([parent, placeholder], {}, ctx, graph_name="test")
+        assert parent.run.called
+        assert not placeholder.run.called
+        assert ctx.run_state["placeholder"].status == Status.SKIPPED
+
+    def test_declarative_and_tool_call_ops_merge(self):
+        """A single agent with BOTH a dispatch: block AND tool calls —
+        the executor applies them atomically as one batch."""
+        from temper_ai.stage.dispatch import DispatchOp
+
+        # Dispatch block in agent config adds 'from_yaml'
+        dispatch_block = [
+            {"op": "add", "node": {"name": "from_yaml", "agent": "y"}},
+        ]
+        parent = _make_dispatcher_node("parent", dispatch_block)
+        from_yaml = _make_agent_node("from_yaml", output="y-ran")
+        from_tool = _make_agent_node("from_tool", output="t-ran")
+
+        ctx = _make_context()
+        ctx.graph_loader = _StubGraphLoader({
+            "from_yaml": from_yaml, "from_tool": from_tool,
+        })
+        # Tool-call adds 'from_tool'
+        self._prime_pending_ops(ctx, "parent", [
+            DispatchOp(op="add", node={"name": "from_tool", "type": "agent", "agent": "t"}),
+        ])
+
+        result = execute_graph([parent], {}, ctx, graph_name="test")
+        assert result.status == Status.COMPLETED
+        assert from_yaml.run.called
+        assert from_tool.run.called
+
+    def test_merged_batch_respects_fan_out_cap(self):
+        """Cap applies to the MERGED total of declarative + tool-call adds."""
+        from temper_ai.stage.dispatch import DispatchOp
+        from temper_ai.stage.dispatch_limits import DispatchLimits
+
+        dispatch_block = [
+            {"op": "add", "for_each": [1, 2],
+             "node": {"name": "y_{{ item }}", "agent": "y"}},
+        ]
+        parent = _make_dispatcher_node("parent", dispatch_block)
+
+        ctx = _make_context()
+        ctx.graph_loader = _StubGraphLoader({
+            "y_1": _make_agent_node("y_1"), "y_2": _make_agent_node("y_2"),
+            "t": _make_agent_node("t"),
+        })
+        ctx.dispatch_limits = DispatchLimits(max_children_per_dispatch=2)
+        # 2 declarative + 1 tool-call = 3, exceeds cap of 2
+        self._prime_pending_ops(ctx, "parent", [
+            DispatchOp(op="add", node={"name": "t", "type": "agent", "agent": "t"}),
+        ])
+
+        result = execute_graph([parent], {}, ctx, graph_name="test")
+        assert result.status == Status.FAILED
+        assert "max_children_per_dispatch" in (result.error or "")
+
+    def test_tool_call_ops_respect_cycle_detection(self):
+        from temper_ai.stage.dispatch import DispatchOp
+        from temper_ai.stage.dispatch_limits import DispatchLimits
+
+        parent = _make_agent_node("parent")
+        # The AgentNode's agent_config name is auto-set from the NodeConfig.
+        # For cycle detection, we queue an add whose agent matches the parent's
+        # agent_config name with empty input_map (same as parent's input_data).
+        parent.agent_config = {"name": "parent", "type": "llm"}
+
+        ctx = _make_context()
+        ctx.graph_loader = _StubGraphLoader({"clone": _make_agent_node("clone")})
+        ctx.dispatch_limits = DispatchLimits(cycle_detection=True)
+        self._prime_pending_ops(ctx, "parent", [
+            DispatchOp(op="add", node={
+                "name": "clone", "agent": "parent", "input_map": {},
+            }),
+        ])
+
+        result = execute_graph([parent], {}, ctx, graph_name="test")
+        assert result.status == Status.FAILED
+        assert "cycle" in (result.error or "").lower()
+
+    def test_tool_call_with_empty_pending_is_noop(self):
+        """Agent didn't call any tools — executor skips dispatch entirely."""
+        parent = _make_agent_node("parent", output="done")
+        ctx = _make_context()
+        # No dispatch_state set up, no pending_ops
+        result = execute_graph([parent], {}, ctx, graph_name="test")
+        assert result.status == Status.COMPLETED
+
+
 class TestExecuteGraphCore:
     """Condition, cost, and event tests that historically lived inline in
     TestExecuteGraph. Split into their own class so the dispatch/caps tests

@@ -277,8 +277,10 @@ def _preconnect_mcp_servers(mcp_tools, mcp_manager, mcp_loop) -> None:
 def _build_execution_context(args, config, nodes, llm_providers, memory_service, tool_executor):
     """Create the CLI printer, event recorder, and ExecutionContext."""
     from temper_ai.cli.printer import CLIPrinter
+    from temper_ai.config import ConfigStore
     from temper_ai.observability.event_recorder import EventRecorder
     from temper_ai.shared.types import ExecutionContext
+    from temper_ai.stage.loader import GraphLoader
 
     execution_id = str(uuid.uuid4())
     printer = CLIPrinter(verbosity=args.verbose)
@@ -287,6 +289,10 @@ def _build_execution_context(args, config, nodes, llm_providers, memory_service,
         notifier=printer,
         persist=not args.no_db,
     )
+    # Fresh loader so dispatch can materialize new nodes into the running DAG.
+    # Loader is cheap (just holds a config store reference); reusing the store
+    # keeps agent lookups consistent with the one that resolved the initial tree.
+    graph_loader = GraphLoader(ConfigStore())
     context = ExecutionContext(
         run_id=execution_id,
         workflow_name=config.name,
@@ -297,6 +303,7 @@ def _build_execution_context(args, config, nodes, llm_providers, memory_service,
         memory_service=memory_service,
         llm_providers=llm_providers,
         workspace_path=args.workspace,
+        graph_loader=graph_loader,
     )
     return printer, recorder, context
 

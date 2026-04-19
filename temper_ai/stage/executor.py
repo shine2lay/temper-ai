@@ -123,6 +123,7 @@ def _run_batches(
             node_outputs[node.name] = result
             if cp:
                 cp.save_node_completed(node.name, result)
+            _apply_declarative_dispatch(node, result, input_data, node_outputs, node_map, batches, context)
             rewind = _handle_loop(node, result, node_outputs, loop_counts, loop_feedback, batches, node_map, cp)
             if rewind is not None:
                 batch_idx = rewind
@@ -134,6 +135,10 @@ def _run_batches(
                 node_outputs[node.name] = result
                 if cp:
                     cp.save_node_completed(node.name, result)
+            # Dispatch after ALL parallel nodes complete — mutation to batches is
+            # safe only once the current batch is done being iterated.
+            for node, result in results:
+                _apply_declarative_dispatch(node, result, input_data, node_outputs, node_map, batches, context)
         batch_idx += 1
 
 def _build_final_result(
@@ -438,6 +443,120 @@ def _execute_parallel_batch(
             results.append((node, result))
 
     return results
+
+
+def _apply_declarative_dispatch(
+    node: Node,
+    result: NodeResult,
+    input_data: dict,
+    node_outputs: dict[str, NodeResult],
+    node_map: dict[str, Node],
+    batches: list[list[Node]],
+    context: ExecutionContext,
+) -> None:
+    """If the node's agent config has a `dispatch:` block, render it and
+    apply the resulting ops to the running DAG.
+
+    Tier 1 scope:
+      - op=add: build Node instances from rendered dicts, topologically sort
+        the new mini-DAG, append batches to `batches` list. The main executor
+        loop iterates len(batches) dynamically, so new batches are picked up
+        in later iterations.
+      - op=remove: mark the target pending node as SKIPPED in node_outputs
+        so subsequent batches skip it and downstream cascade via unresolved
+        input_map refs (standard engine behavior).
+
+    Silent-no-op when:
+      - The node is not an AgentNode (stage-level dispatch is out of v1 scope)
+      - The agent config has no `dispatch:` block (common case)
+      - The node FAILED (don't dispatch on failure — the agent's output is
+        unreliable)
+
+    Errors in the dispatch block bubble up as exceptions and fail the run,
+    matching how validation errors surface elsewhere.
+    """
+    # Imports inside function to avoid circular deps with loader/agent_node
+    from temper_ai.stage.agent_node import AgentNode
+    from temper_ai.stage.dispatch import DispatchRenderError, render_dispatch
+    from temper_ai.stage.models import NodeConfig
+
+    if not isinstance(node, AgentNode):
+        return
+    if result.status == Status.FAILED:
+        return
+    agent_config = getattr(node, "agent_config", None) or {}
+    if not agent_config.get("dispatch"):
+        return
+    loader = getattr(context, "graph_loader", None)
+    if loader is None:
+        logger.warning(
+            "Agent '%s' declared dispatch but ExecutionContext has no graph_loader — "
+            "dispatch skipped. Wire context.graph_loader in routes.py / CLI.",
+            node.name,
+        )
+        return
+
+    # Gather the agent's produced data to feed the Jinja scope
+    agent_result = result.agent_results[0] if result.agent_results else None
+    agent_output = agent_result.output if agent_result else (result.output or "")
+    agent_structured = (
+        agent_result.structured_output if agent_result else result.structured_output
+    )
+
+    try:
+        ops = render_dispatch(
+            agent_config,
+            agent_output=agent_output,
+            agent_structured=agent_structured,
+            agent_input_data=input_data,
+        )
+    except DispatchRenderError as exc:
+        logger.error("Dispatch render failed for '%s': %s", node.name, exc)
+        raise
+
+    if not ops:
+        return
+
+    new_nodes: list[Node] = []
+    for op in ops:
+        if op.op == "add":
+            for node_dict in op.all_added_nodes():
+                try:
+                    nc = NodeConfig.from_dict(node_dict)
+                    built = loader._resolve_node(nc)
+                except Exception as exc:
+                    raise DispatchRenderError(
+                        f"dispatch from '{node.name}' produced node "
+                        f"{node_dict.get('name', '<unnamed>')!r} that failed to "
+                        f"build: {exc}"
+                    ) from exc
+                if built.name in node_map or built.name in node_outputs:
+                    raise DispatchRenderError(
+                        f"dispatch from '{node.name}' produced node "
+                        f"{built.name!r} which already exists in the DAG"
+                    )
+                node_map[built.name] = built
+                new_nodes.append(built)
+        elif op.op == "remove":
+            target = op.target or ""
+            if target in node_outputs:
+                # Already run or already marked — nothing to do
+                continue
+            # Mark as skipped so downstream cascades via unresolved input_map
+            node_outputs[target] = NodeResult(
+                status=Status.SKIPPED,
+                error=f"removed by dispatch from '{node.name}'",
+            )
+            logger.info("Dispatch from '%s' removed pending node %r", node.name, target)
+
+    if new_nodes:
+        new_batches = topological_sort(new_nodes)
+        batches.extend(new_batches)
+        logger.info(
+            "Dispatch from '%s' added %d node(s) in %d batch(es): %s",
+            node.name, len(new_nodes), len(new_batches),
+            [n.name for n in new_nodes],
+        )
 
 
 def _handle_loop(

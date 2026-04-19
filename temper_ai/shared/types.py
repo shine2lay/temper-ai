@@ -109,6 +109,7 @@ class ExecutionContext:
     graph_event_id: str | None = None  # Top-level workflow/stage event ID (for Delegate tool DAG parenting)
     skip_policies: list[str] | None = None  # Policy types to skip for the current node
     run_state: dict[str, Any] | None = None  # Live node_outputs dict (name -> NodeResult). Set by executor for introspection tools (QueryRunState, future dispatch).
+    graph_loader: Any = None  # GraphLoader — used by dispatch to materialize dispatched node dicts into Node instances. Set by routes/CLI before execute_graph.
 
     def get_llm(self, provider: str) -> Any:
         """Get LLM provider by name. Raises KeyError if not found."""

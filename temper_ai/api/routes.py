@@ -137,6 +137,7 @@ def start_run(body: RunRequest):
         cancel_event=cancel_event,
         checkpoint_service=checkpoint_svc,
         gate_registry=_state().gates,
+        graph_loader=_state().graph_loader,
     )
 
     # Bind execution context to Delegate tool so it can create sub-agents
@@ -283,6 +284,7 @@ def resume_run(execution_id: str, body: ResumeRequest | None = None):
         cancel_event=cancel_event,
         checkpoint_service=checkpoint_svc,
         gate_registry=_state().gates,
+        graph_loader=_state().graph_loader,
     )
 
     _bind_delegate_tool(run_tool_executor, context)
@@ -359,6 +361,7 @@ def fork_run(body: ForkRequest):
         cancel_event=cancel_event,
         checkpoint_service=fork_svc,
         gate_registry=_state().gates,
+        graph_loader=_state().graph_loader,
     )
 
     _bind_delegate_tool(run_tool_executor, context)

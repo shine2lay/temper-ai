@@ -111,7 +111,18 @@ def _cmd_run(args) -> None:
 
     _load_configs(args.config_dir)
 
-    nodes, config = _load_workflow(args.workflow)
+    cli_overrides: dict = {}
+    if args.provider:
+        cli_overrides["provider"] = args.provider
+    if args.model:
+        cli_overrides["model"] = args.model
+
+    nodes, config = _load_workflow(args.workflow, cli_overrides)
+
+    # Reflect overrides in config.defaults so header display + dispatched-node
+    # propagation see the effective values, not the pre-override YAML ones.
+    if cli_overrides:
+        config.defaults = {**(config.defaults or {}), **cli_overrides}
 
     from temper_ai.server import _init_llm_providers
     llm_providers = _init_llm_providers()
@@ -187,13 +198,15 @@ def _load_configs(config_dir_path: str) -> None:
                 logger.debug("Skipped config %s: %s", yaml_file, exc)
 
 
-def _load_workflow(workflow_name: str):
+def _load_workflow(workflow_name: str, overrides: dict | None = None):
     """Load a workflow by name. Exits on failure."""
     from temper_ai.config import ConfigStore
     from temper_ai.stage.loader import GraphLoader
 
     store = ConfigStore()
     loader = GraphLoader(store)
+    if overrides:
+        loader._overrides = overrides
     try:
         return loader.load_workflow(workflow_name)
     except Exception as exc:  # noqa: BLE001
@@ -298,6 +311,15 @@ def _build_execution_context(args, config, nodes, llm_providers, memory_service,
     # fall back to LLMAgent's hardcoded "openai" default.
     graph_loader = GraphLoader(ConfigStore())
     graph_loader._defaults = config.defaults or {}
+    # CLI overrides (--provider/--model) already merged into config.defaults above,
+    # but apply them as true top-precedence overrides so agent-level configs in
+    # dispatched nodes can't shadow them.
+    cli_overrides: dict = {}
+    if getattr(args, "provider", None):
+        cli_overrides["provider"] = args.provider
+    if getattr(args, "model", None):
+        cli_overrides["model"] = args.model
+    graph_loader._overrides = cli_overrides
     context = ExecutionContext(
         run_id=execution_id,
         workflow_name=config.name,

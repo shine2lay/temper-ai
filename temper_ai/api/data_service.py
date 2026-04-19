@@ -36,10 +36,26 @@ def get_workflow_execution(execution_id: str) -> dict | None:
     _set_children_index(events)
 
     # Find workflow event
-    workflow_event = _find_event_by_type(events, "workflow.")
-    if not workflow_event:
+    # If the run was resumed, there may be multiple workflow.started events
+    # for this execution_id. Pick the most complete one so detail totals
+    # stay consistent with the listing (same selection rule as
+    # list_workflow_executions' dedup).
+    workflow_candidates = [
+        e for e in events if e.get("type", "").startswith("workflow.")
+    ]
+    if not workflow_candidates:
         _clear_children_index()
         return None
+
+    def _completeness(ev: dict) -> tuple:
+        d = ev.get("data") or {}
+        s = ev.get("status", "")
+        return (
+            1 if s == "completed" else 0,
+            1 if (d.get("cost_usd") or 0) > 0 else 0,
+            ev.get("timestamp", ""),
+        )
+    workflow_event = max(workflow_candidates, key=_completeness)
 
     # Check for fork metadata — if present, merge source execution's nodes
     fork_meta = next(
@@ -114,20 +130,36 @@ def list_workflow_executions(
     # Get all workflow start events
     all_events = get_events(event_type=EventType("workflow.started"), limit=1000)
 
-    # For each, build a summary
-    runs = []
-    for event in all_events:
-        execution_id = event.get("execution_id", event["id"])
-        data = event.get("data", {})
-
-        # Skip runs with no execution_id
-        if not execution_id:
+    # Dedup by execution_id: a resumed run records a NEW workflow.started
+    # event with the same execution_id. Keep the event with the most complete
+    # data — prefer completed, then the one with a non-zero cost, then the
+    # newest by timestamp. This prevents the listing from double-counting
+    # resumed runs and keeps totals consistent with the detail endpoint.
+    def _completeness(ev: dict) -> tuple:
+        d = ev.get("data") or {}
+        s = ev.get("status", "")
+        return (
+            1 if s == "completed" else 0,
+            1 if (d.get("cost_usd") or 0) > 0 else 0,
+            ev.get("timestamp", ""),
+        )
+    by_exec: dict[str, dict] = {}
+    for ev in all_events:
+        eid = ev.get("execution_id", ev["id"])
+        if not eid:
             continue
+        prev = by_exec.get(eid)
+        if prev is None or _completeness(ev) > _completeness(prev):
+            by_exec[eid] = ev
 
-        # Status comes from the event's own status field (updated in-place by executor)
+    runs = []
+    for execution_id, event in by_exec.items():
+        data = event.get("data", {})
+        # Status comes from the event's own status field (updated in-place
+        # by the executor). Whitelist recognized terminal states;
+        # "interrupted" signals an orphaned run left by a server restart.
         run_status = event.get("status", "running")
-        # Normalize: the executor sets "completed"/"failed" on the start event
-        if run_status not in ("completed", "failed", "running", "cancelled"):
+        if run_status not in ("completed", "failed", "running", "cancelled", "interrupted"):
             run_status = "running"
 
         if status and run_status != status:

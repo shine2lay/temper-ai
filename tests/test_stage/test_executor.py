@@ -166,6 +166,38 @@ class TestResolveInputs:
         resolved = _resolve_inputs(node, {}, {})
         assert resolved == {"x": None}
 
+    def test_input_map_sentence_literal_passes_through(self):
+        """A string that doesn't parse as a node ref (has spaces) is a
+        literal — return as-is rather than warn+None. Critical for
+        dispatched nodes whose Jinja-rendered input_map values are often
+        sentences from an upstream agent's structured output."""
+        node = _make_agent_node(
+            "b", input_map={"brief": "Research hiking trails in Japan."},
+        )
+        resolved = _resolve_inputs(node, {}, {})
+        assert resolved == {"brief": "Research hiking trails in Japan."}
+
+    def test_input_map_bare_scalar_literal_passes_through(self):
+        """No period in source and not in input_data → literal."""
+        node = _make_agent_node("b", input_map={"topic": "cherry_blossoms"})
+        resolved = _resolve_inputs(node, {}, {})
+        assert resolved == {"topic": "cherry_blossoms"}
+
+    def test_input_map_bare_scalar_matches_workflow_input(self):
+        """Bare identifier still resolves against workflow inputs when present."""
+        node = _make_agent_node("b", input_map={"t": "task"})
+        resolved = _resolve_inputs(node, {"task": "hello"}, {})
+        assert resolved == {"t": "hello"}
+
+    def test_input_map_non_string_source_passes_through(self):
+        """Ints, booleans, lists from Jinja-rendered numeric expressions are
+        literals — no resolution attempted."""
+        node = _make_agent_node(
+            "b", input_map={"count": 42, "enabled": True, "items": [1, 2]},
+        )
+        resolved = _resolve_inputs(node, {}, {})
+        assert resolved == {"count": 42, "enabled": True, "items": [1, 2]}
+
     def test_input_map_status(self):
         node = _make_agent_node("b", input_map={"prev_status": "a.status"})
         node_outputs = {
@@ -740,6 +772,197 @@ class TestToolCallDispatch:
         # No dispatch_state set up, no pending_ops
         result = execute_graph([parent], {}, ctx, graph_name="test")
         assert result.status == Status.COMPLETED
+
+
+class TestDispatchCheckpointing:
+    """Dispatch outcomes are persisted via CheckpointService so a crashed
+    run can resume with the dispatched DAG shape intact."""
+
+    def test_declarative_dispatch_saves_checkpoint(self):
+        """A successful declarative dispatch calls save_dispatch_applied with
+        the right payload so resume can re-materialize the children."""
+        dispatch_block = [
+            {"op": "add", "node": {"name": "spawned", "agent": "x"}},
+        ]
+        dispatcher = _make_dispatcher_node("parent", dispatch_block)
+        spawned = _make_agent_node("spawned")
+
+        ctx = _make_context()
+        ctx.graph_loader = _StubGraphLoader({"spawned": spawned})
+        cp = MagicMock()
+        ctx.checkpoint_service = cp
+
+        execute_graph([dispatcher], {}, ctx, graph_name="test")
+
+        # save_dispatch_applied was called with the dispatched child's dict
+        assert cp.save_dispatch_applied.called
+        call_kwargs = cp.save_dispatch_applied.call_args.kwargs
+        assert call_kwargs["dispatcher_name"] == "parent"
+        assert call_kwargs["added_nodes"][0]["name"] == "spawned"
+        assert call_kwargs["removed_targets"] == []
+        assert call_kwargs["dispatched_count_delta"] == 1
+
+    def test_remove_op_also_saves_checkpoint(self):
+        """op=remove alone (no adds) still persists a dispatch_applied so
+        resume knows to skip the target."""
+        dispatch_block = [{"op": "remove", "target": "placeholder"}]
+        dispatcher = _make_dispatcher_node("killer", dispatch_block)
+        placeholder = _make_agent_node("placeholder")
+        placeholder.config.depends_on = ["killer"]
+
+        ctx = _make_context()
+        ctx.graph_loader = _StubGraphLoader({})
+        cp = MagicMock()
+        ctx.checkpoint_service = cp
+
+        execute_graph([dispatcher, placeholder], {}, ctx, graph_name="test")
+
+        assert cp.save_dispatch_applied.called
+        call_kwargs = cp.save_dispatch_applied.call_args.kwargs
+        assert call_kwargs["removed_targets"] == ["placeholder"]
+        assert call_kwargs["added_nodes"] == []
+        assert call_kwargs["dispatched_count_delta"] == 0
+
+    def test_empty_dispatch_doesnt_save_checkpoint(self):
+        """A dispatcher whose ops list renders empty (e.g. for_each over an
+        empty list) doesn't write a dispatch_applied checkpoint — keeps the
+        log clean."""
+        dispatch_block = [{
+            "op": "add", "for_each": [],
+            "node": {"name": "x", "agent": "y"},
+        }]
+        dispatcher = _make_dispatcher_node("parent", dispatch_block)
+        ctx = _make_context()
+        ctx.graph_loader = _StubGraphLoader({})
+        cp = MagicMock()
+        ctx.checkpoint_service = cp
+
+        execute_graph([dispatcher], {}, ctx, graph_name="test")
+        assert not cp.save_dispatch_applied.called
+
+    def test_dispatch_failure_doesnt_save_checkpoint(self):
+        """Cap exceeded → dispatch fails → no checkpoint written (partial
+        state not persisted)."""
+        from temper_ai.stage.dispatch_limits import DispatchLimits
+
+        dispatch_block = [{
+            "op": "add", "for_each": [1, 2, 3],
+            "node": {"name": "c_{{ item }}", "agent": "x"},
+        }]
+        dispatcher = _make_dispatcher_node("parent", dispatch_block)
+        ctx = _make_context()
+        ctx.graph_loader = _StubGraphLoader({
+            f"c_{i}": _make_agent_node(f"c_{i}") for i in range(1, 4)
+        })
+        ctx.dispatch_limits = DispatchLimits(max_children_per_dispatch=1)
+        cp = MagicMock()
+        ctx.checkpoint_service = cp
+
+        execute_graph([dispatcher], {}, ctx, graph_name="test")
+        assert not cp.save_dispatch_applied.called
+
+    def test_no_checkpoint_service_is_noop(self):
+        """Dispatch still works when checkpoint_service is None (the
+        non-persisted dev/CLI case)."""
+        dispatch_block = [
+            {"op": "add", "node": {"name": "spawned", "agent": "x"}},
+        ]
+        dispatcher = _make_dispatcher_node("parent", dispatch_block)
+        spawned = _make_agent_node("spawned")
+        ctx = _make_context()
+        ctx.graph_loader = _StubGraphLoader({"spawned": spawned})
+        ctx.checkpoint_service = None
+
+        result = execute_graph([dispatcher], {}, ctx, graph_name="test")
+        assert result.status == Status.COMPLETED
+        assert spawned.run.called
+
+
+class TestDispatchObservabilityEvents:
+    """Dispatch emits observability events so the dashboard timeline sees it."""
+
+    def _event_types_recorded(self, ctx) -> list[str]:
+        """Extract the event type value from every recorder.record call."""
+        out = []
+        for call in ctx.event_recorder.record.call_args_list:
+            if call.args:
+                evt = call.args[0]
+                out.append(getattr(evt, "value", str(evt)))
+            elif "event_type" in call.kwargs:
+                out.append(call.kwargs["event_type"])
+        return out
+
+    def test_successful_dispatch_emits_dispatch_applied(self):
+        dispatch_block = [
+            {"op": "add", "node": {"name": "spawned", "agent": "x"}},
+        ]
+        dispatcher = _make_dispatcher_node("parent", dispatch_block)
+        spawned = _make_agent_node("spawned")
+
+        ctx = _make_context()
+        ctx.graph_loader = _StubGraphLoader({"spawned": spawned})
+
+        execute_graph([dispatcher], {}, ctx, graph_name="test")
+        assert "dispatch.applied" in self._event_types_recorded(ctx)
+
+    def test_event_payload_lists_added_and_removed(self):
+        dispatch_block = [
+            {"op": "add", "node": {"name": "spawned", "agent": "x"}},
+            {"op": "remove", "target": "placeholder"},
+        ]
+        dispatcher = _make_dispatcher_node("parent", dispatch_block)
+        spawned = _make_agent_node("spawned")
+        placeholder = _make_agent_node("placeholder")
+        placeholder.config.depends_on = ["parent"]
+
+        ctx = _make_context()
+        ctx.graph_loader = _StubGraphLoader({"spawned": spawned})
+
+        execute_graph([dispatcher, placeholder], {}, ctx, graph_name="test")
+
+        dispatch_calls = [
+            c for c in ctx.event_recorder.record.call_args_list
+            if c.args and getattr(c.args[0], "value", "") == "dispatch.applied"
+        ]
+        assert len(dispatch_calls) == 1
+        data = dispatch_calls[0].kwargs["data"]
+        assert data["dispatcher"] == "parent"
+        assert data["added"] == ["spawned"]
+        assert data["removed"] == ["placeholder"]
+
+    def test_cap_exceeded_emits_event(self):
+        """When a cap fires, dispatch.cap_exceeded is recorded before the
+        error propagates."""
+        from temper_ai.stage.dispatch_limits import DispatchLimits
+
+        dispatch_block = [{
+            "op": "add", "for_each": [1, 2, 3],
+            "node": {"name": "c_{{ item }}", "agent": "x"},
+        }]
+        dispatcher = _make_dispatcher_node("parent", dispatch_block)
+        ctx = _make_context()
+        ctx.graph_loader = _StubGraphLoader({
+            f"c_{i}": _make_agent_node(f"c_{i}") for i in range(1, 4)
+        })
+        ctx.dispatch_limits = DispatchLimits(max_children_per_dispatch=1)
+
+        execute_graph([dispatcher], {}, ctx, graph_name="test")
+        assert "dispatch.cap_exceeded" in self._event_types_recorded(ctx)
+
+    def test_empty_dispatch_emits_no_event(self):
+        """A dispatcher with empty ops shouldn't pollute the timeline."""
+        dispatch_block = [{
+            "op": "add", "for_each": [],
+            "node": {"name": "x", "agent": "y"},
+        }]
+        dispatcher = _make_dispatcher_node("parent", dispatch_block)
+        ctx = _make_context()
+        ctx.graph_loader = _StubGraphLoader({})
+
+        execute_graph([dispatcher], {}, ctx, graph_name="test")
+        types_ = self._event_types_recorded(ctx)
+        assert "dispatch.applied" not in types_
+        assert "dispatch.cap_exceeded" not in types_
 
 
 class TestExecuteGraphCore:

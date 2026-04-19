@@ -81,26 +81,33 @@ MCP servers are configured at the server level like LLM providers. API keys live
 
 Move Temper from a workflow engine (code decides the path) toward an agentic system (model decides the path). The goal: **structured autonomy** — the developer defines the possible paths, the model chooses which one at runtime, and every decision is observable.
 
-### Dynamic Routing — Model Decides Next Step
-**What:** A node's structured output determines which node executes next. Instead of binary conditions (run or skip), the model can route to any of several predefined paths.
+### Dynamic Routing — Model Decides Next Step ✓ SHIPPED (as Dynamic Dispatch)
+
+**What shipped:** An agent's output (structured or tool-calls) can add, remove, and replace pending nodes in the running DAG. Strictly more general than the original "pick a path" proposal — the agent can construct arbitrary subgraphs (including stages), fan out per-item with `for_each`, build fan-in depends_on lists from its output, and insert nodes between existing ones.
 
 ```yaml
-- name: review
-  type: agent
-  agent: reviewer
-  routes:
-    source: review.structured.next_action
-    paths:
-      approve: ship
-      revise: code              # loop back
-      escalate: human_review    # different path
+agent:
+  name: planner
+  dispatch:
+    - op: add
+      for_each: structured.subtopics        # agent-decided fan-out
+      node:
+        name: "research_{{ item.slug }}"
+        agent: researcher
+        input_map: {topic: "{{ item.slug }}"}
+    - op: remove
+      target: placeholder_body              # drop pre-existing node
+    - op: add                               # replace it with real content
+      node:
+        name: placeholder_body
+        agent: researcher
 ```
 
-**Why:** Today, the graph is fixed at config time. With dynamic routing, the reviewer's judgment drives the workflow. The YAML still defines the possible paths (observable, safe), but the model picks the path (agentic).
+**Two tiers:** declarative (`dispatch:` block, Jinja-rendered against agent output) and imperative (`AddNode` / `RemoveNode` tools). Plus script-agent dispatch with zero LLM cost on the dispatcher.
 
-**What exists today:** `condition` (binary skip/execute) and `loop_to` (fixed loop target). Dynamic routing extends these into multi-path branching.
+**Safety:** cap-enforced (max_children_per_dispatch, max_dispatch_depth, max_dynamic_nodes, cycle_detection), resume-safe (checkpointed + replayed), observable (`dispatch.applied` / `dispatch.cap_exceeded` events).
 
-**Integration point:** Stage executor — after a node completes, check `routes` config, resolve the structured output field, match to a path, execute that node next.
+**Demos:** `configs/workflows/demo_dispatch*.yaml`. Reference: `llms.txt` §13b.
 
 ---
 

@@ -17,11 +17,31 @@ pip install -e ".[dev]"
 
 ### Pre-commit hook
 
-The repo includes a pre-commit hook that auto-regenerates reference docs when source files change. Install it after cloning:
+The repo includes a tracked pre-commit hook (`scripts/git-hooks/pre-commit`) that mirrors CI — running `ruff`, `mypy`, and the full test suite against your commit so lint/type/test failures surface locally before CI catches them.
+
+Install it once after cloning:
 
 ```bash
-# The hook is already in .git/hooks/pre-commit after clone
-# To regenerate docs manually:
+./scripts/install-git-hooks.sh
+```
+
+This points `core.hooksPath` at `scripts/git-hooks/`. The hook checks:
+
+- **ruff** — staged `*.py` files only (grandfathers the existing baseline)
+- **mypy** — staged `temper_ai/*.py` files only
+- **pytest** — full suite, `--ignore=tests/test_database` by default
+- **docs regeneration** — auto-runs `scripts/generate_docs.py` when source files that feed the reference docs are staged
+
+Escape hatches:
+
+```bash
+git commit --no-verify              # skip the hook entirely
+PRECOMMIT_RUN_DB=1 git commit       # include tests/test_database/
+```
+
+To regenerate docs manually without committing:
+
+```bash
 python scripts/generate_docs.py
 ```
 

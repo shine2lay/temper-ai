@@ -20,9 +20,11 @@ from typing import Any
 from temper_ai.agent.base import AgentABC
 from temper_ai.llm.models import CallContext, LLMRunResult
 from temper_ai.llm.prompt_renderer import PromptRenderer
-from temper_ai.llm.service import DEFAULT_MAX_CONTEXT_TOKENS, DEFAULT_MAX_MESSAGES, LLMService
-
-DEFAULT_TOTAL_TIMEOUT = 300.0
+from temper_ai.llm.service import (
+    DEFAULT_MAX_CONTEXT_TOKENS,
+    DEFAULT_MAX_MESSAGES,
+    LLMService,
+)
 from temper_ai.observability import EventType
 from temper_ai.observability import record as _default_record
 from temper_ai.shared.types import (
@@ -32,6 +34,8 @@ from temper_ai.shared.types import (
     Status,
     TokenUsage,
 )
+
+DEFAULT_TOTAL_TIMEOUT = 300.0
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +74,7 @@ class LLMAgent(AgentABC):
             self._record_agent_completed(_record, result, agent_event_id, context)
             return result
 
-        except Exception as e:  # noqa: broad-except
+        except Exception as e:  # noqa: BLE001
             duration = round(time.monotonic() - start, 3)
             _record(
                 EventType.AGENT_FAILED,
@@ -185,9 +189,11 @@ class LLMAgent(AgentABC):
                 return decision.reason if decision.action == "deny" else None
             budget_check = _check_budget
 
-        # Wire usage tracker so budget stays current between LLM iterations
+        # Wire usage tracker so budget stays current between LLM iterations.
+        # _usage_tracker is declared None by default; attaching a callable here
+        # is the documented hook, so we ignore the type reassignment.
         if budget_check and te:
-            llm_service._usage_tracker = lambda cost, tokens: te.track_usage(cost, tokens)
+            llm_service._usage_tracker = lambda cost, tokens: te.track_usage(cost, tokens)  # type: ignore[assignment]
 
         llm_result: LLMRunResult = llm_service.run(
             messages=messages,

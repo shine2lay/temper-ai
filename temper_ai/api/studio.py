@@ -122,7 +122,7 @@ def validate_config(config_type: str, body: ConfigBody):
             # Temporarily store config for validation
             _store().put("__validate_temp", config_type, body.config)
             loader.load_workflow("__validate_temp")
-        except Exception as exc:  # noqa: broad-except
+        except Exception as exc:  # noqa: BLE001
             errors.append(str(exc))
         finally:
             _store().delete("__validate_temp", config_type)
@@ -144,11 +144,11 @@ def get_registry():
     Each registry is pulled from the actual runtime registries, so custom
     types registered via plugins or startup hooks appear automatically.
     """
-    from temper_ai.stage.topology import _GENERATORS
     from temper_ai.agent import AGENT_TYPES
     from temper_ai.llm.providers.factory import _PROVIDER_MAP
-    from temper_ai.tools import TOOL_CLASSES
     from temper_ai.safety.engine import POLICY_REGISTRY
+    from temper_ai.stage.topology import _GENERATORS
+    from temper_ai.tools import TOOL_CLASSES
 
     # Collect MCP server names — tools are referenced as "server.tool_name"
     mcp_servers: list[str] = []

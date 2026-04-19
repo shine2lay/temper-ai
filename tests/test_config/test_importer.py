@@ -1,7 +1,5 @@
 """Tests for YAML config importer."""
 
-import os
-import tempfile
 
 import pytest
 

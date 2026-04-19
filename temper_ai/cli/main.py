@@ -138,7 +138,7 @@ def _cmd_run(args) -> None:
     except KeyboardInterrupt:
         print("\nInterrupted.", file=sys.stderr)
         sys.exit(130)
-    except Exception as exc:  # noqa: broad-except
+    except Exception as exc:  # noqa: BLE001
         print(f"\nExecution failed: {exc}", file=sys.stderr)
         sys.exit(1)
     finally:
@@ -169,6 +169,7 @@ def _parse_inputs(input_args: list) -> dict:
 def _load_configs(config_dir_path: str) -> None:
     """Load YAML configs from a directory into the ConfigStore."""
     from pathlib import Path
+
     from temper_ai.config import ConfigStore
     from temper_ai.config.importer import import_yaml
 
@@ -195,7 +196,7 @@ def _load_workflow(workflow_name: str):
     loader = GraphLoader(store)
     try:
         return loader.load_workflow(workflow_name)
-    except Exception as exc:  # noqa: broad-except
+    except Exception as exc:  # noqa: BLE001
         print(f"Error loading workflow '{workflow_name}': {exc}", file=sys.stderr)
         sys.exit(1)
 
@@ -225,6 +226,7 @@ def _init_mcp_tools(tool_executor, nodes, config_dir: str) -> None:
     try:
         import asyncio
         import threading
+
         from temper_ai.tools.mcp_client import MCPClientManager
         from temper_ai.tools.mcp_tool import create_mcp_tools_from_agents
     except ImportError:
@@ -262,7 +264,7 @@ def _preconnect_mcp_servers(mcp_tools, mcp_manager, mcp_loop) -> None:
                 mcp_manager.ensure_connected(name), mcp_loop
             )
             f.result(timeout=30)
-        except Exception as e:  # noqa: broad-except
+        except Exception as e:  # noqa: BLE001
             errors.append(f"MCP server '{name}': {e}")
 
     if errors:
@@ -333,6 +335,7 @@ def _cmd_validate(args) -> None:
     os.environ.setdefault("TEMPER_DATABASE_URL", "sqlite:///data/dev.db")
 
     from pathlib import Path
+
     from temper_ai.config import ConfigStore
     from temper_ai.config.importer import import_yaml
     from temper_ai.database import init_database
@@ -369,8 +372,8 @@ def _cmd_validate(args) -> None:
         if default_provider and default_provider not in providers:
             print(f"\n⚠ Warning: provider '{default_provider}' is not configured.")
             print(f"  Available providers: {list(providers.keys()) or ['none — set API keys in .env']}")
-            print(f"  Set the appropriate API key in .env or change the workflow's defaults.provider")
-    except Exception as exc:  # noqa: broad-except
+            print("  Set the appropriate API key in .env or change the workflow's defaults.provider")
+    except Exception as exc:  # noqa: BLE001
         print(f"✗ Validation failed: {exc}", file=sys.stderr)
         sys.exit(1)
 

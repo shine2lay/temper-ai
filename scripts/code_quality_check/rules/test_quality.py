@@ -1,7 +1,6 @@
 """Test quality — detect tests with zero assertions."""
 
 import ast
-from pathlib import Path
 
 from scripts.code_quality_check.base import Finding, Rule, ScanContext, Severity
 

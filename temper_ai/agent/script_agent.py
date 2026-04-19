@@ -73,7 +73,7 @@ class ScriptAgent(AgentABC):
                 duration_seconds=duration,
             )
 
-        except Exception as e:  # noqa: broad-except
+        except Exception as e:  # noqa: BLE001
             duration = round(time.monotonic() - start, 3)
             _record(
                 EventType.AGENT_FAILED,

@@ -1,12 +1,13 @@
 """Tests for stage/loader.py — config loading and resolution."""
 
-import pytest
 from unittest.mock import MagicMock
 
-from temper_ai.stage.loader import GraphLoader
+import pytest
+
 from temper_ai.stage.agent_node import AgentNode
-from temper_ai.stage.stage_node import StageNode
 from temper_ai.stage.exceptions import LoaderError, ValidationError
+from temper_ai.stage.loader import GraphLoader
+from temper_ai.stage.stage_node import StageNode
 
 
 def _mock_config_store(configs=None):

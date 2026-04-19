@@ -235,7 +235,7 @@ def _emit_restored_node(node: Node, result: NodeResult, context: ExecutionContex
         agent_names = [node.name]
 
     for agent_name in agent_names:
-        agent_event_id = recorder.record(
+        recorder.record(
             EventType.AGENT_STARTED,
             parent_id=node_event_id,
             execution_id=context.run_id,
@@ -620,10 +620,10 @@ def _resolve_single_input(
     if field == "structured" and len(parts) >= 3:
         if not result.structured_output:
             return None
-        value: Any = result.structured_output
+        structured_value: Any = result.structured_output
         for key in parts[2:]:
-            value = value.get(key) if isinstance(value, dict) else None
-        return value
+            structured_value = structured_value.get(key) if isinstance(structured_value, dict) else None
+        return structured_value
 
     # Child node reference: "stage.child_node.output" or "stage.child_node.structured.field"
     if result.node_results and field in result.node_results:
@@ -762,7 +762,6 @@ def _wait_for_gate(node: Node, context: ExecutionContext, parent_event_id: str) 
 
     # Save checkpoint before waiting (so the run can resume if server crashes while waiting)
     if context.checkpoint_service:
-        from temper_ai.shared.types import NodeResult, Status
         context.checkpoint_service._save(
             event_type="gate_waiting",
             node_name=node.name,

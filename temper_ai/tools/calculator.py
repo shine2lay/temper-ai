@@ -7,7 +7,8 @@ and a small set of math functions.
 import ast
 import math
 import operator
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from temper_ai.tools.base import BaseTool, ToolResult
 

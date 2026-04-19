@@ -69,7 +69,7 @@ class MCPTool(BaseTool):
             )
             result_text = future.result(timeout=30)
             return ToolResult(success=True, result=result_text)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             error = f"MCP tool '{self.name}' timed out after 30s"
             logger.warning(error)
             return ToolResult(success=False, result="", error=error)

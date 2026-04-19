@@ -14,10 +14,10 @@ Usage:
 """
 
 from temper_ai.safety.base import ActionType, BasePolicy, PolicyDecision
+from temper_ai.safety.budget import BudgetPolicy
 from temper_ai.safety.engine import PolicyEngine, register_policy
 from temper_ai.safety.file_access import FileAccessPolicy
 from temper_ai.safety.forbidden_ops import ForbiddenOpsPolicy
-from temper_ai.safety.budget import BudgetPolicy
 
 # Register built-in policies
 register_policy("file_access", FileAccessPolicy)

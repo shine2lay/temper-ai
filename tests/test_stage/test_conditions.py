@@ -3,7 +3,11 @@
 import pytest
 
 from temper_ai.shared.types import NodeResult, Status
-from temper_ai.stage.conditions import evaluate_condition, _resolve_source, _apply_operator
+from temper_ai.stage.conditions import (
+    _apply_operator,
+    _resolve_source,
+    evaluate_condition,
+)
 from temper_ai.stage.exceptions import ConditionError
 
 

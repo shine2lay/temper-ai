@@ -1,6 +1,5 @@
 """Tests for HTTP tool."""
 
-import pytest
 
 from temper_ai.tools.http import Http
 

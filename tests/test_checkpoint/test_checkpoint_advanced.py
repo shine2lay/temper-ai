@@ -91,6 +91,6 @@ class TestForkChain:
         assert svc2.execution_id == "fork-target-001"
 
     def test_fork_nonexistent_sequence_raises(self):
-        svc1 = CheckpointService("fork-bad-001")
+        CheckpointService("fork-bad-001")
         with pytest.raises((ValueError, Exception)):
             CheckpointService.fork("fork-bad-001", 999, "fork-bad-target")

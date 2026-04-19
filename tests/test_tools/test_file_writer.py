@@ -4,8 +4,6 @@ import os
 import tempfile
 from pathlib import Path
 
-import pytest
-
 from temper_ai.tools.file_writer import FileWriter
 
 
@@ -19,7 +17,7 @@ class TestFileWriter:
         r = self.fw.execute(file_path=path, content="hello world")
         assert r.success is True
         assert Path(path).read_text() == "hello world"
-        assert r.metadata["bytes_written"] == len("hello world".encode())
+        assert r.metadata["bytes_written"] == len(b"hello world")
 
     def test_creates_parent_directories(self):
         path = os.path.join(self._tmpdir, "a", "b", "c", "deep.txt")

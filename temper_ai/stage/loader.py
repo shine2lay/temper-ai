@@ -11,12 +11,18 @@ Handles:
 from __future__ import annotations
 
 import logging
+from typing import Any
+
 from temper_ai.config.store import ConfigStore
 from temper_ai.stage.agent_node import AgentNode
 from temper_ai.stage.exceptions import LoaderError, ValidationError
 from temper_ai.stage.models import NodeConfig, WorkflowConfig
 from temper_ai.stage.node import Node
 from temper_ai.stage.stage_node import StageNode
+from temper_ai.stage.template_expansion import (
+    TemplateExpansionError,
+    expand_templates,
+)
 from temper_ai.stage.topology import build_topology
 
 logger = logging.getLogger(__name__)
@@ -36,20 +42,31 @@ class GraphLoader:
         self.config_store = config_store
         self._defaults: dict = {}  # Workflow-level defaults (provider, model, etc.)
 
-    def load_workflow(self, workflow_ref: str) -> tuple[list[Node], WorkflowConfig]:
+    def load_workflow(
+        self,
+        workflow_ref: str,
+        inputs: dict[str, Any] | None = None,
+    ) -> tuple[list[Node], WorkflowConfig]:
         """Load a workflow config and return resolved nodes + config.
 
         Args:
             workflow_ref: Config name (looked up in config store) or raw config dict.
+            inputs: Workflow inputs (the POST body's `inputs` field). Required
+                only if the workflow uses `type: template` nodes; otherwise
+                may be None.
 
         Returns:
             Tuple of (resolved_nodes, workflow_config).
 
         Raises:
-            LoaderError: Config not found or invalid.
+            LoaderError: Config not found, invalid, or template expansion failed.
             ValidationError: Config fails validation.
         """
         raw = self._load_config(workflow_ref, "workflow")
+        try:
+            raw = expand_templates(raw, inputs)
+        except TemplateExpansionError as exc:
+            raise LoaderError(f"template expansion failed: {exc}") from exc
         config = WorkflowConfig.from_dict(raw)
 
         # Store workflow defaults so agent resolution can apply them as fallbacks

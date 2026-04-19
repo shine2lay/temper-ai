@@ -77,9 +77,12 @@ def start_run(body: RunRequest):
     """
     execution_id = str(uuid.uuid4())
 
-    # Validate workflow exists before starting
+    # Validate workflow exists before starting. Pass inputs so any
+    # `type: template` nodes can be expanded at load time.
     try:
-        nodes, config = _state().graph_loader.load_workflow(body.workflow)
+        nodes, config = _state().graph_loader.load_workflow(
+            body.workflow, inputs=body.inputs
+        )
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

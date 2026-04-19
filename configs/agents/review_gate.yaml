@@ -1,23 +1,105 @@
-# @description Reads review verdict — pass or needs_work
+# @description Review gate — fails CLOSED. Missing/ambiguous review = NEEDS_WORK.
+# Also guards against "reviewer said PASS but executor produced no real changes."
 agent:
   name: review_gate
   type: script
   script_template: |
     #!/bin/bash
-    set -e
-
+    # NOTE: no `set -e` here — we handle errors explicitly and want to emit JSON in every path
     WORKSPACE="{{ workspace_path }}"
     REVIEW="$WORKSPACE/.context/REVIEW.md"
+    LOG="$WORKSPACE/.context/BUILD_LOG.md"
 
+    # ── FAIL CLOSED: no review file means reviewer did not run or crashed ──
     if [ ! -f "$REVIEW" ]; then
-      echo '{"verdict": "pass", "reason": "no review file found"}'
+      echo '{"verdict": "needs_work", "reason": "no REVIEW.md — visual_reviewer did not write a verdict"}'
       exit 0
     fi
 
-    # Check for NEEDS_WORK verdict
-    if grep -qi "NEEDS_WORK" "$REVIEW" 2>/dev/null; then
-      echo '{"verdict": "needs_work", "reason": "reviewer flagged issues to fix"}'
-    else
-      echo '{"verdict": "pass"}'
+    # ── Extract verdict line — look for the canonical "## Verdict: X" format ──
+    VERDICT_LINE=$(grep -iE "^##[[:space:]]*Verdict:|^Verdict:" "$REVIEW" 2>/dev/null | head -1)
+
+    # Explicit NEEDS_WORK wins
+    if echo "$VERDICT_LINE" | grep -qi "NEEDS_WORK"; then
+      # Distinguish fixable bugs (code) vs unverifiable criteria (spec issue).
+      # Count evidence-table rows with Status "UNVERIFIED" vs "FAIL".
+      UNVER=$(grep -iE '\| UNVERIFIED \|' "$REVIEW" 2>/dev/null | wc -l)
+      FAILS=$(grep -iE '\| FAIL \|' "$REVIEW" 2>/dev/null | wc -l)
+      UNVER=$(printf '%d' "$UNVER" 2>/dev/null || echo 0)
+      FAILS=$(printf '%d' "$FAILS" 2>/dev/null || echo 0)
+      [ -z "$UNVER" ] && UNVER=0
+      [ -z "$FAILS" ] && FAILS=0
+
+      if [ "$UNVER" -gt 0 ] && [ "$FAILS" -eq 0 ]; then
+        # All issues are UNVERIFIED — spec needs architect review, not code fix
+        echo "{\"verdict\": \"needs_spec_review\", \"reason\": \"$UNVER criterion(s) unverifiable in env — loop to architect\", \"unverifiable\": $UNVER, \"fails\": 0}"
+        exit 0
+      fi
+      echo "{\"verdict\": \"needs_work\", \"reason\": \"reviewer flagged issues to fix\", \"unverifiable\": $UNVER, \"fails\": $FAILS}"
+      exit 0
     fi
-  timeout_seconds: 10
+
+    # No clear PASS = fail closed
+    if ! echo "$VERDICT_LINE" | grep -qi "PASS"; then
+      echo '{"verdict": "needs_work", "reason": "REVIEW.md has no recognizable PASS/NEEDS_WORK verdict line"}'
+      exit 0
+    fi
+
+    # ── PASS claimed — verify executor actually produced real source changes ──
+    # (Catches "reviewer rubber-stamped but executor did nothing" pattern from v3 logs)
+    cd "$WORKSPACE" || { echo '{"verdict": "needs_work", "reason": "cannot cd to workspace"}'; exit 0; }
+
+    # BASELINE = CURRENT_STEP.md (planner writes it at start of each cycle).
+    # Anything newer than the baseline is what THIS step produced.
+    # Explicit if-else — do NOT use `${VAR:-default}` here, it produced garbage in workflow runs.
+    STEP_PLAN=".context/CURRENT_STEP.md"
+    BASELINE=""
+    if [ -n "$STEP_PLAN" ] && [ -f "$STEP_PLAN" ]; then
+      BASELINE="$STEP_PLAN"
+    elif [ -f "$LOG" ]; then
+      BASELINE="$LOG"
+    fi
+    if [ -z "$BASELINE" ]; then
+      # First-ever run, no baselines to compare — let it pass
+      echo '{"verdict": "pass", "reason": "no baseline file to compare against"}'
+      exit 0
+    fi
+
+    # Count real source files modified since the baseline.
+    # Excludes: contexts, VCS, deps, build caches, compiled artifacts.
+    REAL_CHANGES=$(find . -newer "$BASELINE" -type f \
+      -not -path '*/.context/*' \
+      -not -path '*/.git/*' \
+      -not -path '*/node_modules/*' \
+      -not -path '*/.next/*' \
+      -not -path '*/.next-backup/*' \
+      -not -path '*/.next.bak/*' \
+      -not -path '*/.nuxt/*' \
+      -not -path '*/dist/*' \
+      -not -path '*/build/*' \
+      -not -path '*/.cache/*' \
+      -not -path '*/__pycache__/*' \
+      -not -path '*/target/*' \
+      -not -path '*/venv/*' \
+      -not -path '*/.venv/*' \
+      -not -path '*/.pytest_cache/*' \
+      -not -path '*/.ruff_cache/*' \
+      -not -name '*.pyc' \
+      -not -name '*.pyo' \
+      -not -name '*.tsbuildinfo' \
+      -not -name '*.pack' \
+      -not -name '*.pack.gz' \
+      -not -name '*.pack.gz.old' \
+      -not -name '*.log' \
+      -not -name '.*' \
+      2>/dev/null | wc -l)
+    REAL_CHANGES=$(printf '%d' "$REAL_CHANGES" 2>/dev/null || echo 0)
+    if [ -z "$REAL_CHANGES" ]; then REAL_CHANGES=0; fi
+
+    if [ "$REAL_CHANGES" -eq 0 ]; then
+      echo "{\"verdict\": \"needs_work\", \"reason\": \"reviewer said PASS but 0 real source files changed — executor likely produced no output\"}"
+      exit 0
+    fi
+
+    echo "{\"verdict\": \"pass\", \"real_files_changed\": $REAL_CHANGES}"
+  timeout_seconds: 15

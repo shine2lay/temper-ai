@@ -103,7 +103,7 @@ _TOOL_FIELDS: list[dict[str, Any]] = [
 
 def _dataclass_to_fields(cls: type, docs: dict[str, str]) -> list[dict[str, Any]]:
     """Extract field docs from a dataclass."""
-    fields = []
+    fields: list[dict[str, Any]] = []
     for f in dataclasses.fields(cls):
         if f.name.startswith("_"):
             continue

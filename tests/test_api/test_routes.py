@@ -3,8 +3,9 @@
 Uses FastAPI TestClient to test endpoints without starting a real server.
 """
 
+from unittest.mock import MagicMock
+
 import pytest
-from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
 
 from temper_ai.api.app_state import AppState

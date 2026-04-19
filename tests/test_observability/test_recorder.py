@@ -21,8 +21,6 @@ Covers:
 
 import uuid
 
-import pytest
-
 from temper_ai.observability.event_types import EventType
 from temper_ai.observability.recorder import (
     copy_events_for_fork,
@@ -30,7 +28,6 @@ from temper_ai.observability.recorder import (
     record,
     update_event,
 )
-
 
 # ---------------------------------------------------------------------------
 # record()
@@ -60,7 +57,7 @@ class TestRecord:
 
     def test_event_with_parent_id(self):
         parent_id = str(uuid.uuid4())
-        eid = record(
+        record(
             EventType.LLM_CALL_STARTED,
             parent_id=parent_id,
             execution_id="exec-r4",
@@ -69,7 +66,7 @@ class TestRecord:
         assert events[0]["parent_id"] == parent_id
 
     def test_event_with_status(self):
-        eid = record(
+        record(
             EventType.STAGE_STARTED,
             status="running",
             execution_id="exec-r5",
@@ -79,7 +76,7 @@ class TestRecord:
 
     def test_event_with_empty_data(self):
         """Passing no data should default to empty dict."""
-        eid = record(EventType.WORKFLOW_COMPLETED, execution_id="exec-r6")
+        record(EventType.WORKFLOW_COMPLETED, execution_id="exec-r6")
         events = get_events(execution_id="exec-r6")
         assert events[0]["data"] == {}
 
@@ -92,7 +89,7 @@ class TestRecord:
             "flag": True,
             "null_val": None,
         }
-        eid = record(
+        record(
             EventType.AGENT_COMPLETED,
             data=payload,
             execution_id="exec-r7",
@@ -178,7 +175,7 @@ class TestGetEvents:
         assert len(events) == 3
 
     def test_results_contain_expected_fields(self):
-        eid = record(
+        record(
             EventType.LLM_CALL_STARTED,
             data={"model": "qwen"},
             execution_id="exec-g9",
@@ -309,13 +306,13 @@ class TestCopyEventsForFork:
         dst = "exec-fork-dst-3"
 
         wf_id = record(EventType.WORKFLOW_STARTED, execution_id=src)
-        stage_a_id = record(
+        record(
             EventType.STAGE_STARTED,
             parent_id=wf_id,
             execution_id=src,
             data={"name": "stage_a"},
         )
-        stage_b_id = record(
+        record(
             EventType.STAGE_STARTED,
             parent_id=wf_id,
             execution_id=src,
@@ -325,7 +322,7 @@ class TestCopyEventsForFork:
         copy_events_for_fork(src, dst, {"stage_a"})  # Only copy stage_a
 
         dst_events = get_events(execution_id=dst)
-        dst_types = {e["type"] for e in dst_events}
+        {e["type"] for e in dst_events}
         dst_data = [e["data"] for e in dst_events]
 
         # stage_a events should be present, stage_b events should not

@@ -9,7 +9,6 @@ the model only sends the changed fragment, not the entire file.
 """
 
 import logging
-from pathlib import Path
 from typing import Any
 
 from temper_ai.tools.base import BaseTool, ToolResult

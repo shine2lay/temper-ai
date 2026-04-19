@@ -129,7 +129,7 @@ class TestConfigStoreSchemaVersion:
 
     def test_upsert_updated_at_changes(self, store):
         store.put("ts_test", "agent", {"name": "ts_test", "v": 1})
-        before = next(c for c in store.list("agent") if c["name"] == "ts_test")
+        next(c for c in store.list("agent") if c["name"] == "ts_test")
         store.put("ts_test", "agent", {"name": "ts_test", "v": 2})
         after = next(c for c in store.list("agent") if c["name"] == "ts_test")
         # updated_at should be a valid ISO timestamp string

@@ -154,6 +154,7 @@ class MCPClientManager:
     async def _connect_stdio(self, config: dict) -> ClientSession:
         # Sanitize env — block dangerous vars that could be injected via MCP YAML config
         raw_env = config.get("env")
+        sanitized_env: dict | None
         if raw_env and isinstance(raw_env, dict):
             blocked = {"LD_PRELOAD", "LD_LIBRARY_PATH", "DYLD_INSERT_LIBRARIES", "PYTHONPATH"}
             sanitized_env = {k: v for k, v in raw_env.items() if k not in blocked}

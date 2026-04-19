@@ -12,11 +12,11 @@ from __future__ import annotations
 import ast
 import hashlib
 import logging
+import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -131,8 +131,6 @@ class ExternalToolRule(Rule):
 
     def scan(self, ctx: ScanContext) -> list[Finding]:
         """Run the external tool and convert output to Findings."""
-        import subprocess
-
         tool_path = self._find_tool()
         if not tool_path:
             logger.info("Tool '%s' not installed, skipping rule '%s'", self.tool_name, self.key)
@@ -161,7 +159,7 @@ class ExternalToolRule(Rule):
         """Build the CLI command to run. Override in subclasses."""
         raise NotImplementedError
 
-    def parse_output(self, result: "subprocess.CompletedProcess", ctx: ScanContext) -> list[Finding]:
+    def parse_output(self, result: subprocess.CompletedProcess, ctx: ScanContext) -> list[Finding]:
         """Parse CLI output into Findings. Override in subclasses."""
         raise NotImplementedError
 

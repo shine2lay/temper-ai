@@ -5,10 +5,11 @@ We don't test mem0 internals. We only verify:
 2. The interface is implemented correctly (via mock)
 """
 
-import pytest
 from unittest.mock import MagicMock, patch
 
-from temper_ai.memory.exceptions import MemoryDependencyError, MemoryBackendError
+import pytest
+
+from temper_ai.memory.exceptions import MemoryDependencyError
 
 
 class TestMem0DependencyCheck:

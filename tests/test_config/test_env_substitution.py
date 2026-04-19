@@ -4,7 +4,7 @@ import os
 
 import pytest
 
-from temper_ai.config.helpers import substitute_env_vars, ConfigValidationError
+from temper_ai.config.helpers import ConfigValidationError, substitute_env_vars
 
 
 class TestSubstituteEnvVarsExtended:

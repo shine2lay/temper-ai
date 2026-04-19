@@ -44,8 +44,8 @@ class TestExecutorBasics:
         assert "Unknown tool" in result.error
 
     def test_multiple_tools(self):
-        from temper_ai.tools.calculator import Calculator
         from temper_ai.tools.bash import Bash
+        from temper_ai.tools.calculator import Calculator
 
         executor = ToolExecutor()
         executor.register_tools({

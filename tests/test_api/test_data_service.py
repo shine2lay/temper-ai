@@ -2,8 +2,6 @@
 
 from unittest.mock import patch
 
-import pytest
-
 from temper_ai.api.data_service import (
     _build_agent_execution,
     _build_node_execution,

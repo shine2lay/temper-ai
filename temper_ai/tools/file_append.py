@@ -1,6 +1,5 @@
 """FileAppend tool — append text to a file without rewriting it."""
 
-from pathlib import Path
 from typing import Any
 
 from temper_ai.tools.base import BaseTool, ToolResult

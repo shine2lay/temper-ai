@@ -9,7 +9,6 @@ Tests can pass explicit SQLite URLs for isolation.
 
 import logging
 import os
-import sys
 
 from sqlalchemy import event
 from sqlalchemy.engine import Engine

@@ -1,7 +1,11 @@
 """Tests for the LLM service — the tool-calling loop with observability."""
 
-from temper_ai.llm.models import CallContext, LLMResponse, LLMStreamChunk
-from temper_ai.llm.service import LLMService, _apply_message_window, _inject_tool_results
+from temper_ai.llm.models import CallContext, LLMResponse
+from temper_ai.llm.service import (
+    LLMService,
+    _apply_message_window,
+    _inject_tool_results,
+)
 from temper_ai.observability import EventType, get_events
 
 from .conftest import MockProvider

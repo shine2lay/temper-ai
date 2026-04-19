@@ -11,16 +11,14 @@ from __future__ import annotations
 import logging
 import threading
 import uuid
-from typing import Any
 
 from fastapi import APIRouter, HTTPException, WebSocket
 from pydantic import BaseModel
 
 from temper_ai.api.app_state import AppState
 from temper_ai.api.data_service import get_workflow_execution, list_workflow_executions
-from temper_ai.checkpoint.service import CheckpointService
 from temper_ai.api.websocket import ws_manager
-from temper_ai.memory import MemoryService
+from temper_ai.checkpoint.service import CheckpointService
 from temper_ai.observability.event_recorder import EventRecorder
 from temper_ai.shared.types import ExecutionContext
 from temper_ai.stage.executor import execute_graph
@@ -192,8 +190,8 @@ def cancel_run(execution_id: str):
 
     # Orphaned running workflow — update the workflow.started event status directly
     # so the list query picks up the new status.
-    from temper_ai.observability.recorder import get_events, update_event
     from temper_ai.observability.event_types import EventType
+    from temper_ai.observability.recorder import get_events, update_event
     start_events = get_events(event_type=EventType("workflow.started"), execution_id=execution_id, limit=1)
     if start_events:
         update_event(start_events[0]["id"], status="cancelled", data={"cancelled_reason": "Stale run cancelled by user"})
@@ -378,9 +376,10 @@ def fork_run(body: ForkRequest):
                 restored_top_level.add(node.name)
 
     # Store fork metadata as an event so the data service can link to the source.
+    import uuid as _uuid
+
     from temper_ai.observability.models import Event as _Event
     from temper_ai.observability.recorder import _db_write_with_retry
-    import uuid as _uuid
     fork_event = _Event(
         id=str(_uuid.uuid4()),
         type="fork.metadata",

@@ -1,6 +1,5 @@
 """Tests for llm/prompt_renderer.py — template rendering, budget enforcement, validation."""
 
-import logging
 
 import pytest
 

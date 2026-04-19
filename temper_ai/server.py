@@ -8,13 +8,6 @@ import logging
 import os
 import sys
 from collections.abc import AsyncIterator
-
-# Configure logging so our module loggers output to stdout
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(levelname)s %(name)s: %(message)s",
-    stream=sys.stdout,
-)
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -27,13 +20,23 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from temper_ai.api.app_state import AppState
-from temper_ai.api.routes import router as api_router, init_app_state
-from temper_ai.api.studio import router as studio_router
 from temper_ai.api.docs import router as docs_router
+from temper_ai.api.routes import init_app_state
+from temper_ai.api.routes import router as api_router
+from temper_ai.api.studio import router as studio_router
 from temper_ai.config import ConfigStore
 from temper_ai.database import init_database, reset_database
 from temper_ai.memory import InMemoryStore, MemoryService
 from temper_ai.memory.base import MemoryStoreBase
+
+# Configure logging so our module loggers output to stdout. Called at import
+# time so loggers created by subsequent imports pick up the handler; kept
+# below the imports (not above) so ruff E402 doesn't flag each import line.
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(levelname)s %(name)s: %(message)s",
+    stream=sys.stdout,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -179,8 +182,8 @@ def _recover_orphaned_runs():
     via the checkpoint system.
     """
     try:
-        from temper_ai.observability.recorder import get_events, update_event
         from temper_ai.observability.event_types import EventType
+        from temper_ai.observability.recorder import get_events, update_event
 
         running_events = get_events(
             event_type=EventType("workflow.started"),

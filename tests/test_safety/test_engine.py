@@ -2,7 +2,7 @@
 
 import pytest
 
-from temper_ai.safety import ActionType, PolicyEngine, PolicyDecision, BasePolicy
+from temper_ai.safety import ActionType, BasePolicy, PolicyDecision, PolicyEngine
 from temper_ai.safety.engine import POLICY_REGISTRY, register_policy
 from temper_ai.safety.exceptions import SafetyConfigError
 

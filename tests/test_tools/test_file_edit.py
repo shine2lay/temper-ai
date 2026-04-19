@@ -1,7 +1,5 @@
 """Tests for FileEdit tool."""
 
-import os
-import tempfile
 
 import pytest
 

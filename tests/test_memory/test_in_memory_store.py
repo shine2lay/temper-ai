@@ -1,10 +1,9 @@
 """Tests for InMemoryStore — the dict-based memory backend."""
 
-import pytest
 import threading
 
-from temper_ai.memory.in_memory_store import InMemoryStore
 from temper_ai.memory.base import MemoryEntry
+from temper_ai.memory.in_memory_store import InMemoryStore
 
 
 class TestStore:

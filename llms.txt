@@ -1,0 +1,549 @@
+# Temper AI — LLM Reference (llms.txt)
+
+> For AI coding agents: Temper AI is a YAML-defined multi-agent workflow engine. Read this fully before creating, modifying, or debugging workflows.
+
+---
+
+## 1. Server
+
+**Default port: 8420** (not 3000, not 8000, not 8080)
+
+```
+Dashboard:    http://127.0.0.1:8420/app/     (NOT the root "/")
+API base:     http://127.0.0.1:8420/api/
+API docs:     http://127.0.0.1:8420/api/docs
+Health:       GET http://127.0.0.1:8420/api/health
+WebSocket:    ws://127.0.0.1:8420/ws/{execution_id}
+```
+
+**Start:** `temper serve --port 8420` or `docker compose up`
+
+DO NOT create a separate frontend server. The backend serves the React SPA at `/app/*`.
+DO NOT run raw `uvicorn` — use `temper serve`.
+
+**Providers are configured via environment variables:**
+
+| Provider | Env var | Default model |
+|----------|---------|---------------|
+| openai | `OPENAI_API_KEY` | gpt-4o-mini |
+| anthropic | `ANTHROPIC_API_KEY` | claude-sonnet-4-20250514 |
+| vllm | `VLLM_BASE_URL` | (set `VLLM_MODEL`) |
+| ollama | `OLLAMA_BASE_URL` | llama3.2 |
+| gemini | `GEMINI_API_KEY` | gemini-2.5-flash |
+
+At least one provider must be configured or all workflows fail with "provider not configured".
+
+---
+
+## 2. Running Workflows
+
+**Via API:**
+```bash
+POST http://127.0.0.1:8420/api/runs
+Content-Type: application/json
+
+{
+  "workflow": "blog_writer",
+  "inputs": {"task": "Write about LLMs"},
+  "workspace_path": "/optional/path"
+}
+```
+Returns `{"execution_id": "uuid", "status": "running"}`. Execution is async.
+
+The `workflow` field is the `workflow.name` value from the YAML, not a file path.
+
+**Via CLI:**
+```bash
+temper run blog_writer --input task="Write about LLMs" -v
+temper run blog_writer --no-db       # ephemeral, no persistence
+temper validate blog_writer          # validate without executing
+```
+
+**Other API endpoints:**
+```
+GET  /api/workflows/{execution_id}        # full execution with hierarchy
+GET  /api/workflows?limit=20&status=running  # list runs
+POST /api/runs/{id}/cancel
+POST /api/runs/{id}/resume                # resume from checkpoint
+POST /api/runs/fork                       # fork from checkpoint
+POST /api/runs/{id}/approve/{node_name}   # approve a gate node
+GET  /api/runs/{id}/gates                 # list waiting gates
+GET  /api/runs/{id}/checkpoints
+```
+
+---
+
+## 3. Workflow YAML
+
+A workflow is a DAG of nodes. Nodes are either agent nodes (one agent) or stage nodes (multiple agents with a strategy).
+
+```yaml
+workflow:
+  name: my_workflow                  # required, unique identifier
+  description: "What this does"
+  defaults:
+    provider: openai                 # applies to all agents unless overridden
+    model: gpt-4o-mini
+  safety:
+    policies:
+      - type: budget
+        max_cost_usd: 5.00
+  nodes:
+    - name: step_one
+      type: agent
+      agent: my_agent
+
+    - name: step_two
+      type: agent
+      agent: another_agent
+      depends_on: [step_one]
+      input_map:
+        result: step_one.output
+```
+
+Workflow files live in `configs/workflows/*.yaml`. Agent files in `configs/agents/*.yaml`.
+
+**WRONG — provider/model on every node:**
+```yaml
+nodes:
+  - name: step_one
+    type: agent
+    agent: my_agent
+    provider: openai      # redundant
+    model: gpt-4o-mini    # redundant
+  - name: step_two
+    type: agent
+    agent: my_agent
+    provider: openai      # redundant
+    model: gpt-4o-mini    # redundant
+```
+
+**RIGHT — set once in defaults, override only when needed:**
+```yaml
+workflow:
+  defaults:
+    provider: openai
+    model: gpt-4o-mini
+  nodes:
+    - name: step_one
+      type: agent
+      agent: my_agent            # inherits defaults
+    - name: expensive_step
+      type: agent
+      agent: deep_analyzer
+      model: gpt-4o              # override only here
+```
+
+---
+
+## 4. Node Types: `agent` vs `stage`
+
+| Use `type: agent` | Use `type: stage` |
+|---|---|
+| Single agent doing one task | Multiple agents with a shared strategy |
+| Sequential pipeline steps | Parallel review, leader synthesis, sequential chain |
+
+**WRONG — parallel agents as separate top-level nodes:**
+```yaml
+# WRONG — no shared context, no synthesis, must manually wire with input_map
+nodes:
+  - name: analyst
+    type: agent
+    agent: code_analyst
+  - name: security
+    type: agent
+    agent: security_reviewer
+  - name: synthesizer
+    type: agent
+    agent: reviewer
+    depends_on: [analyst, security]
+    input_map:
+      analyst_out: analyst.output
+      security_out: security.output
+```
+
+**RIGHT — use a stage with a strategy:**
+```yaml
+# RIGHT — workers run in parallel, leader auto-receives all outputs
+nodes:
+  - name: review
+    type: stage
+    strategy: leader
+    agents:
+      - code_analyst
+      - security_reviewer
+      - agent: reviewer
+        role: leader
+        task_template: |
+          Findings: {{ other_agents }}
+          Original: {{ task }}
+          Synthesize into a verdict.
+  - name: improve
+    type: agent
+    agent: code_improver
+    depends_on: [review]
+    input_map:
+      review: review.output    # leader's output
+```
+
+---
+
+## 5. Strategies
+
+Three built-in strategies (only valid on `type: stage` nodes):
+
+### `parallel`
+All agents run concurrently with no dependencies between them. Min 2 agents.
+```yaml
+- name: implement
+  type: stage
+  strategy: parallel
+  agents: [frontend_dev, backend_dev]
+```
+
+### `sequential`
+Linear chain. Each agent receives the previous agent's output in `{{ other_agents }}`. Min 2 agents.
+```yaml
+- name: pipeline
+  type: stage
+  strategy: sequential
+  agents: [researcher, drafter, editor]
+```
+
+### `leader`
+Workers run in parallel, then one leader synthesizes. The leader receives `{{ other_agents }}` with all worker outputs. Mark the leader with `role: leader` — if omitted, the last agent is the leader. Min 2 agents.
+```yaml
+- name: review
+  type: stage
+  strategy: leader
+  agents:
+    - code_analyst              # worker
+    - security_reviewer         # worker
+    - agent: reviewer           # leader
+      role: leader
+```
+
+**Stage agents support inline overrides:**
+```yaml
+agents:
+  - frontend_dev                         # shorthand, uses agent config as-is
+  - agent: backend_dev                   # dict form with overrides
+    task_template: "Custom: {{ task }}"
+    role: leader
+```
+
+---
+
+## 6. input_map — Wiring Data Between Nodes
+
+`input_map` maps Jinja2 variable names in the receiving agent's template to source references from other nodes.
+
+**Source reference formats:**
+
+| Format | Meaning |
+|---|---|
+| `node_name.output` | Full text output of a node |
+| `node_name.structured.field` | Field from JSON-structured output |
+| `node_name.structured.a.b` | Nested field traversal |
+| `node_name.status` | Status string of a node |
+| `workflow.field` or `input.field` | Workflow-level input |
+| `stage_name.child_node.output` | Child node inside a stage |
+
+**WRONG:**
+```yaml
+input_map:
+  data: step_one                    # missing .output
+  verdict: review.verdict           # missing .structured.
+  result: step_one.result           # .result doesn't exist, use .output
+```
+
+**RIGHT:**
+```yaml
+input_map:
+  data: step_one.output
+  verdict: review.structured.verdict
+  task: workflow.task
+```
+
+The mapped keys become Jinja2 variables in the agent's `task_template`:
+```yaml
+task_template: |
+  Data: {{ data }}
+  Verdict: {{ verdict }}
+```
+
+**Without input_map:** the node receives all workflow inputs plus `{{ other_agents }}` (formatted outputs of all `depends_on` nodes).
+
+---
+
+## 7. Agent YAML
+
+### LLM Agent
+
+```yaml
+agent:
+  name: code_analyst
+  type: llm
+  system_prompt: |
+    You are a code quality analyst.
+  task_template: |
+    Review this code: {{ code }}
+    Output JSON: {"verdict": "PASS", "issues": [...]}
+  tools:
+    - Bash
+    - FileWriter
+  max_iterations: 10       # tool-calling loop limit (default 10)
+  token_budget: 8000       # max input tokens (default 8000)
+  total_timeout: 300       # seconds (default 300)
+```
+
+Do NOT set `provider` or `model` in agent YAML unless it genuinely must differ from the workflow default.
+
+### Script Agent
+
+Runs a bash script, no LLM. The last JSON-parseable line of stdout becomes `structured_output`.
+
+```yaml
+agent:
+  name: build_checker
+  type: script
+  script_template: |
+    #!/bin/bash
+    set -e
+    cd {{ workspace_path }}
+    npm run build 2>&1
+    echo '{"success": true}'
+  timeout_seconds: 60      # default 30
+```
+
+Input variables from `input_data` are available as Jinja2 variables (string values are shell-quoted).
+
+### Structured Output
+
+Agents that output JSON can declare fields for compile-time validation and downstream field-level wiring:
+
+```yaml
+# On the node in the workflow:
+- name: analyze
+  type: agent
+  agent: planner
+  outputs:
+    verdict: string        # "complex" or "simple"
+    components: list
+    approach: string
+```
+
+Types: `string`, `list`, `dict`, `number`, `boolean`, `any`
+
+Then reference downstream: `analyze.structured.verdict`, `analyze.structured.components`
+
+---
+
+## 8. Tools
+
+Reference by exact name (case-sensitive):
+
+| Name | Description |
+|---|---|
+| `Bash` | Shell commands (sanitized env, command allowlist) |
+| `FileWriter` | Write files with path protection |
+| `FileEdit` | Exact-string replacement in files |
+| `FileAppend` | Append to files |
+| `Delegate` | Spawn sub-agents as visible DAG nodes |
+| `WebSearch` | Web search via SearXNG |
+| `Calculator` | Safe math evaluation |
+| `git` | Git operations in workspace |
+| `http` | HTTP requests |
+
+**WRONG — wrong case:**
+```yaml
+tools:
+  - bash          # WRONG, must be "Bash"
+  - file_writer   # WRONG, must be "FileWriter"
+```
+
+MCP tools are configured in `configs/mcp_servers/*.yaml` and referenced by `<server>.<tool>` in agent `tools` lists.
+
+---
+
+## 9. Conditions and Loops
+
+**Conditional execution** — skip a node unless condition is met:
+```yaml
+- name: fix
+  type: agent
+  agent: fixer
+  depends_on: [review]
+  condition:
+    source: review.structured.verdict
+    operator: equals
+    value: "NEEDS_WORK"
+```
+
+Operators: `equals`, `not_equals`, `contains`, `in`, `exists`, `not_exists`
+
+**Loops** — rewind to an earlier node:
+```yaml
+- name: check
+  type: agent
+  agent: checker
+  depends_on: [fix]
+  loop_to: fix             # rewind target
+  max_loops: 3             # safety limit (default 1)
+  loop_condition:
+    source: check.structured.verdict
+    operator: equals
+    value: "NEEDS_WORK"
+```
+
+Both `loop_to` and `loop_condition` are required together. The agent must output valid JSON for structured field references.
+
+---
+
+## 10. Gates (Human-in-the-Loop)
+
+```yaml
+- name: deploy
+  type: agent
+  agent: deployer
+  gate: true               # pauses, waits for approval
+  depends_on: [review]
+```
+
+Approve: `POST /api/runs/{execution_id}/approve/deploy`
+
+---
+
+## 11. Safety Policies
+
+Declared under `workflow.safety.policies`. Evaluated before every tool call. First-deny-wins.
+
+```yaml
+safety:
+  policies:
+    - type: budget
+      max_cost_usd: 5.00
+      max_tokens: 500000
+
+    - type: file_access
+      allowed_paths: ["/workspace"]
+      denied_paths: [".env", "credentials", "/etc/"]
+
+    - type: forbidden_ops
+      # uses safe defaults: rm -rf /, DROP TABLE, curl | sh, etc.
+```
+
+Skip a policy per node: `skip_policies: ["budget"]`
+
+---
+
+## 12. Workflow Outputs
+
+Map named outputs for programmatic consumption:
+
+```yaml
+workflow:
+  name: my_workflow
+  outputs:
+    final_result: edit.output
+    verdict: review.structured.verdict
+  nodes: [...]
+```
+
+---
+
+## 13. Env Var Substitution
+
+Anywhere in YAML values:
+- `${VAR}` — substituted at read time; error if unset
+- `${VAR:default}` — uses `default` if `VAR` is unset
+
+Works in system_prompt, task_template, script_template, MCP server args, etc.
+
+---
+
+## 14. Config File Locations
+
+```
+configs/
+  workflows/       workflow YAML files
+  agents/          agent YAML files
+  stages/          reusable stage configs
+  mcp_servers/     MCP server configs
+  tools/           custom tool configs
+```
+
+The server auto-loads all YAML from `configs/` on startup. Override: `--config-dir /path`.
+
+---
+
+## 15. Common Mistakes
+
+| Mistake | Fix |
+|---|---|
+| Accessing dashboard at `/` or creating a separate server | Use `http://127.0.0.1:8420/app/` |
+| Running raw `uvicorn` instead of `temper serve` | Use `temper serve --port 8420` |
+| Parallel agents as separate top-level nodes | Use `type: stage` + `strategy: parallel` or `leader` |
+| `node_name` alone in input_map | Use `node_name.output` or `node_name.structured.field` |
+| `node_name.result` or `node_name.json.field` | Use `node_name.output` or `node_name.structured.field` |
+| Setting provider/model on every agent | Set once in `workflow.defaults` |
+| Wrong tool casing (`bash`, `file_writer`) | Exact names: `Bash`, `FileWriter`, `FileEdit`, `WebSearch` |
+| `strategy` on a `type: agent` node | `strategy` and `agents` only work on `type: stage` |
+| Both `agents` and `nodes` on a stage | Mutually exclusive — pick one |
+| `loop_condition` without `loop_to` | Both are required together |
+| Referencing workflow by file path in API | Use the `workflow.name` value from YAML |
+| Forgetting `depends_on` for sequential flow | Nodes without `depends_on` run immediately |
+
+---
+
+## 16. Minimal Working Example
+
+```yaml
+# configs/workflows/my_pipeline.yaml
+workflow:
+  name: my_pipeline
+  defaults:
+    provider: openai
+    model: gpt-4o-mini
+  safety:
+    policies:
+      - type: budget
+        max_cost_usd: 2.00
+  nodes:
+    - name: research
+      type: agent
+      agent: topic_researcher
+
+    - name: review
+      type: stage
+      strategy: leader
+      depends_on: [research]
+      input_map:
+        research: research.output
+      agents:
+        - code_analyst
+        - security_reviewer
+        - agent: reviewer
+          role: leader
+          task_template: |
+            Research: {{ research }}
+            Findings: {{ other_agents }}
+            Produce a final verdict.
+
+    - name: improve
+      type: agent
+      agent: code_improver
+      depends_on: [review]
+      condition:
+        source: review.structured.verdict
+        operator: equals
+        value: "FAIL"
+      input_map:
+        review: review.output
+```
+
+```bash
+curl -X POST http://127.0.0.1:8420/api/runs \
+  -H "Content-Type: application/json" \
+  -d '{"workflow": "my_pipeline", "inputs": {"task": "LLM caching strategies"}}'
+```

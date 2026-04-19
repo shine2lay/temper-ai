@@ -94,6 +94,50 @@ class CheckpointService:
             error=result.error if hasattr(result, "error") else None,
         )
 
+    def save_dispatch_applied(
+        self,
+        dispatcher_name: str,
+        added_nodes: list[dict[str, Any]],
+        removed_targets: list[str],
+        dispatcher_depth: int,
+        dispatcher_fingerprint: tuple[str, str],
+        dispatched_count_delta: int,
+    ) -> None:
+        """Record a successful runtime dispatch application.
+
+        Called by the executor after `_apply_declarative_dispatch` mutates
+        the DAG. The serialized payload is enough to reconstruct both the
+        materialized nodes and the DispatchRunState entries on resume —
+        see `reconstruct_dispatch_history` for the reverse direction.
+
+        Args:
+            dispatcher_name: The agent node that emitted the dispatch.
+            added_nodes: Raw node dicts (post-Jinja-render) that were
+                materialized into the DAG.
+            removed_targets: Names of pending nodes marked SKIPPED by
+                this dispatcher's op=remove entries.
+            dispatcher_depth: The dispatcher's own dispatch-depth at the
+                time it fired. Children get depth+1; used by max_dispatch_depth
+                enforcement on resume.
+            dispatcher_fingerprint: (agent_name, input_hash) for the
+                dispatcher — used by cycle_detection walks on resume.
+            dispatched_count_delta: Number of nodes this dispatch added to
+                run-wide count. Summed across all dispatch_applied entries
+                to restore state.dispatched_count.
+        """
+        self._save(
+            event_type="dispatch_applied",
+            node_name=dispatcher_name,
+            status="applied",
+            metadata_={
+                "added_nodes": added_nodes,
+                "removed_targets": removed_targets,
+                "dispatcher_depth": dispatcher_depth,
+                "dispatcher_fingerprint": list(dispatcher_fingerprint),
+                "dispatched_count_delta": dispatched_count_delta,
+            },
+        )
+
     def save_loop_rewind(
         self,
         trigger_node: str,
@@ -215,7 +259,9 @@ class CheckpointService:
         """Replay checkpoint history to reconstruct node_outputs.
 
         Only restores successfully completed nodes — failed and skipped
-        nodes are excluded so they re-run on resume.
+        nodes are excluded so they re-run on resume. Dispatched nodes that
+        were removed via op=remove ARE restored here (as SKIPPED) so the
+        executor still treats them as accounted-for on resume.
         """
         node_outputs: dict[str, NodeResult] = {}
 
@@ -228,10 +274,60 @@ class CheckpointService:
                 for name in cleared:
                     node_outputs.pop(name, None)
 
+            elif cp.event_type == "dispatch_applied":
+                # op=remove targets are recorded so the executor doesn't try
+                # to run them on resume. op=add children don't go here —
+                # they're restored by reconstruct_dispatch_history() as live
+                # Node instances inserted into the workflow's node list.
+                removed = (cp.metadata_ or {}).get("removed_targets", [])
+                for name in removed:
+                    if name not in node_outputs:
+                        node_outputs[name] = NodeResult(
+                            status=Status.SKIPPED,
+                            error=f"removed by dispatch from '{cp.node_name}'",
+                        )
+
             # agent_completed entries are informational —
             # the node_completed entry for the parent stage holds the aggregated result
 
         return node_outputs
+
+    def reconstruct_dispatch_history(
+        self, up_to_sequence: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return every dispatch_applied event in order, for DAG/state resume.
+
+        Each entry is a dict with:
+            dispatcher_name         str
+            added_nodes             list[dict]      (post-render node configs)
+            removed_targets         list[str]
+            dispatcher_depth        int
+            dispatcher_fingerprint  (str, str) tuple
+            dispatched_count_delta  int
+
+        The caller (routes.resume_run) replays these to:
+          1. Materialize added nodes via GraphLoader._resolve_node and insert
+             them into the workflow's node list before execute_graph_with_state
+          2. Restore DispatchRunState fields (depths, parents, fingerprints,
+             dispatched_count) so on-resume dispatches enforce the same caps
+             they would have in the original run
+        """
+        history = self._load_full_history(up_to_sequence)
+        out: list[dict[str, Any]] = []
+        for cp in history:
+            if cp.event_type != "dispatch_applied":
+                continue
+            meta = cp.metadata_ or {}
+            fp = meta.get("dispatcher_fingerprint") or ["", ""]
+            out.append({
+                "dispatcher_name": cp.node_name or "",
+                "added_nodes": list(meta.get("added_nodes", [])),
+                "removed_targets": list(meta.get("removed_targets", [])),
+                "dispatcher_depth": int(meta.get("dispatcher_depth", 0)),
+                "dispatcher_fingerprint": (str(fp[0]), str(fp[1])) if len(fp) >= 2 else ("", ""),
+                "dispatched_count_delta": int(meta.get("dispatched_count_delta", 0)),
+            })
+        return out
 
     # ── Branching ────────────────────────────────────────────────────
 

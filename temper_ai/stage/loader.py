@@ -34,6 +34,26 @@ _NODE_FIELDS = {
     "inputs", "outputs",
 }
 
+# Keys under workflow.defaults that are workflow-scoped — must NOT cascade
+# into agent configs. `dispatch` at workflow level holds safety caps (a dict);
+# `dispatch` at agent level holds ops (a list). Same key, different meanings —
+# merging them corrupts agent configs. `safety` is the workflow-level policy
+# engine config and has no agent-level meaning.
+_WORKFLOW_ONLY_DEFAULTS = {"dispatch", "safety"}
+
+
+def _agent_defaults(defaults: dict) -> dict:
+    """Filter workflow-level defaults to what's safe to merge into an agent's config."""
+    return {k: v for k, v in defaults.items() if k not in _WORKFLOW_ONLY_DEFAULTS}
+
+
+def _is_valid_node_ref_head(head: str) -> bool:
+    """True if `head` parses as a Python-identifier-shaped node name — the
+    shape the executor's resolver treats as a real node ref. Must mirror
+    `executor._looks_like_node_ref`."""
+    import re
+    return bool(re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", head))
+
 
 class GraphLoader:
     """Load and resolve graph configs into executable node trees."""
@@ -147,9 +167,10 @@ class GraphLoader:
         # Resolve each agent ref to a full config dict
         agent_configs = []
         assert nc.agents is not None  # guaranteed by caller check # noqa: B101
+        defaults = _agent_defaults(self._defaults)
         for agent_ref in nc.agents:
             if isinstance(agent_ref, str):
-                agent_config = {**self._defaults, **self._load_agent_config(agent_ref)}
+                agent_config = {**defaults, **self._load_agent_config(agent_ref)}
             elif isinstance(agent_ref, dict):
                 # Inline agent config or ref with overrides
                 if "agent" in agent_ref or "ref" in agent_ref:
@@ -159,9 +180,9 @@ class GraphLoader:
                         k: v for k, v in agent_ref.items()
                         if k not in ("agent", "ref")
                     }
-                    agent_config = {**self._defaults, **base, **overrides}
+                    agent_config = {**defaults, **base, **overrides}
                 else:
-                    agent_config = {**self._defaults, **agent_ref}
+                    agent_config = {**defaults, **agent_ref}
             else:
                 raise LoaderError(
                     f"Invalid agent entry in stage '{nc.name}': {agent_ref}"
@@ -230,8 +251,10 @@ class GraphLoader:
             if value is not None and field_name not in _NODE_FIELDS:
                 overrides[field_name] = value
 
-        # Merge: workflow defaults (lowest) → agent config → node overrides (highest)
-        merged = {**self._defaults, **base, **overrides}
+        # Merge: workflow defaults (lowest) → agent config → node overrides (highest).
+        # Workflow-scoped keys (`dispatch`, `safety`) are filtered out — see
+        # _WORKFLOW_ONLY_DEFAULTS for why.
+        merged = {**_agent_defaults(self._defaults), **base, **overrides}
 
         # Ensure name
         if "name" not in merged:
@@ -311,15 +334,24 @@ class GraphLoader:
                         f"which doesn't exist"
                     )
 
-            # Check input_map source references
+            # Check input_map source references. Strings that don't look
+            # like identifier-shaped refs (sentences, bare literals,
+            # non-strings) are treated as literal values — matches the
+            # executor's _resolve_single_input behavior. Only flag as
+            # errors sources whose head IS identifier-shaped but doesn't
+            # match a real node name.
             if node.config.input_map:
                 for local_name, source in node.config.input_map.items():
+                    if not isinstance(source, str):
+                        continue  # non-string literal — fine
                     parts = source.split(".")
+                    head = parts[0] if parts else ""
+                    if not _is_valid_node_ref_head(head):
+                        continue  # literal like "placeholder" or "a sentence"
                     if len(parts) < 2:
-                        errors.append(
-                            f"Node '{node.name}' input_map '{local_name}' has invalid "
-                            f"source '{source}' (expected 'node_name.field')"
-                        )
+                        # Bare identifier that happens to be identifier-shaped
+                        # — could be a workflow input or just a literal. Don't
+                        # flag — resolver handles both at runtime.
                         continue
                     source_node = parts[0]
                     if source_node not in ("workflow", "input") and source_node not in node_names:
@@ -329,12 +361,42 @@ class GraphLoader:
                             f"Available nodes: {sorted(node_names)}"
                         )
 
+            # Validate dispatch block (if this is an agent node with one)
+            if isinstance(node, AgentNode):
+                dispatch_errors = _validate_dispatch_on_node(
+                    node, node_names, self.config_store,
+                )
+                errors.extend(dispatch_errors)
+
             # Validate child nodes recursively (for StageNodes)
             if isinstance(node, StageNode):
                 child_errors = self._validate(node.child_nodes)
                 errors.extend(child_errors)
 
         return errors
+
+
+def _validate_dispatch_on_node(
+    node: AgentNode,
+    known_node_names: set[str],
+    config_store: Any,
+) -> list[str]:
+    """Run static dispatch-block validation for an agent node.
+
+    Split out so the main _validate loop reads top-to-bottom without an
+    import at line-level inside a nested block. Returns an empty list when
+    the agent has no `dispatch:` key.
+    """
+    from temper_ai.stage.dispatch_validation import validate_dispatch_block
+    agent_config = getattr(node, "agent_config", None) or {}
+    if not agent_config.get("dispatch"):
+        return []
+    return validate_dispatch_block(
+        agent_name=node.name,
+        agent_config=agent_config,
+        config_store=config_store,
+        known_node_names=known_node_names,
+    )
 
 
 def _unwrap_config(raw: dict, config_type: str) -> dict:

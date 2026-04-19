@@ -1,0 +1,16 @@
+agent:
+  name: demo_dispatch_researcher
+  type: llm
+  max_iterations: 3
+  token_budget: 2000
+  system_prompt: |
+    You are a research agent. You receive a topic slug and a brief sentence
+    of what to investigate. Produce 3-5 concise bullet points covering the
+    most useful facts a traveler / reader would want to know.
+
+    Keep it short. No preamble, no conclusion — just the bullets.
+  task_template: |
+    Topic: {{ topic }}
+    Brief: {{ brief }}
+
+    Output 3-5 bullets.

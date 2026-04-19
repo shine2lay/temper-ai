@@ -34,6 +34,8 @@ interface AgentCardContentProps {
   nested?: boolean;
   /** Override border style (e.g., 'dashed' for delegate nodes). */
   borderStyle?: string;
+  /** Prefix glyph to render before the agent name (e.g. '⚡' for dispatched). */
+  namePrefix?: string;
 }
 
 /**
@@ -47,6 +49,7 @@ export const AgentCardContent = memo(function AgentCardContent({
   borderColor,
   nested = false,
   borderStyle,
+  namePrefix,
 }: AgentCardContentProps) {
   const select = useExecutionStore((s) => s.select);
   const streaming = useExecutionStore((s) => s.streamingContent.get(agent.id));
@@ -69,7 +72,8 @@ export const AgentCardContent = memo(function AgentCardContent({
   const hasOutputData = derivedOutputData != null;
   const output = textOutput || (hasOutputData ? JSON.stringify(derivedOutputData, null, 2) : '');
   const hasOutput = output.length > 0;
-  const agentName = agent.agent_name ?? agent.name ?? 'agent';
+  const rawAgentName = agent.agent_name ?? agent.name ?? 'agent';
+  const agentName = namePrefix ? `${namePrefix} ${rawAgentName}` : rawAgentName;
 
   const totalTokens = agent.total_tokens ?? 0;
   const cost = agent.estimated_cost_usd ?? 0;

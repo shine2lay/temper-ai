@@ -340,6 +340,73 @@ class TestGraphLoaderDefaults:
         nodes, _ = loader.load_workflow("test")
         assert nodes[0].agent_config["provider"] == "openai"
 
+    def test_workflow_dispatch_caps_dont_leak_into_agent_config(self):
+        """workflow.defaults.dispatch holds SAFETY CAPS (a dict). agent.dispatch
+        holds OPS (a list). Same key, different meanings — merging the caps
+        dict into an agent config as `dispatch` then trips the dispatch
+        renderer into 'dispatch: must be a list, got dict'. Fix: filter
+        `dispatch` and `safety` out of workflow defaults when merging into
+        per-agent configs."""
+        store = _mock_config_store({
+            "workflow:test": {
+                "name": "test",
+                "defaults": {
+                    "provider": "vllm",
+                    "dispatch": {"max_children_per_dispatch": 5},
+                },
+                "nodes": [{"name": "a", "type": "agent", "agent": "agents/a"}],
+            },
+            "agent:a": {"name": "a", "type": "llm"},
+        })
+        loader = GraphLoader(store)
+        nodes, _ = loader.load_workflow("test")
+        # Provider default still cascades
+        assert nodes[0].agent_config["provider"] == "vllm"
+        # Workflow-scoped dispatch caps don't leak
+        assert "dispatch" not in nodes[0].agent_config
+
+    def test_agent_level_dispatch_ops_preserved(self):
+        """If the AGENT's own config declares `dispatch: [ops]`, that stays.
+        Workflow-level defaults can't clobber it even if they also have a
+        `dispatch:` key (the filter runs on defaults, not on agent)."""
+        store = _mock_config_store({
+            "workflow:test": {
+                "name": "test",
+                "defaults": {
+                    "provider": "vllm",
+                    "dispatch": {"max_children_per_dispatch": 5},
+                },
+                "nodes": [{"name": "a", "type": "agent", "agent": "agents/a"}],
+            },
+            "agent:a": {
+                "name": "a", "type": "llm",
+                "dispatch": [{"op": "add", "node": {"name": "c", "agent": "x"}}],
+            },
+        })
+        loader = GraphLoader(store)
+        nodes, _ = loader.load_workflow("test")
+        # Agent-level ops survived
+        assert isinstance(nodes[0].agent_config["dispatch"], list)
+        assert nodes[0].agent_config["dispatch"][0]["op"] == "add"
+
+    def test_workflow_safety_doesnt_leak_into_agents(self):
+        """Same treatment for `safety` — it's workflow-scoped policy config,
+        not agent metadata."""
+        store = _mock_config_store({
+            "workflow:test": {
+                "name": "test",
+                "defaults": {
+                    "provider": "vllm",
+                    "safety": {"policies": [{"type": "budget", "max_cost_usd": 5}]},
+                },
+                "nodes": [{"name": "a", "type": "agent", "agent": "agents/a"}],
+            },
+            "agent:a": {"name": "a", "type": "llm"},
+        })
+        loader = GraphLoader(store)
+        nodes, _ = loader.load_workflow("test")
+        assert "safety" not in nodes[0].agent_config
+
 
 class TestGraphLoaderInputMapValidation:
     def test_valid_input_map(self):
@@ -382,8 +449,10 @@ class TestGraphLoaderInputMapValidation:
             },
         })
         loader = GraphLoader(store)
-        with pytest.raises(ValidationError, match="invalid source.*expected 'node_name.field'"):
-            loader.load_workflow("test")
+        # Bare identifiers are valid — resolver treats them as workflow-input
+        # keys at runtime, else as literals. No error at load time.
+        nodes, _ = loader.load_workflow("test")
+        assert nodes[0].config.input_map == {"task": "bad_no_dot"}
 
     def test_input_map_nonexistent_source_node(self):
         store = _mock_config_store({

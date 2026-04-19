@@ -161,6 +161,8 @@ Workflow
 
 **Strategy** — how agents within a stage are wired. See [Strategies Reference](docs/reference/strategies/index.md).
 
+**Dispatch** — an agent can mutate the running DAG at runtime based on its own reasoning. Add new nodes, remove pending ones, replace existing ones (remove + re-add with same name). Two tiers: declarative (`dispatch:` block in agent YAML, Jinja-rendered against the agent's output) and imperative (`AddNode` / `RemoveNode` tools the agent calls). Cap-enforced, resume-safe, observable. See [llms.txt §13b](llms.txt) and `configs/workflows/demo_dispatch*.yaml` for runnable examples.
+
 ---
 
 ## Your First Workflow

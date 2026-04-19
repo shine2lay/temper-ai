@@ -408,6 +408,102 @@ class TestGraphLoaderDefaults:
         assert "safety" not in nodes[0].agent_config
 
 
+class TestGraphLoaderCLIOverrides:
+    """CLI flags like --provider / --model set loader._overrides, which must
+    win over workflow defaults, agent config, and node-level overrides."""
+
+    def test_override_beats_agent_config(self):
+        store = _mock_config_store({
+            "workflow:test": {
+                "name": "test",
+                "defaults": {"provider": "vllm", "model": "qwen3"},
+                "nodes": [{"name": "a", "type": "agent", "agent": "agents/a"}],
+            },
+            "agent:a": {
+                "name": "a", "type": "llm",
+                "provider": "openai", "model": "gpt-4o",
+            },
+        })
+        loader = GraphLoader(store)
+        loader._overrides = {"provider": "claude", "model": "opus"}
+        nodes, _ = loader.load_workflow("test")
+        assert nodes[0].agent_config["provider"] == "claude"
+        assert nodes[0].agent_config["model"] == "opus"
+
+    def test_override_beats_node_override(self):
+        store = _mock_config_store({
+            "workflow:test": {
+                "name": "test",
+                "nodes": [{
+                    "name": "a", "type": "agent", "agent": "agents/a",
+                    "model": "gpt-4o-mini",
+                }],
+            },
+            "agent:a": {"name": "a", "type": "llm", "provider": "openai"},
+        })
+        loader = GraphLoader(store)
+        loader._overrides = {"provider": "claude", "model": "opus"}
+        nodes, _ = loader.load_workflow("test")
+        assert nodes[0].agent_config["provider"] == "claude"
+        assert nodes[0].agent_config["model"] == "opus"
+
+    def test_partial_override_keeps_other_fields(self):
+        store = _mock_config_store({
+            "workflow:test": {
+                "name": "test",
+                "defaults": {"provider": "vllm", "model": "qwen3"},
+                "nodes": [{"name": "a", "type": "agent", "agent": "agents/a"}],
+            },
+            "agent:a": {"name": "a", "type": "llm"},
+        })
+        loader = GraphLoader(store)
+        loader._overrides = {"provider": "claude"}  # model left alone
+        nodes, _ = loader.load_workflow("test")
+        assert nodes[0].agent_config["provider"] == "claude"
+        assert nodes[0].agent_config["model"] == "qwen3"
+
+    def test_override_applies_to_strategy_agents(self):
+        store = _mock_config_store({
+            "workflow:test": {
+                "name": "test",
+                "nodes": [{
+                    "name": "review", "type": "stage", "strategy": "parallel",
+                    "agents": [
+                        "agents/a",
+                        {"agent": "agents/b", "model": "inline-override"},
+                    ],
+                }],
+            },
+            "agent:a": {"name": "a", "type": "llm", "provider": "openai"},
+            "agent:b": {"name": "b", "type": "llm", "provider": "openai"},
+        })
+        loader = GraphLoader(store)
+        loader._overrides = {"provider": "claude", "model": "opus"}
+        nodes, _ = loader.load_workflow("test")
+        stage = nodes[0]
+        # String-ref agent: override wins over agent config's provider
+        assert stage.child_nodes[0].agent_config["provider"] == "claude"
+        assert stage.child_nodes[0].agent_config["model"] == "opus"
+        # Dict-ref agent with inline model override: CLI override still wins
+        assert stage.child_nodes[1].agent_config["provider"] == "claude"
+        assert stage.child_nodes[1].agent_config["model"] == "opus"
+
+    def test_no_overrides_is_noop(self):
+        store = _mock_config_store({
+            "workflow:test": {
+                "name": "test",
+                "defaults": {"provider": "vllm", "model": "qwen3"},
+                "nodes": [{"name": "a", "type": "agent", "agent": "agents/a"}],
+            },
+            "agent:a": {"name": "a", "type": "llm"},
+        })
+        loader = GraphLoader(store)
+        # No _overrides set → defaults behavior intact
+        nodes, _ = loader.load_workflow("test")
+        assert nodes[0].agent_config["provider"] == "vllm"
+        assert nodes[0].agent_config["model"] == "qwen3"
+
+
 class TestGraphLoaderInputMapValidation:
     def test_valid_input_map(self):
         store = _mock_config_store({

@@ -20,13 +20,14 @@ import { StageNode } from './StageNode';
 import { AgentNodeComponent } from './AgentNodeComponent';
 import { StageGroupNode } from './StageGroupNode';
 import { LoopBackEdge } from './LoopBackEdge';
+import { DispatchEdge } from './DispatchEdge';
 
 const nodeTypes = {
   stage: StageNode,
   agentNode: AgentNodeComponent,
   stageGroup: StageGroupNode,
 };
-const edgeTypes = { loopBack: LoopBackEdge };
+const edgeTypes = { loopBack: LoopBackEdge, dispatch: DispatchEdge };
 const RELAYOUT_DELAY_MS = 150;
 
 /**

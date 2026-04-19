@@ -1,0 +1,98 @@
+#!/bin/bash
+# Pre-commit hook — runs the same checks as .github/workflows/ci.yml so CI
+# failures surface locally before push. Scoped to staged files for ruff/mypy
+# (grandfathers the existing baseline of pre-existing errors); pytest runs
+# the full suite because tests can break from changes anywhere.
+#
+# Bypass with `git commit --no-verify` if you must.
+#
+# Install: ./scripts/install-git-hooks.sh
+# or: git config core.hooksPath scripts/git-hooks
+
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+PASS="\033[0;32m✓\033[0m"
+FAIL="\033[0;31m✗\033[0m"
+
+# ─── 0. Docs regeneration (existing behavior) ─────────────────────────────
+RELEVANT_PATHS=(
+    "temper_ai/tools/"
+    "temper_ai/llm/providers/"
+    "temper_ai/agent/"
+    "temper_ai/safety/"
+    "temper_ai/stage/topology.py"
+    "scripts/generate_docs.py"
+)
+
+docs_needed=false
+for path in "${RELEVANT_PATHS[@]}"; do
+    if git diff --cached --name-only | grep -q "^${path}"; then
+        docs_needed=true
+        break
+    fi
+done
+
+if [ "$docs_needed" = true ]; then
+    echo "Source files changed — regenerating docs..."
+    if ! PYTHONPATH="$REPO_ROOT" python3 "$REPO_ROOT/scripts/generate_docs.py" 2>&1; then
+        echo -e "$FAIL Doc generation failed. Commit aborted."
+        exit 1
+    fi
+    git add "$REPO_ROOT/docs/reference/"
+    echo -e "$PASS Docs regenerated and staged."
+fi
+
+# ─── 1. ruff (staged *.py files only) ──────────────────────────────────────
+STAGED_PY=$(git diff --cached --name-only --diff-filter=ACM -- '*.py' || true)
+
+if [ -n "$STAGED_PY" ]; then
+    echo "Running ruff check on staged files..."
+    # shellcheck disable=SC2086  (word splitting is intentional)
+    if ! ruff check $STAGED_PY; then
+        echo ""
+        echo -e "$FAIL ruff check failed on staged files."
+        echo "   Try: ruff check --fix \$(git diff --cached --name-only --diff-filter=ACM -- '*.py')"
+        echo "   Or bypass: git commit --no-verify"
+        exit 1
+    fi
+    echo -e "$PASS ruff check passed on $(echo "$STAGED_PY" | wc -w) file(s)."
+fi
+
+# ─── 2. mypy (staged files in temper_ai/ only) ─────────────────────────────
+STAGED_TEMPER=$(echo "$STAGED_PY" | tr ' ' '\n' | grep '^temper_ai/' || true)
+
+if [ -n "$STAGED_TEMPER" ]; then
+    echo "Running mypy on staged temper_ai files..."
+    # shellcheck disable=SC2086
+    if ! mypy $STAGED_TEMPER --ignore-missing-imports --follow-imports=silent --no-error-summary 2>&1; then
+        echo ""
+        echo -e "$FAIL mypy failed on staged files."
+        echo "   Bypass: git commit --no-verify"
+        exit 1
+    fi
+    echo -e "$PASS mypy passed on $(echo "$STAGED_TEMPER" | wc -w) file(s)."
+fi
+
+# ─── 3. pytest (full suite) ────────────────────────────────────────────────
+# CI runs `pytest tests/ -x --timeout=60`. We mirror that but skip
+# tests/test_database/ since local dev may not have Postgres running (CI has
+# a Postgres service container). Set PRECOMMIT_RUN_DB=1 to include them.
+PYTEST_ARGS="tests/ -x --timeout=60 -q --no-header"
+if [ -z "${PRECOMMIT_RUN_DB:-}" ]; then
+    PYTEST_ARGS="$PYTEST_ARGS --ignore=tests/test_database"
+fi
+
+echo "Running pytest..."
+# shellcheck disable=SC2086
+if ! pytest $PYTEST_ARGS 2>&1 | tail -20; then
+    echo ""
+    echo -e "$FAIL pytest failed."
+    echo "   Bypass: git commit --no-verify"
+    exit 1
+fi
+echo -e "$PASS pytest passed."
+
+echo -e "$PASS All pre-commit checks passed."

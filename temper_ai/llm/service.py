@@ -172,6 +172,12 @@ class LLMService:
             kwargs["cwd"] = self._ctx.cwd
         if self._ctx.model:
             kwargs["model"] = self._ctx.model
+        # Forward any provider-specific config from the agent YAML. Opaque to
+        # the service — each provider reads whichever keys it understands and
+        # ignores the rest. Named kwargs above win on collision.
+        if self._ctx.provider_config:
+            for key, value in self._ctx.provider_config.items():
+                kwargs.setdefault(key, value)
         if self._stream_callback:
             return self.provider.stream(self._messages, on_chunk=self._stream_callback, **kwargs)
         return self.provider.complete(self._messages, **kwargs)

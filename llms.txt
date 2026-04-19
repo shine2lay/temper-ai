@@ -462,6 +462,73 @@ Works in system_prompt, task_template, script_template, MCP server args, etc.
 
 ---
 
+## 13b. Dynamic Dispatch (runtime DAG mutation)
+
+An agent can grow the DAG at runtime based on its own reasoning. Two tiers.
+
+**Tier 1 — Declarative** (in agent YAML). Jinja-templated block rendered
+against the agent's output after it completes:
+
+```yaml
+agent:
+  name: scout
+  type: llm
+  # ... system_prompt, etc ...
+  dispatch:
+    - op: add
+      for_each: structured.topics      # list from agent's structured output
+      as: topic
+      node:
+        name: "research_{{ topic.name }}"
+        type: agent
+        agent: demo_dispatch_researcher
+        input_map:
+          topic: "{{ topic.name }}"
+          brief: "{{ topic.brief }}"
+```
+
+Ops: `add` (single `node:` or subgraph `nodes:`), `remove` (`target:`).
+`for_each` accepts a list, an int, or a scope path (`input.*`,
+`output.*`, `structured.*`).
+
+**Tier 2 — Tool-call** (imperative). Agent calls `AddNode` / `RemoveNode`
+tools during its run:
+
+```yaml
+agent:
+  name: reactive_scout
+  tools: [AddNode, RemoveNode, QueryRunState]
+```
+
+Both tiers can be combined on the same agent. Engine merges ops atomically
+after the agent completes.
+
+**Safety caps** (workflow defaults):
+
+```yaml
+workflow:
+  defaults:
+    dispatch:
+      max_children_per_dispatch: 20
+      max_dynamic_nodes: 200
+      max_dispatch_depth: 3
+      cycle_detection: true
+```
+
+**Events:** `dispatch.applied` (success), `dispatch.cap_exceeded` (cap
+breach) surface in the run timeline.
+
+**Resume:** dispatch outcomes are checkpointed — a crashed run reloads
+with dispatched nodes intact.
+
+**Out of scope for v1:** replace op (compose via remove + add), nested
+`type: template` inside a dispatched subgraph, `loop_to:` on a
+dispatched node.
+
+Working demo: `configs/workflows/demo_dispatch.yaml`.
+
+---
+
 ## 14. Config File Locations
 
 ```

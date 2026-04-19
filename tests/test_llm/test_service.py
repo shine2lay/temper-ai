@@ -581,3 +581,72 @@ class TestMessagesPassed:
         )
 
         assert provider.calls[0]["kwargs"]["tools"] == tools
+
+
+class TestProviderConfigPassthrough:
+    """CallContext.provider_config is forwarded to the provider as **kwargs
+    without core interpreting the keys — this is how gitignored providers
+    (e.g. Claude Code in local/) receive their per-call config from agent YAML."""
+
+    def test_provider_config_keys_passed_as_kwargs(self):
+        provider = MockProvider([_make_text_response("Hi")])
+        service = LLMService(provider)
+        ctx = CallContext(provider_config={"system_prompt_mode": "replace"})
+
+        service.run([{"role": "user", "content": "Hi"}], context=ctx)
+
+        kwargs = provider.calls[0]["kwargs"]
+        assert kwargs["system_prompt_mode"] == "replace"
+
+    def test_multiple_keys_passed_through(self):
+        provider = MockProvider([_make_text_response("Hi")])
+        service = LLMService(provider)
+        ctx = CallContext(provider_config={
+            "custom_flag": True,
+            "system_prompt_mode": "append",
+            "retry_budget": 3,
+        })
+
+        service.run([{"role": "user", "content": "Hi"}], context=ctx)
+
+        kwargs = provider.calls[0]["kwargs"]
+        assert kwargs["custom_flag"] is True
+        assert kwargs["system_prompt_mode"] == "append"
+        assert kwargs["retry_budget"] == 3
+
+    def test_no_provider_config_is_noop(self):
+        """Default CallContext doesn't add anything to kwargs."""
+        provider = MockProvider([_make_text_response("Hi")])
+        service = LLMService(provider)
+
+        service.run([{"role": "user", "content": "Hi"}], context=CallContext())
+
+        kwargs = provider.calls[0]["kwargs"]
+        # Only baseline kwargs (none for a bare CallContext) — no provider_config
+        assert "system_prompt_mode" not in kwargs
+
+    def test_named_kwarg_wins_over_provider_config(self):
+        """If an agent's provider_config collides with a named CallContext
+        field (e.g. model), the named field wins. Prevents provider_config
+        from silently overriding first-class options."""
+        provider = MockProvider([_make_text_response("Hi")])
+        service = LLMService(provider)
+        ctx = CallContext(
+            model="named-model",
+            provider_config={"model": "config-model"},
+        )
+
+        service.run([{"role": "user", "content": "Hi"}], context=ctx)
+
+        assert provider.calls[0]["kwargs"]["model"] == "named-model"
+
+    def test_empty_provider_config_is_noop(self):
+        provider = MockProvider([_make_text_response("Hi")])
+        service = LLMService(provider)
+        ctx = CallContext(provider_config={})
+
+        service.run([{"role": "user", "content": "Hi"}], context=ctx)
+
+        kwargs = provider.calls[0]["kwargs"]
+        # No extras beyond what other fields add
+        assert kwargs.get("custom_flag") is None

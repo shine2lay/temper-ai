@@ -55,3 +55,7 @@ class EventType(StrEnum):
 
     # Streaming
     LLM_STREAM_CHUNK = "llm.stream.chunk"
+
+    # Runtime dispatch — dynamic DAG mutation (see stage/dispatch.py)
+    DISPATCH_APPLIED = "dispatch.applied"
+    DISPATCH_CAP_EXCEEDED = "dispatch.cap_exceeded"

@@ -270,6 +270,185 @@ class TestExecuteGraph:
         # Parent reference is unchanged; sub-run did not clobber it
         assert ctx.run_state is parent_state
 
+
+# --- Declarative Dispatch (tier 1) integration ---
+
+
+def _make_dispatcher_node(name, dispatch_block, structured_output=None, output="done"):
+    """AgentNode whose agent_config has a `dispatch:` block and whose run()
+    returns a fixed result. Used to test executor integration of dispatch."""
+    nc = NodeConfig(name=name)
+    agent_config = {"name": name, "type": "llm", "dispatch": dispatch_block}
+    node = AgentNode(nc, agent_config)
+    result = NodeResult(
+        status=Status.COMPLETED,
+        output=output,
+        structured_output=structured_output,
+        agent_results=[
+            AgentResult(
+                status=Status.COMPLETED,
+                output=output,
+                structured_output=structured_output,
+                tokens=TokenUsage(total_tokens=100),
+            )
+        ],
+    )
+    node.run = MagicMock(return_value=result)
+    return node
+
+
+class _StubGraphLoader:
+    """Minimal graph_loader stand-in: hands back pre-built nodes keyed by the
+    rendered node name. Lets executor tests run dispatch without config store."""
+
+    def __init__(self, nodes_by_name: dict):
+        self._nodes = nodes_by_name
+        self.resolved: list[str] = []   # observability: which names were asked for
+
+    def _resolve_node(self, nc):
+        self.resolved.append(nc.name)
+        if nc.name not in self._nodes:
+            raise ValueError(f"Stub loader has no node for {nc.name!r}")
+        return self._nodes[nc.name]
+
+
+class TestDeclarativeDispatch:
+    def test_add_single_node_via_dispatch_runs_it(self):
+        """An agent with dispatch: add -> new node materializes and runs."""
+        dispatch_block = [
+            {"op": "add", "node": {"name": "spawned", "agent": "x"}}
+        ]
+        dispatcher = _make_dispatcher_node("parent", dispatch_block)
+        spawned = _make_agent_node("spawned", output="spawned-ran")
+
+        ctx = _make_context()
+        ctx.graph_loader = _StubGraphLoader({"spawned": spawned})
+
+        result = execute_graph([dispatcher], {}, ctx, graph_name="test")
+        assert result.status == Status.COMPLETED
+        assert dispatcher.run.called
+        assert spawned.run.called
+        # Spawned node's output is visible in run_state
+        assert ctx.run_state["spawned"].output == "spawned-ran"
+
+    def test_for_each_fans_out_multiple_nodes(self):
+        """Dispatch with for_each over structured output spawns one node per item."""
+        dispatch_block = [
+            {
+                "op": "add",
+                "for_each": "structured.cities",
+                "node": {"name": "{{ item.city }}_research", "agent": "researcher"},
+            }
+        ]
+        dispatcher = _make_dispatcher_node(
+            "allocator", dispatch_block,
+            structured_output={
+                "cities": [{"city": "Tokyo"}, {"city": "Kyoto"}, {"city": "Osaka"}]
+            },
+        )
+        tokyo = _make_agent_node("Tokyo_research", output="t")
+        kyoto = _make_agent_node("Kyoto_research", output="k")
+        osaka = _make_agent_node("Osaka_research", output="o")
+
+        ctx = _make_context()
+        ctx.graph_loader = _StubGraphLoader({
+            "Tokyo_research": tokyo,
+            "Kyoto_research": kyoto,
+            "Osaka_research": osaka,
+        })
+
+        result = execute_graph([dispatcher], {}, ctx, graph_name="test")
+        assert result.status == Status.COMPLETED
+        for n in (tokyo, kyoto, osaka):
+            assert n.run.called
+        assert {"Tokyo_research", "Kyoto_research", "Osaka_research"} <= set(ctx.run_state)
+
+    def test_remove_marks_pending_node_skipped(self):
+        """op=remove on a pending node — target appears as SKIPPED and doesn't run."""
+        dispatch_block = [{"op": "remove", "target": "placeholder"}]
+        dispatcher = _make_dispatcher_node("killer", dispatch_block)
+        placeholder = _make_agent_node("placeholder", output="should-not-run")
+        # placeholder has no depends_on — it would run in parallel with dispatcher
+        # but parallel-batch execution would run it first before dispatch fires.
+        # Make it a downstream instead, so it's still pending when dispatch runs.
+        placeholder.config.depends_on = ["killer"]
+
+        ctx = _make_context()
+        ctx.graph_loader = _StubGraphLoader({})
+
+        execute_graph([dispatcher, placeholder], {}, ctx, graph_name="test")
+        assert dispatcher.run.called
+        assert not placeholder.run.called
+        assert ctx.run_state["placeholder"].status == Status.SKIPPED
+
+    def test_dispatch_skipped_when_agent_failed(self):
+        """A failing dispatcher doesn't trigger dispatch (output unreliable)."""
+        dispatch_block = [{"op": "add", "node": {"name": "spawned", "agent": "x"}}]
+        dispatcher = _make_dispatcher_node("fail_parent", dispatch_block)
+        # Override dispatcher's run to return FAILED
+        dispatcher.run.return_value = NodeResult(
+            status=Status.FAILED, output="", error="boom"
+        )
+        spawned = _make_agent_node("spawned")
+
+        ctx = _make_context()
+        ctx.graph_loader = _StubGraphLoader({"spawned": spawned})
+
+        execute_graph([dispatcher], {}, ctx, graph_name="test")
+        assert dispatcher.run.called
+        assert not spawned.run.called
+
+    def test_dispatch_warns_without_graph_loader(self, caplog):
+        """If graph_loader isn't set on context, dispatch logs a warning and
+        proceeds without mutating. The dispatcher's own output is still produced."""
+        dispatch_block = [{"op": "add", "node": {"name": "spawned", "agent": "x"}}]
+        dispatcher = _make_dispatcher_node("parent", dispatch_block, output="parent-ran")
+
+        ctx = _make_context()   # no graph_loader set
+        import logging as _lg
+        with caplog.at_level(_lg.WARNING):
+            result = execute_graph([dispatcher], {}, ctx, graph_name="test")
+        assert result.status == Status.COMPLETED
+        assert any("dispatch skipped" in r.message for r in caplog.records)
+
+    def test_dispatch_bad_subgraph_fails_run(self):
+        """A node dict that already exists in the DAG surfaces as a run failure."""
+        dispatch_block = [
+            {"op": "add", "node": {"name": "conflict", "agent": "x"}}
+        ]
+        dispatcher = _make_dispatcher_node("parent", dispatch_block)
+        existing = _make_agent_node("conflict", output="ok")  # same name
+
+        ctx = _make_context()
+        ctx.graph_loader = _StubGraphLoader({"conflict": _make_agent_node("conflict")})
+
+        result = execute_graph([dispatcher, existing], {}, ctx, graph_name="test")
+        # Either failed overall or one of the nodes captured the error —
+        # the important thing is the run surfaces the conflict.
+        assert "conflict" in (result.error or "") or result.status == Status.FAILED
+
+    def test_dispatched_node_can_depend_on_existing_node(self):
+        """A dispatched node with depends_on referencing an existing
+        already-completed node runs after that node. Order preserved by the
+        executor even though topology was mutated mid-run."""
+        dispatch_block = [
+            {
+                "op": "add",
+                "node": {"name": "followup", "agent": "f",
+                         "depends_on": ["parent"]},
+            }
+        ]
+        dispatcher = _make_dispatcher_node("parent", dispatch_block, output="p-ran")
+        followup = _make_agent_node("followup", output="f-ran", depends_on=["parent"])
+
+        ctx = _make_context()
+        ctx.graph_loader = _StubGraphLoader({"followup": followup})
+
+        execute_graph([dispatcher], {}, ctx, graph_name="test")
+        assert dispatcher.run.called
+        assert followup.run.called
+        assert ctx.run_state["followup"].output == "f-ran"
+
     def test_condition_skip(self):
         a = _make_agent_node(
             "a",

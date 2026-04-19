@@ -63,6 +63,14 @@ def execute_graph(
     # Store graph event ID on context so Delegate tool can parent child nodes to the DAG
     context.graph_event_id = graph_event_id
 
+    # Expose live node_outputs to tools that need to introspect run state
+    # (e.g. QueryRunState). Shared reference — updates become visible to tools
+    # as nodes complete. Only the top-level workflow call seeds this; nested
+    # stage executions inherit the existing reference so a sub-stage's tools
+    # see the full run, not just their sub-stage's outputs.
+    if context.run_state is None:
+        context.run_state = node_outputs
+
     try:
         _run_batches(batches, node_map, input_data, node_outputs, loop_counts, context, graph_event_id)
         return _build_final_result(nodes, node_outputs, input_data, start, graph_event_id, context, workflow_outputs)

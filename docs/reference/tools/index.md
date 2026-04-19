@@ -4,7 +4,7 @@
 
 _Auto-generated from code. Do not edit manually._
 
-Temper AI includes **9 built-in tools**. Agents reference tools by name in their [agent config](../agents/llm.md).
+Temper AI includes **10 built-in tools**. Agents reference tools by name in their [agent config](../agents/llm.md).
 
 Tool execution is gated by [safety policies](../policies/index.md) — see [File Access](../policies/file_access.md) and [Forbidden Ops](../policies/forbidden_ops.md).
 
@@ -16,6 +16,7 @@ Tool execution is gated by [safety policies](../policies/index.md) — see [File
 | [`FileAppend`](fileappend.md) | Append text to the end of a file. The file must already exist. Use this instead of FileWriter when you want to add a new section to an existing file without rewriting it. |
 | [`FileEdit`](fileedit.md) | Replace exact text in an existing file. Provide the exact text to find (old_text) and what to replace it with (new_text). The old_text must match exactly once in the file, including whitespace and indentation. Include a few surrounding lines in old_text to make it unique. Use replace_all=true to replace all occurrences (e.g., renaming a variable). |
 | [`FileWriter`](filewriter.md) | Write content to a file. Creates parent directories if needed. |
+| [`QueryRunState`](queryrunstate.md) | Return the state of nodes in the current workflow run. Returns a JSON list of nodes with their status ('running', 'completed', 'failed') and, for completed nodes, their output and structured_output. Use this to discover what upstream nodes have produced before making decisions — e.g. before dispatching new work based on earlier agents' results. Outputs are truncated by default; pass truncate_chars=0 to disable. |
 | [`WebSearch`](websearch.md) | Search the web. Returns titles, URLs, and snippets for the query. |
 | [`git`](git.md) | Run git commands in the workspace (status, diff, add, commit, push, etc.) |
 | [`http`](http.md) | Make HTTP requests to APIs. Returns status code and response body. |

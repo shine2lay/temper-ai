@@ -360,10 +360,16 @@ class LLMAgent(AgentABC):
 
     def _make_tool_executor(self, context: ExecutionContext):
         """Create a tool executor function compatible with LLMService."""
-        # Keep Delegate tool's context in sync with the agent's context
-        delegate = context.tool_executor.get_tool("Delegate") if context.tool_executor else None
-        if delegate and hasattr(delegate, "bind_context"):
-            delegate.bind_context(context)
+        # Bind the execution context to any tool that declares bind_context.
+        # Used by Delegate (to run sub-agents), QueryRunState (to read live
+        # node_outputs), and any future tool that needs the current run's state.
+        te = context.tool_executor
+        if te is not None:
+            tool_names = self.config.get("tools", []) or []
+            for tool_name in tool_names:
+                tool = te.get_tool(tool_name)
+                if tool is not None and hasattr(tool, "bind_context"):
+                    tool.bind_context(context)
 
         def execute_tool(tool_name: str, params: dict[str, Any]) -> Any:
             result = context.tool_executor.execute(

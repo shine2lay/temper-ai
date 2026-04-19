@@ -11,6 +11,7 @@ from temper_ai.tools.file_writer import FileWriter
 from temper_ai.tools.git import Git
 from temper_ai.tools.http import Http
 from temper_ai.tools.loader import load_tools
+from temper_ai.tools.query_run_state import QueryRunState
 from temper_ai.tools.web_search import WebSearch
 
 # Static registry of all available tool classes.
@@ -24,6 +25,7 @@ TOOL_CLASSES: dict[str, type[BaseTool]] = {
     "FileWriter": FileWriter,
     "git": Git,
     "http": Http,
+    "QueryRunState": QueryRunState,
     "WebSearch": WebSearch,
 }
 

@@ -490,7 +490,15 @@ def _apply_declarative_dispatch(
     if result.status == Status.FAILED:
         return
     agent_config = getattr(node, "agent_config", None) or {}
-    if not agent_config.get("dispatch"):
+
+    # Tier 2 (tool-call) dispatch leaves ops on dispatch_state.pending_ops
+    # keyed by node_path. Tier 1 (declarative) lives in agent_config["dispatch"].
+    # Early-return only if BOTH sources are empty — otherwise we need to run
+    # the full path so cap enforcement + graph_loader wiring both execute.
+    has_declarative = bool(agent_config.get("dispatch"))
+    existing_state = getattr(context, "dispatch_state", None)
+    has_tool_call_ops = _has_pending_tool_call_ops(existing_state, context, node)
+    if not has_declarative and not has_tool_call_ops:
         return
     loader = getattr(context, "graph_loader", None)
     if loader is None:
@@ -524,6 +532,12 @@ def _apply_declarative_dispatch(
     except DispatchRenderError as exc:
         logger.error("Dispatch render failed for '%s': %s", node.name, exc)
         raise
+
+    # Tier 2: drain any tool-call ops (AddNode / RemoveNode) accumulated
+    # during this agent's run. They merge with tier-1 declarative ops and
+    # go through the same cap enforcement + validation path below.
+    tool_call_ops = _drain_tool_call_ops(state, context, node)
+    ops = list(ops) + tool_call_ops
 
     if not ops:
         return
@@ -581,6 +595,40 @@ def _apply_declarative_dispatch(
             node.name, len(new_nodes), len(new_batches),
             [n.name for n in new_nodes],
         )
+
+
+def _has_pending_tool_call_ops(state: Any, context: ExecutionContext, node: Node) -> bool:
+    """Peek at state.pending_ops without draining — same key-lookup logic as
+    _drain_tool_call_ops. Used to decide whether to skip the dispatch path
+    entirely when an agent has neither declarative nor tool-call ops."""
+    if state is None or not getattr(state, "pending_ops", None):
+        return False
+    parent_path = getattr(context, "node_path", "") or ""
+    agent_path = f"{parent_path}.{node.name}" if parent_path else node.name
+    buckets = state.pending_ops
+    return bool(buckets.get(agent_path) or buckets.get(node.name))
+
+
+def _drain_tool_call_ops(state: Any, context: ExecutionContext, node: Node) -> list[Any]:
+    """Pop any ops that AddNode/RemoveNode queued during this node's agent run.
+
+    Tier 2 tools write to `state.pending_ops[node_path]`. The path they use
+    comes from the agent's CallContext (set by AgentNode.run via
+    `replace(context, node_path=f"{parent}.{name}", ...)`). We reconstruct
+    the same path here so we drain the right bucket.
+
+    Returns [] when no tools were called — most nodes won't use tier 2.
+    """
+    if state is None or not getattr(state, "pending_ops", None):
+        return []
+    parent_path = getattr(context, "node_path", "") or ""
+    agent_path = f"{parent_path}.{node.name}" if parent_path else node.name
+    # Try the canonical path first; fall back to just node.name for nodes
+    # where the CallContext wasn't derived from a parent-path context.
+    ops = state.pending_ops.pop(agent_path, None)
+    if ops is None:
+        ops = state.pending_ops.pop(node.name, [])
+    return ops or []
 
 
 def _enforce_caps_and_build(

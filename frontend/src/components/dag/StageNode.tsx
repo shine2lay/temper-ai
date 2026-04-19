@@ -29,7 +29,13 @@ export const StageNode = memo(function StageNode({ data }: NodeProps) {
     strategy,
     totalTokens,
     totalCost,
+    dispatchedBy,
+    dispatchedChildren,
+    removedChildren,
   } = data as StageNodeData;
+  const hasDispatchedChildren = !!(dispatchedChildren && dispatchedChildren.length > 0);
+  const hasRemovedChildren = !!(removedChildren && removedChildren.length > 0);
+  const isDispatcher = hasDispatchedChildren || hasRemovedChildren;
 
   const select = useExecutionStore((s) => s.select);
   const openStageDetail = useExecutionStore((s) => s.openStageDetail);
@@ -54,13 +60,17 @@ export const StageNode = memo(function StageNode({ data }: NodeProps) {
   const hasCollaboration = (currentStage.collaboration_events ?? []).length > 0;
   const failedCount = currentStage.num_agents_failed ?? 0;
 
+  const effectiveBorder = dispatchedBy ? '#f59e0b' : borderColor;
+  const borderWidth = dispatchedBy ? 3 : 2;
+
   return (
     <div
-      className="rounded-lg cursor-pointer focus:outline-none focus:ring-2 focus:ring-temper-accent/50 focus:ring-offset-1 focus:ring-offset-temper-panel"
+      className="relative rounded-lg cursor-pointer focus:outline-none focus:ring-2 focus:ring-temper-accent/50 focus:ring-offset-1 focus:ring-offset-temper-panel"
       style={{
-        border: `2px solid ${borderColor}`,
-        backgroundColor: bgColor,
+        border: `${borderWidth}px solid ${effectiveBorder}`,
+        backgroundColor: dispatchedBy ? 'rgba(245, 158, 11, 0.05)' : bgColor,
         minWidth: '260px',
+        boxShadow: dispatchedBy ? '0 0 0 1px rgba(245, 158, 11, 0.3)' : undefined,
       }}
       role="button"
       tabIndex={0}
@@ -92,10 +102,36 @@ export const StageNode = memo(function StageNode({ data }: NodeProps) {
         {/* Stage name */}
         <span
           className="text-sm font-bold truncate"
-          style={{ color: stageColor }}
+          style={{ color: dispatchedBy ? '#f59e0b' : stageColor }}
         >
-          {stageName}
+          {dispatchedBy ? '⚡ ' : ''}{stageName}
         </span>
+
+        {/* Dispatched-stage badge (inline, right after the name) */}
+        {dispatchedBy && (
+          <span
+            className="text-[10px] px-2 py-0.5 rounded-sm bg-amber-500/30 text-amber-200 border border-amber-400/60 font-bold uppercase tracking-wide flex-shrink-0"
+            title={`Dispatched at runtime by ${dispatchedBy}`}
+          >
+            DISPATCHED STAGE
+          </span>
+        )}
+
+        {/* Dispatcher badge (inline, if this stage dispatched others) */}
+        {isDispatcher && !dispatchedBy && (
+          <span className="flex items-center gap-1 flex-shrink-0">
+            {hasDispatchedChildren && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded-sm bg-sky-500/30 text-sky-200 border border-sky-400/50 font-semibold">
+                +{dispatchedChildren!.length}
+              </span>
+            )}
+            {hasRemovedChildren && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded-sm bg-rose-500/30 text-rose-200 border border-rose-400/50 font-semibold">
+                −{removedChildren!.length}
+              </span>
+            )}
+          </span>
+        )}
 
         {/* Strategy badge */}
         {strategy && (

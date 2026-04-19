@@ -449,8 +449,10 @@ class TestGraphLoaderInputMapValidation:
             },
         })
         loader = GraphLoader(store)
-        with pytest.raises(ValidationError, match="invalid source.*expected 'node_name.field'"):
-            loader.load_workflow("test")
+        # Bare identifiers are valid — resolver treats them as workflow-input
+        # keys at runtime, else as literals. No error at load time.
+        nodes, _ = loader.load_workflow("test")
+        assert nodes[0].config.input_map == {"task": "bad_no_dot"}
 
     def test_input_map_nonexistent_source_node(self):
         store = _mock_config_store({

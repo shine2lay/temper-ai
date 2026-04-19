@@ -70,11 +70,44 @@ def validate_dispatch_block(
         ]
 
     errors: list[str] = []
+    # Growing set of names that will exist by the time later ops validate:
+    # earlier `add` ops contribute their node names, so a later op can
+    # safely reference them via depends_on / input_map. Mirrors how the
+    # executor applies ops in order.
+    known_so_far: set[str] = set(known_node_names)
     for i, op in enumerate(raw_ops):
         errors.extend(_validate_op(
-            agent_name, i, op, config_store, known_node_names,
+            agent_name, i, op, config_store, known_so_far,
         ))
+        # After validating, add names contributed by this op to the set.
+        # Remove ops don't shrink `known_so_far` — if a later op adds a
+        # new node with the removed name (replace pattern), that's the
+        # existing behavior; if a later op references the removed name,
+        # the executor resolves against the SKIPPED tombstone at runtime.
+        if isinstance(op, dict) and op.get("op") == "add":
+            for added_name in _added_names_from_op(op):
+                if added_name and not _has_jinja(added_name):
+                    known_so_far.add(added_name)
     return errors
+
+
+def _added_names_from_op(op: dict[str, Any]) -> list[str]:
+    """Extract the `name` field from every node this op adds — used by
+    the progressive-validation loop so later ops see earlier siblings."""
+    names: list[str] = []
+    node = op.get("node")
+    if isinstance(node, dict):
+        n = node.get("name")
+        if isinstance(n, str):
+            names.append(n)
+    nodes = op.get("nodes")
+    if isinstance(nodes, list):
+        for item in nodes:
+            if isinstance(item, dict):
+                n = item.get("name")
+                if isinstance(n, str):
+                    names.append(n)
+    return names
 
 
 def _validate_op(

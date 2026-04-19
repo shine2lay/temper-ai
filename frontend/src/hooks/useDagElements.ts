@@ -30,6 +30,11 @@ export interface StageNodeData extends Record<string, unknown> {
   dagInfo: DagInfo;
   expanded: boolean;
   delegateCount?: number;
+  // Dispatch metadata — if set, this stage was materialized at runtime
+  // by a dispatcher. Rendered prominently so it's obvious.
+  dispatchedBy?: string;
+  dispatchedChildren?: string[];
+  removedChildren?: string[];
 }
 
 /** Data for an agent-type node (leaf, single agent). */
@@ -42,6 +47,11 @@ export interface AgentNodeData extends Record<string, unknown> {
   durationSeconds: number;
   isDelegate?: boolean;
   delegatedBy?: string;
+  // Dispatch metadata — whose dispatch added this node, or which children
+  // this node dispatched.
+  dispatchedBy?: string;
+  dispatchedChildren?: string[];
+  removedChildren?: string[];
   /** All iterations for this node (when loop/retry produces multiple runs). */
   iterations?: { agent: AgentExecution | null; stage: StageExecution }[];
 }
@@ -152,6 +162,9 @@ export function useDagElements(): { nodes: Node[]; edges: Edge[] } {
           durationSeconds,
           isDelegate,
           delegatedBy: isDelegate ? latest.delegated_by : undefined,
+          dispatchedBy: latest.dispatched_by,
+          dispatchedChildren: latest.dispatched_children,
+          removedChildren: latest.removed_children,
           iterations: iters,
         };
 
@@ -222,6 +235,9 @@ export function useDagElements(): { nodes: Node[]; edges: Edge[] } {
           dagInfo,
           expanded: true,
           delegateCount: delegateAgents.length,
+          dispatchedBy: latest.dispatched_by,
+          dispatchedChildren: latest.dispatched_children,
+          removedChildren: latest.removed_children,
         };
 
         nodes.push({
@@ -343,6 +359,9 @@ export function useDagElements(): { nodes: Node[]; edges: Edge[] } {
           durationSeconds,
           dagInfo,
           expanded: true,
+          dispatchedBy: latest.dispatched_by,
+          dispatchedChildren: latest.dispatched_children,
+          removedChildren: latest.removed_children,
         };
 
         // Identify leader agent (if leader strategy)

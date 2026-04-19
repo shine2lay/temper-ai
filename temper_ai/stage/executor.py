@@ -565,8 +565,45 @@ def _apply_declarative_dispatch(
                 input_data,
             )
 
+        # Two-pass: figure out which removed names will be re-added
+        # ("replace" pattern) so we can tombstone non-replaced removes while
+        # freeing replaced slots completely. This prevents the batches loop
+        # from running either the original-being-replaced OR the replacement
+        # by making the name's status unambiguous per dispatch.
+        add_names: set[str] = set()
         for op in ops:
             if op.op == "add":
+                for nd in op.all_added_nodes():
+                    name = nd.get("name")
+                    if isinstance(name, str) and name:
+                        add_names.add(name)
+
+        for op in ops:
+            if op.op == "remove":
+                target = op.target or ""
+                if target in node_outputs and node_outputs[target].status != Status.PENDING:
+                    # Already ran (completed/failed) or already tombstoned
+                    continue
+                # Clear from node_map + batches so the original doesn't run.
+                # Nodes are only equal if same instance — filter by name.
+                node_map.pop(target, None)
+                for batch in batches:
+                    batch[:] = [n for n in batch if n.name != target]
+                if target in add_names:
+                    # Replace path — a subsequent add will take this slot.
+                    # Clear any stale output (shouldn't be there, defensive)
+                    # so add's _enforce_caps_and_build sees a clean slot.
+                    node_outputs.pop(target, None)
+                else:
+                    # Standalone remove — tombstone so downstream that resolves
+                    # `target.output` sees SKIPPED.
+                    node_outputs[target] = NodeResult(
+                        status=Status.SKIPPED,
+                        error=f"removed by dispatch from '{node.name}'",
+                    )
+                removed_targets.append(target)
+                logger.info("Dispatch from '%s' removed pending node %r", node.name, target)
+            elif op.op == "add":
                 for node_dict in op.all_added_nodes():
                     _enforce_caps_and_build(
                         op_dict=node_dict,
@@ -580,18 +617,6 @@ def _apply_declarative_dispatch(
                         new_nodes=new_nodes,
                     )
                     added_node_dicts.append(node_dict)
-            elif op.op == "remove":
-                target = op.target or ""
-                if target in node_outputs:
-                    # Already run or already marked — nothing to do
-                    continue
-                # Mark as skipped so downstream cascades via unresolved input_map
-                node_outputs[target] = NodeResult(
-                    status=Status.SKIPPED,
-                    error=f"removed by dispatch from '{node.name}'",
-                )
-                removed_targets.append(target)
-                logger.info("Dispatch from '%s' removed pending node %r", node.name, target)
     except DispatchCapExceeded as exc:
         # Record the cap breach before letting it propagate — the dispatcher's
         # node will fail, but the timeline needs to show WHY.
@@ -756,6 +781,10 @@ def _enforce_caps_and_build(
             f"{op_dict.get('name', '<unnamed>')!r} that failed to "
             f"build: {exc}"
         ) from exc
+    # Name collision. _apply_declarative_dispatch's remove-pass clears
+    # node_map + node_outputs for "being replaced" names before adds run,
+    # so a genuine collision here means the agent emitted an add that
+    # shadows an existing (non-being-removed) node.
     if built.name in node_map or built.name in node_outputs:
         raise DispatchRenderError(
             f"dispatch from '{dispatcher_name}' produced node "

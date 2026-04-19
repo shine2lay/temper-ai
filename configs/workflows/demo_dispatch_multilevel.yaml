@@ -1,0 +1,58 @@
+workflow:
+  name: demo_dispatch_multilevel
+  description: |
+    Multi-level dispatch with an explicit fan-out → fan-in pattern, PLUS
+    a dispatcher that INSERTS a new stage BETWEEN two pre-existing nodes
+    and rewires the downstream node's input_map to read from the inserted
+    stage.
+
+    Static DAG:
+      orchestrator → drafter → publisher
+                              (drafter.output → publisher's input)
+
+    After orchestrator dispatches:
+      orchestrator → drafter → review_stage → publisher
+                                             (drafter.output → review_stage,
+                                              review_stage.output → publisher)
+           → researcher_N (fan-out)
+                       → synthesizer (fan-in: depends on all researchers)
+
+    Exercises:
+      - Fan-out: N parallel researcher lanes from for_each
+      - Fan-in: synthesizer with depends_on covering each dispatched name
+      - Insert-between: a new review_stage inserted on the drafter→publisher
+        edge; publisher's input_map REWIRED to point at the inserted stage
+      - Multi-level: the synthesizer is itself a dispatcher that can
+        fan out critics per-researcher (tested in integration tests)
+
+  defaults:
+    provider: claude
+    model: opus
+    dispatch:
+      max_children_per_dispatch: 20
+      max_dynamic_nodes: 100
+      max_dispatch_depth: 3
+
+  nodes:
+    - name: orchestrator
+      type: agent
+      agent: demo_dispatch_orchestrator
+      input_map:
+        query: input.query
+
+    - name: drafter
+      type: agent
+      agent: demo_dispatch_researcher
+      depends_on: [orchestrator]
+      input_map:
+        topic: "draft"
+        brief: "produce an initial draft from the orchestrator's plan"
+
+    - name: publisher
+      type: agent
+      agent: demo_dispatch_summarizer
+      depends_on: [drafter]
+      input_map:
+        # Orchestrator will REWIRE this by removing `publisher` and re-adding
+        # it with input_map pointing at the inserted `review_stage`.
+        research: drafter.output

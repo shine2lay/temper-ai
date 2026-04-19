@@ -1,0 +1,68 @@
+workflow:
+  name: demo_dispatch_advanced
+  description: |
+    Exercises every dispatch primitive on an existing DAG:
+      - REMOVE a pre-existing pending node (pure remove, cascades)
+      - REPLACE a pre-existing node (remove + re-add same name)
+      - ADD a dispatched STAGE (not just an agent) with multiple child
+        agents running in parallel
+
+    Static DAG (before planner runs):
+      planner → body (placeholder) → (summarizer skipped, cascade)
+             → obsolete (placeholder)
+
+    After planner's dispatch:
+      planner → body (REPLACED with real content)
+             → subtopic_A (STAGE: researcher + critic in parallel)
+             → subtopic_B (STAGE: researcher + critic in parallel)
+             ...
+      (obsolete is SKIPPED, summarizer runs against real body)
+
+    Tested end-to-end with claude/opus. See dispatch.applied events in
+    the dashboard timeline — each lists the names added + removed by
+    the planner.
+
+  defaults:
+    provider: claude
+    model: opus
+    dispatch:
+      max_children_per_dispatch: 20
+      max_dynamic_nodes: 100
+      max_dispatch_depth: 2
+
+  nodes:
+    # The dispatcher. Decides what subtopics exist and rewrites the DAG.
+    - name: planner
+      type: agent
+      agent: demo_dispatch_advanced_planner
+      input_map:
+        query: input.query
+
+    # Pre-existing PLACEHOLDER — planner will REPLACE this (remove + add
+    # same name) with real content derived from its output.
+    - name: body
+      type: agent
+      agent: demo_dispatch_researcher
+      depends_on: [planner]
+      input_map:
+        topic: "placeholder_body"
+        brief: "to be replaced by planner"
+
+    # Pre-existing obsolete node — planner will REMOVE it (no replacement).
+    # Downstream of this node would cascade-skip on its output.
+    - name: obsolete_research
+      type: agent
+      agent: demo_dispatch_researcher
+      depends_on: [planner]
+      input_map:
+        topic: "obsolete"
+        brief: "will be removed by planner"
+
+    # Downstream of `body` — depends on the replaced node producing real
+    # output. Proves replace preserves the downstream contract.
+    - name: summary
+      type: agent
+      agent: demo_dispatch_summarizer
+      depends_on: [body]
+      input_map:
+        research: body.output

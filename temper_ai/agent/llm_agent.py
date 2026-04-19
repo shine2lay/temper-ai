@@ -245,6 +245,7 @@ class LLMAgent(AgentABC):
                 context.event_recorder.record if context.event_recorder else None
             ),
             cwd=cwd,
+            model=self.model,
         )
 
     def _recall_memories(self, context: ExecutionContext) -> list[str]:

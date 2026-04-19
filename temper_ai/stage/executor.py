@@ -554,10 +554,15 @@ def _resolve_inputs(
             resolved["other_agents"] = "\n\n".join(dep_outputs)
         return resolved
 
-    return {
+    resolved = {
         local_name: _resolve_single_input(node.name, local_name, source, input_data, effective_outputs)
         for local_name, source in input_map.items()
     }
+    if logger.isEnabledFor(logging.DEBUG):
+        for local_name, value in resolved.items():
+            val_len = len(str(value)) if value else 0
+            logger.debug("input_map resolved: %s.%s = %s (%d chars)", node.name, local_name, input_map[local_name], val_len)
+    return resolved
 
 
 def _resolve_single_input(
@@ -576,7 +581,20 @@ def _resolve_single_input(
     field = parts[1]
 
     if source_node in ("workflow", "input"):
-        return input_data.get(field)
+        # Support nested paths (input.foo.bar.0.baz) walking dicts + lists,
+        # consistent with how .structured. paths work below.
+        value: Any = input_data.get(field)
+        for key in parts[2:]:
+            if isinstance(value, dict):
+                value = value.get(key)
+            elif isinstance(value, list):
+                try:
+                    value = value[int(key)]
+                except (ValueError, IndexError):
+                    return None
+            else:
+                return None
+        return value
 
     if source_node not in node_outputs:
         logger.warning(

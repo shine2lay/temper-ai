@@ -58,3 +58,4 @@ class CallContext:
     node_path: str | None = None
     event_recorder: Callable | None = None  # record() compatible callable
     cwd: str | None = None  # Working directory for providers that need it (e.g., Claude Code)
+    model: str | None = None  # Per-call model override (e.g., "opus" vs "sonnet")

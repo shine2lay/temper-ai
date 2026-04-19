@@ -203,7 +203,7 @@ class CheckpointService:
             )
             if up_to_sequence is not None:
                 query = query.where(Checkpoint.sequence <= up_to_sequence)
-            query = query.order_by(Checkpoint.sequence)
+            query = query.order_by(Checkpoint.sequence)  # type: ignore[arg-type]  # SQLModel field descriptor
             results = list(session.exec(query).all())
             # Detach from session by expunging — access all attrs while still bound
             for cp in results:
@@ -220,7 +220,7 @@ class CheckpointService:
         node_outputs: dict[str, NodeResult] = {}
 
         for cp in history:
-            if cp.event_type == "node_completed" and cp.status == "completed":
+            if cp.event_type == "node_completed" and cp.status == "completed" and cp.node_name:
                 node_outputs[cp.node_name] = _checkpoint_to_node_result(cp)
 
             elif cp.event_type == "loop_rewind":
@@ -241,7 +241,7 @@ class CheckpointService:
         source_execution_id: str,
         sequence: int,
         new_execution_id: str,
-    ) -> "CheckpointService":
+    ) -> CheckpointService:
         """Create a forked CheckpointService from a specific point in another execution.
 
         The fork's first checkpoint will have a parent_id pointing to the

@@ -25,11 +25,11 @@ Install it once after cloning:
 ./scripts/install-git-hooks.sh
 ```
 
-This points `core.hooksPath` at `scripts/git-hooks/`. The hook checks:
+This points `core.hooksPath` at `scripts/git-hooks/`. The hook runs the same checks CI runs:
 
-- **ruff** — staged `*.py` files only (grandfathers the existing baseline)
-- **mypy** — staged `temper_ai/*.py` files only
-- **pytest** — full suite, `--ignore=tests/test_database` by default
+- **ruff check .** — whole project
+- **mypy temper_ai/ --ignore-missing-imports** — whole package
+- **pytest tests/ -x --timeout=60** — full suite (`--ignore=tests/test_database` by default)
 - **docs regeneration** — auto-runs `scripts/generate_docs.py` when source files that feed the reference docs are staged
 
 Escape hatches:

@@ -2,9 +2,11 @@
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
-from temper_ai.agent.llm_agent import LLMAgent, _extract_structured_output, _truncate_input_data
+from temper_ai.agent.llm_agent import (
+    LLMAgent,
+    _extract_structured_output,
+    _truncate_input_data,
+)
 from temper_ai.llm.models import LLMRunResult
 from temper_ai.shared.types import ExecutionContext, Status
 

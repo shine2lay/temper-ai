@@ -8,8 +8,6 @@ Tests the security hardening applied in this session:
 
 import os
 
-import pytest
-
 from temper_ai.tools.bash import Bash, _safe_env
 
 

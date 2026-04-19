@@ -1,7 +1,9 @@
 """Tests for shared exceptions."""
 
 from temper_ai.shared.exceptions import (
-    TemperError, ErrorCode, sanitize_message,
+    ErrorCode,
+    TemperError,
+    sanitize_message,
 )
 
 

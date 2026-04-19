@@ -5,7 +5,7 @@ import threading
 import pytest
 
 from temper_ai.api.app_state import AppState
-from temper_ai.api.routes import init_app_state, _state
+from temper_ai.api.routes import _state, init_app_state
 from temper_ai.config import ConfigStore
 from temper_ai.memory import InMemoryStore, MemoryService
 from temper_ai.stage.loader import GraphLoader

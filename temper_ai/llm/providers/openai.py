@@ -208,7 +208,7 @@ def _stream_tool_call_deltas(
     """Stream tool call fragments to the frontend as they arrive."""
     for tc_delta in tc_deltas:
         idx = tc_delta["index"]
-        buf = tool_call_buffer.get(idx, {})
+        tool_call_buffer.get(idx, {})
         fn = tc_delta.get("function", {})
         name_part = fn.get("name", "")
         args_part = fn.get("arguments", "")

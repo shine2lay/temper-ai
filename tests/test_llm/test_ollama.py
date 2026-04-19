@@ -8,7 +8,6 @@ import pytest
 from temper_ai.llm.providers.ollama import OllamaLLM
 from temper_ai.llm.providers.openai import OpenAILLM
 
-
 # ---------------------------------------------------------------------------
 # Construction and defaults
 # ---------------------------------------------------------------------------

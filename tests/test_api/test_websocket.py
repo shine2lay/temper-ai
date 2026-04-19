@@ -11,9 +11,8 @@ Covers:
 """
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
-import pytest
 from fastapi import FastAPI, WebSocket
 from fastapi.testclient import TestClient
 
@@ -23,7 +22,6 @@ from temper_ai.api.websocket import (
     WebSocketManager,
     ws_manager,
 )
-
 
 # ---------------------------------------------------------------------------
 # Minimal FastAPI test app using a fresh WebSocketManager per test
@@ -205,7 +203,7 @@ class TestWebSocketConnection:
     def test_client_receives_heartbeat_message_structure(self):
         """WebSocket connect/disconnect without crash."""
         with TestClient(self.app) as client:
-            with client.websocket_connect("/ws/exec-heartbeat") as ws:
+            with client.websocket_connect("/ws/exec-heartbeat"):
                 # Connection was accepted — receive the snapshot (mocked, sends nothing)
                 # Disconnect immediately
                 pass
@@ -215,7 +213,7 @@ class TestWebSocketConnection:
     def test_connection_registers_and_deregisters(self):
         """Connection should be registered during session and removed on disconnect."""
         with TestClient(self.app) as client:
-            with client.websocket_connect("/ws/exec-reg") as ws:
+            with client.websocket_connect("/ws/exec-reg"):
                 # During connection, exec-reg should be tracked
                 assert "exec-reg" in self.manager._connections
 
@@ -225,7 +223,7 @@ class TestWebSocketConnection:
     def test_snapshot_sent_on_connect(self):
         """_send_snapshot should be called once per connection."""
         with TestClient(self.app) as client:
-            with client.websocket_connect("/ws/exec-snap") as ws:
+            with client.websocket_connect("/ws/exec-snap"):
                 pass
 
         self.manager._send_snapshot.assert_called_once()
@@ -240,9 +238,9 @@ class TestWebSocketConnection:
         app = _make_app(manager)
 
         with TestClient(app) as client1:
-            with client1.websocket_connect("/ws/exec-multi") as ws1:
+            with client1.websocket_connect("/ws/exec-multi"):
                 with TestClient(app) as client2:
-                    with client2.websocket_connect("/ws/exec-multi") as ws2:
+                    with client2.websocket_connect("/ws/exec-multi"):
                         conns = manager._connections.get("exec-multi", [])
                         assert len(conns) == 2
 
@@ -255,7 +253,7 @@ class TestWebSocketConnection:
 
         with TestClient(self.app) as client:
             # Connection attempt — snapshot send will fail internally but not raise
-            with client.websocket_connect("/ws/exec-bad-send") as ws:
+            with client.websocket_connect("/ws/exec-bad-send"):
                 pass  # No crash expected
 
 

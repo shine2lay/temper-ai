@@ -207,8 +207,8 @@ class DocSection:
             "",
             self.index_intro(),
             "",
-            f"| Name | Description |",
-            f"|------|-------------|",
+            "| Name | Description |",
+            "|------|-------------|",
         ]
         for name in sorted(items):
             summary = self.item_summary(name, items[name])
@@ -217,7 +217,7 @@ class DocSection:
 
         ext = self.extension_example()
         if ext:
-            lines.append(f"## Extending")
+            lines.append("## Extending")
             lines.append("")
             lines.append(ext)
             lines.append("")
@@ -272,7 +272,7 @@ class ToolsSection(DocSection):
             "",
             f"# `{name}` Tool",
             "",
-            f"[Back to Tools](index.md)",
+            "[Back to Tools](index.md)",
             "",
             f"> {cls.description}",
             "",
@@ -329,8 +329,8 @@ class ToolsSection(DocSection):
         lines.append("")
         lines.append("```yaml")
         lines.append("agent:")
-        lines.append(f'  name: my_agent')
-        lines.append(f'  type: llm')
+        lines.append('  name: my_agent')
+        lines.append('  type: llm')
         lines.append(f'  tools: [{name}]')
         lines.append("```")
         lines.append("")
@@ -400,7 +400,7 @@ class ProvidersSection(DocSection):
             "",
             f"# `{name}` Provider",
             "",
-            f"[Back to Providers](index.md)",
+            "[Back to Providers](index.md)",
             "",
         ]
 
@@ -454,7 +454,7 @@ class ProvidersSection(DocSection):
             lines.append("")
             lines.append("Methods this provider implements:")
             lines.append("")
-            for mname, sig, mdoc in abstract_methods:
+            for mname, _sig, mdoc in abstract_methods:
                 lines.append(f"### `{mname}()`")
                 lines.append("")
                 if mdoc:
@@ -468,12 +468,12 @@ class ProvidersSection(DocSection):
         lines.append("# In workflow defaults:")
         lines.append("defaults:")
         lines.append(f'  provider: "{name}"')
-        lines.append(f'  model: "your-model-name"')
+        lines.append('  model: "your-model-name"')
         lines.append("")
         lines.append("# Or per-agent override:")
         lines.append("agent:")
         lines.append(f'  provider: "{name}"')
-        lines.append(f'  model: "your-model-name"')
+        lines.append('  model: "your-model-name"')
         lines.append("```")
         lines.append("")
 
@@ -569,11 +569,11 @@ class AgentsSection(DocSection):
         lines.append("")
         lines.append("```yaml")
         lines.append("agent:")
-        lines.append(f'  name: "my_agent"')
+        lines.append('  name: "my_agent"')
         lines.append(f'  type: "{name}"')
 
         if name == "llm":
-            lines.append(f'  provider: "openai"        # see providers/')
+            lines.append('  provider: "openai"        # see providers/')
             lines.append('  model: "gpt-4o"           # Model identifier')
             lines.append('  system_prompt: "You are..."  # System message (plain string)')
             lines.append('  task_template: "{{ task }}"  # Jinja2 user prompt template')
@@ -821,10 +821,10 @@ class StrategiesSection(DocSection):
             lines.append("    - agent: agents/decider")
             lines.append("      role: leader  # receives all workers' outputs")
         else:
-            lines.append(f"- name: my_stage")
-            lines.append(f"  type: stage")
+            lines.append("- name: my_stage")
+            lines.append("  type: stage")
             lines.append(f"  strategy: {name}")
-            lines.append(f"  agents: [agents/a, agents/b]")
+            lines.append("  agents: [agents/a, agents/b]")
         lines.append("```")
         lines.append("")
 
@@ -894,10 +894,10 @@ def generate_top_index() -> str:
         "```",
         "",
         "1. A **workflow** defines a graph of nodes.",
-        f"2. Each **agent node** runs an [agent type](agents/index.md) with a "
-        f"configured [LLM provider](providers/index.md) and optional [tools](tools/index.md).",
-        f"3. Each **stage node** uses a [topology strategy](strategies/index.md) to wire agents together.",
-        f"4. [Safety policies](policies/index.md) enforce constraints on every action.",
+        "2. Each **agent node** runs an [agent type](agents/index.md) with a "
+        "configured [LLM provider](providers/index.md) and optional [tools](tools/index.md).",
+        "3. Each **stage node** uses a [topology strategy](strategies/index.md) to wire agents together.",
+        "4. [Safety policies](policies/index.md) enforce constraints on every action.",
         "",
         "## Quick Example",
         "",

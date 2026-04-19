@@ -144,8 +144,9 @@ def copy_events_for_fork(
     for e in source_events:
         if e["type"] == "workflow.started":
             workflow_event = e
-        if e["parent_id"]:
-            children_of.setdefault(e["parent_id"], []).append(e)
+        parent_id = e["parent_id"]
+        if parent_id and isinstance(parent_id, str):
+            children_of.setdefault(parent_id, []).append(e)
 
     if not workflow_event:
         return None

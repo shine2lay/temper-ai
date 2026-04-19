@@ -84,7 +84,8 @@ class ConfigStore:
                 .where(Config.type == config_type)
                 .where(Config.name == name)
             )
-            if session.bind.dialect.name != "sqlite":
+            bind = session.bind
+            if bind is not None and bind.dialect.name != "sqlite":
                 query = query.with_for_update()
             existing = session.exec(query).first()
 

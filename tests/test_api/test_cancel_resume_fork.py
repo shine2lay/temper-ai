@@ -1,7 +1,8 @@
 """Tests for cancel, resume, and fork API endpoints."""
 
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
 from fastapi.testclient import TestClient
 
 from temper_ai.api.app_state import AppState

@@ -11,7 +11,8 @@ Design principles (from cross-framework research):
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from jinja2 import BaseLoader, Environment, TemplateSyntaxError, Undefined
 

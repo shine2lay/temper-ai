@@ -2,9 +2,11 @@
 
 import os
 
-import pytest
-
-from temper_ai.database.engine import create_app_engine, create_test_engine, get_database_url
+from temper_ai.database.engine import (
+    create_app_engine,
+    create_test_engine,
+    get_database_url,
+)
 
 
 class TestGetDatabaseUrl:

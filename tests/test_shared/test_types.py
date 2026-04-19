@@ -1,8 +1,12 @@
 """Tests for shared types."""
 
 from temper_ai.shared.types import (
-    Status, AgentResult, NodeResult, TokenUsage,
-    ExecutionContext, AgentInterface,
+    AgentInterface,
+    AgentResult,
+    ExecutionContext,
+    NodeResult,
+    Status,
+    TokenUsage,
 )
 
 

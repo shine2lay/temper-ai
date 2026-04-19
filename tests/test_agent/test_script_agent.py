@@ -2,8 +2,6 @@
 
 from unittest.mock import MagicMock
 
-import pytest
-
 from temper_ai.agent.script_agent import ScriptAgent
 from temper_ai.tools.base import ToolResult
 
@@ -37,7 +35,7 @@ class TestScriptAgentBasic:
             "script_template": "echo {{ greeting }}",
         })
         ctx = _make_context(ToolResult(success=True, result="hi\n"))
-        result = agent.run({"greeting": "hi"}, ctx)
+        agent.run({"greeting": "hi"}, ctx)
         # Verify template was rendered (tool_executor.execute was called)
         assert ctx.tool_executor.execute.called
         # The rendered command should contain "hi"

@@ -172,6 +172,8 @@ class LLMService:
             kwargs["cwd"] = self._ctx.cwd
         if self._ctx.model:
             kwargs["model"] = self._ctx.model
+        if self._ctx.session_id:
+            kwargs["session_id"] = self._ctx.session_id
         # Forward any provider-specific config from the agent YAML. Opaque to
         # the service — each provider reads whichever keys it understands and
         # ignores the rest. Named kwargs above win on collision.

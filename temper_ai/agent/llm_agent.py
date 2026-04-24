@@ -242,6 +242,7 @@ class LLMAgent(AgentABC):
         """Build the CallContext for LLMService observability."""
         # Use workspace_path from input_data as cwd for providers that need it (Claude Code)
         cwd = (input_data or {}).get("workspace_path") or context.workspace_path
+        session_id = (input_data or {}).get("session_id")
         return CallContext(
             execution_id=context.run_id,
             agent_event_id=agent_event_id,
@@ -252,6 +253,7 @@ class LLMAgent(AgentABC):
             ),
             cwd=cwd,
             model=self.model,
+            session_id=session_id,
             # Opaque provider-specific config passed through to the LLM
             # provider. Agent YAML opts in via `provider_config: {...}`.
             # Core doesn't know what keys mean — the provider does.

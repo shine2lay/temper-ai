@@ -245,11 +245,10 @@ def _validate_added_node(
             f"{loc}: nested `type: template` inside a dispatch block is not "
             f"supported in v1 — use static workflow-level templates instead"
         )
-    if node.get("loop_to"):
-        errors.append(
-            f"{loc}: `loop_to:` inside a dispatched node is not supported "
-            f"in v1"
-        )
+    # loop_to on dispatched nodes: the rewind machinery in _handle_loop walks
+    # the current `batches` list, which is mutated by dispatch as nodes are
+    # appended. Structurally this works — target node + trigger node end up in
+    # distinct batches after dispatch. Relaxing the v1 guard.
 
     if not agent_ref and not agents and not node_type:
         errors.append(

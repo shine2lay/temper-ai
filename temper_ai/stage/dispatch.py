@@ -287,6 +287,15 @@ def _resolve_for_each_list(
             f"scope key: {sorted(scope.keys())}"
         )
     cursor: Any = scope[parts[0]]
+    # Tolerate empty structured_output (e.g. upstream LLM API failed with
+    # no recovered JSON): treat missing `structured.<field>` as an empty
+    # iteration so the dispatch becomes a no-op rather than crashing the
+    # whole phase. The bad agent still shows up as having produced no
+    # structured output, and downstream reviewers just don't spawn this
+    # iteration — matches the intended "graceful skip" for transient
+    # upstream failures.
+    if parts[0] == "structured" and not cursor:
+        return []
     for key in parts[1:]:
         if isinstance(cursor, dict):
             if key not in cursor:

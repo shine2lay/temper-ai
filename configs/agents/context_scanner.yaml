@@ -97,4 +97,4 @@ agent:
     echo "- Files without description: $UNDESCRIBED" >> "$STATE"
 
     echo '{"files_scanned": '"$TOTAL"', "undescribed": '"$UNDESCRIBED"'}'
-  timeout_seconds: 60
+  timeout_seconds: 300

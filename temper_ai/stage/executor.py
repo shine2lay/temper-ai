@@ -125,7 +125,7 @@ def _run_batches(
             if cp:
                 cp.save_node_completed(node.name, result)
             _apply_declarative_dispatch(node, result, input_data, node_outputs, node_map, batches, context)
-            rewind = _handle_loop(node, result, node_outputs, loop_counts, loop_feedback, batches, node_map, cp)
+            rewind = _handle_loop(node, result, node_outputs, loop_counts, loop_feedback, batches, node_map, cp, input_data)
             if rewind is not None:
                 batch_idx = rewind
                 continue
@@ -523,12 +523,18 @@ def _apply_declarative_dispatch(
         agent_result.structured_output if agent_result else result.structured_output
     )
 
+    # Dispatch Jinja scope `input.*` must reflect the node's own resolved
+    # input_map (what it actually ran with), not the batch-level workflow
+    # input_data. Re-resolve here so dispatch can reference values wired
+    # via input_map (e.g. step_uid passed from an upstream capturer).
+    dispatch_input_data = _resolve_inputs(node, input_data, node_outputs)
+
     try:
         ops = render_dispatch(
             agent_config,
             agent_output=agent_output,
             agent_structured=agent_structured,
-            agent_input_data=input_data,
+            agent_input_data=dispatch_input_data,
         )
     except DispatchRenderError as exc:
         logger.error("Dispatch render failed for '%s': %s", node.name, exc)
@@ -809,6 +815,7 @@ def _handle_loop(
     batches: list[list[Node]],
     node_map: dict[str, Node],
     checkpoint_service: Any = None,
+    input_data: dict | None = None,
 ) -> int | None:
     """Handle loop_to logic. Returns batch index to rewind to, or None.
 
@@ -844,10 +851,19 @@ def _handle_loop(
     loop_counts[loop_key] += 1
 
     if loop_counts[loop_key] >= node.max_loops:
-        logger.info(
-            "Loop %s reached max_loops (%d), stopping",
-            loop_key, node.max_loops,
+        policy = node.on_max_loops or "silent"
+        logger.warning(
+            "Loop %s reached max_loops (%d) — policy=%s",
+            loop_key, node.max_loops, policy,
         )
+        if policy == "ship_with_open_issues":
+            _append_known_issues(node, result, loop_key, loop_counts[loop_key], input_data)
+        elif policy == "fail":
+            # Mark this node's result as failed so downstream fail-cascade applies
+            result.status = Status.FAILED
+            if not result.error:
+                result.error = f"Loop {loop_key} exhausted max_loops={node.max_loops} with loop_condition still active"
+        # "silent" (default) → legacy behavior: stop looping, continue workflow silently
         return None
 
     logger.info(
@@ -1226,3 +1242,59 @@ def _get_final_output(
         from dataclasses import replace as dc_replace
         return dc_replace(last, output="\n\n".join(combined_parts))
     return last
+
+
+def _append_known_issues(
+    node: Node,
+    result: NodeResult,
+    loop_key: str,
+    iterations: int,
+    input_data: dict | None,
+) -> None:
+    """Append the last triggering-node review output to .context/KNOWN_ISSUES.md
+    so downstream planners see what was left unresolved.
+
+    Called when max_loops is exhausted under policy=ship_with_open_issues.
+    The workflow continues, but the unresolved verdict is no longer silent.
+    """
+    workspace_path = (input_data or {}).get("workspace_path")
+    if not workspace_path:
+        logger.warning(
+            "_append_known_issues: no workspace_path in input_data; "
+            "skipping KNOWN_ISSUES.md write for loop %s", loop_key,
+        )
+        return
+    from datetime import UTC, datetime
+    from pathlib import Path
+    ctx_dir = Path(workspace_path) / ".context"
+    ctx_dir.mkdir(parents=True, exist_ok=True)
+    known_path = ctx_dir / "KNOWN_ISSUES.md"
+    review_path = ctx_dir / "REVIEW.md"
+    review_excerpt = ""
+    if review_path.exists():
+        try:
+            review_excerpt = review_path.read_text()[:4000]
+        except Exception:
+            review_excerpt = "(could not read REVIEW.md)"
+    now = datetime.now(UTC).isoformat(timespec="seconds")
+    header = "# Known Issues (shipped with open items)\n\n" if not known_path.exists() else ""
+    entry = (
+        f"## {now} — loop {loop_key} exhausted after {iterations} iterations\n\n"
+        f"Triggering node: `{node.name}`\n"
+        f"Policy: ship_with_open_issues\n"
+        f"Last verdict output captured below. Downstream planners: treat these as TODO.\n\n"
+        f"### Last REVIEW.md at exhaustion\n\n"
+        f"```\n{review_excerpt.strip()}\n```\n\n"
+        f"---\n\n"
+    )
+    try:
+        with open(known_path, "a") as f:
+            if header:
+                f.write(header)
+            f.write(entry)
+        logger.warning(
+            "Appended unresolved loop %s to %s (review excerpt %d chars)",
+            loop_key, known_path, len(review_excerpt),
+        )
+    except Exception as exc:
+        logger.error("Failed to write KNOWN_ISSUES.md: %s", exc)

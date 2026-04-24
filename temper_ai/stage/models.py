@@ -48,6 +48,11 @@ class NodeConfig:
     loop_to: str | None = None  # Re-execute target node on failure
     max_loops: int = 1
     loop_condition: dict | None = None  # {"source": "x.structured.y", "operator": "equals", "value": "FAIL"}
+    # Policy when max_loops is exhausted with the loop_condition still active:
+    #   "silent"                — legacy behavior: stop and proceed as if nothing happened (backward compat default)
+    #   "ship_with_open_issues" — proceed but append unresolved issues to .context/KNOWN_ISSUES.md
+    #   "fail"                  — mark node FAILED and cascade downstream skip
+    on_max_loops: str = "silent"
 
     # Timeout, gates, and policy overrides
     timeout_seconds: int | None = None  # Wall-clock timeout for this node (default: no limit)
@@ -78,7 +83,7 @@ class NodeConfig:
     _KNOWN_FIELDS: frozenset = frozenset({
         "name", "type", "agent", "strategy", "strategy_config", "agents",
         "nodes", "ref", "depends_on", "condition", "loop_to", "max_loops",
-        "loop_condition", "timeout_seconds", "gate", "skip_policies",
+        "loop_condition", "on_max_loops", "timeout_seconds", "gate", "skip_policies",
         "input_map", "inputs", "outputs",
         "task_template",
         "system_prompt", "role", "model", "provider", "temperature",
@@ -117,6 +122,7 @@ class NodeConfig:
             loop_to=data.get("loop_to"),
             max_loops=data.get("max_loops", 1),
             loop_condition=data.get("loop_condition"),
+            on_max_loops=data.get("on_max_loops", "silent"),
             timeout_seconds=data.get("timeout_seconds"),
             gate=data.get("gate", False),
             skip_policies=data.get("skip_policies"),

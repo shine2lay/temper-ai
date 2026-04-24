@@ -54,3 +54,8 @@ class Node(ABC):
     def loop_condition(self) -> dict | None:
         """Optional condition that triggers a loop rewind when met (on COMPLETED nodes)."""
         return self.config.loop_condition
+
+    @property
+    def on_max_loops(self) -> str:
+        """Policy when max_loops is exhausted: silent | ship_with_open_issues | fail."""
+        return self.config.on_max_loops

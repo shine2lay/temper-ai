@@ -447,7 +447,11 @@ def test_nested_template_flagged():
     assert any("template" in e and "not supported" in e for e in errors)
 
 
-def test_loop_to_inside_dispatched_node_flagged():
+def test_loop_to_inside_dispatched_node_allowed():
+    """`loop_to:` on dispatched nodes is permitted — the rewind machinery in
+    _handle_loop walks the batches list which is mutated during dispatch, so
+    target + trigger end up in distinct batches structurally.
+    """
     errors = validate_dispatch_block(
         "a",
         {"dispatch": [{
@@ -456,7 +460,7 @@ def test_loop_to_inside_dispatched_node_flagged():
         }]},
         _store_with({"y"}), set(),
     )
-    assert any("loop_to" in e and "not supported" in e for e in errors)
+    assert not any("loop_to" in e for e in errors)
 
 
 # ---------------------------------------------------------------------------

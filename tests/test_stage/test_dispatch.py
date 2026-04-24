@@ -268,6 +268,9 @@ def test_for_each_negative_raises():
 
 
 def test_for_each_path_missing_raises():
+    """Missing key on a non-empty structured still raises — that's a real
+    config bug (referencing a field that the agent declared but never wrote).
+    """
     cfg = {
         "dispatch": [
             {"op": "add", "for_each": "structured.no_such_key",
@@ -275,7 +278,22 @@ def test_for_each_path_missing_raises():
         ]
     }
     with pytest.raises(DispatchRenderError, match="not found"):
-        render_dispatch(cfg, agent_structured={})
+        render_dispatch(cfg, agent_structured={"some_other_key": "x"})
+
+
+def test_for_each_empty_structured_is_noop():
+    """Empty `structured_output` (e.g. upstream LLM API failed with no
+    recovered JSON) yields zero iterations rather than crashing the phase.
+    Lets the workflow proceed past a transient upstream failure.
+    """
+    cfg = {
+        "dispatch": [
+            {"op": "add", "for_each": "structured.no_such_key",
+             "node": {"name": "x", "agent": "y"}}
+        ]
+    }
+    ops = render_dispatch(cfg, agent_structured={})
+    assert ops == []
 
 
 def test_for_each_path_wrong_type_raises():

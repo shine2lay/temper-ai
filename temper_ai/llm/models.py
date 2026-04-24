@@ -60,6 +60,10 @@ class CallContext:
     event_recorder: Callable | None = None  # record() compatible callable
     cwd: str | None = None  # Working directory for providers that need it (e.g., Claude Code)
     model: str | None = None  # Per-call model override (e.g., "opus" vs "sonnet")
+    # Per-invocation session id for providers that support session resume
+    # (Claude Code). When set, provider uses --session-id on first call and
+    # --resume on subsequent calls sharing the same id+cwd.
+    session_id: str | None = None
     # Opaque dict of provider-specific kwargs. Core never inspects these keys —
     # the agent YAML opts in via `provider_config: {key: value}`, and only the
     # matching provider reads them. Lets gitignored providers (e.g. Claude Code

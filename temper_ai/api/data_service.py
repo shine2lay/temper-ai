@@ -127,6 +127,14 @@ def get_workflow_execution(execution_id: str) -> dict | None:
     nodes.sort(key=lambda n: n.get("start_time") or "")
     current_node_names = {n.get("name") for n in nodes if n.get("name")}
 
+    # Inline same-named passthrough children. When a stage has a child
+    # of the same name (the executor's stage-ref expansion creates these),
+    # pull the passthrough's children/agents up so the view doesn't show
+    # a redundant "stage > stage" double-wrap. Runs before the renester
+    # so dispatched siblings dedupe against the inlined contents instead
+    # of competing with a passthrough wrapper.
+    _inline_passthroughs(nodes)
+
     # Annotate nodes with dispatch relationships. `dispatch.applied` events
     # list each dispatcher's added children + removed targets. Frontend
     # uses these fields to show "dispatcher" badges on parents and
@@ -251,6 +259,76 @@ def list_workflow_executions(
     runs = runs[offset: offset + limit]
 
     return {"runs": runs, "total": total}
+
+
+def _inline_passthroughs(nodes: list[dict]) -> None:
+    """Walk the tree and collapse same-named "stage-ref passthrough"
+    wrappers. When a stage `S` has a child stage also named `S`, pull
+    that child's child_nodes and agents up to be siblings of S's other
+    children. Mutates nodes in place.
+
+    The executor creates these passthroughs when expanding YAML `ref:`
+    entries — visually they're a redundant outer wrapper. The frontend's
+    own unwrap only handles the case where the passthrough is the ONLY
+    child; this server-side pass handles it even when sibling children
+    exist (e.g. after the recursive resume merge or the renester adds
+    dispatched siblings alongside the passthrough).
+
+    On collisions during inlining (passthrough's child has same name as a
+    sibling already at parent level), the existing sibling is kept and
+    the passthrough's version is dropped. The recursive merge already ran
+    upstream so the existing sibling is the up-to-date one.
+    """
+    for node in nodes:
+        kids = node.get("child_nodes") or []
+        if not kids:
+            continue
+        node_name = node.get("name") or node.get("id")
+        # First, recurse so deeply-nested passthroughs get inlined too —
+        # important for pipeline_t1 > pipeline_t1 chains.
+        _inline_passthroughs(kids)
+
+        # Then check this level for any same-named child to inline.
+        rebuilt: list[dict] = []
+        existing_names = {
+            (k.get("name") or k.get("id"))
+            for k in kids
+            if k.get("name") or k.get("id")
+        }
+        for kid in kids:
+            kid_name = kid.get("name") or kid.get("id")
+            is_passthrough = (
+                kid.get("type") == "stage"
+                and kid_name == node_name
+                and (kid.get("child_nodes") or kid.get("agents"))
+            )
+            if not is_passthrough:
+                rebuilt.append(kid)
+                continue
+            # Inline: pull passthrough's children up, dropping any whose
+            # name already exists at this level (sibling wins).
+            for grandkid in kid.get("child_nodes") or []:
+                gk_name = grandkid.get("name") or grandkid.get("id")
+                if gk_name in existing_names:
+                    continue
+                rebuilt.append(grandkid)
+                if gk_name:
+                    existing_names.add(gk_name)
+            # Merge passthrough's agents into parent's agents.
+            parent_agents = node.get("agents") or []
+            kid_agents = kid.get("agents") or []
+            if kid_agents:
+                by_agent_name = {
+                    (a.get("agent_name") or a.get("id")): a
+                    for a in parent_agents
+                    if a.get("agent_name") or a.get("id")
+                }
+                for a in kid_agents:
+                    n = a.get("agent_name") or a.get("id")
+                    if n and n not in by_agent_name:
+                        by_agent_name[n] = a
+                node["agents"] = list(by_agent_name.values())
+        node["child_nodes"] = rebuilt
 
 
 def _build_resume_chain(latest_event: dict, all_workflow_events: list[dict]) -> list[dict]:

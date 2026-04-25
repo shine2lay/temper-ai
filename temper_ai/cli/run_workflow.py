@@ -78,6 +78,13 @@ def cmd_run_workflow(args: argparse.Namespace) -> int:
     cancel_event = threading.Event()
     _install_signal_handlers(cancel_event, execution_id)
 
+    # --- Live-streaming notifier (Redis Streams) -----------------------------
+    # When TEMPER_REDIS_URL is set, chunk events flow to Redis so the server's
+    # WS handler can forward them live. Events still go to DB via EventRecorder
+    # regardless — Redis is best-effort for the live UX only.
+    from temper_ai.streaming import RedisChunkNotifier
+    notifier = RedisChunkNotifier()
+
     # --- Execute --------------------------------------------------------------
     from temper_ai.runner.execute import execute_workflow
     try:
@@ -87,7 +94,7 @@ def cmd_run_workflow(args: argparse.Namespace) -> int:
             workspace_path=run_row["workspace_path"],
             inputs=run_row["inputs"] or {},
             runner_ctx=runner_ctx,
-            notifier=None,  # no WS in worker mode; phase 4 adds Redis chunks
+            notifier=notifier,
             cancel_event=cancel_event,
         )
     except Exception as exc:
@@ -101,6 +108,12 @@ def cmd_run_workflow(args: argparse.Namespace) -> int:
             error={"message": str(exc), "kind": type(exc).__name__},
         )
         return 1
+    finally:
+        # Always send the terminal sentinel so any WS subscriber unblocks
+        # cleanly, then release the Redis client. Runs on both success and
+        # exception paths.
+        notifier.cleanup(execution_id)
+        notifier.close()
 
     # --- Persist terminal state ----------------------------------------------
     final_status = (

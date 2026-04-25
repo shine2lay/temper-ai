@@ -68,6 +68,17 @@ class WebSocketManager:
 
         logger.info("WebSocket connected for execution %s", execution_id)
 
+        # Subprocess workers publish chunks to Redis (their notifier is
+        # RedisChunkNotifier, not us). Spawn a forwarder task per WS that
+        # pulls from Redis and pushes through this manager's broadcast
+        # path so the client sees one unified stream. In-process workers
+        # still hit notify_stream_chunk directly; both paths converge at
+        # the WS message layer.
+        redis_task = asyncio.create_task(
+            self._forward_redis_chunks(execution_id),
+            name=f"ws-redis-{execution_id}",
+        )
+
         try:
             # Send snapshot of current state — this contains all data up to now,
             # so we skip replaying buffered events (they'd overwrite correct statuses)
@@ -93,7 +104,49 @@ class WebSocketManager:
         except Exception as exc:
             logger.warning("WebSocket error for %s: %s", execution_id, exc)
         finally:
+            redis_task.cancel()
             self._disconnect(websocket, execution_id)
+
+    async def _forward_redis_chunks(self, execution_id: str) -> None:
+        """Pull chunks from Redis Streams and push them into the same
+        notify_stream_chunk path that in-process workers use.
+
+        Runs as a per-WS task. Exits when:
+          - subscriber sees the terminal sentinel
+          - the Redis client is unavailable (silent return — no Redis configured)
+          - the task is cancelled (WS closed)
+        """
+        try:
+            from temper_ai.streaming import RedisChunkSubscriber
+        except ImportError:
+            return
+
+        sub = RedisChunkSubscriber()
+        if not sub.enabled:
+            return
+
+        try:
+            async for chunk in sub.subscribe(execution_id):
+                if chunk.chunk_type == "terminal":
+                    return
+                # Reuse the existing batched-chunk path so subprocess and
+                # in-process runs render identically client-side.
+                self.notify_stream_chunk(
+                    execution_id,
+                    chunk.agent_id,
+                    chunk.content,
+                    chunk_type=chunk.chunk_type,
+                    done=chunk.done,
+                )
+        except asyncio.CancelledError:
+            # WS closed; let cleanup happen below
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "Redis chunk forwarder for %s exited: %s", execution_id, exc,
+            )
+        finally:
+            await sub.close()
 
     def notify_event(self, execution_id: str, event_type: str, data: dict):
         """Called by the executor when an event occurs. Broadcasts to all connected clients.

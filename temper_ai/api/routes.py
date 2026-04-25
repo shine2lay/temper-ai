@@ -20,6 +20,12 @@ from temper_ai.api.data_service import get_workflow_execution, list_workflow_exe
 from temper_ai.api.websocket import ws_manager
 from temper_ai.checkpoint.service import CheckpointService
 from temper_ai.observability.event_recorder import EventRecorder
+from temper_ai.runner._helpers import (
+    McpPreconnectError,
+    bind_delegate_tool,
+    build_dispatch_limits,
+    preconnect_mcp_servers,
+)
 from temper_ai.shared.types import ExecutionContext
 from temper_ai.stage.executor import execute_graph
 from temper_ai.tools import TOOL_CLASSES
@@ -115,7 +121,10 @@ def start_run(body: RunRequest):
     mcp_tools = create_mcp_tools_from_agents(mcp_manager, agent_configs)
     if mcp_tools:
         run_tool_executor.register_tools(dict(mcp_tools))
-        _preconnect_mcp_servers(mcp_manager, mcp_tools)  # raises on failure
+        try:
+            preconnect_mcp_servers(mcp_manager, mcp_tools)
+        except McpPreconnectError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     recorder = EventRecorder(execution_id, notifier=ws_manager)
     # Start execution in background thread
@@ -138,11 +147,11 @@ def start_run(body: RunRequest):
         checkpoint_service=checkpoint_svc,
         gate_registry=_state().gates,
         graph_loader=_state().graph_loader,
-        dispatch_limits=_build_dispatch_limits(config),
+        dispatch_limits=build_dispatch_limits(config),
     )
 
     # Bind execution context to Delegate tool so it can create sub-agents
-    _bind_delegate_tool(run_tool_executor, context)
+    bind_delegate_tool(run_tool_executor, context)
 
     thread = threading.Thread(
         target=_run_workflow,
@@ -286,10 +295,10 @@ def resume_run(execution_id: str, body: ResumeRequest | None = None):
         checkpoint_service=checkpoint_svc,
         gate_registry=_state().gates,
         graph_loader=_state().graph_loader,
-        dispatch_limits=_build_dispatch_limits(config),
+        dispatch_limits=build_dispatch_limits(config),
     )
 
-    _bind_delegate_tool(run_tool_executor, context)
+    bind_delegate_tool(run_tool_executor, context)
 
     # Reconstruct original inputs from the first run
     original_inputs = result.get("input_data") or {}
@@ -386,10 +395,10 @@ def fork_run(body: ForkRequest):
         checkpoint_service=fork_svc,
         gate_registry=_state().gates,
         graph_loader=_state().graph_loader,
-        dispatch_limits=_build_dispatch_limits(config),
+        dispatch_limits=build_dispatch_limits(config),
     )
 
-    _bind_delegate_tool(run_tool_executor, context)
+    bind_delegate_tool(run_tool_executor, context)
 
     # Record fork metadata so the data service can link back to the source.
     # Determine top-level node names that were restored.
@@ -468,23 +477,6 @@ def get_checkpoints(execution_id: str):
     svc = CheckpointService(execution_id)
     history = svc.get_history()
     return {"execution_id": execution_id, "checkpoints": history, "total": len(history)}
-
-
-def _bind_delegate_tool(tool_executor: ToolExecutor, context) -> None:
-    """Bind execution context to the Delegate tool if registered."""
-    delegate = tool_executor.get_tool("Delegate")
-    if delegate and hasattr(delegate, "bind_context"):
-        delegate.bind_context(context)
-
-
-def _build_dispatch_limits(config):
-    """Resolve DispatchLimits from the workflow's `defaults.dispatch` section.
-
-    Split out so all three ExecutionContext build-sites share one formula;
-    keeps route handlers from repeating the import + lookup boilerplate.
-    """
-    from temper_ai.stage.dispatch_limits import DispatchLimits
-    return DispatchLimits.from_defaults(getattr(config, "defaults", None))
 
 
 def _find_latest_workflow_event(execution_id: str) -> dict | None:
@@ -591,37 +583,6 @@ def _apply_dispatch_history_on_resume(
         len(history), len(nodes), state.dispatched_count,
     )
     return replayed_dispatchers
-
-
-def _preconnect_mcp_servers(mcp_manager, mcp_tools: dict) -> None:
-    """Pre-connect MCP servers needed by this workflow.
-
-    Runs async connections from the sync route context via run_coroutine_threadsafe.
-    Logs warnings but never blocks the workflow from starting.
-    """
-    import asyncio
-
-    server_names = {tool._server_name for tool in mcp_tools.values()}
-    if not server_names:
-        return
-
-    errors = []
-
-    async def connect_all():
-        for name in server_names:
-            try:
-                await mcp_manager.ensure_connected(name)
-            except Exception as e:
-                errors.append(f"MCP server '{name}': {e}")
-
-    future = asyncio.run_coroutine_threadsafe(connect_all(), mcp_manager.event_loop)
-    future.result(timeout=30)
-
-    if errors:
-        raise HTTPException(
-            status_code=503,
-            detail=f"Required MCP servers failed to connect: {'; '.join(errors)}",
-        )
 
 
 @router.get("/api/mcp-servers")

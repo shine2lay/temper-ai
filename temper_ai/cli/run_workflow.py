@@ -78,12 +78,26 @@ def cmd_run_workflow(args: argparse.Namespace) -> int:
     cancel_event = threading.Event()
     _install_signal_handlers(cancel_event, execution_id)
 
-    # --- Live-streaming notifier (Redis Streams) -----------------------------
-    # When TEMPER_REDIS_URL is set, chunk events flow to Redis so the server's
-    # WS handler can forward them live. Events still go to DB via EventRecorder
-    # regardless — Redis is best-effort for the live UX only.
+    # --- Sinks: live-streaming + JSONL forensic log --------------------------
+    # Two sinks composed via CompositeNotifier:
+    #   * RedisChunkNotifier: chunks → Redis Streams → server WS forwarder
+    #     (best-effort live UX; degrades silently if Redis is down)
+    #   * JsonlNotifier: every event → ${TEMPER_LOG_DIR}/{exec_id}/events.jsonl
+    #     (forensic record + analytics input; survives DB resets)
+    # Events also go to DB via EventRecorder; these sinks are additive.
+    from temper_ai.observability.composite_notifier import CompositeNotifier
+    from temper_ai.observability.jsonl_logger import JsonlNotifier
     from temper_ai.streaming import RedisChunkNotifier
-    notifier = RedisChunkNotifier()
+    redis_notifier = RedisChunkNotifier()
+    jsonl_notifier = JsonlNotifier(
+        execution_id,
+        run_row["workflow_name"],
+        metadata={
+            "workspace_path": run_row["workspace_path"],
+            "spawned_via": "temper run-workflow",
+        },
+    )
+    notifier = CompositeNotifier(redis_notifier, jsonl_notifier)
 
     # --- Execute --------------------------------------------------------------
     from temper_ai.runner.execute import execute_workflow
@@ -109,11 +123,12 @@ def cmd_run_workflow(args: argparse.Namespace) -> int:
         )
         return 1
     finally:
-        # Always send the terminal sentinel so any WS subscriber unblocks
-        # cleanly, then release the Redis client. Runs on both success and
-        # exception paths.
+        # Composite cleanup fans out to both sinks: Redis sends terminal
+        # sentinel + closes; JSONL writes footer + closes the file.
         notifier.cleanup(execution_id)
-        notifier.close()
+        # Redis publisher needs explicit close (TCP socket); JSONL is
+        # closed by its own cleanup. Only call close() on the one that has it.
+        redis_notifier.close()
 
     # --- Persist terminal state ----------------------------------------------
     final_status = (

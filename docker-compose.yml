@@ -21,6 +21,27 @@ services:
         max-size: "100m"
         max-file: "5"
 
+  # Redis: used by the worker protocol (phase 4+) for live LLM chunk streaming.
+  # Stream `chunks:{execution_id}` is bounded via XADD MAXLEN; chunks expire on TTL.
+  # Server is fine without redis until phase 4; service runs ahead of need so
+  # local-dev compose stays one command.
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly no --save ""
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
   server:
     build:
       context: .
@@ -37,6 +58,10 @@ services:
       HOME: /app
       PYTHONDONTWRITEBYTECODE: "1"
       TEMPER_DATABASE_URL: postgresql://temper_ai:${POSTGRES_PASSWORD:-temper_dev}@postgres:5432/temper_ai
+      # Redis: live chunk streaming (worker_protocol_v1 phase 4+).
+      # Server runs without it pre-phase-4; URL set up early so config doesn't
+      # have to change later.
+      TEMPER_REDIS_URL: redis://redis:6379/0
       TEMPER_LOG_LEVEL: ${TEMPER_LOG_LEVEL:-INFO}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
@@ -57,6 +82,8 @@ services:
       - "host.docker.internal:host-gateway"
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     logging:
       driver: "json-file"

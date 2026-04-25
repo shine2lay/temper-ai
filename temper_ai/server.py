@@ -29,6 +29,10 @@ from temper_ai.database import init_database, reset_database
 from temper_ai.memory import InMemoryStore, MemoryService
 from temper_ai.memory.base import MemoryStoreBase
 
+# Import runner so its WorkflowRun SQLModel registers with metadata before
+# init_database calls create_all_tables. Phase 0 of worker_protocol_v1.
+from temper_ai.runner import WorkflowRun  # noqa: F401  (side-effect import)
+
 # Configure logging so our module loggers output to stdout. Called at import
 # time so loggers created by subsequent imports pick up the handler; kept
 # below the imports (not above) so ruff E402 doesn't flag each import line.

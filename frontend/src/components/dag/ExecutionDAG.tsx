@@ -12,23 +12,25 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { useExecutionStore } from '@/store/executionStore';
-import { selectStageGroups, selectDagInfo } from '@/store/selectors';
 import { useDagElements } from '@/hooks/useDagElements';
-import { computeStagePositions } from '@/lib/dagLayout';
 import { DAG_FIT_PADDING } from '@/lib/constants';
 import { StageNode } from './StageNode';
 import { AgentNodeComponent } from './AgentNodeComponent';
 import { StageGroupNode } from './StageGroupNode';
 import { LoopBackEdge } from './LoopBackEdge';
 import { DispatchEdge } from './DispatchEdge';
+import { RoutedEdge } from './RoutedEdge';
 
 const nodeTypes = {
   stage: StageNode,
   agentNode: AgentNodeComponent,
   stageGroup: StageGroupNode,
 };
-const edgeTypes = { loopBack: LoopBackEdge, dispatch: DispatchEdge };
-const RELAYOUT_DELAY_MS = 150;
+const edgeTypes = {
+  loopBack: LoopBackEdge,
+  dispatch: DispatchEdge,
+  routed: RoutedEdge,
+};
 
 /**
  * Main React Flow container for the workflow execution DAG.
@@ -40,14 +42,13 @@ const RELAYOUT_DELAY_MS = 150;
  */
 export function ExecutionDAG() {
   const computed = useDagElements();
-  const { setNodes, setEdges, fitView, getNodes } = useReactFlow();
+  const { setNodes, setEdges, fitView } = useReactFlow();
   const prevNodeCountRef = useRef(0);
-  const expandedStages = useExecutionStore((s) => s.expandedStages);
   const stages = useExecutionStore((s) => s.stages);
   const agents = useExecutionStore((s) => s.agents);
   const select = useExecutionStore((s) => s.select);
   const clearSelection = useExecutionStore((s) => s.clearSelection);
-  const relayoutTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const setHoveredNodeId = useExecutionStore((s) => s.setHoveredNodeId);
   const focusedNodeIndexRef = useRef<number>(-1);
   const [search, setSearch] = useState('');
 
@@ -148,123 +149,32 @@ export function ExecutionDAG() {
     setTimeout(() => fitView({ padding: DAG_FIT_PADDING }), 50);
   }, [fitView]);
 
-  // Push computed nodes/edges into React Flow's internal store
+  // Push computed nodes/edges into React Flow's internal store. Split
+  // into two effects so a hover-only edge restyle (computed.edges
+  // changes, computed.nodes stays referentially stable) doesn't
+  // re-call setNodes — that triggers React Flow to re-measure node
+  // dimensions, which in turn jitters layout slightly.
   useEffect(() => {
     setNodes(computed.nodes);
+  }, [computed.nodes, setNodes]);
+  useEffect(() => {
     setEdges(computed.edges);
-  }, [computed.nodes, computed.edges, setNodes, setEdges]);
+  }, [computed.edges, setEdges]);
 
   /**
-   * Re-layout using actual DOM-measured dimensions from React Flow.
-   * Reads measured.width/height from each node and recomputes positions
-   * so no nodes overlap.
+   * Layout is now driven entirely by ELK in `useDagElements`. The old
+   * "render with estimates → measure DOM → recompute" two-pass dance
+   * is gone; ELK does its own size-aware layout in one async call.
    */
-  const relayoutFromMeasurements = useCallback(() => {
-    const rfNodes = getNodes();
-    if (rfNodes.length === 0) return;
 
-    // Step 1: Collect measured sizes for all non-group nodes
-    const measuredSizes = new Map<string, { width: number; height: number }>();
-    let anyMeasured = false;
-    for (const node of rfNodes) {
-      if (node.measured?.width && node.measured?.height) {
-        measuredSizes.set(node.id, {
-          width: node.measured.width,
-          height: node.measured.height,
-        });
-        anyMeasured = true;
-      }
-    }
-    if (!anyMeasured) return;
-
-    // Step 2: Compute REAL container sizes from children's measured dimensions.
-    // This is the key fix — container size is derived from actual child content,
-    // not from the estimate that was used for initial layout.
-    for (const node of rfNodes) {
-      if (node.type === 'stageGroup') {
-        const children = rfNodes.filter((n) => n.parentId === node.id);
-        if (children.length === 0) continue;
-
-        let maxRight = 0;
-        let maxBottom = 0;
-        for (const child of children) {
-          const cw = child.measured?.width ?? measuredSizes.get(child.id)?.width ?? 260;
-          const ch = child.measured?.height ?? measuredSizes.get(child.id)?.height ?? 160;
-          maxRight = Math.max(maxRight, child.position.x + cw);
-          maxBottom = Math.max(maxBottom, child.position.y + ch);
-        }
-        const padX = 40;
-        const padY = 50;
-        const containerW = Math.max(maxRight + padX, 350);
-        const containerH = Math.max(maxBottom + padY, 200);
-        // Override the measured size for this container so the layout algorithm uses it
-        measuredSizes.set(node.id, { width: containerW, height: containerH });
-      }
-    }
-
-    // Step 3: Re-compute ALL positions with measured sizes (including real container sizes)
-    const stageGroups = selectStageGroups(stages);
-    const dagInfo = selectDagInfo();
-    const newPositions = computeStagePositions(
-      stageGroups,
-      dagInfo,
-      expandedStages,
-      measuredSizes,
-    );
-
-    // Step 4: Apply new positions AND container sizes
-    let changed = false;
-    const updatedNodes = rfNodes.map((node) => {
-      let updated = node;
-
-      // Apply container sizes
-      if (node.type === 'stageGroup') {
-        const size = measuredSizes.get(node.id);
-        if (size) {
-          const currentW = typeof node.style?.width === 'number' ? node.style.width : 0;
-          const currentH = typeof node.style?.height === 'number' ? node.style.height : 0;
-          if (Math.abs(size.width - currentW) > 5 || Math.abs(size.height - currentH) > 5) {
-            changed = true;
-            updated = { ...updated, style: { ...updated.style, width: size.width, height: size.height } };
-          }
-        }
-      }
-
-      // Apply new positions (only for top-level nodes, not children inside containers)
-      const pos = newPositions.get(node.id);
-      if (pos && !node.parentId && (Math.abs(node.position.x - pos.x) > 1 || Math.abs(node.position.y - pos.y) > 1)) {
-        changed = true;
-        updated = { ...updated, position: { x: pos.x, y: pos.y } };
-      }
-
-      return updated;
-    });
-
-    if (changed) {
-      setNodes(updatedNodes);
-    }
-  }, [getNodes, stages, expandedStages, setNodes]);
-
-  // Listen for dimension changes from React Flow and trigger re-layout.
-  // Run twice: first to resize containers, second to reposition with real sizes.
-  const relayoutCount = useRef(0);
-  const onNodesChange = useCallback(
-    (changes: NodeChange[]) => {
-      const hasDimensionChange = changes.some((c) => c.type === 'dimensions');
-      if (hasDimensionChange) {
-        clearTimeout(relayoutTimer.current);
-        relayoutTimer.current = setTimeout(() => {
-          relayoutFromMeasurements();
-          // Schedule a second relayout to catch container size changes
-          if (relayoutCount.current < 3) {
-            relayoutCount.current++;
-            setTimeout(relayoutFromMeasurements, 200);
-          }
-        }, RELAYOUT_DELAY_MS);
-      }
-    },
-    [relayoutFromMeasurements],
-  );
+  // ELK gives us final positions + container sizes + edge routing in
+  // one async pass via useDagElements, so we no longer need the
+  // legacy "render-with-estimates → measure DOM → relayout" two-pass
+  // dance. onNodesChange is a no-op now (kept as a stub so React Flow
+  // doesn't lose the interactive position-on-drag controlled mode).
+  const onNodesChange = useCallback((_changes: NodeChange[]) => {
+    // Intentionally empty — ELK is the source of truth for layout.
+  }, []);
 
   // Auto-fit when new stages appear
   useEffect(() => {
@@ -274,14 +184,6 @@ export function ExecutionDAG() {
       return () => clearTimeout(timer);
     }
   }, [computed.nodes.length, fitView]);
-
-  // Re-layout when stages are expanded or collapsed — but keep current viewport.
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      relayoutFromMeasurements();
-    }, RELAYOUT_DELAY_MS);
-    return () => clearTimeout(timer);
-  }, [expandedStages, relayoutFromMeasurements]);
 
   /**
    * Keyboard navigation for the DAG container.
@@ -334,6 +236,8 @@ export function ExecutionDAG() {
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         onInit={onInit}
+        onNodeMouseEnter={(_, node) => setHoveredNodeId(node.id)}
+        onNodeMouseLeave={() => setHoveredNodeId(null)}
         fitView
         minZoom={0.1}
         maxZoom={2}

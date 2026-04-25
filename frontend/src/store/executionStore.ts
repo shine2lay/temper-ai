@@ -34,6 +34,9 @@ interface ExecutionState {
   toolCalls: Map<string, ToolCall>;
   streamingContent: Map<string, StreamEntry>;
   selection: Selection | null;
+  /** Id of the node the cursor is currently over. Drives "hover-to-reveal"
+   *  edge highlighting — connected edges go full opacity, others dim. */
+  hoveredNodeId: string | null;
   wsStatus: WSStatus;
   eventLog: EventLogEntry[];
   expandedStages: Set<string>;
@@ -46,6 +49,7 @@ interface ExecutionState {
   reset: () => void;
   select: (type: Selection['type'], id: string) => void;
   clearSelection: () => void;
+  setHoveredNodeId: (id: string | null) => void;
   setWSStatus: (partial: Partial<WSStatus>) => void;
   toggleStageExpanded: (stageName: string) => void;
   openStageDetail: (stageId: string) => void;
@@ -164,6 +168,7 @@ export const useExecutionStore = create<ExecutionState>()(
     eventLog: [],
     expandedStages: new Set(),
     stageDetailId: null,
+    hoveredNodeId: null,
     checkpointPreview: null,
 
     applySnapshot: (workflow) =>
@@ -458,6 +463,11 @@ export const useExecutionStore = create<ExecutionState>()(
     clearSelection: () =>
       set((state) => {
         state.selection = null;
+      }),
+
+    setHoveredNodeId: (id) =>
+      set((state) => {
+        state.hoveredNodeId = id;
       }),
 
     setWSStatus: (partial) =>

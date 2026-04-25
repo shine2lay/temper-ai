@@ -96,13 +96,19 @@ def start_run(body: RunRequest):
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    # Mode dispatch — subprocess path skips all the in-process plumbing
-    # (tool executor, MCP preconnect, ExecutionContext, thread). The
-    # worker rebuilds it from env via runner.bootstrap.
+    # Mode dispatch — three modes:
+    #   inprocess (default): server thread runs workflow (legacy)
+    #   subprocess: server spawns a child process in its own container
+    #   external: server inserts row + returns; an external watcher
+    #             (temper watch-queue, in the worker container) picks it up
+    #             and spawns the worker. Solves the toolchain problem —
+    #             worker container has pytest/npm/docker-cli baked in.
     import os as _os
     mode = _os.environ.get("TEMPER_EXECUTION_MODE", "inprocess").lower()
     if mode == "subprocess":
         return _start_run_subprocess(execution_id, body, config)
+    if mode == "external":
+        return _start_run_external(execution_id, body, config)
 
     # Build execution context
 
@@ -176,6 +182,33 @@ def start_run(body: RunRequest):
     thread.start()
 
     return RunResponse(execution_id=execution_id, status="running")
+
+
+def _start_run_external(
+    execution_id: str, body: RunRequest, config,
+) -> RunResponse:
+    """Insert WorkflowRun row + return; external watcher will spawn the worker.
+
+    The server doesn't track the worker process at all in this mode — the
+    watcher (running in the temper-worker container) owns spawn/poll/kill.
+    The server's only job is to durably record what was requested.
+
+    Same WorkflowRun row contract as subprocess mode; the watcher reads
+    workflow_name + workspace_path + inputs and runs `temper run-workflow`.
+    """
+    from temper_ai.database import get_session
+    from temper_ai.runner.models import WorkflowRun
+
+    with get_session() as session:
+        session.add(WorkflowRun(
+            execution_id=execution_id,
+            workflow_name=config.name,
+            workspace_path=body.workspace_path or "",
+            inputs=body.inputs or {},
+            status="queued",
+        ))
+
+    return RunResponse(execution_id=execution_id, status="queued")
 
 
 def _start_run_subprocess(

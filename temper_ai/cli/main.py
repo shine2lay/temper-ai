@@ -67,6 +67,21 @@ def main() -> None:
     )
     rw_parser.add_argument("--debug", action="store_true", help="Enable debug logging")
 
+    # -- temper watch-queue (long-lived daemon — spawns workers from queued rows) --
+    wq_parser = subparsers.add_parser(
+        "watch-queue",
+        help="Daemon: poll Postgres for queued WorkflowRun rows, spawn each as a subprocess",
+    )
+    wq_parser.add_argument(
+        "--poll-interval", type=float, default=2.0,
+        help="Seconds between scans for new queued rows (default: 2.0)",
+    )
+    wq_parser.add_argument(
+        "--reaper-interval", type=float, default=5.0,
+        help="Seconds between reaper liveness sweeps (default: 5.0)",
+    )
+    wq_parser.add_argument("--debug", action="store_true", help="Enable debug logging")
+
     args = parser.parse_args()
 
     # F28: --debug flag sets logging to DEBUG
@@ -85,6 +100,17 @@ def main() -> None:
     elif args.command == "run-workflow":
         from temper_ai.cli.run_workflow import cmd_run_workflow
         sys.exit(cmd_run_workflow(args))
+    elif args.command == "watch-queue":
+        # Configure logging at INFO so the daemon is observable in docker logs
+        if not args.debug:
+            logging.basicConfig(
+                level=logging.INFO,
+                format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+                stream=sys.stdout,
+                force=True,
+            )
+        from temper_ai.cli.watch_queue import cmd_watch_queue
+        sys.exit(cmd_watch_queue(args))
     else:
         parser.print_help()
         sys.exit(1)

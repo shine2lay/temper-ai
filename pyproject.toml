@@ -25,6 +25,10 @@ dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.34.0",
     "mcp>=1.0.0",
+    # Worker protocol v1 (phase 4+): Redis Streams for live LLM chunk streaming.
+    # Optional at runtime — server tolerates Redis being unreachable; feature
+    # degrades gracefully (milestones still flow via Postgres).
+    "redis>=5.0,<6.0",
 ]
 
 [project.optional-dependencies]

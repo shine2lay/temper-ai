@@ -497,7 +497,7 @@ function makeInnerEdge(
     target: targetId,
     sourceHandle: 'right',
     targetHandle: 'left',
-    type: 'default',
+    type: 'smoothstep',
     markerEnd: {
       type: 'arrowclosed' as MarkerType,
       color,
@@ -618,7 +618,7 @@ function appendWorkflowLevelEdges(
         target: targetId,
         sourceHandle: 'right',
         targetHandle: 'left',
-        type: 'default',
+        type: 'smoothstep',
         markerEnd: depMarker,
         style: { stroke: EDGE_COLORS.dataFlow, strokeWidth: 2 },
       });

@@ -246,6 +246,10 @@ curl -X POST http://localhost:8420/api/runs \
 temper run <workflow> --input key=value [-v] [-vv] [--no-db] [--debug]
 temper serve [--port 8420] [--dev] [--debug]
 temper validate <workflow> [--debug]
+
+# Worker-mode (opt-in, see Execution Modes below)
+temper run-workflow --execution-id <id>           # worker entry point
+temper watch-queue [--poll-interval N]            # daemon: claim queued runs
 ```
 
 | Flag | Description |
@@ -255,6 +259,28 @@ temper validate <workflow> [--debug]
 | `--no-db` | Ephemeral run, no event persistence |
 | `--dev` | Hot reload for server mode |
 | `--debug` | Enable debug logging (config loading, provider init, LLM requests) |
+
+---
+
+## Execution Modes
+
+How a workflow run is hosted is configurable per server via `TEMPER_EXECUTION_MODE`:
+
+| Mode | What runs where | When to use |
+|------|-----------------|-------------|
+| `inprocess` (default) | Workflow runs in a server thread | Local dev, single-host, low-isolation OK |
+| `subprocess` | Server forks a child process inside its own container | Crash isolation; same toolchain as server |
+| `external` | Server inserts a queued `WorkflowRun` row + returns. A separate `temper-ai-worker` container picks it up via `temper watch-queue` and spawns a subprocess locally to itself. | When agents need a heavier toolchain (pytest, npm, docker CLI, db clients) than the server should carry |
+
+The `temper-ai-worker` service is profile-gated in docker-compose:
+
+```bash
+docker compose --profile worker up -d
+```
+
+Live LLM token streams flow from the worker via Redis Streams — the dashboard sees chunks the same way regardless of which container produced them. JSONL forensic logs land at `${TEMPER_LOG_DIR}/{execution_id}/events.jsonl` per run.
+
+See [docs/reference/architecture.md](docs/reference/architecture.md) for the full server-and-worker design and when each mode is appropriate.
 
 ---
 
@@ -327,12 +353,18 @@ temper_ai/
   database/      SQLModel engine + sessions
   llm/           Tool-calling loop + 5 providers + prompt renderer
   memory/        mem0 + InMemory backends
-  observability/ Event recording
+  observability/ Event recording + per-run JSONL forensic log + composite notifier
+  runner/        Portable workflow execution — execute_workflow() + RunnerContext
   safety/        Policy engine + 3 policies
   shared/        Cross-module types
+  spawner/       Worker process management — Spawner ABC, SubprocessSpawner, Reaper
   stage/         Graph executor + topology generators + loader
+  streaming/     Redis Streams chunk publisher + subscriber + EventNotifier adapter
   tools/         9 tools + executor with sandbox
+  worker_proto/  Wire-protocol Pydantic schemas (RunRequest, ProcessHandle, etc.)
 ```
+
+The server-and-worker split (see [Execution Modes](#execution-modes)) means orchestration (`api/`, the FastAPI server) and execution (`runner/` + `cli/run_workflow.py` + `cli/watch_queue.py`) can run in separate containers. The `worker_proto/` package defines the wire shapes; the `spawner/` package is how the server (or a watcher) launches workers.
 
 ---
 

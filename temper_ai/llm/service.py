@@ -112,7 +112,9 @@ class LLMService:
             return self._handle_no_executor(iteration, tool_calls)
 
         self._execute_and_inject_tools(tool_calls, llm_event_id)
-        self._record_iteration(iteration, "tool_calls", len(tool_calls))
+        self._record_iteration(
+            iteration, "tool_calls", len(tool_calls), tool_calls=tool_calls,
+        )
         return None  # continue loop
 
     def _call_llm(self, iteration: int) -> tuple[str, LLMResponse, float]:
@@ -262,21 +264,53 @@ class LLMService:
         iteration: int,
         action: str,
         tool_count: int,
+        tool_calls: list[dict] | None = None,
     ) -> None:
-        """Record an iteration summary event."""
+        """Record an iteration summary event.
+
+        When tool_calls are provided, capture name + truncated arguments so
+        forensic consumers (JSONL log readers, post-run analysis scripts)
+        can reconstruct what each agent actually invoked. Without this, the
+        event-store loses the call detail — only the count survives, and
+        the rich detail in Redis Stream chunks ages out via TTL.
+        """
+        data: dict[str, Any] = {
+            "agent_name": self._ctx.agent_name,
+            "node_path": self._ctx.node_path,
+            "iteration": iteration,
+            "action": action,
+            "tool_count": tool_count,
+            "total_tokens_so_far": self._total_tokens,
+        }
+        if tool_calls:
+            data["tool_calls"] = [_summarize_tool_call(tc) for tc in tool_calls]
         self._record(
             EventType.LLM_ITERATION,
             parent_id=self._ctx.agent_event_id,
             execution_id=self._ctx.execution_id,
-            data={
-                "agent_name": self._ctx.agent_name,
-                "node_path": self._ctx.node_path,
-                "iteration": iteration,
-                "action": action,
-                "tool_count": tool_count,
-                "total_tokens_so_far": self._total_tokens,
-            },
+            data=data,
         )
+
+
+def _summarize_tool_call(tc: dict) -> dict:
+    """Compact representation of a tool call for forensic event logs.
+
+    Keeps the name + id (so consumers can correlate with stream chunks) and
+    a JSON-serialized + truncated `arguments` blob. Truncation matters: a
+    single Bash tool_call can carry tens of KB of file content (Edit/Write
+    tools), and we don't want every iteration event in the JSONL log to
+    blow past line-buffer thresholds. The full content remains available
+    in the Redis chunk stream for live debugging.
+    """
+    name = tc.get("name") or tc.get("tool_name") or "?"
+    args = tc.get("arguments")
+    try:
+        args_repr = json.dumps(args, default=str)
+    except (TypeError, ValueError):
+        args_repr = repr(args)
+    if len(args_repr) > 1000:
+        args_repr = args_repr[:1000] + "…(truncated)"
+    return {"name": name, "id": tc.get("id"), "arguments": args_repr}
 
 
 def _inject_tool_results(

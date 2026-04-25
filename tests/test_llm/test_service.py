@@ -484,8 +484,18 @@ class TestServiceObservability:
         assert len(iterations) == 2
         assert iterations[0]["data"]["action"] == "tool_calls"
         assert iterations[0]["data"]["tool_count"] == 1
+        # Tool-calling iteration must carry the structured tool_calls list
+        # so JSONL forensic logs can reconstruct what was actually invoked
+        # (without this, `tool_count` is the only surviving signal — name,
+        # id, and arguments are lost when Redis chunks TTL out).
+        tcs = iterations[0]["data"].get("tool_calls")
+        assert tcs is not None and len(tcs) == 1
+        assert "name" in tcs[0]
+        assert "arguments" in tcs[0]
         assert iterations[1]["data"]["action"] == "final_response"
         assert iterations[1]["data"]["tool_count"] == 0
+        # Final-response iteration has no tool_calls payload
+        assert iterations[1]["data"].get("tool_calls") is None
 
     def test_llm_failure_records_failed_event(self):
         provider = MockProvider([])  # No responses — will raise

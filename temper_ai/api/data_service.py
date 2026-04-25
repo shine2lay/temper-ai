@@ -63,32 +63,66 @@ def get_workflow_execution(execution_id: str) -> dict | None:
         None,
     )
 
-    # Build node executions. When the run was interrupted and resumed in
-    # place, each attempt has its own `workflow.started` event with its own
-    # children. Walk children of ALL workflow events and merge by name so
-    # the user sees pre-interruption progress alongside the new attempt.
-    # For nodes that ran in multiple attempts (e.g. `sprint`), latest start
-    # wins for the node's own state but child_nodes / agents are unioned
-    # recursively — otherwise we'd lose nested pipelines from earlier
-    # attempts when the same stage ran a second time with different
-    # children.
-    raw_node_events: list[dict] = []
-    for w in workflow_candidates:
-        raw_node_events.extend(_find_children(events, w["id"], "stage."))
-    built = [_build_node_execution(e, events) for e in raw_node_events]
+    # Build node executions across all attempts for this execution_id,
+    # filtered by what the engine considers part of the current run state.
+    #
+    # When a run is interrupted and resumed, each attempt has its own
+    # `workflow.started` event. The engine stamps the new event with
+    # `data.restored_node_names = [list of names whose outputs came from
+    # checkpoint]` — that's the authoritative "still alive" list.
+    #
+    # We walk children of every workflow event for this execution_id, and
+    # for prior-attempt nodes we include only those whose name appears in
+    # the latest attempt's restored_names OR latest's own children.
+    # Anything else is orphaned (e.g. dispatched siblings from a prior
+    # attempt that the new dispatcher didn't recreate).
+    #
+    # Recursive merge by name: latest wins for the node's own state, but
+    # child_nodes / agents are unioned so nested descendants from earlier
+    # attempts (e.g. pre-interruption pipelines inside `sprint`) survive
+    # the dedupe.
+    #
+    # Falls back gracefully on pre-metadata events (those without
+    # restored_node_names): if the latest event has no metadata, we
+    # don't filter — the merge happens unchanged.
+    latest_data = workflow_event.get("data") or {}
+    restored_names: set[str] = set(latest_data.get("restored_node_names") or [])
+    has_resume_signal = bool(restored_names) or bool(latest_data.get("resume_of"))
+
+    latest_children_events = _find_children(events, workflow_event["id"], "stage.")
+    latest_nodes = [_build_node_execution(e, events) for e in latest_children_events]
+    latest_names = {n.get("name") for n in latest_nodes if n.get("name")}
+
     by_name: dict[str, dict] = {}
-    for n in built:
+    for n in latest_nodes:
         key = n.get("name") or n.get("id")
-        if not key:
-            continue
-        existing = by_name.get(key)
-        if existing is None:
+        if key:
             by_name[key] = n
-            continue
-        if (n.get("start_time") or "") >= (existing.get("start_time") or ""):
-            by_name[key] = _merge_node_recursive(latest=n, older=existing)
-        else:
-            by_name[key] = _merge_node_recursive(latest=existing, older=n)
+
+    for prior in workflow_candidates:
+        if prior["id"] == workflow_event["id"]:
+            continue  # already processed as latest
+        prior_children_events = _find_children(events, prior["id"], "stage.")
+        for ev in prior_children_events:
+            built = _build_node_execution(ev, events)
+            key = built.get("name") or built.get("id")
+            if not key:
+                continue
+            # Drop orphans on resumed runs: top-level nodes from older
+            # attempts that aren't restored AND don't share a name with
+            # any latest top-level. On non-resumed (pre-metadata) runs
+            # we skip this filter since we don't know what's alive.
+            if has_resume_signal and key not in latest_names and key not in restored_names:
+                continue
+            existing = by_name.get(key)
+            if existing is None:
+                by_name[key] = built
+                continue
+            if (built.get("start_time") or "") >= (existing.get("start_time") or ""):
+                by_name[key] = _merge_node_recursive(latest=built, older=existing)
+            else:
+                by_name[key] = _merge_node_recursive(latest=existing, older=built)
+
     nodes = list(by_name.values())
     nodes.sort(key=lambda n: n.get("start_time") or "")
     current_node_names = {n.get("name") for n in nodes if n.get("name")}
@@ -96,8 +130,17 @@ def get_workflow_execution(execution_id: str) -> dict | None:
     # Annotate nodes with dispatch relationships. `dispatch.applied` events
     # list each dispatcher's added children + removed targets. Frontend
     # uses these fields to show "dispatcher" badges on parents and
-    # "dispatched by X" / "removed by X" badges on children.
+    # "dispatched by X" / "removed by X" badges on children. Must run
+    # before `_renest_dispatched_into_containers` so `dispatched_by` is
+    # populated on the nodes the renester inspects.
     _annotate_dispatch_relationships(nodes, events)
+
+    # Re-nest top-level dispatched siblings under the container that
+    # dispatched them. After resume the engine sometimes promotes a
+    # dispatched pipeline (which was originally nested inside `sprint`)
+    # to a top-level sibling. Conceptually the pipeline is part of the
+    # sprint that fanned it out — restore that structure.
+    nodes = _renest_dispatched_into_containers(nodes)
 
     # For forked runs: fetch restored nodes from the source execution
     if fork_meta:
@@ -208,6 +251,96 @@ def list_workflow_executions(
     runs = runs[offset: offset + limit]
 
     return {"runs": runs, "total": total}
+
+
+def _build_resume_chain(latest_event: dict, all_workflow_events: list[dict]) -> list[dict]:
+    """Walk the resume chain backwards from `latest_event` via the
+    `data.resume_of` link the engine stamps on each new workflow.started
+    during resume. Returns chain[0] = latest_event, chain[N] = oldest
+    ancestor. Stops on missing pointer, missing target, or cycle.
+
+    A chain longer than 1 means this run was interrupted and resumed; a
+    chain of length 1 is a fresh run.
+    """
+    chain = [latest_event]
+    seen = {latest_event["id"]}
+    by_id = {e["id"]: e for e in all_workflow_events}
+    while True:
+        prev_id = (chain[-1].get("data") or {}).get("resume_of")
+        if not prev_id or prev_id in seen:
+            break
+        prev = by_id.get(prev_id)
+        if prev is None:
+            break
+        chain.append(prev)
+        seen.add(prev_id)
+    return chain
+
+
+def _renest_dispatched_into_containers(nodes: list[dict]) -> list[dict]:
+    """Move top-level nodes with `dispatched_by` into the container whose
+    agent did the dispatching.
+
+    The engine sometimes places dispatched siblings at the top level after
+    resume (the new attempt's dispatcher creates them as workflow-level
+    children rather than re-nesting under the originating stage). Users
+    expect "this pipeline was part of that sprint" to translate to
+    nesting in the view, so we normalize by walking each top-level node's
+    name + agent_name index and re-attaching dispatched-by'd siblings
+    into the container that owns the dispatcher.
+
+    Handles dedupe: if the destination already has a child with the same
+    name (because that container ran in an earlier attempt with a nested
+    copy of the same pipeline), the two are merged via
+    `_merge_node_recursive` rather than duplicated.
+    """
+    if not nodes:
+        return nodes
+
+    name_to_top: dict[str, dict] = {}
+
+    def index(n: dict, top: dict) -> None:
+        nm = n.get("name") or n.get("id")
+        if nm:
+            name_to_top[nm] = top
+        for a in n.get("agents") or []:
+            an = a.get("agent_name") or a.get("id")
+            if an:
+                name_to_top[an] = top
+        for c in n.get("child_nodes") or []:
+            index(c, top)
+
+    for top in nodes:
+        index(top, top)
+
+    keep: list[dict] = []
+    for n in nodes:
+        dispatcher = n.get("dispatched_by")
+        if not dispatcher:
+            keep.append(n)
+            continue
+        ancestor = name_to_top.get(dispatcher)
+        if ancestor is None or ancestor is n:
+            keep.append(n)
+            continue
+        kids = ancestor.get("child_nodes") or []
+        existing_idx = None
+        n_name = n.get("name") or n.get("id")
+        for i, k in enumerate(kids):
+            if (k.get("name") or k.get("id")) == n_name:
+                existing_idx = i
+                break
+        if existing_idx is not None:
+            existing = kids[existing_idx]
+            if (n.get("start_time") or "") >= (existing.get("start_time") or ""):
+                kids[existing_idx] = _merge_node_recursive(latest=n, older=existing)
+            else:
+                kids[existing_idx] = _merge_node_recursive(latest=existing, older=n)
+        else:
+            kids.append(n)
+        ancestor["child_nodes"] = kids
+
+    return keep
 
 
 def _merge_node_recursive(*, latest: dict, older: dict) -> dict:

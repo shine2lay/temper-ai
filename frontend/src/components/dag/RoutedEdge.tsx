@@ -1,71 +1,48 @@
 /**
  * Edge component that renders a path from ELK-supplied waypoints.
  *
- * ELK's `ORTHOGONAL` edge routing returns each edge as a list of bend
- * points: [start, ...bends, end]. We render that as a single SVG path
- * with rounded corners at each bend so the edge reads as a smooth
- * orthogonal route through the layout's edge channels rather than a
- * bezier through whatever node bodies happen to be in the way.
- *
- * The arrowhead (markerEnd) gets attached to the SVG and orients along
- * the final segment automatically.
+ * The path normally uses ELK's pre-computed orthogonal route. When a
+ * user drags a node, React Flow updates the source/target endpoint
+ * positions but the cached waypoints are now stale — so we detect the
+ * drift and fall back to a smoothstep recomputed from live endpoints.
+ * The arrow always anchors to the actual current node position; the
+ * worst case during drag is a less-pretty path until ELK re-runs.
  */
 import { type FC } from 'react';
-import { BaseEdge, type EdgeProps } from '@xyflow/react';
+import { BaseEdge, getSmoothStepPath, type EdgeProps } from '@xyflow/react';
 
 const CORNER_RADIUS = 8;
+/** Endpoint match tolerance — if the live endpoint is more than this
+ *  many pixels from the cached endpoint, treat the cache as stale. */
+const STALE_THRESHOLD = 6;
 
 type Point = { x: number; y: number };
 
-/** Build an SVG path string from a polyline of points, rounding the
- *  corners at each interior bend by `radius`. */
 function pathFromPoints(points: Point[], radius: number): string {
   if (points.length === 0) return '';
-  if (points.length === 1) {
-    const p = points[0];
-    return `M ${p.x} ${p.y}`;
-  }
-  if (points.length === 2) {
-    return `M ${points[0].x} ${points[0].y} L ${points[1].x} ${points[1].y}`;
-  }
+  if (points.length === 1) return `M ${points[0].x} ${points[0].y}`;
+  if (points.length === 2) return `M ${points[0].x} ${points[0].y} L ${points[1].x} ${points[1].y}`;
 
   const segments: string[] = [`M ${points[0].x} ${points[0].y}`];
-
   for (let i = 1; i < points.length - 1; i++) {
     const prev = points[i - 1];
     const cur = points[i];
     const next = points[i + 1];
-
-    // Vector from cur → prev (we'll back off in this direction)
-    const dxPrev = prev.x - cur.x;
-    const dyPrev = prev.y - cur.y;
-    const lenPrev = Math.hypot(dxPrev, dyPrev) || 1;
-    const ux1 = dxPrev / lenPrev;
-    const uy1 = dyPrev / lenPrev;
-
-    // Vector from cur → next
-    const dxNext = next.x - cur.x;
-    const dyNext = next.y - cur.y;
-    const lenNext = Math.hypot(dxNext, dyNext) || 1;
-    const ux2 = dxNext / lenNext;
-    const uy2 = dyNext / lenNext;
-
-    const r = Math.min(radius, lenPrev / 2, lenNext / 2);
-
-    const beforeX = cur.x + ux1 * r;
-    const beforeY = cur.y + uy1 * r;
-    const afterX = cur.x + ux2 * r;
-    const afterY = cur.y + uy2 * r;
-
-    segments.push(`L ${beforeX} ${beforeY}`);
-    // Quadratic curve through the corner — control point at the corner.
-    segments.push(`Q ${cur.x} ${cur.y} ${afterX} ${afterY}`);
+    const dxP = prev.x - cur.x, dyP = prev.y - cur.y;
+    const lenP = Math.hypot(dxP, dyP) || 1;
+    const dxN = next.x - cur.x, dyN = next.y - cur.y;
+    const lenN = Math.hypot(dxN, dyN) || 1;
+    const r = Math.min(radius, lenP / 2, lenN / 2);
+    segments.push(`L ${cur.x + (dxP / lenP) * r} ${cur.y + (dyP / lenP) * r}`);
+    segments.push(`Q ${cur.x} ${cur.y} ${cur.x + (dxN / lenN) * r} ${cur.y + (dyN / lenN) * r}`);
   }
-
   const last = points[points.length - 1];
   segments.push(`L ${last.x} ${last.y}`);
-
   return segments.join(' ');
+}
+
+function close(a: Point, b: Point): boolean {
+  return Math.abs(a.x - b.x) < STALE_THRESHOLD && Math.abs(a.y - b.y) < STALE_THRESHOLD;
 }
 
 export const RoutedEdge: FC<EdgeProps> = ({
@@ -73,18 +50,33 @@ export const RoutedEdge: FC<EdgeProps> = ({
   data,
   markerEnd,
   style,
-  // ELK gives us the routed points; React Flow falls back to source/target
-  // coords if data.points is missing (shouldn't happen on a successful
-  // ELK pass, but keeps us safe during transitions).
   sourceX,
   sourceY,
   targetX,
   targetY,
+  sourcePosition,
+  targetPosition,
 }) => {
-  const points = (data?.points as Point[] | undefined) ?? [
-    { x: sourceX, y: sourceY },
-    { x: targetX, y: targetY },
-  ];
-  const path = pathFromPoints(points, CORNER_RADIUS);
+  const cached = (data?.points as Point[] | undefined) ?? [];
+  const liveSrc = { x: sourceX, y: sourceY };
+  const liveTgt = { x: targetX, y: targetY };
+
+  // Use cached path only if both endpoints still match where ELK
+  // routed them. Otherwise the user has dragged a node — fall back to
+  // a smoothstep computed from current handle positions so the arrow
+  // stays anchored.
+  const usable =
+    cached.length >= 2 &&
+    close(cached[0], liveSrc) &&
+    close(cached[cached.length - 1], liveTgt);
+
+  const path = usable
+    ? pathFromPoints(cached, CORNER_RADIUS)
+    : getSmoothStepPath({
+        sourceX, sourceY, targetX, targetY,
+        sourcePosition, targetPosition,
+        borderRadius: CORNER_RADIUS,
+      })[0];
+
   return <BaseEdge id={id} path={path} markerEnd={markerEnd} style={style} />;
 };

@@ -63,9 +63,34 @@ def get_workflow_execution(execution_id: str) -> dict | None:
         None,
     )
 
-    # Build node executions (children of workflow event)
-    node_events = _find_children(events, workflow_event["id"], "stage.")
-    nodes = [_build_node_execution(e, events) for e in node_events]
+    # Build node executions. When the run was interrupted and resumed in
+    # place, each attempt has its own `workflow.started` event with its own
+    # children. Walk children of ALL workflow events and merge by name so
+    # the user sees pre-interruption progress alongside the new attempt.
+    # For nodes that ran in multiple attempts (e.g. `sprint`), latest start
+    # wins for the node's own state but child_nodes / agents are unioned
+    # recursively — otherwise we'd lose nested pipelines from earlier
+    # attempts when the same stage ran a second time with different
+    # children.
+    raw_node_events: list[dict] = []
+    for w in workflow_candidates:
+        raw_node_events.extend(_find_children(events, w["id"], "stage."))
+    built = [_build_node_execution(e, events) for e in raw_node_events]
+    by_name: dict[str, dict] = {}
+    for n in built:
+        key = n.get("name") or n.get("id")
+        if not key:
+            continue
+        existing = by_name.get(key)
+        if existing is None:
+            by_name[key] = n
+            continue
+        if (n.get("start_time") or "") >= (existing.get("start_time") or ""):
+            by_name[key] = _merge_node_recursive(latest=n, older=existing)
+        else:
+            by_name[key] = _merge_node_recursive(latest=existing, older=n)
+    nodes = list(by_name.values())
+    nodes.sort(key=lambda n: n.get("start_time") or "")
     current_node_names = {n.get("name") for n in nodes if n.get("name")}
 
     # Annotate nodes with dispatch relationships. `dispatch.applied` events
@@ -183,6 +208,62 @@ def list_workflow_executions(
     runs = runs[offset: offset + limit]
 
     return {"runs": runs, "total": total}
+
+
+def _merge_node_recursive(*, latest: dict, older: dict) -> dict:
+    """Merge two NodeExecution dicts that share a name across resume attempts.
+
+    The `latest` (more recent start_time) wins for the node's own state —
+    status, agents at the leaf, totals, timing. But child_nodes and agents
+    are *unioned* by name with recursive merging, so we don't lose nested
+    descendants from an earlier attempt when the same stage re-ran with a
+    different set of children. Without this, a `sprint` that ran twice
+    (each producing different pipelines) would show only the second run's
+    pipelines, dropping the first run's completed work from view.
+    """
+    merged = dict(latest)
+
+    # Merge child_nodes by name, recursively.
+    older_kids = older.get("child_nodes") or []
+    latest_kids = latest.get("child_nodes") or []
+    if older_kids or latest_kids:
+        kid_by_name: dict[str, dict] = {}
+        for kid in older_kids:
+            key = kid.get("name") or kid.get("id")
+            if key:
+                kid_by_name[key] = kid
+        for kid in latest_kids:
+            key = kid.get("name") or kid.get("id")
+            if not key:
+                continue
+            existing = kid_by_name.get(key)
+            if existing is None:
+                kid_by_name[key] = kid
+            else:
+                if (kid.get("start_time") or "") >= (existing.get("start_time") or ""):
+                    kid_by_name[key] = _merge_node_recursive(latest=kid, older=existing)
+                else:
+                    kid_by_name[key] = _merge_node_recursive(latest=existing, older=kid)
+        merged["child_nodes"] = list(kid_by_name.values()) or None
+
+    # Merge leaf agents by agent_name. Latest's data wins per agent.
+    older_agents = older.get("agents") or []
+    latest_agents = latest.get("agents") or []
+    if older_agents and not latest_agents:
+        merged["agents"] = older_agents
+    elif older_agents and latest_agents:
+        agent_by_name: dict[str, dict] = {}
+        for a in older_agents:
+            key = a.get("agent_name") or a.get("id")
+            if key:
+                agent_by_name[key] = a
+        for a in latest_agents:
+            key = a.get("agent_name") or a.get("id")
+            if key:
+                agent_by_name[key] = a  # latest wins per agent
+        merged["agents"] = list(agent_by_name.values())
+
+    return merged
 
 
 def _build_node_execution(node_event: dict, all_events: list[dict]) -> dict:

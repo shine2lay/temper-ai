@@ -39,8 +39,11 @@ export const LAYOUT = {
   AGENT_WIDTH: 220,
   AGENT_HEIGHT: 160,  // Increased — cards include IN/OUT sections, source tags, output previews
   AGENT_GAP_Y: 16,
-  STAGE_GAP_X: 120,
-  STAGE_GAP_Y: 60,  // Increased to prevent overlap between stages at same depth
+  // Gaps double as edge "freeway lanes" — smoothstep elbows route through
+  // them, so they need to be wide enough that horizontal/vertical edge
+  // segments have visible breathing room outside any node's body.
+  STAGE_GAP_X: 200,
+  STAGE_GAP_Y: 110,
   STAGE_PAD_X: 20,
   STAGE_PAD_Y: 60,
   STAGE_HEADER_HEIGHT: 48,

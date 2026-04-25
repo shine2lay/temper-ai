@@ -208,6 +208,13 @@ export function useDagElements(): { nodes: Node[]; edges: Edge[] } {
       fragment.rfEdges,
     );
 
+    // Lane routing: when a source has multiple outgoing edges (or a
+    // target has multiple incoming), assign each a unique lane index
+    // so the corresponding LaneEdge can stagger their elbow X. Without
+    // this, fan-out edges all overlap on the same vertical line and
+    // cut through whatever nodes sit in that column gap.
+    fragment.rfEdges = assignEdgeLanes(fragment.rfEdges);
+
     return { nodes: fragment.rfNodes, edges: fragment.rfEdges };
   }, [workflow, stages, agents]);
 
@@ -257,6 +264,57 @@ function applyHoverOpacity(
     };
   });
 }
+
+/** Assign lane indices to fan-out and fan-in edges so the LaneEdge
+ *  custom component can route them through staggered parallel lanes
+ *  instead of all colliding on the same midpoint X. Promotes the edge
+ *  type to 'lane' so React Flow uses LaneEdge to render them.
+ *
+ *  Strategy: group edges by source (fan-out) AND by target (fan-in);
+ *  whichever group is larger sets the laneCount/laneIdx for an edge.
+ *  Edges that aren't part of any fan-out/fan-in (1-to-1) keep their
+ *  original 'smoothstep' / 'default' type and don't get lane offsets.
+ */
+function assignEdgeLanes(edges: Edge[]): Edge[] {
+  // Skip dispatch/loopBack — they have their own custom rendering.
+  const skip = new Set(['dispatch', 'loopBack']);
+
+  // Group eligible edges by source and by target.
+  const bySource = new Map<string, Edge[]>();
+  const byTarget = new Map<string, Edge[]>();
+  for (const e of edges) {
+    if (skip.has(e.type ?? '')) continue;
+    (bySource.get(e.source) ?? bySource.set(e.source, []).get(e.source)!).push(e);
+    (byTarget.get(e.target) ?? byTarget.set(e.target, []).get(e.target)!).push(e);
+  }
+
+  return edges.map((e) => {
+    if (skip.has(e.type ?? '')) return e;
+    const fanOut = bySource.get(e.source) ?? [];
+    const fanIn = byTarget.get(e.target) ?? [];
+    // Pick whichever side has more edges sharing this corridor; that
+    // governs how many lanes are needed.
+    const useFanOut = fanOut.length >= fanIn.length;
+    const group = useFanOut ? fanOut : fanIn;
+    if (group.length <= 1) return e;
+    // Stable ordering by the OTHER endpoint id keeps lane assignment
+    // deterministic across renders.
+    const sorted = [...group].sort((a, b) =>
+      (useFanOut ? a.target : a.source).localeCompare(useFanOut ? b.target : b.source),
+    );
+    const laneIdx = sorted.indexOf(e);
+    return {
+      ...e,
+      type: 'lane',
+      data: {
+        ...(e.data || {}),
+        laneIdx,
+        laneCount: group.length,
+      },
+    };
+  });
+}
+
 
 /** Walk every edge — if an endpoint is nested inside a container that
  *  the OTHER endpoint isn't part of, retarget the endpoint to the

@@ -196,6 +196,18 @@ export function useDagElements(): { nodes: Node[]; edges: Edge[] } {
       nameToRenderedId,
     );
 
+    // Container-port routing: an edge that spans different parent
+    // containers gets retargeted to point at the LCA's direct children
+    // instead of deeply-nested endpoints. e.g. an edge from
+    // ticket_dispatcher_no_qa (inside sprint) to setup_ticket (inside
+    // pipeline_t1 inside sprint) becomes ticket_dispatcher_no_qa →
+    // pipeline_t1. Keeps cross-container edges from crossing other
+    // containers' chrome.
+    fragment.rfEdges = retargetCrossContainerEdges(
+      fragment.rfNodes,
+      fragment.rfEdges,
+    );
+
     return { nodes: fragment.rfNodes, edges: fragment.rfEdges };
   }, [workflow, stages, agents]);
 
@@ -243,6 +255,62 @@ function applyHoverOpacity(
         strokeWidth: isConnected ? baseWidth + 1 : baseWidth,
       },
     };
+  });
+}
+
+/** Walk every edge — if an endpoint is nested inside a container that
+ *  the OTHER endpoint isn't part of, retarget the endpoint to the
+ *  highest ancestor that's still inside the lowest-common-ancestor
+ *  container. So a leaf-to-leaf cross-container edge becomes a
+ *  sibling-to-sibling edge between containers (or a leaf in one + a
+ *  container in the other), routed cleanly within the LCA's bounds.
+ *
+ *  No-ops when both endpoints share an immediate parent (intra-container
+ *  edges stay leaf-to-leaf so the inside of a container reads naturally).
+ */
+function retargetCrossContainerEdges(nodes: Node[], edges: Edge[]): Edge[] {
+  const parentOf = new Map<string, string | undefined>();
+  for (const n of nodes) {
+    parentOf.set(n.id, (n as { parentId?: string }).parentId);
+  }
+  const ancestorChain = (id: string): string[] => {
+    const chain = [id];
+    let cur = parentOf.get(id);
+    while (cur) {
+      chain.push(cur);
+      cur = parentOf.get(cur);
+    }
+    return chain;  // [self, parent, grandparent, ..., topmost]
+  };
+  return edges.map((e) => {
+    const src = ancestorChain(e.source);
+    const tgt = ancestorChain(e.target);
+    // Same immediate parent? Already a sibling edge — leave it alone.
+    if (src[1] === tgt[1] && src[1] !== undefined) return e;
+    if (src[1] === undefined && tgt[1] === undefined) return e;  // both top-level
+    // Find lowest common ancestor (any node id in both chains).
+    const srcSet = new Set(src);
+    let lcaIdxInTgt = -1;
+    for (let i = 0; i < tgt.length; i++) {
+      if (srcSet.has(tgt[i])) { lcaIdxInTgt = i; break; }
+    }
+    const lca = lcaIdxInTgt >= 0 ? tgt[lcaIdxInTgt] : undefined;
+    // Resolve each endpoint to "direct child of LCA" — the container
+    // that's a sibling at the LCA level. If LCA is undefined (top-level),
+    // promote each to its topmost ancestor.
+    const promoteTo = (chain: string[]): string => {
+      if (lca === undefined) return chain[chain.length - 1];
+      const idx = chain.indexOf(lca);
+      // chain[idx] is the LCA itself; chain[idx-1] is its direct child.
+      return idx > 0 ? chain[idx - 1] : chain[0];
+    };
+    const newSource = promoteTo(src);
+    const newTarget = promoteTo(tgt);
+    if (newSource === e.source && newTarget === e.target) return e;
+    // Preserve edge identity by ID — id collisions are unlikely since
+    // multiple leaf-pairs that promote to the same container pair
+    // would share an edge anyway (same dispatch relationship).
+    return { ...e, source: newSource, target: newTarget };
   });
 }
 

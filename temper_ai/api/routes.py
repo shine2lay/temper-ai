@@ -297,16 +297,28 @@ def resume_run(execution_id: str, body: ResumeRequest | None = None):
     # Replay any dispatch_applied checkpoints — materialize dispatched nodes
     # into the loaded workflow and rebuild DispatchRunState so caps still
     # enforce correctly against the pre-crash history.
-    _apply_dispatch_history_on_resume(
+    replayed_dispatches = _apply_dispatch_history_on_resume(
         checkpoint_svc=checkpoint_svc,
         graph_loader=_state().graph_loader,
         nodes=nodes,
         context=context,
     )
 
+    # Build resume metadata so the new workflow.started event carries a
+    # link back to the prior attempt + the list of names whose outputs
+    # came from checkpoint. This lets the view distinguish "fresh start"
+    # from "resume" without inferring from event count.
+    prev_workflow_event = _find_latest_workflow_event(execution_id)
+    resume_metadata = {
+        "resume_of": prev_workflow_event["id"] if prev_workflow_event else None,
+        "restored_node_names": sorted(restored_outputs.keys()),
+        "replayed_dispatches": replayed_dispatches or [],
+    }
+
     thread = threading.Thread(
         target=_run_workflow_with_checkpoints,
         args=(nodes, original_inputs, context, config.name, execution_id, restored_outputs),
+        kwargs={"resume_metadata": resume_metadata},
         daemon=True,
     )
     thread.start()
@@ -475,9 +487,27 @@ def _build_dispatch_limits(config):
     return DispatchLimits.from_defaults(getattr(config, "defaults", None))
 
 
+def _find_latest_workflow_event(execution_id: str) -> dict | None:
+    """Return the most recent `workflow.started` event for the given run, or
+    None if none exists. Used during resume to stamp the new workflow event
+    with `data.resume_of` pointing back to the prior attempt.
+    """
+    from temper_ai.observability.event_types import EventType
+    from temper_ai.observability.recorder import get_events
+    candidates = get_events(
+        execution_id=execution_id,
+        event_type=EventType.WORKFLOW_STARTED,
+        limit=100,
+    )
+    if not candidates:
+        return None
+    # Latest by timestamp wins.
+    return max(candidates, key=lambda e: e.get("timestamp") or "")
+
+
 def _apply_dispatch_history_on_resume(
     checkpoint_svc, graph_loader, nodes, context,
-) -> None:
+) -> list[str]:
     """Rebuild the DAG + DispatchRunState from saved dispatch_applied events.
 
     Called before executor restart during resume. For each persisted dispatch:
@@ -488,13 +518,16 @@ def _apply_dispatch_history_on_resume(
 
     op=remove targets are already handled by reconstruct() which marks them
     SKIPPED in the restored node_outputs.
+
+    Returns: list of dispatcher names whose state was replayed (for resume
+    metadata stamping on the new workflow.started event).
     """
     from temper_ai.stage.dispatch_limits import DispatchRunState
     from temper_ai.stage.models import NodeConfig
 
     history = checkpoint_svc.reconstruct_dispatch_history()
     if not history:
-        return
+        return []
 
     # Seed the state if the context doesn't have one yet — on resume, no
     # dispatch has fired in this executor process, so state starts empty.
@@ -503,6 +536,7 @@ def _apply_dispatch_history_on_resume(
     state = context.dispatch_state
 
     existing_names = {n.name for n in nodes}
+    replayed_dispatchers: list[str] = []
     for event in history:
         dispatcher_name = event["dispatcher_name"]
         # Record dispatcher's own fingerprint + depth so cycle/depth walks
@@ -548,12 +582,15 @@ def _apply_dispatch_history_on_resume(
                 agent_ref, node_dict.get("input_map") or {},
             )
         state.dispatched_count += event["dispatched_count_delta"]
+        if dispatcher_name not in replayed_dispatchers:
+            replayed_dispatchers.append(dispatcher_name)
 
     logger.info(
         "Resume: replayed %d dispatch_applied event(s); DAG now has %d nodes, "
         "dispatched_count=%d",
         len(history), len(nodes), state.dispatched_count,
     )
+    return replayed_dispatchers
 
 
 def _preconnect_mcp_servers(mcp_manager, mcp_tools: dict) -> None:
@@ -641,8 +678,16 @@ def _run_workflow(nodes, inputs, context, workflow_name, execution_id, workflow_
             context.tool_executor.shutdown(wait=False)
 
 
-def _run_workflow_with_checkpoints(nodes, inputs, context, workflow_name, execution_id, restored_outputs):
-    """Run a workflow with pre-populated node_outputs from checkpoints."""
+def _run_workflow_with_checkpoints(
+    nodes, inputs, context, workflow_name, execution_id, restored_outputs,
+    *, resume_metadata: dict | None = None,
+):
+    """Run a workflow with pre-populated node_outputs from checkpoints.
+
+    `resume_metadata`, when provided, flows through to the WORKFLOW_STARTED
+    event so the view can identify the new attempt as a resume of a prior
+    workflow event (instead of inferring from event count).
+    """
     try:
         logger.info(
             "Resuming workflow '%s' (execution: %s) — %d nodes pre-loaded",
@@ -656,6 +701,7 @@ def _run_workflow_with_checkpoints(nodes, inputs, context, workflow_name, execut
             graph_name=workflow_name,
             is_workflow=True,
             initial_outputs=restored_outputs,
+            resume_metadata=resume_metadata,
         )
         logger.info(
             "Workflow '%s' resumed and completed: status=%s, cost=$%.4f, tokens=%d",

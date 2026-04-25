@@ -45,7 +45,7 @@ export function AgentRow({ agentId, defaultExpanded = false }: AgentRowProps) {
     <div
       className={cn(
         'rounded-lg border transition-all',
-        isFailed ? 'border-red-900/50 bg-red-950/20' : 'border-temper-border/50 bg-temper-panel/50',
+        isFailed ? 'border-red-300 bg-red-50 dark:border-red-900/50 dark:bg-red-950/20' : 'border-temper-border/50 bg-temper-panel/50',
         expanded && 'shadow-md',
       )}
     >
@@ -98,10 +98,10 @@ export function AgentRow({ agentId, defaultExpanded = false }: AgentRowProps) {
               className={cn(
                 'text-[10px] px-1.5 py-0.5 rounded font-mono',
                 agent.confidence_score >= 0.8
-                  ? 'bg-emerald-950/50 text-emerald-400'
+                  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400'
                   : agent.confidence_score >= 0.5
-                    ? 'bg-amber-950/50 text-amber-400'
-                    : 'bg-red-950/50 text-red-400',
+                    ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-400'
+                    : 'bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-400',
               )}
             >
               {(agent.confidence_score * 100).toFixed(0)}%
@@ -109,7 +109,7 @@ export function AgentRow({ agentId, defaultExpanded = false }: AgentRowProps) {
           )}
           {hasApprovalRequired && (
             <span
-              className="text-[10px] px-1.5 py-0.5 rounded bg-amber-950/50 text-amber-400 border border-amber-900/50"
+              className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-300 dark:bg-amber-950/50 dark:text-amber-400 dark:border-amber-900/50"
               title="Has tool calls requiring approval"
             >
               !
@@ -135,7 +135,7 @@ export function AgentRow({ agentId, defaultExpanded = false }: AgentRowProps) {
         <div id={regionId} role="region" aria-label={`Details for ${agent.agent_name ?? agentId}`} className="border-t border-temper-border/30">
           {/* Error banner for failed agents */}
           {isFailed && agent.error_message && (
-            <div className="mx-4 mt-3 px-3 py-2 rounded-md bg-red-950/40 text-sm text-red-400 border border-red-900/50">
+            <div className="mx-4 mt-3 px-3 py-2 rounded-md bg-red-50 text-sm text-red-700 border border-red-200 dark:bg-red-950/40 dark:text-red-400 dark:border-red-900/50">
               <span className="font-medium">Error: </span>
               {agent.error_message}
             </div>

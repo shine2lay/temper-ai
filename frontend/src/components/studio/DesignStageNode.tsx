@@ -206,7 +206,7 @@ function AgentMiniCard({
               {summary.name}
             </span>
             {summary.type !== 'standard' && (
-              <span className="text-[7px] px-0.5 py-px rounded bg-violet-900/30 text-violet-400 shrink-0">
+              <span className="text-[7px] px-0.5 py-px rounded bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400 shrink-0">
                 {summary.type}
               </span>
             )}
@@ -251,7 +251,7 @@ function AgentMiniCard({
             {summary.name}
           </span>
           {summary.type !== 'standard' && (
-            <span className="text-[8px] px-1 py-px rounded bg-violet-900/30 text-violet-400 shrink-0">
+            <span className="text-[8px] px-1 py-px rounded bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400 shrink-0">
               {summary.type}
             </span>
           )}
@@ -291,7 +291,7 @@ function AgentMiniCard({
             <span className="text-[9px] text-temper-text-dim shrink-0">{summary.timeoutSeconds}s</span>
           )}
           {summary.riskLevel && (
-            <span className="text-[8px] px-0.5 py-px rounded bg-amber-900/30 text-amber-400 shrink-0">
+            <span className="text-[8px] px-0.5 py-px rounded bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 shrink-0">
               risk:{summary.riskLevel}
             </span>
           )}
@@ -448,7 +448,7 @@ function SequentialLayout({
   return (
     <div className="flex flex-col gap-0">
       <div className="flex items-center gap-1 mb-1">
-        <span className="text-[8px] px-1 py-px rounded bg-amber-900/30 text-amber-400">
+        <span className="text-[8px] px-1 py-px rounded bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
           sequential
         </span>
         <span className="text-[8px] text-temper-text-dim">
@@ -586,7 +586,7 @@ function ParallelLayout({
     <div className="flex flex-col gap-0">
       {isParallel && (
         <div className="flex items-center gap-1 mb-1">
-          <span className="text-[8px] px-1 py-px rounded bg-amber-900/30 text-amber-400">
+          <span className="text-[8px] px-1 py-px rounded bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
             parallel
           </span>
           <span className="text-[8px] text-temper-text-dim">

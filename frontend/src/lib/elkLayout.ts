@@ -338,12 +338,15 @@ const FRAGMENT_OPTIONS: LayoutOptions = {
   'elk.algorithm': 'layered',
   'elk.direction': 'RIGHT',
   'elk.layered.edgeRouting': 'ORTHOGONAL',
-  'elk.layered.spacing.nodeNodeBetweenLayers': '60',
-  'elk.layered.spacing.edgeNodeBetweenLayers': '24',
-  'elk.layered.spacing.edgeEdgeBetweenLayers': '12',
-  'elk.spacing.nodeNode': '30',
-  'elk.spacing.edgeNode': '16',
-  'elk.spacing.edgeEdge': '10',
+  // Bumped from 60 → 140 — leader-strategy fan-in needs visible
+  // breathing room between the worker column and the leader column,
+  // otherwise the moderator looks crammed against its workers.
+  'elk.layered.spacing.nodeNodeBetweenLayers': '140',
+  'elk.layered.spacing.edgeNodeBetweenLayers': '40',
+  'elk.layered.spacing.edgeEdgeBetweenLayers': '20',
+  'elk.spacing.nodeNode': '40',
+  'elk.spacing.edgeNode': '20',
+  'elk.spacing.edgeEdge': '12',
   'elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF',
   'elk.layered.nodePlacement.bk.fixedAlignment': 'BALANCED',
   'elk.padding': `[top=${HEADER_H + PAD},left=${PAD},bottom=${PAD},right=${PAD}]`,
@@ -391,7 +394,100 @@ export async function layoutWithElk(
   };
 
   const laidOut = await elk.layout(root);
-  return collectResult(laidOut, ctx);
+  const result = collectResult(laidOut, ctx);
+
+  // Strategy-specific post-processing. ELK's general-purpose layout
+  // does well most of the time, but specific strategies have an
+  // expected visual that ELK doesn't quite hit (e.g. `leader` wants
+  // the leader vertically centered on its workers, not aligned to one
+  // worker's row). Override here.
+  postProcessStrategies(result);
+
+  return result;
+}
+
+
+// ---------------------------------------------------------------------------
+// Strategy-specific post-processors
+// ---------------------------------------------------------------------------
+
+/** Mutates `result` in place. */
+function postProcessStrategies(result: ElkLayoutResult): void {
+  // Build a parent → children map and an absolute-Y map for the walk.
+  const childrenByParent = new Map<string | undefined, ElkPositionedNode[]>();
+  for (const n of result.nodes) {
+    const list = childrenByParent.get(n.parentId) ?? [];
+    list.push(n);
+    childrenByParent.set(n.parentId, list);
+  }
+  const absY = new Map<string, number>();
+  const computeAbs = (n: ElkPositionedNode, parentAbsY: number): void => {
+    const a = parentAbsY + n.y;
+    absY.set(n.id, a);
+    for (const c of childrenByParent.get(n.id) ?? []) computeAbs(c, a);
+  };
+  for (const top of childrenByParent.get(undefined) ?? []) computeAbs(top, 0);
+
+  for (const container of result.nodes) {
+    if (container.node.strategy !== 'leader') continue;
+    const kids = childrenByParent.get(container.id) ?? [];
+    if (kids.length < 2) continue;
+
+    // ELK output may reorder children. Find the leader by matching
+    // back to the original NodeExecution's last agent / child entry —
+    // that's the one we treated as the leader during edge synthesis.
+    const orig = container.node;
+    const origKidsList: { id?: string; name?: string }[] =
+      orig.child_nodes && orig.child_nodes.length > 0
+        ? orig.child_nodes
+        : (orig.agents ?? []).map((a) => ({
+            id: `${orig.id}__${a.agent_name ?? a.id}`,
+            name: a.agent_name ?? a.id,
+          }));
+    const leaderRef = origKidsList[origKidsList.length - 1];
+    const leader = kids.find((k) => k.id === leaderRef?.id) ?? kids[kids.length - 1];
+    const workers = kids.filter((k) => k !== leader);
+    if (workers.length === 0) continue;
+
+    // Center Y (absolute) of the workers' bounding box.
+    let minTop = Infinity, maxBottom = -Infinity;
+    for (const w of workers) {
+      const ay = absY.get(w.id) ?? 0;
+      minTop = Math.min(minTop, ay);
+      maxBottom = Math.max(maxBottom, ay + w.height);
+    }
+    const workersCenterY = (minTop + maxBottom) / 2;
+    const leaderCenterY = (absY.get(leader.id) ?? 0) + leader.height / 2;
+    const deltaY = workersCenterY - leaderCenterY;
+    if (Math.abs(deltaY) < 4) continue;  // already close enough
+
+    // Shift the leader's relative Y.
+    leader.y += deltaY;
+    const newLeaderAbsY = (absY.get(leader.id) ?? 0) + deltaY;
+    absY.set(leader.id, newLeaderAbsY);
+
+    // Adjust incoming edges to the leader. ELK's ORTHOGONAL routing
+    // produces a polyline of [source, ...bends, target]. The last
+    // 1-2 points are at the leader's old Y; shift them so the edge
+    // terminates at the new Y. Middle bends (inside the inter-column
+    // gap) extend their vertical run accordingly.
+    const oldLeaderEndpointY = newLeaderAbsY - deltaY + leader.height / 2;
+    const newLeaderEndpointY = newLeaderAbsY + leader.height / 2;
+    for (const e of result.edges) {
+      if (e.target !== leader.id) continue;
+      // Walk backwards from the end; any point at the old endpoint Y
+      // moves to the new one. Stops at the first point whose Y differs
+      // (that's the start of the vertical segment in the gap, which
+      // we want to keep where it is).
+      for (let i = e.points.length - 1; i >= 0; i--) {
+        if (Math.abs(e.points[i].y - oldLeaderEndpointY) < 4) {
+          e.points[i] = { x: e.points[i].x, y: newLeaderEndpointY };
+        } else {
+          break;
+        }
+      }
+    }
+  }
 }
 
 

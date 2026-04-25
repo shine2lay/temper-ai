@@ -1,14 +1,40 @@
-import { useMemo } from 'react';
-import { useExecutionStore } from '@/store/executionStore';
-import { selectStageGroups, selectDagInfo } from '@/store/selectors';
-import { computeStagePositions } from '@/lib/dagLayout';
-import { STAGE_PALETTE, EDGE_COLORS } from '@/lib/constants';
-import type { Node, Edge, MarkerType } from '@xyflow/react';
-import type { StageExecution, AgentExecution } from '@/types';
-import type { DagInfo } from '@/store/selectors';
-import type { StagePosition } from '@/lib/dagLayout';
+/**
+ * Builds React Flow nodes and edges from store state.
+ *
+ * Architecture: a single recursive walker (`buildFragment`) handles every
+ * level of the DAG via the `computeFragmentLayout` primitive in
+ * `lib/dagFragment.ts`. Stages with `child_nodes` recurse; stages with
+ * leaf agents (no children) synthesize per-agent fragment nodes and recurse
+ * with the strategy as a layout hint. Strategies (`sequential` / `parallel`
+ * / `leader`) collapse into edge synthesis on the same primitive — there's
+ * no per-strategy positioning code.
+ *
+ * Skipped nodes are filtered before layout, with edges rewired transitively
+ * so `A → SKIP → C` becomes `A → C`. No more "gaping hole" gaps.
+ *
+ * Workflow-level affordances (loop-back, dispatch indicators) attach at
+ * the top level after the fragment walk completes.
+ */
 
-/** Agents and metrics for a single iteration of a stage. */
+import { useMemo } from 'react';
+import type { Edge, MarkerType, Node } from '@xyflow/react';
+
+import { useExecutionStore } from '@/store/executionStore';
+import { selectDagInfo, selectStageGroups } from '@/store/selectors';
+import type { DagInfo } from '@/store/selectors';
+import {
+  computeFragmentLayout,
+  type FragmentPosition,
+  type LayoutHint,
+} from '@/lib/dagFragment';
+import { EDGE_COLORS, LAYOUT, STAGE_PALETTE } from '@/lib/constants';
+import type { AgentExecution, NodeExecution, StageExecution } from '@/types';
+
+// ---------------------------------------------------------------------------
+// Public types — kept stable so StageGroupNode / AgentNodeComponent don't
+// need updates.
+// ---------------------------------------------------------------------------
+
 export interface IterationData {
   stage: StageExecution;
   agents: AgentExecution[];
@@ -17,7 +43,6 @@ export interface IterationData {
   durationSeconds: number;
 }
 
-/** Data for a stage-type node (composite, has multiple agents). */
 export interface StageNodeData extends Record<string, unknown> {
   stage: StageExecution;
   iterations: IterationData[];
@@ -30,14 +55,11 @@ export interface StageNodeData extends Record<string, unknown> {
   dagInfo: DagInfo;
   expanded: boolean;
   delegateCount?: number;
-  // Dispatch metadata — if set, this stage was materialized at runtime
-  // by a dispatcher. Rendered prominently so it's obvious.
   dispatchedBy?: string;
   dispatchedChildren?: string[];
   removedChildren?: string[];
 }
 
-/** Data for an agent-type node (leaf, single agent). */
 export interface AgentNodeData extends Record<string, unknown> {
   agent: AgentExecution | null;
   stage: StageExecution;
@@ -47,666 +69,606 @@ export interface AgentNodeData extends Record<string, unknown> {
   durationSeconds: number;
   isDelegate?: boolean;
   delegatedBy?: string;
-  // Dispatch metadata — whose dispatch added this node, or which children
-  // this node dispatched.
   dispatchedBy?: string;
   dispatchedChildren?: string[];
   removedChildren?: string[];
-  /** All iterations for this node (when loop/retry produces multiple runs). */
   iterations?: { agent: AgentExecution | null; stage: StageExecution }[];
 }
 
-/**
- * Transforms store state into React Flow nodes and edges.
- *
- * Renders differently based on node type:
- * - type='agent': renders as AgentNodeComponent (compact card)
- * - type='stage': renders as StageNode (container with agents inside)
- */
+
+// ---------------------------------------------------------------------------
+// Hook
+// ---------------------------------------------------------------------------
+
 export function useDagElements(): { nodes: Node[]; edges: Edge[] } {
   const workflow = useExecutionStore((s) => s.workflow);
   const stages = useExecutionStore((s) => s.stages);
   const agents = useExecutionStore((s) => s.agents);
-  const expandedStages = useExecutionStore((s) => s.expandedStages);
 
   return useMemo(() => {
     if (!workflow) return { nodes: [], edges: [] };
 
     const stageGroups = selectStageGroups(stages);
     const dagInfo = selectDagInfo();
-    const positions = computeStagePositions(stageGroups, dagInfo, expandedStages);
 
-    const nodes: Node[] = [];
-    const edges: Edge[] = [];
+    // Top-level: pick the latest execution per name (iteration grouping —
+    // multiple runs of the same name show up as iteration badges, not as
+    // separate DAG nodes).
+    const topLevelLatest: NodeExecution[] = [];
+    const executionsByName = new Map<string, NodeExecution[]>();
+    for (const [name, execs] of stageGroups) {
+      const latest = execs[execs.length - 1];
+      // Filter delegates out of top-level — they're rendered as children of
+      // their delegate_source.
+      if (latest.type === 'delegate') continue;
+      topLevelLatest.push(latest);
+      executionsByName.set(name, execs);
+    }
 
-    let colorIndex = 0;
-    const stageNames = Array.from(stageGroups.keys());
-    const renderedStages = new Set<string>(); // Track which stages actually render
-
-    // Pre-pass: group delegate nodes by their parent (delegate_source)
-    const delegatesByParent = new Map<string, string[]>();
-    for (const [stageName, executions] of stageGroups) {
-      const latest = executions[executions.length - 1];
-      if (latest.type === 'delegate') {
-        const parent = latest.delegate_source;
-        if (parent) {
-          const list = delegatesByParent.get(parent) ?? [];
-          list.push(stageName);
-          delegatesByParent.set(parent, list);
-        }
+    // Pre-pass: group delegate stages under their sources so the recursive
+    // walker can treat them as if they were proper child_nodes of the parent.
+    const delegatesByParent = new Map<string, NodeExecution[]>();
+    for (const [, execs] of stageGroups) {
+      const latest = execs[execs.length - 1];
+      if (latest.type === 'delegate' && latest.delegate_source) {
+        const list = delegatesByParent.get(latest.delegate_source) ?? [];
+        list.push(latest);
+        delegatesByParent.set(latest.delegate_source, list);
       }
     }
-    // Set of delegate stage names (to skip when rendering top-level)
-    const delegateStageNames = new Set(
-      Array.from(delegatesByParent.values()).flat(),
+
+    // Color assignment is per top-level node, stable by index.
+    const colorByName = new Map<string, string>();
+    topLevelLatest.forEach((n, i) => {
+      colorByName.set(n.name ?? n.id, STAGE_PALETTE[i % STAGE_PALETTE.length]);
+    });
+
+    const ctx: BuildCtx = {
+      agents,
+      executionsByName,
+      delegatesByParent,
+      colorByName,
+      dagInfo,
+    };
+
+    const fragment = buildFragment(topLevelLatest, null, undefined, ctx);
+
+    // Workflow-level edges (loop-back + dispatch). These cross fragment
+    // boundaries conceptually but in practice all our examples keep them
+    // at the top level.
+    const renderedNames = new Set(topLevelLatest.map((n) => n.name ?? n.id));
+    const liveTopIds = new Set(fragment.liveTopLevelIds);
+    appendWorkflowLevelEdges(
+      fragment.rfEdges,
+      dagInfo,
+      stageGroups,
+      renderedNames,
+      liveTopIds,
     );
 
-    for (const [stageName, executions] of stageGroups) {
-      const latest = executions[executions.length - 1];
-      const pos = positions.get(stageName);
-      if (!pos) continue;
-
-      const stageColor = STAGE_PALETTE[colorIndex % STAGE_PALETTE.length];
-      colorIndex++;
-
-      // Determine if this is an agent-type or stage-type node
-      const nodeType = latest.type ?? 'agent';
-      const isDelegate = nodeType === 'delegate';
-      const nodeAgents = latest.agents ?? [];
-      const isSkipped = latest.status === 'skipped' && nodeAgents.length === 0;
-
-      // Skipped stages: don't render
-      if (isSkipped) {
-        colorIndex++;
-        continue;
-      }
-
-      // Delegate nodes are rendered inside their parent — skip top-level
-      if (delegateStageNames.has(stageName)) {
-        renderedStages.add(stageName); // still mark as rendered for edge routing
-        continue;
-      }
-
-      renderedStages.add(stageName);
-
-      // Check if this agent has delegate children
-      const delegateNames = delegatesByParent.get(stageName);
-
-      if ((nodeType === 'agent' || isDelegate) && !delegateNames) {
-        // Simple agent node: render as compact agent card
-        const agent = nodeAgents.length > 0
-          ? (agents.get(nodeAgents[0].id) ?? nodeAgents[0])
-          : null;
-
-        const totalTokens = agent?.total_tokens ?? 0;
-        const totalCost = agent?.estimated_cost_usd ?? 0;
-        const durationSeconds = latest.duration_seconds ?? 0;
-
-        // Build iterations for multi-run nodes (loops/retries)
-        const iters = executions.length > 1
-          ? executions.map((exec) => {
-              const execAgents = exec.agents ?? [];
-              const execAgent = execAgents.length > 0
-                ? (agents.get(execAgents[0].id) ?? execAgents[0])
-                : null;
-              return { agent: execAgent, stage: exec };
-            })
-          : undefined;
-
-        const data: AgentNodeData = {
-          agent,
-          stage: latest,
-          stageColor,
-          totalTokens,
-          totalCost,
-          durationSeconds,
-          isDelegate,
-          delegatedBy: isDelegate ? latest.delegated_by : undefined,
-          dispatchedBy: latest.dispatched_by,
-          dispatchedChildren: latest.dispatched_children,
-          removedChildren: latest.removed_children,
-          iterations: iters,
-        };
-
-        nodes.push({
-          id: stageName,
-          type: 'agentNode',
-          position: { x: pos.x, y: pos.y },
-          data,
-        });
-      } else if (nodeType === 'agent' && delegateNames) {
-        // Agent with delegates: render as a group container
-        // Parent agent card at top, delegate cards below
-        const parentAgent = nodeAgents.length > 0
-          ? (agents.get(nodeAgents[0].id) ?? nodeAgents[0])
-          : null;
-
-        const cardH = 200;
-        const hdrH = 75;
-        const pad = 28;
-        const gap = 20;
-
-        // Collect delegate agents
-        const delegateAgents: { name: string; agent: AgentExecution | null; stage: StageExecution }[] = [];
-        for (const dName of delegateNames) {
-          const dExecs = stageGroups.get(dName);
-          if (!dExecs) continue;
-          const dLatest = dExecs[dExecs.length - 1];
-          const dAgents = dLatest.agents ?? [];
-          const dAgent = dAgents.length > 0
-            ? (agents.get(dAgents[0].id) ?? dAgents[0])
-            : null;
-          delegateAgents.push({ name: dName, agent: dAgent, stage: dLatest });
-        }
-
-        // Calculate totals
-        let totalTokens = parentAgent?.total_tokens ?? 0;
-        let totalCost = parentAgent?.estimated_cost_usd ?? 0;
-        for (const d of delegateAgents) {
-          totalTokens += d.agent?.total_tokens ?? 0;
-          totalCost += d.agent?.estimated_cost_usd ?? 0;
-        }
-        const durationSeconds = latest.duration_seconds ?? 0;
-
-        // Horizontal layout: parent on left, delegates stacked vertically on right
-        const delegatesH = delegateAgents.length * cardH + (delegateAgents.length - 1) * gap;
-        const contentH = Math.max(cardH, delegatesH);
-        const maxCardW = 350; // AgentNodeComponent max-w-[350px]
-        const containerW = pad * 3 + maxCardW * 2 + gap;
-        const containerH = hdrH + pad + contentH + pad;
-
-        const iterations: IterationData[] = [{
-          stage: latest,
-          agents: nodeAgents,
-          totalTokens,
-          totalCost,
-          durationSeconds,
-        }];
-
-        const data: StageNodeData = {
-          stage: latest,
-          iterations,
-          iterationCount: 1,
-          stageColor,
-          strategy: 'delegate',
-          totalTokens,
-          totalCost,
-          durationSeconds,
-          dagInfo,
-          expanded: true,
-          delegateCount: delegateAgents.length,
-          dispatchedBy: latest.dispatched_by,
-          dispatchedChildren: latest.dispatched_children,
-          removedChildren: latest.removed_children,
-        };
-
-        nodes.push({
-          id: stageName,
-          type: 'stageGroup',
-          position: { x: pos.x, y: pos.y },
-          data,
-          style: {
-            width: Math.max(containerW, 350),
-            height: Math.max(containerH, 200),
-          },
-        });
-
-        // Parent agent card on the left, aligned to top of content area
-        const parentY = hdrH + pad;
-        if (parentAgent) {
-          nodes.push({
-            id: `${stageName}__${parentAgent.agent_name ?? parentAgent.id}`,
-            type: 'agentNode',
-            position: { x: pad, y: parentY },
-            parentId: stageName,
-            extent: 'parent' as const,
-            data: {
-              agent: parentAgent,
-              stage: latest,
-              stageColor,
-              totalTokens: parentAgent.total_tokens ?? 0,
-              totalCost: parentAgent.estimated_cost_usd ?? 0,
-              durationSeconds: parentAgent.duration_seconds ?? 0,
-            } as AgentNodeData,
-          });
-        }
-
-        // Delegate agent cards stacked vertically on the right
-        const delegateColor = '#8b5cf6'; // violet
-        const delegateX = pad + maxCardW + gap;
-        delegateAgents.forEach((d, i) => {
-          const childY = hdrH + pad + i * (cardH + gap);
-          // Clean up display name: strip "delegate:" prefix and trailing "_N"
-          const displayName = d.name
-            .replace(/^delegate:/, '')
-            .replace(/_\d+$/, '');
-
-          nodes.push({
-            id: d.name,
-            type: 'agentNode',
-            position: { x: delegateX, y: childY },
-            parentId: stageName,
-            extent: 'parent' as const,
-            data: {
-              agent: d.agent,
-              stage: { ...d.stage, name: displayName },
-              stageColor: delegateColor,
-              totalTokens: d.agent?.total_tokens ?? 0,
-              totalCost: d.agent?.estimated_cost_usd ?? 0,
-              durationSeconds: d.agent?.duration_seconds ?? 0,
-              isDelegate: true,
-              delegatedBy: parentAgent?.agent_name,
-            } as AgentNodeData,
-          });
-
-          // Edge from parent agent → delegate (horizontal arrow)
-          if (parentAgent) {
-            edges.push({
-              id: `delegate-${stageName}-${d.name}`,
-              source: `${stageName}__${parentAgent.agent_name ?? parentAgent.id}`,
-              target: d.name,
-              sourceHandle: 'right',
-              targetHandle: 'left',
-              type: 'default',
-              markerEnd: {
-                type: 'arrowclosed' as MarkerType,
-                color: delegateColor,
-                width: 12,
-                height: 12,
-              },
-              style: { stroke: delegateColor, strokeWidth: 1.5, strokeDasharray: '6 3' },
-            });
-          }
-        });
-      } else {
-        // Stage node: render as group container with child agent nodes inside
-        const nodeAgents = (latest.agents ?? []).map(
-          (a) => agents.get(a.id) ?? a,
-        );
-
-        let totalTokens = 0;
-        let totalCost = 0;
-        for (const a of nodeAgents) {
-          totalTokens += a.total_tokens ?? 0;
-          totalCost += a.estimated_cost_usd ?? 0;
-        }
-        const durationSeconds = latest.duration_seconds ?? 0;
-        const strategy = latest.strategy;
-
-        // Layout constants
-        const cardW = 280;
-        const cardH = 200;
-        const hdrH = 75;
-        const pad = 28;
-        const gap = 30;
-
-        const iterations: IterationData[] = [{
-          stage: latest,
-          agents: nodeAgents,
-          totalTokens,
-          totalCost,
-          durationSeconds,
-        }];
-
-        const data: StageNodeData = {
-          stage: latest,
-          iterations,
-          iterationCount: executions.length,
-          stageColor,
-          strategy,
-          totalTokens,
-          totalCost,
-          durationSeconds,
-          dagInfo,
-          expanded: true,
-          dispatchedBy: latest.dispatched_by,
-          dispatchedChildren: latest.dispatched_children,
-          removedChildren: latest.removed_children,
-        };
-
-        // Identify leader agent (if leader strategy)
-        const isLeader = strategy === 'leader';
-        const isSequential = strategy === 'sequential';
-        const leaderAgent = isLeader
-          ? nodeAgents.find((a) => a.role === 'leader') ?? nodeAgents[nodeAgents.length - 1]
-          : null;
-        const workerAgents = isLeader
-          ? nodeAgents.filter((a) => a !== leaderAgent)
-          : nodeAgents;
-
-        // Calculate container size based on strategy
-        let containerW: number;
-        let containerH: number;
-
-        if (isSequential) {
-          // Horizontal chain
-          containerW = pad * 2 + nodeAgents.length * cardW + (nodeAgents.length - 1) * gap;
-          containerH = hdrH + pad + cardH + pad;
-        } else if (isLeader) {
-          // Workers stacked vertically on left, leader on right
-          const workersH = workerAgents.length * cardH + (workerAgents.length - 1) * gap;
-          containerW = pad * 3 + cardW * 2 + gap;
-          containerH = hdrH + pad + Math.max(workersH, cardH) + pad;
-        } else {
-          // Parallel: vertical stack
-          containerW = pad * 2 + cardW;
-          containerH = hdrH + pad + nodeAgents.length * cardH + (nodeAgents.length - 1) * gap + pad;
-        }
-
-        // Parent group node
-        nodes.push({
-          id: stageName,
-          type: 'stageGroup',
-          position: { x: pos.x, y: pos.y },
-          data,
-          style: {
-            width: Math.max(containerW, 350),
-            height: Math.max(containerH, 200),
-          },
-        });
-
-        // Position child nodes based on strategy
-        if (isLeader && leaderAgent) {
-          // Workers: vertical stack on left
-          workerAgents.forEach((agent, i) => {
-            nodes.push({
-              id: `${stageName}__${agent.agent_name ?? agent.id}`,
-              type: 'agentNode',
-              position: { x: pad, y: hdrH + pad + i * (cardH + gap) },
-              parentId: stageName,
-              extent: 'parent' as const,
-              data: {
-                agent, stage: latest, stageColor,
-                totalTokens: agent.total_tokens ?? 0,
-                totalCost: agent.estimated_cost_usd ?? 0,
-                durationSeconds: agent.duration_seconds ?? 0,
-              } as AgentNodeData,
-            });
-          });
-
-          // Leader: positioned to the right, vertically centered
-          const workersH = workerAgents.length * cardH + (workerAgents.length - 1) * gap;
-          const leaderY = hdrH + pad + Math.max(0, (workersH - cardH) / 2);
-          nodes.push({
-            id: `${stageName}__${leaderAgent.agent_name ?? leaderAgent.id}`,
-            type: 'agentNode',
-            position: { x: pad + cardW + gap, y: leaderY },
-            parentId: stageName,
-            extent: 'parent' as const,
-            data: {
-              agent: leaderAgent, stage: latest, stageColor,
-              totalTokens: leaderAgent.total_tokens ?? 0,
-              totalCost: leaderAgent.estimated_cost_usd ?? 0,
-              durationSeconds: leaderAgent.duration_seconds ?? 0,
-            } as AgentNodeData,
-          });
-
-          // Edges: each worker → leader
-          for (const worker of workerAgents) {
-            edges.push({
-              id: `inner-${stageName}-${worker.agent_name ?? worker.id}-to-leader`,
-              source: `${stageName}__${worker.agent_name ?? worker.id}`,
-              target: `${stageName}__${leaderAgent.agent_name ?? leaderAgent.id}`,
-              sourceHandle: 'right',
-              targetHandle: 'left',
-              type: 'default',
-              markerEnd: {
-                type: 'arrowclosed' as MarkerType,
-                color: stageColor,
-                width: 14,
-                height: 14,
-              },
-              style: { stroke: stageColor, strokeWidth: 2 },
-              animated: latest.status === 'running',
-            });
-          }
-        } else {
-          // Sequential or Parallel: position agents
-          nodeAgents.forEach((agent, i) => {
-            const childX = isSequential ? pad + i * (cardW + gap) : pad;
-            const childY = isSequential ? hdrH + pad : hdrH + pad + i * (cardH + gap);
-
-            nodes.push({
-              id: `${stageName}__${agent.agent_name ?? agent.id}`,
-              type: 'agentNode',
-              position: { x: childX, y: childY },
-              parentId: stageName,
-              extent: 'parent' as const,
-              data: {
-                agent, stage: latest, stageColor,
-                totalTokens: agent.total_tokens ?? 0,
-                totalCost: agent.estimated_cost_usd ?? 0,
-                durationSeconds: agent.duration_seconds ?? 0,
-              } as AgentNodeData,
-            });
-          });
-
-          // Sequential edges (horizontal arrows)
-          if (isSequential && nodeAgents.length > 1) {
-            for (let i = 0; i < nodeAgents.length - 1; i++) {
-              const src = nodeAgents[i];
-              const tgt = nodeAgents[i + 1];
-              edges.push({
-                id: `inner-${stageName}-${i}`,
-                source: `${stageName}__${src.agent_name ?? src.id}`,
-                target: `${stageName}__${tgt.agent_name ?? tgt.id}`,
-                sourceHandle: 'right',
-                targetHandle: 'left',
-                type: 'default',
-                markerEnd: {
-                  type: 'arrowclosed' as MarkerType,
-                  color: stageColor,
-                  width: 14,
-                  height: 14,
-                },
-                style: { stroke: stageColor, strokeWidth: 2 },
-                animated: latest.status === 'running',
-              });
-            }
-          }
-          // No inner edges for parallel
-        }
-      }
-    }
-
-    // Arrowhead marker for dependency edges
-    const depMarker = {
-      type: 'arrowclosed' as MarkerType,
-      color: EDGE_COLORS.dataFlow,
-      width: 16,
-      height: 16,
-    };
-
-    // Amber marker for dispatch edges (dispatcher → dispatched node)
-    const DISPATCH_COLOR = '#f59e0b';
-    const dispatchMarker = {
-      type: 'arrowclosed' as MarkerType,
-      color: DISPATCH_COLOR,
-      width: 16,
-      height: 16,
-    };
-
-    // Build edges with smart handle selection based on node positions
-    if (dagInfo.hasDeps) {
-      for (const [target, deps] of dagInfo.depMap) {
-        if (!renderedStages.has(target)) continue; // Skip edges to non-rendered stages
-        // Skip edges to/from delegate nodes (they're rendered inside parent containers)
-        if (delegateStageNames.has(target)) continue;
-        for (const source of deps) {
-          if (!renderedStages.has(source)) continue; // Skip edges from non-rendered stages
-          if (delegateStageNames.has(source)) continue;
-          const sourceStage = stageGroups.get(source);
-          const sourceStatus = sourceStage
-            ? sourceStage[sourceStage.length - 1].status
-            : undefined;
-
-          const srcPos = positions.get(source);
-          const tgtPos = positions.get(target);
-          const handles = _pickHandles(srcPos, tgtPos);
-
-          // Detect dispatch edges: target was added at runtime by source.
-          const targetStage = stageGroups.get(target);
-          const targetDispatchedBy = targetStage
-            ? targetStage[targetStage.length - 1].dispatched_by
-            : undefined;
-          const isDispatchEdge = targetDispatchedBy === source;
-
-          edges.push({
-            id: `dep-${source}-${target}`,
-            source,
-            target,
-            sourceHandle: handles.sourceHandle,
-            targetHandle: handles.targetHandle,
-            type: isDispatchEdge ? 'dispatch' : 'default',
-            markerEnd: isDispatchEdge ? dispatchMarker : depMarker,
-            style: isDispatchEdge
-              ? undefined
-              : { stroke: EDGE_COLORS.dataFlow, strokeWidth: 2 },
-            animated: sourceStatus === 'running',
-          });
-        }
-      }
-
-      for (const [source, target] of dagInfo.loopsBackTo) {
-        const sourceExecs = stageGroups.get(source);
-        const targetExecs = stageGroups.get(target);
-        const iterCount = targetExecs ? targetExecs.length : 0;
-        const maxLoops = dagInfo.maxLoops.get(source);
-        const sourceStatus = sourceExecs
-          ? sourceExecs[sourceExecs.length - 1].status
-          : undefined;
-        const isActive = sourceStatus === 'failed' || sourceStatus === 'running';
-
-        const iterLabel = maxLoops
-          ? `${iterCount}/${maxLoops}`
-          : `x${iterCount}`;
-        const label = iterCount > 1
-          ? `retry ${iterLabel}`
-          : maxLoops
-            ? `on fail (max ${maxLoops})`
-            : 'on fail';
-
-        edges.push({
-          id: `loop-${source}-${target}`,
-          source,
-          target,
-          sourceHandle: 'bottom',
-          targetHandle: 'bottom-target',
-          type: 'loopBack',
-          label,
-          style: {
-            stroke: EDGE_COLORS.loopBack,
-            strokeWidth: 2.5,
-            strokeDasharray: '8 4',
-          },
-          animated: isActive,
-        });
-      }
-    } else {
-      // Fallback: sequential edges in stage order. Skip when the target was
-      // dispatched at runtime — the dispatch-edge pass below will draw an
-      // explicit amber edge from dispatcher→target instead, and stacking a
-      // blue seq edge underneath would just muddle the view.
-      for (let i = 0; i < stageNames.length - 1; i++) {
-        const source = stageNames[i];
-        const target = stageNames[i + 1];
-        const targetExecs = stageGroups.get(target);
-        const targetDispatchedBy = targetExecs
-          ? targetExecs[targetExecs.length - 1].dispatched_by
-          : undefined;
-        if (targetDispatchedBy) continue;
-
-        const sourceStage = stageGroups.get(source);
-        const sourceStatus = sourceStage
-          ? sourceStage[sourceStage.length - 1].status
-          : undefined;
-
-        edges.push({
-          id: `seq-${source}-${target}`,
-          source,
-          target,
-          sourceHandle: 'right',
-          targetHandle: 'left',
-          type: 'default',
-          markerEnd: depMarker,
-          style: { stroke: EDGE_COLORS.dataFlow, strokeWidth: 2 },
-          animated: sourceStatus === 'running',
-        });
-      }
-    }
-
-    // Dispatch edges for dispatched nodes. Use the same smart handle
-    // selection as normal dep edges (right→left by default) so the flow
-    // stays left-to-right; the custom DispatchEdge component raises the
-    // label z-index so it stays readable even when the edge passes over
-    // another node.
-    const existingEdgeIds = new Set(edges.map((e) => e.id));
-    for (const [target, execs] of stageGroups) {
-      if (!renderedStages.has(target)) continue;
-      if (delegateStageNames.has(target)) continue;
-      const latest = execs[execs.length - 1];
-      const dispatcher = latest.dispatched_by;
-      if (!dispatcher) continue;
-      if (!renderedStages.has(dispatcher)) continue;
-      if (delegateStageNames.has(dispatcher)) continue;
-      const edgeId = `dep-${dispatcher}-${target}`;
-      if (existingEdgeIds.has(edgeId)) continue;
-
-      const srcPos = positions.get(dispatcher);
-      const tgtPos = positions.get(target);
-      const handles = _pickHandles(srcPos, tgtPos);
-      const sourceStage = stageGroups.get(dispatcher);
-      const sourceStatus = sourceStage
-        ? sourceStage[sourceStage.length - 1].status
-        : undefined;
-
-      edges.push({
-        id: edgeId,
-        source: dispatcher,
-        target,
-        sourceHandle: handles.sourceHandle,
-        targetHandle: handles.targetHandle,
-        type: 'dispatch',
-        markerEnd: dispatchMarker,
-        animated: sourceStatus === 'running',
-        zIndex: 1000,
-      });
-    }
-
-    return { nodes, edges };
-  }, [workflow, stages, agents, expandedStages]);
+    return { nodes: fragment.rfNodes, edges: fragment.rfEdges };
+  }, [workflow, stages, agents]);
 }
 
-/**
- * Pick source/target handles based on relative node positions.
- * - Same column (small x delta): use bottom→top
- * - Target to the right: use right→left (default L→R flow)
- * - Target to the left: use left→right (backflow)
- */
-function _pickHandles(
-  srcPos: StagePosition | undefined,
-  tgtPos: StagePosition | undefined,
-): { sourceHandle: string; targetHandle: string } {
-  if (!srcPos || !tgtPos) {
-    return { sourceHandle: 'right', targetHandle: 'left' };
+
+// ---------------------------------------------------------------------------
+// Recursive builder
+// ---------------------------------------------------------------------------
+
+interface BuildCtx {
+  agents: Map<string, AgentExecution>;
+  executionsByName: Map<string, NodeExecution[]>;
+  delegatesByParent: Map<string, NodeExecution[]>;
+  colorByName: Map<string, string>;
+  dagInfo: DagInfo;
+}
+
+interface FragmentResult {
+  rfNodes: Node[];
+  rfEdges: Edge[];
+  width: number;
+  height: number;
+  /** Ids of nodes that survived the skip filter at THIS level. Caller uses
+   *  this to suppress workflow-level edges that point at skipped nodes. */
+  liveTopLevelIds: string[];
+}
+
+const HEADER_H = LAYOUT.STAGE_HEADER_HEIGHT + LAYOUT.STAGE_METRICS_HEIGHT;
+const PAD = LAYOUT.STAGE_PAD_X;
+
+function buildFragment(
+  nodes: NodeExecution[],
+  parentContainerId: string | null,
+  layoutHint: LayoutHint,
+  ctx: BuildCtx,
+): FragmentResult {
+  // First, recursively measure children of any stage in this fragment.
+  // We need their inner sizes BEFORE laying out this fragment so the layout
+  // primitive can size containers correctly.
+  const innerCache = new Map<string, FragmentResult>();
+  for (const n of nodes) {
+    if (n.status === 'skipped') continue;
+    const inner = computeInnerFragment(n, ctx);
+    if (inner) innerCache.set(n.id, inner);
   }
 
-  const dx = tgtPos.x - srcPos.x;
-  const dy = tgtPos.y - srcPos.y;
+  const sizeFor = (n: NodeExecution): { width: number; height: number } => {
+    const inner = innerCache.get(n.id);
+    if (inner) {
+      return {
+        width: inner.width + PAD * 2,
+        height: inner.height + HEADER_H + PAD * 2,
+      };
+    }
+    return leafSize(n);
+  };
 
-  // If target is roughly in the same column (small horizontal gap),
-  // route vertically to avoid crossing
-  if (Math.abs(dx) < 80) {
-    return dy > 0
-      ? { sourceHandle: 'bottom', targetHandle: 'left' }
-      : { sourceHandle: 'right', targetHandle: 'bottom' };
+  const layout = computeFragmentLayout(nodes, { layoutHint, sizeFor });
+
+  const rfNodes: Node[] = [];
+  const rfEdges: Edge[] = [];
+  const liveTopLevelIds: string[] = layout.liveNodes.map((n) => n.id);
+
+  for (const n of layout.liveNodes) {
+    const pos = layout.positions.get(n.id)!;
+    const stageColor = colorOf(n, parentContainerId, ctx);
+    const inner = innerCache.get(n.id);
+
+    if (inner) {
+      emitContainer(rfNodes, rfEdges, n, pos, stageColor, inner, parentContainerId, ctx);
+    } else {
+      emitLeafAgent(rfNodes, n, pos, stageColor, parentContainerId, ctx);
+    }
   }
 
-  // Normal left-to-right flow
-  if (dx > 0) {
-    return { sourceHandle: 'right', targetHandle: 'left' };
+  // Inner edges from layout (synthetic + real depends_on).
+  for (const e of layout.edges) {
+    rfEdges.push(makeInnerEdge(e.source, e.target, parentContainerId, ctx));
   }
 
-  // Backflow (target is to the left)
-  return { sourceHandle: 'left', targetHandle: 'right' };
+  return {
+    rfNodes,
+    rfEdges,
+    width: layout.width,
+    height: layout.height,
+    liveTopLevelIds,
+  };
+}
+
+
+// ---------------------------------------------------------------------------
+// Inner-fragment computation. Decides what "inside this node" means:
+//   - has child_nodes  → recurse on them
+//   - has agents       → synthesize fragment nodes from agents, recurse
+//   - has delegates    → synthesize fragment nodes from delegates, recurse
+//   - else             → leaf, no inner
+// ---------------------------------------------------------------------------
+
+function computeInnerFragment(node: NodeExecution, ctx: BuildCtx): FragmentResult | null {
+  // 1. Real nested stages.
+  if (node.child_nodes && node.child_nodes.length > 0) {
+    // Unwrap the "stage-ref passthrough" pattern: when a stage has exactly
+    // one child stage with the same name (the inner copy that the executor
+    // creates when expanding a `ref:`), render the grandchildren directly
+    // in this container so we don't get two nested same-name boxes.
+    const passthrough = unwrapPassthrough(node);
+    if (passthrough) {
+      const hint = (passthrough.strategy ?? node.strategy) as LayoutHint;
+      // If the passthrough child has its own children, recurse on those;
+      // otherwise treat its agents as a fragment.
+      if (passthrough.child_nodes && passthrough.child_nodes.length > 0) {
+        return buildFragment(passthrough.child_nodes, node.id, hint, ctx);
+      }
+      if ((passthrough.agents ?? []).length > 0) {
+        const pseudo = (passthrough.agents ?? []).map((a) =>
+          pseudoAgentNode(node, a, false),
+        );
+        return buildFragment(pseudo, node.id, hint, ctx);
+      }
+    }
+    return buildFragment(node.child_nodes, node.id, node.strategy as LayoutHint, ctx);
+  }
+
+  // 2. Stage with leaf agents → synthesize fragment nodes per agent.
+  if (node.type === 'stage' && (node.agents ?? []).length > 0) {
+    const pseudo: NodeExecution[] = (node.agents ?? []).map((a) =>
+      pseudoAgentNode(node, a, /* isDelegate */ false),
+    );
+    return buildFragment(pseudo, node.id, node.strategy as LayoutHint, ctx);
+  }
+
+  // 3. Agent with delegates → synthesize the parent agent + delegate agents
+  //    as a leader-style fragment. This preserves the existing visual where
+  //    delegates fan out from the parent.
+  const delegates = ctx.delegatesByParent.get(node.name ?? node.id);
+  if (node.type === 'agent' && delegates && delegates.length > 0) {
+    const parentAgent = node.agent ?? (node.agents ?? [])[0];
+    if (!parentAgent) return null;
+    const pseudo: NodeExecution[] = [
+      pseudoAgentNode(node, parentAgent, false),
+      ...delegates.map((d) => {
+        const dAgent = d.agent ?? (d.agents ?? [])[0] ?? null;
+        return delegatePseudoNode(node, d, dAgent);
+      }),
+    ];
+    return buildFragment(pseudo, node.id, 'leader', ctx);
+  }
+
+  return null;
+}
+
+
+// ---------------------------------------------------------------------------
+// React Flow node emission
+// ---------------------------------------------------------------------------
+
+function emitContainer(
+  rfNodes: Node[],
+  rfEdges: Edge[],
+  node: NodeExecution,
+  pos: FragmentPosition,
+  stageColor: string,
+  inner: FragmentResult,
+  parentContainerId: string | null,
+  ctx: BuildCtx,
+): void {
+  const allAgents = collectAgents(node, ctx);
+  const totalTokens = allAgents.reduce((acc, a) => acc + (a.total_tokens ?? 0), 0);
+  const totalCost = allAgents.reduce((acc, a) => acc + (a.estimated_cost_usd ?? 0), 0);
+
+  const execs = ctx.executionsByName.get(node.name ?? node.id) ?? [node];
+  const iterations: IterationData[] = [
+    {
+      stage: node,
+      agents: allAgents,
+      totalTokens,
+      totalCost,
+      durationSeconds: node.duration_seconds ?? 0,
+    },
+  ];
+
+  const data: StageNodeData = {
+    stage: node,
+    iterations,
+    iterationCount: execs.length,
+    stageColor,
+    strategy: node.strategy,
+    totalTokens,
+    totalCost,
+    durationSeconds: node.duration_seconds ?? 0,
+    dagInfo: ctx.dagInfo,
+    expanded: true,
+    delegateCount: ctx.delegatesByParent.get(node.name ?? node.id)?.length,
+    dispatchedBy: node.dispatched_by,
+    dispatchedChildren: node.dispatched_children,
+    removedChildren: node.removed_children,
+  };
+
+  rfNodes.push({
+    id: node.id,
+    type: 'stageGroup',
+    position: { x: pos.x, y: pos.y },
+    ...(parentContainerId
+      ? { parentId: parentContainerId, extent: 'parent' as const }
+      : {}),
+    style: {
+      width: pos.width,
+      height: pos.height,
+    },
+    data,
+  });
+
+  // Inner content sits below the header, padded.
+  for (const innerNode of inner.rfNodes) {
+    if (innerNode.parentId !== node.id) {
+      // Only direct children of this container need translation; deeper
+      // descendants are positioned relative to their own container.
+      rfNodes.push(innerNode);
+      continue;
+    }
+    rfNodes.push({
+      ...innerNode,
+      position: {
+        x: innerNode.position.x + PAD,
+        y: innerNode.position.y + HEADER_H + PAD,
+      },
+    });
+  }
+  rfEdges.push(...inner.rfEdges);
+}
+
+function emitLeafAgent(
+  rfNodes: Node[],
+  node: NodeExecution,
+  pos: FragmentPosition,
+  stageColor: string,
+  parentContainerId: string | null,
+  ctx: BuildCtx,
+): void {
+  const agentList = node.agents ?? (node.agent ? [node.agent] : []);
+  const liveAgent = agentList.length > 0
+    ? (ctx.agents.get(agentList[0].id) ?? agentList[0])
+    : null;
+
+  const execs = ctx.executionsByName.get(node.name ?? node.id) ?? [];
+  const iters = execs.length > 1
+    ? execs.map((exec) => {
+        const execAgents = exec.agents ?? (exec.agent ? [exec.agent] : []);
+        const execAgent = execAgents.length > 0
+          ? (ctx.agents.get(execAgents[0].id) ?? execAgents[0])
+          : null;
+        return { agent: execAgent, stage: exec };
+      })
+    : undefined;
+
+  const data: AgentNodeData = {
+    agent: liveAgent,
+    stage: node,
+    stageColor,
+    totalTokens: liveAgent?.total_tokens ?? 0,
+    totalCost: liveAgent?.estimated_cost_usd ?? 0,
+    durationSeconds: node.duration_seconds ?? liveAgent?.duration_seconds ?? 0,
+    isDelegate: node.type === 'delegate',
+    delegatedBy: node.delegated_by,
+    dispatchedBy: node.dispatched_by,
+    dispatchedChildren: node.dispatched_children,
+    removedChildren: node.removed_children,
+    iterations: iters,
+  };
+
+  rfNodes.push({
+    id: node.id,
+    type: 'agentNode',
+    position: { x: pos.x, y: pos.y },
+    ...(parentContainerId
+      ? { parentId: parentContainerId, extent: 'parent' as const }
+      : {}),
+    data,
+  });
+}
+
+
+// ---------------------------------------------------------------------------
+// Edges
+// ---------------------------------------------------------------------------
+
+function makeInnerEdge(
+  sourceId: string,
+  targetId: string,
+  parentContainerId: string | null,
+  ctx: BuildCtx,
+): Edge {
+  // For inner edges within a fragment we always use right→left (BFS gives
+  // left-to-right flow). For top-level edges between containers we'd want
+  // smart handle selection; that's handled in appendWorkflowLevelEdges.
+  const color = parentContainerId
+    ? colorById(parentContainerId, ctx) ?? EDGE_COLORS.dataFlow
+    : EDGE_COLORS.dataFlow;
+
+  return {
+    id: `inner-${sourceId}-${targetId}`,
+    source: sourceId,
+    target: targetId,
+    sourceHandle: 'right',
+    targetHandle: 'left',
+    type: 'default',
+    markerEnd: {
+      type: 'arrowclosed' as MarkerType,
+      color,
+      width: 14,
+      height: 14,
+    },
+    style: { stroke: color, strokeWidth: 2 },
+  };
+}
+
+function appendWorkflowLevelEdges(
+  edges: Edge[],
+  dagInfo: DagInfo,
+  stageGroups: Map<string, StageExecution[]>,
+  renderedNames: Set<string>,
+  liveTopIds: Set<string>,
+): void {
+  // Loop-back arrows (workflow-level only).
+  const dispatchMarker = {
+    type: 'arrowclosed' as MarkerType,
+    color: '#f59e0b',
+    width: 16,
+    height: 16,
+  };
+  const depMarker = {
+    type: 'arrowclosed' as MarkerType,
+    color: EDGE_COLORS.dataFlow,
+    width: 16,
+    height: 16,
+  };
+
+  // Loop-back edges (workflow-level retries).
+  for (const [source, target] of dagInfo.loopsBackTo) {
+    if (!renderedNames.has(source) || !renderedNames.has(target)) continue;
+    const sourceExecs = stageGroups.get(source);
+    const targetExecs = stageGroups.get(target);
+    const sourceId = sourceExecs?.[sourceExecs.length - 1]?.id;
+    const targetId = targetExecs?.[targetExecs.length - 1]?.id;
+    if (!sourceId || !targetId) continue;
+    if (!liveTopIds.has(sourceId) || !liveTopIds.has(targetId)) continue;
+
+    const iterCount = targetExecs?.length ?? 0;
+    const maxLoops = dagInfo.maxLoops.get(source);
+    const sourceStatus = sourceExecs?.[sourceExecs.length - 1]?.status;
+    const isActive = sourceStatus === 'failed' || sourceStatus === 'running';
+
+    const iterLabel = maxLoops ? `${iterCount}/${maxLoops}` : `x${iterCount}`;
+    const label = iterCount > 1
+      ? `retry ${iterLabel}`
+      : maxLoops ? `on fail (max ${maxLoops})` : 'on fail';
+
+    edges.push({
+      id: `loop-${source}-${target}`,
+      source: sourceId,
+      target: targetId,
+      sourceHandle: 'bottom',
+      targetHandle: 'bottom-target',
+      type: 'loopBack',
+      label,
+      style: {
+        stroke: EDGE_COLORS.loopBack,
+        strokeWidth: 2.5,
+        strokeDasharray: '8 4',
+      },
+      animated: isActive,
+    });
+  }
+
+  // Dispatch edges: a dispatcher node added the target at runtime. We add
+  // an explicit amber edge so the addition is visible.
+  for (const [name, execs] of stageGroups) {
+    if (!renderedNames.has(name)) continue;
+    const latest = execs[execs.length - 1];
+    if (!latest.dispatched_by) continue;
+    if (!renderedNames.has(latest.dispatched_by)) continue;
+    const sourceExecs = stageGroups.get(latest.dispatched_by);
+    const sourceId = sourceExecs?.[sourceExecs.length - 1]?.id;
+    if (!sourceId) continue;
+    if (!liveTopIds.has(sourceId) || !liveTopIds.has(latest.id)) continue;
+    edges.push({
+      id: `dispatch-${sourceId}-${latest.id}`,
+      source: sourceId,
+      target: latest.id,
+      sourceHandle: 'right',
+      targetHandle: 'left',
+      type: 'dispatch',
+      markerEnd: dispatchMarker,
+      animated: latest.status === 'running',
+      zIndex: 1000,
+    });
+  }
+
+  // Top-level dependency edges (when fragment didn't synthesize them — i.e.
+  // when the workflow has explicit depends_on). The recursive builder
+  // already produced inner edges for siblings within stage containers; here
+  // we add edges between top-level containers.
+  if (!dagInfo.hasDeps) return;
+  for (const [target, deps] of dagInfo.depMap) {
+    if (!renderedNames.has(target)) continue;
+    const targetExecs = stageGroups.get(target);
+    const targetId = targetExecs?.[targetExecs.length - 1]?.id;
+    if (!targetId || !liveTopIds.has(targetId)) continue;
+    for (const source of deps) {
+      if (!renderedNames.has(source)) continue;
+      const sourceExecs = stageGroups.get(source);
+      const sourceId = sourceExecs?.[sourceExecs.length - 1]?.id;
+      if (!sourceId || !liveTopIds.has(sourceId)) continue;
+      // Skip if this edge is already in the inner-edges set (from a fragment
+      // that included these as siblings).
+      const id = `inner-${sourceId}-${targetId}`;
+      if (edges.some((e) => e.id === id)) continue;
+      edges.push({
+        id: `dep-${sourceId}-${targetId}`,
+        source: sourceId,
+        target: targetId,
+        sourceHandle: 'right',
+        targetHandle: 'left',
+        type: 'default',
+        markerEnd: depMarker,
+        style: { stroke: EDGE_COLORS.dataFlow, strokeWidth: 2 },
+      });
+    }
+  }
+}
+
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** Detect the "stage-ref" passthrough pattern: outer stage has a single
+ *  child stage with the same name. The executor creates this when expanding
+ *  a YAML `ref:` — visually it's a redundant wrapper. */
+function unwrapPassthrough(node: NodeExecution): NodeExecution | null {
+  const kids = node.child_nodes ?? [];
+  if (kids.length !== 1) return null;
+  const only = kids[0];
+  if (only.type !== 'stage') return null;
+  if ((only.name ?? only.id) !== (node.name ?? node.id)) return null;
+  return only;
+}
+
+function leafSize(node: NodeExecution): { width: number; height: number } {
+  // Even "stage with no children" cases use leaf size since the outer loop
+  // detects inner content and overrides via sizeFor.
+  void node;
+  return { width: LAYOUT.AGENT_WIDTH + 60, height: LAYOUT.AGENT_HEIGHT };
+}
+
+function colorOf(node: NodeExecution, parentContainerId: string | null, ctx: BuildCtx): string {
+  // Top-level: per-node from palette.
+  if (!parentContainerId) {
+    return ctx.colorByName.get(node.name ?? node.id) ?? STAGE_PALETTE[0];
+  }
+  // Nested: inherit parent's color.
+  return colorById(parentContainerId, ctx) ?? STAGE_PALETTE[0];
+}
+
+function colorById(id: string, ctx: BuildCtx): string | undefined {
+  // Walk top-level looking for the id (slow but the map is small in practice).
+  for (const [name, color] of ctx.colorByName) {
+    const execs = ctx.executionsByName.get(name);
+    if (execs && execs.some((e) => e.id === id)) return color;
+  }
+  return undefined;
+}
+
+function collectAgents(node: NodeExecution, ctx: BuildCtx): AgentExecution[] {
+  const out: AgentExecution[] = [];
+  const agentList = node.agents ?? (node.agent ? [node.agent] : []);
+  for (const a of agentList) out.push(ctx.agents.get(a.id) ?? a);
+  for (const child of node.child_nodes ?? []) out.push(...collectAgents(child, ctx));
+  return out;
+}
+
+/** Build a synthetic NodeExecution for a leaf agent so it can travel
+ *  through the same recursive builder as a real node. */
+function pseudoAgentNode(
+  parent: NodeExecution,
+  agent: AgentExecution,
+  isDelegate: boolean,
+): NodeExecution {
+  return {
+    id: `${parent.id}__${agent.agent_name ?? agent.id}`,
+    name: agent.agent_name ?? agent.id,
+    type: isDelegate ? 'delegate' : 'agent',
+    status: agent.status as NodeExecution['status'],
+    start_time: agent.start_time,
+    end_time: agent.end_time,
+    duration_seconds: agent.duration_seconds,
+    cost_usd: agent.estimated_cost_usd ?? 0,
+    total_tokens: agent.total_tokens ?? 0,
+    agent,
+    depends_on: [],
+  };
+}
+
+function delegatePseudoNode(
+  parent: NodeExecution,
+  delegateNode: NodeExecution,
+  agent: AgentExecution | null,
+): NodeExecution {
+  // Delegate cards keep their original delegate node id so selection still
+  // resolves to the right place in the store.
+  return {
+    id: delegateNode.id,
+    name: delegateNode.name,
+    type: 'delegate',
+    status: delegateNode.status,
+    start_time: delegateNode.start_time,
+    end_time: delegateNode.end_time,
+    duration_seconds: delegateNode.duration_seconds,
+    cost_usd: delegateNode.cost_usd,
+    total_tokens: delegateNode.total_tokens,
+    agent: agent ?? undefined,
+    delegated_by: parent.name ?? parent.id,
+    delegate_source: parent.name ?? parent.id,
+    depends_on: [],
+  };
 }

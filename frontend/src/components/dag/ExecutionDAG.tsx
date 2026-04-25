@@ -12,7 +12,6 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { useExecutionStore } from '@/store/executionStore';
-import { selectStageGroups, selectDagInfo } from '@/store/selectors';
 import { useDagElements } from '@/hooks/useDagElements';
 import { DAG_FIT_PADDING } from '@/lib/constants';
 import { StageNode } from './StageNode';
@@ -43,9 +42,8 @@ const edgeTypes = {
  */
 export function ExecutionDAG() {
   const computed = useDagElements();
-  const { setNodes, setEdges, fitView, getNodes } = useReactFlow();
+  const { setNodes, setEdges, fitView } = useReactFlow();
   const prevNodeCountRef = useRef(0);
-  const expandedStages = useExecutionStore((s) => s.expandedStages);
   const stages = useExecutionStore((s) => s.stages);
   const agents = useExecutionStore((s) => s.agents);
   const select = useExecutionStore((s) => s.select);

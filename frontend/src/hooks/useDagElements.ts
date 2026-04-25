@@ -131,7 +131,45 @@ export function useDagElements(): { nodes: Node[]; edges: Edge[] } {
       dagInfo,
     };
 
-    const fragment = buildFragment(topLevelLatest, null, undefined, ctx);
+    // Dispatch-driven layout: when a top-level node was added at runtime by
+    // a dispatcher (e.g. `pipeline_t4` dispatched by `ticket_dispatcher`
+    // inside `sprint`), give it a synthetic dep on the dispatcher's
+    // top-level ancestor (`sprint`) so BFS places it one column to the
+    // right, instead of stacking all 3 in column 0. The visual edge for
+    // this synthetic dep is suppressed below — only the existing amber
+    // cross-level dispatch edge shows.
+    const ancestorByName = buildTopLevelAncestorMap(topLevelLatest);
+    const syntheticDepKeys = new Set<string>();
+    const enrichedTopLevel = topLevelLatest.map((n) => {
+      const dispatcher = n.dispatched_by;
+      if (!dispatcher) return n;
+      const ancestorName = ancestorByName.get(dispatcher);
+      if (!ancestorName || ancestorName === (n.name ?? n.id)) return n;
+      const existing = new Set(n.depends_on ?? []);
+      if (existing.has(ancestorName)) return n;
+      // Mark by id-pair so we can drop the auto-generated inner edge later.
+      syntheticDepKeys.add(`${ancestorName}->${n.id}`);
+      return { ...n, depends_on: [...(n.depends_on ?? []), ancestorName] };
+    });
+
+    const fragment = buildFragment(enrichedTopLevel, null, undefined, ctx);
+
+    // Drop top-level fragment edges produced by synthetic dispatch deps —
+    // the same relationship is already drawn (more accurately, leaf-to-leaf)
+    // by the cross-level dispatch edge in appendWorkflowLevelEdges.
+    if (syntheticDepKeys.size > 0) {
+      const ancestorIdByName = new Map<string, string>();
+      for (const top of enrichedTopLevel) {
+        ancestorIdByName.set(top.name ?? top.id, top.id);
+      }
+      const dropEdgeIds = new Set<string>();
+      for (const key of syntheticDepKeys) {
+        const [ancestorName, targetId] = key.split('->');
+        const ancestorId = ancestorIdByName.get(ancestorName);
+        if (ancestorId) dropEdgeIds.add(`inner-${ancestorId}-${targetId}`);
+      }
+      fragment.rfEdges = fragment.rfEdges.filter((e) => !dropEdgeIds.has(e.id));
+    }
 
     // Workflow-level edges (loop-back + dispatch). Dispatch edges in
     // particular can be cross-level: a leaf agent inside a stage container
@@ -603,6 +641,29 @@ function unwrapPassthrough(node: NodeExecution): NodeExecution | null {
   if (only.type !== 'stage') return null;
   if ((only.name ?? only.id) !== (node.name ?? node.id)) return null;
   return only;
+}
+
+/** For every named node anywhere in the tree (top-level, nested stage,
+ *  leaf agent inside a stage), return which top-level container it
+ *  belongs to. Used so a top-level node dispatched by a deeply-nested
+ *  agent can pick up a synthetic layout dep on that agent's outermost
+ *  container — the BFS sees it and places things horizontally. */
+function buildTopLevelAncestorMap(topLevel: NodeExecution[]): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const top of topLevel) {
+    const topName = top.name ?? top.id;
+    const stack: NodeExecution[] = [top];
+    while (stack.length) {
+      const n = stack.pop()!;
+      out.set(n.name ?? n.id, topName);
+      for (const a of n.agents ?? []) {
+        if (a.agent_name) out.set(a.agent_name, topName);
+      }
+      if (n.agent?.agent_name) out.set(n.agent.agent_name, topName);
+      for (const c of n.child_nodes ?? []) stack.push(c);
+    }
+  }
+  return out;
 }
 
 /** Build a `name → rendered React Flow id` map covering every node we

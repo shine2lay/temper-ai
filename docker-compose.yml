@@ -115,15 +115,11 @@ services:
       # Source code mount for hot-reload of agent / CLI changes
       - ./temper_ai:/app/temper_ai
       - ./configs:/app/configs:ro
-      - ./local:/app/local:ro
-      # Workspaces at host-equivalent path
+      # Workspaces at host-equivalent path so engineer-agent
+      # `docker compose up` resolves volume mounts correctly through DooD
       - ${WORKSPACE_DIR:-./workspaces}:${WORKSPACE_DIR:-./workspaces}
-      # Host docker socket so agents can `docker compose up` against host daemon
+      # Host docker socket so agents can talk to the host daemon
       - /var/run/docker.sock:/var/run/docker.sock
-      # Claude Code OAuth credentials (Max plan)
-      - ${HOME}/.claude/.credentials.json:/home/temperai-worker/.claude/.credentials.json:ro
-      # Mount claude binary versions for the local provider
-      - ${HOME}/.local/share/claude/versions:/opt/claude/versions:ro
     environment:
       HOME: /home/temperai-worker
       PYTHONDONTWRITEBYTECODE: "1"
@@ -133,7 +129,8 @@ services:
       # Workspace path string the server writes into WorkflowRun rows must
       # match what the worker can resolve — same value on both sides.
       WORKSPACE_DIR: ${WORKSPACE_DIR:-./workspaces}
-      # LLM provider config — mirror server's
+      # LLM provider config — mirror server's defaults; user-specific
+      # provider plugins + credentials live in docker-compose.override.yml.
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-}
@@ -141,8 +138,6 @@ services:
       VLLM_MODEL: ${VLLM_MODEL:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-}
-      CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
-      CLAUDE_CODE_MODEL: ${CLAUDE_CODE_MODEL:-sonnet}
     env_file:
       - path: .env
         required: false

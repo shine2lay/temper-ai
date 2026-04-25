@@ -77,7 +77,7 @@ export function YAMLPanel({ configData, onChange }: YAMLPanelProps) {
             spellCheck={false}
           />
           {parseError && (
-            <p className="mt-1 text-[10px] text-red-400">{parseError}</p>
+            <p className="mt-1 text-[10px] text-red-600 dark:text-red-400">{parseError}</p>
           )}
         </div>
       </CollapsibleContent>

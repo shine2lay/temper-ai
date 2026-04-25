@@ -11,12 +11,12 @@ interface CollaborationTimelineProps {
 
 /** Color pool for agent labels in timeline. */
 const AGENT_COLORS = [
-  'text-blue-400',
-  'text-purple-400',
-  'text-teal-400',
-  'text-orange-400',
-  'text-pink-400',
-  'text-cyan-400',
+  'text-blue-700 dark:text-blue-400',
+  'text-purple-700 dark:text-purple-400',
+  'text-teal-700 dark:text-teal-400',
+  'text-orange-700 dark:text-orange-400',
+  'text-pink-700 dark:text-pink-400',
+  'text-cyan-700 dark:text-cyan-400',
 ];
 
 const EVENT_ICONS: Record<string, string> = {

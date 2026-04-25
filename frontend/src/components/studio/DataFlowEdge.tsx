@@ -153,7 +153,7 @@ export const DataFlowEdge: FC<EdgeProps> = ({
               transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY + 14}px)`,
             }}
           >
-            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-temper-panel text-amber-400 border border-amber-400/30 shadow-sm">
+            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-temper-panel text-amber-700 dark:text-amber-400 border border-amber-400/30 shadow-sm">
 
               {loopLabel}
             </span>

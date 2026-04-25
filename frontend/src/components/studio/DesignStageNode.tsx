@@ -95,14 +95,14 @@ function CapabilityChips({
     chips.push({ label: compact ? 'rsn' : 'reasoning', color: 'bg-indigo-900/30 text-indigo-400' });
   }
   if (summary.persistent) {
-    chips.push({ label: compact ? 'pers' : 'persistent', color: 'bg-teal-900/30 text-teal-400' });
+    chips.push({ label: compact ? 'pers' : 'persistent', color: 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400' });
   }
   if (summary.hasPreCommands) {
     const label = compact ? `pre:${summary.preCommandCount}` : `${summary.preCommandCount} pre-cmd`;
     chips.push({ label, color: 'bg-orange-900/30 text-orange-400' });
   }
   if (summary.hasOutputSchema) {
-    chips.push({ label: compact ? 'sch' : 'schema', color: 'bg-emerald-900/30 text-emerald-400' });
+    chips.push({ label: compact ? 'sch' : 'schema', color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' });
   }
 
   if (chips.length === 0) return null;
@@ -135,7 +135,7 @@ function AgentIOSection({ summary }: { summary: ResolvedAgentSummary }) {
     <div className="border-t border-temper-border/30 pt-1 mt-1">
       {hasInputs && (
         <div className="text-[8px] text-temper-text-dim truncate">
-          <span className="text-blue-400/70 font-medium">IN</span>{' '}
+          <span className="text-blue-700/80 dark:text-blue-400/70 font-medium">IN</span>{' '}
           <span className="text-temper-text-muted">
             {visibleInputs.join(', ')}
             {extraInputCount > 0 ? ` +${extraInputCount} more` : ''}
@@ -143,7 +143,7 @@ function AgentIOSection({ summary }: { summary: ResolvedAgentSummary }) {
         </div>
       )}
       <div className="text-[8px] text-temper-text-dim truncate">
-        <span className="text-emerald-400/70 font-medium">OUT</span>{' '}
+        <span className="text-emerald-700/80 dark:text-emerald-400/70 font-medium">OUT</span>{' '}
         <span className="text-temper-text-muted">
           {hasOutputs
             ? summary.outputSchemaFields.map((f) => `${f.name}:${f.type}`).join(', ')
@@ -380,7 +380,7 @@ function LeaderLayout({
     <div className="flex flex-col gap-0">
       {/* Mode label */}
       <div className="flex items-center gap-1 mb-1">
-        <span className="text-[8px] px-1 py-px rounded bg-blue-900/30 text-blue-400">
+        <span className="text-[8px] px-1 py-px rounded bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
           leader
         </span>
         <span className="text-[8px] text-temper-text-dim">
@@ -599,7 +599,7 @@ function ParallelLayout({
         {/* Fan-out bar */}
         {isParallel && agents.length > 1 && (
           <div className="flex items-center shrink-0 mr-1">
-            <svg width="8" height={agents.length * 32} viewBox={`0 0 8 ${agents.length * 32}`} className="text-amber-400/40">
+            <svg width="8" height={agents.length * 32} viewBox={`0 0 8 ${agents.length * 32}`} className="text-amber-600/50 dark:text-amber-400/40">
               <line x1="2" y1="0" x2="2" y2={agents.length * 32} stroke="currentColor" strokeWidth="1.5" />
               {agents.map((_, i) => (
                 <line key={i} x1="2" y1={i * 32 + 16} x2="8" y2={i * 32 + 16} stroke="currentColor" strokeWidth="1" />
@@ -630,7 +630,7 @@ function ParallelLayout({
         {/* Fan-in bar */}
         {isParallel && agents.length > 1 && (
           <div className="flex items-center shrink-0 ml-1">
-            <svg width="8" height={agents.length * 32} viewBox={`0 0 8 ${agents.length * 32}`} className="text-amber-400/40">
+            <svg width="8" height={agents.length * 32} viewBox={`0 0 8 ${agents.length * 32}`} className="text-amber-600/50 dark:text-amber-400/40">
               <line x1="6" y1="0" x2="6" y2={agents.length * 32} stroke="currentColor" strokeWidth="1.5" />
               {agents.map((_, i) => (
                 <line key={i} x1="0" y1={i * 32 + 16} x2="6" y2={i * 32 + 16} stroke="currentColor" strokeWidth="1" />
@@ -894,7 +894,7 @@ export function DesignStageNode({ data }: NodeProps) {
             </div>
           )}
           {!isSingleAgent && (
-            <span className="text-[8px] px-1.5 py-0.5 rounded shrink-0 font-medium bg-blue-900/30 text-blue-400">
+            <span className="text-[8px] px-1.5 py-0.5 rounded shrink-0 font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
               stage
             </span>
           )}
@@ -1046,7 +1046,7 @@ export function DesignStageNode({ data }: NodeProps) {
                       }
                       updateStage(stageName, { inputs: newInputs });
                     }}
-                    className="text-[10px] text-red-400 hover:text-red-300 px-0.5 shrink-0"
+                    className="text-[10px] text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 px-0.5 shrink-0"
                   >&times;</button>
                 </div>
               ))}
@@ -1076,7 +1076,7 @@ export function DesignStageNode({ data }: NodeProps) {
                   className="!absolute !w-2.5 !h-2.5 !bg-emerald-400 !border-emerald-600 !transform-none !min-w-0 !min-h-0 data-wire-handle"
                   style={{ right: '-13px', top: '50%', transform: 'translateY(-50%)' }}
                 />
-                <span className="px-1.5 py-0.5 text-[10px] text-emerald-400/80 italic">output</span>
+                <span className="px-1.5 py-0.5 text-[10px] text-emerald-700 dark:text-emerald-400/80 italic">output</span>
                 <span className="flex-1 px-1.5 py-0.5 text-[10px] text-temper-text-dim">full response (default)</span>
               </div>
               {/* Named structured outputs */}
@@ -1114,7 +1114,7 @@ export function DesignStageNode({ data }: NodeProps) {
                       }
                       updateStage(stageName, { outputs: newOutputs });
                     }}
-                    className="text-[10px] text-red-400 hover:text-red-300 px-0.5 shrink-0"
+                    className="text-[10px] text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 px-0.5 shrink-0"
                   >&times;</button>
                 </div>
               ))}
@@ -1174,7 +1174,7 @@ export function DesignStageNode({ data }: NodeProps) {
           {/* Loop — only show when set or when editing (selected) */}
           {(loopsBackTo || isSelected) && (
           <div className="nopan nodrag flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-            <span className="text-[9px] text-amber-400 shrink-0">loop &rarr;</span>
+            <span className="text-[9px] text-amber-700 dark:text-amber-400 shrink-0">loop &rarr;</span>
             <InlineSelect
               value={loopsBackTo ?? ''}
               options={[
@@ -1182,7 +1182,7 @@ export function DesignStageNode({ data }: NodeProps) {
                 ...otherStageNames.map((n) => ({ value: n, label: n })),
               ]}
               onChange={(v) => updateStage(stageName, { loops_back_to: v || null })}
-              className="text-[9px] text-amber-400"
+              className="text-[9px] text-amber-700 dark:text-amber-400"
             />
             {loopsBackTo && (
               <>
@@ -1192,7 +1192,7 @@ export function DesignStageNode({ data }: NodeProps) {
                   onChange={(v) => updateStage(stageName, { max_loops: v != null && v !== '' ? Number(v) : null })}
                   type="number"
                   emptyLabel="\u221E"
-                  className="text-[9px] text-amber-400 w-8"
+                  className="text-[9px] text-amber-700 dark:text-amber-400 w-8"
                   min={1}
                 />
               </>

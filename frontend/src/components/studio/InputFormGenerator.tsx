@@ -192,7 +192,7 @@ function InputField({
             </option>
           ))}
         </select>
-        {error && <p className="text-[10px] text-red-400 mt-0.5">{error}</p>}
+        {error && <p className="text-[10px] text-red-600 dark:text-red-400 mt-0.5">{error}</p>}
       </div>
     );
   }
@@ -216,7 +216,7 @@ function InputField({
           step={spec.type === 'integer' ? 1 : 'any'}
           className={`${inputClass} mt-1`}
         />
-        {error && <p className="text-[10px] text-red-400 mt-0.5">{error}</p>}
+        {error && <p className="text-[10px] text-red-600 dark:text-red-400 mt-0.5">{error}</p>}
       </div>
     );
   }
@@ -239,7 +239,7 @@ function InputField({
         className={`${inputClass} mt-1`}
         placeholder={spec.description}
       />
-      {error && <p className="text-[10px] text-red-400 mt-0.5">{error}</p>}
+      {error && <p className="text-[10px] text-red-600 dark:text-red-400 mt-0.5">{error}</p>}
     </div>
   );
 }

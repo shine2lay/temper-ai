@@ -273,15 +273,15 @@ export function ExecutionDAG() {
         <Panel position="top-right">
           <div className="flex flex-col items-end gap-1.5">
             {checkpointPreview && (
-              <div className="flex items-center gap-2 px-2.5 py-1.5 bg-amber-500/15 border border-amber-500/30 rounded text-amber-400 text-xs">
+              <div className="flex items-center gap-2 px-2.5 py-1.5 bg-amber-500/15 border border-amber-500/30 rounded text-amber-700 dark:text-amber-400 text-xs">
                 <span>Checkpoint #{checkpointPreview.sequence}</span>
-                <span className="text-[10px] text-amber-400/70">
+                <span className="text-[10px] text-amber-700/70 dark:text-amber-400/70">
                   {checkpointPreview.completedNodes.size} completed
                   {checkpointPreview.failedNodes.size > 0 && `, ${checkpointPreview.failedNodes.size} failed`}
                 </span>
                 <button
                   onClick={() => setCheckpointPreview(null)}
-                  className="ml-1 text-amber-400/60 hover:text-amber-400 transition-colors"
+                  className="ml-1 text-amber-700/60 hover:text-amber-700 dark:text-amber-400/60 dark:hover:text-amber-400 transition-colors"
                   aria-label="Clear checkpoint preview"
                 >
                   ✕

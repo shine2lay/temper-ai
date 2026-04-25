@@ -205,14 +205,14 @@ export function LiveStreamBar() {
           if (seg.type === 'thinking') {
             return (
               <div key={i} className="my-1 px-2 py-1 rounded bg-violet-500/10 border-l-2 border-violet-500/40">
-                <span className="text-[9px] text-violet-400 font-medium block mb-0.5">thinking</span>
-                <span className="text-violet-300/70 whitespace-pre-wrap">{seg.content}</span>
+                <span className="text-[9px] text-violet-700 dark:text-violet-400 font-medium block mb-0.5">thinking</span>
+                <span className="text-violet-700/80 dark:text-violet-300/70 whitespace-pre-wrap">{seg.content}</span>
               </div>
             );
           }
           if (seg.type === 'tool_call') {
             return (
-              <div key={i} className="my-0.5 text-amber-400 whitespace-pre-wrap">
+              <div key={i} className="my-0.5 text-amber-700 dark:text-amber-400 whitespace-pre-wrap">
                 {seg.content}
               </div>
             );
@@ -222,9 +222,9 @@ export function LiveStreamBar() {
         {/* Active tool call being streamed — shown separately with distinct styling */}
         {activeToolCallContent && (
           <div className="mt-1 px-2 py-1.5 rounded bg-amber-500/10 border-l-2 border-amber-500/40">
-            <span className="text-[9px] text-amber-400 font-medium block mb-0.5">tool call</span>
-            <span className="text-amber-300/90 whitespace-pre-wrap break-all">{activeToolCallContent}</span>
-            <span className="animate-pulse text-amber-400">&#x2588;</span>
+            <span className="text-[9px] text-amber-700 dark:text-amber-400 font-medium block mb-0.5">tool call</span>
+            <span className="text-amber-800/90 dark:text-amber-300/90 whitespace-pre-wrap break-all">{activeToolCallContent}</span>
+            <span className="animate-pulse text-amber-700 dark:text-amber-400">&#x2588;</span>
           </div>
         )}
         {!activeToolCallContent && <span className="animate-pulse text-temper-accent">&#x2588;</span>}

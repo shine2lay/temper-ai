@@ -45,7 +45,7 @@ export function StudioLoadDialog({ open, onOpenChange }: StudioLoadDialogProps) 
           )}
 
           {error && (
-            <p className="text-xs text-red-400 p-4">
+            <p className="text-xs text-red-600 dark:text-red-400 p-4">
               Failed to load workflows: {(error as Error).message}
             </p>
           )}

@@ -105,7 +105,7 @@ export function StageDetailOverlay() {
                 <span>{formatTokens(totalTokens)} tokens</span>
                 <span>{formatCost(totalCost)}</span>
                 {agents.filter(a => a.status === 'failed').length > 0 && (
-                  <span className="text-red-400">
+                  <span className="text-red-700 dark:text-red-400">
                     {agents.filter(a => a.status === 'failed').length} failed
                   </span>
                 )}

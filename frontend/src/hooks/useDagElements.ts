@@ -332,7 +332,13 @@ function findTopLevelName(_id: string, _ctx: DataCtx): string | null {
 }
 
 function toReactFlowEdge(
-  e: { id: string; source: string; target: string; points: { x: number; y: number }[] },
+  e: {
+    id: string;
+    source: string;
+    target: string;
+    points: { x: number; y: number }[];
+    fanIn?: { laneIndex: number; totalLanes: number; entryY: number };
+  },
   _ctx: DataCtx,
 ): Edge {
   return {
@@ -340,7 +346,7 @@ function toReactFlowEdge(
     source: e.source,
     target: e.target,
     type: 'routed',
-    data: { points: e.points },
+    data: { points: e.points, fanIn: e.fanIn },
     markerEnd: {
       type: 'arrowclosed' as MarkerType,
       color: EDGE_COLORS.dataFlow,

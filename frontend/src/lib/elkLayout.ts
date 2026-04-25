@@ -69,6 +69,13 @@ export interface ElkPositionedEdge {
   points: { x: number; y: number }[];
   /** Optional metadata for custom edge components (dispatch, loop-back). */
   meta?: { kind?: 'depends_on' | 'sequential' | 'leader' | 'parallel' | 'inner' };
+  /** Fan-in routing metadata for leader-strategy edges. RoutedEdge uses
+   *  this to compute lane X / entry Y at render time using live React
+   *  Flow endpoints (which can differ from ELK's logical coords by 60+
+   *  pixels because RF measures the rendered handle position).
+   *
+   *  When set, RoutedEdge ignores `points` for X positioning. */
+  fanIn?: { laneIndex: number; totalLanes: number; entryY: number };
 }
 
 export interface ElkLayoutResult {
@@ -513,31 +520,20 @@ function postProcessStrategies(result: ElkLayoutResult): void {
     if (incoming.length < 2) continue;
 
     const N = incoming.length;
-    // Lane Xs: spread across the middle 60% of the gap, leaving 20%
-    // breathing room on each side.
-    const laneStart = workerRightMax + gap * 0.2;
-    const laneEnd = leaderLeftX - gap * 0.2;
-    const laneStep = N > 1 ? (laneEnd - laneStart) / (N - 1) : 0;
-
-    // Entry Ys: spread along the leader's left edge with margin.
+    // Entry Ys (vertical positions on leader's left edge): these match
+    // between ELK coords and render coords, so we can compute and use
+    // them directly. Lane X is left to RoutedEdge to compute at render
+    // time from live src/tgt X (they don't always match ELK's logical X).
     const entryMargin = Math.min(20, leader.height * 0.15);
     const entryTop = leaderTopY + entryMargin;
     const entryBottom = leaderBottomY - entryMargin;
     const entryStep = N > 1 ? (entryBottom - entryTop) / (N - 1) : 0;
 
-    incoming.forEach(({ edge, srcCenterY, srcRight }, i) => {
-      const laneX = N === 1 ? (workerRightMax + leaderLeftX) / 2 : laneStart + i * laneStep;
+    incoming.forEach(({ edge }, i) => {
       const entryY = N === 1 ? leaderTopY + leader.height / 2 : entryTop + i * entryStep;
-
-      // Orthogonal route:
-      //   (srcRight, srcCenterY) → (laneX, srcCenterY)
-      //   → (laneX, entryY) → (leaderLeftX, entryY)
-      edge.points = [
-        { x: srcRight, y: srcCenterY },
-        { x: laneX, y: srcCenterY },
-        { x: laneX, y: entryY },
-        { x: leaderLeftX, y: entryY },
-      ];
+      edge.fanIn = { laneIndex: i, totalLanes: N, entryY };
+      // Leave edge.points alone so RoutedEdge can fall back to it if
+      // fanIn isn't honored for some reason.
     });
   }
 }

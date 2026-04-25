@@ -20,6 +20,12 @@ from temper_ai.api.data_service import get_workflow_execution, list_workflow_exe
 from temper_ai.api.websocket import ws_manager
 from temper_ai.checkpoint.service import CheckpointService
 from temper_ai.observability.event_recorder import EventRecorder
+from temper_ai.runner._helpers import (
+    McpPreconnectError,
+    bind_delegate_tool,
+    build_dispatch_limits,
+    preconnect_mcp_servers,
+)
 from temper_ai.shared.types import ExecutionContext
 from temper_ai.stage.executor import execute_graph
 from temper_ai.tools import TOOL_CLASSES
@@ -68,15 +74,21 @@ class RunResponse(BaseModel):
 
 @router.post("/api/runs", response_model=RunResponse)
 def start_run(body: RunRequest):
-    """Start a workflow execution in a background thread.
+    """Start a workflow execution.
 
-    Returns immediately with the execution_id. Use WebSocket or
-    GET /api/workflows/{id} to track progress.
+    Two modes, picked by $TEMPER_EXECUTION_MODE:
+      inprocess (default) — run in a server-process thread (legacy behavior)
+      subprocess          — spawn a `temper run-workflow` subprocess
+
+    Subprocess mode is opt-in until phase 6 flips the default. In both
+    modes, the response shape is identical: returns execution_id + status,
+    and the caller polls GET /api/workflows/{id} or watches the WebSocket.
     """
     execution_id = str(uuid.uuid4())
 
     # Validate workflow exists before starting. Pass inputs so any
-    # `type: template` nodes can be expanded at load time.
+    # `type: template` nodes can be expanded at load time. Both modes
+    # share this validation so a bad workflow name fails fast as 400.
     try:
         nodes, config = _state().graph_loader.load_workflow(
             body.workflow, inputs=body.inputs
@@ -84,8 +96,21 @@ def start_run(body: RunRequest):
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    # Mode dispatch — three modes:
+    #   inprocess (default): server thread runs workflow (legacy)
+    #   subprocess: server spawns a child process in its own container
+    #   external: server inserts row + returns; an external watcher
+    #             (temper watch-queue, in the worker container) picks it up
+    #             and spawns the worker. Solves the toolchain problem —
+    #             worker container has pytest/npm/docker-cli baked in.
+    import os as _os
+    mode = _os.environ.get("TEMPER_EXECUTION_MODE", "inprocess").lower()
+    if mode == "subprocess":
+        return _start_run_subprocess(execution_id, body, config)
+    if mode == "external":
+        return _start_run_external(execution_id, body, config)
+
     # Build execution context
-    from temper_ai.api.websocket import ws_manager
 
     # Create per-run policy engine from workflow safety config (if any)
     policy_engine = None
@@ -115,9 +140,14 @@ def start_run(body: RunRequest):
     mcp_tools = create_mcp_tools_from_agents(mcp_manager, agent_configs)
     if mcp_tools:
         run_tool_executor.register_tools(dict(mcp_tools))
-        _preconnect_mcp_servers(mcp_manager, mcp_tools)  # raises on failure
+        try:
+            preconnect_mcp_servers(mcp_manager, mcp_tools)
+        except McpPreconnectError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
 
-    recorder = EventRecorder(execution_id, notifier=ws_manager)
+    recorder = EventRecorder(
+        execution_id, notifier=_build_notifier(execution_id, config.name),
+    )
     # Start execution in background thread
     cancel_event = threading.Event()
     _state().running[execution_id] = cancel_event
@@ -138,11 +168,11 @@ def start_run(body: RunRequest):
         checkpoint_service=checkpoint_svc,
         gate_registry=_state().gates,
         graph_loader=_state().graph_loader,
-        dispatch_limits=_build_dispatch_limits(config),
+        dispatch_limits=build_dispatch_limits(config),
     )
 
     # Bind execution context to Delegate tool so it can create sub-agents
-    _bind_delegate_tool(run_tool_executor, context)
+    bind_delegate_tool(run_tool_executor, context)
 
     thread = threading.Thread(
         target=_run_workflow,
@@ -150,6 +180,94 @@ def start_run(body: RunRequest):
         daemon=True,
     )
     thread.start()
+
+    return RunResponse(execution_id=execution_id, status="running")
+
+
+def _start_run_external(
+    execution_id: str, body: RunRequest, config,
+) -> RunResponse:
+    """Insert WorkflowRun row + return; external watcher will spawn the worker.
+
+    The server doesn't track the worker process at all in this mode — the
+    watcher (running in the temper-worker container) owns spawn/poll/kill.
+    The server's only job is to durably record what was requested.
+
+    Same WorkflowRun row contract as subprocess mode; the watcher reads
+    workflow_name + workspace_path + inputs and runs `temper run-workflow`.
+    """
+    from temper_ai.database import get_session
+    from temper_ai.runner.models import WorkflowRun
+
+    with get_session() as session:
+        session.add(WorkflowRun(
+            execution_id=execution_id,
+            workflow_name=config.name,
+            workspace_path=body.workspace_path or "",
+            inputs=body.inputs or {},
+            status="queued",
+        ))
+
+    return RunResponse(execution_id=execution_id, status="queued")
+
+
+def _start_run_subprocess(
+    execution_id: str, body: RunRequest, config,
+) -> RunResponse:
+    """Spawn a worker subprocess instead of running in this server process.
+
+    Insert the WorkflowRun row first (worker reads it at startup), then
+    ask the spawner to launch. If the spawn fails, mark the row failed
+    and surface 503 — the caller can retry.
+
+    Cancellation, monitoring, and terminal-state writes are owned by the
+    reaper + worker respectively; this function returns as soon as the
+    process is launched.
+    """
+    from datetime import UTC, datetime
+
+    from temper_ai.database import get_session
+    from temper_ai.runner.models import WorkflowRun
+    from temper_ai.spawner import SpawnerError, get_spawner
+
+    with get_session() as session:
+        session.add(WorkflowRun(
+            execution_id=execution_id,
+            workflow_name=config.name,
+            workspace_path=body.workspace_path or "",
+            inputs=body.inputs or {},
+            status="queued",
+        ))
+
+    spawner = get_spawner()
+    try:
+        handle = spawner.spawn(execution_id)
+    except SpawnerError as exc:
+        # Mark failed so the dashboard reflects reality. Don't keep the
+        # queued row around — caller knows it didn't start.
+        with get_session() as session:
+            from sqlmodel import select
+            row = session.exec(
+                select(WorkflowRun).where(WorkflowRun.execution_id == execution_id),
+            ).first()
+            if row is not None:
+                row.status = "failed"
+                row.completed_at = datetime.now(UTC)
+                row.error = {"message": str(exc), "kind": "spawn"}
+                session.add(row)
+        raise HTTPException(status_code=503, detail=f"Spawner failed: {exc}") from exc
+
+    # Stamp the handle so the reaper can poll/kill it.
+    with get_session() as session:
+        from sqlmodel import select
+        row = session.exec(
+            select(WorkflowRun).where(WorkflowRun.execution_id == execution_id),
+        ).first()
+        if row is not None:
+            row.spawner_kind = handle.kind.value
+            row.spawner_handle = handle.handle
+            row.spawner_metadata = handle.metadata
+            session.add(row)
 
     return RunResponse(execution_id=execution_id, status="running")
 
@@ -173,14 +291,31 @@ def get_workflow(execution_id: str):
 def cancel_run(execution_id: str):
     """Cancel a running workflow execution.
 
-    If the execution is actively running in this server, sets the cancel event.
-    If it's an orphaned run (stale from a server restart), marks it as cancelled
-    directly in the event store.
+    Three paths in priority order:
+      1. In-process run: cancel_event in this server's `running` dict → set it
+      2. Subprocess run: WorkflowRun row exists → set cancel_requested=true so
+         the reaper sends SIGTERM (worker writes the cancelled milestone)
+      3. Stale run: only an event row exists → mark the workflow.started
+         event cancelled (legacy fallback for crashed in-process runs)
     """
     cancel_event = _state().running.get(execution_id)
     if cancel_event is not None:
         cancel_event.set()
         return {"status": "cancelling", "execution_id": execution_id}
+
+    # Subprocess run? WorkflowRun row is the source of truth for spawner-managed runs.
+    from sqlmodel import select
+
+    from temper_ai.database import get_session
+    from temper_ai.runner.models import WorkflowRun
+    with get_session() as session:
+        row = session.exec(
+            select(WorkflowRun).where(WorkflowRun.execution_id == execution_id),
+        ).first()
+        if row is not None and row.status in ("queued", "running"):
+            row.cancel_requested = True
+            session.add(row)
+            return {"status": "cancelling", "execution_id": execution_id}
 
     # Not in running dict — could be an orphaned stale run. Check if it exists in DB.
     result = get_workflow_execution(execution_id)
@@ -256,7 +391,6 @@ def resume_run(execution_id: str, body: ResumeRequest | None = None):
     )
 
     # Rebuild context
-    from temper_ai.api.websocket import ws_manager
 
     workspace = body.workspace_path or (result.get("input_data") or {}).get("workspace_path")
 
@@ -268,7 +402,9 @@ def resume_run(execution_id: str, body: ResumeRequest | None = None):
     run_tool_executor = ToolExecutor(workspace_root=workspace, policy_engine=policy_engine)
     run_tool_executor.register_tools({name: cls() for name, cls in TOOL_CLASSES.items()})
 
-    recorder = EventRecorder(execution_id, notifier=ws_manager)
+    recorder = EventRecorder(
+        execution_id, notifier=_build_notifier(execution_id, config.name),
+    )
     cancel_event = threading.Event()
     _state().running[execution_id] = cancel_event
 
@@ -286,10 +422,10 @@ def resume_run(execution_id: str, body: ResumeRequest | None = None):
         checkpoint_service=checkpoint_svc,
         gate_registry=_state().gates,
         graph_loader=_state().graph_loader,
-        dispatch_limits=_build_dispatch_limits(config),
+        dispatch_limits=build_dispatch_limits(config),
     )
 
-    _bind_delegate_tool(run_tool_executor, context)
+    bind_delegate_tool(run_tool_executor, context)
 
     # Reconstruct original inputs from the first run
     original_inputs = result.get("input_data") or {}
@@ -358,7 +494,6 @@ def fork_run(body: ForkRequest):
         body.source_execution_id, body.sequence, new_execution_id, len(restored_outputs),
     )
 
-    from temper_ai.api.websocket import ws_manager
 
     policy_engine = None
     if config.safety:
@@ -368,7 +503,9 @@ def fork_run(body: ForkRequest):
     run_tool_executor = ToolExecutor(workspace_root=body.workspace_path, policy_engine=policy_engine)
     run_tool_executor.register_tools({name: cls() for name, cls in TOOL_CLASSES.items()})
 
-    recorder = EventRecorder(new_execution_id, notifier=ws_manager)
+    recorder = EventRecorder(
+        new_execution_id, notifier=_build_notifier(new_execution_id, config.name),
+    )
     cancel_event = threading.Event()
     _state().running[new_execution_id] = cancel_event
 
@@ -386,10 +523,10 @@ def fork_run(body: ForkRequest):
         checkpoint_service=fork_svc,
         gate_registry=_state().gates,
         graph_loader=_state().graph_loader,
-        dispatch_limits=_build_dispatch_limits(config),
+        dispatch_limits=build_dispatch_limits(config),
     )
 
-    _bind_delegate_tool(run_tool_executor, context)
+    bind_delegate_tool(run_tool_executor, context)
 
     # Record fork metadata so the data service can link back to the source.
     # Determine top-level node names that were restored.
@@ -470,21 +607,23 @@ def get_checkpoints(execution_id: str):
     return {"execution_id": execution_id, "checkpoints": history, "total": len(history)}
 
 
-def _bind_delegate_tool(tool_executor: ToolExecutor, context) -> None:
-    """Bind execution context to the Delegate tool if registered."""
-    delegate = tool_executor.get_tool("Delegate")
-    if delegate and hasattr(delegate, "bind_context"):
-        delegate.bind_context(context)
+def _build_notifier(execution_id: str, workflow_name: str):
+    """Compose the notifier sinks for an in-process workflow run.
 
-
-def _build_dispatch_limits(config):
-    """Resolve DispatchLimits from the workflow's `defaults.dispatch` section.
-
-    Split out so all three ExecutionContext build-sites share one formula;
-    keeps route handlers from repeating the import + lookup boilerplate.
+    Two sinks: ws_manager (live WebSocket broadcast) + JsonlNotifier
+    (per-run forensic log). Subprocess workers build their own composite
+    in cmd_run_workflow — we don't share construction because the subprocess
+    side adds Redis chunks that the in-process side doesn't need.
     """
-    from temper_ai.stage.dispatch_limits import DispatchLimits
-    return DispatchLimits.from_defaults(getattr(config, "defaults", None))
+    from temper_ai.observability.composite_notifier import CompositeNotifier
+    from temper_ai.observability.jsonl_logger import JsonlNotifier
+    return CompositeNotifier(
+        ws_manager,
+        JsonlNotifier(
+            execution_id, workflow_name,
+            metadata={"spawned_via": "in-process route handler"},
+        ),
+    )
 
 
 def _find_latest_workflow_event(execution_id: str) -> dict | None:
@@ -591,37 +730,6 @@ def _apply_dispatch_history_on_resume(
         len(history), len(nodes), state.dispatched_count,
     )
     return replayed_dispatchers
-
-
-def _preconnect_mcp_servers(mcp_manager, mcp_tools: dict) -> None:
-    """Pre-connect MCP servers needed by this workflow.
-
-    Runs async connections from the sync route context via run_coroutine_threadsafe.
-    Logs warnings but never blocks the workflow from starting.
-    """
-    import asyncio
-
-    server_names = {tool._server_name for tool in mcp_tools.values()}
-    if not server_names:
-        return
-
-    errors = []
-
-    async def connect_all():
-        for name in server_names:
-            try:
-                await mcp_manager.ensure_connected(name)
-            except Exception as e:
-                errors.append(f"MCP server '{name}': {e}")
-
-    future = asyncio.run_coroutine_threadsafe(connect_all(), mcp_manager.event_loop)
-    future.result(timeout=30)
-
-    if errors:
-        raise HTTPException(
-            status_code=503,
-            detail=f"Required MCP servers failed to connect: {'; '.join(errors)}",
-        )
 
 
 @router.get("/api/mcp-servers")

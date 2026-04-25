@@ -21,7 +21,8 @@ v1 is a clean rewrite focused on the core engine: composable graph execution, co
 - Sprint workflow (domain-agnostic iterative execution)
 - Auto-generated reference docs
 - CI pipeline (lint, typecheck, test with Python 3.11+3.12)
-- 725+ tests
+- **Worker Protocol v1** — server + worker split with three execution modes (inprocess / subprocess / external), separate worker container with curated toolchain (pytest, npm, docker CLI, db clients), live LLM chunk streaming via Redis, per-run JSONL forensic log, reaper-driven cancel cascade. Solves the engineer-can't-execute-their-own-code problem and gives the dashboard real-time visibility into out-of-process workers. See [docs/reference/architecture.md](reference/architecture.md).
+- 1241+ tests
 
 ---
 

@@ -21,6 +21,27 @@ services:
         max-size: "100m"
         max-file: "5"
 
+  # Redis: used by the worker protocol (phase 4+) for live LLM chunk streaming.
+  # Stream `chunks:{execution_id}` is bounded via XADD MAXLEN; chunks expire on TTL.
+  # Server is fine without redis until phase 4; service runs ahead of need so
+  # local-dev compose stays one command.
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly no --save ""
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
   server:
     build:
       context: .
@@ -37,6 +58,10 @@ services:
       HOME: /app
       PYTHONDONTWRITEBYTECODE: "1"
       TEMPER_DATABASE_URL: postgresql://temper_ai:${POSTGRES_PASSWORD:-temper_dev}@postgres:5432/temper_ai
+      # Redis: live chunk streaming (worker_protocol_v1 phase 4+).
+      # Server runs without it pre-phase-4; URL set up early so config doesn't
+      # have to change later.
+      TEMPER_REDIS_URL: redis://redis:6379/0
       TEMPER_LOG_LEVEL: ${TEMPER_LOG_LEVEL:-INFO}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
@@ -58,6 +83,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     logging:
       driver: "json-file"
       options:
@@ -67,6 +94,74 @@ services:
       .venv/bin/python -m uvicorn temper_ai.server:app
       --host 0.0.0.0
       --port 8420
+
+  # Worker: polls Postgres for queued workflow runs and spawns each as a
+  # subprocess in this container. Has the toolchain (pytest, npm, docker
+  # CLI, db clients) the server image deliberately doesn't carry, so
+  # engineer agents can actually exercise their work. Server inserts rows
+  # with status=queued when TEMPER_EXECUTION_MODE=external; the worker
+  # picks them up. Both share the same Postgres + Redis.
+  #
+  # Workspaces mounted at the SAME path as the host (instead of /app/workspaces)
+  # so when an agent inside this container runs `docker compose up`, the
+  # host docker daemon resolves the volume paths correctly. Without this
+  # path-equivalent mount, sibling containers get broken volume mounts.
+  worker:
+    build:
+      context: .
+      target: worker
+    restart: unless-stopped
+    volumes:
+      # Source code mount for hot-reload of agent / CLI changes
+      - ./temper_ai:/app/temper_ai
+      - ./configs:/app/configs:ro
+      # Workspaces at host-equivalent path so engineer-agent
+      # `docker compose up` resolves volume mounts correctly through DooD
+      - ${WORKSPACE_DIR:-./workspaces}:${WORKSPACE_DIR:-./workspaces}
+      # Host docker socket so agents can talk to the host daemon
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      HOME: /home/temperai-worker
+      PYTHONDONTWRITEBYTECODE: "1"
+      TEMPER_DATABASE_URL: postgresql://temper_ai:${POSTGRES_PASSWORD:-temper_dev}@postgres:5432/temper_ai
+      TEMPER_REDIS_URL: redis://redis:6379/0
+      TEMPER_LOG_LEVEL: ${TEMPER_LOG_LEVEL:-INFO}
+      # Workspace path string the server writes into WorkflowRun rows must
+      # match what the worker can resolve — same value on both sides.
+      WORKSPACE_DIR: ${WORKSPACE_DIR:-./workspaces}
+      # LLM provider config — mirror server's defaults; user-specific
+      # provider plugins + credentials live in docker-compose.override.yml.
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-}
+      VLLM_BASE_URL: ${VLLM_BASE_URL:-}
+      VLLM_MODEL: ${VLLM_MODEL:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-}
+    env_file:
+      - path: .env
+        required: false
+    # Add the host's docker socket GID so temperai-worker can use the socket
+    # without sudo. Override DOCKER_GID via .env if your host's docker
+    # group has a non-default GID (Linux: `stat -c '%g' /var/run/docker.sock`).
+    group_add:
+      - "${DOCKER_GID:-999}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "5"
+    # Opt-in: only starts when explicitly profiled or named.
+    # `docker compose --profile worker up -d` to enable.
+    profiles:
+      - worker
 
 volumes:
   postgres-data:

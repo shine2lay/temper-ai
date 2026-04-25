@@ -63,7 +63,7 @@ export const AgentNodeComponent = memo(function AgentNodeComponent({ data }: Nod
       {/* Delegate badge */}
       {isDelegate && (
         <div className="absolute -top-3 left-2 z-10 flex items-center gap-1">
-          <span className="text-[9px] px-1.5 py-0.5 rounded-sm bg-violet-500/20 text-violet-400 border border-violet-500/30 font-medium">
+          <span className="text-[9px] px-1.5 py-0.5 rounded-sm bg-violet-500/20 text-violet-700 dark:text-violet-400 border border-violet-500/30 font-medium">
             sub-agent
           </span>
           {delegatedBy && (
@@ -77,10 +77,10 @@ export const AgentNodeComponent = memo(function AgentNodeComponent({ data }: Nod
       {/* Dispatched-node badge (this node was added at runtime by a dispatcher) */}
       {dispatchedBy && (
         <div className="absolute -top-3 left-2 right-2 z-10 flex items-center justify-between gap-2">
-          <span className="text-[10px] px-2 py-0.5 rounded-sm bg-amber-500/30 text-amber-300 border border-amber-400/50 font-bold uppercase tracking-wide shadow">
+          <span className="text-[10px] px-2 py-0.5 rounded-sm bg-amber-500/30 text-amber-800 dark:text-amber-300 border border-amber-400/50 font-bold uppercase tracking-wide shadow">
             ⚡ dispatched
           </span>
-          <span className="text-[10px] text-amber-300/90 bg-temper-bg/80 px-1.5 rounded-sm border border-amber-400/30">
+          <span className="text-[10px] text-amber-800 dark:text-amber-300/90 bg-temper-bg/80 px-1.5 rounded-sm border border-amber-400/30">
             by {dispatchedBy}
           </span>
         </div>

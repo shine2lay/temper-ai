@@ -78,7 +78,7 @@ export function AgentToolsTab({ config, updateField }: Props) {
                     ...config.tools,
                     entries: config.tools.entries.filter((_, j) => j !== i),
                   })}
-                  className="text-xs text-red-400 hover:text-red-300 px-1"
+                  className="text-xs text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 px-1"
                 >
                   &times;
                 </button>

@@ -146,7 +146,7 @@ function InlineAgentsSection({
             </button>
             <button
               onClick={() => onUpdate({ agents: stage.agents.filter((a) => a !== agent) })}
-              className="text-xs text-red-400 hover:text-red-300 px-1"
+              className="text-xs text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 px-1"
               aria-label={`Remove agent ${agent}`}
             >
               &times;
@@ -331,7 +331,7 @@ export function StagePropertiesPanel() {
                   {dep}
                   <button
                     onClick={() => onUpdate({ depends_on: stage.depends_on.filter((d) => d !== dep) })}
-                    className="text-[10px] text-red-400 hover:text-red-300"
+                    className="text-[10px] text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
                   >
                     &times;
                   </button>

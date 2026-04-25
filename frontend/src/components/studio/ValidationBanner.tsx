@@ -18,7 +18,7 @@ export function ValidationBanner() {
 
   if (validation.status === 'valid') {
     return (
-      <div className="px-4 py-1.5 bg-emerald-500/10 text-emerald-400 text-xs border-b border-temper-border">
+      <div className="px-4 py-1.5 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 text-xs border-b border-temper-border">
         Configuration is valid
       </div>
     );
@@ -26,7 +26,7 @@ export function ValidationBanner() {
 
   // invalid
   return (
-    <div className="px-4 py-1.5 bg-red-500/10 text-red-400 text-xs border-b border-temper-border">
+    <div className="px-4 py-1.5 bg-red-500/10 text-red-700 dark:text-red-400 text-xs border-b border-temper-border">
       <span className="font-medium">Validation errors:</span>
       <ul className="list-disc list-inside mt-0.5">
         {validation.errors.map((err, i) => (

@@ -179,38 +179,6 @@ def _load_default_configs(config_store: ConfigStore):
         logger.info("Loaded %d configs from %s", loaded, configs_dir)
 
 
-def _recover_orphaned_runs():
-    """Mark any executions left in 'running' status as 'interrupted'.
-
-    These are orphaned from a previous server crash. They can be resumed
-    via the checkpoint system.
-    """
-    try:
-        from temper_ai.observability.event_types import EventType
-        from temper_ai.observability.recorder import get_events, update_event
-
-        running_events = get_events(
-            event_type=EventType("workflow.started"),
-            status="running",
-            limit=100,
-        )
-        if not running_events:
-            return
-
-        for event in running_events:
-            execution_id = event.get("execution_id", "")
-            update_event(
-                event["id"],
-                status="interrupted",
-                data={"interrupted_reason": "Server restarted — resume via POST /api/runs/{id}/resume"},
-            )
-            logger.info("Marked orphaned execution %s as interrupted", execution_id)
-
-        logger.info("Recovered %d orphaned run(s)", len(running_events))
-    except Exception as exc:
-        logger.warning("Orphaned run recovery failed (non-fatal): %s", exc)
-
-
 # -- Lifespan --
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -253,9 +221,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                         len(configured), ", ".join(configured))
     except Exception as e:
         logger.warning("MCP setup failed (non-fatal): %s", e)
-
-    # Mark orphaned runs as interrupted (from previous crashes)
-    _recover_orphaned_runs()
 
     # Reaper — only when subprocess execution is enabled. In-process runs
     # don't need it because they share the server process's lifecycle.

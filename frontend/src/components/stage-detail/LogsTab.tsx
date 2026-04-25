@@ -325,7 +325,7 @@ function LogEntryRow({
         <span
           className={cn(
             'text-[10px] shrink-0',
-            log.status === 'failed' ? 'text-red-400' : 'text-temper-text-dim',
+            log.status === 'failed' ? 'text-red-700 dark:text-red-400' : 'text-temper-text-dim',
           )}
         >
           {log.status === 'failed' ? '\u2717' : '\u2713'}

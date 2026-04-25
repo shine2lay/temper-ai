@@ -121,18 +121,18 @@ export const AgentCardContent = memo(function AgentCardContent({
           className="w-2 h-2 rounded-full shrink-0"
           style={{ backgroundColor: statusColor }}
         />
-        <span className={cn('text-[13px] font-semibold truncate', isFailed ? 'text-red-400' : 'text-temper-text')}>
+        <span className={cn('text-[13px] font-semibold truncate', isFailed ? 'text-red-700 dark:text-red-400' : 'text-temper-text')}>
           {agentName}
         </span>
         {isFailed && (
-          <span className="text-[9px] px-1 py-px rounded bg-red-500/15 text-red-400 font-medium shrink-0">FAILED</span>
+          <span className="text-[9px] px-1 py-px rounded bg-red-500/15 text-red-700 dark:text-red-400 font-medium shrink-0">FAILED</span>
         )}
         {isStreaming && (
-          <span className="text-[9px] px-1 py-px rounded bg-blue-500/15 text-blue-400 font-medium shrink-0 animate-pulse">streaming</span>
+          <span className="text-[9px] px-1 py-px rounded bg-blue-500/15 text-blue-700 dark:text-blue-400 font-medium shrink-0 animate-pulse">streaming</span>
         )}
         <span className="ml-auto flex items-center gap-1 shrink-0">
           {isScript ? (
-            <span className="text-[9px] px-1 py-px rounded bg-amber-500/15 text-amber-400 font-medium">script</span>
+            <span className="text-[9px] px-1 py-px rounded bg-amber-500/15 text-amber-700 dark:text-amber-400 font-medium">script</span>
           ) : model ? (
             <span className="text-[9px] px-1 py-px rounded bg-temper-surface text-temper-text-dim font-mono"
                   title={provider ? `${provider}/${model}` : model}>
@@ -151,13 +151,13 @@ export const AgentCardContent = memo(function AgentCardContent({
             {isFailed && agent.error_message && (
               <>
                 <span className="text-temper-border/40">|</span>
-                <span className="text-red-400 truncate max-w-[150px]">{agent.error_message.slice(0, 60)}</span>
+                <span className="text-red-700 dark:text-red-400 truncate max-w-[150px]">{agent.error_message.slice(0, 60)}</span>
               </>
             )}
             {!isFailed && (
               <>
                 <span className="text-temper-border/40">|</span>
-                <span className="text-emerald-400">exit 0</span>
+                <span className="text-emerald-700 dark:text-emerald-400">exit 0</span>
               </>
             )}
             {(configSnapshot as Record<string, unknown>)?.timeout_seconds && (

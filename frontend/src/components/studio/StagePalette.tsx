@@ -77,7 +77,7 @@ function OutlineItem({
       <span className="truncate flex-1">{isSingleAgent ? stage.agents[0] : stage.name}</span>
       {!isSingleAgent && (
         <span className={`text-[9px] px-1 py-px rounded shrink-0 ${
-          stage.agents.length === 0 ? 'bg-temper-surface text-temper-text-dim' : 'bg-blue-900/30 text-blue-400'
+          stage.agents.length === 0 ? 'bg-temper-surface text-temper-text-dim' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
         }`}>
           {stage.agents.length === 0 ? 'empty' : `${stage.agents.length} agents`}
         </span>
@@ -274,7 +274,7 @@ export function StagePalette() {
             <div className="text-[9px] text-temper-text-dim uppercase tracking-wider mb-1">Strategies</div>
             <div className="flex flex-wrap gap-1">
               {strategies.map((s) => (
-                <span key={s} className="text-[10px] px-1.5 py-0.5 rounded bg-blue-900/30 text-blue-400">{s}</span>
+                <span key={s} className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">{s}</span>
               ))}
             </div>
           </div>

@@ -84,8 +84,12 @@ export function useDagElements(): { nodes: Node[]; edges: Edge[] } {
   const workflow = useExecutionStore((s) => s.workflow);
   const stages = useExecutionStore((s) => s.stages);
   const agents = useExecutionStore((s) => s.agents);
+  const hoveredNodeId = useExecutionStore((s) => s.hoveredNodeId);
 
-  return useMemo(() => {
+  // Structural pass: nodes + edges without hover-derived styling. Memoized
+  // on data deps only, so hover changes don't re-trigger size measurement
+  // / position recomputation (which caused visible layout jitter).
+  const structural = useMemo<{ nodes: Node[]; edges: Edge[] }>(() => {
     if (!workflow) return { nodes: [], edges: [] };
 
     const stageGroups = selectStageGroups(stages);
@@ -194,6 +198,77 @@ export function useDagElements(): { nodes: Node[]; edges: Edge[] } {
 
     return { nodes: fragment.rfNodes, edges: fragment.rfEdges };
   }, [workflow, stages, agents]);
+
+  // Hover pass: cheap restyle of edges only. Nodes pass through
+  // unchanged so their identity / measured sizes stay stable.
+  return useMemo(() => ({
+    nodes: structural.nodes,
+    edges: applyHoverOpacity(structural.nodes, structural.edges, hoveredNodeId),
+  }), [structural, hoveredNodeId]);
+}
+
+/** Apply opacity + width emphasis to edges based on hover state.
+ *
+ * Resting state: edges at 0.35 opacity — present but recessive.
+ * On hover: connected edges snap to full opacity + thicker stroke;
+ * unconnected edges dim further to 0.06.
+ *
+ * "Connected" is computed against the hovered node's *subtree* — hovering
+ * a stage container highlights edges between any of its descendants.
+ * Hovering a leaf agent highlights edges with that agent as source/target.
+ */
+function applyHoverOpacity(
+  nodes: Node[], edges: Edge[], hoveredNodeId: string | null,
+): Edge[] {
+  const REST = 0.35;
+  const DIM = 0.06;
+  if (!hoveredNodeId) {
+    return edges.map((e) => ({
+      ...e,
+      style: { ...(e.style || {}), opacity: REST },
+    }));
+  }
+  // Build the set of node ids that count as "the hovered subtree": the
+  // hovered node + every descendant via the parentId chain.
+  const subtreeIds = collectSubtree(nodes, hoveredNodeId);
+  return edges.map((e) => {
+    const isConnected = subtreeIds.has(e.source) || subtreeIds.has(e.target);
+    const baseStyle = e.style || {};
+    const baseWidth = typeof baseStyle.strokeWidth === 'number' ? baseStyle.strokeWidth : 2;
+    return {
+      ...e,
+      style: {
+        ...baseStyle,
+        opacity: isConnected ? 1 : DIM,
+        strokeWidth: isConnected ? baseWidth + 1 : baseWidth,
+      },
+    };
+  });
+}
+
+/** Return the set of node ids that are `rootId` or any descendant of
+ *  `rootId` via React Flow's `parentId` field. */
+function collectSubtree(nodes: Node[], rootId: string): Set<string> {
+  // childrenByParent: parentId -> [child ids]
+  const childrenByParent = new Map<string, string[]>();
+  for (const n of nodes) {
+    const pid = (n as { parentId?: string }).parentId;
+    if (!pid) continue;
+    const list = childrenByParent.get(pid) ?? [];
+    list.push(n.id);
+    childrenByParent.set(pid, list);
+  }
+  const out = new Set<string>([rootId]);
+  const stack = [rootId];
+  while (stack.length) {
+    const id = stack.pop()!;
+    for (const childId of childrenByParent.get(id) ?? []) {
+      if (out.has(childId)) continue;
+      out.add(childId);
+      stack.push(childId);
+    }
+  }
+  return out;
 }
 
 

@@ -47,6 +47,7 @@ export function ExecutionDAG() {
   const agents = useExecutionStore((s) => s.agents);
   const select = useExecutionStore((s) => s.select);
   const clearSelection = useExecutionStore((s) => s.clearSelection);
+  const setHoveredNodeId = useExecutionStore((s) => s.setHoveredNodeId);
   const relayoutTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const focusedNodeIndexRef = useRef<number>(-1);
   const [search, setSearch] = useState('');
@@ -148,11 +149,17 @@ export function ExecutionDAG() {
     setTimeout(() => fitView({ padding: DAG_FIT_PADDING }), 50);
   }, [fitView]);
 
-  // Push computed nodes/edges into React Flow's internal store
+  // Push computed nodes/edges into React Flow's internal store. Split
+  // into two effects so a hover-only edge restyle (computed.edges
+  // changes, computed.nodes stays referentially stable) doesn't
+  // re-call setNodes — that triggers React Flow to re-measure node
+  // dimensions, which in turn jitters layout slightly.
   useEffect(() => {
     setNodes(computed.nodes);
+  }, [computed.nodes, setNodes]);
+  useEffect(() => {
     setEdges(computed.edges);
-  }, [computed.nodes, computed.edges, setNodes, setEdges]);
+  }, [computed.edges, setEdges]);
 
   /**
    * Re-layout using actual DOM-measured dimensions from React Flow.
@@ -334,6 +341,8 @@ export function ExecutionDAG() {
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         onInit={onInit}
+        onNodeMouseEnter={(_, node) => setHoveredNodeId(node.id)}
+        onNodeMouseLeave={() => setHoveredNodeId(null)}
         fitView
         minZoom={0.1}
         maxZoom={2}

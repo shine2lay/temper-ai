@@ -52,6 +52,21 @@ def main() -> None:
     validate_parser.add_argument("--config-dir", default="configs", help="Config directory")
     validate_parser.add_argument("--debug", action="store_true", help="Enable debug logging")
 
+    # -- temper run-workflow (worker entry point — spawned by server, not user-facing) --
+    rw_parser = subparsers.add_parser(
+        "run-workflow",
+        help="Worker entry point: execute a pre-queued WorkflowRun row by id",
+    )
+    rw_parser.add_argument(
+        "--execution-id", required=True,
+        help="WorkflowRun.execution_id of the queued row to execute",
+    )
+    rw_parser.add_argument(
+        "--config-dir", default=None,
+        help="Workflow config directory (default: $TEMPER_CONFIG_DIR or repo configs/)",
+    )
+    rw_parser.add_argument("--debug", action="store_true", help="Enable debug logging")
+
     args = parser.parse_args()
 
     # F28: --debug flag sets logging to DEBUG
@@ -67,6 +82,9 @@ def main() -> None:
         _cmd_serve(args)
     elif args.command == "validate":
         _cmd_validate(args)
+    elif args.command == "run-workflow":
+        from temper_ai.cli.run_workflow import cmd_run_workflow
+        sys.exit(cmd_run_workflow(args))
     else:
         parser.print_help()
         sys.exit(1)

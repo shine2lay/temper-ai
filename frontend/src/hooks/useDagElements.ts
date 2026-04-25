@@ -465,14 +465,17 @@ function applyHoverOpacity(
 
 function collectSubtree(nodes: Node[], rootId: string): Set<string> {
   const childrenByParent = new Map<string, string[]>();
+  const parentById = new Map<string, string>();
   for (const n of nodes) {
     const pid = (n as { parentId?: string }).parentId;
     if (!pid) continue;
+    parentById.set(n.id, pid);
     const list = childrenByParent.get(pid) ?? [];
     list.push(n.id);
     childrenByParent.set(pid, list);
   }
   const out = new Set<string>([rootId]);
+  // Walk down: descendants. Hovering a stage reveals its child agents.
   const stack = [rootId];
   while (stack.length) {
     const id = stack.pop()!;
@@ -481,6 +484,16 @@ function collectSubtree(nodes: Node[], rootId: string): Set<string> {
       out.add(childId);
       stack.push(childId);
     }
+  }
+  // Walk up: ancestors. Top-level "agent" nodes are wrapped in an outer
+  // container (the actual top-level node) with a single pseudo-agent
+  // child. Edges between top-level nodes reference the outer container's
+  // id, but onNodeMouseEnter usually fires on the inner child. Include
+  // ancestors so the connecting edges still highlight.
+  let cur = parentById.get(rootId);
+  while (cur) {
+    out.add(cur);
+    cur = parentById.get(cur);
   }
   return out;
 }

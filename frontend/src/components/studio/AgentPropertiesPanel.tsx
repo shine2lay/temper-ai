@@ -58,7 +58,7 @@ export function AgentPropertiesPanel() {
         >
           &larr; Back to stage
         </button>
-        <p className="text-xs text-red-400">
+        <p className="text-xs text-red-600 dark:text-red-400">
           Failed to load agent: {(error as Error).message}
         </p>
       </div>
@@ -105,12 +105,12 @@ export function AgentPropertiesPanel() {
 
       {/* Status banners */}
       {saveStatus === 'success' && (
-        <div className="px-3 py-1.5 text-[10px] text-green-400 bg-green-400/10 border-b border-temper-border/50">
+        <div className="px-3 py-1.5 text-[10px] text-green-700 bg-green-400/10 dark:text-green-400 border-b border-temper-border/50">
           Agent saved
         </div>
       )}
       {saveError && (
-        <div className="px-3 py-1.5 text-[10px] text-red-400 bg-red-400/10 border-b border-temper-border/50">
+        <div className="px-3 py-1.5 text-[10px] text-red-700 bg-red-400/10 dark:text-red-400 border-b border-temper-border/50">
           Save failed: {saveError.message}
         </div>
       )}

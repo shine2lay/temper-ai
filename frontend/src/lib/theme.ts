@@ -22,15 +22,30 @@ function setStoredTheme(theme: Theme): void {
   }
 }
 
-/** Apply the given theme by setting data-theme on <html>, or remove the
- *  attribute to fall back to system preference. */
+/** Resolve the effective theme, taking system preference into account
+ *  when no explicit choice is stored. */
+function resolveTheme(theme: Theme | null): Theme {
+  if (theme !== null) return theme;
+  return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+}
+
+/** Apply the given theme by:
+ *   - setting data-theme on <html> (drives the temper-* CSS custom
+ *     properties via [data-theme="light"] / [data-theme="dark"])
+ *   - toggling the .dark class on <html> (drives Tailwind's `dark:`
+ *     variant, which is configured as `&:is(.dark *)`)
+ *  When `theme` is null we fall back to system preference, but still
+ *  apply the resolved class so Tailwind dark: utilities stay in sync.
+ */
 function applyTheme(theme: Theme | null): void {
   const root = document.documentElement;
+  const resolved = resolveTheme(theme);
   if (theme === null) {
     root.removeAttribute('data-theme');
   } else {
     root.setAttribute('data-theme', theme);
   }
+  root.classList.toggle('dark', resolved === 'dark');
 }
 
 /** Initialise the theme as early as possible (call from main.tsx or inline

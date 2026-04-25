@@ -316,7 +316,7 @@ export const StageNode = memo(function StageNode({ data }: NodeProps) {
 
       {/* Error message for failed stages */}
       {currentStage.status === 'failed' && currentStage.error_message && (
-        <div className="mx-2 mb-2 px-2 py-1 rounded text-xs bg-red-950/50 text-red-400 border border-red-900/50 truncate">
+        <div className="mx-2 mb-2 px-2 py-1 rounded text-xs bg-red-100 text-red-700 border border-red-300 dark:bg-red-950/50 dark:text-red-400 dark:border-red-900/50 truncate">
           {currentStage.error_message}
         </div>
       )}

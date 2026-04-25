@@ -313,7 +313,7 @@ export function WorkflowHeader() {
         <div
           onClick={() => setErrorExpanded(!errorExpanded)}
           className={cn(
-            'bg-red-950/50 border-b border-red-900/50 px-4 py-2 text-sm text-red-400 cursor-pointer hover:bg-red-950/70 shrink-0',
+            'bg-red-50 border-b border-red-200 px-4 py-2 text-sm text-red-700 cursor-pointer hover:bg-red-100 dark:bg-red-950/50 dark:border-red-900/50 dark:text-red-400 dark:hover:bg-red-950/70 shrink-0',
             !errorExpanded && 'truncate',
           )}
           role="button"

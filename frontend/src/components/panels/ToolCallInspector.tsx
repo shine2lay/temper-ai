@@ -76,7 +76,7 @@ export function ToolCallInspector({ toolCallId }: ToolCallInspectorProps) {
         {toolCall.approval_required && (
           <Badge
             variant="outline"
-            className="text-xs bg-amber-950/30 text-amber-400 border-amber-900/50"
+            className="text-xs bg-amber-100 text-amber-700 border-amber-300 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-900/50"
           >
             Approval Required
           </Badge>
@@ -96,8 +96,8 @@ export function ToolCallInspector({ toolCallId }: ToolCallInspectorProps) {
         return (
           <div className="rounded-md bg-temper-bg-failed p-3 text-sm text-temper-failed">
             <div className="flex items-center gap-2 mb-1">
-              <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-red-950 border border-red-900/50">{type}</span>
-              {retryable && <span className="text-xs text-amber-400">Retryable</span>}
+              <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-red-100 border border-red-300 dark:bg-red-950 dark:border-red-900/50">{type}</span>
+              {retryable && <span className="text-xs text-amber-600 dark:text-amber-400">Retryable</span>}
             </div>
             {toolCall.error_message}
           </div>

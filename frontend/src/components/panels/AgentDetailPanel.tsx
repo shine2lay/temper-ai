@@ -32,7 +32,13 @@ export function AgentDetailPanel({ agentId }: AgentDetailPanelProps) {
   const ag = useExecutionStore((s) => s.agents.get(agentId));
   const select = useExecutionStore((s) => s.select);
   const stages = useExecutionStore((s) => s.stages);
+  const streamEntry = useExecutionStore((s) => s.streamingContent.get(agentId));
   const isRunning = ag?.status === 'running';
+  // Keep the streamed transcript visible after the agent finishes — same
+  // content the live bar showed during the run, just frozen. Empties on a
+  // fresh page load (chunks aren't persisted in the backend), but in-session
+  // it preserves the full trace so the user can scroll back through it.
+  const hasStream = !!(streamEntry && (streamEntry.content || (streamEntry.toolActivity?.length ?? 0) > 0));
 
   if (!ag) {
     return <EmptyState title="Agent not found" />;
@@ -208,13 +214,15 @@ export function AgentDetailPanel({ agentId }: AgentDetailPanelProps) {
       {/* Error */}
       {ag.error_message && <ErrorDisplay error={ag.error_message} />}
 
-      {/* Streaming panel when running */}
-      {isRunning && (
+      {/* Streamed transcript — shown while running and kept visible
+          after the agent finishes so the user can read back through the
+          token-by-token trace + tool calls. */}
+      {hasStream && (
         <>
           <Separator />
           <div>
             <span className="mb-2 block text-sm font-medium text-temper-text-muted">
-              Live Stream
+              {isRunning ? 'Live Stream' : 'Live Streamed'}
             </span>
             <StreamingPanel agentId={agentId} />
           </div>

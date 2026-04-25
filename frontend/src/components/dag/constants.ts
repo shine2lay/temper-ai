@@ -8,9 +8,9 @@ export {
 
 /** Confidence score thresholds and their badge styles */
 export const CONFIDENCE_STYLES = {
-  high: { threshold: 0.8, className: 'bg-emerald-950/50 text-emerald-400' },
-  medium: { threshold: 0.5, className: 'bg-amber-950/50 text-amber-400' },
-  low: { threshold: 0, className: 'bg-red-950/50 text-red-400' },
+  high: { threshold: 0.8, className: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400' },
+  medium: { threshold: 0.5, className: 'bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-400' },
+  low: { threshold: 0, className: 'bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-400' },
 } as const;
 
 export function confidenceBadgeClass(score: number): string {

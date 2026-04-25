@@ -74,21 +74,35 @@ class RunResponse(BaseModel):
 
 @router.post("/api/runs", response_model=RunResponse)
 def start_run(body: RunRequest):
-    """Start a workflow execution in a background thread.
+    """Start a workflow execution.
 
-    Returns immediately with the execution_id. Use WebSocket or
-    GET /api/workflows/{id} to track progress.
+    Two modes, picked by $TEMPER_EXECUTION_MODE:
+      inprocess (default) — run in a server-process thread (legacy behavior)
+      subprocess          — spawn a `temper run-workflow` subprocess
+
+    Subprocess mode is opt-in until phase 6 flips the default. In both
+    modes, the response shape is identical: returns execution_id + status,
+    and the caller polls GET /api/workflows/{id} or watches the WebSocket.
     """
     execution_id = str(uuid.uuid4())
 
     # Validate workflow exists before starting. Pass inputs so any
-    # `type: template` nodes can be expanded at load time.
+    # `type: template` nodes can be expanded at load time. Both modes
+    # share this validation so a bad workflow name fails fast as 400.
     try:
         nodes, config = _state().graph_loader.load_workflow(
             body.workflow, inputs=body.inputs
         )
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # Mode dispatch — subprocess path skips all the in-process plumbing
+    # (tool executor, MCP preconnect, ExecutionContext, thread). The
+    # worker rebuilds it from env via runner.bootstrap.
+    import os as _os
+    mode = _os.environ.get("TEMPER_EXECUTION_MODE", "inprocess").lower()
+    if mode == "subprocess":
+        return _start_run_subprocess(execution_id, body, config)
 
     # Build execution context
     from temper_ai.api.websocket import ws_manager
@@ -163,6 +177,67 @@ def start_run(body: RunRequest):
     return RunResponse(execution_id=execution_id, status="running")
 
 
+def _start_run_subprocess(
+    execution_id: str, body: RunRequest, config,
+) -> RunResponse:
+    """Spawn a worker subprocess instead of running in this server process.
+
+    Insert the WorkflowRun row first (worker reads it at startup), then
+    ask the spawner to launch. If the spawn fails, mark the row failed
+    and surface 503 — the caller can retry.
+
+    Cancellation, monitoring, and terminal-state writes are owned by the
+    reaper + worker respectively; this function returns as soon as the
+    process is launched.
+    """
+    from datetime import UTC, datetime
+
+    from temper_ai.database import get_session
+    from temper_ai.runner.models import WorkflowRun
+    from temper_ai.spawner import SpawnerError, get_spawner
+
+    with get_session() as session:
+        session.add(WorkflowRun(
+            execution_id=execution_id,
+            workflow_name=config.name,
+            workspace_path=body.workspace_path or "",
+            inputs=body.inputs or {},
+            status="queued",
+        ))
+
+    spawner = get_spawner()
+    try:
+        handle = spawner.spawn(execution_id)
+    except SpawnerError as exc:
+        # Mark failed so the dashboard reflects reality. Don't keep the
+        # queued row around — caller knows it didn't start.
+        with get_session() as session:
+            from sqlmodel import select
+            row = session.exec(
+                select(WorkflowRun).where(WorkflowRun.execution_id == execution_id),
+            ).first()
+            if row is not None:
+                row.status = "failed"
+                row.completed_at = datetime.now(UTC)
+                row.error = {"message": str(exc), "kind": "spawn"}
+                session.add(row)
+        raise HTTPException(status_code=503, detail=f"Spawner failed: {exc}") from exc
+
+    # Stamp the handle so the reaper can poll/kill it.
+    with get_session() as session:
+        from sqlmodel import select
+        row = session.exec(
+            select(WorkflowRun).where(WorkflowRun.execution_id == execution_id),
+        ).first()
+        if row is not None:
+            row.spawner_kind = handle.kind.value
+            row.spawner_handle = handle.handle
+            row.spawner_metadata = handle.metadata
+            session.add(row)
+
+    return RunResponse(execution_id=execution_id, status="running")
+
+
 @router.get("/api/workflows")
 def list_workflows(limit: int = 20, offset: int = 0, status: str | None = None):
     """List workflow executions with summary data."""
@@ -182,14 +257,31 @@ def get_workflow(execution_id: str):
 def cancel_run(execution_id: str):
     """Cancel a running workflow execution.
 
-    If the execution is actively running in this server, sets the cancel event.
-    If it's an orphaned run (stale from a server restart), marks it as cancelled
-    directly in the event store.
+    Three paths in priority order:
+      1. In-process run: cancel_event in this server's `running` dict → set it
+      2. Subprocess run: WorkflowRun row exists → set cancel_requested=true so
+         the reaper sends SIGTERM (worker writes the cancelled milestone)
+      3. Stale run: only an event row exists → mark the workflow.started
+         event cancelled (legacy fallback for crashed in-process runs)
     """
     cancel_event = _state().running.get(execution_id)
     if cancel_event is not None:
         cancel_event.set()
         return {"status": "cancelling", "execution_id": execution_id}
+
+    # Subprocess run? WorkflowRun row is the source of truth for spawner-managed runs.
+    from sqlmodel import select
+
+    from temper_ai.database import get_session
+    from temper_ai.runner.models import WorkflowRun
+    with get_session() as session:
+        row = session.exec(
+            select(WorkflowRun).where(WorkflowRun.execution_id == execution_id),
+        ).first()
+        if row is not None and row.status in ("queued", "running"):
+            row.cancel_requested = True
+            session.add(row)
+            return {"status": "cancelling", "execution_id": execution_id}
 
     # Not in running dict — could be an orphaned stale run. Check if it exists in DB.
     result = get_workflow_execution(execution_id)

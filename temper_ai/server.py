@@ -257,10 +257,24 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Mark orphaned runs as interrupted (from previous crashes)
     _recover_orphaned_runs()
 
+    # Reaper — only when subprocess execution is enabled. In-process runs
+    # don't need it because they share the server process's lifecycle.
+    reaper = None
+    if os.environ.get("TEMPER_EXECUTION_MODE", "inprocess").lower() == "subprocess":
+        from temper_ai.spawner import get_spawner
+        from temper_ai.spawner.reaper import Reaper
+        try:
+            reaper = Reaper(get_spawner())
+            reaper.start()
+        except Exception as e:
+            logger.warning("Reaper failed to start (cancel/orphan detection disabled): %s", e)
+
     logger.info("Temper AI server ready")
     yield
 
     # Shutdown
+    if reaper is not None:
+        reaper.stop()
     try:
         from temper_ai.tools.mcp_client import mcp_manager
         await mcp_manager.stop()

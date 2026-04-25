@@ -133,17 +133,25 @@ export function useDagElements(): { nodes: Node[]; edges: Edge[] } {
 
     const fragment = buildFragment(topLevelLatest, null, undefined, ctx);
 
-    // Workflow-level edges (loop-back + dispatch). These cross fragment
-    // boundaries conceptually but in practice all our examples keep them
-    // at the top level.
+    // Workflow-level edges (loop-back + dispatch). Dispatch edges in
+    // particular can be cross-level: a leaf agent inside a stage container
+    // (e.g. `ticket_dispatcher` inside `sprint`) can dispatch new top-level
+    // sibling stages (e.g. `pipeline_t1`). For those, the source endpoint
+    // is the nested agent's id, not the top-level container's id. Build a
+    // recursive name → rendered id map so we can resolve dispatchers
+    // wherever they live in the tree.
     const renderedNames = new Set(topLevelLatest.map((n) => n.name ?? n.id));
     const liveTopIds = new Set(fragment.liveTopLevelIds);
+    const renderedNodeIds = new Set(fragment.rfNodes.map((n) => n.id));
+    const nameToRenderedId = buildNameToIdMap(fragment.rfNodes);
     appendWorkflowLevelEdges(
       fragment.rfEdges,
       dagInfo,
       stageGroups,
       renderedNames,
       liveTopIds,
+      renderedNodeIds,
+      nameToRenderedId,
     );
 
     return { nodes: fragment.rfNodes, edges: fragment.rfEdges };
@@ -468,6 +476,8 @@ function appendWorkflowLevelEdges(
   stageGroups: Map<string, StageExecution[]>,
   renderedNames: Set<string>,
   liveTopIds: Set<string>,
+  renderedNodeIds: Set<string>,
+  nameToRenderedId: Map<string, string>,
 ): void {
   // Loop-back arrows (workflow-level only).
   const dispatchMarker = {
@@ -520,17 +530,18 @@ function appendWorkflowLevelEdges(
     });
   }
 
-  // Dispatch edges: a dispatcher node added the target at runtime. We add
-  // an explicit amber edge so the addition is visible.
+  // Dispatch edges: a dispatcher node added the target at runtime. The
+  // dispatcher may be a leaf agent nested inside a stage container — e.g.
+  // `ticket_dispatcher` lives inside `sprint` and dispatches new top-level
+  // pipeline stages. We resolve `dispatched_by` against the recursive
+  // name→id map (covering all rendered nesting levels), not just the top.
   for (const [name, execs] of stageGroups) {
     if (!renderedNames.has(name)) continue;
     const latest = execs[execs.length - 1];
     if (!latest.dispatched_by) continue;
-    if (!renderedNames.has(latest.dispatched_by)) continue;
-    const sourceExecs = stageGroups.get(latest.dispatched_by);
-    const sourceId = sourceExecs?.[sourceExecs.length - 1]?.id;
-    if (!sourceId) continue;
-    if (!liveTopIds.has(sourceId) || !liveTopIds.has(latest.id)) continue;
+    if (!liveTopIds.has(latest.id)) continue;
+    const sourceId = nameToRenderedId.get(latest.dispatched_by);
+    if (!sourceId || !renderedNodeIds.has(sourceId)) continue;
     edges.push({
       id: `dispatch-${sourceId}-${latest.id}`,
       source: sourceId,
@@ -592,6 +603,21 @@ function unwrapPassthrough(node: NodeExecution): NodeExecution | null {
   if (only.type !== 'stage') return null;
   if ((only.name ?? only.id) !== (node.name ?? node.id)) return null;
   return only;
+}
+
+/** Build a `name → rendered React Flow id` map covering every node we
+ *  emitted, regardless of nesting depth. Used to resolve cross-level
+ *  dispatch edges where the dispatcher lives inside a container. */
+function buildNameToIdMap(rfNodes: Node[]): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const n of rfNodes) {
+    const data = n.data as { stage?: { name?: string }; agent?: { agent_name?: string } } | undefined;
+    const stageName = data?.stage?.name;
+    if (stageName && !out.has(stageName)) out.set(stageName, n.id);
+    const agentName = data?.agent?.agent_name;
+    if (agentName && !out.has(agentName)) out.set(agentName, n.id);
+  }
+  return out;
 }
 
 function leafSize(node: NodeExecution): { width: number; height: number } {

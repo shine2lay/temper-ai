@@ -338,18 +338,24 @@ const FRAGMENT_OPTIONS: LayoutOptions = {
   'elk.algorithm': 'layered',
   'elk.direction': 'RIGHT',
   'elk.layered.edgeRouting': 'ORTHOGONAL',
-  // Bumped from 60 → 140 — leader-strategy fan-in needs visible
-  // breathing room between the worker column and the leader column,
-  // otherwise the moderator looks crammed against its workers.
-  'elk.layered.spacing.nodeNodeBetweenLayers': '140',
+  // 220 gives a wide enough channel for 5+ fan-in lanes to splay
+  // between worker column and leader column without arrows looking
+  // squished against the right edge of the workers.
+  'elk.layered.spacing.nodeNodeBetweenLayers': '220',
   'elk.layered.spacing.edgeNodeBetweenLayers': '40',
-  'elk.layered.spacing.edgeEdgeBetweenLayers': '20',
+  'elk.layered.spacing.edgeEdgeBetweenLayers': '24',
   'elk.spacing.nodeNode': '40',
-  'elk.spacing.edgeNode': '20',
-  'elk.spacing.edgeEdge': '12',
+  'elk.spacing.edgeNode': '30',
+  // 28 ensures each fan-in lane has visible separation from its
+  // neighbour. With 5 workers feeding 1 leader the previous 12px
+  // packed the lanes too close to read.
+  'elk.spacing.edgeEdge': '28',
   'elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF',
   'elk.layered.nodePlacement.bk.fixedAlignment': 'BALANCED',
-  'elk.padding': `[top=${HEADER_H + PAD},left=${PAD},bottom=${PAD},right=${PAD}]`,
+  // Bigger right padding gives the last node-column inside a stage
+  // container some breathing room to its parent's right border —
+  // otherwise the leader/last-column visually slams the edge.
+  'elk.padding': `[top=${HEADER_H + PAD},left=${PAD},bottom=${PAD},right=${PAD * 2}]`,
 };
 
 
@@ -420,13 +426,18 @@ function postProcessStrategies(result: ElkLayoutResult): void {
     list.push(n);
     childrenByParent.set(n.parentId, list);
   }
-  const absY = new Map<string, number>();
-  const computeAbs = (n: ElkPositionedNode, parentAbsY: number): void => {
-    const a = parentAbsY + n.y;
-    absY.set(n.id, a);
-    for (const c of childrenByParent.get(n.id) ?? []) computeAbs(c, a);
+  const absPos = new Map<string, { x: number; y: number }>();
+  const computeAbs = (
+    n: ElkPositionedNode,
+    parentAbsX: number,
+    parentAbsY: number,
+  ): void => {
+    const ax = parentAbsX + n.x;
+    const ay = parentAbsY + n.y;
+    absPos.set(n.id, { x: ax, y: ay });
+    for (const c of childrenByParent.get(n.id) ?? []) computeAbs(c, ax, ay);
   };
-  for (const top of childrenByParent.get(undefined) ?? []) computeAbs(top, 0);
+  for (const top of childrenByParent.get(undefined) ?? []) computeAbs(top, 0, 0);
 
   for (const container of result.nodes) {
     if (container.node.strategy !== 'leader') continue;
@@ -449,44 +460,85 @@ function postProcessStrategies(result: ElkLayoutResult): void {
     const workers = kids.filter((k) => k !== leader);
     if (workers.length === 0) continue;
 
-    // Center Y (absolute) of the workers' bounding box.
+    // (1) Vertically center the leader on the workers' bounding box.
     let minTop = Infinity, maxBottom = -Infinity;
     for (const w of workers) {
-      const ay = absY.get(w.id) ?? 0;
+      const ay = absPos.get(w.id)?.y ?? 0;
       minTop = Math.min(minTop, ay);
       maxBottom = Math.max(maxBottom, ay + w.height);
     }
     const workersCenterY = (minTop + maxBottom) / 2;
-    const leaderCenterY = (absY.get(leader.id) ?? 0) + leader.height / 2;
+    const leaderAbs = absPos.get(leader.id) ?? { x: 0, y: 0 };
+    const leaderCenterY = leaderAbs.y + leader.height / 2;
     const deltaY = workersCenterY - leaderCenterY;
-    if (Math.abs(deltaY) < 4) continue;  // already close enough
-
-    // Shift the leader's relative Y.
-    leader.y += deltaY;
-    const newLeaderAbsY = (absY.get(leader.id) ?? 0) + deltaY;
-    absY.set(leader.id, newLeaderAbsY);
-
-    // Adjust incoming edges to the leader. ELK's ORTHOGONAL routing
-    // produces a polyline of [source, ...bends, target]. The last
-    // 1-2 points are at the leader's old Y; shift them so the edge
-    // terminates at the new Y. Middle bends (inside the inter-column
-    // gap) extend their vertical run accordingly.
-    const oldLeaderEndpointY = newLeaderAbsY - deltaY + leader.height / 2;
-    const newLeaderEndpointY = newLeaderAbsY + leader.height / 2;
-    for (const e of result.edges) {
-      if (e.target !== leader.id) continue;
-      // Walk backwards from the end; any point at the old endpoint Y
-      // moves to the new one. Stops at the first point whose Y differs
-      // (that's the start of the vertical segment in the gap, which
-      // we want to keep where it is).
-      for (let i = e.points.length - 1; i >= 0; i--) {
-        if (Math.abs(e.points[i].y - oldLeaderEndpointY) < 4) {
-          e.points[i] = { x: e.points[i].x, y: newLeaderEndpointY };
-        } else {
-          break;
-        }
-      }
+    if (Math.abs(deltaY) >= 4) {
+      leader.y += deltaY;
+      absPos.set(leader.id, { x: leaderAbs.x, y: leaderAbs.y + deltaY });
     }
+
+    // (2) Custom fan-in routing. ELK packs all worker→leader edges
+    // through a single vertical column, which visually merges N arrows
+    // into one line. Replace those routes: each edge gets its own lane
+    // X in the gap and its own entry Y on the leader's left edge so the
+    // fan-in reads as N distinct arrows.
+    const leaderPosNew = absPos.get(leader.id)!;
+    const leaderLeftX = leaderPosNew.x;
+    const leaderTopY = leaderPosNew.y;
+    const leaderBottomY = leaderTopY + leader.height;
+
+    // Find the rightmost worker right-edge so all lanes start past it.
+    let workerRightMax = -Infinity;
+    for (const w of workers) {
+      const ax = absPos.get(w.id)?.x ?? 0;
+      workerRightMax = Math.max(workerRightMax, ax + w.width);
+    }
+    if (!isFinite(workerRightMax) || workerRightMax >= leaderLeftX) continue;
+    const gap = leaderLeftX - workerRightMax;
+    if (gap < 40) continue;  // not enough room to splay — leave ELK's route
+
+    // Stable order: by source Y so visually-top worker → topmost lane.
+    const incoming = result.edges
+      .filter((e) => e.target === leader.id)
+      .map((e) => {
+        const src = absPos.get(e.source);
+        const srcNode = result.nodes.find((n) => n.id === e.source);
+        return {
+          edge: e,
+          srcCenterY: src && srcNode ? src.y + srcNode.height / 2 : 0,
+          srcRight: src && srcNode ? src.x + srcNode.width : workerRightMax,
+        };
+      })
+      .sort((a, b) => a.srcCenterY - b.srcCenterY);
+
+    if (incoming.length < 2) continue;
+
+    const N = incoming.length;
+    // Lane Xs: spread across the middle 60% of the gap, leaving 20%
+    // breathing room on each side.
+    const laneStart = workerRightMax + gap * 0.2;
+    const laneEnd = leaderLeftX - gap * 0.2;
+    const laneStep = N > 1 ? (laneEnd - laneStart) / (N - 1) : 0;
+
+    // Entry Ys: spread along the leader's left edge with margin.
+    const entryMargin = Math.min(20, leader.height * 0.15);
+    const entryTop = leaderTopY + entryMargin;
+    const entryBottom = leaderBottomY - entryMargin;
+    const entryStep = N > 1 ? (entryBottom - entryTop) / (N - 1) : 0;
+
+    incoming.forEach(({ edge, srcCenterY, srcRight }, i) => {
+      const laneX = N === 1 ? (workerRightMax + leaderLeftX) / 2 : laneStart + i * laneStep;
+      const entryY = N === 1 ? leaderTopY + leader.height / 2 : entryTop + i * entryStep;
+
+      // Orthogonal route:
+      //   (srcRight, srcCenterY) → (laneX, srcCenterY)
+      //   → (laneX, entryY) → (leaderLeftX, entryY)
+      edge.points = [
+        { x: srcRight, y: srcCenterY },
+        { x: laneX, y: srcCenterY },
+        { x: laneX, y: entryY },
+        { x: leaderLeftX, y: entryY },
+      ];
+    });
   }
 }
 

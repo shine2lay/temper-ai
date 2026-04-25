@@ -1,6 +1,10 @@
 # Temper AI — Reference Documentation
 
-_Auto-generated from code. Do not edit manually._
+_Module pages auto-generated from code. Architecture page hand-written._
+
+## Architecture
+
+- [Server + Worker Architecture](architecture.md) — execution modes (`inprocess` / `subprocess` / `external`), worker container, live streaming, JSONL forensic log, spawner abstraction
 
 ## Modules
 

@@ -102,6 +102,8 @@ local/
 configs/workflows/local/
 configs/agents/local/
 configs/mcp_servers/local/
+configs/stages/local/
+experiments/
 temper_ai/llm/providers/claude_code.py
 temper_ai/agent/claude_code_agent.py
 docs/reference/providers/claude.md

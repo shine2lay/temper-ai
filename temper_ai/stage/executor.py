@@ -27,12 +27,18 @@ def execute_graph_with_state(
     graph_name: str = "",
     is_workflow: bool = False,
     initial_outputs: dict[str, NodeResult] | None = None,
+    resume_metadata: dict | None = None,
 ) -> NodeResult:
-    """Execute a graph with pre-populated node_outputs (for resume from checkpoints)."""
+    """Execute a graph with pre-populated node_outputs (for resume from checkpoints).
+
+    `resume_metadata` flows through to `execute_graph` so the resumed
+    workflow.started event carries the link back to the prior attempt.
+    """
     return execute_graph(
         nodes, input_data, context,
         graph_name=graph_name, is_workflow=is_workflow,
         initial_outputs=initial_outputs,
+        resume_metadata=resume_metadata,
     )
 
 
@@ -44,8 +50,20 @@ def execute_graph(
     is_workflow: bool = False,
     initial_outputs: dict[str, NodeResult] | None = None,
     workflow_outputs: dict[str, str] | None = None,
+    resume_metadata: dict | None = None,
 ) -> NodeResult:
-    """Execute a graph of nodes in topological order, concurrently where possible."""
+    """Execute a graph of nodes in topological order, concurrently where possible.
+
+    When `resume_metadata` is provided (non-None, only meaningful at the
+    top-level workflow call), it's merged into the WORKFLOW_STARTED event's
+    `data` so the view can identify this attempt as a resume of a prior
+    workflow event. Expected keys:
+      - `resume_of` (str): id of the prior workflow.started event
+      - `restored_node_names` (list[str]): names whose outputs came from
+        a checkpoint instead of fresh execution
+      - `replayed_dispatches` (list[str], optional): dispatcher names
+        whose dispatch state was replayed without re-emitting events
+    """
     start_event = EventType.WORKFLOW_STARTED if is_workflow else EventType.STAGE_STARTED
     node_map = {node.name: node for node in nodes}
     batches = topological_sort(nodes)
@@ -53,9 +71,13 @@ def execute_graph(
     loop_counts: dict[str, int] = defaultdict(int)
     start = time.monotonic()
 
+    start_data: dict = {"name": graph_name, "node_count": len(nodes)}
+    if is_workflow and resume_metadata:
+        start_data.update(resume_metadata)
+
     graph_event_id = context.event_recorder.record(
         start_event,
-        data={"name": graph_name, "node_count": len(nodes)},
+        data=start_data,
         parent_id=context.parent_event_id if not is_workflow else None,
         execution_id=context.run_id,
         status="running",

@@ -1,20 +1,28 @@
 /**
- * Edge component that renders a path from ELK-supplied waypoints.
+ * Edge component that renders a path stitched from live React Flow
+ * endpoints + ELK-computed intermediate bends.
  *
- * The path normally uses ELK's pre-computed orthogonal route. When a
- * user drags a node, React Flow updates the source/target endpoint
- * positions but the cached waypoints are now stale — so we detect the
- * drift and fall back to a smoothstep recomputed from live endpoints.
- * The arrow always anchors to the actual current node position; the
- * worst case during drag is a less-pretty path until ELK re-runs.
+ * Why this hybrid: React Flow's source/target positions account for
+ * the actually-rendered DOM size and handle offset (which can differ
+ * from ELK's logical width by tens of pixels due to node padding,
+ * border boxes, etc.). If we used ELK's endpoint values directly the
+ * arrows wouldn't anchor to the rendered handles.
+ *
+ * Strategy:
+ *   - Live endpoints (sourceX/Y, targetX/Y) are the source of truth
+ *     for where the arrow head + tail must sit.
+ *   - The middle bend points come from ELK's `data.points` cache. We
+ *     drop the first and last cache points (those were ELK's view of
+ *     the endpoints, which we're overriding) and bridge the live
+ *     endpoints to the first/last *bend* with axis-aligned segments
+ *     so the path stays orthogonal.
+ *   - If there are no intermediate bends (straight edge), fall back
+ *     to React Flow's smoothstep so we don't draw a bare line.
  */
 import { type FC } from 'react';
 import { BaseEdge, getSmoothStepPath, type EdgeProps } from '@xyflow/react';
 
 const CORNER_RADIUS = 8;
-/** Endpoint match tolerance — if the live endpoint is more than this
- *  many pixels from the cached endpoint, treat the cache as stale. */
-const STALE_THRESHOLD = 6;
 
 type Point = { x: number; y: number };
 
@@ -41,8 +49,40 @@ function pathFromPoints(points: Point[], radius: number): string {
   return segments.join(' ');
 }
 
-function close(a: Point, b: Point): boolean {
-  return Math.abs(a.x - b.x) < STALE_THRESHOLD && Math.abs(a.y - b.y) < STALE_THRESHOLD;
+/**
+ * Stitch live endpoints to cached middle bends, keeping the path
+ * orthogonal (every segment is purely horizontal or purely vertical).
+ *
+ * The source bend usually shares Y with the source endpoint; the
+ * target bend usually shares Y with the target endpoint. If they
+ * don't, we insert an intermediate corner so the shape stays clean.
+ */
+function stitchPath(
+  liveSrc: Point,
+  liveTgt: Point,
+  middleBends: Point[],
+): Point[] {
+  if (middleBends.length === 0) return [liveSrc, liveTgt];
+
+  const out: Point[] = [liveSrc];
+
+  // Bridge live source → first bend.
+  const firstBend = middleBends[0];
+  if (Math.abs(liveSrc.y - firstBend.y) > 0.5 && Math.abs(liveSrc.x - firstBend.x) > 0.5) {
+    // Diagonal — insert intermediate corner that holds source's Y
+    // until reaching first bend's X (a horizontal-then-vertical step).
+    out.push({ x: firstBend.x, y: liveSrc.y });
+  }
+
+  for (const b of middleBends) out.push(b);
+
+  // Bridge last bend → live target.
+  const lastBend = middleBends[middleBends.length - 1];
+  if (Math.abs(liveTgt.y - lastBend.y) > 0.5 && Math.abs(liveTgt.x - lastBend.x) > 0.5) {
+    out.push({ x: lastBend.x, y: liveTgt.y });
+  }
+  out.push(liveTgt);
+  return out;
 }
 
 export const RoutedEdge: FC<EdgeProps> = ({
@@ -61,22 +101,21 @@ export const RoutedEdge: FC<EdgeProps> = ({
   const liveSrc = { x: sourceX, y: sourceY };
   const liveTgt = { x: targetX, y: targetY };
 
-  // Use cached path only if both endpoints still match where ELK
-  // routed them. Otherwise the user has dragged a node — fall back to
-  // a smoothstep computed from current handle positions so the arrow
-  // stays anchored.
-  const usable =
-    cached.length >= 2 &&
-    close(cached[0], liveSrc) &&
-    close(cached[cached.length - 1], liveTgt);
+  // Strip ELK's cached endpoint guesses; keep only the bend points.
+  const middleBends = cached.length >= 2 ? cached.slice(1, -1) : cached;
 
-  const path = usable
-    ? pathFromPoints(cached, CORNER_RADIUS)
-    : getSmoothStepPath({
-        sourceX, sourceY, targetX, targetY,
-        sourcePosition, targetPosition,
-        borderRadius: CORNER_RADIUS,
-      })[0];
+  const stitched = stitchPath(liveSrc, liveTgt, middleBends);
+
+  // Straight edge with no bends — smoothstep gives a nicer curve than
+  // a bare line.
+  const path =
+    stitched.length <= 2
+      ? getSmoothStepPath({
+          sourceX, sourceY, targetX, targetY,
+          sourcePosition, targetPosition,
+          borderRadius: CORNER_RADIUS,
+        })[0]
+      : pathFromPoints(stitched, CORNER_RADIUS);
 
   return <BaseEdge id={id} path={path} markerEnd={markerEnd} style={style} />;
 };

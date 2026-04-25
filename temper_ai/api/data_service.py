@@ -63,9 +63,30 @@ def get_workflow_execution(execution_id: str) -> dict | None:
         None,
     )
 
-    # Build node executions (children of workflow event)
-    node_events = _find_children(events, workflow_event["id"], "stage.")
-    nodes = [_build_node_execution(e, events) for e in node_events]
+    # Build node executions. When the run was resumed, each attempt has its
+    # own `workflow.started` event and its own children — we walk children
+    # of ALL workflow events and dedupe by node name (latest start_time
+    # wins) so the view shows pre-interruption progress alongside the new
+    # attempt's progress, instead of dropping one or the other.
+    raw_node_events: list[dict] = []
+    for w in workflow_candidates:
+        raw_node_events.extend(_find_children(events, w["id"], "stage."))
+    built = [_build_node_execution(e, events) for e in raw_node_events]
+    by_name: dict[str, dict] = {}
+    for n in built:
+        key = n.get("name") or n.get("id")
+        if not key:
+            continue
+        existing = by_name.get(key)
+        if existing is None:
+            by_name[key] = n
+            continue
+        # Latest start wins. Empty start_time sorts as oldest (kept only if
+        # nothing better is available).
+        if (n.get("start_time") or "") >= (existing.get("start_time") or ""):
+            by_name[key] = n
+    nodes = list(by_name.values())
+    nodes.sort(key=lambda n: n.get("start_time") or "")
     current_node_names = {n.get("name") for n in nodes if n.get("name")}
 
     # Annotate nodes with dispatch relationships. `dispatch.applied` events

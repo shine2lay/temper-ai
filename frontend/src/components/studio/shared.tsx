@@ -228,7 +228,7 @@ export function CompactArrayEditor({
           />
           <button
             onClick={() => onChange(values.filter((_, j) => j !== i))}
-            className="text-[10px] text-red-400 hover:text-red-300"
+            className="text-[10px] text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
           >
             &times;
           </button>
@@ -284,7 +284,7 @@ export function CompactOutputsEditor({
           />
           <button
             onClick={() => onChange(outputs.filter((_, j) => j !== i))}
-            className="text-[10px] text-red-400 hover:text-red-300 px-0.5 shrink-0"
+            className="text-[10px] text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 px-0.5 shrink-0"
           >
             &times;
           </button>
@@ -355,7 +355,7 @@ export function CompactKeyValueEditor({
               delete next[k];
               onChange(next);
             }}
-            className="text-[10px] text-red-400 hover:text-red-300 px-0.5 shrink-0"
+            className="text-[10px] text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 px-0.5 shrink-0"
           >
             &times;
           </button>

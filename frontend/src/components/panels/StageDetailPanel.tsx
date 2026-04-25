@@ -95,8 +95,8 @@ export function StageDetailPanel({ stageId }: StageDetailPanelProps) {
         return (
           <div className="rounded-md bg-temper-bg-failed p-3 text-sm text-temper-failed">
             <div className="flex items-center gap-2 mb-1">
-              <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-red-950 border border-red-900/50">{type}</span>
-              {retryable && <span className="text-xs text-amber-400">Retryable</span>}
+              <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-red-100 border border-red-300 dark:bg-red-950 dark:border-red-900/50">{type}</span>
+              {retryable && <span className="text-xs text-amber-600 dark:text-amber-400">Retryable</span>}
             </div>
             {stage.error_message}
           </div>

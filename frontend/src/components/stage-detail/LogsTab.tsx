@@ -269,10 +269,10 @@ function LogEntryRow({
   const [expanded, setExpanded] = useState(false);
   const borderClass = AGENT_BG_COLORS[colorIndex];
   const typeColors: Record<string, string> = {
-    llm: 'text-blue-400 bg-blue-950/30',
-    tool: 'text-teal-400 bg-teal-950/30',
-    error: 'text-red-400 bg-red-950/30',
-    output: 'text-emerald-400 bg-emerald-950/30',
+    llm: 'text-blue-700 bg-blue-100 dark:text-blue-400 dark:bg-blue-950/30',
+    tool: 'text-teal-700 bg-teal-100 dark:text-teal-400 dark:bg-teal-950/30',
+    error: 'text-red-700 bg-red-100 dark:text-red-400 dark:bg-red-950/30',
+    output: 'text-emerald-700 bg-emerald-100 dark:text-emerald-400 dark:bg-emerald-950/30',
   };
   const typeColor = typeColors[log.type] ?? 'text-temper-text-muted';
 
@@ -325,7 +325,7 @@ function LogEntryRow({
         <span
           className={cn(
             'text-[10px] shrink-0',
-            log.status === 'failed' ? 'text-red-400' : 'text-temper-text-dim',
+            log.status === 'failed' ? 'text-red-700 dark:text-red-400' : 'text-temper-text-dim',
           )}
         >
           {log.status === 'failed' ? '\u2717' : '\u2713'}

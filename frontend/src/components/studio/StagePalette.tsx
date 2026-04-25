@@ -282,7 +282,7 @@ export function StagePalette() {
             <div className="text-[9px] text-temper-text-dim uppercase tracking-wider mb-1">Tools</div>
             <div className="flex flex-wrap gap-1">
               {tools.map((t) => (
-                <span key={t} className="text-[10px] px-1.5 py-0.5 rounded bg-amber-900/30 text-amber-400">{t}</span>
+                <span key={t} className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">{t}</span>
               ))}
             </div>
           </div>

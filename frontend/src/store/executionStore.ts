@@ -345,7 +345,12 @@ export const useExecutionStore = create<ExecutionState>()(
             const agent = state.agents.get(aid);
             if (agent) Object.assign(agent, data);
             if (msg.event_type.includes('end') || msg.event_type.includes('completed') || msg.event_type.includes('failed')) {
-              state.streamingContent.delete(aid);
+              // Don't delete — keep the streamed content around so the user
+              // can still scroll through the LLM trace after the agent
+              // finishes. Just mark it done so the live "streaming" pulse
+              // stops and the UI can render it as a completed transcript.
+              const entry = state.streamingContent.get(aid);
+              if (entry) entry.done = true;
             }
             break;
           }

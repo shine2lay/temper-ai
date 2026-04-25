@@ -65,7 +65,9 @@ export function LiveStreamBar() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const prevLengthsRef = useRef(new Map<string, number>());
 
-  // Active streaming agents — done if entry.done OR agent status is terminal
+  // Active streaming agents — done if entry.done OR agent status is terminal.
+  // Finished entries are NOT shown in the live bar (the user can read the
+  // completed trace from the agent detail panel instead).
   const streamingAgents = useMemo(() => {
     const result: { id: string; name: string; content: string; activeToolCall: string; toolActivity: ToolActivity[] }[] = [];
     for (const [agentId, entry] of streamingContent) {

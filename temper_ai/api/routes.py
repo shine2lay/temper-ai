@@ -105,7 +105,6 @@ def start_run(body: RunRequest):
         return _start_run_subprocess(execution_id, body, config)
 
     # Build execution context
-    from temper_ai.api.websocket import ws_manager
 
     # Create per-run policy engine from workflow safety config (if any)
     policy_engine = None
@@ -140,7 +139,9 @@ def start_run(body: RunRequest):
         except McpPreconnectError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
 
-    recorder = EventRecorder(execution_id, notifier=ws_manager)
+    recorder = EventRecorder(
+        execution_id, notifier=_build_notifier(execution_id, config.name),
+    )
     # Start execution in background thread
     cancel_event = threading.Event()
     _state().running[execution_id] = cancel_event
@@ -357,7 +358,6 @@ def resume_run(execution_id: str, body: ResumeRequest | None = None):
     )
 
     # Rebuild context
-    from temper_ai.api.websocket import ws_manager
 
     workspace = body.workspace_path or (result.get("input_data") or {}).get("workspace_path")
 
@@ -369,7 +369,9 @@ def resume_run(execution_id: str, body: ResumeRequest | None = None):
     run_tool_executor = ToolExecutor(workspace_root=workspace, policy_engine=policy_engine)
     run_tool_executor.register_tools({name: cls() for name, cls in TOOL_CLASSES.items()})
 
-    recorder = EventRecorder(execution_id, notifier=ws_manager)
+    recorder = EventRecorder(
+        execution_id, notifier=_build_notifier(execution_id, config.name),
+    )
     cancel_event = threading.Event()
     _state().running[execution_id] = cancel_event
 
@@ -459,7 +461,6 @@ def fork_run(body: ForkRequest):
         body.source_execution_id, body.sequence, new_execution_id, len(restored_outputs),
     )
 
-    from temper_ai.api.websocket import ws_manager
 
     policy_engine = None
     if config.safety:
@@ -469,7 +470,9 @@ def fork_run(body: ForkRequest):
     run_tool_executor = ToolExecutor(workspace_root=body.workspace_path, policy_engine=policy_engine)
     run_tool_executor.register_tools({name: cls() for name, cls in TOOL_CLASSES.items()})
 
-    recorder = EventRecorder(new_execution_id, notifier=ws_manager)
+    recorder = EventRecorder(
+        new_execution_id, notifier=_build_notifier(new_execution_id, config.name),
+    )
     cancel_event = threading.Event()
     _state().running[new_execution_id] = cancel_event
 
@@ -569,6 +572,25 @@ def get_checkpoints(execution_id: str):
     svc = CheckpointService(execution_id)
     history = svc.get_history()
     return {"execution_id": execution_id, "checkpoints": history, "total": len(history)}
+
+
+def _build_notifier(execution_id: str, workflow_name: str):
+    """Compose the notifier sinks for an in-process workflow run.
+
+    Two sinks: ws_manager (live WebSocket broadcast) + JsonlNotifier
+    (per-run forensic log). Subprocess workers build their own composite
+    in cmd_run_workflow — we don't share construction because the subprocess
+    side adds Redis chunks that the in-process side doesn't need.
+    """
+    from temper_ai.observability.composite_notifier import CompositeNotifier
+    from temper_ai.observability.jsonl_logger import JsonlNotifier
+    return CompositeNotifier(
+        ws_manager,
+        JsonlNotifier(
+            execution_id, workflow_name,
+            metadata={"spawned_via": "in-process route handler"},
+        ),
+    )
 
 
 def _find_latest_workflow_event(execution_id: str) -> dict | None:

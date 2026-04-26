@@ -4,7 +4,7 @@
 
 _Auto-generated from code. Do not edit manually._
 
-**3 built-in strategies** define how agents within a stage are wired together.
+**4 built-in strategies** define how agents within a stage are wired together.
 
 Strategies are **not** a separate execution layer — they generate a node topology that the graph executor runs like any other graph.
 
@@ -12,6 +12,7 @@ Each strategy takes a list of [agent](../agents/index.md) configs and produces a
 
 | Name | Description |
 |------|-------------|
+| [`debate`](debate.md) | Multi-round debate. N debaters speak per round seeing the previous |
 | [`leader`](leader.md) | Workers run in parallel, leader synthesizes their outputs. |
 | [`parallel`](parallel.md) | All agents run independently. No depends_on between them. |
 | [`sequential`](sequential.md) | Linear chain. Each agent depends on the previous. |

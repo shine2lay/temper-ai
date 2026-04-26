@@ -1,0 +1,49 @@
+# @description Multi-round debate among PM, designer, and engineer roles,
+# converging on a unified PRD + architecture decision via a synthesizer.
+# Demonstrates the `debate` topology strategy.
+workflow:
+  name: demo_debate
+  description: |
+    PM, designer, and engineer debate what to build over N rounds, then a
+    synthesizer reads the full transcript and produces the unified PRD +
+    architecture decision.
+
+    Strategy: `debate` — for D debaters × R rounds, generates D*R + 1
+    nodes:
+      - Round 1 debaters run in parallel with no inputs (opening positions)
+      - Round 2..R debaters depend on the previous round and see all
+        prior-round transcripts via `{{ other_agents }}`
+      - Synthesizer depends on every debate node and sees the full
+        cross-round transcript
+
+    Usage:
+      POST /api/runs {
+        "workflow": "demo_debate",
+        "inputs": {
+          "task": "what feature should we build next?"
+        }
+      }
+
+  defaults:
+    provider: openai
+    model: gpt-4o-mini
+
+  safety:
+    policies:
+      - type: budget
+        max_cost_usd: 2.00
+
+  nodes:
+    - name: prd_debate
+      type: stage
+      strategy: debate
+      strategy_config:
+        rounds: 3
+      input_map:
+        task: input.task
+      agents:
+        - demo_debate_pm
+        - demo_debate_designer
+        - demo_debate_engineer
+        - agent: demo_debate_synthesizer
+          role: synthesizer

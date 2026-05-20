@@ -1,0 +1,185 @@
+# Combines schema_check + semantic_validate outputs into a single
+# pass/fail signal. Used by the event-guide workflow's loop_to
+# mechanism — when needs_fix is true, the workflow loops back to
+# remediate. After max_loops (3), on_max_loops: fail cascades a
+# FAILED status downstream.
+#
+# Inputs come as flat fields (temper resolver doesn't pass bare
+# .structured) — see workflow input_map.
+agent:
+  name: eg_validate_gate
+  type: script
+  script_template: |
+    python3 << 'PYEOF'
+    import json, sys
+
+    SCHEMA_PASSED   = r"""{{ schema_passed | tojson }}"""
+    SCHEMA_ERRORS   = r"""{{ schema_errors | tojson }}"""
+    SCHEMA_WARNINGS = r"""{{ schema_warnings | tojson }}"""
+    SEM_PASSED      = r"""{{ semantic_passed | tojson }}"""
+    SEM_ISSUES      = r"""{{ semantic_issues | tojson }}"""
+    SEM_COUNTS      = r"""{{ semantic_counts | tojson }}"""
+
+    def _j(blob, default):
+        try: return json.loads(blob)
+        except Exception: return default
+
+    schema_passed   = _j(SCHEMA_PASSED, None)
+    schema_errors   = _j(SCHEMA_ERRORS, []) or []
+    schema_warnings = _j(SCHEMA_WARNINGS, []) or []
+    sem_passed      = _j(SEM_PASSED, None)
+    sem_issues      = _j(SEM_ISSUES, []) or []
+    sem_counts      = _j(SEM_COUNTS, {}) or {}
+
+    # ── Fixable-warning allow-list ──────────────────────────────────
+    # Warnings the remediator can reliably resolve. Match by substring
+    # (case-insensitive) against the warning string. Extend as we
+    # learn what's fixable.
+    #
+    # Each entry: (substring_to_match, category_for_remediate_prompt).
+    # The category drives the fix-recipe shown to the remediator —
+    # see eg_remediate.yaml's recipe table.
+
+    # schema_check warnings (deterministic, structural):
+    FIXABLE_SCHEMA_WARNING_PATTERNS = [
+        ("faq missing intent coverage",        "intent_coverage"),
+        ("hotVenues unsupported in",           "hot_venues_unsupported"),
+    ]
+
+    # semantic_validator warnings (LLM-detected, content-quality).
+    # These are the categories the remediator's system prompt has
+    # explicit fix recipes for (ungrounded specifics, internal
+    # contradictions, comparative claims). Without this allow-list
+    # they'd just log and ship — same trap as the WC2026 batch's
+    # 64 hand-fixed warnings.
+    FIXABLE_SEMANTIC_WARNING_PATTERNS = [
+        ("ungrounded",            "ungrounded_specific"),
+        ("without upstream",      "ungrounded_specific"),
+        ("invented specific",     "ungrounded_specific"),
+        ("not traceable",         "ungrounded_specific"),
+        ("specific dollar",       "ungrounded_specific"),
+        ("specific number",       "ungrounded_specific"),
+        ("specific time",         "ungrounded_specific"),
+        ("specific capacity",     "ungrounded_specific"),
+        ("specific amenity",      "ungrounded_specific"),
+        ("specific booking",      "ungrounded_specific"),
+        ("specific quotable",     "ungrounded_specific"),
+        ("precise quotable",      "ungrounded_specific"),
+        ("precise number",        "ungrounded_specific"),
+        ("no upstream",           "ungrounded_specific"),
+        ("no grounding",          "ungrounded_specific"),
+        ("lacks upstream",        "ungrounded_specific"),
+        ("lacks grounding",       "ungrounded_specific"),
+        ("not in upstream",       "ungrounded_specific"),
+        ("internal inconsistency","internal_contradiction"),
+        ("internal contradiction","internal_contradiction"),
+        ("contradicts",           "internal_contradiction"),
+        ("inconsistent",          "internal_contradiction"),
+        ("comparative claim",     "comparative_claim"),
+        ("superlative",           "comparative_claim"),
+        ("the only",              "comparative_claim"),
+        ("worst",                 "comparative_claim"),
+        ("largest",               "comparative_claim"),
+        ("photo_subject_mismatch","photo_subject_mismatch"),
+        ("photo subject",         "photo_subject_mismatch"),
+        ("alt describes",         "photo_subject_mismatch"),
+        ("seen from",             "photo_subject_mismatch"),
+        ("not the named",         "photo_subject_mismatch"),
+    ]
+
+    def _classify(s, patterns):
+        sl = str(s).lower()
+        for substr, cat in patterns:
+            if substr.lower() in sl:
+                return cat
+        return None
+
+    fixable_schema_warnings = [
+        (w, _classify(w, FIXABLE_SCHEMA_WARNING_PATTERNS)) for w in schema_warnings
+    ]
+    fixable_schema_warnings = [(w, c) for w, c in fixable_schema_warnings if c]
+
+    # Pull warning-severity semantic issues and classify
+    fixable_semantic_warnings = []
+    for iss in sem_issues:
+        if not isinstance(iss, dict): continue
+        if iss.get("severity") != "warning": continue
+        # Concatenate issue + where + evidence so the matcher catches
+        # patterns no matter which field the LLM put them in
+        haystack = " ".join(str(iss.get(k, "")) for k in ("issue", "where", "evidence"))
+        cat = _classify(haystack, FIXABLE_SEMANTIC_WARNING_PATTERNS)
+        if cat:
+            fixable_semantic_warnings.append((iss, cat))
+
+    # Hard pass criteria: zero schema errors AND zero semantic critical
+    # AND zero fixable warnings (schema OR semantic). Other warnings +
+    # nits log but don't block.
+    schema_ok = len(schema_errors) == 0
+    semantic_ok = int(sem_counts.get("critical", 0)) == 0
+    no_fixable_warnings = (
+        len(fixable_schema_warnings) == 0
+        and len(fixable_semantic_warnings) == 0
+    )
+    needs_fix = not (schema_ok and semantic_ok and no_fixable_warnings)
+
+    # Fix instructions for the remediate agent on the next iteration.
+    # Order: schema errors (structural) → critical semantic → fixable
+    # warnings (lowest priority but still trigger the loop).
+    fix_instructions = []
+    for e in schema_errors:
+        fix_instructions.append({
+            "source": "schema_check",
+            "severity": "error",
+            "issue":   str(e),
+        })
+    for iss in sem_issues:
+        if isinstance(iss, dict) and iss.get("severity") == "critical":
+            fix_instructions.append({
+                "source":   "semantic_validate",
+                "severity": "critical",
+                "where":    iss.get("where"),
+                "issue":    iss.get("issue"),
+                "evidence": iss.get("evidence"),
+            })
+    for w, category in fixable_schema_warnings:
+        fix_instructions.append({
+            "source":   "schema_check",
+            "severity": "warning_fixable",
+            "category": category,
+            "issue":    str(w),
+        })
+    for iss, category in fixable_semantic_warnings:
+        fix_instructions.append({
+            "source":   "semantic_validate",
+            "severity": "warning_fixable",
+            "category": category,
+            "where":    iss.get("where"),
+            "issue":    iss.get("issue"),
+            "evidence": iss.get("evidence"),
+        })
+
+    print(json.dumps({
+        "needs_fix": needs_fix,
+        "schema_ok": schema_ok,
+        "semantic_ok": semantic_ok,
+        "fix_instructions": fix_instructions,
+        "summary": {
+            "schema_errors":      len(schema_errors),
+            "schema_warnings":    len(schema_warnings),
+            "fixable_warnings":   len(fixable_schema_warnings) + len(fixable_semantic_warnings),
+            "fixable_schema_warnings":   len(fixable_schema_warnings),
+            "fixable_semantic_warnings": len(fixable_semantic_warnings),
+            "semantic_critical":  int(sem_counts.get("critical", 0)),
+            "semantic_warning":   int(sem_counts.get("warning", 0)),
+            "semantic_nit":       int(sem_counts.get("nit", 0)),
+            "fix_instruction_count": len(fix_instructions),
+        },
+    }))
+    PYEOF
+  timeout_seconds: 10
+  outputs:
+    needs_fix: boolean
+    schema_ok: boolean
+    semantic_ok: boolean
+    fix_instructions: list
+    summary: object

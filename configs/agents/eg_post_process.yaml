@@ -1,0 +1,196 @@
+# Deterministic post-process between assemble and validators.
+#
+# Catches what doesn't need LLM judgment:
+#   - drops satelliteEvents with non-http rsvp URLs
+#   - strips stages[] entries with empty must_catch[]
+#   - normalizes time strings (24h ↔ 12h dual references)
+#   - dedupes lineup[] slots where (day,startTime,stage,artist) repeats
+#   - deduplicates timeline rows with identical labels
+#
+# Emits the cleaned guide + a diff log of what was changed. The diff
+# is consumed by the remediate agent so it can see "post_process
+# already fixed X; only do Y" instead of duplicating work.
+agent:
+  name: eg_post_process
+  type: script
+  script_template: |
+    python3 << 'PYEOF'
+    import json, re, sys
+    from urllib.parse import urlparse
+
+    GUIDE_BLOB = r"""{{ guide | tojson }}"""
+    SIDE_BLOB  = r"""{{ side_week_events | tojson }}"""
+
+    try:
+        guide = json.loads(GUIDE_BLOB)
+    except Exception as e:
+        print(json.dumps({
+            "guide": None,
+            "satelliteEvents": [],
+            "diff_log": [f"guide_parse_error: {e}"],
+            "passed_through": False,
+        }))
+        sys.exit(0)
+
+    try:
+        side_events = json.loads(SIDE_BLOB)
+    except Exception:
+        side_events = []
+
+    diff_log = []
+
+    inner = guide.get("guide") if isinstance(guide, dict) and "guide" in guide else guide
+    if not isinstance(inner, dict):
+        inner = {}
+
+    # ─── 1. Drop satelliteEvents with non-http rsvp ───────────────
+    sat_list = inner.get("satelliteEvents") if "satelliteEvents" in inner else side_events
+    if not isinstance(sat_list, list):
+        sat_list = []
+    kept = []
+    dropped_urls = 0
+    for ev in sat_list:
+        if not isinstance(ev, dict): continue
+        rsvp = str(ev.get("rsvp", "") or "")
+        if rsvp.startswith("http://") or rsvp.startswith("https://"):
+            kept.append(ev)
+        else:
+            dropped_urls += 1
+    if dropped_urls:
+        diff_log.append(f"dropped_{dropped_urls}_satelliteEvents_with_bad_rsvp_urls")
+    if "satelliteEvents" in inner:
+        inner["satelliteEvents"] = kept
+    side_events = kept  # for sibling
+
+    # ─── 2. Strip stages[] with empty must_catch[] ───────────────
+    stages = inner.get("stages")
+    if isinstance(stages, list):
+        kept_stages = [s for s in stages if isinstance(s, dict) and (s.get("must_catch") or [])]
+        dropped = len(stages) - len(kept_stages)
+        if dropped:
+            diff_log.append(f"dropped_{dropped}_stages_with_empty_must_catch")
+        inner["stages"] = kept_stages
+
+    # ─── 3. Dedup lineup[] on (day,startTime,stage,artist) ──────
+    lineup = inner.get("lineup")
+    if isinstance(lineup, list):
+        seen = set()
+        kept_l = []
+        for slot in lineup:
+            if not isinstance(slot, dict): continue
+            key = (slot.get("day"), slot.get("startTime"), slot.get("stage"), slot.get("artist"))
+            if key in seen: continue
+            seen.add(key)
+            kept_l.append(slot)
+        dropped = len(lineup) - len(kept_l)
+        if dropped:
+            diff_log.append(f"deduped_{dropped}_duplicate_lineup_slots")
+        inner["lineup"] = kept_l
+
+    # ─── 4. Dedup timeline rows with identical labels ───────────
+    tl = inner.get("timeline")
+    if isinstance(tl, list):
+        seen = set()
+        kept_t = []
+        for row in tl:
+            if not isinstance(row, dict): continue
+            lab = row.get("label")
+            if lab in seen: continue
+            seen.add(lab)
+            kept_t.append(row)
+        dropped = len(tl) - len(kept_t)
+        if dropped:
+            diff_log.append(f"deduped_{dropped}_timeline_rows")
+        inner["timeline"] = kept_t
+
+    # ─── 5. Strip /thumb/.../Wpx- from Wikimedia URLs ───────────
+    # Wikimedia rejects arbitrary thumbnail widths with HTTP 400 —
+    # the agent occasionally emits thumbnail URLs anyway. Strip
+    # them to the canonical original URL.
+    THUMB_RE = re.compile(
+        r"^(https://upload\.wikimedia\.org/wikipedia/commons/)thumb/"
+        r"([0-9a-f]/[0-9a-f]{2}/[^/]+)/\d+px-[^/]+$"
+    )
+    def _fix_wm(url):
+        if not isinstance(url, str): return url
+        m = THUMB_RE.match(url)
+        return (m.group(1) + m.group(2)) if m else url
+
+    fixed_urls = 0
+    h = inner.get("hero")
+    if isinstance(h, dict) and h.get("url"):
+        new = _fix_wm(h["url"])
+        if new != h["url"]:
+            h["url"] = new; fixed_urls += 1
+    for section in ("hotels", "escapes"):
+        for row in inner.get(section) or []:
+            p = row.get("photo") if isinstance(row, dict) else None
+            if isinstance(p, dict) and p.get("url"):
+                new = _fix_wm(p["url"])
+                if new != p["url"]:
+                    p["url"] = new; fixed_urls += 1
+    for vsec in ("hotVenues", "fanZones"):
+        for row in inner.get(vsec) or []:
+            p = row.get("photo") if isinstance(row, dict) else None
+            if isinstance(p, dict) and p.get("url"):
+                new = _fix_wm(p["url"])
+                if new != p["url"]:
+                    p["url"] = new; fixed_urls += 1
+    if fixed_urls:
+        diff_log.append(f"stripped_{fixed_urls}_wikimedia_thumbnail_wrappers")
+
+    # ─── 6. Normalize time strings — flag conflicts only ────────
+    # Find every "HH:MM AM/PM" or "HH:MM" reference in text fields.
+    # If the same string-context (e.g. "doors at") has multiple
+    # different times across sections, flag it.
+    TIME_24H = re.compile(r"\b([01]?\d|2[0-3]):[0-5]\d\b")
+    TIME_12H = re.compile(r"\b(1[0-2]|0?[1-9]):[0-5]\d\s?(?:AM|PM)\b", re.IGNORECASE)
+
+    text_pool = []
+    for k in ("tagline","oneLineAnswer"):
+        v = inner.get(k)
+        if isinstance(v, str): text_pool.append((k, v))
+    for k in ("intro",):
+        v = inner.get(k)
+        if isinstance(v, list):
+            for i, p in enumerate(v):
+                if isinstance(p, str): text_pool.append((f"{k}[{i}]", p))
+    for f in inner.get("faq") or []:
+        if isinstance(f, dict) and isinstance(f.get("a"), str):
+            text_pool.append(("faq.a", f["a"]))
+    for s in inner.get("survival") or []:
+        if isinstance(s, dict) and isinstance(s.get("note"), str):
+            text_pool.append(("survival.note", s["note"]))
+
+    # Find "doors" mentions and the time near them
+    doors_times = set()
+    for _, text in text_pool:
+        for m in re.finditer(r"doors?[^.]{0,40}", text, re.IGNORECASE):
+            seg = m.group(0)
+            for t in TIME_24H.findall(seg): doors_times.add(t)
+            for t in TIME_12H.findall(seg): doors_times.add(t.upper())
+    if len(doors_times) > 1:
+        diff_log.append(f"door_time_inconsistency_detected_times={sorted(doors_times)}")
+
+    # Output the cleaned guide (preserve the wrapper structure)
+    if isinstance(guide, dict) and "guide" in guide:
+        out_guide = {"guide": inner, "satelliteEvents": kept}
+        if guide.get("satelliteEvents") is not None and "satelliteEvents" not in out_guide:
+            out_guide["satelliteEvents"] = kept
+    else:
+        out_guide = {"guide": inner, "satelliteEvents": kept}
+
+    report = {
+        "guide": out_guide.get("guide"),
+        "satelliteEvents": out_guide.get("satelliteEvents", []),
+        "diff_log": diff_log,
+        "passed_through": len(diff_log) == 0,
+    }
+    print(json.dumps(report, default=str))
+    PYEOF
+  timeout_seconds: 30
+  outputs:
+    guide: object
+    satelliteEvents: list
+    diff_log: list
+    passed_through: boolean

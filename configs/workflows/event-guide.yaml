@@ -1,0 +1,279 @@
+workflow:
+  name: event-guide
+  description: |
+    Event-guide v2 — type-aware + self-correcting.
+
+    Hot path:
+      eg_event_resolver  →  classifies event_type + event_shape
+            │
+            ├─→  eg_side_program_miner    (type-branched WebSearch)
+            └─→  eg_city_context          (hotels, escapes, survival, transit)
+                            │
+                            ▼
+                  eg_program_analyst      (type-specific shaping)
+                            │
+                            ▼
+                  eg_narrative_writer     (type-aware voice)
+                            │
+                            ▼
+                  eg_assembler            (pure merge — runs ONCE)
+
+    Self-correcting loop (max 3 iterations):
+                            │
+                            ▼
+                  eg_remediate            (pass-through on iter 1; fixes on iter 2+)
+                            │
+                            ▼
+                  eg_post_process         (deterministic cleanup)
+                            │
+                            ▼
+                  eg_schema_check + eg_semantic_validator   (parallel)
+                            │
+                            ▼
+                  eg_validate_gate        (combines results)
+                            │   if needs_fix:
+                            └─→ loop_to: remediate (max_loops: 3)
+                                on_max_loops: fail
+                                ↓ cascades FAILED status to consumer
+                                  which quarantines + writes failure report
+
+    Output: canonical event-guide JSON matching
+    frontend/src/guide/eventTypes.ts EventGuide.
+
+    Trigger:
+      POST /api/runs
+      { "workflow": "event-guide",
+        "inputs": {"brief": "MAU Vegas 2026"} }
+
+  defaults:
+    provider: claude
+    model: opus
+
+  inputs:
+    brief:
+      type: string
+      required: true
+
+  outputs:
+    # Final corrected guide (the loop's last successful pass)
+    guide: post_process.structured.guide
+    satelliteEvents: post_process.structured.satelliteEvents
+    # Validation telemetry
+    schema_validation: schema_check.structured
+    semantic_validation: semantic_validate.structured
+    gate: validate_gate.structured
+    # Remediation diff so consumer can show what was fixed
+    remediation_diff: remediate.structured.diff
+    remediation_iteration: remediate.structured.iteration
+
+  nodes:
+    - name: scope_resolve
+      type: agent
+      agent: eg_event_resolver
+      input_map:
+        brief: input.brief
+
+    - name: side_program
+      type: agent
+      agent: eg_side_program_miner
+      depends_on: [scope_resolve]
+      input_map:
+        event_name: scope_resolve.structured.event_name
+        event_type: scope_resolve.structured.event_type
+        event_shape: scope_resolve.structured.event_shape
+        dates: scope_resolve.structured.dates
+        venue: scope_resolve.structured.venue
+        city: scope_resolve.structured.city
+        side_program_url: scope_resolve.structured.side_program_url
+        expected_sections: scope_resolve.structured.expected_sections
+        resolver_diagnostics: scope_resolve.structured.diagnostics
+
+    - name: city_context
+      type: agent
+      agent: eg_city_context
+      depends_on: [scope_resolve]
+      input_map:
+        event_name: scope_resolve.structured.event_name
+        event_type: scope_resolve.structured.event_type
+        event_shape: scope_resolve.structured.event_shape
+        dates: scope_resolve.structured.dates
+        venue: scope_resolve.structured.venue
+        city: scope_resolve.structured.city
+        region: scope_resolve.structured.region
+        transit_likely_non_trivial: scope_resolve.structured.diagnostics.transit_likely_non_trivial
+
+    - name: program_analyze
+      type: agent
+      agent: eg_program_analyst
+      depends_on: [side_program]
+      input_map:
+        event_name: scope_resolve.structured.event_name
+        event_type: scope_resolve.structured.event_type
+        event_shape: scope_resolve.structured.event_shape
+        dates: scope_resolve.structured.dates
+        venue: scope_resolve.structured.venue
+        city: scope_resolve.structured.city
+        audience: scope_resolve.structured.audience
+        side_events: side_program.structured.satelliteEvents
+        raw_discoveries: side_program.structured.raw_discoveries
+
+    - name: narrative
+      type: agent
+      agent: eg_narrative_writer
+      depends_on: [program_analyze, city_context]
+      input_map:
+        event_name: scope_resolve.structured.event_name
+        event_type: scope_resolve.structured.event_type
+        event_shape: scope_resolve.structured.event_shape
+        dates: scope_resolve.structured.dates
+        venue: scope_resolve.structured.venue
+        city: scope_resolve.structured.city
+        audience: scope_resolve.structured.audience
+        register_url: scope_resolve.structured.registerUrl
+        hero: scope_resolve.structured.hero
+        series: scope_resolve.structured.series
+        side_events_count: side_program.structured.diagnostics.events_captured
+        side_event_days: side_program.structured.diagnostics.events_by_day
+        side_events_sample: side_program.structured.satelliteEvents
+        experience_anchors: program_analyze.structured.experienceAnchors
+        timeline: program_analyze.structured.timeline
+        hosts: program_analyze.structured.hosts
+        hot_venues: program_analyze.structured.hotVenues
+        fan_zones: program_analyze.structured.fanZones
+        watch_parties: program_analyze.structured.watchParties
+        matches: program_analyze.structured.matches
+        stages: program_analyze.structured.stages
+        brand_camps: program_analyze.structured.brandCamps
+        afterparties: program_analyze.structured.afterparties
+        hotels: city_context.structured.hotels
+        escapes: city_context.structured.escapes
+        survival: city_context.structured.survival
+        transit: city_context.structured.transit
+
+    - name: assemble
+      type: agent
+      agent: eg_assembler
+      depends_on: [narrative]
+      input_map:
+        event_type: scope_resolve.structured.event_type
+        event_shape: scope_resolve.structured.event_shape
+        slug: scope_resolve.structured.slug
+        event_name: scope_resolve.structured.event_name
+        dates: scope_resolve.structured.dates
+        venue: scope_resolve.structured.venue
+        register_url: scope_resolve.structured.registerUrl
+        audience: scope_resolve.structured.audience
+        hero: scope_resolve.structured.hero
+        series: scope_resolve.structured.series
+        side_week_events: side_program.structured.satelliteEvents
+        hotels: city_context.structured.hotels
+        escapes: city_context.structured.escapes
+        survival: city_context.structured.survival
+        transit: city_context.structured.transit
+        experience_anchors: program_analyze.structured.experienceAnchors
+        timeline: program_analyze.structured.timeline
+        hosts: program_analyze.structured.hosts
+        hot_venues: program_analyze.structured.hotVenues
+        fan_zones: program_analyze.structured.fanZones
+        watch_parties: program_analyze.structured.watchParties
+        matches: program_analyze.structured.matches
+        stages: program_analyze.structured.stages
+        lineup: program_analyze.structured.lineup
+        brand_camps: program_analyze.structured.brandCamps
+        afterparties: program_analyze.structured.afterparties
+        tagline: narrative.structured.tagline
+        one_line_answer: narrative.structured.oneLineAnswer
+        intro: narrative.structured.intro
+        faq: narrative.structured.faq
+        meta: narrative.structured.meta
+
+    # ─── Self-correcting loop starts here ───────────────────────────
+    # remediate runs on every iteration. On iteration 1 prior_*
+    # inputs are empty, so it passes through. On iteration 2+ it
+    # consumes the previous validator output and produces a fix.
+    - name: remediate
+      type: agent
+      agent: eg_remediate
+      depends_on: [assemble]
+      input_map:
+        guide: assemble.structured.guide
+        satellite_events: assemble.structured.satelliteEvents
+        # Scope — enumerate, temper resolver doesn't take bare .structured
+        scope_event_name: scope_resolve.structured.event_name
+        scope_event_type: scope_resolve.structured.event_type
+        scope_event_shape: scope_resolve.structured.event_shape
+        scope_dates: scope_resolve.structured.dates
+        scope_venue: scope_resolve.structured.venue
+        scope_city: scope_resolve.structured.city
+        scope_audience: scope_resolve.structured.audience
+        analyst_diagnostics: program_analyze.structured.diagnostics
+        city_diagnostics: city_context.structured.diagnostics
+        miner_diagnostics: side_program.structured.diagnostics
+        # Prior validator output — fields enumerated. On iter 1 these
+        # resolve to null since the source nodes haven't run yet.
+        prior_schema_passed: schema_check.structured.passed
+        prior_schema_errors: schema_check.structured.errors
+        prior_schema_warnings: schema_check.structured.warnings
+        prior_semantic_passed: semantic_validate.structured.passed
+        prior_semantic_issues: semantic_validate.structured.issues
+        prior_semantic_counts: semantic_validate.structured.severity_counts
+        prior_post_process_diff: post_process.structured.diff_log
+        gate_fix_instructions: validate_gate.structured.fix_instructions
+        gate_iter_count: validate_gate.structured.summary.fix_instruction_count
+
+    - name: post_process
+      type: agent
+      agent: eg_post_process
+      depends_on: [remediate]
+      input_map:
+        guide: remediate.structured.guide
+        side_week_events: remediate.structured.satelliteEvents
+
+    - name: schema_check
+      type: agent
+      agent: eg_schema_check
+      depends_on: [post_process]
+      input_map:
+        guide: post_process.structured.guide
+        side_week_events: post_process.structured.satelliteEvents
+
+    - name: semantic_validate
+      type: agent
+      agent: eg_semantic_validator
+      depends_on: [post_process]
+      input_map:
+        guide: post_process.structured.guide
+        side_events_count: side_program.structured.diagnostics.events_captured
+        side_events_sample: side_program.structured.satelliteEvents
+        event_type: scope_resolve.structured.event_type
+        event_shape: scope_resolve.structured.event_shape
+        event_name: scope_resolve.structured.event_name
+        dates: scope_resolve.structured.dates
+        venue: scope_resolve.structured.venue
+        city: scope_resolve.structured.city
+        audience: scope_resolve.structured.audience
+
+    - name: validate_gate
+      type: agent
+      agent: eg_validate_gate
+      depends_on: [schema_check, semantic_validate]
+      input_map:
+        schema_passed: schema_check.structured.passed
+        schema_errors: schema_check.structured.errors
+        schema_warnings: schema_check.structured.warnings
+        semantic_passed: semantic_validate.structured.passed
+        semantic_issues: semantic_validate.structured.issues
+        semantic_counts: semantic_validate.structured.severity_counts
+      loop_to: remediate
+      # 5 iters: gives the remediator room when there are many
+      # ungrounded specifics to strip. NYC Marathon run #3 made 8
+      # fixes in 3 iters but still left 11 warnings. Going to 5 lets
+      # us reach quiescence on guides with high specific-density.
+      # Each iteration costs ~$2 + ~3min, so 5 caps worst-case at
+      # ~$10 / ~15 min of remediation overhead per guide.
+      max_loops: 5
+      loop_condition:
+        source: validate_gate.structured.needs_fix
+        operator: equals
+        value: true
+      on_max_loops: fail

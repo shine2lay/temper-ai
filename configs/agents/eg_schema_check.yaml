@@ -1,0 +1,387 @@
+# Deterministic schema + SEO validator for the assembled event guide.
+# Type-aware: required sections + thresholds adapt to event_type and
+# event_shape. Runs as a terminal node; non-blocking.
+#
+# CORE checks (every type):
+#   - required core keys present (slug, eventName, dates, venue, etc.)
+#   - event_type in known taxonomy
+#   - event_shape derived correctly from dates
+#   - slug kebab-case + 4-digit year suffix
+#   - dates ISO + ordered
+#   - venue.name + mapsUrl
+#   - hero null OR url host upload.wikimedia.org
+#   - photos in hotels[], escapes[]: same wikimedia rule
+#   - meta.title 40-75 chars, meta.description 130-170 chars
+#   - intro 2-5 paragraphs
+#   - faq 8-15 entries
+#   - timeline 3-8 rows (multi_day) or 3-5 rows (single_day)
+#
+# PER-TYPE checks:
+#   conference_b2b:   satelliteEvents 15+, hosts 3+, hotVenues 3+
+#                     host eventCount grounded in satelliteEvents
+#                     hotVenues names appear in satelliteEvents
+#   sports_megaevent: fanZones 3+, watchParties 3+, transit 2+
+#   music_festival:   stages 2+, lineup 20+, transit 1+
+#   single_day_show:  hotels 3-7, escapes 3-6, survival 4-8
+#   other:            core only
+agent:
+  name: eg_schema_check
+  type: script
+  script_template: |
+    python3 << 'PYEOF'
+    import json, re, sys
+    from urllib.parse import urlparse
+
+    # Raw triple-quoted strings keep JSON's \n / \" escapes literal so
+    # json.loads handles them correctly.
+    GUIDE_BLOB = r"""{{ guide | tojson }}"""
+    SIDE_BLOB  = r"""{{ side_week_events | tojson }}"""
+
+    try:
+        guide = json.loads(GUIDE_BLOB)
+    except Exception as e:
+        print(json.dumps({
+            "passed": False,
+            "errors": [f"guide_input_parse_error: {e}"],
+            "warnings": [],
+            "summary": {"errors": 1, "warnings": 0, "checks_run": 1},
+        }))
+        sys.exit(0)
+
+    try:
+        side_events = json.loads(SIDE_BLOB)
+    except Exception:
+        side_events = []
+
+    if isinstance(guide, dict) and "guide" in guide and isinstance(guide["guide"], dict):
+        inner = guide["guide"]
+        if not side_events and isinstance(guide.get("satelliteEvents"), list):
+            side_events = guide["satelliteEvents"]
+    else:
+        inner = guide if isinstance(guide, dict) else {}
+
+    errors, warnings = [], []
+    checks_run = 0
+
+    def err(msg): errors.append(msg)
+    def warn(msg): warnings.append(msg)
+
+    KNOWN_TYPES = {"conference_b2b","sports_megaevent","music_festival","single_day_show","other"}
+    KNOWN_SHAPES = {"single_day","multi_day"}
+    CORE_REQUIRED = {
+        "event_type","event_shape","slug","eventName","tagline","hero",
+        "dates","venue","registerUrl","audience","oneLineAnswer","intro",
+        "timeline","hotels","escapes","survival","faq","meta",
+    }
+    # Slug: kebab-case with a 4-digit year anywhere inside. The
+    # year doesn't have to be at the end — sports events tend to
+    # be "world-cup-2026-usa-opener", festivals "coachella-2026-w1".
+    SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+    SLUG_YEAR_RE = re.compile(r"-\d{4}(?:-|$)")
+    ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+    TIME_RE = re.compile(r"^(?:\d{1,2}:\d{2}\s?(?:AM|PM)|TBD)$", re.IGNORECASE)
+    VALID_DAYS = {"MON","TUE","WED","THU","FRI","SAT","SUN","PRE","DAY","POST"}
+
+    # ── Discriminators ──────────────────────────────────────────────
+    checks_run += 1
+    et = inner.get("event_type")
+    es = inner.get("event_shape")
+    if et not in KNOWN_TYPES:
+        err(f"event_type unknown: {et!r}")
+    if es not in KNOWN_SHAPES:
+        err(f"event_shape unknown: {es!r}")
+
+    # ── Core required keys ──────────────────────────────────────────
+    checks_run += 1
+    missing = CORE_REQUIRED - set(inner.keys())
+    if missing:
+        err(f"core_keys_missing: {sorted(missing)}")
+
+    # ── slug ────────────────────────────────────────────────────────
+    checks_run += 1
+    slug = inner.get("slug") or ""
+    if not SLUG_RE.match(slug):
+        err(f"slug_format: {slug!r} is not kebab-case")
+    elif not SLUG_YEAR_RE.search("-" + slug + "-"):
+        err(f"slug_year: {slug!r} has no 4-digit year segment")
+
+    # ── dates ───────────────────────────────────────────────────────
+    checks_run += 1
+    dates = inner.get("dates") or {}
+    start, end = dates.get("start"), dates.get("end")
+    if not (start and ISO_DATE.match(start)):
+        err(f"dates.start not ISO: {start!r}")
+    if end is not None and not ISO_DATE.match(end):
+        err(f"dates.end not ISO and not null: {end!r}")
+    if start and end and ISO_DATE.match(start) and ISO_DATE.match(end) and start > end:
+        err(f"dates_out_of_order: {start} > {end}")
+    # Cross-check event_shape vs dates
+    if start and (end is None or end == start) and es != "single_day":
+        warn(f"event_shape={es} but dates suggest single_day")
+    if start and end and end != start and es != "multi_day":
+        warn(f"event_shape={es} but dates suggest multi_day")
+    if not dates.get("displayDates"):
+        warn("dates.displayDates empty")
+
+    # ── venue ───────────────────────────────────────────────────────
+    checks_run += 1
+    venue = inner.get("venue") or {}
+    if not venue.get("name"):
+        err("venue.name empty")
+    if not str(venue.get("mapsUrl","")).startswith("https://maps.google.com"):
+        warn(f"venue.mapsUrl not maps.google.com: {venue.get('mapsUrl')!r}")
+
+    # ── hero ────────────────────────────────────────────────────────
+    checks_run += 1
+    hero = inner.get("hero")
+    if isinstance(hero, dict) and hero.get("url"):
+        host = urlparse(str(hero["url"])).hostname or ""
+        if host != "upload.wikimedia.org":
+            err(f"hero.url not wikimedia: host={host}")
+
+    # ── hotel + escape photos ───────────────────────────────────────
+    checks_run += 1
+    for section, rows in (("hotels", inner.get("hotels") or []), ("escapes", inner.get("escapes") or [])):
+        for i, row in enumerate(rows):
+            photo = row.get("photo")
+            if not isinstance(photo, dict):
+                continue
+            host = urlparse(str(photo.get("url",""))).hostname or ""
+            if host != "upload.wikimedia.org":
+                err(f"{section}[{i}].photo host not wikimedia: {host} ({row.get('name')!r})")
+
+    # ── SEO meta ────────────────────────────────────────────────────
+    checks_run += 1
+    meta = inner.get("meta") or {}
+    title_len = len(str(meta.get("title","")))
+    desc_len = len(str(meta.get("description","")))
+    if not (40 <= title_len <= 75):
+        err(f"meta.title length {title_len} out of [40,75]")
+    if not (130 <= desc_len <= 170):
+        err(f"meta.description length {desc_len} out of [130,170]")
+    if not meta.get("ogImage"):
+        warn("meta.ogImage empty")
+
+    # ── intro ───────────────────────────────────────────────────────
+    # We enforce minimums (guard against thin guides) but no upper
+    # bound — verbose is fine, structural correctness is what matters.
+    checks_run += 1
+    intro = inner.get("intro") or []
+    intro_min = 2  # multi_day or single_day both want at least 2 paragraphs
+    if len(intro) < intro_min:
+        err(f"intro paragraphs {len(intro)} < {intro_min}")
+    for i, p in enumerate(intro):
+        if not isinstance(p, str) or len(p) < 100:
+            err(f"intro[{i}] too short: {len(p) if isinstance(p,str) else 'N/A'} chars (< 100)")
+
+    # ── FAQ ─────────────────────────────────────────────────────────
+    checks_run += 1
+    faq = inner.get("faq") or []
+    if len(faq) < 8:
+        err(f"faq entries {len(faq)} < 8")
+    bad_faq = [i for i, f in enumerate(faq) if not (isinstance(f, dict) and f.get("q") and f.get("a"))]
+    if bad_faq:
+        err(f"faq malformed entries: {bad_faq[:5]}")
+
+    # ── timeline ────────────────────────────────────────────────────
+    checks_run += 1
+    timeline = inner.get("timeline") or []
+    if len(timeline) < 3:
+        err(f"timeline rows {len(timeline)} < 3")
+    bad_tl = [i for i, t in enumerate(timeline) if not (t.get("label") and t.get("theme"))]
+    if bad_tl:
+        err(f"timeline malformed: {bad_tl[:5]}")
+
+    # ── hotels + escapes + survival minimums (shape-aware) ──────────
+    checks_run += 1
+    hotels = inner.get("hotels") or []
+    escapes = inner.get("escapes") or []
+    survival = inner.get("survival") or []
+    if es == "single_day":
+        if len(hotels) < 3:
+            err(f"hotels {len(hotels)} < 3 (single_day)")
+        if len(escapes) < 3:
+            warn(f"escapes {len(escapes)} < 3 (single_day) — recommended but not required")
+        if len(survival) < 4:
+            err(f"survival {len(survival)} < 4 (single_day)")
+    else:
+        if len(hotels) < 5:
+            err(f"hotels {len(hotels)} < 5 (multi_day)")
+        if len(escapes) < 5:
+            err(f"escapes {len(escapes)} < 5 (multi_day)")
+        if len(survival) < 5:
+            err(f"survival {len(survival)} < 5 (multi_day)")
+
+    # ── Hotel category populated ────────────────────────────────────
+    checks_run += 1
+    bad_cat = [h.get("name") for h in hotels if not (h.get("category") or h.get("tier"))]
+    if bad_cat:
+        err(f"hotels with no category: {bad_cat[:5]}")
+
+    # ── PER-TYPE checks ─────────────────────────────────────────────
+    if et == "conference_b2b":
+        checks_run += 3
+        hosts = inner.get("hosts") or []
+        hot_venues = inner.get("hotVenues") or []
+        if len(side_events) < 15:
+            err(f"conference_b2b satelliteEvents {len(side_events)} < 15")
+        if len(hosts) < 3:
+            err(f"conference_b2b hosts {len(hosts)} < 3")
+        if len(hot_venues) < 3:
+            err(f"conference_b2b hotVenues {len(hot_venues)} < 3")
+
+        # eventCount grounded
+        side_host_strs = [(e.get("host") or "").lower() for e in side_events]
+        inflated = []
+        for h in hosts:
+            nm = (h.get("name") or "").lower()
+            claimed = int(h.get("eventCount") or 0)
+            if not nm: continue
+            actual = sum(1 for s in side_host_strs if nm in s)
+            ceiling = int(actual * 1.5) + 2
+            if claimed > ceiling:
+                inflated.append(f"{h.get('name')}: claimed={claimed} actual={actual}")
+        if inflated:
+            err(f"host eventCount inflated: {inflated[:5]}")
+
+        # hotVenues grounded
+        titles_lower = " | ".join((e.get("title") or "").lower() for e in side_events)
+        unsupported = []
+        for v in hot_venues:
+            nm = (v.get("name") or "").lower()
+            first_word = nm.split("(")[0].split(",")[0].strip()
+            if not first_word or first_word not in titles_lower:
+                unsupported.append(v.get("name"))
+        if unsupported:
+            warn(f"hotVenues unsupported in satelliteEvents: {unsupported[:5]}")
+
+    elif et == "sports_megaevent":
+        checks_run += 3
+        fz = inner.get("fanZones") or []
+        wp = inner.get("watchParties") or []
+        tr = inner.get("transit") or []
+        if len(fz) < 3:
+            err(f"sports_megaevent fanZones {len(fz)} < 3")
+        if len(wp) < 3:
+            err(f"sports_megaevent watchParties {len(wp)} < 3")
+        if len(tr) < 2:
+            err(f"sports_megaevent transit {len(tr)} < 2")
+
+    elif et == "music_festival":
+        checks_run += 3
+        st = inner.get("stages") or []
+        lp = inner.get("lineup") or []
+        tr = inner.get("transit") or []
+        if len(st) < 2:
+            err(f"music_festival stages {len(st)} < 2")
+        if len(lp) < 20:
+            warn(f"music_festival lineup {len(lp)} < 20 (lineup mining is hard)")
+        if len(tr) < 1:
+            err(f"music_festival transit {len(tr)} < 1")
+
+    elif et == "single_day_show":
+        checks_run += 1
+        # No required type-specific sections. Just check that if
+        # satelliteEvents is present, day vocab includes PRE/DAY/POST.
+        bad_phase = [i for i, e in enumerate(side_events) if e.get("day") not in VALID_DAYS]
+        if bad_phase:
+            err(f"satelliteEvents bad day labels: {bad_phase[:5]}")
+
+    # ── satelliteEvents shape (when present) ────────────────────────
+    if side_events:
+        checks_run += 1
+        bad_day = [i for i, e in enumerate(side_events) if e.get("day") not in VALID_DAYS]
+        bad_time = [i for i, e in enumerate(side_events) if not TIME_RE.match(str(e.get("time","")))]
+        bad_url = [i for i, e in enumerate(side_events) if not str(e.get("rsvp","")).startswith("http")]
+        if bad_day:
+            err(f"satelliteEvents bad day: {bad_day[:5]} of {len(side_events)}")
+        if bad_time:
+            warn(f"satelliteEvents bad time: {bad_time[:5]} of {len(side_events)}")
+        if bad_url:
+            err(f"satelliteEvents bad rsvp urls: {bad_url[:5]} of {len(side_events)}")
+
+    # ── series field shape (when present) ───────────────────────────
+    # series drives the renderer's "Other ..." footer. Shape errors
+    # break internal linking silently — siblings render as cards with
+    # broken links. Validate when present; absence is OK (one-off
+    # events legitimately lack a series).
+    series = inner.get("series")
+    if isinstance(series, dict):
+        checks_run += 1
+        ALLOWED_SERIES_TYPES = {"tournament","weekend_variant","annual_edition","tour_stop","other"}
+        if not series.get("name"):
+            err("series.name empty")
+        s_type = series.get("type")
+        if s_type not in ALLOWED_SERIES_TYPES:
+            err(f"series.type unknown: {s_type!r}")
+        hub = series.get("hubSlug")
+        if hub is not None and ("/" in str(hub) or str(hub).startswith("http")):
+            err(f"series.hubSlug malformed: {hub!r}")
+        sibs = series.get("siblings")
+        if not isinstance(sibs, list) or len(sibs) == 0:
+            err("series.siblings missing or empty")
+        else:
+            self_in_sibs = [s for s in sibs if isinstance(s, dict) and s.get("slug") == slug]
+            if self_in_sibs:
+                err(f"series.siblings include self ({slug})")
+            bad_sib = []
+            for i, s in enumerate(sibs):
+                if not isinstance(s, dict): bad_sib.append(i); continue
+                if not s.get("slug") or not SLUG_RE.match(str(s.get("slug",""))): bad_sib.append(i)
+                if not s.get("displayName"): bad_sib.append(i)
+            if bad_sib:
+                err(f"series.siblings malformed entries: {bad_sib[:5]}")
+
+    # ── Intent-FAQ coverage ─────────────────────────────────────────
+    # Every guide's FAQ must answer the core travel-intent queries
+    # readers send to AI search engines. We match on keyword presence
+    # across the joined faq questions. The phrasing is flexible (the
+    # narrative_writer prompt lets agents choose wording); the
+    # substance must be there.
+    checks_run += 1
+    faq_qs_joined = " ".join((f.get("q","") or "").lower() for f in faq if isinstance(f, dict))
+    INTENT_PROBES = [
+        # (probe keyword set, label)
+        ({"stay", "hotel", "where to sleep", "where should i stay"}, "where_to_stay"),
+        ({"do beyond", "things to do", "day trip", "off-day", "between days", "around the"}, "things_to_do"),
+        ({"transit", "getting around", "get there", "get to", "drive", "subway", "shuttle", "uber", "lyft"}, "transit"),
+        ({"how many days", "days should", "trip length", "how long", "weekend or"}, "trip_length"),
+    ]
+    missing_intents = []
+    for keys, label in INTENT_PROBES:
+        if not any(k in faq_qs_joined for k in keys):
+            missing_intents.append(label)
+    if missing_intents:
+        warn(f"faq missing intent coverage: {missing_intents}")
+
+    # ── Transit when expected ──────────────────────────────────────
+    if et in ("sports_megaevent","music_festival"):
+        tr = inner.get("transit") or []
+        for i, t in enumerate(tr):
+            if not (t.get("mode") and t.get("route") and t.get("note")):
+                err(f"transit[{i}] malformed: missing mode/route/note")
+
+    report = {
+        "passed": len(errors) == 0,
+        "errors": errors,
+        "warnings": warnings,
+        "summary": {
+            "errors": len(errors),
+            "warnings": len(warnings),
+            "checks_run": checks_run,
+            "event_type": et,
+            "event_shape": es,
+            "side_events_count": len(side_events),
+            "hotels_count": len(hotels),
+            "timeline_rows": len(timeline),
+            "transit_rows": len(inner.get("transit") or []),
+        },
+    }
+    print(json.dumps(report))
+    PYEOF
+  timeout_seconds: 30
+  outputs:
+    passed: boolean
+    errors: list
+    warnings: list
+    summary: object

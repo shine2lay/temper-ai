@@ -1,0 +1,99 @@
+agent:
+  name: pn_validate_citations
+  type: script
+  description: |
+    Deterministic citation validator for place_nugget_research output.
+
+    The LLM's pn_research agent has a hard rule that every nugget
+    cites a URL it actually fetched. This script enforces that rule
+    at the engine level — checks each nugget.source_url against the
+    sources_fetched[] list. If a nugget cites a URL that wasn't
+    fetched, OR has no source_url, OR has empty text, it's dropped
+    and reported in diagnostics.
+
+    Returns the same shape as pn_research, with nuggets filtered to
+    citation-valid entries only. Downstream persister can trust
+    every row.
+  script_template: |
+    python3 << 'PYEOF'
+    import json, re, sys
+
+    # Temper passes each upstream field individually. We only pull
+    # the list-valued fields; strings (place_name, city) are stripped
+    # because r"""{{ x | tojson }}""" breaks on JSON-encoded strings
+    # (the surrounding " collide with the triple-quote wrapper).
+    # The persister downstream re-attaches place_name/city from its
+    # own inputs.
+    QUERIES_RUN     = r"""{{ queries_run | tojson }}"""
+    SOURCES_FETCHED = r"""{{ sources_fetched | tojson }}"""
+    NUGGETS         = r"""{{ nuggets | tojson }}"""
+
+    def _j(blob, default):
+        try: return json.loads(blob)
+        except Exception: return default
+
+    nuggets_in = _j(NUGGETS, []) or []
+    sources    = _j(SOURCES_FETCHED, []) or []
+    d = {
+        "queries_run":     _j(QUERIES_RUN, []) or [],
+        "sources_fetched": sources,
+        "nuggets":         nuggets_in,
+    }
+    fetched_urls = {s.get("url","").strip() for s in sources if isinstance(s, dict) and s.get("url")}
+
+    KNOWN_TYPES = {
+        "tip","warning","timing","cost_signal","photo_spot",
+        "vibe_note","pairing","surprise","skip","replacement",
+    }
+    KNOWN_SEVERITY = {"low","med","high","consider_skipping","definitely_skip"}
+
+    accepted, rejected = [], []
+    for i, n in enumerate(nuggets_in):
+        if not isinstance(n, dict):
+            rejected.append({"i": i, "reason": "not a dict"}); continue
+        ntype = (n.get("nugget_type") or "").strip()
+        text = (n.get("text") or "").strip()
+        src = (n.get("source_url") or "").strip()
+        sev = (n.get("severity") or "").strip().lower()
+        if ntype not in KNOWN_TYPES:
+            rejected.append({"i": i, "reason": f"unknown nugget_type: {ntype!r}"}); continue
+        if not text:
+            rejected.append({"i": i, "reason": "empty text"}); continue
+        if not src:
+            rejected.append({"i": i, "reason": "no source_url cited"}); continue
+        if src not in fetched_urls:
+            rejected.append({
+                "i": i,
+                "reason": "source_url not in sources_fetched (hallucinated citation)",
+                "cited": src,
+            })
+            continue
+        if sev and sev not in KNOWN_SEVERITY:
+            # Demote unknown severity to null rather than rejecting the
+            # whole nugget — the LLM occasionally invents categories.
+            n["severity"] = None
+        accepted.append(n)
+
+    print(json.dumps({
+        "ok": True,
+        # place_name + city stripped — persister re-attaches from its own inputs
+        "queries_run": d.get("queries_run") or [],
+        "sources_fetched": sources,
+        "nuggets": accepted,
+        "rejected": rejected,
+        "diagnostics": {
+            "nuggets_in": len(nuggets_in),
+            "nuggets_kept": len(accepted),
+            "nuggets_rejected": len(rejected),
+            "fetched_urls_count": len(fetched_urls),
+        },
+    }))
+    PYEOF
+  timeout_seconds: 30
+  outputs:
+    ok: boolean
+    queries_run: list
+    sources_fetched: list
+    nuggets: list
+    rejected: list
+    diagnostics: object

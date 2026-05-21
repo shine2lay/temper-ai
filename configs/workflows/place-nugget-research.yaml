@@ -6,19 +6,23 @@ workflow:
     tips / warnings / timing / cost / photo / vibe insights from
     real web sources, each cited.
 
-    Output feeds backend's place_nugget_enricher.py persister,
-    which writes into the existing research_articles +
-    research_nuggets schema (zero schema migration). Adds new
-    source_kind values: forum / reddit / review / official /
-    guide / news / social. Existing concierge string-match
-    lookup picks them up automatically.
+    Single-stage workflow: pn_research does WebSearch + WebFetch +
+    LLM extraction in one. Citation validation moved to the
+    backend persister (backend/research_pipeline/place_nugget_enricher.py)
+    — simpler than wiring it as a temper script-agent stage, and
+    avoids the script-template / Jinja-tojson edge cases that the
+    in-temper validator kept tripping on.
 
-    Two stages:
-      1. pn_research (LLM) — plan queries, WebSearch, WebFetch,
-         extract typed nuggets with citations.
-      2. pn_validate_citations (script) — enforce every nugget
-         cites a URL that was actually fetched (no hallucinated
-         citations).
+    Output goes straight into backend's persister, which:
+      1. Validates every nugget cites a URL that appears in
+         sources_fetched (drops uncited).
+      2. Persists each fetched URL as a new research_articles row
+         (with new source_kind values: forum, reddit, review, etc.).
+      3. Persists each nugget as a research_nuggets row FK'd to its
+         source article.
+
+    Existing concierge string-match lookup picks up the new
+    nuggets automatically (zero schema change).
 
   defaults:
     provider: claude
@@ -39,10 +43,10 @@ workflow:
       required: false
 
   outputs:
-    nuggets: validate.structured.nuggets
-    sources_fetched: validate.structured.sources_fetched
-    rejected: validate.structured.rejected
-    diagnostics: validate.structured.diagnostics
+    queries_run: research.structured.queries_run
+    sources_fetched: research.structured.sources_fetched
+    nuggets: research.structured.nuggets
+    diagnostics: research.structured.diagnostics
 
   nodes:
     - name: research
@@ -53,18 +57,3 @@ workflow:
         city: input.city
         category: input.category
         context: input.context
-
-    - name: validate
-      type: agent
-      agent: pn_validate_citations
-      depends_on: [research]
-      input_map:
-        # Whole-bag refs don't resolve in temper, AND r"""{{ x | tojson }}"""
-        # breaks on string values (the JSON-encoded string starts/ends with "
-        # creating a 4-quote syntax error inside r"""..."""). Only pass the
-        # list/dict-valued fields the validator actually needs. Strings
-        # (place_name, city) get re-attached by the backend persister
-        # from its own inputs, not from the validator output.
-        queries_run:     research.structured.queries_run
-        sources_fetched: research.structured.sources_fetched
-        nuggets:         research.structured.nuggets

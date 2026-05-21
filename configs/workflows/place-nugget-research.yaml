@@ -1,0 +1,70 @@
+workflow:
+  name: place-nugget-research
+  description: |
+    Place-driven nugget enrichment. Given a specific place
+    (name + city + optional category/context), surfaces practical
+    tips / warnings / timing / cost / photo / vibe insights from
+    real web sources, each cited.
+
+    Output feeds backend's place_nugget_enricher.py persister,
+    which writes into the existing research_articles +
+    research_nuggets schema (zero schema migration). Adds new
+    source_kind values: forum / reddit / review / official /
+    guide / news / social. Existing concierge string-match
+    lookup picks them up automatically.
+
+    Two stages:
+      1. pn_research (LLM) — plan queries, WebSearch, WebFetch,
+         extract typed nuggets with citations.
+      2. pn_validate_citations (script) — enforce every nugget
+         cites a URL that was actually fetched (no hallucinated
+         citations).
+
+  defaults:
+    provider: claude
+    model: opus
+
+  inputs:
+    place_name:
+      type: string
+      required: true
+    city:
+      type: string
+      required: true
+    category:
+      type: string
+      required: false
+    context:
+      type: string
+      required: false
+
+  outputs:
+    nuggets: validate.structured.nuggets
+    sources_fetched: validate.structured.sources_fetched
+    rejected: validate.structured.rejected
+    diagnostics: validate.structured.diagnostics
+
+  nodes:
+    - name: research
+      type: agent
+      agent: pn_research
+      input_map:
+        place_name: input.place_name
+        city: input.city
+        category: input.category
+        context: input.context
+
+    - name: validate
+      type: agent
+      agent: pn_validate_citations
+      depends_on: [research]
+      input_map:
+        # Whole-bag refs don't resolve in temper, AND r"""{{ x | tojson }}"""
+        # breaks on string values (the JSON-encoded string starts/ends with "
+        # creating a 4-quote syntax error inside r"""..."""). Only pass the
+        # list/dict-valued fields the validator actually needs. Strings
+        # (place_name, city) get re-attached by the backend persister
+        # from its own inputs, not from the validator output.
+        queries_run:     research.structured.queries_run
+        sources_fetched: research.structured.sources_fetched
+        nuggets:         research.structured.nuggets

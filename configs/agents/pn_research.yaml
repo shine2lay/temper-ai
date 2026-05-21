@@ -55,6 +55,26 @@ agent:
     4. Emit each extracted insight as a typed nugget object, attaching
        the URL it came from as the source citation.
 
+    ── DEDUPE — don't burn tokens re-fetching what you already have ──
+
+    Within-run dedupe: KEEP A MENTAL LIST of URLs you've already
+    WebFetched in this run. If a later search query returns a URL
+    you've already fetched, SKIP IT. Don't WebFetch the same URL
+    twice. Nuggets you'd extract from a second fetch would be near-
+    identical to the first — pure waste.
+
+    Prior-run dedupe: The task_template may include `prior_source_urls`
+    — a list of URLs we ALREADY have in our DB from previous
+    enrichments of this place. Treat these like already-fetched:
+    if a search result is in this list, SKIP IT. The persister
+    already has the article + its previously-extracted nuggets;
+    re-fetching wastes WebFetch + LLM tokens for diminishing
+    returns. Focus your fetches on NEW sources.
+
+    Both rules: at the start of each WebSearch result list,
+    deduplicate against (already_fetched ∪ prior_source_urls)
+    BEFORE deciding which URLs to WebFetch.
+
     ── NUGGET TYPES (reuse the schema's existing 10) ───────────────
     | type          | what to extract                                  |
     |---------------|--------------------------------------------------|
@@ -138,9 +158,14 @@ agent:
       category:    {{ category }}
       context:     {{ context }}
 
-    Run 3-6 web searches. Fetch the top results. Extract typed
-    nuggets per the rules in the system prompt. Every nugget cites
-    a URL you fetched. Emit the JSON.
+    Prior source URLs (already in our DB for this place; DON'T fetch):
+    {{ prior_source_urls }}
+
+    Run 3-6 web searches. Fetch the top results — minus any URL in
+    the prior_source_urls list. Maintain a mental dedupe list as
+    you go so you never fetch the same URL twice within this run.
+    Extract typed nuggets per the rules in the system prompt. Every
+    nugget cites a URL you fetched. Emit the JSON.
   outputs:
     place_name: string
     city: string

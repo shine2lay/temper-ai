@@ -41,6 +41,13 @@ workflow:
     context:
       type: string
       required: false
+    prior_source_urls:
+      # List of URLs already in research_articles for this place,
+      # passed by the backend persister so the agent doesn't waste
+      # WebFetches on URLs we already have. May be empty for first-
+      # time enrichment.
+      type: list
+      required: false
 
   outputs:
     queries_run: research.structured.queries_run
@@ -57,3 +64,4 @@ workflow:
         city: input.city
         category: input.category
         context: input.context
+        prior_source_urls: input.prior_source_urls

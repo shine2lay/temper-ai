@@ -328,11 +328,10 @@ def _resolve_for_each_list(
     # path. With this fix, the empty fan dispatches zero children and the
     # rest of the DAG proceeds normally.
     #
-    # Originally surfaced 2026-05-11 by tp_v5_research_v4 hitting cold
-    # destinations (Vietnam Hoi An / Ho Chi Minh City): url_fetcher
-    # returned `fetched: null` and extract_fan's `for_each: input.fetched`
-    # crashed the whole research run, causing user-visible "researcher
-    # service is down" snags despite the rest of the pipeline being fine.
+    # Originally surfaced 2026-05-11 in a research pipeline on a sparse
+    # topic: the URL fetcher returned `fetched: null` and the extractor's
+    # `for_each: input.fetched` crashed the whole run, surfacing to users as
+    # a service outage despite the rest of the pipeline being fine.
     if cursor is None:
         return []
     if isinstance(cursor, bool):

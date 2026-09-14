@@ -50,10 +50,10 @@ class LLMAgent(AgentABC):
         self.max_iterations = config.get("max_iterations", 10)
         # Default to None (no budget enforcement) rather than 8000. The 8000
         # default was silently truncating LLM inputs to ~1000 chars per field
-        # via prompt_renderer, breaking agents like tp_v5_day_allocator whose
-        # inputs legitimately span tens of thousands of tokens. Per
-        # feedback_no_silent_truncation: if budget enforcement is wanted,
-        # opt in explicitly via config; the default is "send what you've got."
+        # via prompt_renderer, breaking agents (e.g. planners/allocators) whose
+        # inputs legitimately span tens of thousands of tokens. If budget
+        # enforcement is wanted, opt in explicitly via config; the default is
+        # "send what you've got."
         self.token_budget = config.get("token_budget", None)
         self.prompt_renderer = PromptRenderer(
             token_counter=self._estimate_token_count,

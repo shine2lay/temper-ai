@@ -284,7 +284,7 @@ export function WorkflowHeader() {
           <button
             onClick={exportReport}
             className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-temper-surface text-temper-text-muted hover:text-temper-accent hover:bg-temper-accent/10 border border-temper-border transition-colors shrink-0 cursor-pointer"
-            aria-label="Export run as Markdown report"
+            aria-label="Export — download this run as a Markdown report"
           >
             <Download className="w-3 h-3" />
             Export
@@ -295,7 +295,7 @@ export function WorkflowHeader() {
             onClick={handleRerun}
             disabled={rerunning}
             className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-temper-surface text-temper-text-muted hover:text-temper-accent hover:bg-temper-accent/10 border border-temper-border transition-colors shrink-0 cursor-pointer disabled:opacity-50"
-            aria-label="Re-run this workflow with the same inputs"
+            aria-label="Re-run — start this workflow again with the same inputs"
           >
             <RotateCcw className="w-3 h-3" />
             Re-run

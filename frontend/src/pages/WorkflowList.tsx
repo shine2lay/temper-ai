@@ -17,6 +17,10 @@ import {
 } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useDebounce } from '@/hooks/useDebounce';
+import {
+  InputFormGenerator,
+  type InputSchema,
+} from '@/components/studio/InputFormGenerator';
 import { SEARCH_DEBOUNCE_MS } from '@/lib/constants';
 import { authFetch } from '@/lib/authFetch';
 
@@ -336,6 +340,34 @@ function NewRunModal({
     [configList],
   );
 
+  // The selected workflow's declared inputs. The dialog only offered a raw
+  // JSON textarea, so starting a run meant remembering the schema by heart
+  // (and a typo surfaced as a workflow failure, not a form error).
+  const { data: selectedConfig } = useQuery<Record<string, unknown>>({
+    queryKey: ['workflow-config', selectedWorkflow],
+    queryFn: async () => {
+      const res = await authFetch(`/api/studio/configs/workflow/${selectedWorkflow}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json();
+    },
+    enabled: open && !!selectedWorkflow,
+  });
+
+  const inputSchema = useMemo<InputSchema | null>(() => {
+    const wf = (selectedConfig?.workflow ?? selectedConfig) as Record<string, unknown> | undefined;
+    const raw = wf?.inputs as Record<string, unknown> | undefined;
+    if (!raw || Array.isArray(raw)) return null;
+    const entries = Object.entries(raw).filter(
+      ([, v]) => v !== null && typeof v === 'object' && !Array.isArray(v),
+    );
+    return entries.length > 0 ? (Object.fromEntries(entries) as InputSchema) : null;
+  }, [selectedConfig]);
+
+  // Raw JSON stays available: workflows that declare no inputs, and anyone
+  // who wants to paste a payload.
+  const [jsonMode, setJsonMode] = useState(false);
+  const showForm = !!inputSchema && !jsonMode;
+
   // Auto-select first workflow when list loads
   useEffect(() => {
     if (workflowNames.length > 0 && !selectedWorkflow) {
@@ -428,7 +460,7 @@ function NewRunModal({
           </div>
 
           <p id="new-run-description" className="text-xs text-temper-text-dim -mt-2">
-            Select a workflow, optionally provide JSON inputs, then click Run.
+            Select a workflow, fill in its inputs, then click Run.
           </p>
 
           {/* Workflow selector */}
@@ -467,14 +499,52 @@ function NewRunModal({
             )}
           </div>
 
-          {/* JSON inputs */}
+          {/* Declared inputs when the workflow has a schema, else raw JSON */}
+          {showForm ? (
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-temper-text-muted">Inputs</span>
+                <button
+                  type="button"
+                  onClick={() => setJsonMode(true)}
+                  className="text-[10px] text-temper-text-dim hover:text-temper-text underline"
+                >
+                  Edit as JSON
+                </button>
+              </div>
+              <InputFormGenerator
+                schema={inputSchema!}
+                isSubmitting={runMutation.isPending}
+                onCancel={() => handleOpenChange(false)}
+                onSubmit={(values) =>
+                  runMutation.mutate({ workflow: selectedWorkflow, inputs: values })
+                }
+              />
+              {runMutation.isError && (
+                <div className="rounded-md bg-red-500/10 border border-red-500/20 px-3 py-2 text-xs text-red-400" role="alert">
+                  {runMutation.error.message}
+                </div>
+              )}
+            </div>
+          ) : (
           <div className="flex flex-col gap-1.5">
-            <label
-              htmlFor="new-run-inputs"
-              className="text-xs font-medium text-temper-text-muted"
-            >
-              Inputs (JSON)
-            </label>
+            <div className="flex items-center justify-between">
+              <label
+                htmlFor="new-run-inputs"
+                className="text-xs font-medium text-temper-text-muted"
+              >
+                Inputs (JSON)
+              </label>
+              {inputSchema && (
+                <button
+                  type="button"
+                  onClick={() => setJsonMode(false)}
+                  className="text-[10px] text-temper-text-dim hover:text-temper-text underline"
+                >
+                  Use form
+                </button>
+              )}
+            </div>
             <textarea
               id="new-run-inputs"
               ref={textareaRef}
@@ -503,15 +573,17 @@ function NewRunModal({
               </span>
             )}
           </div>
+          )}
 
           {/* Run error */}
-          {runMutation.isError && (
+          {!showForm && runMutation.isError && (
             <div className="rounded-md bg-red-500/10 border border-red-500/20 px-3 py-2 text-xs text-red-400" role="alert">
               {runMutation.error.message}
             </div>
           )}
 
-          {/* Footer */}
+          {/* Footer — the generated form supplies its own buttons */}
+          {!showForm && (
           <div className="flex justify-end gap-2 pt-1">
             <Dialog.Close
               className={cn(
@@ -537,6 +609,7 @@ function NewRunModal({
               {runMutation.isPending ? 'Starting…' : 'Run'}
             </button>
           </div>
+          )}
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
@@ -708,7 +781,7 @@ export function WorkflowList() {
               <button
                 onClick={() => setNewRunOpen(true)}
                 className="flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium bg-temper-accent text-white hover:opacity-90 transition-colors focus:outline-none focus:ring-2 focus:ring-temper-accent/50"
-                aria-label="Start a new workflow run"
+                aria-label="New Run — start a workflow run"
               >
                 <Play className="w-3 h-3" />
                 New Run

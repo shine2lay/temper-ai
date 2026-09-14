@@ -25,14 +25,16 @@ import { inputClass } from './shared';
 
 // ── Config types ─────────────────────────────────────────────────────
 
-const CONFIG_TABS = ['workflow', 'agent', 'stage', 'tool'] as const;
+// Only these are stored configs. 'tool' was listed here too, but tools are a
+// runtime registry, so selecting that tab asked the API for an invalid config
+// type and got a 400.
+const CONFIG_TABS = ['workflow', 'agent', 'stage'] as const;
 type ConfigTab = (typeof CONFIG_TABS)[number];
 
 const TAB_LABELS: Record<ConfigTab, string> = {
   workflow: 'Workflows',
   agent: 'Agents',
   stage: 'Stages',
-  tool: 'Tools',
 };
 
 // ── Resource list sub-component ──────────────────────────────────────

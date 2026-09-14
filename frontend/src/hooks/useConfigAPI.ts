@@ -183,11 +183,22 @@ export function useTemplates(configType: string) {
 
 // ── Profile CRUD hooks ───────────────────────────────────────────────
 
+/**
+ * Profiles are not implemented on the backend — `/api/studio/profiles/*`
+ * has no route. Studio asked for five profile types on every load and got
+ * five 404s in the console, which buried real errors. The hooks keep their
+ * shape (callers render an empty picker) but no longer make the request;
+ * flip `PROFILES_SUPPORTED` when the endpoints land.
+ */
+const PROFILES_SUPPORTED = false;
+
 /** List all profiles of a given type. */
 export function useProfiles(profileType: string) {
   return useQuery<ProfileListResponse>({
     queryKey: ['profiles', profileType],
     queryFn: () => fetchJSON(`${PROFILES_BASE}/${profileType}`),
+    enabled: PROFILES_SUPPORTED,
+    initialData: PROFILES_SUPPORTED ? undefined : { profiles: [], total: 0 },
   });
 }
 
@@ -196,7 +207,7 @@ export function useProfile(profileType: string, name: string | null) {
   return useQuery<ProfileDetail>({
     queryKey: ['profiles', profileType, name],
     queryFn: () => fetchJSON(`${PROFILES_BASE}/${profileType}/${name}`),
-    enabled: !!name,
+    enabled: PROFILES_SUPPORTED && !!name,
   });
 }
 

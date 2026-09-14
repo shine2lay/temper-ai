@@ -14,6 +14,8 @@ import {
   CompactOutputsEditor,
 } from './shared';
 
+const STORAGE_KEY_SETTINGS_MODE = 'temper-studio-settings-mode';
+
 const failureOptions = [
   { value: 'halt', label: 'halt' },
   { value: 'continue', label: 'continue' },
@@ -82,7 +84,21 @@ function EdgeToggle({ label, checked, onChange }: { label: string; checked: bool
 }
 
 export function WorkflowSettingsOverlay() {
-  const [mode, setMode] = useState<'minimized' | 'compact' | 'expanded'>('compact');
+  // Remember how the user left it: the panel floats over the canvas, so
+  // someone who minimized it to see the nodes underneath should not have it
+  // reappear on top of them on the next visit.
+  const [mode, setModeState] = useState<'minimized' | 'compact' | 'expanded'>(
+    () => {
+      const stored = localStorage.getItem(STORAGE_KEY_SETTINGS_MODE);
+      return stored === 'minimized' || stored === 'compact' || stored === 'expanded'
+        ? stored
+        : 'compact';
+    },
+  );
+  const setMode = useCallback((next: 'minimized' | 'compact' | 'expanded') => {
+    localStorage.setItem(STORAGE_KEY_SETTINGS_MODE, next);
+    setModeState(next);
+  }, []);
   const meta = useDesignStore((s) => s.meta);
   const setMeta = useDesignStore((s) => s.setMeta);
   const showDepEdges = useDesignStore((s) => s.showDepEdges);

@@ -145,6 +145,14 @@ function InputField({
   onChange: (value: unknown) => void;
 }) {
   const label = `${name}${spec.required ? ' *' : ''}`;
+  // Every control needs a label association: without htmlFor/id a screen
+  // reader announces an unlabelled edit box, and browser autofill and
+  // click-the-label-to-focus do not work either.
+  const fieldId = `wf-input-${name}`;
+  const errorId = error ? `${fieldId}-error` : undefined;
+  const describedBy = [spec.description ? `${fieldId}-desc` : null, errorId]
+    .filter(Boolean)
+    .join(' ') || undefined;
 
   // Boolean → checkbox
   if (spec.type === 'boolean') {
@@ -172,15 +180,19 @@ function InputField({
   if (spec.options && spec.options.length > 0) {
     return (
       <div>
-        <label className="text-[11px] font-medium text-temper-text-muted">
+        <label htmlFor={fieldId} className="text-[11px] font-medium text-temper-text-muted">
           {label}
         </label>
         {spec.description && (
-          <p className="text-[10px] text-temper-text-dim mt-0.5">
+          <p id={`${fieldId}-desc`} className="text-[10px] text-temper-text-dim mt-0.5">
             {spec.description}
           </p>
         )}
         <select
+          id={fieldId}
+          aria-describedby={describedBy}
+          aria-invalid={!!error}
+          required={spec.required}
           className={`${selectClass} mt-1`}
           value={String(value ?? '')}
           onChange={(e) => onChange(e.target.value)}
@@ -201,22 +213,26 @@ function InputField({
   if (spec.type === 'number' || spec.type === 'integer') {
     return (
       <div>
-        <label className="text-[11px] font-medium text-temper-text-muted">
+        <label htmlFor={fieldId} className="text-[11px] font-medium text-temper-text-muted">
           {label}
         </label>
         {spec.description && (
-          <p className="text-[10px] text-temper-text-dim mt-0.5">
+          <p id={`${fieldId}-desc`} className="text-[10px] text-temper-text-dim mt-0.5">
             {spec.description}
           </p>
         )}
         <input
+          id={fieldId}
           type="number"
           value={String(value ?? '')}
           onChange={(e) => onChange(e.target.value)}
           step={spec.type === 'integer' ? 1 : 'any'}
+          aria-describedby={describedBy}
+          aria-invalid={!!error}
+          required={spec.required}
           className={`${inputClass} mt-1`}
         />
-        {error && <p className="text-[10px] text-red-600 dark:text-red-400 mt-0.5">{error}</p>}
+        {error && <p id={errorId} role="alert" className="text-[10px] text-red-600 dark:text-red-400 mt-0.5">{error}</p>}
       </div>
     );
   }
@@ -224,22 +240,26 @@ function InputField({
   // Default: string → text input
   return (
     <div>
-      <label className="text-[11px] font-medium text-temper-text-muted">
+      <label htmlFor={fieldId} className="text-[11px] font-medium text-temper-text-muted">
         {label}
       </label>
       {spec.description && (
-        <p className="text-[10px] text-temper-text-dim mt-0.5">
+        <p id={`${fieldId}-desc`} className="text-[10px] text-temper-text-dim mt-0.5">
           {spec.description}
         </p>
       )}
       <input
+        id={fieldId}
         type="text"
         value={String(value ?? '')}
         onChange={(e) => onChange(e.target.value)}
+        aria-describedby={describedBy}
+        aria-invalid={!!error}
+        required={spec.required}
         className={`${inputClass} mt-1`}
         placeholder={spec.description}
       />
-      {error && <p className="text-[10px] text-red-600 dark:text-red-400 mt-0.5">{error}</p>}
+      {error && <p id={errorId} role="alert" className="text-[10px] text-red-600 dark:text-red-400 mt-0.5">{error}</p>}
     </div>
   );
 }

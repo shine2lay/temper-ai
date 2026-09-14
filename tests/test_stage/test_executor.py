@@ -1357,6 +1357,79 @@ class TestExecuteGraphCore:
         assert result.node_results["a"].status == Status.FAILED
 
 
+class TestWorkflowTerminalStatus:
+    """A workflow is only `completed` when nothing inside it failed."""
+
+    def test_workflow_with_failed_node_is_failed(self):
+        a = _make_agent_node("a", status=Status.FAILED, output="boom")
+        b = _make_agent_node("b", depends_on=["a"])
+        ctx = _make_context()
+
+        result = execute_graph([a, b], {}, ctx, graph_name="wf", is_workflow=True)
+
+        assert result.status == Status.FAILED
+        assert "a" in (result.error or "")
+        final = ctx.event_recorder.update_event.call_args
+        assert final.kwargs["status"] == "failed"
+        assert final.kwargs["data"]["failed_nodes"] == ["a"]
+
+    def test_workflow_without_failures_is_completed(self):
+        a = _make_agent_node("a")
+        b = _make_agent_node("b", depends_on=["a"])
+        ctx = _make_context()
+
+        result = execute_graph([a, b], {}, ctx, graph_name="wf", is_workflow=True)
+
+        assert result.status == Status.COMPLETED
+        assert result.error is None
+
+    def test_stage_keeps_tolerant_semantics(self):
+        """A nested stage still completes with a failed child so a leader can
+        synthesise the rest; only the enclosing workflow turns red."""
+        a = _make_agent_node("a", status=Status.FAILED, output="boom")
+        ctx = _make_context()
+
+        result = execute_graph([a], {}, ctx, graph_name="stage", is_workflow=False)
+
+        assert result.status == Status.COMPLETED
+
+    def test_condition_skip_is_not_a_failure(self):
+        a = _make_agent_node("a", output="v", structured_output={"verdict": "FAIL"})
+        b = _make_agent_node(
+            "b",
+            depends_on=["a"],
+            condition={"source": "a.structured.verdict", "operator": "equals", "value": "PASS"},
+        )
+        ctx = _make_context()
+
+        result = execute_graph([a, b], {}, ctx, graph_name="wf", is_workflow=True)
+
+        assert result.status == Status.COMPLETED
+
+    def test_cancellation_reports_cancelled(self):
+        import threading
+
+        cancel = threading.Event()
+        cancel.set()
+        a = _make_agent_node("a")
+        ctx = _make_context(cancel_event=cancel)
+
+        result = execute_graph([a], {}, ctx, graph_name="wf", is_workflow=True)
+
+        assert result.status == Status.CANCELLED
+        assert ctx.event_recorder.update_event.call_args.kwargs["status"] == "cancelled"
+
+    def test_workflow_started_records_inputs_and_workspace(self):
+        a = _make_agent_node("a")
+        ctx = _make_context(workspace_path="/tmp/ws")
+
+        execute_graph([a], {"topic": "x"}, ctx, graph_name="wf", is_workflow=True)
+
+        start = ctx.event_recorder.record.call_args_list[0]
+        assert start.kwargs["data"]["input_data"] == {"topic": "x"}
+        assert start.kwargs["data"]["workspace_path"] == "/tmp/ws"
+
+
 # --- Final Output Selection ---
 
 

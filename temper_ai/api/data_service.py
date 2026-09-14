@@ -256,13 +256,27 @@ def list_workflow_executions(
         if status and run_status != status:
             continue
 
+        # The executor updates the started event in place rather than emitting
+        # a completed event, so derive the end from start + duration instead
+        # of returning null for every run.
+        started = event.get("timestamp")
+        duration = data.get("duration_seconds")
+        end_time = None
+        if started and duration is not None:
+            try:
+                end_time = (
+                    datetime.fromisoformat(started) + timedelta(seconds=float(duration))
+                ).isoformat()
+            except (TypeError, ValueError):
+                end_time = None
+
         runs.append({
             "id": execution_id,
             "workflow_name": data.get("name", ""),
             "status": run_status,
-            "start_time": event.get("timestamp"),
-            "end_time": None,  # Updated via data field
-            "duration_seconds": data.get("duration_seconds"),
+            "start_time": started,
+            "end_time": end_time,
+            "duration_seconds": duration,
             "total_cost_usd": data.get("cost_usd", 0),
             "total_tokens": data.get("total_tokens", 0),
         })

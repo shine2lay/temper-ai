@@ -281,19 +281,6 @@ function WorkflowRow({
         )}
       </span>
 
-      {/* LLM / tool calls */}
-      <span className="text-xs font-mono text-temper-text-muted w-24 text-right shrink-0 hidden xl:block">
-        {wf.total_llm_calls != null || wf.total_tool_calls != null ? (
-          <>
-            <span title="LLM calls">{wf.total_llm_calls ?? 0}L</span>
-            <span className="text-temper-text-dim mx-0.5">/</span>
-            <span title="Tool calls">{wf.total_tool_calls ?? 0}T</span>
-          </>
-        ) : (
-          <span className="text-temper-text-dim">—</span>
-        )}
-      </span>
-
       {/* Studio link */}
       <Link
         to={`/studio/${wf.workflow_name}`}
@@ -880,7 +867,6 @@ export function WorkflowList() {
             <span className="w-36 shrink-0 hidden sm:block">Time</span>
             <span className="w-16 text-right shrink-0 hidden md:block">Duration</span>
             <span className="w-32 text-right shrink-0 hidden lg:block">Tokens / Cost</span>
-            <span className="w-24 text-right shrink-0 hidden xl:block">LLM/Tools</span>
             <span className="shrink-0 w-10" aria-hidden="true" />
           </div>
         </div>

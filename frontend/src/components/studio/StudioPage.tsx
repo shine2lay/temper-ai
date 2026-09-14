@@ -5,7 +5,7 @@
  */
 import { useState, useCallback, useEffect } from 'react';
 import { ReactFlowProvider } from '@xyflow/react';
-import { useBlocker } from 'react-router-dom';
+import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
 import { useDesignStore } from '@/store/designStore';
 import { useResolveStageAgents } from '@/hooks/useResolveStageAgents';
 import { StudioHeader } from './StudioHeader';
@@ -73,23 +73,8 @@ export function StudioPage() {
   // Fetch stage configs to resolve agent info for all stage_ref stages
   useResolveStageAgents();
 
-  // Block SPA navigation when dirty (back button, link clicks)
-  useBlocker(({ currentLocation, nextLocation }) => {
-    if (!isDirty) return false;
-    if (currentLocation.pathname === nextLocation.pathname) return false;
-    return !window.confirm('You have unsaved changes. Are you sure you want to leave?');
-  });
-
-  // Block browser tab close / refresh when dirty
-  useEffect(() => {
-    const handler = (e: BeforeUnloadEvent) => {
-      if (isDirty) {
-        e.preventDefault();
-      }
-    };
-    window.addEventListener('beforeunload', handler);
-    return () => window.removeEventListener('beforeunload', handler);
-  }, [isDirty]);
+  // Warn before leaving with unsaved canvas edits (nav + tab close).
+  useUnsavedChangesGuard(isDirty);
 
   const [yamlPreviewOpen, setYamlPreviewOpen] = useState(false);
   const onOpenLoadDialog = useCallback(() => setLoadDialogOpen(true), []);

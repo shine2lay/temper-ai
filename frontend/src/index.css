@@ -22,6 +22,11 @@
   --color-temper-running: #4fc3f7;
   --color-temper-failed: #ef5350;
   --color-temper-pending: #6a7080;
+  /* A user cancel is not a failure, a skipped branch is not an error, and a
+     gate waiting on a human is not a stall — each gets its own colour. */
+  --color-temper-cancelled: #ffa726;
+  --color-temper-skipped: #8a90a0;
+  --color-temper-waiting: #ffca28;
 
   --color-temper-bg-completed: var(--temper-bg-completed);
   --color-temper-bg-running: var(--temper-bg-running);

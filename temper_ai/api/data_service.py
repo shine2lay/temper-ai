@@ -203,8 +203,12 @@ def list_workflow_executions(
 
     Returns: {"runs": [...], "total": int}
     """
-    # Get all workflow start events
-    all_events = get_events(event_type=EventType("workflow.started"), limit=1000)
+    # Get the most RECENT workflow start events. Without newest_first the query
+    # returns the oldest `limit` rows, so once the events table grows past the
+    # limit the listing freezes on the earliest runs and never shows new ones.
+    all_events = get_events(
+        event_type=EventType("workflow.started"), limit=1000, newest_first=True
+    )
 
     # Dedup by execution_id: a resumed run records a NEW workflow.started
     # event with the same execution_id. Keep the event with the most complete

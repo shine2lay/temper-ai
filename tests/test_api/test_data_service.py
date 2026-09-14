@@ -193,6 +193,15 @@ class TestListWorkflowExecutions:
         assert result["runs"][0]["id"] == "run-2"
 
     @patch("temper_ai.api.data_service.get_events")
+    def test_list_requests_newest_events(self, mock_get_events):
+        """Regression: the listing MUST fetch newest-first. Ordered ascending +
+        limited, it returns the oldest N once the events table grows past the
+        limit — which froze the dashboard on month-old runs for ~3 weeks."""
+        mock_get_events.return_value = []
+        list_workflow_executions()
+        assert mock_get_events.call_args.kwargs.get("newest_first") is True
+
+    @patch("temper_ai.api.data_service.get_events")
     def test_filter_by_status(self, mock_get_events):
         mock_get_events.return_value = [
             _evt("wf1", "workflow.started", execution_id="run-1", status="completed",

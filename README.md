@@ -105,6 +105,16 @@ docker compose up
 
 Dashboard at **http://localhost:8420/app/**
 
+### Check the install — no API key, no spend
+
+```bash
+temper run smoke_test --input message="hello"
+```
+
+`smoke_test` is two script nodes and no LLM calls, so it works before you
+have configured a provider. If it completes, the engine, the database, the
+event stream and the dashboard are all working.
+
 ### `.env` — pick one provider
 
 ```bash

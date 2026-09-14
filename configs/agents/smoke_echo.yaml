@@ -1,0 +1,11 @@
+# Zero-LLM agent: echoes its input as JSON.
+#
+# Used by the `smoke_test` workflow to check an installation end to end
+# (engine, database, events, dashboard) without an API key or any spend.
+agent:
+  name: smoke_echo
+  type: script
+  timeout_seconds: 10
+  script_template: |
+    #!/bin/bash
+    echo '{"echoed": {{ message | default("hello") | tojson }}, "workspace": "{{ workspace_path }}"}'

@@ -46,6 +46,27 @@ class TestScriptAgentBasic:
             command = str(call_args)
         assert "hi" in command
 
+    def test_workspace_path_comes_from_context(self):
+        """`{{ workspace_path }}` resolves without being passed as an input."""
+        agent = ScriptAgent(config={
+            "name": "test_script",
+            "script_template": "echo {{ workspace_path }}/marker",
+        })
+        ctx = _make_context(ToolResult(success=True, result="ok\n"))
+        agent.run({}, ctx)
+        command = ctx.tool_executor.execute.call_args[0][1]["command"]
+        assert "/tmp/marker" in command
+
+    def test_explicit_workspace_input_wins(self):
+        agent = ScriptAgent(config={
+            "name": "test_script",
+            "script_template": "echo {{ workspace_path }}",
+        })
+        ctx = _make_context(ToolResult(success=True, result="ok\n"))
+        agent.run({"workspace_path": "/other"}, ctx)
+        command = ctx.tool_executor.execute.call_args[0][1]["command"]
+        assert "/other" in command
+
     def test_run_script_failure(self):
         agent = ScriptAgent(config={
             "name": "failing_script",

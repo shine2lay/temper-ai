@@ -38,6 +38,15 @@ class DatabaseManager:
 
     def create_all_tables(self) -> None:
         """Create all SQLModel tables. For dev/test only — use Alembic in production."""
+        # Import the table modules so they are registered on SQLModel.metadata
+        # before create_all runs. Relying on some other import having happened
+        # first is fragile: a table whose module is imported lazily (memory is
+        # only constructed after init_database) would silently not be created.
+        from temper_ai.checkpoint import models as _checkpoint_models  # noqa: F401
+        from temper_ai.memory import models as _memory_models  # noqa: F401
+        from temper_ai.observability import models as _event_models  # noqa: F401
+        from temper_ai.runner import models as _runner_models  # noqa: F401
+
         SQLModel.metadata.create_all(self.engine)
 
     @contextmanager

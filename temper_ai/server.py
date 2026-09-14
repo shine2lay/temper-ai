@@ -134,10 +134,16 @@ def _try_init_provider(providers: dict, name: str, factory, success_msg: str) ->
 def _init_memory_service() -> MemoryService:
     """Initialize memory service.
 
-    Uses InMemoryStore by default (non-persistent, for dev).
-    Set TEMPER_MEMORY_BACKEND=mem0 for persistent memory (requires mem0ai).
+    Defaults to the `sql` backend, which persists memories in the database
+    temper already uses. The previous default, `in_memory`, is a dict owned by
+    one process: with the server/worker split every run executes in its own
+    process, so an agent with memory enabled recalled nothing from the run
+    before while looking correctly configured.
+
+    `TEMPER_MEMORY_BACKEND` selects `sql` (default), `mem0` (semantic recall,
+    requires mem0ai) or `in_memory` (tests and throwaway runs).
     """
-    backend = os.environ.get("TEMPER_MEMORY_BACKEND", "in_memory")
+    backend = os.environ.get("TEMPER_MEMORY_BACKEND", "sql")
 
     store: MemoryStoreBase
     if backend == "mem0":
@@ -146,13 +152,37 @@ def _init_memory_service() -> MemoryService:
             store = Mem0Store()
             logger.info("Memory: mem0 backend initialized")
         except Exception as exc:
-            logger.warning("Failed to init mem0, falling back to in-memory: %s", exc)
-            store = InMemoryStore()
-    else:
+            logger.warning("Failed to init mem0, falling back to SQL memory: %s", exc)
+            store = _sql_or_in_memory()
+    elif backend == "in_memory":
         store = InMemoryStore()
-        logger.info("Memory: in-memory backend (non-persistent)")
+        logger.warning(
+            "Memory: in-memory backend selected — memories are lost when this "
+            "process exits, and workflows executed by a worker process keep "
+            "their own copy. Use TEMPER_MEMORY_BACKEND=sql to persist."
+        )
+    else:
+        store = _sql_or_in_memory()
 
     return MemoryService(store)
+
+
+def _sql_or_in_memory() -> MemoryStoreBase:
+    """SQL-backed memory, falling back to the dict store if the DB is absent."""
+    try:
+        from temper_ai.memory import SqlMemoryStore
+        store = SqlMemoryStore()
+        # Touch the table so a misconfigured database fails here, loudly,
+        # rather than on the first agent that tries to remember something.
+        store.recall("__healthcheck__", "__startup__", limit=1)
+        logger.info("Memory: SQL backend (persistent)")
+        return store
+    except Exception as exc:
+        logger.warning(
+            "Memory: SQL backend unavailable (%s) — falling back to a "
+            "non-persistent in-memory store", exc,
+        )
+        return InMemoryStore()
 
 
 def _load_default_configs(config_store: ConfigStore):

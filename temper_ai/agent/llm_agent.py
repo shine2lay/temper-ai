@@ -48,7 +48,13 @@ class LLMAgent(AgentABC):
         self.provider = config.get("provider", "openai")
         self.model = config.get("model", "gpt-4o-mini")
         self.max_iterations = config.get("max_iterations", 10)
-        self.token_budget = config.get("token_budget", 8000)
+        # Default to None (no budget enforcement) rather than 8000. The 8000
+        # default was silently truncating LLM inputs to ~1000 chars per field
+        # via prompt_renderer, breaking agents like tp_v5_day_allocator whose
+        # inputs legitimately span tens of thousands of tokens. Per
+        # feedback_no_silent_truncation: if budget enforcement is wanted,
+        # opt in explicitly via config; the default is "send what you've got."
+        self.token_budget = config.get("token_budget", None)
         self.prompt_renderer = PromptRenderer(
             token_counter=self._estimate_token_count,
         )
@@ -475,11 +481,20 @@ def _try_parse_first_brace(text: str) -> dict | None:
     return None
 
 
-def _truncate_input_data(input_data: dict[str, Any], max_value_len: int = 500) -> dict[str, Any]:
-    """Truncate input data values for event storage.
+def _truncate_input_data(input_data: dict[str, Any], max_value_len: int = 200_000) -> dict[str, Any]:
+    """Sanitize input data values for event storage.
 
-    Keeps keys and structure but truncates long string values.
-    Strips internal fields (prefixed with _).
+    Bumped from 500 chars to 200k (2026-05-01). The 500-char cap was making
+    the temper workflow API near-useless for debugging anything with
+    realistic JSON inputs — a 28k-token allocator prompt would show as
+    `{"places_by_city_json": "{... [34491 chars total]"}` in the API
+    response, blocking any post-mortem analysis. 200k matches a reasonable
+    upper bound for inputs we'd realistically pass; truly enormous
+    payloads still get clipped so the event store doesn't blow up.
+
+    Strips internal fields (prefixed with _). List clipping (>10 items)
+    kept as-is for the same reason — most lists are short and a 10-item
+    sample is enough for debugging.
     """
     truncated: dict[str, Any] = {}
     for key, value in input_data.items():

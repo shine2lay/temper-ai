@@ -94,12 +94,19 @@ class PromptRenderer:
         template_vars: dict[str, Any],
         system: str,
     ) -> list[dict[str, str]]:
-        """Graceful degradation when prompt exceeds token budget.
+        """Enforce token budget.
 
-        Trimming order (matches what matters least -> most):
-        1. Drop memories (supplementary context, agent can work without them)
-        2. Truncate input_data values (keep structure, trim long content)
-        3. Raise PromptBudgetError (system_prompt + minimal input doesn't fit)
+        Behavior change (2026-05-01): we no longer silently truncate input
+        values to fit a budget. Silent truncation produced subtly broken
+        prompts — the LLM would receive `... [truncated]` markers and
+        either hallucinate the missing data or politely refuse to continue.
+        Trip-planner-v5's allocator hit this when its 28k-token input was
+        clipped to 8k, then complained that "places_by_city needs to be
+        re-supplied without truncation."
+
+        We still drop memories as a soft fallback (those are explicitly
+        supplementary context). If that's still over budget, we raise so
+        the caller fails loud instead of producing degraded output.
         """
         assert self.token_counter is not None  # noqa: B101
 
@@ -107,7 +114,9 @@ class PromptRenderer:
         if token_count <= budget:
             return messages
 
-        # Step 1: Re-render without memories
+        # Soft fallback: drop memories (supplementary context the agent can
+        # work without). Anything more aggressive would be a silent edit of
+        # the user's data, which is the bug we're avoiding.
         trimmed_vars = {**template_vars, "memories": []}
         user_content = self._render_template(task_template, trimmed_vars)
         messages = [
@@ -118,25 +127,13 @@ class PromptRenderer:
             logger.info("Dropped memories to fit token budget")
             return messages
 
-        # Step 2: Truncate long input values
-        for key, value in trimmed_vars.items():
-            if isinstance(value, str) and len(value) > 1000:
-                trimmed_vars[key] = value[:1000] + "\n... [truncated]"
-        user_content = self._render_template(task_template, trimmed_vars)
-        messages = [
-            {"role": "system", "content": system},
-            {"role": "user", "content": user_content},
-        ]
-        if self.token_counter(messages) <= budget:
-            logger.info("Truncated long inputs to fit token budget")
-            return messages
-
-        # Step 3: Can't fit
+        # Don't fit even after dropping memories — fail loud.
         final_count = self.token_counter(messages)
         raise PromptBudgetError(
             f"Prompt exceeds token budget ({final_count} > {budget}) "
-            f"even after trimming memories and truncating inputs. "
-            f"Increase token_budget or reduce system_prompt/task_template size."
+            f"after dropping memories. Increase token_budget for this agent "
+            f"or reduce the size of inputs you're passing in. We no longer "
+            f"silently truncate input values — see prompt_renderer.py for why."
         )
 
 

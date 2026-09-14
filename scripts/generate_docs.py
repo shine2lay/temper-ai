@@ -85,6 +85,12 @@ def _anchor(name: str) -> str:
     return name.lower().replace(" ", "-").replace("`", "")
 
 
+def _is_private(obj: Any) -> bool:
+    """True when `obj` (class or instance) was defined under the gitignored `local/` package."""
+    module = getattr(obj, "__module__", None) or getattr(type(obj), "__module__", "")
+    return module == "local" or module.startswith("local.")
+
+
 # ---------------------------------------------------------------------------
 # Introspection helpers
 # ---------------------------------------------------------------------------
@@ -176,6 +182,20 @@ class DocSection:
         """Return {name: class_or_object} for all items to document."""
         raise NotImplementedError
 
+    def public_registry(self) -> dict[str, Any]:
+        """`registry()` minus anything registered from the private `local/` package.
+
+        `local/` is gitignored (see the OSS split), so its providers/tools/agents
+        must not leak into the committed reference docs either — the pre-commit
+        hook regenerates and stages these files, which is how
+        `providers/claude_v2.md` slipped into the public tree once.
+        """
+        return {
+            name: obj
+            for name, obj in self.registry().items()
+            if not _is_private(obj)
+        }
+
     def item_page(self, name: str, obj: Any) -> str:
         """Generate full markdown page for a single item."""
         raise NotImplementedError
@@ -197,7 +217,7 @@ class DocSection:
     # -- Generation (don't override) --
 
     def generate_index(self) -> str:
-        items = self.registry()
+        items = self.public_registry()
         lines = [
             _nav_bar(self.key),
             "",
@@ -226,7 +246,7 @@ class DocSection:
 
     def generate_all(self) -> dict[str, str]:
         """Return {filename: content} for index + all item pages."""
-        items = self.registry()
+        items = self.public_registry()
         pages = {"index.md": self.generate_index()}
         for name, obj in sorted(items.items()):
             filename = f"{_slug(name)}.md"
@@ -247,7 +267,7 @@ class ToolsSection(DocSection):
         return dict(TOOL_CLASSES)
 
     def index_intro(self):
-        count = len(self.registry())
+        count = len(self.public_registry())
         return (
             f"Temper AI includes **{count} built-in tools**. "
             f"Agents reference tools by name in their {link_to('agents', 'llm', 'agent config')}.\n\n"
@@ -381,7 +401,7 @@ class ProvidersSection(DocSection):
         return dict(_PROVIDER_MAP)
 
     def index_intro(self):
-        count = len(self.registry())
+        count = len(self.public_registry())
         return (
             f"Temper AI supports **{count} LLM providers**. "
             f"Set the provider in your {link_to('agents', 'llm', 'agent config')} or "
@@ -520,7 +540,7 @@ class AgentsSection(DocSection):
         return dict(AGENT_TYPES)
 
     def index_intro(self):
-        count = len(self.registry())
+        count = len(self.public_registry())
         return (
             f"Temper AI includes **{count} agent types**. "
             "Set `type:` in your agent YAML config."
@@ -638,7 +658,7 @@ class PoliciesSection(DocSection):
         return dict(POLICY_REGISTRY)
 
     def index_intro(self):
-        count = len(self.registry())
+        count = len(self.public_registry())
         return (
             f"Temper AI includes **{count} built-in safety policies**. "
             "Configure them in your workflow YAML under `safety.policies`.\n\n"
@@ -768,7 +788,7 @@ class StrategiesSection(DocSection):
         return dict(_GENERATORS)
 
     def index_intro(self):
-        count = len(self.registry())
+        count = len(self.public_registry())
         return (
             f"**{count} built-in strategies** define how agents within a stage are wired together.\n\n"
             "Strategies are **not** a separate execution layer — they generate a node "

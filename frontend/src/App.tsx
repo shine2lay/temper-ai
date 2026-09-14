@@ -5,6 +5,7 @@ import { StudioView } from '@/pages/StudioView';
 import { LibraryView } from '@/pages/LibraryView';
 import { EditorView } from '@/pages/EditorView';
 import { DocsPage } from '@/pages/DocsPage';
+import { SettingsPage } from '@/pages/SettingsPage';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
 import { Toaster } from '@/components/ui/sonner';
@@ -32,6 +33,7 @@ const router = createBrowserRouter(
         { path: '/library', element: <LibraryView /> },
         { path: '/library/:configType/:name', element: <EditorView /> },
         { path: '/docs', element: <DocsPage /> },
+        { path: '/settings', element: <SettingsPage /> },
         { path: '*', element: <NotFound /> },
       ],
     },

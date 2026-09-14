@@ -5,6 +5,7 @@ import {
   PenTool,
   BookOpen,
   FileText,
+  Settings,
   Sun,
   Moon,
   PanelLeftClose,
@@ -20,6 +21,7 @@ const NAV_ITEMS = [
   { label: 'Studio', icon: PenTool, to: '/studio', match: (p: string) => p.startsWith('/studio') },
   { label: 'Library', icon: BookOpen, to: '/library', match: (p: string) => p.startsWith('/library') },
   { label: 'Docs', icon: FileText, to: '/docs', match: (p: string) => p.startsWith('/docs') },
+  { label: 'Settings', icon: Settings, to: '/settings', match: (p: string) => p.startsWith('/settings') },
 ] as const;
 
 export function AppSidebar() {

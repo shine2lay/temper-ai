@@ -4,6 +4,7 @@ import type { NodeProps } from '@xyflow/react';
 import { AgentCardContent } from './AgentCardContent';
 import type { AgentNodeData } from '@/hooks/useDagElements';
 import { cn } from '@/lib/utils';
+import { STATUS_COLORS } from '@/lib/constants';
 
 /**
  * React Flow node for an agent-type node (standalone, not inside a stage).
@@ -20,10 +21,14 @@ export const AgentNodeComponent = memo(function AgentNodeComponent({ data }: Nod
   const hasRemovedChildren = !!(removedChildren && removedChildren.length > 0);
   const isDispatcher = hasDispatchedChildren || hasRemovedChildren;
 
-  // No agent (skipped/empty stages): return null
+  // No agent execution yet: skipped branches, pending nodes, and nodes
+  // parked at a human gate all land here. The label used to always read
+  // "skipped", so a gate waiting for approval looked like it had been
+  // passed over.
   if (!agent) {
+    const nodeStatus = stage?.status ?? 'skipped';
     const name = stage?.name ?? 'skipped';
-    const borderColor = stageColor ?? '#6b7280';
+    const borderColor = STATUS_COLORS[nodeStatus] ?? stageColor ?? '#6b7280';
     return (
       <div className="w-[200px]">
         <Handle type="target" position={Position.Left} id="left"
@@ -37,7 +42,9 @@ export const AgentNodeComponent = memo(function AgentNodeComponent({ data }: Nod
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full" style={{ backgroundColor: borderColor }} />
             <span className="text-xs font-medium text-temper-text-dim">{name}</span>
-            <span className="text-[9px] px-1 py-px rounded bg-temper-surface text-temper-text-dim">skipped</span>
+            <span className="text-[9px] px-1 py-px rounded bg-temper-surface text-temper-text-dim">
+              {nodeStatus === 'waiting' ? 'awaiting approval' : nodeStatus}
+            </span>
           </div>
         </div>
       </div>

@@ -1,0 +1,33 @@
+workflow:
+  name: smoke_test
+  description: |
+    Zero-cost installation check. Two script nodes, no LLM calls, no API key
+    needed — run it after installing to confirm the engine, the database, the
+    event stream and the dashboard all work:
+
+      temper run smoke_test --input message="hello"
+      POST /api/runs {"workflow": "smoke_test", "inputs": {"message": "hello"}}
+
+    It is also what the end-to-end browser tests run against.
+
+  inputs:
+    message:
+      type: string
+      required: false
+
+  outputs:
+    echoed: first.structured.echoed
+
+  nodes:
+    - name: first
+      type: agent
+      agent: smoke_echo
+      input_map:
+        message: input.message
+
+    - name: second
+      type: agent
+      agent: smoke_echo
+      depends_on: [first]
+      input_map:
+        message: first.structured.echoed

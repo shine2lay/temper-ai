@@ -100,9 +100,9 @@ class PromptRenderer:
         values to fit a budget. Silent truncation produced subtly broken
         prompts — the LLM would receive `... [truncated]` markers and
         either hallucinate the missing data or politely refuse to continue.
-        Trip-planner-v5's allocator hit this when its 28k-token input was
-        clipped to 8k, then complained that "places_by_city needs to be
-        re-supplied without truncation."
+        A planning agent hit this when its 28k-token input was clipped to
+        8k, then complained that the data "needs to be re-supplied without
+        truncation."
 
         We still drop memories as a soft fallback (those are explicitly
         supplementary context). If that's still over budget, we raise so

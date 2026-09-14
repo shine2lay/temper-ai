@@ -45,6 +45,15 @@ FROM base AS server
 # Copy pre-built frontend (used if frontend/dist is not volume-mounted)
 COPY --from=frontend-build /app/frontend/dist /app/frontend/dist
 
+# tmux — required by the claude_v2 (interactive Claude Code) LLM provider,
+# which drives the interactive `claude` TUI inside a tmux session. Without
+# tmux on PATH the provider's create_from_env returns None and every agent
+# on `provider: claude_v2` fails to run. (server stage only; base/worker
+# don't need it.)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends tmux && \
+    rm -rf /var/lib/apt/lists/*
+
 RUN groupadd -r temperai && useradd -r -g temperai -d /app temperai && \
     chown -R temperai:temperai /app && \
     mkdir -p /tmp/workspaces && chown temperai:temperai /tmp/workspaces && \

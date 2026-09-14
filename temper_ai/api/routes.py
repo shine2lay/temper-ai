@@ -20,6 +20,8 @@ from temper_ai.api.data_service import get_workflow_execution, list_workflow_exe
 from temper_ai.api.websocket import ws_manager
 from temper_ai.checkpoint.service import CheckpointService
 from temper_ai.observability.event_recorder import EventRecorder
+from temper_ai.observability.event_types import EventType
+from temper_ai.observability.recorder import get_events, update_event
 from temper_ai.runner._helpers import (
     McpPreconnectError,
     bind_delegate_tool,
@@ -327,8 +329,6 @@ def cancel_run(execution_id: str):
 
     # Orphaned running workflow — update the workflow.started event status directly
     # so the list query picks up the new status.
-    from temper_ai.observability.event_types import EventType
-    from temper_ai.observability.recorder import get_events, update_event
     start_events = get_events(event_type=EventType("workflow.started"), execution_id=execution_id, limit=1)
     if start_events:
         update_event(start_events[0]["id"], status="cancelled", data={"cancelled_reason": "Stale run cancelled by user"})
@@ -392,7 +392,13 @@ def resume_run(execution_id: str, body: ResumeRequest | None = None):
 
     # Rebuild context
 
-    workspace = body.workspace_path or (result.get("input_data") or {}).get("workspace_path")
+    # `workspace_path` is recorded alongside the inputs on workflow.started;
+    # older runs kept it inside input_data, so accept both.
+    workspace = (
+        body.workspace_path
+        or result.get("workspace_path")
+        or (result.get("input_data") or {}).get("workspace_path")
+    )
 
     policy_engine = None
     if config.safety:
@@ -573,17 +579,24 @@ def fork_run(body: ForkRequest):
 def approve_gate(execution_id: str, node_name: str):
     """Approve a gate node, allowing the workflow to continue.
 
-    The gate node must be in a 'waiting' state. Once approved, the
-    executor thread unblocks and the node executes.
+    The gate node must be in a 'waiting' state. In-process runs are
+    unblocked through the shared gate registry; runs executing in a worker
+    process/container (subprocess or external mode) cannot see that
+    registry, so the waiting event is also marked ``approved`` in the
+    database, which the worker polls.
     """
     gate_key = f"{execution_id}:{node_name}"
     gate_event = _state().gates.get(gate_key)
-    if gate_event is None:
+    waiting_events = _waiting_gate_events(execution_id, node_name)
+    if gate_event is None and not waiting_events:
         raise HTTPException(
             status_code=404,
             detail=f"No gate waiting for node '{node_name}' in execution '{execution_id}'",
         )
-    gate_event.set()
+    for ev in waiting_events:
+        update_event(ev["id"], status="approved", data={"gate_status": "approved"})
+    if gate_event is not None:
+        gate_event.set()
     return {"status": "approved", "execution_id": execution_id, "node_name": node_name}
 
 
@@ -591,12 +604,29 @@ def approve_gate(execution_id: str, node_name: str):
 def list_gates(execution_id: str):
     """List all gates currently waiting for approval in an execution."""
     prefix = f"{execution_id}:"
-    waiting = [
-        {"node_name": key.split(":", 1)[1], "status": "waiting"}
+    names = {
+        key.split(":", 1)[1]
         for key in _state().gates
         if key.startswith(prefix) and not _state().gates[key].is_set()
-    ]
+    }
+    names.update((ev.get("data") or {}).get("name", "") for ev in _waiting_gate_events(execution_id))
+    waiting = [{"node_name": n, "status": "waiting"} for n in sorted(names) if n]
     return {"execution_id": execution_id, "gates": waiting}
+
+
+def _waiting_gate_events(execution_id: str, node_name: str | None = None) -> list[dict]:
+    """Persisted ``stage.started`` events still in ``waiting`` for gate nodes."""
+    events = get_events(
+        execution_id=execution_id,
+        event_type=EventType("stage.started"),
+        status="waiting",
+        limit=100,
+    )
+    return [
+        ev for ev in events
+        if (ev.get("data") or {}).get("gate")
+        and (node_name is None or (ev.get("data") or {}).get("name") == node_name)
+    ]
 
 
 @router.get("/api/runs/{execution_id}/checkpoints")

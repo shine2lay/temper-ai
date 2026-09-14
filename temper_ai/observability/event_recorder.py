@@ -82,6 +82,18 @@ class EventRecorder:
 
         return eid
 
+    def event_status(self, event_id) -> str | None:
+        """Current persisted status of one event, or None when not persisting.
+
+        Lets a worker process observe state changes made by another process
+        through the database (the API approving a gate, for example).
+        """
+        if not self._persist:
+            return None
+        from temper_ai.observability.recorder import get_event
+        event = get_event(event_id)
+        return event.get("status") if event else None
+
     def update_event(self, event_id, status=None, data=None):
         if self._persist:
             from temper_ai.observability.recorder import update_event

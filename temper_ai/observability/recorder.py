@@ -247,15 +247,23 @@ def get_events(
         order = col(Event.timestamp).desc() if newest_first else col(Event.timestamp)
         stmt = stmt.order_by(order).limit(limit)
         results = session.exec(stmt).all()
-        return [
-            {
-                "id": e.id,
-                "type": e.type,
-                "parent_id": e.parent_id,
-                "execution_id": e.execution_id,
-                "status": e.status,
-                "data": e.data,
-                "timestamp": e.timestamp.isoformat(),
-            }
-            for e in results
-        ]
+        return [_event_to_dict(e) for e in results]
+
+
+def get_event(event_id: str) -> dict[str, Any] | None:
+    """Fetch one event by id (None when it does not exist)."""
+    with get_session() as session:
+        event = session.get(Event, event_id)
+        return _event_to_dict(event) if event else None
+
+
+def _event_to_dict(e: Event) -> dict[str, Any]:
+    return {
+        "id": e.id,
+        "type": e.type,
+        "parent_id": e.parent_id,
+        "execution_id": e.execution_id,
+        "status": e.status,
+        "data": e.data,
+        "timestamp": e.timestamp.isoformat(),
+    }

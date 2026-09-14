@@ -5,6 +5,12 @@ export const STATUS_COLORS: Record<string, string> = {
   running: 'var(--color-temper-running)',
   failed: 'var(--color-temper-failed)',
   pending: 'var(--color-temper-pending)',
+  queued: 'var(--color-temper-pending)',
+  cancelled: 'var(--color-temper-cancelled)',
+  interrupted: 'var(--color-temper-cancelled)',
+  orphaned: 'var(--color-temper-cancelled)',
+  skipped: 'var(--color-temper-skipped)',
+  waiting: 'var(--color-temper-waiting)',
 };
 
 export const STATUS_BG_COLORS: Record<string, string> = {
@@ -12,6 +18,12 @@ export const STATUS_BG_COLORS: Record<string, string> = {
   running: 'var(--color-temper-bg-running)',
   failed: 'var(--color-temper-bg-failed)',
   pending: 'var(--color-temper-bg-pending)',
+  queued: 'var(--color-temper-bg-pending)',
+  cancelled: 'var(--color-temper-bg-pending)',
+  interrupted: 'var(--color-temper-bg-pending)',
+  orphaned: 'var(--color-temper-bg-pending)',
+  skipped: 'var(--color-temper-bg-pending)',
+  waiting: 'var(--color-temper-bg-pending)',
 };
 
 export const STAGE_PALETTE = [
@@ -83,5 +95,10 @@ export const STATUS_ICONS: Record<string, string> = {
   running: '\u25B6',   // play triangle
   failed: '\u2717',    // cross
   pending: '\u25CB',   // circle
+  queued: '\u25CB',    // circle
   cancelled: '\u25A0', // square stop
+  interrupted: '\u25A0',
+  orphaned: '\u25A0',
+  skipped: '\u2298',   // circled slash
+  waiting: '\u23F8',   // pause
 };

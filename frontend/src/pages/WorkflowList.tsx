@@ -69,6 +69,12 @@ const STORAGE_KEY_SEARCH = 'temper-wf-search';
 const STORAGE_KEY_FILTER = 'temper-wf-filter';
 const STORAGE_KEY_SORT = 'temper-wf-sort';
 
+/** Runs fetched per page, and added by each "Load more". */
+const PAGE_SIZE = 50;
+
+/** Status tabs. The value is sent to the API as ?status=; `all` sends none. */
+const STATUS_TABS = ['all', 'running', 'completed', 'failed', 'cancelled', 'pending'] as const;
+
 /** Threshold in seconds above which a still-running workflow is flagged stale. */
 const STALE_THRESHOLD_S = 30 * 60;
 
@@ -544,18 +550,6 @@ export function WorkflowList() {
   const navigate = useNavigate();
   const [newRunOpen, setNewRunOpen] = useState(false);
 
-  const { data: workflows, isLoading, error, dataUpdatedAt, refetch } = useQuery<WorkflowSummary[]>({
-    queryKey: ['workflows'],
-    queryFn: async () => {
-      const res = await authFetch('/api/workflows');
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      // v1 API returns {runs: [...], total: int}
-      return data.runs ?? data;
-    },
-    refetchInterval: 5000,
-  });
-
   const [sortBy, setSortBy] = useState<SortKey>(
     () => (localStorage.getItem(STORAGE_KEY_SORT) as SortKey) ?? 'time',
   );
@@ -565,6 +559,38 @@ export function WorkflowList() {
   const [statusFilter, setStatusFilter] = useState<string | null>(
     () => localStorage.getItem(STORAGE_KEY_FILTER),
   );
+  // How many runs to request. The API pages with limit/offset; "Load more"
+  // raises this rather than fetching pages separately, so the list keeps a
+  // single sorted array and the run-number computation stays correct.
+  const [limit, setLimit] = useState(PAGE_SIZE);
+
+  // The status filter is applied by the API, not in the browser. It used to
+  // fetch the newest 20 runs and filter those client-side, so on any busy
+  // instance the running/failed tabs showed "0/20" — the matching runs were
+  // simply not in the fetched window.
+  const { data, isLoading, error, dataUpdatedAt, refetch, isFetching } = useQuery<{
+    runs: WorkflowSummary[];
+    total: number;
+  }>({
+    queryKey: ['workflows', statusFilter, limit],
+    queryFn: async () => {
+      const params = new URLSearchParams({ limit: String(limit) });
+      if (statusFilter) params.set('status', statusFilter);
+      const res = await authFetch(`/api/workflows?${params}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const body = await res.json();
+      // v1 API returns {runs: [...], total: int}
+      return Array.isArray(body)
+        ? { runs: body, total: body.length }
+        : { runs: body.runs ?? [], total: body.total ?? (body.runs ?? []).length };
+    },
+    placeholderData: (previous) => previous,
+    refetchInterval: 5000,
+  });
+
+  const workflows = data?.runs;
+  const total = data?.total ?? 0;
+  const hasMore = (workflows?.length ?? 0) < total;
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
   function toggleSelect(id: string) {
@@ -600,12 +626,20 @@ export function WorkflowList() {
     localStorage.setItem(STORAGE_KEY_SORT, sortBy);
   }, [sortBy]);
 
+  // Reset paging when the filter changes, so switching tabs doesn't keep
+  // asking for a huge window.
+  useEffect(() => {
+    setLimit(PAGE_SIZE);
+  }, [statusFilter]);
+
+  // Search stays client-side over what has been loaded (the API has no name
+  // filter); the placeholder says so.
   const filtered = useMemo(() => {
     if (!workflows) return [];
-    return workflows
-      .filter((wf) => !debouncedSearch || wf.workflow_name.toLowerCase().includes(debouncedSearch.toLowerCase()))
-      .filter((wf) => !statusFilter || wf.status === statusFilter);
-  }, [workflows, debouncedSearch, statusFilter]);
+    if (!debouncedSearch) return workflows;
+    const needle = debouncedSearch.toLowerCase();
+    return workflows.filter((wf) => wf.workflow_name.toLowerCase().includes(needle));
+  }, [workflows, debouncedSearch]);
 
   const sorted = useMemo(
     () => sortWorkflows(filtered, sortBy),
@@ -653,12 +687,15 @@ export function WorkflowList() {
           <div className="flex items-center gap-4">
             <h1 className="text-xl font-semibold text-temper-text">Workflows</h1>
             <span className="text-xs text-temper-text-muted">
-              {filtered.length}/{workflows?.length ?? 0} workflows
+              {debouncedSearch
+                ? `${filtered.length} of ${workflows?.length ?? 0} loaded`
+                : `${workflows?.length ?? 0} of ${total}`}{' '}
+              {statusFilter ? `${statusFilter} runs` : 'workflows'}
             </span>
 
             <input
               type="text"
-              placeholder="Search workflows..."
+              placeholder="Search loaded runs..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="px-3 py-1.5 rounded-md bg-temper-surface border border-temper-border text-sm text-temper-text placeholder:text-temper-text-dim focus:outline-none focus:ring-1 focus:ring-temper-accent w-64"
@@ -699,7 +736,7 @@ export function WorkflowList() {
           {/* Row 2: Filters + Sort + Refresh */}
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2" role="group" aria-label="Filter by status">
-              {(['all', 'running', 'completed', 'failed', 'pending'] as const).map((s) => (
+              {STATUS_TABS.map((s) => (
                 <button
                   key={s}
                   onClick={() => setStatusFilter(s === 'all' ? null : s)}
@@ -785,8 +822,12 @@ export function WorkflowList() {
         {workflows && workflows.length === 0 && (
           <EmptyState
             icon={Inbox}
-            title="No workflows found"
-            subtitle="Run a workflow to see it here, or create one in Studio."
+            title={statusFilter ? `No ${statusFilter} workflows` : 'No workflows found'}
+            subtitle={
+              statusFilter
+                ? 'No runs with this status. Pick another tab to see the rest.'
+                : 'Run a workflow to see it here, or create one in Studio.'
+            }
             action={
               <Link to="/studio" className="text-temper-accent hover:underline text-sm">
                 Create Workflow
@@ -798,8 +839,12 @@ export function WorkflowList() {
         {workflows && workflows.length > 0 && sorted.length === 0 && (
           <EmptyState
             icon={SearchX}
-            title="No workflows match your filters"
-            subtitle="Try adjusting your search or status filter."
+            title="No workflows match your search"
+            subtitle={
+              hasMore
+                ? 'Search covers the runs loaded so far — load more to widen it.'
+                : 'Try adjusting your search or status filter.'
+            }
           />
         )}
 
@@ -834,6 +879,20 @@ export function WorkflowList() {
                 />
               ))
             )}
+          </div>
+        )}
+
+        {hasMore && (
+          <div className="flex justify-center py-4">
+            <button
+              onClick={() => setLimit((n) => n + PAGE_SIZE)}
+              disabled={isFetching}
+              className="px-3 py-1.5 rounded-md border border-temper-border bg-temper-surface text-sm text-temper-text-muted hover:text-temper-text disabled:opacity-50"
+            >
+              {isFetching
+                ? 'Loading…'
+                : `Load more (${workflows?.length ?? 0} of ${total})`}
+            </button>
           </div>
         )}
       </div>

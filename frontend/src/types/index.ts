@@ -1,9 +1,31 @@
 /* TypeScript interfaces matching the v1 Python backend (snake_case). */
 
+/**
+ * Every status the backend can report.
+ *
+ * The narrow four-value unions this replaces predated `cancelled` (a user
+ * cancel, distinct from a failure), `queued` (external execution mode, before
+ * a worker claims the run), `waiting` (parked at a human gate) and the
+ * reaper's `interrupted`/`orphaned`, so TypeScript rejected perfectly valid
+ * comparisons against them.
+ */
+export type ExecutionStatus =
+  | 'pending'
+  | 'queued'
+  | 'running'
+  | 'waiting'
+  | 'cancelling'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+  | 'interrupted'
+  | 'orphaned'
+  | 'skipped';
+
 export interface WorkflowExecution {
   id: string;
   workflow_name: string;
-  status: 'pending' | 'running' | 'completed' | 'failed';
+  status: ExecutionStatus;
   start_time: string | null;
   end_time: string | null;
   duration_seconds: number | null;
@@ -25,7 +47,7 @@ export interface NodeExecution {
   id: string;
   name: string;
   type: 'agent' | 'stage' | 'delegate';
-  status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
+  status: ExecutionStatus;
   start_time: string | null;
   end_time: string | null;
   duration_seconds: number | null;
@@ -87,7 +109,7 @@ export interface AgentExecution {
   id: string;
   agent_name: string;
   name?: string;
-  status: 'pending' | 'running' | 'completed' | 'failed';
+  status: ExecutionStatus;
   start_time: string | null;
   end_time: string | null;
   duration_seconds: number | null;
@@ -133,7 +155,7 @@ export interface LLMCall {
   id: string;
   provider?: string;
   model?: string;
-  status: 'pending' | 'running' | 'completed' | 'failed';
+  status: ExecutionStatus;
   start_time: string | null;
   end_time: string | null;
   duration_seconds: number | null;
@@ -157,7 +179,7 @@ export interface LLMCall {
 export interface ToolCall {
   id: string;
   tool_name: string;
-  status: 'pending' | 'running' | 'completed' | 'failed';
+  status: ExecutionStatus;
   start_time: string | null;
   end_time: string | null;
   duration_seconds: number | null;
@@ -184,7 +206,7 @@ export interface CollaborationEvent {
 
 export interface ToolActivity {
   toolName: string;
-  status: 'running' | 'completed' | 'failed';
+  status: ExecutionStatus;
   startedAt: string;
   completedAt?: string;
   durationSeconds?: number;

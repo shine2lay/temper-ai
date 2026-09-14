@@ -8,6 +8,7 @@ that the frontend expects: WorkflowExecution → NodeExecution → AgentExecutio
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timedelta
 
 from temper_ai.observability import get_events
 from temper_ai.observability.event_types import EventType
@@ -165,13 +166,22 @@ def get_workflow_execution(execution_id: str) -> dict | None:
                         src_node["restored_from_fork"] = True
                         nodes.insert(0, src_node)
 
-    # Calculate aggregates
-    total_cost = sum(n.get("cost_usd", 0) for n in nodes)
-    total_tokens = sum(n.get("total_tokens", 0) for n in nodes)
-    total_llm_calls = sum(n.get("total_llm_calls", 0) for n in nodes)
-    total_tool_calls = sum(n.get("total_tool_calls", 0) for n in nodes)
-
+    # Calculate aggregates. Summing only top-level nodes missed every
+    # dynamically dispatched child (they hang under the dispatcher, whose
+    # own cost covers just its planning call), so a dispatch-heavy run
+    # reported $0.00 / 0 tokens. `_sum_node_metric` walks the tree with the
+    # right rule per node type; the workflow event's own totals (computed by
+    # the executor over every node, dispatched included) win when present.
     wf_data = workflow_event.get("data", {})
+    total_cost = wf_data.get("cost_usd")
+    if total_cost is None:
+        total_cost = _sum_node_metric(nodes, "cost_usd")
+    total_tokens = wf_data.get("total_tokens")
+    if total_tokens is None:
+        total_tokens = _sum_node_metric(nodes, "total_tokens")
+    total_llm_calls = _sum_node_metric(nodes, "total_llm_calls")
+    total_tool_calls = _sum_node_metric(nodes, "total_tool_calls")
+
     result = {
         "id": execution_id,
         "workflow_name": wf_data.get("name", ""),
@@ -185,6 +195,7 @@ def get_workflow_execution(execution_id: str) -> dict | None:
         "total_llm_calls": total_llm_calls,
         "total_tool_calls": total_tool_calls,
         "input_data": wf_data.get("input_data"),
+        "workspace_path": wf_data.get("workspace_path"),
         "output_data": wf_data.get("output_data"),
         "workflow_output": wf_data.get("workflow_output"),
         "error_message": wf_data.get("error"),
@@ -801,10 +812,46 @@ def _resolve_status(event: dict) -> str:
 
 
 def _get_end_time(events: list[dict], start_event_id: str, type_prefix: str) -> str | None:
-    """Find the end time for a started event by looking for its completed/failed counterpart."""
+    """End time for a started event.
+
+    Prefers an explicit ``*.completed`` / ``*.failed`` counterpart. The
+    executor does not emit one for workflows and stages — it updates the
+    started event in place — so fall back to start + duration, which is why
+    every run used to report ``end_time: null``.
+    """
     for e in events:
         if (e.get("parent_id") == start_event_id or e.get("id") == start_event_id) and \
            e.get("type", "").startswith(type_prefix) and \
            (e.get("type", "").endswith(".completed") or e.get("type", "").endswith(".failed")):
             return e.get("timestamp")
+
+    for e in events:
+        if e.get("id") != start_event_id:
+            continue
+        duration = (e.get("data") or {}).get("duration_seconds")
+        started = e.get("timestamp")
+        if duration is None or not started:
+            return None
+        try:
+            return (datetime.fromisoformat(started) + timedelta(seconds=float(duration))).isoformat()
+        except (TypeError, ValueError):
+            return None
     return None
+
+
+def _sum_node_metric(nodes: list[dict], key: str) -> float:
+    """Total of `key` over a node tree.
+
+    A ``stage`` node's own figure is already the sum of its children, so only
+    the children are counted. An ``agent`` node counts itself plus any nodes
+    it dispatched at runtime (those are separate executions nested under it).
+    """
+    total: float = 0
+    for node in nodes:
+        children = node.get("child_nodes") or []
+        if node.get("type") == "stage":
+            total += _sum_node_metric(children, key)
+        else:
+            total += node.get(key) or 0
+            total += _sum_node_metric(children, key)
+    return total

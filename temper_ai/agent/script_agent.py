@@ -42,7 +42,15 @@ class ScriptAgent(AgentABC):
 
         try:
             template = self.env.from_string(self.config["script_template"])
-            escaped = {k: shlex.quote(str(v)) if isinstance(v, str) else v for k, v in input_data.items()}
+            # `{{ workspace_path }}` is the documented way for a script to
+            # address the run's workspace, but it only ever resolved when a
+            # caller happened to pass it as a workflow input — otherwise it
+            # rendered empty and scripts silently wrote to `/`. Provide it
+            # from the execution context, without shadowing an explicit input.
+            render_vars = dict(input_data)
+            if context.workspace_path and not render_vars.get("workspace_path"):
+                render_vars["workspace_path"] = context.workspace_path
+            escaped = {k: shlex.quote(str(v)) if isinstance(v, str) else v for k, v in render_vars.items()}
             script = template.render(**escaped)
 
             timeout = self.config.get("timeout_seconds", 30)

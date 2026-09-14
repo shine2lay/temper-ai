@@ -162,9 +162,16 @@ class LLMAgent(AgentABC):
         """Core execution logic, separated for clean error handling."""
         memories = self._recall_memories(context)
 
+        # Same as for script agents: `{{ workspace_path }}` in a prompt or
+        # task_template should resolve to the run's workspace rather than
+        # silently rendering empty.
+        render_input = dict(input_data)
+        if context.workspace_path and not render_input.get("workspace_path"):
+            render_input["workspace_path"] = context.workspace_path
+
         messages = self.prompt_renderer.render(
             agent_config=self.config,
-            input_data=input_data,
+            input_data=render_input,
             memories=memories,
             strategy_context=input_data.get("_strategy_context"),
             token_budget=self.token_budget,

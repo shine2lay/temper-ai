@@ -257,6 +257,22 @@ def test_for_each_zero_produces_no_ops():
     assert render_dispatch(cfg) == []
 
 
+def test_for_each_none_produces_no_ops():
+    """Treat None like an empty list — when an upstream agent produced no
+    items (e.g. URL fetcher with all-failed fetches), the structured field
+    serializes as null and the for_each must gracefully fan to zero. The
+    original crash forced research_v4 to die on cold destinations where
+    no articles fetched successfully. Regression test for 2026-05-11 fix.
+    """
+    cfg = {
+        "dispatch": [
+            {"op": "add", "for_each": "structured.results",
+             "node": {"name": "n_{{ i }}", "agent": "x"}}
+        ]
+    }
+    assert render_dispatch(cfg, agent_structured={"results": None}) == []
+
+
 def test_for_each_negative_raises():
     cfg = {
         "dispatch": [

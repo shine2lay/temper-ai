@@ -8,6 +8,7 @@ import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { useExecutionStore } from '@/store/executionStore';
 import { WorkflowHeader } from '@/components/layout/WorkflowHeader';
 import { WorkflowSummaryBar } from '@/components/layout/WorkflowSummaryBar';
+import { GateBanner } from '@/components/layout/GateBanner';
 import { ViewTabs } from '@/components/layout/ViewTabs';
 import { EventLogPanel } from '@/components/layout/EventLogPanel';
 import { LLMCallsTable } from '@/components/layout/LLMCallsTable';
@@ -65,13 +66,25 @@ export function ExecutionView() {
   useKeyboardShortcuts({ onSwitchTab: setActiveTab, onShowHelp: () => setShowShortcutHelp(prev => !prev) });
 
   useEffect(() => {
-    if (prevStatus.current === 'running' && workflow?.status === 'completed') {
-      toast.success('Workflow completed successfully');
-    } else if (prevStatus.current === 'running' && workflow?.status === 'failed') {
-      toast.error('Workflow failed');
+    const was = prevStatus.current;
+    const now = workflow?.status;
+    if (was && was !== now && (was === 'running' || was === 'queued')) {
+      if (now === 'completed') toast.success('Workflow completed successfully');
+      else if (now === 'failed') toast.error('Workflow failed');
+      else if (now === 'cancelled') toast.info('Workflow cancelled');
     }
-    prevStatus.current = workflow?.status;
+    prevStatus.current = now;
   }, [workflow?.status]);
+
+  // Per-route document title (it used to read "Execution View" everywhere).
+  useEffect(() => {
+    document.title = workflow
+      ? `Temper AI — ${workflow.workflow_name}`
+      : 'Temper AI — Workflow';
+    return () => {
+      document.title = 'Temper AI';
+    };
+  }, [workflow?.workflow_name, workflow]);
 
   if (!workflow) {
     return <LoadingSkeleton />;
@@ -81,6 +94,7 @@ export function ExecutionView() {
     <ReactFlowProvider>
       <div className="flex flex-col h-full bg-temper-bg">
         <WorkflowHeader />
+        <GateBanner executionId={workflowId} />
         <WorkflowSummaryBar />
 
         <ViewTabs

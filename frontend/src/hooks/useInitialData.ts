@@ -31,8 +31,26 @@ function snapshotFingerprint(wf: WorkflowExecution): string {
  *   the DAG unnecessarily.
  * - After completion: stops polling.
  */
+/**
+ * Statuses that mean "this run can still change". `running` alone was too
+ * narrow: external-mode runs sit at `queued` until a worker claims them, and
+ * a run parked at a human gate reports `waiting` — in both cases the view
+ * froze until the user reloaded by hand.
+ */
+const ACTIVE_STATUSES = new Set([
+  'running',
+  'queued',
+  'pending',
+  'waiting',
+  'resuming',
+  'cancelling',
+]);
+
 export function useInitialData(workflowId: string | undefined) {
-  const isRunning = useExecutionStore((s) => s.workflow?.status === 'running');
+  const isRunning = useExecutionStore((s) => {
+    const status = s.workflow?.status;
+    return !status || ACTIVE_STATUSES.has(status);
+  });
   const applySnapshot = useExecutionStore((s) => s.applySnapshot);
   const reset = useExecutionStore((s) => s.reset);
   const lastFingerprint = useRef('');
@@ -51,8 +69,12 @@ export function useInitialData(workflowId: string | undefined) {
         return r.json() as Promise<WorkflowExecution>;
       }),
     enabled: !!workflowId,
-    // Poll while running so the DAG picks up new nodes and agents
+    // Poll while the run can still change so the DAG picks up new nodes and
+    // agents. Keep polling when the tab is in the background: runs are often
+    // watched on a second screen, and react-query pauses interval refetches
+    // for unfocused tabs by default.
     refetchInterval: isRunning ? POLL_INTERVAL_MS : false,
+    refetchIntervalInBackground: isRunning,
   });
 
   // Apply snapshot only when structural data actually changed

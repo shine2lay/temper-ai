@@ -25,8 +25,8 @@ workflow:
     # models that ignore JSON-only instructions (some local vLLM deployments
     # add a reasoning prefix) will fail the render step. Override via
     # workflow YAML or provider-config if using a different provider.
-    provider: claude
-    model: opus
+    provider: openai         # change to: anthropic, ollama, vllm, gemini
+    model: gpt-4o-mini      # change to match your provider's model
     dispatch:
       max_children_per_dispatch: 10
       max_dynamic_nodes: 50

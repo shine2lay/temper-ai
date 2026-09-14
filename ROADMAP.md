@@ -2,21 +2,20 @@
 
 ## Backlog (Not Yet Implemented)
 
-### Memory System (P0 — currently non-functional)
-The current default `InMemoryStore` is useless — it resets on every restart so agents never accumulate expertise. Remove it entirely and make real persistence the only option.
-
-- [ ] Remove `InMemoryStore` — it masks bugs by pretending memory works when it doesn't
-- [ ] Make `Mem0Store` the only backend (or use SQLite/Postgres for simple key-value persistence)
-- [ ] Bundle `mem0ai` in Docker image so memory works out of the box
-- [ ] Configure vector DB (ChromaDB or Qdrant) in docker-compose for persistence
-- [ ] When memory is disabled on an agent, it's truly off — no fake store
+### Memory System
+- [x] Persist memories (`SqlMemoryStore`, now the default backend) — they
+      survive restarts, and the worker processes that actually run workflows
+- [x] `in_memory` is opt-in and warns that it persists nothing
+- [ ] Bundle `mem0ai` in Docker image so semantic memory works out of the box
+- [ ] Configure vector DB (ChromaDB or Qdrant) in docker-compose
+- [ ] Semantic recall in the SQL backend (today: recency + substring match)
 - [ ] Memory viewer in execution view — show what an agent recalled and stored
 - [ ] Memory browser — search and manage stored memories across agents
 - [ ] Memory config in Workflow Settings overlay (connection string, embedding model)
 
 ### Execution Engine
 - [ ] Re-run from specific stage (skip completed upstream stages)
-- [ ] Per-stage timeout enforcement (field exists in UI, backend ignores it)
+- [x] Per-stage timeout enforcement (`timeout_seconds`; verified enforced)
 - [ ] Per-stage error handling (continue/halt/retry per stage, not just workflow-level)
 - [ ] Convergence detection (similarity-based, not just loop count)
 - [ ] Multi-round collaboration (debate, consensus, round-robin strategies)
@@ -27,18 +26,19 @@ The current default `InMemoryStore` is useless — it resets on every restart so
 - [ ] Pre-execution commands (run scripts before agent starts)
 - [ ] Merit tracking (agent performance scoring across runs)
 - [ ] Persistent agents (maintain state across workflow runs)
-- [ ] Checkpointing & resume (persist node outputs to DB at stage boundaries, resume from last checkpoint on crash/restart)
-- [ ] Human-in-the-loop gates (pause execution at designated nodes, wait for human approval/input before continuing)
+- [x] Checkpointing & resume (checkpoints per node; `POST /api/runs/{id}/resume`
+      and `/fork`; resume replays the original inputs)
+- [x] Human-in-the-loop gates (`gate: true`, approved from the dashboard or
+      `POST /api/runs/{id}/approve/{node}`; works across worker processes)
 - [ ] Budget pacing & mid-run alerts (track spend rate vs progress, warn when budget consumption outpaces completion)
 
-### DAG Layout (P1 — currently breaks with complex workflows)
-The execution DAG layout uses static height estimates that break for multi-agent stages and stages with varying content. Needs a "measure-first, layout-second" approach.
+### DAG Layout
+ELK now resolves positions, container sizes and edge routing in one pass, so
+the old "estimate heights, then fix them up" problems are gone.
 
-- [ ] Render nodes off-screen first, measure actual DOM dimensions, then compute layout
-- [ ] Propagate tall stage heights to adjacent depth columns to prevent vertical overlap
-- [ ] Handle empty/skipped stages (0-height nodes) without wasting space
-- [ ] Account for I/O sections, source tags, and output previews in height calculations
-- [ ] Same approach for Studio canvas layout (currently uses `estimateNodeHeight`)
+- [x] Auto-fit follows the resolved layout (and stops once the user pans/zooms)
+- [x] Skipped nodes are rendered rather than dropped, with a toggle to hide them
+- [ ] Same ELK approach for the Studio canvas (still uses `estimateNodeHeight`)
 
 ### Studio UX
 - [ ] Undo granularity — batch rapid text edits into single undo entries
@@ -60,6 +60,14 @@ The execution DAG layout uses static height estimates that break for multi-agent
 - [ ] Stale run auto-cleanup on server restart (mark orphaned "running" as failed)
 - [ ] Webhook notifications for workflow completion/failure
 - [ ] API authentication (currently open)
+
+### Studio
+Studio preserves the parts of the workflow schema it cannot edit (they
+round-trip untouched), but it still cannot *edit* them:
+
+- [ ] Edit per-agent overrides inside a stage (`name`, `task_template`, `role`)
+- [ ] Edit workflow-level `inputs:` / `outputs:`
+- [ ] An editor for `type: template` nodes (currently read-only passthrough)
 
 ## Recently Completed
 

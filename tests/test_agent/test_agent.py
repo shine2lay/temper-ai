@@ -55,7 +55,9 @@ class TestLLMAgent:
         assert agent.provider == "openai"
         assert agent.model == "gpt-4o-mini"
         assert agent.max_iterations == 10
-        assert agent.token_budget == 8000
+        # No budget by default: enforcement is opt-in via `token_budget` in
+        # the agent config (the old 8000 default silently truncated inputs).
+        assert agent.token_budget is None
 
     def test_init_custom(self):
         agent = LLMAgent({

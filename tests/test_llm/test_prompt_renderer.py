@@ -129,21 +129,42 @@ class TestPromptRendererBudget:
         # Memories should be dropped (empty list)
         assert "word word word" not in msgs[1]["content"]
 
-    def test_truncates_long_inputs(self):
-        long_code = "x " * 2000  # 2000 words, > 1000 chars
+    def test_never_truncates_long_inputs(self):
+        """Over-budget inputs fail loud instead of being silently clipped.
+
+        Pre-2026-05-01 the renderer cut long values to 1000 chars and appended
+        "[truncated]", which produced subtly broken prompts (the LLM either
+        hallucinated the missing data or refused). Now the only soft fallback
+        is dropping memories; inputs are never edited.
+        """
+        long_code = "x " * 2000  # 2000 words
 
         def counter(messages):
             return sum(len(m["content"].split()) for m in messages)
 
         r = PromptRenderer(token_counter=counter)
-        # After truncation: 1000 chars of "x " = ~500 words + system (5 words) + "Review:" (1)
-        # Need budget high enough for truncated but not for original (2000+ words)
+        with pytest.raises(PromptBudgetError, match="no longer silently truncate"):
+            r.render(
+                agent_config={"task_template": "Review: {{ code }}"},
+                input_data={"code": long_code},
+                token_budget=600,
+            )
+
+    def test_no_budget_sends_everything(self):
+        """token_budget=None (the LLMAgent default) means no enforcement."""
+        long_code = "x " * 2000
+
+        def counter(messages):
+            return sum(len(m["content"].split()) for m in messages)
+
+        r = PromptRenderer(token_counter=counter)
         msgs = r.render(
             agent_config={"task_template": "Review: {{ code }}"},
             input_data={"code": long_code},
-            token_budget=600,
+            token_budget=None,
         )
-        assert "[truncated]" in msgs[1]["content"]
+        assert msgs[1]["content"] == "Review: " + long_code
+        assert "[truncated]" not in msgs[1]["content"]
 
     def test_raises_when_still_over_budget(self):
         def counter(messages):

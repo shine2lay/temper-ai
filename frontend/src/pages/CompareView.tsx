@@ -127,6 +127,12 @@ export function CompareView() {
                   <div className="font-mono text-[10px] text-temper-text-dim">
                     {ids[i].slice(0, 8)}
                   </div>
+                  {/* Say why a column is empty instead of showing dashes. */}
+                  {queries[i]?.isError && (
+                    <div className="text-[10px] font-normal text-temper-failed">
+                      could not be loaded ({(queries[i].error as Error).message})
+                    </div>
+                  )}
                 </th>
               ))}
             </tr>

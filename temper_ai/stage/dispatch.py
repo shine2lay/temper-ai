@@ -319,6 +319,22 @@ def _resolve_for_each_list(
 
     if isinstance(cursor, list):
         return list(cursor)
+    # Treat None like an empty list — same "graceful empty-fan" reasoning
+    # as the missing-structured-output guard above. An upstream agent that
+    # legitimately produced no items (URL fetcher with all-failed fetches,
+    # researcher with zero candidates, etc.) emits `field: null` rather
+    # than `field: []`; crashing the whole workflow on that case forced
+    # callers to either pad the upstream output or rewrite the for_each
+    # path. With this fix, the empty fan dispatches zero children and the
+    # rest of the DAG proceeds normally.
+    #
+    # Originally surfaced 2026-05-11 by tp_v5_research_v4 hitting cold
+    # destinations (Vietnam Hoi An / Ho Chi Minh City): url_fetcher
+    # returned `fetched: null` and extract_fan's `for_each: input.fetched`
+    # crashed the whole research run, causing user-visible "researcher
+    # service is down" snags despite the rest of the pipeline being fine.
+    if cursor is None:
+        return []
     if isinstance(cursor, bool):
         raise DispatchRenderError(
             f"dispatch[{op_idx}].for_each {spec!r} resolved to bool"

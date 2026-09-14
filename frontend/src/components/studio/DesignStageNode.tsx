@@ -460,7 +460,7 @@ function SequentialLayout({
         {agents.map((name, i) => {
           const summary = agentSummaries.find((s) => s.name === name);
           return (
-            <div key={name} className="flex items-center gap-1 min-w-0">
+            <div key={`${name}-${i}`} className="flex items-center gap-1 min-w-0">
               {i > 0 && <ArrowLine />}
               <div className="flex-1 min-w-0">
                 {summary ? (
@@ -528,11 +528,11 @@ function ConsensusLayout({
       {/* Agents in a ring-suggestive layout: grid with connecting lines */}
       <div className="relative">
         <div className="grid grid-cols-2 gap-1">
-          {agents.map((name) => {
+          {agents.map((name, i) => {
             const summary = agentSummaries.find((s) => s.name === name);
             return summary ? (
               <AgentMiniCard
-                key={name}
+                key={`${name}-${i}`}
                 summary={summary}
                 isLeader={false}
                 compact={isCompact}
@@ -540,7 +540,7 @@ function ConsensusLayout({
                 onRemove={onRemoveAgent ? () => onRemoveAgent(name) : undefined}
               />
             ) : (
-              <AgentSkeleton key={name} />
+              <AgentSkeleton key={`${name}-${i}`} />
             );
           })}
         </div>
@@ -610,11 +610,11 @@ function ParallelLayout({
 
         {/* Agent cards stacked vertically */}
         <div className="flex-1 flex flex-col gap-1 min-w-0">
-          {agents.map((name) => {
+          {agents.map((name, i) => {
             const summary = agentSummaries.find((s) => s.name === name);
             return summary ? (
               <AgentMiniCard
-                key={name}
+                key={`${name}-${i}`}
                 summary={summary}
                 isLeader={false}
                 compact={isCompact}
@@ -622,7 +622,7 @@ function ParallelLayout({
                 onRemove={onRemoveAgent ? () => onRemoveAgent(name) : undefined}
               />
             ) : (
-              <AgentSkeleton key={name} />
+              <AgentSkeleton key={`${name}-${i}`} />
             );
           })}
         </div>
@@ -671,11 +671,11 @@ function CollaborationLayout({
   if (!agentDetailsLoaded) {
     return (
       <div className="flex flex-col gap-1">
-        {agents.map((name) => {
+        {agents.map((name, i) => {
           const summary = agentSummaries.find((s) => s.name === name);
           return summary ? (
             <AgentMiniCard
-              key={name}
+              key={`${name}-${i}`}
               summary={summary}
               isLeader={name === leaderAgent}
               compact={isCompact}
@@ -683,7 +683,7 @@ function CollaborationLayout({
               onRemove={onRemoveAgent ? () => onRemoveAgent(name) : undefined}
             />
           ) : (
-            <AgentSkeleton key={name} />
+            <AgentSkeleton key={`${name}-${i}`} />
           );
         })}
       </div>

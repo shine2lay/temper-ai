@@ -7,6 +7,17 @@ export type CollaborationStrategy = 'independent' | 'leader' | 'consensus' | 'de
 
 export interface DesignStage {
   name: string;
+  /**
+   * The node exactly as it was loaded.
+   *
+   * Studio models a subset of the node schema — a stage's agents become a
+   * list of names, which drops per-entry `name`, `task_template`, `role`,
+   * `model` and friends, and node types it does not know (`type: template`)
+   * have no representation at all. Saving used to emit only what Studio
+   * understood, so opening a workflow and pressing Save silently destroyed
+   * the rest. Serialization merges over this, so unknown keys survive.
+   */
+  raw?: Record<string, unknown>;
   stage_ref: string | null;
   depends_on: string[];
   loops_back_to: string | null;
@@ -77,6 +88,12 @@ export interface WorkflowOutput {
 }
 
 export interface WorkflowMeta {
+  /**
+   * Workflow-level keys Studio does not model (`inputs`, `outputs`, and
+   * anything else), kept so a save round-trip preserves them.
+   */
+  raw?: Record<string, unknown>;
+
   // --- General ---
   name: string;
   description: string;

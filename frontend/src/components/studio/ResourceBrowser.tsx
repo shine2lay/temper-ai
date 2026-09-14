@@ -8,6 +8,7 @@
 import { useState, useRef, useCallback, type DragEvent, type KeyboardEvent } from 'react';
 import { useDesignStore, defaultDesignStage, type DesignStage } from '@/store/designStore';
 import { useConfigs, useCreateConfig } from '@/hooks/useConfigAPI';
+import { useRegistry } from '@/hooks/useRegistry';
 
 type Tab = 'stages' | 'agents' | 'tools';
 
@@ -117,7 +118,9 @@ export function ResourceBrowser() {
 
   const { data: stageData, isLoading: stagesLoading } = useConfigs('stage');
   const { data: agentData, isLoading: agentsLoading } = useConfigs('agent');
-  const { data: toolData, isLoading: toolsLoading } = useConfigs('tool');
+  // Tools are a runtime registry, not stored configs: asking the config API
+  // for type 'tool' returned 400 on every Studio load.
+  const { data: registry, isLoading: toolsLoading } = useRegistry();
 
   const createStageMutation = useCreateConfig('stage');
   const createAgentMutation = useCreateConfig('agent');
@@ -263,7 +266,9 @@ export function ResourceBrowser() {
 
   const stages = filterConfigs(stageData?.configs);
   const agents = filterConfigs(agentData?.configs);
-  const tools = filterConfigs(toolData?.configs);
+  const tools = filterConfigs(
+    (registry?.tools ?? []).map((name) => ({ name, description: '' })),
+  );
   const isLoading =
     activeTab === 'stages' ? stagesLoading : activeTab === 'agents' ? agentsLoading : toolsLoading;
 

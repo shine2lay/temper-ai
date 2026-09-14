@@ -24,10 +24,20 @@ export function parseWorkflowMeta(name: string, config: Record<string, unknown>)
   const wfDefaults = (inner.defaults ?? {}) as Record<string, unknown>;
 
   const inputsObj = (inner.inputs ?? {}) as Record<string, unknown>;
+  // Two shapes exist. Legacy: `inputs: {required: [...], optional: [...]}`.
+  // Current: `inputs: {topic: {type, required}, ...}` — which was not read at
+  // all, so a workflow declaring three inputs displayed "0 inputs".
+  const schemaInputs = Object.entries(inputsObj).filter(
+    ([, v]) => v !== null && typeof v === 'object' && !Array.isArray(v),
+  ) as [string, Record<string, unknown>][];
   const reqInputs =
-    (inner.required_inputs as string[]) ?? (inputsObj.required as string[]) ?? [];
+    (inner.required_inputs as string[])
+    ?? (inputsObj.required as string[])
+    ?? schemaInputs.filter(([, v]) => v.required).map(([k]) => k);
   const optInputs =
-    (inner.optional_inputs as string[]) ?? (inputsObj.optional as string[]) ?? [];
+    (inner.optional_inputs as string[])
+    ?? (inputsObj.optional as string[])
+    ?? schemaInputs.filter(([, v]) => !v.required).map(([k]) => k);
 
   const pick = <T>(...candidates: unknown[]): T | undefined =>
     candidates.find((c) => c !== undefined && c !== null) as T | undefined;
@@ -35,6 +45,10 @@ export function parseWorkflowMeta(name: string, config: Record<string, unknown>)
   const defaults = defaultMeta();
 
   return {
+    // Keep the workflow as loaded so serialization can merge over it: Studio
+    // does not model `inputs:`/`outputs:` (the run's declared parameters and
+    // result mapping) and used to drop them on save.
+    raw: inner,
     name: (inner.name as string) ?? name,
     description: (inner.description as string) ?? '',
     version: (inner.version as string) ?? defaults.version,
@@ -202,6 +216,9 @@ export function parseWorkflowStages(config: Record<string, unknown>): DesignStag
     }
 
     return {
+      // Keep the node verbatim so serialization can merge over it and not
+      // lose the parts of the schema Studio does not model.
+      raw: rs,
       name: (rs.name as string) ?? '',
       stage_ref: (rs.stage_ref as string | null) ?? (rs.ref as string | null) ?? (rs.stage as string | null) ?? null,
       depends_on: (rs.depends_on as string[]) ?? [],
@@ -249,10 +266,84 @@ export function parseWorkflowStages(config: Record<string, unknown>): DesignStag
   });
 }
 
+/** Node types Studio has an editor for. Anything else is passed through. */
+const KNOWN_NODE_TYPES = new Set(['agent', 'stage', 'delegate']);
+
+/**
+ * Top-level workflow keys that serialization rebuilds from the Studio model.
+ * Everything else in the loaded workflow is carried through untouched.
+ */
+const REBUILT_WORKFLOW_KEYS = [
+  'name',
+  'description',
+  'version',
+  'product_type',
+  'defaults',
+  'nodes',
+  'stages',
+  'predecessor_injection',
+  'config',
+  'error_handling',
+  'safety',
+  'memory',
+  'observability',
+  'autonomous_loop',
+  'lifecycle',
+  'metadata',
+  'execution',
+  'required_inputs',
+  'optional_inputs',
+];
+
+/**
+ * Rebuild a stage's `agents:` list, keeping each entry's original object.
+ *
+ * Studio reduces the list to names, so re-emitting it naively turned
+ * `- agent: worker` + `name: first_item` + `task_template: …` into a bare
+ * `- agent: worker`. Repeated names then collide into identically-named
+ * child nodes, which the engine reports as a cyclic dependency.
+ */
+function mergeAgentEntries(names: string[], raw: unknown): unknown[] {
+  const rawList = Array.isArray(raw) ? raw : [];
+  const used = new Set<number>();
+  return names.map((name, index) => {
+    // Prefer the entry that sat in the same position, then any unused entry
+    // with the same agent ref, so reordering and renaming still match up.
+    const candidates = [index, ...rawList.keys()];
+    for (const i of candidates) {
+      if (used.has(i)) continue;
+      const entry = rawList[i];
+      if (typeof entry === 'string') {
+        if (entry === name) {
+          used.add(i);
+          return entry;
+        }
+        continue;
+      }
+      if (entry && typeof entry === 'object') {
+        const rec = entry as Record<string, unknown>;
+        if ((rec.agent ?? rec.ref ?? rec.name) === name) {
+          used.add(i);
+          return rec;
+        }
+      }
+    }
+    return { agent: name };
+  });
+}
+
 /** Serialize a stage to a workflow config entry (only non-default fields). */
 function serializeStage(s: DesignStage): Record<string, unknown> {
   const def = defaultDesignStage();
-  const entry: Record<string, unknown> = { name: s.name };
+  // Start from the node as loaded so keys Studio does not model survive a
+  // load -> save round trip; everything below overwrites what it does model.
+  const entry: Record<string, unknown> = { ...(s.raw ?? {}), name: s.name };
+
+  // A node type Studio has no editor for (today: `type: template`) is passed
+  // through untouched rather than being rewritten as an empty stage.
+  if (s.raw && typeof s.raw.type === 'string' && !KNOWN_NODE_TYPES.has(s.raw.type)) {
+    return { ...s.raw };
+  }
 
   // v1 format: single-agent = {type: "agent", agent: "name"},
   // multi-agent = {type: "stage", strategy: "parallel", agents: [...]}
@@ -269,7 +360,7 @@ function serializeStage(s: DesignStage): Record<string, unknown> {
       ? s.collaboration_strategy  // leader, consensus, etc.
       : s.agent_mode;            // parallel, sequential
     entry.strategy = strategy;
-    entry.agents = s.agents.map((a) => ({ agent: a }));
+    entry.agents = mergeAgentEntries(s.agents, s.raw?.agents);
   }
 
   if (s.stage_ref) entry.ref = s.stage_ref;
@@ -340,7 +431,12 @@ function serializeStage(s: DesignStage): Record<string, unknown> {
 export function serializeWorkflowConfig(meta: WorkflowMeta, stages: DesignStage[]): Record<string, unknown> {
   const defaults = defaultMeta();
   // Build in display order: name, description, defaults, nodes, then config sections
-  const wfConfig: Record<string, unknown> = { name: meta.name };
+  // Start from the workflow as loaded, minus the parts rebuilt below, so
+  // unmodelled top-level keys (inputs, outputs, anything newer than Studio)
+  // survive a load -> save round trip.
+  const preserved: Record<string, unknown> = { ...(meta.raw ?? {}) };
+  for (const key of REBUILT_WORKFLOW_KEYS) delete preserved[key];
+  const wfConfig: Record<string, unknown> = { ...preserved, name: meta.name };
 
   wfConfig.description = meta.description || '';
   if (meta.version !== defaults.version) wfConfig.version = meta.version;
@@ -435,13 +531,23 @@ export function serializeWorkflowConfig(meta: WorkflowMeta, stages: DesignStage[
   if (meta.owner != null) metaObj.owner = meta.owner;
   if (Object.keys(metaObj).length > 0) wfConfig.metadata = metaObj;
 
-  if (meta.required_inputs.length > 0 || meta.optional_inputs.length > 0) {
+  // Only rewrite `inputs:`/`outputs:` in the legacy shape Studio can edit.
+  // A workflow using the current schema (`inputs: {name: {type, required}}`,
+  // `outputs: {key: "node.field"}`) keeps the value it was loaded with rather
+  // than being rewritten into a lossy list of names.
+  const rawInputs = (meta.raw?.inputs ?? null) as Record<string, unknown> | null;
+  const inputsAreLegacy =
+    !rawInputs || Array.isArray(rawInputs.required) || Array.isArray(rawInputs.optional);
+  if (inputsAreLegacy && (meta.required_inputs.length > 0 || meta.optional_inputs.length > 0)) {
     const inputsObj: Record<string, unknown> = {};
     if (meta.required_inputs.length > 0) inputsObj.required = meta.required_inputs;
     if (meta.optional_inputs.length > 0) inputsObj.optional = meta.optional_inputs;
     wfConfig.inputs = inputsObj;
   }
-  if (meta.outputs.length > 0) {
+
+  const rawOutputs = meta.raw?.outputs;
+  const outputsAreLegacy = !rawOutputs || Array.isArray(rawOutputs);
+  if (outputsAreLegacy && meta.outputs.length > 0) {
     wfConfig.outputs = meta.outputs.map((o) => {
       const entry: Record<string, string> = { name: o.name };
       if (o.description) entry.description = o.description;

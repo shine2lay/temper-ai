@@ -266,6 +266,19 @@ body {
   overflow: hidden;
 }
 
+/* Keyboard focus.
+
+   Components across the app set `focus:outline-none` and rely on a ring that
+   is often not there, so tabbing through the UI moved an invisible cursor —
+   you could not tell what Enter would activate. This restores a visible
+   indicator for keyboard users only (`:focus-visible`), so it never shows on
+   mouse clicks. */
+:focus-visible {
+  outline: 2px solid var(--color-temper-accent, #4fc3f7);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
 /* React Flow theme overrides */
 .react-flow__background {
   background-color: var(--temper-bg) !important;

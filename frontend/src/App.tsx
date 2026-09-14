@@ -5,6 +5,7 @@ import { StudioView } from '@/pages/StudioView';
 import { LibraryView } from '@/pages/LibraryView';
 import { EditorView } from '@/pages/EditorView';
 import { DocsPage } from '@/pages/DocsPage';
+import { CompareView } from '@/pages/CompareView';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
@@ -33,6 +34,7 @@ const router = createBrowserRouter(
         { path: '/library', element: <LibraryView /> },
         { path: '/library/:configType/:name', element: <EditorView /> },
         { path: '/docs', element: <DocsPage /> },
+        { path: '/compare', element: <CompareView /> },
         { path: '/settings', element: <SettingsPage /> },
         { path: '*', element: <NotFound /> },
       ],

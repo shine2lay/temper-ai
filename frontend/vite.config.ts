@@ -28,5 +28,9 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: ['./src/__tests__/setup.ts'],
     css: false,
+    // `e2e/` holds Playwright specs (run with `npx playwright test`, which
+    // needs @playwright/test installed). Vitest picking them up made
+    // `vitest run` fail before it ran a single unit test.
+    exclude: ['node_modules/**', 'dist/**', 'e2e/**'],
   },
 })

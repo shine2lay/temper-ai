@@ -214,6 +214,7 @@ def get_events(
     parent_id: str | None = None,
     status: str | None = None,
     limit: int = 100,
+    newest_first: bool = False,
 ) -> list[dict[str, Any]]:
     """Query events with optional filters.
 
@@ -223,9 +224,13 @@ def get_events(
         parent_id: Filter by parent event ID.
         status: Filter by event status.
         limit: Max results.
+        newest_first: When True, return the most recent `limit` events
+            (timestamp DESC). Listings want this so they don't get stuck on
+            the oldest N once the table grows past `limit`. Leave False for
+            per-run queries that rebuild the event tree chronologically.
 
     Returns:
-        List of event dicts ordered by timestamp.
+        List of event dicts ordered by timestamp (DESC when newest_first).
     """
     with get_session() as session:
         stmt = select(Event)
@@ -239,7 +244,8 @@ def get_events(
         if status is not None:
             stmt = stmt.where(Event.status == status)
 
-        stmt = stmt.order_by(col(Event.timestamp)).limit(limit)
+        order = col(Event.timestamp).desc() if newest_first else col(Event.timestamp)
+        stmt = stmt.order_by(order).limit(limit)
         results = session.exec(stmt).all()
         return [
             {

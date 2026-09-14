@@ -4,7 +4,8 @@
  * Loads an existing agent config by name or starts with empty state.
  * Saves via Config CRUD API (Plan 2).
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -59,13 +60,16 @@ export function AgentEditor({ name }: AgentEditorProps) {
   const updateMutation = useUpdateConfig('agent', name ?? '');
 
   const [form, setForm] = useState<AgentForm>(EMPTY_FORM);
+  // Snapshot of the loaded config, so leaving with unsaved edits can warn.
+  const loadedRef = useRef<string>(JSON.stringify(EMPTY_FORM));
+  useUnsavedChangesGuard(JSON.stringify(form) !== loadedRef.current);
 
   // Load existing config
   useEffect(() => {
     if (data?.config_data) {
       const d = data.config_data as Record<string, unknown>;
       const agent = (d.agent ?? d) as Record<string, unknown>;
-      setForm({
+      const loaded: AgentForm = {
         name: data.name ?? '',
         description: data.description ?? '',
         type: String(agent.type ?? 'conversational'),
@@ -84,7 +88,9 @@ export function AgentEditor({ name }: AgentEditorProps) {
           ? String(agent.observability_profile)
           : null,
         memory_profile: agent.memory_profile ? String(agent.memory_profile) : null,
-      });
+      };
+      setForm(loaded);
+      loadedRef.current = JSON.stringify(loaded);
     }
   }, [data]);
 

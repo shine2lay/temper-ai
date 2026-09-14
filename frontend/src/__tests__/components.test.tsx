@@ -57,8 +57,9 @@ describe('LLMCallInspector', () => {
   it('renders LLM call details from store', () => {
     render(<LLMCallInspector llmCallId="llm-001" />);
 
-    expect(screen.getByText('ollama/qwen3')).toBeInTheDocument();
-    expect(screen.getByText('completed')).toBeInTheDocument();
+    // provider/model appears both in the header badge and the detail rows
+    expect(screen.getAllByText('ollama/qwen3').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('completed').length).toBeGreaterThan(0);
     expect(screen.getByText('5000ms')).toBeInTheDocument();
   });
 
@@ -100,8 +101,9 @@ describe('ToolCallInspector', () => {
   it('renders tool call details from store', () => {
     render(<ToolCallInspector toolCallId="tool-001" />);
 
-    expect(screen.getByText('Bash')).toBeInTheDocument();
-    expect(screen.getByText('completed')).toBeInTheDocument();
+    // tool name appears in both the header and the detail rows
+    expect(screen.getAllByText('Bash').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('completed').length).toBeGreaterThan(0);
   });
 
   it('shows "not found" for missing tool call', () => {
@@ -130,7 +132,9 @@ describe('StreamingPanel', () => {
   });
 
   it('shows "waiting for stream" when no streaming content', () => {
-    render(<StreamingPanel agentId="agent-002" />);
+    // A snapshot seeds a stream for *running* agents so their transcript
+    // stays visible, so use an agent that has none.
+    render(<StreamingPanel agentId="agent-without-stream" />);
     expect(screen.getByText(/waiting|no stream/i)).toBeInTheDocument();
   });
 
@@ -187,7 +191,7 @@ describe('Store updates trigger component re-renders', () => {
 
     // Render LLM inspector for existing call
     const { rerender } = render(<LLMCallInspector llmCallId="llm-001" />);
-    expect(screen.getByText('ollama/qwen3')).toBeInTheDocument();
+    expect(screen.getAllByText('ollama/qwen3').length).toBeGreaterThan(0);
     expect(screen.getByText('350')).toBeInTheDocument(); // total_tokens
 
     // Simulate agent_end event that doesn't change the LLM call
@@ -197,7 +201,7 @@ describe('Store updates trigger component re-renders', () => {
 
     // LLM call should still be visible
     rerender(<LLMCallInspector llmCallId="llm-001" />);
-    expect(screen.getByText('ollama/qwen3')).toBeInTheDocument();
+    expect(screen.getAllByText('ollama/qwen3').length).toBeGreaterThan(0);
   });
 
   it('workflow status changes propagate to components', () => {
@@ -224,8 +228,8 @@ describe('Store updates trigger component re-renders', () => {
       useExecutionStore.getState().applySnapshot(MOCK_WORKFLOW);
     });
 
-    // Initially no streaming content
-    expect(useExecutionStore.getState().streamingContent.size).toBe(0);
+    // The snapshot seeds a placeholder stream for each running agent.
+    const seeded = useExecutionStore.getState().streamingContent.size;
 
     // Apply stream batch
     act(() => {
@@ -234,9 +238,11 @@ describe('Store updates trigger component re-renders', () => {
       );
     });
 
-    // Now streaming content exists
+    // Now streaming content exists for that agent, without adding entries
+    // for anyone else.
     const entry = useExecutionStore.getState().streamingContent.get('agent-002');
     expect(entry).toBeDefined();
     expect(entry!.content).toBe('Hello');
+    expect(useExecutionStore.getState().streamingContent.size).toBe(Math.max(seeded, 1));
   });
 });

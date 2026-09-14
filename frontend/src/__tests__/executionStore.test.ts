@@ -120,8 +120,10 @@ describe('executionStore', () => {
       expect(state.agents.size).toBe(2);
     });
 
-    it('handles empty stages array', () => {
-      const emptyWorkflow = { ...MOCK_WORKFLOW, stages: [] };
+    it('handles an empty node list', () => {
+      // The backend field is `nodes`; `stages` is the legacy alias the store
+      // no longer reads, so both are cleared here.
+      const emptyWorkflow = { ...MOCK_WORKFLOW, nodes: [], stages: [] };
       useExecutionStore.getState().applySnapshot(emptyWorkflow);
 
       const state = useExecutionStore.getState();
@@ -359,21 +361,26 @@ describe('executionStore', () => {
     });
 
     it('each event is appended to eventLog', () => {
+      // applySnapshot seeds the log with the run's history, so live events
+      // are appended after that baseline rather than starting from zero.
+      const baseline = useExecutionStore.getState().eventLog.length;
       const { applyEvent } = useExecutionStore.getState();
       applyEvent(makeStageStartEvent());
       applyEvent(makeAgentStartEvent());
       applyEvent(makeAgentEndEvent());
 
       const { eventLog } = useExecutionStore.getState();
-      expect(eventLog.length).toBe(3);
-      expect(eventLog[0].event_type).toBe('stage_start');
-      expect(eventLog[1].event_type).toBe('agent_start');
-      expect(eventLog[2].event_type).toBe('agent_end');
+      expect(eventLog.length).toBe(baseline + 3);
+      expect(eventLog.slice(-3).map((e) => e.event_type)).toEqual([
+        'stage_start',
+        'agent_start',
+        'agent_end',
+      ]);
     });
 
     it('event log entries have labels from event data', () => {
       useExecutionStore.getState().applyEvent(makeStageStartEvent());
-      const entry = useExecutionStore.getState().eventLog[0];
+      const entry = useExecutionStore.getState().eventLog.at(-1)!;
       expect(entry.label).toBe('review');
     });
   });
@@ -389,6 +396,8 @@ describe('executionStore', () => {
       // Initial snapshot (workflow just started, 1 stage with 2 agents)
       applySnapshot(MOCK_WORKFLOW);
       expect(useExecutionStore.getState().workflow!.status).toBe('running');
+      // The snapshot seeds the log with prior history; count live events on top.
+      const baseline = useExecutionStore.getState().eventLog.length;
 
       // Agent 2 finishes
       applyEvent(makeAgentEndEvent());
@@ -410,7 +419,7 @@ describe('executionStore', () => {
       applyEvent(makeWorkflowEndEvent());
       const finalState = useExecutionStore.getState();
       expect(finalState.workflow!.status).toBe('completed');
-      expect(finalState.eventLog.length).toBe(5);
+      expect(finalState.eventLog.length).toBe(baseline + 5);
     });
   });
 

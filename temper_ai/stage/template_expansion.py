@@ -60,6 +60,43 @@ _JINJA_ENV = jinja2.Environment(
 )
 
 
+class _PreserveUndefined(jinja2.Undefined):
+    """Renders an unknown name back as ``{{ name }}`` instead of failing.
+
+    Template-node expansion happens at *load* time, when only the loop
+    variable and the workflow inputs exist. A cloned body legitimately also
+    contains *runtime* variables meant for the agent's own renderer
+    (``task_template: "Lane {{ i }} about {{ item }}"``). With
+    StrictUndefined those killed the whole run with `'item' is undefined`,
+    forcing authors to wrap them in ``{% raw %}``. Now only the load-time
+    names are substituted and everything else is handed on untouched.
+
+    Filters that inspect undefined values (``| default(...)``) still resolve
+    at load time; wrap those in ``{% raw %}`` when that is not wanted.
+    """
+
+    __slots__ = ()
+
+    def __getattr__(self, name: str) -> _PreserveUndefined:
+        if name.startswith("__"):
+            raise AttributeError(name)
+        return _PreserveUndefined(name=f"{self._undefined_name}.{name}")
+
+    def __getitem__(self, key: Any) -> Any:  # noqa: D105 - matches jinja2's loose signature
+        return _PreserveUndefined(name=f"{self._undefined_name}[{key!r}]")
+
+    def __str__(self) -> str:
+        return "{{ " + str(self._undefined_name) + " }}"
+
+
+# Same environment, but unknown names survive expansion (see above).
+_JINJA_ENV_PRESERVING = jinja2.Environment(
+    autoescape=False,
+    undefined=_PreserveUndefined,
+    keep_trailing_newline=True,
+)
+
+
 def _resolve_for_each(spec: Any, inputs: dict[str, Any]) -> int:
     """Resolve a template's `for_each` to a concrete non-negative int count.
 
@@ -113,7 +150,7 @@ def _resolve_for_each(spec: Any, inputs: dict[str, Any]) -> int:
     )
 
 
-def _render_strings(value: Any, ctx: dict[str, Any]) -> Any:
+def _render_strings(value: Any, ctx: dict[str, Any], preserve_unknown: bool = False) -> Any:
     """Walk a YAML-derived structure, rendering every string leaf through Jinja.
 
     Non-string leaves (int, float, bool, None) pass through untouched.
@@ -129,8 +166,9 @@ def _render_strings(value: Any, ctx: dict[str, Any]) -> Any:
         # Fast path: no Jinja markers means no render needed.
         if "{{" not in value and "{%" not in value:
             return value
+        env = _JINJA_ENV_PRESERVING if preserve_unknown else _JINJA_ENV
         try:
-            template = _JINJA_ENV.from_string(value)
+            template = env.from_string(value)
             rendered = template.render(**ctx)
         except jinja2.TemplateError as exc:
             raise TemplateExpansionError(
@@ -148,9 +186,9 @@ def _render_strings(value: Any, ctx: dict[str, Any]) -> Any:
                 pass
         return rendered
     if isinstance(value, dict):
-        return {k: _render_strings(v, ctx) for k, v in value.items()}
+        return {k: _render_strings(v, ctx, preserve_unknown) for k, v in value.items()}
     if isinstance(value, list):
-        return [_render_strings(v, ctx) for v in value]
+        return [_render_strings(v, ctx, preserve_unknown) for v in value]
     return value
 
 
@@ -186,7 +224,7 @@ def _expand_one_template(
             # Deep-copy first so Jinja never mutates the source template, then
             # render every string leaf under this loop's context.
             cloned = copy.deepcopy(item)
-            rendered = _render_strings(cloned, ctx)
+            rendered = _render_strings(cloned, ctx, preserve_unknown=True)
             expanded.append(rendered)
     return expanded
 

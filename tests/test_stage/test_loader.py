@@ -103,6 +103,47 @@ class TestGraphLoaderStageNodes:
         assert len(nodes[0].child_nodes) == 2
         assert all(isinstance(n, AgentNode) for n in nodes[0].child_nodes)
 
+    def test_duplicate_agent_in_stage_is_rejected(self):
+        """Two entries resolving to the same child name used to surface at run
+        time as 'Cyclic dependency detected involving nodes: []'."""
+        store = _mock_config_store({
+            "workflow:test": {
+                "name": "test",
+                "nodes": [{
+                    "name": "review",
+                    "type": "stage",
+                    "strategy": "parallel",
+                    "agents": ["agents/coder_a", "agents/coder_a"],
+                }],
+            },
+            "agent:coder_a": {"name": "coder_a", "type": "llm"},
+        })
+        loader = GraphLoader(store)
+
+        with pytest.raises(LoaderError, match="more than once"):
+            loader.load_workflow("test")
+
+    def test_same_agent_twice_with_distinct_names_is_allowed(self):
+        store = _mock_config_store({
+            "workflow:test": {
+                "name": "test",
+                "nodes": [{
+                    "name": "review",
+                    "type": "stage",
+                    "strategy": "parallel",
+                    "agents": [
+                        {"agent": "agents/coder_a", "name": "first"},
+                        {"agent": "agents/coder_a", "name": "second"},
+                    ],
+                }],
+            },
+            "agent:coder_a": {"name": "coder_a", "type": "llm"},
+        })
+        loader = GraphLoader(store)
+        nodes, _ = loader.load_workflow("test")
+
+        assert [n.name for n in nodes[0].child_nodes] == ["first", "second"]
+
     def test_stage_with_explicit_nodes(self):
         store = _mock_config_store({
             "workflow:test": {

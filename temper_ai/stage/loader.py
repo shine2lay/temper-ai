@@ -196,6 +196,22 @@ class GraphLoader:
                 )
             agent_configs.append(agent_config)
 
+        # Child node names come from the agent name, so listing the same
+        # agent twice in one stage produces two identically-named nodes. That
+        # used to surface at run time as the baffling "Cyclic dependency
+        # detected involving nodes: []" (the two collapse into one key in the
+        # topological sort). Fail at load time with the fix in the message.
+        seen: set[str] = set()
+        for cfg in agent_configs:
+            name = cfg.get("name", "unnamed")
+            if name in seen:
+                raise LoaderError(
+                    f"Stage '{nc.name}' uses the agent name '{name}' more than once. "
+                    f"Give each entry a distinct `name:`, e.g. "
+                    f"`- agent: {name}` + `  name: {name}_2`."
+                )
+            seen.add(name)
+
         # Generate topology from strategy
         child_nodes: list[Node] = list(build_topology(nc.strategy, agent_configs, nc.strategy_config))
         return StageNode(nc, child_nodes)

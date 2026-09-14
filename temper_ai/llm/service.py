@@ -176,6 +176,16 @@ class LLMService:
             kwargs["model"] = self._ctx.model
         if self._ctx.session_id:
             kwargs["session_id"] = self._ctx.session_id
+        # Forward (execution_id, agent_name) for provider-side token-pool
+        # routing. The claude_code provider builds a sticky_key from these
+        # when session_id isn't set (most non-sprint workflows) so each
+        # agent within a workflow run pins to a deterministic token —
+        # spreads load across the pool while keeping prompt-cache hits
+        # within a single agent's calls in the same run.
+        if self._ctx.execution_id:
+            kwargs["execution_id"] = self._ctx.execution_id
+        if self._ctx.agent_name:
+            kwargs["agent_name"] = self._ctx.agent_name
         # Forward any provider-specific config from the agent YAML. Opaque to
         # the service — each provider reads whichever keys it understands and
         # ignores the rest. Named kwargs above win on collision.

@@ -36,6 +36,8 @@ interface AgentCardContentProps {
   borderStyle?: string;
   /** Prefix glyph to render before the agent name (e.g. '⚡' for dispatched). */
   namePrefix?: string;
+  /** Name of the workflow node this agent runs in (may differ from the agent). */
+  nodeName?: string;
 }
 
 /**
@@ -50,6 +52,7 @@ export const AgentCardContent = memo(function AgentCardContent({
   nested = false,
   borderStyle,
   namePrefix,
+  nodeName,
 }: AgentCardContentProps) {
   const select = useExecutionStore((s) => s.select);
   const streaming = useExecutionStore((s) => s.streamingContent.get(agent.id));
@@ -72,8 +75,14 @@ export const AgentCardContent = memo(function AgentCardContent({
   const hasOutputData = derivedOutputData != null;
   const output = textOutput || (hasOutputData ? JSON.stringify(derivedOutputData, null, 2) : '');
   const hasOutput = output.length > 0;
+  // Title with the *node* name when it differs from the agent's. The node
+  // name is what the YAML author wrote and what input_map/depends_on refer
+  // to, so template lanes read "lane_0"/"lane_1" rather than the same agent
+  // name twice; the agent stays visible as a secondary label.
   const rawAgentName = agent.agent_name ?? agent.name ?? 'agent';
-  const agentName = namePrefix ? `${namePrefix} ${rawAgentName}` : rawAgentName;
+  const displayName = nodeName && nodeName !== rawAgentName ? nodeName : rawAgentName;
+  const secondaryName = displayName === rawAgentName ? null : rawAgentName;
+  const agentName = namePrefix ? `${namePrefix} ${displayName}` : displayName;
 
   const totalTokens = agent.total_tokens ?? 0;
   const cost = agent.estimated_cost_usd ?? 0;
@@ -124,6 +133,11 @@ export const AgentCardContent = memo(function AgentCardContent({
         <span className={cn('text-[13px] font-semibold truncate', isFailed ? 'text-red-700 dark:text-red-400' : 'text-temper-text')}>
           {agentName}
         </span>
+        {secondaryName && (
+          <span className="text-[10px] text-temper-text-dim truncate shrink-0" title={`agent: ${secondaryName}`}>
+            {secondaryName}
+          </span>
+        )}
         {isFailed && (
           <span className="text-[9px] px-1 py-px rounded bg-red-500/15 text-red-700 dark:text-red-400 font-medium shrink-0">FAILED</span>
         )}

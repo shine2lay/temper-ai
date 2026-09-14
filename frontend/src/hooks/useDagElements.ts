@@ -101,7 +101,7 @@ interface DataCtx {
 // Hook
 // ---------------------------------------------------------------------------
 
-export function useDagElements(): { nodes: Node[]; edges: Edge[] } {
+export function useDagElements(hideSkipped = false): { nodes: Node[]; edges: Edge[] } {
   const workflow = useExecutionStore((s) => s.workflow);
   const stages = useExecutionStore((s) => s.stages);
   const agents = useExecutionStore((s) => s.agents);
@@ -156,7 +156,7 @@ export function useDagElements(): { nodes: Node[]; edges: Edge[] } {
       return;
     }
     let cancelled = false;
-    layoutWithElk(dataCtx.topLevelLatest)
+    layoutWithElk(dataCtx.topLevelLatest, { hideSkipped })
       .then((result) => {
         if (!cancelled) setLayout(result);
       })

@@ -107,6 +107,7 @@ export const AgentNodeComponent = memo(function AgentNodeComponent({ data }: Nod
         borderColor={dispatchedBy ? '#f59e0b' : stageColor}
         borderStyle={isDelegate ? 'dashed' : (dispatchedBy ? 'solid' : undefined)}
         namePrefix={dispatchedBy ? '⚡' : undefined}
+        nodeName={stage?.name}
       />
 
       {/* Iteration picker */}

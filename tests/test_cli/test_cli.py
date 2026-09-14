@@ -25,8 +25,25 @@ class TestParseInputs:
         assert _parse_inputs(["topic=cats"]) == {"topic": "cats"}
 
     def test_multiple_key_values(self):
+        # Numbers come back as numbers (workflow inputs are typed; a
+        # `type: template` node's for_each needs a real int), plain words
+        # stay strings.
         result = _parse_inputs(["a=1", "b=2", "c=three"])
-        assert result == {"a": "1", "b": "2", "c": "three"}
+        assert result == {"a": 1, "b": 2, "c": "three"}
+
+    def test_json_values_are_parsed(self):
+        result = _parse_inputs([
+            'cities=[{"name": "Lisbon"}]',
+            "n=2",
+            "flag=true",
+            "prose=a plain sentence",
+        ])
+        assert result == {
+            "cities": [{"name": "Lisbon"}],
+            "n": 2,
+            "flag": True,
+            "prose": "a plain sentence",
+        }
 
     def test_value_with_equals_sign(self):
         # Only the first '=' is the separator

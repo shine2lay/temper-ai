@@ -49,6 +49,11 @@ def main() -> None:
     # -- temper validate --
     validate_parser = subparsers.add_parser("validate", help="Validate a workflow config")
     validate_parser.add_argument("workflow", help="Workflow config name")
+    validate_parser.add_argument(
+        "--input", "-i", action="append", default=[],
+        help="Input as key=value (repeatable). Required to validate workflows "
+             "with `type: template` nodes, whose size depends on an input.",
+    )
     validate_parser.add_argument("--config-dir", default="configs", help="Config directory")
     validate_parser.add_argument("--debug", action="store_true", help="Enable debug logging")
 
@@ -210,14 +215,30 @@ def _cmd_run(args) -> None:
 
 
 def _parse_inputs(input_args: list) -> dict:
-    """Parse key=value input arguments into a dict."""
+    """Parse key=value input arguments into a dict.
+
+    Values that parse as JSON become real lists/dicts/numbers/booleans, so
+    workflows taking structured input work from the CLI too:
+
+        --input 'cities=[{"name":"Lisbon"}]'   -> list of dicts
+        --input n_lanes=2                        -> int
+        --input topic=lighthouses                -> str (unchanged)
+
+    Anything that is not valid JSON stays the plain string it was, so
+    ordinary prose inputs need no quoting.
+    """
+    import json
+
     inputs = {}
     for item in input_args:
         if "=" not in item:
             print(f"Error: invalid input format '{item}' (expected key=value)", file=sys.stderr)
             sys.exit(1)
         key, value = item.split("=", 1)
-        inputs[key] = value
+        try:
+            inputs[key] = json.loads(value)
+        except ValueError:
+            inputs[key] = value
     return inputs
 
 
@@ -438,7 +459,7 @@ def _cmd_validate(args) -> None:
     loader = GraphLoader(store)
 
     try:
-        nodes, config = loader.load_workflow(args.workflow)
+        nodes, config = loader.load_workflow(args.workflow, inputs=_parse_inputs(args.input))
         print(f"✓ Workflow '{config.name}' is valid")
         print(f"  Nodes: {len(nodes)}")
         for node in nodes:

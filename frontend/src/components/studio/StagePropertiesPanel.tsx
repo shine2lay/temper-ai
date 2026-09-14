@@ -79,9 +79,11 @@ function RefAgentsSection({ stageRef }: { stageRef: string }) {
   return (
     <div className="flex flex-col gap-2">
       <div className="flex flex-col gap-1">
-        {agents.map((agent) => (
+        {/* The same agent may legitimately appear twice in one stage (with
+            distinct node names), so index the key to keep it unique. */}
+        {agents.map((agent, i) => (
           <button
-            key={agent}
+            key={`${agent}-${i}`}
             onClick={() => selectAgent(agent)}
             className="flex items-center gap-1.5 px-2 py-1 bg-temper-surface rounded text-xs text-temper-text hover:bg-temper-surface/80 transition-colors group text-left w-full"
           >
@@ -132,8 +134,8 @@ function InlineAgentsSection({
     <div className="flex flex-col gap-2">
       {/* Agent list */}
       <div className="flex flex-col gap-1">
-        {stage.agents.map((agent) => (
-          <div key={agent} className="flex items-center gap-1">
+        {stage.agents.map((agent, i) => (
+          <div key={`${agent}-${i}`} className="flex items-center gap-1">
             <button
               onClick={() => selectAgent(agent)}
               className="flex-1 flex items-center gap-1.5 text-xs text-temper-text px-2 py-1 bg-temper-surface rounded hover:bg-temper-surface/80 transition-colors group text-left"

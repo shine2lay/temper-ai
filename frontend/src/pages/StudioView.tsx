@@ -3,12 +3,14 @@
  * Loads a workflow config by name param if provided, then renders StudioPage.
  */
 import { useEffect } from 'react';
+import { useDocumentTitle } from '@/hooks/useDocumentTitle';
 import { useParams, Link } from 'react-router-dom';
 import { useDesignStore } from '@/store/designStore';
 import { useConfig } from '@/hooks/useConfigAPI';
 import { StudioPage } from '@/components/studio/StudioPage';
 
 export function StudioView() {
+  useDocumentTitle('Studio');
   const { name } = useParams<{ name?: string }>();
   const { data, isLoading, error } = useConfig('workflow', name ?? null);
   const loadFromConfig = useDesignStore((s) => s.loadFromConfig);

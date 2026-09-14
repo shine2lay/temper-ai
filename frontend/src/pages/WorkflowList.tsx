@@ -1,4 +1,5 @@
 import { useMemo, useState, useEffect, useRef } from 'react';
+import { useDocumentTitle } from '@/hooks/useDocumentTitle';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
 import * as Dialog from '@radix-ui/react-dialog';
@@ -547,6 +548,7 @@ function NewRunModal({
 // ---------------------------------------------------------------------------
 
 export function WorkflowList() {
+  useDocumentTitle('Workflows');
   const navigate = useNavigate();
   const [newRunOpen, setNewRunOpen] = useState(false);
 

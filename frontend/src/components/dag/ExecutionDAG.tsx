@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import {
   ReactFlow,
   Controls,
@@ -21,6 +21,8 @@ import { LoopBackEdge } from './LoopBackEdge';
 import { DispatchEdge } from './DispatchEdge';
 import { RoutedEdge } from './RoutedEdge';
 
+const STORAGE_KEY_HIDE_SKIPPED = 'temper-dag-hide-skipped';
+
 const nodeTypes = {
   stage: StageNode,
   agentNode: AgentNodeComponent,
@@ -41,9 +43,22 @@ const edgeTypes = {
  *    real sizes so nodes never overlap.
  */
 export function ExecutionDAG() {
-  const computed = useDagElements();
+  // Skipped nodes are shown by default: a branch that a condition skipped is
+  // part of what happened, and both the header's stage count and the Timeline
+  // list it. Users who prefer the compact graph can hide them; the choice
+  // sticks.
+  const [hideSkipped, setHideSkipped] = useState(
+    () => localStorage.getItem(STORAGE_KEY_HIDE_SKIPPED) === '1',
+  );
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY_HIDE_SKIPPED, hideSkipped ? '1' : '0');
+  }, [hideSkipped]);
+
+  const computed = useDagElements(hideSkipped);
   const { setNodes, setEdges, fitView } = useReactFlow();
-  const prevNodeCountRef = useRef(0);
+  const prevLayoutRef = useRef('');
+  const userMovedRef = useRef(false);
+  const [legendOpen, setLegendOpen] = useState(false);
   const stages = useExecutionStore((s) => s.stages);
   const agents = useExecutionStore((s) => s.agents);
   const select = useExecutionStore((s) => s.select);
@@ -176,14 +191,33 @@ export function ExecutionDAG() {
     // Intentionally empty — ELK is the source of truth for layout.
   }, []);
 
-  // Auto-fit when new stages appear
+  // Auto-fit whenever the layout changes, not just when the node count does.
+  // ELK resolves sizes and positions asynchronously, so fitting on count
+  // alone ran before the final geometry existed and left nodes cut off at
+  // the edges of the viewport. Once the user pans or zooms, their view is
+  // left alone.
+  const layoutSignature = useMemo(
+    () =>
+      computed.nodes
+        .map((n) => `${n.id}:${Math.round(n.position?.x ?? 0)},${Math.round(n.position?.y ?? 0)}`)
+        .join('|'),
+    [computed.nodes],
+  );
+
   useEffect(() => {
-    if (computed.nodes.length > 0 && computed.nodes.length !== prevNodeCountRef.current) {
-      prevNodeCountRef.current = computed.nodes.length;
-      const timer = setTimeout(() => fitView({ padding: DAG_FIT_PADDING, duration: 300 }), 100);
-      return () => clearTimeout(timer);
-    }
-  }, [computed.nodes.length, fitView]);
+    if (computed.nodes.length === 0) return;
+    if (userMovedRef.current) return;
+    if (layoutSignature === prevLayoutRef.current) return;
+    prevLayoutRef.current = layoutSignature;
+    const timer = setTimeout(() => fitView({ padding: DAG_FIT_PADDING, duration: 300 }), 120);
+    return () => clearTimeout(timer);
+  }, [layoutSignature, computed.nodes.length, fitView]);
+
+  // React Flow passes the originating event only for user gestures;
+  // programmatic fitView calls pass none.
+  const onMoveStart = useCallback((event: unknown) => {
+    if (event) userMovedRef.current = true;
+  }, []);
 
   /**
    * Keyboard navigation for the DAG container.
@@ -236,6 +270,7 @@ export function ExecutionDAG() {
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         onInit={onInit}
+        onMoveStart={onMoveStart}
         onNodeMouseEnter={(_, node) => setHoveredNodeId(node.id)}
         onNodeMouseLeave={() => setHoveredNodeId(null)}
         fitView
@@ -247,21 +282,41 @@ export function ExecutionDAG() {
       >
         <Background variant={BackgroundVariant.Dots} gap={24} size={1} />
         <Controls position="bottom-left" />
+        {/* Collapsed by default: as a permanently expanded box in the corner
+            it sat on top of whichever node ELK placed there. */}
         <Panel position="bottom-left" className="!bottom-28 !left-2">
-          <div className="flex flex-col gap-1 px-2 py-1.5 rounded bg-temper-panel/90 border border-temper-border/50 text-[10px] text-temper-text-muted">
-            <span className="font-medium text-temper-text-dim mb-0.5">Node border = status</span>
-            {[
-              ['border-[var(--color-temper-completed)]', 'Completed'],
-              ['border-[var(--color-temper-running)]', 'Running'],
-              ['border-[var(--color-temper-failed)]', 'Failed'],
-              ['border-[var(--color-temper-pending)]', 'Pending'],
-            ].map(([border, label]) => (
-              <div key={label} className="flex items-center gap-1.5">
-                <span className={`inline-block w-3 h-2.5 rounded-sm border-2 ${border} bg-temper-surface`} />
-                <span>{label}</span>
-              </div>
-            ))}
-          </div>
+          {legendOpen ? (
+            <div className="flex flex-col gap-1 px-2 py-1.5 rounded bg-temper-panel/90 border border-temper-border/50 text-[10px] text-temper-text-muted">
+              <button
+                onClick={() => setLegendOpen(false)}
+                className="flex items-center justify-between gap-3 font-medium text-temper-text-dim mb-0.5 hover:text-temper-text"
+              >
+                <span>Node border = status</span>
+                <span aria-hidden>×</span>
+              </button>
+              {[
+                ['border-[var(--color-temper-completed)]', 'Completed'],
+                ['border-[var(--color-temper-running)]', 'Running'],
+                ['border-[var(--color-temper-failed)]', 'Failed'],
+                ['border-[var(--color-temper-waiting)]', 'Waiting for approval'],
+                ['border-[var(--color-temper-cancelled)]', 'Cancelled'],
+                ['border-[var(--color-temper-skipped)] border-dashed', 'Skipped'],
+                ['border-[var(--color-temper-pending)]', 'Pending'],
+              ].map(([border, label]) => (
+                <div key={label} className="flex items-center gap-1.5">
+                  <span className={`inline-block w-3 h-2.5 rounded-sm border-2 ${border} bg-temper-surface`} />
+                  <span>{label}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <button
+              onClick={() => setLegendOpen(true)}
+              className="px-2 py-1 rounded bg-temper-panel/90 border border-temper-border/50 text-[10px] text-temper-text-muted hover:text-temper-text"
+            >
+              Legend
+            </button>
+          )}
         </Panel>
         <MiniMap
           nodeColor="var(--temper-minimap-node, #1e2a4a)"
@@ -289,6 +344,15 @@ export function ExecutionDAG() {
               </div>
             )}
             <div className="flex items-center gap-1.5">
+              <label className="flex items-center gap-1 px-2 py-1 rounded bg-temper-surface border border-temper-border text-[10px] text-temper-text-muted cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={!hideSkipped}
+                  onChange={(e) => setHideSkipped(!e.target.checked)}
+                  className="accent-[var(--color-temper-accent)]"
+                />
+                Show skipped
+              </label>
               <input
                 type="search"
                 value={search}

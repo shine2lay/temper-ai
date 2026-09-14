@@ -90,7 +90,10 @@ export interface BuildOptions {
   /** Per-node measured DOM size for container-aware layout. Without it
    *  we use estimates. */
   measuredSize?: (id: string) => { width: number; height: number } | undefined;
-  /** Hide skipped nodes. Default true. */
+  /** Hide skipped nodes. Default true when omitted; the DAG passes it
+   *  explicitly from a user toggle that defaults to showing them, because a
+   *  branch that was skipped is part of what happened in a conditional
+   *  workflow (and the header's stage count and the Timeline both show it). */
   hideSkipped?: boolean;
 }
 
@@ -223,7 +226,13 @@ function pseudoAgentNode(
 ): NodeExecution {
   return {
     id: `${parent.id}__${agent.agent_name ?? agent.id}`,
-    name: agent.agent_name ?? agent.id,
+    // Keep the *workflow node's* name when the parent is a plain agent node:
+    // that is what the author wrote and what depends_on/input_map reference.
+    // Using the agent name made every template lane render as the same agent
+    // name ("audit_worker" three times) instead of lane_0/lane_1/lane_2.
+    name: (parent.type === 'agent' ? parent.name : undefined)
+      ?? agent.agent_name
+      ?? agent.id,
     type: isDelegate ? 'delegate' : 'agent',
     status: agent.status as NodeExecution['status'],
     start_time: agent.start_time,

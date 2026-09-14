@@ -10,10 +10,13 @@ interface TimelineAxisProps {
 const TICK_COUNT = 6;
 
 function formatAxisTime(ms: number): string {
+  // Local time, like every other timestamp in the app. The axis used to
+  // render UTC while the detail panels rendered local, so the same event
+  // appeared at two different clock times depending on where you looked.
   const d = new Date(ms);
-  const h = String(d.getUTCHours()).padStart(2, '0');
-  const m = String(d.getUTCMinutes()).padStart(2, '0');
-  const s = String(d.getUTCSeconds()).padStart(2, '0');
+  const h = String(d.getHours()).padStart(2, '0');
+  const m = String(d.getMinutes()).padStart(2, '0');
+  const s = String(d.getSeconds()).padStart(2, '0');
   return `${h}:${m}:${s}`;
 }
 

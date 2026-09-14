@@ -198,6 +198,37 @@
   --chart-5: #ef5350;
 }
 
+/* Light mode — shadcn overrides, by system preference.
+
+   The temper-* block above already has this fallback, but these shadcn
+   tokens only had the explicit [data-theme="light"] rule. On a light system
+   with no theme chosen, the page went light while every shadcn surface
+   (Sheet, Dialog, Popover, Card) stayed dark — which is why the Agent
+   Details panel rendered dark-navy with dark text on it. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+    --background: #f0f2f5;
+    --foreground: #1a1a2e;
+    --card: #ffffff;
+    --card-foreground: #1a1a2e;
+    --popover: #ffffff;
+    --popover-foreground: #1a1a2e;
+    --primary: #1976d2;
+    --primary-foreground: #ffffff;
+    --secondary: #e8ecf2;
+    --secondary-foreground: #1a1a2e;
+    --muted: #e8ecf2;
+    --muted-foreground: #5a6070;
+    --accent: #e8ecf2;
+    --accent-foreground: #1a1a2e;
+    --destructive: #d32f2f;
+    --border: #d0d7e3;
+    --input: #d0d7e3;
+    --ring: #1976d2;
+  }
+}
+
 /* Light mode — shadcn overrides */
 :root[data-theme="light"] {
   color-scheme: light;

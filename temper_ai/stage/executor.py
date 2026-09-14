@@ -20,6 +20,10 @@ from temper_ai.stage.node import Node
 
 logger = logging.getLogger(__name__)
 
+# How often a node parked at a human gate re-checks cancellation and, for
+# runs executed outside the API process, the database for approval.
+GATE_POLL_SECONDS = 2.0
+
 def execute_graph_with_state(
     nodes: list[Node],
     input_data: dict,
@@ -72,6 +76,12 @@ def execute_graph(
     start = time.monotonic()
 
     start_data: dict = {"name": graph_name, "node_count": len(nodes)}
+    if is_workflow:
+        # The request that started the run, so a resume or fork can rebuild
+        # the same inputs (before this, resume re-ran nodes with {} inputs)
+        # and the API can show what a run was asked to do.
+        start_data["input_data"] = input_data
+        start_data["workspace_path"] = context.workspace_path
     if is_workflow and resume_metadata:
         start_data.update(resume_metadata)
 
@@ -96,17 +106,24 @@ def execute_graph(
 
     try:
         _run_batches(batches, node_map, input_data, node_outputs, loop_counts, context, graph_event_id)
-        return _build_final_result(nodes, node_outputs, input_data, start, graph_event_id, context, workflow_outputs)
+        return _build_final_result(
+            nodes, node_outputs, input_data, start, graph_event_id, context, workflow_outputs,
+            is_workflow=is_workflow,
+        )
 
     except Exception as exc:
         duration = time.monotonic() - start
+        # A user cancel is its own terminal state, not a failure: the run
+        # list, the CLI exit code and downstream callers all treat it
+        # differently (nothing went wrong; someone stopped it).
+        terminal = Status.CANCELLED if isinstance(exc, CancellationError) else Status.FAILED
         context.event_recorder.update_event(
             graph_event_id,
-            status="failed",
+            status=terminal.value,
             data={"error": str(exc), "duration_seconds": duration},
         )
         return NodeResult(
-            status=Status.FAILED,
+            status=terminal,
             error=str(exc),
             agent_results=[r for nr in node_outputs.values() for r in nr.agent_results],
             node_results=node_outputs,
@@ -172,8 +189,19 @@ def _build_final_result(
     graph_event_id: str,
     context: ExecutionContext,
     workflow_outputs: dict[str, str] | None = None,
+    is_workflow: bool = False,
 ) -> NodeResult:
-    """Assemble the final NodeResult after all batches complete successfully."""
+    """Assemble the final NodeResult once every batch has run.
+
+    A *workflow* whose nodes include a failure is reported as ``failed``
+    (with the failed node names in the event), not ``completed``: before
+    this, any run in which a node blew up and its dependants were skipped
+    still showed a green tick and exited 0, which hid real breakage in
+    ~5% of production runs. Stages keep their tolerant semantics — a
+    parallel stage with one failed lane still completes so a leader can
+    synthesise the rest — so the check is applied at the workflow level
+    only, over the whole (nested) result tree.
+    """
     # Rebuild from final outputs to avoid duplicates from loop reruns
     all_agent_results = [
         r for node in nodes
@@ -205,9 +233,17 @@ def _build_final_result(
     if resolved_outputs:
         event_data["workflow_output"] = resolved_outputs
 
+    failed_nodes = _failed_node_names(node_outputs) if is_workflow else []
+    final_status = Status.FAILED if failed_nodes else Status.COMPLETED
+    error: str | None = None
+    if failed_nodes:
+        error = f"{len(failed_nodes)} node(s) failed: {', '.join(failed_nodes)}"
+        event_data["error"] = error
+        event_data["failed_nodes"] = failed_nodes
+
     context.event_recorder.update_event(
         graph_event_id,
-        status="completed",
+        status=final_status.value,
         data=event_data,
     )
 
@@ -217,7 +253,8 @@ def _build_final_result(
     )
 
     return NodeResult(
-        status=Status.COMPLETED,
+        status=final_status,
+        error=error,
         output=last_output.output if last_output else "",
         structured_output=final_structured,
         agent_results=all_agent_results,
@@ -1172,22 +1209,29 @@ def _drain_batch(
 def _wait_for_gate(node: Node, context: ExecutionContext, parent_event_id: str) -> None:
     """Pause execution and wait for human approval at a gate node.
 
-    Emits a 'gate.waiting' event, then blocks until the gate is approved
-    via the API (which sets the threading.Event) or the workflow is cancelled.
+    Records a ``stage.started`` event with status ``waiting`` (the UI and
+    ``GET /api/runs/{id}/gates`` read it), then blocks until the gate is
+    approved or the workflow is cancelled. Approval arrives one of two ways:
+
+    - in-process runs: ``POST /approve`` sets the ``threading.Event`` in the
+      shared ``gate_registry``;
+    - subprocess/external runs (worker in another process or container):
+      the API cannot reach that registry, so it flips the waiting event's
+      status to ``approved`` in the database and the worker polls for it.
     """
     import threading
 
     gate_registry = context.gate_registry
     if gate_registry is None:
-        logger.warning("Node '%s' has gate=true but no gate_registry on context — skipping gate", node.name)
-        return
+        gate_registry = {}
+        logger.info("Node '%s' has gate=true and no in-process gate registry; approval via the database only", node.name)
 
     gate_key = f"{context.run_id}:{node.name}"
     gate_event = threading.Event()
     gate_registry[gate_key] = gate_event
 
     # Record waiting event so the UI can show the gate
-    context.event_recorder.record(
+    waiting_event_id = context.event_recorder.record(
         EventType.STAGE_STARTED,
         data={**_build_node_event_data(node), "gate": True, "gate_status": "waiting"},
         parent_id=parent_event_id,
@@ -1205,13 +1249,22 @@ def _wait_for_gate(node: Node, context: ExecutionContext, parent_event_id: str) 
 
     logger.info("Gate: waiting for approval on node '%s' (execution: %s)", node.name, context.run_id)
 
-    # Block until approved or cancelled
+    # Block until approved (in memory or in the database) or cancelled
     while not gate_event.is_set():
         _check_cancelled(context)
-        gate_event.wait(timeout=5.0)  # Check cancellation every 5s
+        if gate_event.wait(timeout=GATE_POLL_SECONDS):
+            break
+        try:
+            if context.event_recorder.event_status(waiting_event_id) == "approved":
+                break
+        except Exception as exc:  # DB hiccup: keep waiting, the in-memory path still works
+            logger.warning("Gate: could not read approval state for '%s': %s", node.name, exc)
 
-    # Clean up
+    # Clean up; mark the waiting event approved so it is not listed twice
     gate_registry.pop(gate_key, None)
+    context.event_recorder.update_event(
+        waiting_event_id, status="approved", data={"gate_status": "approved"},
+    )
     logger.info("Gate: node '%s' approved, continuing", node.name)
 
 
@@ -1219,6 +1272,23 @@ def _check_cancelled(context: ExecutionContext) -> None:
     """Raise CancellationError if the workflow has been cancelled."""
     if context.cancel_event and context.cancel_event.is_set():
         raise CancellationError("Workflow cancelled by user")
+
+
+def _failed_node_names(node_outputs: dict[str, NodeResult], prefix: str = "") -> list[str]:
+    """Names of every node that ended FAILED, recursing into stage children.
+
+    A node that failed and was then re-run by a loop shows up with its
+    latest result only (node_outputs holds the last attempt), so a retried
+    and passed node does not count.
+    """
+    failed: list[str] = []
+    for name, result in node_outputs.items():
+        path = f"{prefix}{name}"
+        if result.status == Status.FAILED:
+            failed.append(path)
+        if result.node_results:
+            failed.extend(_failed_node_names(result.node_results, prefix=f"{path}/"))
+    return failed
 
 
 def _get_final_output(

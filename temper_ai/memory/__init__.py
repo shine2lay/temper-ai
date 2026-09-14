@@ -22,10 +22,12 @@ Usage:
 from temper_ai.memory.base import MemoryEntry, MemoryStoreBase
 from temper_ai.memory.in_memory_store import InMemoryStore
 from temper_ai.memory.service import MemoryService
+from temper_ai.memory.sql_store import SqlMemoryStore
 
 __all__ = [
     "MemoryEntry",
     "MemoryStoreBase",
     "MemoryService",
     "InMemoryStore",
+    "SqlMemoryStore",
 ]

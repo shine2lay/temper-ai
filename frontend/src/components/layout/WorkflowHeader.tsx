@@ -232,7 +232,10 @@ export function WorkflowHeader() {
           <ArrowLeft className="w-5 h-5" />
         </button>
 
-        <h1 className="text-lg font-semibold text-temper-text truncate">
+        {/* min-width so the name is never the thing that gets squeezed out:
+            with only `truncate` among unshrinkable siblings it collapsed to
+            zero on a narrow window, leaving no clue which run was open. */}
+        <h1 className="text-lg font-semibold text-temper-text truncate min-w-[6rem] flex-1">
           {workflow?.workflow_name ?? 'Loading...'}
         </h1>
 

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
+import { AlertCircle } from 'lucide-react';
 import { ReactFlowProvider } from '@xyflow/react';
 import { toast } from 'sonner';
 import { useWorkflowWebSocket } from '@/hooks/useWorkflowWebSocket';
@@ -62,7 +63,7 @@ export function ExecutionView() {
   );
 
   useWorkflowWebSocket(workflowId);
-  useInitialData(workflowId);
+  const { error: loadError } = useInitialData(workflowId);
   useKeyboardShortcuts({ onSwitchTab: setActiveTab, onShowHelp: () => setShowShortcutHelp(prev => !prev) });
 
   useEffect(() => {
@@ -85,6 +86,28 @@ export function ExecutionView() {
       document.title = 'Temper AI';
     };
   }, [workflow?.workflow_name, workflow]);
+
+  // A run that cannot be loaded (bad link, deleted history, API down) used to
+  // sit on the loading skeleton forever, with the reason only in the console.
+  if (!workflow && loadError) {
+    return (
+      <div className="flex flex-col h-full bg-temper-bg items-center justify-center gap-3 p-6 text-center">
+        <AlertCircle className="size-8 text-temper-failed" aria-hidden />
+        <h1 className="text-lg font-semibold text-temper-text">Run not found</h1>
+        <p className="text-sm text-temper-text-muted max-w-md">
+          No run with id <code className="font-mono text-xs">{workflowId}</code>.
+          It may have been removed, or the link may be wrong.
+        </p>
+        <p className="text-xs text-temper-text-dim">{loadError.message}</p>
+        <Link
+          to="/"
+          className="mt-1 px-3 py-1.5 rounded-md text-xs font-medium bg-temper-surface border border-temper-border text-temper-text hover:bg-temper-surface/80"
+        >
+          Back to workflows
+        </Link>
+      </div>
+    );
+  }
 
   if (!workflow) {
     return <LoadingSkeleton />;

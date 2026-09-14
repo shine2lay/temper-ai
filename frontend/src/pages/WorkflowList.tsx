@@ -203,7 +203,7 @@ function WorkflowRow({
       />
 
       {/* Name + run number */}
-      <div className="flex-1 min-w-0">
+      <div className="flex-1 min-w-[8rem]">
         <span className="text-sm font-medium text-temper-text truncate block">
           {wf.workflow_name}
           {runNumber != null && (
@@ -258,17 +258,17 @@ function WorkflowRow({
       </div>
 
       {/* Relative time */}
-      <span className="text-xs text-temper-text-muted w-36 shrink-0">
+      <span className="text-xs text-temper-text-muted w-36 shrink-0 hidden sm:block">
         {wf.start_time ? formatRelativeTime(wf.start_time) : '-'}
       </span>
 
       {/* Duration */}
-      <span className="text-xs font-mono text-temper-text-muted w-16 text-right shrink-0">
+      <span className="text-xs font-mono text-temper-text-muted w-16 text-right shrink-0 hidden md:block">
         {formatDuration(wf.duration_seconds)}
       </span>
 
       {/* Tokens + cost */}
-      <span className="text-xs font-mono text-temper-text-muted w-32 text-right shrink-0">
+      <span className="text-xs font-mono text-temper-text-muted w-32 text-right shrink-0 hidden lg:block">
         {hasTokenInfo ? (
           <>
             <span className="text-temper-text-dim">{formatTokens(wf.total_tokens)}</span>
@@ -282,7 +282,7 @@ function WorkflowRow({
       </span>
 
       {/* LLM / tool calls */}
-      <span className="text-xs font-mono text-temper-text-muted w-24 text-right shrink-0">
+      <span className="text-xs font-mono text-temper-text-muted w-24 text-right shrink-0 hidden xl:block">
         {wf.total_llm_calls != null || wf.total_tool_calls != null ? (
           <>
             <span title="LLM calls">{wf.total_llm_calls ?? 0}L</span>
@@ -789,9 +789,9 @@ export function WorkflowList() {
 
               {selected.size >= 2 && (
                 <button
-                  onClick={() => {
-                    toast.info('Run comparison coming in v1.1');
-                  }}
+                  onClick={() =>
+                    navigate(`/compare?ids=${[...selected].join(',')}`)
+                  }
                   className="px-3 py-1 rounded-md text-xs font-medium bg-temper-accent text-white hover:opacity-90 transition-colors"
                 >
                   Compare ({selected.size})
@@ -868,14 +868,19 @@ export function WorkflowList() {
       {sorted.length > 0 && (
         <div className="px-6 pt-3 pb-1 max-w-[1600px] mx-auto w-full shrink-0">
           <div className="flex items-center gap-4 px-4 text-[10px] font-medium text-temper-text-dim uppercase tracking-wide">
+            {/* Secondary columns drop away as the window narrows so the
+                workflow name always has room. They used to be fixed-width and
+                unshrinkable, which squeezed the name to zero below ~1100px:
+                rows showed a status badge and an id fragment, and the column
+                headers overlapped each other. */}
             <span className="w-4 shrink-0" aria-hidden="true" />
-            <span className="flex-1 min-w-0">Workflow</span>
+            <span className="flex-1 min-w-[8rem]">Workflow</span>
             {/* status + cancel zone */}
             <span className="shrink-0 w-32">Status</span>
-            <span className="w-36 shrink-0">Time</span>
-            <span className="w-16 text-right shrink-0">Duration</span>
-            <span className="w-32 text-right shrink-0">Tokens / Cost</span>
-            <span className="w-24 text-right shrink-0">LLM/Tools</span>
+            <span className="w-36 shrink-0 hidden sm:block">Time</span>
+            <span className="w-16 text-right shrink-0 hidden md:block">Duration</span>
+            <span className="w-32 text-right shrink-0 hidden lg:block">Tokens / Cost</span>
+            <span className="w-24 text-right shrink-0 hidden xl:block">LLM/Tools</span>
             <span className="shrink-0 w-10" aria-hidden="true" />
           </div>
         </div>

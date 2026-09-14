@@ -23,8 +23,8 @@ workflow:
     the planner.
 
   defaults:
-    provider: claude
-    model: opus
+    provider: openai         # change to: anthropic, ollama, vllm, gemini
+    model: gpt-4o-mini      # change to match your provider's model
     dispatch:
       max_children_per_dispatch: 20
       max_dynamic_nodes: 100

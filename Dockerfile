@@ -129,8 +129,10 @@ RUN install -m 0755 -d /etc/apt/keyrings && \
 # stay readable on the host without chowning.
 RUN groupadd -g 1000 temperai-worker && \
     useradd -u 1000 -g 1000 -m -s /bin/bash temperai-worker && \
-    mkdir -p /app/.local/bin && \
-    chown -R temperai-worker:temperai-worker /app
+    mkdir -p /app/.local/bin /opt/claude/versions && \
+    chown -R temperai-worker:temperai-worker /app /opt/claude
+
+COPY --chown=temperai-worker:temperai-worker entrypoint.sh /app/entrypoint.sh
 
 # /var/run/docker.sock is mounted from host at runtime; user's group
 # membership for it is added via docker-compose `group_add` at deploy
@@ -140,6 +142,12 @@ USER temperai-worker
 
 ENV PATH="/home/temperai-worker/.local/bin:/app/.local/bin:${PATH}" \
     PYTHONDONTWRITEBYTECODE=1
+
+# Same entrypoint as the server stage: symlink the mounted Claude Code
+# binary onto PATH. Without it the worker ran agents through an `npx`
+# fallback that is not installed here, so every CLI-provider agent failed
+# as soon as execution moved off the server (subprocess/external mode).
+ENTRYPOINT ["/app/entrypoint.sh"]
 
 # Default: run the watcher. Spawned workers are subprocesses of this
 # command (see temper_ai/cli/watch_queue.py).

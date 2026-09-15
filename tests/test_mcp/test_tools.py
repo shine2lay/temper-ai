@@ -215,3 +215,40 @@ class TestServerRegistration:
 
     def test_default_budget_is_modest(self):
         assert DEFAULT_MAX_CHARS <= 8000
+
+
+class TestAllowedHosts:
+    """The SDK rejects unknown Host headers; serving under a real hostname
+    means naming it, and forgetting to is a 421 that looks like a network
+    fault rather than a configuration one."""
+
+    def test_localhost_works_without_configuration(self, monkeypatch):
+        from temper_ai.mcp.server import _security_settings
+
+        monkeypatch.delenv("TEMPER_MCP_ALLOWED_HOSTS", raising=False)
+        settings = _security_settings()
+        assert "localhost:8420" in settings.allowed_hosts
+        assert "127.0.0.1:8420" in settings.allowed_hosts
+
+    def test_configured_hosts_are_added_with_both_schemes(self, monkeypatch):
+        from temper_ai.mcp.server import _security_settings
+
+        monkeypatch.setenv("TEMPER_MCP_ALLOWED_HOSTS", "temper.example.com, host.ts.net")
+        settings = _security_settings()
+        assert "temper.example.com" in settings.allowed_hosts
+        assert "host.ts.net" in settings.allowed_hosts  # whitespace trimmed
+        assert "https://temper.example.com" in settings.allowed_origins
+        # Local access keeps working once a gateway name is added.
+        assert "localhost" in settings.allowed_hosts
+
+    def test_empty_configuration_adds_nothing(self, monkeypatch):
+        from temper_ai.mcp.server import _security_settings
+
+        monkeypatch.setenv("TEMPER_MCP_ALLOWED_HOSTS", "  ,  ")
+        settings = _security_settings()
+        assert settings.allowed_hosts == [
+            "localhost",
+            "localhost:8420",
+            "127.0.0.1",
+            "127.0.0.1:8420",
+        ]

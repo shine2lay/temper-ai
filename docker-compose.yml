@@ -1,3 +1,8 @@
+# Published ports bind to loopback by default: the dashboard and the MCP
+# endpoint have no authentication, so nothing here should be reachable from
+# the LAN just because the host has an address on it. To expose the server,
+# put a gateway in front of it (TLS + a real hostname on a private network),
+# or set TEMPER_BIND=0.0.0.0 deliberately.
 services:
   postgres:
     image: pgvector/pgvector:pg16
@@ -7,7 +12,7 @@ services:
       POSTGRES_USER: temper_ai
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-temper_dev}
     ports:
-      - "${POSTGRES_PORT:-5433}:5432"
+      - "${TEMPER_BIND:-127.0.0.1}:${POSTGRES_PORT:-5433}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -30,7 +35,7 @@ services:
     restart: unless-stopped
     command: redis-server --appendonly no --save ""
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      - "${TEMPER_BIND:-127.0.0.1}:${REDIS_PORT:-6379}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -48,7 +53,7 @@ services:
       target: server
     restart: unless-stopped
     ports:
-      - "8420:8420"
+      - "${TEMPER_BIND:-127.0.0.1}:8420:8420"
     volumes:
       # Hot reload: mount source code over the installed package
       - ./temper_ai:/app/temper_ai
@@ -63,6 +68,10 @@ services:
       # have to change later.
       TEMPER_REDIS_URL: redis://redis:6379/0
       TEMPER_LOG_LEVEL: ${TEMPER_LOG_LEVEL:-INFO}
+      # Hostnames the MCP endpoint may be reached under. The SDK rejects
+      # any other Host header (DNS-rebinding protection), so a server
+      # behind a gateway must name itself here.
+      TEMPER_MCP_ALLOWED_HOSTS: ${TEMPER_MCP_ALLOWED_HOSTS:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-}

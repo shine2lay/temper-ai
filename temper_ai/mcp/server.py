@@ -91,13 +91,28 @@ def build_server() -> FastMCP:
     tools = TemperTools()
 
     @mcp.tool()
-    async def list_workflows() -> dict:
-        """List runnable workflows and the inputs each declares.
+    async def list_workflows(name_contains: str | None = None, limit: int = 50) -> dict:
+        """List runnable workflow names, one line each.
 
-        Call this first: it tells you the exact workflow names run_workflow
-        accepts and which inputs are required.
+        Call this first to find the exact name run_workflow accepts. An
+        installation can hold hundreds, so filter with name_contains rather
+        than raising limit, and use get_workflow for the detail of one.
         """
-        return await _off_loop(tools.list_workflows)
+        return await _off_loop(
+            tools.list_workflows, name_contains=name_contains, limit=limit
+        )
+
+    @mcp.tool()
+    async def get_workflow(name: str, max_chars: int = DEFAULT_MAX_CHARS) -> dict:
+        """One workflow's inputs, shape and models.
+
+        Read this before running something unfamiliar: most workflows
+        declare no inputs even when they need them, so inputs_referenced
+        lists the names their templates actually use. Also names the
+        provider and model each agent asks for, which is what explains a
+        "provider not configured" failure.
+        """
+        return await _off_loop(tools.get_workflow, name, max_chars=max_chars)
 
     @mcp.tool()
     async def list_runs(

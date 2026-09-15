@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import functools
 import json
+import re
 from typing import Any
 
 import anyio
@@ -132,6 +133,118 @@ def _agents_of(node: dict) -> list[dict]:
     return [a for a in ([node.get("agent")] + (node.get("agents") or [])) if a]
 
 
+def _first_line(text: Any, max_chars: int) -> str:
+    """The first meaningful line of a description, for list views."""
+    if not isinstance(text, str):
+        return ""
+    line = next((ln.strip() for ln in text.splitlines() if ln.strip()), "")
+    return line if len(line) <= max_chars else line[: max_chars - 1] + "…"
+
+
+def _declared_inputs(body: dict) -> dict:
+    """Inputs a workflow declares, in either the modern or shorthand schema."""
+    inputs = {}
+    for key, spec in (body.get("inputs") or {}).items():
+        if isinstance(spec, dict):
+            inputs[key] = {
+                "type": spec.get("type", "string"),
+                "required": bool(spec.get("required", False)),
+            }
+        else:
+            inputs[key] = {"type": str(spec), "required": False}
+    return inputs
+
+
+# `input.topic`, and `{{ topic }}` in a template.
+_INPUT_PATH = re.compile(r"\binput\.([A-Za-z_][A-Za-z0-9_]*)")
+_JINJA_VAR = re.compile(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)")
+
+# Supplied by the engine, not by the caller: the workspace, the memories
+# a memory-enabled agent recalled, the dependency outputs a stage injects
+# as `other_agents`, and the loop variables of an expanded template node.
+_ENGINE_VARS = {
+    "workspace_path",
+    "execution_id",
+    "memories",
+    "other_agents",
+    "loop",
+    "item",
+    "index",
+    "i",
+}
+
+
+def _referenced_inputs(body: dict, store: Any) -> set[str]:
+    """Input names a workflow uses without necessarily declaring them.
+
+    Most workflows declare nothing, so an agent otherwise discovers a
+    required input by getting a 400 back. Reads the names out of the
+    places they are actually used: `input.x` paths, workflow-level
+    templates, and the task templates of the agents involved. Anything a
+    node supplies through input_map is excluded — that comes from another
+    node, not from the caller.
+    """
+    rendered = json.dumps(body, default=str)
+    found = set(_INPUT_PATH.findall(rendered)) | set(_JINJA_VAR.findall(rendered))
+
+    mapped: set[str] = set()
+    agent_names: set[str] = set()
+    for node in body.get("nodes") or []:
+        mapped |= set((node.get("input_map") or {}).keys())
+        for agent in (node.get("agents") or []) + (
+            [node["agent"]] if node.get("agent") else []
+        ):
+            if isinstance(agent, str):
+                agent_names.add(agent)
+            elif isinstance(agent, dict):
+                mapped |= set((agent.get("input_map") or {}).keys())
+                if agent.get("agent"):
+                    agent_names.add(str(agent["agent"]))
+
+    for agent_name in agent_names:
+        try:
+            agent_raw = store.get(agent_name, "agent")
+        except Exception:
+            continue
+        agent_body = agent_raw.get("agent", agent_raw)
+        for field in ("task_template", "script_template"):
+            found |= set(_JINJA_VAR.findall(str(agent_body.get(field) or "")))
+
+    return {name for name in found if name not in _ENGINE_VARS and name not in mapped}
+
+
+def _failure_summary(run: dict, failed_nodes: list) -> str | None:
+    """One sentence saying why a run is not green, whatever the shape."""
+    status = run.get("status")
+    if status not in {"failed", "cancelled"}:
+        return None
+    error = run.get("error_message")
+    if failed_nodes:
+        detail = f"failed at {', '.join(str(n) for n in failed_nodes)}"
+        return f"{detail}: {_clip(error, 500)}" if error else detail
+    if error:
+        return f"failed before any node completed: {_clip(error, 500)}"
+    return f"{status}, with no node marked failed"
+
+
+def _agent_models(agent_names: list[str], store: Any) -> dict:
+    """Which provider and model each agent asks for (why a run failed)."""
+    agents = {}
+    for agent_name in agent_names:
+        try:
+            raw = store.get(agent_name, "agent")
+        except Exception:
+            agents[agent_name] = {"error": "config not found"}
+            continue
+        body = raw.get("agent", raw)
+        agents[agent_name] = {
+            "type": body.get("type", "llm"),
+            "provider": body.get("provider") or "(workflow default)",
+            "model": body.get("model") or "(workflow default)",
+        }
+    return agents
+
+
 class TemperTools:
     """Tool bodies, bound to the server's own state.
 
@@ -148,41 +261,117 @@ class TemperTools:
 
     # -- discovery ---------------------------------------------------------
 
-    def list_workflows(self) -> dict:
-        """Workflows available to run, with the inputs each one declares."""
+    def list_workflows(
+        self,
+        name_contains: str | None = None,
+        limit: int = 50,
+    ) -> dict:
+        """Workflows available to run.
+
+        Deliberately terse: an installation can hold hundreds of
+        workflows, and this is the first call an agent makes. One line of
+        description each; call get_workflow for the detail of one.
+        """
         from temper_ai.api.routes import _state
 
         store = _state().config_store
+        names = sorted(
+            entry["name"]
+            for entry in store.list(config_type="workflow")
+            if entry.get("name")
+        )
+        if name_contains:
+            needle = name_contains.lower()
+            names = [n for n in names if needle in n.lower()]
+        total = len(names)
+
         workflows = []
-        for entry in store.list(config_type="workflow"):
-            name = entry.get("name")
-            if not name:
-                continue
+        for name in names[: max(limit, 1)]:
             try:
                 raw = store.get(name, "workflow")
-            except Exception:  # pragma: no cover - a config that won't load
+            except Exception as exc:
+                # Say so rather than dropping it: a workflow silently
+                # missing from the list is worse than one marked broken.
+                workflows.append(
+                    {"name": name, "summary": f"(config could not be read: {exc})"}
+                )
                 continue
             body = raw.get("workflow", raw)
-            declared = body.get("inputs") or {}
-            inputs = {}
-            for key, spec in declared.items():
-                # Both the modern schema ({type, required}) and the old
-                # shorthand (name: "string") appear in the wild.
-                if isinstance(spec, dict):
-                    inputs[key] = {
-                        "type": spec.get("type", "string"),
-                        "required": bool(spec.get("required", False)),
-                    }
-                else:
-                    inputs[key] = {"type": str(spec), "required": False}
             workflows.append(
                 {
                     "name": name,
-                    "description": _clip(body.get("description"), 300),
-                    "inputs": inputs,
+                    "summary": _first_line(body.get("description"), 120),
+                    "inputs": sorted(_declared_inputs(body)),
                 }
             )
-        return {"workflows": sorted(workflows, key=lambda w: w["name"] or "")}
+        result = {"workflows": workflows, "returned": len(workflows), "total": total}
+        if total > len(workflows):
+            result["hint"] = (
+                f"showing {len(workflows)} of {total} — filter with "
+                f"name_contains, or raise limit"
+            )
+        return result
+
+    def get_workflow(self, name: str, max_chars: int = DEFAULT_MAX_CHARS) -> dict:
+        """One workflow's definition: its inputs, shape, and which models it uses.
+
+        This is what makes a failure self-serviceable: when a run dies with
+        "provider 'openai' not configured", this says which agent asked for
+        it.
+        """
+        from temper_ai.api.routes import _state
+
+        store = _state().config_store
+        try:
+            raw = store.get(name, "workflow")
+        except Exception:
+            available = sorted(
+                e["name"]
+                for e in store.list(config_type="workflow")
+                if e.get("name") and name.lower() in str(e["name"]).lower()
+            )
+            return {
+                "error": f"no workflow named {name!r}",
+                "similar": available[:10] or "call list_workflows to see what exists",
+            }
+
+        body = raw.get("workflow", raw)
+        declared = _declared_inputs(body)
+        nodes = []
+        agent_names: set[str] = set()
+        for node in body.get("nodes") or []:
+            entry = {
+                "name": node.get("name"),
+                "type": node.get("type", "agent"),
+            }
+            for key in ("agent", "depends_on", "strategy", "loop_to", "condition"):
+                if node.get(key):
+                    entry[key] = node[key]
+            agents = node.get("agents") or ([node["agent"]] if node.get("agent") else [])
+            for agent in agents:
+                agent_names.add(agent if isinstance(agent, str) else str(agent.get("agent", "")))
+            if node.get("agents"):
+                entry["agents"] = [
+                    a if isinstance(a, str) else a.get("agent") for a in node["agents"]
+                ]
+            if node.get("for_each"):
+                entry["for_each"] = node["for_each"]
+            nodes.append(entry)
+
+        return {
+            "name": name,
+            "description": _clip(body.get("description"), max_chars),
+            "inputs_declared": declared,
+            # The gap that makes workflows guesswork: most declare nothing
+            # while their templates reference inputs by name.
+            "inputs_referenced": sorted(
+                v for v in _referenced_inputs(body, store) if v not in declared
+            ),
+            "outputs": body.get("outputs") or {},
+            "defaults": body.get("defaults") or {},
+            "nodes": nodes,
+            "agents": _agent_models(sorted(n for n in agent_names if n), store),
+        }
 
     def list_runs(
         self,
@@ -267,6 +456,9 @@ class TemperTools:
             return {"error": f"no run with id {execution_id}"}
 
         nodes = run.get("nodes") or []
+        failed = [
+            n.get("name") for n in _iter_nodes(nodes) if n.get("status") == "failed"
+        ]
         return {
             "execution_id": run.get("id"),
             "workflow": run.get("workflow_name"),
@@ -280,11 +472,11 @@ class TemperTools:
             "output": _clip(run.get("workflow_output"), max_chars),
             "error_message": _clip(run.get("error_message"), max_chars),
             "nodes": [_node_summary(n) for n in nodes],
-            "failed_nodes": [
-                n.get("name")
-                for n in _iter_nodes(nodes)
-                if n.get("status") == "failed"
-            ],
+            "failed_nodes": failed,
+            # A run can fail before any node exists — a bad template
+            # expansion, for instance — and then failed_nodes is empty and
+            # says nothing. This always explains the failure.
+            "failure_summary": _failure_summary(run, failed),
         }
 
     def get_node_output(
@@ -304,11 +496,25 @@ class TemperTools:
             available = [n.get("name") for n in _iter_nodes(run.get("nodes") or [])]
             return {"error": f"no node {node_name!r} in this run", "available": available}
 
+        # The same agent appearing more than once in a node is a retry, not
+        # two agents; unlabelled it just reads as duplicated output.
+        seen = [str(a.get("agent_name") or "") for a in _agents_of(node)]
+        attempts = {name: seen.count(name) for name in set(seen)}
+        counter: dict[str, int] = {}
+
         agents = []
         for agent in _agents_of(node):
+            agent_name = str(agent.get("agent_name") or "")
+            counter[agent_name] = counter.get(agent_name, 0) + 1
+            entry_attempt = (
+                f"{counter[agent_name]} of {attempts[agent_name]}"
+                if attempts.get(agent_name, 0) > 1
+                else None
+            )
             agents.append(
                 {
-                    "agent": agent.get("agent_name"),
+                    "agent": agent_name,
+                    "attempt": entry_attempt,
                     "role": agent.get("role"),
                     "status": agent.get("status"),
                     "input": _clip(agent.get("input_data"), max_chars),

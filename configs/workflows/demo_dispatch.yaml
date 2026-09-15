@@ -20,13 +20,13 @@ workflow:
     See the dispatch block on the `demo_dispatch_scout` agent for the
     full example.
   defaults:
-    # Tested end-to-end with claude/opus — produces clean structured output
-    # that the dispatcher can fan out from. Other providers work too, but
-    # models that ignore JSON-only instructions (some local vLLM deployments
-    # add a reasoning prefix) will fail the render step. Override via
-    # workflow YAML or provider-config if using a different provider.
-    provider: openai         # change to: anthropic, ollama, vllm, gemini
-    model: gpt-4o-mini      # change to match your provider's model
+    # No provider here: whichever one you configured is used. Pin one with
+    # `provider:` + `model:`, or set TEMPER_DEFAULT_PROVIDER.
+    #
+    # Tested end-to-end with claude/opus, which produces the clean
+    # structured output the dispatcher fans out from. Other providers work
+    # too, but a model that ignores JSON-only instructions (some local
+    # vLLM deployments add a reasoning prefix) will fail the render step.
     dispatch:
       max_children_per_dispatch: 10
       max_dynamic_nodes: 50

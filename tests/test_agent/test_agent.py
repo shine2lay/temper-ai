@@ -52,8 +52,12 @@ class TestLLMAgent:
     def test_init_defaults(self):
         agent = LLMAgent({"name": "test", "system_prompt": "hi"})
         assert agent.name == "test"
-        assert agent.provider == "openai"
-        assert agent.model == "gpt-4o-mini"
+        # No provider or model by default: the execution context resolves
+        # them from what is configured. Defaulting to openai/gpt-4o-mini
+        # here made every workflow that did not pin a provider fail on an
+        # install without an OpenAI key.
+        assert agent.provider is None
+        assert agent.model is None
         assert agent.max_iterations == 10
         # No budget by default: enforcement is opt-in via `token_budget` in
         # the agent config (the old 8000 default silently truncated inputs).

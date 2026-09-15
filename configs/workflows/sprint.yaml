@@ -7,9 +7,13 @@ workflow:
 
     Works for any domain: coding, research, writing, analysis.
     Define your goal, point it at a workspace, and let it build sprint by sprint.
-  defaults:
-    provider: anthropic
-    model: claude-sonnet-4-6
+  inputs:
+    goal:
+      type: string
+      required: true
+  # No provider here: whichever one you configured is used. This one leans
+  # on long-context reasoning, so a frontier model is worth pinning with
+  # `provider:` + `model:` if you have one.
 
   nodes:
     # Scan workspace and build file manifest

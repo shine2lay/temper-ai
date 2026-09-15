@@ -231,9 +231,13 @@ See [Agent Types Reference](docs/reference/agents/index.md) for all configuratio
 # configs/workflows/my_workflow.yaml
 workflow:
   name: my_workflow
-  defaults:
-    provider: openai       # or: anthropic, ollama, vllm
-    model: gpt-4o-mini     # change to match your provider
+  inputs:
+    task:                  # declared inputs become typed fields in the
+      type: string         # dashboard's New Run form, and tell an agent
+      required: true       # driving temper over MCP what to pass
+  # No `defaults.provider`: whichever provider you configured is used.
+  # Pin one with `provider:` + `model:` when a workflow needs a specific
+  # model, or set TEMPER_DEFAULT_PROVIDER to choose between several.
   safety:
     policies:
       - type: budget

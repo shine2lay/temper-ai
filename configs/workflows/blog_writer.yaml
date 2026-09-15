@@ -3,9 +3,12 @@ workflow:
   description: |
     Simple 3-agent pipeline: research → draft → edit.
     Demonstrates sequential data flow and input_map wiring.
-  defaults:
-    provider: openai         # change to: anthropic, ollama, vllm
-    model: gpt-4o-mini      # change to match your provider's model
+  inputs:
+    task:
+      type: string
+      required: true
+  # No provider here: whichever one you configured is used. Pin one with
+  # `provider:` + `model:`, or set TEMPER_DEFAULT_PROVIDER.
   safety:
     policies:
       - type: budget

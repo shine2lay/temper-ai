@@ -4,9 +4,12 @@ workflow:
     Parallel code review with leader synthesis, then improvement.
     Demonstrates: parallel strategy, leader pattern, structured output.
     Two reviewers analyze independently → leader decides verdict → improver fixes issues.
-  defaults:
-    provider: openai         # change to: anthropic, ollama, vllm
-    model: gpt-4o-mini      # change to match your provider's model
+  inputs:
+    task:
+      type: string
+      required: true
+  # No provider here: whichever one you configured is used. Pin one with
+  # `provider:` + `model:`, or set TEMPER_DEFAULT_PROVIDER.
   safety:
     policies:
       - type: budget

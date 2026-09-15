@@ -56,8 +56,13 @@ the old "estimate heights, then fix them up" problems are gone.
 - [ ] Agent config diff — compare current config vs what was used in a run
 
 ### Infrastructure
-- [ ] Structured output persistence — `structured_output` not stored in event DB
-- [ ] Stale run auto-cleanup on server restart (mark orphaned "running" as failed)
+<!-- Removed: "structured output persistence". It is persisted — 278,520
+     agent.completed events carry structured_output, which is why the DAG,
+     the API and the MCP tools can all show it. -->
+- [ ] Stale run auto-cleanup on server restart (mark orphaned "running" as
+      failed). Low priority on the evidence: of 997 runs in a working
+      database, 983 completed, 11 failed, 2 cancelled and 1 was legitimately
+      still running — no orphans at all.
 - [ ] Webhook notifications for workflow completion/failure
 - [ ] API authentication (currently open) — also gates the MCP endpoint, which
       inherits the API's posture

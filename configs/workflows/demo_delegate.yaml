@@ -3,9 +3,12 @@ workflow:
   description: |
     Demo: coordinator delegates to researchers (mid-agent), then the
     workflow continues to a summarizer that receives the coordinator's output.
-  defaults:
-    provider: openai         # change to: anthropic, ollama, vllm
-    model: gpt-4o-mini      # change to match your provider's model
+  inputs:
+    topic:
+      type: string
+      required: true
+  # No provider here: whichever one you configured is used. Pin one with
+  # `provider:` + `model:`, or set TEMPER_DEFAULT_PROVIDER.
   nodes:
     - name: research
       type: agent

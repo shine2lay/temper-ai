@@ -45,8 +45,11 @@ class LLMAgent(AgentABC):
 
     def __init__(self, config: dict):
         super().__init__(config)
-        self.provider = config.get("provider", "openai")
-        self.model = config.get("model", "gpt-4o-mini")
+        # None means "whatever is configured" (resolved per run by the
+        # execution context). Defaulting to openai here made every shipped
+        # workflow fail on an install without an OpenAI key.
+        self.provider = config.get("provider") or None
+        self.model = config.get("model") or None
         self.max_iterations = config.get("max_iterations", 10)
         # Default to None (no budget enforcement) rather than 8000. The 8000
         # default was silently truncating LLM inputs to ~1000 chars per field

@@ -25,9 +25,13 @@ workflow:
     Dispatched researchers use Claude (they're LLMs) but the dispatcher
     itself doesn't — so per-run planner cost is $0.
 
+  inputs:
+    cities:
+      type: array
+      required: true
   defaults:
-    provider: openai         # change to: anthropic, ollama, vllm, gemini
-    model: gpt-4o-mini      # change to match your provider's model
+    # No provider here: whichever one you configured is used. Pin one with
+    # `provider:` + `model:`, or set TEMPER_DEFAULT_PROVIDER.
     dispatch:
       max_children_per_dispatch: 20
       max_dynamic_nodes: 50

@@ -114,14 +114,73 @@ class ExecutionContext:
     dispatch_limits: Any = None  # DispatchLimits — per-workflow safety caps. Resolved from workflow defaults by routes/CLI; None means use module defaults.
     dispatch_state: Any = None  # DispatchRunState — per-run bookkeeping for cap enforcement. Seeded by executor on first dispatch.
 
-    def get_llm(self, provider: str) -> Any:
-        """Get LLM provider by name. Raises KeyError if not found."""
+    def get_llm(self, provider: str | None) -> Any:
+        """Get an LLM provider by name, or the default one.
+
+        `provider` is None when neither the agent nor the workflow names
+        one, in which case whatever is configured is used — see
+        resolve_provider. An explicitly named provider is never silently
+        swapped for another: asking for one model and being billed for a
+        different one is worse than failing.
+        """
+        if provider is None:
+            provider = self.resolve_provider()
         if provider not in self.llm_providers:
             raise KeyError(
                 f"LLM provider '{provider}' not configured. "
-                f"Available: {list(self.llm_providers.keys())}"
+                f"Available: {list(self.llm_providers.keys())}. "
+                f"Remove the `provider:` line to use whichever is "
+                f"configured, or set TEMPER_DEFAULT_PROVIDER."
             )
         return self.llm_providers[provider]
+
+    def resolve_provider(self) -> str:
+        """Which provider to use when a workflow does not name one.
+
+        Shipped workflows used to hard-code `provider: openai`, so every
+        example failed on an install configured for anything else. They now
+        leave it out and land here.
+
+        TEMPER_DEFAULT_PROVIDER wins; otherwise the first configured
+        provider in a fixed preference order, so the choice is
+        reproducible rather than dependent on dictionary order.
+        """
+        import os
+
+        available = list(self.llm_providers)
+        if not available:
+            raise KeyError(
+                "No LLM provider is configured. Set one of OPENAI_API_KEY, "
+                "ANTHROPIC_API_KEY, GEMINI_API_KEY, OLLAMA_BASE_URL or "
+                "VLLM_BASE_URL."
+            )
+
+        preferred = os.environ.get("TEMPER_DEFAULT_PROVIDER", "").strip()
+        if preferred:
+            if preferred not in available:
+                raise KeyError(
+                    f"TEMPER_DEFAULT_PROVIDER is '{preferred}', which is not "
+                    f"configured. Available: {available}"
+                )
+            return preferred
+
+        for candidate in PROVIDER_PREFERENCE:
+            if candidate in available:
+                return candidate
+        return available[0]
+
+
+# Hosted providers first: a local endpoint (ollama, vllm) is often
+# configured by a stray environment variable while nothing is listening on
+# it, which fails as a connection refused rather than a clear message.
+PROVIDER_PREFERENCE = (
+    "claude",
+    "anthropic",
+    "openai",
+    "gemini",
+    "ollama",
+    "vllm",
+)
 
 
 @dataclass

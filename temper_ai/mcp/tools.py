@@ -14,26 +14,77 @@ one call at a time, with an explicit character budget.
 
 from __future__ import annotations
 
-import time
+import functools
+import json
 from typing import Any
+
+import anyio
 
 # Default ceiling for any single free-text field we hand back. Generous
 # enough to read an answer, small enough that a surprise never costs more
 # than a few thousand tokens.
 DEFAULT_MAX_CHARS = 4000
 
+# Floor for one string inside a structure: below this a message is too
+# short to tell you anything.
+_MIN_LEAF_CHARS = 256
+
 TERMINAL_STATUSES = {"completed", "failed", "cancelled"}
 
 
-def _clip(text: Any, max_chars: int = DEFAULT_MAX_CHARS) -> Any:
-    """Truncate long text, saying so and how to get the rest."""
-    if not isinstance(text, str) or len(text) <= max_chars:
-        return text
-    dropped = len(text) - max_chars
-    return (
-        f"{text[:max_chars]}\n\n[truncated {dropped} more characters — "
-        f"raise max_chars to see them]"
-    )
+def _clip(value: Any, max_chars: int = DEFAULT_MAX_CHARS) -> Any:
+    """Bound any field to max_chars, saying what it dropped.
+
+    Structures are bounded too, not just strings. A chat prompt arrives as
+    a list of message dicts, so clipping only `str` left the single
+    largest field in the payload unbounded — exactly the thing this is
+    supposed to prevent.
+    """
+    if isinstance(value, str):
+        if len(value) <= max_chars:
+            return value
+        dropped = len(value) - max_chars
+        return (
+            f"{value[:max_chars]}\n\n[truncated {dropped} more characters — "
+            f"raise max_chars to see them]"
+        )
+    if isinstance(value, (list, dict)):
+        rendered = json.dumps(value, default=str)
+        if len(rendered) <= max_chars:
+            return value  # small enough to keep as it is
+        # Share the budget between the strings inside, so a chat prompt
+        # comes back as recognisable messages — every role visible, each
+        # one opening with its first few hundred characters — rather than
+        # as one truncated blob.
+        share = max(_MIN_LEAF_CHARS, max_chars // max(_count_string_leaves(value), 1))
+        clipped = _clip_leaves(value, share)
+        if len(json.dumps(clipped, default=str)) <= max_chars * 2:
+            return clipped
+        # Too many pieces to show any of them usefully: hand back the
+        # beginning as text rather than blowing the budget.
+        return _clip(rendered, max_chars)
+    return value
+
+
+def _count_string_leaves(value: Any) -> int:
+    if isinstance(value, str):
+        return 1
+    if isinstance(value, list):
+        return sum(_count_string_leaves(item) for item in value)
+    if isinstance(value, dict):
+        return sum(_count_string_leaves(item) for item in value.values())
+    return 0
+
+
+def _clip_leaves(value: Any, max_chars: int) -> Any:
+    """Clip every string inside a structure, keeping the structure."""
+    if isinstance(value, str):
+        return _clip(value, max_chars)
+    if isinstance(value, list):
+        return [_clip_leaves(item, max_chars) for item in value]
+    if isinstance(value, dict):
+        return {key: _clip_leaves(item, max_chars) for key, item in value.items()}
+    return value
 
 
 def _node_summary(node: dict) -> dict:
@@ -169,25 +220,33 @@ class TemperTools:
         data["next"] = "poll get_run(execution_id) or call wait_for_run(execution_id)"
         return data
 
-    def wait_for_run(self, execution_id: str, timeout_seconds: float = 120.0) -> dict:
-        """Block until a run reaches a terminal state, or the timeout.
+    async def wait_for_run(self, execution_id: str, timeout_seconds: float = 120.0) -> dict:
+        """Wait until a run reaches a terminal state, or the timeout.
 
         Returns the same summary as `get_run`, plus `timed_out` so the
         caller can tell "still running" from "finished".
+
+        Async on purpose. FastMCP calls synchronous tools directly on the
+        event loop, so sleeping here in a sync function froze the whole
+        server — dashboard, API and every other MCP call — for as long as
+        an agent waited. The polling sleep yields, and each database read
+        happens on a worker thread.
         """
-        deadline = time.monotonic() + timeout_seconds
+        deadline = anyio.current_time() + timeout_seconds
         while True:
-            summary = self.get_run(execution_id)
+            summary = await anyio.to_thread.run_sync(
+                functools.partial(self.get_run, execution_id)
+            )
             if summary.get("error"):
                 return summary
             if summary.get("status") in TERMINAL_STATUSES:
                 summary["timed_out"] = False
                 return summary
-            if time.monotonic() >= deadline:
+            if anyio.current_time() >= deadline:
                 summary["timed_out"] = True
                 summary["hint"] = "still running — call wait_for_run again to keep waiting"
                 return summary
-            time.sleep(1.0)
+            await anyio.sleep(1.0)
 
     def cancel_run(self, execution_id: str) -> dict:
         """Ask a running workflow to stop."""
@@ -254,7 +313,7 @@ class TemperTools:
                     "status": agent.get("status"),
                     "input": _clip(agent.get("input_data"), max_chars),
                     "output": _clip(agent.get("output"), max_chars),
-                    "structured_output": agent.get("structured_output"),
+                    "structured_output": _clip(agent.get("structured_output"), max_chars),
                     "error_message": _clip(agent.get("error_message"), max_chars),
                     "llm_call_ids": [c.get("id") for c in (agent.get("llm_calls") or [])],
                     "tool_calls": [

@@ -7,6 +7,7 @@ each response and about failures being explained rather than silent.
 
 from unittest.mock import patch  # noqa: F401
 
+import anyio  # noqa: E402
 import pytest
 
 from temper_ai.mcp.tools import DEFAULT_MAX_CHARS, TemperTools, _clip, _node_summary
@@ -93,9 +94,38 @@ class TestClip:
         assert out.startswith("x" * 100)
         assert "truncated 4900 more characters" in out
 
-    def test_non_strings_pass_through(self):
+    def test_small_structures_keep_their_shape(self):
         assert _clip({"a": 1}) == {"a": 1}
         assert _clip(None) is None
+        assert _clip([{"role": "user", "content": "hi"}]) == [{"role": "user", "content": "hi"}]
+
+    def test_structures_are_bounded_too(self):
+        """A chat prompt is a list of message dicts, so bounding only str
+        left the largest field in the payload unbounded."""
+        prompt = [{"role": "system", "content": "x" * 9000},
+                  {"role": "user", "content": "y" * 9000}]
+        out = _clip(prompt, max_chars=500)
+        assert len(str(out)) < 1500
+        assert "truncated" in str(out)
+
+    def test_a_chat_prompt_stays_readable_as_messages(self):
+        # Every role visible, each message opening with real text, rather
+        # than the whole prompt flattened into one truncated blob.
+        prompt = [
+            {"role": "system", "content": "s" * 5000},
+            {"role": "user", "content": "u" * 5000},
+        ]
+        out = _clip(prompt, max_chars=2000)
+        assert isinstance(out, list)
+        assert [m["role"] for m in out] == ["system", "user"]
+        assert out[0]["content"].startswith("s" * 256)
+        assert "truncated" in out[0]["content"]
+
+    def test_falls_back_to_text_when_there_are_too_many_pieces(self):
+        huge = [{"role": "user", "content": "x" * 400} for _ in range(200)]
+        out = _clip(huge, max_chars=1000)
+        assert isinstance(out, str)
+        assert "truncated" in out
 
 
 class TestGetRun:
@@ -162,21 +192,50 @@ class TestLlmCall:
 class TestWait:
     def test_returns_as_soon_as_the_run_is_terminal(self, tools):
         with _with_run(RUN):
-            result = tools.wait_for_run("run-1", timeout_seconds=5)
+            result = anyio.run(tools.wait_for_run, "run-1", 5)
         assert result["timed_out"] is False
         assert result["status"] == "failed"
 
     def test_reports_a_timeout_without_failing(self, tools):
         running = {**RUN, "status": "running"}
         with _with_run(running):
-            result = tools.wait_for_run("run-1", timeout_seconds=0.1)
+            result = anyio.run(tools.wait_for_run, "run-1", 0.1)
         assert result["timed_out"] is True
         assert "call wait_for_run again" in result["hint"]
 
     def test_stops_early_on_an_unknown_run(self, tools):
         with _with_run(None):
-            result = tools.wait_for_run("nope", timeout_seconds=30)
+            result = anyio.run(tools.wait_for_run, "nope", 30)
         assert "no run" in result["error"]
+
+    def test_waiting_does_not_block_the_event_loop(self, tools):
+        """The bug this replaced: FastMCP calls sync tools directly on the
+        event loop, so sleeping inside one froze the whole server — the
+        dashboard and the API stopped answering while an agent waited."""
+        running = {**RUN, "status": "running"}
+        progressed = 0
+        progressed_when_wait_returned = -1
+
+        async def scenario():
+            nonlocal progressed, progressed_when_wait_returned
+
+            async def other_work():
+                nonlocal progressed
+                while True:
+                    await anyio.sleep(0.05)
+                    progressed += 1
+
+            async with anyio.create_task_group() as tg:
+                tg.start_soon(other_work)
+                with _with_run(running):
+                    await tools.wait_for_run("run-1", timeout_seconds=0.4)
+                # Sampled here, not after the task group drains, or a
+                # blocking implementation would look fine in hindsight.
+                progressed_when_wait_returned = progressed
+                tg.cancel_scope.cancel()
+
+        anyio.run(scenario)
+        assert progressed_when_wait_returned >= 3
 
 
 class TestNodeSummary:

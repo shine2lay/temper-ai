@@ -59,7 +59,11 @@ the old "estimate heights, then fix them up" problems are gone.
 - [ ] Structured output persistence — `structured_output` not stored in event DB
 - [ ] Stale run auto-cleanup on server restart (mark orphaned "running" as failed)
 - [ ] Webhook notifications for workflow completion/failure
-- [ ] API authentication (currently open)
+- [ ] API authentication (currently open) — also gates the MCP endpoint, which
+      inherits the API's posture
+- [ ] Support the MCP 2.x SDK (pinned to `mcp<2`: v2 renames FastMCP to
+      MCPServer and changes other APIs that both `temper_ai/mcp` and the
+      MCP tool client are written against)
 
 ### Studio
 Studio preserves the parts of the workflow schema it cannot edit (they

@@ -76,16 +76,26 @@ jobs:
         env:
           TEMPER_DATABASE_URL: sqlite:///e2e.db
         run: |
-          temper serve --port 8420 &
+          temper serve --port 8420 > server.log 2>&1 &
           for i in $(seq 1 60); do
-            curl -sf http://localhost:8420/api/health && break
+            curl -sf http://127.0.0.1:8420/api/health && break
             sleep 1
           done
+          # Fail here, loudly, if the server never came up. Without this the
+          # job carried on and every browser test failed with a connection
+          # error, hiding a one-line import failure behind twelve of them.
+          if ! curl -sf http://127.0.0.1:8420/api/health > /dev/null; then
+            echo "::error::server did not start"
+            cat server.log
+            exit 1
+          fi
 
       - name: Run end-to-end tests
         working-directory: frontend
         env:
-          TEMPER_E2E_BASE_URL: http://localhost:8420
+          # 127.0.0.1, not localhost: the server binds IPv4 and the runner
+          # resolves localhost to ::1 first.
+          TEMPER_E2E_BASE_URL: http://127.0.0.1:8420
         run: npm run e2e
 
       - uses: actions/upload-artifact@v4

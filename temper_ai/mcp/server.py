@@ -12,17 +12,54 @@ for a tool and what it costs, because that is all the model sees.
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 
 from temper_ai.mcp.tools import DEFAULT_MAX_CHARS, TemperTools
+
+# The SDK rejects requests whose Host header is not in this list, which is
+# what stops a malicious web page from driving a local MCP server through
+# a victim's browser (DNS rebinding). The default keeps that protection;
+# serving the endpoint under a real hostname means naming it here.
+DEFAULT_ALLOWED_HOSTS = [
+    "localhost",
+    "localhost:8420",
+    "127.0.0.1",
+    "127.0.0.1:8420",
+]
+
+
+def _security_settings() -> TransportSecuritySettings:
+    """Allow the hostnames temper is actually served under.
+
+    Set TEMPER_MCP_ALLOWED_HOSTS to a comma-separated list when the server
+    sits behind a gateway or is reached over a tailnet, e.g.
+
+        TEMPER_MCP_ALLOWED_HOSTS=temper-dev.wai2shine.com,spark.tailbb5055.ts.net
+
+    Each entry also becomes an allowed http/https Origin.
+    """
+    configured = [
+        host.strip()
+        for host in os.environ.get("TEMPER_MCP_ALLOWED_HOSTS", "").split(",")
+        if host.strip()
+    ]
+    hosts = DEFAULT_ALLOWED_HOSTS + configured
+    origins = [f"{scheme}://{host}" for host in hosts for scheme in ("http", "https")]
+    return TransportSecuritySettings(
+        allowed_hosts=hosts,
+        allowed_origins=origins,
+    )
 
 
 def build_server() -> FastMCP:
     """Create the MCP server with temper's tools registered."""
     mcp = FastMCP(
         name="temper",
+        transport_security=_security_settings(),
         # Served under the /mcp mount in server.py, so the app itself
         # answers at its root.
         streamable_http_path="/",

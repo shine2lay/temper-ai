@@ -95,6 +95,37 @@ When something fails, `get_run` names the failed nodes (including nested
 ones inside dispatch or parallel stages), so the drill-down is one call
 rather than a search.
 
+## Serving it beyond localhost
+
+Agents rarely run on the same machine as temper, and two things have to be
+right before a remote one can connect.
+
+**1. Name the host.** The MCP SDK refuses any request whose `Host` header
+it does not recognise — that is what stops a web page from driving a local
+MCP server through a victim's browser (DNS rebinding). Reaching the
+endpoint under a real hostname therefore means declaring it, otherwise the
+server answers `421 Misdirected Request`, which reads like a network fault
+rather than a configuration one:
+
+```bash
+TEMPER_MCP_ALLOWED_HOSTS=temper.example.com,host.tailnet.ts.net
+```
+
+localhost and 127.0.0.1 keep working without configuration.
+
+**2. Put something in front of it.** Published ports bind to `127.0.0.1`
+by default, because the dashboard and the MCP endpoint have no
+authentication and should not be reachable from the LAN just because the
+host has an address on it. Terminate TLS somewhere that also restricts who
+can reach it — a private-network gateway, a reverse proxy, an SSH tunnel:
+
+```json
+{ "mcpServers": { "temper": { "url": "https://temper.example.com/mcp" } } }
+```
+
+Set `TEMPER_BIND=0.0.0.0` only when you have decided something else is
+doing the restricting.
+
 ## Notes
 
 - **No authentication.** The MCP endpoint inherits the API's posture, so

@@ -12,9 +12,11 @@ for a tool and what it costs, because that is all the model sees.
 
 from __future__ import annotations
 
+import functools
 import os
 from typing import Any
 
+import anyio
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
@@ -55,6 +57,16 @@ def _security_settings() -> TransportSecuritySettings:
     )
 
 
+async def _off_loop(fn, *args, **kwargs):
+    """Run a blocking tool body on a worker thread.
+
+    FastMCP invokes synchronous tools directly on the event loop, so every
+    database read here would otherwise stall the dashboard, the API and
+    other agents for as long as it took.
+    """
+    return await anyio.to_thread.run_sync(functools.partial(fn, *args, **kwargs))
+
+
 def build_server() -> FastMCP:
     """Create the MCP server with temper's tools registered."""
     mcp = FastMCP(
@@ -79,16 +91,16 @@ def build_server() -> FastMCP:
     tools = TemperTools()
 
     @mcp.tool()
-    def list_workflows() -> dict:
+    async def list_workflows() -> dict:
         """List runnable workflows and the inputs each declares.
 
         Call this first: it tells you the exact workflow names run_workflow
         accepts and which inputs are required.
         """
-        return tools.list_workflows()
+        return await _off_loop(tools.list_workflows)
 
     @mcp.tool()
-    def list_runs(
+    async def list_runs(
         workflow: str | None = None,
         status: str | None = None,
         limit: int = 20,
@@ -98,10 +110,10 @@ def build_server() -> FastMCP:
         Filter by workflow name, or by status (queued, running, completed,
         failed, cancelled).
         """
-        return tools.list_runs(workflow=workflow, status=status, limit=limit)
+        return await _off_loop(tools.list_runs, workflow=workflow, status=status, limit=limit)
 
     @mcp.tool()
-    def run_workflow(
+    async def run_workflow(
         workflow: str,
         inputs: dict[str, Any] | None = None,
         workspace_path: str | None = None,
@@ -111,30 +123,33 @@ def build_server() -> FastMCP:
         Runs can take minutes and cost money, so this does not block and
         does not wait for the result. Follow it with wait_for_run.
         """
-        return tools.run_workflow(
-            workflow=workflow, inputs=inputs, workspace_path=workspace_path
+        return await _off_loop(
+            tools.run_workflow,
+            workflow=workflow,
+            inputs=inputs,
+            workspace_path=workspace_path,
         )
 
     @mcp.tool()
-    def wait_for_run(execution_id: str, timeout_seconds: float = 120.0) -> dict:
+    async def wait_for_run(execution_id: str, timeout_seconds: float = 120.0) -> dict:
         """Wait for a run to finish, then return its summary.
 
         Returns early with timed_out=true if the run is still going when the
         timeout expires — call again to keep waiting.
         """
-        return tools.wait_for_run(execution_id, timeout_seconds=timeout_seconds)
+        return await tools.wait_for_run(execution_id, timeout_seconds=timeout_seconds)
 
     @mcp.tool()
-    def get_run(execution_id: str, max_chars: int = DEFAULT_MAX_CHARS) -> dict:
+    async def get_run(execution_id: str, max_chars: int = DEFAULT_MAX_CHARS) -> dict:
         """Status of a run and one line per node.
 
         Cheap, and the right first look at any run. Omits prompts,
         responses and node outputs by design.
         """
-        return tools.get_run(execution_id, max_chars=max_chars)
+        return await _off_loop(tools.get_run, execution_id, max_chars=max_chars)
 
     @mcp.tool()
-    def get_node_output(
+    async def get_node_output(
         execution_id: str,
         node_name: str,
         max_chars: int = DEFAULT_MAX_CHARS,
@@ -144,10 +159,10 @@ def build_server() -> FastMCP:
         Use after get_run points at an interesting or failed node. Long
         fields are truncated at max_chars.
         """
-        return tools.get_node_output(execution_id, node_name, max_chars=max_chars)
+        return await _off_loop(tools.get_node_output, execution_id, node_name, max_chars=max_chars)
 
     @mcp.tool()
-    def get_llm_call(
+    async def get_llm_call(
         execution_id: str,
         call_id: str,
         max_chars: int = DEFAULT_MAX_CHARS,
@@ -157,21 +172,21 @@ def build_server() -> FastMCP:
         The most expensive tool here: prompts are often thousands of
         tokens. Get call ids from get_node_output.
         """
-        return tools.get_llm_call(execution_id, call_id, max_chars=max_chars)
+        return await _off_loop(tools.get_llm_call, execution_id, call_id, max_chars=max_chars)
 
     @mcp.tool()
-    def cancel_run(execution_id: str) -> dict:
+    async def cancel_run(execution_id: str) -> dict:
         """Ask a running workflow to stop."""
-        return tools.cancel_run(execution_id)
+        return await _off_loop(tools.cancel_run, execution_id)
 
     @mcp.tool()
-    def list_gates(execution_id: str) -> dict:
+    async def list_gates(execution_id: str) -> dict:
         """Approval gates this run is waiting on, if any."""
-        return tools.list_gates(execution_id)
+        return await _off_loop(tools.list_gates, execution_id)
 
     @mcp.tool()
-    def approve_gate(execution_id: str, node_name: str) -> dict:
+    async def approve_gate(execution_id: str, node_name: str) -> dict:
         """Approve a waiting gate so the run continues past it."""
-        return tools.approve_gate(execution_id, node_name)
+        return await _off_loop(tools.approve_gate, execution_id, node_name)
 
     return mcp

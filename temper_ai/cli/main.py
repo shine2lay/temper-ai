@@ -46,6 +46,18 @@ def main() -> None:
     serve_parser.add_argument("--config-dir", default="configs", help="Config directory")
     serve_parser.add_argument("--debug", action="store_true", help="Enable debug logging")
 
+    # -- temper mcp --
+    mcp_parser = subparsers.add_parser(
+        "mcp",
+        help="Serve temper's MCP tools over stdio (proxies to a running server)",
+    )
+    mcp_parser.add_argument(
+        "--url",
+        default="http://localhost:8420/mcp",
+        help="MCP endpoint of a running temper server (default: %(default)s)",
+    )
+    mcp_parser.add_argument("--debug", action="store_true", help="Enable debug logging")
+
     # -- temper validate --
     validate_parser = subparsers.add_parser("validate", help="Validate a workflow config")
     validate_parser.add_argument("workflow", help="Workflow config name")
@@ -100,6 +112,9 @@ def main() -> None:
         _cmd_run(args)
     elif args.command == "serve":
         _cmd_serve(args)
+    elif args.command == "mcp":
+        from temper_ai.mcp.bridge import run_bridge
+        run_bridge(args.url)
     elif args.command == "validate":
         _cmd_validate(args)
     elif args.command == "run-workflow":

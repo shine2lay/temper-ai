@@ -311,3 +311,161 @@ class TestAllowedHosts:
             "127.0.0.1",
             "127.0.0.1:8420",
         ]
+
+
+class TestWorkflowDiscovery:
+    """Running workflows as an agent exposed these: an opening call that
+    cost 15k tokens, required inputs that only surfaced as a 400, and no
+    way to ask which provider a failing workflow wanted."""
+
+    AUDIT_BRANCH = {
+        "workflow": {
+            "name": "audit_branch",
+            "description": "Branching demo.\nSecond line ignored in lists.",
+            "nodes": [
+                {"name": "plan", "agent": "planner"},
+                {
+                    "name": "lanes",
+                    "type": "template",
+                    "for_each": "input.n_lanes",
+                    "agent": "worker",
+                    "input_map": {"brief": "plan.structured.brief"},
+                },
+            ],
+        }
+    }
+    AGENTS = {
+        "planner": {"agent": {"type": "llm", "provider": "openai", "model": "gpt-4o-mini",
+                              "task_template": "Topic: {{ topic }}"}},
+        "worker": {"agent": {"type": "llm", "task_template": "Work on {{ brief }}"}},
+    }
+
+    @pytest.fixture
+    def store(self):
+        class Store:
+            def list(self, config_type=None):
+                return [{"name": "audit_branch"}, {"name": "smoke_test"}]
+
+            def get(self, name, config_type):
+                if config_type == "agent":
+                    return TestWorkflowDiscovery.AGENTS[name]
+                if name == "audit_branch":
+                    return TestWorkflowDiscovery.AUDIT_BRANCH
+                raise KeyError(name)
+
+        return Store()
+
+    def _patched(self, store):
+        state = type("S", (), {"config_store": store})()
+        return patch("temper_ai.api.routes._state", return_value=state)
+
+    def test_listing_is_terse_and_says_how_many_there_are(self, tools, store):
+        with self._patched(store):
+            result = tools.list_workflows(limit=1)
+        assert result["returned"] == 1
+        assert result["total"] == 2
+        assert "filter with name_contains" in result["hint"]
+        # One line only — the full description is get_workflow's job.
+        assert "Second line" not in str(result)
+
+    def test_filtering_by_name(self, tools, store):
+        with self._patched(store):
+            result = tools.list_workflows(name_contains="branch")
+        assert [w["name"] for w in result["workflows"]] == ["audit_branch"]
+
+    def test_an_unreadable_config_is_reported_not_hidden(self, tools, store):
+        # smoke_test is listed but cannot be read; it must still appear.
+        with self._patched(store):
+            result = tools.list_workflows()
+        entry = next(w for w in result["workflows"] if w["name"] == "smoke_test")
+        assert "could not be read" in entry["summary"]
+
+    def test_undeclared_inputs_are_surfaced(self, tools, store):
+        """n_lanes and topic are required but declared nowhere; before this
+        an agent found them by getting a 400 back."""
+        with self._patched(store):
+            result = tools.get_workflow("audit_branch")
+        assert result["inputs_declared"] == {}
+        assert "n_lanes" in result["inputs_referenced"]  # from for_each
+        assert "topic" in result["inputs_referenced"]  # from an agent template
+        # Supplied by another node, so not something the caller passes.
+        assert "brief" not in result["inputs_referenced"]
+
+    def test_engine_supplied_variables_are_not_asked_for(self, tools, store):
+        """`other_agents` and `memories` are injected by the engine; telling
+        an agent to pass them sends it chasing inputs that do not exist."""
+        body = dict(TestWorkflowDiscovery.AUDIT_BRANCH["workflow"])
+        agents = {**TestWorkflowDiscovery.AGENTS}
+        agents["planner"] = {"agent": {"task_template":
+            "{{ topic }} {{ other_agents }} {{ memories }} {{ workspace_path }}"}}
+
+        class S:
+            def list(self, config_type=None):
+                return [{"name": "audit_branch"}]
+
+            def get(self, name, config_type):
+                return agents[name] if config_type == "agent" else {"workflow": body}
+
+        with self._patched(S()):
+            result = tools.get_workflow("audit_branch")
+        assert "topic" in result["inputs_referenced"]
+        for injected in ("other_agents", "memories", "workspace_path"):
+            assert injected not in result["inputs_referenced"]
+
+    def test_names_the_provider_each_agent_wants(self, tools, store):
+        with self._patched(store):
+            result = tools.get_workflow("audit_branch")
+        assert result["agents"]["planner"]["provider"] == "openai"
+        assert result["agents"]["worker"]["provider"] == "(workflow default)"
+
+    def test_unknown_workflow_suggests_near_matches(self, tools, store):
+        with self._patched(store):
+            result = tools.get_workflow("audit")
+        assert "no workflow named" in result["error"]
+        assert "audit_branch" in result["similar"]
+
+
+class TestFailureReporting:
+    def test_a_failure_before_any_node_is_still_explained(self, tools):
+        """A bad template expansion fails the run before nodes exist, so
+        failed_nodes is empty and on its own says nothing."""
+        run = {
+            "id": "r", "workflow_name": "w", "status": "failed", "nodes": [],
+            "error_message": "dispatch[0] Jinja render failed: 'str object' has no attribute 'name'",
+        }
+        with patch("temper_ai.api.data_service.get_workflow_execution", return_value=run):
+            result = tools.get_run("r")
+        assert result["failed_nodes"] == []
+        assert "before any node completed" in result["failure_summary"]
+        assert "Jinja render failed" in result["failure_summary"]
+
+    def test_a_failed_node_is_named(self, tools):
+        with patch("temper_ai.api.data_service.get_workflow_execution", return_value=RUN):
+            result = tools.get_run("run-1")
+        assert "failed at write, lane_0" in result["failure_summary"]
+
+    def test_a_green_run_has_no_failure_summary(self, tools):
+        ok = {**RUN, "status": "completed"}
+        with patch("temper_ai.api.data_service.get_workflow_execution", return_value=ok):
+            assert tools.get_run("run-1")["failure_summary"] is None
+
+    def test_retries_are_labelled_as_attempts(self, tools):
+        """Two tries of one agent read as two different agents before."""
+        retried = {
+            "id": "r", "workflow_name": "w", "status": "failed",
+            "nodes": [{
+                "name": "plan", "status": "failed", "agent": None,
+                "agents": [
+                    {"agent_name": "planner", "status": "failed", "error_message": "refused"},
+                    {"agent_name": "planner", "status": "failed", "error_message": "refused"},
+                ],
+            }],
+        }
+        with patch("temper_ai.api.data_service.get_workflow_execution", return_value=retried):
+            result = tools.get_node_output("r", "plan")
+        assert [a["attempt"] for a in result["agents"]] == ["1 of 2", "2 of 2"]
+
+    def test_a_single_run_is_not_labelled(self, tools):
+        with patch("temper_ai.api.data_service.get_workflow_execution", return_value=RUN):
+            result = tools.get_node_output("run-1", "research")
+        assert result["agents"][0]["attempt"] is None

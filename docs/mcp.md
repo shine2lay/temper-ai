@@ -37,7 +37,8 @@ curl -s -X POST http://localhost:8420/mcp \
 
 | Tool | Use it for |
 |---|---|
-| `list_workflows` | What can be run, and which inputs each declares |
+| `list_workflows` | What can be run (filter with `name_contains`) |
+| `get_workflow` | One workflow's inputs, shape and models |
 | `list_runs` | Recent runs, filtered by workflow or status |
 | `run_workflow` | Start a run; returns an `execution_id` immediately |
 | `wait_for_run` | Block until a run finishes (returns `timed_out` rather than failing) |
@@ -85,15 +86,26 @@ thousand.
 ## A typical loop
 
 ```python
-list_workflows()                                  # what can I run?
+list_workflows(name_contains="blog")              # what can I run?
+get_workflow("blog_writer")                       # what does it need?
 run_workflow("blog_writer", {"topic": "otters"})  # -> execution_id
 wait_for_run(execution_id, timeout_seconds=120)   # -> status + node lines
 get_node_output(execution_id, "draft")            # only if you need detail
 ```
 
+The second call matters more than it looks. Most workflows declare no
+`inputs:` even when they need them, so `get_workflow` also reports
+`inputs_referenced` — the names their templates actually use, minus the
+ones the engine supplies and the ones another node maps in. It also names
+the provider and model each agent asks for, which is what turns "provider
+'openai' not configured" into something you can act on.
+
 When something fails, `get_run` names the failed nodes (including nested
-ones inside dispatch or parallel stages), so the drill-down is one call
-rather than a search.
+ones inside dispatch or parallel stages) and gives a `failure_summary`
+that explains the run even when it died before any node existed — a bad
+template expansion, say, where the list of failed nodes is empty.
+Retried agents are labelled `attempt: "1 of 2"` rather than appearing
+twice.
 
 ## Serving it beyond localhost
 

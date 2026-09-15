@@ -138,6 +138,31 @@ can reach it — a private-network gateway, a reverse proxy, an SSH tunnel:
 Set `TEMPER_BIND=0.0.0.0` only when you have decided something else is
 doing the restricting.
 
+## Embedding the dashboard
+
+The dashboard refuses to be framed by default — an embedded copy of an
+unauthenticated UI is a clickjacking target, and every button here can
+spend money. Naming the origins that may embed it lifts that for those
+origins only:
+
+```bash
+TEMPER_FRAME_ANCESTORS=https://pi.example.com
+TEMPER_FRAME_ANCESTORS="https://pi.example.com https://host.tailnet.ts.net:8787"
+```
+
+Space- or comma-separated, and each entry must be a full origin (scheme +
+host + optional port). `*` is rejected rather than quietly trusted. When
+the variable is set the server publishes
+`Content-Security-Policy: frame-ancestors 'self' <origins>` and stops
+sending `X-Frame-Options`, because that header cannot express an
+allow-list and browsers honouring it would block the origin just allowed.
+Unset, the responses are unchanged: `frame-ancestors 'none'` plus
+`X-Frame-Options: DENY`.
+
+The embedding page can still only reach temper if the network lets it —
+this setting relaxes the browser's framing rule, not the reverse proxy's
+access rules.
+
 ## Notes
 
 - **No authentication.** The MCP endpoint inherits the API's posture, so

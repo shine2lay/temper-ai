@@ -311,12 +311,40 @@ app.add_middleware(
 
 
 # -- Security headers --
+def frame_ancestors() -> str:
+    """Origins allowed to embed this server in a frame (default: none).
+
+    Embedding is denied outright unless TEMPER_FRAME_ANCESTORS names the
+    origins that may frame the dashboard, e.g. a private pi-web-ui instance
+    showing runs next to its chats:
+
+        TEMPER_FRAME_ANCESTORS=https://pi.wai2shine.com
+        TEMPER_FRAME_ANCESTORS=https://pi.wai2shine.com https://spark.tailbb5055.ts.net:8787
+
+    Space- or comma-separated. Only complete origins belong here (scheme +
+    host [+ port]); this is an allow-list against clickjacking, so wildcards
+    such as "*" are rejected rather than quietly trusted.
+    """
+    raw = os.environ.get("TEMPER_FRAME_ANCESTORS", "")
+    origins = [part for part in raw.replace(",", " ").split() if part]
+    return " ".join(o for o in origins if o != "*" and "://" in o)
+
+
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """Add security headers (X-Content-Type-Options, X-Frame-Options, etc.) to all responses."""
     async def dispatch(self, request: Request, call_next):
         response: Response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["X-Frame-Options"] = "DENY"
+        # Framing: X-Frame-Options cannot express an allow-list, so a configured
+        # allow-list switches to CSP frame-ancestors (and must NOT also send
+        # XFO DENY — browsers honouring XFO would block the allowed origin).
+        # Unconfigured stays exactly as before: deny, with both headers set.
+        allowed = frame_ancestors()
+        if allowed:
+            response.headers["Content-Security-Policy"] = f"frame-ancestors 'self' {allowed}"
+        else:
+            response.headers["Content-Security-Policy"] = "frame-ancestors 'none'"
+            response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-XSS-Protection"] = "1; mode=block"
         return response
 

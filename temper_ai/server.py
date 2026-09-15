@@ -26,6 +26,7 @@ from temper_ai.api.routes import router as api_router
 from temper_ai.api.studio import router as studio_router
 from temper_ai.config import ConfigStore
 from temper_ai.database import init_database, reset_database
+from temper_ai.mcp import build_server as _build_mcp_server
 from temper_ai.memory import InMemoryStore, MemoryService
 from temper_ai.memory.base import MemoryStoreBase
 
@@ -209,6 +210,10 @@ def _load_default_configs(config_store: ConfigStore):
         logger.info("Loaded %d configs from %s", loaded, configs_dir)
 
 
+# -- MCP server (built once; mounted below, session started in the lifespan) --
+_mcp_server = _build_mcp_server()
+
+
 # -- Lifespan --
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -265,7 +270,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             logger.warning("Reaper failed to start (cancel/orphan detection disabled): %s", e)
 
     logger.info("Temper AI server ready")
-    yield
+
+    # The /mcp endpoint needs its session manager running for the life of
+    # the server; mounting a Starlette sub-app does not start it for us.
+    async with _mcp_server.session_manager.run():
+        yield
 
     # Shutdown
     if reaper is not None:
@@ -318,6 +327,42 @@ app.add_middleware(SecurityHeadersMiddleware)
 app.include_router(api_router)
 app.include_router(studio_router)
 app.include_router(docs_router)
+
+# -- MCP --
+# Agents drive temper through the same functions the REST API uses.
+#
+# Mounted under /mcp (never at "/", which would shadow every route
+# registered after it, including the dashboard). We mount the session
+# manager's ASGI handler rather than FastMCP's own Starlette app, so that
+# both /mcp and /mcp/ are served directly: the wrapper app answers only at
+# its root and sends /mcp to /mcp/ as a 307, which not every MCP client
+# follows. The session manager itself is started by the lifespan above.
+_mcp_server.streamable_http_app()  # forces session-manager construction
+
+
+async def _mcp_asgi(scope, receive, send):
+    await _mcp_server.session_manager.handle_request(scope, receive, send)
+
+
+class MCPPathMiddleware:
+    """Serve the MCP endpoint at /mcp as well as /mcp/.
+
+    A Mount only matches paths *under* its prefix, so a request to exactly
+    /mcp would otherwise be answered with a 307 to /mcp/ — and MCP clients
+    configured with the obvious URL do not all follow redirects on POST.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") == "http" and scope.get("path") == "/mcp":
+            scope = {**scope, "path": "/mcp/", "raw_path": b"/mcp/"}
+        await self.app(scope, receive, send)
+
+
+app.mount("/mcp", _mcp_asgi)
+app.add_middleware(MCPPathMiddleware)
 
 
 # -- Health check --

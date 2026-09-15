@@ -86,6 +86,25 @@ Three verbosity levels: default (progress), `-v` (inputs/outputs), `-vv` (full d
 
 Every event is queryable: `GET /api/workflows/{id}` returns the full execution tree with all agent inputs, outputs, LLM calls, tool results, and timing data.
 
+### MCP — Agents Run Workflows
+
+Temper is an MCP server, so a coding agent can start a workflow and inspect
+what happened inside it:
+
+```json
+{ "mcpServers": { "temper": { "url": "http://localhost:8420/mcp" } } }
+```
+
+```python
+list_workflows()                                  # what can I run, which inputs?
+run_workflow("blog_writer", {"topic": "otters"})  # -> execution_id
+wait_for_run(execution_id)                        # -> status + one line per node
+get_node_output(execution_id, "draft")            # drill down only when needed
+```
+
+Inspection is layered on purpose: a full run payload can be ~23,500 tokens,
+while `get_run` answers the same questions in ~300. See [docs/mcp.md](docs/mcp.md).
+
 ### Studio
 
 Build and edit workflows visually. Drag agents, connect stages, configure strategies — all synced to the underlying YAML.

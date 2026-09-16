@@ -72,6 +72,10 @@ export const DAG_FIT_PADDING = 0.08;
 /* WebSocket reconnection */
 export const WS_INITIAL_DELAY_MS = 1000;
 export const WS_MAX_DELAY_MS = 30000;
+/** The server heartbeats every 30s; nothing for this long means the
+ *  connection is dead even though the socket never reported closing
+ *  (a dropped network does not always produce an onclose event). */
+export const WS_STALE_AFTER_MS = 75000;
 export const WS_BACKOFF_MULTIPLIER = 2;
 export const WS_MAX_RECONNECT_ATTEMPTS = 20;
 

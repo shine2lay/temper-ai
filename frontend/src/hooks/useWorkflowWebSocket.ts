@@ -8,6 +8,7 @@ import {
   WS_BACKOFF_MULTIPLIER,
   WS_MAX_RECONNECT_ATTEMPTS,
   WS_CLOSE_WORKFLOW_TERMINAL,
+  WS_STALE_AFTER_MS,
 } from '@/lib/constants';
 
 /**
@@ -19,6 +20,9 @@ export function useWorkflowWebSocket(workflowId: string | undefined): void {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const delayRef = useRef(WS_INITIAL_DELAY_MS);
   const unmountedRef = useRef(false);
+  /** When the server was last heard from — a dropped network does not
+   *  always close the socket, so silence is the only signal. */
+  const lastSeenRef = useRef<number>(Date.now());
 
   const applySnapshot = useExecutionStore((s) => s.applySnapshot);
   const applyEvent = useExecutionStore((s) => s.applyEvent);
@@ -38,10 +42,12 @@ export function useWorkflowWebSocket(workflowId: string | undefined): void {
 
     ws.onopen = () => {
       delayRef.current = WS_INITIAL_DELAY_MS;
+      lastSeenRef.current = Date.now();
       setWSStatus({ connected: true, reconnectAttempt: 0, wsError: null });
     };
 
     ws.onmessage = (event) => {
+      lastSeenRef.current = Date.now();
       let msg: WSMessage;
       try {
         msg = JSON.parse(event.data) as WSMessage;
@@ -93,6 +99,54 @@ export function useWorkflowWebSocket(workflowId: string | undefined): void {
 
     ws.onerror = () => {};
   }, [workflowId, applySnapshot, applyEvent, setWSStatus]);
+
+  // A network that vanishes mid-run often leaves the socket open with no
+  // close event, so the dashboard went on reporting "Connected" while
+  // receiving nothing. The server heartbeats every 30s; silence well past
+  // that means the connection is gone, so drop it and let the existing
+  // backoff reconnect.
+  // The browser knows immediately when the network goes away; the
+  // heartbeat check below is the backstop for a connection that dies
+  // without the browser noticing (a server that stops answering, a
+  // silently dropped tunnel).
+  useEffect(() => {
+    const onOffline = () => {
+      setWSStatus({ connected: false });
+      try {
+        socketRef.current?.close();
+      } catch {
+        /* already gone */
+      }
+    };
+    const onOnline = () => {
+      lastSeenRef.current = Date.now();
+      if (!unmountedRef.current) connect();
+    };
+    window.addEventListener('offline', onOffline);
+    window.addEventListener('online', onOnline);
+    return () => {
+      window.removeEventListener('offline', onOffline);
+      window.removeEventListener('online', onOnline);
+    };
+  }, [connect, setWSStatus]);
+
+  useEffect(() => {
+    const check = setInterval(() => {
+      if (unmountedRef.current) return;
+      if (!useExecutionStore.getState().wsStatus.connected) return;
+      if (Date.now() - lastSeenRef.current < WS_STALE_AFTER_MS) return;
+      setWSStatus({ connected: false });
+      const ws = socketRef.current;
+      if (ws) {
+        try {
+          ws.close();
+        } catch {
+          /* already gone */
+        }
+      }
+    }, 5000);
+    return () => clearInterval(check);
+  }, [setWSStatus]);
 
   useEffect(() => {
     unmountedRef.current = false;

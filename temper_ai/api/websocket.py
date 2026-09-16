@@ -258,17 +258,44 @@ class WebSocketManager:
         self._broadcast(execution_id, message)
 
     def _broadcast(self, execution_id: str, message: dict):
-        """Send a message to all connected WebSockets for an execution."""
-        connections = self._connections.get(execution_id, [])
+        """Send a message to all connected WebSockets for an execution.
+
+        Called from the event loop *and* from workflow threads (in-process
+        execution streams chunks straight from the agent's thread). A
+        thread has no running loop, and the previous fallback of
+        `asyncio.run(...)` spun up a brand-new one to touch a socket owned
+        by uvicorn's loop — which killed the connection with "is bound to a
+        different event loop" the moment a run started streaming. Live
+        updates then silently degraded to polling, so token streaming never
+        reached the browser at all.
+
+        Work from another thread is handed to the loop that owns the
+        socket, captured when the connection was accepted.
+        """
+        connections = list(self._connections.get(execution_id, []))
+        if not connections:
+            return
+
+        try:
+            running_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            running_loop = None
+        main_loop = getattr(self, "_main_loop", None)
+
         for ws in connections:
+            coro = self._send_json(ws, message)
             try:
-                try:
-                    asyncio.get_running_loop()
-                    asyncio.ensure_future(self._send_json(ws, message))
-                except RuntimeError:
-                    # No running event loop — create one
-                    asyncio.run(self._send_json(ws, message))
+                if running_loop is not None:
+                    asyncio.ensure_future(coro)
+                elif main_loop is not None and main_loop.is_running():
+                    asyncio.run_coroutine_threadsafe(coro, main_loop)
+                else:
+                    # Nobody can deliver this; close the coroutine so it
+                    # does not surface as "never awaited".
+                    coro.close()
+                    logger.debug("No event loop available to broadcast on")
             except Exception:
+                coro.close()
                 logger.debug("Failed to send to WebSocket", exc_info=True)
 
     def cleanup(self, execution_id: str):

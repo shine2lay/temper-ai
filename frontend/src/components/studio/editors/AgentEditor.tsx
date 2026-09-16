@@ -62,6 +62,11 @@ export function AgentEditor({ name }: AgentEditorProps) {
   const [form, setForm] = useState<AgentForm>(EMPTY_FORM);
   // Snapshot of the loaded config, so leaving with unsaved edits can warn.
   const loadedRef = useRef<string>(JSON.stringify(EMPTY_FORM));
+  // The form only covers LLM fields. A script agent also carries
+  // script_template, timeout_seconds and dispatch ops, and rebuilding the
+  // config from the form alone silently deleted them — turning a script
+  // agent into an empty LLM one and erasing its runtime routing.
+  const rawAgentRef = useRef<Record<string, unknown>>({});
   useUnsavedChangesGuard(JSON.stringify(form) !== loadedRef.current);
 
   // Load existing config.
@@ -76,6 +81,7 @@ export function AgentEditor({ name }: AgentEditorProps) {
     if (raw) {
       const d = raw;
       const agent = (d.agent ?? d) as Record<string, unknown>;
+      rawAgentRef.current = agent;
       const loaded: AgentForm = {
         name: (data?.name as string | undefined) ?? (agent.name as string | undefined) ?? name ?? '',
         description:
@@ -113,6 +119,8 @@ export function AgentEditor({ name }: AgentEditorProps) {
 
   const toConfigData = useCallback((): Record<string, unknown> => {
     const agent: Record<string, unknown> = {
+      // Anything this form does not manage is carried through untouched.
+      ...rawAgentRef.current,
       type: form.type,
       system_prompt: form.system_prompt,
       provider: form.provider,

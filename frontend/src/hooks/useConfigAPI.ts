@@ -108,11 +108,14 @@ export function useCreateConfig(configType: string) {
     Error,
     { name: string; description?: string; config_data: Record<string, unknown> }
   >({
+    // The API takes {config, schema_version} at /configs/{type}/{name};
+    // posting {name, description, config_data} to the collection URL was
+    // answered with 422 and the config was never written.
     mutationFn: (body) =>
-      fetchJSON(`${CONFIGS_BASE}/${configType}`, {
+      fetchJSON(`${CONFIGS_BASE}/${configType}/${body.name}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ config: body.config_data, schema_version: '1.0' }),
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['configs', configType] });
@@ -132,7 +135,7 @@ export function useUpdateConfig(configType: string, name: string) {
       fetchJSON(`${CONFIGS_BASE}/${configType}/${name}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ config: body.config_data, schema_version: '1.0' }),
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['configs', configType] });

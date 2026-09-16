@@ -38,6 +38,8 @@ interface AgentCardContentProps {
   namePrefix?: string;
   /** Name of the workflow node this agent runs in (may differ from the agent). */
   nodeName?: string;
+  /** input_map entries that pointed at something that did not exist. */
+  unresolvedInputs?: string[];
 }
 
 /**
@@ -53,6 +55,7 @@ export const AgentCardContent = memo(function AgentCardContent({
   borderStyle,
   namePrefix,
   nodeName,
+  unresolvedInputs,
 }: AgentCardContentProps) {
   const select = useExecutionStore((s) => s.select);
   const streaming = useExecutionStore((s) => s.streamingContent.get(agent.id));
@@ -233,6 +236,23 @@ export const AgentCardContent = memo(function AgentCardContent({
           >
             <div className="h-full bg-temper-token-prompt" style={{ width: `${(promptTokens / totalTokens) * 100}%` }} />
             <div className="h-full bg-temper-token-completion" style={{ width: `${(completionTokens / totalTokens) * 100}%` }} />
+          </div>
+        </div>
+      )}
+
+      {/* Wiring that resolved to nothing: the agent ran with nulls in
+          those slots, so the run can be green and still built on air. */}
+      {unresolvedInputs && unresolvedInputs.length > 0 && (
+        <div
+          className="px-2.5 py-1 border-t border-amber-500/30 bg-amber-500/10"
+          title={unresolvedInputs.join('\n')}
+        >
+          <span className="text-[9px] font-medium text-amber-700 dark:text-amber-400">
+            ⚠ {unresolvedInputs.length} unresolved input
+            {unresolvedInputs.length > 1 ? 's' : ''}
+          </span>
+          <div className="text-[9px] text-temper-text-dim truncate">
+            {unresolvedInputs[0]}
           </div>
         </div>
       )}

@@ -128,6 +128,7 @@ export const AgentNodeComponent = memo(function AgentNodeComponent({ data }: Nod
         borderStyle={isDelegate ? 'dashed' : (dispatchedBy ? 'solid' : undefined)}
         namePrefix={dispatchedBy ? '⚡' : undefined}
         nodeName={stage?.name}
+        unresolvedInputs={stage?.unresolved_inputs}
       />
 
       {/* Iteration picker */}

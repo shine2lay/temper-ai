@@ -82,6 +82,9 @@ export interface NodeExecution {
   // Populated by api/data_service.py._annotate_dispatch_relationships.
   dispatched_by?: string;            // dispatcher node that ADDED this node
   dispatched_children?: string[];    // (this node is a dispatcher) names it added
+  // input_map entries that pointed at something that did not exist; the
+  // agent ran with nulls in their place (see stage/executor.py).
+  unresolved_inputs?: string[];
   removed_children?: string[];       // (this node is a dispatcher) names it removed
   // Backward compat
   collaboration_events?: CollaborationEvent[];

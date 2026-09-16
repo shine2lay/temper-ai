@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Info, Pencil, Download, RotateCcw } from 'lucide-react';
+import { ArrowLeft, Info, Pencil, Download, RotateCcw, Square } from 'lucide-react';
 import { toast } from 'sonner';
 import { useExecutionStore } from '@/store/executionStore';
 import { StatusBadge } from '@/components/shared/StatusBadge';
@@ -197,6 +197,23 @@ export function WorkflowHeader() {
   }, [workflow, stages, agents, llmCalls]);
 
   const [rerunning, setRerunning] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+
+  // A run could be cancelled from the list but not from the run you were
+  // actually watching — which is where you notice it needs stopping.
+  const handleCancel = useCallback(async () => {
+    if (!workflow || cancelling) return;
+    setCancelling(true);
+    try {
+      const res = await authFetch(`/api/runs/${workflow.id}/cancel`, { method: 'POST' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      toast.success('Cancelling run');
+    } catch (err) {
+      toast.error(`Cancel failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    } finally {
+      setCancelling(false);
+    }
+  }, [workflow, cancelling]);
 
   const handleRerun = useCallback(async () => {
     if (!workflow || rerunning) return;
@@ -291,6 +308,17 @@ export function WorkflowHeader() {
           >
             <Download className="w-3 h-3" />
             Export
+          </button>
+        )}
+        {workflow && isRunning && (
+          <button
+            onClick={handleCancel}
+            disabled={cancelling}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-temper-surface text-temper-text-muted hover:text-red-500 hover:bg-red-500/10 border border-temper-border transition-colors shrink-0 cursor-pointer disabled:opacity-50"
+            aria-label="Cancel — stop this run"
+          >
+            <Square className="w-3 h-3" />
+            {cancelling ? 'Cancelling…' : 'Cancel'}
           </button>
         )}
         {workflow && !isRunning && (

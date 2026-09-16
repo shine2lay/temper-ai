@@ -6,8 +6,9 @@ agent:
   max_iterations: 10
   total_timeout: 600
   token_budget: 16000
-  provider: vllm
-  model: qwen3-next
+  # No provider pinned: whichever one you configured is used. This agent
+  # drives the Delegate tool, so it needs a model that follows tool-use
+  # instructions reliably.
   system_prompt: |
     You are a research coordinator. You delegate research to specialists,
     then synthesize their findings into a brief summary.

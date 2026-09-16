@@ -254,12 +254,21 @@ function buildElkNode(
   // Decide what's "inside" this node — child stages or synthesized
   // per-agent pseudo nodes.
   const realChildren = node.child_nodes ?? [];
+  // A plain agent node already draws its own agent card (buildAgentData
+  // reads node.agent), and the store normalises `.agent` into `.agents`
+  // for those nodes. Synthesizing a pseudo child for them therefore
+  // produced a second node stacked exactly on top of the first: invisible,
+  // but twice the DOM, twice the layout work, and an ambiguous click
+  // target. Stages still need pseudo children — that is how their agents
+  // become nodes.
+  const synthesizeFrom =
+    node.type === 'agent' && (node.agents ?? []).length <= 1
+      ? []
+      : (node.agents ?? []);
   const pseudoChildren: NodeExecution[] =
     realChildren.length > 0
       ? realChildren
-      : (node.agents ?? []).map((a) =>
-          pseudoAgentNode(node, a, /* isDelegate */ false),
-        );
+      : synthesizeFrom.map((a) => pseudoAgentNode(node, a, /* isDelegate */ false));
 
   // Filter skipped + rewire deps within this fragment.
   const { liveNodes, depMap: baseDepMap } = ctx.options.hideSkipped !== false

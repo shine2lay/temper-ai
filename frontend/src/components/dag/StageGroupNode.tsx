@@ -39,16 +39,23 @@ export const StageGroupNode = memo(function StageGroupNode({ data }: NodeProps) 
     ? `${agents.length} agent + ${delegateCount} sub-agent${delegateCount > 1 ? 's' : ''}`
     : `${agents.length} agents`;
   const isRunning = stage.status === 'running';
+  // A stage whose condition was not met is skipped just like an agent node,
+  // but it used to keep full stage styling and read "0 agents · 0 tok" — so
+  // a branch that never ran looked like one that ran and produced nothing.
+  const isSkipped = stage.status === 'skipped';
 
   return (
     <div
       className={cn(
         'rounded-xl w-full h-full relative',
         !isRunning && 'border-2',
+        isSkipped && 'border-dashed opacity-50',
       )}
       style={{
-        borderColor: isRunning ? 'transparent' : stageColor,
-        backgroundColor: `color-mix(in srgb, ${stageColor} 4%, transparent)`,
+        borderColor: isRunning ? 'transparent' : isSkipped ? statusColor : stageColor,
+        backgroundColor: isSkipped
+          ? 'transparent'
+          : `color-mix(in srgb, ${stageColor} 4%, transparent)`,
       }}
       role="button"
       tabIndex={0}
@@ -102,7 +109,13 @@ export const StageGroupNode = memo(function StageGroupNode({ data }: NodeProps) 
         )}
       </div>
 
-      {/* Metrics row */}
+      {/* Metrics row. A skipped stage has no metrics worth showing — zeros
+          read as "ran and did nothing" rather than "never ran". */}
+      {isSkipped ? (
+        <div className="px-3 py-1 text-[10px] text-temper-text-dim border-b border-temper-border/10">
+          skipped — condition not met
+        </div>
+      ) : (
       <div className="px-3 py-1 flex items-center gap-2 text-[10px] text-temper-text-muted border-b border-temper-border/10">
         <span>{agentLabel}</span>
         <span className="text-temper-border/40">|</span>
@@ -116,6 +129,7 @@ export const StageGroupNode = memo(function StageGroupNode({ data }: NodeProps) 
         <span className="text-temper-border/40">|</span>
         <span>{formatDuration(durationSeconds)}</span>
       </div>
+      )}
 
       {/* Child nodes render here via ReactFlow's parentId grouping */}
     </div>

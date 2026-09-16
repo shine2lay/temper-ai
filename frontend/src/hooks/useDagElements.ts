@@ -169,7 +169,10 @@ export function useDagElements(hideSkipped = false): { nodes: Node[]; edges: Edg
     return () => {
       cancelled = true;
     };
-  }, [dataCtx]);
+    // hideSkipped belongs here: the layout is computed with it, so leaving
+    // it out meant toggling "Show skipped" flipped the checkbox and
+    // changed nothing on the canvas until something else forced a relayout.
+  }, [dataCtx, hideSkipped]);
 
   // Map ELK output → React Flow nodes/edges.
   const structural = useMemo<{ nodes: Node[]; edges: Edge[] }>(() => {

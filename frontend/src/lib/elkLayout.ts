@@ -129,6 +129,14 @@ function rawDepMap(nodes: NodeExecution[]): Map<string, string[]> {
       const id = nameToId.get(depName);
       if (id) deps.push(id);
     }
+    // A node created at runtime depends on whatever created it. Without
+    // this the dispatcher and its children are disconnected components,
+    // which ELK stacks at the same coordinates — every dynamic run drew
+    // its nodes in one pile with no edges between them.
+    if (n.dispatched_by && !(n.depends_on ?? []).includes(n.dispatched_by)) {
+      const id = nameToId.get(n.dispatched_by);
+      if (id && id !== n.id) deps.push(id);
+    }
     out.set(n.id, deps);
   }
   return out;
@@ -357,11 +365,21 @@ const ROOT_OPTIONS: LayoutOptions = {
   'elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF',
   'elk.layered.nodePlacement.bk.fixedAlignment': 'BALANCED',
   'elk.padding': '[top=60,left=20,bottom=20,right=20]',
+  // Without this, disconnected parts of a graph are laid out on top of
+  // each other at the padding origin rather than side by side.
+  'elk.separateConnectedComponents': 'true',
+  'elk.spacing.componentComponent': '60',
 };
 
 const FRAGMENT_OPTIONS: LayoutOptions = {
   'elk.algorithm': 'layered',
   'elk.direction': 'RIGHT',
+  // Children of a container are frequently unconnected to each other —
+  // dispatched siblings, parallel stage members. Without component
+  // separation ELK piles them at the container's padding origin, which is
+  // how every dynamically created node ended up drawn in one stack.
+  'elk.separateConnectedComponents': 'true',
+  'elk.spacing.componentComponent': '60',
   'elk.layered.edgeRouting': 'ORTHOGONAL',
   // 220 gives a wide enough channel for 5+ fan-in lanes to splay
   // between worker column and leader column without arrows looking
@@ -390,16 +408,59 @@ const FRAGMENT_OPTIONS: LayoutOptions = {
 
 const elk = new ELK();
 
+
+/**
+ * Lift nodes created at runtime out of their dispatcher and make them its
+ * siblings, depending on it.
+ *
+ * The API nests dispatched children inside the node that created them,
+ * which is right for reading the data but wrong for drawing it: a nested
+ * child has no edge to its parent and no dependency on anything, so the
+ * layout engine piled every dynamically created node at one coordinate
+ * with nothing joining them. As siblings with an explicit dependency they
+ * lay out left to right and the dispatch edge is drawn.
+ */
+function hoistDispatchedChildren(nodes: NodeExecution[]): NodeExecution[] {
+  const out: NodeExecution[] = [];
+  for (const node of nodes) {
+    const children = node.child_nodes ?? [];
+    const dispatched = children.filter((c) => (c as NodeExecution).dispatched_by);
+    if (dispatched.length === 0) {
+      out.push(node);
+      continue;
+    }
+    const kept = children.filter((c) => !(c as NodeExecution).dispatched_by);
+    out.push({ ...node, child_nodes: kept.length > 0 ? kept : undefined } as NodeExecution);
+    for (const child of dispatched) {
+      const parentName = (child as NodeExecution).dispatched_by ?? node.name;
+      out.push({
+        ...(child as NodeExecution),
+        depends_on: (child.depends_on ?? []).length > 0
+          ? child.depends_on
+          : [parentName as string],
+      } as NodeExecution);
+    }
+    // A dispatched child may itself have dispatched: recurse.
+    const nested = hoistDispatchedChildren(dispatched);
+    for (const n of nested) {
+      if (!out.some((existing) => existing.id === n.id)) out.push(n);
+    }
+  }
+  return out;
+}
+
 export async function layoutWithElk(
   topLevelNodes: NodeExecution[],
   options: BuildOptions = {},
 ): Promise<ElkLayoutResult> {
   const ctx: BuildContext = { options, byId: new Map() };
 
+  const hoisted = hoistDispatchedChildren(topLevelNodes);
+
   // Filter top-level skipped + rewire across the top level.
   const { liveNodes, depMap } = options.hideSkipped !== false
-    ? filterSkippedAndRewire(topLevelNodes)
-    : { liveNodes: topLevelNodes, depMap: rawDepMap(topLevelNodes) };
+    ? filterSkippedAndRewire(hoisted)
+    : { liveNodes: hoisted, depMap: rawDepMap(hoisted) };
 
   const rootChildren: ElkNode[] = liveNodes.map((n) =>
     buildElkNode(n, undefined, undefined, ctx),

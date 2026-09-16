@@ -65,6 +65,13 @@ class BaseLLM(ABC):
     # Subclasses should override with a semantic name (e.g., "openai", "vllm")
     PROVIDER_NAME: str = "unknown"
 
+    # Whether this provider can offer temper's tools to the model and
+    # return tool calls. Providers that drive an external agent with its
+    # own tool surface (the Claude Code CLI, for instance) cannot, and an
+    # agent configured with `tools:` would otherwise run without them and
+    # report success.
+    SUPPORTS_TOOLS: bool = True
+
     @property
     def provider_name(self) -> str:
         return self.PROVIDER_NAME

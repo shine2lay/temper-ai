@@ -596,12 +596,14 @@ def _apply_declarative_dispatch(
     # via input_map (e.g. step_uid passed from an upstream capturer).
     dispatch_input_data = _resolve_inputs(node, input_data, node_outputs)
 
+    dispatch_notes: list[str] = []
     try:
         ops = render_dispatch(
             agent_config,
             agent_output=agent_output,
             agent_structured=agent_structured,
             agent_input_data=dispatch_input_data,
+            notes=dispatch_notes,
         )
     except DispatchRenderError as exc:
         logger.error("Dispatch render failed for '%s': %s", node.name, exc)
@@ -612,6 +614,19 @@ def _apply_declarative_dispatch(
     # go through the same cap enforcement + validation path below.
     tool_call_ops = _drain_tool_call_ops(state, context, node)
     ops = list(ops) + tool_call_ops
+
+    if dispatch_notes and context.event_recorder:
+        # Recorded so the run says what did not happen; the dashboard reads
+        # this the same way it reads unresolved inputs.
+        logger.warning("Dispatch from '%s' produced nothing: %s", node.name, dispatch_notes)
+        context.event_recorder.record(
+            EventType.DISPATCH_APPLIED,
+            data={"dispatcher": node.name, "added": [], "removed": [],
+                  "skipped_reasons": dispatch_notes},
+            parent_id=context.parent_event_id,
+            execution_id=context.run_id,
+            status="skipped",
+        )
 
     if not ops:
         return

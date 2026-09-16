@@ -195,6 +195,30 @@ class LLMAgent(AgentABC):
         tools = self._get_tools(context)
         execute_tool = self._make_tool_executor(context) if tools else None
 
+        # An agent that declares tools against a provider that cannot offer
+        # them runs without them and still reports success — a workflow
+        # whose whole job is to delegate or mutate the graph then completes
+        # having done nothing of the sort.
+        if tools and not getattr(llm_service.provider, "SUPPORTS_TOOLS", True):
+            declared = [t.get("name") or t.get("function", {}).get("name") for t in tools]
+            message = (
+                f"provider '{getattr(llm_service.provider, 'PROVIDER_NAME', '?')}' "
+                f"does not support tool calls; {declared} were not offered to the model"
+            )
+            logger.warning("Agent '%s': %s", self.name, message)
+            record = (
+                context.event_recorder.record if context.event_recorder else None
+            )
+            if record:
+                record(
+                    EventType.LLM_NO_EXECUTOR,
+                    parent_id=agent_event_id,
+                    execution_id=context.run_id,
+                    status="skipped",
+                    data={"agent_name": self.name, "tools_unavailable": declared,
+                          "reason": message},
+                )
+
         stream_cb = context.stream_callback
         if not stream_cb and hasattr(context.event_recorder, 'broadcast_stream_chunk'):
             stream_cb = self._make_stream_callback(context, agent_event_id)

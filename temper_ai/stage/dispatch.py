@@ -102,6 +102,7 @@ def render_dispatch(
     agent_output: str = "",
     agent_structured: dict[str, Any] | None = None,
     agent_input_data: dict[str, Any] | None = None,
+    notes: list[str] | None = None,
 ) -> list[DispatchOp]:
     """Render an agent's dispatch block into concrete operations.
 
@@ -128,12 +129,15 @@ def render_dispatch(
             raise DispatchRenderError(
                 f"dispatch[{op_idx}] must be a dict, got {type(raw_op).__name__}"
             )
-        resolved.extend(_render_one_op(raw_op, op_idx, base_scope))
+        resolved.extend(_render_one_op(raw_op, op_idx, base_scope, notes))
     return resolved
 
 
 def _render_one_op(
-    raw_op: dict[str, Any], op_idx: int, base_scope: dict[str, Any]
+    raw_op: dict[str, Any],
+    op_idx: int,
+    base_scope: dict[str, Any],
+    notes: list[str] | None = None,
 ) -> list[DispatchOp]:
     """Render a single op entry. for_each expands to N ops, no for_each = 1 op."""
     op_name = raw_op.get("op")
@@ -146,7 +150,7 @@ def _render_one_op(
     if for_each_spec is None:
         return [_render_single_op(raw_op, op_name, base_scope, op_idx)]
 
-    loop_items = _resolve_for_each_list(for_each_spec, base_scope, op_idx)
+    loop_items = _resolve_for_each_list(for_each_spec, base_scope, op_idx, notes)
     loop_var = raw_op.get("as", "item")
     if not isinstance(loop_var, str) or not loop_var.isidentifier():
         raise DispatchRenderError(
@@ -253,7 +257,7 @@ def _require_node_shape(node: dict[str, Any], op_idx: int, loop_idx: int | None)
 
 
 def _resolve_for_each_list(
-    spec: Any, scope: dict[str, Any], op_idx: int
+    spec: Any, scope: dict[str, Any], op_idx: int, notes: list[str] | None = None
 ) -> list[Any]:
     """Resolve a `for_each:` spec to a concrete list of items to iterate over.
 
@@ -295,6 +299,14 @@ def _resolve_for_each_list(
     # iteration — matches the intended "graceful skip" for transient
     # upstream failures.
     if parts[0] == "structured" and not cursor:
+        # Graceful, but not silent: a dispatcher that fans out nothing
+        # because its own JSON did not parse otherwise leaves a run that
+        # looks completed while none of its work happened.
+        if notes is not None:
+            notes.append(
+                f"dispatch[{op_idx}] fanned out nothing: {spec!r} is empty "
+                f"(the agent produced no structured output)"
+            )
         return []
     for key in parts[1:]:
         if isinstance(cursor, dict):

@@ -231,26 +231,12 @@ export function AgentDetailPanel({ agentId }: AgentDetailPanelProps) {
 
       <Separator />
 
-      {/* System Prompt — the most important context for understanding agent behavior */}
-      {config?.system_prompt && (
-        <CollapsibleSection title="System Prompt" defaultOpen>
-          <SmartContent content={config.system_prompt} maxHeight={200} className="mt-1" />
-        </CollapsibleSection>
-      )}
-
-      {/* Task Template — what the agent was actually told to do */}
-      {config?.task_template && (
-        <CollapsibleSection title="Task Template" defaultOpen>
-          <SmartContent content={config.task_template} maxHeight={200} className="mt-1" />
-        </CollapsibleSection>
-      )}
-
-      {/* Collapsible sections */}
-      <CollapsibleSection title="Input Data">
-        <JsonViewer data={ag.input_data} />
-      </CollapsibleSection>
-
-      <CollapsibleSection title="Output">
+      {/* What the agent produced comes first and open: it is what someone
+          opens this panel to read. The prompt and template are identical on
+          every run of the agent, so they follow, collapsed — the previous
+          order hid a 3,000-character answer behind a disclosure triangle
+          while boilerplate filled the screen. */}
+      <CollapsibleSection title="Output" defaultOpen>
         {ag.output && (
           ag.output.includes('<think>') ? (
             <ThinkingContent
@@ -272,6 +258,22 @@ export function AgentDetailPanel({ agentId }: AgentDetailPanelProps) {
           <span className="text-xs text-temper-text-dim">No output</span>
         )}
       </CollapsibleSection>
+
+      <CollapsibleSection title="Input Data">
+        <JsonViewer data={ag.input_data} />
+      </CollapsibleSection>
+
+      {config?.system_prompt && (
+        <CollapsibleSection title="System Prompt">
+          <SmartContent content={config.system_prompt} maxHeight={200} className="mt-1" />
+        </CollapsibleSection>
+      )}
+
+      {config?.task_template && (
+        <CollapsibleSection title="Task Template">
+          <SmartContent content={config.task_template} maxHeight={200} className="mt-1" />
+        </CollapsibleSection>
+      )}
 
       {ag.reasoning && (
         <CollapsibleSection title="Reasoning">

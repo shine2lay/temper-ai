@@ -59,6 +59,10 @@ services:
       - ./temper_ai:/app/temper_ai
       - ./configs:/app/configs:ro
       - ${WORKSPACE_DIR:-./workspaces}:/app/workspaces
+      # Serve the locally built dashboard when there is one, so `npm run
+      # build` + restart is enough. Without this the image's own copy is
+      # served, and a rebuilt frontend silently never reaches the browser.
+      - ${FRONTEND_DIST:-./frontend/dist}:/app/frontend/dist:ro
     environment:
       HOME: /app
       PYTHONDONTWRITEBYTECODE: "1"

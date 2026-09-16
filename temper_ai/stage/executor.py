@@ -345,8 +345,13 @@ def _execute_single_node(
             _record_skipped_node(node, context, parent_event_id, str(exc))
             return result
 
-    resolved = _resolve_inputs(node, input_data, node_outputs, loop_feedback)
+    unresolved: list[str] = []
+    resolved = _resolve_inputs(node, input_data, node_outputs, loop_feedback, unresolved)
     resolved = _inject_strategy_context(node, resolved, node_outputs)
+    if unresolved:
+        # Recorded on the node so it reaches the API and the dashboard: a
+        # log line is invisible to whoever is looking at the run.
+        logger.warning("Node '%s' has unresolved input_map entries: %s", node.name, unresolved)
 
     # Gate: pause and wait for human approval before executing
     if node.config.gate:
@@ -354,7 +359,10 @@ def _execute_single_node(
 
     node_event_id = context.event_recorder.record(
         EventType.STAGE_STARTED,
-        data=_build_node_event_data(node),
+        data={
+            **_build_node_event_data(node),
+            **({"unresolved_inputs": unresolved} if unresolved else {}),
+        },
         parent_id=parent_event_id,
         execution_id=context.run_id,
         status="running",
@@ -964,6 +972,7 @@ def _resolve_inputs(
     input_data: dict,
     node_outputs: dict[str, NodeResult],
     loop_feedback: dict[str, NodeResult] | None = None,
+    unresolved: list[str] | None = None,
 ) -> dict:
     """Resolve input_map for a node.
 
@@ -998,7 +1007,9 @@ def _resolve_inputs(
         return resolved
 
     resolved = {
-        local_name: _resolve_single_input(node.name, local_name, source, input_data, effective_outputs)
+        local_name: _resolve_single_input(
+            node.name, local_name, source, input_data, effective_outputs, unresolved,
+        )
         for local_name, source in input_map.items()
     }
     if logger.isEnabledFor(logging.DEBUG):
@@ -1030,6 +1041,7 @@ def _resolve_single_input(
     source: Any,
     input_data: dict,
     node_outputs: dict[str, NodeResult],
+    unresolved: list[str] | None = None,
 ) -> Any:
     """Resolve a single input_map entry from its source reference.
 
@@ -1081,6 +1093,8 @@ def _resolve_single_input(
             "Node '%s' input_map '%s': source node '%s' has not produced output yet",
             node_name, local_name, source_node,
         )
+        if unresolved is not None:
+            unresolved.append(f"{local_name} \u2190 {source} (no such node)")
         return None
 
     result = node_outputs[source_node]
@@ -1091,10 +1105,17 @@ def _resolve_single_input(
         return result.status
     if field == "structured" and len(parts) >= 3:
         if not result.structured_output:
+            if unresolved is not None:
+                unresolved.append(f"{local_name} \u2190 {source} (node produced no structured output)")
             return None
         structured_value: Any = result.structured_output
         for key in parts[2:]:
             structured_value = structured_value.get(key) if isinstance(structured_value, dict) else None
+        if structured_value is None and unresolved is not None:
+            # A typo in a wiring path otherwise passes null to the agent and
+            # the run finishes green, which is indistinguishable from work
+            # that was genuinely done.
+            unresolved.append(f"{local_name} \u2190 {source} (field not found)")
         return structured_value
 
     # Child node reference: "stage.child_node.output" or "stage.child_node.structured.field"

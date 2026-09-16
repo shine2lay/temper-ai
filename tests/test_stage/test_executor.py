@@ -1458,3 +1458,39 @@ class TestGetFinalOutput:
         outputs = {"a": NodeResult(status=Status.SKIPPED)}
         result = _get_final_output(nodes, outputs)
         assert result is None
+
+
+class TestUnresolvedInputMap:
+    """A typo in a wiring path used to pass null to the agent and finish
+    green — indistinguishable from work that was genuinely done."""
+
+    def _result(self, structured):
+        from temper_ai.shared.types import NodeResult, Status
+        return NodeResult(status=Status.COMPLETED, output="x", structured_output=structured)
+
+    def test_a_missing_field_is_reported(self):
+        from temper_ai.stage.executor import _resolve_single_input
+        unresolved: list[str] = []
+        value = _resolve_single_input(
+            "second", "msg", "first.structured.does_not_exist", {},
+            {"first": self._result({"real_field": 1})}, unresolved,
+        )
+        assert value is None
+        assert unresolved and "does_not_exist" in unresolved[0]
+        assert "field not found" in unresolved[0]
+
+    def test_a_missing_node_is_reported(self):
+        from temper_ai.stage.executor import _resolve_single_input
+        unresolved: list[str] = []
+        _resolve_single_input("second", "msg", "nope.structured.x", {}, {}, unresolved)
+        assert unresolved and "no such node" in unresolved[0]
+
+    def test_a_resolved_path_reports_nothing(self):
+        from temper_ai.stage.executor import _resolve_single_input
+        unresolved: list[str] = []
+        value = _resolve_single_input(
+            "second", "msg", "first.structured.real_field", {},
+            {"first": self._result({"real_field": "here"})}, unresolved,
+        )
+        assert value == "here"
+        assert unresolved == []

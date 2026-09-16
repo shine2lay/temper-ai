@@ -555,6 +555,10 @@ def _build_node_execution(node_event: dict, all_events: list[dict]) -> dict:
         "agents": agents if len(agents) != 1 or node_type != "agent" else None,
         "child_nodes": child_nodes if child_nodes else None,
         "strategy": data.get("strategy"),
+        # input_map entries that pointed at something that did not exist.
+        # The agent ran with nulls in their place, so the run can be green
+        # and still wrong; surfacing this is the only way to notice.
+        "unresolved_inputs": data.get("unresolved_inputs"),
         "depends_on": data.get("depends_on", []),
         "loop_to": data.get("loop_to"),
         "max_loops": data.get("max_loops"),

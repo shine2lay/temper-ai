@@ -36,11 +36,24 @@ export const AgentNodeComponent = memo(function AgentNodeComponent({ data }: Nod
         <Handle type="source" position={Position.Right} id="right"
           className="!w-2 !h-2 !bg-temper-border !border-temper-bg" />
         <div
-          className="rounded-lg px-3 py-2 border-2 border-dashed opacity-50"
+          className={cn(
+            'rounded-lg px-3 py-2 border-2 border-dashed',
+            // A node that is actually working is not faded out, and its
+            // dot pulses like any other live node. Dispatched children
+            // arrive here before their agent record does, so without this
+            // a running child looked identical to a skipped one.
+            nodeStatus === 'running' ? 'opacity-100' : 'opacity-50',
+          )}
           style={{ borderColor }}
         >
           <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: borderColor }} />
+            <span
+              className={cn(
+                'w-2 h-2 rounded-full',
+                nodeStatus === 'running' && 'animate-pulse',
+              )}
+              style={{ backgroundColor: borderColor }}
+            />
             <span className="text-xs font-medium text-temper-text-dim">{name}</span>
             <span className="text-[9px] px-1 py-px rounded bg-temper-surface text-temper-text-dim">
               {nodeStatus === 'waiting' ? 'awaiting approval' : nodeStatus}

@@ -64,7 +64,13 @@ export const AgentCardContent = memo(function AgentCardContent({
 
   const statusColor = STATUS_COLORS[agent.status] ?? STATUS_COLORS.pending;
   const agentDone = agent.status === 'completed' || agent.status === 'failed';
-  const isStreaming = streaming && !streaming.done && !agentDone;
+  // The store seeds an empty entry for every running agent, so this badge
+  // used to appear the moment an agent started and sit there for the whole
+  // run even when no text ever arrived — a provider that returns its answer
+  // in one piece streams nothing, and the card claimed otherwise for half a
+  // minute. Only say "streaming" once something has actually streamed.
+  const isStreaming =
+    streaming && !streaming.done && !agentDone && (streaming.content?.length ?? 0) > 0;
   const textOutput = isStreaming ? streaming.content : agent.output ?? '';
   // Derive structured output from text if API doesn't provide it
   const derivedOutputData = useMemo(() => {

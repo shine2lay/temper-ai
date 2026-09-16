@@ -285,6 +285,31 @@ def get_workflow(execution_id: str):
     """Get full workflow execution hierarchy."""
     result = get_workflow_execution(execution_id)
     if not result:
+        # A run is registered before its first event is written, so for a
+        # fraction of a second POST /api/runs handed back an id that this
+        # endpoint answered 404 for. Anything that started a run and polled
+        # immediately — an agent over MCP, a script — saw "not found" for a
+        # run that was about to exist.
+        if execution_id in _state().running:
+            return {
+                "id": execution_id,
+                "workflow_name": None,
+                "status": "running",
+                "start_time": None,
+                "end_time": None,
+                "duration_seconds": None,
+                "nodes": [],
+                "total_tokens": 0,
+                "total_cost_usd": 0.0,
+                "total_llm_calls": 0,
+                "total_tool_calls": 0,
+                "input_data": None,
+                "workspace_path": None,
+                "output_data": None,
+                "workflow_output": None,
+                "error_message": None,
+                "fork_source": None,
+            }
         raise HTTPException(status_code=404, detail=f"Execution '{execution_id}' not found")
     return result
 

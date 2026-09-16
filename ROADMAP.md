@@ -60,9 +60,14 @@ the old "estimate heights, then fix them up" problems are gone.
      agent.completed events carry structured_output, which is why the DAG,
      the API and the MCP tools can all show it. -->
 - [ ] Stale run auto-cleanup on server restart (mark orphaned "running" as
-      failed). Low priority on the evidence: of 997 runs in a working
-      database, 983 completed, 11 failed, 2 cancelled and 1 was legitimately
-      still running — no orphans at all.
+      failed). Re-rated up: an earlier sample found no orphans, but that was
+      a quiet moment — orphans are *created* by restarts. After a day of
+      testing with frequent restarts, 2 runs (demo_structured, ui_stream)
+      have shown "running" for 19 hours with nodes stuck mid-execution and
+      no process behind them. They never resolve on their own.
+- [ ] A run parked on a gate reports status "running" at the run level, so
+      the list shows 19 hours of "running" for something that is waiting for
+      a human. The node says `waiting`; the run should too.
 - [ ] Webhook notifications for workflow completion/failure
 - [x] API authentication — `TEMPER_API_TOKEN` gates the API, the MCP
       endpoint and the WebSocket at the HTTP edge (off by default)

@@ -16,14 +16,15 @@ logger = logging.getLogger(__name__)
 DEFAULT_URL = "http://localhost:8420/mcp"
 
 
-async def _serve(url: str) -> None:
+async def _serve(url: str, token: str | None = None) -> None:
     import mcp.types as types
     from mcp.client.session import ClientSession
     from mcp.client.streamable_http import streamablehttp_client
     from mcp.server import Server
     from mcp.server.stdio import stdio_server
 
-    async with streamablehttp_client(url) as (read, write, _), ClientSession(
+    headers = {"Authorization": f"Bearer {token}"} if token else None
+    async with streamablehttp_client(url, headers=headers) as (read, write, _), ClientSession(
         read, write
     ) as upstream:
         await upstream.initialize()
@@ -48,8 +49,14 @@ async def _serve(url: str) -> None:
             await proxy.run(stdin, stdout, options)
 
 
-def run_bridge(url: str = DEFAULT_URL) -> None:
-    """Serve temper's MCP tools over stdio by proxying to a running server."""
+def run_bridge(url: str = DEFAULT_URL, token: str | None = None) -> None:
+    """Serve temper's MCP tools over stdio by proxying to a running server.
+
+    The token defaults to TEMPER_API_TOKEN, so a bridge running beside the
+    server it proxies needs no extra configuration.
+    """
+    import os
+
     import anyio
 
-    anyio.run(_serve, url)
+    anyio.run(_serve, url, token or os.environ.get("TEMPER_API_TOKEN") or None)

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { useExecutionStore } from '@/store/executionStore';
 import type { WSMessage } from '@/types';
+import { getApiKey } from '@/lib/authFetch';
 import {
   WS_INITIAL_DELAY_MS,
   WS_MAX_DELAY_MS,
@@ -27,7 +28,11 @@ export function useWorkflowWebSocket(workflowId: string | undefined): void {
     if (unmountedRef.current || !workflowId) return;
 
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const url = `${protocol}//${location.host}/ws/${workflowId}`;
+    // A browser cannot set headers on a WebSocket handshake, so the token
+    // rides in the query string (the server accepts either).
+    const token = getApiKey();
+    const query = token ? `?token=${encodeURIComponent(token)}` : '';
+    const url = `${protocol}//${location.host}/ws/${workflowId}${query}`;
     const ws = new WebSocket(url);
     socketRef.current = ws;
 

@@ -780,8 +780,15 @@ def list_mcp_servers():
 
 @router.get("/api/runtime-config")
 def get_runtime_config():
-    """Runtime config for the frontend (auth tokens, feature flags, etc.)."""
-    return {"dashboard_token": None}  # noqa: B105
+    """Runtime config for the frontend.
+
+    Reports *whether* a token is required, never the token itself: an
+    open endpoint that hands out the credential is theatre, not
+    authentication.
+    """
+    from temper_ai.api.auth import configured_token
+
+    return {"auth_required": configured_token() is not None}
 
 
 @router.websocket("/ws/{execution_id}")

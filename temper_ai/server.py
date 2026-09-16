@@ -20,6 +20,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from temper_ai.api.app_state import AppState
+from temper_ai.api.auth import TokenAuthMiddleware, configured_token
 from temper_ai.api.docs import router as docs_router
 from temper_ai.api.routes import init_app_state
 from temper_ai.api.routes import router as api_router
@@ -269,6 +270,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         except Exception as e:
             logger.warning("Reaper failed to start (cancel/orphan detection disabled): %s", e)
 
+    if configured_token():
+        logger.info("Authentication: enabled (bearer token required)")
+    else:
+        logger.warning(
+            "Authentication: disabled — the API, the MCP endpoint and the "
+            "dashboard are open to anyone who can reach this server. Set "
+            "TEMPER_API_TOKEN to require a token."
+        )
+
     logger.info("Temper AI server ready")
 
     # The /mcp endpoint needs its session manager running for the life of
@@ -391,6 +401,10 @@ class MCPPathMiddleware:
 
 app.mount("/mcp", _mcp_asgi)
 app.add_middleware(MCPPathMiddleware)
+
+# Added last, so it wraps everything else: /api, /mcp and /ws alike. Does
+# nothing unless TEMPER_API_TOKEN is set.
+app.add_middleware(TokenAuthMiddleware)
 
 
 # -- Health check --

@@ -56,6 +56,11 @@ def main() -> None:
         default="http://localhost:8420/mcp",
         help="MCP endpoint of a running temper server (default: %(default)s)",
     )
+    mcp_parser.add_argument(
+        "--token",
+        default=None,
+        help="API token, if the server requires one (default: $TEMPER_API_TOKEN)",
+    )
     mcp_parser.add_argument("--debug", action="store_true", help="Enable debug logging")
 
     # -- temper validate --
@@ -114,7 +119,7 @@ def main() -> None:
         _cmd_serve(args)
     elif args.command == "mcp":
         from temper_ai.mcp.bridge import run_bridge
-        run_bridge(args.url)
+        run_bridge(args.url, args.token)
     elif args.command == "validate":
         _cmd_validate(args)
     elif args.command == "run-workflow":

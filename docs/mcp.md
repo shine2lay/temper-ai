@@ -163,10 +163,36 @@ The embedding page can still only reach temper if the network lets it —
 this setting relaxes the browser's framing rule, not the reverse proxy's
 access rules.
 
+## Authentication
+
+Set `TEMPER_API_TOKEN` and the server requires a bearer token on the API,
+the MCP endpoint and the WebSocket. Unset, everything is open — which is
+the default, so nothing changes on upgrade.
+
+```json
+{
+  "mcpServers": {
+    "temper": {
+      "url": "https://temper.example.com/mcp",
+      "headers": { "Authorization": "Bearer <TEMPER_API_TOKEN>" }
+    }
+  }
+}
+```
+
+The stdio bridge picks the token up from the environment, or takes
+`--token`:
+
+```bash
+temper mcp --url https://temper.example.com/mcp --token "$TEMPER_API_TOKEN"
+```
+
+The check lives in middleware rather than on the route handlers, because
+the MCP tools call those handlers in-process: a route dependency would
+have secured HTTP callers and let every MCP call through.
+
 ## Notes
 
-- **No authentication.** The MCP endpoint inherits the API's posture, so
-  expose the server only on a trusted network.
 - `run_workflow` really does spend money — it runs the same engine as the
   dashboard's New Run button.
 - Omitting `workspace_path` uses the server's default, exactly as the REST

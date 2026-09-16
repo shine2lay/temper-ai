@@ -72,6 +72,9 @@ services:
       # any other Host header (DNS-rebinding protection), so a server
       # behind a gateway must name itself here.
       TEMPER_MCP_ALLOWED_HOSTS: ${TEMPER_MCP_ALLOWED_HOSTS:-}
+      # Set to require a bearer token on the API, the MCP endpoint and the
+      # WebSocket. Unset = open to anyone who can reach the server.
+      TEMPER_API_TOKEN: ${TEMPER_API_TOKEN:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-}

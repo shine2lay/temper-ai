@@ -64,8 +64,9 @@ the old "estimate heights, then fix them up" problems are gone.
       database, 983 completed, 11 failed, 2 cancelled and 1 was legitimately
       still running — no orphans at all.
 - [ ] Webhook notifications for workflow completion/failure
-- [ ] API authentication (currently open) — also gates the MCP endpoint, which
-      inherits the API's posture
+- [x] API authentication — `TEMPER_API_TOKEN` gates the API, the MCP
+      endpoint and the WebSocket at the HTTP edge (off by default)
+- [ ] Named, revocable per-client tokens (today: one shared token)
 - [ ] Support the MCP 2.x SDK (pinned to `mcp<2`: v2 renames FastMCP to
       MCPServer and changes other APIs that both `temper_ai/mcp` and the
       MCP tool client are written against)

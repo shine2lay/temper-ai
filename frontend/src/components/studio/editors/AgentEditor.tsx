@@ -64,14 +64,24 @@ export function AgentEditor({ name }: AgentEditorProps) {
   const loadedRef = useRef<string>(JSON.stringify(EMPTY_FORM));
   useUnsavedChangesGuard(JSON.stringify(form) !== loadedRef.current);
 
-  // Load existing config
+  // Load existing config.
+  //
+  // The config endpoint returns the raw config — `{agent: {...}}` — not a
+  // `config_data` wrapper. Reading only the wrapper meant the form never
+  // loaded: it sat on its blank defaults (openai / gpt-4o) while claiming
+  // to be editing a real agent, and saving would have written those
+  // defaults over the stored config. Accept both shapes.
   useEffect(() => {
-    if (data?.config_data) {
-      const d = data.config_data as Record<string, unknown>;
+    const raw = (data?.config_data ?? data) as Record<string, unknown> | undefined;
+    if (raw) {
+      const d = raw;
       const agent = (d.agent ?? d) as Record<string, unknown>;
       const loaded: AgentForm = {
-        name: data.name ?? '',
-        description: data.description ?? '',
+        name: (data?.name as string | undefined) ?? (agent.name as string | undefined) ?? name ?? '',
+        description:
+          (data?.description as string | undefined)
+          ?? (agent.description as string | undefined)
+          ?? '',
         type: String(agent.type ?? 'conversational'),
         system_prompt: String(agent.system_prompt ?? ''),
         provider: String(agent.provider ?? 'openai'),

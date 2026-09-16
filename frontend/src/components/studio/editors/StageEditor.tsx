@@ -44,13 +44,20 @@ export function StageEditor({ name }: StageEditorProps) {
 
   const [form, setForm] = useState<StageForm>(EMPTY_FORM);
 
+  // Same shape problem as the agent editor: the endpoint returns the raw
+  // config, not a `config_data` wrapper, so reading only the wrapper left
+  // the form blank while appearing to edit a real stage.
   useEffect(() => {
-    if (data?.config_data) {
-      const d = data.config_data as Record<string, unknown>;
+    const raw = (data?.config_data ?? data) as Record<string, unknown> | undefined;
+    if (raw) {
+      const d = raw;
       const stage = (d.stage ?? d) as Record<string, unknown>;
       setForm({
-        name: data.name ?? '',
-        description: data.description ?? '',
+        name: (data?.name as string | undefined) ?? (stage.name as string | undefined) ?? name ?? '',
+        description:
+          (data?.description as string | undefined)
+          ?? (stage.description as string | undefined)
+          ?? '',
         agents: Array.isArray(stage.agents) ? stage.agents.map(String) : [],
         execution_mode: String(stage.execution_mode ?? stage.agent_mode ?? 'sequential'),
         timeout_seconds: Number(stage.timeout_seconds ?? 300),

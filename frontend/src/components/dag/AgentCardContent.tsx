@@ -205,7 +205,7 @@ export const AgentCardContent = memo(function AgentCardContent({
             {showCost && (
               <>
                 <span className="text-temper-border/40">|</span>
-                <span className="text-emerald-400">{formatCost(cost)}</span>
+                <span className="text-emerald-800 dark:text-emerald-400">{formatCost(cost)}</span>
               </>
             )}
             {llmCalls > 0 && (
@@ -351,7 +351,7 @@ function InputSection({ data, expanded }: { data: Record<string, unknown>; expan
           {expanded ? '\u25BE' : '\u25B8'} IN
         </span>
         {isWorkflowOnly && (
-          <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400 font-medium">
+          <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-800 dark:text-blue-400 font-medium">
             ← workflow input
           </span>
         )}
@@ -361,7 +361,7 @@ function InputSection({ data, expanded }: { data: Record<string, unknown>; expan
           const displayName = agentName ?? s.name;
           return (
           <span key={s.name} className="inline-flex flex-col gap-px max-w-full">
-            <span className="text-[9px] px-1.5 py-0.5 rounded-t bg-blue-500/15 text-blue-400 font-medium">
+            <span className="text-[9px] px-1.5 py-0.5 rounded-t bg-blue-500/15 text-blue-800 dark:text-blue-400 font-medium">
               ← {displayName}
             </span>
             {s.preview && (
@@ -380,7 +380,7 @@ function InputSection({ data, expanded }: { data: Record<string, unknown>; expan
         {extraSources.map((key) => {
           const agentName = stageToAgent.get(key.replace(/_output$/, ''));
           return (
-            <span key={key} className="text-[9px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400 font-medium">
+            <span key={key} className="text-[9px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-800 dark:text-blue-400 font-medium">
               ← {agentName ?? key}
             </span>
           );
@@ -461,8 +461,8 @@ function OutputSection({ output, error, expanded }: { output: string; error?: st
         <span className="text-[9px] font-semibold text-temper-text-muted shrink-0">{expanded ? '\u25BE' : '\u25B8'} OUT</span>
         <span className={cn(
           'text-[9px] px-1 py-px rounded font-mono shrink-0',
-          isJson ? 'bg-emerald-500/15 text-emerald-400' :
-          isCode ? 'bg-violet-500/15 text-violet-400' :
+          isJson ? 'bg-emerald-500/15 text-emerald-800 dark:text-emerald-400' :
+          isCode ? 'bg-violet-500/15 text-violet-800 dark:text-violet-400' :
           'bg-temper-surface text-temper-text-dim',
         )}>
           {typeLabel}

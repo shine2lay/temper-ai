@@ -96,13 +96,20 @@ export const StageGroupNode = memo(function StageGroupNode({ data }: NodeProps) 
           className="w-2 h-2 rounded-full shrink-0"
           style={{ backgroundColor: statusColor }}
         />
-        <span className="text-sm font-bold truncate" style={{ color: stageColor }}>
+        <span
+          className="text-sm font-bold truncate stage-tinted-text"
+          style={{ '--stage-color': stageColor, color: 'var(--stage-ink, var(--stage-color))' } as React.CSSProperties}
+        >
           {stageName}
         </span>
         {strategy && (
           <span
-            className="text-[10px] px-1.5 py-0.5 rounded shrink-0 font-medium"
-            style={{ backgroundColor: `color-mix(in srgb, ${stageColor} 15%, transparent)`, color: stageColor }}
+            className="text-[10px] px-1.5 py-0.5 rounded shrink-0 font-medium stage-tinted-text"
+            style={{
+              '--stage-color': stageColor,
+              backgroundColor: `color-mix(in srgb, ${stageColor} 15%, transparent)`,
+              color: 'var(--stage-ink, var(--stage-color))',
+            } as React.CSSProperties}
           >
             {STRATEGY_LABELS[strategy] ?? strategy}
           </span>

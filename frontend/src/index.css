@@ -91,6 +91,15 @@
     --temper-accent: #2563eb;
     --temper-accent-dim: #1d4ed8;
 
+    /* Status colours: the dark-theme values are light tints that fail on a
+       white panel (the completed green measured 2.36:1 against 4.5 required).
+       These are the 700/800 equivalents, verified above AA. */
+    --color-temper-completed: #15803d;
+    --color-temper-running: #0369a1;
+    --color-temper-failed: #b91c1c;
+    --color-temper-pending: #52525b;
+
+
     --temper-bg-completed: #e8f5e9;
     --temper-bg-running: #e3f2fd;
     --temper-bg-failed: #fce4e4;
@@ -130,6 +139,14 @@
   --temper-accent: #2563eb;
   --temper-accent-dim: #1d4ed8;
   --color-temper-token-prompt: #2563eb;
+  /* Status colours: the dark-theme values are light tints that fail on a
+     white panel (the completed green measured 2.36:1 against 4.5 required).
+     These are the 700/800 equivalents, verified above AA. */
+  --color-temper-completed: #15803d;
+  --color-temper-running: #0369a1;
+  --color-temper-failed: #b91c1c;
+  --color-temper-pending: #52525b;
+
   --color-temper-token-completion: #16a34a;
 
   /* Semantic accent colors — dark enough for white backgrounds */
@@ -591,4 +608,12 @@ body {
    DispatchEdge to avoid bumping every edge label. */
 .react-flow__edgelabel-renderer .dispatch-edge-label {
   z-index: 1000;
+}
+
+/* Stage palette colours are picked for a dark canvas; used as *text* on a
+   light tint of themselves they measured 2.3:1. Darken them in light mode
+   only — the palette itself stays the identity of the stage. */
+:root[data-theme="light"] .stage-tinted-text { --stage-ink: color-mix(in srgb, var(--stage-color) 45%, #000); }
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) .stage-tinted-text { --stage-ink: color-mix(in srgb, var(--stage-color) 45%, #000); }
 }

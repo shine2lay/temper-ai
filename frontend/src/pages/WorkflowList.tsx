@@ -226,7 +226,7 @@ function WorkflowRow({
         )}
         {stale && (
           <span
-            className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 font-medium cursor-help"
+            className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-500/20 text-yellow-900 dark:text-yellow-400 border border-yellow-500/30 font-medium cursor-help"
             title="This run has been running for over 30 minutes without progress. It may be stuck — consider cancelling."
           >
             stale?

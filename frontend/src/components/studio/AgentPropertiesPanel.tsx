@@ -115,7 +115,7 @@ export function AgentPropertiesPanel() {
         </div>
       )}
       {validateResult && !validateResult.valid && (
-        <div className="px-3 py-1.5 text-[10px] text-yellow-400 bg-yellow-400/10 border-b border-temper-border/50">
+        <div className="px-3 py-1.5 text-[10px] text-yellow-900 dark:text-yellow-400 bg-yellow-400/10 border-b border-temper-border/50">
           {validateResult.errors.map((e, i) => <p key={i}>{e}</p>)}
         </div>
       )}

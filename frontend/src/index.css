@@ -49,7 +49,11 @@
   --temper-border-light: #3a4a6c;
   --temper-text: #e0e0e0;
   --temper-text-muted: #8a8fa0;
-  --temper-text-dim: #6a7080;
+  /* Was #6a7080: 3.61:1 on the panel and 3.45:1 on the page background,
+     which fails AA for the 9-10px metadata this token is used for. This
+     value measures 4.88 / 4.66 and stays dimmer than --temper-text-muted
+     (5.55), so the dim < muted < text hierarchy is unchanged. */
+  --temper-text-dim: #7d8698;
   --temper-accent: #4fc3f7;
   --temper-accent-dim: #2a7a9f;
 

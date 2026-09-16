@@ -153,7 +153,7 @@ function EmptyCanvasOverlay() {
         <p className="text-sm text-temper-text-muted/80">
           Double-click to add a stage, drag from the left panel, or use the + button below
         </p>
-        <p className="text-xs text-temper-text-muted/60 mt-1">
+        <p className="text-xs text-temper-text-muted mt-1">
           or load an existing workflow
         </p>
       </div>

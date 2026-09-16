@@ -13,7 +13,7 @@ import {
 import '@xyflow/react/dist/style.css';
 import { useExecutionStore } from '@/store/executionStore';
 import { useDagElements } from '@/hooks/useDagElements';
-import { DAG_FIT_PADDING } from '@/lib/constants';
+import { DAG_FIT_MIN_ZOOM, DAG_FIT_PADDING } from '@/lib/constants';
 import { StageNode } from './StageNode';
 import { AgentNodeComponent } from './AgentNodeComponent';
 import { StageGroupNode } from './StageGroupNode';
@@ -161,7 +161,7 @@ export function ExecutionDAG() {
   }, [matchingNodeIds]);
 
   const onInit: OnInit = useCallback(() => {
-    setTimeout(() => fitView({ padding: DAG_FIT_PADDING }), 50);
+    setTimeout(() => fitView({ padding: DAG_FIT_PADDING, minZoom: DAG_FIT_MIN_ZOOM }), 50);
   }, [fitView]);
 
   // Push computed nodes/edges into React Flow's internal store. Split
@@ -209,7 +209,7 @@ export function ExecutionDAG() {
     if (userMovedRef.current) return;
     if (layoutSignature === prevLayoutRef.current) return;
     prevLayoutRef.current = layoutSignature;
-    const timer = setTimeout(() => fitView({ padding: DAG_FIT_PADDING, duration: 300 }), 120);
+    const timer = setTimeout(() => fitView({ padding: DAG_FIT_PADDING, duration: 300, minZoom: DAG_FIT_MIN_ZOOM }), 120);
     return () => clearTimeout(timer);
   }, [layoutSignature, computed.nodes.length, fitView]);
 

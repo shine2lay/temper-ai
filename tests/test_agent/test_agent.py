@@ -171,3 +171,51 @@ class TestTruncateInputData:
         data = {"items": list(range(50))}
         result = _truncate_input_data(data)
         assert len(result["items"]) == 10
+
+
+class TestTerminalEventReflectsFailure:
+    """An agent can finish without raising and still have failed — a budget
+    policy denying the call is the usual way. Recording that as
+    AGENT_COMPLETED left a node that failed for no stated reason."""
+
+    def _agent(self):
+        from temper_ai.agent.llm_agent import LLMAgent
+        return LLMAgent({"name": "a", "system_prompt": "s"})
+
+    def _record_calls(self, result):
+        from unittest.mock import MagicMock
+        agent = self._agent()
+        record = MagicMock()
+        context = MagicMock()
+        context.run_id = "run-1"
+        agent._record_agent_completed(record, result, "evt-1", context)
+        return record.call_args
+
+    def test_a_failed_result_is_recorded_as_failed(self):
+        from temper_ai.observability.event_types import EventType
+        from temper_ai.shared.types import AgentResult, Status, TokenUsage
+
+        result = AgentResult(
+            status=Status.FAILED,
+            output="",
+            error="Budget exceeded: cap of $0.000001 reached",
+            tokens=TokenUsage(total_tokens=0),
+        )
+        args, kwargs = self._record_calls(result)
+        assert args[0] == EventType.AGENT_FAILED
+        assert kwargs["status"] == "failed"
+        assert "Budget exceeded" in kwargs["data"]["error"]
+
+    def test_a_successful_result_is_still_recorded_as_completed(self):
+        from temper_ai.observability.event_types import EventType
+        from temper_ai.shared.types import AgentResult, Status, TokenUsage
+
+        result = AgentResult(
+            status=Status.COMPLETED,
+            output="fine",
+            tokens=TokenUsage(total_tokens=3),
+        )
+        args, kwargs = self._record_calls(result)
+        assert args[0] == EventType.AGENT_COMPLETED
+        assert kwargs["status"] == "completed"
+        assert "error" not in kwargs["data"]

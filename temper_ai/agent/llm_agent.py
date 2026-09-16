@@ -136,14 +136,23 @@ class LLMAgent(AgentABC):
         )
 
     def _record_agent_completed(self, _record, result, agent_event_id: str, context: ExecutionContext) -> None:
-        """Emit AGENT_COMPLETED event."""
+        """Emit the agent's terminal event, completed or failed.
+
+        An agent can finish without raising and still have failed — a
+        budget policy denying the call is the usual way. Recording that as
+        AGENT_COMPLETED/completed left the run showing a node that failed
+        for no stated reason: empty output, no error, nothing in the UI to
+        explain why. The result's own status decides.
+        """
+        failed = getattr(result, "status", None) == Status.FAILED or bool(result.error)
         _record(
-            EventType.AGENT_COMPLETED,
+            EventType.AGENT_FAILED if failed else EventType.AGENT_COMPLETED,
             parent_id=agent_event_id,
             execution_id=context.run_id,
-            status="completed",
+            status="failed" if failed else "completed",
             data={
                 "agent_name": self.name,
+                **({"error": result.error} if result.error else {}),
                 "output": result.output[:5000] if result.output else "",
                 "output_length": len(result.output),
                 "has_structured_output": result.structured_output is not None,

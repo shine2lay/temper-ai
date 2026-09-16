@@ -77,9 +77,14 @@ class LLMService:
             if self._budget_check:
                 denial = self._budget_check()
                 if denial:
+                    # The policy's reason usually names the cap already, so
+                    # prefixing unconditionally produced "Budget exceeded:
+                    # Budget exceeded: $0.0173 >= $0.000001".
+                    reason = str(denial)
                     return self._build_result(
                         iteration - 1,
-                        error=f"Budget exceeded: {denial}",
+                        error=reason if reason.lower().startswith("budget")
+                        else f"Budget exceeded: {reason}",
                     )
 
             result = self._run_iteration(iteration)

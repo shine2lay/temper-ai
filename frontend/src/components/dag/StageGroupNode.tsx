@@ -37,7 +37,7 @@ export const StageGroupNode = memo(function StageGroupNode({ data }: NodeProps) 
   const showCost = totalCost > 0;
   const agentLabel = delegateCount
     ? `${agents.length} agent + ${delegateCount} sub-agent${delegateCount > 1 ? 's' : ''}`
-    : `${agents.length} agents`;
+    : `${agents.length} agent${agents.length === 1 ? '' : 's'}`;
   const isRunning = stage.status === 'running';
   // A stage whose condition was not met is skipped just like an agent node,
   // but it used to keep full stage styling and read "0 agents · 0 tok" — so

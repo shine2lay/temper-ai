@@ -172,7 +172,7 @@ export const StageNode = memo(function StageNode({ data }: NodeProps) {
             }}
             className="text-[10px] px-1.5 py-0.5 rounded bg-temper-surface text-temper-text-muted hover:text-temper-text shrink-0 ml-auto"
             aria-expanded={!collapsed}
-            aria-label={collapsed ? `Show ${currentAgents.length} agents` : 'Hide agents'}
+            aria-label={collapsed ? `Show ${currentAgents.length} agent${currentAgents.length === 1 ? '' : 's'}` : 'Hide agents'}
           >
             {collapsed ? `Show ${currentAgents.length}` : 'Hide'}
           </button>
@@ -301,7 +301,7 @@ export const StageNode = memo(function StageNode({ data }: NodeProps) {
       )}
       {collapsed && (
         <div className="px-2 pb-2 flex items-center gap-3 text-[10px] text-temper-text-muted">
-          <span>{currentAgents.length} agents</span>
+          <span>{currentAgents.length} agent{currentAgents.length === 1 ? '' : 's'}</span>
           <span className="font-mono">{formatTokens(currentIter?.totalTokens ?? 0)} tok</span>
           <span className="font-mono">{formatCost(currentIter?.totalCost ?? 0)}</span>
         </div>

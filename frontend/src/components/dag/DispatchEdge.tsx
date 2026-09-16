@@ -1,7 +1,6 @@
 import { type FC } from 'react';
 import {
   BaseEdge,
-  EdgeLabelRenderer,
   getBezierPath,
   type EdgeProps,
 } from '@xyflow/react';
@@ -19,7 +18,7 @@ export const DispatchEdge: FC<EdgeProps> = ({
   markerEnd,
   animated,
 }) => {
-  const [edgePath, labelX, labelY] = getBezierPath({
+  const [edgePath] = getBezierPath({
     sourceX,
     sourceY,
     targetX,
@@ -41,28 +40,10 @@ export const DispatchEdge: FC<EdgeProps> = ({
         }}
         className={animated ? 'react-flow__edge-path-animated' : undefined}
       />
-      <EdgeLabelRenderer>
-        <div
-          className="nodrag nopan pointer-events-none dispatch-edge-label"
-          style={{
-            position: 'absolute',
-            transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
-          }}
-        >
-          <span
-            className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
-            style={{
-              backgroundColor: 'rgb(30, 20, 5)',
-              color: DISPATCH_COLOR,
-              border: `1px solid ${DISPATCH_COLOR}`,
-              whiteSpace: 'nowrap',
-              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.6)',
-            }}
-          >
-            ⚡ dispatched
-          </span>
-        </div>
-      </EdgeLabelRenderer>
+      {/* No label on the edge itself: the target card already reads
+          "⚡ DISPATCHED / by <source>", and the pill was landing on top of
+          card content — measured two overlaps of ~1,460px² covering the
+          output row. The amber dashed stroke carries the meaning. */}
     </>
   );
 };

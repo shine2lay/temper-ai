@@ -106,16 +106,19 @@ export const AgentNodeComponent = memo(function AgentNodeComponent({ data }: Nod
         </div>
       )}
 
-      {/* Dispatcher badge (this node added/removed children at runtime) */}
+      {/* Dispatcher badge (this node added/removed children at runtime).
+          Light-mode text colours matter here: these were sky-200/rose-200
+          with no light variant, so in the default theme the chip was pale
+          text on a pale card and read as a clipped smudge. */}
       {isDispatcher && (
         <div className="absolute -bottom-3 left-2 right-2 z-10 flex items-center gap-2 flex-wrap">
           {hasDispatchedChildren && (
-            <span className="text-[10px] px-2 py-0.5 rounded-sm bg-sky-500/30 text-sky-200 border border-sky-400/50 font-bold uppercase tracking-wide shadow">
+            <span className="text-[10px] px-2 py-0.5 rounded-sm bg-sky-500/30 text-sky-900 dark:text-sky-200 border border-sky-400/50 font-bold uppercase tracking-wide shadow">
               + dispatched {dispatchedChildren!.length}
             </span>
           )}
           {hasRemovedChildren && (
-            <span className="text-[10px] px-2 py-0.5 rounded-sm bg-rose-500/30 text-rose-200 border border-rose-400/50 font-bold uppercase tracking-wide shadow">
+            <span className="text-[10px] px-2 py-0.5 rounded-sm bg-rose-500/30 text-rose-900 dark:text-rose-200 border border-rose-400/50 font-bold uppercase tracking-wide shadow">
               − removed {removedChildren!.length}
             </span>
           )}

@@ -443,6 +443,87 @@ class TemperTools:
 
     # -- inspection --------------------------------------------------------
 
+    def get_events(
+        self,
+        execution_id: str,
+        event_type: str | None = None,
+        status: str | None = None,
+        limit: int = 50,
+        max_chars: int = DEFAULT_MAX_CHARS,
+    ) -> dict:
+        """The event timeline of a run: what happened, in order, with times.
+
+        The only record of *ordering and timing* — get_run gives final
+        states, this gives the sequence that produced them, which is what
+        you need for "what ran before the failure" or "why did this take
+        40 seconds".
+
+        Events carry whole prompts and outputs in their data, so each one
+        is reduced to a line here: type, status, time, and the handful of
+        fields that identify it. Follow up with get_node_output or
+        get_llm_call for the contents.
+
+        Args:
+            execution_id: The run to read.
+            event_type: Exact type filter, e.g. "agent.failed", "llm.call".
+            status: Filter by event status, e.g. "failed".
+            limit: Most recent N events (default 50).
+        """
+        from temper_ai.observability.recorder import get_events as _query
+
+        try:
+            events = _query(
+                execution_id=execution_id,
+                event_type=event_type,  # type: ignore[arg-type]
+                status=status,
+                limit=limit,
+                newest_first=True,
+            )
+        except Exception as exc:
+            return {"error": f"could not read events: {exc}"}
+
+        if not events:
+            return {
+                "execution_id": execution_id,
+                "events": [],
+                "note": (
+                    "no events matched"
+                    + (f" type={event_type}" if event_type else "")
+                    + (f" status={status}" if status else "")
+                ),
+            }
+
+        # Chronological for reading, even though the query took the newest N.
+        events = list(reversed(events))
+        IDENTIFYING = ("name", "agent_name", "node_path", "model", "error", "tool_name")
+        lines = []
+        for e in events:
+            data = e.get("data") or {}
+            line = {
+                "type": e.get("type"),
+                "status": e.get("status"),
+                "time": e.get("timestamp"),
+            }
+            for key in IDENTIFYING:
+                if data.get(key) not in (None, ""):
+                    line[key] = _first_line(data[key], max_chars=120)
+            if data.get("duration_seconds") is not None:
+                line["duration_seconds"] = data["duration_seconds"]
+            lines.append(line)
+
+        counts: dict[str, int] = {}
+        for e in events:
+            key = str(e.get("type"))
+            counts[key] = counts.get(key, 0) + 1
+
+        return {
+            "execution_id": execution_id,
+            "returned": len(lines),
+            "truncated": len(lines) >= limit,
+            "counts_by_type": counts,
+            "events": _clip(lines, max_chars),
+        }
+
     def get_run(self, execution_id: str, max_chars: int = DEFAULT_MAX_CHARS) -> dict:
         """Status of a run plus one line per node.
 

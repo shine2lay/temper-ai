@@ -164,6 +164,30 @@ def build_server() -> FastMCP:
         return await _off_loop(tools.get_run, execution_id, max_chars=max_chars)
 
     @mcp.tool()
+    async def get_events(
+        execution_id: str,
+        event_type: str | None = None,
+        status: str | None = None,
+        limit: int = 50,
+        max_chars: int = DEFAULT_MAX_CHARS,
+    ) -> dict:
+        """The event timeline of a run: what happened, in order, with times.
+
+        get_run gives final states; this gives the sequence that produced
+        them — what ran before a failure, where the time went. One line per
+        event, so follow up with get_node_output or get_llm_call for
+        contents. Filter with event_type ("agent.failed") or status.
+        """
+        return await _off_loop(
+            tools.get_events,
+            execution_id,
+            event_type=event_type,
+            status=status,
+            limit=limit,
+            max_chars=max_chars,
+        )
+
+    @mcp.tool()
     async def get_node_output(
         execution_id: str,
         node_name: str,

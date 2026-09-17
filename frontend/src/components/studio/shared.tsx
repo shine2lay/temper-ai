@@ -2,7 +2,7 @@
  * Shared UI primitives for Studio property panels.
  * Used by WorkflowSettingsOverlay, StagePropertiesPanel, and AgentPropertiesPanel.
  */
-import { useState, useEffect, type ReactNode } from 'react';
+import { useState, useEffect, useId, isValidElement, cloneElement, Children, type ReactNode, type ReactElement } from 'react';
 
 /* ========== Legacy Section (used by older panel code) ========== */
 
@@ -49,6 +49,8 @@ export function Section({
 }
 
 /** Labeled form field with optional hint text. */
+const LABELABLE = new Set(['input', 'select', 'textarea']);
+
 export function Field({
   label,
   hint,
@@ -58,11 +60,30 @@ export function Field({
   hint?: string;
   children: ReactNode;
 }) {
+  // The label was a sibling of the control with no htmlFor, so no field in
+  // any Library editor had an accessible name: a screen reader announced
+  // every input as unlabeled, and get_by_label found nothing. When the
+  // child is a single native control, give it an id and point the label
+  // at it. Anything else is left exactly as it was.
+  const generated = useId();
+  // Children may be [control, hint]: label the first native control found.
+  const items = Children.toArray(children);
+  const index = items.findIndex(
+    (c) => isValidElement(c) && typeof c.type === 'string' && LABELABLE.has(c.type),
+  );
+  let id: string | undefined;
+  let control: ReactNode = children;
+  if (index >= 0) {
+    const child = items[index] as ReactElement<{ id?: string }>;
+    id = child.props.id ?? generated;
+    items[index] = cloneElement(child, { id });
+    control = items;
+  }
   return (
     <div>
-      <label className="text-[11px] font-medium text-temper-text-muted">{label}</label>
+      <label htmlFor={id} className="text-[11px] font-medium text-temper-text-muted">{label}</label>
       {hint && <p className="text-[10px] text-temper-text-dim mt-0.5">{hint}</p>}
-      <div className="mt-1">{children}</div>
+      <div className="mt-1">{control}</div>
     </div>
   );
 }

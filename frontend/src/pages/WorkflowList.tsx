@@ -1,7 +1,7 @@
-import { useMemo, useState, useEffect, useRef } from 'react';
+import { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { useDocumentTitle } from '@/hooks/useDocumentTitle';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import * as Dialog from '@radix-ui/react-dialog';
 import { AlertCircle, Inbox, SearchX, X, Play } from 'lucide-react';
 import { StatusBadge } from '@/components/shared/StatusBadge';
@@ -614,15 +614,46 @@ export function WorkflowList() {
   const navigate = useNavigate();
   const [newRunOpen, setNewRunOpen] = useState(false);
 
-  const [sortBy, setSortBy] = useState<SortKey>(
-    () => (localStorage.getItem(STORAGE_KEY_SORT) as SortKey) ?? 'time',
-  );
+  // Filter and sort live in the URL so a view can be linked, bookmarked and
+  // stepped back through. localStorage remains the fallback for a bare /app,
+  // so the last view is still restored when no query is given.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const sortBy = ((searchParams.get('sort') as SortKey | null) ?? 'time') as SortKey;
+  const setSortBy = useCallback((next: SortKey) => {
+    setSearchParams((prev) => {
+      const p = new URLSearchParams(prev);
+      if (next === 'time') p.delete('sort'); else p.set('sort', next);
+      return p;
+    });
+  }, [setSearchParams]);
   const [search, setSearch] = useState(
     () => localStorage.getItem(STORAGE_KEY_SEARCH) ?? '',
   );
-  const [statusFilter, setStatusFilter] = useState<string | null>(
-    () => localStorage.getItem(STORAGE_KEY_FILTER),
-  );
+  const statusFilter = searchParams.get('status');
+
+  // Restore the last view from localStorage *once*, on a bare /app, by
+  // writing it into the URL. After that the URL is the only source of truth,
+  // so Back genuinely undoes a filter instead of localStorage re-applying it.
+  const restoredRef = useRef(false);
+  useEffect(() => {
+    if (restoredRef.current) return;
+    restoredRef.current = true;
+    if (searchParams.get('status') || searchParams.get('sort')) return;
+    const savedStatus = localStorage.getItem(STORAGE_KEY_FILTER);
+    const savedSort = localStorage.getItem(STORAGE_KEY_SORT);
+    if (!savedStatus && (!savedSort || savedSort === 'time')) return;
+    const p = new URLSearchParams();
+    if (savedStatus) p.set('status', savedStatus);
+    if (savedSort && savedSort !== 'time') p.set('sort', savedSort);
+    setSearchParams(p, { replace: true });
+  }, [searchParams, setSearchParams]);
+  const setStatusFilter = useCallback((next: string | null) => {
+    setSearchParams((prev) => {
+      const p = new URLSearchParams(prev);
+      if (next) p.set('status', next); else p.delete('status');
+      return p;
+    });
+  }, [setSearchParams]);
   // How many runs to request. The API pages with limit/offset; "Load more"
   // raises this rather than fetching pages separately, so the list keeps a
   // single sorted array and the run-number computation stays correct.

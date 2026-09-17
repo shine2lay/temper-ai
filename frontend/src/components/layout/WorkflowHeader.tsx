@@ -24,6 +24,12 @@ export function WorkflowHeader() {
 
   const isRunning = workflow?.status === 'running';
 
+  // stages is a Map<string, NodeExecution>, not a plain object.
+  let unresolvedCount = 0;
+  stages?.forEach((stage) => {
+    unresolvedCount += stage?.unresolved_inputs?.length ?? 0;
+  });
+
   useEffect(() => {
     if (!isRunning || !workflow?.start_time) return;
 
@@ -265,6 +271,17 @@ export function WorkflowHeader() {
         </button>
 
         {workflow && <StatusBadge status={workflow.status} />}
+        {/* A run whose wiring did not resolve still completes — that is the
+            deliberate design — but the only sign of it was a chip on one
+            card somewhere in the graph. Say it at the top too. */}
+        {unresolvedCount > 0 && (
+          <span
+            className="text-[11px] px-1.5 py-0.5 rounded border border-amber-500/40 bg-amber-500/15 text-amber-900 dark:text-amber-300"
+            title="Some inputs could not be resolved; the nodes ran with those values missing"
+          >
+            ⚠ {unresolvedCount} unresolved input{unresolvedCount === 1 ? '' : 's'}
+          </span>
+        )}
 
         <span className={cn(
           'text-sm font-mono',

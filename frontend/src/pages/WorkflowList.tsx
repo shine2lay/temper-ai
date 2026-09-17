@@ -877,7 +877,22 @@ export function WorkflowList() {
           <EmptyState title="Loading workflows..." />
         )}
 
-        {error && (
+        {/* A failed refresh with rows already on screen used to render
+            "Failed to load workflows" in the middle of those very rows —
+            two contradictory claims at once. If there is data, say the data
+            is stale and leave it readable; only take the page over when
+            there is nothing to show. */}
+        {error && workflows && workflows.length > 0 && (
+          <div className="mb-2 flex items-center gap-2 rounded border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-900 dark:text-amber-300">
+            <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+            <span>
+              Could not refresh ({(error as Error).message}). Showing the last data loaded
+              {dataUpdatedAt ? ` at ${new Date(dataUpdatedAt).toLocaleTimeString()}` : ''}.
+            </span>
+          </div>
+        )}
+
+        {error && (!workflows || workflows.length === 0) && (
           <EmptyState
             icon={AlertCircle}
             title="Failed to load workflows"

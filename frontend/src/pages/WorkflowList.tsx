@@ -185,7 +185,9 @@ function WorkflowRow({
       role="link"
       tabIndex={0}
       className={cn(
-        'flex items-center gap-4 rounded-lg px-4 py-3 border transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-temper-accent/50',
+        // flex-wrap: the trailing Studio link sat outside the viewport from
+        // 1024px down, with no horizontal scroll to reach it.
+        'flex flex-wrap items-center gap-4 rounded-lg px-4 py-3 border transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-temper-accent/50',
         instant
           ? 'bg-red-950/10 border-red-500/20 hover:bg-red-950/20'
           : 'bg-temper-panel border-temper-border hover:bg-temper-surface',
@@ -745,8 +747,10 @@ export function WorkflowList() {
     <div className="flex flex-col h-full bg-temper-bg">
       <header className="bg-temper-panel px-6 py-3 border-b border-temper-border shrink-0">
         <div className="max-w-[1600px] mx-auto flex flex-col gap-2">
-          {/* Row 1: Title + Search + Primary Actions */}
-          <div className="flex items-center gap-4">
+          {/* Row 1: Title + Search + Primary Actions.
+              flex-wrap: below 640px New Run was pushed off the right edge,
+              and the page has no horizontal scroll to get it back. */}
+          <div className="flex flex-wrap items-center gap-4">
             <h1 className="text-xl font-semibold text-temper-text">Workflows</h1>
             <span className="text-xs text-temper-text-muted">
               {debouncedSearch
@@ -760,7 +764,7 @@ export function WorkflowList() {
               placeholder="Search loaded runs..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="px-3 py-1.5 rounded-md bg-temper-surface border border-temper-border text-sm text-temper-text placeholder:text-temper-text-dim focus:outline-none focus:ring-1 focus:ring-temper-accent w-64"
+              className="px-3 py-1.5 rounded-md bg-temper-surface border border-temper-border text-sm text-temper-text placeholder:text-temper-text-dim focus:outline-none focus:ring-1 focus:ring-temper-accent w-64 max-w-full min-w-0 flex-1"
               aria-label="Search workflows by name"
             />
 
@@ -796,7 +800,7 @@ export function WorkflowList() {
           </div>
 
           {/* Row 2: Filters + Sort + Refresh */}
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-2" role="group" aria-label="Filter by status">
               {STATUS_TABS.map((s) => (
                 <button

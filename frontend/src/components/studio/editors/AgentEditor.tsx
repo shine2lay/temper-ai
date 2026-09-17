@@ -118,16 +118,22 @@ export function AgentEditor({ name }: AgentEditorProps) {
   );
 
   const toConfigData = useCallback((): Record<string, unknown> => {
+    const raw = rawAgentRef.current ?? {};
     const agent: Record<string, unknown> = {
       // Anything this form does not manage is carried through untouched.
-      ...rawAgentRef.current,
+      ...raw,
       type: form.type,
-      system_prompt: form.system_prompt,
-      provider: form.provider,
-      model: form.model,
-      temperature: form.temperature,
-      max_tokens: form.max_tokens,
     };
+    // Only write an LLM field when the config already had it or the user
+    // actually changed it. Writing them unconditionally meant opening a
+    // *script* agent and pressing Save injected provider: openai,
+    // model: gpt-4o, temperature, max_tokens and system_prompt into a
+    // config that has no LLM at all — measured on ui_echo.
+    const llmFields = ['system_prompt', 'provider', 'model', 'temperature', 'max_tokens'] as const;
+    for (const key of llmFields) {
+      const value = form[key];
+      if (key in raw || value !== EMPTY_FORM[key]) agent[key] = value;
+    }
     if (form.tools.length > 0) agent.tools = form.tools;
     if (form.llm_profile) agent.llm_profile = form.llm_profile;
     if (form.safety_profile) agent.safety_profile = form.safety_profile;
@@ -212,6 +218,12 @@ export function AgentEditor({ name }: AgentEditorProps) {
               value={form.type}
               onChange={(e) => update('type', e.target.value)}
             >
+              {/* A loaded config may declare a type this form does not
+                  offer (script, for one). Surface it rather than silently
+                  showing the first option as if that were the truth. */}
+              {!['conversational', 'autonomous', 'reactive'].includes(form.type) && (
+                <option value={form.type}>{form.type} (not editable here)</option>
+              )}
               <option value="conversational">Conversational</option>
               <option value="autonomous">Autonomous</option>
               <option value="reactive">Reactive</option>

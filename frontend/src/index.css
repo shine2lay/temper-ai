@@ -621,3 +621,15 @@ body {
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) .stage-tinted-text { --stage-ink: color-mix(in srgb, var(--stage-color) 45%, #000); }
 }
+
+/* React Flow gives every node tabindex=0, so a keyboard user tabs through
+   the graph — but the node matched :focus-visible while rendering no
+   indicator at all (outline: none, no shadow), so there was no way to tell
+   which card was focused before acting on it. The global focus rule does
+   not reach these because React Flow resets the outline itself. */
+.react-flow .react-flow__node:focus-visible,
+.react-flow__renderer .react-flow__node:focus-visible {
+  outline: 2px solid var(--temper-accent) !important;
+  outline-offset: 3px;
+  border-radius: 12px;
+}

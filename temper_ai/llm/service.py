@@ -11,6 +11,7 @@ from typing import Any
 
 from temper_ai.llm.models import CallContext, LLMResponse, LLMRunResult
 from temper_ai.llm.pricing import estimate_cost
+from temper_ai.llm.provider_tools import make_provider_tool_recorder
 from temper_ai.llm.providers.base import BaseLLM, StreamCallback
 from temper_ai.llm.response_parser import extract_final_answer, parse_tool_calls
 from temper_ai.llm.tool_execution import ToolExecutorFn, execute_tool_calls
@@ -135,7 +136,7 @@ class LLMService:
         """
         event_id = self._record_llm_started(iteration)
         try:
-            response = self._invoke_provider()
+            response = self._invoke_provider(llm_event_id=event_id)
             raw = response.raw_response or {}
             provider_cost = raw.get("total_cost_usd")
             if provider_cost is not None:
@@ -157,7 +158,7 @@ class LLMService:
             self._record_llm_failed(iteration, e)
             raise
 
-    def _invoke_provider(self) -> LLMResponse:
+    def _invoke_provider(self, llm_event_id: str | None = None) -> LLMResponse:
         """Call the LLM provider (stream or complete).
 
         Checks estimated context size before calling. If over the limit,
@@ -197,6 +198,20 @@ class LLMService:
         if self._ctx.provider_config:
             for key, value in self._ctx.provider_config.items():
                 kwargs.setdefault(key, value)
+        # A provider that executes tools itself (Claude Code runs Bash,
+        # WebSearch and every MCP server it is given inside its own process)
+        # reports each one through this callback, and it lands in the event
+        # log in the same shape as a tool temper ran — otherwise a run that
+        # made five MCP calls says "Tool Calls 0".
+        kwargs["on_tool_event"] = make_provider_tool_recorder(
+            self._record,
+            execution_id=self._ctx.execution_id,
+            agent_event_id=self._ctx.agent_event_id,
+            agent_name=self._ctx.agent_name,
+            node_path=self._ctx.node_path,
+            parent_id=llm_event_id,
+            provider_name=self.provider.provider_name,
+        )
         if self._stream_callback:
             return self.provider.stream(self._messages, on_chunk=self._stream_callback, **kwargs)
         return self.provider.complete(self._messages, **kwargs)

@@ -495,7 +495,7 @@ class TemperTools:
 
         # Chronological for reading, even though the query took the newest N.
         events = list(reversed(events))
-        IDENTIFYING = ("name", "agent_name", "node_path", "model", "error", "tool_name")
+        IDENTIFYING = ("name", "agent_name", "node_path", "model", "error", "tool_name", "transport", "server", "executed_by")
         lines = []
         for e in events:
             data = e.get("data") or {}
@@ -603,11 +603,18 @@ class TemperTools:
                     "structured_output": _clip(agent.get("structured_output"), max_chars),
                     "error_message": _clip(agent.get("error_message"), max_chars),
                     "llm_call_ids": [c.get("id") for c in (agent.get("llm_calls") or [])],
+                    # One line per tool call. transport/server/executed_by say
+                    # whether it went over MCP, to which server, and who ran
+                    # it (temper, or a provider that runs tools itself).
                     "tool_calls": [
                         {
                             "tool": t.get("tool_name"),
                             "status": t.get("status"),
                             "duration_seconds": t.get("duration_seconds"),
+                            "transport": t.get("transport"),
+                            "server": t.get("server"),
+                            "executed_by": t.get("executed_by"),
+                            "error": _clip(t.get("error_message"), 200) if t.get("error_message") else None,
                         }
                         for t in (agent.get("tool_calls") or [])
                     ],

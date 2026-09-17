@@ -88,7 +88,9 @@ export function LogsTab({ agents }: LogsTabProps) {
           agentName,
           agentId: agent.id,
           type: 'tool',
-          title: `Tool: ${fullTool.tool_name}`,
+          title: fullTool.transport === 'mcp'
+            ? `MCP ${fullTool.server ? fullTool.server + ' · ' : ''}${fullTool.tool_name}`
+            : `Tool: ${fullTool.tool_name}`,
           detail: fullTool.output_data ? truncate(JSON.stringify(fullTool.output_data), 200) : undefined,
           data: fullTool.input_params,
           status: fullTool.status,

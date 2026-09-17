@@ -689,6 +689,20 @@ def _build_llm_call(event: dict, all_events: list[dict]) -> dict:
     }
 
 
+def _claimed_completions() -> set:
+    """Completion events already paired with a start, for this request.
+
+    Lives on the same thread-local as the children index so it resets with
+    it; without this, name-based pairing hands the first completion to every
+    same-named start.
+    """
+    claimed = getattr(_children_index_local, "claimed_completions", None)
+    if claimed is None:
+        claimed = set()
+        _children_index_local.claimed_completions = claimed
+    return claimed
+
+
 def _build_tool_call(event: dict, all_events: list[dict] | None = None) -> dict:
     """Build a tool call dict from a started event, merging completed/failed data."""
     data = dict(event.get("data", {}))
@@ -696,19 +710,32 @@ def _build_tool_call(event: dict, all_events: list[dict] | None = None) -> dict:
     end_time = None
     tool_name = data.get("tool_name", "")
 
-    # Find the corresponding completed/failed event by matching tool_name
-    # Tool completed/failed events share the same parent_id (the LLM call)
+    # Find the corresponding completed/failed event. Prefer the call_id both
+    # sides carry: matching by tool_name alone paired the *first* completion
+    # with every same-named start, so an agent that called browser_extract
+    # twice under one LLM call showed both with the first result. Fall back
+    # to name + parent for events recorded before call ids existed.
     if all_events and status == "running":
         start_id = event["id"]
         parent_id = event.get("parent_id")
+        call_id = data.get("call_id")
+        claimed = _claimed_completions()
         for e in all_events:
             e_type = e.get("type", "")
             e_data = e.get("data", {})
-            # Match by: same parent, same tool_name, completed/failed type
-            if (e_type.startswith("tool") and
-                (e_type.endswith(".completed") or e_type.endswith(".failed")) and
-                e_data.get("tool_name") == tool_name and
-                (e.get("parent_id") == parent_id or e.get("parent_id") == start_id)):
+            if not (e_type.startswith("tool") and
+                    (e_type.endswith(".completed") or e_type.endswith(".failed"))):
+                continue
+            if call_id:
+                matched = e_data.get("call_id") == call_id
+            else:
+                matched = (
+                    e_data.get("tool_name") == tool_name
+                    and (e.get("parent_id") == parent_id or e.get("parent_id") == start_id)
+                    and e["id"] not in claimed
+                )
+            if matched:
+                claimed.add(e["id"])
                 status = e.get("status", status)
                 end_time = e.get("timestamp")
                 data.update(e_data)
@@ -727,6 +754,12 @@ def _build_tool_call(event: dict, all_events: list[dict] | None = None) -> dict:
         "input_data": data.get("input_params") or data.get("params"),
         "output_data": data.get("output") or data.get("result"),
         "error_message": data.get("error"),
+        # Which side ran it and where it went: "mcp" over a named server, or
+        # a "builtin" of whoever executed it ("temper", or a provider name).
+        "transport": data.get("transport"),
+        "server": data.get("server"),
+        "executed_by": data.get("executed_by"),
+        "call_id": data.get("call_id"),
     }
 
 
@@ -799,11 +832,13 @@ def _build_children_index(events: list[dict]) -> dict[str, list[dict]]:
 def _set_children_index(events: list[dict]) -> None:
     """Build and cache the children index for the current request."""
     _children_index_local.index = _build_children_index(events)
+    _children_index_local.claimed_completions = set()
 
 
 def _clear_children_index() -> None:
     """Clear the cached children index."""
     _children_index_local.index = None
+    _children_index_local.claimed_completions = None
 
 
 def _find_children(events: list[dict], parent_id: str, type_prefix: str) -> list[dict]:

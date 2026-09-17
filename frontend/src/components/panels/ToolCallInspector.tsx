@@ -1,5 +1,6 @@
 import { useExecutionStore } from '@/store/executionStore';
 import { StatusBadge } from '@/components/shared/StatusBadge';
+import { ToolOriginBadge } from '@/components/shared/ToolOriginBadge';
 import { CollapsibleSection } from '@/components/shared/Collapsible';
 import { JsonViewer } from '@/components/shared/JsonViewer';
 import { MetricCell } from '@/components/shared/MetricCell';
@@ -65,6 +66,7 @@ export function ToolCallInspector({ toolCallId }: ToolCallInspectorProps) {
           {toolCall.tool_name}
         </h3>
         <StatusBadge status={toolCall.status} />
+        <ToolOriginBadge tool={toolCall} />
         {toolCall.safety_checks_applied != null && (
           <Badge
             variant="outline"

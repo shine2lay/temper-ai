@@ -43,7 +43,8 @@ curl -s -X POST http://localhost:8420/mcp \
 | `run_workflow` | Start a run; returns an `execution_id` immediately |
 | `wait_for_run` | Block until a run finishes (returns `timed_out` rather than failing) |
 | `get_run` | Status plus one line per node |
-| `get_node_output` | What one node produced |
+| `get_events` | The event timeline: what happened, in order, with times |
+| `get_node_output` | What one node produced, including its tool calls |
 | `get_llm_call` | The prompt, response and thinking of one call |
 | `cancel_run` | Stop a running workflow |
 | `list_gates` / `approve_gate` | See and release approval gates |
@@ -82,6 +83,35 @@ a node produced, `get_llm_call` for a prompt and response. Every free-text
 field is truncated at `max_chars` (4000 by default) and says how much it
 dropped, so a surprise costs a few thousand tokens rather than a hundred
 thousand.
+
+## Events and tool calls
+
+`get_events` is the record of *ordering and timing* — `get_run` gives final
+states, this gives the sequence that produced them: what ran before a
+failure, where forty seconds went, whether a retry happened. Events carry
+whole prompts and outputs in their data, so each is reduced to one line
+(type, status, time, and the fields that identify it). On a 21-event run
+that is about 3 KB where the raw events are 27 KB. Filter with
+`event_type` (`"agent.failed"`) or `status`; `limit` takes the most recent
+N and the reply says whether it truncated, while `counts_by_type` always
+describes everything matched.
+
+Tool calls appear in `get_node_output` one line each, and say where the
+call went and who ran it:
+
+```json
+{ "tool": "browser_status", "status": "completed", "duration_seconds": 0.06,
+  "transport": "mcp", "server": "browser", "executed_by": "claude", "error": null }
+```
+
+`transport` is `mcp` (over a named MCP `server`) or `builtin`. `executed_by`
+is `temper` for tools temper executed, or a provider name for tools the
+provider executed inside its own process — Claude Code runs Bash, WebSearch
+and every MCP server it is given that way. Those used to be invisible: a
+run that made five browser calls over MCP reported no tool calls at all. A
+provider that can see its own tool activity reports it, and it is recorded
+in the same shape as a temper-executed call. The `tool.call.*` lines from
+`get_events` carry the same three fields.
 
 ## A typical loop
 

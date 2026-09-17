@@ -10,6 +10,7 @@ from collections.abc import Callable
 from typing import Any
 
 from temper_ai.llm.models import CallContext
+from temper_ai.llm.provider_tools import classify_tool
 from temper_ai.observability import EventType, record
 
 logger = logging.getLogger(__name__)
@@ -90,8 +91,25 @@ def _record_tool_started(
             "agent_name": ctx.agent_name,
             "agent_id": ctx.agent_event_id,
             "node_path": ctx.node_path,
+            **_where(name),
         },
     )
+
+
+def _where(name: str) -> dict[str, Any]:
+    """transport / server / executed_by for a tool temper ran itself.
+
+    An MCP tool is named "<server>.<tool>" by temper's wrapper; classify it
+    against the configured servers so the log says it went over MCP, and
+    to which server, the same way a provider-run MCP call is labelled.
+    """
+    try:
+        from temper_ai.tools.mcp_client import mcp_manager
+        servers = set(mcp_manager.get_configured_servers())
+    except Exception:  # noqa: BLE001 - classification is best-effort
+        servers = set()
+    kind = classify_tool(name, servers)
+    return {"transport": kind["transport"], "server": kind["server"], "executed_by": "temper"}
 
 
 def _build_success_result(
@@ -111,7 +129,7 @@ def _build_success_result(
         execution_id=ctx.execution_id,
         status="completed",
         data={"tool_name": name, "duration_ms": duration_ms, "output": result_str,
-              "agent_id": ctx.agent_event_id, "agent_name": ctx.agent_name},
+              "agent_id": ctx.agent_event_id, "agent_name": ctx.agent_name, **_where(name)},
     )
     return {
         "tool_call_id": tool_call_id,
@@ -139,7 +157,7 @@ def _build_failure_result(
         execution_id=ctx.execution_id,
         status="failed",
         data={"tool_name": name, "duration_ms": duration_ms, "error": error_msg,
-              "agent_id": ctx.agent_event_id, "agent_name": ctx.agent_name},
+              "agent_id": ctx.agent_event_id, "agent_name": ctx.agent_name, **_where(name)},
     )
     logger.warning("Tool '%s' failed after %dms: %s", name, duration_ms, error_msg)
     return {

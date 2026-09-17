@@ -6,6 +6,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { render, screen, act } from '@testing-library/react';
 import { useExecutionStore } from '@/store/executionStore';
 import { StatusBadge } from '@/components/shared/StatusBadge';
+import { ToolOriginBadge } from '@/components/shared/ToolOriginBadge';
 import { LLMCallInspector } from '@/components/panels/LLMCallInspector';
 import { ToolCallInspector } from '@/components/panels/ToolCallInspector';
 import { StreamingPanel } from '@/components/panels/StreamingPanel';
@@ -244,5 +245,33 @@ describe('Store updates trigger component re-renders', () => {
     expect(entry).toBeDefined();
     expect(entry!.content).toBe('Hello');
     expect(useExecutionStore.getState().streamingContent.size).toBe(Math.max(seeded, 1));
+  });
+});
+
+
+describe('ToolOriginBadge', () => {
+  // A run that made five MCP calls through the provider reported "Tool
+  // Calls 0". Now that they are recorded, the row has to say what they were.
+  it('names the MCP server and the provider that ran the call', () => {
+    render(<ToolOriginBadge tool={{ transport: 'mcp', server: 'browser', executed_by: 'claude' }} />);
+    expect(screen.getByText('MCP · browser')).toBeTruthy();
+    expect(screen.getByText('via claude')).toBeTruthy();
+  });
+
+  it('says only MCP when the server is unknown', () => {
+    render(<ToolOriginBadge tool={{ transport: 'mcp', server: null, executed_by: 'temper' }} />);
+    expect(screen.getByText('MCP')).toBeTruthy();
+    expect(screen.queryByText(/^via /)).toBeNull();
+  });
+
+  it('renders nothing for a temper-run builtin, the historical default', () => {
+    const { container } = render(<ToolOriginBadge tool={{ transport: 'builtin', server: null, executed_by: 'temper' }} />);
+    expect(container.textContent).toBe('');
+  });
+
+  it('marks a provider-run builtin as such', () => {
+    render(<ToolOriginBadge tool={{ transport: 'builtin', server: null, executed_by: 'claude' }} />);
+    expect(screen.getByText('via claude')).toBeTruthy();
+    expect(screen.queryByText(/MCP/)).toBeNull();
   });
 });

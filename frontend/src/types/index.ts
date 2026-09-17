@@ -183,6 +183,16 @@ export interface ToolCall {
   id: string;
   tool_name: string;
   status: ExecutionStatus;
+  // Where the call went and who ran it. transport "mcp" means a named MCP
+  // server; "builtin" means a tool of whoever executed it. executed_by is
+  // "temper" for tools temper ran, or a provider name (e.g. "claude") for
+  // tools the provider ran inside its own process — Claude Code runs Bash,
+  // WebSearch and every MCP server it is given that way, and those were
+  // invisible here until the provider started reporting them.
+  transport?: 'mcp' | 'builtin' | string | null;
+  server?: string | null;
+  executed_by?: string | null;
+  call_id?: string | null;
   start_time: string | null;
   end_time: string | null;
   duration_seconds: number | null;

@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { useExecutionStore } from '@/store/executionStore';
 import { StatusBadge } from '@/components/shared/StatusBadge';
+import { ToolOriginBadge } from '@/components/shared/ToolOriginBadge';
 import { CollapsibleSection } from '@/components/shared/Collapsible';
 import { JsonViewer } from '@/components/shared/JsonViewer';
 import { MetricCell } from '@/components/shared/MetricCell';
@@ -404,6 +405,7 @@ export function AgentDetailPanel({ agentId }: AgentDetailPanelProps) {
             >
               <span className="flex items-center gap-2 text-temper-text min-w-0">
                 <span className="text-xs font-medium text-amber-400">{tool.tool_name}</span>
+                <ToolOriginBadge tool={tool} />
                 {tool.duration_seconds != null && (
                   <span className="text-[10px] text-temper-text-dim shrink-0">
                     {formatDuration(tool.duration_seconds)}

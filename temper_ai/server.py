@@ -4,6 +4,7 @@ Entry point: uvicorn temper_ai.server:app --reload
 Or: docker-compose up
 """
 
+import datetime as _dt
 import logging
 import os
 import sys
@@ -215,6 +216,11 @@ def _load_default_configs(config_store: ConfigStore):
 _mcp_server = _build_mcp_server()
 
 
+# Captured before any run of ours can start, so reconciliation can tell a
+# previous process's runs from this one's.
+_PROCESS_START = _dt.datetime.now(_dt.UTC).replace(tzinfo=None)
+
+
 # -- Lifespan --
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -246,6 +252,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # Load default configs
     _load_default_configs(config_store)
+
+    # Runs that were in flight when this process last stopped cannot report
+    # their own death — their status lives on an event nobody will update.
+    from temper_ai.observability.reconcile import reconcile_interrupted_runs
+    reconcile_interrupted_runs(started_before=_PROCESS_START)
 
     # MCP servers (load configs only — connections are lazy)
     try:

@@ -12,6 +12,9 @@ const STATUS_STYLES: Record<string, string> = {
   // A run parked on a gate is not progressing; saying "running" next to a
   // banner that says "this run is paused" is two answers to one question.
   waiting: 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/40',
+  // Cut off by a restart rather than failed on its own terms: worth telling
+  // apart from a failure when reading old runs.
+  interrupted: 'bg-slate-500/15 text-slate-700 dark:text-slate-300 border-slate-500/40',
 };
 
 export const StatusBadge = memo(function StatusBadge({ status, className }: { status: string; className?: string }) {

@@ -90,6 +90,17 @@ class BaseLLM(ABC):
             )
         return self._http_client
 
+    def resolve_model(self, kwargs: dict[str, Any]) -> str:
+        """The model this call should use.
+
+        The service passes the agent's ``model:`` as a per-call kwarg because
+        every agent on a provider shares one provider instance. A provider
+        that reads only ``self.model`` sends its startup default for every
+        agent and the YAML setting is silently a no-op — which is what all
+        the shipped providers did until this existed.
+        """
+        return str(kwargs.get("model") or self.model)
+
     def complete(self, messages: list[dict], **kwargs: Any) -> LLMResponse:
         """Send a completion request with retry on transient failures."""
         request = self._build_request(messages, **kwargs)

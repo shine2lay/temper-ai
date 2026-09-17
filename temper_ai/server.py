@@ -83,15 +83,21 @@ def _init_llm_providers() -> dict:
             return OllamaLLM(model=os.environ.get("OLLAMA_MODEL", "llama3.2"), base_url=ollama_url)
         _try_init_provider(providers, "ollama", _make_ollama, f"Ollama provider initialized at {ollama_url}")
 
-    anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
+    # Either an API key or an OAuth token brings the provider up; the provider
+    # itself decides how each is sent (see providers/anthropic.py).
+    from temper_ai.llm.providers.anthropic import resolve_credential
+    anthropic_key, anthropic_mode = resolve_credential()
     if anthropic_key:
         def _make_anthropic():
-            from temper_ai.llm.providers.anthropic import AnthropicLLM
+            from temper_ai.llm.providers.anthropic import DEFAULT_MODEL, AnthropicLLM
             return AnthropicLLM(
-                model=os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-20250514"),
+                model=os.environ.get("ANTHROPIC_MODEL", DEFAULT_MODEL),
                 api_key=anthropic_key,
             )
-        _try_init_provider(providers, "anthropic", _make_anthropic, "Anthropic provider initialized")
+        _try_init_provider(
+            providers, "anthropic", _make_anthropic,
+            f"Anthropic provider initialized (auth mode: {anthropic_mode})",
+        )
 
     gemini_key = os.environ.get("GEMINI_API_KEY")
     if gemini_key:

@@ -77,7 +77,7 @@ class OpenAILLM(BaseLLM):
             )
 
         request: dict[str, Any] = {
-            "model": self.model,
+            "model": self.resolve_model(kwargs),
             "messages": messages,
             "temperature": self.temperature,
             "max_tokens": effective_max_tokens,

@@ -73,13 +73,14 @@ class GeminiLLM(BaseLLM):
         if tools:
             config.tools = [_convert_tools(tools)]
 
+        model = self.resolve_model(kwargs)
         response = self._client.models.generate_content(
-            model=self.model,
+            model=model,
             contents=contents,
             config=config,
         )
 
-        return _parse_response(response, self.model)
+        return _parse_response(response, model)
 
     def stream(self, messages: list[dict], on_chunk: StreamCallback | None = None,
                **kwargs: Any) -> LLMResponse:
@@ -101,8 +102,9 @@ class GeminiLLM(BaseLLM):
 
         content_parts: list[str] = []
 
+        model = self.resolve_model(kwargs)
         for chunk in self._client.models.generate_content_stream(
-            model=self.model,
+            model=model,
             contents=contents,
             config=config,
         ):
@@ -119,7 +121,7 @@ class GeminiLLM(BaseLLM):
         full_text = "".join(content_parts)
         return LLMResponse(
             content=full_text,
-            model=self.model,
+            model=model,
             provider="gemini",
             finish_reason="stop",
         )

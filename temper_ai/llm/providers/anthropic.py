@@ -6,16 +6,110 @@ Key differences from OpenAI:
 - System prompt is a separate parameter, not in messages array
 - Tool results use content blocks (tool_use/tool_result), not tool_calls
 - Response has content[] array with text and tool_use blocks
+
+Credentials
+-----------
+The provider accepts two kinds of credential and tells them apart by
+prefix. An API key (``sk-ant-api…``) is sent as ``x-api-key``. An OAuth
+access token (``sk-ant-oat…``) is sent as a bearer token, which is how the
+Anthropic SDK itself carries OAuth credentials (``auth_token=``).
+
+Resolution order: an explicit ``api_key`` argument, then
+``ANTHROPIC_API_KEY``, then ``CLAUDE_CODE_OAUTH_TOKEN``. The API key wins
+when both are set, because it is this provider's native credential; the
+opposite order is a documented source of confusion elsewhere.
+
+Anthropic treats a bare bearer request from a third-party client
+differently from one that identifies as its own tooling. What identification
+to send — if any — is a policy decision that does not belong in this file.
+It is delegated to an *OAuth request shaper* registered at startup
+(``register_oauth_shaper``): it may add headers to, and rewrite, each
+outgoing request. It is consulted per request, so registration order does
+not matter. Without one, OAuth requests go out unshaped and the provider
+says so once.
 """
 
 import json
 import logging
-from typing import Any
+import os
+import threading
+from typing import Any, Protocol
 
 from temper_ai.llm.models import LLMResponse, LLMStreamChunk
 from temper_ai.llm.providers.base import BaseLLM, StreamCallback
 
 logger = logging.getLogger(__name__)
+
+# The previous default, claude-sonnet-4-20250514, was retired: the API now
+# answers 404 not_found for it, so every agent without ANTHROPIC_MODEL set
+# failed on its first call. Dated ids are what Anthropic's deprecation
+# schedule keys on; this one is current as of 2026-09 and can be overridden
+# with ANTHROPIC_MODEL or per agent.
+DEFAULT_MODEL = "claude-sonnet-4-5-20250929"
+OAUTH_TOKEN_PREFIX = "sk-ant-oat"  # noqa: S105 - a prefix, not a secret
+API_KEY_ENV = "ANTHROPIC_API_KEY"
+OAUTH_TOKEN_ENV = "CLAUDE_CODE_OAUTH_TOKEN"  # noqa: S105 - name, not a secret
+
+AuthMode = str  # "api_key" | "oauth" | "none"
+
+
+def resolve_credential(api_key: str | None = None) -> tuple[str | None, AuthMode]:
+    """The credential this provider would use, and what kind it is.
+
+    Returns ``(None, "none")`` when nothing is configured, so callers can
+    decide whether to initialise the provider at all.
+    """
+    key = (
+        (api_key or "").strip()
+        or os.environ.get(API_KEY_ENV, "").strip()
+        or os.environ.get(OAUTH_TOKEN_ENV, "").strip()
+    )
+    if not key:
+        return None, "none"
+    return key, ("oauth" if key.startswith(OAUTH_TOKEN_PREFIX) else "api_key")
+
+
+class OAuthRequestShaper(Protocol):
+    """How an OAuth request should present itself. Registered at startup."""
+
+    def client_headers(self) -> dict[str, str]:
+        """Default headers for every request made with an OAuth token."""
+        ...
+
+    def shape(self, create_kwargs: dict[str, Any]) -> dict[str, Any]:
+        """Rewrite one outgoing ``messages.create`` payload. Must return it."""
+        ...
+
+
+_oauth_shaper: OAuthRequestShaper | None = None
+_warned_unshaped = False
+_shaper_lock = threading.Lock()
+
+
+def register_oauth_shaper(shaper: OAuthRequestShaper | None) -> None:
+    """Install (or, with None, remove) the shaper applied to OAuth requests."""
+    global _oauth_shaper, _warned_unshaped
+    with _shaper_lock:
+        _oauth_shaper = shaper
+        _warned_unshaped = False
+
+
+def get_oauth_shaper() -> OAuthRequestShaper | None:
+    return _oauth_shaper
+
+
+def _warn_unshaped_once() -> None:
+    global _warned_unshaped
+    with _shaper_lock:
+        if _warned_unshaped:
+            return
+        _warned_unshaped = True
+    logger.warning(
+        "Anthropic provider is using an OAuth token with no request shaper "
+        "registered. Requests go out as a bare bearer token; Anthropic "
+        "classifies those as third-party usage. Register one with "
+        "temper_ai.llm.providers.anthropic.register_oauth_shaper()."
+    )
 
 
 def _ensure_anthropic():
@@ -36,7 +130,7 @@ class AnthropicLLM(BaseLLM):
 
     def __init__(
         self,
-        model: str = "claude-sonnet-4-20250514",
+        model: str = DEFAULT_MODEL,
         api_key: str | None = None,
         base_url: str = "https://api.anthropic.com",
         temperature: float = 0.7,
@@ -54,41 +148,27 @@ class AnthropicLLM(BaseLLM):
             **kwargs,
         )
         anthropic_mod = _ensure_anthropic()
-        self._client = anthropic_mod.Anthropic(
-            api_key=api_key,
-            base_url=base_url if base_url != "https://api.anthropic.com" else None,
-            timeout=timeout,
-        )
-
-    def complete(self, messages: list[dict], **kwargs: Any) -> LLMResponse:
-        """Call Claude via the Anthropic SDK."""
-        system, claude_messages = _extract_system(messages)
-
-        tools = kwargs.get("tools")
-        tool_defs = _convert_tools(tools) if tools else None
-
-        create_kwargs: dict[str, Any] = {
-            "model": self.model,
-            "messages": claude_messages,
-            "max_tokens": self.max_tokens,
-            "temperature": self.temperature,
+        credential, self.auth_mode = resolve_credential(api_key)
+        self.api_key = credential
+        client_kwargs: dict[str, Any] = {
+            "base_url": base_url if base_url != "https://api.anthropic.com" else None,
+            "timeout": timeout,
         }
-        if system:
-            create_kwargs["system"] = system
-        if tool_defs:
-            create_kwargs["tools"] = tool_defs
+        if self.auth_mode == "oauth":
+            # Bearer, not x-api-key: the SDK's own way of carrying OAuth.
+            client_kwargs["auth_token"] = credential
+            client_kwargs["api_key"] = None
+        else:
+            client_kwargs["api_key"] = credential
+        self._client = anthropic_mod.Anthropic(**client_kwargs)
+        logger.info("Anthropic provider: auth mode %s", self.auth_mode)
 
-        response = self._client.messages.create(**create_kwargs)
-
-        return _parse_response(response, self.model)
-
-    def stream(self, messages: list[dict], on_chunk: StreamCallback | None = None,
-               **kwargs: Any) -> LLMResponse:
-        """Stream Claude response."""
+    def _build_create_kwargs(self, messages: list[dict], **kwargs: Any) -> dict[str, Any]:
+        """The ``messages.create`` payload, shaped for the credential in use."""
         system, claude_messages = _extract_system(messages)
 
         create_kwargs: dict[str, Any] = {
-            "model": self.model,
+            "model": self.resolve_model(kwargs),
             "messages": claude_messages,
             "max_tokens": self.max_tokens,
             "temperature": self.temperature,
@@ -99,6 +179,33 @@ class AnthropicLLM(BaseLLM):
         tools = kwargs.get("tools")
         if tools:
             create_kwargs["tools"] = _convert_tools(tools)
+
+        if self.auth_mode == "oauth":
+            # Resolved per request, not at construction: the shaper is
+            # registered from local/ when the provider factory loads, which
+            # can be after this provider was built. Headers ride along as
+            # the SDK's per-call extra_headers for the same reason.
+            shaper = get_oauth_shaper()
+            if shaper is None:
+                _warn_unshaped_once()
+            else:
+                create_kwargs = shaper.shape(create_kwargs)
+                create_kwargs["extra_headers"] = {
+                    **shaper.client_headers(),
+                    **(create_kwargs.get("extra_headers") or {}),
+                }
+        return create_kwargs
+
+    def complete(self, messages: list[dict], **kwargs: Any) -> LLMResponse:
+        """Call Claude via the Anthropic SDK."""
+        create_kwargs = self._build_create_kwargs(messages, **kwargs)
+        response = self._client.messages.create(**create_kwargs)
+        return _parse_response(response, create_kwargs["model"])
+
+    def stream(self, messages: list[dict], on_chunk: StreamCallback | None = None,
+               **kwargs: Any) -> LLMResponse:
+        """Stream Claude response."""
+        create_kwargs = self._build_create_kwargs(messages, **kwargs)
 
         content_parts: list[str] = []
 
@@ -113,7 +220,7 @@ class AnthropicLLM(BaseLLM):
 
         # Get the final message for metadata
         final = stream.get_final_message()
-        return _parse_response(final, self.model)
+        return _parse_response(final, create_kwargs["model"])
 
     # The Anthropic and Gemini providers use their SDK clients directly
     # (via complete()/stream()) rather than the httpx-based base class methods.
@@ -131,7 +238,7 @@ class AnthropicLLM(BaseLLM):
         # Not used — SDK-based providers override complete()/stream() directly.
         return LLMResponse(content="", model=self.model, provider=self.PROVIDER_NAME)
 
-    def _consume_stream(  # noqa: duplicate
+    def _consume_stream(
         self,
         response: Any,
         on_chunk: StreamCallback | None,

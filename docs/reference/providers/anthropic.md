@@ -13,6 +13,27 @@ Key differences from OpenAI:
 - Tool results use content blocks (tool_use/tool_result), not tool_calls
 - Response has content[] array with text and tool_use blocks
 
+Credentials
+-----------
+The provider accepts two kinds of credential and tells them apart by
+prefix. An API key (``sk-ant-api…``) is sent as ``x-api-key``. An OAuth
+access token (``sk-ant-oat…``) is sent as a bearer token, which is how the
+Anthropic SDK itself carries OAuth credentials (``auth_token=``).
+
+Resolution order: an explicit ``api_key`` argument, then
+``ANTHROPIC_API_KEY``, then ``CLAUDE_CODE_OAUTH_TOKEN``. The API key wins
+when both are set, because it is this provider's native credential; the
+opposite order is a documented source of confusion elsewhere.
+
+Anthropic treats a bare bearer request from a third-party client
+differently from one that identifies as its own tooling. What identification
+to send — if any — is a policy decision that does not belong in this file.
+It is delegated to an *OAuth request shaper* registered at startup
+(``register_oauth_shaper``): it may add headers to, and rewrite, each
+outgoing request. It is consulted per request, so registration order does
+not matter. Without one, OAuth requests go out unshaped and the provider
+says so once.
+
 - **Default base URL:** `https://api.anthropic.com`
 - **Type:** SDK-based (uses official SDK)
 
@@ -20,7 +41,7 @@ Key differences from OpenAI:
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `model` | str | 'claude-sonnet-4-20250514' | Model identifier |
+| `model` | str | 'claude-sonnet-4-5-20250929' | Model identifier |
 | `api_key` | str | None | None | API authentication key |
 | `base_url` | str | 'https://api.anthropic.com' | API base URL |
 | `temperature` | float | 0.7 | Sampling temperature (0.0-2.0) |

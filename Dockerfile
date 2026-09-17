@@ -22,7 +22,7 @@ WORKDIR /app
 # Install deps first (layer caching)
 COPY pyproject.toml uv.lock README.md ./
 RUN mkdir -p temper_ai && touch temper_ai/__init__.py && \
-    uv sync --frozen --no-dev
+    uv sync --frozen --no-dev --extra anthropic
 
 ENV PYTHONDONTWRITEBYTECODE=1
 COPY temper_ai/ ./temper_ai/

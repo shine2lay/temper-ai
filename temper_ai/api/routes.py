@@ -13,7 +13,7 @@ import threading
 import uuid
 
 from fastapi import APIRouter, HTTPException, WebSocket
-from pydantic import BaseModel
+from pydantic import AliasChoices, BaseModel, Field
 
 from temper_ai.api.app_state import AppState
 from temper_ai.api.data_service import get_workflow_execution, list_workflow_executions
@@ -58,11 +58,21 @@ def _state() -> AppState:
 # --- Request/Response models ---
 
 class RunRequest(BaseModel):
-    """Request to start a workflow execution."""
+    """Request to start a workflow execution.
 
-    workflow: str  # Workflow config name (loaded from config store)
+    Accepts ``workflow_name`` as well as ``workflow``: every run the API
+    *returns* names the field ``workflow_name``, so posting it back is the
+    obvious thing to try and it used to fail with a bare 422.
+    """
+
+    workflow: str = Field(  # Workflow config name (loaded from config store)
+        validation_alias=AliasChoices("workflow", "workflow_name"),
+        serialization_alias="workflow",
+    )
     inputs: dict = {}
     workspace_path: str | None = None
+
+    model_config = {"populate_by_name": True}
 
 
 class RunResponse(BaseModel):

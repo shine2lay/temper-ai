@@ -22,7 +22,11 @@ logger = logging.getLogger(__name__)
 
 # Container health checks have no credential to offer, and the endpoint
 # reveals nothing.
-PUBLIC_PATHS = ("/api/health",)
+# /api/runtime-config answers one question — "does this server need a
+# token?" — and gating it made the answer unobtainable: the flag could only
+# ever be read as false, so every client had to infer the truth from a 401.
+# It discloses nothing a 401 does not already disclose.
+PUBLIC_PATHS = ("/api/health", "/api/runtime-config")
 
 # The dashboard's static shell: HTML, JS and CSS containing no data. It
 # has to load unauthenticated or there is nowhere to type the token. Every

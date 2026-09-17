@@ -63,9 +63,57 @@ def get_config(config_type: str, name: str):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+def _agent_body(config: dict) -> dict:
+    """The agent dict itself, whether or not it arrived wrapped as {agent: ...}.
+
+    Stored agent configs are wrapped; the validator was reading the wrapper,
+    so it reported "must have name" for every real agent and never looked
+    at anything else.
+    """
+    inner = config.get("agent")
+    return inner if isinstance(inner, dict) else config
+
+
+def _check_agent(config: dict) -> tuple[list[str], list[str]]:
+    """Errors that would stop this agent from running, and warnings that would not.
+
+    Checked against the live agent registry rather than a fixed list, so a
+    type registered by a plugin at startup is accepted and a type nothing
+    can run is refused here, with the same message the executor would give
+    — just before the config is saved rather than the first time a run
+    fails on it.
+    """
+    from temper_ai.agent import AGENT_TYPES
+
+    agent = _agent_body(config)
+    errors: list[str] = []
+    warnings: list[str] = []
+    if not agent.get("name"):
+        errors.append("Agent config must have 'name'")
+    agent_type = agent.get("type", "llm")
+    if agent_type not in AGENT_TYPES:
+        errors.append(
+            f"Unknown agent type: '{agent_type}'. Available: {sorted(AGENT_TYPES)}"
+        )
+    if agent_type == "script" and not agent.get("script_template"):
+        errors.append("A script agent must have 'script_template'")
+    if agent_type == "llm" and not agent.get("system_prompt") and not agent.get("task_template"):
+        warnings.append("Agent has no system_prompt or task_template")
+    return errors, warnings
+
+
+def _refuse_unrunnable_agent(config_type: str, config: dict) -> None:
+    if config_type != "agent":
+        return
+    errors, _ = _check_agent(config)
+    if errors:
+        raise HTTPException(status_code=400, detail="; ".join(errors))
+
+
 @router.post("/configs/{config_type}/{name}", status_code=201)
 def create_config(config_type: str, name: str, body: ConfigBody):
     """Create a new config."""
+    _refuse_unrunnable_agent(config_type, body.config)
     try:
         config_id = _store().put(
             name=name,
@@ -81,6 +129,7 @@ def create_config(config_type: str, name: str, body: ConfigBody):
 @router.put("/configs/{config_type}/{name}")
 def update_config(config_type: str, name: str, body: ConfigBody):
     """Update an existing config."""
+    _refuse_unrunnable_agent(config_type, body.config)
     try:
         config_id = _store().put(
             name=name,
@@ -128,11 +177,9 @@ def validate_config(config_type: str, body: ConfigBody):
             _store().delete("__validate_temp", config_type)
 
     elif config_type == "agent":
-        config = body.config
-        if not config.get("name"):
-            errors.append("Agent config must have 'name'")
-        if not config.get("system_prompt") and not config.get("task_template"):
-            warnings.append("Agent has no system_prompt or task_template")
+        agent_errors, agent_warnings = _check_agent(body.config)
+        errors.extend(agent_errors)
+        warnings.extend(agent_warnings)
 
     return {"valid": len(errors) == 0, "errors": errors, "warnings": warnings}
 

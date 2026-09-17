@@ -59,19 +59,24 @@ the old "estimate heights, then fix them up" problems are gone.
 <!-- Removed: "structured output persistence". It is persisted — 278,520
      agent.completed events carry structured_output, which is why the DAG,
      the API and the MCP tools can all show it. -->
-- [ ] Stale run auto-cleanup on server restart (mark orphaned "running" as
-      failed). Re-rated up: an earlier sample found no orphans, but that was
-      a quiet moment — orphans are *created* by restarts. After a day of
-      testing with frequent restarts, 2 runs (demo_structured, ui_stream)
-      have shown "running" for 19 hours with nodes stuck mid-execution and
-      no process behind them. They never resolve on their own.
-- [ ] A run parked on a gate reports status "running" at the run level, so
-      the list shows 19 hours of "running" for something that is waiting for
-      a human. The node says `waiting`; the run should too.
+- [x] Runs left "running" by a restart are resolved at startup. An in-process
+      run cannot record its own death, so its status stayed `running` for
+      ever. Startup marks them `interrupted` (not `failed`: it was cut off,
+      not a failure on its own terms). Narrow by design — in-process mode
+      only, only runs older than this process, with a kill switch — because
+      the risk is burying a live run, not missing a dead one. Cleared 59
+      accumulated orphans on the dev database, two of them 19 hours old.
+- [x] A run parked on a gate said "running" beside a banner saying it was
+      paused. The header now derives `waiting` for display; the stored
+      status is untouched, so the API and MCP keep their meaning.
 - [ ] Webhook notifications for workflow completion/failure
 - [x] API authentication — `TEMPER_API_TOKEN` gates the API, the MCP
       endpoint and the WebSocket at the HTTP edge (off by default)
 - [ ] Named, revocable per-client tokens (today: one shared token)
+- [x] `get_events` MCP tool — the event timeline was websocket-only, so an
+      agent could see final states and contents but never the sequence that
+      produced them. Summary-first like the rest: 3.3 KB where the raw
+      events are 27 KB on a 21-event run.
 - [ ] Support the MCP 2.x SDK (pinned to `mcp<2`: v2 renames FastMCP to
       MCPServer and changes other APIs that both `temper_ai/mcp` and the
       MCP tool client are written against)
@@ -81,7 +86,12 @@ Studio preserves the parts of the workflow schema it cannot edit (they
 round-trip untouched), but it still cannot *edit* them:
 
 - [ ] Edit per-agent overrides inside a stage (`name`, `task_template`, `role`)
-- [ ] Edit workflow-level `inputs:` / `outputs:`
+- [ ] Edit workflow-level `inputs:` / `outputs:` *types*. The names are
+      already editable (required/optional lists) and a typed `inputs:` block
+      round-trips a no-op save byte-identically — verified on
+      ui_dispatch_slowkids, whose `items: {type: array, required: true}`
+      survives untouched. What is missing is editing the type and required
+      flag from the UI rather than the YAML.
 - [ ] An editor for `type: template` nodes (currently read-only passthrough)
 
 ## Recently Completed

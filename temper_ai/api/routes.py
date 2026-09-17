@@ -682,12 +682,17 @@ def _build_notifier(execution_id: str, workflow_name: str):
     """
     from temper_ai.observability.composite_notifier import CompositeNotifier
     from temper_ai.observability.jsonl_logger import JsonlNotifier
+    from temper_ai.observability.webhook_notifier import WebhookNotifier
+
+    webhook = WebhookNotifier()
     return CompositeNotifier(
         ws_manager,
         JsonlNotifier(
             execution_id, workflow_name,
             metadata={"spawned_via": "in-process route handler"},
         ),
+        # None unless TEMPER_WEBHOOK_URL is set; CompositeNotifier drops it.
+        webhook if webhook.enabled else None,
     )
 
 

@@ -80,6 +80,9 @@ services:
       # Set to require a bearer token on the API, the MCP endpoint and the
       # WebSocket. Unset = open to anyone who can reach the server.
       TEMPER_API_TOKEN: ${TEMPER_API_TOKEN:-}
+      # POST the outcome of every run to a URL. Off unless set.
+      TEMPER_WEBHOOK_URL: ${TEMPER_WEBHOOK_URL:-}
+      TEMPER_WEBHOOK_TIMEOUT: ${TEMPER_WEBHOOK_TIMEOUT:-}
       # Named, revocable client tokens: a JSON file of {"client-name":
       # "token"}, re-read when it changes so removing a name takes effect on
       # the next request rather than the next deploy. Mount the file

@@ -69,7 +69,10 @@ the old "estimate heights, then fix them up" problems are gone.
 - [x] A run parked on a gate said "running" beside a banner saying it was
       paused. The header now derives `waiting` for display; the stored
       status is untouched, so the API and MCP keep their meaning.
-- [ ] Webhook notifications for workflow completion/failure
+- [x] Webhook notifications — `TEMPER_WEBHOOK_URL` gets one POST when a run
+      reaches a terminal state, carrying status, workflow, duration, cost,
+      tokens and the error. Off by default; bounded retries; delivery
+      failures are logged and never touch the run's own outcome.
 - [x] API authentication — `TEMPER_API_TOKEN` gates the API, the MCP
       endpoint and the WebSocket at the HTTP edge (off by default)
 - [ ] Named, revocable per-client tokens (today: one shared token)

@@ -97,7 +97,13 @@ def cmd_run_workflow(args: argparse.Namespace) -> int:
             "spawned_via": "temper run-workflow",
         },
     )
-    notifier = CompositeNotifier(redis_notifier, jsonl_notifier)
+    from temper_ai.observability.webhook_notifier import WebhookNotifier
+    webhook = WebhookNotifier()
+    notifier = CompositeNotifier(
+        redis_notifier,
+        jsonl_notifier,
+        webhook if webhook.enabled else None,
+    )
 
     # --- Execute --------------------------------------------------------------
     from temper_ai.runner.execute import execute_workflow

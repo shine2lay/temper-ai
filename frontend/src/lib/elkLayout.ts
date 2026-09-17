@@ -269,10 +269,15 @@ function buildElkNode(
   // but twice the DOM, twice the layout work, and an ambiguous click
   // target. Stages still need pseudo children — that is how their agents
   // become nodes.
+  // Count *distinct* agents, not agent records. A node that ran twice — a
+  // retry, or a timeout that was attempted again — carries one record per
+  // attempt, all with the same agent name, so counting records sent this
+  // down the synthesis path and produced a second card at identical
+  // coordinates. Attempts already render inside the card as iterations.
+  const agentRecords = node.agents ?? [];
+  const distinctAgents = new Set(agentRecords.map((a) => a.agent_name ?? a.id)).size;
   const synthesizeFrom =
-    node.type === 'agent' && (node.agents ?? []).length <= 1
-      ? []
-      : (node.agents ?? []);
+    node.type === 'agent' && distinctAgents <= 1 ? [] : agentRecords;
   const pseudoChildren: NodeExecution[] =
     realChildren.length > 0
       ? realChildren

@@ -60,4 +60,24 @@ describe('dispatch layout', () => {
     const xs = result.nodes.map((n) => Math.round(n.x));
     expect(new Set(xs).size).toBeGreaterThan(1);
   });
+
+  it('draws one card for a node that was attempted twice', async () => {
+    // A retry or a re-attempted timeout returns one agent record per
+    // attempt, all naming the same agent. Counting records rather than
+    // distinct agents sent this down the pseudo-child path and produced a
+    // second card at identical coordinates — invisible, and an ambiguous
+    // click target. Attempts belong inside the card as iterations.
+    const retried = [
+      agent('node-1', 'slow', {
+        agents: [
+          { id: 'att-1', agent_name: 'ui_slow', status: 'failed' },
+          { id: 'att-2', agent_name: 'ui_slow', status: 'failed' },
+        ],
+      } as unknown as Partial<NodeExecution>),
+    ];
+    const result = await layoutWithElk(retried, { hideSkipped: false });
+    const positions = result.nodes.map((n) => `${Math.round(n.x)},${Math.round(n.y)}`);
+    expect(new Set(positions).size).toBe(positions.length);
+    expect(result.nodes.length).toBe(1);
+  });
 });

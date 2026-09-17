@@ -19,18 +19,22 @@ export function TimelineChart() {
   const [zoomLevel, setZoomLevel] = useState(1);
   const [now, setNow] = useState(Date.now());
   const containerRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Responsive width via ResizeObserver
+  // Responsive width via ResizeObserver.
+  // Measure the scrolling area's clientWidth, not the outer container's
+  // contentRect: contentRect still counts the space the vertical scrollbar
+  // takes inside it, so the axis and every bar were laid out ~17px wider
+  // than the visible area and the last tick label was cut off.
   useEffect(() => {
-    const el = containerRef.current;
+    const el = scrollRef.current ?? containerRef.current;
     if (!el) return;
 
-    const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        const width = entry.contentRect.width - TIMELINE.LABEL_WIDTH;
-        setChartWidth(Math.max(width, 0));
-      }
-    });
+    const measure = (target: HTMLElement) => {
+      setChartWidth(Math.max(target.clientWidth - TIMELINE.LABEL_WIDTH, 0));
+    };
+    measure(el);
+    const observer = new ResizeObserver(() => measure(el));
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
@@ -113,7 +117,7 @@ export function TimelineChart() {
       </div>
 
       {/* Scrollable timeline area */}
-      <div className="flex-1 min-h-0 overflow-auto relative">
+      <div ref={scrollRef} className="flex-1 min-h-0 overflow-auto relative">
         <TimelineAxis
           timeRange={timeRange}
           chartWidth={zoomedWidth}

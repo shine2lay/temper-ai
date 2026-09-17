@@ -21,7 +21,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from temper_ai.api.app_state import AppState
-from temper_ai.api.auth import TokenAuthMiddleware, configured_token
+from temper_ai.api.auth import TokenAuthMiddleware, auth_enabled
 from temper_ai.api.docs import router as docs_router
 from temper_ai.api.routes import init_app_state
 from temper_ai.api.routes import router as api_router
@@ -281,7 +281,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         except Exception as e:
             logger.warning("Reaper failed to start (cancel/orphan detection disabled): %s", e)
 
-    if configured_token():
+    if auth_enabled():
         logger.info("Authentication: enabled (bearer token required)")
     else:
         logger.warning(

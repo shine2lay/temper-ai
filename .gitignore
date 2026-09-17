@@ -130,3 +130,4 @@ scripts/local/
 /*.png
 workspaces/
 frontend/e2e/proofs/
+local-tokens.json

@@ -187,6 +187,27 @@ The stdio bridge picks the token up from the environment, or takes
 temper mcp --url https://temper.example.com/mcp --token "$TEMPER_API_TOKEN"
 ```
 
+### More than one client
+
+`TEMPER_API_TOKEN` is a single shared secret: everyone who has it is
+indistinguishable, and withdrawing it withdraws it from everyone. For
+several clients, point `TEMPER_API_TOKENS_FILE` at a JSON file:
+
+```json
+{ "ci": "…", "laptop": "…", "bot": "…" }
+```
+
+Each name is accepted independently and the file is re-read when it changes,
+so deleting a name stops that client on its **next request** rather than at
+the next restart — which is the only behaviour that makes "revocable" mean
+anything when a token has leaked. Both mechanisms can be used together; the
+shared token reports as the client `shared`.
+
+An unreadable or missing file grants nothing and is logged. It deliberately
+does not fail open: a typo in a config file should not turn into an open
+server.
+```
+
 The check lives in middleware rather than on the route handlers, because
 the MCP tools call those handlers in-process: a route dependency would
 have secured HTTP callers and let every MCP call through.

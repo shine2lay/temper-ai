@@ -30,11 +30,83 @@ PUBLIC_PATHS = ("/api/health",)
 PUBLIC_PREFIXES = ("/app", "/assets", "/favicon")
 
 TOKEN_ENV_VAR = "TEMPER_API_TOKEN"  # noqa: S105 - name, not a secret
+TOKEN_FILE_ENV_VAR = "TEMPER_API_TOKENS_FILE"  # noqa: S105 - name, not a secret
+
+# Cache of the tokens file, refreshed when its mtime changes. Without this a
+# revocation would need a restart, which makes "revocable" untrue in the only
+# case that matters: a token you need to stop working right now.
+_file_cache: tuple[float, dict[str, str]] | None = None
 
 
 def configured_token() -> str | None:
-    """The expected token, or None when authentication is disabled."""
+    """The shared token, or None when it is not set."""
     return os.environ.get(TOKEN_ENV_VAR, "").strip() or None
+
+
+def named_tokens() -> dict[str, str]:
+    """Named client tokens from the tokens file: ``{"ci": "abc...", ...}``.
+
+    Re-read whenever the file changes, so deleting a name takes effect on
+    the next request rather than the next restart. A malformed or missing
+    file is treated as "no named tokens" and logged, never raised: an
+    unreadable file must not take the server down, and must not silently
+    grant access either.
+    """
+    global _file_cache
+    path = os.environ.get(TOKEN_FILE_ENV_VAR, "").strip()
+    if not path:
+        return {}
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        if _file_cache is not None:
+            logger.warning("tokens file %s disappeared; no named tokens accepted", path)
+        _file_cache = None
+        return {}
+
+    if _file_cache is not None and _file_cache[0] == mtime:
+        return _file_cache[1]
+
+    try:
+        with open(path, encoding="utf-8") as handle:
+            raw = json.load(handle)
+        tokens = {
+            str(name): str(value).strip()
+            for name, value in raw.items()
+            if str(value).strip()
+        }
+    except Exception as exc:
+        logger.warning("tokens file %s unreadable (%s); no named tokens accepted", path, exc)
+        _file_cache = (mtime, {})
+        return {}
+
+    logger.info("tokens file %s loaded: %d named client(s)", path, len(tokens))
+    _file_cache = (mtime, tokens)
+    return tokens
+
+
+def auth_enabled() -> bool:
+    """True when any credential is configured."""
+    return configured_token() is not None or bool(named_tokens())
+
+
+def identify(presented: str | None) -> str | None:
+    """Return the client name a token belongs to, or None if it matches none.
+
+    The shared token answers to "shared". Comparison is constant-time and
+    every candidate is checked, so the reply time does not reveal which
+    name matched or how far down the list it was.
+    """
+    if presented is None:
+        return None
+    matched: str | None = None
+    shared = configured_token()
+    if shared is not None and hmac.compare_digest(presented, shared):
+        matched = "shared"
+    for name, token in named_tokens().items():
+        if hmac.compare_digest(presented, token):
+            matched = matched or name
+    return matched
 
 
 def _header(headers: Iterable[tuple[bytes, bytes]], name: bytes) -> str | None:
@@ -95,15 +167,14 @@ class TokenAuthMiddleware:
             await self.app(scope, receive, send)
             return
 
-        expected = configured_token()
-        if expected is None or _is_public(scope.get("path", "")):
+        if not auth_enabled() or _is_public(scope.get("path", "")):
             await self.app(scope, receive, send)
             return
 
-        presented = _presented_token(scope)
-        # Constant-time: a token that leaks through response timing is not
-        # much of a token.
-        if presented is not None and hmac.compare_digest(presented, expected):
+        # Constant-time comparison: a token that leaks through response
+        # timing is not much of a token.
+        client = identify(_presented_token(scope))
+        if client is not None:
             await self.app(scope, receive, send)
             return
 

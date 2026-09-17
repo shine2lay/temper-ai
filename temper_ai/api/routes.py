@@ -821,9 +821,9 @@ def get_runtime_config():
     open endpoint that hands out the credential is theatre, not
     authentication.
     """
-    from temper_ai.api.auth import configured_token
+    from temper_ai.api.auth import auth_enabled
 
-    return {"auth_required": configured_token() is not None}
+    return {"auth_required": auth_enabled()}
 
 
 @router.websocket("/ws/{execution_id}")

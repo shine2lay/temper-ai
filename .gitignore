@@ -129,3 +129,4 @@ scripts/local/
 # Root-level artifacts
 /*.png
 workspaces/
+frontend/e2e/proofs/

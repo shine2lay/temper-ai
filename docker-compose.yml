@@ -58,8 +58,6 @@ services:
       # Hot reload: mount source code over the installed package
       - ./temper_ai:/app/temper_ai
       - ./configs:/app/configs:ro
-      # Optional named-token file; harmless when absent.
-      - ./local-tokens.json:/app/local-tokens.json:ro
       - ${WORKSPACE_DIR:-./workspaces}:/app/workspaces
       # Serve the locally built dashboard when there is one, so `npm run
       # build` + restart is enough. Without this the image's own copy is
@@ -82,9 +80,15 @@ services:
       # Set to require a bearer token on the API, the MCP endpoint and the
       # WebSocket. Unset = open to anyone who can reach the server.
       TEMPER_API_TOKEN: ${TEMPER_API_TOKEN:-}
-      # Named, revocable client tokens. Point this at a JSON file of
-      # {"client-name": "token"}; it is re-read when it changes, so removing
-      # a name takes effect on the next request rather than the next deploy.
+      # Named, revocable client tokens: a JSON file of {"client-name":
+      # "token"}, re-read when it changes so removing a name takes effect on
+      # the next request rather than the next deploy. Mount the file
+      # yourself and point this at it, e.g.
+      #   volumes: [./my-tokens.json:/app/tokens.json:ro]
+      #   TEMPER_API_TOKENS_FILE=/app/tokens.json
+      # It is not mounted here by default: a bind mount for a file that does
+      # not exist makes Docker create a *directory* of that name, which
+      # would break the feature for anyone who has not created one.
       TEMPER_API_TOKENS_FILE: ${TEMPER_API_TOKENS_FILE:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}

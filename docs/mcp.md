@@ -197,6 +197,15 @@ several clients, point `TEMPER_API_TOKENS_FILE` at a JSON file:
 { "ci": "…", "laptop": "…", "bot": "…" }
 ```
 
+In Docker, mount it yourself and point the variable at it — it is not
+mounted by default, because a bind mount for a file that does not exist
+makes Docker create a directory of that name:
+
+```yaml
+volumes: [./my-tokens.json:/app/tokens.json:ro]
+environment: { TEMPER_API_TOKENS_FILE: /app/tokens.json }
+```
+
 Each name is accepted independently and the file is re-read when it changes,
 so deleting a name stops that client on its **next request** rather than at
 the next restart — which is the only behaviour that makes "revocable" mean

@@ -18,7 +18,7 @@ import { AlertCircle } from 'lucide-react';
 import { authFetch } from '@/lib/authFetch';
 import { useDocumentTitle } from '@/hooks/useDocumentTitle';
 import { StatusBadge } from '@/components/shared/StatusBadge';
-import { formatCost, formatDuration, formatTokens } from '@/lib/utils';
+import { cn, formatCost, formatDuration, formatTokens } from '@/lib/utils';
 import type { NodeExecution, WorkflowExecution } from '@/types';
 
 function nodeMap(run: WorkflowExecution | undefined): Map<string, NodeExecution> {
@@ -90,7 +90,18 @@ export function CompareView() {
     { label: 'Started', values: runs.map((r) => (r?.start_time ? new Date(r.start_time + 'Z').toLocaleString() : null)) },
     { label: 'Duration', values: runs.map((r) => (r?.duration_seconds != null ? formatDuration(r.duration_seconds) : null)) },
     { label: 'Tokens', values: runs.map((r) => (r?.total_tokens != null ? formatTokens(r.total_tokens) : null)) },
-    { label: 'Cost', values: runs.map((r) => (r?.total_cost_usd != null ? formatCost(r.total_cost_usd) : null)) },
+    {
+      label: 'Cost',
+      // Same precision across the row: formatCost on its own rendered
+      // $0.0039 next to $0.02, which the reader has to mentally align
+      // before the comparison means anything.
+      values: (() => {
+        const raw = runs.map((r) => r?.total_cost_usd ?? null);
+        const smallest = Math.min(...raw.filter((v): v is number => v != null && v > 0));
+        const dp = Number.isFinite(smallest) && smallest < 0.01 ? 4 : 2;
+        return raw.map((v) => (v != null ? `$${v.toFixed(dp)}` : null));
+      })(),
+    },
     { label: 'LLM calls', values: runs.map((r) => r?.total_llm_calls ?? null) },
     { label: 'Tool calls', values: runs.map((r) => r?.total_tool_calls ?? null) },
   ];
@@ -141,10 +152,20 @@ export function CompareView() {
             {summaryRows.map((row) => (
               <tr
                 key={row.label}
-                className={differs(row.values) ? 'bg-temper-accent/5' : undefined}
+                className={differs(row.values) ? 'bg-temper-accent/10' : undefined}
               >
-                <td className="border-b border-temper-border/50 p-2 text-xs text-temper-text-muted">
+                <td
+                  className={cn(
+                    'border-b border-temper-border/50 p-2 text-xs text-temper-text-muted',
+                    differs(row.values) && 'border-l-2 border-l-temper-accent font-medium text-temper-text',
+                  )}
+                >
                   {row.label}
+                  {differs(row.values) && (
+                    <span className="ml-1.5 text-[10px] text-temper-accent" title="values differ">
+                      differs
+                    </span>
+                  )}
                 </td>
                 {row.values.map((v, i) => (
                   <td key={ids[i]} className="border-b border-temper-border/50 p-2 text-temper-text">

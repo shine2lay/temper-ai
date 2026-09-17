@@ -3,7 +3,7 @@
  * Compact view shows 4 key settings; expanded view shows all settings with inline editing.
  * Expanded view organized into important (always-visible) and advanced (collapsible) sections.
  */
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useDesignStore, defaultMeta, type WorkflowMeta } from '@/store/designStore';
 import { InlineEdit, InlineSelect, InlineToggle } from './InlineEdit';
 import {
@@ -87,15 +87,31 @@ export function WorkflowSettingsOverlay() {
   // Remember how the user left it: the panel floats over the canvas, so
   // someone who minimized it to see the nodes underneath should not have it
   // reappear on top of them on the next visit.
+  // Default depends on whether there is anything to cover. On an empty
+  // canvas the settings are the first thing you need; on a loaded workflow
+  // the panel opened on top of the first stage card, hiding the thing the
+  // user came to look at. Measured: it covered a stage in audit_branch.
+  const stageCount = useDesignStore((s) => s.stages.length);
   const [mode, setModeState] = useState<'minimized' | 'compact' | 'expanded'>(
     () => {
       const stored = localStorage.getItem(STORAGE_KEY_SETTINGS_MODE);
-      return stored === 'minimized' || stored === 'compact' || stored === 'expanded'
-        ? stored
-        : 'compact';
+      if (stored === 'minimized' || stored === 'compact' || stored === 'expanded') return stored;
+      return stageCount > 0 ? 'minimized' : 'compact';
     },
   );
+
+  // The store is empty on first render, so the initialiser above cannot see a
+  // workflow that is still loading. Step aside once the stages arrive — but
+  // only if the user has expressed no preference, and without persisting,
+  // so this never overrides a deliberate choice.
+  const userChose = useRef(false);
+  useEffect(() => {
+    if (userChose.current) return;
+    if (localStorage.getItem(STORAGE_KEY_SETTINGS_MODE)) return;
+    if (stageCount > 0) setModeState('minimized');
+  }, [stageCount]);
   const setMode = useCallback((next: 'minimized' | 'compact' | 'expanded') => {
+    userChose.current = true;
     localStorage.setItem(STORAGE_KEY_SETTINGS_MODE, next);
     setModeState(next);
   }, []);

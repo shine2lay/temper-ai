@@ -147,7 +147,9 @@ export function StudioHeader({ onOpenLoadDialog, onOpenYaml }: StudioHeaderProps
   const isRunning = saveMutation.isPending || runMutation.isPending;
 
   return (
-    <header className="flex items-center gap-3 bg-temper-panel px-4 py-2.5 border-b border-temper-border shrink-0 relative z-30">
+    // flex-wrap: at 820px Save and Run fell off the right edge, so a narrow
+    // window could not save or run a workflow at all.
+    <header className="flex flex-wrap items-center gap-3 bg-temper-panel px-4 py-2.5 border-b border-temper-border shrink-0 relative z-30">
       {/* Back to home */}
       <button
         onClick={() => navigate('/')}

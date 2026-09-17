@@ -252,7 +252,10 @@ export function WorkflowHeader() {
 
   return (
     <>
-      <header className="flex items-center gap-4 bg-temper-panel px-4 py-3 border-b border-temper-border shrink-0">
+      {/* flex-wrap: below ~820px the action buttons (Export, Re-run, the
+          theme toggle) were clipped off the right edge with no horizontal
+          scroll to reach them — not squeezed, unreachable. */}
+      <header className="flex flex-wrap items-center gap-4 bg-temper-panel px-4 py-3 border-b border-temper-border shrink-0">
         <button
           onClick={() => navigate('/')}
           className="text-temper-text-muted hover:text-temper-text transition-colors shrink-0"

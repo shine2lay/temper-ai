@@ -8,6 +8,7 @@ import { formatDuration, formatTokens, formatCost, elapsedSeconds, cn } from '@/
 import { DURATION_TICK_MS } from '@/lib/constants';
 import { ThemeToggle } from '@/components/shared/ThemeToggle';
 import { authFetch } from '@/lib/authFetch';
+import { useGates } from '@/hooks/useGates';
 
 export function WorkflowHeader() {
   const navigate = useNavigate();
@@ -22,7 +23,12 @@ export function WorkflowHeader() {
   const [elapsed, setElapsed] = useState(0);
   const [errorExpanded, setErrorExpanded] = useState(false);
 
+  const { gates } = useGates(workflow?.id);
+  const isGated = (gates?.length ?? 0) > 0;
   const isRunning = workflow?.status === 'running';
+  // The engine keeps a gated run as "running" (it holds its slot); the
+  // header should still say what is actually true of it to a person.
+  const displayStatus = isRunning && isGated ? 'waiting' : workflow?.status;
 
   // stages is a Map<string, NodeExecution>, not a plain object.
   let unresolvedCount = 0;
@@ -270,7 +276,7 @@ export function WorkflowHeader() {
           <Info className="w-4 h-4" />
         </button>
 
-        {workflow && <StatusBadge status={workflow.status} />}
+        {workflow && <StatusBadge status={displayStatus ?? workflow.status} />}
         {/* A run whose wiring did not resolve still completes — that is the
             deliberate design — but the only sign of it was a chip on one
             card somewhere in the graph. Say it at the top too. */}

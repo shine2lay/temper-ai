@@ -16,6 +16,7 @@ import {
   useDeleteConfig,
   useTemplates,
   useForkConfig,
+  PROFILES_SUPPORTED,
   useProfiles,
   useDeleteProfile,
   type ConfigSummary,
@@ -172,7 +173,16 @@ function ConfigItem({
         </Button>
         <AlertDialog>
           <AlertDialogTrigger asChild>
-            <Button size="xs" variant="destructive">Delete</Button>
+            {/* Was variant="destructive": a saturated red button on every one of
+                400+ rows, giving a destructive action the same pull as Edit.
+                Quiet until hovered; the confirm dialog is unchanged. */}
+            <Button
+              size="xs"
+              variant="ghost"
+              className="text-temper-text-muted hover:text-red-700 hover:bg-red-500/10 dark:hover:text-red-300"
+            >
+              Delete
+            </Button>
           </AlertDialogTrigger>
           <AlertDialogContent>
             <AlertDialogTitle>Delete &ldquo;{config.name}&rdquo;?</AlertDialogTitle>
@@ -378,7 +388,16 @@ function ProfileList({
             </Button>
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button size="xs" variant="destructive">Delete</Button>
+                {/* Was variant="destructive": a saturated red button on every one of
+                400+ rows, giving a destructive action the same pull as Edit.
+                Quiet until hovered; the confirm dialog is unchanged. */}
+            <Button
+              size="xs"
+              variant="ghost"
+              className="text-temper-text-muted hover:text-red-700 hover:bg-red-500/10 dark:hover:text-red-300"
+            >
+              Delete
+            </Button>
               </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogTitle>Delete profile &ldquo;{p.name}&rdquo;?</AlertDialogTitle>
@@ -403,6 +422,26 @@ function ProfileList({
 }
 
 // ── Main export ──────────────────────────────────────────────────────
+
+/** Profiles span several types, so its count is the sum — it was the only
+ *  tab rendering without one, which reads as "unknown" rather than "all". */
+function ProfilesTabCount() {
+  // No count while the profile endpoints are unimplemented: the hooks return
+  // a placeholder {total: 0}, so a count here would read "there are zero
+  // profiles" when the truth is "profiles do not exist yet". A wrong number
+  // is worse than the missing one this replaces.
+  if (!PROFILES_SUPPORTED) return null;
+  // PROFILE_TYPES is a module constant, so the hook order is fixed.
+  // Summing a subset would also render a wrong number.
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  const results = PROFILE_TYPES.map((pt) => useProfiles(pt));
+  const counts = results.map(
+    (r) => r.data?.total ?? (Array.isArray(r.data?.profiles) ? r.data.profiles.length : undefined),
+  );
+  if (counts.some((c) => c == null)) return null;
+  const total = counts.reduce<number>((a, c) => a + (c ?? 0), 0);
+  return <span className="ml-1 text-[10px] opacity-80 tabular-nums">({total})</span>;
+}
 
 function TabCount({ configType }: { configType: string }) {
   const { data } = useConfigs(configType);
@@ -450,7 +489,7 @@ export function MyLibrary() {
                 {TAB_LABELS[tab]}<TabCount configType={tab} />
               </TabsTrigger>
             ))}
-            <TabsTrigger value="profiles">Profiles</TabsTrigger>
+            <TabsTrigger value="profiles">Profiles<ProfilesTabCount /></TabsTrigger>
           </TabsList>
 
           {CONFIG_TABS.map((tab) => (

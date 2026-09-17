@@ -193,7 +193,7 @@ export function useTemplates(configType: string) {
  * shape (callers render an empty picker) but no longer make the request;
  * flip `PROFILES_SUPPORTED` when the endpoints land.
  */
-const PROFILES_SUPPORTED = false;
+export const PROFILES_SUPPORTED = false;
 
 /** List all profiles of a given type. */
 export function useProfiles(profileType: string) {

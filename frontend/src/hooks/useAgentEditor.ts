@@ -173,7 +173,9 @@ function defaultFormState(): AgentFormState {
     name: '',
     description: '',
     version: '1.0',
-    type: 'standard',
+    // The engine's default for a missing type (create_agent: config.get("type", "llm")).
+    // This said 'standard', which nothing can run.
+    type: 'llm',
     prompt: { mode: 'inline', inline: '', template: '', variables: {} },
     inference: {
       provider: '',
@@ -348,7 +350,7 @@ function parseConfig(data: AnyRecord): AgentFormState {
     name: (agent.name as string) ?? '',
     description: (agent.description as string) ?? '',
     version: (agent.version as string) ?? '1.0',
-    type: (agent.type as string) ?? 'standard',
+    type: (agent.type as string) ?? 'llm',
     prompt: {
       mode: hasTemplate && !hasInline && !hasTopLevelPrompt ? 'template' : 'inline',
       inline: (prompt?.inline as string) || topLevelSystemPrompt || '',

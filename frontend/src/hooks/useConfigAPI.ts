@@ -76,7 +76,22 @@ async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await authFetch(url, init);
   if (!res.ok) {
     const body = await res.text().catch(() => '');
-    throw new Error(body || `HTTP ${res.status}`);
+    // FastAPI puts the reason in {"detail": ...}. The server now refuses
+    // configs it cannot run, with a sentence saying why; the toast should
+    // show that sentence, not a JSON blob with the sentence inside it.
+    let message = body;
+    try {
+      const parsed = JSON.parse(body) as { detail?: unknown };
+      if (typeof parsed.detail === 'string') message = parsed.detail;
+      else if (Array.isArray(parsed.detail)) {
+        message = parsed.detail
+          .map((d) => (typeof d === 'object' && d && 'msg' in d ? String((d as { msg: unknown }).msg) : String(d)))
+          .join('; ');
+      }
+    } catch {
+      /* not JSON: keep the raw body */
+    }
+    throw new Error(message || `HTTP ${res.status}`);
   }
   return res.json();
 }

@@ -13,44 +13,19 @@ import { useConfig, useCreateConfig, useUpdateConfig } from '@/hooks/useConfigAP
 import { Field, inputClass, selectClass, textareaClass } from '../shared';
 import { ProfileSelector } from './ProfileSelector';
 import { YAMLPanel } from './YAMLPanel';
+import { useRegistry } from '@/hooks/useRegistry';
+import {
+  EMPTY_FORM,
+  agentTypeOptions,
+  buildAgentConfig,
+  formFromAgent,
+  type AgentForm,
+} from './agentEditorConfig';
 
 interface AgentEditorProps {
   name: string | null;
 }
 
-interface AgentForm {
-  name: string;
-  description: string;
-  type: string;
-  system_prompt: string;
-  provider: string;
-  model: string;
-  temperature: number;
-  max_tokens: number;
-  tools: string[];
-  llm_profile: string | null;
-  safety_profile: string | null;
-  error_handling_profile: string | null;
-  observability_profile: string | null;
-  memory_profile: string | null;
-}
-
-const EMPTY_FORM: AgentForm = {
-  name: '',
-  description: '',
-  type: 'conversational',
-  system_prompt: '',
-  provider: 'openai',
-  model: 'gpt-4o',
-  temperature: 0.7,
-  max_tokens: 4096,
-  tools: [],
-  llm_profile: null,
-  safety_profile: null,
-  error_handling_profile: null,
-  observability_profile: null,
-  memory_profile: null,
-};
 
 export function AgentEditor({ name }: AgentEditorProps) {
   const navigate = useNavigate();
@@ -88,12 +63,10 @@ export function AgentEditor({ name }: AgentEditorProps) {
           (data?.description as string | undefined)
           ?? (agent.description as string | undefined)
           ?? '',
-        type: String(agent.type ?? 'conversational'),
-        system_prompt: String(agent.system_prompt ?? ''),
-        provider: String(agent.provider ?? 'openai'),
-        model: String(agent.model ?? 'gpt-4o'),
-        temperature: Number(agent.temperature ?? 0.7),
-        max_tokens: Number(agent.max_tokens ?? 4096),
+        ...(formFromAgent(agent) as Pick<
+          AgentForm,
+          'type' | 'system_prompt' | 'provider' | 'model' | 'temperature' | 'max_tokens'
+        >),
         tools: Array.isArray(agent.tools) ? agent.tools.map(String) : [],
         llm_profile: agent.llm_profile ? String(agent.llm_profile) : null,
         safety_profile: agent.safety_profile ? String(agent.safety_profile) : null,
@@ -117,31 +90,17 @@ export function AgentEditor({ name }: AgentEditorProps) {
     [],
   );
 
-  const toConfigData = useCallback((): Record<string, unknown> => {
-    const raw = rawAgentRef.current ?? {};
-    const agent: Record<string, unknown> = {
-      // Anything this form does not manage is carried through untouched.
-      ...raw,
-      type: form.type,
-    };
-    // Only write an LLM field when the config already had it or the user
-    // actually changed it. Writing them unconditionally meant opening a
-    // *script* agent and pressing Save injected provider: openai,
-    // model: gpt-4o, temperature, max_tokens and system_prompt into a
-    // config that has no LLM at all — measured on ui_echo.
-    const llmFields = ['system_prompt', 'provider', 'model', 'temperature', 'max_tokens'] as const;
-    for (const key of llmFields) {
-      const value = form[key];
-      if (key in raw || value !== EMPTY_FORM[key]) agent[key] = value;
-    }
-    if (form.tools.length > 0) agent.tools = form.tools;
-    if (form.llm_profile) agent.llm_profile = form.llm_profile;
-    if (form.safety_profile) agent.safety_profile = form.safety_profile;
-    if (form.error_handling_profile) agent.error_handling_profile = form.error_handling_profile;
-    if (form.observability_profile) agent.observability_profile = form.observability_profile;
-    if (form.memory_profile) agent.memory_profile = form.memory_profile;
-    return { agent };
-  }, [form]);
+  // Pure and tested in agentEditorConfig.ts: carries unknown keys through,
+  // writes a managed field only when it was there or the user changed it.
+  const toConfigData = useCallback(
+    (): Record<string, unknown> => buildAgentConfig(rawAgentRef.current ?? {}, form),
+    [form],
+  );
+
+  // The engine publishes the types it can run. Offering anything else here
+  // produced agents that saved fine and failed their first run.
+  const { data: registry } = useRegistry();
+  const typeOptions = agentTypeOptions(registry?.agent_types, form.type);
 
   const handleSave = useCallback(() => {
     const config_data = toConfigData();
@@ -218,16 +177,19 @@ export function AgentEditor({ name }: AgentEditorProps) {
               value={form.type}
               onChange={(e) => update('type', e.target.value)}
             >
-              {/* A loaded config may declare a type this form does not
-                  offer (script, for one). Surface it rather than silently
-                  showing the first option as if that were the truth. */}
-              {!['conversational', 'autonomous', 'reactive'].includes(form.type) && (
-                <option value={form.type}>{form.type} (not editable here)</option>
-              )}
-              <option value="conversational">Conversational</option>
-              <option value="autonomous">Autonomous</option>
-              <option value="reactive">Reactive</option>
+              {typeOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
             </select>
+            {form.type !== 'llm' && (
+              <p className="mt-1 text-[11px] text-temper-text-muted">
+                This form edits the LLM fields. A <code>{form.type}</code> agent&apos;s other
+                fields (for a script agent, <code>script_template</code>) are kept from the
+                loaded config and can be edited in the YAML panel below.
+              </p>
+            )}
           </Field>
         </div>
 
@@ -329,15 +291,12 @@ export function AgentEditor({ name }: AgentEditorProps) {
             configData={toConfigData()}
             onChange={(cfg) => {
               const agent = (cfg.agent ?? cfg) as Record<string, unknown>;
-              setForm((f) => ({
-                ...f,
-                type: String(agent.type ?? f.type),
-                system_prompt: String(agent.system_prompt ?? f.system_prompt),
-                provider: String(agent.provider ?? f.provider),
-                model: String(agent.model ?? f.model),
-                temperature: Number(agent.temperature ?? f.temperature),
-                max_tokens: Number(agent.max_tokens ?? f.max_tokens),
-              }));
+              // The YAML is the whole agent, so it becomes the new raw
+              // config — not just a source for the six LLM fields. Before
+              // this, a script_template typed into the YAML panel reached
+              // the form and was dropped on save.
+              rawAgentRef.current = agent;
+              setForm((f) => ({ ...f, ...formFromAgent(agent) }));
             }}
           />
         </div>

@@ -68,11 +68,19 @@ test.describe('proofs', () => {
     // Narrow: where Save/Run and New Run were once clipped out of reach.
     await page.setViewportSize({ width: 640, height: 900 });
     await page.goto('/app');
-    await expect(page.getByRole('button', { name: /New Run/ })).toBeVisible();
+    // Two proxies failed here before this line was right. toBeVisible() is
+    // true for an element pushed off the right edge, and bare
+    // toBeInViewport() passes on *any* intersection — it accepted a button
+    // spanning 636-703px in a 640px viewport because 4px poked in. The bug
+    // is a control placed out of reach, so require the whole of it.
+    await expect(page.getByRole('button', { name: /New Run/ })).toBeInViewport({ ratio: 1 });
     await page.screenshot({ path: `${OUT}/list-640.png` });
 
     await page.goto('/app/studio');
     await page.waitForLoadState('networkidle');
+    for (const name of ['Save', 'Run']) {
+      await expect(page.getByRole('button', { name, exact: true })).toBeInViewport({ ratio: 1 });
+    }
     await page.screenshot({ path: `${OUT}/studio-640.png` });
   });
 });

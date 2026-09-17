@@ -171,8 +171,14 @@ export function AgentDetailPanel({ agentId }: AgentDetailPanelProps) {
         <MetricCell label="Total Tokens" value={formatTokens(totalDisplay)} compact />
         <MetricCell label="Cost" value={formatCost(cost)} compact />
         <MetricCell label="Duration" value={formatDuration(ag.duration_seconds)} compact />
-        <MetricCell label="LLM Calls" value={String(ag.total_llm_calls)} compact />
-        <MetricCell label="Tool Calls" value={String(ag.total_tool_calls)} compact />
+        {/* One cell, not two: seven cells in a three-column grid left "Tool
+            Calls" stranded alone on its own row. They are the same kind of
+            fact, and together they make the common case a clean 2x3. */}
+        <MetricCell
+          label="Calls"
+          value={`${ag.total_llm_calls} llm \u00b7 ${ag.total_tool_calls} tool`}
+          compact
+        />
         {ag.confidence_score != null && (
           <MetricCell label="Confidence" value={`${(ag.confidence_score * 100).toFixed(1)}%`} compact />
         )}

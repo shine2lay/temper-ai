@@ -141,12 +141,10 @@ def test_a_registered_shaper_dresses_oauth_requests(fake_sdk):
 
     llm.complete([{"role": "system", "content": "be brief"}, {"role": "user", "content": "hi"}])
     sent = _last_client().messages.calls[0]
-    # The shaper's blocks survive, carrying the cache breakpoint: caching is
-    # applied after shaping so the identity blocks sit inside the cached
-    # prefix rather than ahead of it.
-    assert sent["system"] == [
-        {"type": "text", "text": "shaped", "cache_control": {"type": "ephemeral"}},
-    ]
+    # The shaper's blocks reach the API untouched; caching is requested at the
+    # request level, so nothing has to be written into them.
+    assert sent["system"] == [{"type": "text", "text": "shaped"}]
+    assert sent["cache_control"] == {"type": "ephemeral", "ttl": "5m"}
     assert sent["extra_headers"] == {"x-test-identity": "shaper"}
     assert shaper.shaped[0]["system"] == "be brief"  # it saw the original
 
@@ -167,11 +165,9 @@ def test_the_shaper_never_touches_api_key_requests(fake_sdk):
     llm.complete([{"role": "system", "content": "be brief"}, {"role": "user", "content": "hi"}])
     assert shaper.shaped == []
     sent = _last_client().messages.calls[0]
-    # Unshaped, but still cached: the string is lifted into one text block so
-    # the breakpoint has somewhere to live.
-    assert sent["system"] == [
-        {"type": "text", "text": "be brief", "cache_control": {"type": "ephemeral"}},
-    ]
+    assert sent["system"] == "be brief"
+    # An API-key request is not shaped, but it is still cached.
+    assert sent["cache_control"] == {"type": "ephemeral", "ttl": "5m"}
     assert "extra_headers" not in sent
 
 

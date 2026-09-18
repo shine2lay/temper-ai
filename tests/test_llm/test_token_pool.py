@@ -41,10 +41,18 @@ class TestStickiness:
         picks = {pool.pick(f"run-1-agent-{i}") for i in range(40)}
         assert len(picks) > 1
 
-    def test_no_key_means_no_locality(self):
-        """Without a key there is nothing to keep warm, so spread the load."""
+    def test_no_key_still_keeps_one_conversation_on_one_subscription(self):
+        """Picking at random per call looked harmless and was not: each account
+        holds its own cache, so a keyless loop alternated between them and every
+        other turn was a full miss (measured on a live 9-turn probe)."""
         pool = _pool()
-        assert len({pool.pick(None) for _ in range(60)}) > 1
+        assert len({pool.pick(None) for _ in range(60)}) == 1
+
+    def test_keyless_default_still_fails_over_when_cooled(self):
+        pool = _pool()
+        default = pool.pick(None)
+        pool.cool(default)
+        assert pool.pick(None) != default
 
     def test_single_token_pool_is_not_random(self):
         pool = TokenPool(name="test", tokens=["only"])
@@ -133,66 +141,39 @@ class TestPromptCaching:
     input price for text it had already sent 59 times.
     """
 
-    def _sent(self, messages, system=None, tools=None):
-        from temper_ai.llm.providers.anthropic import _apply_prompt_caching
+    def _sent(self, monkeypatch, **provider_kwargs):
+        from temper_ai.llm.providers import anthropic as mod
 
-        kwargs = {"messages": messages}
-        if system is not None:
-            kwargs["system"] = system
-        if tools is not None:
-            kwargs["tools"] = tools
-        _apply_prompt_caching(kwargs)
-        return kwargs
+        monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat-only")
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        sent: list[dict] = []
 
-    def test_the_system_prompt_is_cached(self):
-        sent = self._sent([{"role": "user", "content": "hi"}], system="rules")
-        assert sent["system"] == [
-            {"type": "text", "text": "rules", "cache_control": {"type": "ephemeral"}},
-        ]
+        def fake_anthropic(**_kw):
+            client = MagicMock()
+            client.messages.create.side_effect = lambda **c: (
+                sent.append(c),
+                MagicMock(content=[], usage=MagicMock(input_tokens=1, output_tokens=1), stop_reason="end_turn"),
+            )[1]
+            return client
 
-    def test_only_the_last_system_block_carries_the_breakpoint(self):
-        """One breakpoint covers everything before it; four is the whole budget."""
-        blocks = [{"type": "text", "text": "identity"}, {"type": "text", "text": "agent rules"}]
-        sent = self._sent([{"role": "user", "content": "hi"}], system=blocks)
-        assert "cache_control" not in sent["system"][0]
-        assert sent["system"][1]["cache_control"] == {"type": "ephemeral"}
+        monkeypatch.setattr(mod, "_ensure_anthropic", lambda: MagicMock(Anthropic=fake_anthropic))
+        provider = mod.AnthropicLLM(model="claude-opus-5", **provider_kwargs)
+        return provider, sent
 
-    def test_the_two_newest_turns_are_breakpoints(self):
-        """A lookup only happens at a breakpoint present in this request, so the
-        previous turn's must survive. Marking only the newest one measured 24%
-        saved on an 8-turn loop; keeping both, 44%."""
-        messages = [
-            {"role": "user", "content": "first"},
-            {"role": "assistant", "content": [{"type": "text", "text": "thinking"}]},
-            {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1", "content": "a"}]},
-            {"role": "assistant", "content": [{"type": "text", "text": "more"}]},
-            {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t2", "content": "b"}]},
-        ]
-        sent = self._sent(messages, system="rules")
-        assert sent["messages"][4]["content"][-1]["cache_control"] == {"type": "ephemeral"}
-        assert sent["messages"][2]["content"][-1]["cache_control"] == {"type": "ephemeral"}
-        # not the first user message, and never an assistant turn
-        assert "cache_control" not in str(sent["messages"][0]["content"])
-        assert "cache_control" not in str(sent["messages"][1]["content"])
+    def test_every_request_asks_for_caching(self, monkeypatch):
+        provider, sent = self._sent(monkeypatch)
+        provider.complete([{"role": "system", "content": "rules"}, {"role": "user", "content": "hi"}])
+        assert sent[-1]["cache_control"] == {"type": "ephemeral", "ttl": "5m"}
 
-    def test_breakpoints_stay_within_the_budget(self):
-        """Anthropic allows four; system takes one, so the conversation takes two."""
-        messages = []
-        for i in range(12):
-            messages.append({"role": "user", "content": f"q{i}"})
-            messages.append({"role": "assistant", "content": [{"type": "text", "text": f"a{i}"}]})
-        sent = self._sent(messages, system="rules")
-        marked = sum(1 for m in sent["messages"] if "cache_control" in str(m.get("content")))
-        assert marked == 2
-        assert marked + 1 <= 4
+    def test_a_long_running_agent_can_buy_the_hour(self, monkeypatch):
+        """A test suite between two calls outlasts the 5-minute tier, and the
+        next call then re-writes the whole prefix at full price."""
+        provider, sent = self._sent(monkeypatch, cache_ttl="1h")
+        provider.complete([{"role": "user", "content": "hi"}])
+        assert sent[-1]["cache_control"]["ttl"] == "1h"
 
-    def test_an_existing_breakpoint_is_left_alone(self):
-        block = {"type": "text", "text": "x", "cache_control": {"type": "persistent"}}
-        sent = self._sent([{"role": "user", "content": [block]}])
-        assert sent["messages"][0]["content"][0]["cache_control"] == {"type": "persistent"}
-
-    def test_no_messages_no_crash(self):
-        assert self._sent([], system="rules")["system"][0]["cache_control"]
+        provider.complete([{"role": "user", "content": "hi"}], cache_ttl="5m")
+        assert sent[-1]["cache_control"]["ttl"] == "5m", "per call overrides the agent default"
 
     def test_cached_input_is_priced_as_cached(self):
         """The bill is dominated by re-sent transcript; at the full input rate a

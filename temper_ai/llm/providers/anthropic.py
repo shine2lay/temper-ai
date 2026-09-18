@@ -144,56 +144,22 @@ def _warn_unshaped_once() -> None:
     )
 
 
-def _apply_prompt_caching(create_kwargs: dict[str, Any]) -> None:
-    """Ask Anthropic to cache the stable prefix of this request, in place.
+def _apply_prompt_caching(create_kwargs: dict[str, Any], ttl: str = "5m") -> None:
+    """Ask Anthropic to cache this request's stable prefix, its own way.
 
-    A tool-using agent re-sends its whole transcript on every iteration: by the
-    fortieth call the system prompt, the tool schemas and thirty-nine tool
-    results have each been paid for dozens of times. Cache reads are a tenth of
-    the price of fresh input, and nothing here was asking for them.
+    Request-level `cache_control` is automatic caching: the service places and
+    advances the breakpoints itself as the conversation grows, which is what
+    Anthropic recommends for multi-turn tool loops and what hand-placed
+    breakpoints kept getting wrong (mark only the newest turn and the previous
+    breakpoint vanishes from the request; mark two and you still pay a write
+    premium on every boundary you guessed wrong).
 
-    Two of the four allowed breakpoints, in the order Anthropic assembles a
-    prompt (tools, then system, then messages):
-
-    * the last system block — covers the tool schemas and the whole system
-      prompt, which never change within a run;
-    * the last block of each of the two newest user-side messages. Two, not
-      one, because a lookup only happens at a breakpoint present in *this*
-      request: marking just the newest message drops the previous turn's
-      breakpoint and the read falls back to some far older prefix. Measured on
-      an 8-turn loop, one moving breakpoint re-wrote 9,216 tokens to read 6,532
-      back; keeping the previous one turns that into a read of nearly the whole
-      transcript and a write of only the new turn.
-
-    The cache is keyed to the credential, which is why an agent stays on one
-    subscription for a whole run (see the module docstring).
+    `ttl` is "5m" (write costs 1.25x) or "1h" (1.5x). A gap longer than the TTL
+    between two calls of one run — a test suite, an install — expires the whole
+    prefix and the next call re-writes it at full price, so a long-running agent
+    is cheaper on the hour.
     """
-    system = create_kwargs.get("system")
-    if isinstance(system, str) and system:
-        system = [{"type": "text", "text": system}]
-        create_kwargs["system"] = system
-    if isinstance(system, list) and system:
-        _mark(system[-1])
-
-    messages = create_kwargs.get("messages") or []
-    # User-side messages only: tool results arrive as role "user", and an
-    # assistant turn is always followed by one, so these are the points a
-    # prefix can end on.
-    marks = [i for i, m in enumerate(messages) if m.get("role") == "user"][-2:]
-    for i in marks:
-        message = messages[i]
-        content = message.get("content")
-        if isinstance(content, str) and content:
-            content = [{"type": "text", "text": content}]
-            message["content"] = content
-        if isinstance(content, list) and content:
-            _mark(content[-1])
-
-
-def _mark(block: Any) -> None:
-    """Put a cache breakpoint on one block, if it is one we may annotate."""
-    if isinstance(block, dict) and "cache_control" not in block:
-        block["cache_control"] = {"type": "ephemeral"}
+    create_kwargs["cache_control"] = {"type": "ephemeral", "ttl": ttl}
 
 
 def _is_rate_limit(exc: Exception) -> bool:
@@ -264,6 +230,7 @@ class AnthropicLLM(BaseLLM):
         # truncation. Current models allow far more; an unused ceiling is free.
         max_tokens: int = 32_000,
         timeout: int = 120,
+        cache_ttl: str = "5m",
         **kwargs: Any,
     ):
         super().__init__(
@@ -275,6 +242,7 @@ class AnthropicLLM(BaseLLM):
             timeout=timeout,
             **kwargs,
         )
+        self.cache_ttl = cache_ttl
         anthropic_mod = _ensure_anthropic()
         credential, self.auth_mode = resolve_credential(api_key)
         self.api_key = credential
@@ -409,7 +377,7 @@ class AnthropicLLM(BaseLLM):
         # After shaping, so the identity blocks the shaper prepends are inside
         # the cached prefix rather than ahead of it (a block added before the
         # breakpoint on the next call would miss every time).
-        _apply_prompt_caching(create_kwargs)
+        _apply_prompt_caching(create_kwargs, ttl=kwargs.get("cache_ttl") or self.cache_ttl)
         return create_kwargs
 
     def complete(self, messages: list[dict], **kwargs: Any) -> LLMResponse:

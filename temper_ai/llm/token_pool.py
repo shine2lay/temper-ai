@@ -97,6 +97,12 @@ class TokenPool:
     tokens: list[str]
     _cooldown: dict[str, float] = field(default_factory=dict)
     _lock: threading.Lock = field(default_factory=threading.Lock)
+    #: Slot used by callers that give no sticky key. Chosen once, not per call:
+    #: picking randomly each time spreads one conversation across every
+    #: subscription, and each holds its own cache, so a run alternating between
+    #: two accounts reads a prefix one turn stale and re-writes the rest. Seen
+    #: on a probe: every other turn a full miss.
+    _default_slot: int = field(default_factory=lambda: random.randrange(1 << 30))  # noqa: S311
 
     def __len__(self) -> int:
         return len(self.tokens)
@@ -137,6 +143,10 @@ class TokenPool:
             )
 
         if available:
+            if not sticky_key:
+                preferred = self.tokens[self._default_slot % len(self.tokens)]
+                if preferred in available:
+                    return preferred
             return random.choice(available)  # noqa: S311 - load spreading, not cryptography
         raise PoolExhausted(len(self.tokens), self.soonest_reset())
 

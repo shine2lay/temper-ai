@@ -4,6 +4,7 @@ import tempfile
 import time
 from typing import Any
 
+from temper_ai.observability import EventType
 from temper_ai.tools.base import BaseTool, ToolResult
 from temper_ai.tools.executor import ToolExecutor
 
@@ -202,3 +203,109 @@ class TestSkipPolicies:
             context={"skip_policies": ["budget"]},
         )
         assert result.success is False
+
+
+class EchoTool(BaseTool):
+    name = "echo"
+    description = "Returns what it was given"
+    parameters = {"type": "object", "properties": {}}
+
+    def __init__(self, config=None):
+        super().__init__(config)
+        self.calls: list[dict] = []
+
+    def execute(self, **params: Any) -> ToolResult:
+        self.calls.append(params)
+        return ToolResult(success=True, result="echoed")
+
+
+class TestScopedToolExecutor:
+    """A per-agent view: only the agent's declared tools resolve.
+
+    The executor is per RUN and holds every node's tools together, so an agent
+    shown only `github-ci.*` could otherwise execute `github-full.merge_pull_request`
+    if that name reached the model — hallucinated, or planted in a tool result
+    (GitHub issue bodies, PR descriptions and CI logs are untrusted input).
+    """
+
+    def _root(self):
+        root = ToolExecutor()
+        mine, theirs = EchoTool(), EchoTool()
+        root.register_tools({"github-ci.get_job_logs": mine, "github-full.merge_pull_request": theirs})
+        return root, mine, theirs
+
+    def test_declared_tool_executes_through_the_root(self):
+        root, mine, _ = self._root()
+        view = root.scoped(["github-ci.get_job_logs"], agent_name="ci_diagnoser")
+        result = view.execute("github-ci.get_job_logs", {"run_id": 1})
+        assert result.success is True
+        assert result.result == "echoed"
+        assert mine.calls == [{"run_id": 1}]
+
+    def test_undeclared_tool_is_refused_and_never_reaches_the_tool(self, monkeypatch):
+        root, _, theirs = self._root()
+        events: list[tuple] = []
+        monkeypatch.setattr(
+            "temper_ai.tools.executor.record",
+            lambda et, **kw: events.append((et, kw)),
+        )
+        view = root.scoped(["github-ci.get_job_logs"], agent_name="ci_diagnoser")
+
+        result = view.execute(
+            "github-full.merge_pull_request", {"pullNumber": 1},
+            context={"execution_id": "run-1", "parent_id": "evt-9"},
+        )
+
+        assert result.success is False
+        assert "not available to agent 'ci_diagnoser'" in result.error
+        assert "github-ci.get_job_logs" in result.error, "the model is told what it does have"
+        assert theirs.calls == [], "the other agent's tool was never invoked"
+
+        assert len(events) == 1
+        event_type, kwargs = events[0]
+        assert event_type is EventType.TOOL_BLOCKED
+        assert kwargs["status"] == "blocked"
+        assert kwargs["execution_id"] == "run-1"
+        assert kwargs["parent_id"] == "evt-9"
+        assert kwargs["data"] == {
+            "tool_name": "github-full.merge_pull_request",
+            "reason": "not_declared_by_agent",
+            "agent_name": "ci_diagnoser",
+            "declared": ["github-ci.get_job_logs"],
+        }
+
+    def test_get_tool_is_scoped_too(self):
+        root, mine, _ = self._root()
+        view = root.scoped(["github-ci.get_job_logs"])
+        assert view.get_tool("github-ci.get_job_logs") is mine
+        assert view.get_tool("github-full.merge_pull_request") is None
+        assert root.get_tool("github-full.merge_pull_request") is not None, "root is unchanged"
+
+    def test_empty_scope_allows_nothing(self):
+        root, _, _ = self._root()
+        view = root.scoped([], agent_name="no_tools")
+        assert view.execute("github-ci.get_job_logs", {}).success is False
+        assert "declared tools: none" in view.execute("github-ci.get_job_logs", {}).error
+
+    def test_rescoping_widens_from_root_not_from_the_parent_view(self):
+        """A Delegate child declares its own tools; it must not inherit the
+        parent's narrower list."""
+        root, _, theirs = self._root()
+        parent = root.scoped(["github-ci.get_job_logs"], agent_name="parent")
+        child = parent.scoped(["github-full.merge_pull_request"], agent_name="child")
+        assert child.execute("github-full.merge_pull_request", {}).success is True
+        assert theirs.calls == [{}]
+        # and the child is still scoped — it did not inherit the parent's tool
+        assert child.execute("github-ci.get_job_logs", {}).success is False
+
+    def test_view_shares_run_state_and_never_shuts_down_the_pool(self):
+        root, _, _ = self._root()
+        view = root.scoped(["github-ci.get_job_logs"], agent_name="a")
+        view.track_usage(cost_usd=0.25, tokens=100)
+        assert root.run_cost_usd == 0.25 and root.run_tokens == 100
+        assert view.run_cost_usd == 0.25, "passthrough reads the root's totals"
+        assert view.workspace_root == root.workspace_root
+
+        view.shutdown()  # a view does not own the pool
+        assert root.execute("github-ci.get_job_logs", {}).success is True
+        root.shutdown()

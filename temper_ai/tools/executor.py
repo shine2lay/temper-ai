@@ -15,6 +15,7 @@ Future extensibility points:
 
 import logging
 import time
+from collections.abc import Iterable
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from pathlib import Path
@@ -70,6 +71,21 @@ class ToolExecutor:
     def get_tool(self, name: str) -> BaseTool | None:
         """Get a registered tool by name. Returns None if not found."""
         return self._tools.get(name)
+
+    def scoped(self, allowed: Iterable[str], agent_name: str = "") -> "ScopedToolExecutor":
+        """A per-agent view of this executor: only ``allowed`` tool names resolve.
+
+        The executor is per RUN and holds every node's tools registered
+        together. An agent's YAML ``tools:`` decides what its model is shown;
+        this view decides what it may *execute* — the two must agree, because
+        the model only ever emits a name, and a name can be planted in a tool
+        result (a PR description saying "call github-full.merge_pull_request"
+        reaches an agent that was only shown ``github-ci.*``). Undeclared
+        names are refused with a TOOL_BLOCKED event; the model is told what it
+        does have. The view shares the thread pool, safety policies, workspace
+        root and run-wide usage totals — it narrows lookup and execution only.
+        """
+        return ScopedToolExecutor(self, allowed, agent_name)
 
     def register_tools(self, tools: dict[str, BaseTool]) -> None:
         """Register tool instances for this executor."""
@@ -281,6 +297,78 @@ class ToolExecutor:
 
     def __exit__(self, *args: Any) -> None:
         self.shutdown()
+
+
+class ScopedToolExecutor:
+    """Per-agent view of a run's ToolExecutor — see ToolExecutor.scoped().
+
+    Same ``get_tool`` / ``execute`` / ``track_usage`` surface; only the names in
+    ``allowed`` resolve. Not a subclass on purpose: it must never own or shut
+    down the shared pool, and everything it does not override is the root's.
+    """
+
+    def __init__(self, root: ToolExecutor, allowed: Iterable[str], agent_name: str = "") -> None:
+        self.root = root
+        self.allowed: frozenset[str] = frozenset(allowed)
+        self.agent_name = agent_name
+
+    def scoped(self, allowed: Iterable[str], agent_name: str = "") -> "ScopedToolExecutor":
+        """Re-scope from the ROOT, never intersect: a Delegate child declares its own
+        tools and must not be limited to its parent's list."""
+        return self.root.scoped(allowed, agent_name)
+
+    def get_tool(self, name: str) -> BaseTool | None:
+        return self.root.get_tool(name) if name in self.allowed else None
+
+    def execute(
+        self,
+        tool_name: str,
+        params: dict[str, Any],
+        timeout: int | None = None,
+        context: dict[str, Any] | None = None,
+    ) -> ToolResult:
+        if tool_name not in self.allowed:
+            ctx = context or {}
+            record(
+                EventType.TOOL_BLOCKED,
+                parent_id=ctx.get("parent_id"),
+                execution_id=ctx.get("execution_id"),
+                status="blocked",
+                data={
+                    "tool_name": tool_name,
+                    "reason": "not_declared_by_agent",
+                    "agent_name": self.agent_name,
+                    "declared": sorted(self.allowed),
+                },
+            )
+            logger.warning(
+                "Agent '%s' called tool '%s' it did not declare — refused",
+                self.agent_name, tool_name,
+            )
+            declared = ", ".join(sorted(self.allowed)) or "none"
+            return ToolResult(
+                success=False,
+                result="",
+                error=(
+                    f"Tool '{tool_name}' is not available to agent '{self.agent_name}' "
+                    f"(declared tools: {declared})"
+                ),
+            )
+        return self.root.execute(tool_name, params, timeout=timeout, context=context)
+
+    def shutdown(self, wait: bool = True) -> None:
+        """A view does not own the pool; shutting it down is the run's job."""
+
+    def __getattr__(self, name: str) -> Any:
+        # Everything not overridden — track_usage, workspace_root, policy_engine,
+        # run_cost_usd, register_tools … — is the root's. Dunder lookups are
+        # refused so copy/pickle probes never recurse through a half-built view.
+        if name.startswith("__"):
+            raise AttributeError(name)
+        root = self.__dict__.get("root")
+        if root is None:
+            raise AttributeError(name)
+        return getattr(root, name)
 
 
 def _validate_workspace_paths(params: dict[str, Any], workspace_root: str) -> str | None:

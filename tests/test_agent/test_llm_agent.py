@@ -9,6 +9,8 @@ from temper_ai.agent.llm_agent import (
 )
 from temper_ai.llm.models import LLMRunResult
 from temper_ai.shared.types import ExecutionContext, Status
+from temper_ai.tools.base import BaseTool, ToolResult
+from temper_ai.tools.executor import ToolExecutor
 
 
 def _make_context(**overrides) -> ExecutionContext:
@@ -371,3 +373,75 @@ class TestToolContextBinding:
         agent = _make_agent({"tools": ["GhostTool"]})
         # Should not raise
         agent._make_tool_executor(ctx)
+
+
+class _Echo(BaseTool):
+    name = "echo"
+    description = "echo"
+    parameters = {"type": "object", "properties": {}}
+
+    def __init__(self, config=None):
+        super().__init__(config)
+        self.calls: list[dict] = []
+
+    def execute(self, **params):
+        self.calls.append(params)
+        return ToolResult(success=True, result="ran")
+
+
+class TestPerAgentToolScope:
+    """The agent runs against a SCOPED view of the run's executor.
+
+    The gate itself lives in ToolExecutor.scoped (tested in test_executor.py);
+    these cover the wiring: the agent asks for a view over its declared tools,
+    the model's callback goes through it, and the run's context keeps the ROOT
+    executor — Delegate copies the context to sub-agents that declare their own
+    tools, and ScriptAgent calls the root directly.
+    """
+
+    def _ctx_with_root(self):
+        """A real ToolExecutor holding two agents' tools, as a run does."""
+        root = ToolExecutor()
+        mine, theirs = _Echo(), _Echo()
+        root.register_tools({"github-ci.get_job_logs": mine, "github-full.merge_pull_request": theirs})
+        return _make_context(tool_executor=root), root, mine, theirs
+
+    def test_declared_tool_runs_undeclared_is_refused(self):
+        ctx, _, mine, theirs = self._ctx_with_root()
+        run = _make_agent({"tools": ["github-ci.get_job_logs"]})._make_tool_executor(ctx)
+
+        assert run("github-ci.get_job_logs", {"run_id": 1}) == "ran"
+        assert mine.calls == [{"run_id": 1}]
+
+        out = run("github-full.merge_pull_request", {"pullNumber": 1})
+        assert out.startswith("Error: Tool 'github-full.merge_pull_request' is not available to agent 'test_agent'")
+        assert "github-ci.get_job_logs" in out, "the model is told what it does have"
+        assert theirs.calls == [], "the other agent's tool was never invoked"
+
+    def test_context_keeps_the_root_executor(self):
+        """Regression guard: scoping must not leak into the context, or a Delegate
+        child (or ScriptAgent) would inherit this agent's narrower list."""
+        ctx, root, _, theirs = self._ctx_with_root()
+        agent = _make_agent({"tools": ["github-ci.get_job_logs"]})
+        agent._get_tools(ctx)
+        agent._make_tool_executor(ctx)
+
+        assert ctx.tool_executor is root
+        assert root.execute("github-full.merge_pull_request", {}).success is True
+        assert theirs.calls == [{}]
+
+    def test_shown_and_executable_come_from_one_source(self):
+        """A {name, config} spec entry counts for visibility AND execution."""
+        ctx, _, mine, _ = self._ctx_with_root()
+        agent = _make_agent({"tools": [{"name": "github-ci.get_job_logs", "config": {}}]})
+
+        assert [s["function"]["name"] for s in agent._get_tools(ctx)] == ["echo"]
+        run = agent._make_tool_executor(ctx)
+        assert run("github-ci.get_job_logs", {}) == "ran"
+        assert mine.calls == [{}]
+
+    def test_agent_with_no_tools_can_execute_nothing(self):
+        ctx, _, _, theirs = self._ctx_with_root()
+        run = _make_agent({"tools": []})._make_tool_executor(ctx)
+        assert run("github-full.merge_pull_request", {}).startswith("Error: Tool ")
+        assert theirs.calls == []

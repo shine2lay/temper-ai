@@ -34,6 +34,7 @@ from temper_ai.shared.types import (
     Status,
     TokenUsage,
 )
+from temper_ai.tools.executor import ScopedToolExecutor, ToolExecutor
 
 DEFAULT_TOTAL_TIMEOUT = 300.0
 
@@ -402,15 +403,50 @@ class LLMAgent(AgentABC):
             return f"project:{context.workspace_path}"
         return f"workflow:{context.workflow_name}"
 
+    def _declared_tools(self) -> list[str]:
+        """Tool names this agent's config declares.
+
+        The single source of truth for BOTH what the model is shown (_get_tools)
+        and what it may execute (the executor view from _scoped_executor) — read
+        in one place so the two can never disagree. Entries are bare names or
+        ``{name: ..., config: ...}`` (the loader's spec form).
+        """
+        names: list[str] = []
+        for spec in self.config.get("tools", []) or []:
+            if isinstance(spec, str):
+                name = spec
+            elif isinstance(spec, dict):
+                name = str(spec.get("name") or "")
+            else:
+                name = str(getattr(spec, "name", "") or "")
+            if name:
+                names.append(name)
+        return names
+
+    def _scoped_executor(self, context: ExecutionContext) -> Any:
+        """The run's ToolExecutor narrowed to this agent's declared tools.
+
+        This is what the model's tool calls go through (see ToolExecutor.scoped):
+        an undeclared name is refused by the executor itself, with a TOOL_BLOCKED
+        event. The view is NOT written back into ``context`` — Delegate copies
+        the context to sub-agents, which declare their own tools, and ScriptAgent
+        calls the root directly.
+        """
+        te = context.tool_executor
+        if isinstance(te, (ToolExecutor, ScopedToolExecutor)):
+            return te.scoped(self._declared_tools(), agent_name=self.name)
+        return te  # None, or a test double standing in for the executor
+
     def _get_tools(self, context: ExecutionContext) -> list[dict[str, Any]]:
         """Get tool schemas for tools configured on this agent."""
-        tool_names = self.config.get("tools", [])
-        if not tool_names or not context.tool_executor:
+        tool_names = self._declared_tools()
+        te = self._scoped_executor(context)
+        if not tool_names or not te:
             return []
 
         schemas = []
         for name in tool_names:
-            tool = context.tool_executor.get_tool(name)
+            tool = te.get_tool(name)
             if tool:
                 schemas.append(tool.to_llm_schema())
             else:
@@ -421,20 +457,24 @@ class LLMAgent(AgentABC):
         return schemas
 
     def _make_tool_executor(self, context: ExecutionContext):
-        """Create a tool executor function compatible with LLMService."""
-        # Bind the execution context to any tool that declares bind_context.
-        # Used by Delegate (to run sub-agents), QueryRunState (to read live
-        # node_outputs), and any future tool that needs the current run's state.
-        te = context.tool_executor
+        """Create a tool executor function compatible with LLMService.
+
+        Binds the execution context to any declared tool that has
+        ``bind_context`` (Delegate runs sub-agents, QueryRunState reads live
+        node_outputs, …), then returns the callback the model's tool calls go
+        through. That callback executes against this agent's *scoped* view of
+        the run executor, so a tool the agent did not declare is refused by the
+        executor (see ToolExecutor.scoped) — not merely hidden from the prompt.
+        """
+        te = self._scoped_executor(context)
         if te is not None:
-            tool_names = self.config.get("tools", []) or []
-            for tool_name in tool_names:
+            for tool_name in self._declared_tools():
                 tool = te.get_tool(tool_name)
                 if tool is not None and hasattr(tool, "bind_context"):
                     tool.bind_context(context)
 
         def execute_tool(tool_name: str, params: dict[str, Any]) -> Any:
-            result = context.tool_executor.execute(
+            result = te.execute(
                 tool_name,
                 params,
                 context={

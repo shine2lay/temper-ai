@@ -3,11 +3,13 @@
 from unittest.mock import MagicMock, patch
 
 from temper_ai.agent.llm_agent import (
+    DEFAULT_TOTAL_TIMEOUT,
     LLMAgent,
     _extract_structured_output,
     _truncate_input_data,
 )
 from temper_ai.llm.models import LLMRunResult
+from temper_ai.llm.service import DEFAULT_MAX_CONTEXT_TOKENS, DEFAULT_MAX_MESSAGES
 from temper_ai.shared.types import ExecutionContext, Status
 from temper_ai.tools.base import BaseTool, ToolResult
 from temper_ai.tools.executor import ALL_TOOLS, ToolExecutor
@@ -151,8 +153,16 @@ class TestLLMAgentRun:
         ctx = _make_context(llm_providers={"vllm": mock_llm})
         agent.run({"task": "x"}, ctx)
 
-        # LLMService was initialized with the correct provider
-        MockLLMService.assert_called_once_with(provider=mock_llm, max_iterations=10, max_messages=50, total_timeout=300.0, max_context_tokens=120000)
+        # LLMService was initialized with the correct provider. The defaults are
+        # asserted through the constants they come from, so changing a default
+        # does not leave a stale literal failing here.
+        MockLLMService.assert_called_once_with(
+            provider=mock_llm,
+            max_iterations=10,
+            max_messages=DEFAULT_MAX_MESSAGES,
+            total_timeout=DEFAULT_TOTAL_TIMEOUT,
+            max_context_tokens=DEFAULT_MAX_CONTEXT_TOKENS,
+        )
 
     @patch("temper_ai.agent.llm_agent.LLMService")
     def test_tools_passed_to_llm_service(self, MockLLMService):

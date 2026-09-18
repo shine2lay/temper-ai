@@ -138,3 +138,43 @@ class TestStartRunValidation:
     def test_missing_workflow_field(self, client):
         r = client.post("/api/runs", json={"inputs": {}})
         assert r.status_code == 422  # Pydantic validation error
+
+
+class TestMountFrontend:
+    """docker-compose.yml bind-mounts ./frontend/dist; on a fresh checkout Docker
+    creates it empty. That must degrade to API-only, not a crash at import."""
+
+    def test_empty_dist_dir_is_api_only(self, tmp_path, caplog):
+        from fastapi import FastAPI
+
+        from temper_ai.server import mount_frontend
+
+        dist = tmp_path / "dist"
+        dist.mkdir()  # exists, but no assets/ — the empty bind mount
+        app = FastAPI()
+        assert mount_frontend(app, dist) is False
+        assert "serving the API only" in caplog.text
+        assert TestClient(app).get("/app").status_code == 404
+
+    def test_missing_dist_is_silent(self, tmp_path, caplog):
+        from fastapi import FastAPI
+
+        from temper_ai.server import mount_frontend
+
+        assert mount_frontend(FastAPI(), tmp_path / "nope") is False
+        assert "API only" not in caplog.text
+
+    def test_built_dist_is_served(self, tmp_path):
+        from fastapi import FastAPI
+
+        from temper_ai.server import mount_frontend
+
+        dist = tmp_path / "dist"
+        (dist / "assets").mkdir(parents=True)
+        (dist / "assets" / "a.js").write_text("1")
+        (dist / "index.html").write_text("<html>spa</html>")
+        app = FastAPI()
+        assert mount_frontend(app, dist) is True
+        c = TestClient(app)
+        assert c.get("/app/runs/123").text == "<html>spa</html>"
+        assert c.get("/app/assets/a.js").text == "1"

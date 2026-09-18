@@ -441,25 +441,44 @@ def health() -> dict:
 
 # -- Serve frontend (SPA with client-side routing) --
 _frontend_dist = Path(__file__).parent.parent / "frontend" / "dist"
-if _frontend_dist.exists():
+
+
+def mount_frontend(app: FastAPI, dist: Path) -> bool:
+    """Serve the built dashboard from `dist` if there is one. Returns whether it was mounted.
+
+    `dist.exists()` alone is not enough: docker-compose.yml bind-mounts
+    ./frontend/dist over the image's copy, and on a checkout that has never run
+    `npm run build` Docker creates that path as an *empty* directory. StaticFiles
+    then raised on the missing assets/ and the server never came up. No
+    dashboard is a warning; the API still serves.
+    """
+    if not (dist / "assets").is_dir():
+        if dist.exists():
+            logger.warning("%s has no assets/ (unbuilt dashboard, or an empty bind mount); serving the API only", dist)
+        return False
+
     from starlette.responses import FileResponse
 
     # Serve static assets (JS, CSS, images)
-    app.mount("/app/assets", StaticFiles(directory=str(_frontend_dist / "assets")), name="frontend-assets")
+    app.mount("/app/assets", StaticFiles(directory=str(dist / "assets")), name="frontend-assets")
 
     # SPA catch-all: serve index.html for any /app/* route
     @app.get("/app/{full_path:path}")
     async def serve_spa(full_path: str):
         """Serve index.html for all frontend routes (SPA client-side routing)."""
         # Check if it's a real static file first
-        file_path = _frontend_dist / full_path
+        file_path = dist / full_path
         if file_path.is_file():
             return FileResponse(str(file_path))
         # Otherwise serve index.html (React Router handles the route)
-        return FileResponse(str(_frontend_dist / "index.html"))
+        return FileResponse(str(dist / "index.html"))
 
     @app.get("/app")
     async def serve_spa_root():
-        return FileResponse(str(_frontend_dist / "index.html"))
+        return FileResponse(str(dist / "index.html"))
 
-    logger.info("Serving frontend from %s", _frontend_dist)
+    logger.info("Serving frontend from %s", dist)
+    return True
+
+
+mount_frontend(app, _frontend_dist)

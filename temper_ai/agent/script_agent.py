@@ -50,6 +50,10 @@ class ScriptAgent(AgentABC):
             render_vars = dict(input_data)
             if context.workspace_path and not render_vars.get("workspace_path"):
                 render_vars["workspace_path"] = context.workspace_path
+            # Same for `{{ run_id }}`: scripts that leave a durable record
+            # (a claim file, a branch) want to say which run made it.
+            if context.run_id and not render_vars.get("run_id"):
+                render_vars["run_id"] = str(context.run_id)
             escaped = {k: shlex.quote(str(v)) if isinstance(v, str) else v for k, v in render_vars.items()}
             script = template.render(**escaped)
 

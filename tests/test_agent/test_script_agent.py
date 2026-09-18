@@ -67,6 +67,27 @@ class TestScriptAgentBasic:
         command = ctx.tool_executor.execute.call_args[0][1]["command"]
         assert "/other" in command
 
+    def test_run_id_comes_from_context(self):
+        """`{{ run_id }}` resolves to the execution id without being an input."""
+        agent = ScriptAgent(config={
+            "name": "test_script",
+            "script_template": "echo run={{ run_id }}",
+        })
+        ctx = _make_context(ToolResult(success=True, result="ok\n"))
+        agent.run({}, ctx)
+        command = ctx.tool_executor.execute.call_args[0][1]["command"]
+        assert "run=test-exec-001" in command
+
+    def test_explicit_run_id_input_wins(self):
+        agent = ScriptAgent(config={
+            "name": "test_script",
+            "script_template": "echo {{ run_id }}",
+        })
+        ctx = _make_context(ToolResult(success=True, result="ok\n"))
+        agent.run({"run_id": "mine"}, ctx)
+        command = ctx.tool_executor.execute.call_args[0][1]["command"]
+        assert "mine" in command
+
     def test_run_script_failure(self):
         agent = ScriptAgent(config={
             "name": "failing_script",

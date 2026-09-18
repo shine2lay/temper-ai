@@ -216,6 +216,72 @@ class TestPromptCaching:
         assert parsed.cache_write_tokens == 1_000
 
 
+class TestThinkingBudget:
+    """Thinking is billed as output, and on a real planning run it was 65% of
+    the bill and effectively all of the 33-minute wall clock — 4,145 output
+    tokens per call, including on calls whose job was to read back a grep.
+    `budget_tokens` is the hard ceiling on that; `effort` is the soft dial.
+    """
+
+    def _sent(self, monkeypatch, **provider_kwargs):
+        from temper_ai.llm.providers import anthropic as mod
+
+        monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat-only")
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        sent: list[dict] = []
+
+        def fake_anthropic(**_kw):
+            client = MagicMock()
+            client.messages.create.side_effect = lambda **c: (
+                sent.append(c),
+                MagicMock(content=[], usage=MagicMock(input_tokens=1, output_tokens=1), stop_reason="end_turn"),
+            )[1]
+            return client
+
+        monkeypatch.setattr(mod, "_ensure_anthropic", lambda: MagicMock(Anthropic=fake_anthropic))
+        provider = mod.AnthropicLLM(model="claude-opus-5", **provider_kwargs)
+        provider.complete([{"role": "user", "content": "hi"}])
+        return sent[-1]
+
+    def test_nothing_is_sent_by_default(self):
+        """Unset means the model's own judgement — for Opus 5, high effort."""
+        import pytest as _pytest
+
+        monkeypatch = _pytest.MonkeyPatch()
+        try:
+            sent = self._sent(monkeypatch)
+        finally:
+            monkeypatch.undo()
+        assert "thinking" not in sent
+        assert "output_config" not in sent
+
+    def test_a_budget_is_a_ceiling_the_api_enforces(self, monkeypatch):
+        sent = self._sent(monkeypatch, thinking_budget=1024)
+        assert sent["thinking"] == {"type": "enabled", "budget_tokens": 1024}
+
+    def test_max_tokens_is_raised_to_leave_room_for_an_answer(self, monkeypatch):
+        """max_tokens covers thinking and the reply together: a budget at or above
+        it leaves nothing to answer with and the API refuses the request."""
+        sent = self._sent(monkeypatch, thinking_budget=30_000, max_tokens=8_000)
+        assert sent["max_tokens"] > 30_000
+
+    def test_a_budget_drops_temperature(self, monkeypatch):
+        """Extended thinking accepts no temperature but 1 and rejects the request
+        otherwise; an agent that set 0.7 did not mean to forbid thinking."""
+        sent = self._sent(monkeypatch, thinking_budget=1024, temperature=0.7)
+        assert "temperature" not in sent
+
+    def test_effort_is_the_soft_dial(self, monkeypatch):
+        sent = self._sent(monkeypatch, effort="low")
+        assert sent["output_config"] == {"effort": "low"}
+
+    def test_a_budget_wins_over_effort(self, monkeypatch):
+        """Anthropic rejects both together; the budget is the harder promise."""
+        sent = self._sent(monkeypatch, effort="high", thinking_budget=2048)
+        assert sent["thinking"]["budget_tokens"] == 2048
+        assert "output_config" not in sent
+
+
 class TestTruncation:
     """A reply cut off by max_tokens must say so.
 

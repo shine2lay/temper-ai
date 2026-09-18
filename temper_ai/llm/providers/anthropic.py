@@ -72,6 +72,10 @@ OAUTH_TOKEN_ENV = "CLAUDE_CODE_OAUTH_TOKEN"  # noqa: S105 - name, not a secret
 
 AuthMode = str  # "api_key" | "oauth" | "none"
 
+# Room kept for the answer itself when a thinking budget is set: max_tokens is
+# the ceiling for thinking plus reply together.
+_ANSWER_HEADROOM = 8_000
+
 # Models that answer 400 `temperature is deprecated for this model`. Learned at
 # runtime rather than listed ahead of time: the set grows with every release,
 # and a hard-coded list is wrong the day after it is written. One rejected
@@ -231,6 +235,8 @@ class AnthropicLLM(BaseLLM):
         max_tokens: int = 32_000,
         timeout: int = 120,
         cache_ttl: str = "5m",
+        effort: str | None = None,
+        thinking_budget: int | None = None,
         **kwargs: Any,
     ):
         super().__init__(
@@ -243,6 +249,18 @@ class AnthropicLLM(BaseLLM):
             **kwargs,
         )
         self.cache_ttl = cache_ttl
+        # How hard the model thinks before answering: low | medium | high | max.
+        # Unset means the model's own default, which for Opus 5 is `high` — and
+        # high applies to every turn, including the ones whose whole job is to
+        # read back a grep. Measured on a 36-call planning run: 149k output
+        # tokens, 65% of the bill and effectively all of the 33-minute wall
+        # clock, against 2 seconds of actual shell work.
+        self.effort = effort
+        # A hard ceiling, in tokens, on what the model may spend thinking before
+        # it answers — `effort` is a dial, this is a limit. Thinking is billed as
+        # output, so it is the one knob that caps that side of the bill directly.
+        # None leaves the model to its own judgement.
+        self.thinking_budget = thinking_budget
         anthropic_mod = _ensure_anthropic()
         credential, self.auth_mode = resolve_credential(api_key)
         self.api_key = credential
@@ -353,6 +371,26 @@ class AnthropicLLM(BaseLLM):
         }
         if model not in _NO_TEMPERATURE:
             create_kwargs["temperature"] = self.temperature
+
+        budget = kwargs.get("thinking_budget") or self.thinking_budget
+        effort = kwargs.get("effort") or self.effort
+        if budget:
+            create_kwargs["thinking"] = {"type": "enabled", "budget_tokens": int(budget)}
+            # Extended thinking accepts no temperature but 1, and rejects the
+            # request outright otherwise. Sampling is the model's own business
+            # while it reasons; an agent config that set 0.7 did not mean to
+            # forbid thinking.
+            create_kwargs.pop("temperature", None)
+            # max_tokens covers thinking *and* the answer, so a budget at or
+            # above it leaves no room to reply and the API refuses the request.
+            floor = int(budget) + _ANSWER_HEADROOM
+            if create_kwargs["max_tokens"] < floor:
+                create_kwargs["max_tokens"] = floor
+            # An explicit budget and an effort dial are two ways to say the same
+            # thing, and Anthropic rejects both together. The budget is the
+            # harder promise, so it wins.
+        elif effort:
+            create_kwargs["output_config"] = {"effort": effort}
         if system:
             create_kwargs["system"] = system
 
@@ -383,8 +421,13 @@ class AnthropicLLM(BaseLLM):
     def complete(self, messages: list[dict], **kwargs: Any) -> LLMResponse:
         """Call Claude via the Anthropic SDK."""
         create_kwargs = self._build_create_kwargs(messages, **kwargs)
+        # Timed here rather than left at None: with thinking billed as output,
+        # per-call latency is the visible half of what a thinking budget buys,
+        # and the event log had nothing to show for it.
+        started = time.monotonic()
         response = self._send(create_kwargs, kwargs, lambda client: client.messages.create(**create_kwargs))
-        return _parse_response(response, create_kwargs["model"])
+        elapsed_ms = int((time.monotonic() - started) * 1000)
+        return _parse_response(response, create_kwargs["model"], elapsed_ms)
 
     def stream(self, messages: list[dict], on_chunk: StreamCallback | None = None,
                **kwargs: Any) -> LLMResponse:
@@ -404,12 +447,14 @@ class AnthropicLLM(BaseLLM):
         # A rate limit surfaces on entering the stream, before any chunk; if it
         # ever arrives mid-stream the partial text is dropped and the retry
         # starts clean rather than emitting the same prefix twice.
+        started = time.monotonic()
         final = self._send(create_kwargs, kwargs, run)
+        elapsed_ms = int((time.monotonic() - started) * 1000)
 
         if on_chunk:
             on_chunk(LLMStreamChunk(content="", done=True))
 
-        return _parse_response(final, create_kwargs["model"])
+        return _parse_response(final, create_kwargs["model"], elapsed_ms)
 
     # The Anthropic and Gemini providers use their SDK clients directly
     # (via complete()/stream()) rather than the httpx-based base class methods.
@@ -508,7 +553,7 @@ def _convert_tools(tools: list[dict]) -> list[dict]:
     return anthropic_tools
 
 
-def _parse_response(response: Any, model: str) -> LLMResponse:
+def _parse_response(response: Any, model: str, latency_ms: int | None = None) -> LLMResponse:
     """Parse Anthropic response to standard LLMResponse."""
     content_text = ""
     tool_calls = []
@@ -545,6 +590,7 @@ def _parse_response(response: Any, model: str) -> LLMResponse:
         total_tokens=prompt_tokens + usage.output_tokens,
         cached_prompt_tokens=cache_read,
         cache_write_tokens=cache_write,
+        latency_ms=latency_ms,
         finish_reason="tool_calls" if tool_calls else response.stop_reason or "stop",
         tool_calls=tool_calls if tool_calls else None,
     )

@@ -102,41 +102,42 @@ def command_heads(command: str) -> list[str]:
     parse (an unbalanced quote — the shell would reject it too) yields the
     pseudo-command `<unparseable>`, which no allowlist contains.
     """
+    # The whole command is one lexer input, not one per line: a quoted string
+    # may span lines (a multi-paragraph `git commit -m "..."`), and lexing
+    # each line alone would see an unbalanced quote and refuse it. Newlines
+    # outside quotes are command separators, and `#` starts a comment.
+    lexer = shlex.shlex(command, posix=True, punctuation_chars="();<>|&\n")
+    lexer.whitespace_split = True
+    lexer.whitespace = " \t\r"  # \n is punctuation: its own token, a command separator
+    lexer.commenters = "#"
+    try:
+        tokens = list(lexer)
+    except ValueError:
+        return ["<unparseable>"]
     heads: list[str] = []
-    for line in command.strip().splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
+    expect_head = True
+    skip_next = False
+    for tok in tokens:
+        if skip_next:
+            skip_next = False
             continue
-        lexer = shlex.shlex(line, posix=True, punctuation_chars=True)
-        lexer.whitespace_split = True
-        try:
-            tokens = list(lexer)
-        except ValueError:
-            heads.append("<unparseable>")
+        if tok in _SEPARATORS or tok.strip("\n") == "":
+            expect_head = True
             continue
-        expect_head = True
-        skip_next = False
-        for tok in tokens:
-            if skip_next:
-                skip_next = False
-                continue
-            if tok in _SEPARATORS:
-                expect_head = True
-                continue
-            if tok in _REDIRECTS or (tok and tok[0].isdigit() and tok.lstrip("0123456789") in _REDIRECTS):
-                skip_next = True
-                continue
-            if not expect_head:
-                continue
-            if tok in ("for", "case", "select", "function"):
-                expect_head = False  # `for f in a b;` / `case $x in`: names, not commands, until the next separator
-                continue
-            if tok in _SHELL_WORDS:
-                continue  # keyword: the command comes after it
-            if "=" in tok and not tok.startswith("=") and tok.split("=", 1)[0].replace("_", "a").isalnum():
-                continue  # VAR=value prefix: the command comes after it
-            heads.append(os.path.basename(tok))
-            expect_head = False
+        if tok in _REDIRECTS or (tok and tok[0].isdigit() and tok.lstrip("0123456789") in _REDIRECTS):
+            skip_next = True  # the redirection target (`2>&1` lexes as `2`, `>&`, `1`: the `2` was a bare digit word)
+            continue
+        if not expect_head or tok.isdigit():
+            continue  # (a bare digit is a file descriptor: `2>&1` lexes as `2`, `>&`, `1`)
+        if tok in ("for", "case", "select", "function"):
+            expect_head = False  # `for f in a b;` / `case $x in`: names, not commands, until the next separator
+            continue
+        if tok in _SHELL_WORDS:
+            continue  # keyword: the command comes after it
+        if "=" in tok and not tok.startswith("=") and tok.split("=", 1)[0].replace("_", "a").isalnum():
+            continue  # VAR=value prefix: the command comes after it
+        heads.append(os.path.basename(tok))
+        expect_head = False
     return heads
 
 

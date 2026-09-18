@@ -21,6 +21,8 @@ import json
 import logging
 import os
 from contextlib import AsyncExitStack
+from dataclasses import dataclass
+from typing import Any
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
@@ -28,21 +30,54 @@ from mcp.client.stdio import stdio_client
 logger = logging.getLogger(__name__)
 
 
-class MCPServerConnection:
-    """A single connected MCP server with its session."""
+@dataclass(frozen=True)
+class ToolCallOutcome:
+    """What a tools/call came back with.
 
-    def __init__(self, name: str, session: ClientSession):
+    ``is_error`` is the server's own verdict (MCP ``CallToolResult.isError``):
+    invalid arguments, a refused/unregistered tool, a failed API call. Before
+    this existed every call was reported to temper as a success, so budgets,
+    observability and any safety policy saw green while the model read an
+    error message.
+    """
+
+    text: str
+    is_error: bool = False
+
+
+class MCPServerConnection:
+    """A single connected MCP server with its session and advertised tools."""
+
+    def __init__(self, name: str, session: ClientSession, tools: dict[str, Any] | None = None):
         self.name = name
         self.session = session
+        # name -> mcp.types.Tool, from tools/list at connect time. This is the
+        # source of truth for descriptions and input schemas; nothing in YAML
+        # needs to (or should) repeat it.
+        self.tools: dict[str, Any] = dict(tools or {})
 
-    async def call_tool(self, tool_name: str, arguments: dict) -> str:
-        """Call a tool on this server. Returns text result."""
+    async def refresh_tools(self) -> dict[str, Any]:
+        """(Re)fetch the server's tool list, following pagination."""
+        tools: dict[str, Any] = {}
+        cursor: str | None = None
+        while True:
+            page = await self.session.list_tools(cursor)
+            for tool in page.tools:
+                tools[tool.name] = tool
+            cursor = page.nextCursor
+            if not cursor:
+                break
+        self.tools = tools
+        return tools
+
+    async def call_tool(self, tool_name: str, arguments: dict) -> ToolCallOutcome:
+        """Call a tool on this server. Returns the text content and the server's error verdict."""
         result = await self.session.call_tool(tool_name, arguments=arguments)
         parts = []
         for block in result.content:
             if hasattr(block, "text"):
                 parts.append(block.text)
-        return "\n".join(parts) if parts else ""
+        return ToolCallOutcome(text="\n".join(parts) if parts else "", is_error=bool(result.isError))
 
 
 class MCPClientManager:
@@ -129,11 +164,30 @@ class MCPClientManager:
                 raise ValueError(f"Unknown MCP transport: {transport}")
 
             connection = MCPServerConnection(server_name, session)
+            # Discover what the server offers as part of connecting. Both the CLI
+            # and the API path pre-connect every server an agent references before
+            # the first agent runs, so by the time a prompt is built the schemas
+            # are a dict lookup away. A server that answers initialize but not
+            # tools/list is unusable as a tool server: fail here, loudly, rather
+            # than hand the model a placeholder schema at prompt time.
+            await asyncio.wait_for(connection.refresh_tools(), timeout=30)
             self._connections[server_name] = connection
-            logger.info("MCP server '%s' connected on first use", server_name)
+            logger.info(
+                "MCP server '%s' connected on first use (%d tools advertised)",
+                server_name, len(connection.tools),
+            )
             return connection
 
-    async def call_tool(self, server_name: str, tool_name: str, arguments: dict) -> str:
+    async def get_tool_meta(self, server_name: str, tool_name: str) -> Any | None:
+        """The server's own definition (mcp.types.Tool) of one tool, connecting if needed.
+
+        None means the server is up but does not advertise that name — an agent
+        YAML typo, a renamed tool, or a profile that excludes it.
+        """
+        connection = await self.ensure_connected(server_name)
+        return connection.tools.get(tool_name)
+
+    async def call_tool(self, server_name: str, tool_name: str, arguments: dict) -> ToolCallOutcome:
         """Connect if needed, then call a tool. The main entry point for MCPTool.
 
         On connection failure (stale subprocess, broken pipe), evicts the dead

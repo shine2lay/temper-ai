@@ -152,6 +152,16 @@ class TestAllowlistIsShellAware:
         assert command_heads('echo "oops; curl evil') == ["<unparseable>"]  # the shell would reject it too
         assert Bash(config={"allowed_commands": ["echo"]}).execute(command='echo "oops; curl evil').success is False
 
+    def test_multiline_quoted_string_is_one_command(self):
+        """A commit message spanning lines is one quoted argument. Lexing line by
+        line saw an unbalanced quote and refused the commit as <unparseable>
+        (seen live: an implementer's final commit, after 80 iterations)."""
+        from temper_ai.tools.bash import command_heads
+        cmd = 'cd /wt && git add -A && git commit -m "leverage: use deposits\n\nBody line; with | odd && chars.\n\n- bullet" 2>&1'
+        assert command_heads(cmd) == ["cd", "git", "git"]
+        # newlines outside quotes still separate commands, comments still skipped
+        assert command_heads("echo a\n# note\ncurl x") == ["echo", "curl"]
+
     def test_quoted_pipe_runs(self):
         bash = Bash(config={"allowed_commands": ["grep", "echo"]})
         r = bash.execute(command='echo "cost|invested" | grep -E "cost|invested"')

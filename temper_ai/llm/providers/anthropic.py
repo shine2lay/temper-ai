@@ -76,6 +76,42 @@ AuthMode = str  # "api_key" | "oauth" | "none"
 # the ceiling for thinking plus reply together.
 _ANSWER_HEADROOM = 8_000
 
+# Which knob a model actually obeys. Both are *accepted* by every model here;
+# only one of them changes anything, and which one flipped with the generation.
+# Measured on one hard prompt, output tokens:
+#
+#   opus-5        effort low 427 -> max 1,302   budget 1k 753 vs 16k 734  (ignored)
+#   sonnet-4-6    effort low 1,143 vs max 1,139 (ignored)   budget 1k 4,760 -> 16k 7,232
+#
+# So sending a budget to a Claude 5 model is not a cap, it is a no-op that
+# reads like a cap — the expensive kind of silence.
+_ADAPTIVE_EFFORT_MODELS = (
+    "claude-opus-5", "claude-sonnet-5", "claude-fable-5",
+    "claude-opus-4-8", "claude-opus-4-7",
+)
+
+# What each effort level means to a model that only understands a fixed budget.
+# `low` is deliberately None: on those models extended thinking is opt-in and
+# enabling it *raises* output (sonnet-4-6: 1,099 tokens off, 4,760 at a 1k
+# budget), so the cheapest setting is not to enable it at all.
+_EFFORT_AS_BUDGET: dict[str, int | None] = {
+    "low": None, "medium": 4_000, "high": 8_000, "max": 16_000,
+}
+
+_thinking_warned: set[str] = set()
+
+
+def _honours_effort(model: str) -> bool:
+    return any(model.startswith(m) for m in _ADAPTIVE_EFFORT_MODELS)
+
+
+def _warn_once(key: str, message: str, *args: Any) -> None:
+    with _no_temperature_lock:
+        if key in _thinking_warned:
+            return
+        _thinking_warned.add(key)
+    logger.warning(message, *args)
+
 # Models that answer 400 `temperature is deprecated for this model`. Learned at
 # runtime rather than listed ahead of time: the set grows with every release,
 # and a hard-coded list is wrong the day after it is written. One rejected
@@ -146,6 +182,58 @@ def _warn_unshaped_once() -> None:
         "classifies those as third-party usage. Register one with "
         "temper_ai.llm.providers.anthropic.register_oauth_shaper()."
     )
+
+
+def _apply_thinking_control(
+    create_kwargs: dict[str, Any],
+    model: str,
+    effort: str | None,
+    budget: int | None,
+) -> None:
+    """Ask for as much thinking as was asked for, in the dialect this model speaks.
+
+    Thinking is billed as output, so this is the knob that caps that side of a
+    run's bill. Which knob works depends on the generation (see
+    `_ADAPTIVE_EFFORT_MODELS`), and the one a model ignores is accepted without
+    complaint — so a setting aimed at the wrong knob looks like a control and
+    is a no-op. Rather than pass it through and let it lie, translate it and say
+    so once.
+    """
+    if not effort and not budget:
+        return
+
+    if _honours_effort(model):
+        if budget and not effort:
+            effort = "low" if budget <= 2_000 else "medium" if budget <= 8_000 else "high"
+            _warn_once(
+                f"budget-on-adaptive:{model}",
+                "Anthropic: %s ignores thinking budgets (adaptive thinking); reading "
+                "thinking_budget=%d as effort=%s. Set `effort` directly.",
+                model, budget, effort,
+            )
+        create_kwargs["output_config"] = {"effort": effort}
+        return
+
+    # Legacy: a fixed budget is the only control, and thinking is opt-in.
+    if budget is None:
+        budget = _EFFORT_AS_BUDGET.get(effort or "", None)
+        _warn_once(
+            f"effort-on-legacy:{model}",
+            "Anthropic: %s has no effort dial; reading effort=%s as %s.",
+            model, effort, f"a {budget}-token thinking budget" if budget else "thinking off",
+        )
+    if not budget:
+        return
+    create_kwargs["thinking"] = {"type": "enabled", "budget_tokens": int(budget)}
+    # Extended thinking accepts no temperature but 1, and refuses the request
+    # otherwise. Sampling is the model's own business while it reasons; an agent
+    # config that set 0.7 did not mean to forbid thinking.
+    create_kwargs.pop("temperature", None)
+    # max_tokens covers thinking *and* the answer, so a budget at or above it
+    # leaves nothing to reply with.
+    floor = int(budget) + _ANSWER_HEADROOM
+    if create_kwargs.get("max_tokens", 0) < floor:
+        create_kwargs["max_tokens"] = floor
 
 
 def _apply_prompt_caching(create_kwargs: dict[str, Any], ttl: str = "5m") -> None:
@@ -372,25 +460,11 @@ class AnthropicLLM(BaseLLM):
         if model not in _NO_TEMPERATURE:
             create_kwargs["temperature"] = self.temperature
 
-        budget = kwargs.get("thinking_budget") or self.thinking_budget
-        effort = kwargs.get("effort") or self.effort
-        if budget:
-            create_kwargs["thinking"] = {"type": "enabled", "budget_tokens": int(budget)}
-            # Extended thinking accepts no temperature but 1, and rejects the
-            # request outright otherwise. Sampling is the model's own business
-            # while it reasons; an agent config that set 0.7 did not mean to
-            # forbid thinking.
-            create_kwargs.pop("temperature", None)
-            # max_tokens covers thinking *and* the answer, so a budget at or
-            # above it leaves no room to reply and the API refuses the request.
-            floor = int(budget) + _ANSWER_HEADROOM
-            if create_kwargs["max_tokens"] < floor:
-                create_kwargs["max_tokens"] = floor
-            # An explicit budget and an effort dial are two ways to say the same
-            # thing, and Anthropic rejects both together. The budget is the
-            # harder promise, so it wins.
-        elif effort:
-            create_kwargs["output_config"] = {"effort": effort}
+        _apply_thinking_control(
+            create_kwargs, model,
+            effort=kwargs.get("effort") or self.effort,
+            budget=kwargs.get("thinking_budget") or self.thinking_budget,
+        )
         if system:
             create_kwargs["system"] = system
 

@@ -13,6 +13,8 @@ import shlex
 import subprocess  # noqa: B404
 from typing import Any
 
+from temper_ai.tools._output_compaction import DEFAULT_MAX_CHARS
+from temper_ai.tools._output_compaction import compact as compact_output
 from temper_ai.tools.base import BaseTool, ToolResult
 
 logger = logging.getLogger(__name__)
@@ -81,7 +83,13 @@ class Bash(BaseTool):
                     )
 
         cwd = self.config.get("workspace_root") or self.config.get("cwd")
-        return _run_subprocess(command, timeout, cwd)
+        return _run_subprocess(
+            command,
+            timeout,
+            cwd,
+            compact=self.config.get("compact_output", True),
+            max_output_chars=int(self.config.get("max_output_chars") or DEFAULT_MAX_CHARS),
+        )
 
 
 _SHELL_WORDS = frozenset((
@@ -141,7 +149,13 @@ def command_heads(command: str) -> list[str]:
     return heads
 
 
-def _run_subprocess(command: str, timeout: int, cwd: str | None) -> "ToolResult":
+def _run_subprocess(
+    command: str,
+    timeout: int,
+    cwd: str | None,
+    compact: bool = True,
+    max_output_chars: int = DEFAULT_MAX_CHARS,
+) -> "ToolResult":
     """Execute a shell command in a subprocess and return a ToolResult."""
     try:
         result = subprocess.run(
@@ -154,21 +168,32 @@ def _run_subprocess(command: str, timeout: int, cwd: str | None) -> "ToolResult"
             env=_safe_env(),
         )
 
+        # Hard ceiling first, so a runaway command cannot exhaust memory here.
         stdout = result.stdout[:_MAX_OUTPUT_SIZE] + "\n... (truncated)" if len(result.stdout) > _MAX_OUTPUT_SIZE else result.stdout
         stderr = result.stderr[:_MAX_OUTPUT_SIZE] + "\n... (truncated)" if len(result.stderr) > _MAX_OUTPUT_SIZE else result.stderr
+
+        notes: list[str] = []
+        if compact:
+            # Compact each stream separately: stderr is usually the short, important
+            # one, and windowing the combined text could drop it entirely.
+            stdout, out_notes = compact_output(command, stdout, max_output_chars)
+            stderr, err_notes = compact_output(command, stderr, max_output_chars)
+            notes = out_notes + [n for n in err_notes if n not in out_notes]
 
         output = stdout
         if stderr:
             output = f"{stdout}\nSTDERR:\n{stderr}" if stdout else f"STDERR:\n{stderr}"
+        if notes:
+            output = f"{output}\n\n[output compacted: {'; '.join(notes)}]"
 
         if result.returncode != 0:
             return ToolResult(
                 success=False,
                 result=output,
                 error=f"Command exited with code {result.returncode}",
-                metadata={"exit_code": result.returncode},
+                metadata={"exit_code": result.returncode, "compacted": bool(notes)},
             )
-        return ToolResult(success=True, result=output)
+        return ToolResult(success=True, result=output, metadata={"compacted": bool(notes)})
 
     except subprocess.TimeoutExpired:
         return ToolResult(success=False, result="", error=f"Command timed out after {timeout}s")

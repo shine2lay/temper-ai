@@ -13,18 +13,6 @@ vLLM exposes an OpenAI-compatible API. This provider adds:
 - **Default base URL:** `http://localhost:8000`
 - **Type:** HTTP-based (with automatic retry)
 
-## Configuration
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `model` | str | — | Model identifier |
-| `base_url` | str | — | API base URL |
-| `api_key` | str | None | None | API authentication key |
-| `temperature` | float | 0.7 | Sampling temperature (0.0-2.0) |
-| `max_tokens` | int | 32768 | Maximum tokens in response |
-| `timeout` | int | 7200 | Request timeout in seconds |
-| `max_retries` | int | 3 | Max retry attempts on transient failures |
-
 ## Provider Interface
 
 Methods this provider implements:

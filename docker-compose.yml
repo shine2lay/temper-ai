@@ -94,6 +94,10 @@ services:
       # would break the feature for anyone who has not created one.
       TEMPER_API_TOKENS_FILE: ${TEMPER_API_TOKENS_FILE:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      # ChatGPT Plus/Pro OAuth token (a JWT): routes to the Codex Responses
+      # endpoint instead of api.openai.com. local/sync-openai-oauth-token.sh
+      # copies pi's current token here.
+      OPENAI_OAUTH_TOKEN: ${OPENAI_OAUTH_TOKEN:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-}
       VLLM_BASE_URL: ${VLLM_BASE_URL:-}

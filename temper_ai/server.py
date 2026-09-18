@@ -58,16 +58,21 @@ def _init_llm_providers() -> dict:
 
     providers: dict[str, BaseLLM] = {}
 
-    openai_key = os.environ.get("OPENAI_API_KEY")
+    # An API key or a ChatGPT-subscription OAuth token; the provider decides
+    # the endpoint and protocol from the credential (see providers/openai.py).
+    from temper_ai.llm.providers.openai import resolve_credential as _resolve_openai
+    openai_key, openai_mode = _resolve_openai()
     if openai_key:
         def _make_openai():
             from temper_ai.llm.providers.openai import OpenAILLM
+            from temper_ai.llm.providers.openai_codex import DEFAULT_CODEX_MODEL
+            default_model = DEFAULT_CODEX_MODEL if openai_mode == "oauth" else "gpt-4o-mini"
             return OpenAILLM(
-                model=os.environ.get("OPENAI_MODEL", "gpt-4o-mini"),
+                model=os.environ.get("OPENAI_MODEL", default_model),
                 base_url=os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1"),
                 api_key=openai_key,
             )
-        _try_init_provider(providers, "openai", _make_openai, "OpenAI provider initialized")
+        _try_init_provider(providers, "openai", _make_openai, f"OpenAI provider initialized (auth mode: {openai_mode})")
 
     vllm_url = os.environ.get("VLLM_BASE_URL")
     if vllm_url:

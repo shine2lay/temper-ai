@@ -6,23 +6,18 @@
 
 Provider for OpenAI and OpenAI-compatible APIs.
 
+Two credentials, two wire protocols. An API key goes to
+``/v1/chat/completions`` on ``base_url`` (this class, and its Ollama and
+vLLM subclasses, which never see an OAuth token). A ChatGPT-subscription
+OAuth token goes to the Codex Responses endpoint through
+``CodexTransport``; ``complete``/``stream`` delegate to it and the rest of
+this class is bypassed.
+
 Handles both completion and streaming via the /v1/chat/completions endpoint.
 Works with OpenAI, Azure OpenAI, and any OpenAI-compatible API.
 
 - **Default base URL:** `https://api.openai.com`
 - **Type:** HTTP-based (with automatic retry)
-
-## Configuration
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `model` | str | — | Model identifier |
-| `base_url` | str | — | API base URL |
-| `api_key` | str | None | None | API authentication key |
-| `temperature` | float | 0.7 | Sampling temperature (0.0-2.0) |
-| `max_tokens` | int | 32768 | Maximum tokens in response |
-| `timeout` | int | 7200 | Request timeout in seconds |
-| `max_retries` | int | 3 | Max retry attempts on transient failures |
 
 ## Provider Interface
 

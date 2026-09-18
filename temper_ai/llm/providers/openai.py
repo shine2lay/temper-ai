@@ -6,6 +6,7 @@ Works with OpenAI, Azure OpenAI, and any OpenAI-compatible API.
 
 import json
 import logging
+import os
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -30,10 +31,82 @@ class _StreamState:
 logger = logging.getLogger(__name__)
 
 
+API_KEY_ENV = "OPENAI_API_KEY"
+OAUTH_TOKEN_ENV = "OPENAI_OAUTH_TOKEN"  # noqa: S105 - name, not a secret
+
+AuthMode = str  # "api_key" | "oauth" | "none"
+
+
+def is_oauth_token(credential: str) -> bool:
+    """A ChatGPT-subscription OAuth access token is a JWT; an API key is ``sk-…``.
+
+    Shape, not prefix: OpenAI's OAuth tokens carry no distinguishing prefix,
+    but they are three base64url segments and start with the JSON header
+    ``{"alg"`` (``eyJ``), which an API key never does.
+    """
+    return credential.startswith("eyJ") and credential.count(".") == 2
+
+
+def resolve_credential(api_key: str | None = None) -> tuple[str | None, AuthMode]:
+    """The credential this provider would use, and what kind it is.
+
+    Explicit argument, then OPENAI_API_KEY, then OPENAI_OAUTH_TOKEN. The kind
+    is decided by the credential's shape, not by which variable held it.
+    An OAuth token is sent to a different endpoint speaking a different
+    protocol (see providers/openai_codex.py), not merely with different
+    headers.
+    """
+    key = (
+        (api_key or "").strip()
+        or os.environ.get(API_KEY_ENV, "").strip()
+        or os.environ.get(OAUTH_TOKEN_ENV, "").strip()
+    )
+    if not key:
+        return None, "none"
+    return key, ("oauth" if is_oauth_token(key) else "api_key")
+
+
 class OpenAILLM(BaseLLM):
-    """Provider for OpenAI and OpenAI-compatible APIs."""
+    """Provider for OpenAI and OpenAI-compatible APIs.
+
+    Two credentials, two wire protocols. An API key goes to
+    ``/v1/chat/completions`` on ``base_url`` (this class, and its Ollama and
+    vLLM subclasses, which never see an OAuth token). A ChatGPT-subscription
+    OAuth token goes to the Codex Responses endpoint through
+    ``CodexTransport``; ``complete``/``stream`` delegate to it and the rest of
+    this class is bypassed.
+    """
 
     PROVIDER_NAME = "openai"
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.auth_mode: AuthMode = "api_key"
+        self._codex: Any = None
+        # Only the real OpenAI provider resolves from the environment; the
+        # Ollama/vLLM subclasses set their own keys and must not pick up
+        # OPENAI_API_KEY or an OAuth token by accident.
+        if type(self).PROVIDER_NAME != "openai":
+            return
+        credential, self.auth_mode = resolve_credential(self.api_key)
+        self.api_key = credential
+        if self.auth_mode == "oauth" and credential:
+            from temper_ai.llm.providers.openai_codex import CodexTransport
+            self._codex = CodexTransport(
+                credential, model=self.model, temperature=self.temperature, timeout=self.timeout,
+            )
+        logger.info("OpenAI provider: auth mode %s", self.auth_mode)
+
+    def complete(self, messages: list[dict], **kwargs: Any) -> LLMResponse:
+        if self._codex is not None:
+            return self._codex.complete(messages, **kwargs)
+        return super().complete(messages, **kwargs)
+
+    def stream(self, messages: list[dict], on_chunk: StreamCallback | None = None,
+               **kwargs: Any) -> LLMResponse:
+        if self._codex is not None:
+            return self._codex.stream(messages, on_chunk=on_chunk, **kwargs)
+        return super().stream(messages, on_chunk=on_chunk, **kwargs)
 
     def _get_headers(self) -> dict[str, str]:
         headers: dict[str, str] = {"Content-Type": "application/json"}

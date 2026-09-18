@@ -15,7 +15,7 @@ Future extensibility points:
 
 import logging
 import time
-from collections.abc import Iterable
+from collections.abc import Collection, Container
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from pathlib import Path
@@ -30,21 +30,47 @@ _DEFAULT_TIMEOUT = 30
 _MAX_TIMEOUT = 600
 _DEFAULT_WORKERS = 4
 
+
+class _AllTools(Container[str]):
+    """Every name is in it. See ALL_TOOLS."""
+
+    def __contains__(self, item: object) -> bool:
+        return True
+
+    def __repr__(self) -> str:
+        return "ALL_TOOLS"
+
+
+ALL_TOOLS = _AllTools()
+"""Declare this when the caller is temper itself rather than a model.
+
+``execute()`` requires every caller to state which tools it may use. Model-driven
+callers pass the agent's declared list; trusted internal callers (a ScriptAgent
+running its own rendered script, a test exercising the executor) pass ALL_TOOLS —
+explicit and greppable, and impossible to arrive at by forgetting.
+"""
+
 # Path parameter names to check for workspace sandboxing
 _PATH_PARAMS = {"path", "file_path", "directory", "filename", "output_path"}
 
 
 class ToolExecutor:
-    """Executes tools with timeout enforcement and workspace sandboxing.
+    """Executes tools with per-caller scope, timeout enforcement and workspace sandboxing.
 
-    Records observability events for every execution, including blocks,
-    timeouts, and errors. Events use parent_id/execution_id from the
-    context dict if provided.
+    One executor per RUN: it holds every node's tools registered together, so
+    every call must say which tools ITS caller may run (see execute()). Records
+    observability events for every execution, including blocks, timeouts, and
+    errors. Events use parent_id/execution_id from the context dict if provided.
 
     Usage:
         executor = ToolExecutor(workspace_root="/home/user/project")
         executor.register_tools({"Bash": bash_instance, "FileWriter": fw_instance})
-        result = executor.execute("Bash", {"command": "ls"})
+
+        # agent-driven: scoped to what that agent declared
+        result = executor.execute("Bash", {"command": "ls"}, allowed_tools=["Bash"])
+
+        # temper itself, not a model
+        result = executor.execute("Bash", {"command": "ls"}, allowed_tools=ALL_TOOLS)
     """
 
     def __init__(
@@ -72,21 +98,6 @@ class ToolExecutor:
         """Get a registered tool by name. Returns None if not found."""
         return self._tools.get(name)
 
-    def scoped(self, allowed: Iterable[str], agent_name: str = "") -> "ScopedToolExecutor":
-        """A per-agent view of this executor: only ``allowed`` tool names resolve.
-
-        The executor is per RUN and holds every node's tools registered
-        together. An agent's YAML ``tools:`` decides what its model is shown;
-        this view decides what it may *execute* — the two must agree, because
-        the model only ever emits a name, and a name can be planted in a tool
-        result (a PR description saying "call github-full.merge_pull_request"
-        reaches an agent that was only shown ``github-ci.*``). Undeclared
-        names are refused with a TOOL_BLOCKED event; the model is told what it
-        does have. The view shares the thread pool, safety policies, workspace
-        root and run-wide usage totals — it narrows lookup and execution only.
-        """
-        return ScopedToolExecutor(self, allowed, agent_name)
-
     def register_tools(self, tools: dict[str, BaseTool]) -> None:
         """Register tool instances for this executor."""
         # Inject workspace_root into each tool's config so they can resolve relative paths
@@ -100,16 +111,33 @@ class ToolExecutor:
         self,
         tool_name: str,
         params: dict[str, Any],
+        *,
+        allowed_tools: Container[str],
         timeout: int | None = None,
         context: dict[str, Any] | None = None,
     ) -> ToolResult:
-        """Execute a tool by name.
+        """Execute a tool by name, if the caller declared it.
 
         Args:
             tool_name: Registered tool name.
             params: Parameters to pass to the tool.
+            allowed_tools: What THIS caller may run — an agent's declared tool
+                list, or ALL_TOOLS for trusted internal callers. Required and
+                keyword-only: the executor is per RUN and holds every node's
+                tools registered together, so without a per-call scope any name
+                reaching any caller would run. An agent's YAML ``tools:``
+                decides what its model is *shown*; this decides what it may
+                *execute*, and the two must agree — a model only ever emits a
+                name, and a name can be planted in a tool result (a PR
+                description saying "call github-full.merge_pull_request"
+                reaching an agent that was only shown ``github-ci.*``). A
+                required parameter rather than a scoped wrapper or a context
+                key: a caller cannot get a weaker guarantee by holding a
+                different object or by omitting a key — there is one entry
+                point and it does not run without an answer.
             timeout: Execution timeout in seconds. Uses default if not specified.
-            context: Optional observability context with parent_id, execution_id, etc.
+            context: Optional observability context with parent_id, execution_id,
+                and agent_name (named in the refusal when a tool is not declared).
 
         Returns:
             ToolResult with success/failure, result, and optional error.
@@ -117,6 +145,34 @@ class ToolExecutor:
         ctx = context or {}
         parent_id = ctx.get("parent_id")
         execution_id = ctx.get("execution_id")
+
+        if tool_name not in allowed_tools:
+            # Checked before the registry lookup on purpose: "you may not" must
+            # not also reveal whether the tool exists elsewhere in this run.
+            declared = sorted(allowed_tools) if isinstance(allowed_tools, Collection) else []
+            caller = str(ctx.get("agent_name") or "")
+            who = f"agent '{caller}'" if caller else "this caller"
+            record(
+                EventType.TOOL_BLOCKED,
+                parent_id=parent_id,
+                execution_id=execution_id,
+                status="blocked",
+                data={
+                    "tool_name": tool_name,
+                    "reason": "not_declared_by_caller",
+                    "agent_name": caller,
+                    "declared": declared,
+                },
+            )
+            logger.warning("Tool '%s' refused: not declared by %s", tool_name, who)
+            return ToolResult(
+                success=False,
+                result="",
+                error=(
+                    f"Tool '{tool_name}' is not available to {who} "
+                    f"(declared tools: {', '.join(declared) or 'none'})"
+                ),
+            )
 
         tool = self._tools.get(tool_name)
         if tool is None:
@@ -299,76 +355,7 @@ class ToolExecutor:
         self.shutdown()
 
 
-class ScopedToolExecutor:
-    """Per-agent view of a run's ToolExecutor — see ToolExecutor.scoped().
 
-    Same ``get_tool`` / ``execute`` / ``track_usage`` surface; only the names in
-    ``allowed`` resolve. Not a subclass on purpose: it must never own or shut
-    down the shared pool, and everything it does not override is the root's.
-    """
-
-    def __init__(self, root: ToolExecutor, allowed: Iterable[str], agent_name: str = "") -> None:
-        self.root = root
-        self.allowed: frozenset[str] = frozenset(allowed)
-        self.agent_name = agent_name
-
-    def scoped(self, allowed: Iterable[str], agent_name: str = "") -> "ScopedToolExecutor":
-        """Re-scope from the ROOT, never intersect: a Delegate child declares its own
-        tools and must not be limited to its parent's list."""
-        return self.root.scoped(allowed, agent_name)
-
-    def get_tool(self, name: str) -> BaseTool | None:
-        return self.root.get_tool(name) if name in self.allowed else None
-
-    def execute(
-        self,
-        tool_name: str,
-        params: dict[str, Any],
-        timeout: int | None = None,
-        context: dict[str, Any] | None = None,
-    ) -> ToolResult:
-        if tool_name not in self.allowed:
-            ctx = context or {}
-            record(
-                EventType.TOOL_BLOCKED,
-                parent_id=ctx.get("parent_id"),
-                execution_id=ctx.get("execution_id"),
-                status="blocked",
-                data={
-                    "tool_name": tool_name,
-                    "reason": "not_declared_by_agent",
-                    "agent_name": self.agent_name,
-                    "declared": sorted(self.allowed),
-                },
-            )
-            logger.warning(
-                "Agent '%s' called tool '%s' it did not declare — refused",
-                self.agent_name, tool_name,
-            )
-            declared = ", ".join(sorted(self.allowed)) or "none"
-            return ToolResult(
-                success=False,
-                result="",
-                error=(
-                    f"Tool '{tool_name}' is not available to agent '{self.agent_name}' "
-                    f"(declared tools: {declared})"
-                ),
-            )
-        return self.root.execute(tool_name, params, timeout=timeout, context=context)
-
-    def shutdown(self, wait: bool = True) -> None:
-        """A view does not own the pool; shutting it down is the run's job."""
-
-    def __getattr__(self, name: str) -> Any:
-        # Everything not overridden — track_usage, workspace_root, policy_engine,
-        # run_cost_usd, register_tools … — is the root's. Dunder lookups are
-        # refused so copy/pickle probes never recurse through a half-built view.
-        if name.startswith("__"):
-            raise AttributeError(name)
-        root = self.__dict__.get("root")
-        if root is None:
-            raise AttributeError(name)
-        return getattr(root, name)
 
 
 def _validate_workspace_paths(params: dict[str, Any], workspace_root: str) -> str | None:

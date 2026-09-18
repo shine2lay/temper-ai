@@ -34,7 +34,6 @@ from temper_ai.shared.types import (
     Status,
     TokenUsage,
 )
-from temper_ai.tools.executor import ScopedToolExecutor, ToolExecutor
 
 DEFAULT_TOTAL_TIMEOUT = 300.0
 
@@ -423,24 +422,10 @@ class LLMAgent(AgentABC):
                 names.append(name)
         return names
 
-    def _scoped_executor(self, context: ExecutionContext) -> Any:
-        """The run's ToolExecutor narrowed to this agent's declared tools.
-
-        This is what the model's tool calls go through (see ToolExecutor.scoped):
-        an undeclared name is refused by the executor itself, with a TOOL_BLOCKED
-        event. The view is NOT written back into ``context`` — Delegate copies
-        the context to sub-agents, which declare their own tools, and ScriptAgent
-        calls the root directly.
-        """
-        te = context.tool_executor
-        if isinstance(te, (ToolExecutor, ScopedToolExecutor)):
-            return te.scoped(self._declared_tools(), agent_name=self.name)
-        return te  # None, or a test double standing in for the executor
-
     def _get_tools(self, context: ExecutionContext) -> list[dict[str, Any]]:
         """Get tool schemas for tools configured on this agent."""
         tool_names = self._declared_tools()
-        te = self._scoped_executor(context)
+        te = context.tool_executor
         if not tool_names or not te:
             return []
 
@@ -462,13 +447,20 @@ class LLMAgent(AgentABC):
         Binds the execution context to any declared tool that has
         ``bind_context`` (Delegate runs sub-agents, QueryRunState reads live
         node_outputs, …), then returns the callback the model's tool calls go
-        through. That callback executes against this agent's *scoped* view of
-        the run executor, so a tool the agent did not declare is refused by the
-        executor (see ToolExecutor.scoped) — not merely hidden from the prompt.
+        through.
+
+        Every call declares this agent's tools, so the executor refuses a name
+        the agent did not declare — _get_tools only controls what the model is
+        *shown*, and a name it was not shown can still reach it (hallucinated, or
+        planted in a tool result). Shown and declared come from the same
+        ``_declared_tools()``, so they cannot drift. Nothing is written back into
+        ``context``: Delegate copies it to sub-agents that declare their own
+        tools, and ScriptAgent declares its own.
         """
-        te = self._scoped_executor(context)
+        te = context.tool_executor
+        allowed = tuple(self._declared_tools())
         if te is not None:
-            for tool_name in self._declared_tools():
+            for tool_name in allowed:
                 tool = te.get_tool(tool_name)
                 if tool is not None and hasattr(tool, "bind_context"):
                     tool.bind_context(context)
@@ -477,10 +469,12 @@ class LLMAgent(AgentABC):
             result = te.execute(
                 tool_name,
                 params,
+                allowed_tools=allowed,
                 context={
                     "parent_id": None,
                     "execution_id": context.run_id,
                     "skip_policies": context.skip_policies,
+                    "agent_name": self.name,
                 },
             )
             return result.result if result.success else f"Error: {result.error}"

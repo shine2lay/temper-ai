@@ -61,11 +61,16 @@ class ScriptAgent(AgentABC):
             tool_result = context.tool_executor.execute(
                 "Bash",
                 {"command": script, "_skip_allowlist": True, "timeout": timeout},
+                # A script agent runs the script ITS OWN config declares — the
+                # command is rendered from the template here, not chosen by a
+                # model — so it declares exactly the one tool it uses.
+                allowed_tools=("Bash",),
                 timeout=timeout,
                 context={
                     "parent_id": agent_event_id,
                     "execution_id": context.run_id,
                     "skip_policies": context.skip_policies,
+                    "agent_name": self.name,
                 },
             )
 

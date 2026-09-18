@@ -4,9 +4,11 @@ import tempfile
 import time
 from typing import Any
 
+import pytest
+
 from temper_ai.observability import EventType
 from temper_ai.tools.base import BaseTool, ToolResult
-from temper_ai.tools.executor import ToolExecutor
+from temper_ai.tools.executor import ALL_TOOLS, ToolExecutor
 
 
 class SlowTool(BaseTool):
@@ -34,13 +36,13 @@ class TestExecutorBasics:
         executor = ToolExecutor()
         executor.register_tools({"Calculator": Calculator()})
 
-        result = executor.execute("Calculator", {"expression": "2 + 3"})
+        result = executor.execute("Calculator", {"expression": "2 + 3"}, allowed_tools=ALL_TOOLS)
         assert result.success is True
         assert result.result == "5"
 
     def test_unknown_tool(self):
         executor = ToolExecutor()
-        result = executor.execute("NonExistent", {})
+        result = executor.execute("NonExistent", {}, allowed_tools=ALL_TOOLS)
         assert result.success is False
         assert "Unknown tool" in result.error
 
@@ -54,10 +56,10 @@ class TestExecutorBasics:
             "Bash": Bash(),
         })
 
-        r1 = executor.execute("Calculator", {"expression": "10 * 5"})
+        r1 = executor.execute("Calculator", {"expression": "10 * 5"}, allowed_tools=ALL_TOOLS)
         assert r1.result == "50"
 
-        r2 = executor.execute("Bash", {"command": "echo hello"})
+        r2 = executor.execute("Bash", {"command": "echo hello"}, allowed_tools=ALL_TOOLS)
         assert r2.success is True
         assert "hello" in r2.result
 
@@ -67,7 +69,7 @@ class TestExecutorTimeout:
         executor = ToolExecutor(default_timeout=1)
         executor.register_tools({"slow": SlowTool()})
 
-        result = executor.execute("slow", {"duration": 10})
+        result = executor.execute("slow", {"duration": 10}, allowed_tools=ALL_TOOLS)
         assert result.success is False
         assert "timed out" in result.error.lower()
         executor.shutdown()
@@ -76,7 +78,7 @@ class TestExecutorTimeout:
         executor = ToolExecutor(default_timeout=30)
         executor.register_tools({"slow": SlowTool()})
 
-        result = executor.execute("slow", {"duration": 10}, timeout=1)
+        result = executor.execute("slow", {"duration": 10}, allowed_tools=ALL_TOOLS, timeout=1)
         assert result.success is False
         assert "timed out" in result.error.lower()
         executor.shutdown()
@@ -87,7 +89,7 @@ class TestExecutorErrorHandling:
         executor = ToolExecutor()
         executor.register_tools({"failing": FailingTool()})
 
-        result = executor.execute("failing", {})
+        result = executor.execute("failing", {}, allowed_tools=ALL_TOOLS)
         assert result.success is False
         assert "RuntimeError" in result.error
         assert "exploded" in result.error
@@ -96,7 +98,7 @@ class TestExecutorErrorHandling:
         with ToolExecutor() as executor:
             from temper_ai.tools.calculator import Calculator
             executor.register_tools({"Calculator": Calculator()})
-            result = executor.execute("Calculator", {"expression": "1 + 1"})
+            result = executor.execute("Calculator", {"expression": "1 + 1"}, allowed_tools=ALL_TOOLS)
             assert result.result == "2"
 
 
@@ -110,7 +112,7 @@ class TestWorkspaceSandbox:
 
         import os
         path = os.path.join(tmpdir, "safe.txt")
-        result = executor.execute("FileWriter", {"file_path": path, "content": "ok"})
+        result = executor.execute("FileWriter", {"file_path": path, "content": "ok"}, allowed_tools=ALL_TOOLS)
         assert result.success is True
 
     def test_path_escapes_workspace(self):
@@ -120,7 +122,9 @@ class TestWorkspaceSandbox:
         executor = ToolExecutor(workspace_root=tmpdir)
         executor.register_tools({"FileWriter": FileWriter()})
 
-        result = executor.execute("FileWriter", {"file_path": "/tmp/escape.txt", "content": "bad"})
+        result = executor.execute(
+            "FileWriter", {"file_path": "/tmp/escape.txt", "content": "bad"}, allowed_tools=ALL_TOOLS,
+        )
         assert result.success is False
         assert "escapes workspace" in result.error.lower()
 
@@ -131,7 +135,9 @@ class TestWorkspaceSandbox:
         executor = ToolExecutor(workspace_root=tmpdir)
         executor.register_tools({"FileWriter": FileWriter()})
 
-        result = executor.execute("FileWriter", {"file_path": f"{tmpdir}/evil\x00.txt", "content": "x"})
+        result = executor.execute(
+            "FileWriter", {"file_path": f"{tmpdir}/evil\x00.txt", "content": "x"}, allowed_tools=ALL_TOOLS,
+        )
         assert result.success is False
         # Null byte causes either our explicit check or an OS-level path error
         assert "null" in result.error.lower() or "invalid" in result.error.lower()
@@ -141,7 +147,7 @@ class TestWorkspaceSandbox:
         from temper_ai.tools.calculator import Calculator
         executor = ToolExecutor()  # no workspace_root
         executor.register_tools({"Calculator": Calculator()})
-        result = executor.execute("Calculator", {"expression": "1"})
+        result = executor.execute("Calculator", {"expression": "1"}, allowed_tools=ALL_TOOLS)
         assert result.success is True
 
 
@@ -163,7 +169,7 @@ class TestSkipPolicies:
         executor.register_tools({"Calculator": Calculator()})
         executor.run_cost_usd = 1.0  # Over the 0.001 limit
 
-        result = executor.execute("Calculator", {"expression": "1+1"})
+        result = executor.execute("Calculator", {"expression": "1+1"}, allowed_tools=ALL_TOOLS)
         assert result.success is False
         assert "budget" in result.error.lower() or "policy" in result.error.lower()
 
@@ -176,7 +182,7 @@ class TestSkipPolicies:
         executor.run_cost_usd = 1.0  # Over the limit
 
         result = executor.execute(
-            "Calculator", {"expression": "1+1"},
+            "Calculator", {"expression": "1+1"}, allowed_tools=ALL_TOOLS,
             context={"skip_policies": ["budget"]},
         )
         assert result.success is True
@@ -199,7 +205,7 @@ class TestSkipPolicies:
 
         # Skip budget, but file_access should still block /etc paths
         result = executor.execute(
-            "FileWriter", {"file_path": "/etc/passwd", "content": "x"},
+            "FileWriter", {"file_path": "/etc/passwd", "content": "x"}, allowed_tools=ALL_TOOLS,
             context={"skip_policies": ["budget"]},
         )
         assert result.success is False
@@ -219,46 +225,58 @@ class EchoTool(BaseTool):
         return ToolResult(success=True, result="echoed")
 
 
-class TestScopedToolExecutor:
-    """A per-agent view: only the agent's declared tools resolve.
+class TestToolDeclarationGate:
+    """execute() runs a tool only if the CALLER declared it.
 
-    The executor is per RUN and holds every node's tools together, so an agent
-    shown only `github-ci.*` could otherwise execute `github-full.merge_pull_request`
-    if that name reached the model — hallucinated, or planted in a tool result
-    (GitHub issue bodies, PR descriptions and CI logs are untrusted input).
+    One executor per run holds every node's tools registered together, so
+    without a per-call scope any name reaching any caller would run: an agent
+    shown only `github-ci.*` could execute `github-full.merge_pull_request` —
+    hallucinated, or planted in a tool result (GitHub issue bodies, PR
+    descriptions and CI logs are third-party text).
+
+    ``allowed_tools`` is required and keyword-only, so this is a property of the
+    interface rather than of which object the caller happens to hold.
     """
 
-    def _root(self):
-        root = ToolExecutor()
+    def _executor(self):
+        ex = ToolExecutor()
         mine, theirs = EchoTool(), EchoTool()
-        root.register_tools({"github-ci.get_job_logs": mine, "github-full.merge_pull_request": theirs})
-        return root, mine, theirs
+        ex.register_tools({"github-ci.get_job_logs": mine, "github-full.merge_pull_request": theirs})
+        return ex, mine, theirs
 
-    def test_declared_tool_executes_through_the_root(self):
-        root, mine, _ = self._root()
-        view = root.scoped(["github-ci.get_job_logs"], agent_name="ci_diagnoser")
-        result = view.execute("github-ci.get_job_logs", {"run_id": 1})
+    def test_execute_cannot_be_called_without_declaring(self):
+        """The interpreter enforces it — not a convention a caller may skip."""
+        ex, _, _ = self._executor()
+        with pytest.raises(TypeError, match="allowed_tools"):
+            ex.execute("github-ci.get_job_logs", {})  # type: ignore[call-arg]
+
+    def test_declared_tool_runs(self):
+        ex, mine, _ = self._executor()
+        result = ex.execute(
+            "github-ci.get_job_logs", {"run_id": 1},
+            allowed_tools=["github-ci.get_job_logs"],
+        )
         assert result.success is True
         assert result.result == "echoed"
         assert mine.calls == [{"run_id": 1}]
 
     def test_undeclared_tool_is_refused_and_never_reaches_the_tool(self, monkeypatch):
-        root, _, theirs = self._root()
+        ex, _, theirs = self._executor()
         events: list[tuple] = []
         monkeypatch.setattr(
             "temper_ai.tools.executor.record",
             lambda et, **kw: events.append((et, kw)),
         )
-        view = root.scoped(["github-ci.get_job_logs"], agent_name="ci_diagnoser")
 
-        result = view.execute(
+        result = ex.execute(
             "github-full.merge_pull_request", {"pullNumber": 1},
-            context={"execution_id": "run-1", "parent_id": "evt-9"},
+            allowed_tools=["github-ci.get_job_logs"],
+            context={"execution_id": "run-1", "parent_id": "evt-9", "agent_name": "ci_diagnoser"},
         )
 
         assert result.success is False
         assert "not available to agent 'ci_diagnoser'" in result.error
-        assert "github-ci.get_job_logs" in result.error, "the model is told what it does have"
+        assert "github-ci.get_job_logs" in result.error, "the caller is told what it does have"
         assert theirs.calls == [], "the other agent's tool was never invoked"
 
         assert len(events) == 1
@@ -269,43 +287,44 @@ class TestScopedToolExecutor:
         assert kwargs["parent_id"] == "evt-9"
         assert kwargs["data"] == {
             "tool_name": "github-full.merge_pull_request",
-            "reason": "not_declared_by_agent",
+            "reason": "not_declared_by_caller",
             "agent_name": "ci_diagnoser",
             "declared": ["github-ci.get_job_logs"],
         }
 
-    def test_get_tool_is_scoped_too(self):
-        root, mine, _ = self._root()
-        view = root.scoped(["github-ci.get_job_logs"])
-        assert view.get_tool("github-ci.get_job_logs") is mine
-        assert view.get_tool("github-full.merge_pull_request") is None
-        assert root.get_tool("github-full.merge_pull_request") is not None, "root is unchanged"
+    def test_refusal_does_not_reveal_whether_the_tool_exists(self):
+        """Undeclared registered tool and undeclared unknown tool look the same."""
+        ex, _, _ = self._executor()
+        registered = ex.execute("github-full.merge_pull_request", {}, allowed_tools=["x"])
+        unknown = ex.execute("no_such_tool_at_all", {}, allowed_tools=["x"])
+        assert registered.error.replace("github-full.merge_pull_request", "T") == unknown.error.replace(
+            "no_such_tool_at_all", "T"
+        )
+        # declared-but-unregistered still reports Unknown tool, as before
+        assert "Unknown tool" in ex.execute("ghost", {}, allowed_tools=["ghost"]).error
 
-    def test_empty_scope_allows_nothing(self):
-        root, _, _ = self._root()
-        view = root.scoped([], agent_name="no_tools")
-        assert view.execute("github-ci.get_job_logs", {}).success is False
-        assert "declared tools: none" in view.execute("github-ci.get_job_logs", {}).error
+    def test_empty_declaration_allows_nothing(self):
+        ex, _, _ = self._executor()
+        result = ex.execute("github-ci.get_job_logs", {}, allowed_tools=[])
+        assert result.success is False
+        assert "declared tools: none" in result.error
+        assert "this caller" in result.error, "no agent_name in context → generic wording"
 
-    def test_rescoping_widens_from_root_not_from_the_parent_view(self):
-        """A Delegate child declares its own tools; it must not inherit the
-        parent's narrower list."""
-        root, _, theirs = self._root()
-        parent = root.scoped(["github-ci.get_job_logs"], agent_name="parent")
-        child = parent.scoped(["github-full.merge_pull_request"], agent_name="child")
-        assert child.execute("github-full.merge_pull_request", {}).success is True
-        assert theirs.calls == [{}]
-        # and the child is still scoped — it did not inherit the parent's tool
-        assert child.execute("github-ci.get_job_logs", {}).success is False
+    def test_all_tools_is_an_explicit_opt_out(self):
+        """Trusted internal callers (ScriptAgent, these tests) say so out loud."""
+        ex, mine, theirs = self._executor()
+        assert ex.execute("github-ci.get_job_logs", {}, allowed_tools=ALL_TOOLS).success is True
+        assert ex.execute("github-full.merge_pull_request", {}, allowed_tools=ALL_TOOLS).success is True
+        assert mine.calls == [{}] and theirs.calls == [{}]
+        assert "anything" in ALL_TOOLS and repr(ALL_TOOLS) == "ALL_TOOLS"
 
-    def test_view_shares_run_state_and_never_shuts_down_the_pool(self):
-        root, _, _ = self._root()
-        view = root.scoped(["github-ci.get_job_logs"], agent_name="a")
-        view.track_usage(cost_usd=0.25, tokens=100)
-        assert root.run_cost_usd == 0.25 and root.run_tokens == 100
-        assert view.run_cost_usd == 0.25, "passthrough reads the root's totals"
-        assert view.workspace_root == root.workspace_root
+    def test_gate_runs_before_safety_policies_and_sandbox(self):
+        """An undeclared tool is refused without consulting policies at all."""
+        from temper_ai.safety.engine import PolicyEngine
 
-        view.shutdown()  # a view does not own the pool
-        assert root.execute("github-ci.get_job_logs", {}).success is True
-        root.shutdown()
+        engine = PolicyEngine.from_config({"policies": [{"type": "budget", "max_cost_usd": 0.001}]})
+        ex = ToolExecutor(policy_engine=engine)
+        ex.register_tools({"Echo": EchoTool()})
+        ex.run_cost_usd = 1.0  # would trip the budget policy
+        result = ex.execute("Echo", {}, allowed_tools=[])
+        assert "is not available" in result.error, "refused by the gate, not the budget policy"

@@ -10,7 +10,7 @@ from temper_ai.agent.llm_agent import (
 from temper_ai.llm.models import LLMRunResult
 from temper_ai.shared.types import ExecutionContext, Status
 from temper_ai.tools.base import BaseTool, ToolResult
-from temper_ai.tools.executor import ToolExecutor
+from temper_ai.tools.executor import ALL_TOOLS, ToolExecutor
 
 
 def _make_context(**overrides) -> ExecutionContext:
@@ -390,13 +390,13 @@ class _Echo(BaseTool):
 
 
 class TestPerAgentToolScope:
-    """The agent runs against a SCOPED view of the run's executor.
+    """The agent declares its tools on every execute() call.
 
-    The gate itself lives in ToolExecutor.scoped (tested in test_executor.py);
-    these cover the wiring: the agent asks for a view over its declared tools,
-    the model's callback goes through it, and the run's context keeps the ROOT
-    executor — Delegate copies the context to sub-agents that declare their own
-    tools, and ScriptAgent calls the root directly.
+    The gate itself lives in ToolExecutor.execute (tested in test_executor.py);
+    these cover the wiring: the model's callback passes this agent's declared
+    list, shown and declared come from one source, and nothing about the scope
+    is written into the context — Delegate copies it to sub-agents that declare
+    their own tools, and ScriptAgent declares its own.
     """
 
     def _ctx_with_root(self):
@@ -418,8 +418,8 @@ class TestPerAgentToolScope:
         assert "github-ci.get_job_logs" in out, "the model is told what it does have"
         assert theirs.calls == [], "the other agent's tool was never invoked"
 
-    def test_context_keeps_the_root_executor(self):
-        """Regression guard: scoping must not leak into the context, or a Delegate
+    def test_context_keeps_the_unrestricted_executor(self):
+        """Regression guard: the scope must not leak into the context, or a Delegate
         child (or ScriptAgent) would inherit this agent's narrower list."""
         ctx, root, _, theirs = self._ctx_with_root()
         agent = _make_agent({"tools": ["github-ci.get_job_logs"]})
@@ -427,7 +427,9 @@ class TestPerAgentToolScope:
         agent._make_tool_executor(ctx)
 
         assert ctx.tool_executor is root
-        assert root.execute("github-full.merge_pull_request", {}).success is True
+        assert root.execute(
+            "github-full.merge_pull_request", {}, allowed_tools=ALL_TOOLS,
+        ).success is True
         assert theirs.calls == [{}]
 
     def test_shown_and_executable_come_from_one_source(self):

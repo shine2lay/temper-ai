@@ -29,7 +29,16 @@ DEFAULT_MAX_ITERATIONS = 10
 # files, 27 turns apart, 1.6M tokens).
 DEFAULT_MAX_MESSAGES = 400
 DEFAULT_MAX_CONTEXT_TOKENS = 120_000  # Conservative default — most models handle at least 128k
-MAX_TOOL_RESULT_CHARS = 20_000  # ~5k tokens — prevents context overflow from large tool outputs
+# The most of one tool result that reaches the model. 20k chars (~330 lines)
+# was set for an uncached loop with a 120k window, where every token in context
+# was re-billed at full price every turn and small was cheap. It never fired —
+# the agents learned to slice instead — and that is what it cost: a planner read
+# one 2,058-line file in seven separate sed ranges, seven LLM round-trips at
+# ~14 s and ~$0.06 each, when carrying the whole file costs ~$0.015 a turn at
+# the cached rate. With the prompt cache on, the round-trip is the expensive
+# thing and a large result is not. Overflow is still handled: the context
+# limiter trims tool results further when a run is actually over budget.
+MAX_TOOL_RESULT_CHARS = 200_000  # ~50k tokens
 
 
 class LLMService:

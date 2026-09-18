@@ -225,6 +225,57 @@ class EchoTool(BaseTool):
         return ToolResult(success=True, result="echoed")
 
 
+class RemotePathTool(BaseTool):
+    """A tool whose 'path' names a file somewhere else (an MCP tool does this)."""
+    name = "remote"
+    description = "Reads a path on another machine"
+    parameters = {"type": "object", "properties": {"path": {"type": "string"}}}
+    local_paths = False
+
+    def execute(self, **params: Any) -> ToolResult:
+        return ToolResult(success=True, result=f"remote:{params.get('path')}")
+
+
+class TestWorkspaceSandboxScope:
+    """The workspace sandbox judges LOCAL paths only.
+
+    path/file_path/... are resolved against this process's cwd and compared to
+    workspace_root. For a tool that opens files here that is the point. For a
+    tool that forwards its arguments to another process it is simply wrong:
+    every GitHub `get_file_contents(path="README.md")` was refused with
+    "escapes workspace root" before local_paths existed.
+    """
+
+    def test_remote_path_tool_is_not_sandboxed(self):
+        with tempfile.TemporaryDirectory() as workspace:
+            ex = ToolExecutor(workspace_root=workspace)
+            ex.register_tools({"remote": RemotePathTool()})
+            for path in ("README.md", "src/main.py", "/etc/passwd"):
+                result = ex.execute("remote", {"path": path}, allowed_tools=ALL_TOOLS)
+                assert result.success is True, f"{path} should reach the tool"
+                assert result.result == f"remote:{path}"
+
+    def test_local_path_tool_is_still_sandboxed(self):
+        from temper_ai.tools.file_writer import FileWriter
+
+        with tempfile.TemporaryDirectory() as workspace:
+            ex = ToolExecutor(workspace_root=workspace)
+            ex.register_tools({"FileWriter": FileWriter()})
+            result = ex.execute(
+                "FileWriter", {"file_path": "/tmp/escape.txt", "content": "x"},
+                allowed_tools=ALL_TOOLS,
+            )
+            assert result.success is False
+            assert "escapes workspace root" in result.error
+
+    def test_default_is_local(self):
+        """Opting out is deliberate: a tool that says nothing gets the sandbox."""
+        from temper_ai.tools.file_writer import FileWriter
+
+        assert BaseTool.local_paths is True
+        assert FileWriter().local_paths is True
+
+
 class TestToolDeclarationGate:
     """execute() runs a tool only if the CALLER declared it.
 

@@ -31,12 +31,24 @@ class BaseTool(ABC):
         parameters: JSON Schema dict describing the tool's parameters.
         modifies_state: Whether this tool changes external state. Used by
             future safety features (rollback snapshots, caching decisions).
+        local_paths: Whether this tool's path-like parameters name files on
+            THIS machine. The executor sandboxes path/file_path/directory/
+            filename/output_path against the run's workspace_root, which is
+            right for a tool that opens files here and wrong for a tool whose
+            "path" means something elsewhere: an MCP tool's arguments are sent
+            to a separate server process, where `path` may be a path inside a
+            GitHub repo, or a path under that server's own configured roots in
+            another container. Such a check cannot be correct across a process
+            boundary — it resolves relative to *this* process's cwd — so those
+            tools set this False and their path safety belongs to the server
+            and its launch configuration. Safety policies still apply either way.
     """
 
     name: str = ""
     description: str = ""
     parameters: dict[str, Any] = {}
     modifies_state: bool = True
+    local_paths: bool = True
 
     def __init__(self, config: dict[str, Any] | None = None) -> None:
         self.config = config or {}

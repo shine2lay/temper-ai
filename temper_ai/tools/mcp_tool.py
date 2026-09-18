@@ -40,6 +40,12 @@ class MCPTool(BaseTool):
     # ``readOnlyHint`` annotation.
     modifies_state = True
 
+    # An MCP tool's arguments go to another process. Its ``path`` is a path in a
+    # GitHub repo, or under that server's own roots — never this workspace, so the
+    # workspace sandbox must not judge it (see BaseTool.local_paths). Path safety
+    # for MCP is the server's, set when the server is launched.
+    local_paths = False
+
     def __init__(
         self,
         server_name: str,

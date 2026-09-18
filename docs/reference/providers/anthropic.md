@@ -25,6 +25,18 @@ Resolution order: an explicit ``api_key`` argument, then
 when both are set, because it is this provider's native credential; the
 opposite order is a documented source of confusion elsewhere.
 
+Several subscriptions, one cache
+-------------------------------
+OAuth tokens are pooled: ``CLAUDE_CODE_OAUTH_TOKEN``, ``_BACKUP`` and
+``_2``…``_9`` are separate subscriptions with separate rate-limit windows.
+The pool rotates *between* agents and never *within* one — an agent's calls
+in a given run all go out on the same token, because Anthropic's prompt
+cache is per credential and a tool-using run re-sends its transcript every
+iteration. A token that answers 429 is cooled until its reset and the call
+is retried on another; the sticky agent then loses its warm cache, which is
+why failover is a fallback and not the normal path. See
+``temper_ai.llm.token_pool``.
+
 Anthropic treats a bare bearer request from a third-party client
 differently from one that identifies as its own tooling. What identification
 to send — if any — is a policy decision that does not belong in this file.
@@ -45,7 +57,7 @@ says so once.
 | `api_key` | str | None | None | API authentication key |
 | `base_url` | str | 'https://api.anthropic.com' | API base URL |
 | `temperature` | float | 0.7 | Sampling temperature (0.0-2.0) |
-| `max_tokens` | int | 4096 | Maximum tokens in response |
+| `max_tokens` | int | 32000 | Maximum tokens in response |
 | `timeout` | int | 120 | Request timeout in seconds |
 
 ## Provider Interface

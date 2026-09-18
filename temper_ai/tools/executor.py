@@ -185,9 +185,13 @@ class ToolExecutor:
         if policy_block is not None:
             return policy_block
 
-        workspace_block = self._validate_workspace_paths(tool_name, params, parent_id, execution_id)
-        if workspace_block is not None:
-            return workspace_block
+        # Only for tools whose paths are local (see BaseTool.local_paths): an MCP
+        # tool's `path` names a file in a repo or on another machine, and resolving
+        # it against this process's workspace would reject every legitimate call.
+        if tool.local_paths:
+            workspace_block = self._validate_workspace_paths(tool_name, params, parent_id, execution_id)
+            if workspace_block is not None:
+                return workspace_block
 
         # Tools that manage their own execution (e.g., Delegate runs sub-agents)
         # skip the timeout wrapper — they handle timeouts internally.

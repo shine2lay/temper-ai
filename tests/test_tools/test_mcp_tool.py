@@ -115,6 +115,18 @@ def test_to_llm_schema_applies_server_definition_once(loop):
     assert t.modifies_state is False, "readOnlyHint=True → does not modify state"
 
 
+def test_mcp_paths_are_not_local(loop):
+    """The executor's workspace sandbox must not judge an MCP tool's path.
+
+    `path` here is a path in a GitHub repo (or under the server's own roots in
+    another container), resolved by that server — not a file in this workspace.
+    Before this flag, every github get_file_contents(path="README.md") was
+    refused with "escapes workspace root".
+    """
+    assert MCPTool.local_paths is False
+    assert _tool(loop, FakeManager(_meta())).local_paths is False
+
+
 def test_modifies_state_defaults_conservative_and_follows_annotation(loop):
     assert MCPTool.modifies_state is True, "unknown MCP tool: assume it can change remote state"
     t = _tool(loop, FakeManager(_meta(read_only=False)))

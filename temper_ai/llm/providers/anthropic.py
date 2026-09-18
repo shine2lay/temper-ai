@@ -157,10 +157,13 @@ def _apply_prompt_caching(create_kwargs: dict[str, Any]) -> None:
 
     * the last system block — covers the tool schemas and the whole system
       prompt, which never change within a run;
-    * the last block of the last message — a breakpoint that moves forward each
-      turn, so the previous turn's transcript is a cache hit. Earlier
-      breakpoints keep working while they live, so the moving one costs one
-      cache write per turn and saves re-reading everything before it.
+    * the last block of each of the two newest user-side messages. Two, not
+      one, because a lookup only happens at a breakpoint present in *this*
+      request: marking just the newest message drops the previous turn's
+      breakpoint and the read falls back to some far older prefix. Measured on
+      an 8-turn loop, one moving breakpoint re-wrote 9,216 tokens to read 6,532
+      back; keeping the previous one turns that into a read of nearly the whole
+      transcript and a write of only the new turn.
 
     The cache is keyed to the credential, which is why an agent stays on one
     subscription for a whole run (see the module docstring).
@@ -173,15 +176,18 @@ def _apply_prompt_caching(create_kwargs: dict[str, Any]) -> None:
         _mark(system[-1])
 
     messages = create_kwargs.get("messages") or []
-    if not messages:
-        return
-    last = messages[-1]
-    content = last.get("content")
-    if isinstance(content, str) and content:
-        content = [{"type": "text", "text": content}]
-        last["content"] = content
-    if isinstance(content, list) and content:
-        _mark(content[-1])
+    # User-side messages only: tool results arrive as role "user", and an
+    # assistant turn is always followed by one, so these are the points a
+    # prefix can end on.
+    marks = [i for i, m in enumerate(messages) if m.get("role") == "user"][-2:]
+    for i in marks:
+        message = messages[i]
+        content = message.get("content")
+        if isinstance(content, str) and content:
+            content = [{"type": "text", "text": content}]
+            message["content"] = content
+        if isinstance(content, list) and content:
+            _mark(content[-1])
 
 
 def _mark(block: Any) -> None:
@@ -569,6 +575,8 @@ def _parse_response(response: Any, model: str) -> LLMResponse:
         prompt_tokens=prompt_tokens,
         completion_tokens=usage.output_tokens,
         total_tokens=prompt_tokens + usage.output_tokens,
+        cached_prompt_tokens=cache_read,
+        cache_write_tokens=cache_write,
         finish_reason="tool_calls" if tool_calls else response.stop_reason or "stop",
         tool_calls=tool_calls if tool_calls else None,
     )

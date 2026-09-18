@@ -74,23 +74,39 @@ _MODEL_PRICING: dict[str, tuple[float, float]] = {
 }
 
 
+# Anthropic's cache multipliers, which OpenAI and Gemini approximately share:
+# reading a cached prefix costs a tenth of fresh input, writing one costs a
+# quarter extra. Priced at the full input rate, a well-cached agent run reads
+# as roughly ten times its real cost.
+CACHE_READ_MULTIPLIER = 0.1
+CACHE_WRITE_MULTIPLIER = 1.25
+
+
 def estimate_cost(
     model: str,
     prompt_tokens: int | None = None,
     completion_tokens: int | None = None,
     total_tokens: int | None = None,
+    cached_prompt_tokens: int | None = None,
+    cache_write_tokens: int | None = None,
 ) -> float:
     """Estimate the cost of an LLM call in USD.
 
     Uses per-model pricing when available, falls back to default rates.
     If only total_tokens is available, assumes a 60/40 input/output split.
+    Cached input, when the provider reports it, is priced as cached.
     """
     pricing = _find_pricing(model)
     input_rate, output_rate = pricing
 
     if prompt_tokens is not None and completion_tokens is not None:
+        cached = cached_prompt_tokens or 0
+        written = cache_write_tokens or 0
+        fresh = max(prompt_tokens - cached - written, 0)
         return round(
-            (prompt_tokens / 1_000_000) * input_rate
+            (fresh / 1_000_000) * input_rate
+            + (cached / 1_000_000) * input_rate * CACHE_READ_MULTIPLIER
+            + (written / 1_000_000) * input_rate * CACHE_WRITE_MULTIPLIER
             + (completion_tokens / 1_000_000) * output_rate,
             6,
         )

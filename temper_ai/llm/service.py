@@ -147,6 +147,10 @@ class LLMService:
         """Call the LLM provider and record events. Returns (event_id, response, cost).
 
         Cost precedence:
+          0. Cached input is priced as cached when the provider reports it — a
+             tool-using loop re-sends its transcript every turn, so most of a
+             long run's input is a cache read at a tenth of the rate. Billing
+             it as fresh input overstated these runs roughly tenfold.
           1. Provider's authoritative `raw_response.total_cost_usd` if present
              (e.g. Claude Code reports the actual Anthropic-billed cost with
              cache-read / cache-write discounts applied).
@@ -159,19 +163,21 @@ class LLMService:
             response = self._invoke_provider(llm_event_id=event_id)
             raw = response.raw_response or {}
             provider_cost = raw.get("total_cost_usd")
+            def estimate() -> float:
+                return estimate_cost(
+                    response.model, response.prompt_tokens,
+                    response.completion_tokens, response.total_tokens,
+                    cached_prompt_tokens=response.cached_prompt_tokens,
+                    cache_write_tokens=response.cache_write_tokens,
+                )
+
             if provider_cost is not None:
                 try:
                     cost = float(provider_cost)
                 except (TypeError, ValueError):
-                    cost = estimate_cost(
-                        response.model, response.prompt_tokens,
-                        response.completion_tokens, response.total_tokens,
-                    )
+                    cost = estimate()
             else:
-                cost = estimate_cost(
-                    response.model, response.prompt_tokens,
-                    response.completion_tokens, response.total_tokens,
-                )
+                cost = estimate()
             self._record_llm_completed(event_id, response, cost, iteration)
             return event_id, response, cost
         except Exception as e:  # noqa: BLE001
@@ -298,6 +304,10 @@ class LLMService:
             execution_id=self._ctx.execution_id, status="completed",
             data={"model": response.model, "prompt_tokens": response.prompt_tokens,
                   "completion_tokens": response.completion_tokens, "total_tokens": response.total_tokens,
+                  # Recorded so a run's bill can be read back: without these a
+                  # cached loop and an uncached one look identical in the log.
+                  "cached_prompt_tokens": response.cached_prompt_tokens,
+                  "cache_write_tokens": response.cache_write_tokens,
                   "latency_ms": response.latency_ms, "finish_reason": response.finish_reason,
                   "cost_usd": cost, "has_tool_calls": bool(response.tool_calls),
                   "tool_calls_requested": [{"name": tc.get("name"), "id": tc.get("id")}

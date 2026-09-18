@@ -157,16 +157,34 @@ class TestPromptCaching:
         assert "cache_control" not in sent["system"][0]
         assert sent["system"][1]["cache_control"] == {"type": "ephemeral"}
 
-    def test_the_breakpoint_moves_to_the_newest_turn(self):
-        """Each turn caches the transcript up to it, so the next turn reads it back."""
+    def test_the_two_newest_turns_are_breakpoints(self):
+        """A lookup only happens at a breakpoint present in this request, so the
+        previous turn's must survive. Marking only the newest one measured 24%
+        saved on an 8-turn loop; keeping both, 44%."""
         messages = [
             {"role": "user", "content": "first"},
             {"role": "assistant", "content": [{"type": "text", "text": "thinking"}]},
-            {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1", "content": "out"}]},
+            {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1", "content": "a"}]},
+            {"role": "assistant", "content": [{"type": "text", "text": "more"}]},
+            {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t2", "content": "b"}]},
         ]
         sent = self._sent(messages, system="rules")
-        assert sent["messages"][-1]["content"][-1]["cache_control"] == {"type": "ephemeral"}
-        assert "cache_control" not in sent["messages"][1]["content"][0]
+        assert sent["messages"][4]["content"][-1]["cache_control"] == {"type": "ephemeral"}
+        assert sent["messages"][2]["content"][-1]["cache_control"] == {"type": "ephemeral"}
+        # not the first user message, and never an assistant turn
+        assert "cache_control" not in str(sent["messages"][0]["content"])
+        assert "cache_control" not in str(sent["messages"][1]["content"])
+
+    def test_breakpoints_stay_within_the_budget(self):
+        """Anthropic allows four; system takes one, so the conversation takes two."""
+        messages = []
+        for i in range(12):
+            messages.append({"role": "user", "content": f"q{i}"})
+            messages.append({"role": "assistant", "content": [{"type": "text", "text": f"a{i}"}]})
+        sent = self._sent(messages, system="rules")
+        marked = sum(1 for m in sent["messages"] if "cache_control" in str(m.get("content")))
+        assert marked == 2
+        assert marked + 1 <= 4
 
     def test_an_existing_breakpoint_is_left_alone(self):
         block = {"type": "text", "text": "x", "cache_control": {"type": "persistent"}}
@@ -175,6 +193,29 @@ class TestPromptCaching:
 
     def test_no_messages_no_crash(self):
         assert self._sent([], system="rules")["system"][0]["cache_control"]
+
+    def test_cached_input_is_priced_as_cached(self):
+        """The bill is dominated by re-sent transcript; at the full input rate a
+        cached run reads about ten times its real cost."""
+        from temper_ai.llm.pricing import estimate_cost
+
+        # opus-5: $5 / MTok in, $25 out. 100k prompt of which 90k is a cache read.
+        cached = estimate_cost("claude-opus-5", prompt_tokens=100_000, completion_tokens=1_000,
+                               cached_prompt_tokens=90_000)
+        uncached = estimate_cost("claude-opus-5", prompt_tokens=100_000, completion_tokens=1_000)
+        # uncached: 100k x $5 + 1k x $25 = $0.525
+        # cached:    10k x $5 + 90k x $0.50 + 1k x $25 = $0.12
+        assert uncached == pytest.approx(0.525)
+        assert cached == pytest.approx(0.12)
+        assert cached < uncached / 4
+
+    def test_writing_the_cache_costs_a_premium(self):
+        from temper_ai.llm.pricing import estimate_cost
+
+        written = estimate_cost("claude-opus-5", prompt_tokens=10_000, completion_tokens=0,
+                                cache_write_tokens=10_000)
+        fresh = estimate_cost("claude-opus-5", prompt_tokens=10_000, completion_tokens=0)
+        assert written == pytest.approx(fresh * 1.25)
 
     def test_cached_input_is_counted_as_prompt_tokens(self):
         """Anthropic reports cache reads separately; ignoring them makes a
@@ -190,6 +231,8 @@ class TestPromptCaching:
         parsed = _parse_response(response, "claude-opus-5")
         assert parsed.prompt_tokens == 41_300
         assert parsed.total_tokens == 41_350
+        assert parsed.cached_prompt_tokens == 40_000
+        assert parsed.cache_write_tokens == 1_000
 
 
 class TestTruncation:

@@ -15,6 +15,13 @@ class LLMResponse:
     prompt_tokens: int | None = None
     completion_tokens: int | None = None
     total_tokens: int | None = None
+    # How much of prompt_tokens was served from, or written to, the provider's
+    # prompt cache. A tool-using loop re-sends its whole transcript every turn,
+    # so these dominate the bill: reads cost a tenth of fresh input, writes a
+    # quarter more. Counted inside prompt_tokens, not beside it — they are what
+    # the request contained, priced differently.
+    cached_prompt_tokens: int | None = None
+    cache_write_tokens: int | None = None
     latency_ms: int | None = None
     finish_reason: str | None = None  # "stop", "tool_calls", "length"
     reasoning: str | None = None  # thinking/reasoning content (if model supports it)

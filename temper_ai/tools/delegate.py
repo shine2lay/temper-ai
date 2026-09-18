@@ -5,7 +5,7 @@ agent nodes, runs them (with full observability), and returns results
 to the calling agent's tool-calling loop.
 
 Usage in agent config:
-    tools: [Bash, FileWriter, Delegate]
+    tools: [Bash, Write, Delegate]
 
 The agent calls it like:
     Delegate(tasks=[

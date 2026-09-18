@@ -26,7 +26,7 @@ class BaseTool(ABC):
     Subclasses must set class attributes and implement execute().
 
     Attributes:
-        name: Tool name as the LLM sees it (e.g., "Bash", "FileWriter").
+        name: Tool name as the LLM sees it (e.g., "Bash", "Write").
         description: What the tool does — shown to the LLM.
         parameters: JSON Schema dict describing the tool's parameters.
         modifies_state: Whether this tool changes external state. Used by

@@ -3,7 +3,7 @@ agent:
   type: llm
   tools:
     - Bash
-    - FileWriter
+    - Write
   max_iterations: 15
   total_timeout: 900
   max_context_tokens: 30000

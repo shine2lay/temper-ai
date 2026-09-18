@@ -1,7 +1,7 @@
 """Tool loader — load tool instances from agent config.
 
 Handles both bare tool names ("Bash") and tool objects with config
-({name: "FileWriter", config: {allowed_root: "/workspace"}}).
+({name: "Write", config: {allowed_root: "/workspace"}}).
 """
 
 import logging
@@ -21,7 +21,7 @@ def load_tools(
     Args:
         tool_specs: List from agent YAML config. Each entry is either:
             - A string: "Bash" (bare tool name, no config)
-            - A dict: {"name": "FileWriter", "config": {"allowed_root": "..."}}
+            - A dict: {"name": "Write", "config": {"allowed_root": "..."}}
         tool_classes: Registry mapping tool names to classes.
 
     Returns:

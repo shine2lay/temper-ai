@@ -16,18 +16,18 @@ class TestLoadTools:
 
     def test_dict_with_config(self):
         tools = load_tools(
-            [{"name": "FileWriter", "config": {"allowed_root": "/tmp"}}],
+            [{"name": "Write", "config": {"allowed_root": "/tmp"}}],
             TOOL_CLASSES,
         )
-        assert "FileWriter" in tools
-        assert tools["FileWriter"].config["allowed_root"] == "/tmp"
+        assert "Write" in tools
+        assert tools["Write"].config["allowed_root"] == "/tmp"
 
     def test_multiple_tools(self):
-        tools = load_tools(["Calculator", "Bash", {"name": "FileWriter"}], TOOL_CLASSES)
+        tools = load_tools(["Calculator", "Bash", {"name": "Write"}], TOOL_CLASSES)
         assert len(tools) == 3
         assert "Calculator" in tools
         assert "Bash" in tools
-        assert "FileWriter" in tools
+        assert "Write" in tools
 
     def test_unknown_tool_skipped(self):
         tools = load_tools(["Calculator", "NonExistent"], TOOL_CLASSES)
@@ -44,7 +44,7 @@ class TestLoadTools:
         tools = load_tools(["Calculator"], TOOL_CLASSES)
         assert len(tools) == 1
         assert "Bash" not in tools
-        assert "FileWriter" not in tools
+        assert "Write" not in tools
 
 
 class TestResolveSpec:
@@ -52,10 +52,10 @@ class TestResolveSpec:
         specs = [
             "Calculator",
             {"name": "Bash"},
-            {"name": "FileWriter", "config": {"allowed_root": "/workspace"}},
+            {"name": "Write", "config": {"allowed_root": "/workspace"}},
         ]
         tools = load_tools(specs, TOOL_CLASSES)
         assert len(tools) == 3
-        assert tools["FileWriter"].config["allowed_root"] == "/workspace"
+        assert tools["Write"].config["allowed_root"] == "/workspace"
         assert tools["Bash"].config == {}
         assert tools["Calculator"].config == {}

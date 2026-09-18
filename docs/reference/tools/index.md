@@ -4,7 +4,7 @@
 
 _Auto-generated from code. Do not edit manually._
 
-Temper AI includes **12 built-in tools**. Agents reference tools by name in their [agent config](../agents/llm.md).
+Temper AI includes **15 built-in tools**. Agents reference tools by name in their [agent config](../agents/llm.md).
 
 Tool execution is gated by [safety policies](../policies/index.md) — see [File Access](../policies/file_access.md) and [Forbidden Ops](../policies/forbidden_ops.md).
 
@@ -14,12 +14,15 @@ Tool execution is gated by [safety policies](../policies/index.md) — see [File
 | [`Bash`](bash.md) | Execute a shell command and return its output. |
 | [`Calculator`](calculator.md) | Evaluate a mathematical expression safely. Supports arithmetic, sqrt, sin, cos, tan, log, exp, abs, round, min, max, pi, e. |
 | [`Delegate`](delegate.md) | Run one or more agents as sub-tasks. Each task specifies an agent name and inputs. Results are returned as JSON. Use this to delegate work to specialized agents and get their output back. |
-| [`FileAppend`](fileappend.md) | Append text to the end of a file. The file must already exist. Use this instead of FileWriter when you want to add a new section to an existing file without rewriting it. |
-| [`FileEdit`](fileedit.md) | Replace exact text in an existing file. Provide the exact text to find (old_text) and what to replace it with (new_text). The old_text must match exactly once in the file, including whitespace and indentation. Include a few surrounding lines in old_text to make it unique. Use replace_all=true to replace all occurrences (e.g., renaming a variable). |
-| [`FileWriter`](filewriter.md) | Write content to a file. Creates parent directories if needed. |
+| [`Edit`](edit.md) | Edit a file by exact string replacement. Pass several disjoint edits in one call — they are applied together or not at all. Each old_text must appear exactly once (include surrounding lines to make it unique) unless replace_all is set. Use Write to create a file or replace it wholesale. |
+| [`Glob`](glob.md) | Find files by name pattern, e.g. '**/*.py' or 'src/**/test_*.ts'. Returns up to 200 paths (raise with limit), newest first. Skips anything the repo's .gitignore excludes, plus .git, node_modules, __pycache__, virtualenvs and build output. Use Grep to search file contents. |
+| [`Grep`](grep.md) | Search file contents with a regular expression. Returns 'path:line: text' for up to 200 matches (raise with limit), then reports how many were omitted. Skips anything the repo's .gitignore excludes, plus .git, node_modules, __pycache__, virtualenvs and build output. Prefer this over running grep through Bash: that output is unbounded. |
 | [`QueryRunState`](queryrunstate.md) | Return the state of nodes in the current workflow run. Returns a JSON list of nodes with their status ('running', 'completed', 'failed') and, for completed nodes, their output and structured_output. Use this to discover what upstream nodes have produced before making decisions — e.g. before dispatching new work based on earlier agents' results. Outputs are truncated by default; pass truncate_chars=0 to disable. |
+| [`Read`](read.md) | Read the contents of a text file. Output is capped at 2000 lines or 50KB (whichever comes first); when a file is longer the result ends with the offset to continue from. Use offset/limit to read a specific range instead of the whole file. Prefer this over running `cat` through Bash: that returns the entire file and can exhaust the context in one call. |
 | [`RemoveNode`](removenode.md) | Remove a still-pending node from the running workflow graph. Called during an agent's run when the agent determines a downstream node shouldn't execute (e.g., a placeholder that turned out unnecessary). The target is marked SKIPPED; any further-downstream nodes whose input_map refs it will cascade to skipped too. Only pending nodes can be removed — already-started nodes are unaffected. |
+| [`WebFetch`](webfetch.md) | Fetch a web page and return its readable text — scripts, styles, nav and footers removed. Use this to read documentation, articles and API pages. JSON responses are returned formatted. Output is capped (default 30k characters) and says so when truncated. Use the http tool instead when you need the raw body, headers or a non-GET method. |
 | [`WebSearch`](websearch.md) | Search the web. Returns titles, URLs, and snippets for the query. |
+| [`Write`](write.md) | Write content to a file, creating parent directories as needed. Overwrites by default; set append=true to add to the end instead. To change part of an existing file use Edit, which does not require rewriting the whole file. |
 | [`git`](git.md) | Run git commands in the workspace (status, diff, add, commit, push, etc.) |
 | [`http`](http.md) | Make HTTP requests to APIs. Returns status code and response body. |
 

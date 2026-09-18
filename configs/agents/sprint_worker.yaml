@@ -3,8 +3,8 @@ agent:
   type: llm
   tools:
     - Bash
-    - FileWriter
-    - FileEdit
+    - Write
+    - Edit
     - WebSearch
   max_iterations: 50
   total_timeout: 3600
@@ -20,15 +20,15 @@ agent:
        If it has feedback, fix the issues mentioned before proceeding.
     3. If you need to research something, use WebSearch(query="your query")
     4. For each file in "Files to create":
-       a. Write the file using FileWriter with a description parameter
-       b. FileWriter(file_path="ABSOLUTE_PATH", content="...", description="one-line summary")
+       a. Write the file using Write with a description parameter
+       b. Write(file_path="ABSOLUTE_PATH", content="...", description="one-line summary")
     5. After ALL files are written, output JSON and STOP
 
     RULES:
     - Read CURRENT_SPRINT.md FIRST — it has everything you need
     - Use ABSOLUTE paths starting with {{ workspace_path }}/
     - ONLY create files listed in the sprint plan
-    - ALWAYS include a description parameter in every FileWriter call
+    - ALWAYS include a description parameter in every Write call
     - Match the code style from the Pattern Reference section if provided
     - After writing all files, OUTPUT JSON immediately — do not keep iterating
     - If the task involves research, search the web for real data and cite sources

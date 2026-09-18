@@ -49,7 +49,7 @@ _NODE_FIELD_DOCS: dict[str, str] = {
     "temperature": "Override sampling temperature (0.0 - 2.0).",
     "max_tokens": "Override max output tokens.",
     "token_budget": "Total token budget for this agent's execution.",
-    "tools": 'List of tool names available to this agent (e.g. ["Bash", "FileWriter"]).',
+    "tools": 'List of tool names available to this agent (e.g. ["Bash", "Write"]).',
     "memory": "Memory configuration for this agent.",
 }
 
@@ -84,7 +84,7 @@ _AGENT_FIELDS: list[dict[str, Any]] = [
     {"name": "temperature", "type": "float", "default": None, "required": False,
      "description": "Sampling temperature (0.0 = deterministic, 2.0 = creative).", "constraints": {"min": 0.0, "max": 2.0}},
     {"name": "tools", "type": "list[string]", "default": "[]", "required": False,
-     "description": "Tool names this agent can use (e.g. Bash, FileWriter, WebSearch).", "constraints": {}},
+     "description": "Tool names this agent can use (e.g. Bash, Write, WebSearch).", "constraints": {}},
     {"name": "structured_output", "type": "object", "default": None, "required": False,
      "description": "JSON schema for structured output extraction from agent response.", "constraints": {}},
     {"name": "memory", "type": "object", "default": None, "required": False,
@@ -184,7 +184,7 @@ def get_schema(tier: str):
                 "heading": "Tool Configuration",
                 "description": (
                     "Tools give agents the ability to interact with the outside world. "
-                    "Built-in tools include Bash, FileWriter, WebSearch, and more."
+                    "Built-in tools include Bash, Write, WebSearch, and more."
                 ),
                 "fields": _TOOL_FIELDS,
                 "sub_sections": [],

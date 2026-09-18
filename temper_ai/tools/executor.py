@@ -64,7 +64,7 @@ class ToolExecutor:
 
     Usage:
         executor = ToolExecutor(workspace_root="/home/user/project")
-        executor.register_tools({"Bash": bash_instance, "FileWriter": fw_instance})
+        executor.register_tools({"Bash": bash_instance, "Write": fw_instance})
 
         # agent-driven: scoped to what that agent declared
         result = executor.execute("Bash", {"command": "ls"}, allowed_tools=["Bash"])

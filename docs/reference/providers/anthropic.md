@@ -59,6 +59,9 @@ says so once.
 | `temperature` | float | 0.7 | Sampling temperature (0.0-2.0) |
 | `max_tokens` | int | 32000 | Maximum tokens in response |
 | `timeout` | int | 120 | Request timeout in seconds |
+| `cache_ttl` | str | '5m' |  |
+| `effort` | str | None | None |  |
+| `thinking_budget` | int | None | None |  |
 
 ## Provider Interface
 

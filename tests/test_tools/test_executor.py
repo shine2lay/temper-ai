@@ -105,38 +105,38 @@ class TestExecutorErrorHandling:
 class TestWorkspaceSandbox:
     def test_path_within_workspace(self):
         tmpdir = tempfile.mkdtemp()
-        from temper_ai.tools.file_writer import FileWriter
+        from temper_ai.tools.write import Write
 
         executor = ToolExecutor(workspace_root=tmpdir)
-        executor.register_tools({"FileWriter": FileWriter()})
+        executor.register_tools({"Write": Write()})
 
         import os
         path = os.path.join(tmpdir, "safe.txt")
-        result = executor.execute("FileWriter", {"file_path": path, "content": "ok"}, allowed_tools=ALL_TOOLS)
+        result = executor.execute("Write", {"file_path": path, "content": "ok"}, allowed_tools=ALL_TOOLS)
         assert result.success is True
 
     def test_path_escapes_workspace(self):
         tmpdir = tempfile.mkdtemp()
-        from temper_ai.tools.file_writer import FileWriter
+        from temper_ai.tools.write import Write
 
         executor = ToolExecutor(workspace_root=tmpdir)
-        executor.register_tools({"FileWriter": FileWriter()})
+        executor.register_tools({"Write": Write()})
 
         result = executor.execute(
-            "FileWriter", {"file_path": "/tmp/escape.txt", "content": "bad"}, allowed_tools=ALL_TOOLS,
+            "Write", {"file_path": "/tmp/escape.txt", "content": "bad"}, allowed_tools=ALL_TOOLS,
         )
         assert result.success is False
         assert "escapes workspace" in result.error.lower()
 
     def test_null_byte_in_path(self):
         tmpdir = tempfile.mkdtemp()
-        from temper_ai.tools.file_writer import FileWriter
+        from temper_ai.tools.write import Write
 
         executor = ToolExecutor(workspace_root=tmpdir)
-        executor.register_tools({"FileWriter": FileWriter()})
+        executor.register_tools({"Write": Write()})
 
         result = executor.execute(
-            "FileWriter", {"file_path": f"{tmpdir}/evil\x00.txt", "content": "x"}, allowed_tools=ALL_TOOLS,
+            "Write", {"file_path": f"{tmpdir}/evil\x00.txt", "content": "x"}, allowed_tools=ALL_TOOLS,
         )
         assert result.success is False
         # Null byte causes either our explicit check or an OS-level path error
@@ -191,7 +191,7 @@ class TestSkipPolicies:
     def test_skip_policies_only_skips_matching(self):
         """Skipping 'budget' should not skip other policies like file_access."""
         from temper_ai.safety.engine import PolicyEngine
-        from temper_ai.tools.file_writer import FileWriter
+        from temper_ai.tools.write import Write
 
         engine = PolicyEngine.from_config({
             "policies": [
@@ -200,12 +200,12 @@ class TestSkipPolicies:
             ],
         })
         executor = ToolExecutor(policy_engine=engine, workspace_root="/tmp")
-        executor.register_tools({"FileWriter": FileWriter()})
+        executor.register_tools({"Write": Write()})
         executor.run_cost_usd = 1.0  # Over budget
 
         # Skip budget, but file_access should still block /etc paths
         result = executor.execute(
-            "FileWriter", {"file_path": "/etc/passwd", "content": "x"}, allowed_tools=ALL_TOOLS,
+            "Write", {"file_path": "/etc/passwd", "content": "x"}, allowed_tools=ALL_TOOLS,
             context={"skip_policies": ["budget"]},
         )
         assert result.success is False
@@ -256,13 +256,13 @@ class TestWorkspaceSandboxScope:
                 assert result.result == f"remote:{path}"
 
     def test_local_path_tool_is_still_sandboxed(self):
-        from temper_ai.tools.file_writer import FileWriter
+        from temper_ai.tools.write import Write
 
         with tempfile.TemporaryDirectory() as workspace:
             ex = ToolExecutor(workspace_root=workspace)
-            ex.register_tools({"FileWriter": FileWriter()})
+            ex.register_tools({"Write": Write()})
             result = ex.execute(
-                "FileWriter", {"file_path": "/tmp/escape.txt", "content": "x"},
+                "Write", {"file_path": "/tmp/escape.txt", "content": "x"},
                 allowed_tools=ALL_TOOLS,
             )
             assert result.success is False
@@ -270,10 +270,10 @@ class TestWorkspaceSandboxScope:
 
     def test_default_is_local(self):
         """Opting out is deliberate: a tool that says nothing gets the sandbox."""
-        from temper_ai.tools.file_writer import FileWriter
+        from temper_ai.tools.write import Write
 
         assert BaseTool.local_paths is True
-        assert FileWriter().local_paths is True
+        assert Write().local_paths is True
 
 
 class TestToolDeclarationGate:

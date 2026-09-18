@@ -3,7 +3,7 @@ agent:
   type: llm
   tools:
     - Bash
-    - FileWriter
+    - Write
   max_iterations: 20
   total_timeout: 1200
   max_context_tokens: 30000
@@ -17,7 +17,7 @@ agent:
     2. Read each file listed in "Files to create"
     3. Check each acceptance criterion — is it actually met?
     4. Assess quality: are files thorough? Do claims have evidence?
-    5. Write your review to {{ workspace_path }}/.context/REVIEW.md using FileWriter
+    5. Write your review to {{ workspace_path }}/.context/REVIEW.md using Write
     6. Output JSON
 
     REVIEW FORMAT:

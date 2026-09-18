@@ -1,8 +1,12 @@
 """Security regression tests for file tool path validation.
 
-Tests the security hardening applied in this session:
-- P0-SEC-7: FileEdit and FileAppend now validate paths
-- P0-SEC-8: FileWriter prefix off-by-one fixed
+Originally written against FileEdit/FileAppend/FileWriter:
+- P0-SEC-7: the edit and append tools validate paths
+- P0-SEC-8: allowed_root prefix off-by-one (/workspace must not match /workspaceevildir)
+
+Those tools were replaced by Edit and Write (append is now Write(append=True)).
+The properties they pin are unchanged and carried over here — a rewrite of the
+file tools is exactly when a path check is most likely to be lost.
 """
 
 import os
@@ -11,9 +15,8 @@ import tempfile
 import pytest
 
 from temper_ai.tools._path_utils import validate_file_path
-from temper_ai.tools.file_append import FileAppend
-from temper_ai.tools.file_edit import FileEdit
-from temper_ai.tools.file_writer import FileWriter
+from temper_ai.tools.edit import Edit
+from temper_ai.tools.write import Write
 
 
 class TestValidateFilePath:
@@ -75,24 +78,22 @@ class TestValidateFilePath:
             validate_file_path("/workspace/../etc/passwd", allowed_root="/workspace")
 
 
-class TestFileEditPathValidation:
-    """P0-SEC-7: FileEdit now validates paths."""
+class TestEditPathValidation:
+    """P0-SEC-7, carried over from FileEdit."""
 
     def test_blocks_system_paths(self):
-        edit = FileEdit()
-        r = edit.execute(file_path="/etc/passwd", old_text="root", new_text="hacked")
+        r = Edit().execute(path="/etc/passwd", edits=[{"old_text": "root", "new_text": "hacked"}])
         assert r.success is False
         assert "forbidden" in r.error
 
     def test_blocks_proc(self):
-        edit = FileEdit()
-        r = edit.execute(file_path="/proc/1/status", old_text="a", new_text="b")
+        r = Edit().execute(path="/proc/1/status", edits=[{"old_text": "a", "new_text": "b"}])
         assert r.success is False
         assert "forbidden" in r.error
 
     def test_respects_allowed_root(self):
-        edit = FileEdit(config={"allowed_root": "/workspace"})
-        r = edit.execute(file_path="/home/user/file.txt", old_text="a", new_text="b")
+        edit = Edit(config={"allowed_root": "/workspace"})
+        r = edit.execute(path="/home/user/file.txt", edits=[{"old_text": "a", "new_text": "b"}])
         assert r.success is False
         assert "outside allowed root" in r.error
 
@@ -101,26 +102,30 @@ class TestFileEditPathValidation:
             f.write("hello world")
             path = f.name
         try:
-            edit = FileEdit()
-            r = edit.execute(file_path=path, old_text="hello", new_text="goodbye")
+            r = Edit().execute(path=path, edits=[{"old_text": "hello", "new_text": "goodbye"}])
             assert r.success is True
-            assert "Replaced" in r.result
+            assert open(path).read() == "goodbye world"
         finally:
             os.unlink(path)
 
+    def test_single_edit_form_still_validated(self):
+        """The old FileEdit call shape is accepted — it must not bypass the path check."""
+        r = Edit().execute(file_path="/etc/passwd", old_text="root", new_text="hacked")
+        assert r.success is False
+        assert "forbidden" in r.error
 
-class TestFileAppendPathValidation:
-    """P0-SEC-7: FileAppend now validates paths."""
+
+class TestWriteAppendPathValidation:
+    """P0-SEC-7, carried over from FileAppend (now Write(append=True))."""
 
     def test_blocks_system_paths(self):
-        append = FileAppend()
-        r = append.execute(file_path="/etc/hosts", content="evil.com 127.0.0.1")
+        r = Write().execute(path="/etc/hosts", content="evil.com 127.0.0.1", append=True)
         assert r.success is False
         assert "forbidden" in r.error
 
     def test_respects_allowed_root(self):
-        append = FileAppend(config={"allowed_root": "/workspace"})
-        r = append.execute(file_path="/tmp/outside.txt", content="data")
+        write = Write(config={"allowed_root": "/workspace"})
+        r = write.execute(path="/tmp/outside.txt", content="data", append=True)
         assert r.success is False
         assert "outside allowed root" in r.error
 
@@ -129,22 +134,37 @@ class TestFileAppendPathValidation:
             f.write("line1\n")
             path = f.name
         try:
-            append = FileAppend()
-            r = append.execute(file_path=path, content="line2\n")
+            r = Write().execute(path=path, content="line2\n", append=True)
             assert r.success is True
-            with open(path) as f:
-                content = f.read()
-            assert "line1" in content
-            assert "line2" in content
+            content = open(path).read()
+            assert "line1" in content and "line2" in content
         finally:
             os.unlink(path)
 
 
-class TestFileWriterPrefixFix:
-    """P0-SEC-8: FileWriter prefix off-by-one regression test."""
+class TestWritePrefixFix:
+    """P0-SEC-8: allowed_root prefix off-by-one regression test."""
 
     def test_prefix_off_by_one_blocked(self):
-        writer = FileWriter(config={"allowed_root": "/workspace"})
-        r = writer.execute(file_path="/workspaceevildir/file.txt", content="evil")
+        writer = Write(config={"allowed_root": "/workspace"})
+        r = writer.execute(path="/workspaceevildir/file.txt", content="evil")
+        assert r.success is False
+        assert "outside allowed root" in r.error
+
+
+class TestReadPathValidation:
+    """Read is new — the same checks must apply to it, not only to the writers."""
+
+    def test_blocks_system_paths(self):
+        from temper_ai.tools.read import Read
+
+        r = Read().execute(path="/etc/passwd")
+        assert r.success is False
+        assert "forbidden" in r.error
+
+    def test_respects_allowed_root(self):
+        from temper_ai.tools.read import Read
+
+        r = Read(config={"allowed_root": "/workspace"}).execute(path="/tmp/outside.txt")
         assert r.success is False
         assert "outside allowed root" in r.error

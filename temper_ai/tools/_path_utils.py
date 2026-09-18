@@ -1,4 +1,4 @@
-"""Shared path validation for file tools (FileWriter, FileEdit, FileAppend)."""
+"""Shared path validation for file tools (Write, Edit, Write with append=true)."""
 
 from pathlib import Path
 

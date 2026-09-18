@@ -20,6 +20,16 @@ _MODEL_PRICING: dict[str, tuple[float, float]] = {
     "o3": (10.0, 40.0),
     "o3-mini": (1.10, 4.40),
     # --- Anthropic ---
+    # Prefix match, longest wins: "claude-opus-5" does not start with "claude-opus-4",
+    # so every model past the 4 series fell through to _default (3/15) and was
+    # mispriced in both directions until listed here.
+    "claude-opus-5": (5.0, 25.0),
+    "claude-sonnet-5": (3.0, 15.0),
+    "claude-fable-5": (3.0, 15.0),
+    "claude-opus-4-8": (5.0, 25.0),
+    "claude-opus-4-7": (15.0, 75.0),
+    "claude-opus-4-6": (15.0, 75.0),
+    "claude-sonnet-4-6": (3.0, 15.0),
     "claude-opus-4": (15.0, 75.0),
     "claude-sonnet-4": (3.00, 15.0),
     "claude-haiku-4": (0.80, 4.0),

@@ -19,6 +19,18 @@ Resolution order: an explicit ``api_key`` argument, then
 when both are set, because it is this provider's native credential; the
 opposite order is a documented source of confusion elsewhere.
 
+Several subscriptions, one cache
+-------------------------------
+OAuth tokens are pooled: ``CLAUDE_CODE_OAUTH_TOKEN``, ``_BACKUP`` and
+``_2``…``_9`` are separate subscriptions with separate rate-limit windows.
+The pool rotates *between* agents and never *within* one — an agent's calls
+in a given run all go out on the same token, because Anthropic's prompt
+cache is per credential and a tool-using run re-sends its transcript every
+iteration. A token that answers 429 is cooled until its reset and the call
+is retried on another; the sticky agent then loses its warm cache, which is
+why failover is a fallback and not the normal path. See
+``temper_ai.llm.token_pool``.
+
 Anthropic treats a bare bearer request from a third-party client
 differently from one that identifies as its own tooling. What identification
 to send — if any — is a policy decision that does not belong in this file.
@@ -33,10 +45,18 @@ import json
 import logging
 import os
 import threading
+import time
+from datetime import datetime
 from typing import Any, Protocol
 
 from temper_ai.llm.models import LLMResponse, LLMStreamChunk
 from temper_ai.llm.providers.base import BaseLLM, StreamCallback
+from temper_ai.llm.token_pool import (
+    PoolExhausted,
+    TokenPool,
+    sticky_key_from_kwargs,
+    tokens_from_env,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +71,18 @@ API_KEY_ENV = "ANTHROPIC_API_KEY"
 OAUTH_TOKEN_ENV = "CLAUDE_CODE_OAUTH_TOKEN"  # noqa: S105 - name, not a secret
 
 AuthMode = str  # "api_key" | "oauth" | "none"
+
+# Models that answer 400 `temperature is deprecated for this model`. Learned at
+# runtime rather than listed ahead of time: the set grows with every release,
+# and a hard-coded list is wrong the day after it is written. One rejected
+# request per model per process teaches it.
+_NO_TEMPERATURE: set[str] = set()
+_no_temperature_lock = threading.Lock()
+
+
+def _temperature_rejected(exc: Exception) -> bool:
+    status = getattr(exc, "status_code", None) or getattr(getattr(exc, "response", None), "status_code", None)
+    return status == 400 and "temperature" in str(exc).lower() and "deprecated" in str(exc).lower()
 
 
 def resolve_credential(api_key: str | None = None) -> tuple[str | None, AuthMode]:
@@ -112,6 +144,92 @@ def _warn_unshaped_once() -> None:
     )
 
 
+def _apply_prompt_caching(create_kwargs: dict[str, Any]) -> None:
+    """Ask Anthropic to cache the stable prefix of this request, in place.
+
+    A tool-using agent re-sends its whole transcript on every iteration: by the
+    fortieth call the system prompt, the tool schemas and thirty-nine tool
+    results have each been paid for dozens of times. Cache reads are a tenth of
+    the price of fresh input, and nothing here was asking for them.
+
+    Two of the four allowed breakpoints, in the order Anthropic assembles a
+    prompt (tools, then system, then messages):
+
+    * the last system block — covers the tool schemas and the whole system
+      prompt, which never change within a run;
+    * the last block of the last message — a breakpoint that moves forward each
+      turn, so the previous turn's transcript is a cache hit. Earlier
+      breakpoints keep working while they live, so the moving one costs one
+      cache write per turn and saves re-reading everything before it.
+
+    The cache is keyed to the credential, which is why an agent stays on one
+    subscription for a whole run (see the module docstring).
+    """
+    system = create_kwargs.get("system")
+    if isinstance(system, str) and system:
+        system = [{"type": "text", "text": system}]
+        create_kwargs["system"] = system
+    if isinstance(system, list) and system:
+        _mark(system[-1])
+
+    messages = create_kwargs.get("messages") or []
+    if not messages:
+        return
+    last = messages[-1]
+    content = last.get("content")
+    if isinstance(content, str) and content:
+        content = [{"type": "text", "text": content}]
+        last["content"] = content
+    if isinstance(content, list) and content:
+        _mark(content[-1])
+
+
+def _mark(block: Any) -> None:
+    """Put a cache breakpoint on one block, if it is one we may annotate."""
+    if isinstance(block, dict) and "cache_control" not in block:
+        block["cache_control"] = {"type": "ephemeral"}
+
+
+def _is_rate_limit(exc: Exception) -> bool:
+    """Whether this failure means "this subscription, not now".
+
+    Matched on status code rather than SDK class so an overload (529) and a
+    plain HTTP error from a proxy are treated the same way, and so the check
+    holds if the SDK reorganises its exception types.
+    """
+    status = getattr(exc, "status_code", None) or getattr(getattr(exc, "response", None), "status_code", None)
+    return status in (429, 529)
+
+
+def _reset_epoch(exc: Exception) -> float | None:
+    """When the limited subscription is usable again, from the response headers.
+
+    `retry-after` (seconds) or `anthropic-ratelimit-*-reset` (RFC 3339). None
+    when the response says nothing, and the pool then applies a fixed wait.
+    """
+    headers = getattr(getattr(exc, "response", None), "headers", None)
+    if not headers:
+        return None
+    retry_after = headers.get("retry-after")
+    if retry_after:
+        try:
+            return time.time() + float(retry_after)
+        except (TypeError, ValueError):
+            pass
+    resets = [headers.get(k) for k in (
+        "anthropic-ratelimit-unified-reset",
+        "anthropic-ratelimit-tokens-reset",
+        "anthropic-ratelimit-requests-reset",
+    ) if headers.get(k)]
+    epochs = []
+    for value in resets:
+        try:
+            epochs.append(datetime.fromisoformat(str(value).replace("Z", "+00:00")).timestamp())
+        except ValueError:
+            continue
+    return max(epochs) if epochs else None
+
+
 def _ensure_anthropic():
     try:
         import anthropic
@@ -150,29 +268,111 @@ class AnthropicLLM(BaseLLM):
         anthropic_mod = _ensure_anthropic()
         credential, self.auth_mode = resolve_credential(api_key)
         self.api_key = credential
-        client_kwargs: dict[str, Any] = {
-            "base_url": base_url if base_url != "https://api.anthropic.com" else None,
-            "timeout": timeout,
-        }
-        if self.auth_mode == "oauth":
-            # Bearer, not x-api-key: the SDK's own way of carrying OAuth.
-            client_kwargs["auth_token"] = credential
-            client_kwargs["api_key"] = None
-        else:
-            client_kwargs["api_key"] = credential
-        self._client = anthropic_mod.Anthropic(**client_kwargs)
-        logger.info("Anthropic provider: auth mode %s", self.auth_mode)
+        self._anthropic = anthropic_mod
+        self._base_url = base_url if base_url != "https://api.anthropic.com" else None
+        self._clients: dict[str, Any] = {}
+        self._clients_lock = threading.Lock()
+
+        # Pool only the env-configured OAuth subscriptions, and only when this
+        # provider is actually using one: an explicitly passed credential (a
+        # test's, a caller's) is the one to use, not a hint to go looking for
+        # siblings of it in the environment.
+        pooled: list[str] = []
+        if self.auth_mode == "oauth" and not (api_key or "").strip():
+            pooled = [t for t in tokens_from_env(OAUTH_TOKEN_ENV) if t.startswith(OAUTH_TOKEN_PREFIX)]
+        self._pool = TokenPool(name="anthropic-oauth", tokens=pooled) if len(pooled) > 1 else None
+
+        self._client = self._client_for(credential) if credential else None
+        logger.info(
+            "Anthropic provider: auth mode %s%s",
+            self.auth_mode,
+            f", {len(self._pool)} pooled subscriptions" if self._pool else "",
+        )
+
+    def _client_for(self, credential: str):
+        """The SDK client for one credential, created once and reused.
+
+        One client per token rather than one per call: the SDK holds an HTTP
+        connection pool, and rebuilding it for every request of a 60-iteration
+        run costs a TLS handshake each time.
+        """
+        with self._clients_lock:
+            client = self._clients.get(credential)
+            if client is not None:
+                return client
+            client_kwargs: dict[str, Any] = {"base_url": self._base_url, "timeout": self.timeout}
+            if credential.startswith(OAUTH_TOKEN_PREFIX):
+                # Bearer, not x-api-key: the SDK's own way of carrying OAuth.
+                client_kwargs["auth_token"] = credential
+                client_kwargs["api_key"] = None
+            else:
+                client_kwargs["api_key"] = credential
+            client = self._anthropic.Anthropic(**client_kwargs)
+            self._clients[credential] = client
+            return client
+
+    def _credential_for_call(self, kwargs: dict[str, Any]) -> str | None:
+        """Which subscription this call goes out on (see the module docstring)."""
+        if self._pool is None:
+            return self.api_key
+        return self._pool.pick(sticky_key_from_kwargs(kwargs))
+
+    def _send(self, create_kwargs: dict[str, Any], kwargs: dict[str, Any], run) -> Any:
+        """One request, surviving a subscription limit and a rejected knob.
+
+        Newer models refuse `temperature` outright (400, not a warning), which
+        killed the request rather than the parameter. The first refusal per
+        model teaches the process to stop sending it.
+        """
+        try:
+            return self._call_with_pool(kwargs, run)
+        except Exception as exc:  # noqa: BLE001 - narrowed immediately
+            if "temperature" not in create_kwargs or not _temperature_rejected(exc):
+                raise
+            model = create_kwargs["model"]
+            with _no_temperature_lock:
+                first = model not in _NO_TEMPERATURE
+                _NO_TEMPERATURE.add(model)
+            if first:
+                logger.warning("Anthropic: %s rejects temperature; dropping it for this model", model)
+            create_kwargs.pop("temperature")
+            return self._call_with_pool(kwargs, run)
+
+    def _call_with_pool(self, kwargs: dict[str, Any], run) -> Any:
+        """Run `run(client)`, moving to another subscription on a rate limit.
+
+        Attempts are bounded by the pool size: each 429 cools exactly one
+        token, so at worst every subscription is tried once and the pool then
+        reports itself exhausted instead of spinning.
+        """
+        attempts = len(self._pool) if self._pool else 1
+        last_error: Exception | None = None
+        for _ in range(max(attempts, 1)):
+            credential = self._credential_for_call(kwargs)
+            if credential is None:
+                raise RuntimeError("Anthropic provider has no credential configured")
+            try:
+                return run(self._client_for(credential))
+            except Exception as exc:  # noqa: BLE001 - re-raised below unless it is a limit
+                if self._pool is None or not _is_rate_limit(exc):
+                    raise
+                self._pool.cool(credential, until=_reset_epoch(exc))
+                last_error = exc
+        raise PoolExhausted(len(self._pool) if self._pool else 0,
+                            self._pool.soonest_reset() if self._pool else None) from last_error
 
     def _build_create_kwargs(self, messages: list[dict], **kwargs: Any) -> dict[str, Any]:
         """The ``messages.create`` payload, shaped for the credential in use."""
         system, claude_messages = _extract_system(messages)
 
+        model = self.resolve_model(kwargs)
         create_kwargs: dict[str, Any] = {
-            "model": self.resolve_model(kwargs),
+            "model": model,
             "messages": claude_messages,
             "max_tokens": self.max_tokens,
-            "temperature": self.temperature,
         }
+        if model not in _NO_TEMPERATURE:
+            create_kwargs["temperature"] = self.temperature
         if system:
             create_kwargs["system"] = system
 
@@ -194,12 +394,16 @@ class AnthropicLLM(BaseLLM):
                     **shaper.client_headers(),
                     **(create_kwargs.get("extra_headers") or {}),
                 }
+        # After shaping, so the identity blocks the shaper prepends are inside
+        # the cached prefix rather than ahead of it (a block added before the
+        # breakpoint on the next call would miss every time).
+        _apply_prompt_caching(create_kwargs)
         return create_kwargs
 
     def complete(self, messages: list[dict], **kwargs: Any) -> LLMResponse:
         """Call Claude via the Anthropic SDK."""
         create_kwargs = self._build_create_kwargs(messages, **kwargs)
-        response = self._client.messages.create(**create_kwargs)
+        response = self._send(create_kwargs, kwargs, lambda client: client.messages.create(**create_kwargs))
         return _parse_response(response, create_kwargs["model"])
 
     def stream(self, messages: list[dict], on_chunk: StreamCallback | None = None,
@@ -209,17 +413,22 @@ class AnthropicLLM(BaseLLM):
 
         content_parts: list[str] = []
 
-        with self._client.messages.stream(**create_kwargs) as stream:
-            for text in stream.text_stream:
-                content_parts.append(text)
-                if on_chunk:
-                    on_chunk(LLMStreamChunk(content=text, done=False))
+        def run(client):
+            with client.messages.stream(**create_kwargs) as stream:
+                for text in stream.text_stream:
+                    content_parts.append(text)
+                    if on_chunk:
+                        on_chunk(LLMStreamChunk(content=text, done=False))
+                return stream.get_final_message()
+
+        # A rate limit surfaces on entering the stream, before any chunk; if it
+        # ever arrives mid-stream the partial text is dropped and the retry
+        # starts clean rather than emitting the same prefix twice.
+        final = self._send(create_kwargs, kwargs, run)
 
         if on_chunk:
             on_chunk(LLMStreamChunk(content="", done=True))
 
-        # Get the final message for metadata
-        final = stream.get_final_message()
         return _parse_response(final, create_kwargs["model"])
 
     # The Anthropic and Gemini providers use their SDK clients directly
@@ -338,13 +547,22 @@ def _parse_response(response: Any, model: str) -> LLMResponse:
         elif block.type in ("server_tool_use", "web_search_tool_result", "code_execution_tool_result"):
             pass
 
+    # Cached input is reported in its own counters, not in input_tokens. Left
+    # out, a run whose prefix is being cached looks like it stopped sending a
+    # prompt at all: input_tokens collapses to the few hundred new tokens and
+    # the usage figures stop describing the request.
+    usage = response.usage
+    cache_read = getattr(usage, "cache_read_input_tokens", 0) or 0
+    cache_write = getattr(usage, "cache_creation_input_tokens", 0) or 0
+    prompt_tokens = usage.input_tokens + cache_read + cache_write
+
     return LLMResponse(
         content=content_text,
         model=model,
         provider="anthropic",
-        prompt_tokens=response.usage.input_tokens,
-        completion_tokens=response.usage.output_tokens,
-        total_tokens=response.usage.input_tokens + response.usage.output_tokens,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=usage.output_tokens,
+        total_tokens=prompt_tokens + usage.output_tokens,
         finish_reason="tool_calls" if tool_calls else response.stop_reason or "stop",
         tool_calls=tool_calls if tool_calls else None,
     )

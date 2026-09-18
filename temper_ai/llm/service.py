@@ -20,7 +20,14 @@ from temper_ai.observability import EventType, record
 logger = logging.getLogger(__name__)
 
 DEFAULT_MAX_ITERATIONS = 10
-DEFAULT_MAX_MESSAGES = 50
+# A backstop against unbounded growth, not the working limit: `max_context_tokens`
+# is what governs how much the model may remember, and `_enforce_context_limit`
+# applies this window only when that budget is exceeded. At 50 it was the
+# governor instead — a tool-using agent lost every file it had read about 24
+# calls back and went looking for it again, plateauing at a fifth of its token
+# budget and never converging (one planner: three passes over the same five
+# files, 27 turns apart, 1.6M tokens).
+DEFAULT_MAX_MESSAGES = 400
 DEFAULT_MAX_CONTEXT_TOKENS = 120_000  # Conservative default — most models handle at least 128k
 MAX_TOOL_RESULT_CHARS = 20_000  # ~5k tokens — prevents context overflow from large tool outputs
 
@@ -232,7 +239,10 @@ class LLMService:
             })
         _inject_tool_results(self._messages, self._response, tool_calls, tool_results)
         _nudge_to_finish(self._messages, self._iteration, self.max_iterations)
-        _apply_message_window(self._messages, self.max_messages)
+        # No window here: _enforce_context_limit runs before every provider call
+        # and trims by token budget, which is the measure that matters. Trimming
+        # by message count after every tool round threw away work the model was
+        # nowhere near out of room to keep.
 
     def _handle_no_executor(self, iteration: int, tool_calls: list[dict]) -> LLMRunResult:
         """Handle case where LLM requests tools but no executor is available."""

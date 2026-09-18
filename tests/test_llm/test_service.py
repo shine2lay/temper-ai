@@ -151,6 +151,28 @@ class TestToolCallingLoop:
         assert result.error is not None
         assert "max iterations" in result.error.lower()
 
+    def test_model_is_warned_as_the_budget_runs_out(self):
+        """The last tool results before the cap carry a wrap-up note, so the model
+        can answer from what it has instead of being cut off with nothing. Seen
+        live: a planner spent 40 iterations and 570k tokens and returned nothing."""
+        responses = [
+            _make_tool_response([{"id": f"c{i}", "name": "bash", "arguments": '{"command": "loop"}'}])
+            for i in range(6)
+        ]
+        provider = MockProvider(responses)
+        service = LLMService(provider, max_iterations=6)
+        service.run([{"role": "user", "content": "Do something"}], tools=[], execute_tool=_echo_tool)
+
+        # the transcript is one shared list; tool message i holds iteration i+1's result
+        tool_msgs = [m["content"] for m in provider.calls[-1]["messages"] if m["role"] == "tool"]
+        assert len(tool_msgs) == 6
+        assert "[iteration budget]" not in tool_msgs[1]                  # after iteration 2: 4 turns left, no nudge
+        assert "3 LLM turns left" in tool_msgs[2]                        # after iteration 3 of 6
+        assert "2 LLM turns left" in tool_msgs[3]
+        assert "last one the iteration budget allows" in tool_msgs[4]    # after iteration 5: one call left
+        assert "[iteration budget]" not in tool_msgs[5]                  # after the cap: nobody will read it
+        assert tool_msgs[4].startswith("result of bash")                 # the result itself is intact
+
     def test_no_executor_returns_error(self):
         """LLM returns tool calls but no executor provided."""
         responses = [

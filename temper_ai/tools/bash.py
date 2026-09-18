@@ -9,6 +9,7 @@ Security:
 
 import logging
 import os
+import shlex
 import subprocess  # noqa: B404
 from typing import Any
 
@@ -72,31 +73,71 @@ class Bash(BaseTool):
         skip_allowlist = params.get("_skip_allowlist", False)
         allowed = self.config.get("allowed_commands", _DEFAULT_ALLOWED_COMMANDS)
         if allowed and not skip_allowlist:
-            for line in command.strip().splitlines():
-                line = line.strip()
-                if not line or line.startswith("#"):
-                    continue
-                # Handle chained commands: &&, ||, ;, |
-                for segment in line.replace("&&", ";").replace("||", ";").replace("|", ";").split(";"):
-                    segment = segment.strip()
-                    if not segment:
-                        continue
-                    first_word = segment.split()[0]
-                    # Skip variable assignments (VAR=value, VAR="value")
-                    if "=" in first_word and not first_word.startswith("="):
-                        continue
-                    # Skip shell syntax tokens
-                    if first_word in ("then", "else", "fi", "do", "done", "esac", "}", "{", ")", "(", ";;"):
-                        continue
-                    base_cmd_name = os.path.basename(first_word)
-                    if base_cmd_name not in allowed:
-                        return ToolResult(
-                            success=False, result="",
-                            error=f"Command '{base_cmd_name}' not in allowed list: {allowed}",
-                        )
+            for base_cmd_name in command_heads(command):
+                if base_cmd_name not in allowed:
+                    return ToolResult(
+                        success=False, result="",
+                        error=f"Command '{base_cmd_name}' not in allowed list: {allowed}",
+                    )
 
         cwd = self.config.get("workspace_root") or self.config.get("cwd")
         return _run_subprocess(command, timeout, cwd)
+
+
+_SHELL_WORDS = frozenset((
+    "then", "else", "elif", "fi", "do", "done", "esac", "in", "}", "{", ")", "(", ";;",
+    "!", "if", "while", "until", "for", "case", "time",
+))
+_SEPARATORS = frozenset(("|", "||", "&&", ";", "&", "(", ")", ";;"))
+_REDIRECTS = frozenset((">", ">>", "<", "<<", "<<<", ">&", "<&", "&>", ">|"))
+
+
+def command_heads(command: str) -> list[str]:
+    """The basename of every command a shell line would run, for the allowlist.
+
+    Shell-aware: a `|`, `;` or `&&` inside quotes is text, not a separator
+    (`grep -E "cost|invested"` is one grep, not a grep and an `invested"`),
+    redirections and their targets are skipped, and leading `VAR=value`
+    assignments and shell keywords are not commands. A line the lexer cannot
+    parse (an unbalanced quote — the shell would reject it too) yields the
+    pseudo-command `<unparseable>`, which no allowlist contains.
+    """
+    heads: list[str] = []
+    for line in command.strip().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        lexer = shlex.shlex(line, posix=True, punctuation_chars=True)
+        lexer.whitespace_split = True
+        try:
+            tokens = list(lexer)
+        except ValueError:
+            heads.append("<unparseable>")
+            continue
+        expect_head = True
+        skip_next = False
+        for tok in tokens:
+            if skip_next:
+                skip_next = False
+                continue
+            if tok in _SEPARATORS:
+                expect_head = True
+                continue
+            if tok in _REDIRECTS or (tok and tok[0].isdigit() and tok.lstrip("0123456789") in _REDIRECTS):
+                skip_next = True
+                continue
+            if not expect_head:
+                continue
+            if tok in ("for", "case", "select", "function"):
+                expect_head = False  # `for f in a b;` / `case $x in`: names, not commands, until the next separator
+                continue
+            if tok in _SHELL_WORDS:
+                continue  # keyword: the command comes after it
+            if "=" in tok and not tok.startswith("=") and tok.split("=", 1)[0].replace("_", "a").isalnum():
+                continue  # VAR=value prefix: the command comes after it
+            heads.append(os.path.basename(tok))
+            expect_head = False
+    return heads
 
 
 def _run_subprocess(command: str, timeout: int, cwd: str | None) -> "ToolResult":

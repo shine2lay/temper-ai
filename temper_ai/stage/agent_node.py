@@ -57,8 +57,11 @@ class AgentNode(Node):
                 result = agent.run(input_data, ctx)
                 last_result = result
 
-                # Check if output is empty — retry if so
-                if not result.output or not result.output.strip():
+                # Check if output is empty — retry if so. Not when the run
+                # *told us why* it has no output (max iterations, timeout,
+                # budget): re-running a 40-iteration exploration from scratch
+                # doubles its cost and ends the same way.
+                if (not result.output or not result.output.strip()) and not result.error:
                     if attempt < self.MAX_RETRIES:
                         logger.warning(
                             "Agent '%s' returned empty output (attempt %d/%d), retrying...",

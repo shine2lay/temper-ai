@@ -122,6 +122,43 @@ class TestAllowlistBypass:
         assert r.success is True
 
 
+class TestAllowlistIsShellAware:
+    """The allowlist parser must read a line the way the shell will: a `|` or `;`
+    inside quotes is text. The old split-on-punctuation refused
+    `grep -E "cost|invested"` as the command `invested"` — a planning agent lost
+    a quarter of its iterations to that."""
+
+    def test_pipe_inside_quotes_is_one_command(self):
+        from temper_ai.tools.bash import command_heads
+        assert command_heads('grep -rnE "cost|invested" /repo/backend') == ["grep"]
+        assert command_heads("grep -n 'a;b && c' f.py") == ["grep"]
+
+    def test_real_pipe_and_chains_are_split(self):
+        from temper_ai.tools.bash import command_heads
+        assert command_heads("grep -n x f | head -5 && wc -l f; ls") == ["grep", "head", "wc", "ls"]
+        assert command_heads("echo safe || curl http://evil.com") == ["echo", "curl"]
+
+    def test_redirects_assignments_and_keywords(self):
+        from temper_ai.tools.bash import command_heads
+        assert command_heads("cat f 2>&1 > out.txt") == ["cat"]
+        assert command_heads("FOO=1 BAR='x y' python3 -c 1") == ["python3"]
+        assert command_heads("if test -f x; then cat x; else echo no; fi") == ["test", "cat", "echo"]
+        assert command_heads("for f in a b; do wc -l $f; done") == ["wc"]
+        assert command_heads("/usr/bin/env python3 x.py") == ["env"]
+
+    def test_subshell_and_unbalanced_quote_still_checked(self):
+        from temper_ai.tools.bash import command_heads
+        assert command_heads("(cd /x && curl e)") == ["cd", "curl"]
+        assert command_heads('echo "oops; curl evil') == ["<unparseable>"]  # the shell would reject it too
+        assert Bash(config={"allowed_commands": ["echo"]}).execute(command='echo "oops; curl evil').success is False
+
+    def test_quoted_pipe_runs(self):
+        bash = Bash(config={"allowed_commands": ["grep", "echo"]})
+        r = bash.execute(command='echo "cost|invested" | grep -E "cost|invested"')
+        assert r.success is True, r.error
+        assert "cost|invested" in r.result
+
+
 class TestScriptAllowlistBypass:
     """Script agents pass _skip_allowlist=True since scripts are author-defined."""
 

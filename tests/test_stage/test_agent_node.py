@@ -75,6 +75,25 @@ def test_returns_last_result_when_all_attempts_empty(create_agent):
 
 @patch("temper_ai.stage.agent_node.time.sleep", lambda _s: None)
 @patch("temper_ai.stage.agent_node.create_agent")
+def test_no_retry_when_the_empty_output_has_a_reason(create_agent):
+    """Empty output *with* an error (max iterations, timeout, budget) is a verdict,
+    not a glitch: re-running a 40-iteration exploration doubles its cost and ends
+    the same way. Seen live: a planner hit its cap at 570k tokens and was run again."""
+    agent = MagicMock()
+    agent.name = "n1"
+    capped = AgentResult(status=Status.FAILED, output="", error="Reached max iterations (40)")
+    agent.run.side_effect = [capped, _result(output="would be a second full run")]
+    create_agent.return_value = agent
+
+    result = _make_node().run({}, _make_context())
+
+    assert agent.run.call_count == 1
+    assert result.output == ""
+    assert "max iterations" in (result.error or "")
+
+
+@patch("temper_ai.stage.agent_node.time.sleep", lambda _s: None)
+@patch("temper_ai.stage.agent_node.create_agent")
 def test_retries_on_exception_then_succeeds(create_agent):
     """Exception on first attempt → retry → success on second attempt."""
     agent = MagicMock()

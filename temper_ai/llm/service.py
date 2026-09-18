@@ -117,6 +117,7 @@ class LLMService:
         if self._execute_tool is None:
             return self._handle_no_executor(iteration, tool_calls)
 
+        self._iteration = iteration
         self._execute_and_inject_tools(tool_calls, llm_event_id)
         self._record_iteration(
             iteration, "tool_calls", len(tool_calls), tool_calls=tool_calls,
@@ -230,6 +231,7 @@ class LLMService:
                 "result": tr["result"], "success": tr["success"],
             })
         _inject_tool_results(self._messages, self._response, tool_calls, tool_results)
+        _nudge_to_finish(self._messages, self._iteration, self.max_iterations)
         _apply_message_window(self._messages, self.max_messages)
 
     def _handle_no_executor(self, iteration: int, tool_calls: list[dict]) -> LLMRunResult:
@@ -384,6 +386,31 @@ def _inject_tool_results(
             "tool_call_id": tr["tool_call_id"],
             "content": content,
         })
+
+
+WRAP_UP_TURNS = 3  # LLM turns left at which the model is told to stop exploring
+
+
+def _nudge_to_finish(messages: list[dict], iteration: int, max_iterations: int) -> None:
+    """Tell the model the iteration budget is nearly spent, on the last tool result.
+
+    Without this a model that is still reading at the cap is cut off with no
+    answer at all — the whole exploration is lost (seen live: a planner spent
+    40 iterations and 570k tokens and returned nothing). Appended to the tool
+    result rather than as a user message so the transcript stays a valid
+    tool-call sequence for every provider.
+    """
+    left = max_iterations - iteration  # LLM calls that can still happen
+    if left > WRAP_UP_TURNS or left < 1 or not messages or messages[-1].get("role") != "tool":
+        return
+    if left == 1:
+        note = "Your next reply is the last one the iteration budget allows. It must be your final answer, with no tool calls."
+    else:
+        note = (
+            f"You have {left} LLM turns left before the iteration budget ({max_iterations}) is spent. "
+            "Stop exploring and produce your final answer now, from what you already know."
+        )
+    messages[-1]["content"] = f"{messages[-1]['content']}\n\n[iteration budget] {note}"
 
 
 def _estimate_messages_tokens(messages: list[dict]) -> int:

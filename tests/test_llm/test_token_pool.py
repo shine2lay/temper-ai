@@ -192,7 +192,72 @@ class TestPromptCaching:
         assert parsed.total_tokens == 41_350
 
 
-class TestProviderUsesThePool:
+class TestTruncation:
+    """A reply cut off by max_tokens must say so.
+
+    Live: a planner explored for 24 iterations, was truncated while writing its
+    plan, returned empty, and the node — seeing an empty output with no reason —
+    ran the entire exploration again and was truncated at the same place.
+    """
+
+    def _run(self, finish_reason: str, content: str | None):
+        from temper_ai.llm.models import LLMResponse
+        from temper_ai.llm.service import LLMService
+
+        from .conftest import MockProvider
+
+        response = LLMResponse(
+            content=content, model="claude-opus-5", provider="MockProvider",
+            prompt_tokens=10, completion_tokens=32_000, total_tokens=32_010,
+            latency_ms=1, finish_reason=finish_reason,
+        )
+        return LLMService(MockProvider([response])).run([{"role": "user", "content": "plan it"}])
+
+    def test_an_empty_truncated_reply_names_its_cause(self):
+        result = self._run("max_tokens", "")
+        assert result.output == ""
+        assert "max_tokens" in (result.error or "")
+        assert "provider_config" in result.error, "say what to change, not just what broke"
+
+    def test_a_truncated_reply_that_still_said_something_is_kept(self):
+        """Partial text is worth returning; only a silent truncation is a fault."""
+        result = self._run("max_tokens", "## Plan\nhalf a plan")
+        assert result.output.startswith("## Plan")
+        assert result.error is None
+
+    def test_an_ordinary_empty_reply_is_still_unexplained(self):
+        """The retry-on-empty path stays for the glitches it was built for."""
+        result = self._run("stop", "")
+        assert result.output == ""
+        assert result.error is None
+
+
+class TestPerAgentMaxTokens:
+    def test_an_agent_may_ask_for_more_room_than_the_shared_provider(self, monkeypatch):
+        from temper_ai.llm.providers import anthropic as mod
+
+        monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat-only")
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        sent: list[dict] = []
+
+        def fake_anthropic(**_kw):
+            client = MagicMock()
+            client.messages.create.side_effect = lambda **c: (
+                sent.append(c),
+                MagicMock(content=[], usage=MagicMock(input_tokens=1, output_tokens=1), stop_reason="end_turn"),
+            )[1]
+            return client
+
+        monkeypatch.setattr(mod, "_ensure_anthropic", lambda: MagicMock(Anthropic=fake_anthropic))
+        provider = mod.AnthropicLLM(model="claude-opus-5")
+
+        provider.complete([{"role": "user", "content": "hi"}])
+        assert sent[-1]["max_tokens"] == 32_000, "the default is no longer a 2023 ceiling"
+
+        provider.complete([{"role": "user", "content": "hi"}], max_tokens=64_000)
+        assert sent[-1]["max_tokens"] == 64_000
+
+
     """The provider side: one agent-run pins to one client, a 429 moves it on."""
 
     def _provider(self, monkeypatch, n=3):

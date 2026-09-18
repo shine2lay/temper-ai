@@ -252,7 +252,11 @@ class AnthropicLLM(BaseLLM):
         api_key: str | None = None,
         base_url: str = "https://api.anthropic.com",
         temperature: float = 0.7,
-        max_tokens: int = 4096,
+        # 4096 was a 2023-era ceiling. An agent whose final answer is a plan, a
+        # diff or a long tool argument hit it mid-sentence and returned nothing
+        # at all, which reads as a mysterious empty response rather than a
+        # truncation. Current models allow far more; an unused ceiling is free.
+        max_tokens: int = 32_000,
         timeout: int = 120,
         **kwargs: Any,
     ):
@@ -369,7 +373,9 @@ class AnthropicLLM(BaseLLM):
         create_kwargs: dict[str, Any] = {
             "model": model,
             "messages": claude_messages,
-            "max_tokens": self.max_tokens,
+            # Per call, so one agent can be given more room than the shared
+            # provider default (agent YAML: provider_config.max_tokens).
+            "max_tokens": kwargs.get("max_tokens") or self.max_tokens,
         }
         if model not in _NO_TEMPERATURE:
             create_kwargs["temperature"] = self.temperature

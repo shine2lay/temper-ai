@@ -119,7 +119,19 @@ class LLMService:
         tool_calls = parse_tool_calls(self._response)
         if not tool_calls:
             self._record_iteration(iteration, "final_response", 0)
-            return self._build_result(iteration, output=extract_final_answer(self._response))
+            output = extract_final_answer(self._response)
+            error = None
+            if not output.strip() and self._response.finish_reason == "max_tokens":
+                # A truncated answer arrives as an empty one. Said plainly it is
+                # a configuration fault with an obvious fix; said as "empty
+                # output" the node just runs the whole exploration again and is
+                # truncated again at the same place.
+                error = (
+                    "Response hit max_tokens before any text was returned. Raise the agent's "
+                    "provider_config.max_tokens."
+                )
+                logger.warning("'%s': %s", self._ctx.agent_name, error)
+            return self._build_result(iteration, output=output, error=error)
 
         if self._execute_tool is None:
             return self._handle_no_executor(iteration, tool_calls)

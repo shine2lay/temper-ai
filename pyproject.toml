@@ -31,6 +31,9 @@ dependencies = [
     # other APIs, which both the MCP server (temper_ai/mcp) and the MCP
     # tool client (temper_ai/tools/mcp_client) are written against.
     "mcp>=1.0.0,<2.0",
+    # Sealing key + Fernet for stored MCP OAuth grants (temper_ai/tools/mcp_auth.py).
+    # Present transitively before this, declared here because runtime code uses it.
+    "cryptography>=42.0,<47.0",
     # Worker protocol v1 (phase 4+): Redis Streams for live LLM chunk streaming.
     # Optional at runtime — server tolerates Redis being unreachable; feature
     # degrades gracefully (milestones still flow via Postgres).

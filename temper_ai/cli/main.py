@@ -3,6 +3,8 @@
 Usage:
     temper run <workflow> [--input key=value ...] [-v] [-vv] [--provider X] [--model Y]
     temper serve [--port N] [--dev]
+    temper connect <mcp-server>          # one-time OAuth, grant stored
+    temper connections                   # what is authorized
     temper validate <workflow>
 """
 
@@ -63,6 +65,44 @@ def main() -> None:
     )
     mcp_parser.add_argument("--debug", action="store_true", help="Enable debug logging")
 
+    # -- temper connect / connections / disconnect --
+    connect_parser = subparsers.add_parser(
+        "connect",
+        help="Authorize an OAuth MCP server once; the grant is stored and reused",
+    )
+    connect_parser.add_argument("server", help="Configured MCP server name (e.g. notion)")
+    connect_parser.add_argument(
+        "--port",
+        type=int,
+        default=8765,
+        help="Local port for the OAuth redirect (default: %(default)s)",
+    )
+    connect_parser.add_argument(
+        "--manual",
+        action="store_true",
+        help=(
+            "Paste the redirected URL instead of listening locally "
+            "(for headless or remote machines whose browser is elsewhere)"
+        ),
+    )
+    connect_parser.add_argument("--debug", action="store_true", help="Enable debug logging")
+
+    connections_parser = subparsers.add_parser(
+        "connections",
+        help="Show configured HTTP MCP servers and whether they are authorized",
+    )
+    connections_parser.add_argument(
+        "--debug", action="store_true", help="Enable debug logging"
+    )
+
+    disconnect_parser = subparsers.add_parser(
+        "disconnect", help="Forget a stored MCP authorization"
+    )
+    disconnect_parser.add_argument("server", help="Configured MCP server name")
+    disconnect_parser.add_argument(
+        "--debug", action="store_true", help="Enable debug logging"
+    )
+
     # -- temper validate --
     validate_parser = subparsers.add_parser("validate", help="Validate a workflow config")
     validate_parser.add_argument("workflow", help="Workflow config name")
@@ -120,6 +160,15 @@ def main() -> None:
     elif args.command == "mcp":
         from temper_ai.mcp.bridge import run_bridge
         run_bridge(args.url, args.token)
+    elif args.command == "connect":
+        from temper_ai.cli.connect import cmd_connect
+        sys.exit(cmd_connect(args))
+    elif args.command == "connections":
+        from temper_ai.cli.connect import cmd_connections
+        sys.exit(cmd_connections(args))
+    elif args.command == "disconnect":
+        from temper_ai.cli.connect import cmd_disconnect
+        sys.exit(cmd_disconnect(args))
     elif args.command == "validate":
         _cmd_validate(args)
     elif args.command == "run-workflow":

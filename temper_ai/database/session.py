@@ -46,6 +46,7 @@ class DatabaseManager:
         from temper_ai.memory import models as _memory_models  # noqa: F401
         from temper_ai.observability import models as _event_models  # noqa: F401
         from temper_ai.runner import models as _runner_models  # noqa: F401
+        from temper_ai.tools import mcp_models as _mcp_models  # noqa: F401
 
         SQLModel.metadata.create_all(self.engine)
 

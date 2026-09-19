@@ -1,0 +1,18 @@
+# Notion — hosted MCP server, OAuth.
+#
+# Authorize once with `temper connect notion`; the grant is stored encrypted
+# in the database and refreshed automatically from then on, including by
+# container workers that have no browser.
+#
+# The server supports dynamic client registration, so there is no OAuth app
+# to create by hand and no client secret to keep anywhere.
+#
+# Agents reach it with tools named `notion.<tool>`. Notion prefixes its own
+# tool names, so the declarations read `notion.notion-search`,
+# `notion.notion-fetch`, `notion.notion-create-pages`, `notion.notion-update-page`.
+# 45 tools are advertised; `temper connections` shows authorization status.
+mcp_server:
+  name: notion
+  transport: http
+  url: https://mcp.notion.com/mcp
+  auth: oauth

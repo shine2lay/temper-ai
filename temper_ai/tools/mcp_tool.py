@@ -68,6 +68,21 @@ class MCPTool(BaseTool):
         # per process, not once per prompt.
         self._missing_on_server = False
 
+    @property
+    def llm_name(self) -> str:
+        """``server__tool`` — the dotted name with the dot a provider won't take.
+
+        Anthropic and OpenAI both require ``^[a-zA-Z0-9_-]+$``, so sending
+        ``playwright.browser_navigate`` fails the request outright (400,
+        ``tools.0.custom.name: String should match pattern``). Double underscore
+        matches what the Claude CLI already calls MCP tools (``mcp__server__tool``),
+        so the name reads the same in a log whichever provider ran it.
+
+        ``self.name`` keeps the dot: configs declare ``playwright.browser_navigate``
+        and the executor scopes on it. LLMAgent maps back before executing.
+        """
+        return f"{self._server_name}__{self._tool_name}"
+
     # -- schema discovery ----------------------------------------------------
 
     def to_llm_schema(self) -> dict[str, Any]:

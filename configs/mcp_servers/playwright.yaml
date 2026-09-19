@@ -1,0 +1,22 @@
+# A headless Chromium an agent can drive: navigate, read the page back as an
+# accessibility tree, click, type, wait. Runs as its own container
+# (docker-compose.yml `playwright-mcp`), so this is an HTTP connection rather
+# than a subprocess — the browser and its 1.5 GB of dependencies stay out of the
+# server image, and a hung page cannot take the API down with it.
+#
+# Give an agent the tools by name, e.g.
+#   tools:
+#     - playwright.browser_navigate
+#     - playwright.browser_snapshot
+#     - playwright.browser_click
+#     - playwright.browser_type
+#
+# `browser_snapshot` is the one that matters: it returns the page as text (roles,
+# names and `ref=eNN` handles) and those refs are what click/type target. Screenshots
+# are NOT a substitute here — temper's MCP client keeps the text blocks of a tool
+# result and drops the image ones, so `browser_take_screenshot` writes a file the
+# model never sees.
+mcp_server:
+  name: playwright
+  transport: http
+  url: ${PLAYWRIGHT_MCP_URL:http://playwright-mcp:8931/mcp}

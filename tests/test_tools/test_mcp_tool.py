@@ -108,7 +108,10 @@ def test_to_llm_schema_applies_server_definition_once(loop):
     s2 = t.to_llm_schema()
     assert m.meta_calls == 1, "discovery is once per tool, not once per prompt"
     fn = s1["function"]
-    assert fn["name"] == "srv.thing"
+    # The schema carries the wire name, not the dotted identity: providers reject
+    # a dot. See tests/test_tools/test_mcp_tool_naming.py.
+    assert fn["name"] == "srv__thing"
+    assert t.name == "srv.thing"
     assert fn["description"] == "Real description"
     assert fn["parameters"]["required"] == ["x"]
     assert s2 == s1

@@ -47,6 +47,42 @@ services:
         max-size: "50m"
         max-file: "3"
 
+  # Playwright MCP: a headless Chromium an agent can drive over MCP, so a node
+  # can open a deployed app and read it back. Reached at http://playwright-mcp:8931/mcp
+  # on this network (configs/mcp_servers/playwright.yaml); the published port is for
+  # a human poking at it, not for the agents.
+  #
+  # Why its own service and not a browser in the server image: Chromium and its
+  # font/codec dependencies are ~1.5 GB that only browser nodes ever use, and the
+  # browser gets to crash, leak or hang on its own without taking the API down.
+  #
+  # --isolated keeps each session's profile in memory: a verify run never inherits
+  # the cookies or the logged-in state of the run before it. --no-sandbox because
+  # Chromium's own sandbox needs privileges this container deliberately lacks; the
+  # container is the sandbox.
+  playwright-mcp:
+    image: mcr.microsoft.com/playwright/mcp:latest
+    restart: unless-stopped
+    init: true
+    ports:
+      - "${TEMPER_BIND:-127.0.0.1}:${PLAYWRIGHT_MCP_PORT:-8931}:8931"
+    entrypoint: node
+    command: >
+      /app/cli.js
+      --headless
+      --browser chromium
+      --no-sandbox
+      --isolated
+      --port 8931
+      --host 0.0.0.0
+      --allowed-hosts playwright-mcp:8931,localhost:8931,127.0.0.1:8931
+      --output-dir /app/browser-output
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
   server:
     build:
       context: .

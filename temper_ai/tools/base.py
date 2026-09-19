@@ -60,12 +60,27 @@ class BaseTool(ABC):
         Returns a ToolResult with success/failure, result data, and optional error.
         """
 
+    @property
+    def llm_name(self) -> str:
+        """The name the model sees, which is not always ``self.name``.
+
+        Providers constrain tool names: Anthropic rejects anything outside
+        ``^[a-zA-Z0-9_-]{1,128}$`` and OpenAI has the same shape. A native
+        tool's name already fits, so this is an identity by default — the one
+        exception is MCP, whose names are ``server.tool`` (see MCPTool).
+
+        ``self.name`` stays the identifier everything else uses: the registry
+        key, what an agent config declares, what the executor scopes on. Only
+        the wire differs, and LLMAgent maps the model's answer back.
+        """
+        return self.name
+
     def to_llm_schema(self) -> dict[str, Any]:
         """Generate OpenAI function calling schema for this tool."""
         return {
             "type": "function",
             "function": {
-                "name": self.name,
+                "name": self.llm_name,
                 "description": self.description,
                 "parameters": self.parameters,
             },

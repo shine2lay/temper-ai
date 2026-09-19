@@ -463,19 +463,31 @@ class LLMAgent(AgentABC):
         ``_declared_tools()``, so they cannot drift. Nothing is written back into
         ``context``: Delegate copies it to sub-agents that declare their own
         tools, and ScriptAgent declares its own.
+
+        The model answers with the name it was shown, which for an MCP tool is
+        not the name anything here uses (``playwright__browser_navigate`` on the
+        wire, ``playwright.browser_navigate`` in configs and the registry — see
+        BaseTool.llm_name). The map back is built from the same declared list, so
+        a tool that was never shown has no way in through it either.
         """
         te = context.tool_executor
         allowed = tuple(self._declared_tools())
         workspace = _node_workspace(input_data, context)
+        by_llm_name: dict[str, str] = {}
         if te is not None:
             for tool_name in allowed:
                 tool = te.get_tool(tool_name)
-                if tool is not None and hasattr(tool, "bind_context"):
+                if tool is None:
+                    continue
+                if hasattr(tool, "bind_context"):
                     tool.bind_context(context)
+                wire = getattr(tool, "llm_name", tool_name)
+                if wire != tool_name:
+                    by_llm_name[wire] = tool_name
 
         def execute_tool(tool_name: str, params: dict[str, Any]) -> Any:
             result = te.execute(
-                tool_name,
+                by_llm_name.get(tool_name, tool_name),
                 params,
                 allowed_tools=allowed,
                 workspace=workspace,

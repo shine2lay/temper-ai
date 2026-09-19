@@ -162,7 +162,19 @@ class TestLLMAgentRun:
             max_messages=DEFAULT_MAX_MESSAGES,
             total_timeout=DEFAULT_TOTAL_TIMEOUT,
             max_context_tokens=DEFAULT_MAX_CONTEXT_TOKENS,
+            context_policy="truncate",
         )
+
+    @patch("temper_ai.agent.llm_agent.LLMService")
+    def test_context_policy_is_the_agents_choice(self, MockLLMService):
+        mock_service = MockLLMService.return_value
+        mock_service.run.return_value = LLMRunResult(output="ok", tokens=0, iterations=1)
+
+        agent = _make_agent({"provider": "vllm", "context_policy": "compress"})
+        ctx = _make_context(llm_providers={"vllm": MagicMock()})
+        agent.run({"task": "x"}, ctx)
+
+        assert MockLLMService.call_args.kwargs["context_policy"] == "compress"
 
     @patch("temper_ai.agent.llm_agent.LLMService")
     def test_tools_passed_to_llm_service(self, MockLLMService):

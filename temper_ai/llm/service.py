@@ -9,6 +9,14 @@ import logging
 import time
 from typing import Any
 
+from temper_ai.llm.context import (
+    CONTEXT_POLICIES,
+    ContextCompressor,
+    ContextError,
+)
+from temper_ai.llm.context import (
+    estimate_messages_tokens as _estimate_messages_tokens,
+)
 from temper_ai.llm.models import CallContext, LLMResponse, LLMRunResult
 from temper_ai.llm.pricing import estimate_cost
 from temper_ai.llm.provider_tools import make_provider_tool_recorder
@@ -56,12 +64,22 @@ class LLMService:
         max_messages: int = DEFAULT_MAX_MESSAGES,
         total_timeout: float = 300.0,
         max_context_tokens: int = DEFAULT_MAX_CONTEXT_TOKENS,
+        context_policy: str = "truncate",
     ) -> None:
+        if context_policy not in CONTEXT_POLICIES:
+            raise ValueError(
+                f"context_policy must be one of {', '.join(CONTEXT_POLICIES)}, not {context_policy!r}"
+            )
         self.provider = provider
         self.max_iterations = max_iterations
         self.max_messages = max_messages
         self.total_timeout = total_timeout  # Overall timeout for the entire run loop
         self.max_context_tokens = max_context_tokens
+        # What happens when the transcript outgrows max_context_tokens — see
+        # temper_ai.llm.context. "truncate" is the mechanical trim below;
+        # "compress" hands the model ref tags and a compress tool and lets it
+        # write the summaries itself.
+        self.context_policy = context_policy
 
     def run(
         self,
@@ -78,7 +96,10 @@ class LLMService:
         self._ctx = context or CallContext()
         self._record = self._ctx.event_recorder or record
         self._messages = messages
-        self._tools = tools
+        self._compressor = (
+            ContextCompressor(self.max_context_tokens) if self.context_policy == "compress" else None
+        )
+        self._tools = (list(tools or []) + self._compressor.tools()) if self._compressor else tools
         self._execute_tool = execute_tool
         self._stream_callback = stream_callback
         self._all_tool_calls: list[dict[str, Any]] = []
@@ -142,7 +163,7 @@ class LLMService:
                 logger.warning("'%s': %s", self._ctx.agent_name, error)
             return self._build_result(iteration, output=output, error=error)
 
-        if self._execute_tool is None:
+        if self._execute_tool is None and any(not self._is_context_tool(tc["name"]) for tc in tool_calls):
             return self._handle_no_executor(iteration, tool_calls)
 
         self._iteration = iteration
@@ -196,17 +217,23 @@ class LLMService:
     def _invoke_provider(self, llm_event_id: str | None = None) -> LLMResponse:
         """Call the LLM provider (stream or complete).
 
-        Checks estimated context size before calling. If over the limit,
-        aggressively trims tool results and old messages to fit.
+        Applies the context policy first. Under "truncate" the transcript is
+        trimmed in place when over the limit; under "compress" it is never
+        touched — the provider gets a view with compressed ranges hidden and
+        ref tags rendered.
         """
-        _enforce_context_limit(self._messages, self.max_context_tokens, self.max_messages)
-        # Debug: verify user message survived trimming
-        roles = [m.get("role") for m in self._messages]
-        if "user" not in roles:
-            logger.error(
-                "BUG: No user message after context trimming! Roles: %s (total: %d msgs)",
-                roles[:10], len(self._messages),
-            )
+        if self._compressor is not None:
+            wire = self._compressor.prepare(self._messages)
+        else:
+            _enforce_context_limit(self._messages, self.max_context_tokens, self.max_messages)
+            wire = self._messages
+            # Debug: verify user message survived trimming
+            roles = [m.get("role") for m in self._messages]
+            if "user" not in roles:
+                logger.error(
+                    "BUG: No user message after context trimming! Roles: %s (total: %d msgs)",
+                    roles[:10], len(self._messages),
+                )
 
         kwargs: dict[str, Any] = {}
         if self._tools:
@@ -248,17 +275,29 @@ class LLMService:
             provider_name=self.provider.provider_name,
         )
         if self._stream_callback:
-            return self.provider.stream(self._messages, on_chunk=self._stream_callback, **kwargs)
-        return self.provider.complete(self._messages, **kwargs)
+            return self.provider.stream(wire, on_chunk=self._stream_callback, **kwargs)
+        return self.provider.complete(wire, **kwargs)
+
+    def _is_context_tool(self, name: str) -> bool:
+        return self._compressor is not None and self._compressor.handles(name)
 
     def _execute_and_inject_tools(self, tool_calls: list[dict], llm_event_id: str) -> None:
-        """Execute tools, track results, inject into messages."""
-        assert self._execute_tool is not None  # noqa: B101
+        """Execute tools, track results, inject into messages.
+
+        Context tools (compress, decompress, …) never reach the tool executor:
+        they act on this service's own transcript, so they run here, through
+        the same recording path as any other tool so every summary the model
+        writes is in the event log.
+        """
         assert self._response is not None  # noqa: B101
-        tool_results = execute_tool_calls(
-            tool_calls=tool_calls, execute_tool=self._execute_tool,
-            context=self._ctx, llm_call_event_id=llm_event_id,
-        )
+        tool_results: list[dict] = []
+        for tc in tool_calls:
+            executor = self._context_tool_runner(tc) if self._is_context_tool(tc["name"]) else self._execute_tool
+            assert executor is not None  # noqa: B101
+            tool_results.extend(execute_tool_calls(
+                tool_calls=[tc], execute_tool=executor,
+                context=self._ctx, llm_call_event_id=llm_event_id,
+            ))
         for tc, tr in zip(tool_calls, tool_results, strict=False):
             self._all_tool_calls.append({
                 "name": tc["name"], "arguments": tc["arguments"],
@@ -270,6 +309,21 @@ class LLMService:
         # and trims by token budget, which is the measure that matters. Trimming
         # by message count after every tool round threw away work the model was
         # nowhere near out of room to keep.
+
+    def _context_tool_runner(self, tc: dict) -> ToolExecutorFn:
+        """An executor for one context tool call, bound to this transcript."""
+        assert self._compressor is not None  # noqa: B101
+        compressor = self._compressor
+
+        def run(name: str, arguments: dict) -> str:
+            try:
+                return compressor.execute(name, arguments, self._messages, tool_call_id=tc["id"])
+            except ContextError as e:
+                # A bad range is the model's mistake to correct, not a failure
+                # of the run: hand the reason back as the tool result.
+                return f"Error: {e}"
+
+        return run
 
     def _handle_no_executor(self, iteration: int, tool_calls: list[dict]) -> LLMRunResult:
         """Handle case where LLM requests tools but no executor is available."""
@@ -452,25 +506,6 @@ def _nudge_to_finish(messages: list[dict], iteration: int, max_iterations: int) 
             "Stop exploring and produce your final answer now, from what you already know."
         )
     messages[-1]["content"] = f"{messages[-1]['content']}\n\n[iteration budget] {note}"
-
-
-def _estimate_messages_tokens(messages: list[dict]) -> int:
-    """Rough token estimate for a message list (~3 chars per token).
-
-    Uses 3 chars/token (conservative) to avoid underestimating and
-    hitting model context limits.
-    """
-    total = 0
-    for msg in messages:
-        content = msg.get("content", "")
-        if content:
-            total += len(content) // 3 + 4  # message overhead
-        # Tool calls in assistant messages
-        for tc in msg.get("tool_calls", []):
-            fn = tc.get("function", {})
-            total += len(fn.get("name", "")) // 3
-            total += len(str(fn.get("arguments", ""))) // 3
-    return total
 
 
 def _enforce_context_limit(messages: list[dict], max_tokens: int, max_messages: int) -> None:

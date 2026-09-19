@@ -283,6 +283,7 @@ class LLMAgent(AgentABC):
             max_messages=self.config.get("max_messages", DEFAULT_MAX_MESSAGES),
             total_timeout=float(self.config.get("total_timeout", DEFAULT_TOTAL_TIMEOUT)),
             max_context_tokens=self.config.get("max_context_tokens", DEFAULT_MAX_CONTEXT_TOKENS),
+            context_policy=self.config.get("context_policy", "truncate"),
         )
 
     def _build_call_context(

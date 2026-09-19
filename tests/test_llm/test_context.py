@@ -1,7 +1,7 @@
 """Tests for the ``compress`` context policy — model-driven compression.
 
 The transcript is built the way the service builds it: system, task, then
-assistant tool-call / tool-result pairs. ``_anchor`` appends what the service
+assistant tool-call / tool-result pairs. ``_reply`` appends what the service
 would append after a compress call, so tests can walk several turns.
 """
 
@@ -11,6 +11,7 @@ import pytest
 
 from temper_ai.llm.context import (
     GUIDANCE,
+    SUMMARY_STUB_CHARS,
     ContextCompressor,
     ContextError,
     estimate_messages_tokens,
@@ -58,11 +59,15 @@ def _transcript(turns: int = 6, size: int = 3000) -> list[dict]:
     return messages
 
 
-def _anchor(
-    messages: list[dict], compressor: ContextCompressor, call_id: str, result: str
+def _reply(
+    messages: list[dict],
+    compressor: ContextCompressor,
+    call_id: str,
+    ranges: list[dict],
+    result: str,
 ) -> None:
     """What the service appends after a compress call, then the next prepare()."""
-    _turn(messages, call_id, "compress", result, {"ranges": "…"})
+    _turn(messages, call_id, "compress", result, {"ranges": ranges})
     compressor.prepare(messages)
 
 
@@ -73,7 +78,7 @@ def _compress(
     ranges: list[dict],
 ) -> str:
     result = compressor.compress(messages, ranges, tool_call_id=call_id)
-    _anchor(messages, compressor, call_id, result)
+    _reply(messages, compressor, call_id, ranges, result)
     return result
 
 
@@ -101,18 +106,25 @@ class TestView:
 
     def test_transcript_is_never_mutated(self):
         messages = _transcript(turns=2)
-        before = json.dumps(messages)
         c = ContextCompressor(100_000)
         c.prepare(messages)
         _compress(
             c,
             messages,
             "k1",
-            [{"start": "m00003", "end": "m00006", "summary": "read f0, f1: nothing"}],
+            [
+                {
+                    "start": "m00003",
+                    "end": "m00006",
+                    "summary": "read f0, f1: " + "n" * 400,
+                }
+            ],
         )
+        before = json.dumps(messages)
         c.prepare(messages)
+        c.view(messages)
 
-        assert json.dumps(messages[:6]) == json.dumps(json.loads(before)[:6])
+        assert json.dumps(messages) == before  # the stubbed compress call is a copy
         assert all(not k.startswith("_") for m in messages for k in m)
 
     def test_refs_are_transcript_positions(self):
@@ -129,7 +141,7 @@ class TestView:
 
 
 class TestCompress:
-    def test_hides_the_range_and_keeps_the_anchor(self):
+    def test_hides_the_range_and_renders_the_summary_in_its_place(self):
         messages = _transcript(turns=4)
         c = ContextCompressor(100_000)
         c.prepare(messages)
@@ -141,6 +153,7 @@ class TestCompress:
                 {
                     "start": "m00003",
                     "end": "m00006",
+                    "topic": "first two files",
                     "summary": "f0 and f1 are irrelevant",
                 },
             ],
@@ -148,13 +161,48 @@ class TestCompress:
 
         assert result.startswith("Compressed 1 range(s): m00003–m00006 → b1 (tier 1")
         view = c.view(messages)
-        refs = _tags(view)
-        assert "m00003" not in refs and "m00006" not in refs
-        assert "m00008" in refs and "m00010" in refs  # later turns untouched
-        # the model's own compress call is the anchor and stays visible
-        assert any("compress" in json.dumps(m.get("tool_calls", "")) for m in view)
-        assert c.blocks["b1"].anchor == len(messages) - 1
+        # the summary stands where m00003–m00006 stood; the compress call (m00011) follows in order
+        assert _tags(view) == [
+            "",
+            "m00002",
+            "b1",
+            "",
+            "m00008",
+            "",
+            "m00010",
+            "",
+            "m00012",
+        ]
+        rendered = view[2]
+        assert (
+            rendered["role"] == "user"
+        )  # never system: providers fold that into the prompt
+        assert rendered["content"].startswith(
+            "[Compressed b1 — first two files] m00003–m00006, tier 1, ~"
+        )
+        assert "\nf0 and f1 are irrelevant\n" in rendered["content"]
         assert estimate_messages_tokens(view) < estimate_messages_tokens(messages)
+
+    def test_the_compress_call_is_stubbed_so_the_summary_is_sent_once(self):
+        messages = _transcript(turns=2)
+        c = ContextCompressor(100_000)
+        c.prepare(messages)
+        summary = "the parser: " + "s" * 600
+        _compress(
+            c,
+            messages,
+            "k1",
+            [{"start": "m00003", "end": "m00006", "summary": summary}],
+        )
+
+        view = c.view(messages)
+        call = view[-2]["tool_calls"][0]["function"]["arguments"]
+        stub = json.loads(call)["ranges"][0]["summary"]
+        assert len(stub) == SUMMARY_STUB_CHARS and stub.endswith("…")
+        assert json.dumps(view).count("s" * 600) == 1  # rendered once, in place
+        assert (
+            summary in messages[-2]["tool_calls"][0]["function"]["arguments"]
+        )  # log intact
 
     def test_boundaries_snap_to_tool_call_pairs(self):
         messages = _transcript(turns=3)
@@ -271,51 +319,9 @@ class TestCompress:
                 tool_call_id="k2",
             )
 
-    def test_cutting_into_a_block_is_rejected(self):
-        messages = _transcript(turns=4)
-        c = ContextCompressor(100_000)
-        c.prepare(messages)
-        _compress(
-            c,
-            messages,
-            "k1",
-            [{"start": "m00003", "end": "m00006", "summary": "first two files"}],
-        )
-        # a range that swallows b1's anchor but not its content would lose the only record of m00003–m00006
-        anchor = ref(c.blocks["b1"].anchor)
-        with pytest.raises(
-            ContextError,
-            match=f"would hide {anchor}, the anchor of b1 .*start the range at b1",
-        ):
-            c.compress(
-                messages,
-                [{"start": "m00007", "end": anchor, "summary": "s"}],
-                tool_call_id="k2",
-            )
-        assert len(c.blocks) == 1
-
-    def test_taking_the_content_without_the_anchor_is_rejected(self):
-        messages = _transcript(turns=4)
-        c = ContextCompressor(100_000)
-        c.prepare(messages)
-        _compress(
-            c,
-            messages,
-            "k1",
-            [{"start": "m00005", "end": "m00006", "summary": "file 1"}],
-        )
-        anchor = ref(c.blocks["b1"].anchor)
-        with pytest.raises(
-            ContextError,
-            match=f"contains b1 .* but not its anchor {anchor}; end the range at b1",
-        ):
-            c.compress(
-                messages,
-                [{"start": "m00003", "end": "m00008", "summary": "s"}],
-                tool_call_id="k2",
-            )
-
-    def test_the_gap_between_a_block_and_its_anchor_is_live(self):
+    def test_second_compress_takes_what_the_first_left_out(self):
+        """The failure the anchor model had: the messages right after a block — what the
+        model left live the first time — are the oldest content by the next turn."""
         messages = _transcript(turns=4)
         c = ContextCompressor(100_000)
         c.prepare(messages)
@@ -325,15 +331,56 @@ class TestCompress:
             "k1",
             [{"start": "m00003", "end": "m00004", "summary": "file 0"}],
         )
-        # m00005–m00010 happened after file 0 was read but before it was compressed: plain live messages
         result = _compress(
             c,
             messages,
             "k2",
             [{"start": "m00005", "end": "m00010", "summary": "files 1-3"}],
         )
+
         assert "→ b2 (tier 1" in result and "folds" not in result
         assert c.blocks["b1"].active and c.blocks["b2"].active
+        # both summaries in order, then the two compress calls (m00011, m00013) and their results
+        assert _tags(c.view(messages)) == [
+            "",
+            "m00002",
+            "b1",
+            "b2",
+            "",
+            "m00012",
+            "",
+            "m00014",
+        ]
+
+    def test_a_range_may_swallow_an_older_compress_call(self):
+        messages = _transcript(turns=4)
+        c = ContextCompressor(100_000)
+        c.prepare(messages)
+        _compress(
+            c,
+            messages,
+            "k1",
+            [{"start": "m00003", "end": "m00004", "summary": "file 0"}],
+        )
+        # m00011–m00012 is the k1 call and its result; b1's summary does not live there
+        _compress(
+            c,
+            messages,
+            "k2",
+            [
+                {
+                    "start": "m00005",
+                    "end": "m00012",
+                    "summary": "files 1-3, then compressed",
+                }
+            ],
+        )
+
+        view = c.view(messages)
+        assert c.blocks["b1"].active
+        assert _tags(view) == ["", "m00002", "b1", "b2", "", "m00014"]
+        assert "file 0" in view[2]["content"]
+        assert '"k1"' not in json.dumps(view)
 
 
 class TestTiers:
@@ -379,16 +426,24 @@ class TestTiers:
             and c.blocks["b3"].active
         )
         view = c.view(messages)
-        refs = _tags(view)
-        # both child anchors are gone from the wire, the tier-2 anchor remains
-        assert ref(c.blocks["b1"].anchor) not in refs
-        assert ref(c.blocks["b2"].anchor) not in refs
-        assert ref(c.blocks["b3"].anchor) in refs
-        # files 4-5 were live between b2 and the fold; a fold spans everything from b1's start to b2's anchor
-        assert "m00012" not in refs and "m00014" not in refs
-        assert refs == ["", "m00002", "", ref(c.blocks["b3"].anchor)]
+        # b3 stands where b1 began; files 4-5 (m00011–m00014) stay live in order; the
+        # folded blocks' compress calls (m00015–m00018) leave the view, b3's own (m00019) stays
+        assert _tags(view) == [
+            "",
+            "m00002",
+            "b3",
+            "",
+            "m00012",
+            "",
+            "m00014",
+            "",
+            "m00020",
+        ]
+        wire = json.dumps(view)
+        assert '"k1"' not in wire and '"k2"' not in wire and '"k3"' in wire
+        assert "files 0-1: nothing relevant" not in wire  # two tiers down now
 
-    def test_a_block_created_this_turn_cannot_bound_a_range_yet(self):
+    def test_a_new_block_can_bound_a_range_at_once(self):
         messages = _transcript(turns=4)
         c = ContextCompressor(100_000)
         c.compress(
@@ -396,12 +451,12 @@ class TestTiers:
             [{"start": "m00003", "end": "m00004", "summary": "f0"}],
             tool_call_id="k1",
         )
-        with pytest.raises(ContextError, match="b1 was created this turn"):
-            c.compress(
-                messages,
-                [{"start": "b1", "end": "m00006", "summary": "s"}],
-                tool_call_id="k1",
-            )
+        result = c.compress(
+            messages,
+            [{"start": "b1", "end": "m00006", "summary": "f0-f1"}],
+            tool_call_id="k2",
+        )
+        assert "→ b2 (tier 2" in result and "folds b1" in result
 
 
 class TestDecompressSearchStatus:
@@ -452,25 +507,27 @@ class TestDecompressSearchStatus:
             c,
             messages,
             "k2",
-            [{"start": "m00005", "end": "m00006", "summary": "f1: nothing"}],
+            [{"start": "m00007", "end": "m00008", "summary": "f2: nothing"}],
         )
+        # spans both children, the live turns between and after them, and both their compress calls
         _compress(
             c,
             messages,
             "k3",
-            [{"start": "b1", "end": "b2", "summary": "f0-f1: nothing"}],
+            [{"start": "b1", "end": "m00016", "summary": "f0-f4: nothing"}],
         )
 
         text = c.decompress(messages, "b3")
         assert "--- b1 (tier 1, m00003–m00004) summary ---\nf0: nothing" in text
-        assert "--- b2 (tier 1, m00005–m00006) summary ---\nf1: nothing" in text
         assert (
-            "--- m00008 tool Read ---\nfile 2: xxx" in text
-        )  # live between the children: shown in full
+            "--- m00006 tool Read ---\nfile 1: xxx" in text
+        )  # live between the children
+        assert "--- b2 (tier 1, m00007–m00008) summary ---\nf2: nothing" in text
+        assert "--- m00012 tool Read ---\nfile 4: xxx" in text
         assert "file 0: xxx" not in text  # originals are two tiers down
         assert (
-            "Compressed 1 range" not in text
-        )  # the children's anchor pairs add nothing
+            "compress(" not in text and "Compressed 1 range" not in text
+        )  # children's calls add nothing
 
     def test_unknown_block(self):
         c = ContextCompressor(100_000)
@@ -516,11 +573,20 @@ class TestNudgeAndEviction:
         view = ContextCompressor(1_000_000).prepare(messages)
         assert "[context]" not in view[-1]["content"]
 
-    def test_nudge_names_the_largest_ranges(self):
+    def test_nudge_is_a_message_of_its_own_after_the_tool_result(self):
+        """Not appended inside the tool result: models discount instructions found in
+        tool output, and gpt-5.6-luna ignored the tail form at 97% usage, every turn."""
         messages = _transcript(turns=6, size=3000)  # ~6K tokens of results
         c = ContextCompressor(8_000)
         view = c.prepare(messages)
-        note = view[-1]["content"].split("[context] ")[-1]
+
+        assert view[-2]["role"] == "tool" and "[context]" not in view[-2]["content"]
+        assert view[-1]["role"] == "user" and view[-1]["content"].startswith(
+            "[context] "
+        )
+        assert "<acp" not in view[-1]["content"]  # not a transcript message, no ref
+        assert messages[-1]["role"] == "tool"  # transcript untouched
+        note = view[-1]["content"]
         assert "of the 8,000-token limit used" in note
         assert "Largest compressible ranges: m00003–m00012" in note
         assert "Compress consumed ranges before continuing" in note
@@ -538,8 +604,9 @@ class TestNudgeAndEviction:
         ]
         assert stubs and stubs[0]["content"].endswith("m00004</acp>")  # oldest first
         assert (
-            "file 5: xxx" in view[-1]["content"]
+            "file 5: xxx" in view[-2]["content"]
         )  # the newest result is never evicted
+        assert view[-1]["role"] == "user"
         assert "tool result(s) were evicted" in view[-1]["content"]
         assert messages[3]["content"].startswith("file 0: xxx")  # transcript intact
         assert estimate_messages_tokens(view) < estimate_messages_tokens(messages)
@@ -551,6 +618,91 @@ class TestNudgeAndEviction:
         _turn(messages, "c9", "Read", "file 9: " + "y" * 100)
         view = c.prepare(messages)
         assert "were evicted" not in view[-1]["content"]
+
+    def test_compressing_evicted_results_counts_their_stubs_not_their_bodies(self):
+        """Live run: two evicted 9K/13K reads inside the range made the result say
+        'Context ≈ 20,333 → 0' — they were only ~40-token stubs in the view."""
+        messages = _transcript(turns=6, size=3000)
+        c = ContextCompressor(4_000)
+        c.prepare(messages)  # evicts the oldest results
+        assert 3 in c._evicted
+
+        result = c.compress(
+            messages,
+            [
+                {
+                    "start": "m00003",
+                    "end": "m00008",
+                    "summary": "files 0-2: nothing relevant",
+                }
+            ],
+            tool_call_id="k1",
+        )
+        b = c.blocks["b1"]
+        assert b.tokens_before < 2 * 1_000  # not the 3 × 1K bodies
+        before, after = (
+            int(x.replace(",", ""))
+            for x in result.split("Context ≈ ")[1].split(" of ")[0].split(" → ")
+        )
+        assert after == estimate_messages_tokens(c.view(messages))  # measured
+        assert 0 < after < before
+
+    def test_a_summary_written_over_evicted_content_says_so(self):
+        """Live run: the model compressed a range seven of whose reads were already
+        evicted, then answered with docstrings it had made up for them."""
+        messages = _transcript(turns=6, size=3000)
+        c = ContextCompressor(4_000)
+        c.prepare(messages)
+        assert sorted(c._evicted) == [
+            3,
+            5,
+            7,
+        ]  # the three oldest results, all in the range
+
+        result = c.compress(
+            messages,
+            [
+                {
+                    "start": "m00003",
+                    "end": "m00008",
+                    "summary": "files 0-2: nothing relevant",
+                }
+            ],
+            tool_call_id="k1",
+        )
+        assert (
+            "note: m00004, m00006, m00008 had already been evicted, so the summary's account of them is from memory"
+            in result
+        )
+        rendered = ContextCompressor.render(c.blocks["b1"])["content"]
+        assert (
+            "(m00004, m00006, m00008 had already been evicted when this summary was written"
+            in rendered
+        )
+        assert c.blocks["b1"].evicted == [3, 5, 7]
+
+    def test_context_tool_receipts_are_never_evicted(self):
+        messages = _transcript(turns=6, size=3000)
+        c = ContextCompressor(4_000)
+        c.prepare(messages)
+        _compress(
+            c,
+            messages,
+            "k1",
+            [{"start": "m00009", "end": "m00010", "summary": "file 3: nothing"}],
+        )
+        receipt = len(messages) - 1  # the compress result, appended by _reply
+        assert messages[receipt]["tool_call_id"] == "k1"
+        # enough pressure that oldest-first eviction has to walk past the receipt:
+        # six more 3K reads against a 4K limit
+        for n in range(6):
+            _turn(messages, f"n{n}", "Read", f"file {10 + n}: " + "z" * 3000)
+            c.prepare(messages)
+
+        assert receipt not in c._evicted
+        newer = [i for i in c._evicted if i > receipt]
+        assert newer  # results younger than the receipt were evicted instead
+        assert messages[newer[0]]["role"] == "tool"
 
 
 def _text(content="Done", tokens=100):
@@ -656,9 +808,12 @@ class TestServiceWiring:
         assert result.error is None and result.output == "Done"
         last_wire = provider.calls[-1]["messages"]
         assert "x" * 3000 not in json.dumps(last_wire)  # the reads are hidden
-        assert "a and b: both fine" in json.dumps(
-            last_wire
-        )  # the summary is the anchor
+        assert last_wire[1]["role"] == "user" and last_wire[1]["content"].startswith(
+            "[Compressed b1] m00002–m00005, tier 1"
+        )
+        assert (
+            "a and b: both fine" in last_wire[1]["content"]
+        )  # rendered where the reads were
         assert last_wire[-1]["content"].startswith(
             "Compressed 1 range(s): m00002–m00005 → b1"
         )

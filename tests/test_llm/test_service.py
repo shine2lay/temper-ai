@@ -1,5 +1,7 @@
 """Tests for the LLM service — the tool-calling loop with observability."""
 
+from temper_ai.llm import service as service_mod
+from temper_ai.llm.context import estimate_messages_tokens
 from temper_ai.llm.models import CallContext, LLMResponse
 from temper_ai.llm.service import (
     LLMService,
@@ -682,3 +684,137 @@ class TestProviderConfigPassthrough:
         kwargs = provider.calls[0]["kwargs"]
         # No extras beyond what other fields add
         assert kwargs.get("custom_flag") is None
+
+
+# -- The run-level wall clock --
+#
+# These pin the seam, not the helper: a mutation that stops enforcing
+# total_timeout entirely used to leave the whole test_llm suite green.
+
+
+class TestTotalTimeout:
+    def _clock(self, monkeypatch, readings):
+        """Drive the service's clock by hand so the test is fast and exact.
+
+        service.py calls time.monotonic() twice: once for _run_start (line
+        109) and once per iteration for the elapsed check (line 136). The
+        last reading repeats if the loop asks for more.
+        """
+        ticks = iter(readings)
+        last = [readings[-1]]
+
+        def fake_monotonic():
+            try:
+                last[0] = next(ticks)
+            except StopIteration:
+                pass
+            return last[0]
+
+        monkeypatch.setattr(service_mod.time, "monotonic", fake_monotonic)
+
+    def test_timeout_stops_the_loop_mid_run(self, monkeypatch):
+        """A run that goes over its wall clock stops even with work left to do."""
+        provider = MockProvider(
+            [
+                # Flat shape: the response parser drops calls that nest the
+                # name under "function" (response_parser.py:32).
+                _make_tool_response(
+                    [{"id": "c1", "name": "bash", "arguments": "{}"}]
+                ),
+                _make_text_response("second call should never happen"),
+            ]
+        )
+        # _run_start=0; iteration 1 checks at 1s (under budget, proceeds);
+        # iteration 2 checks at 99s (over the 30s budget, stops).
+        self._clock(monkeypatch, [0.0, 1.0, 99.0])
+
+        service = LLMService(provider, total_timeout=30.0)
+        result = service.run(
+            [{"role": "user", "content": "go"}], execute_tool=_echo_tool
+        )
+
+        assert "timed out" in (result.error or "")
+        assert len(provider.calls) == 1, "the second LLM call must not be made"
+
+    def test_a_run_inside_its_budget_is_untouched(self):
+        """Control: without this, the test above could pass for the wrong reason."""
+        provider = MockProvider([_make_text_response("Done")])
+        service = LLMService(provider, total_timeout=300.0)
+
+        result = service.run([{"role": "user", "content": "go"}])
+
+        assert result.error is None
+        assert result.output == "Done"
+
+
+# -- The context policy is actually applied --
+#
+# ContextCompressor and _enforce_context_limit are unit-tested elsewhere.
+# What was untested is that the service calls them at all: deleting the call
+# left every other test green. These assert on what the provider RECEIVED,
+# which is the only thing that matters to a real model.
+
+
+class TestContextPolicyIsApplied:
+    def _long_history(self, turns: int = 40) -> list[dict]:
+        msgs: list[dict] = [{"role": "user", "content": "start"}]
+        for i in range(turns):
+            msgs.append({"role": "assistant", "content": f"thinking {i} " + "x" * 400})
+            msgs.append({"role": "user", "content": f"more {i} " + "y" * 400})
+        return msgs
+
+    def test_truncate_shrinks_what_the_provider_sees(self):
+        history = self._long_history()
+        before = len(history)
+        provider = MockProvider([_make_text_response("ok")])
+        service = LLMService(provider, max_context_tokens=500, context_policy="truncate")
+
+        service.run(history)
+
+        sent = provider.calls[0]["messages"]
+        assert len(sent) < before, "transcript was sent whole despite the limit"
+
+    def test_truncate_edits_the_callers_list_in_place(self):
+        """Documented asymmetry: truncate is destructive, compress is not.
+
+        A caller that keeps its own reference to the transcript (the stage
+        layer does) sees messages disappear from under it. Pinned because it
+        is surprising, not because it is desirable.
+        """
+        history = self._long_history()
+        before = len(history)
+        provider = MockProvider([_make_text_response("ok")])
+        service = LLMService(provider, max_context_tokens=500, context_policy="truncate")
+
+        service.run(history)
+
+        assert len(history) < before
+
+    def test_truncate_keeps_a_user_message(self):
+        """Trimming that drops every user turn produces a prompt no model can answer."""
+        provider = MockProvider([_make_text_response("ok")])
+        service = LLMService(provider, max_context_tokens=500, context_policy="truncate")
+
+        service.run(self._long_history())
+
+        assert any(m.get("role") == "user" for m in provider.calls[0]["messages"])
+
+    def test_compress_leaves_every_caller_message_intact(self):
+        """Under compress the wire view is derived; the transcript stays whole."""
+        history = self._long_history()
+        original = [dict(m) for m in history]
+        provider = MockProvider([_make_text_response("ok")])
+        service = LLMService(provider, max_context_tokens=500, context_policy="compress")
+
+        service.run(history)
+
+        assert history[: len(original)] == original, "compress must not drop caller messages"
+
+    def test_compress_keeps_the_provider_under_the_limit(self):
+        provider = MockProvider([_make_text_response("ok")])
+        service = LLMService(provider, max_context_tokens=500, context_policy="compress")
+
+        service.run(self._long_history())
+
+        sent = provider.calls[0]["messages"]
+        assert estimate_messages_tokens(sent) <= 500

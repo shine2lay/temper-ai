@@ -71,7 +71,11 @@ echo -e "$PASS mypy passed."
 # CI runs `pytest tests/ -x --timeout=60` with a Postgres service container.
 # Local dev may not have Postgres running, so tests/test_database/ is skipped
 # by default. Set PRECOMMIT_RUN_DB=1 to include them (requires TEMPER_DATABASE_URL).
-PYTEST_ARGS="tests/ -x --timeout=60 -q --no-header"
+# -n 8: the suite is xdist-safe and this is where the speedup plateaus on a
+# 20-core box (68s serial -> 20s at 8 workers; 16 workers only buys ~1s more
+# while taking twice the machine). Override with PRECOMMIT_PYTEST_WORKERS.
+PYTEST_WORKERS="${PRECOMMIT_PYTEST_WORKERS:-8}"
+PYTEST_ARGS="tests/ -x --timeout=60 -q --no-header -n $PYTEST_WORKERS"
 if [ -z "${PRECOMMIT_RUN_DB:-}" ]; then
     PYTEST_ARGS="$PYTEST_ARGS --ignore=tests/test_database"
 fi

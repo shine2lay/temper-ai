@@ -1,6 +1,7 @@
 """Tests for ToolExecutor."""
 
 import tempfile
+import threading
 import time
 from typing import Any
 
@@ -65,22 +66,65 @@ class TestExecutorBasics:
 
 
 class TestExecutorTimeout:
-    def test_timeout_kills_slow_tool(self):
+    # The tool only has to outlive its timeout; it used to sleep 10s against a
+    # 1s timeout, and shutdown() then joined the abandoned thread — 20s of the
+    # suite's wall clock spent waiting for sleeps nobody was measuring.
+    OVERRUN = 1.3  # seconds; must exceed the 1s timeout floor (timeout is int)
+
+    def test_timeout_stops_waiting_for_a_slow_tool(self):
+        """Named for what it does: the WAIT ends. See the kill test below."""
         executor = ToolExecutor(default_timeout=1)
         executor.register_tools({"slow": SlowTool()})
 
-        result = executor.execute("slow", {"duration": 10}, allowed_tools=ALL_TOOLS)
+        result = executor.execute(
+            "slow", {"duration": self.OVERRUN}, allowed_tools=ALL_TOOLS
+        )
         assert result.success is False
         assert "timed out" in result.error.lower()
         executor.shutdown()
 
     def test_custom_timeout_per_call(self):
+        """A per-call timeout overrides a longer default."""
         executor = ToolExecutor(default_timeout=30)
         executor.register_tools({"slow": SlowTool()})
 
-        result = executor.execute("slow", {"duration": 10}, allowed_tools=ALL_TOOLS, timeout=1)
+        result = executor.execute(
+            "slow", {"duration": self.OVERRUN}, allowed_tools=ALL_TOOLS, timeout=1
+        )
         assert result.success is False
         assert "timed out" in result.error.lower()
+        executor.shutdown()
+
+    def test_a_timed_out_tool_is_not_actually_killed(self):
+        """The timeout abandons the future; the thread runs to completion.
+
+        Pinned because it is surprising and has teeth: a tool reported as
+        "timed out" still holds a pool worker and its side effects still
+        land afterwards. It is also why shutdown() blocks for as long as
+        the runaway tool takes.
+        """
+        finished = threading.Event()
+
+        class Runaway(BaseTool):
+            name = "runaway"
+            description = "Outlives its timeout, then completes anyway"
+            parameters = {"type": "object", "properties": {}}
+
+            def execute(self, **params: Any) -> ToolResult:
+                time.sleep(TestExecutorTimeout.OVERRUN)
+                finished.set()
+                return ToolResult(success=True, result="side effect landed")
+
+        executor = ToolExecutor(default_timeout=1)
+        executor.register_tools({"runaway": Runaway()})
+
+        result = executor.execute("runaway", {}, allowed_tools=ALL_TOOLS)
+        assert result.success is False
+        assert "timed out" in result.error.lower()
+        assert not finished.is_set(), "tool should still be running at timeout"
+
+        # It was never cancelled: it finishes on its own shortly after.
+        assert finished.wait(timeout=5), "abandoned tool never completed"
         executor.shutdown()
 
 

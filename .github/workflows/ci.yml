@@ -134,6 +134,9 @@ jobs:
           path: ~/.cache/pip
           key: pip-${{ matrix.python-version }}-${{ hashFiles('pyproject.toml') }}
       - run: pip install -e ".[dev]"
-      - run: pytest tests/ -x --timeout=60
+      # -n auto: GitHub runners are 2-4 cores, so let xdist size itself.
+      # The suite is xdist-safe (verified: identical results serial and at
+      # 4/8/16 workers).
+      - run: pytest tests/ -x --timeout=60 -n auto
         env:
           TEMPER_DATABASE_URL: postgresql://temper_ai:test@localhost:5432/temper_ai_test

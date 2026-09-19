@@ -104,17 +104,8 @@ def _load_configs_into_store(
         logger.warning("Config dir does not exist: %s", config_dir)
         return 0
 
-    from temper_ai.config.importer import import_yaml
+    from temper_ai.config.importer import import_config_tree
 
-    loaded = 0
-    for yaml_file in sorted(config_dir.rglob("*.yaml")):
-        if "mcp_servers" in yaml_file.parts or "tools" in yaml_file.parts:
-            continue
-        try:
-            import_yaml(str(yaml_file), store)
-            loaded += 1
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("Skipped config %s: %s", yaml_file, exc)
-
+    loaded = import_config_tree(config_dir, store)
     logger.info("Loaded %d workflow configs from %s", loaded, config_dir)
     return loaded

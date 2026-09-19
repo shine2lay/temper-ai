@@ -14,19 +14,18 @@ from temper_ai.config.store import ConfigStore
 logger = logging.getLogger(__name__)
 
 
-def import_yaml(file_path: str | Path, store: ConfigStore | None = None) -> dict[str, Any]:
-    """Import a single YAML config file into the DB.
+def parse_yaml(file_path: str | Path) -> dict[str, Any]:
+    """Read and validate a YAML config without touching the database.
 
-    Flow: read file → security checks → parse → detect type → validate → store.
-
-    Args:
-        file_path: Path to YAML file.
-        store: ConfigStore instance. Creates one if not provided.
+    Flow: read file → security checks → parse → detect type → validate.
+    Split out of ``import_yaml`` so a bulk load can parse every file first
+    (where the per-file failures actually are) and then write them in one
+    transaction instead of one per file.
 
     Returns:
-        Dict with id, type, name of the imported config.
+        Dict with name, config_type, config, schema_version — the arguments
+        ``ConfigStore.put``/``put_many`` expect.
     """
-    store = store or ConfigStore()
     path = Path(file_path)
 
     # Parse YAML with security checks
@@ -43,18 +42,73 @@ def import_yaml(file_path: str | Path, store: ConfigStore | None = None) -> dict
             f"Config must have a 'name' field inside '{config_type}' block"
         )
 
-    schema_version = raw_config.get("schema_version", "1.0")
+    return {
+        "name": name,
+        "config_type": config_type,
+        "config": raw_config,
+        "schema_version": raw_config.get("schema_version", "1.0"),
+    }
+
+
+def import_yaml(file_path: str | Path, store: ConfigStore | None = None) -> dict[str, Any]:
+    """Import a single YAML config file into the DB.
+
+    Flow: read file → security checks → parse → detect type → validate → store.
+
+    Args:
+        file_path: Path to YAML file.
+        store: ConfigStore instance. Creates one if not provided.
+
+    Returns:
+        Dict with id, type, name of the imported config.
+    """
+    store = store or ConfigStore()
+    path = Path(file_path)
+
+    parsed = parse_yaml(path)
+    config_type = parsed["config_type"]
+    name = parsed["name"]
 
     # Store in DB (with ${VAR} still in place — resolved at read time)
     config_id = store.put(
         name=name,
         config_type=config_type,
-        config=raw_config,
-        schema_version=schema_version,
+        config=parsed["config"],
+        schema_version=parsed["schema_version"],
     )
 
     logger.info("Imported %s config '%s' from %s", config_type, name, path)
     return {"id": config_id, "type": config_type, "name": name}
+
+
+# Subdirectories holding YAMLs that are not workflow/stage/agent configs.
+NON_CONFIG_DIRS = ("mcp_servers", "tools")
+
+
+def import_config_tree(root: str | Path, store: ConfigStore | None = None) -> int:
+    """Recursively import every config YAML under ``root``. Returns the count.
+
+    Parses all files first, then writes them in a single transaction. Doing a
+    ``put`` per file cost a disk sync each time — 6.5s for this repo's tree,
+    paid on every server and worker startup.
+
+    A file that fails to parse is skipped and logged, not raised: one bad YAML
+    must not leave the process with no configs at all.
+    """
+    store = store or ConfigStore()
+    parsed: list[dict[str, Any]] = []
+
+    for yaml_file in sorted(Path(root).rglob("*.yaml")):
+        if any(part in NON_CONFIG_DIRS for part in yaml_file.parts):
+            continue
+        try:
+            parsed.append(parse_yaml(yaml_file))
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Skipped config %s: %s", yaml_file, exc)
+
+    if parsed:
+        store.put_many(parsed)
+    return len(parsed)
 
 
 def import_directory(dir_path: str | Path, store: ConfigStore | None = None) -> list[dict[str, Any]]:

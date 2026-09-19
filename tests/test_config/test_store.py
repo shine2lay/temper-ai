@@ -34,6 +34,76 @@ class TestConfigStorePut:
             store.put("x", "invalid_type", {"name": "x"})
 
 
+class TestConfigStorePutMany:
+    """put_many is the bulk-load path used at server/worker startup."""
+
+    def test_inserts_all_entries(self, store):
+        ids = store.put_many(
+            [
+                {"name": "bulk_a", "config_type": "agent", "config": {"name": "bulk_a"}},
+                {"name": "bulk_b", "config_type": "workflow", "config": {"name": "bulk_b"}},
+            ]
+        )
+        assert len(ids) == 2
+        assert store.get("bulk_a", "agent")["name"] == "bulk_a"
+        assert store.get("bulk_b", "workflow")["name"] == "bulk_b"
+
+    def test_updates_existing_like_put(self, store):
+        store.put("reload_me", "agent", {"name": "reload_me", "version": 1})
+        store.put_many(
+            [
+                {
+                    "name": "reload_me",
+                    "config_type": "agent",
+                    "config": {"name": "reload_me", "version": 2},
+                }
+            ]
+        )
+        # Restart must overwrite, not duplicate or silently keep the old body.
+        assert store.get("reload_me", "agent")["version"] == 2
+
+    def test_same_name_twice_in_one_batch_keeps_last(self, store):
+        """Two files can declare the same config name; the batch must not collide."""
+        store.put_many(
+            [
+                {"name": "dupe", "config_type": "agent", "config": {"name": "dupe", "v": 1}},
+                {"name": "dupe", "config_type": "agent", "config": {"name": "dupe", "v": 2}},
+            ]
+        )
+        assert store.get("dupe", "agent")["v"] == 2
+
+    def test_same_name_different_types_coexist(self, store):
+        store.put_many(
+            [
+                {"name": "shared", "config_type": "agent", "config": {"name": "shared", "k": "a"}},
+                {
+                    "name": "shared",
+                    "config_type": "workflow",
+                    "config": {"name": "shared", "k": "w"},
+                },
+            ]
+        )
+        # The batch SELECT matches on type AND name; a cross-product bug here
+        # would let the workflow overwrite the agent.
+        assert store.get("shared", "agent")["k"] == "a"
+        assert store.get("shared", "workflow")["k"] == "w"
+
+    def test_invalid_type_rejects_whole_batch(self, store):
+        with pytest.raises(ValueError):
+            store.put_many(
+                [
+                    {"name": "good", "config_type": "agent", "config": {"name": "good"}},
+                    {"name": "bad", "config_type": "invalid_type", "config": {"name": "bad"}},
+                ]
+            )
+        # Validated up front, so the valid entry must not have been written.
+        with pytest.raises(ConfigNotFoundError):
+            store.get("good", "agent")
+
+    def test_empty_batch_is_noop(self, store):
+        assert store.put_many([]) == []
+
+
 class TestConfigStoreGet:
     def test_get_not_found(self, store):
         with pytest.raises(ConfigNotFoundError):

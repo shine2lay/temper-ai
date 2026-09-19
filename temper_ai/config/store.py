@@ -106,6 +106,71 @@ class ConfigStore:
             session.flush()
             return row.id
 
+    def put_many(self, configs: list[dict[str, Any]]) -> list[str]:
+        """Upsert many configs in a single transaction.
+
+        ``put`` commits per call, which costs a disk sync each time: loading
+        the repo's config tree that way spent 2.6s of its 6.5s in sqlite
+        commits alone, on every server and worker startup. This does the same
+        upsert once per entry and commits once.
+
+        Intended for bulk load at startup. It holds a write transaction for
+        the whole batch, so it is not a drop-in replacement for concurrent
+        single writes — ``put`` remains the right call there.
+
+        Args:
+            configs: Dicts of name, config_type, config, and optionally
+                schema_version (defaults to "1.0").
+
+        Returns:
+            The config IDs, in the order given.
+        """
+        for entry in configs:
+            self._validate_type(entry["config_type"])
+
+        ids: list[str] = []
+        with get_session() as session:
+            # One query for the whole batch instead of one per entry; the
+            # per-row SELECT was the other half of the cost.
+            wanted = {(e["config_type"], e["name"]) for e in configs}
+            existing_rows = {
+                (row.type, row.name): row
+                for row in session.exec(
+                    select(Config).where(
+                        Config.type.in_({t for t, _ in wanted}),  # type: ignore[attr-defined]
+                        Config.name.in_({n for _, n in wanted}),  # type: ignore[attr-defined]
+                    )
+                ).all()
+            }
+
+            for entry in configs:
+                key = (entry["config_type"], entry["name"])
+                schema_version = entry.get("schema_version", "1.0")
+                existing = existing_rows.get(key)
+
+                if existing is not None:
+                    existing.config = entry["config"]
+                    existing.schema_version = schema_version
+                    existing.updated_at = datetime.now(UTC)
+                    session.add(existing)
+                    ids.append(existing.id)
+                    continue
+
+                row = Config(
+                    type=entry["config_type"],
+                    name=entry["name"],
+                    schema_version=schema_version,
+                    config=entry["config"],
+                )
+                session.add(row)
+                session.flush()
+                # A batch may name the same config twice (two files, same
+                # name): the second must update the first, not collide.
+                existing_rows[key] = row
+                ids.append(row.id)
+
+        return ids
+
     def list(self, config_type: str | None = None) -> list[dict[str, Any]]:
         """List configs, optionally filtered by type.
 

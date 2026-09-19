@@ -4,12 +4,52 @@
 import pytest
 
 from temper_ai.config import ConfigStore
-from temper_ai.config.importer import import_yaml
+from temper_ai.config.importer import import_config_tree, import_yaml
 
 
 @pytest.fixture
 def store():
     return ConfigStore()
+
+
+def _write(path, body):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(body)
+
+
+class TestImportConfigTree:
+    """The shared bulk loader behind server and worker startup."""
+
+    def test_imports_nested_configs(self, store, tmp_path):
+        _write(tmp_path / "agents" / "a.yaml", "agent:\n  name: tree_a\n  type: llm\n")
+        _write(tmp_path / "workflows" / "deep" / "w.yaml", "workflow:\n  name: tree_w\n  nodes: []\n")
+
+        assert import_config_tree(tmp_path, store) == 2
+        # Stored as the raw YAML, top-level type key included.
+        assert store.get("tree_a", "agent")["agent"]["type"] == "llm"
+        assert store.get("tree_w", "workflow")["workflow"]["nodes"] == []
+
+    def test_skips_mcp_and_tool_yamls(self, store, tmp_path):
+        """Those dirs hold non-config YAMLs; importing them would log noise on every boot."""
+        _write(tmp_path / "agents" / "keep.yaml", "agent:\n  name: kept\n  type: llm\n")
+        _write(tmp_path / "mcp_servers" / "notion.yaml", "name: notion\nurl: https://x\n")
+        _write(tmp_path / "tools" / "bash.yaml", "name: bash\n")
+
+        assert import_config_tree(tmp_path, store) == 1
+
+    def test_one_bad_file_does_not_abort_the_rest(self, store, tmp_path):
+        """A single broken YAML must not leave the process with zero configs."""
+        _write(tmp_path / "ok1.yaml", "agent:\n  name: ok_one\n  type: llm\n")
+        _write(tmp_path / "broken.yaml", "agent:\n  nope: [unclosed\n")
+        _write(tmp_path / "noname.yaml", "agent:\n  type: llm\n")
+        _write(tmp_path / "ok2.yaml", "agent:\n  name: ok_two\n  type: llm\n")
+
+        assert import_config_tree(tmp_path, store) == 2
+        assert store.get("ok_one", "agent")["agent"]["name"] == "ok_one"
+        assert store.get("ok_two", "agent")["agent"]["name"] == "ok_two"
+
+    def test_empty_dir_returns_zero(self, store, tmp_path):
+        assert import_config_tree(tmp_path, store) == 0
 
 
 class TestImportYaml:

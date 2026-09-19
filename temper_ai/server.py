@@ -206,18 +206,9 @@ def _load_default_configs(config_store: ConfigStore):
         logger.info("No configs/ directory found, skipping default config loading")
         return
 
-    from temper_ai.config.importer import import_yaml
+    from temper_ai.config.importer import import_config_tree
 
-    loaded = 0
-    for yaml_file in sorted(configs_dir.rglob("*.yaml")):
-        # Skip non-config YAMLs (MCP servers, tool definitions)
-        if "mcp_servers" in yaml_file.parts or "tools" in yaml_file.parts:
-            continue
-        try:
-            import_yaml(str(yaml_file), config_store)
-            loaded += 1
-        except Exception as exc:
-            logger.debug("Skipped config %s: %s", yaml_file, exc)
+    loaded = import_config_tree(configs_dir, config_store)
 
     if loaded:
         logger.info("Loaded %d configs from %s", loaded, configs_dir)

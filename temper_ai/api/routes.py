@@ -84,6 +84,31 @@ class RunResponse(BaseModel):
 
 # --- Routes ---
 
+def _register_run_tools(run_tool_executor: ToolExecutor, nodes) -> None:
+    """Give a run its tools: the built-ins, then whatever MCP servers its agents declare.
+
+    Every path that builds a ToolExecutor goes through here — start, resume and fork. Registering the
+    built-ins alone is not a smaller capability, it is a silent one: an agent that declared
+    ``playwright.browser_navigate`` still starts, the name simply resolves to nothing, and an LLM with no
+    browser does not stop. It writes a plausible answer about what it could not do. A resumed QA step
+    reported ``verdict: fail`` that way, having never opened a page.
+    """
+    from temper_ai.tools.mcp_client import mcp_manager
+    from temper_ai.tools.mcp_tool import create_mcp_tools_from_agents
+
+    run_tool_executor.register_tools({name: cls() for name, cls in TOOL_CLASSES.items()})
+
+    agent_configs = [node.agent_config for node in nodes if hasattr(node, "agent_config")]
+    mcp_tools = create_mcp_tools_from_agents(mcp_manager, agent_configs)
+    if mcp_tools:
+        run_tool_executor.register_tools(dict(mcp_tools))
+        try:
+            preconnect_mcp_servers(mcp_manager, mcp_tools)
+        except McpPreconnectError as exc:
+            # 503 on start; on resume/fork the caller decides, since the run already exists.
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
 @router.post("/api/runs", response_model=RunResponse)
 def start_run(body: RunRequest):
     """Start a workflow execution.
@@ -139,23 +164,7 @@ def start_run(body: RunRequest):
         workspace_root=body.workspace_path,
         policy_engine=policy_engine,
     )
-    # Register built-in tools
-    run_tool_executor.register_tools({name: cls() for name, cls in TOOL_CLASSES.items()})
-
-    # Register MCP tools and pre-connect needed servers
-    from temper_ai.tools.mcp_client import mcp_manager
-    from temper_ai.tools.mcp_tool import create_mcp_tools_from_agents
-
-    agent_configs = [
-        node.agent_config for node in nodes if hasattr(node, "agent_config")
-    ]
-    mcp_tools = create_mcp_tools_from_agents(mcp_manager, agent_configs)
-    if mcp_tools:
-        run_tool_executor.register_tools(dict(mcp_tools))
-        try:
-            preconnect_mcp_servers(mcp_manager, mcp_tools)
-        except McpPreconnectError as exc:
-            raise HTTPException(status_code=503, detail=str(exc)) from exc
+    _register_run_tools(run_tool_executor, nodes)
 
     recorder = EventRecorder(
         execution_id, notifier=_build_notifier(execution_id, config.name),
@@ -441,7 +450,9 @@ def resume_run(execution_id: str, body: ResumeRequest | None = None):
         policy_engine = PolicyEngine.from_config(config.safety)
 
     run_tool_executor = ToolExecutor(workspace_root=workspace, policy_engine=policy_engine)
-    run_tool_executor.register_tools({name: cls() for name, cls in TOOL_CLASSES.items()})
+    # The resumed nodes are the ones that had not finished, so they are exactly the ones that still need
+    # their tools — including the MCP ones, which a resume used to drop.
+    _register_run_tools(run_tool_executor, nodes)
 
     recorder = EventRecorder(
         execution_id, notifier=_build_notifier(execution_id, config.name),
@@ -542,7 +553,7 @@ def fork_run(body: ForkRequest):
         policy_engine = PolicyEngine.from_config(config.safety)
 
     run_tool_executor = ToolExecutor(workspace_root=body.workspace_path, policy_engine=policy_engine)
-    run_tool_executor.register_tools({name: cls() for name, cls in TOOL_CLASSES.items()})
+    _register_run_tools(run_tool_executor, nodes)
 
     recorder = EventRecorder(
         new_execution_id, notifier=_build_notifier(new_execution_id, config.name),
